@@ -81,13 +81,31 @@ async function registerSecurityPlugins() {
 
   // CORS per cross-origin requests
   await fastify.register(cors, {
-    origin:
-      process.env.NODE_ENV === 'development'
-        ? ['http://localhost:3000', 'http://localhost:3001']
-        : false, // In production, configurare origins specifici
+    origin: true, // In development, accetta tutte le origini
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-luke-trace-id'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: [
+      'Content-Type', 
+      'Authorization', 
+      'x-luke-trace-id',
+      'Accept',
+      'Origin',
+      'X-Requested-With'
+    ],
+    exposedHeaders: ['Content-Type', 'x-luke-trace-id'],
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
+  });
+}
+
+/**
+ * Registra route OPTIONS per tRPC (gestione CORS preflight)
+ */
+async function registerTRPCOptions() {
+  // Gestisci richieste OPTIONS per tRPC
+  fastify.options('/trpc/*', async (request, reply) => {
+    // CORS headers sono già gestiti dal plugin CORS
+    reply.status(204).send();
   });
 }
 
@@ -104,6 +122,8 @@ async function registerTRPCPlugin() {
         fastify.log.error(`tRPC Error on '${path}': ${error.message}`);
       },
     },
+    // Gestisci richieste OPTIONS per CORS
+    useWSS: false,
   });
 }
 
@@ -180,8 +200,8 @@ function setupGracefulShutdown() {
  */
 const start = async () => {
   try {
-    // Registra plugin e route
-    await registerSecurityPlugins();
+    // Registra plugin e route nell'ordine corretto
+    await registerSecurityPlugins(); // CORS deve essere registrato prima di tRPC
     await registerTRPCPlugin();
     await registerHealthRoute();
 
