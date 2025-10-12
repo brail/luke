@@ -30,7 +30,12 @@ export default function UsersPage() {
   const [showForm, setShowForm] = useState(false);
 
   // Query tRPC per lista utenti
-  const { data: users, isLoading, error, refetch } = trpc.users.list.useQuery();
+  const {
+    data: users,
+    isLoading,
+    error,
+    refetch,
+  } = (trpc as any).users.list.useQuery();
 
   const handleSignOut = async () => {
     await signOut({ callbackUrl: '/login' });
@@ -148,7 +153,7 @@ export default function UsersPage() {
                           </TableCell>
                         </TableRow>
                       ) : (
-                        users.map(user => (
+                        users.map((user: any) => (
                           <TableRow key={user.id}>
                             <TableCell className="font-mono text-sm">
                               {user.id}

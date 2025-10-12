@@ -45,7 +45,7 @@ export const config = {
     async session({ session, token }) {
       // Passa i dati dal token alla sessione
       if (token) {
-        session.user.id = token.sub;
+        session.user.id = token.sub || '';
         session.user.role = token.role as string;
       }
       return session;

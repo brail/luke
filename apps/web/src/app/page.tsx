@@ -35,7 +35,7 @@ export default function Home() {
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
               Gestisci utenti, configurazioni e monitora il sistema attraverso
-              un'interfaccia moderna e intuitiva.
+              un&apos;interfaccia moderna e intuitiva.
             </p>
           </div>
 
@@ -106,6 +106,60 @@ export default function Home() {
                 <Link href="/settings/config">
                   <Button className="w-full" variant="outline">
                     Configurazioni
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-md transition-shadow">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  💾 Storage
+                </CardTitle>
+                <CardDescription>
+                  Configura SMB/Samba e Google Drive
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link href="/settings/storage">
+                  <Button className="w-full" variant="outline">
+                    Storage
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-md transition-shadow">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  📧 Mail
+                </CardTitle>
+                <CardDescription>
+                  Configura server SMTP per email
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link href="/settings/mail">
+                  <Button className="w-full" variant="outline">
+                    Mail
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-md transition-shadow">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  📥 Import/Export
+                </CardTitle>
+                <CardDescription>
+                  Importa ed esporta dati del sistema
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link href="/import-export">
+                  <Button className="w-full" variant="outline">
+                    Import/Export
                   </Button>
                 </Link>
               </CardContent>

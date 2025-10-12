@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Button } from '../../components/ui/button';
@@ -43,7 +43,7 @@ export default function LoginPage() {
         // Redirect a dashboard dopo login riuscito
         router.push('/dashboard');
       }
-    } catch (err) {
+    } catch {
       setError('Errore durante il login');
     } finally {
       setIsLoading(false);

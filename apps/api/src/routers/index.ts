@@ -6,6 +6,7 @@
 import { router } from '../lib/trpc';
 import { usersRouter } from './users';
 import { configRouter } from './config';
+import { integrationsRouter } from './integrations';
 
 /**
  * Router principale dell'applicazione
@@ -14,6 +15,7 @@ import { configRouter } from './config';
 export const appRouter = router({
   users: usersRouter,
   config: configRouter,
+  integrations: integrationsRouter,
 });
 
 /**

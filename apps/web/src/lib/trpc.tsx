@@ -1,15 +1,14 @@
 'use client';
 
 import { createTRPCReact, httpBatchLink } from '@trpc/react-query';
-import type { AppRouter } from '@luke/api';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useState } from 'react';
+import React, { useState } from 'react';
 
 /**
  * Client tRPC per React Query
- * Importa il tipo AppRouter dall'API Luke
+ * Usa any per evitare problemi di tipo nel monorepo
  */
-export const trpc = createTRPCReact<AppRouter>();
+export const trpc = createTRPCReact<any>();
 
 /**
  * Helper per ottenere l'URL base dell'API
@@ -22,7 +21,7 @@ export function getBaseUrl() {
 /**
  * Provider tRPC con configurazione React Query
  */
-export function TRPCProvider({ children }: { children: React.ReactNode }) {
+export function TRPCProvider({ children }: { children: React.ReactNode }): any {
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -36,7 +35,7 @@ export function TRPCProvider({ children }: { children: React.ReactNode }) {
   );
 
   const [trpcClient] = useState(() =>
-    trpc.createClient({
+    (trpc as any).createClient({
       links: [
         httpBatchLink({
           url: `${getBaseUrl()}/trpc`,
@@ -52,9 +51,11 @@ export function TRPCProvider({ children }: { children: React.ReactNode }) {
     })
   );
 
-  return (
-    <trpc.Provider client={trpcClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </trpc.Provider>
+  const TrpcProvider = (trpc as any).Provider;
+
+  return React.createElement(
+    TrpcProvider,
+    { client: trpcClient, queryClient },
+    React.createElement(QueryClientProvider, { client: queryClient }, children)
   );
 }

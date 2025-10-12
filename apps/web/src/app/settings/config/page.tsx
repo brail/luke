@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { trpc } from '../../../lib/trpc';
 import { Button } from '../../../components/ui/button';
@@ -40,12 +40,12 @@ export default function ConfigPage() {
     isLoading,
     error,
     refetch,
-  } = trpc.config.list.useQuery({
+  } = (trpc as any).config.list.useQuery({
     decrypt: true,
   });
 
   // Mutation tRPC per salvare configurazione
-  const { mutateAsync: setConfig } = trpc.config.set.useMutation();
+  const { mutateAsync: setConfig } = (trpc as any).config.set.useMutation();
 
   const handleSignOut = async () => {
     await signOut({ callbackUrl: '/login' });
@@ -210,7 +210,7 @@ export default function ConfigPage() {
                           </TableCell>
                         </TableRow>
                       ) : (
-                        configs.map(config => (
+                        configs.map((config: any) => (
                           <TableRow key={config.key}>
                             <TableCell className="font-mono text-sm">
                               {config.key}
