@@ -21,8 +21,10 @@ import {
   TableRow,
 } from '../../components/ui/table';
 import { UserDialog } from '../../components/UserDialog';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { toast } from 'sonner';
 import Link from 'next/link';
+import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 
 /**
  * Pagina gestione utenti con CRUD completo
@@ -39,6 +41,20 @@ export default function UsersPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('');
 
+  // Stato per modal di conferma
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{
+    type: 'delete' | 'disable' | 'hardDelete';
+    user: any;
+    handler: () => void;
+  } | null>(null);
+
+  // Stato per ordinamento
+  const [sortBy, setSortBy] = useState<
+    'email' | 'username' | 'role' | 'isActive' | 'createdAt'
+  >('createdAt');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
   // Query tRPC per lista utenti con paginazione e filtri
   const {
     data: usersData,
@@ -50,6 +66,8 @@ export default function UsersPage() {
     limit: 10,
     search: searchTerm || undefined,
     role: roleFilter || undefined,
+    sortBy,
+    sortOrder,
   });
 
   // Mutations tRPC
@@ -112,20 +130,75 @@ export default function UsersPage() {
     setDialogOpen(true);
   };
 
-  const handleDeleteUser = (userId: string) => {
-    if (confirm('Sei sicuro di voler disattivare questo utente?')) {
-      deleteUserMutation.mutate({ id: userId });
+  const handleDeleteUser = (user: any) => {
+    setConfirmAction({
+      type: 'disable',
+      user,
+      handler: () => deleteUserMutation.mutate({ id: user.id }),
+    });
+    setConfirmDialogOpen(true);
+  };
+
+  const handleHardDeleteUser = (user: any) => {
+    setConfirmAction({
+      type: 'hardDelete',
+      user,
+      handler: () => hardDeleteUserMutation.mutate({ id: user.id }),
+    });
+    setConfirmDialogOpen(true);
+  };
+
+  const handleConfirmAction = () => {
+    if (confirmAction) {
+      confirmAction.handler();
     }
   };
 
-  const handleHardDeleteUser = (userId: string) => {
-    if (
-      confirm(
-        'ATTENZIONE: Questa operazione è irreversibile. Sei sicuro di voler eliminare definitivamente questo utente?'
-      )
-    ) {
-      hardDeleteUserMutation.mutate({ id: userId });
+  const handleSort = (
+    column: 'email' | 'username' | 'role' | 'isActive' | 'createdAt'
+  ) => {
+    if (sortBy === column) {
+      // Se è la stessa colonna, inverte l'ordinamento
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Se è una nuova colonna, imposta come ascendente
+      setSortBy(column);
+      setSortOrder('asc');
     }
+    // Reset alla prima pagina quando si cambia ordinamento
+    setCurrentPage(1);
+  };
+
+  // Componente helper per header ordinabile
+  const SortableHeader = ({
+    column,
+    children,
+  }: {
+    column: 'email' | 'username' | 'role' | 'isActive' | 'createdAt';
+    children: React.ReactNode;
+  }) => {
+    const isActive = sortBy === column;
+    const getSortIcon = () => {
+      if (!isActive)
+        return <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />;
+      return sortOrder === 'asc' ? (
+        <ChevronUp className="h-4 w-4 text-primary" />
+      ) : (
+        <ChevronDown className="h-4 w-4 text-primary" />
+      );
+    };
+
+    return (
+      <TableHead
+        className="cursor-pointer hover:bg-muted/50 select-none"
+        onClick={() => handleSort(column)}
+      >
+        <div className="flex items-center gap-2">
+          {children}
+          {getSortIcon()}
+        </div>
+      </TableHead>
+    );
   };
 
   const handleFormSubmit = (data: any) => {
@@ -247,11 +320,15 @@ export default function UsersPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Email</TableHead>
-                        <TableHead>Username</TableHead>
-                        <TableHead>Ruolo</TableHead>
-                        <TableHead>Stato</TableHead>
-                        <TableHead>Creato</TableHead>
+                        <SortableHeader column="email">Email</SortableHeader>
+                        <SortableHeader column="username">
+                          Username
+                        </SortableHeader>
+                        <SortableHeader column="role">Ruolo</SortableHeader>
+                        <SortableHeader column="isActive">Stato</SortableHeader>
+                        <SortableHeader column="createdAt">
+                          Creato
+                        </SortableHeader>
                         <TableHead>Azioni</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -305,7 +382,7 @@ export default function UsersPage() {
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  onClick={() => handleDeleteUser(user.id)}
+                                  onClick={() => handleDeleteUser(user)}
                                   disabled={!user.isActive}
                                 >
                                   Disattiva
@@ -313,7 +390,7 @@ export default function UsersPage() {
                                 <Button
                                   variant="destructive"
                                   size="sm"
-                                  onClick={() => handleHardDeleteUser(user.id)}
+                                  onClick={() => handleHardDeleteUser(user)}
                                 >
                                   Elimina
                                 </Button>
@@ -382,6 +459,43 @@ export default function UsersPage() {
         onSubmit={handleFormSubmit}
         isLoading={createUserMutation.isPending || updateUserMutation.isPending}
       />
+
+      {/* Confirm Dialog */}
+      {confirmAction && (
+        <ConfirmDialog
+          open={confirmDialogOpen}
+          onOpenChange={setConfirmDialogOpen}
+          title={
+            confirmAction.type === 'disable'
+              ? 'Disattiva Utente'
+              : confirmAction.type === 'hardDelete'
+                ? 'Elimina Definitivamente'
+                : 'Conferma Azione'
+          }
+          description={
+            confirmAction.type === 'disable'
+              ? "L'utente non potrà più accedere al sistema. L'operazione può essere annullata riattivando l'utente."
+              : confirmAction.type === 'hardDelete'
+                ? "Questa operazione è irreversibile. Tutti i dati dell'utente verranno eliminati permanentemente dal database."
+                : 'Sei sicuro di voler procedere con questa azione?'
+          }
+          confirmText={
+            confirmAction.type === 'disable'
+              ? 'Disattiva'
+              : confirmAction.type === 'hardDelete'
+                ? 'Elimina Definitivamente'
+                : 'Conferma'
+          }
+          cancelText="Annulla"
+          variant="destructive"
+          onConfirm={handleConfirmAction}
+          isLoading={
+            deleteUserMutation.isPending || hardDeleteUserMutation.isPending
+          }
+          userEmail={confirmAction.user?.email}
+          actionType={confirmAction.type}
+        />
+      )}
     </div>
   );
 }

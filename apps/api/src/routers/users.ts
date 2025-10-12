@@ -40,9 +40,68 @@ const UserIdSchema = z.object({
 });
 
 /**
+ * Schema per autenticazione
+ */
+const AuthenticateSchema = z.object({
+  username: z.string().min(1, 'Username richiesto'),
+  password: z.string().min(1, 'Password richiesta'),
+});
+
+/**
  * Router per gestione utenti
  */
 export const usersRouter = router({
+  /**
+   * Autentica un utente con username e password
+   */
+  authenticate: publicProcedure
+    .input(AuthenticateSchema)
+    .mutation(async ({ input, ctx }) => {
+      const { username, password } = input;
+
+      // Trova l'utente e la sua identità locale
+      const user = await ctx.prisma.user.findFirst({
+        where: {
+          username,
+          isActive: true, // Solo utenti attivi possono autenticarsi
+        },
+        include: {
+          identities: {
+            where: {
+              provider: 'LOCAL',
+              providerId: username,
+            },
+            include: {
+              localCredential: true,
+            },
+          },
+        },
+      });
+
+      if (!user || !user.identities[0]?.localCredential) {
+        throw new Error('Credenziali non valide');
+      }
+
+      // Verifica la password
+      const isValidPassword = await argon2.verify(
+        user.identities[0].localCredential.passwordHash,
+        password
+      );
+
+      if (!isValidPassword) {
+        throw new Error('Credenziali non valide');
+      }
+
+      // Restituisce i dati utente per la sessione
+      return {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+        isActive: user.isActive,
+      };
+    }),
+
   /**
    * Lista tutti gli utenti con paginazione e filtri
    */
@@ -54,11 +113,22 @@ export const usersRouter = router({
           limit: z.number().min(1).max(100).default(10),
           search: z.string().optional(),
           role: z.enum(['admin', 'editor', 'viewer']).optional(),
+          sortBy: z
+            .enum(['email', 'username', 'role', 'isActive', 'createdAt'])
+            .default('createdAt'),
+          sortOrder: z.enum(['asc', 'desc']).default('desc'),
         })
         .optional()
     )
     .query(async ({ ctx, input }) => {
-      const { page = 1, limit = 10, search, role } = input || {};
+      const {
+        page = 1,
+        limit = 10,
+        search,
+        role,
+        sortBy = 'createdAt',
+        sortOrder = 'desc',
+      } = input || {};
       const skip = (page - 1) * limit;
 
       const where = {
@@ -84,7 +154,7 @@ export const usersRouter = router({
             },
           },
           orderBy: {
-            createdAt: 'desc',
+            [sortBy]: sortOrder,
           },
         }),
         ctx.prisma.user.count({ where }),
@@ -116,7 +186,7 @@ export const usersRouter = router({
   /**
    * Ottiene un utente per ID
    */
-  getById: publicProcedure.input(UserIdSchema).query(async ({ input, ctx }) => {
+  getById: loggedProcedure.input(UserIdSchema).query(async ({ input, ctx }) => {
     const user = await ctx.prisma.user.findUnique({
       where: { id: input.id },
       include: {
@@ -152,7 +222,7 @@ export const usersRouter = router({
   /**
    * Crea un nuovo utente con identità locale
    */
-  create: publicProcedure
+  create: loggedProcedure
     .input(CreateUserSchema)
     .mutation(async ({ input, ctx }) => {
       // Verifica che email e username non esistano già
@@ -224,7 +294,7 @@ export const usersRouter = router({
   /**
    * Aggiorna un utente esistente
    */
-  update: publicProcedure
+  update: loggedProcedure
     .input(UpdateUserSchema)
     .mutation(async ({ input, ctx }) => {
       const { id, ...updateData } = input;
@@ -288,7 +358,7 @@ export const usersRouter = router({
   /**
    * Elimina un utente (soft delete)
    */
-  delete: publicProcedure
+  delete: loggedProcedure
     .input(UserIdSchema)
     .mutation(async ({ input, ctx }) => {
       const user = await ctx.prisma.user.findUnique({
@@ -323,7 +393,7 @@ export const usersRouter = router({
    * Hard delete di un utente (elimina completamente dal database)
    * ATTENZIONE: Questa operazione è irreversibile
    */
-  hardDelete: publicProcedure
+  hardDelete: loggedProcedure
     .input(UserIdSchema)
     .mutation(async ({ input, ctx }) => {
       const user = await ctx.prisma.user.findUnique({

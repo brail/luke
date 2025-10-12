@@ -10,43 +10,47 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 /**
  * Schema di validazione per il form utente
  */
-const CreateUserSchema = z.object({
-  email: z.string().email('Email non valida'),
-  username: z.string().min(3, 'Username deve essere di almeno 3 caratteri'),
-  password: z.string().min(8, 'Password deve essere di almeno 8 caratteri'),
-  confirmPassword: z.string().min(8, 'Conferma password richiesta'),
-  role: z.enum(['admin', 'editor', 'viewer']),
-  isActive: z.boolean(),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Le password non coincidono",
-  path: ["confirmPassword"],
-});
+const CreateUserSchema = z
+  .object({
+    email: z.string().email('Email non valida'),
+    username: z.string().min(3, 'Username deve essere di almeno 3 caratteri'),
+    password: z.string().min(8, 'Password deve essere di almeno 8 caratteri'),
+    confirmPassword: z.string().min(8, 'Conferma password richiesta'),
+    role: z.enum(['admin', 'editor', 'viewer']),
+    isActive: z.boolean(),
+  })
+  .refine(data => data.password === data.confirmPassword, {
+    message: 'Le password non coincidono',
+    path: ['confirmPassword'],
+  });
 
-const EditUserSchema = z.object({
-  email: z.string().email('Email non valida'),
-  username: z.string().min(3, 'Username deve essere di almeno 3 caratteri'),
-  password: z
-    .string()
-    .min(8, 'Password deve essere di almeno 8 caratteri')
-    .optional()
-    .or(z.literal('')), // Permette stringa vuota
-  confirmPassword: z
-    .string()
-    .optional()
-    .or(z.literal('')), // Permette stringa vuota
-  role: z.enum(['admin', 'editor', 'viewer']),
-  isActive: z.boolean(),
-}).refine((data) => {
-  // Se password è vuota, confirmPassword deve essere vuota
-  if (!data.password || data.password.trim() === '') {
-    return !data.confirmPassword || data.confirmPassword.trim() === '';
-  }
-  // Se password è presente, deve coincidere con confirmPassword
-  return data.password === data.confirmPassword;
-}, {
-  message: "Le password non coincidono",
-  path: ["confirmPassword"],
-});
+const EditUserSchema = z
+  .object({
+    email: z.string().email('Email non valida'),
+    username: z.string().min(3, 'Username deve essere di almeno 3 caratteri'),
+    password: z
+      .string()
+      .min(8, 'Password deve essere di almeno 8 caratteri')
+      .optional()
+      .or(z.literal('')), // Permette stringa vuota
+    confirmPassword: z.string().optional().or(z.literal('')), // Permette stringa vuota
+    role: z.enum(['admin', 'editor', 'viewer']),
+    isActive: z.boolean(),
+  })
+  .refine(
+    data => {
+      // Se password è vuota, confirmPassword deve essere vuota
+      if (!data.password || data.password.trim() === '') {
+        return !data.confirmPassword || data.confirmPassword.trim() === '';
+      }
+      // Se password è presente, deve coincidere con confirmPassword
+      return data.password === data.confirmPassword;
+    },
+    {
+      message: 'Le password non coincidono',
+      path: ['confirmPassword'],
+    }
+  );
 
 type CreateUserData = z.infer<typeof CreateUserSchema>;
 type EditUserData = z.infer<typeof EditUserSchema>;
@@ -126,14 +130,15 @@ export function UserForm({
     if (field === 'confirmPassword') {
       const confirmPasswordValue = value as string;
       const passwordValue = formData.password;
-      
+
       if (mode === 'edit') {
         // In edit mode, se password è vuota, confirmPassword deve essere vuota
         if (!passwordValue || passwordValue.trim() === '') {
           if (confirmPasswordValue && confirmPasswordValue.trim() !== '') {
             setErrors(prev => ({
               ...prev,
-              confirmPassword: 'Conferma password non necessaria se password è vuota',
+              confirmPassword:
+                'Conferma password non necessaria se password è vuota',
             }));
           } else {
             setErrors(prev => ({ ...prev, confirmPassword: '' }));
@@ -145,7 +150,10 @@ export function UserForm({
               ...prev,
               confirmPassword: 'Le password non coincidono',
             }));
-          } else if (confirmPasswordValue && confirmPasswordValue === passwordValue) {
+          } else if (
+            confirmPasswordValue &&
+            confirmPasswordValue === passwordValue
+          ) {
             setErrors(prev => ({ ...prev, confirmPassword: '' }));
           }
         }
@@ -156,7 +164,10 @@ export function UserForm({
             ...prev,
             confirmPassword: 'Le password non coincidono',
           }));
-        } else if (confirmPasswordValue && confirmPasswordValue === passwordValue) {
+        } else if (
+          confirmPasswordValue &&
+          confirmPasswordValue === passwordValue
+        ) {
           setErrors(prev => ({ ...prev, confirmPassword: '' }));
         }
       }
@@ -183,7 +194,7 @@ export function UserForm({
 
     // Rimuovi confirmPassword dai dati prima di inviare
     const { confirmPassword: _, ...dataToSubmit } = result.data;
-    
+
     // Per edit mode, se password è vuota, rimuovila dai dati
     if (
       mode === 'edit' &&
@@ -265,7 +276,10 @@ export function UserForm({
           </div>
 
           {/* Conferma Password */}
-          {(mode === 'create' || (mode === 'edit' && formData.password && formData.password.trim() !== '')) && (
+          {(mode === 'create' ||
+            (mode === 'edit' &&
+              formData.password &&
+              formData.password.trim() !== '')) && (
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">
                 Conferma Password {mode === 'create' ? '*' : ''}
@@ -274,12 +288,16 @@ export function UserForm({
                 id="confirmPassword"
                 type="password"
                 value={formData.confirmPassword}
-                onChange={e => handleInputChange('confirmPassword', e.target.value)}
+                onChange={e =>
+                  handleInputChange('confirmPassword', e.target.value)
+                }
                 placeholder="Ripeti la password"
                 className={errors.confirmPassword ? 'border-destructive' : ''}
               />
               {errors.confirmPassword && (
-                <p className="text-sm text-destructive">{errors.confirmPassword}</p>
+                <p className="text-sm text-destructive">
+                  {errors.confirmPassword}
+                </p>
               )}
               {mode === 'create' && (
                 <p className="text-xs text-muted-foreground">

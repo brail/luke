@@ -85,12 +85,12 @@ async function registerSecurityPlugins() {
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: [
-      'Content-Type', 
-      'Authorization', 
+      'Content-Type',
+      'Authorization',
       'x-luke-trace-id',
       'Accept',
       'Origin',
-      'X-Requested-With'
+      'X-Requested-With',
     ],
     exposedHeaders: ['Content-Type', 'x-luke-trace-id'],
     preflightContinue: false,
