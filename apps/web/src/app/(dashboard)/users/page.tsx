@@ -2,16 +2,16 @@
 
 import { useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
-import { trpc } from '../../lib/trpc';
-import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
+import { trpc } from '../../../lib/trpc';
+import { Button } from '../../../components/ui/button';
+import { Input } from '../../../components/ui/input';
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '../../components/ui/card';
+} from '../../../components/ui/card';
 import {
   Table,
   TableBody,
@@ -19,9 +19,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '../../components/ui/table';
-import { UserDialog } from '../../components/UserDialog';
-import { ConfirmDialog } from '../../components/ConfirmDialog';
+} from '../../../components/ui/table';
+import { UserDialog } from '../../../components/UserDialog';
+import { ConfirmDialog } from '../../../components/ConfirmDialog';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import React from 'react';
