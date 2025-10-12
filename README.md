@@ -108,6 +108,30 @@ pnpm --filter @luke/core build  # Solo core package
 - **RBAC**: Role-based access control con `@luke/core`
 - **Audit**: Log completo di tutte le mutazioni
 
+### Sincronizzazione Utenti
+
+Gli utenti autenticati tramite provider esterni (LDAP oggi, OIDC domani) vengono sincronizzati automaticamente ad ogni login:
+
+- **On-the-fly**: La sincronizzazione avviene a ogni login o creazione dell'utente
+- **Campi sincronizzati**: username, password
+- **Campi preservati**: email e ruolo, se modificati manualmente, non vengono più sovrascritti dalla sincronizzazione
+- **Immutabilità frontend**: I campi sincronizzati non possono essere modificati manualmente dal frontend
+- **Nessun job manuale**: Non è presente un job di sincronizzazione manuale; l'aggiornamento è completamente automatico
+
+**Provider supportati:**
+
+- LOCAL: utenti gestiti manualmente, tutti i campi modificabili
+- LDAP: campi sincronizzati dal server LDAP
+- OIDC (futuro): campi sincronizzati dal provider OIDC
+
+### Protezioni Amministrative
+
+Il sistema include protezioni robuste per la gestione degli utenti:
+
+- **Auto-eliminazione**: Gli admin non possono eliminare o disabilitare il proprio account
+- **Ultimo admin**: Non è possibile eliminare o rimuovere il ruolo admin dall'ultimo amministratore del sistema
+- **Preservazione modifiche**: Email e ruolo modificati manualmente non vengono sovrascritti dalla sincronizzazione LDAP
+
 ## 🎯 Qualità
 
 - **TypeScript**: Strict mode abilitato

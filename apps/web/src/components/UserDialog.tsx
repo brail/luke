@@ -18,6 +18,10 @@ interface User {
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
+  identities?: Array<{
+    provider: 'LOCAL' | 'LDAP' | 'OIDC';
+    providerId: string;
+  }>;
 }
 
 interface UserDialogProps {
@@ -34,6 +38,8 @@ interface UserDialogProps {
     isActive: boolean;
   }) => void;
   isLoading?: boolean;
+  syncedFields?: ('email' | 'username' | 'name' | 'role' | 'password')[];
+  isSelfEdit?: boolean;
 }
 
 /**
@@ -47,6 +53,8 @@ export function UserDialog({
   user,
   onSubmit,
   isLoading = false,
+  syncedFields,
+  isSelfEdit = false,
 }: UserDialogProps) {
   // eslint-disable-next-line no-unused-vars
   const _ = open; // Usa il parametro open per evitare warning
@@ -86,6 +94,8 @@ export function UserDialog({
           onSubmit={handleSubmit}
           onCancel={handleCancel}
           isLoading={isLoading}
+          syncedFields={syncedFields}
+          isSelfEdit={isSelfEdit}
         />
       </DialogContent>
     </Dialog>

@@ -41,6 +41,9 @@ export default function UsersPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('');
+  const [syncedFields, setSyncedFields] = useState<
+    ('email' | 'username' | 'name' | 'role' | 'password')[]
+  >([]);
 
   // Stato per modal di conferma
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
@@ -52,7 +55,7 @@ export default function UsersPage() {
 
   // Stato per ordinamento
   const [sortBy, setSortBy] = useState<
-    'email' | 'username' | 'role' | 'isActive' | 'createdAt'
+    'email' | 'username' | 'role' | 'isActive' | 'createdAt' | 'provider'
   >('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
@@ -127,12 +130,21 @@ export default function UsersPage() {
   const handleCreateUser = () => {
     setDialogMode('create');
     setSelectedUser(null);
+    setSyncedFields([]); // Nuovo utente = nessun campo sincronizzato
     setDialogOpen(true);
   };
 
   const handleEditUser = (user: any) => {
     setDialogMode('edit');
     setSelectedUser(user);
+    // Determina campi sincronizzati in base al provider
+    // Per utenti LDAP: username e password non sono editabili
+    // Email e ruolo rimangono editabili anche per utenti LDAP
+    const synced: ('email' | 'username' | 'name' | 'role' | 'password')[] =
+      user?.identities?.[0]?.provider !== 'LOCAL'
+        ? ['username', 'name', 'password']
+        : [];
+    setSyncedFields(synced);
     setDialogOpen(true);
   };
 
@@ -161,7 +173,13 @@ export default function UsersPage() {
   };
 
   const handleSort = (
-    column: 'email' | 'username' | 'role' | 'isActive' | 'createdAt'
+    column:
+      | 'email'
+      | 'username'
+      | 'role'
+      | 'isActive'
+      | 'createdAt'
+      | 'provider'
   ) => {
     if (sortBy === column) {
       // Se è la stessa colonna, inverte l'ordinamento
@@ -180,7 +198,13 @@ export default function UsersPage() {
     column,
     children,
   }: {
-    column: 'email' | 'username' | 'role' | 'isActive' | 'createdAt';
+    column:
+      | 'email'
+      | 'username'
+      | 'role'
+      | 'isActive'
+      | 'createdAt'
+      | 'provider';
     children: React.ReactNode;
   }) => {
     const isActive = sortBy === column;
@@ -337,6 +361,9 @@ export default function UsersPage() {
                         <SortableHeader column="username">
                           Username
                         </SortableHeader>
+                        <SortableHeader column="provider">
+                          Provider
+                        </SortableHeader>
                         <SortableHeader column="role">Ruolo</SortableHeader>
                         <SortableHeader column="isActive">Stato</SortableHeader>
                         <SortableHeader column="createdAt">
@@ -349,7 +376,7 @@ export default function UsersPage() {
                       {users.length === 0 ? (
                         <TableRow>
                           <TableCell
-                            colSpan={6}
+                            colSpan={7}
                             className="text-center py-8 text-muted-foreground"
                           >
                             Nessun utente trovato
@@ -360,6 +387,11 @@ export default function UsersPage() {
                           <TableRow key={user.id}>
                             <TableCell>{user.email}</TableCell>
                             <TableCell>{user.username}</TableCell>
+                            <TableCell>
+                              <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-1 text-xs font-medium">
+                                {user.identities?.[0]?.provider || 'LOCAL'}
+                              </span>
+                            </TableCell>
                             <TableCell>
                               <span className="inline-flex items-center rounded-full bg-secondary px-2 py-1 text-xs font-medium">
                                 {user.role}
@@ -396,7 +428,15 @@ export default function UsersPage() {
                                   variant="outline"
                                   size="sm"
                                   onClick={() => handleDeleteUser(user)}
-                                  disabled={!user.isActive}
+                                  disabled={
+                                    !user.isActive ||
+                                    user.id === session?.user?.id
+                                  }
+                                  title={
+                                    user.id === session?.user?.id
+                                      ? 'Non puoi disattivare il tuo stesso account'
+                                      : undefined
+                                  }
                                 >
                                   Disattiva
                                 </Button>
@@ -404,6 +444,12 @@ export default function UsersPage() {
                                   variant="destructive"
                                   size="sm"
                                   onClick={() => handleHardDeleteUser(user)}
+                                  disabled={user.id === session?.user?.id}
+                                  title={
+                                    user.id === session?.user?.id
+                                      ? 'Non puoi eliminare il tuo stesso account'
+                                      : undefined
+                                  }
                                 >
                                   Elimina
                                 </Button>
@@ -471,6 +517,8 @@ export default function UsersPage() {
         user={selectedUser}
         onSubmit={handleFormSubmit}
         isLoading={createUserMutation.isPending || updateUserMutation.isPending}
+        syncedFields={syncedFields}
+        isSelfEdit={selectedUser?.id === session?.user?.id}
       />
 
       {/* Confirm Dialog */}

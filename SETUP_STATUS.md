@@ -127,6 +127,20 @@ Luke supporta autenticazione enterprise via LDAP con le seguenti funzionalità:
 - Audit log completo delle operazioni LDAP
 - Fallback graceful in caso di errori di connessione
 
+### Sincronizzazione Utenti
+
+- **Automatica**: Gli attributi utente (username, password) vengono sincronizzati ad ogni login LDAP
+- **Campi protetti**: Nel frontend, i campi sincronizzati sono disabilitati per utenti esterni
+- **Campi preservati**: Email e ruolo modificati manualmente non vengono sovrascritti dalla sincronizzazione
+- **Indicatore visivo**: Nota "Campo sincronizzato esternamente" sotto ogni campo disabilitato
+- **Colonna Provider**: La tabella utenti mostra il provider di ogni utente (LOCAL/LDAP/OIDC)
+
+### Protezioni Amministrative
+
+- **Auto-eliminazione**: Gli admin non possono eliminare o disabilitare il proprio account
+- **Ultimo admin**: Protezione contro l'eliminazione dell'ultimo amministratore del sistema
+- **Robustezza CRUD**: Validazioni avanzate per prevenire operazioni pericolose
+
 ## 🎯 Prossimi Passi
 
 Il monorepo è **pronto per lo sviluppo**! Puoi procedere con:

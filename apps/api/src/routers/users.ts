@@ -62,7 +62,14 @@ export const usersRouter = router({
           search: z.string().optional(),
           role: z.enum(['admin', 'editor', 'viewer']).optional(),
           sortBy: z
-            .enum(['email', 'username', 'role', 'isActive', 'createdAt'])
+            .enum([
+              'email',
+              'username',
+              'role',
+              'isActive',
+              'createdAt',
+              'provider',
+            ])
             .default('createdAt'),
           sortOrder: z.enum(['asc', 'desc']).default('desc'),
         })
@@ -101,12 +108,25 @@ export const usersRouter = router({
               },
             },
           },
-          orderBy: {
-            [sortBy]: sortOrder,
-          },
+          orderBy:
+            sortBy === 'provider'
+              ? undefined // Ordinamento per provider gestito dopo
+              : {
+                  [sortBy]: sortOrder,
+                },
         }),
         ctx.prisma.user.count({ where }),
       ]);
+
+      // Ordinamento per provider se richiesto
+      if (sortBy === 'provider') {
+        users.sort((a, b) => {
+          const providerA = a.identities?.[0]?.provider || 'LOCAL';
+          const providerB = b.identities?.[0]?.provider || 'LOCAL';
+          const comparison = providerA.localeCompare(providerB);
+          return sortOrder === 'asc' ? comparison : -comparison;
+        });
+      }
 
       return {
         users: users.map(user => ({
@@ -269,6 +289,47 @@ export const usersRouter = router({
         });
       }
 
+      // Protezione: impedisci auto-disabilitazione
+      if (
+        updateData.isActive === false &&
+        existingUser.id === ctx.session.user.id
+      ) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Non puoi disattivare il tuo stesso account',
+        });
+      }
+
+      // Protezione: impedisci auto-modifica del ruolo
+      if (updateData.role && existingUser.id === ctx.session.user.id) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Non puoi modificare il tuo stesso ruolo',
+        });
+      }
+
+      // Protezione: impedisci rimozione ruolo admin dall'ultimo admin
+      if (
+        existingUser.role === 'admin' &&
+        updateData.role &&
+        updateData.role !== 'admin'
+      ) {
+        const adminCount = await ctx.prisma.user.count({
+          where: {
+            role: 'admin',
+            isActive: true,
+          },
+        });
+
+        if (adminCount <= 1) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message:
+              "Non puoi rimuovere il ruolo admin dall'ultimo amministratore del sistema",
+          });
+        }
+      }
+
       // Se si sta aggiornando email o username, verifica che non esistano già
       if (updateData.email || updateData.username) {
         const conflictingUser = await ctx.prisma.user.findFirst({
@@ -340,6 +401,31 @@ export const usersRouter = router({
         });
       }
 
+      // Protezione: impedisci auto-eliminazione
+      if (user.id === ctx.session.user.id) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Non puoi disattivare il tuo stesso account',
+        });
+      }
+
+      // Protezione: impedisci eliminazione dell'ultimo admin
+      if (user.role === 'admin') {
+        const adminCount = await ctx.prisma.user.count({
+          where: {
+            role: 'admin',
+            isActive: true,
+          },
+        });
+
+        if (adminCount <= 1) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: "Non puoi eliminare l'ultimo amministratore del sistema",
+          });
+        }
+      }
+
       // Soft delete: imposta isActive = false
       const deletedUser = await ctx.prisma.user.update({
         where: { id: input.id },
@@ -377,6 +463,32 @@ export const usersRouter = router({
           code: 'NOT_FOUND',
           message: 'Utente non trovato',
         });
+      }
+
+      // Protezione: impedisci auto-eliminazione definitiva
+      if (user.id === ctx.session.user.id) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Non puoi eliminare definitivamente il tuo stesso account',
+        });
+      }
+
+      // Protezione: impedisci eliminazione definitiva dell'ultimo admin
+      if (user.role === 'admin') {
+        const adminCount = await ctx.prisma.user.count({
+          where: {
+            role: 'admin',
+            isActive: true,
+          },
+        });
+
+        if (adminCount <= 1) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message:
+              "Non puoi eliminare definitivamente l'ultimo amministratore del sistema",
+          });
+        }
       }
 
       // Hard delete: elimina utente e tutte le relazioni (cascade)

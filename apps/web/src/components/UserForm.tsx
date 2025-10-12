@@ -63,6 +63,8 @@ interface UserFormProps {
   onSubmit: (data: UserFormData) => void;
   onCancel: () => void;
   isLoading?: boolean;
+  syncedFields?: ('email' | 'username' | 'name' | 'role' | 'password')[];
+  isSelfEdit?: boolean;
 }
 
 /**
@@ -76,6 +78,8 @@ export function UserForm({
   onSubmit,
   onCancel,
   isLoading = false,
+  syncedFields = [],
+  isSelfEdit = false,
 }: UserFormProps) {
   const [formData, setFormData] = useState<UserFormData>({
     email: initialData?.email || '',
@@ -230,9 +234,15 @@ export function UserForm({
               onChange={e => handleInputChange('email', e.target.value)}
               placeholder="utente@esempio.com"
               className={errors.email ? 'border-destructive' : ''}
+              disabled={syncedFields?.includes('email')}
             />
             {errors.email && (
               <p className="text-sm text-destructive">{errors.email}</p>
+            )}
+            {syncedFields?.includes('email') && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Campo sincronizzato esternamente
+              </p>
             )}
           </div>
 
@@ -246,9 +256,15 @@ export function UserForm({
               onChange={e => handleInputChange('username', e.target.value)}
               placeholder="username"
               className={errors.username ? 'border-destructive' : ''}
+              disabled={syncedFields?.includes('username')}
             />
             {errors.username && (
               <p className="text-sm text-destructive">{errors.username}</p>
+            )}
+            {syncedFields?.includes('username') && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Campo sincronizzato esternamente
+              </p>
             )}
           </div>
 
@@ -268,11 +284,17 @@ export function UserForm({
                   : 'Lascia vuoto per non modificare la password'
               }
               className={errors.password ? 'border-destructive' : ''}
+              disabled={syncedFields?.includes('password')}
             />
             {errors.password && (
               <p className="text-sm text-destructive">{errors.password}</p>
             )}
-            {mode === 'edit' && (
+            {syncedFields?.includes('password') && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Campo sincronizzato esternamente
+              </p>
+            )}
+            {mode === 'edit' && !syncedFields?.includes('password') && (
               <p className="text-xs text-muted-foreground">
                 Lascia vuoto se non vuoi modificare la password attuale
               </p>
@@ -283,33 +305,34 @@ export function UserForm({
           {(mode === 'create' ||
             (mode === 'edit' &&
               formData.password &&
-              formData.password.trim() !== '')) && (
-            <div className="space-y-2">
-              <Label htmlFor="confirmPassword">
-                Conferma Password {mode === 'create' ? '*' : ''}
-              </Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                value={formData.confirmPassword}
-                onChange={e =>
-                  handleInputChange('confirmPassword', e.target.value)
-                }
-                placeholder="Ripeti la password"
-                className={errors.confirmPassword ? 'border-destructive' : ''}
-              />
-              {errors.confirmPassword && (
-                <p className="text-sm text-destructive">
-                  {errors.confirmPassword}
-                </p>
-              )}
-              {mode === 'create' && (
-                <p className="text-xs text-muted-foreground">
-                  Inserisci nuovamente la password per confermare
-                </p>
-              )}
-            </div>
-          )}
+              formData.password.trim() !== '')) &&
+            !syncedFields?.includes('password') && (
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword">
+                  Conferma Password {mode === 'create' ? '*' : ''}
+                </Label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  value={formData.confirmPassword}
+                  onChange={e =>
+                    handleInputChange('confirmPassword', e.target.value)
+                  }
+                  placeholder="Ripeti la password"
+                  className={errors.confirmPassword ? 'border-destructive' : ''}
+                />
+                {errors.confirmPassword && (
+                  <p className="text-sm text-destructive">
+                    {errors.confirmPassword}
+                  </p>
+                )}
+                {mode === 'create' && (
+                  <p className="text-xs text-muted-foreground">
+                    Inserisci nuovamente la password per confermare
+                  </p>
+                )}
+              </div>
+            )}
 
           {/* Ruolo */}
           <div className="space-y-2">
@@ -318,12 +341,18 @@ export function UserForm({
               id="role"
               value={formData.role}
               onChange={e => handleInputChange('role', e.target.value)}
+              disabled={isSelfEdit}
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <option value="viewer">Viewer</option>
               <option value="editor">Editor</option>
               <option value="admin">Admin</option>
             </select>
+            {isSelfEdit && (
+              <p className="text-xs text-muted-foreground">
+                Non puoi modificare il tuo stesso ruolo
+              </p>
+            )}
             {errors.role && (
               <p className="text-sm text-destructive">{errors.role}</p>
             )}

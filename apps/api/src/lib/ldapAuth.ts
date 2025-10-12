@@ -70,11 +70,13 @@ export async function authenticateViaLdap(
     }
 
     // Cerca l'utente
-    const userDN = await searchUser(client, config, username);
-    if (!userDN) {
+    const userResult = await searchUser(client, config, username);
+    if (!userResult) {
       console.log(`User ${username} not found in LDAP`);
       return null;
     }
+
+    const { dn: userDN, attributes: userAttributes } = userResult;
 
     // Verifica le credenziali dell'utente
     const isValidCredentials = await verifyUserCredentials(
@@ -94,7 +96,13 @@ export async function authenticateViaLdap(
     const role = determineUserRole(userGroups, config.roleMapping);
 
     // Crea o aggiorna l'utente nel database
-    const user = await createOrUpdateUser(prisma, username, userDN, role);
+    const user = await createOrUpdateUser(
+      prisma,
+      username,
+      userDN,
+      role,
+      userAttributes
+    );
 
     console.log(
       `LDAP authentication successful for user: ${username}, role: ${role}`
@@ -133,7 +141,7 @@ async function searchUser(
   client: ldap.Client,
   config: LdapConfig,
   username: string
-): Promise<string | null> {
+): Promise<{ dn: string; attributes: any } | null> {
   return new Promise((resolve, reject) => {
     const searchFilter = config.searchFilter.replace(
       /\$\{username\}/g,
@@ -149,7 +157,7 @@ async function searchUser(
       {
         filter: searchFilter,
         scope: 'sub',
-        attributes: ['dn', 'cn', 'mail', 'uid'],
+        attributes: ['dn', 'cn', 'mail', 'uid', 'displayName'],
       },
       (err, res) => {
         if (err) {
@@ -163,12 +171,18 @@ async function searchUser(
           return;
         }
 
-        let foundDN: string | null = null;
+        let foundUser: { dn: string; attributes: any } | null = null;
 
         res.on('searchEntry', entry => {
-          foundDN = entry.dn.toString();
-          console.log(`Found user DN: ${foundDN}`);
-          console.log(`User attributes:`, entry.attributes);
+          const dn = entry.dn.toString();
+          const attributes = entry.attributes.reduce((acc: any, attr: any) => {
+            acc[attr.type] = attr.values;
+            return acc;
+          }, {});
+
+          foundUser = { dn, attributes };
+          console.log(`Found user DN: ${dn}`);
+          console.log(`User attributes:`, attributes);
         });
 
         res.on('error', err => {
@@ -182,8 +196,10 @@ async function searchUser(
         });
 
         res.on('end', () => {
-          console.log(`LDAP search completed. Found DN: ${foundDN || 'none'}`);
-          resolve(foundDN);
+          console.log(
+            `LDAP search completed. Found user: ${foundUser ? foundUser.dn : 'none'}`
+          );
+          resolve(foundUser);
         });
       }
     );
@@ -298,8 +314,12 @@ async function createOrUpdateUser(
   prisma: PrismaClient,
   username: string,
   userDN: string,
-  role: 'admin' | 'editor' | 'viewer'
+  role: 'admin' | 'editor' | 'viewer',
+  userAttributes: any
 ): Promise<User> {
+  // Estrai email dagli attributi LDAP
+  const ldapEmail = userAttributes.mail?.[0] || `${username}@ldap.local`;
+
   // Cerca utente esistente
   let user = await prisma.user.findFirst({
     where: {
@@ -308,14 +328,12 @@ async function createOrUpdateUser(
   });
 
   if (user) {
-    // Aggiorna ruolo se cambiato
-    if (user.role !== role) {
-      user = await prisma.user.update({
-        where: { id: user.id },
-        data: { role },
-      });
-      console.log(`Updated user ${username} role to ${role}`);
-    }
+    // Per utenti esistenti, NON aggiorniamo email e ruolo
+    // Questi campi possono essere stati modificati manualmente nell'app
+    // e devono rimanere invariati per preservare le modifiche manuali
+    console.log(
+      `User ${username} already exists, skipping email and role sync to preserve manual modifications`
+    );
 
     // Verifica che abbia un'identità LDAP
     const ldapIdentity = await prisma.identity.findFirst({
@@ -343,7 +361,7 @@ async function createOrUpdateUser(
       // Crea utente
       const newUser = await tx.user.create({
         data: {
-          email: `${username}@ldap.local`, // Email placeholder per utenti LDAP
+          email: ldapEmail, // Email reale da LDAP
           username,
           role,
           isActive: true,

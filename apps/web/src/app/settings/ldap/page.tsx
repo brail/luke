@@ -47,8 +47,9 @@ export default function LdapSettingsPage() {
   } | null>(null);
 
   // Carica configurazione esistente
-  const { data: existingConfig, isLoading: isLoadingConfig } =
-    trpc.integrations.auth.getLdapConfig.useQuery();
+  const { data: existingConfig, isLoading: isLoadingConfig } = (
+    trpc as any
+  ).integrations.auth.getLdapConfig.useQuery();
 
   useEffect(() => {
     if (existingConfig) {
@@ -68,7 +69,9 @@ export default function LdapSettingsPage() {
   }, [existingConfig]);
 
   // Mutations
-  const saveConfigMutation = trpc.integrations.auth.saveLdapConfig.useMutation({
+  const saveConfigMutation = (
+    trpc as any
+  ).integrations.auth.saveLdapConfig.useMutation({
     onSuccess: () => {
       setMessage({
         type: 'success',
@@ -76,7 +79,7 @@ export default function LdapSettingsPage() {
       });
       setErrors({});
     },
-    onError: err => {
+    onError: (err: any) => {
       setMessage({ type: 'error', text: err.message });
     },
     onSettled: () => {
@@ -84,31 +87,34 @@ export default function LdapSettingsPage() {
     },
   });
 
-  const testConnectionMutation =
-    trpc.integrations.auth.testLdapConnection.useMutation({
-      onSuccess: () => {
-        setMessage({
-          type: 'success',
-          text: 'Test connessione LDAP riuscito!',
-        });
-      },
-      onError: err => {
-        setMessage({
-          type: 'error',
-          text: `Test connessione fallito: ${err.message}`,
-        });
-      },
-    });
+  const testConnectionMutation = (
+    trpc as any
+  ).integrations.auth.testLdapConnection.useMutation({
+    onSuccess: () => {
+      setMessage({
+        type: 'success',
+        text: 'Test connessione LDAP riuscito!',
+      });
+    },
+    onError: (err: any) => {
+      setMessage({
+        type: 'error',
+        text: `Test connessione fallito: ${err.message}`,
+      });
+    },
+  });
 
-  const testSearchMutation = trpc.integrations.auth.testLdapSearch.useMutation({
-    onSuccess: data => {
+  const testSearchMutation = (
+    trpc as any
+  ).integrations.auth.testLdapSearch.useMutation({
+    onSuccess: (data: any) => {
       setMessage({
         type: 'success',
         text: `Test ricerca LDAP: ${data.message}`,
       });
       console.log('LDAP Search Results:', data);
     },
-    onError: err => {
+    onError: (err: any) => {
       setMessage({
         type: 'error',
         text: `Test ricerca fallito: ${err.message}`,
@@ -311,7 +317,9 @@ export default function LdapSettingsPage() {
             <Input
               id="bindPassword"
               type="password"
-              onChange={e => handleInputChange('bindPassword', e.target.value)}
+              onChange={e =>
+                handleInputChange('hasBindPassword', !!e.target.value)
+              }
               placeholder={
                 formData.hasBindPassword ? '••••••••' : 'Inserisci password'
               }
