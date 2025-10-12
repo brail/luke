@@ -82,8 +82,8 @@ async function registerTRPCPlugin() {
     prefix: '/trpc',
     trpcOptions: {
       router: appRouter,
-      createContext: ({ req, res }: any) => createContext({ prisma }),
-      onError: ({ path, error }: any) => {
+      createContext: ({ req, res }) => createContext({ prisma }),
+      onError: ({ path, error }) => {
         fastify.log.error(`tRPC Error on '${path}': ${error.message}`);
       },
     },
@@ -136,7 +136,7 @@ function setupGracefulShutdown() {
 
       fastify.log.info('Shutdown completato');
       process.exit(0);
-    } catch (error: any) {
+    } catch (error) {
       fastify.log.error('Errore durante shutdown:', error);
       process.exit(1);
     }
@@ -147,12 +147,12 @@ function setupGracefulShutdown() {
   process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
   // Gestisci errori non catturati
-  process.on('uncaughtException', (error: any) => {
+  process.on('uncaughtException', error => {
     fastify.log.error('Uncaught Exception:', error);
     gracefulShutdown('uncaughtException');
   });
 
-  process.on('unhandledRejection', (reason: any, promise: any) => {
+  process.on('unhandledRejection', (reason, promise) => {
     fastify.log.error('Unhandled Rejection at:', promise, 'reason:', reason);
     gracefulShutdown('unhandledRejection');
   });
@@ -190,9 +190,8 @@ const start = async () => {
         `🗄️  Prisma Studio: pnpm --filter @luke/api prisma:studio`
       );
     }
-  } catch (err: any) {
+  } catch (err) {
     fastify.log.error('Errore avvio server:', err);
-    console.error('Errore dettagliato:', err);
     process.exit(1);
   }
 };

@@ -34,8 +34,8 @@ export default function Home() {
               Benvenuto nella piattaforma Luke
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
-              Gestisci utenti, configurazioni, integrazioni e monitora il
-              sistema attraverso un&apos;interfaccia moderna e intuitiva.
+              Gestisci utenti, configurazioni e monitora il sistema attraverso
+              un&apos;interfaccia moderna e intuitiva.
             </p>
           </div>
 

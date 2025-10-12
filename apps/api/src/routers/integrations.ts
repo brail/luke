@@ -6,14 +6,7 @@
 import { z } from 'zod';
 import { router, publicProcedure } from '../lib/trpc';
 import { saveConfig, getConfig } from '../lib/configManager';
-import * as nodemailer from 'nodemailer';
-import {
-  ErrorCode,
-  createStandardError,
-  toTRPCError,
-  IntegrationErrorHandler,
-  SecureLogger,
-} from '../lib/errorHandler';
+import nodemailer from 'nodemailer';
 
 // Schema per configurazione SMB
 const smbConfigSchema = z.object({
@@ -40,17 +33,6 @@ const smtpConfigSchema = z.object({
 });
 
 export const integrationsRouter = router({
-  // Endpoint di test per verificare che le mutation funzionino
-  test: publicProcedure
-    .input(z.object({ message: z.string() }))
-    .mutation(async ({ input }) => {
-      console.log('🔍 Test mutation received:', input);
-      return {
-        success: true,
-        message: `Test mutation received: ${input.message}`,
-      };
-    }),
-
   storage: router({
     saveConfig: publicProcedure
       .input(
@@ -60,53 +42,43 @@ export const integrationsRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
-        try {
-          console.log('🔍 Received input:', JSON.stringify(input, null, 2));
-          const { provider, config } = input;
-          const configKey = `storage.${provider}`;
-          const logger = new SecureLogger(console);
+        const { provider, config } = input;
+        const configKey = `storage.${provider}`;
 
-          // Cifra le credenziali sensibili
-          let configToSave = { ...config };
+        // Cifra le credenziali sensibili
+        let configToSave = { ...config };
 
-          if (provider === 'smb' && 'password' in config && config.password) {
-            configToSave = {
-              ...configToSave,
-              password: '[REDACTED]', // Per i log
-            };
-          }
-
-          if (
-            provider === 'drive' &&
-            'clientSecret' in config &&
-            config.clientSecret
-          ) {
-            configToSave = {
-              ...configToSave,
-              clientSecret: '[REDACTED]', // Per i log
-            };
-          }
-
-          // Salva la configurazione cifrata
-          const configValue = JSON.stringify(config);
-          await saveConfig(ctx.prisma, configKey, configValue, true);
-
-          logger.info(`💾 Configurazione storage ${provider} salvata`, {
-            provider,
-            config: configToSave,
-          });
-
-          return {
-            success: true,
-            message: `Configurazione ${provider.toUpperCase()} salvata con successo`,
+        if (provider === 'smb' && 'password' in config && config.password) {
+          configToSave = {
+            ...configToSave,
+            password: '[REDACTED]', // Per i log
           };
-        } catch (error: any) {
-          const standardError = IntegrationErrorHandler.handleConfigError(
-            `storage.${input.provider}`,
-            error
-          );
-          throw toTRPCError(standardError);
         }
+
+        if (
+          provider === 'drive' &&
+          'clientSecret' in config &&
+          config.clientSecret
+        ) {
+          configToSave = {
+            ...configToSave,
+            clientSecret: '[REDACTED]', // Per i log
+          };
+        }
+
+        // Salva la configurazione cifrata
+        const configValue = JSON.stringify(config);
+        await saveConfig(ctx.prisma, configKey, configValue, true);
+
+        console.log(
+          `💾 Configurazione storage ${provider} salvata:`,
+          configToSave
+        );
+
+        return {
+          success: true,
+          message: `Configurazione ${provider.toUpperCase()} salvata con successo`,
+        };
       }),
 
     testConnection: publicProcedure
@@ -155,17 +127,11 @@ export const integrationsRouter = router({
 
     test: publicProcedure.mutation(async ({ ctx }) => {
       try {
-        const logger = new SecureLogger(console);
-
         // Recupera la configurazione SMTP
         const configValue = await getConfig(ctx.prisma, 'mail.smtp', true);
 
         if (!configValue) {
-          const standardError = createStandardError(
-            ErrorCode.CONFIG_ERROR,
-            'Configurazione SMTP non trovata'
-          );
-          throw toTRPCError(standardError);
+          throw new Error('Configurazione SMTP non trovata');
         }
 
         const config = JSON.parse(configValue);
@@ -195,18 +161,20 @@ export const integrationsRouter = router({
 
         await transporter.sendMail(testEmail);
 
-        logger.info('✅ Email di test inviata con successo', {
-          to: config.from,
-          subject: testEmail.subject,
-        });
+        console.log('✅ Email di test inviata con successo');
 
         return {
           success: true,
           message: 'Email di test inviata con successo',
         };
-      } catch (error: any) {
-        const standardError = IntegrationErrorHandler.handleSMTPError(error);
-        throw toTRPCError(standardError);
+      } catch (error) {
+        console.error('❌ Errore test email:', error);
+
+        return {
+          success: false,
+          message:
+            error instanceof Error ? error.message : 'Errore sconosciuto',
+        };
       }
     }),
   }),
