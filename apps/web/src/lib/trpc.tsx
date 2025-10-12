@@ -39,9 +39,10 @@ export function TRPCProvider({ children }: { children: React.ReactNode }): any {
       links: [
         httpBatchLink({
           url: `${getBaseUrl()}/trpc`,
-          // Headers per autenticazione (se necessario)
+          // Headers per autenticazione e Content-Type
           headers() {
             return {
+              'Content-Type': 'application/json',
               // TODO: Aggiungere token JWT quando disponibile
               // authorization: `Bearer ${token}`,
             };

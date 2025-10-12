@@ -37,6 +37,23 @@ const fastify = Fastify({
 });
 
 /**
+ * Parser JSON personalizzato per gestire Content-Type con charset
+ * Risolve il problema delle mutation tRPC che non ricevono i parametri
+ */
+fastify.addContentTypeParser(
+  /^application\/json/,
+  { parseAs: 'string' },
+  (req, body, done) => {
+    try {
+      const json = JSON.parse(body as string);
+      done(null, json);
+    } catch (err) {
+      done(err as Error, undefined);
+    }
+  }
+);
+
+/**
  * Inizializza Prisma Client
  */
 const prisma = new PrismaClient({

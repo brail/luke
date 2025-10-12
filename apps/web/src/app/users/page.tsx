@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { trpc } from '../../lib/trpc';
 import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
 import {
   Card,
   CardContent,
@@ -19,27 +20,134 @@ import {
   TableHeader,
   TableRow,
 } from '../../components/ui/table';
+import { UserDialog } from '../../components/UserDialog';
+import { toast } from 'sonner';
 import Link from 'next/link';
 
 /**
- * Pagina gestione utenti con lista e creazione via tRPC
- * Mostra tabella utenti e form per nuovo utente (placeholder)
+ * Pagina gestione utenti con CRUD completo
+ * Include lista paginata, filtri, creazione, modifica e eliminazione utenti
  */
 export default function UsersPage() {
   const { data: session } = useSession();
-  const [showForm, setShowForm] = useState(false);
 
-  // Query tRPC per lista utenti
+  // Stato per dialog e paginazione
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [roleFilter, setRoleFilter] = useState<string>('');
+
+  // Query tRPC per lista utenti con paginazione e filtri
   const {
-    data: users,
+    data: usersData,
     isLoading,
     error,
     refetch,
-  } = (trpc as any).users.list.useQuery();
+  } = (trpc as any).users.list.useQuery({
+    page: currentPage,
+    limit: 10,
+    search: searchTerm || undefined,
+    role: roleFilter || undefined,
+  });
 
+  // Mutations tRPC
+  const createUserMutation = (trpc as any).users.create.useMutation({
+    onSuccess: () => {
+      toast.success('Utente creato con successo');
+      setDialogOpen(false);
+      refetch();
+    },
+    onError: (error: any) => {
+      toast.error(`Errore nella creazione: ${error.message}`);
+    },
+  });
+
+  const updateUserMutation = (trpc as any).users.update.useMutation({
+    onSuccess: () => {
+      toast.success('Utente aggiornato con successo');
+      setDialogOpen(false);
+      refetch();
+    },
+    onError: (error: any) => {
+      toast.error(`Errore nell'aggiornamento: ${error.message}`);
+    },
+  });
+
+  const deleteUserMutation = (trpc as any).users.delete.useMutation({
+    onSuccess: () => {
+      toast.success('Utente disattivato con successo');
+      refetch();
+    },
+    onError: (error: any) => {
+      toast.error(`Errore nella disattivazione: ${error.message}`);
+    },
+  });
+
+  const hardDeleteUserMutation = (trpc as any).users.hardDelete.useMutation({
+    onSuccess: () => {
+      toast.success('Utente eliminato definitivamente');
+      refetch();
+    },
+    onError: (error: any) => {
+      toast.error(`Errore nell'eliminazione: ${error.message}`);
+    },
+  });
+
+  // Handlers per le azioni
   const handleSignOut = async () => {
     await signOut({ callbackUrl: '/login' });
   };
+
+  const handleCreateUser = () => {
+    setDialogMode('create');
+    setSelectedUser(null);
+    setDialogOpen(true);
+  };
+
+  const handleEditUser = (user: any) => {
+    setDialogMode('edit');
+    setSelectedUser(user);
+    setDialogOpen(true);
+  };
+
+  const handleDeleteUser = (userId: string) => {
+    if (confirm('Sei sicuro di voler disattivare questo utente?')) {
+      deleteUserMutation.mutate({ id: userId });
+    }
+  };
+
+  const handleHardDeleteUser = (userId: string) => {
+    if (
+      confirm(
+        'ATTENZIONE: Questa operazione è irreversibile. Sei sicuro di voler eliminare definitivamente questo utente?'
+      )
+    ) {
+      hardDeleteUserMutation.mutate({ id: userId });
+    }
+  };
+
+  const handleFormSubmit = (data: any) => {
+    if (dialogMode === 'create') {
+      createUserMutation.mutate(data);
+    } else {
+      updateUserMutation.mutate({ id: selectedUser.id, ...data });
+    }
+  };
+
+  const handleSearch = (value: string) => {
+    setSearchTerm(value);
+    setCurrentPage(1); // Reset alla prima pagina
+  };
+
+  const handleRoleFilter = (value: string) => {
+    setRoleFilter(value);
+    setCurrentPage(1); // Reset alla prima pagina
+  };
+
+  const users = usersData?.users || [];
+  const totalPages = usersData?.totalPages || 0;
 
   return (
     <div className="min-h-screen bg-background">
@@ -61,7 +169,7 @@ export default function UsersPage() {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
         <div className="space-y-6">
-          {/* Azioni */}
+          {/* Azioni e Filtri */}
           <div className="flex justify-between items-center">
             <div>
               <h2 className="text-xl font-semibold">Lista Utenti</h2>
@@ -70,34 +178,39 @@ export default function UsersPage() {
               </p>
             </div>
             <div className="flex gap-2">
-              <Button onClick={() => setShowForm(!showForm)}>
-                {showForm ? 'Annulla' : 'Nuovo Utente'}
-              </Button>
+              <Button onClick={handleCreateUser}>Nuovo Utente</Button>
               <Button variant="outline" onClick={() => refetch()}>
                 Aggiorna
               </Button>
             </div>
           </div>
 
-          {/* Form Nuovo Utente (Placeholder) */}
-          {showForm && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Nuovo Utente</CardTitle>
-                <CardDescription>
-                  Form di creazione utente (da implementare)
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-8 text-muted-foreground">
-                  <p>Form di creazione utente in sviluppo</p>
-                  <p className="text-sm mt-2">
-                    TODO: Implementare trpc.users.create mutation
-                  </p>
+          {/* Filtri */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex gap-4 items-center">
+                <div className="flex-1">
+                  <Input
+                    placeholder="Cerca per email o username..."
+                    value={searchTerm}
+                    onChange={e => handleSearch(e.target.value)}
+                  />
                 </div>
-              </CardContent>
-            </Card>
-          )}
+                <div>
+                  <select
+                    value={roleFilter}
+                    onChange={e => handleRoleFilter(e.target.value)}
+                    className="flex h-10 w-32 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="">Tutti i ruoli</option>
+                    <option value="admin">Admin</option>
+                    <option value="editor">Editor</option>
+                    <option value="viewer">Viewer</option>
+                  </select>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Tabella Utenti */}
           <Card>
@@ -134,10 +247,10 @@ export default function UsersPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>ID</TableHead>
                         <TableHead>Email</TableHead>
                         <TableHead>Username</TableHead>
                         <TableHead>Ruolo</TableHead>
+                        <TableHead>Stato</TableHead>
                         <TableHead>Creato</TableHead>
                         <TableHead>Azioni</TableHead>
                       </TableRow>
@@ -155,14 +268,22 @@ export default function UsersPage() {
                       ) : (
                         users.map((user: any) => (
                           <TableRow key={user.id}>
-                            <TableCell className="font-mono text-sm">
-                              {user.id}
-                            </TableCell>
                             <TableCell>{user.email}</TableCell>
                             <TableCell>{user.username}</TableCell>
                             <TableCell>
                               <span className="inline-flex items-center rounded-full bg-secondary px-2 py-1 text-xs font-medium">
                                 {user.role}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <span
+                                className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
+                                  user.isActive
+                                    ? 'bg-green-100 text-green-800'
+                                    : 'bg-red-100 text-red-800'
+                                }`}
+                              >
+                                {user.isActive ? 'Attivo' : 'Disattivo'}
                               </span>
                             </TableCell>
                             <TableCell>
@@ -173,15 +294,68 @@ export default function UsersPage() {
                                 : 'N/A'}
                             </TableCell>
                             <TableCell>
-                              <Button variant="outline" size="sm">
-                                Modifica
-                              </Button>
+                              <div className="flex gap-1">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleEditUser(user)}
+                                >
+                                  Modifica
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleDeleteUser(user.id)}
+                                  disabled={!user.isActive}
+                                >
+                                  Disattiva
+                                </Button>
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => handleHardDeleteUser(user.id)}
+                                >
+                                  Elimina
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))
                       )}
                     </TableBody>
                   </Table>
+                </div>
+              )}
+
+              {/* Paginazione */}
+              {totalPages > 1 && (
+                <div className="flex justify-between items-center pt-4">
+                  <div className="text-sm text-muted-foreground">
+                    Pagina {currentPage} di {totalPages} (
+                    {usersData?.total || 0} utenti totali)
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setCurrentPage(prev => Math.max(1, prev - 1))
+                      }
+                      disabled={currentPage === 1}
+                    >
+                      Precedente
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setCurrentPage(prev => Math.min(totalPages, prev + 1))
+                      }
+                      disabled={currentPage === totalPages}
+                    >
+                      Successiva
+                    </Button>
+                  </div>
                 </div>
               )}
             </CardContent>
@@ -198,6 +372,16 @@ export default function UsersPage() {
           </div>
         </div>
       </main>
+
+      {/* User Dialog */}
+      <UserDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        mode={dialogMode}
+        user={selectedUser}
+        onSubmit={handleFormSubmit}
+        isLoading={createUserMutation.isPending || updateUserMutation.isPending}
+      />
     </div>
   );
 }

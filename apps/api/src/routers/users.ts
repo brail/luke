@@ -5,7 +5,7 @@
 
 import { z } from 'zod';
 import argon2 from 'argon2';
-import { router, loggedProcedure } from '../lib/trpc';
+import { router, loggedProcedure, publicProcedure } from '../lib/trpc';
 import { UserSchema, Role } from '@luke/core';
 
 /**
@@ -44,43 +44,79 @@ const UserIdSchema = z.object({
  */
 export const usersRouter = router({
   /**
-   * Lista tutti gli utenti con le loro identità
+   * Lista tutti gli utenti con paginazione e filtri
    */
-  list: loggedProcedure.query(async ({ ctx }) => {
-    const users = await ctx.prisma.user.findMany({
-      include: {
-        identities: {
-          include: {
-            localCredential: true,
-          },
-        },
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+  list: publicProcedure
+    .input(
+      z
+        .object({
+          page: z.number().min(1).default(1),
+          limit: z.number().min(1).max(100).default(10),
+          search: z.string().optional(),
+          role: z.enum(['admin', 'editor', 'viewer']).optional(),
+        })
+        .optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const { page = 1, limit = 10, search, role } = input || {};
+      const skip = (page - 1) * limit;
 
-    return users.map(user => ({
-      ...user,
-      // Nascondi password hash dalla risposta
-      identities: user.identities.map(identity => ({
-        ...identity,
-        localCredential: identity.localCredential
-          ? {
-              id: identity.localCredential.id,
-              createdAt: identity.localCredential.createdAt,
-              updatedAt: identity.localCredential.updatedAt,
-              // Non esporre passwordHash
-            }
-          : null,
-      })),
-    }));
-  }),
+      const where = {
+        ...(search && {
+          OR: [
+            { email: { contains: search } },
+            { username: { contains: search } },
+          ],
+        }),
+        ...(role && { role }),
+      };
+
+      const [users, total] = await ctx.prisma.$transaction([
+        ctx.prisma.user.findMany({
+          where,
+          skip,
+          take: limit,
+          include: {
+            identities: {
+              include: {
+                localCredential: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: 'desc',
+          },
+        }),
+        ctx.prisma.user.count({ where }),
+      ]);
+
+      return {
+        users: users.map(user => ({
+          ...user,
+          // Nascondi password hash dalla risposta
+          identities: user.identities.map(identity => ({
+            ...identity,
+            localCredential: identity.localCredential
+              ? {
+                  id: identity.localCredential.id,
+                  createdAt: identity.localCredential.createdAt,
+                  updatedAt: identity.localCredential.updatedAt,
+                  // Non esporre passwordHash
+                }
+              : null,
+          })),
+        })),
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      };
+    }),
 
   /**
    * Ottiene un utente per ID
    */
-  getById: loggedProcedure.input(UserIdSchema).query(async ({ input, ctx }) => {
+  getById: publicProcedure.input(UserIdSchema).query(async ({ input, ctx }) => {
     const user = await ctx.prisma.user.findUnique({
       where: { id: input.id },
       include: {
@@ -116,7 +152,7 @@ export const usersRouter = router({
   /**
    * Crea un nuovo utente con identità locale
    */
-  create: loggedProcedure
+  create: publicProcedure
     .input(CreateUserSchema)
     .mutation(async ({ input, ctx }) => {
       // Verifica che email e username non esistano già
@@ -188,7 +224,7 @@ export const usersRouter = router({
   /**
    * Aggiorna un utente esistente
    */
-  update: loggedProcedure
+  update: publicProcedure
     .input(UpdateUserSchema)
     .mutation(async ({ input, ctx }) => {
       const { id, ...updateData } = input;
@@ -252,7 +288,7 @@ export const usersRouter = router({
   /**
    * Elimina un utente (soft delete)
    */
-  delete: loggedProcedure
+  delete: publicProcedure
     .input(UserIdSchema)
     .mutation(async ({ input, ctx }) => {
       const user = await ctx.prisma.user.findUnique({
@@ -287,7 +323,7 @@ export const usersRouter = router({
    * Hard delete di un utente (elimina completamente dal database)
    * ATTENZIONE: Questa operazione è irreversibile
    */
-  hardDelete: loggedProcedure
+  hardDelete: publicProcedure
     .input(UserIdSchema)
     .mutation(async ({ input, ctx }) => {
       const user = await ctx.prisma.user.findUnique({
