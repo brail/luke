@@ -62,14 +62,19 @@ export default function UsersPage() {
     isLoading,
     error,
     refetch,
-  } = (trpc as any).users.list.useQuery({
-    page: currentPage,
-    limit: 10,
-    search: searchTerm || undefined,
-    role: roleFilter || undefined,
-    sortBy,
-    sortOrder,
-  });
+  } = (trpc as any).users.list.useQuery(
+    {
+      page: currentPage,
+      limit: 10,
+      search: searchTerm || undefined,
+      role: roleFilter || undefined,
+      sortBy,
+      sortOrder,
+    },
+    {
+      enabled: !!session?.accessToken, // Aspetta che la sessione sia caricata
+    }
+  );
 
   // Mutations tRPC
   const createUserMutation = (trpc as any).users.create.useMutation({
@@ -295,7 +300,14 @@ export default function UsersPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {isLoading && (
+              {!session?.accessToken && (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                  <p>Caricamento sessione...</p>
+                </div>
+              )}
+
+              {isLoading && session?.accessToken && (
                 <div className="text-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
                   <p>Caricamento utenti...</p>
@@ -316,7 +328,7 @@ export default function UsersPage() {
                 </div>
               )}
 
-              {users && !isLoading && (
+              {users && !isLoading && session?.accessToken && (
                 <div className="rounded-md border">
                   <Table>
                     <TableHeader>
@@ -406,7 +418,7 @@ export default function UsersPage() {
               )}
 
               {/* Paginazione */}
-              {totalPages > 1 && (
+              {totalPages > 1 && session?.accessToken && (
                 <div className="flex justify-between items-center pt-4">
                   <div className="text-sm text-muted-foreground">
                     Pagina {currentPage} di {totalPages} (

@@ -24,7 +24,7 @@ export function getBaseUrl() {
  */
 export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
   const { data: session } = useSession();
-  
+
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -37,27 +37,29 @@ export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
       })
   );
 
-  const [trpcClient] = useState(() =>
-    (trpc as any).createClient({
-      links: [
-        httpBatchLink({
-          url: `${getBaseUrl()}/trpc`,
-          // Headers per autenticazione e Content-Type
-          headers() {
-            const headers: Record<string, string> = {
-              'Content-Type': 'application/json',
-            };
-            
-            // Aggiungi token JWT se disponibile
-            if (session?.accessToken) {
-              headers.authorization = `Bearer ${session.accessToken}`;
-            }
-            
-            return headers;
-          },
-        }),
-      ],
-    })
+  const trpcClient = React.useMemo(
+    () =>
+      (trpc as any).createClient({
+        links: [
+          httpBatchLink({
+            url: `${getBaseUrl()}/trpc`,
+            // Headers per autenticazione e Content-Type
+            headers() {
+              const headers: Record<string, string> = {
+                'Content-Type': 'application/json',
+              };
+
+              // Aggiungi token JWT se disponibile
+              if (session?.accessToken) {
+                headers.authorization = `Bearer ${session.accessToken}`;
+              }
+
+              return headers;
+            },
+          }),
+        ],
+      }),
+    [session?.accessToken]
   );
 
   const TrpcProvider = (trpc as any).Provider;
