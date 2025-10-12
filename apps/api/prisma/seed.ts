@@ -5,6 +5,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
+import { randomBytes } from 'crypto';
 import { encryptValue } from '../src/lib/configManager';
 
 /**
@@ -80,7 +81,21 @@ async function main() {
     // Configurazioni iniziali
     console.log('⚙️  Creazione configurazioni iniziali...');
 
+    // Genera segreti JWT e NextAuth
+    const jwtSecret = randomBytes(32).toString('hex');
+    const nextAuthSecret = randomBytes(32).toString('hex');
+
     const initialConfigs = [
+      {
+        key: 'auth.jwtSecret',
+        value: jwtSecret,
+        encrypt: true,
+      },
+      {
+        key: 'auth.nextAuthSecret',
+        value: nextAuthSecret,
+        encrypt: true,
+      },
       {
         key: 'auth.providers.local.enabled',
         value: 'true',
@@ -167,6 +182,9 @@ async function main() {
     console.log('   Email: admin@luke.local');
     console.log('   Username: admin');
     console.log('   Password: changeme');
+    console.log('\n🔐 Segreti generati:');
+    console.log('   JWT Secret: Generato e cifrato in AppConfig');
+    console.log('   NextAuth Secret: Generato e cifrato in AppConfig');
     console.log('\n⚠️  IMPORTANTE: Cambia la password admin al primo login!');
     console.log('\n🚀 Prossimi passi:');
     console.log('   1. Avvia il server: pnpm --filter @luke/api dev');

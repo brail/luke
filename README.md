@@ -17,10 +17,12 @@ luke/
 ## 🚀 Quick Start
 
 ### Prerequisiti
+
 - Node.js >= 20.0.0 (usa `nvm use` per versione automatica)
 - pnpm >= 8.0.0
 
 ### Setup iniziale
+
 ```bash
 # Installa dipendenze
 pnpm install
@@ -31,6 +33,9 @@ pnpm deps:latest
 # Build tutti i workspace
 pnpm build
 
+# Esegui seed del database (genera segreti JWT e NextAuth)
+pnpm --filter @luke/api run seed
+
 # Avvia in modalità sviluppo
 pnpm dev
 ```
@@ -38,18 +43,21 @@ pnpm dev
 ## 📦 Workspaces
 
 ### `@luke/web` (apps/web)
+
 - **Framework**: Next.js 15 con App Router
 - **UI**: shadcn/ui components
 - **Styling**: Tailwind CSS
 - **Port**: http://localhost:3000
 
 ### `@luke/api` (apps/api)
+
 - **Framework**: Fastify 5
 - **API**: tRPC per type-safe APIs
 - **Database**: Prisma ORM (SQLite → PostgreSQL)
 - **Port**: http://localhost:3001
 
 ### `@luke/core` (packages/core)
+
 - **Validation**: Zod schemas
 - **RBAC**: Role-based access control
 - **Utils**: Funzioni condivise tra frontend/backend
@@ -84,14 +92,17 @@ pnpm --filter @luke/core build  # Solo core package
 ## 🔐 Sicurezza
 
 ### Configurazione
+
 - **Nessun .env**: Tutte le configurazioni sono in database (AppConfig)
 - **Cifratura**: AES-256-GCM per segreti sensibili
-- **Master Key**: 
+- **Master Key**:
   - Primario: keytar (keychain OS)
   - Fallback: `~/.luke/secret.key`
 - **JWT**: RS256 con chiavi asimmetriche
+- **Segreti**: JWT_SECRET e NEXTAUTH_SECRET generati automaticamente e cifrati in AppConfig
 
 ### Autenticazione
+
 - **Config-driven**: Local → LDAP → OIDC (configurabile via DB)
 - **RBAC**: Role-based access control con `@luke/core`
 - **Audit**: Log completo di tutte le mutazioni
@@ -132,11 +143,13 @@ pnpm --filter @luke/core build  # Solo core package
 ## 🆘 Troubleshooting
 
 ### Errori comuni
+
 - **Node version**: Usa `nvm use` per versione corretta
 - **pnpm install**: Assicurati di essere nella root del monorepo
 - **Build errors**: Controlla che `@luke/core` sia buildato prima degli altri workspace
 
 ### Reset completo
+
 ```bash
 # Rimuovi node_modules e lock files
 rm -rf node_modules apps/*/node_modules packages/*/node_modules
@@ -152,6 +165,9 @@ pnpm install
 - **Database**: SQLite file viene creato automaticamente al primo avvio
 - **Ports**: Frontend (3000), Backend (3001) - configurabili via AppConfig
 - **Caching**: Turborepo cache in `.turbo/` (ignorato da git)
+- **Segreti**: JWT_SECRET e NEXTAUTH_SECRET vengono generati automaticamente durante il seed e cifrati in AppConfig
+- **Rotazione Segreti**: Aggiorna i valori in AppConfig e riavvia il server per applicare le modifiche
+- **Nessun .env**: I segreti non devono mai essere committati in file .env (solo NEXT*PUBLIC*\* se necessario)
 
 ---
 

@@ -6,6 +6,8 @@
 import jwt from 'jsonwebtoken';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import type { User } from '@luke/core';
+import type { PrismaClient } from '@prisma/client';
+import { getSecret } from './configManager';
 
 /**
  * Interfaccia per il payload JWT
@@ -32,10 +34,65 @@ export interface UserSession {
 }
 
 /**
+ * Cache in-memory per i segreti
+ */
+const secretsCache = new Map<string, string>();
+
+/**
+ * Inizializza i segreti dal database
+ * @param prisma - Client Prisma
+ */
+export async function initializeSecrets(prisma: PrismaClient): Promise<void> {
+  try {
+    console.log('🔐 Inizializzazione segreti...');
+
+    // Carica JWT secret
+    const jwtSecret = await getSecret(prisma, 'auth.jwtSecret');
+    secretsCache.set('jwtSecret', jwtSecret);
+
+    // Carica NextAuth secret
+    const nextAuthSecret = await getSecret(prisma, 'auth.nextAuthSecret');
+    secretsCache.set('nextAuthSecret', nextAuthSecret);
+
+    console.log('✅ Segreti caricati in cache');
+  } catch (error) {
+    console.error('❌ Errore caricamento segreti:', error);
+    throw new Error(
+      'Impossibile inizializzare i segreti. Esegui il seed del database.'
+    );
+  }
+}
+
+/**
+ * Ottiene il JWT secret dalla cache
+ */
+function getJWTSecret(): string {
+  const secret = secretsCache.get('jwtSecret');
+  if (!secret) {
+    throw new Error(
+      'JWT secret non inizializzato. Chiama initializeSecrets() prima.'
+    );
+  }
+  return secret;
+}
+
+/**
+ * Ottiene il NextAuth secret dalla cache
+ */
+export function getNextAuthSecret(): string {
+  const secret = secretsCache.get('nextAuthSecret');
+  if (!secret) {
+    throw new Error(
+      'NextAuth secret non inizializzato. Chiama initializeSecrets() prima.'
+    );
+  }
+  return secret;
+}
+
+/**
  * Configurazione JWT
  */
-const JWT_SECRET = process.env.JWT_SECRET || 'CHANGE_ME_IN_PRODUCTION';
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+const JWT_EXPIRES_IN = '7d';
 
 /**
  * Crea un JWT token per un utente
@@ -53,9 +110,13 @@ export function createToken(user: {
     role: user.role,
   };
 
-  return jwt.sign(payload, JWT_SECRET, {
-    expiresIn: JWT_EXPIRES_IN,
-  });
+  return jwt.sign(
+    payload,
+    getJWTSecret() as jwt.Secret,
+    {
+      expiresIn: JWT_EXPIRES_IN,
+    } as jwt.SignOptions
+  );
 }
 
 /**
@@ -63,7 +124,10 @@ export function createToken(user: {
  */
 export function verifyToken(token: string): JWTPayload | null {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as JWTPayload;
+    const decoded = jwt.verify(
+      token,
+      getJWTSecret() as jwt.Secret
+    ) as JWTPayload;
     return decoded;
   } catch (error) {
     console.error('Errore verifica token:', error);

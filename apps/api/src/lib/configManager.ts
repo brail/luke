@@ -201,3 +201,36 @@ export async function deleteConfig(
     where: { key },
   });
 }
+
+/**
+ * Recupera un segreto dal database e lo decifra
+ * @param prisma - Client Prisma
+ * @param key - Chiave del segreto da recuperare
+ * @returns Valore decifrato del segreto
+ * @throws Error se la chiave non esiste o non è cifrata
+ */
+export async function getSecret(
+  prisma: PrismaClient,
+  key: string
+): Promise<string> {
+  const config = await prisma.appConfig.findUnique({
+    where: { key },
+  });
+
+  if (!config) {
+    throw new Error(`Segreto '${key}' non trovato in AppConfig`);
+  }
+
+  if (!config.isEncrypted) {
+    throw new Error(
+      `La configurazione '${key}' non è cifrata. Usa getConfig() per valori non cifrati.`
+    );
+  }
+
+  try {
+    return decryptValue(config.value);
+  } catch (error) {
+    console.error(`Errore decifratura segreto ${key}:`, error);
+    throw new Error(`Impossibile decifrare segreto: ${key}`);
+  }
+}

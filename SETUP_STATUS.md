@@ -38,6 +38,8 @@ pnpm format           # ✅ Formatta con Prettier
 - ✅ **Master key** - keytar + fallback `~/.luke/secret.key`
 - ✅ **RBAC** - Role-based access control in `@luke/core`
 - ✅ **Audit log** - logging completo delle mutazioni
+- ✅ **Segreti centralizzati** - JWT_SECRET e NEXTAUTH_SECRET in AppConfig cifrati
+- ✅ **Error handling uniforme** - TRPCError in tutti i router
 
 ## ⚠️ Note
 
@@ -59,6 +61,34 @@ pnpm format           # ✅ Formatta con Prettier
 - ✅ **TypeScript** strict mode
 - ✅ **Build** funzionante
 
+## 🔐 Gestione Segreti
+
+### Processo Seed
+
+```bash
+# Genera segreti JWT e NextAuth automaticamente
+pnpm --filter @luke/api run seed
+```
+
+### Segreti Generati
+
+- **auth.jwtSecret**: 32 bytes random, cifrato con AES-256-GCM
+- **auth.nextAuthSecret**: 32 bytes random, cifrato con AES-256-GCM
+- **Master key**: `~/.luke/secret.key` (creata automaticamente)
+
+### Rotazione Segreti
+
+1. Aggiorna i valori in AppConfig tramite UI o direttamente nel DB
+2. Riavvia il server per applicare le modifiche
+3. I segreti vengono caricati in cache all'avvio per performance
+
+### Verifica Sicurezza
+
+- ✅ Nessun file `.env` committato nel repository
+- ✅ Tutti i segreti sono cifrati in AppConfig
+- ✅ Master key protetta con permessi 600
+- ✅ Cache in-memory per performance (nessuna query DB per ogni token)
+
 ## 🎯 Prossimi Passi
 
 Il monorepo è **pronto per lo sviluppo**! Puoi procedere con:
@@ -78,11 +108,20 @@ curl http://localhost:3000
 # Test API
 curl http://localhost:3001
 
+# Test Health Check
+curl http://localhost:3001/api/health
+
 # Build completo
 pnpm build
 
 # Lint
 pnpm lint
+
+# Test Seed (genera segreti)
+pnpm --filter @luke/api run seed
+
+# Verifica segreti in DB
+pnpm --filter @luke/api prisma:studio
 ```
 
 ---

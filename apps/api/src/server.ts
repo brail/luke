@@ -11,6 +11,7 @@ import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import { PrismaClient } from '@prisma/client';
 import { appRouter } from './routers';
 import { createContext } from './lib/trpc';
+import { initializeSecrets, getNextAuthSecret } from './lib/auth';
 
 /**
  * Configurazione del logger Pino
@@ -70,7 +71,7 @@ const prisma = new PrismaClient({
 async function registerSecurityPlugins() {
   // Cookie plugin per gestione sessioni
   await fastify.register(cookie, {
-    secret: process.env.JWT_SECRET || 'CHANGE_ME_IN_PRODUCTION',
+    secret: getNextAuthSecret(),
   });
 
   // Helmet per security headers
@@ -148,6 +149,21 @@ async function registerHealthRoute() {
     };
   });
 
+  // Route per NextAuth secret (solo in produzione)
+  fastify.get('/api/nextauth-secret', async (request, reply) => {
+    if (process.env.NODE_ENV !== 'production') {
+      reply.status(404).send({ error: 'Not found' });
+      return;
+    }
+
+    try {
+      const secret = getNextAuthSecret();
+      return { secret };
+    } catch (error) {
+      reply.status(500).send({ error: 'Internal server error' });
+    }
+  });
+
   // Route root per compatibilità
   fastify.get('/', async (request, reply) => {
     return {
@@ -207,6 +223,14 @@ function setupGracefulShutdown() {
  */
 const start = async () => {
   try {
+    // Test connessione database
+    await prisma.$connect();
+    fastify.log.info('Connessione database stabilita');
+
+    // Inizializza segreti dal database PRIMA di registrare i plugin
+    await initializeSecrets(prisma);
+    fastify.log.info('Segreti inizializzati');
+
     // Registra plugin e route nell'ordine corretto
     await registerSecurityPlugins(); // CORS deve essere registrato prima di tRPC
     await registerTRPCPlugin();
@@ -214,10 +238,6 @@ const start = async () => {
 
     // Configura graceful shutdown
     setupGracefulShutdown();
-
-    // Test connessione database
-    await prisma.$connect();
-    fastify.log.info('Connessione database stabilita');
 
     // Avvia server
     const port = parseInt(process.env.PORT || '3001', 10);

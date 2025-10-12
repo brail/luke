@@ -7,6 +7,7 @@ import { z } from 'zod';
 import argon2 from 'argon2';
 import { router, publicProcedure, protectedProcedure } from '../lib/trpc';
 import { createToken, setSessionCookie, clearSessionCookie } from '../lib/auth';
+import { TRPCError } from '@trpc/server';
 
 /**
  * Schema per login
@@ -21,7 +22,9 @@ const LoginSchema = z.object({
  */
 const ChangePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Password attuale richiesta'),
-  newPassword: z.string().min(8, 'Nuova password deve essere di almeno 8 caratteri'),
+  newPassword: z
+    .string()
+    .min(8, 'Nuova password deve essere di almeno 8 caratteri'),
 });
 
 /**
@@ -31,67 +34,71 @@ export const authRouter = router({
   /**
    * Login utente
    */
-  login: publicProcedure
-    .input(LoginSchema)
-    .mutation(async ({ input, ctx }) => {
-      const { username, password } = input;
+  login: publicProcedure.input(LoginSchema).mutation(async ({ input, ctx }) => {
+    const { username, password } = input;
 
-      // Trova l'utente e la sua identità locale
-      const user = await ctx.prisma.user.findFirst({
-        where: {
-          username,
-          isActive: true, // Solo utenti attivi possono autenticarsi
-        },
-        include: {
-          identities: {
-            where: {
-              provider: 'LOCAL',
-              providerId: username,
-            },
-            include: {
-              localCredential: true,
-            },
+    // Trova l'utente e la sua identità locale
+    const user = await ctx.prisma.user.findFirst({
+      where: {
+        username,
+        isActive: true, // Solo utenti attivi possono autenticarsi
+      },
+      include: {
+        identities: {
+          where: {
+            provider: 'LOCAL',
+            providerId: username,
+          },
+          include: {
+            localCredential: true,
           },
         },
+      },
+    });
+
+    if (!user || !user.identities[0]?.localCredential) {
+      throw new TRPCError({
+        code: 'UNAUTHORIZED',
+        message: 'Credenziali non valide',
       });
+    }
 
-      if (!user || !user.identities[0]?.localCredential) {
-        throw new Error('Credenziali non valide');
-      }
+    // Verifica la password
+    const isValidPassword = await argon2.verify(
+      user.identities[0].localCredential.passwordHash,
+      password
+    );
 
-      // Verifica la password
-      const isValidPassword = await argon2.verify(
-        user.identities[0].localCredential.passwordHash,
-        password
-      );
+    if (!isValidPassword) {
+      throw new TRPCError({
+        code: 'UNAUTHORIZED',
+        message: 'Credenziali non valide',
+      });
+    }
 
-      if (!isValidPassword) {
-        throw new Error('Credenziali non valide');
-      }
+    // Crea il token JWT
+    const token = createToken({
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      role: user.role,
+    });
 
-      // Crea il token JWT
-      const token = createToken({
+    // Imposta il cookie di sessione
+    setSessionCookie(ctx.res, token);
+
+    // Restituisce i dati utente per la sessione
+    return {
+      user: {
         id: user.id,
         email: user.email,
         username: user.username,
         role: user.role,
-      });
-
-      // Imposta il cookie di sessione
-      setSessionCookie(ctx.res, token);
-
-      // Restituisce i dati utente per la sessione
-      return {
-        user: {
-          id: user.id,
-          email: user.email,
-          username: user.username,
-          role: user.role,
-          isActive: user.isActive,
-        },
-        token,
-      };
-    }),
+        isActive: user.isActive,
+      },
+      token,
+    };
+  }),
 
   /**
    * Logout utente
@@ -138,7 +145,10 @@ export const authRouter = router({
       });
 
       if (!user || !user.identities[0]?.localCredential) {
-        throw new Error('Utente non trovato');
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Utente non trovato',
+        });
       }
 
       // Verifica la password attuale
@@ -148,7 +158,10 @@ export const authRouter = router({
       );
 
       if (!isValidPassword) {
-        throw new Error('Password attuale non corretta');
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'Password attuale non corretta',
+        });
       }
 
       // Hash della nuova password

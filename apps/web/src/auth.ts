@@ -34,6 +34,37 @@ async function callTRPCAuth(username: string, password: string) {
 }
 
 /**
+ * Recupera il NextAuth secret dall'API
+ * Fallback a variabile d'ambiente per sviluppo
+ */
+async function getNextAuthSecret(): Promise<string> {
+  try {
+    // In produzione, recupera il segreto dall'API
+    if (process.env.NODE_ENV === 'production') {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/nextauth-secret`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.secret;
+      }
+    }
+  } catch (error) {
+    console.warn("Impossibile recuperare NextAuth secret dall'API:", error);
+  }
+
+  // Fallback per sviluppo o se l'API non è disponibile
+  return process.env.NEXTAUTH_SECRET || 'CHANGE_ME_IN_PRODUCTION';
+}
+
+/**
  * Configurazione Auth.js v5 per Luke
  * Integrata con il sistema di autenticazione tRPC
  */
@@ -82,8 +113,8 @@ export const config = {
     async jwt({ token, user }) {
       // Passa i dati utente al token JWT
       if (user) {
-        token.role = user.role;
-        token.accessToken = user.accessToken;
+        token.role = (user as any).role;
+        token.accessToken = (user as any).accessToken;
       }
       return token;
     },
@@ -100,7 +131,7 @@ export const config = {
   pages: {
     signIn: '/login',
   },
-  secret: process.env.NEXTAUTH_SECRET || 'CHANGE_ME_IN_PRODUCTION',
+  secret: await getNextAuthSecret(),
 } satisfies NextAuthConfig;
 
 export const { handlers, auth, signIn, signOut } = NextAuth(config);

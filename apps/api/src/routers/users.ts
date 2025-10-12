@@ -5,8 +5,14 @@
 
 import { z } from 'zod';
 import argon2 from 'argon2';
-import { router, publicProcedure, protectedProcedure, adminProcedure } from '../lib/trpc';
+import {
+  router,
+  publicProcedure,
+  protectedProcedure,
+  adminProcedure,
+} from '../lib/trpc';
 import { UserSchema, Role } from '@luke/core';
+import { TRPCError } from '@trpc/server';
 
 /**
  * Schema per creazione utente
@@ -43,7 +49,6 @@ const UserIdSchema = z.object({
  * Router per gestione utenti
  */
 export const usersRouter = router({
-
   /**
    * Lista tutti gli utenti con paginazione e filtri
    * Richiede autenticazione
@@ -130,38 +135,43 @@ export const usersRouter = router({
    * Ottiene un utente per ID
    * Richiede autenticazione
    */
-  getById: protectedProcedure.input(UserIdSchema).query(async ({ input, ctx }) => {
-    const user = await ctx.prisma.user.findUnique({
-      where: { id: input.id },
-      include: {
-        identities: {
-          include: {
-            localCredential: true,
+  getById: protectedProcedure
+    .input(UserIdSchema)
+    .query(async ({ input, ctx }) => {
+      const user = await ctx.prisma.user.findUnique({
+        where: { id: input.id },
+        include: {
+          identities: {
+            include: {
+              localCredential: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    if (!user) {
-      throw new Error('Utente non trovato');
-    }
+      if (!user) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Utente non trovato',
+        });
+      }
 
-    return {
-      ...user,
-      // Nascondi password hash dalla risposta
-      identities: user.identities.map(identity => ({
-        ...identity,
-        localCredential: identity.localCredential
-          ? {
-              id: identity.localCredential.id,
-              createdAt: identity.localCredential.createdAt,
-              updatedAt: identity.localCredential.updatedAt,
-              // Non esporre passwordHash
-            }
-          : null,
-      })),
-    };
-  }),
+      return {
+        ...user,
+        // Nascondi password hash dalla risposta
+        identities: user.identities.map(identity => ({
+          ...identity,
+          localCredential: identity.localCredential
+            ? {
+                id: identity.localCredential.id,
+                createdAt: identity.localCredential.createdAt,
+                updatedAt: identity.localCredential.updatedAt,
+                // Non esporre passwordHash
+              }
+            : null,
+        })),
+      };
+    }),
 
   /**
    * Crea un nuovo utente con identità locale
@@ -178,11 +188,13 @@ export const usersRouter = router({
       });
 
       if (existingUser) {
-        throw new Error(
-          existingUser.email === input.email
-            ? 'Email già esistente'
-            : 'Username già esistente'
-        );
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message:
+            existingUser.email === input.email
+              ? 'Email già esistente'
+              : 'Username già esistente',
+        });
       }
 
       // Hash della password con argon2id
@@ -251,7 +263,10 @@ export const usersRouter = router({
       });
 
       if (!existingUser) {
-        throw new Error('Utente non trovato');
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Utente non trovato',
+        });
       }
 
       // Se si sta aggiornando email o username, verifica che non esistano già
@@ -274,10 +289,16 @@ export const usersRouter = router({
 
         if (conflictingUser) {
           if (conflictingUser.email === updateData.email) {
-            throw new Error('Email già esistente');
+            throw new TRPCError({
+              code: 'CONFLICT',
+              message: 'Email già esistente',
+            });
           }
           if (conflictingUser.username === updateData.username) {
-            throw new Error('Username già esistente');
+            throw new TRPCError({
+              code: 'CONFLICT',
+              message: 'Username già esistente',
+            });
           }
         }
       }
@@ -313,7 +334,10 @@ export const usersRouter = router({
       });
 
       if (!user) {
-        throw new Error('Utente non trovato');
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Utente non trovato',
+        });
       }
 
       // Soft delete: imposta isActive = false
@@ -349,7 +373,10 @@ export const usersRouter = router({
       });
 
       if (!user) {
-        throw new Error('Utente non trovato');
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Utente non trovato',
+        });
       }
 
       // Hard delete: elimina utente e tutte le relazioni (cascade)
