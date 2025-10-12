@@ -39,6 +39,7 @@ interface UserDialogProps {
  * Dialog modal per creazione e modifica utenti
  * Wrapper del UserForm con gestione modal
  */
+// eslint-disable-next-line no-unused-vars
 export function UserDialog({
   open,
   onOpenChange,

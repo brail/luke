@@ -59,7 +59,7 @@ type UserFormData = CreateUserData | EditUserData;
 interface UserFormProps {
   mode: 'create' | 'edit';
   initialData?: Partial<UserFormData>;
-  onSubmit: (userData: UserFormData) => void;
+  onSubmit: (data: UserFormData) => void;
   onCancel: () => void;
   isLoading?: boolean;
 }
@@ -68,6 +68,7 @@ interface UserFormProps {
  * Componente form per creazione e modifica utenti
  * Gestisce validazione client-side e stato del form
  */
+// eslint-disable-next-line no-unused-vars
 export function UserForm({
   mode,
   initialData,
@@ -193,14 +194,16 @@ export function UserForm({
     }
 
     // Rimuovi confirmPassword dai dati prima di inviare
-    const { confirmPassword: _, ...dataToSubmit } = result.data;
+    // eslint-disable-next-line no-unused-vars
+    const { confirmPassword, ...dataToSubmit } = result.data;
 
     // Per edit mode, se password è vuota, rimuovila dai dati
     if (
       mode === 'edit' &&
       (!formData.password || formData.password.trim() === '')
     ) {
-      const { password: __, ...dataWithoutPassword } = dataToSubmit;
+      // eslint-disable-next-line no-unused-vars
+      const { password, ...dataWithoutPassword } = dataToSubmit;
       onSubmit(dataWithoutPassword as UserFormData);
     } else {
       onSubmit(dataToSubmit as UserFormData);

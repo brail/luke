@@ -30,6 +30,7 @@ interface ConfirmDialogProps {
  * Dialog di conferma riutilizzabile per azioni critiche
  * Supporta diverse varianti e tipi di azione con icone appropriate
  */
+// eslint-disable-next-line no-unused-vars
 export function ConfirmDialog({
   open,
   onOpenChange,
