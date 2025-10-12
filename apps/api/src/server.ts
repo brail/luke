@@ -6,6 +6,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
+import cookie from '@fastify/cookie';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import { PrismaClient } from '@prisma/client';
 import { appRouter } from './routers';
@@ -67,6 +68,11 @@ const prisma = new PrismaClient({
  * Registra plugin di sicurezza
  */
 async function registerSecurityPlugins() {
+  // Cookie plugin per gestione sessioni
+  await fastify.register(cookie, {
+    secret: process.env.JWT_SECRET || 'CHANGE_ME_IN_PRODUCTION',
+  });
+
   // Helmet per security headers
   await fastify.register(helmet, {
     contentSecurityPolicy: {
@@ -117,7 +123,8 @@ async function registerTRPCPlugin() {
     prefix: '/trpc',
     trpcOptions: {
       router: appRouter,
-      createContext: ({ req, res }: any) => createContext({ prisma }),
+      createContext: async ({ req, res }: any) =>
+        createContext({ prisma, req, res }),
       onError: ({ path, error }: any) => {
         fastify.log.error(`tRPC Error on '${path}': ${error.message}`);
       },

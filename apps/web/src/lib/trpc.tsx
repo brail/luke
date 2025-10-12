@@ -3,6 +3,7 @@
 import { createTRPCReact, httpBatchLink } from '@trpc/react-query';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React, { useState } from 'react';
+import { useSession } from 'next-auth/react';
 
 /**
  * Client tRPC per React Query
@@ -22,6 +23,8 @@ export function getBaseUrl() {
  * Provider tRPC con configurazione React Query
  */
 export function TRPCProvider({ children }: { children: React.ReactNode }): any {
+  const { data: session } = useSession();
+  
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -41,11 +44,16 @@ export function TRPCProvider({ children }: { children: React.ReactNode }): any {
           url: `${getBaseUrl()}/trpc`,
           // Headers per autenticazione e Content-Type
           headers() {
-            return {
+            const headers: Record<string, string> = {
               'Content-Type': 'application/json',
-              // TODO: Aggiungere token JWT quando disponibile
-              // authorization: `Bearer ${token}`,
             };
+            
+            // Aggiungi token JWT se disponibile
+            if (session?.accessToken) {
+              headers.authorization = `Bearer ${session.accessToken}`;
+            }
+            
+            return headers;
           },
         }),
       ],

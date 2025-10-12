@@ -5,7 +5,7 @@
 
 import { z } from 'zod';
 import argon2 from 'argon2';
-import { router, loggedProcedure, publicProcedure } from '../lib/trpc';
+import { router, publicProcedure, protectedProcedure, adminProcedure } from '../lib/trpc';
 import { UserSchema, Role } from '@luke/core';
 
 /**
@@ -40,72 +40,15 @@ const UserIdSchema = z.object({
 });
 
 /**
- * Schema per autenticazione
- */
-const AuthenticateSchema = z.object({
-  username: z.string().min(1, 'Username richiesto'),
-  password: z.string().min(1, 'Password richiesta'),
-});
-
-/**
  * Router per gestione utenti
  */
 export const usersRouter = router({
-  /**
-   * Autentica un utente con username e password
-   */
-  authenticate: publicProcedure
-    .input(AuthenticateSchema)
-    .mutation(async ({ input, ctx }) => {
-      const { username, password } = input;
-
-      // Trova l'utente e la sua identità locale
-      const user = await ctx.prisma.user.findFirst({
-        where: {
-          username,
-          isActive: true, // Solo utenti attivi possono autenticarsi
-        },
-        include: {
-          identities: {
-            where: {
-              provider: 'LOCAL',
-              providerId: username,
-            },
-            include: {
-              localCredential: true,
-            },
-          },
-        },
-      });
-
-      if (!user || !user.identities[0]?.localCredential) {
-        throw new Error('Credenziali non valide');
-      }
-
-      // Verifica la password
-      const isValidPassword = await argon2.verify(
-        user.identities[0].localCredential.passwordHash,
-        password
-      );
-
-      if (!isValidPassword) {
-        throw new Error('Credenziali non valide');
-      }
-
-      // Restituisce i dati utente per la sessione
-      return {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        role: user.role,
-        isActive: user.isActive,
-      };
-    }),
 
   /**
    * Lista tutti gli utenti con paginazione e filtri
+   * Richiede autenticazione
    */
-  list: publicProcedure
+  list: protectedProcedure
     .input(
       z
         .object({
@@ -185,8 +128,9 @@ export const usersRouter = router({
 
   /**
    * Ottiene un utente per ID
+   * Richiede autenticazione
    */
-  getById: loggedProcedure.input(UserIdSchema).query(async ({ input, ctx }) => {
+  getById: protectedProcedure.input(UserIdSchema).query(async ({ input, ctx }) => {
     const user = await ctx.prisma.user.findUnique({
       where: { id: input.id },
       include: {
@@ -221,8 +165,9 @@ export const usersRouter = router({
 
   /**
    * Crea un nuovo utente con identità locale
+   * Richiede ruolo admin
    */
-  create: loggedProcedure
+  create: adminProcedure
     .input(CreateUserSchema)
     .mutation(async ({ input, ctx }) => {
       // Verifica che email e username non esistano già
@@ -293,8 +238,9 @@ export const usersRouter = router({
 
   /**
    * Aggiorna un utente esistente
+   * Richiede ruolo admin
    */
-  update: loggedProcedure
+  update: adminProcedure
     .input(UpdateUserSchema)
     .mutation(async ({ input, ctx }) => {
       const { id, ...updateData } = input;
@@ -357,8 +303,9 @@ export const usersRouter = router({
 
   /**
    * Elimina un utente (soft delete)
+   * Richiede ruolo admin
    */
-  delete: loggedProcedure
+  delete: adminProcedure
     .input(UserIdSchema)
     .mutation(async ({ input, ctx }) => {
       const user = await ctx.prisma.user.findUnique({
@@ -392,8 +339,9 @@ export const usersRouter = router({
   /**
    * Hard delete di un utente (elimina completamente dal database)
    * ATTENZIONE: Questa operazione è irreversibile
+   * Richiede ruolo admin
    */
-  hardDelete: loggedProcedure
+  hardDelete: adminProcedure
     .input(UserIdSchema)
     .mutation(async ({ input, ctx }) => {
       const user = await ctx.prisma.user.findUnique({

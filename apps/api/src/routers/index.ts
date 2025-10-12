@@ -4,6 +4,7 @@
  */
 
 import { router } from '../lib/trpc';
+import { authRouter } from './auth';
 import { usersRouter } from './users';
 import { configRouter } from './config';
 import { integrationsRouter } from './integrations';
@@ -13,6 +14,7 @@ import { integrationsRouter } from './integrations';
  * Combina tutti i router disponibili
  */
 export const appRouter = router({
+  auth: authRouter,
   users: usersRouter,
   config: configRouter,
   integrations: integrationsRouter,

@@ -25,5 +25,6 @@ declare module 'next-auth/jwt' {
   // eslint-disable-next-line no-unused-vars
   interface JWT {
     role?: string;
+    accessToken?: string;
   }
 }
