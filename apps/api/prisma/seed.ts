@@ -141,6 +141,57 @@ async function main() {
         value: process.env.NODE_ENV === 'production' ? 'warn' : 'info',
         encrypt: false,
       },
+      // Configurazioni LDAP
+      {
+        key: 'auth.ldap.enabled',
+        value: 'false',
+        encrypt: false,
+      },
+      {
+        key: 'auth.ldap.url',
+        value: 'ldap://localhost:389',
+        encrypt: true,
+      },
+      {
+        key: 'auth.ldap.bindDN',
+        value: '',
+        encrypt: true,
+      },
+      {
+        key: 'auth.ldap.bindPassword',
+        value: '',
+        encrypt: true,
+      },
+      {
+        key: 'auth.ldap.searchBase',
+        value: 'dc=example,dc=com',
+        encrypt: true,
+      },
+      {
+        key: 'auth.ldap.searchFilter',
+        value: '(sAMAccountName=${username})',
+        encrypt: true,
+      },
+      {
+        key: 'auth.ldap.groupSearchBase',
+        value: 'ou=groups,dc=example,dc=com',
+        encrypt: true,
+      },
+      {
+        key: 'auth.ldap.groupSearchFilter',
+        value: '(member=${userDN})',
+        encrypt: true,
+      },
+      {
+        key: 'auth.ldap.roleMapping',
+        value: '{}',
+        encrypt: true,
+      },
+      {
+        key: 'auth.strategy',
+        value: 'local-first',
+        encrypt: false,
+      },
     ];
 
     let configsCreated = 0;

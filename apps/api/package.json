@@ -24,6 +24,7 @@
     "argon2": "^0.41.1",
     "fastify": "^5.0.0",
     "jsonwebtoken": "^9.0.2",
+    "ldapjs": "^3.0.7",
     "next-auth": "5.0.0-beta.29",
     "nodemailer": "^6.9.0",
     "pino": "^9.5.0",
@@ -32,6 +33,7 @@
     "zod": "^3.0.0"
   },
   "devDependencies": {
+    "@types/ldapjs": "^2.2.5",
     "@types/node": "^20.0.0",
     "@types/nodemailer": "^6.4.0",
     "ts-node": "^10.9.2",

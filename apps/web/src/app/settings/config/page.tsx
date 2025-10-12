@@ -255,12 +255,15 @@ export default function ConfigPage() {
           </Card>
 
           {/* Navigazione */}
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Link href="/dashboard">
               <Button variant="outline">← Dashboard</Button>
             </Link>
             <Link href="/users">
               <Button variant="outline">Utenti →</Button>
+            </Link>
+            <Link href="/settings/ldap">
+              <Button variant="outline">LDAP →</Button>
             </Link>
           </div>
         </div>

@@ -10,6 +10,22 @@ import { homedir } from 'os';
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 import type { PrismaClient } from '@prisma/client';
 
+/**
+ * Interfaccia per configurazione LDAP
+ */
+export interface LdapConfig {
+  enabled: boolean;
+  url: string;
+  bindDN: string;
+  bindPassword: string;
+  searchBase: string;
+  searchFilter: string;
+  groupSearchBase: string;
+  groupSearchFilter: string;
+  roleMapping: Record<string, string>;
+  strategy: 'local-first' | 'ldap-first' | 'local-only' | 'ldap-only';
+}
+
 const MASTER_KEY_PATH = join(homedir(), '.luke', 'secret.key');
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16; // 128 bits
@@ -233,4 +249,106 @@ export async function getSecret(
     console.error(`Errore decifratura segreto ${key}:`, error);
     throw new Error(`Impossibile decifrare segreto: ${key}`);
   }
+}
+
+/**
+ * Recupera la configurazione LDAP completa dal database
+ * @param prisma - Client Prisma
+ * @returns Configurazione LDAP decifrata e tipizzata
+ * @throws Error se le configurazioni non sono complete
+ */
+export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
+  const configKeys = [
+    'auth.ldap.enabled',
+    'auth.ldap.url',
+    'auth.ldap.bindDN',
+    'auth.ldap.bindPassword',
+    'auth.ldap.searchBase',
+    'auth.ldap.searchFilter',
+    'auth.ldap.groupSearchBase',
+    'auth.ldap.groupSearchFilter',
+    'auth.ldap.roleMapping',
+    'auth.strategy',
+  ];
+
+  const configs = await prisma.appConfig.findMany({
+    where: {
+      key: {
+        in: configKeys,
+      },
+    },
+  });
+
+  // Verifica che tutte le configurazioni esistano
+  const foundKeys = configs.map(c => c.key);
+  const missingKeys = configKeys.filter(key => !foundKeys.includes(key));
+
+  if (missingKeys.length > 0) {
+    throw new Error(`Configurazioni LDAP mancanti: ${missingKeys.join(', ')}`);
+  }
+
+  // Crea mappa per accesso rapido
+  const configMap = new Map(configs.map(c => [c.key, c]));
+
+  // Recupera e decifra i valori
+  const enabled = configMap.get('auth.ldap.enabled')?.value === 'true';
+  const url = configMap.get('auth.ldap.url')?.isEncrypted
+    ? decryptValue(configMap.get('auth.ldap.url')!.value)
+    : configMap.get('auth.ldap.url')?.value || '';
+
+  const bindDN = configMap.get('auth.ldap.bindDN')?.isEncrypted
+    ? decryptValue(configMap.get('auth.ldap.bindDN')!.value)
+    : configMap.get('auth.ldap.bindDN')?.value || '';
+
+  const bindPassword = configMap.get('auth.ldap.bindPassword')?.isEncrypted
+    ? decryptValue(configMap.get('auth.ldap.bindPassword')!.value)
+    : configMap.get('auth.ldap.bindPassword')?.value || '';
+
+  const searchBase = configMap.get('auth.ldap.searchBase')?.isEncrypted
+    ? decryptValue(configMap.get('auth.ldap.searchBase')!.value)
+    : configMap.get('auth.ldap.searchBase')?.value || '';
+
+  const searchFilter = configMap.get('auth.ldap.searchFilter')?.isEncrypted
+    ? decryptValue(configMap.get('auth.ldap.searchFilter')!.value)
+    : configMap.get('auth.ldap.searchFilter')?.value || '';
+
+  const groupSearchBase = configMap.get('auth.ldap.groupSearchBase')
+    ?.isEncrypted
+    ? decryptValue(configMap.get('auth.ldap.groupSearchBase')!.value)
+    : configMap.get('auth.ldap.groupSearchBase')?.value || '';
+
+  const groupSearchFilter = configMap.get('auth.ldap.groupSearchFilter')
+    ?.isEncrypted
+    ? decryptValue(configMap.get('auth.ldap.groupSearchFilter')!.value)
+    : configMap.get('auth.ldap.groupSearchFilter')?.value || '';
+
+  const roleMappingStr = configMap.get('auth.ldap.roleMapping')?.isEncrypted
+    ? decryptValue(configMap.get('auth.ldap.roleMapping')!.value)
+    : configMap.get('auth.ldap.roleMapping')?.value || '{}';
+
+  const strategy =
+    (configMap.get('auth.strategy')?.value as LdapConfig['strategy']) ||
+    'local-first';
+
+  // Parsa roleMapping da JSON
+  let roleMapping: Record<string, string>;
+  try {
+    roleMapping = JSON.parse(roleMappingStr);
+  } catch (error) {
+    console.warn('Errore parsing roleMapping, usando mapping vuoto:', error);
+    roleMapping = {};
+  }
+
+  return {
+    enabled,
+    url,
+    bindDN,
+    bindPassword,
+    searchBase,
+    searchFilter,
+    groupSearchBase,
+    groupSearchFilter,
+    roleMapping,
+    strategy,
+  };
 }

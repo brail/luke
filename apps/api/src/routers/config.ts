@@ -5,6 +5,7 @@
 
 import { z } from 'zod';
 import { router, loggedProcedure } from '../lib/trpc';
+import { TRPCError } from '@trpc/server';
 import {
   saveConfig,
   getConfig,
@@ -69,7 +70,10 @@ export const configRouter = router({
     const value = await getConfig(ctx.prisma, input.key, input.decrypt);
 
     if (value === null) {
-      throw new Error(`Configurazione '${input.key}' non trovata`);
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: `Configurazione '${input.key}' non trovata`,
+      });
     }
 
     return {
@@ -107,7 +111,10 @@ export const configRouter = router({
       });
 
       if (!existingConfig) {
-        throw new Error(`Configurazione '${input.key}' non trovata`);
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: `Configurazione '${input.key}' non trovata`,
+        });
       }
 
       await deleteConfig(ctx.prisma, input.key);
@@ -130,9 +137,10 @@ export const configRouter = router({
       });
 
       if (!existingConfig) {
-        throw new Error(
-          `Configurazione '${input.key}' non trovata. Usa 'set' per creare una nuova configurazione.`
-        );
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: `Configurazione '${input.key}' non trovata. Usa 'set' per creare una nuova configurazione.`,
+        });
       }
 
       await saveConfig(ctx.prisma, input.key, input.value, input.encrypt);

@@ -40,6 +40,7 @@ pnpm format           # ✅ Formatta con Prettier
 - ✅ **Audit log** - logging completo delle mutazioni
 - ✅ **Segreti centralizzati** - JWT_SECRET e NEXTAUTH_SECRET in AppConfig cifrati
 - ✅ **Error handling uniforme** - TRPCError in tutti i router
+- ✅ **LDAP enterprise authentication** - con role mapping e strategia configurabile
 
 ## ⚠️ Note
 
@@ -76,6 +77,12 @@ pnpm --filter @luke/api run seed
 - **auth.nextAuthSecret**: 32 bytes random, cifrato con AES-256-GCM
 - **Master key**: `~/.luke/secret.key` (creata automaticamente)
 
+### Configurazioni LDAP
+
+- **Parametri server LDAP**: url, bindDN, bindPassword, searchBase, searchFilter, groupSearchBase, groupSearchFilter (tutti cifrati)
+- **Role mapping JSON**: mappa gruppi LDAP a ruoli app (admin/editor/viewer)
+- **Strategia autenticazione**: local-first, ldap-first, local-only, ldap-only
+
 ### Rotazione Segreti
 
 1. Aggiorna i valori in AppConfig tramite UI o direttamente nel DB
@@ -88,6 +95,37 @@ pnpm --filter @luke/api run seed
 - ✅ Tutti i segreti sono cifrati in AppConfig
 - ✅ Master key protetta con permessi 600
 - ✅ Cache in-memory per performance (nessuna query DB per ogni token)
+
+## 🔐 Autenticazione LDAP
+
+### Configurazione Enterprise
+
+Luke supporta autenticazione enterprise via LDAP con le seguenti funzionalità:
+
+- **Configurazione parametri server**: URL, Bind DN, Search Base, Search Filter
+- **Mapping gruppi-ruoli**: JSON per mappare gruppi LDAP a ruoli app (admin/editor/viewer)
+- **Strategia fallback configurabile**:
+  - `local-first`: prova locale, poi LDAP
+  - `ldap-first`: prova LDAP, poi locale
+  - `local-only`: solo autenticazione locale
+  - `ldap-only`: solo autenticazione LDAP
+- **Test connessione**: endpoint per verificare configurazione LDAP
+- **UI dedicata**: pagina `/settings/ldap` per configurazione completa
+
+### Configurazione
+
+1. Accedi alla pagina `/settings/ldap` come admin
+2. Configura i parametri del server LDAP
+3. Imposta il mapping dei gruppi ai ruoli in formato JSON
+4. Testa la connessione prima di salvare
+5. Scegli la strategia di autenticazione appropriata
+
+### Sicurezza
+
+- Tutti i parametri sensibili (bindDN, bindPassword) sono cifrati in AppConfig
+- Validazione input per prevenire LDAP injection
+- Audit log completo delle operazioni LDAP
+- Fallback graceful in caso di errori di connessione
 
 ## 🎯 Prossimi Passi
 

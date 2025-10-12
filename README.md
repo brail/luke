@@ -95,6 +95,7 @@ pnpm --filter @luke/core build  # Solo core package
 
 - **Nessun .env**: Tutte le configurazioni sono in database (AppConfig)
 - **Cifratura**: AES-256-GCM per segreti sensibili
+- **Enterprise LDAP**: autenticazione enterprise con role mapping e strategia configurabile
 - **Master Key**:
   - Primario: keytar (keychain OS)
   - Fallback: `~/.luke/secret.key`
