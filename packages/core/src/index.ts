@@ -1,60 +1,26 @@
-import { z } from 'zod';
+/**
+ * @luke/core - Pacchetto core del sistema Luke
+ *
+ * Questo pacchetto fornisce:
+ * - Schemi Zod per validazione dati (User, AppConfig)
+ * - Sistema RBAC per gestione ruoli e permissions
+ * - Utility per date e gestione denaro
+ * - Funzioni di pricing e calcolo margini
+ *
+ * @version 0.1.0
+ * @author Luke Team
+ */
 
-// Base schemas
-export const UserSchema = z.object({
-  id: z.string().uuid(),
-  email: z.string().email(),
-  name: z.string().min(1),
-  role: z.enum(['admin', 'user', 'guest']),
-  createdAt: z.date(),
-  updatedAt: z.date(),
-});
+// Re-export schemas
+export * from './schemas/user';
+export * from './schemas/appConfig';
 
-export const AppConfigSchema = z.object({
-  id: z.string().uuid(),
-  key: z.string().min(1),
-  value: z.string(),
-  encrypted: z.boolean().default(false),
-  createdAt: z.date(),
-  updatedAt: z.date(),
-});
+// Re-export RBAC
+export * from './rbac';
 
-// RBAC schemas
-export const PermissionSchema = z.object({
-  resource: z.string().min(1),
-  action: z.enum(['create', 'read', 'update', 'delete', 'manage']),
-});
+// Re-export utilities
+export * from './utils/date';
+export * from './utils/money';
 
-export const RoleSchema = z.object({
-  name: z.string().min(1),
-  permissions: z.array(PermissionSchema),
-});
-
-// API schemas
-export const ApiResponseSchema = z.object({
-  success: z.boolean(),
-  data: z.any().optional(),
-  error: z.string().optional(),
-  traceId: z.string().uuid().optional(),
-});
-
-// Types
-export type User = z.infer<typeof UserSchema>;
-export type AppConfig = z.infer<typeof AppConfigSchema>;
-export type Permission = z.infer<typeof PermissionSchema>;
-export type Role = z.infer<typeof RoleSchema>;
-export type ApiResponse<T = any> = z.infer<typeof ApiResponseSchema> & {
-  data?: T;
-};
-
-// Utility functions
-export const createApiResponse = <T>(data: T, success = true): ApiResponse<T> => ({
-  success,
-  data,
-});
-
-export const createApiError = (error: string, traceId?: string): ApiResponse => ({
-  success: false,
-  error,
-  traceId,
-});
+// Re-export pricing
+export * from './pricing';
