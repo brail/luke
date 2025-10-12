@@ -20,6 +20,7 @@ interface User {
 }
 
 interface UserDialogProps {
+  open: boolean;
   onOpenChange: (open: boolean) => void;
   mode: 'create' | 'edit';
   user?: User;
@@ -38,6 +39,7 @@ interface UserDialogProps {
  * Wrapper del UserForm con gestione modal
  */
 export function UserDialog({
+  open,
   onOpenChange,
   mode,
   user,
