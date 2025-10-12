@@ -22,7 +22,7 @@ export function getBaseUrl() {
 /**
  * Provider tRPC con configurazione React Query
  */
-export function TRPCProvider({ children }: { children: React.ReactNode }): any {
+export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
   const { data: session } = useSession();
   
   const [queryClient] = useState(
@@ -67,4 +67,4 @@ export function TRPCProvider({ children }: { children: React.ReactNode }): any {
     { client: trpcClient, queryClient },
     React.createElement(QueryClientProvider, { client: queryClient }, children)
   );
-}
+};

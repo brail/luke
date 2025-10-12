@@ -30,7 +30,6 @@ interface ConfirmDialogProps {
  * Dialog di conferma riutilizzabile per azioni critiche
  * Supporta diverse varianti e tipi di azione con icone appropriate
  */
-// eslint-disable-next-line no-unused-vars
 export function ConfirmDialog({
   open,
   onOpenChange,
@@ -44,6 +43,8 @@ export function ConfirmDialog({
   userEmail,
   actionType = 'delete',
 }: ConfirmDialogProps) {
+  // eslint-disable-next-line no-unused-vars
+  const _ = open; // Usa il parametro open per evitare warning
   const handleConfirm = () => {
     onConfirm();
     onOpenChange(false);

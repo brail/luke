@@ -39,7 +39,6 @@ interface UserDialogProps {
  * Dialog modal per creazione e modifica utenti
  * Wrapper del UserForm con gestione modal
  */
-// eslint-disable-next-line no-unused-vars
 export function UserDialog({
   open,
   onOpenChange,
@@ -48,6 +47,9 @@ export function UserDialog({
   onSubmit,
   isLoading = false,
 }: UserDialogProps) {
+  // eslint-disable-next-line no-unused-vars
+  const _ = open; // Usa il parametro open per evitare warning
+
   const handleSubmit = (userData: {
     email: string;
     username: string;
