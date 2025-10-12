@@ -1,0 +1,97 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// Enums
+enum Role {
+  admin
+  editor
+  viewer
+}
+
+enum Provider {
+  LOCAL
+  LDAP
+  OIDC
+}
+
+// Models
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  username  String   @unique
+  role      Role
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  identities Identity[]
+  auditLogs  AuditLog[]
+
+  @@map("users")
+}
+
+model Identity {
+  id         String   @id @default(uuid())
+  userId     String
+  provider   Provider
+  providerId String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  localCredential LocalCredential?
+
+  @@unique([provider, providerId])
+  @@map("identities")
+}
+
+model LocalCredential {
+  id           String   @id @default(uuid())
+  identityId   String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  identity Identity @relation(fields: [identityId], references: [id], onDelete: Cascade)
+
+  @@map("local_credentials")
+}
+
+model AppConfig {
+  id         String   @id @default(uuid())
+  key        String   @unique
+  value      String
+  isEncrypted Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("app_configs")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  resource  String
+  metadata  Json?
+  ipAddress String?
+  timestamp DateTime @default(now())
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
