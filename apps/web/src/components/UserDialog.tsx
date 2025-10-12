@@ -28,6 +28,7 @@ interface UserDialogProps {
     email: string;
     username: string;
     password?: string;
+    confirmPassword?: string;
     role: 'admin' | 'editor' | 'viewer';
     isActive: boolean;
   }) => void;
@@ -50,6 +51,7 @@ export function UserDialog({
     email: string;
     username: string;
     password?: string;
+    confirmPassword?: string;
     role: 'admin' | 'editor' | 'viewer';
     isActive: boolean;
   }) => {
