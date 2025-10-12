@@ -10,18 +10,29 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 /**
  * Schema di validazione per il form utente
  */
-const UserFormSchema = z.object({
+const CreateUserSchema = z.object({
+  email: z.string().email('Email non valida'),
+  username: z.string().min(3, 'Username deve essere di almeno 3 caratteri'),
+  password: z.string().min(8, 'Password deve essere di almeno 8 caratteri'),
+  role: z.enum(['admin', 'editor', 'viewer']),
+  isActive: z.boolean(),
+});
+
+const EditUserSchema = z.object({
   email: z.string().email('Email non valida'),
   username: z.string().min(3, 'Username deve essere di almeno 3 caratteri'),
   password: z
     .string()
     .min(8, 'Password deve essere di almeno 8 caratteri')
-    .optional(),
+    .optional()
+    .or(z.literal('')), // Permette stringa vuota
   role: z.enum(['admin', 'editor', 'viewer']),
   isActive: z.boolean(),
 });
 
-type UserFormData = z.infer<typeof UserFormSchema>;
+type CreateUserData = z.infer<typeof CreateUserSchema>;
+type EditUserData = z.infer<typeof EditUserSchema>;
+type UserFormData = CreateUserData | EditUserData;
 
 interface UserFormProps {
   mode: 'create' | 'edit';
@@ -57,17 +68,29 @@ export function UserForm({
     value: string | boolean
   ) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+    
     // Rimuovi errore quando l'utente inizia a digitare
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
+    }
+
+    // Validazione in tempo reale per password in modalità edit
+    if (field === 'password' && mode === 'edit') {
+      const passwordValue = value as string;
+      if (passwordValue && passwordValue.length > 0 && passwordValue.length < 8) {
+        setErrors(prev => ({ ...prev, password: 'Password deve essere di almeno 8 caratteri' }));
+      } else if (passwordValue && passwordValue.length >= 8) {
+        setErrors(prev => ({ ...prev, password: '' }));
+      }
     }
   };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    // Validazione client-side
-    const result = UserFormSchema.safeParse(formData);
+    // Usa lo schema corretto in base alla modalità
+    const schema = mode === 'create' ? CreateUserSchema : EditUserSchema;
+    const result = schema.safeParse(formData);
 
     if (!result.success) {
       const fieldErrors: Record<string, string> = {};
@@ -80,8 +103,8 @@ export function UserForm({
       return;
     }
 
-    // Per edit mode, password è opzionale
-    if (mode === 'edit' && !formData.password) {
+    // Per edit mode, se password è vuota, rimuovila dai dati
+    if (mode === 'edit' && (!formData.password || formData.password.trim() === '')) {
       const { password: _, ...dataWithoutPassword } = result.data;
       onSubmit(dataWithoutPassword as UserFormData);
     } else {
@@ -142,13 +165,18 @@ export function UserForm({
               onChange={e => handleInputChange('password', e.target.value)}
               placeholder={
                 mode === 'create'
-                  ? 'Password'
-                  : 'Lascia vuoto per non modificare'
+                  ? 'Inserisci una password sicura'
+                  : 'Lascia vuoto per non modificare la password'
               }
               className={errors.password ? 'border-destructive' : ''}
             />
             {errors.password && (
               <p className="text-sm text-destructive">{errors.password}</p>
+            )}
+            {mode === 'edit' && (
+              <p className="text-xs text-muted-foreground">
+                Lascia vuoto se non vuoi modificare la password attuale
+              </p>
             )}
           </div>
 
