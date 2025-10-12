@@ -1,71 +1,185 @@
+import Link from 'next/link';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '../components/ui/card';
+import { Button } from '../components/ui/button';
+
+/**
+ * Home page con link navigazione verso tutte le sezioni
+ * Design pulito e responsive con componenti shadcn/ui
+ */
 export default function Home() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="max-w-4xl mx-auto text-center p-8">
-        <h1 className="text-6xl font-bold text-gray-900 mb-6">🚀 Luke Web</h1>
-        <p className="text-xl text-gray-600 mb-8">
-          Next.js 15 + shadcn/ui + TypeScript
-        </p>
-        <p className="text-lg text-gray-500 mb-12">
-          Monorepo enterprise con pnpm + Turborepo
-        </p>
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="border-b bg-card">
+        <div className="container mx-auto px-4 py-6">
+          <h1 className="text-3xl font-bold text-center">Luke Web</h1>
+          <p className="text-center text-muted-foreground mt-2">
+            Piattaforma Enterprise Frontend
+          </p>
+        </div>
+      </header>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
-          <div className="bg-white p-6 rounded-lg shadow-md">
-            <h3 className="text-lg font-semibold mb-3">🌐 Frontend</h3>
-            <p className="text-gray-600 mb-4">Next.js 15 con App Router</p>
-            <a
-              href="http://localhost:3000"
-              className="inline-block px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-            >
-              Vai al Frontend
-            </a>
+      {/* Main Content */}
+      <main className="container mx-auto px-4 py-12">
+        <div className="max-w-4xl mx-auto">
+          {/* Welcome Section */}
+          <div className="text-center mb-12">
+            <h2 className="text-2xl font-semibold mb-4">
+              Benvenuto nella piattaforma Luke
+            </h2>
+            <p className="text-muted-foreground max-w-2xl mx-auto">
+              Gestisci utenti, configurazioni e monitora il sistema attraverso
+              un'interfaccia moderna e intuitiva.
+            </p>
           </div>
 
-          <div className="bg-white p-6 rounded-lg shadow-md">
-            <h3 className="text-lg font-semibold mb-3">🚀 API</h3>
-            <p className="text-gray-600 mb-4">Fastify 5 + tRPC + Prisma</p>
-            <a
-              href="http://localhost:3001"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-block px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
-            >
-              Vai all&apos;API
-            </a>
+          {/* Navigation Cards */}
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            <Card className="hover:shadow-md transition-shadow">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  🔐 Login
+                </CardTitle>
+                <CardDescription>
+                  Accedi al sistema con le tue credenziali
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link href="/login">
+                  <Button className="w-full">Accedi</Button>
+                </Link>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-md transition-shadow">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  📊 Dashboard
+                </CardTitle>
+                <CardDescription>
+                  Panoramica del sistema e informazioni utente
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link href="/dashboard">
+                  <Button className="w-full" variant="outline">
+                    Vai alla Dashboard
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-md transition-shadow">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  👥 Utenti
+                </CardTitle>
+                <CardDescription>
+                  Gestisci gli utenti del sistema
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link href="/users">
+                  <Button className="w-full" variant="outline">
+                    Gestione Utenti
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-md transition-shadow">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  ⚙️ Configurazioni
+                </CardTitle>
+                <CardDescription>
+                  Configura parametri e impostazioni sistema
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link href="/settings/config">
+                  <Button className="w-full" variant="outline">
+                    Configurazioni
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-md transition-shadow">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  🛡️ Sicurezza
+                </CardTitle>
+                <CardDescription>
+                  Autenticazione config-driven e RBAC
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-sm text-muted-foreground">
+                  <p>• JWT RS256</p>
+                  <p>• Config in DB</p>
+                  <p>• Segreti cifrati</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="hover:shadow-md transition-shadow">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  🔗 API
+                </CardTitle>
+                <CardDescription>tRPC + Fastify + Prisma</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-sm text-muted-foreground">
+                  <p>• Type-safe</p>
+                  <p>• Real-time</p>
+                  <p>• SQLite/Postgres</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Features Section */}
+          <div className="mt-16 text-center">
+            <h3 className="text-xl font-semibold mb-6">
+              Caratteristiche Principali
+            </h3>
+            <div className="grid gap-4 md:grid-cols-3 text-sm text-muted-foreground">
+              <div>
+                <h4 className="font-medium text-foreground mb-2">
+                  🔒 Sicurezza
+                </h4>
+                <p>Autenticazione robusta con JWT e crittografia AES-256-GCM</p>
+              </div>
+              <div>
+                <h4 className="font-medium text-foreground mb-2">
+                  ⚡ Performance
+                </h4>
+                <p>Next.js 15, React Query e ottimizzazioni SSR/CSR</p>
+              </div>
+              <div>
+                <h4 className="font-medium text-foreground mb-2">🎨 UI/UX</h4>
+                <p>Design moderno con shadcn/ui e Tailwind CSS</p>
+              </div>
+            </div>
           </div>
         </div>
+      </main>
 
-        <div className="bg-white p-6 rounded-lg shadow-md">
-          <h3 className="text-lg font-semibold mb-4">✅ Setup Completato</h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-            <div className="flex items-center">
-              <span className="text-green-500 mr-2">✓</span>
-              TypeScript strict mode
-            </div>
-            <div className="flex items-center">
-              <span className="text-green-500 mr-2">✓</span>
-              ESLint + Prettier + Husky
-            </div>
-            <div className="flex items-center">
-              <span className="text-green-500 mr-2">✓</span>
-              Turborepo caching
-            </div>
-            <div className="flex items-center">
-              <span className="text-green-500 mr-2">✓</span>
-              pnpm workspaces
-            </div>
-            <div className="flex items-center">
-              <span className="text-green-500 mr-2">✓</span>
-              Zod schemas in @luke/core
-            </div>
-            <div className="flex items-center">
-              <span className="text-green-500 mr-2">✓</span>
-              Tailwind CSS
-            </div>
-          </div>
+      {/* Footer */}
+      <footer className="border-t bg-card mt-16">
+        <div className="container mx-auto px-4 py-6 text-center text-sm text-muted-foreground">
+          <p>Luke Web - Piattaforma Enterprise Frontend</p>
+          <p className="mt-1">Next.js 15 + Auth.js + tRPC + shadcn/ui</p>
         </div>
-      </div>
+      </footer>
     </div>
   );
 }

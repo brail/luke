@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
 import React from 'react';
+import Providers from '../components/Providers';
 import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Luke Web',
-  description: 'Enterprise monorepo frontend',
+  description: 'Piattaforma Luke Frontend',
 };
 
 export default function RootLayout({
@@ -13,8 +14,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="it">
+      <body className="bg-background text-foreground">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }
