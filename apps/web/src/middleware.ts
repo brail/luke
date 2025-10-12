@@ -13,5 +13,5 @@ export default auth(() => {
 
 // Configurazione matcher per proteggere solo le rotte del dashboard
 export const config = {
-  matcher: ['/(dashboard)(.*)'],
+  matcher: ['/(app)(.*)'],
 };
