@@ -89,3 +89,22 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer utilities {
+  /* Animazione effetto onda per il logo di caricamento */
+  @keyframes wave-pulse {
+    0%,
+    100% {
+      opacity: 0.4;
+      transform: scale(0.9);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.3);
+    }
+  }
+
+  .animate-wave {
+    animation: wave-pulse 2s ease-in-out infinite;
+  }
+}

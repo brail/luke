@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { Button } from '../../components/ui/button';
 import AppSidebar from '../../components/AppSidebar';
 import { SidebarProvider, SidebarTrigger } from '../../components/ui/sidebar';
+import LoadingLogo from '../../components/LoadingLogo';
+import BreadcrumbNav from '../../components/BreadcrumbNav';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
@@ -15,7 +17,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <LoadingLogo size="lg" className="text-primary mx-auto mb-4" />
           <p>Caricamento...</p>
         </div>
       </div>
@@ -41,9 +43,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="flex justify-between items-center px-4 py-4">
               <div className="flex items-center gap-4">
                 <SidebarTrigger />
-                <h1 className="text-2xl font-bold text-foreground">
-                  Luke Dashboard
-                </h1>
+                <BreadcrumbNav />
               </div>
               <div className="flex items-center gap-4">
                 <span className="text-sm text-muted-foreground">

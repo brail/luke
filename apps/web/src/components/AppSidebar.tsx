@@ -31,6 +31,7 @@ import {
   CollapsibleTrigger,
 } from './ui/collapsible';
 import { useState } from 'react';
+import Logo from './Logo';
 
 export default function AppSidebar() {
   const pathname = usePathname();
@@ -45,10 +46,15 @@ export default function AppSidebar() {
       <SidebarContent>
         {/* Header */}
         <div className="mb-6 p-4">
-          <h2 className="text-lg font-semibold text-foreground">Luke</h2>
-          <p className="text-sm text-muted-foreground">
-            Console Amministrativa
-          </p>
+          <div className="flex items-center gap-3">
+            <Logo size="md" className="text-primary" />
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">Luke</h2>
+              <p className="text-sm text-muted-foreground">
+                Console Amministrativa
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Sezione Generale */}

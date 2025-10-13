@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from '../../../components/ui/card';
 import { getLoginDemoText } from '../../../lib/config';
+import Logo from '../../../components/Logo';
 
 /**
  * Pagina di login con form e integrazione Auth.js
@@ -55,6 +56,9 @@ export default function LoginPage() {
     <div className="flex h-screen items-center justify-center bg-muted/50">
       <Card className="w-full max-w-sm">
         <CardHeader className="space-y-1">
+          <div className="flex justify-center mb-4">
+            <Logo size="xl" className="text-primary" />
+          </div>
           <CardTitle className="text-2xl text-center">Accedi</CardTitle>
           <CardDescription className="text-center">
             Inserisci le tue credenziali per accedere
