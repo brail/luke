@@ -1,13 +1,8 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '../../../components/ui/card';
+import { PageHeader } from '../../../components/PageHeader';
+import { SectionCard } from '../../../components/SectionCard';
 
 /**
  * Pagina dashboard con info sessione e statistiche
@@ -18,14 +13,18 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <PageHeader
+        title="Dashboard"
+        description="Panoramica sistema e informazioni sessione"
+      />
+
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {/* Info Sessione */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Informazioni Sessione</CardTitle>
-            <CardDescription>Dettagli utente corrente</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
+        <SectionCard
+          title="Informazioni Sessione"
+          description="Dettagli utente corrente"
+        >
+          <div className="space-y-2">
             <div>
               <span className="font-medium">Nome:</span> {session?.user?.name}
             </div>
@@ -39,16 +38,15 @@ export default function DashboardPage() {
             <div>
               <span className="font-medium">ID:</span> {session?.user?.id}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </SectionCard>
 
         {/* Benvenuto */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Benvenuto in Luke</CardTitle>
-            <CardDescription>Console amministrativa</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
+        <SectionCard
+          title="Benvenuto in Luke"
+          description="Console amministrativa"
+        >
+          <div className="space-y-2">
             <p className="text-sm text-muted-foreground">
               Utilizza la sidebar per navigare tra le diverse sezioni
               dell&apos;applicazione.
@@ -57,22 +55,18 @@ export default function DashboardPage() {
               Puoi gestire utenti, configurazioni, storage, mail e
               autenticazione LDAP.
             </p>
-          </CardContent>
-        </Card>
+          </div>
+        </SectionCard>
 
         {/* Statistiche (Placeholder) */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Statistiche</CardTitle>
-            <CardDescription>Panoramica sistema</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
+        <SectionCard title="Statistiche" description="Panoramica sistema">
+          <div className="space-y-2">
             <div className="text-2xl font-bold">0</div>
             <div className="text-sm text-muted-foreground">Utenti totali</div>
             <div className="text-2xl font-bold">0</div>
             <div className="text-sm text-muted-foreground">Configurazioni</div>
-          </CardContent>
-        </Card>
+          </div>
+        </SectionCard>
       </div>
     </div>
   );

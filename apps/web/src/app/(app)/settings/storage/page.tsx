@@ -1,16 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '../../../../components/ui/card';
 import { Button } from '../../../../components/ui/button';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
+import { PageHeader } from '../../../../components/PageHeader';
+import { SectionCard } from '../../../../components/SectionCard';
 import { trpc } from '../../../../lib/trpc';
 
 type Provider = 'smb' | 'drive';
@@ -83,198 +78,192 @@ export default function StoragePage() {
   };
 
   return (
-    <div className="container mx-auto py-8">
-      <div className="max-w-2xl mx-auto">
-        <Card>
-          <CardHeader>
-            <CardTitle>Configurazione Storage</CardTitle>
-            <CardDescription>
-              Configura le connessioni per SMB/Samba e Google Drive
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Selezione Provider */}
-            <div className="space-y-3">
-              <Label>Provider Storage</Label>
-              <div className="flex space-x-4">
-                <label className="flex items-center space-x-2">
-                  <input
-                    type="radio"
-                    value="smb"
-                    checked={provider === 'smb'}
-                    onChange={(e: any) =>
-                      setProvider(e.target.value as Provider)
-                    }
-                    className="rounded"
-                  />
-                  <span>SMB/Samba</span>
-                </label>
-                <label className="flex items-center space-x-2">
-                  <input
-                    type="radio"
-                    value="drive"
-                    checked={provider === 'drive'}
-                    onChange={(e: any) =>
-                      setProvider(e.target.value as Provider)
-                    }
-                    className="rounded"
-                  />
-                  <span>Google Drive</span>
-                </label>
+    <div className="space-y-6">
+      <PageHeader
+        title="Configurazione Storage"
+        description="Gestisci le connessioni per SMB/Samba e Google Drive"
+      />
+
+      <SectionCard
+        title={
+          provider === 'smb'
+            ? 'Configurazione SMB/Samba'
+            : 'Configurazione Google Drive'
+        }
+        description={
+          provider === 'smb'
+            ? 'Imposta la connessione SMB/Samba'
+            : "Configura l'integrazione OAuth con Google Drive"
+        }
+      >
+        {/* Selezione Provider */}
+        <div className="space-y-3">
+          <Label>Provider Storage</Label>
+          <div className="flex space-x-4">
+            <label className="flex items-center space-x-2">
+              <input
+                type="radio"
+                value="smb"
+                checked={provider === 'smb'}
+                onChange={(e: any) => setProvider(e.target.value as Provider)}
+                className="rounded"
+              />
+              <span>SMB/Samba</span>
+            </label>
+            <label className="flex items-center space-x-2">
+              <input
+                type="radio"
+                value="drive"
+                checked={provider === 'drive'}
+                onChange={(e: any) => setProvider(e.target.value as Provider)}
+                className="rounded"
+              />
+              <span>Google Drive</span>
+            </label>
+          </div>
+        </div>
+
+        {/* Configurazione SMB */}
+        {provider === 'smb' && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="smb-host">Host</Label>
+                <Input
+                  id="smb-host"
+                  value={smbConfig.host}
+                  onChange={(e: any) =>
+                    setSmbConfig({ ...smbConfig, host: e.target.value })
+                  }
+                  placeholder="es. 192.168.1.100"
+                />
+              </div>
+              <div>
+                <Label htmlFor="smb-path">Share Path</Label>
+                <Input
+                  id="smb-path"
+                  value={smbConfig.path}
+                  onChange={(e: any) =>
+                    setSmbConfig({ ...smbConfig, path: e.target.value })
+                  }
+                  placeholder="es. /shared/folder"
+                />
+              </div>
+              <div>
+                <Label htmlFor="smb-username">Username</Label>
+                <Input
+                  id="smb-username"
+                  value={smbConfig.username}
+                  onChange={(e: any) =>
+                    setSmbConfig({ ...smbConfig, username: e.target.value })
+                  }
+                  placeholder="Username SMB"
+                />
+              </div>
+              <div>
+                <Label htmlFor="smb-password">Password</Label>
+                <Input
+                  id="smb-password"
+                  type="password"
+                  value={smbConfig.password}
+                  onChange={(e: any) =>
+                    setSmbConfig({ ...smbConfig, password: e.target.value })
+                  }
+                  placeholder="Password SMB"
+                />
               </div>
             </div>
+          </div>
+        )}
 
-            {/* Configurazione SMB */}
-            {provider === 'smb' && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium">
-                  Configurazione SMB/Samba
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="smb-host">Host</Label>
-                    <Input
-                      id="smb-host"
-                      value={smbConfig.host}
-                      onChange={(e: any) =>
-                        setSmbConfig({ ...smbConfig, host: e.target.value })
-                      }
-                      placeholder="es. 192.168.1.100"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="smb-path">Share Path</Label>
-                    <Input
-                      id="smb-path"
-                      value={smbConfig.path}
-                      onChange={(e: any) =>
-                        setSmbConfig({ ...smbConfig, path: e.target.value })
-                      }
-                      placeholder="es. /shared/folder"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="smb-username">Username</Label>
-                    <Input
-                      id="smb-username"
-                      value={smbConfig.username}
-                      onChange={(e: any) =>
-                        setSmbConfig({ ...smbConfig, username: e.target.value })
-                      }
-                      placeholder="Username SMB"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="smb-password">Password</Label>
-                    <Input
-                      id="smb-password"
-                      type="password"
-                      value={smbConfig.password}
-                      onChange={(e: any) =>
-                        setSmbConfig({ ...smbConfig, password: e.target.value })
-                      }
-                      placeholder="Password SMB"
-                    />
-                  </div>
-                </div>
+        {/* Configurazione Google Drive */}
+        {provider === 'drive' && (
+          <div className="space-y-4">
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="drive-client-id">Client ID</Label>
+                <Input
+                  id="drive-client-id"
+                  value={driveConfig.clientId}
+                  onChange={(e: any) =>
+                    setDriveConfig({
+                      ...driveConfig,
+                      clientId: e.target.value,
+                    })
+                  }
+                  placeholder="Google OAuth Client ID"
+                />
               </div>
-            )}
-
-            {/* Configurazione Google Drive */}
-            {provider === 'drive' && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium">
-                  Configurazione Google Drive OAuth
-                </h3>
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="drive-client-id">Client ID</Label>
-                    <Input
-                      id="drive-client-id"
-                      value={driveConfig.clientId}
-                      onChange={(e: any) =>
-                        setDriveConfig({
-                          ...driveConfig,
-                          clientId: e.target.value,
-                        })
-                      }
-                      placeholder="Google OAuth Client ID"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="drive-client-secret">Client Secret</Label>
-                    <Input
-                      id="drive-client-secret"
-                      type="password"
-                      value={driveConfig.clientSecret}
-                      onChange={(e: any) =>
-                        setDriveConfig({
-                          ...driveConfig,
-                          clientSecret: e.target.value,
-                        })
-                      }
-                      placeholder="Google OAuth Client Secret"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="drive-refresh-token">Refresh Token</Label>
-                    <Input
-                      id="drive-refresh-token"
-                      type="password"
-                      value={driveConfig.refreshToken}
-                      onChange={(e: any) =>
-                        setDriveConfig({
-                          ...driveConfig,
-                          refreshToken: e.target.value,
-                        })
-                      }
-                      placeholder="Google OAuth Refresh Token"
-                    />
-                  </div>
-                </div>
+              <div>
+                <Label htmlFor="drive-client-secret">Client Secret</Label>
+                <Input
+                  id="drive-client-secret"
+                  type="password"
+                  value={driveConfig.clientSecret}
+                  onChange={(e: any) =>
+                    setDriveConfig({
+                      ...driveConfig,
+                      clientSecret: e.target.value,
+                    })
+                  }
+                  placeholder="Google OAuth Client Secret"
+                />
               </div>
-            )}
-
-            {/* Pulsanti Azione */}
-            <div className="flex space-x-4">
-              <Button
-                onClick={handleSaveConfig}
-                disabled={saveConfigMutation.isPending}
-                className="flex-1"
-              >
-                {saveConfigMutation.isPending
-                  ? 'Salvataggio...'
-                  : 'Salva Configurazione'}
-              </Button>
-              <Button
-                onClick={handleTestConnection}
-                disabled={testConnectionQuery.isFetching}
-                variant="outline"
-                className="flex-1"
-              >
-                {testConnectionQuery.isFetching
-                  ? 'Test...'
-                  : 'Test Connessione'}
-              </Button>
+              <div>
+                <Label htmlFor="drive-refresh-token">Refresh Token</Label>
+                <Input
+                  id="drive-refresh-token"
+                  type="password"
+                  value={driveConfig.refreshToken}
+                  onChange={(e: any) =>
+                    setDriveConfig({
+                      ...driveConfig,
+                      refreshToken: e.target.value,
+                    })
+                  }
+                  placeholder="Google OAuth Refresh Token"
+                />
+              </div>
             </div>
+          </div>
+        )}
 
-            {/* Risultato Test */}
-            {testResult && (
-              <div
-                className={`p-4 rounded-md ${
-                  testResult.success
-                    ? 'bg-green-50 text-green-800 border border-green-200'
-                    : 'bg-red-50 text-red-800 border border-red-200'
-                }`}
-              >
-                <p className="font-medium">
-                  {testResult.success ? '✅' : '❌'} {testResult.message}
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+        {/* Pulsanti Azione */}
+        <div className="flex space-x-4">
+          <Button
+            onClick={handleSaveConfig}
+            disabled={saveConfigMutation.isPending}
+            className="flex-1"
+          >
+            {saveConfigMutation.isPending
+              ? 'Salvataggio...'
+              : 'Salva Configurazione'}
+          </Button>
+          <Button
+            onClick={handleTestConnection}
+            disabled={testConnectionQuery.isFetching}
+            variant="outline"
+            className="flex-1"
+          >
+            {testConnectionQuery.isFetching ? 'Test...' : 'Test Connessione'}
+          </Button>
+        </div>
+
+        {/* Risultato Test */}
+        {testResult && (
+          <div
+            className={`p-4 rounded-md ${
+              testResult.success
+                ? 'bg-green-50 text-green-800 border border-green-200'
+                : 'bg-red-50 text-red-800 border border-red-200'
+            }`}
+          >
+            <p className="font-medium">
+              {testResult.success ? '✅' : '❌'} {testResult.message}
+            </p>
+          </div>
+        )}
+      </SectionCard>
     </div>
   );
 }

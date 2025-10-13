@@ -5,8 +5,8 @@ import { Toaster } from 'sonner';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Luke Web',
-  description: 'Piattaforma Luke Frontend',
+  title: 'LUKE',
+  description: 'Piattaforma Luke',
   icons: {
     icon: '/favicon.svg',
     shortcut: '/favicon.svg',
