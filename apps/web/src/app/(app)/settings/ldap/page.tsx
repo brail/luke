@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import { Button } from '../../../../components/ui/button';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
@@ -29,6 +30,7 @@ interface LdapConfig {
 }
 
 export default function LdapSettingsPage() {
+  const { data: session, status } = useSession();
   const [formData, setFormData] = useState<LdapConfig>({
     enabled: false,
     url: '',
@@ -51,10 +53,12 @@ export default function LdapSettingsPage() {
     text: string;
   } | null>(null);
 
-  // Carica configurazione esistente
+  // Carica configurazione esistente (solo se admin)
   const { data: existingConfig, isLoading: isLoadingConfig } = (
     trpc as any
-  ).integrations.auth.getLdapConfig.useQuery();
+  ).integrations.auth.getLdapConfig.useQuery(undefined, {
+    enabled: session?.user?.role === 'admin',
+  });
 
   useEffect(() => {
     if (existingConfig) {
@@ -75,7 +79,7 @@ export default function LdapSettingsPage() {
     }
   }, [existingConfig]);
 
-  // Mutations
+  // Mutations (solo se admin)
   const saveConfigMutation = (
     trpc as any
   ).integrations.auth.saveLdapConfig.useMutation({
@@ -128,6 +132,42 @@ export default function LdapSettingsPage() {
       });
     },
   });
+
+  // Controllo accesso admin
+  if (status === 'loading') {
+    return (
+      <div className="container mx-auto p-6">
+        <Card>
+          <CardContent className="p-6">
+            <div className="text-center">Caricamento...</div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!session || session.user.role !== 'admin') {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Configurazione LDAP" description="Accesso negato" />
+        <Card>
+          <CardContent className="p-6">
+            <div className="text-center space-y-4">
+              <div className="text-destructive text-lg font-semibold">
+                Accesso Negato
+              </div>
+              <p className="text-muted-foreground">
+                Solo gli amministratori possono gestire la configurazione LDAP.
+              </p>
+              <Button asChild variant="outline">
+                <a href="/dashboard">Torna alla Dashboard</a>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   const handleInputChange = (
     field: keyof LdapConfig,
@@ -232,7 +272,7 @@ export default function LdapSettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div key={session?.user?.id} className="space-y-6">
       <PageHeader
         title="Configurazione LDAP"
         description="Configura l'autenticazione enterprise via LDAP con mapping dei ruoli"

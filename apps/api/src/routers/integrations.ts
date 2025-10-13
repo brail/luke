@@ -277,6 +277,12 @@ export const integrationsRouter = router({
   }),
 
   auth: router({
+    /**
+     * Salva la configurazione LDAP globale dell'applicazione
+     * IMPORTANTE: La configurazione LDAP è GLOBALE e non legata a utenti specifici.
+     * Tutti gli amministratori vedono e modificano la stessa configurazione.
+     * Le chiavi sono salvate come 'auth.ldap.*' senza riferimenti a userId.
+     */
     saveLdapConfig: adminProcedure
       .input(ldapConfigSchema)
       .mutation(async ({ input, ctx }) => {
@@ -373,6 +379,11 @@ export const integrationsRouter = router({
         }
       }),
 
+    /**
+     * Recupera la configurazione LDAP globale dell'applicazione
+     * IMPORTANTE: Restituisce sempre la stessa configurazione per tutti gli amministratori.
+     * Non ci sono filtri basati su userId - la configurazione è globale.
+     */
     getLdapConfig: adminProcedure.query(async ({ ctx }) => {
       try {
         const config = await getLdapConfig(ctx.prisma);

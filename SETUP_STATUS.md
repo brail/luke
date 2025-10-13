@@ -147,6 +147,14 @@ I valori cifrati non vengono mai mostrati in chiaro nella lista configurazioni p
 
 ### Configurazione LDAP
 
+**IMPORTANTE: Le configurazioni LDAP sono GLOBALI per l'applicazione**
+
+- **Natura globale**: Tutte le configurazioni LDAP sono salvate con chiavi globali (`auth.ldap.*`) nel database
+- **Accesso uniforme**: Tutti gli amministratori vedono e modificano la stessa configurazione LDAP
+- **Nessuna configurazione per-utente**: Non esistono configurazioni LDAP specifiche per singoli utenti
+- **Reset automatico**: Al cambio di sessione (logout/login), il form si resetta completamente
+- **Protezione accesso**: Solo gli amministratori possono accedere alla pagina `/settings/ldap`
+
 Il campo `bindPassword` nella configurazione LDAP è opzionale:
 
 - **Nuovo setup**: inserire la password per creare la configurazione

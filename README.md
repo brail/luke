@@ -108,6 +108,17 @@ pnpm --filter @luke/core build  # Solo core package
 - **RBAC**: Role-based access control con `@luke/core`
 - **Audit**: Log completo di tutte le mutazioni
 
+### Configurazioni di Autenticazione
+
+**IMPORTANTE: Le configurazioni di autenticazione sono GLOBALI per l'applicazione**
+
+- **Natura globale**: Tutte le configurazioni LDAP e di autenticazione sono salvate con chiavi globali (`auth.*`) nel database
+- **Accesso uniforme**: Tutti gli amministratori vedono e modificano le stesse configurazioni di autenticazione
+- **Nessuna configurazione per-utente**: Non esistono configurazioni di autenticazione specifiche per singoli utenti
+- **Cifratura**: I parametri sensibili (bindDN, bindPassword) sono cifrati con AES-256-GCM
+- **Protezione accesso**: Solo gli amministratori possono accedere alle pagine di configurazione (`/settings/*`)
+- **Reset automatico**: Al cambio di sessione (logout/login), i form si resettano completamente
+
 ### Sincronizzazione Utenti
 
 Gli utenti autenticati tramite provider esterni (LDAP oggi, OIDC domani) vengono sincronizzati automaticamente ad ogni login:
