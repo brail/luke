@@ -13,6 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from '../../../components/ui/card';
+import { getLoginDemoText } from '../../../lib/config';
 
 /**
  * Pagina di login con form e integrazione Auth.js
@@ -95,7 +96,7 @@ export default function LoginPage() {
             </Button>
           </form>
           <div className="mt-4 text-xs text-muted-foreground text-center">
-            <p>Demo: inserisci qualsiasi username e password</p>
+            <p>{getLoginDemoText()}</p>
           </div>
         </CardContent>
       </Card>
