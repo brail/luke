@@ -375,11 +375,11 @@ export const integrationsRouter = router({
         // Converti roleMapping object a JSON string per il frontend
         const roleMappingJson = JSON.stringify(config.roleMapping, null, 2);
 
-        // Per sicurezza, omettere bindPassword
+        // Per sicurezza, omettere dati sensibili
         return {
           enabled: config.enabled,
           url: config.url,
-          bindDN: config.bindDN,
+          hasBindDN: !!config.bindDN,
           hasBindPassword: !!config.bindPassword,
           searchBase: config.searchBase,
           searchFilter: config.searchFilter,

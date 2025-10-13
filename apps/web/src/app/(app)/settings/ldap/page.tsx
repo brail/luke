@@ -16,6 +16,7 @@ interface LdapConfig {
   enabled: boolean;
   url: string;
   bindDN: string;
+  hasBindDN: boolean;
   hasBindPassword: boolean;
   searchBase: string;
   searchFilter: string;
@@ -30,6 +31,7 @@ export default function LdapSettingsPage() {
     enabled: false,
     url: '',
     bindDN: '',
+    hasBindDN: false,
     hasBindPassword: false,
     searchBase: '',
     searchFilter: '',
@@ -56,7 +58,8 @@ export default function LdapSettingsPage() {
       setFormData({
         enabled: existingConfig.enabled,
         url: existingConfig.url,
-        bindDN: existingConfig.bindDN,
+        bindDN: '', // Non mostrare il valore esistente per sicurezza
+        hasBindDN: existingConfig.hasBindDN,
         hasBindPassword: existingConfig.hasBindPassword,
         searchBase: existingConfig.searchBase,
         searchFilter: existingConfig.searchFilter,
@@ -303,7 +306,7 @@ export default function LdapSettingsPage() {
               type="text"
               value={formData.bindDN}
               onChange={e => handleInputChange('bindDN', e.target.value)}
-              placeholder="cn=admin,dc=example,dc=com"
+              placeholder={formData.hasBindDN ? "••••••••" : "cn=admin,dc=example,dc=com"}
               disabled={!formData.enabled}
             />
             <p className="text-xs text-muted-foreground">
