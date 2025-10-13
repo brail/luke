@@ -6,13 +6,6 @@ import { trpc } from '../../../../lib/trpc';
 import { Button } from '../../../../components/ui/button';
 import { Input } from '../../../../components/ui/input';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '../../../../components/ui/card';
-import {
   Table,
   TableBody,
   TableCell,
@@ -22,6 +15,8 @@ import {
 } from '../../../../components/ui/table';
 import { UserDialog } from '../../../../components/UserDialog';
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
+import { PageHeader } from '../../../../components/PageHeader';
+import { SectionCard } from '../../../../components/SectionCard';
 import { toast } from 'sonner';
 import React from 'react';
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
@@ -251,13 +246,36 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-6">
+      <PageHeader
+        title="Gestione Utenti"
+        description="Gestisci gli utenti del sistema"
+      />
+
       {/* Azioni e Filtri */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-xl font-semibold">Lista Utenti</h2>
-          <p className="text-muted-foreground">
-            Gestisci gli utenti del sistema
-          </p>
+      <SectionCard
+        title="Filtri e Ricerca"
+        description="Cerca e filtra gli utenti del sistema"
+      >
+        <div className="flex gap-4 items-center mb-4">
+          <div className="flex-1">
+            <Input
+              placeholder="Cerca per email o username..."
+              value={searchTerm}
+              onChange={e => handleSearch(e.target.value)}
+            />
+          </div>
+          <div>
+            <select
+              value={roleFilter}
+              onChange={e => handleRoleFilter(e.target.value)}
+              className="flex h-10 w-32 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <option value="">Tutti i ruoli</option>
+              <option value="admin">Admin</option>
+              <option value="editor">Editor</option>
+              <option value="viewer">Viewer</option>
+            </select>
+          </div>
         </div>
         <div className="flex gap-2">
           <Button onClick={handleCreateUser}>Nuovo Utente</Button>
@@ -265,207 +283,173 @@ export default function UsersPage() {
             Aggiorna
           </Button>
         </div>
-      </div>
-
-      {/* Filtri */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex gap-4 items-center">
-            <div className="flex-1">
-              <Input
-                placeholder="Cerca per email o username..."
-                value={searchTerm}
-                onChange={e => handleSearch(e.target.value)}
-              />
-            </div>
-            <div>
-              <select
-                value={roleFilter}
-                onChange={e => handleRoleFilter(e.target.value)}
-                className="flex h-10 w-32 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <option value="">Tutti i ruoli</option>
-                <option value="admin">Admin</option>
-                <option value="editor">Editor</option>
-                <option value="viewer">Viewer</option>
-              </select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      </SectionCard>
 
       {/* Tabella Utenti */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Utenti Sistema</CardTitle>
-          <CardDescription>
-            Lista completa degli utenti registrati
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {!session?.accessToken && (
-            <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-              <p>Caricamento sessione...</p>
-            </div>
-          )}
+      <SectionCard
+        title="Utenti Sistema"
+        description="Lista completa degli utenti registrati"
+      >
+        {!session?.accessToken && (
+          <div className="text-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+            <p>Caricamento sessione...</p>
+          </div>
+        )}
 
-          {isLoading && session?.accessToken && (
-            <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-              <p>Caricamento utenti...</p>
-            </div>
-          )}
+        {isLoading && session?.accessToken && (
+          <div className="text-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+            <p>Caricamento utenti...</p>
+          </div>
+        )}
 
-          {error && (
-            <div className="text-center py-8">
-              <div className="text-destructive mb-2">
-                Errore nel caricamento utenti
-              </div>
-              <p className="text-sm text-muted-foreground mb-4">
-                {error.message}
-              </p>
-              <Button variant="outline" onClick={() => refetch()}>
-                Riprova
-              </Button>
+        {error && (
+          <div className="text-center py-8">
+            <div className="text-destructive mb-2">
+              Errore nel caricamento utenti
             </div>
-          )}
+            <p className="text-sm text-muted-foreground mb-4">
+              {error.message}
+            </p>
+            <Button variant="outline" onClick={() => refetch()}>
+              Riprova
+            </Button>
+          </div>
+        )}
 
-          {users && !isLoading && session?.accessToken && (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
+        {users && !isLoading && session?.accessToken && (
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <SortableHeader column="email">Email</SortableHeader>
+                  <SortableHeader column="username">Username</SortableHeader>
+                  <SortableHeader column="provider">Provider</SortableHeader>
+                  <SortableHeader column="role">Ruolo</SortableHeader>
+                  <SortableHeader column="isActive">Stato</SortableHeader>
+                  <SortableHeader column="createdAt">Creato</SortableHeader>
+                  <TableHead>Azioni</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {users.length === 0 ? (
                   <TableRow>
-                    <SortableHeader column="email">Email</SortableHeader>
-                    <SortableHeader column="username">Username</SortableHeader>
-                    <SortableHeader column="provider">Provider</SortableHeader>
-                    <SortableHeader column="role">Ruolo</SortableHeader>
-                    <SortableHeader column="isActive">Stato</SortableHeader>
-                    <SortableHeader column="createdAt">Creato</SortableHeader>
-                    <TableHead>Azioni</TableHead>
+                    <TableCell
+                      colSpan={7}
+                      className="text-center py-8 text-muted-foreground"
+                    >
+                      Nessun utente trovato
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {users.length === 0 ? (
-                    <TableRow>
-                      <TableCell
-                        colSpan={7}
-                        className="text-center py-8 text-muted-foreground"
-                      >
-                        Nessun utente trovato
+                ) : (
+                  users.map((user: any) => (
+                    <TableRow key={user.id}>
+                      <TableCell>{user.email}</TableCell>
+                      <TableCell>{user.username}</TableCell>
+                      <TableCell>
+                        <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-1 text-xs font-medium">
+                          {user.identities?.[0]?.provider || 'LOCAL'}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="inline-flex items-center rounded-full bg-secondary px-2 py-1 text-xs font-medium">
+                          {user.role}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
+                            user.isActive
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-red-100 text-red-800'
+                          }`}
+                        >
+                          {user.isActive ? 'Attivo' : 'Disattivo'}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        {user.createdAt
+                          ? new Date(user.createdAt).toLocaleDateString('it-IT')
+                          : 'N/A'}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleEditUser(user)}
+                          >
+                            Modifica
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDeleteUser(user)}
+                            disabled={
+                              !user.isActive || user.id === session?.user?.id
+                            }
+                            title={
+                              user.id === session?.user?.id
+                                ? 'Non puoi disattivare il tuo stesso account'
+                                : undefined
+                            }
+                          >
+                            Disattiva
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => handleHardDeleteUser(user)}
+                            disabled={user.id === session?.user?.id}
+                            title={
+                              user.id === session?.user?.id
+                                ? 'Non puoi eliminare il tuo stesso account'
+                                : undefined
+                            }
+                          >
+                            Elimina
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
-                  ) : (
-                    users.map((user: any) => (
-                      <TableRow key={user.id}>
-                        <TableCell>{user.email}</TableCell>
-                        <TableCell>{user.username}</TableCell>
-                        <TableCell>
-                          <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-1 text-xs font-medium">
-                            {user.identities?.[0]?.provider || 'LOCAL'}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <span className="inline-flex items-center rounded-full bg-secondary px-2 py-1 text-xs font-medium">
-                            {user.role}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <span
-                            className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
-                              user.isActive
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-red-100 text-red-800'
-                            }`}
-                          >
-                            {user.isActive ? 'Attivo' : 'Disattivo'}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          {user.createdAt
-                            ? new Date(user.createdAt).toLocaleDateString(
-                                'it-IT'
-                              )
-                            : 'N/A'}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-1">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleEditUser(user)}
-                            >
-                              Modifica
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleDeleteUser(user)}
-                              disabled={
-                                !user.isActive || user.id === session?.user?.id
-                              }
-                              title={
-                                user.id === session?.user?.id
-                                  ? 'Non puoi disattivare il tuo stesso account'
-                                  : undefined
-                              }
-                            >
-                              Disattiva
-                            </Button>
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => handleHardDeleteUser(user)}
-                              disabled={user.id === session?.user?.id}
-                              title={
-                                user.id === session?.user?.id
-                                  ? 'Non puoi eliminare il tuo stesso account'
-                                  : undefined
-                              }
-                            >
-                              Elimina
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        )}
 
-          {/* Paginazione */}
-          {totalPages > 1 && session?.accessToken && (
-            <div className="flex justify-between items-center pt-4">
-              <div className="text-sm text-muted-foreground">
-                Pagina {currentPage} di {totalPages} ({usersData?.total || 0}{' '}
-                utenti totali)
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
-                >
-                  Precedente
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setCurrentPage(prev => Math.min(totalPages, prev + 1))
-                  }
-                  disabled={currentPage === totalPages}
-                >
-                  Successiva
-                </Button>
-              </div>
+        {/* Paginazione */}
+        {totalPages > 1 && session?.accessToken && (
+          <div className="flex justify-between items-center pt-4">
+            <div className="text-sm text-muted-foreground">
+              Pagina {currentPage} di {totalPages} ({usersData?.total || 0}{' '}
+              utenti totali)
             </div>
-          )}
-        </CardContent>
-      </Card>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+              >
+                Precedente
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setCurrentPage(prev => Math.min(totalPages, prev + 1))
+                }
+                disabled={currentPage === totalPages}
+              >
+                Successiva
+              </Button>
+            </div>
+          </div>
+        )}
+      </SectionCard>
 
       {/* User Dialog */}
       <UserDialog

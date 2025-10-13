@@ -135,6 +135,25 @@ Luke supporta autenticazione enterprise via LDAP con le seguenti funzionalità:
 - **Indicatore visivo**: Nota "Campo sincronizzato esternamente" sotto ogni campo disabilitato
 - **Colonna Provider**: La tabella utenti mostra il provider di ogni utente (LOCAL/LDAP/OIDC)
 
+## 🔐 Gestione Configurazioni Sensibili
+
+### Visualizzazione Valori Cifrati
+
+I valori cifrati non vengono mai mostrati in chiaro nella lista configurazioni per motivi di sicurezza:
+
+- **Lista configurazioni**: i valori cifrati sono mascherati con `••••••`
+- **Modifica configurazione**: per aggiornare un valore cifrato, è necessario reinserirlo completamente nel form
+- **Indicatore visivo**: la colonna "Cifrato" indica se il valore è protetto con AES-256-GCM
+
+### Configurazione LDAP
+
+Il campo `bindPassword` nella configurazione LDAP è opzionale:
+
+- **Nuovo setup**: inserire la password per creare la configurazione
+- **Aggiornamento parametri**: lasciare vuoto il campo password per mantenerla invariata
+- **Cambio password**: inserire la nuova password per aggiornarla
+- **Placeholder**: `••••••` indica che una password è già salvata e cifrata
+
 ### Protezioni Amministrative
 
 - **Auto-eliminazione**: Gli admin non possono eliminare o disabilitare il proprio account

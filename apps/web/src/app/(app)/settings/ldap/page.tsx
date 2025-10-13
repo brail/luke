@@ -10,6 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from '../../../../components/ui/card';
+import { PageHeader } from '../../../../components/PageHeader';
 import { trpc } from '../../../../lib/trpc';
 
 interface LdapConfig {
@@ -18,6 +19,7 @@ interface LdapConfig {
   bindDN: string;
   hasBindDN: boolean;
   hasBindPassword: boolean;
+  bindPassword: string;
   searchBase: string;
   searchFilter: string;
   groupSearchBase: string;
@@ -33,6 +35,7 @@ export default function LdapSettingsPage() {
     bindDN: '',
     hasBindDN: false,
     hasBindPassword: false,
+    bindPassword: '',
     searchBase: '',
     searchFilter: '',
     groupSearchBase: '',
@@ -61,6 +64,7 @@ export default function LdapSettingsPage() {
         bindDN: '', // Non mostrare il valore esistente per sicurezza
         hasBindDN: existingConfig.hasBindDN,
         hasBindPassword: existingConfig.hasBindPassword,
+        bindPassword: '', // Non mostrare il valore esistente per sicurezza
         searchBase: existingConfig.searchBase,
         searchFilter: existingConfig.searchFilter,
         groupSearchBase: existingConfig.groupSearchBase,
@@ -179,7 +183,14 @@ export default function LdapSettingsPage() {
       return;
     }
 
-    saveConfigMutation.mutate(formData);
+    // Prepara payload escludendo bindPassword se vuoto
+    const { bindPassword, ...payloadWithoutPassword } = formData;
+    const payload =
+      !bindPassword || bindPassword.trim() === ''
+        ? payloadWithoutPassword
+        : formData;
+
+    saveConfigMutation.mutate(payload);
   };
 
   const handleTestConnection = () => {
@@ -221,14 +232,11 @@ export default function LdapSettingsPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Configurazione LDAP</h1>
-        <p className="text-muted-foreground mt-2">
-          Configura l&apos;autenticazione enterprise via LDAP con mapping dei
-          ruoli
-        </p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Configurazione LDAP"
+        description="Configura l'autenticazione enterprise via LDAP con mapping dei ruoli"
+      />
 
       {message && (
         <div
@@ -306,7 +314,9 @@ export default function LdapSettingsPage() {
               type="text"
               value={formData.bindDN}
               onChange={e => handleInputChange('bindDN', e.target.value)}
-              placeholder={formData.hasBindDN ? "••••••••" : "cn=admin,dc=example,dc=com"}
+              placeholder={
+                formData.hasBindDN ? '••••••••' : 'cn=admin,dc=example,dc=com'
+              }
               disabled={!formData.enabled}
             />
             <p className="text-xs text-muted-foreground">
@@ -320,9 +330,8 @@ export default function LdapSettingsPage() {
             <Input
               id="bindPassword"
               type="password"
-              onChange={e =>
-                handleInputChange('hasBindPassword', !!e.target.value)
-              }
+              value={formData.bindPassword}
+              onChange={e => handleInputChange('bindPassword', e.target.value)}
               placeholder={
                 formData.hasBindPassword ? '••••••••' : 'Inserisci password'
               }

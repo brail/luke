@@ -51,7 +51,7 @@ const ldapConfigSchema = z.object({
   enabled: z.boolean(),
   url: z.string().min(1, 'URL LDAP è obbligatorio'),
   bindDN: z.string(),
-  bindPassword: z.string(),
+  bindPassword: z.string().optional(),
   searchBase: z.string().min(1, 'Search Base è obbligatorio'),
   searchFilter: z.string().min(1, 'Search Filter è obbligatorio'),
   groupSearchBase: z.string(),
@@ -303,11 +303,6 @@ export const integrationsRouter = router({
             { key: 'auth.ldap.url', value: input.url, encrypt: true },
             { key: 'auth.ldap.bindDN', value: input.bindDN, encrypt: true },
             {
-              key: 'auth.ldap.bindPassword',
-              value: input.bindPassword,
-              encrypt: true,
-            },
-            {
               key: 'auth.ldap.searchBase',
               value: input.searchBase,
               encrypt: true,
@@ -341,6 +336,16 @@ export const integrationsRouter = router({
               mapping.key,
               mapping.value,
               mapping.encrypt
+            );
+          }
+
+          // Gestisci bindPassword separatamente solo se presente
+          if (input.bindPassword != null && input.bindPassword !== '') {
+            await saveConfig(
+              ctx.prisma,
+              'auth.ldap.bindPassword',
+              input.bindPassword,
+              true
             );
           }
 

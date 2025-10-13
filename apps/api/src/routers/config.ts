@@ -18,7 +18,7 @@ import {
  */
 const GetConfigSchema = z.object({
   key: z.string().min(1, 'Chiave configurazione non può essere vuota'),
-  decrypt: z.boolean().optional().default(true),
+  decrypt: z.boolean().optional().default(false),
 });
 
 /**
@@ -41,7 +41,7 @@ const DeleteConfigSchema = z.object({
  * Schema per listare configurazioni
  */
 const ListConfigsSchema = z.object({
-  decrypt: z.boolean().optional().default(true),
+  decrypt: z.boolean().optional().default(false),
 });
 
 /**
