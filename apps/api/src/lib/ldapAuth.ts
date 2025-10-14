@@ -157,7 +157,17 @@ async function searchUser(
       {
         filter: searchFilter,
         scope: 'sub',
-        attributes: ['dn', 'cn', 'mail', 'uid', 'displayName'],
+        attributes: [
+          'dn',
+          'cn',
+          'mail',
+          'uid',
+          'displayName',
+          'givenName',
+          'sn',
+          'firstName',
+          'lastName',
+        ],
       },
       (err, res) => {
         if (err) {
@@ -320,6 +330,28 @@ async function createOrUpdateUser(
   // Estrai email dagli attributi LDAP
   const ldapEmail = userAttributes.mail?.[0] || `${username}@ldap.local`;
 
+  // Estrai firstName e lastName dagli attributi LDAP
+  // Prova diversi attributi comuni per firstName
+  const firstName =
+    userAttributes.givenName?.[0] ||
+    userAttributes.firstName?.[0] ||
+    userAttributes.cn?.[0]?.split(' ')[0] ||
+    '';
+
+  // Prova diversi attributi comuni per lastName
+  const lastName =
+    userAttributes.sn?.[0] ||
+    userAttributes.lastName?.[0] ||
+    userAttributes.cn?.[0]?.split(' ').slice(1).join(' ') ||
+    '';
+
+  console.log(`LDAP attributes for ${username}:`, {
+    email: ldapEmail,
+    firstName,
+    lastName,
+    availableAttributes: Object.keys(userAttributes),
+  });
+
   // Cerca utente esistente
   let user = await prisma.user.findFirst({
     where: {
@@ -328,12 +360,25 @@ async function createOrUpdateUser(
   });
 
   if (user) {
-    // Per utenti esistenti, NON aggiorniamo email e ruolo
-    // Questi campi possono essere stati modificati manualmente nell'app
-    // e devono rimanere invariati per preservare le modifiche manuali
+    // Per utenti esistenti, aggiorniamo firstName e lastName da LDAP
+    // ma NON email e ruolo per preservare modifiche manuali
     console.log(
-      `User ${username} already exists, skipping email and role sync to preserve manual modifications`
+      `User ${username} already exists, syncing firstName/lastName from LDAP`
     );
+
+    // Aggiorna firstName e lastName se sono diversi
+    if (user.firstName !== firstName || user.lastName !== lastName) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          firstName,
+          lastName,
+        },
+      });
+      console.log(
+        `Updated firstName/lastName for user ${username}: ${firstName} ${lastName}`
+      );
+    }
 
     // Verifica che abbia un'identità LDAP
     const ldapIdentity = await prisma.identity.findFirst({
@@ -363,6 +408,8 @@ async function createOrUpdateUser(
         data: {
           email: ldapEmail, // Email reale da LDAP
           username,
+          firstName, // Sincronizza firstName da LDAP
+          lastName, // Sincronizza lastName da LDAP
           role,
           isActive: true,
         },
@@ -377,7 +424,9 @@ async function createOrUpdateUser(
         },
       });
 
-      console.log(`Created new LDAP user: ${username} with role ${role}`);
+      console.log(
+        `Created new LDAP user: ${username} with role ${role}, firstName: ${firstName}, lastName: ${lastName}`
+      );
       return newUser;
     });
   }

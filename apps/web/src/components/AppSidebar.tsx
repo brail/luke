@@ -50,9 +50,11 @@ export default function AppSidebar() {
             <Logo size="md" className="text-primary" />
             <div>
               <h2 className="text-lg font-semibold text-foreground">Luke</h2>
-              <p className="text-sm text-muted-foreground">
-                Console Amministrativa
-              </p>
+              {/* 
+                <p className="text-sm text-muted-foreground">
+                  Console Amministrativa
+                </p>
+              */}
             </div>
           </div>
         </div>

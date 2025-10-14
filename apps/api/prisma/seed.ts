@@ -29,6 +29,19 @@ async function main() {
 
     if (existingAdmin) {
       console.log('⚠️  Utente admin già esistente, skip creazione');
+      console.log(
+        `🔍 Admin user details: ID=${existingAdmin.id}, Email=${existingAdmin.email}, Username=${existingAdmin.username}, Active=${existingAdmin.isActive}`
+      );
+
+      // Attiva l'utente admin se non è attivo
+      if (!existingAdmin.isActive) {
+        console.log('🔧 Attivazione utente admin...');
+        await prisma.user.update({
+          where: { id: existingAdmin.id },
+          data: { isActive: true },
+        });
+        console.log('✅ Utente admin attivato');
+      }
     } else {
       // Hash della password admin
       const adminPassword = 'changeme';

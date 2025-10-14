@@ -19,7 +19,21 @@ import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
 import { toast } from 'sonner';
 import React from 'react';
-import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
+import {
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
+  MoreHorizontal,
+  Edit,
+  UserX,
+  Trash2,
+} from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../../../../components/ui/dropdown-menu';
 
 /**
  * Pagina gestione utenti con CRUD completo
@@ -37,7 +51,7 @@ export default function UsersPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('');
   const [syncedFields, setSyncedFields] = useState<
-    ('email' | 'username' | 'name' | 'role' | 'password')[]
+    ('email' | 'username' | 'firstName' | 'lastName' | 'role' | 'password')[]
   >([]);
 
   // Stato per modal di conferma
@@ -50,7 +64,14 @@ export default function UsersPage() {
 
   // Stato per ordinamento
   const [sortBy, setSortBy] = useState<
-    'email' | 'username' | 'role' | 'isActive' | 'createdAt' | 'provider'
+    | 'email'
+    | 'username'
+    | 'firstName'
+    | 'lastName'
+    | 'role'
+    | 'isActive'
+    | 'createdAt'
+    | 'provider'
   >('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
@@ -130,11 +151,18 @@ export default function UsersPage() {
     setDialogMode('edit');
     setSelectedUser(user);
     // Determina campi sincronizzati in base al provider
-    // Per utenti LDAP: username e password non sono editabili
-    // Email e ruolo rimangono editabili anche per utenti LDAP
-    const synced: ('email' | 'username' | 'name' | 'role' | 'password')[] =
+    // Per provider esterni (LDAP, OIDC): blocca solo firstName, lastName e password
+    // email, username e ruolo sono sincronizzati solo alla creazione, poi modificabili
+    const synced: (
+      | 'email'
+      | 'username'
+      | 'firstName'
+      | 'lastName'
+      | 'role'
+      | 'password'
+    )[] =
       user?.identities?.[0]?.provider !== 'LOCAL'
-        ? ['username', 'name', 'password']
+        ? ['firstName', 'lastName', 'password']
         : [];
     setSyncedFields(synced);
     setDialogOpen(true);
@@ -168,6 +196,8 @@ export default function UsersPage() {
     column:
       | 'email'
       | 'username'
+      | 'firstName'
+      | 'lastName'
       | 'role'
       | 'isActive'
       | 'createdAt'
@@ -193,6 +223,8 @@ export default function UsersPage() {
     column:
       | 'email'
       | 'username'
+      | 'firstName'
+      | 'lastName'
       | 'role'
       | 'isActive'
       | 'createdAt'
@@ -325,6 +357,8 @@ export default function UsersPage() {
                 <TableRow>
                   <SortableHeader column="email">Email</SortableHeader>
                   <SortableHeader column="username">Username</SortableHeader>
+                  <SortableHeader column="firstName">Nome</SortableHeader>
+                  <SortableHeader column="lastName">Cognome</SortableHeader>
                   <SortableHeader column="provider">Provider</SortableHeader>
                   <SortableHeader column="role">Ruolo</SortableHeader>
                   <SortableHeader column="isActive">Stato</SortableHeader>
@@ -336,7 +370,7 @@ export default function UsersPage() {
                 {users.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={9}
                       className="text-center py-8 text-muted-foreground"
                     >
                       Nessun utente trovato
@@ -347,6 +381,8 @@ export default function UsersPage() {
                     <TableRow key={user.id}>
                       <TableCell>{user.email}</TableCell>
                       <TableCell>{user.username}</TableCell>
+                      <TableCell>{user.firstName || '-'}</TableCell>
+                      <TableCell>{user.lastName || '-'}</TableCell>
                       <TableCell>
                         <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-1 text-xs font-medium">
                           {user.identities?.[0]?.provider || 'LOCAL'}
@@ -374,43 +410,43 @@ export default function UsersPage() {
                           : 'N/A'}
                       </TableCell>
                       <TableCell>
-                        <div className="flex gap-1">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleEditUser(user)}
-                          >
-                            Modifica
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleDeleteUser(user)}
-                            disabled={
-                              !user.isActive || user.id === session?.user?.id
-                            }
-                            title={
-                              user.id === session?.user?.id
-                                ? 'Non puoi disattivare il tuo stesso account'
-                                : undefined
-                            }
-                          >
-                            Disattiva
-                          </Button>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => handleHardDeleteUser(user)}
-                            disabled={user.id === session?.user?.id}
-                            title={
-                              user.id === session?.user?.id
-                                ? 'Non puoi eliminare il tuo stesso account'
-                                : undefined
-                            }
-                          >
-                            Elimina
-                          </Button>
-                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                            >
+                              <span className="sr-only">Apri menu</span>
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => handleEditUser(user)}
+                            >
+                              <Edit className="mr-2 h-4 w-4" />
+                              Modifica
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleDeleteUser(user)}
+                              disabled={
+                                !user.isActive || user.id === session?.user?.id
+                              }
+                            >
+                              <UserX className="mr-2 h-4 w-4" />
+                              Disattiva
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleHardDeleteUser(user)}
+                              disabled={user.id === session?.user?.id}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Elimina
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
                     </TableRow>
                   ))

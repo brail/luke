@@ -129,27 +129,57 @@ export const authRouter = router({
           // Se fallisce, prova LDAP
           if (!authenticatedUser) {
             console.log(`Local auth failed for ${username}, trying LDAP...`);
+            try {
+              authenticatedUser = await authenticateViaLdap(
+                ctx.prisma,
+                username,
+                password
+              );
+              authMethod = 'ldap';
+            } catch (ldapError: unknown) {
+              const errorMessage =
+                ldapError instanceof Error
+                  ? ldapError.message
+                  : 'Unknown LDAP error';
+              console.log(
+                `LDAP connection error for ${username}:`,
+                errorMessage
+              );
+              // Se LDAP non è raggiungibile, mantieni null (autenticazione fallita)
+            }
+          }
+          break;
+
+        case 'ldap-first':
+          // Prova prima LDAP
+          try {
             authenticatedUser = await authenticateViaLdap(
               ctx.prisma,
               username,
               password
             );
             authMethod = 'ldap';
-          }
-          break;
 
-        case 'ldap-first':
-          // Prova prima LDAP
-          authenticatedUser = await authenticateViaLdap(
-            ctx.prisma,
-            username,
-            password
-          );
-          authMethod = 'ldap';
-
-          // Se fallisce, prova autenticazione locale
-          if (!authenticatedUser) {
-            console.log(`LDAP auth failed for ${username}, trying local...`);
+            // Se fallisce, prova autenticazione locale
+            if (!authenticatedUser) {
+              console.log(`LDAP auth failed for ${username}, trying local...`);
+              authenticatedUser = await authenticateLocal(
+                ctx.prisma,
+                username,
+                password
+              );
+              authMethod = 'local';
+            }
+          } catch (ldapError: unknown) {
+            const errorMessage =
+              ldapError instanceof Error
+                ? ldapError.message
+                : 'Unknown LDAP error';
+            console.log(
+              `LDAP connection error for ${username}, falling back to local:`,
+              errorMessage
+            );
+            // Se LDAP non è raggiungibile, fallback a locale
             authenticatedUser = await authenticateLocal(
               ctx.prisma,
               username,

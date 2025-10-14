@@ -7,6 +7,7 @@ import { initTRPC, TRPCError } from '@trpc/server';
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { authenticateRequest, type UserSession } from './auth';
+import { randomUUID } from 'crypto';
 
 /**
  * Context per tRPC
@@ -17,6 +18,7 @@ export interface Context {
   session: UserSession | null;
   req: FastifyRequest;
   res: FastifyReply;
+  traceId: string;
 }
 
 /**
@@ -24,23 +26,27 @@ export interface Context {
  * @param context - Oggetto contenente le dipendenze
  * @returns Context per tRPC
  */
-export async function createContext({ 
-  prisma, 
-  req, 
-  res 
-}: { 
-  prisma: PrismaClient; 
-  req: FastifyRequest; 
-  res: FastifyReply; 
+export async function createContext({
+  prisma,
+  req,
+  res,
+}: {
+  prisma: PrismaClient;
+  req: FastifyRequest;
+  res: FastifyReply;
 }): Promise<Context> {
   // Autentica la richiesta e ottieni la sessione
   const session = await authenticateRequest(req, res);
+
+  // Estrai o genera traceId
+  const traceId = (req.headers['x-luke-trace-id'] as string) || randomUUID();
 
   return {
     prisma,
     session,
     req,
     res,
+    traceId,
   };
 }
 
@@ -65,18 +71,31 @@ export const publicProcedure = t.procedure;
  * Middleware per logging delle procedure
  * Logga le chiamate tRPC per debugging
  */
-export const loggingMiddleware = t.middleware(async ({ next, path, type }) => {
-  const start = Date.now();
+export const loggingMiddleware = t.middleware(
+  async ({ next, path, type, ctx }) => {
+    const start = Date.now();
 
-  console.log(`🔍 tRPC ${type}: ${path}`);
+    ctx.req.log.info({
+      traceId: ctx.traceId,
+      type,
+      path,
+      message: `tRPC ${type}: ${path}`,
+    });
 
-  const result = await next();
+    const result = await next();
 
-  const duration = Date.now() - start;
-  console.log(`✅ tRPC ${type}: ${path} (${duration}ms)`);
+    const duration = Date.now() - start;
+    ctx.req.log.info({
+      traceId: ctx.traceId,
+      type,
+      path,
+      duration,
+      message: `tRPC ${type}: ${path} completed (${duration}ms)`,
+    });
 
-  return result;
-});
+    return result;
+  }
+);
 
 /**
  * Middleware per autenticazione

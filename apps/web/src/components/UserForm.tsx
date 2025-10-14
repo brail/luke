@@ -15,6 +15,8 @@ const CreateUserSchema = z
   .object({
     email: z.string().email('Email non valida'),
     username: z.string().min(3, 'Username deve essere di almeno 3 caratteri'),
+    firstName: z.string().optional().or(z.literal('')),
+    lastName: z.string().optional().or(z.literal('')),
     password: z.string().min(8, 'Password deve essere di almeno 8 caratteri'),
     confirmPassword: z.string().min(8, 'Conferma password richiesta'),
     role: z.enum(['admin', 'editor', 'viewer']),
@@ -29,6 +31,8 @@ const EditUserSchema = z
   .object({
     email: z.string().email('Email non valida'),
     username: z.string().min(3, 'Username deve essere di almeno 3 caratteri'),
+    firstName: z.string().optional().or(z.literal('')),
+    lastName: z.string().optional().or(z.literal('')),
     password: z
       .string()
       .min(8, 'Password deve essere di almeno 8 caratteri')
@@ -59,11 +63,18 @@ type UserFormData = CreateUserData | EditUserData;
 
 interface UserFormProps {
   mode: 'create' | 'edit';
-  initialData?: Partial<UserFormData>;
+  initialData?: Partial<UserFormData> & { provider?: string };
   onSubmit: (data: UserFormData) => void;
   onCancel: () => void;
   isLoading?: boolean;
-  syncedFields?: ('email' | 'username' | 'name' | 'role' | 'password')[];
+  syncedFields?: (
+    | 'email'
+    | 'username'
+    | 'firstName'
+    | 'lastName'
+    | 'role'
+    | 'password'
+  )[];
   isSelfEdit?: boolean;
 }
 
@@ -81,9 +92,13 @@ export function UserForm({
   syncedFields = [],
   isSelfEdit = false,
 }: UserFormProps) {
+  // Determina se l'utente è LDAP
+  const isLdapUser = initialData?.provider === 'LDAP';
   const [formData, setFormData] = useState<UserFormData>({
     email: initialData?.email || '',
     username: initialData?.username || '',
+    firstName: initialData?.firstName || '',
+    lastName: initialData?.lastName || '',
     password: '',
     confirmPassword: '',
     role: initialData?.role || 'viewer',
@@ -224,84 +239,178 @@ export function UserForm({
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Email */}
-          <div className="space-y-2">
-            <Label htmlFor="email">Email *</Label>
-            <Input
-              id="email"
-              type="email"
-              value={formData.email}
-              onChange={e => handleInputChange('email', e.target.value)}
-              placeholder="utente@esempio.com"
-              className={errors.email ? 'border-destructive' : ''}
-              disabled={syncedFields?.includes('email')}
-            />
-            {errors.email && (
-              <p className="text-sm text-destructive">{errors.email}</p>
-            )}
-            {syncedFields?.includes('email') && (
-              <p className="text-xs text-muted-foreground mt-1">
-                Campo sincronizzato esternamente
-              </p>
-            )}
+          {/* Prima riga: Email e Username */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Email */}
+            <div className="space-y-2">
+              <Label htmlFor="email">Email *</Label>
+              <Input
+                id="email"
+                type="email"
+                value={formData.email}
+                onChange={e => handleInputChange('email', e.target.value)}
+                placeholder="utente@esempio.com"
+                className={errors.email ? 'border-destructive' : ''}
+                disabled={syncedFields?.includes('email')}
+              />
+              {errors.email && (
+                <p className="text-sm text-destructive">{errors.email}</p>
+              )}
+              {syncedFields?.includes('email') && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Campo sincronizzato esternamente
+                </p>
+              )}
+            </div>
+
+            {/* Username */}
+            <div className="space-y-2">
+              <Label htmlFor="username">Username *</Label>
+              <Input
+                id="username"
+                type="text"
+                value={formData.username}
+                onChange={e => handleInputChange('username', e.target.value)}
+                placeholder="username"
+                className={errors.username ? 'border-destructive' : ''}
+                disabled={
+                  syncedFields?.includes('username') ||
+                  (mode === 'edit' && isLdapUser)
+                }
+              />
+              {errors.username && (
+                <p className="text-sm text-destructive">{errors.username}</p>
+              )}
+              {syncedFields?.includes('username') && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Campo sincronizzato esternamente
+                </p>
+              )}
+              {mode === 'edit' &&
+                isLdapUser &&
+                !syncedFields?.includes('username') && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Username non modificabile per utenti LDAP
+                  </p>
+                )}
+            </div>
           </div>
 
-          {/* Username */}
-          <div className="space-y-2">
-            <Label htmlFor="username">Username *</Label>
-            <Input
-              id="username"
-              type="text"
-              value={formData.username}
-              onChange={e => handleInputChange('username', e.target.value)}
-              placeholder="username"
-              className={errors.username ? 'border-destructive' : ''}
-              disabled={syncedFields?.includes('username')}
-            />
-            {errors.username && (
-              <p className="text-sm text-destructive">{errors.username}</p>
-            )}
-            {syncedFields?.includes('username') && (
-              <p className="text-xs text-muted-foreground mt-1">
-                Campo sincronizzato esternamente
-              </p>
-            )}
+          {/* Seconda riga: Nome e Cognome */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Nome */}
+            <div className="space-y-2">
+              <Label htmlFor="firstName">Nome</Label>
+              <Input
+                id="firstName"
+                type="text"
+                value={formData.firstName}
+                onChange={e => handleInputChange('firstName', e.target.value)}
+                placeholder="Nome"
+                className={errors.firstName ? 'border-destructive' : ''}
+                disabled={syncedFields?.includes('firstName')}
+              />
+              {errors.firstName && (
+                <p className="text-sm text-destructive">{errors.firstName}</p>
+              )}
+              {syncedFields?.includes('firstName') && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Campo sincronizzato esternamente
+                </p>
+              )}
+            </div>
+
+            {/* Cognome */}
+            <div className="space-y-2">
+              <Label htmlFor="lastName">Cognome</Label>
+              <Input
+                id="lastName"
+                type="text"
+                value={formData.lastName}
+                onChange={e => handleInputChange('lastName', e.target.value)}
+                placeholder="Cognome"
+                className={errors.lastName ? 'border-destructive' : ''}
+                disabled={syncedFields?.includes('lastName')}
+              />
+              {errors.lastName && (
+                <p className="text-sm text-destructive">{errors.lastName}</p>
+              )}
+              {syncedFields?.includes('lastName') && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Campo sincronizzato esternamente
+                </p>
+              )}
+            </div>
           </div>
 
-          {/* Password */}
-          <div className="space-y-2">
-            <Label htmlFor="password">
-              Password {mode === 'create' ? '*' : '(opzionale)'}
-            </Label>
-            <Input
-              id="password"
-              type="password"
-              value={formData.password}
-              onChange={e => handleInputChange('password', e.target.value)}
-              placeholder={
-                mode === 'create'
-                  ? 'Inserisci una password sicura'
-                  : 'Lascia vuoto per non modificare la password'
-              }
-              className={errors.password ? 'border-destructive' : ''}
-              disabled={syncedFields?.includes('password')}
-            />
-            {errors.password && (
-              <p className="text-sm text-destructive">{errors.password}</p>
-            )}
-            {syncedFields?.includes('password') && (
-              <p className="text-xs text-muted-foreground mt-1">
-                Campo sincronizzato esternamente
-              </p>
-            )}
-            {mode === 'edit' && !syncedFields?.includes('password') && (
-              <p className="text-xs text-muted-foreground">
-                Lascia vuoto se non vuoi modificare la password attuale
-              </p>
-            )}
+          {/* Terza riga: Ruolo e Password */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Ruolo */}
+            <div className="space-y-2">
+              <Label htmlFor="role">Ruolo *</Label>
+              <select
+                id="role"
+                value={formData.role}
+                onChange={e => handleInputChange('role', e.target.value)}
+                disabled={syncedFields?.includes('role') || isSelfEdit}
+                className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${
+                  errors.role ? 'border-destructive' : ''
+                }`}
+              >
+                <option value="viewer">Viewer</option>
+                <option value="editor">Editor</option>
+                <option value="admin">Admin</option>
+              </select>
+              {errors.role && (
+                <p className="text-sm text-destructive">{errors.role}</p>
+              )}
+              {syncedFields?.includes('role') && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Campo sincronizzato esternamente
+                </p>
+              )}
+              {isSelfEdit && !syncedFields?.includes('role') && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Non puoi modificare il tuo stesso ruolo
+                </p>
+              )}
+            </div>
+
+            {/* Password */}
+            <div className="space-y-2">
+              <Label htmlFor="password">
+                Password {mode === 'create' ? '*' : '(opzionale)'}
+              </Label>
+              <Input
+                id="password"
+                type="password"
+                value={formData.password}
+                onChange={e => handleInputChange('password', e.target.value)}
+                placeholder={
+                  mode === 'create'
+                    ? 'Inserisci una password sicura'
+                    : 'Lascia vuoto per non modificare la password'
+                }
+                className={errors.password ? 'border-destructive' : ''}
+                disabled={syncedFields?.includes('password')}
+              />
+              {errors.password && (
+                <p className="text-sm text-destructive">{errors.password}</p>
+              )}
+              {syncedFields?.includes('password') && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Campo sincronizzato esternamente
+                </p>
+              )}
+              {mode === 'edit' && !syncedFields?.includes('password') && (
+                <p className="text-xs text-muted-foreground">
+                  Lascia vuoto se non vuoi modificare la password attuale
+                </p>
+              )}
+            </div>
           </div>
 
-          {/* Conferma Password */}
+          {/* Conferma Password - Solo se necessario */}
           {(mode === 'create' ||
             (mode === 'edit' &&
               formData.password &&
@@ -333,30 +442,6 @@ export function UserForm({
                 )}
               </div>
             )}
-
-          {/* Ruolo */}
-          <div className="space-y-2">
-            <Label htmlFor="role">Ruolo *</Label>
-            <select
-              id="role"
-              value={formData.role}
-              onChange={e => handleInputChange('role', e.target.value)}
-              disabled={isSelfEdit}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <option value="viewer">Viewer</option>
-              <option value="editor">Editor</option>
-              <option value="admin">Admin</option>
-            </select>
-            {isSelfEdit && (
-              <p className="text-xs text-muted-foreground">
-                Non puoi modificare il tuo stesso ruolo
-              </p>
-            )}
-            {errors.role && (
-              <p className="text-sm text-destructive">{errors.role}</p>
-            )}
-          </div>
 
           {/* Attivo */}
           <div className="flex items-center space-x-2">

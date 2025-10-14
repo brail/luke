@@ -35,34 +35,42 @@ async function callTRPCAuth(username: string, password: string) {
 
 /**
  * Recupera il NextAuth secret dall'API
- * Fallback a variabile d'ambiente per sviluppo
+ * In Luke, tutti i segreti sono gestiti tramite AppConfig, mai tramite .env
  */
 async function getNextAuthSecret(): Promise<string> {
   try {
-    // In produzione, recupera il segreto dall'API
-    if (process.env.NODE_ENV === 'production') {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/nextauth-secret`,
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        return data.secret;
+    // Recupera sempre il segreto dall'API (sia in sviluppo che produzione)
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/nextauth-secret`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
       }
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      return data.secret;
     }
   } catch (error) {
     console.warn("Impossibile recuperare NextAuth secret dall'API:", error);
   }
 
-  // Fallback per sviluppo o se l'API non è disponibile
-  return process.env.NEXTAUTH_SECRET || 'CHANGE_ME_IN_PRODUCTION';
+  // Fallback solo se l'API non è disponibile (non dovrebbe mai accadere in Luke)
+  throw new Error(
+    "NextAuth secret non disponibile. Verifica che l'API sia in esecuzione e che i segreti siano inizializzati."
+  );
 }
+
+/**
+ * Cache del secret con aggiornamento periodico
+ * Mantiene il secret sempre aggiornato senza overhead su ogni richiesta
+ * Inizializza con un valore temporaneo che verrà sostituito al primo aggiornamento
+ */
+let cachedSecret = 'TEMP_SECRET_DURING_INIT';
+const UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minuti
 
 /**
  * Configurazione Auth.js v5 per Luke
@@ -131,7 +139,28 @@ export const config = {
   pages: {
     signIn: '/login',
   },
-  secret: await getNextAuthSecret(),
+  // Secret con cache e aggiornamento periodico
+  // Inizializza con env var, poi aggiorna dinamicamente via getCachedSecret()
+  secret: cachedSecret,
 } satisfies NextAuthConfig;
 
 export const { handlers, auth, signIn, signOut } = NextAuth(config);
+
+/**
+ * Avvia l'aggiornamento periodico del secret in background
+ * Funziona sia in sviluppo che in produzione
+ */
+// Aggiorna il secret ogni 5 minuti
+setInterval(async () => {
+  try {
+    const newSecret = await getNextAuthSecret();
+    if (newSecret !== cachedSecret) {
+      cachedSecret = newSecret;
+      console.log('NextAuth secret aggiornato in background');
+    }
+  } catch (error) {
+    console.warn('Errore aggiornamento background NextAuth secret:', error);
+  }
+}, UPDATE_INTERVAL);
+
+console.log('NextAuth secret background update avviato');

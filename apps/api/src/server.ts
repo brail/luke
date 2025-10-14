@@ -149,13 +149,8 @@ async function registerHealthRoute() {
     };
   });
 
-  // Route per NextAuth secret (solo in produzione)
+  // Route per NextAuth secret (disponibile sia in sviluppo che produzione)
   fastify.get('/api/nextauth-secret', async (request, reply) => {
-    if (process.env.NODE_ENV !== 'production') {
-      reply.status(404).send({ error: 'Not found' });
-      return;
-    }
-
     try {
       const secret = getNextAuthSecret();
       return { secret };

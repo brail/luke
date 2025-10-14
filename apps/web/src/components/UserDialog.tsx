@@ -14,6 +14,8 @@ interface User {
   id: string;
   email: string;
   username: string;
+  firstName?: string;
+  lastName?: string;
   role: 'admin' | 'editor' | 'viewer';
   isActive: boolean;
   createdAt: Date;
@@ -32,13 +34,22 @@ interface UserDialogProps {
   onSubmit: (userData: {
     email: string;
     username: string;
+    firstName?: string;
+    lastName?: string;
     password?: string;
     confirmPassword?: string;
     role: 'admin' | 'editor' | 'viewer';
     isActive: boolean;
   }) => void;
   isLoading?: boolean;
-  syncedFields?: ('email' | 'username' | 'name' | 'role' | 'password')[];
+  syncedFields?: (
+    | 'email'
+    | 'username'
+    | 'firstName'
+    | 'lastName'
+    | 'role'
+    | 'password'
+  )[];
   isSelfEdit?: boolean;
 }
 
@@ -62,6 +73,8 @@ export function UserDialog({
   const handleSubmit = (userData: {
     email: string;
     username: string;
+    firstName?: string;
+    lastName?: string;
     password?: string;
     confirmPassword?: string;
     role: 'admin' | 'editor' | 'viewer';
@@ -76,7 +89,7 @@ export function UserDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {mode === 'create' ? 'Nuovo Utente' : 'Modifica Utente'}
@@ -90,7 +103,10 @@ export function UserDialog({
 
         <UserForm
           mode={mode}
-          initialData={user}
+          initialData={{
+            ...user,
+            provider: user?.identities?.[0]?.provider,
+          }}
           onSubmit={handleSubmit}
           onCancel={handleCancel}
           isLoading={isLoading}

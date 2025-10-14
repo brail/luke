@@ -11,32 +11,44 @@ import {
   protectedProcedure,
   adminProcedure,
 } from '../lib/trpc';
-import { UserSchema, Role } from '@luke/core';
+import {
+  UserSchema,
+  CreateUserInputSchema,
+  UpdateUserInputSchema,
+  type LockedFields,
+} from '@luke/core';
 import { TRPCError } from '@trpc/server';
+import {
+  logUserCreate,
+  logUserUpdate,
+  logUserDisable,
+  logUserHardDelete,
+} from '../lib/auditLog';
 
 /**
- * Schema per creazione utente
+ * Helper per determinare i campi bloccati in base al provider
  */
-const CreateUserSchema = z.object({
-  email: z.string().email('Email non valida'),
-  username: z.string().min(3, 'Username deve essere di almeno 3 caratteri'),
-  password: z.string().min(8, 'Password deve essere di almeno 8 caratteri'),
-  role: z.enum(['admin', 'editor', 'viewer'] as const),
-});
+function getLockedFields(provider: string): LockedFields[] {
+  if (provider === 'LOCAL') {
+    return [];
+  }
+  // Per provider esterni (LDAP, OIDC), blocca i campi sincronizzati
+  if (provider === 'LDAP') {
+    // Per LDAP: username non modificabile, firstName/lastName sincronizzati, password gestita da LDAP
+    return ['username', 'firstName', 'lastName', 'password'];
+  }
+  // Per altri provider esterni (OIDC), blocca solo i campi sempre sincronizzati
+  return ['firstName', 'lastName', 'password'];
+}
 
 /**
- * Schema per aggiornamento utente
+ * Verifica se un campo è bloccato per l'utente
  */
-const UpdateUserSchema = z.object({
-  id: z.string().uuid('ID utente non valido'),
-  email: z.string().email('Email non valida').optional(),
-  username: z
-    .string()
-    .min(3, 'Username deve essere di almeno 3 caratteri')
-    .optional(),
-  role: z.enum(['admin', 'editor', 'viewer'] as const).optional(),
-  isActive: z.boolean().optional(),
-});
+function isFieldLocked(user: any, field: string): boolean {
+  const provider = user?.identities?.[0]?.provider || 'LOCAL';
+  const lockedFields = getLockedFields(provider);
+  return lockedFields.includes(field as LockedFields);
+}
 
 /**
  * Schema per ID utente
@@ -65,6 +77,8 @@ export const usersRouter = router({
             .enum([
               'email',
               'username',
+              'firstName',
+              'lastName',
               'role',
               'isActive',
               'createdAt',
@@ -91,6 +105,8 @@ export const usersRouter = router({
           OR: [
             { email: { contains: search } },
             { username: { contains: search } },
+            { firstName: { contains: search } },
+            { lastName: { contains: search } },
           ],
         }),
         ...(role && { role }),
@@ -198,7 +214,7 @@ export const usersRouter = router({
    * Richiede ruolo admin
    */
   create: adminProcedure
-    .input(CreateUserSchema)
+    .input(CreateUserInputSchema)
     .mutation(async ({ input, ctx }) => {
       // Verifica che email e username non esistano già
       const existingUser = await ctx.prisma.user.findFirst({
@@ -232,6 +248,8 @@ export const usersRouter = router({
           data: {
             email: input.email,
             username: input.username,
+            firstName: input.firstName || '',
+            lastName: input.lastName || '',
             role: input.role,
             isActive: true,
           },
@@ -257,10 +275,21 @@ export const usersRouter = router({
         return user;
       });
 
+      // Log audit per creazione utente
+      await logUserCreate(ctx, result.id, {
+        email: result.email,
+        username: result.username,
+        firstName: result.firstName,
+        lastName: result.lastName,
+        role: result.role,
+      });
+
       return {
         id: result.id,
         email: result.email,
         username: result.username,
+        firstName: result.firstName,
+        lastName: result.lastName,
         role: result.role,
         isActive: result.isActive,
         createdAt: result.createdAt,
@@ -273,19 +302,37 @@ export const usersRouter = router({
    * Richiede ruolo admin
    */
   update: adminProcedure
-    .input(UpdateUserSchema)
+    .input(UpdateUserInputSchema)
     .mutation(async ({ input, ctx }) => {
       const { id, ...updateData } = input;
 
-      // Verifica che l'utente esista
+      // Verifica che l'utente esista con identities
       const existingUser = await ctx.prisma.user.findUnique({
         where: { id },
+        include: {
+          identities: true,
+        },
       });
 
       if (!existingUser) {
         throw new TRPCError({
           code: 'NOT_FOUND',
           message: 'Utente non trovato',
+        });
+      }
+
+      // Verifica campi bloccati per provider esterni
+      const lockedFields = getLockedFields(
+        existingUser.identities[0]?.provider || 'LOCAL'
+      );
+      const attemptedLockedFields = Object.keys(updateData).filter(field =>
+        lockedFields.includes(field as LockedFields)
+      );
+
+      if (attemptedLockedFields.length > 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Campo ${attemptedLockedFields.join(', ')} sincronizzato esternamente e non modificabile`,
         });
       }
 
@@ -372,10 +419,15 @@ export const usersRouter = router({
         },
       });
 
+      // Log audit per aggiornamento utente
+      await logUserUpdate(ctx, id, existingUser, updatedUser);
+
       return {
         id: updatedUser.id,
         email: updatedUser.email,
         username: updatedUser.username,
+        firstName: updatedUser.firstName,
+        lastName: updatedUser.lastName,
         role: updatedUser.role,
         isActive: updatedUser.isActive,
         createdAt: updatedUser.createdAt,
@@ -435,10 +487,15 @@ export const usersRouter = router({
         },
       });
 
+      // Log audit per disattivazione utente
+      await logUserDisable(ctx, input.id);
+
       return {
         id: deletedUser.id,
         email: deletedUser.email,
         username: deletedUser.username,
+        firstName: deletedUser.firstName,
+        lastName: deletedUser.lastName,
         role: deletedUser.role,
         isActive: deletedUser.isActive,
         createdAt: deletedUser.createdAt,
@@ -490,6 +547,9 @@ export const usersRouter = router({
           });
         }
       }
+
+      // Log audit prima dell'eliminazione
+      await logUserHardDelete(ctx, input.id);
 
       // Hard delete: elimina utente e tutte le relazioni (cascade)
       await ctx.prisma.user.delete({
