@@ -169,6 +169,11 @@ export default function UsersPage() {
   };
 
   const handleDeleteUser = (user: any) => {
+    // Debug: verifica i valori
+    console.log('handleDeleteUser - user.id:', user.id);
+    console.log('handleDeleteUser - session.user.id:', session?.user?.id);
+    console.log('handleDeleteUser - isSelf:', user.id === session?.user?.id);
+
     setConfirmAction({
       type: 'disable',
       user,
@@ -429,7 +434,16 @@ export default function UsersPage() {
                               Modifica
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              onClick={() => handleDeleteUser(user)}
+                              onClick={() => {
+                                // Doppia protezione: controlla anche qui prima di procedere
+                                if (user.id === session?.user?.id) {
+                                  toast.error(
+                                    'Non puoi disattivare il tuo stesso account'
+                                  );
+                                  return;
+                                }
+                                handleDeleteUser(user);
+                              }}
                               disabled={
                                 !user.isActive || user.id === session?.user?.id
                               }
@@ -438,7 +452,16 @@ export default function UsersPage() {
                               Disattiva
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              onClick={() => handleHardDeleteUser(user)}
+                              onClick={() => {
+                                // Doppia protezione: controlla anche qui prima di procedere
+                                if (user.id === session?.user?.id) {
+                                  toast.error(
+                                    'Non puoi eliminare il tuo stesso account'
+                                  );
+                                  return;
+                                }
+                                handleHardDeleteUser(user);
+                              }}
                               disabled={user.id === session?.user?.id}
                               className="text-destructive focus:text-destructive"
                             >

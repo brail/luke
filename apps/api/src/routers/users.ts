@@ -10,6 +10,7 @@ import {
   publicProcedure,
   protectedProcedure,
   adminProcedure,
+  adminOrEditorProcedure,
 } from '../lib/trpc';
 import {
   UserSchema,
@@ -63,9 +64,9 @@ const UserIdSchema = z.object({
 export const usersRouter = router({
   /**
    * Lista tutti gli utenti con paginazione e filtri
-   * Richiede autenticazione
+   * Richiede ruolo admin o editor
    */
-  list: protectedProcedure
+  list: adminOrEditorProcedure
     .input(
       z
         .object({
@@ -120,10 +121,22 @@ export const usersRouter = router({
           where,
           skip,
           take: limit,
-          include: {
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+            isActive: true,
+            createdAt: true,
+            updatedAt: true,
             identities: {
-              include: {
-                localCredential: true,
+              select: {
+                id: true,
+                provider: true,
+                providerId: true,
+                // NO localCredential, NO metadata
               },
             },
           },
@@ -148,21 +161,7 @@ export const usersRouter = router({
       }
 
       return {
-        users: users.map(user => ({
-          ...user,
-          // Nascondi password hash dalla risposta
-          identities: user.identities.map(identity => ({
-            ...identity,
-            localCredential: identity.localCredential
-              ? {
-                  id: identity.localCredential.id,
-                  createdAt: identity.localCredential.createdAt,
-                  updatedAt: identity.localCredential.updatedAt,
-                  // Non esporre passwordHash
-                }
-              : null,
-          })),
-        })),
+        users,
         total,
         page,
         limit,
@@ -172,17 +171,39 @@ export const usersRouter = router({
 
   /**
    * Ottiene un utente per ID
-   * Richiede autenticazione
+   * Richiede autenticazione - solo self-profile o admin
    */
   getById: protectedProcedure
     .input(UserIdSchema)
     .query(async ({ input, ctx }) => {
+      // RBAC: solo self-profile o admin
+      if (
+        input.id !== ctx.session.user.id &&
+        ctx.session.user.role !== 'admin'
+      ) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Puoi visualizzare solo il tuo profilo',
+        });
+      }
+
       const user = await ctx.prisma.user.findUnique({
         where: { id: input.id },
-        include: {
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          firstName: true,
+          lastName: true,
+          role: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
           identities: {
-            include: {
-              localCredential: true,
+            select: {
+              id: true,
+              provider: true,
+              providerId: true,
             },
           },
         },
@@ -195,21 +216,7 @@ export const usersRouter = router({
         });
       }
 
-      return {
-        ...user,
-        // Nascondi password hash dalla risposta
-        identities: user.identities.map(identity => ({
-          ...identity,
-          localCredential: identity.localCredential
-            ? {
-                id: identity.localCredential.id,
-                createdAt: identity.localCredential.createdAt,
-                updatedAt: identity.localCredential.updatedAt,
-                // Non esporre passwordHash
-              }
-            : null,
-        })),
-      };
+      return user;
     }),
 
   /**

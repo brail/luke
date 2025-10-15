@@ -461,9 +461,20 @@ export function UserForm({
               type="checkbox"
               checked={formData.isActive}
               onChange={e => handleInputChange('isActive', e.target.checked)}
-              className="h-4 w-4 rounded border border-input bg-background"
+              disabled={isSelfEdit}
+              className="h-4 w-4 rounded border border-input bg-background disabled:opacity-50 disabled:cursor-not-allowed"
             />
-            <Label htmlFor="isActive">Utente attivo</Label>
+            <Label
+              htmlFor="isActive"
+              className={isSelfEdit ? 'text-muted-foreground' : ''}
+            >
+              Utente attivo
+              {isSelfEdit && (
+                <span className="text-xs text-muted-foreground ml-1">
+                  (non puoi disattivare il tuo stesso account)
+                </span>
+              )}
+            </Label>
           </div>
 
           {/* Pulsanti */}
