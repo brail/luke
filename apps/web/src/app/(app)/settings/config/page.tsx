@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState } from 'react';
-import { trpc } from '../../../../lib/trpc';
 import { Button } from '../../../../components/ui/button';
 import { Skeleton } from '../../../../components/ui/skeleton';
 import { PageHeader } from '../../../../components/PageHeader';
@@ -15,11 +14,26 @@ import { ConfigValueDialog } from '../../../../components/config/ConfigValueDial
 import { ConfigImportDialog } from '../../../../components/config/ConfigImportDialog';
 import { ConfigExportButton } from '../../../../components/config/ConfigExportButton';
 import { Upload } from 'lucide-react';
-import { toast } from 'sonner';
+import {
+  useConfigQuery,
+  type ConfigFormData,
+} from '../../../../lib/useConfigQuery';
 
 /**
  * Pagina gestione configurazioni con CRUD completo
- * Include ricerca, filtri, paginazione, import/export e protezioni di sicurezza
+ *
+ * Questa pagina fornisce un'interfaccia completa per la gestione delle configurazioni
+ * del sistema, includendo:
+ *
+ * - **Ricerca e filtri**: per chiave, categoria, tipo di cifratura
+ * - **Ordinamento**: per chiave o data di aggiornamento
+ * - **Paginazione**: per gestire grandi quantità di configurazioni
+ * - **CRUD sicuro**: create, read, update, delete con validazioni
+ * - **Import/Export**: operazioni batch con anteprima e validazione
+ * - **Protezioni di sicurezza**: mai mostrare segreti in chiaro, blocchi per chiavi critiche
+ *
+ * Utilizza il hook `useConfigQuery` per centralizzare la logica tRPC e ridurre
+ * il boilerplate del componente.
  */
 export default function ConfigPage() {
   // Stati per ricerca e filtri
@@ -35,52 +49,21 @@ export default function ConfigPage() {
   const [selectedConfig, setSelectedConfig] = useState<any>(null);
   const [deleteConfigKey, setDeleteConfigKey] = useState<string | null>(null);
   const [viewValue, setViewValue] = useState('');
+  const [viewValueKey, setViewValueKey] = useState<string>('');
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
 
-  // Query tRPC per lista configurazioni
-  const { data, isLoading, error, refetch } = (
-    trpc as any
-  ).config.list.useQuery({
-    q: searchTerm?.trim() || undefined,
-    isEncrypted: filterEncrypted,
-    category: filterCategory,
-    sortBy,
-    sortDir,
-    page,
-    pageSize,
-  });
-
-  // Mutations tRPC
-  const setConfigMutation = (trpc as any).config.set.useMutation({
-    onSuccess: () => {
-      toast.success('Configurazione salvata con successo');
-      refetch();
-    },
-    onError: (error: any) => {
-      toast.error(`Errore: ${error.message}`);
-    },
-  });
-
-  const updateConfigMutation = (trpc as any).config.update.useMutation({
-    onSuccess: () => {
-      toast.success('Configurazione aggiornata con successo');
-      refetch();
-    },
-    onError: (error: any) => {
-      toast.error(`Errore: ${error.message}`);
-    },
-  });
-
-  const deleteConfigMutation = (trpc as any).config.delete.useMutation({
-    onSuccess: () => {
-      toast.success('Configurazione eliminata con successo');
-      refetch();
-    },
-    onError: (error: any) => {
-      toast.error(`Errore: ${error.message}`);
-    },
-  });
+  // Hook centralizzato per query e mutations - riduce boilerplate significativamente
+  const { data, isLoading, error, saveConfig, deleteConfig, isAnyLoading } =
+    useConfigQuery({
+      q: searchTerm,
+      isEncrypted: filterEncrypted,
+      category: filterCategory,
+      sortBy,
+      sortDir,
+      page,
+      pageSize,
+    });
 
   // Handlers
   const handleNewConfig = () => {
@@ -98,27 +81,20 @@ export default function ConfigPage() {
   };
 
   const handleViewValue = (config: any) => {
+    // Solo per valori non cifrati - sicurezza garantita dal componente Table
     setViewValue(config.valuePreview || config.value);
+    setViewValueKey(config.key);
   };
 
-  const handleSaveConfig = async (data: {
-    key: string;
-    value: string;
-    encrypt: boolean;
-    category?: string;
-  }) => {
-    if (selectedConfig) {
-      await updateConfigMutation.mutateAsync(data);
-    } else {
-      await setConfigMutation.mutateAsync(data);
-    }
+  const handleSaveConfig = async (formData: ConfigFormData) => {
+    await saveConfig(formData);
     setEditDialogOpen(false);
     setSelectedConfig(null);
   };
 
   const handleConfirmDelete = async () => {
     if (deleteConfigKey) {
-      await deleteConfigMutation.mutateAsync({ key: deleteConfigKey });
+      await deleteConfig(deleteConfigKey);
       setDeleteConfigKey(null);
     }
   };
@@ -139,7 +115,7 @@ export default function ConfigPage() {
 
   const handleImportSuccess = () => {
     setImportDialogOpen(false);
-    refetch();
+    // L'invalidazione è gestita automaticamente dal hook
   };
 
   const handleOpenImport = () => {
@@ -242,7 +218,7 @@ export default function ConfigPage() {
             <p className="text-sm text-muted-foreground mb-4">
               {error.message}
             </p>
-            <Button variant="outline" onClick={() => refetch()}>
+            <Button variant="outline" onClick={() => window.location.reload()}>
               Riprova
             </Button>
           </div>
@@ -292,9 +268,7 @@ export default function ConfigPage() {
           }}
           config={selectedConfig}
           onSave={handleSaveConfig}
-          isLoading={
-            setConfigMutation.isPending || updateConfigMutation.isPending
-          }
+          isLoading={isAnyLoading}
         />
       )}
 
@@ -304,16 +278,19 @@ export default function ConfigPage() {
           onOpenChange={() => setDeleteConfigKey(null)}
           configKey={deleteConfigKey}
           onConfirm={handleConfirmDelete}
-          isLoading={deleteConfigMutation.isPending}
+          isLoading={isAnyLoading}
         />
       )}
 
       {/* Dialog per visualizzazione valore */}
       {viewValue && (
         <ConfigValueDialog
-          onOpenChange={() => setViewValue('')}
+          onOpenChange={() => {
+            setViewValue('');
+            setViewValueKey('');
+          }}
           value={viewValue}
-          keyName={selectedConfig?.key}
+          keyName={viewValueKey}
         />
       )}
 

@@ -1,6 +1,17 @@
 /**
  * Dialog per importare configurazioni da file JSON
- * Include validazione, anteprima e applicazione batch
+ *
+ * Questo componente gestisce l'importazione batch di configurazioni con:
+ * - **Validazione file**: verifica formato JSON e struttura dati
+ * - **Anteprima intelligente**: distingue tra nuove configurazioni e aggiornamenti
+ * - **Validazione client-side**: controlla formato chiavi e valori
+ * - **Progress bar funzionale**: feedback visivo durante l'importazione
+ * - **Gestione errori**: report dettagliato di successi e fallimenti
+ *
+ * Il processo avviene in 3 step:
+ * 1. Upload del file JSON
+ * 2. Anteprima con validazione e distinzione new/update
+ * 3. Importazione con progress bar
  */
 
 import React, { useState, useCallback } from 'react';
@@ -63,6 +74,7 @@ export function ConfigImportDialog({
   const [importing, setImporting] = useState(false);
 
   const importMutation = (trpc as any).config.importJson.useMutation();
+  const existsQuery = (trpc as any).config.exists.useQuery;
 
   const validateConfig = useCallback(
     (config: ImportConfig): { valid: boolean; error?: string } => {
@@ -93,7 +105,7 @@ export function ConfigImportDialog({
     setFile(selectedFile);
 
     const reader = new FileReader();
-    reader.onload = e => {
+    reader.onload = async e => {
       try {
         const content = e.target?.result as string;
         const data = JSON.parse(content);
@@ -102,14 +114,35 @@ export function ConfigImportDialog({
           throw new Error('Formato file non valido: manca array "configs"');
         }
 
-        const previewData: ImportPreview[] = data.configs.map((config: any) => {
-          const validation = validateConfig(config);
-          return {
-            config,
-            status: validation.valid ? 'new' : 'invalid',
-            error: validation.error,
-          };
-        });
+        // Valida e determina status per ogni configurazione
+        // Questo step distingue tra nuove configurazioni e aggiornamenti
+        const previewData: ImportPreview[] = await Promise.all(
+          data.configs.map(async (config: any) => {
+            const validation = validateConfig(config);
+            if (!validation.valid) {
+              return {
+                config,
+                status: 'invalid' as const,
+                error: validation.error,
+              };
+            }
+
+            // Verifica se la configurazione esiste già per distinguere "new" da "update"
+            try {
+              const exists = await existsQuery({ key: config.key });
+              return {
+                config,
+                status: exists.exists ? 'update' : 'new',
+              };
+            } catch {
+              // Se la verifica fallisce, assume "new" per sicurezza
+              return {
+                config,
+                status: 'new' as const,
+              };
+            }
+          })
+        );
 
         setPreview(previewData);
         setStep('preview');
@@ -141,9 +174,17 @@ export function ConfigImportDialog({
     setProgress(0);
 
     try {
+      // Progress bar funzionale durante l'import
+      const progressInterval = setInterval(() => {
+        setProgress(prev => Math.min(prev + 10, 90));
+      }, 200);
+
       const result = await importMutation.mutateAsync({
         items: validConfigs,
       });
+
+      clearInterval(progressInterval);
+      setProgress(100); // Completa la progress bar
 
       if (result.successCount > 0) {
         toast.success(
@@ -172,7 +213,8 @@ export function ConfigImportDialog({
       toast.error("Errore durante l'importazione");
     } finally {
       setImporting(false);
-      setProgress(0);
+      // Mantieni progress a 100% per un momento prima di resettare
+      setTimeout(() => setProgress(0), 1000);
     }
   };
 

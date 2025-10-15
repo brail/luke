@@ -60,27 +60,26 @@ export function ConfigEditDialog({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const isEdit = !!config;
 
-  // Reset form quando si apre/chiude il dialog
+  // Reset form quando cambia la configurazione selezionata
   useEffect(() => {
-    if (config !== null) {
-      // Dialog sempre aperto quando renderizzato
-      if (config) {
-        setFormData({
-          key: config.key,
-          value: config.value,
-          encrypt: config.isEncrypted,
-          category: getCategoryFromKey(config.key),
-        });
-      } else {
-        setFormData({
-          key: '',
-          value: '',
-          encrypt: false,
-          category: '',
-        });
-      }
-      setErrors({});
+    if (config) {
+      // Modalità edit: popola form con dati esistenti
+      setFormData({
+        key: config.key,
+        value: config.value,
+        encrypt: config.isEncrypted,
+        category: getCategoryFromKey(config.key),
+      });
+    } else {
+      // Modalità create: form vuoto
+      setFormData({
+        key: '',
+        value: '',
+        encrypt: false,
+        category: '',
+      });
     }
+    setErrors({});
   }, [config]);
 
   const validateForm = () => {
