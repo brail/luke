@@ -3,136 +3,234 @@
 import React, { useState } from 'react';
 import { trpc } from '../../../../lib/trpc';
 import { Button } from '../../../../components/ui/button';
-import { Input } from '../../../../components/ui/input';
-import { Label } from '../../../../components/ui/label';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '../../../../components/ui/table';
+import { Skeleton } from '../../../../components/ui/skeleton';
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
+import { ConfigToolbar } from '../../../../components/config/ConfigToolbar';
+import { ConfigTable } from '../../../../components/config/ConfigTable';
+import { ConfigTablePagination } from '../../../../components/config/ConfigTablePagination';
+import { ConfigEditDialog } from '../../../../components/config/ConfigEditDialog';
+import { ConfigDeleteDialog } from '../../../../components/config/ConfigDeleteDialog';
+import { ConfigValueDialog } from '../../../../components/config/ConfigValueDialog';
+import { ConfigImportDialog } from '../../../../components/config/ConfigImportDialog';
+import { ConfigExportButton } from '../../../../components/config/ConfigExportButton';
+import { Upload } from 'lucide-react';
+import { toast } from 'sonner';
 
 /**
- * Pagina gestione configurazioni con lista e creazione via tRPC
- * Mostra tabella configurazioni e form per nuove configurazioni
- * Layout e header gestiti dal layout padre
+ * Pagina gestione configurazioni con CRUD completo
+ * Include ricerca, filtri, paginazione, import/export e protezioni di sicurezza
  */
 export default function ConfigPage() {
-  const [key, setKey] = useState('');
-  const [value, setValue] = useState('');
-  const [encrypt, setEncrypt] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // Stati per ricerca e filtri
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterEncrypted, setFilterEncrypted] = useState<boolean | undefined>();
+  const [filterCategory, setFilterCategory] = useState<string | undefined>();
+  const [sortBy, setSortBy] = useState<'key' | 'updatedAt'>('key');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
+
+  // Stati per dialog
+  const [selectedConfig, setSelectedConfig] = useState<any>(null);
+  const [deleteConfigKey, setDeleteConfigKey] = useState<string | null>(null);
+  const [viewValue, setViewValue] = useState('');
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   // Query tRPC per lista configurazioni
-  const {
-    data: configs,
-    isLoading,
-    error,
-    refetch,
-  } = (trpc as any).config.list.useQuery({});
+  const { data, isLoading, error, refetch } = (
+    trpc as any
+  ).config.list.useQuery({
+    q: searchTerm?.trim() || undefined,
+    isEncrypted: filterEncrypted,
+    category: filterCategory,
+    sortBy,
+    sortDir,
+    page,
+    pageSize,
+  });
 
-  // Mutation tRPC per salvare configurazione
-  const { mutateAsync: setConfig } = (trpc as any).config.set.useMutation();
+  // Mutations tRPC
+  const setConfigMutation = (trpc as any).config.set.useMutation({
+    onSuccess: () => {
+      toast.success('Configurazione salvata con successo');
+      refetch();
+    },
+    onError: (error: any) => {
+      toast.error(`Errore: ${error.message}`);
+    },
+  });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!key.trim() || !value.trim()) return;
+  const updateConfigMutation = (trpc as any).config.update.useMutation({
+    onSuccess: () => {
+      toast.success('Configurazione aggiornata con successo');
+      refetch();
+    },
+    onError: (error: any) => {
+      toast.error(`Errore: ${error.message}`);
+    },
+  });
 
-    setIsSubmitting(true);
-    try {
-      await setConfig({
-        key: key.trim(),
-        value: value.trim(),
-        encrypt,
-      });
-      await refetch();
-      setKey('');
-      setValue('');
-      setEncrypt(false);
-    } catch (err) {
-      console.error('Errore salvataggio configurazione:', err);
-    } finally {
-      setIsSubmitting(false);
+  const deleteConfigMutation = (trpc as any).config.delete.useMutation({
+    onSuccess: () => {
+      toast.success('Configurazione eliminata con successo');
+      refetch();
+    },
+    onError: (error: any) => {
+      toast.error(`Errore: ${error.message}`);
+    },
+  });
+
+  // Handlers
+  const handleNewConfig = () => {
+    setSelectedConfig(null);
+    setEditDialogOpen(true);
+  };
+
+  const handleEditConfig = (config: any) => {
+    setSelectedConfig(config);
+    setEditDialogOpen(true);
+  };
+
+  const handleDeleteConfig = (config: any) => {
+    setDeleteConfigKey(config.key);
+  };
+
+  const handleViewValue = (config: any) => {
+    setViewValue(config.valuePreview || config.value);
+  };
+
+  const handleSaveConfig = async (data: {
+    key: string;
+    value: string;
+    encrypt: boolean;
+    category?: string;
+  }) => {
+    if (selectedConfig) {
+      await updateConfigMutation.mutateAsync(data);
+    } else {
+      await setConfigMutation.mutateAsync(data);
+    }
+    setEditDialogOpen(false);
+    setSelectedConfig(null);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (deleteConfigKey) {
+      await deleteConfigMutation.mutateAsync({ key: deleteConfigKey });
+      setDeleteConfigKey(null);
     }
   };
+
+  const handleSort = (field: 'key' | 'updatedAt') => {
+    if (sortBy === field) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortDir('asc');
+    }
+    setPage(1); // Reset to first page when sorting
+  };
+
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage);
+  };
+
+  const handleImportSuccess = () => {
+    setImportDialogOpen(false);
+    refetch();
+  };
+
+  const handleOpenImport = () => {
+    setImportDialogOpen(true);
+  };
+
+  // Skeleton per loading
+  const SkeletonRow = () => (
+    <tr>
+      <td>
+        <Skeleton className="h-4 w-32" />
+      </td>
+      <td>
+        <Skeleton className="h-4 w-24" />
+      </td>
+      <td>
+        <Skeleton className="h-4 w-16" />
+      </td>
+      <td>
+        <Skeleton className="h-4 w-20" />
+      </td>
+      <td>
+        <Skeleton className="h-8 w-8" />
+      </td>
+    </tr>
+  );
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Configurazioni Sistema"
-        description="Gestisci le configurazioni del sistema"
+        description="Gestisci le configurazioni del sistema con ricerca, filtri e protezioni di sicurezza"
       />
 
-      {/* Form Nuova Configurazione */}
+      {/* Toolbar con ricerca e filtri */}
       <SectionCard
-        title="Nuova Configurazione"
-        description="Aggiungi una nuova configurazione al sistema"
+        title="Ricerca e Filtri"
+        description="Cerca e filtra le configurazioni del sistema"
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="key">Chiave</Label>
-              <Input
-                id="key"
-                placeholder="es. database.host"
-                value={key}
-                onChange={e => setKey(e.target.value)}
-                required
-                disabled={isSubmitting}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="value">Valore</Label>
-              <Input
-                id="value"
-                placeholder="es. localhost:5432"
-                value={value}
-                onChange={e => setValue(e.target.value)}
-                required
-                disabled={isSubmitting}
-              />
-            </div>
-          </div>
-          <div className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              id="encrypt"
-              checked={encrypt}
-              onChange={e => setEncrypt(e.target.checked)}
-              disabled={isSubmitting}
-              className="rounded border-gray-300"
-            />
-            <Label htmlFor="encrypt" className="text-sm">
-              Cifra il valore (AES-256-GCM)
-            </Label>
-          </div>
+        <ConfigToolbar
+          searchTerm={searchTerm}
+          onSearchChange={setSearchTerm}
+          filterEncrypted={filterEncrypted}
+          onFilterEncryptedChange={setFilterEncrypted}
+          filterCategory={filterCategory}
+          onFilterCategoryChange={setFilterCategory}
+        />
+
+        {/* Azioni in seconda riga */}
+        <div className="flex gap-2 mt-4">
+          <ConfigExportButton />
           <Button
-            type="submit"
-            disabled={isSubmitting || !key.trim() || !value.trim()}
+            variant="outline"
+            size="sm"
+            onClick={handleOpenImport}
+            className="flex items-center gap-2"
           >
-            {isSubmitting ? 'Salvataggio...' : 'Salva Configurazione'}
+            <Upload className="w-4 h-4" />
+            Importa
           </Button>
-        </form>
+          <Button onClick={handleNewConfig} className="flex items-center gap-2">
+            Nuova Config
+          </Button>
+        </div>
       </SectionCard>
 
       {/* Tabella Configurazioni */}
       <SectionCard
-        title="Configurazioni Esistenti"
-        description="Lista completa delle configurazioni"
+        title="Configurazioni Sistema"
+        description="Lista delle configurazioni con ordinamento e paginazione"
       >
-        <div className="flex justify-end mb-4">
-          <Button variant="outline" onClick={() => refetch()}>
-            Aggiorna
-          </Button>
-        </div>
         {isLoading && (
-          <div className="text-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-            <p>Caricamento configurazioni...</p>
+          <div className="space-y-2">
+            <div className="rounded-md border">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b">
+                    <th className="h-12 px-4 text-left">Chiave</th>
+                    <th className="h-12 px-4 text-left">Valore</th>
+                    <th className="h-12 px-4 text-left">Tipo</th>
+                    <th className="h-12 px-4 text-left">Aggiornato</th>
+                    <th className="h-12 px-4 text-left">Azioni</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <SkeletonRow key={i} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -150,73 +248,82 @@ export default function ConfigPage() {
           </div>
         )}
 
-        {configs && !isLoading && (
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Chiave</TableHead>
-                  <TableHead>Valore</TableHead>
-                  <TableHead>Cifrato</TableHead>
-                  <TableHead>Aggiornato</TableHead>
-                  <TableHead>Azioni</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {configs.length === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={5}
-                      className="text-center py-8 text-muted-foreground"
-                    >
-                      Nessuna configurazione trovata
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  configs.map((config: any) => (
-                    <TableRow key={config.key}>
-                      <TableCell className="font-mono text-sm">
-                        {config.key}
-                      </TableCell>
-                      <TableCell
-                        className="max-w-xs truncate"
-                        title={
-                          config.isEncrypted ? 'Valore cifrato' : config.value
-                        }
-                      >
-                        {config.isEncrypted ? '••••••' : config.value}
-                      </TableCell>
-                      <TableCell>
-                        {config.isEncrypted ? (
-                          <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-800">
-                            ✅ Cifrato
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-800">
-                            — Normale
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {config.updatedAt
-                          ? new Date(config.updatedAt).toLocaleDateString(
-                              'it-IT'
-                            )
-                          : 'N/A'}
-                      </TableCell>
-                      <TableCell>
-                        <Button variant="outline" size="sm">
-                          Modifica
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+        {data && !isLoading && (
+          <>
+            <ConfigTable
+              configs={data.items}
+              onEdit={handleEditConfig}
+              onDelete={handleDeleteConfig}
+              onViewValue={handleViewValue}
+              sortBy={sortBy}
+              sortDir={sortDir}
+              onSort={handleSort}
+            />
+
+            {data.total > pageSize && (
+              <ConfigTablePagination
+                page={page}
+                pageSize={pageSize}
+                total={data.total}
+                onPageChange={handlePageChange}
+              />
+            )}
+          </>
+        )}
+
+        {data && !isLoading && data.items.length === 0 && (
+          <div className="text-center py-8">
+            <p className="text-muted-foreground mb-4">
+              Nessuna configurazione trovata
+            </p>
+            <Button onClick={handleNewConfig}>
+              Aggiungi la prima configurazione
+            </Button>
           </div>
         )}
       </SectionCard>
+
+      {/* Dialog per modifica/creazione */}
+      {editDialogOpen && (
+        <ConfigEditDialog
+          onOpenChange={() => {
+            setEditDialogOpen(false);
+            setSelectedConfig(null);
+          }}
+          config={selectedConfig}
+          onSave={handleSaveConfig}
+          isLoading={
+            setConfigMutation.isPending || updateConfigMutation.isPending
+          }
+        />
+      )}
+
+      {/* Dialog per eliminazione */}
+      {deleteConfigKey && (
+        <ConfigDeleteDialog
+          onOpenChange={() => setDeleteConfigKey(null)}
+          configKey={deleteConfigKey}
+          onConfirm={handleConfirmDelete}
+          isLoading={deleteConfigMutation.isPending}
+        />
+      )}
+
+      {/* Dialog per visualizzazione valore */}
+      {viewValue && (
+        <ConfigValueDialog
+          onOpenChange={() => setViewValue('')}
+          value={viewValue}
+          keyName={selectedConfig?.key}
+        />
+      )}
+
+      {/* Dialog per import */}
+      {importDialogOpen && (
+        <ConfigImportDialog
+          onOpenChange={() => setImportDialogOpen(false)}
+          onSuccess={handleImportSuccess}
+        />
+      )}
     </div>
   );
 }

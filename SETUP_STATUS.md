@@ -41,6 +41,9 @@ pnpm format           # ✅ Formatta con Prettier
 - ✅ **Segreti centralizzati** - JWT_SECRET e NEXTAUTH_SECRET in AppConfig cifrati
 - ✅ **Error handling uniforme** - TRPCError in tutti i router
 - ✅ **LDAP enterprise authentication** - con role mapping e strategia configurabile
+- ✅ **Principio "mai decrypt in bulk"** - implementato nel config router
+- ✅ **Paginazione e filtri** - per config.list con output strutturato
+- ✅ **Visualizzazione sicura** - con modalità masked/raw e audit log
 
 ## ⚠️ Note
 
@@ -141,9 +144,13 @@ Luke supporta autenticazione enterprise via LDAP con le seguenti funzionalità:
 
 I valori cifrati non vengono mai mostrati in chiaro nella lista configurazioni per motivi di sicurezza:
 
-- **Lista configurazioni**: i valori cifrati sono mascherati con `••••••`
+- **Lista configurazioni**: `config.list` restituisce `valuePreview: null` per valori cifrati
+- **Modalità visualizzazione**:
+  - `masked`: per tutti, cifrati mostrano `[ENCRYPTED]`
+  - `raw`: solo admin, decritta e genera audit log
 - **Modifica configurazione**: per aggiornare un valore cifrato, è necessario reinserirlo completamente nel form
 - **Indicatore visivo**: la colonna "Cifrato" indica se il valore è protetto con AES-256-GCM
+- **Tracing**: Ogni accesso raw viene tracciato con `x-luke-trace-id` per compliance
 
 ### Configurazione LDAP
 

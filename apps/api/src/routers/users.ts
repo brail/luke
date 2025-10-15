@@ -100,17 +100,20 @@ export const usersRouter = router({
       } = input || {};
       const skip = (page - 1) * limit;
 
-      const where = {
-        ...(search && {
-          OR: [
-            { email: { contains: search } },
-            { username: { contains: search } },
-            { firstName: { contains: search } },
-            { lastName: { contains: search } },
-          ],
-        }),
-        ...(role && { role }),
-      };
+      const where: any = {};
+
+      if (search && search.trim()) {
+        where.OR = [
+          { email: { contains: search, mode: 'insensitive' } },
+          { username: { contains: search, mode: 'insensitive' } },
+          { firstName: { contains: search, mode: 'insensitive' } },
+          { lastName: { contains: search, mode: 'insensitive' } },
+        ];
+      }
+
+      if (role) {
+        where.role = role;
+      }
 
       const [users, total] = await ctx.prisma.$transaction([
         ctx.prisma.user.findMany({

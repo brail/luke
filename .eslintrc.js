@@ -3,7 +3,7 @@ module.exports = {
   root: true,
   extends: ['eslint:recommended', 'next/core-web-vitals'],
   parser: '@typescript-eslint/parser',
-  plugins: [],
+  plugins: ['@typescript-eslint'],
   parserOptions: {
     ecmaVersion: 2022,
     sourceType: 'module',
@@ -19,6 +19,15 @@ module.exports = {
   rules: {
     'prefer-const': 'error',
     'no-var': 'error',
+    'no-unused-vars': 'off', // Disabled in favor of @typescript-eslint/no-unused-vars
+    '@typescript-eslint/no-unused-vars': [
+      'error',
+      {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+      },
+    ],
   },
   ignorePatterns: ['node_modules/', 'dist/', 'build/', '.next/', '.turbo/'],
 };

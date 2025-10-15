@@ -84,41 +84,246 @@ curl -X POST http://localhost:3001/trpc/users.delete \
 
 ### Config Router
 
-#### Lista Configurazioni
+#### Lista Configurazioni (Paginata)
+
+**⚠️ IMPORTANTE**: La lista configurazioni **non decritta mai** i valori cifrati per motivi di sicurezza. I valori cifrati mostrano `valuePreview: null`.
 
 ```bash
-curl "http://localhost:3001/trpc/config.list?input=%7B%22decrypt%22%3Atrue%7D"
+# Lista base con paginazione
+curl "http://localhost:3001/trpc/config.list?input=$(node -e 'console.log(encodeURIComponent(JSON.stringify({page:1,pageSize:20})))')"
+
+# Lista con filtri e ordinamento
+curl "http://localhost:3001/trpc/config.list?input=$(node -e 'console.log(encodeURIComponent(JSON.stringify({page:1,pageSize:10,q:"auth",sortBy:"updatedAt",sortDir:"desc"})))')"
+
+# Filtra per categoria
+curl "http://localhost:3001/trpc/config.list?input=$(node -e 'console.log(encodeURIComponent(JSON.stringify({category:"auth",isEncrypted:true})))')"
+
+# Ricerca con tutti i parametri
+curl "http://localhost:3001/trpc/config.list?input=$(node -e 'console.log(encodeURIComponent(JSON.stringify({q:"ldap",category:"auth",isEncrypted:true,sortBy:"key",sortDir:"asc",page:1,pageSize:50})))')"
+```
+
+**Output atteso**:
+
+```json
+{
+  "items": [
+    {
+      "key": "auth.ldap.url",
+      "valuePreview": "ldaps://example.com",
+      "isEncrypted": false,
+      "category": "auth",
+      "updatedAt": "2024-01-15T10:30:00.000Z"
+    },
+    {
+      "key": "auth.ldap.password",
+      "valuePreview": null,
+      "isEncrypted": true,
+      "category": "auth",
+      "updatedAt": "2024-01-15T10:30:00.000Z"
+    }
+  ],
+  "page": 1,
+  "pageSize": 20,
+  "total": 45,
+  "hasNextPage": true
+}
 ```
 
 #### Ottieni Configurazione
 
+**⚠️ IMPORTANTE**: `decrypt=false` di default per sicurezza. `decrypt=true` richiede ruolo admin.
+
 ```bash
-curl "http://localhost:3001/trpc/config.get?input=%7B%22key%22%3A%22app.name%22%7D"
+# Valore normale (non decrittato) - valori cifrati mostrano [ENCRYPTED]
+curl "http://localhost:3001/trpc/config.get?input=$(node -e 'console.log(encodeURIComponent(JSON.stringify({key:"app.name"})))')"
+
+# Valore decrittato (solo admin) - richiede Authorization header
+curl -H "Authorization: Bearer YOUR_TOKEN" "http://localhost:3001/trpc/config.get?input=$(node -e 'console.log(encodeURIComponent(JSON.stringify({key:"app.name",decrypt:true})))')"
 ```
 
-#### Imposta Configurazione
+**Output atteso**:
+
+```json
+{
+  "key": "app.name",
+  "value": "Luke",
+  "isEncrypted": false
+}
+```
+
+**Per valori cifrati senza decrypt**:
+
+```json
+{
+  "key": "auth.ldap.password",
+  "value": "[ENCRYPTED]",
+  "isEncrypted": undefined
+}
+```
+
+#### Visualizza Valore (Modalità Sicura)
+
+**Modalità disponibili**:
+
+- `masked`: disponibile per tutti gli utenti autenticati, valori cifrati mostrano `[ENCRYPTED]`
+- `raw`: solo admin, decritta i valori cifrati, genera audit log obbligatorio
+
+```bash
+# Modalità masked (qualsiasi utente autenticato)
+curl "http://localhost:3001/trpc/config.viewValue?input=$(node -e 'console.log(encodeURIComponent(JSON.stringify({key:"auth.ldap.url",mode:"masked"})))')"
+
+# Modalità raw (solo admin, audit obbligatorio)
+curl -H "Authorization: Bearer YOUR_TOKEN" -H "x-luke-trace-id: trace-123" "http://localhost:3001/trpc/config.viewValue?input=$(node -e 'console.log(encodeURIComponent(JSON.stringify({key:"auth.ldap.password",mode:"raw"})))')"
+```
+
+**Output atteso (masked)**:
+
+```json
+{
+  "key": "auth.ldap.password",
+  "value": "[ENCRYPTED]",
+  "isEncrypted": true,
+  "mode": "masked"
+}
+```
+
+**Output atteso (raw)**:
+
+```json
+{
+  "key": "auth.ldap.password",
+  "value": "secret-password",
+  "isEncrypted": true,
+  "mode": "raw"
+}
+```
+
+**⚠️ Nota**: Ogni accesso in modalità `raw` genera un audit log con metadati redatti per compliance.
+
+#### Imposta Configurazione (Solo Admin)
 
 ```bash
 curl -X POST http://localhost:3001/trpc/config.set \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
   -d '{"key":"app.name","value":"Luke","encrypt":false}'
 ```
 
-#### Imposta Configurazione Cifrata
+#### Imposta Configurazione Cifrata (Solo Admin)
 
 ```bash
 curl -X POST http://localhost:3001/trpc/config.set \
   -H "Content-Type: application/json" \
-  -d '{"key":"secret.key","value":"secret-value","encrypt":true}'
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{"key":"auth.ldap.password","value":"secret-password","encrypt":true}'
 ```
 
-#### Elimina Configurazione
+#### Elimina Configurazione (Solo Admin)
 
 ```bash
 curl -X POST http://localhost:3001/trpc/config.delete \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "x-luke-trace-id: trace-123" \
   -d '{"key":"config.key"}'
 ```
+
+#### Protezione Chiavi Critiche
+
+**⚠️ IMPORTANTE**: Le seguenti chiavi sono protette e non possono essere eliminate:
+
+- `auth.strategy`, `auth.ldap.url`, `auth.ldap.searchBase`, `auth.ldap.searchFilter`
+- `mail.smtp`, `storage.smb`, `storage.drive`
+- `nextauth.secret`, `jwt.secret`
+
+**Motivazione**: Prevenire la rottura di configurazioni essenziali per il funzionamento del sistema.
+
+**Errore per chiavi critiche**:
+
+```json
+{
+  "error": {
+    "code": "CONFLICT",
+    "message": "La chiave 'auth.strategy' è critica e non può essere eliminata"
+  }
+}
+```
+
+#### Export JSON (Solo Admin)
+
+**⚠️ IMPORTANTE**: I segreti cifrati non vengono mai esportati in chiaro per motivi di sicurezza.
+
+```bash
+# Export solo metadata (senza valori)
+curl -X POST "http://localhost:3001/trpc/config.exportJson" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "x-luke-trace-id: trace-123" \
+  -d '{"includeValues":false}'
+
+# Export con valori (segreti cifrati mostrano [ENCRYPTED])
+curl -X POST "http://localhost:3001/trpc/config.exportJson" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "x-luke-trace-id: trace-123" \
+  -d '{"includeValues":true}'
+```
+
+**Output atteso**:
+
+```json
+{
+  "configs": [
+    {
+      "key": "app.name",
+      "category": "app",
+      "isEncrypted": false,
+      "value": "Luke",
+      "updatedAt": "2024-01-15T10:30:00.000Z"
+    },
+    {
+      "key": "auth.ldap.password",
+      "category": "auth",
+      "isEncrypted": true,
+      "value": "[ENCRYPTED]",
+      "updatedAt": "2024-01-15T10:30:00.000Z"
+    }
+  ],
+  "exportedAt": "2024-01-15T10:30:00.000Z",
+  "includeValues": true,
+  "count": 2
+}
+```
+
+#### Import JSON (Solo Admin)
+
+**⚠️ IMPORTANTE**: `value: null` viene saltato, `encrypt: true` cifra il valore.
+
+```bash
+curl -X POST "http://localhost:3001/trpc/config.importJson" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "x-luke-trace-id: trace-123" \
+  -d '{
+    "items": [
+      {"key":"app.name","value":"Luke","encrypt":false},
+      {"key":"auth.ldap.url","value":"ldaps://example.com","encrypt":true},
+      {"key":"auth.ldap.password","value":null,"encrypt":true}
+    ]
+  }'
+```
+
+**Output atteso**:
+
+```json
+{
+  "successCount": 2,
+  "errorCount": 0,
+  "errors": []
+}
+```
+
+**Nota**: L'item con `value: null` viene saltato automaticamente.
 
 ## 🔑 Credenziali Admin
 
@@ -166,6 +371,64 @@ Le password sono hashate con **argon2id** (time cost: 3, memory: 65536).
 
 I valori sensibili sono cifrati con **AES-256-GCM**.
 
+### Sicurezza Config Router
+
+#### Regole di Sicurezza
+
+- **Mai decrittare in bulk**: La lista configurazioni non restituisce mai valori in chiaro per chiavi cifrate
+- **RBAC rigoroso**: Solo admin può creare/modificare/eliminare configurazioni
+- **Validazione chiavi**: Formato `prefix.subkey` con prefissi ammessi: `app`, `auth`, `mail`, `storage`, `security`, `integrations`
+- **Protezione chiavi critiche**: Chiavi essenziali (es: `auth.strategy`, `jwt.secret`) non possono essere eliminate
+- **Audit log granulare**: Ogni visualizzazione raw genera log con metadati redatti
+- **Export sicuro**: I segreti cifrati nell'export mostrano sempre `[ENCRYPTED]`, mai il plaintext
+- **Tracing distribuito**: Header `x-luke-trace-id` per correlazione log cross-service
+
+#### RBAC (Role-Based Access Control)
+
+| Procedura                        | Ruolo Richiesto   | Descrizione                  |
+| -------------------------------- | ----------------- | ---------------------------- |
+| `config.list`                    | `loggedProcedure` | Qualsiasi utente autenticato |
+| `config.get`                     | `loggedProcedure` | Qualsiasi utente autenticato |
+| `config.viewValue` (mode=masked) | `loggedProcedure` | Qualsiasi utente autenticato |
+| `config.viewValue` (mode=raw)    | `adminProcedure`  | Solo admin                   |
+| `config.exists`                  | `loggedProcedure` | Qualsiasi utente autenticato |
+| `config.getMultiple`             | `loggedProcedure` | Qualsiasi utente autenticato |
+| `config.set`                     | `adminProcedure`  | Solo admin                   |
+| `config.update`                  | `adminProcedure`  | Solo admin                   |
+| `config.delete`                  | `adminProcedure`  | Solo admin                   |
+| `config.setMultiple`             | `adminProcedure`  | Solo admin                   |
+| `config.exportJson`              | `adminProcedure`  | Solo admin                   |
+| `config.importJson`              | `adminProcedure`  | Solo admin                   |
+
+#### Audit & Tracing
+
+**Metadati Audit Log**:
+
+- `CONFIG_VIEW_VALUE` (mode=raw): `{ key, mode: 'raw' }`
+- `CONFIG_CREATE/UPDATE`: `{ key, isEncrypted, valueRedacted: '[ENCRYPTED]' | redact(value, 32) }`
+- `CONFIG_DELETE`: `{ key }`
+- `CONFIG_EXPORT`: `{ includeValues, count }`
+- `CONFIG_IMPORT`: `{ key, isEncrypted, valueRedacted, source: 'import' }`
+
+**Header Tracing**:
+
+- `x-luke-trace-id`: generato automaticamente dal server per correlazione log
+- Usato per tracciare operazioni cross-service e debugging distribuito
+
+#### Chiavi Critiche Protette
+
+Le seguenti chiavi non possono essere eliminate:
+
+- `auth.strategy`, `auth.ldap.url`, `auth.ldap.searchBase`, `auth.ldap.searchFilter`
+- `mail.smtp`, `storage.smb`, `storage.drive`
+- `nextauth.secret`, `jwt.secret`
+
+#### Formato Chiavi Valido
+
+- **Regex**: `/^[a-z]+([._-][a-z0-9]+)+$/`
+- **Esempi validi**: `auth.ldap.url`, `mail.smtp.host`, `storage.smb.password`
+- **Esempi non validi**: `app` (manca separatore), `AUTH.ldap` (maiuscole), `auth.` (termina con punto)
+
 ## 🏗️ Architettura
 
 ### Modelli Database
@@ -179,7 +442,12 @@ I valori sensibili sono cifrati con **AES-256-GCM**.
 ### Router tRPC
 
 - **users**: CRUD completo per gestione utenti
-- **config**: Gestione configurazioni con cifratura
+- **config**: Gestione configurazioni avanzata con:
+  - Lista paginata con filtri e ordinamento
+  - Visualizzazione valori con modalità masked/raw
+  - Import/Export JSON sicuro
+  - Validazione chiavi e protezione critiche
+  - Audit log granulare
 
 ### Sicurezza
 

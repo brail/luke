@@ -71,14 +71,6 @@ export default function AppSidebar() {
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild isActive={isActive('/settings/users')}>
-                <Link href="/settings/users">
-                  <Users size={18} />
-                  <span>Utenti</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
 
@@ -109,11 +101,11 @@ export default function AppSidebar() {
                     <SidebarMenuSubItem>
                       <SidebarMenuSubButton
                         asChild
-                        isActive={isActive('/settings/config')}
+                        isActive={isActive('/settings/users')}
                       >
-                        <Link href="/settings/config">
-                          <ServerCog size={16} />
-                          <span>Configurazioni</span>
+                        <Link href="/settings/users">
+                          <Users size={16} />
+                          <span>Utenti</span>
                         </Link>
                       </SidebarMenuSubButton>
                     </SidebarMenuSubItem>
@@ -157,10 +149,21 @@ export default function AppSidebar() {
           </SidebarMenu>
         </SidebarGroup>
 
-        {/* Sezione Integrazioni */}
+        {/* Sezione Manutenzione */}
         <SidebarGroup>
-          <SidebarGroupLabel>Integrazioni</SidebarGroupLabel>
+          <SidebarGroupLabel>Manutenzione</SidebarGroupLabel>
           <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={isActive('/settings/config')}
+              >
+                <Link href="/settings/config">
+                  <ServerCog size={18} />
+                  <span>Configurazioni</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton
                 asChild

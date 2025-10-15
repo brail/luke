@@ -151,8 +151,8 @@ export default function UsersPage() {
     setDialogMode('edit');
     setSelectedUser(user);
     // Determina campi sincronizzati in base al provider
-    // Per provider esterni (LDAP, OIDC): blocca solo firstName, lastName e password
-    // email, username e ruolo sono sincronizzati solo alla creazione, poi modificabili
+    // Per provider esterni (LDAP, OIDC): blocca username, firstName, lastName e password
+    // email e ruolo sono modificabili anche per utenti esterni
     const synced: (
       | 'email'
       | 'username'
@@ -162,7 +162,7 @@ export default function UsersPage() {
       | 'password'
     )[] =
       user?.identities?.[0]?.provider !== 'LOCAL'
-        ? ['firstName', 'lastName', 'password']
+        ? ['username', 'firstName', 'lastName', 'password']
         : [];
     setSyncedFields(synced);
     setDialogOpen(true);
@@ -285,7 +285,7 @@ export default function UsersPage() {
 
       {/* Azioni e Filtri */}
       <SectionCard
-        title="Filtri e Ricerca"
+        title="Ricerca e Filtri"
         description="Cerca e filtra gli utenti del sistema"
       >
         <div className="flex gap-4 items-center mb-4">

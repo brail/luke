@@ -43,6 +43,7 @@ interface BreadcrumbNavItem {
   href: string;
   isLast: boolean;
   icon: React.ReactNode;
+  isClickable: boolean;
 }
 
 export default function BreadcrumbNav() {
@@ -59,6 +60,7 @@ export default function BreadcrumbNav() {
       href: '/dashboard',
       isLast: false,
       icon: <Home size={16} />,
+      isClickable: true,
     });
 
     // Costruisci il percorso progressivo
@@ -67,11 +69,15 @@ export default function BreadcrumbNav() {
       currentPath += `/${segment}`;
       const isLast = index === segments.length - 1;
 
+      // "Impostazioni" non è cliccabile
+      const isClickable = currentPath !== '/settings' && !isLast;
+
       breadcrumbItems.push({
         label: pathLabels[currentPath] || segment,
         href: pathLinks[currentPath] || currentPath,
         isLast,
         icon: null,
+        isClickable,
       });
     });
 
@@ -86,7 +92,7 @@ export default function BreadcrumbNav() {
         {breadcrumbItems.map((item, index) => (
           <React.Fragment key={`${item.href}-${index}`}>
             <BreadcrumbItem>
-              {item.isLast ? (
+              {item.isLast || !item.isClickable ? (
                 <BreadcrumbPage className="flex items-center gap-1">
                   {item.icon}
                   {item.label}

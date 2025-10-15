@@ -3,38 +3,19 @@
  * Accessibile sia dal frontend che dal backend
  */
 
+// Configurazioni statiche (non dipendenti dal database)
 export const appConfig = {
-  version: process.env.NEXT_PUBLIC_APP_VERSION || '1.0.0',
-  name: process.env.NEXT_PUBLIC_APP_NAME || 'Luke',
   environment: process.env.NODE_ENV,
   isDevelopment: process.env.NODE_ENV === 'development',
   isProduction: process.env.NODE_ENV === 'production',
   isTest: process.env.NODE_ENV === 'test',
 } as const;
 
-/**
- * Ottiene le informazioni dell'app per la visualizzazione
- */
-export const getAppInfo = () => ({
-  version: appConfig.version,
-  name: appConfig.name,
-  environment: appConfig.environment,
-  isDevelopment: appConfig.isDevelopment,
-  isProduction: appConfig.isProduction,
-  displayName: `${appConfig.name} v${appConfig.version}`,
-  environmentLabel: appConfig.isDevelopment
-    ? '(Development)'
-    : appConfig.isProduction
-      ? '(Production)'
-      : '',
-});
+// Note: name e version sono ora recuperati dinamicamente dal database
+// tramite useAppConfig() hook per seguire il pattern architetturale corretto
 
-/**
- * Ottiene il testo completo per la pagina di login
- */
-export const getLoginDemoText = () => {
-  const appInfo = getAppInfo();
-  return `${appInfo.displayName} ${appInfo.environmentLabel}`;
-};
+// Note: Le funzioni getAppInfo() e getLoginDemoText() sono state rimosse
+// per seguire il pattern architetturale corretto. Usa useAppConfig() hook
+// per recuperare dinamicamente le configurazioni dal database tramite API.
 
 export default appConfig;

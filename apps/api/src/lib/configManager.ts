@@ -205,6 +205,154 @@ export async function listConfigs(
 }
 
 /**
+ * Lista configurazioni con paginazione, filtri e ordinamento
+ * @param prisma - Client Prisma
+ * @param params - Parametri per filtri, paginazione e ordinamento
+ * @returns Risultati paginati con metadati
+ */
+export async function listConfigsPaged(
+  prisma: PrismaClient,
+  params: {
+    q?: string;
+    category?: string;
+    isEncrypted?: boolean;
+    sortBy?: 'key' | 'updatedAt';
+    sortDir?: 'asc' | 'desc';
+    page?: number;
+    pageSize?: number;
+  } = {}
+): Promise<{
+  items: Array<{
+    key: string;
+    valuePreview: string | null;
+    isEncrypted: boolean;
+    category: string;
+    updatedAt: string;
+  }>;
+  page: number;
+  pageSize: number;
+  total: number;
+  hasNextPage: boolean;
+}> {
+  const {
+    q,
+    category,
+    isEncrypted,
+    sortBy = 'key',
+    sortDir = 'asc',
+    page = 1,
+    pageSize = 20,
+  } = params;
+
+  // Costruisci where clause per filtri
+  const where: any = {};
+
+  // Gestisci filtri per key
+  if (q && category) {
+    // Se abbiamo sia ricerca che categoria, combina i filtri
+    where.AND = [
+      {
+        key: {
+          contains: q,
+          // SQLite non supporta mode: 'insensitive'
+        },
+      },
+      {
+        key: {
+          startsWith: `${category}.`,
+        },
+      },
+    ];
+  } else if (q) {
+    where.key = {
+      contains: q,
+      // SQLite non supporta mode: 'insensitive'
+    };
+  } else if (category) {
+    where.key = {
+      startsWith: `${category}.`,
+    };
+  }
+
+  if (typeof isEncrypted === 'boolean') {
+    where.isEncrypted = isEncrypted;
+  }
+
+  // Calcola skip per paginazione
+  const skip = (page - 1) * pageSize;
+
+  // Crea where clause per count (senza mode: 'insensitive' che non è supportato)
+  const countWhere: any = {};
+
+  if (q && category) {
+    countWhere.AND = [
+      {
+        key: {
+          contains: q,
+          // Rimuovi mode per count()
+        },
+      },
+      {
+        key: {
+          startsWith: `${category}.`,
+        },
+      },
+    ];
+  } else if (q) {
+    countWhere.key = {
+      contains: q,
+      // Rimuovi mode per count()
+    };
+  } else if (category) {
+    countWhere.key = {
+      startsWith: `${category}.`,
+    };
+  }
+
+  if (typeof isEncrypted === 'boolean') {
+    countWhere.isEncrypted = isEncrypted;
+  }
+
+  // Esegui query parallele per items e total
+  const [itemsRaw, total] = await Promise.all([
+    prisma.appConfig.findMany({
+      where,
+      orderBy: { [sortBy]: sortDir },
+      skip,
+      take: pageSize,
+      select: {
+        key: true,
+        value: true,
+        isEncrypted: true,
+        updatedAt: true,
+      },
+    }),
+    prisma.appConfig.count({ where: countWhere }),
+  ]);
+
+  // Processa i risultati
+  const items = itemsRaw.map(item => ({
+    key: item.key,
+    category: item.key.split('.')[0] || 'misc',
+    isEncrypted: item.isEncrypted,
+    valuePreview: item.isEncrypted
+      ? null
+      : item.value.length > 80
+        ? item.value.slice(0, 77) + '…'
+        : item.value,
+    updatedAt: item.updatedAt.toISOString(),
+  }));
+
+  return {
+    items,
+    page,
+    pageSize,
+    total,
+    hasNextPage: skip + pageSize < total,
+  };
+}
+
+/**
  * Elimina una configurazione
  * @param prisma - Client Prisma
  * @param key - Chiave della configurazione da eliminare

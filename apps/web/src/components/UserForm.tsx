@@ -214,19 +214,30 @@ export function UserForm({
     }
 
     // Rimuovi confirmPassword dai dati prima di inviare
-    // eslint-disable-next-line no-unused-vars
-    const { confirmPassword, ...dataToSubmit } = result.data;
+    const { confirmPassword: _confirmPassword, ...dataToSubmit } = result.data;
 
     // Per edit mode, se password è vuota, rimuovila dai dati
     if (
       mode === 'edit' &&
       (!formData.password || formData.password.trim() === '')
     ) {
-      // eslint-disable-next-line no-unused-vars
-      const { password, ...dataWithoutPassword } = dataToSubmit;
-      onSubmit(dataWithoutPassword as UserFormData);
+      const { password: _password, ...dataWithoutPassword } = dataToSubmit;
+
+      // Rimuovi i campi sincronizzati dai dati da inviare
+      const filteredData = { ...dataWithoutPassword };
+      syncedFields?.forEach(field => {
+        delete filteredData[field as keyof typeof filteredData];
+      });
+
+      onSubmit(filteredData as UserFormData);
     } else {
-      onSubmit(dataToSubmit as UserFormData);
+      // Rimuovi i campi sincronizzati dai dati da inviare
+      const filteredData = { ...dataToSubmit };
+      syncedFields?.forEach(field => {
+        delete filteredData[field as keyof typeof filteredData];
+      });
+
+      onSubmit(filteredData as UserFormData);
     }
   };
 
@@ -290,7 +301,7 @@ export function UserForm({
                 isLdapUser &&
                 !syncedFields?.includes('username') && (
                   <p className="text-xs text-muted-foreground mt-1">
-                    Username non modificabile per utenti LDAP
+                    Campo sincronizzato esternamente
                   </p>
                 )}
             </div>

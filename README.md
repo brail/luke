@@ -95,6 +95,8 @@ pnpm --filter @luke/core build  # Solo core package
 
 - **Nessun .env**: Tutte le configurazioni sono in database (AppConfig)
 - **Cifratura**: AES-256-GCM per segreti sensibili
+- **Principio "mai decrypt in bulk"**: liste configurazioni non espongono mai valori cifrati in chiaro
+- **Visualizzazione controllata**: modalità masked/raw con audit obbligatorio per raw
 - **Enterprise LDAP**: autenticazione enterprise con role mapping e strategia configurabile
 - **Master Key**:
   - Primario: keytar (keychain OS)
@@ -204,6 +206,7 @@ pnpm install
 - **Segreti**: JWT_SECRET e NEXTAUTH_SECRET vengono generati automaticamente durante il seed e cifrati in AppConfig
 - **Rotazione Segreti**: Aggiorna i valori in AppConfig e riavvia il server per applicare le modifiche
 - **Nessun .env**: I segreti non devono mai essere committati in file .env (solo NEXT*PUBLIC*\* se necessario)
+- **Export sicuro**: I segreti cifrati nell'export mostrano sempre `[ENCRYPTED]`, mai il plaintext
 
 ---
 

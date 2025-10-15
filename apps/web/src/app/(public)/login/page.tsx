@@ -13,7 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from '../../../components/ui/card';
-import { getLoginDemoText } from '../../../lib/config';
+import { useAppConfig } from '../../../hooks/use-app-config';
 import Logo from '../../../components/Logo';
 
 /**
@@ -26,6 +26,16 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+
+  const { name, version, isLoading: configLoading, hasError } = useAppConfig();
+
+  const displayText = configLoading
+    ? 'Caricamento...'
+    : hasError
+      ? 'Backend non disponibile'
+      : name && version
+        ? `${name} v${version} (Development)`
+        : 'Connessione al backend...';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,7 +110,7 @@ export default function LoginPage() {
             </Button>
           </form>
           <div className="mt-4 text-xs text-muted-foreground text-center">
-            <p>{getLoginDemoText()}</p>
+            <p>{displayText}</p>
           </div>
         </CardContent>
       </Card>
