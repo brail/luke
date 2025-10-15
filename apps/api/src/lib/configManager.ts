@@ -112,11 +112,20 @@ export function decryptValue(encrypted: string): string {
 }
 
 /**
- * Salva una configurazione nel database
+ * Salva una configurazione nel database con supporto cifratura
+ *
  * @param prisma - Client Prisma
- * @param key - Chiave della configurazione
+ * @param key - Chiave della configurazione (deve rispettare formato e prefissi ammessi)
  * @param value - Valore da salvare
- * @param encrypt - Se true, cifra il valore prima di salvarlo
+ * @param encrypt - Se true, cifra il valore con AES-256-GCM prima di salvarlo
+ *
+ * @example
+ * // Salva valore plaintext
+ * await saveConfig(prisma, "app.name", "Luke", false);
+ *
+ * @example
+ * // Salva valore cifrato
+ * await saveConfig(prisma, "auth.ldap.password", "secret123", true);
  */
 export async function saveConfig(
   prisma: PrismaClient,
@@ -142,11 +151,23 @@ export async function saveConfig(
 }
 
 /**
- * Recupera una configurazione dal database
+ * Recupera una configurazione dal database con supporto decifratura
+ *
+ * **SICUREZZA**: Per motivi di sicurezza, questa funzione dovrebbe essere usata
+ * solo per singole chiavi. Per liste multiple, usare `listConfigsPaged`.
+ *
  * @param prisma - Client Prisma
  * @param key - Chiave della configurazione
- * @param decrypt - Se true, decifra il valore se è cifrato
- * @returns Valore della configurazione (decifrato se richiesto)
+ * @param decrypt - Se true, decifra automaticamente i valori cifrati
+ * @returns Valore della configurazione (decifrato se richiesto e cifrato)
+ *
+ * @example
+ * // Recupera valore decifrato
+ * const value = await getConfig(prisma, "auth.ldap.password", true);
+ *
+ * @example
+ * // Recupera valore raw (cifrato rimane cifrato)
+ * const value = await getConfig(prisma, "auth.ldap.password", false);
  */
 export async function getConfig(
   prisma: PrismaClient,
@@ -206,9 +227,36 @@ export async function listConfigs(
 
 /**
  * Lista configurazioni con paginazione, filtri e ordinamento
+ *
+ * **SICUREZZA**: I valori cifrati non vengono mai decrittati in questa funzione.
+ * Per valori cifrati, `valuePreview` sarà sempre `null`.
+ *
  * @param prisma - Client Prisma
  * @param params - Parametri per filtri, paginazione e ordinamento
+ * @param params.q - Ricerca per chiave (case-insensitive)
+ * @param params.category - Filtra per categoria (prefisso della chiave)
+ * @param params.isEncrypted - Filtra per tipo di cifratura
+ * @param params.sortBy - Campo per ordinamento
+ * @param params.sortDir - Direzione ordinamento
+ * @param params.page - Numero pagina (1-based)
+ * @param params.pageSize - Dimensione pagina (5-100)
  * @returns Risultati paginati con metadati
+ *
+ * @example
+ * // Lista base con paginazione
+ * const result = await listConfigsPaged(prisma, { page: 1, pageSize: 20 });
+ *
+ * @example
+ * // Ricerca con filtri
+ * const result = await listConfigsPaged(prisma, {
+ *   q: "ldap",
+ *   category: "auth",
+ *   isEncrypted: true,
+ *   sortBy: "updatedAt",
+ *   sortDir: "desc",
+ *   page: 1,
+ *   pageSize: 50
+ * });
  */
 export async function listConfigsPaged(
   prisma: PrismaClient,

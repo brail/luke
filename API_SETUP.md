@@ -435,17 +435,38 @@ I valori sensibili sono cifrati con **AES-256-GCM**.
 
 #### Chiavi Critiche Protette
 
-Le seguenti chiavi non possono essere eliminate:
+Le seguenti chiavi non possono essere eliminate per motivi di sicurezza e funzionamento del sistema:
 
-- `auth.strategy`, `auth.ldap.url`, `auth.ldap.searchBase`, `auth.ldap.searchFilter`
-- `mail.smtp`, `storage.smb`, `storage.drive`
-- `nextauth.secret`, `jwt.secret`
+**Autenticazione e Autorizzazione:**
+
+- `auth.strategy` - Strategia di autenticazione principale
+- `auth.ldap.url` - URL server LDAP
+- `auth.ldap.searchBase` - Base di ricerca LDAP
+- `auth.ldap.searchFilter` - Filtro di ricerca LDAP
+- `nextauth.secret` - Secret per NextAuth.js
+- `jwt.secret` - Secret per firma token JWT
+
+**Sicurezza e Cifratura:**
+
+- `security.encryption.key` - Chiave master per cifratura
+
+**Servizi Esterni Critici:**
+
+- `mail.smtp` - Configurazione SMTP per email
+- `storage.smb` - Configurazione storage SMB
+- `storage.drive` - Configurazione storage drive
+
+**Gestione Edge Cases:**
+
+- Per eliminare una chiave critica, contattare l'amministratore di sistema
+- In caso di emergenza, la chiave può essere temporaneamente rinominata invece di eliminata
 
 #### Formato Chiavi Valido
 
-- **Regex**: `/^[a-z]+([._-][a-z0-9]+)+$/`
-- **Esempi validi**: `auth.ldap.url`, `mail.smtp.host`, `storage.smb.password`
-- **Esempi non validi**: `app` (manca separatore), `AUTH.ldap` (maiuscole), `auth.` (termina con punto)
+- **Regex**: `/^(categories)(\\.[a-zA-Z0-9_-]+)+$/` (permette maiuscole per acronimi)
+- **Prefissi ammessi**: `app`, `auth`, `mail`, `storage`, `security`, `integrations`
+- **Esempi validi**: `auth.ldap.url`, `mail.smtp.host`, `storage.smb.password`, `auth.SAML.url`
+- **Esempi non validi**: `app` (manca separatore), `auth.` (termina con punto), `invalid.prefix.key` (prefisso non ammesso)
 
 ## 🏗️ Architettura
 

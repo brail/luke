@@ -17,16 +17,24 @@ import { logAudit } from '../lib/auditLog';
 
 /**
  * Chiavi critiche che non possono essere eliminate
+ * Queste chiavi sono essenziali per il funzionamento e la sicurezza del sistema
  */
 const CRITICAL_KEYS = new Set([
+  // Autenticazione e autorizzazione
   'auth.strategy',
   'auth.ldap.url',
   'auth.ldap.searchBase',
   'auth.ldap.searchFilter',
+  'nextauth.secret',
+  'jwt.secret',
+
+  // Sicurezza e cifratura
+  'security.encryption.key',
+
+  // Servizi esterni critici
   'mail.smtp',
   'storage.smb',
   'storage.drive',
-  'nextauth.secret',
 ]);
 
 /**
@@ -119,41 +127,96 @@ const DeleteConfigSchema = z.object({
 });
 
 /**
- * Schema per listare configurazioni
+ * Schema per listare configurazioni con paginazione e filtri
+ *
+ * @example
+ * // Lista base con paginazione
+ * { page: 1, pageSize: 20 }
+ *
+ * @example
+ * // Ricerca per chiave con filtri
+ * { q: "ldap", category: "auth", isEncrypted: true, sortBy: "updatedAt", sortDir: "desc" }
  */
 const ListConfigsSchema = z.object({
-  q: z.string().trim().optional(), // ricerca per chiave (case-insensitive)
-  category: z.string().trim().optional(), // filtra per categoria dedotta
-  isEncrypted: z.boolean().optional(), // filtra cifrato/plain
+  /** Ricerca per chiave (case-insensitive) */
+  q: z.string().trim().optional(),
+  /** Filtra per categoria dedotta dal prefisso della chiave */
+  category: z.string().trim().optional(),
+  /** Filtra per tipo di cifratura (true=cifrato, false=plaintext) */
+  isEncrypted: z.boolean().optional(),
+  /** Campo per ordinamento */
   sortBy: z.enum(['key', 'updatedAt']).default('key'),
+  /** Direzione ordinamento */
   sortDir: z.enum(['asc', 'desc']).default('asc'),
+  /** Numero pagina (1-based) */
   page: z.number().int().min(1).default(1),
+  /** Dimensione pagina (5-100) */
   pageSize: z.number().int().min(5).max(100).default(20),
 });
 
 /**
- * Schema per visualizzare valore configurazione
+ * Schema per visualizzare valore configurazione con modalità sicura
+ *
+ * @example
+ * // Modalità masked (qualsiasi utente autenticato)
+ * { key: "auth.ldap.password", mode: "masked" }
+ *
+ * @example
+ * // Modalità raw (solo admin, genera audit log)
+ * { key: "auth.ldap.password", mode: "raw" }
  */
 const ViewValueSchema = z.object({
+  /** Chiave della configurazione da visualizzare */
   key: z.string().min(1),
+  /**
+   * Modalità di visualizzazione:
+   * - 'masked': valori cifrati mostrano [ENCRYPTED], disponibile per tutti gli utenti autenticati
+   * - 'raw': decritta i valori cifrati, richiede ruolo admin e genera audit log obbligatorio
+   */
   mode: z.enum(['masked', 'raw']).default('masked'),
 });
 
 /**
- * Schema per export JSON
+ * Schema per export JSON sicuro
+ *
+ * @example
+ * // Export solo metadata (senza valori)
+ * { includeValues: false }
+ *
+ * @example
+ * // Export con valori (segreti cifrati mostrano [ENCRYPTED])
+ * { includeValues: true }
  */
 const ExportJsonSchema = z.object({
+  /**
+   * Se includere i valori nelle configurazioni:
+   * - false: solo metadata (chiave, categoria, isEncrypted, updatedAt)
+   * - true: include valori, ma i segreti cifrati mostrano sempre [ENCRYPTED] per sicurezza
+   */
   includeValues: z.boolean().optional().default(false),
 });
 
 /**
- * Schema per import JSON
+ * Schema per import JSON con validazione
+ *
+ * @example
+ * {
+ *   "items": [
+ *     {"key": "app.name", "value": "Luke", "encrypt": false},
+ *     {"key": "auth.ldap.password", "value": "secret", "encrypt": true},
+ *     {"key": "auth.ldap.url", "value": null, "encrypt": true} // value: null viene saltato
+ *   ]
+ * }
  */
 const ImportJsonSchema = z.object({
+  /** Array di configurazioni da importare */
   items: z.array(
     z.object({
+      /** Chiave della configurazione (deve rispettare formato e prefissi ammessi) */
       key: z.string().min(1),
+      /** Valore della configurazione (null = salta questo item) */
       value: z.string().nullable(),
+      /** Se cifrare il valore (true = cifra, false/null = plaintext) */
       encrypt: z.boolean().optional().nullable(),
     })
   ),
