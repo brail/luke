@@ -33,7 +33,7 @@ Il server sarà disponibile su `http://localhost:3001`
 ### Health Check
 
 ```bash
-curl http://localhost:3001/api/health
+curl http://localhost:3001/healthz
 ```
 
 ### Root
@@ -371,6 +371,15 @@ Le password sono hashate con **argon2id** (time cost: 3, memory: 65536).
 
 I valori sensibili sono cifrati con **AES-256-GCM**.
 
+### JWT Token Signing
+
+- **Algoritmo**: HS256 (HMAC-SHA256)
+- **Secret**: Derivato via HKDF-SHA256 dalla master key
+- **Parametri HKDF**: salt='luke', info='api.jwt', length=32 bytes
+- **Scope**: Server-only, mai esposto via HTTP
+- **Rotazione**: Rigenera master key per invalidare tutti i token
+- **Nessun endpoint pubblico**: Il secret JWT non è mai esposto via API
+
 ### NextAuth Secret Derivation
 
 - **Algoritmo**: HKDF-SHA256 (RFC 5869)
@@ -378,6 +387,7 @@ I valori sensibili sono cifrati con **AES-256-GCM**.
 - **Parametri**: salt='luke', info='nextauth.secret', length=32 bytes
 - **Output**: Base64url string
 - **Scope**: Server-only, mai esposto via HTTP
+- **Nessun database**: Il secret non è mai salvato, solo derivato on-demand
 
 ### Sicurezza Config Router
 
@@ -493,6 +503,86 @@ pnpm --filter @luke/api dev
 ```bash
 # Cambia porta o ferma processo esistente
 PORT=3002 pnpm --filter @luke/api dev
+```
+
+## 🏥 Health & Readiness
+
+### Differenza Liveness vs Readiness
+
+- **Liveness (`/healthz`)**: Verifica che il processo sia vivo e l'event loop responsive. Sempre 200 se il server è attivo.
+- **Readiness (`/readyz`)**: Verifica che il sistema sia pronto a servire richieste:
+  - Database connesso
+  - Master key accessibile
+  - Segreti JWT derivabili
+
+**Implicazioni Deploy**:
+
+- Liveness failure → Kubernetes riavvia il pod
+- Readiness failure → Kubernetes rimuove il pod dal load balancer (senza riavvio)
+- Fail-fast al boot → Server termina con exit(1) se segreti non disponibili
+
+### Liveness Probe (`/healthz`)
+
+Verifica che il processo sia attivo.
+
+```bash
+curl http://localhost:3001/healthz
+```
+
+**Output atteso**:
+
+```json
+{
+  "status": "ok",
+  "timestamp": "2024-01-15T10:30:00.000Z"
+}
+```
+
+### Readiness Probe (`/readyz`)
+
+Verifica che il sistema sia pronto:
+
+- Database connesso
+- Master key disponibile
+- Segreti JWT derivabili
+
+```bash
+curl http://localhost:3001/readyz
+```
+
+**Output atteso (ready)**:
+
+```json
+{
+  "status": "ready",
+  "timestamp": "2024-01-15T10:30:00.000Z",
+  "checks": {
+    "database": "ok",
+    "secrets": "ok"
+  }
+}
+```
+
+**Output atteso (not ready)**:
+
+```json
+{
+  "status": "not_ready",
+  "error": "Master key non disponibile"
+}
+```
+
+**Uso in Kubernetes**:
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 3001
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 3001
 ```
 
 ## 📝 Note

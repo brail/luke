@@ -1,14 +1,21 @@
 /**
- * @luke/core/crypto - Gestione sicura dei segreti
+ * @luke/core/crypto - Gestione sicura dei segreti (SERVER-ONLY)
  *
  * Questo modulo fornisce:
  * - Accesso alla master key per cifratura
  * - Derivazione di segreti specifici tramite HKDF-SHA256
  * - Gestione NextAuth secret derivato deterministicamente
  *
+ * ⚠️ IMPORTANTE: Questo modulo può essere importato solo server-side
+ *
  * @version 0.1.0
  * @author Luke Team
  */
+
+// Runtime check: fail se eseguito nel browser
+if (typeof window !== 'undefined') {
+  throw new Error('secrets.server.ts può essere importato solo server-side');
+}
 
 import { hkdfSync, randomBytes } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
@@ -19,6 +26,7 @@ const MASTER_KEY_PATH = join(homedir(), '.luke', 'secret.key');
 const KEY_LENGTH = 32; // 256 bits per AES-256
 const HKDF_SALT = 'luke';
 const HKDF_INFO_NEXTAUTH = 'nextauth.secret';
+const HKDF_INFO_API_JWT = 'api.jwt';
 const HKDF_LENGTH = 32; // 256 bits
 
 /**
@@ -106,6 +114,27 @@ export function getNextAuthSecret(): string {
   } catch (error) {
     console.error('❌ Errore derivazione NextAuth secret:', error);
     throw new Error('Impossibile derivare NextAuth secret dalla master key');
+  }
+}
+
+/**
+ * Ottiene il JWT secret per l'API derivato dalla master key
+ *
+ * Il secret è deterministico: stesso master key → stesso secret
+ * Questo garantisce che i token JWT rimangano validi tra riavvii
+ * sullo stesso host, ma cambiano se la master key viene rigenerata.
+ *
+ * @returns JWT secret per API in formato base64url
+ * @throws Error se la derivazione fallisce
+ */
+export function getApiJwtSecret(): string {
+  try {
+    const secret = deriveSecret(HKDF_INFO_API_JWT);
+    console.log('🔐 API JWT secret derivato via HKDF-SHA256');
+    return secret;
+  } catch (error) {
+    console.error('❌ Errore derivazione API JWT secret:', error);
+    throw new Error('Impossibile derivare API JWT secret dalla master key');
   }
 }
 

@@ -99,11 +99,29 @@ pnpm --filter @luke/core build  # Solo core package
 - **Visualizzazione controllata**: modalità masked/raw con audit obbligatorio per raw
 - **Enterprise LDAP**: autenticazione enterprise con role mapping e strategia configurabile
 - **Master Key**:
-  - Primario: keytar (keychain OS)
-  - Fallback: `~/.luke/secret.key`
-- **JWT**: RS256 con chiavi asimmetriche
-- **Segreti**: JWT_SECRET generato automaticamente e cifrato in AppConfig
+  - File: `~/.luke/secret.key` (permessi 0600, creazione automatica)
+- **JWT & NextAuth**: HS256 con secret derivato via HKDF-SHA256 dalla master key
+- **Derivazione segreti**: HKDF con domini isolati (`api.jwt`, `nextauth.secret`)
 - **NextAuth Secret**: Derivato automaticamente dalla master key tramite HKDF-SHA256. Non è mai esposto via rete né salvato in database
+
+### JWT & NextAuth
+
+- **Algoritmo**: HS256 (HMAC-SHA256)
+- **Derivazione**: HKDF-SHA256 (RFC 5869) dalla master key
+- **Parametri HKDF**: salt='luke', info domain-specific, length=32 bytes
+- **Domini isolati**:
+  - `api.jwt` → JWT API backend
+  - `nextauth.secret` → NextAuth web sessions
+- **Scope**: Server-only, mai esposto via HTTP
+- **Rotazione**: Rigenera `~/.luke/secret.key` per invalidare tutti i token
+- **Nessun endpoint pubblico**: Segreti mai esposti via API
+
+### Health & Readiness
+
+- **`/healthz`** (Liveness): Processo attivo, event loop responsive
+- **`/readyz`** (Readiness): Sistema pronto (DB connesso, segreti disponibili)
+- **Fail-fast**: Server termina con exit(1) se segreti non derivabili al boot
+- **Kubernetes**: Usa `/healthz` per liveness, `/readyz` per readiness probe
 
 ### Autenticazione
 
@@ -204,8 +222,8 @@ pnpm install
 - **Database**: SQLite file viene creato automaticamente al primo avvio
 - **Ports**: Frontend (3000), Backend (3001) - configurabili via AppConfig
 - **Caching**: Turborepo cache in `.turbo/` (ignorato da git)
-- **Segreti**: JWT_SECRET e NEXTAUTH_SECRET vengono generati automaticamente durante il seed e cifrati in AppConfig
-- **Rotazione Segreti**: Aggiorna i valori in AppConfig e riavvia il server per applicare le modifiche
+- **Segreti JWT**: Derivati automaticamente dalla master key via HKDF-SHA256 (nessun database)
+- **Rotazione Segreti**: Rigenera `~/.luke/secret.key` per invalidare tutti i token
 - **Nessun .env**: I segreti non devono mai essere committati in file .env (solo NEXT*PUBLIC*\* se necessario)
 - **Export sicuro**: I segreti cifrati nell'export mostrano sempre `[ENCRYPTED]`, mai il plaintext
 

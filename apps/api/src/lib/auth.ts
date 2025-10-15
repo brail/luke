@@ -1,13 +1,14 @@
 /**
  * Sistema di autenticazione per Luke API
  * Gestisce JWT tokens e sessioni utente per Fastify + tRPC
+ * JWT secret derivato dalla master key via HKDF-SHA256
  */
 
 import jwt from 'jsonwebtoken';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import type { User } from '@luke/core';
 import type { PrismaClient } from '@prisma/client';
-import { getSecret } from './configManager';
+import { deriveSecret } from '@luke/core/server';
 
 /**
  * Interfaccia per il payload JWT
@@ -34,44 +35,10 @@ export interface UserSession {
 }
 
 /**
- * Cache in-memory per i segreti
- */
-const secretsCache = new Map<string, string>();
-
-/**
- * Inizializza i segreti dal database
- * @param prisma - Client Prisma
- */
-export async function initializeSecrets(prisma: PrismaClient): Promise<void> {
-  try {
-    console.log('🔐 Inizializzazione segreti...');
-
-    // Carica JWT secret
-    const jwtSecret = await getSecret(prisma, 'auth.jwtSecret');
-    secretsCache.set('jwtSecret', jwtSecret);
-
-    // NextAuth secret non più gestito qui - derivato via HKDF in apps/web
-
-    console.log('✅ Segreti caricati in cache');
-  } catch (error) {
-    console.error('❌ Errore caricamento segreti:', error);
-    throw new Error(
-      'Impossibile inizializzare i segreti. Esegui il seed del database.'
-    );
-  }
-}
-
-/**
- * Ottiene il JWT secret dalla cache
+ * Ottiene il JWT secret derivato dalla master key via HKDF
  */
 function getJWTSecret(): string {
-  const secret = secretsCache.get('jwtSecret');
-  if (!secret) {
-    throw new Error(
-      'JWT secret non inizializzato. Chiama initializeSecrets() prima.'
-    );
-  }
-  return secret;
+  return deriveSecret('api.jwt');
 }
 
 /**

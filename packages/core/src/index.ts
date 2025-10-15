@@ -25,5 +25,4 @@ export * from './utils/money';
 // Re-export pricing
 export * from './pricing';
 
-// Re-export crypto utilities
-export * from './crypto/secrets';
+// Note: crypto utilities are server-only and exported via @luke/core/server

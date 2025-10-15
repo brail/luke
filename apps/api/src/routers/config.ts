@@ -27,7 +27,6 @@ const CRITICAL_KEYS = new Set([
   'storage.smb',
   'storage.drive',
   'nextauth.secret',
-  'jwt.secret',
 ]);
 
 /**

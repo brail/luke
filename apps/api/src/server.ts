@@ -11,7 +11,7 @@ import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import { PrismaClient } from '@prisma/client';
 import { appRouter } from './routers';
 import { createContext } from './lib/trpc';
-import { initializeSecrets } from './lib/auth';
+import { validateMasterKey, deriveSecret } from '@luke/core/server';
 
 /**
  * Configurazione del logger Pino
@@ -71,7 +71,7 @@ const prisma = new PrismaClient({
 async function registerSecurityPlugins() {
   // Cookie plugin per gestione sessioni
   await fastify.register(cookie, {
-    secret: 'cookie-secret-from-env', // TODO: derivare da master key se necessario
+    secret: deriveSecret('cookie.secret'),
   });
 
   // Helmet per security headers
@@ -136,9 +136,48 @@ async function registerTRPCPlugin() {
 }
 
 /**
- * Registra route di health check
+ * Registra route di health check e readiness
  */
 async function registerHealthRoute() {
+  // Liveness: processo attivo
+  fastify.get('/healthz', async (request, reply) => {
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+    };
+  });
+
+  // Readiness: sistema pronto per servire richieste
+  fastify.get('/readyz', async (request, reply) => {
+    try {
+      // Verifica database
+      await prisma.$queryRaw`SELECT 1`;
+
+      // Verifica segreti
+      if (!validateMasterKey()) {
+        throw new Error('Master key non disponibile');
+      }
+
+      deriveSecret('api.jwt');
+
+      return {
+        status: 'ready',
+        timestamp: new Date().toISOString(),
+        checks: {
+          database: 'ok',
+          secrets: 'ok',
+        },
+      };
+    } catch (error: any) {
+      reply.status(503);
+      return {
+        status: 'not_ready',
+        error: error.message,
+      };
+    }
+  });
+
+  // Route legacy per retrocompatibilità
   fastify.get('/api/health', async (request, reply) => {
     return {
       status: 'ok',
@@ -156,6 +195,8 @@ async function registerHealthRoute() {
       version: process.env.npm_package_version || '0.1.0',
       endpoints: {
         health: '/api/health',
+        healthz: '/healthz',
+        readyz: '/readyz',
         trpc: '/trpc',
         docs: 'https://trpc.io/docs',
       },
@@ -212,9 +253,20 @@ const start = async () => {
     await prisma.$connect();
     fastify.log.info('Connessione database stabilita');
 
-    // Inizializza segreti dal database PRIMA di registrare i plugin
-    await initializeSecrets(prisma);
-    fastify.log.info('Segreti inizializzati');
+    // Test master key availability
+    if (!validateMasterKey()) {
+      fastify.log.error('❌ Master key non disponibile o invalida');
+      process.exit(1);
+    }
+
+    // Test secret derivation
+    try {
+      deriveSecret('api.jwt');
+      fastify.log.info('✅ Segreti JWT derivati con successo');
+    } catch (error: any) {
+      fastify.log.error('❌ Impossibile derivare segreti JWT:', error);
+      process.exit(1);
+    }
 
     // Registra plugin e route nell'ordine corretto
     await registerSecurityPlugins(); // CORS deve essere registrato prima di tRPC
@@ -231,7 +283,8 @@ const start = async () => {
     await fastify.listen({ port, host });
 
     fastify.log.info(`🚀 Luke API server listening on http://${host}:${port}`);
-    fastify.log.info(`📊 Health check: http://${host}:${port}/api/health`);
+    fastify.log.info(`📊 Health check: http://${host}:${port}/healthz`);
+    fastify.log.info(`✅ Readiness check: http://${host}:${port}/readyz`);
     fastify.log.info(`🔗 tRPC endpoint: http://${host}:${port}/trpc`);
 
     if (process.env.NODE_ENV === 'development') {

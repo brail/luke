@@ -94,16 +94,10 @@ async function main() {
     // Configurazioni iniziali
     console.log('⚙️  Creazione configurazioni iniziali...');
 
-    // Genera segreti JWT e NextAuth
-    const jwtSecret = randomBytes(32).toString('hex');
+    // Genera NextAuth secret (JWT secret ora derivato via HKDF)
     const nextAuthSecret = randomBytes(32).toString('hex');
 
     const initialConfigs = [
-      {
-        key: 'auth.jwtSecret',
-        value: jwtSecret,
-        encrypt: true,
-      },
       {
         key: 'auth.nextAuthSecret',
         value: nextAuthSecret,
@@ -247,14 +241,12 @@ async function main() {
     console.log('   Username: admin');
     console.log('   Password: changeme');
     console.log('\n🔐 Segreti generati:');
-    console.log('   JWT Secret: Generato e cifrato in AppConfig');
+    console.log('   JWT Secret: Derivato via HKDF dalla master key');
     console.log('   NextAuth Secret: Generato e cifrato in AppConfig');
     console.log('\n⚠️  IMPORTANTE: Cambia la password admin al primo login!');
     console.log('\n🚀 Prossimi passi:');
     console.log('   1. Avvia il server: pnpm --filter @luke/api dev');
-    console.log(
-      '   2. Testa health check: curl http://localhost:3001/api/health'
-    );
+    console.log('   2. Testa health check: curl http://localhost:3001/healthz');
     console.log(
       '   3. Apri Prisma Studio: pnpm --filter @luke/api prisma:studio'
     );
