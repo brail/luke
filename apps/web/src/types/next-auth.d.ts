@@ -5,6 +5,8 @@ declare module 'next-auth' {
   // eslint-disable-next-line no-unused-vars
   interface User {
     role?: string;
+    firstName?: string;
+    lastName?: string;
   }
 
   // eslint-disable-next-line no-unused-vars
@@ -15,6 +17,8 @@ declare module 'next-auth' {
       email?: string | null;
       image?: string | null;
       role?: string;
+      firstName?: string;
+      lastName?: string;
     };
     accessToken?: string;
   }
@@ -26,5 +30,7 @@ declare module 'next-auth/jwt' {
   interface JWT {
     role?: string;
     accessToken?: string;
+    firstName?: string;
+    lastName?: string;
   }
 }

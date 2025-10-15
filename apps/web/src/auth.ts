@@ -104,6 +104,8 @@ export const config = {
             id: authResult.user.id,
             name: authResult.user.username,
             email: authResult.user.email,
+            firstName: authResult.user.firstName,
+            lastName: authResult.user.lastName,
             role: authResult.user.role,
             accessToken: authResult.token,
           };
@@ -123,6 +125,8 @@ export const config = {
       if (user) {
         token.role = (user as any).role;
         token.accessToken = (user as any).accessToken;
+        token.firstName = (user as any).firstName;
+        token.lastName = (user as any).lastName;
       }
       return token;
     },
@@ -131,6 +135,8 @@ export const config = {
       if (token) {
         session.user.id = token.sub || '';
         session.user.role = token.role as string;
+        session.user.firstName = token.firstName as string;
+        session.user.lastName = token.lastName as string;
         session.accessToken = token.accessToken as string;
       }
       return session;

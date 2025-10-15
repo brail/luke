@@ -224,6 +224,8 @@ export const authRouter = router({
           id: authenticatedUser.id,
           email: authenticatedUser.email,
           username: authenticatedUser.username,
+          firstName: authenticatedUser.firstName,
+          lastName: authenticatedUser.lastName,
           role: authenticatedUser.role,
           isActive: authenticatedUser.isActive,
         },

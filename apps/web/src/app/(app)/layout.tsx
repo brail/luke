@@ -1,9 +1,8 @@
 'use client';
 
 import React from 'react';
-import { useSession, signOut } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Button } from '../../components/ui/button';
 import AppSidebar from '../../components/AppSidebar';
 import { SidebarProvider, SidebarTrigger } from '../../components/ui/sidebar';
 import LoadingLogo from '../../components/LoadingLogo';
@@ -29,10 +28,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return null;
   }
 
-  const handleSignOut = async () => {
-    await signOut({ callbackUrl: '/login' });
-  };
-
   return (
     <SidebarProvider>
       <div className="flex min-h-screen w-full bg-background">
@@ -40,19 +35,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="flex-1 flex flex-col">
           {/* Header comune */}
           <header className="border-b bg-card">
-            <div className="flex justify-between items-center px-4 py-4">
-              <div className="flex items-center gap-4">
-                <SidebarTrigger />
-                <BreadcrumbNav />
-              </div>
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-muted-foreground">
-                  Benvenuto, {session.user?.name || session.user?.email}
-                </span>
-                <Button variant="outline" size="sm" onClick={handleSignOut}>
-                  Logout
-                </Button>
-              </div>
+            <div className="flex items-center gap-4 px-4 py-4">
+              <SidebarTrigger />
+              <BreadcrumbNav />
             </div>
           </header>
 
