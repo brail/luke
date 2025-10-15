@@ -50,9 +50,7 @@ export async function initializeSecrets(prisma: PrismaClient): Promise<void> {
     const jwtSecret = await getSecret(prisma, 'auth.jwtSecret');
     secretsCache.set('jwtSecret', jwtSecret);
 
-    // Carica NextAuth secret
-    const nextAuthSecret = await getSecret(prisma, 'auth.nextAuthSecret');
-    secretsCache.set('nextAuthSecret', nextAuthSecret);
+    // NextAuth secret non più gestito qui - derivato via HKDF in apps/web
 
     console.log('✅ Segreti caricati in cache');
   } catch (error) {
@@ -71,19 +69,6 @@ function getJWTSecret(): string {
   if (!secret) {
     throw new Error(
       'JWT secret non inizializzato. Chiama initializeSecrets() prima.'
-    );
-  }
-  return secret;
-}
-
-/**
- * Ottiene il NextAuth secret dalla cache
- */
-export function getNextAuthSecret(): string {
-  const secret = secretsCache.get('nextAuthSecret');
-  if (!secret) {
-    throw new Error(
-      'NextAuth secret non inizializzato. Chiama initializeSecrets() prima.'
     );
   }
   return secret;

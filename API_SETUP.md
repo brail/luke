@@ -371,6 +371,14 @@ Le password sono hashate con **argon2id** (time cost: 3, memory: 65536).
 
 I valori sensibili sono cifrati con **AES-256-GCM**.
 
+### NextAuth Secret Derivation
+
+- **Algoritmo**: HKDF-SHA256 (RFC 5869)
+- **Input**: Master key (~/.luke/secret.key)
+- **Parametri**: salt='luke', info='nextauth.secret', length=32 bytes
+- **Output**: Base64url string
+- **Scope**: Server-only, mai esposto via HTTP
+
 ### Sicurezza Config Router
 
 #### Regole di Sicurezza

@@ -102,7 +102,8 @@ pnpm --filter @luke/core build  # Solo core package
   - Primario: keytar (keychain OS)
   - Fallback: `~/.luke/secret.key`
 - **JWT**: RS256 con chiavi asimmetriche
-- **Segreti**: JWT_SECRET e NEXTAUTH_SECRET generati automaticamente e cifrati in AppConfig
+- **Segreti**: JWT_SECRET generato automaticamente e cifrato in AppConfig
+- **NextAuth Secret**: Derivato automaticamente dalla master key tramite HKDF-SHA256. Non è mai esposto via rete né salvato in database
 
 ### Autenticazione
 

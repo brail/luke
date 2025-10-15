@@ -11,7 +11,7 @@ import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import { PrismaClient } from '@prisma/client';
 import { appRouter } from './routers';
 import { createContext } from './lib/trpc';
-import { initializeSecrets, getNextAuthSecret } from './lib/auth';
+import { initializeSecrets } from './lib/auth';
 
 /**
  * Configurazione del logger Pino
@@ -71,7 +71,7 @@ const prisma = new PrismaClient({
 async function registerSecurityPlugins() {
   // Cookie plugin per gestione sessioni
   await fastify.register(cookie, {
-    secret: getNextAuthSecret(),
+    secret: 'cookie-secret-from-env', // TODO: derivare da master key se necessario
   });
 
   // Helmet per security headers
@@ -147,16 +147,6 @@ async function registerHealthRoute() {
       version: process.env.npm_package_version || '0.1.0',
       environment: process.env.NODE_ENV || 'development',
     };
-  });
-
-  // Route per NextAuth secret (disponibile sia in sviluppo che produzione)
-  fastify.get('/api/nextauth-secret', async (request, reply) => {
-    try {
-      const secret = getNextAuthSecret();
-      return { secret };
-    } catch (error) {
-      reply.status(500).send({ error: 'Internal server error' });
-    }
   });
 
   // Route root per compatibilità

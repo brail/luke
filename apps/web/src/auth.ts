@@ -1,6 +1,7 @@
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import type { NextAuthConfig } from 'next-auth';
+import { getNextAuthSecret } from '@luke/core';
 
 /**
  * Helper per chiamare l'API tRPC
@@ -32,45 +33,6 @@ async function callTRPCAuth(username: string, password: string) {
     return null;
   }
 }
-
-/**
- * Recupera il NextAuth secret dall'API
- * In Luke, tutti i segreti sono gestiti tramite AppConfig, mai tramite .env
- */
-async function getNextAuthSecret(): Promise<string> {
-  try {
-    // Recupera sempre il segreto dall'API (sia in sviluppo che produzione)
-    const response = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/nextauth-secret`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-
-    if (response.ok) {
-      const data = await response.json();
-      return data.secret;
-    }
-  } catch (error) {
-    console.warn("Impossibile recuperare NextAuth secret dall'API:", error);
-  }
-
-  // Fallback solo se l'API non è disponibile (non dovrebbe mai accadere in Luke)
-  throw new Error(
-    "NextAuth secret non disponibile. Verifica che l'API sia in esecuzione e che i segreti siano inizializzati."
-  );
-}
-
-/**
- * Cache del secret con aggiornamento periodico
- * Mantiene il secret sempre aggiornato senza overhead su ogni richiesta
- * Inizializza con un valore temporaneo che verrà sostituito al primo aggiornamento
- */
-let cachedSecret = 'TEMP_SECRET_DURING_INIT';
-const UPDATE_INTERVAL = 5 * 60 * 1000; // 5 minuti
 
 /**
  * Configurazione Auth.js v5 per Luke
@@ -145,28 +107,9 @@ export const config = {
   pages: {
     signIn: '/login',
   },
-  // Secret con cache e aggiornamento periodico
-  // Inizializza con env var, poi aggiorna dinamicamente via getCachedSecret()
-  secret: cachedSecret,
+  // Secret derivato deterministicamente dalla master key via HKDF-SHA256
+  // Nessuna esposizione HTTP, nessun valore in database
+  secret: getNextAuthSecret(),
 } satisfies NextAuthConfig;
 
 export const { handlers, auth, signIn, signOut } = NextAuth(config);
-
-/**
- * Avvia l'aggiornamento periodico del secret in background
- * Funziona sia in sviluppo che in produzione
- */
-// Aggiorna il secret ogni 5 minuti
-setInterval(async () => {
-  try {
-    const newSecret = await getNextAuthSecret();
-    if (newSecret !== cachedSecret) {
-      cachedSecret = newSecret;
-      console.log('NextAuth secret aggiornato in background');
-    }
-  } catch (error) {
-    console.warn('Errore aggiornamento background NextAuth secret:', error);
-  }
-}, UPDATE_INTERVAL);
-
-console.log('NextAuth secret background update avviato');
