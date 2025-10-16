@@ -17,7 +17,7 @@ interface ConfigExportButtonProps {
 export function ConfigExportButton({ className }: ConfigExportButtonProps) {
   const [isExporting, setIsExporting] = useState(false);
 
-  const exportMutation = (trpc as any).config.exportJson.useMutation();
+  const exportMutation = trpc.config.exportJson.useMutation();
 
   const handleExport = async () => {
     setIsExporting(true);

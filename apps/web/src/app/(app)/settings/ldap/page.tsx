@@ -1,60 +1,81 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { useSession } from 'next-auth/react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '../../../../components/ui/button';
 import { Input } from '../../../../components/ui/input';
-import { Label } from '../../../../components/ui/label';
+import { PasswordInput } from '../../../../components/ui/password-input';
+import { Switch } from '../../../../components/ui/switch';
+import { Textarea } from '../../../../components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../../../components/ui/select';
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '../../../../components/ui/form';
 import { SectionCard } from '../../../../components/SectionCard';
 import { PageHeader } from '../../../../components/PageHeader';
 import { trpc } from '../../../../lib/trpc';
-import type { LdapConfigInput } from '@luke/core';
-
-// Usa i tipi da @luke/core per type-safety
-type LdapConfig = LdapConfigInput & {
-  hasBindDN: boolean;
-  hasBindPassword: boolean;
-};
+import { useToast } from '../../../../hooks/use-toast';
+import { ldapConfigSchema, type LdapConfigInput } from '@luke/core';
+import { CheckCircle, XCircle } from 'lucide-react';
 
 export default function LdapSettingsPage() {
   const { data: session, status } = useSession();
-  const [formData, setFormData] = useState<LdapConfig>({
-    enabled: false,
-    url: '',
-    bindDN: '',
-    hasBindDN: false,
-    hasBindPassword: false,
-    bindPassword: '',
-    searchBase: '',
-    searchFilter: '',
-    groupSearchBase: '',
-    groupSearchFilter: '',
-    roleMapping: '',
-    strategy: 'local-first',
+  const toast = useToast();
+
+  // Form con react-hook-form e validazione Zod
+  const form = useForm<LdapConfigInput>({
+    resolver: zodResolver(ldapConfigSchema),
+    defaultValues: {
+      enabled: false,
+      url: '',
+      bindDN: '',
+      bindPassword: '',
+      searchBase: '',
+      searchFilter: '',
+      groupSearchBase: '',
+      groupSearchFilter: '',
+      roleMapping: '',
+      strategy: 'local-first',
+    },
   });
 
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [isLoading, setIsLoading] = useState(false);
-  const [message, setMessage] = useState<{
-    type: 'success' | 'error';
-    text: string;
-  } | null>(null);
+  // Stato per i flag di presenza dei campi sensibili
+  const [hasBindDN, setHasBindDN] = React.useState(false);
+  const [hasBindPassword, setHasBindPassword] = React.useState(false);
+  const [testConnectionStatus, setTestConnectionStatus] = React.useState<
+    'idle' | 'success' | 'error'
+  >('idle');
 
   // Carica configurazione esistente (solo se admin)
-  const { data: existingConfig, isLoading: isLoadingConfig } = (
-    trpc as any
-  ).integrations.auth.getLdapConfig.useQuery(undefined, {
+  const {
+    data: existingConfig,
+    isLoading: isLoadingConfig,
+    error: configError,
+  } = trpc.integrations.auth.getLdapConfig.useQuery(undefined, {
     enabled: session?.user?.role === 'admin',
   });
 
+  // Aggiorna form quando arriva la configurazione esistente
   useEffect(() => {
     if (existingConfig) {
-      setFormData({
+      form.reset({
         enabled: existingConfig.enabled,
         url: existingConfig.url,
         bindDN: '', // Non mostrare il valore esistente per sicurezza
-        hasBindDN: existingConfig.hasBindDN,
-        hasBindPassword: existingConfig.hasBindPassword,
         bindPassword: '', // Non mostrare il valore esistente per sicurezza
         searchBase: existingConfig.searchBase,
         searchFilter: existingConfig.searchFilter,
@@ -63,60 +84,52 @@ export default function LdapSettingsPage() {
         roleMapping: existingConfig.roleMapping,
         strategy: existingConfig.strategy,
       });
+
+      // Aggiorna i flag per i campi sensibili
+      setHasBindDN(existingConfig.hasBindDN);
+      setHasBindPassword(existingConfig.hasBindPassword);
     }
-  }, [existingConfig]);
+  }, [existingConfig, form]);
 
   // Mutations (solo se admin)
-  const saveConfigMutation = (
-    trpc as any
-  ).integrations.auth.saveLdapConfig.useMutation({
+  const saveConfigMutation = trpc.integrations.auth.saveLdapConfig.useMutation({
     onSuccess: () => {
-      setMessage({
-        type: 'success',
-        text: 'Configurazione LDAP salvata con successo!',
-      });
-      setErrors({});
+      toast.success('Configurazione LDAP salvata con successo!');
+      setTestConnectionStatus('idle');
     },
     onError: (err: any) => {
-      setMessage({ type: 'error', text: err.message });
-    },
-    onSettled: () => {
-      setIsLoading(false);
+      toast.error('Errore durante il salvataggio', {
+        description: err.message,
+      });
+      console.debug('LDAP save error:', err);
     },
   });
 
-  const testConnectionMutation = (
-    trpc as any
-  ).integrations.auth.testLdapConnection.useMutation({
-    onSuccess: () => {
-      setMessage({
-        type: 'success',
-        text: 'Test connessione LDAP riuscito!',
-      });
-    },
-    onError: (err: any) => {
-      setMessage({
-        type: 'error',
-        text: `Test connessione fallito: ${err.message}`,
-      });
-    },
-  });
+  const testConnectionMutation =
+    trpc.integrations.auth.testLdapConnection.useMutation({
+      onSuccess: () => {
+        toast.success('Test connessione LDAP riuscito!');
+        setTestConnectionStatus('success');
+      },
+      onError: (err: any) => {
+        toast.error('Test connessione fallito', {
+          description: err.message,
+        });
+        setTestConnectionStatus('error');
+        console.debug('LDAP connection test error:', err);
+      },
+    });
 
-  const testSearchMutation = (
-    trpc as any
-  ).integrations.auth.testLdapSearch.useMutation({
+  const testSearchMutation = trpc.integrations.auth.testLdapSearch.useMutation({
     onSuccess: (data: any) => {
-      setMessage({
-        type: 'success',
-        text: `Test ricerca LDAP: ${data.message}`,
-      });
+      toast.success(`Test ricerca LDAP: ${data.message}`);
       console.log('LDAP Search Results:', data);
     },
     onError: (err: any) => {
-      setMessage({
-        type: 'error',
-        text: `Test ricerca fallito: ${err.message}`,
+      toast.error('Test ricerca fallito', {
+        description: err.message,
       });
+      console.debug('LDAP search test error:', err);
     },
   });
 
@@ -159,76 +172,21 @@ export default function LdapSettingsPage() {
     );
   }
 
-  const handleInputChange = (
-    field: keyof LdapConfig,
-    value: string | boolean
-  ) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-
-    // Rimuovi errore quando l'utente inizia a digitare
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
-    }
-
-    // Validazione JSON per roleMapping
-    if (field === 'roleMapping') {
-      const roleMappingValue = value as string;
-      if (roleMappingValue.trim()) {
-        try {
-          JSON.parse(roleMappingValue);
-          setErrors(prev => ({ ...prev, roleMapping: '' }));
-        } catch {
-          setErrors(prev => ({ ...prev, roleMapping: 'JSON non valido' }));
-        }
-      }
-    }
-  };
-
-  const handleSaveConfig = async () => {
-    setIsLoading(true);
-    setMessage(null);
-
-    // Validazione finale
-    const newErrors: Record<string, string> = {};
-
-    if (formData.enabled) {
-      if (!formData.url) newErrors.url = 'URL LDAP è obbligatorio';
-      if (!formData.searchBase)
-        newErrors.searchBase = 'Search Base è obbligatorio';
-      if (!formData.searchFilter)
-        newErrors.searchFilter = 'Search Filter è obbligatorio';
-
-      if (formData.roleMapping.trim()) {
-        try {
-          JSON.parse(formData.roleMapping);
-        } catch {
-          newErrors.roleMapping = 'Role Mapping deve essere un JSON valido';
-        }
-      }
-    }
-
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-      setIsLoading(false);
-      return;
-    }
-
+  const onSubmit = (data: LdapConfigInput) => {
     // Prepara payload escludendo bindPassword se vuoto
-    const { bindPassword, ...payloadWithoutPassword } = formData;
+    const { bindPassword, ...payloadWithoutPassword } = data;
     const payload =
       !bindPassword || bindPassword.trim() === ''
         ? payloadWithoutPassword
-        : formData;
+        : data;
 
     saveConfigMutation.mutate(payload);
   };
 
   const handleTestConnection = () => {
+    const formData = form.getValues();
     if (!formData.enabled) {
-      setMessage({
-        type: 'error',
-        text: 'Abilita LDAP prima di testare la connessione',
-      });
+      toast.error('Abilita LDAP prima di testare la connessione');
       return;
     }
 
@@ -236,11 +194,9 @@ export default function LdapSettingsPage() {
   };
 
   const handleTestSearch = () => {
+    const formData = form.getValues();
     if (!formData.enabled) {
-      setMessage({
-        type: 'error',
-        text: 'Abilita LDAP prima di testare la ricerca',
-      });
+      toast.error('Abilita LDAP prima di testare la ricerca');
       return;
     }
     const username = prompt('Inserisci username da cercare:');
@@ -266,6 +222,33 @@ export default function LdapSettingsPage() {
     );
   }
 
+  if (configError) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Configurazione LDAP"
+          description="Errore nel caricamento"
+        />
+        <SectionCard
+          title="Errore"
+          description="Impossibile caricare la configurazione"
+        >
+          <div className="text-center space-y-4">
+            <div className="text-destructive text-lg font-semibold">
+              Errore nel caricamento
+            </div>
+            <p className="text-muted-foreground">
+              {configError.message || 'Errore sconosciuto'}
+            </p>
+            <Button asChild variant="outline">
+              <a href="/dashboard">Torna alla Dashboard</a>
+            </Button>
+          </div>
+        </SectionCard>
+      </div>
+    );
+  }
+
   return (
     <div key={session?.user?.id} className="space-y-6">
       <PageHeader
@@ -273,243 +256,312 @@ export default function LdapSettingsPage() {
         description="Configura l'autenticazione enterprise via LDAP con mapping dei ruoli"
       />
 
-      {message && (
-        <div
-          className={`p-4 rounded-md ${
-            message.type === 'success'
-              ? 'bg-green-50 text-green-800 border border-green-200'
-              : 'bg-red-50 text-red-800 border border-red-200'
-          }`}
-        >
-          {message.text}
-        </div>
-      )}
 
       <SectionCard
         title="Parametri LDAP"
         description="Configurazione completa per l'autenticazione LDAP"
       >
-        {/* Abilita LDAP */}
-        <div className="flex items-center space-x-2">
-          <input
-            id="enabled"
-            type="checkbox"
-            checked={formData.enabled}
-            onChange={e => handleInputChange('enabled', e.target.checked)}
-            className="h-4 w-4 rounded border border-input bg-background"
-          />
-          <Label htmlFor="enabled">Abilita autenticazione LDAP</Label>
-        </div>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            {/* Abilita LDAP */}
+            <FormField
+              control={form.control}
+              name="enabled"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                  <div className="space-y-0.5">
+                    <FormLabel className="text-base">
+                      Abilita autenticazione LDAP
+                    </FormLabel>
+                    <FormDescription>
+                      Attiva l&apos;autenticazione via server LDAP
+                    </FormDescription>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
 
-        {/* Strategia Autenticazione */}
-        <div className="space-y-2">
-          <Label htmlFor="strategy">Strategia Autenticazione</Label>
-          <select
-            id="strategy"
-            value={formData.strategy}
-            onChange={e => handleInputChange('strategy', e.target.value)}
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            <option value="local-first">Locale prima, poi LDAP</option>
-            <option value="ldap-first">LDAP prima, poi locale</option>
-            <option value="local-only">Solo autenticazione locale</option>
-            <option value="ldap-only">Solo autenticazione LDAP</option>
-          </select>
-          <p className="text-xs text-muted-foreground">
-            Determina l&apos;ordine di tentativo per l&apos;autenticazione
-          </p>
-        </div>
+            {/* Strategia Autenticazione */}
+            <FormField
+              control={form.control}
+              name="strategy"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Strategia Autenticazione</FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleziona strategia" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="local-first">
+                        Locale prima, poi LDAP
+                      </SelectItem>
+                      <SelectItem value="ldap-first">
+                        LDAP prima, poi locale
+                      </SelectItem>
+                      <SelectItem value="local-only">
+                        Solo autenticazione locale
+                      </SelectItem>
+                      <SelectItem value="ldap-only">
+                        Solo autenticazione LDAP
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    Determina l&apos;ordine di tentativo per
+                    l&apos;autenticazione
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-        {/* URL LDAP */}
-        <div className="space-y-2">
-          <Label htmlFor="url">URL LDAP *</Label>
-          <Input
-            id="url"
-            type="text"
-            value={formData.url}
-            onChange={e => handleInputChange('url', e.target.value)}
-            placeholder="ldap://server.example.com:389"
-            className={errors.url ? 'border-destructive' : ''}
-            disabled={!formData.enabled}
-          />
-          {errors.url && (
-            <p className="text-sm text-destructive">{errors.url}</p>
-          )}
-          <p className="text-xs text-muted-foreground">
-            URL del server LDAP (es. ldap://server.example.com:389)
-          </p>
-        </div>
+            {/* URL LDAP */}
+            <FormField
+              control={form.control}
+              name="url"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>URL LDAP *</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="ldap://server.example.com:389"
+                      disabled={!form.watch('enabled')}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    URL del server LDAP (es. ldap://server.example.com:389)
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-        {/* Bind DN */}
-        <div className="space-y-2">
-          <Label htmlFor="bindDN">Bind DN</Label>
-          <Input
-            id="bindDN"
-            type="text"
-            value={formData.bindDN}
-            onChange={e => handleInputChange('bindDN', e.target.value)}
-            placeholder={
-              formData.hasBindDN ? '••••••••' : 'cn=admin,dc=example,dc=com'
-            }
-            disabled={!formData.enabled}
-          />
-          <p className="text-xs text-muted-foreground">
-            DN dell&apos;account amministrativo per cercare gli utenti
-          </p>
-        </div>
+            {/* Bind DN */}
+            <FormField
+              control={form.control}
+              name="bindDN"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Bind DN</FormLabel>
+                  <FormControl>
+                    <PasswordInput
+                      placeholder={
+                        hasBindDN ? '••••••••' : 'cn=admin,dc=example,dc=com'
+                      }
+                      disabled={!form.watch('enabled')}
+                      hasValue={hasBindDN}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    DN dell&apos;account amministrativo per cercare gli utenti
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-        {/* Bind Password */}
-        <div className="space-y-2">
-          <Label htmlFor="bindPassword">Bind Password</Label>
-          <Input
-            id="bindPassword"
-            type="password"
-            value={formData.bindPassword}
-            onChange={e => handleInputChange('bindPassword', e.target.value)}
-            placeholder={
-              formData.hasBindPassword ? '••••••••' : 'Inserisci password'
-            }
-            disabled={!formData.enabled}
-          />
-          <p className="text-xs text-muted-foreground">
-            Password dell&apos;account amministrativo
-          </p>
-        </div>
+            {/* Bind Password */}
+            <FormField
+              control={form.control}
+              name="bindPassword"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Bind Password</FormLabel>
+                  <FormControl>
+                    <PasswordInput
+                      placeholder={
+                        hasBindPassword ? '••••••••' : 'Inserisci password'
+                      }
+                      disabled={!form.watch('enabled')}
+                      hasValue={hasBindPassword}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Password dell&apos;account amministrativo
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-        {/* Search Base */}
-        <div className="space-y-2">
-          <Label htmlFor="searchBase">Search Base *</Label>
-          <Input
-            id="searchBase"
-            type="text"
-            value={formData.searchBase}
-            onChange={e => handleInputChange('searchBase', e.target.value)}
-            placeholder="dc=example,dc=com"
-            className={errors.searchBase ? 'border-destructive' : ''}
-            disabled={!formData.enabled}
-          />
-          {errors.searchBase && (
-            <p className="text-sm text-destructive">{errors.searchBase}</p>
-          )}
-          <p className="text-xs text-muted-foreground">
-            Base DN dove cercare gli utenti
-          </p>
-        </div>
+            {/* Search Base */}
+            <FormField
+              control={form.control}
+              name="searchBase"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Search Base *</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="dc=example,dc=com"
+                      disabled={!form.watch('enabled')}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Base DN dove cercare gli utenti
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-        {/* Search Filter */}
-        <div className="space-y-2">
-          <Label htmlFor="searchFilter">Search Filter *</Label>
-          <Input
-            id="searchFilter"
-            type="text"
-            value={formData.searchFilter}
-            onChange={e => handleInputChange('searchFilter', e.target.value)}
-            placeholder="(uid=$&#123;username&#125;)"
-            className={errors.searchFilter ? 'border-destructive' : ''}
-            disabled={!formData.enabled}
-          />
-          {errors.searchFilter && (
-            <p className="text-sm text-destructive">{errors.searchFilter}</p>
-          )}
-          <p className="text-xs text-muted-foreground">
-            Filtro LDAP per cercare utenti (usa $&#123;username&#125; come
-            placeholder)
-          </p>
-        </div>
+            {/* Search Filter */}
+            <FormField
+              control={form.control}
+              name="searchFilter"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Search Filter *</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="(uid=${username})"
+                      disabled={!form.watch('enabled')}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Filtro LDAP per cercare utenti (usa ${'{username}'} come
+                    placeholder)
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-        {/* Group Search Base */}
-        <div className="space-y-2">
-          <Label htmlFor="groupSearchBase">Group Search Base</Label>
-          <Input
-            id="groupSearchBase"
-            type="text"
-            value={formData.groupSearchBase}
-            onChange={e => handleInputChange('groupSearchBase', e.target.value)}
-            placeholder="ou=groups,dc=example,dc=com"
-            disabled={!formData.enabled}
-          />
-          <p className="text-xs text-muted-foreground">
-            Base DN dove cercare i gruppi dell&apos;utente
-          </p>
-        </div>
+            {/* Group Search Base */}
+            <FormField
+              control={form.control}
+              name="groupSearchBase"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Group Search Base</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="ou=groups,dc=example,dc=com"
+                      disabled={!form.watch('enabled')}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Base DN dove cercare i gruppi dell&apos;utente
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-        {/* Group Search Filter */}
-        <div className="space-y-2">
-          <Label htmlFor="groupSearchFilter">Group Search Filter</Label>
-          <Input
-            id="groupSearchFilter"
-            type="text"
-            value={formData.groupSearchFilter}
-            onChange={e =>
-              handleInputChange('groupSearchFilter', e.target.value)
-            }
-            placeholder="(member=${userDN})"
-            disabled={!formData.enabled}
-          />
-          <p className="text-xs text-muted-foreground">
-            Filtro LDAP per cercare gruppi (usa $&#123;userDN&#125; come
-            placeholder)
-          </p>
-        </div>
+            {/* Group Search Filter */}
+            <FormField
+              control={form.control}
+              name="groupSearchFilter"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Group Search Filter</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="(member=${userDN})"
+                      disabled={!form.watch('enabled')}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Filtro LDAP per cercare gruppi (usa ${'{userDN}'} come
+                    placeholder)
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-        {/* Role Mapping */}
-        <div className="space-y-2">
-          <Label htmlFor="roleMapping">Role Mapping (JSON)</Label>
-          <textarea
-            id="roleMapping"
-            value={formData.roleMapping}
-            onChange={e => handleInputChange('roleMapping', e.target.value)}
-            placeholder={`{
+            {/* Role Mapping */}
+            <FormField
+              control={form.control}
+              name="roleMapping"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Role Mapping (JSON)</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      placeholder={`{
   "CN=Admins,DC=example,DC=com": "admin",
   "CN=Editors,DC=example,DC=com": "editor",
   "CN=Users,DC=example,DC=com": "viewer"
 }`}
-            className={`flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${
-              errors.roleMapping ? 'border-destructive' : ''
-            }`}
-            disabled={!formData.enabled}
-          />
-          {errors.roleMapping && (
-            <p className="text-sm text-destructive">{errors.roleMapping}</p>
-          )}
-          <p className="text-xs text-muted-foreground">
-            Mappa i gruppi LDAP ai ruoli dell&apos;applicazione (admin, editor,
-            viewer)
-          </p>
-        </div>
+                      disabled={!form.watch('enabled')}
+                      className="min-h-[120px] font-mono"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Mappa i gruppi LDAP ai ruoli dell&apos;applicazione (admin,
+                    editor, viewer)
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-        {/* Bottoni */}
-        <div className="flex justify-end space-x-2 pt-4">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleTestConnection}
-            disabled={isLoading || testConnectionMutation.isPending}
-          >
-            {testConnectionMutation.isPending
-              ? 'Test in corso...'
-              : 'Test Connessione'}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleTestSearch}
-            disabled={isLoading || testSearchMutation.isPending}
-          >
-            {testSearchMutation.isPending
-              ? 'Ricerca in corso...'
-              : 'Test Ricerca'}
-          </Button>
-          <Button
-            type="button"
-            onClick={handleSaveConfig}
-            disabled={isLoading || saveConfigMutation.isPending}
-          >
-            {isLoading || saveConfigMutation.isPending
-              ? 'Salvataggio...'
-              : 'Salva Configurazione'}
-          </Button>
-        </div>
+            {/* Bottoni */}
+            <div className="flex justify-end space-x-2 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleTestConnection}
+                disabled={
+                  saveConfigMutation.isPending ||
+                  testConnectionMutation.isPending
+                }
+              >
+                {testConnectionMutation.isPending ? (
+                  'Test in corso...'
+                ) : (
+                  <>
+                    Test Connessione
+                    {testConnectionStatus === 'success' && (
+                      <CheckCircle className="ml-2 h-4 w-4 text-green-500" />
+                    )}
+                    {testConnectionStatus === 'error' && (
+                      <XCircle className="ml-2 h-4 w-4 text-red-500" />
+                    )}
+                  </>
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleTestSearch}
+                disabled={
+                  saveConfigMutation.isPending || testSearchMutation.isPending
+                }
+              >
+                {testSearchMutation.isPending
+                  ? 'Ricerca in corso...'
+                  : 'Test Ricerca'}
+              </Button>
+              <Button type="submit" disabled={saveConfigMutation.isPending}>
+                {saveConfigMutation.isPending
+                  ? 'Salvataggio...'
+                  : 'Salva Configurazione'}
+              </Button>
+            </div>
+          </form>
+        </Form>
       </SectionCard>
     </div>
   );

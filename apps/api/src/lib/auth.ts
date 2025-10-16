@@ -101,7 +101,8 @@ export function extractTokenFromRequest(
   }
 
   // Prova poi il cookie
-  const token = request.cookies?.luke_session;
+  const cookies = (request as any).cookies;
+  const token = cookies?.luke_session;
   if (token) {
     return token;
   }
@@ -145,7 +146,7 @@ export async function authenticateRequest(
   const session = createUserSession(token);
   if (!session) {
     // Token non valido, rimuovi il cookie se presente
-    reply.clearCookie('luke_session');
+    (reply as any).clearCookie('luke_session');
     return null;
   }
 
@@ -156,7 +157,7 @@ export async function authenticateRequest(
  * Imposta il cookie di sessione
  */
 export function setSessionCookie(reply: FastifyReply, token: string): void {
-  reply.cookie('luke_session', token, {
+  (reply as any).cookie('luke_session', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
@@ -169,7 +170,7 @@ export function setSessionCookie(reply: FastifyReply, token: string): void {
  * Rimuove il cookie di sessione
  */
 export function clearSessionCookie(reply: FastifyReply): void {
-  reply.clearCookie('luke_session', {
+  (reply as any).clearCookie('luke_session', {
     path: '/',
   });
 }

@@ -75,7 +75,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
   const queryClient = useQueryClient();
 
   // Query principale per lista paginata con filtri e ordinamento
-  const query = (trpc as any).config.list.useQuery({
+  const query = trpc.config.list.useQuery({
     q: params.q?.trim() || undefined,
     category: params.category,
     isEncrypted: params.isEncrypted,
@@ -86,7 +86,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
   });
 
   // Mutation per creare una nuova configurazione
-  const setMutation = (trpc as any).config.set.useMutation({
+  const setMutation = trpc.config.set.useMutation({
     onSuccess: (data: any) => {
       toast.success(data.message || 'Configurazione salvata con successo');
       invalidateQueries();
@@ -100,7 +100,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
   });
 
   // Mutation per aggiornare una configurazione esistente
-  const updateMutation = (trpc as any).config.update.useMutation({
+  const updateMutation = trpc.config.update.useMutation({
     onSuccess: (data: any) => {
       toast.success(data.message || 'Configurazione aggiornata con successo');
       invalidateQueries();
@@ -114,7 +114,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
   });
 
   // Mutation per eliminare una configurazione
-  const deleteMutation = (trpc as any).config.delete.useMutation({
+  const deleteMutation = trpc.config['delete'].useMutation({
     onSuccess: (data: any) => {
       toast.success(data.message || 'Configurazione eliminata con successo');
       invalidateQueries();
@@ -136,7 +136,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
   });
 
   // Mutation per import batch
-  const importMutation = (trpc as any).config.importJson.useMutation({
+  const importMutation = trpc.config.importJson.useMutation({
     onSuccess: (data: any) => {
       const { successCount, errorCount } = data;
 
@@ -159,7 +159,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
   });
 
   // Mutation per export
-  const exportMutation = (trpc as any).config.exportJson.useMutation({
+  const exportMutation = trpc.config.exportJson.useMutation({
     onSuccess: (data: any) => {
       toast.success(`Esportate ${data.count} configurazioni`);
     },
@@ -181,9 +181,8 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
   /**
    * Helper per salvare una configurazione (create o update)
    *
-   * Determina automaticamente se usare set o update basandosi sull'esistenza
-   * della configurazione. Se la verifica dell'esistenza fallisce, assume
-   * che sia una nuova configurazione e usa set.
+   * Prova prima con update, se fallisce usa set per nuove configurazioni.
+   * Questo approccio è più semplice e robusto.
    *
    * @param formData - Dati della configurazione da salvare
    * @returns Promise che si risolve con il risultato dell'operazione
@@ -191,18 +190,10 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
   const saveConfig = useCallback(
     async (formData: ConfigFormData) => {
       try {
-        // Verifica se la configurazione esiste già
-        const exists = await (trpc as any).config.exists.query({
-          key: formData.key,
-        });
-
-        if (exists.exists) {
-          return await updateMutation.mutateAsync(formData);
-        } else {
-          return await setMutation.mutateAsync(formData);
-        }
+        // Prova prima con update (per configurazioni esistenti)
+        return await updateMutation.mutateAsync(formData);
       } catch (_error) {
-        // Se la verifica fallisce, prova con set (per nuove configurazioni)
+        // Se update fallisce, usa set (per nuove configurazioni)
         return await setMutation.mutateAsync(formData);
       }
     },

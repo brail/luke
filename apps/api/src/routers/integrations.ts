@@ -278,14 +278,16 @@ export const integrationsRouter = router({
         try {
           const logger = new SecureLogger(console);
 
-          // Validare che roleMapping sia JSON valido
-          try {
-            JSON.parse(input.roleMapping);
-          } catch (error) {
-            throw new TRPCError({
-              code: 'BAD_REQUEST',
-              message: 'Role Mapping deve essere un JSON valido',
-            });
+          // Validare che roleMapping sia JSON valido (solo se presente)
+          if (input.roleMapping && input.roleMapping.trim() !== '') {
+            try {
+              JSON.parse(input.roleMapping);
+            } catch (error) {
+              throw new TRPCError({
+                code: 'BAD_REQUEST',
+                message: 'Role Mapping deve essere un JSON valido',
+              });
+            }
           }
 
           // Salva ogni campo in AppConfig
@@ -326,12 +328,14 @@ export const integrationsRouter = router({
           ];
 
           for (const mapping of configMappings) {
-            await saveConfig(
-              ctx.prisma,
-              mapping.key,
-              mapping.value,
-              mapping.encrypt
-            );
+            if (mapping.value !== undefined) {
+              await saveConfig(
+                ctx.prisma,
+                mapping.key,
+                mapping.value,
+                mapping.encrypt
+              );
+            }
           }
 
           // Gestisci bindPassword separatamente solo se presente
@@ -431,9 +435,24 @@ export const integrationsRouter = router({
           connectTimeout: 5000,
         });
 
+        // Gestisci errori non catturati del client
+        client.on('error', err => {
+          console.error('LDAP client error:', err);
+        });
+
         // Testa connessione e bind
         await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(
+              new TRPCError({
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Timeout connessione LDAP (10 secondi)',
+              })
+            );
+          }, 10000);
+
           client!.bind(config.bindDN, config.bindPassword, err => {
+            clearTimeout(timeout);
             if (err) {
               console.error('LDAP connection test failed:', err);
               reject(
@@ -468,7 +487,10 @@ export const integrationsRouter = router({
         if (client) {
           try {
             await new Promise<void>(resolve => {
-              client!.unbind(() => {
+              client!.unbind(err => {
+                if (err) {
+                  console.warn('Error closing LDAP test connection:', err);
+                }
                 resolve();
               });
             });

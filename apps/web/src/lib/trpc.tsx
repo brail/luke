@@ -4,12 +4,14 @@ import { createTRPCReact, httpBatchLink } from '@trpc/react-query';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React, { useState } from 'react';
 import { useSession } from 'next-auth/react';
+import type { AppRouter } from '../../../api/src/routers';
+
 /**
  * Client tRPC per React Query
- * TODO: Tipizzare con AppRouter reale quando risolto conflitto con metodi built-in
- * Attualmente usa any per evitare conflitti con metodi built-in tRPC
+ * Tipizzato con AppRouter reale per inferenza end-to-end
+ * TODO futuro: Migrare a import da @luke/core se web/api si separano in repository diversi
  */
-export const trpc = createTRPCReact<any>();
+export const trpc = createTRPCReact<AppRouter>();
 
 /**
  * Helper per ottenere l'URL base dell'API
@@ -39,7 +41,7 @@ export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
 
   const trpcClient = React.useMemo(
     () =>
-      (trpc as any).createClient({
+      trpc.createClient({
         links: [
           httpBatchLink({
             url: `${getBaseUrl()}/trpc`,
@@ -62,11 +64,9 @@ export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
     [session?.accessToken]
   );
 
-  const TrpcProvider = (trpc as any).Provider;
-
-  return React.createElement(
-    TrpcProvider,
-    { client: trpcClient, queryClient },
-    React.createElement(QueryClientProvider, { client: queryClient }, children)
+  return (
+    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    </trpc.Provider>
   );
 };

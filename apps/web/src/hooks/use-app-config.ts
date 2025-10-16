@@ -11,7 +11,7 @@ export function useAppConfig() {
     data: appName,
     isLoading: nameLoading,
     error: nameError,
-  } = (trpc as any).config.get.useQuery(
+  } = trpc.config.get.useQuery(
     { key: 'app.name' },
     {
       staleTime: 5 * 60 * 1000, // 5 minuti
@@ -25,7 +25,7 @@ export function useAppConfig() {
     data: appVersion,
     isLoading: versionLoading,
     error: versionError,
-  } = (trpc as any).config.get.useQuery(
+  } = trpc.config.get.useQuery(
     { key: 'app.version' },
     {
       staleTime: 5 * 60 * 1000, // 5 minuti

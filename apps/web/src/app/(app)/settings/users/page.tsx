@@ -81,12 +81,12 @@ export default function UsersPage() {
     isLoading,
     error,
     refetch,
-  } = (trpc as any).users.list.useQuery(
+  } = trpc.users.list.useQuery(
     {
       page: currentPage,
       limit: 10,
       search: searchTerm || undefined,
-      role: roleFilter || undefined,
+      role: (roleFilter as 'admin' | 'editor' | 'viewer') || undefined,
       sortBy,
       sortOrder,
     },
@@ -96,7 +96,7 @@ export default function UsersPage() {
   );
 
   // Mutations tRPC
-  const createUserMutation = (trpc as any).users.create.useMutation({
+  const createUserMutation = trpc.users.create.useMutation({
     onSuccess: () => {
       toast.success('Utente creato con successo');
       setDialogOpen(false);
@@ -107,7 +107,7 @@ export default function UsersPage() {
     },
   });
 
-  const updateUserMutation = (trpc as any).users.update.useMutation({
+  const updateUserMutation = trpc.users.update.useMutation({
     onSuccess: () => {
       toast.success('Utente aggiornato con successo');
       setDialogOpen(false);
@@ -118,7 +118,7 @@ export default function UsersPage() {
     },
   });
 
-  const deleteUserMutation = (trpc as any).users.delete.useMutation({
+  const deleteUserMutation = trpc.users['delete'].useMutation({
     onSuccess: () => {
       toast.success('Utente disattivato con successo');
       refetch();
@@ -128,7 +128,7 @@ export default function UsersPage() {
     },
   });
 
-  const hardDeleteUserMutation = (trpc as any).users.hardDelete.useMutation({
+  const hardDeleteUserMutation = trpc.users.hardDelete.useMutation({
     onSuccess: () => {
       toast.success('Utente eliminato definitivamente');
       refetch();

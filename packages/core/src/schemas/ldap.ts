@@ -11,14 +11,32 @@ import { z } from 'zod';
  */
 export const ldapConfigSchema = z.object({
   enabled: z.boolean(),
-  url: z.string().min(1, 'URL LDAP è obbligatorio'),
-  bindDN: z.string(),
-  bindPassword: z.string().optional(),
+  url: z
+    .string()
+    .min(1, 'URL LDAP è obbligatorio')
+    .regex(/^ldaps?:\/\//, 'URL deve iniziare con ldap:// o ldaps://'),
+  bindDN: z.string().optional().or(z.literal('')),
+  bindPassword: z.string().optional().or(z.literal('')),
   searchBase: z.string().min(1, 'Search Base è obbligatorio'),
   searchFilter: z.string().min(1, 'Search Filter è obbligatorio'),
-  groupSearchBase: z.string(),
-  groupSearchFilter: z.string(),
-  roleMapping: z.string(), // JSON string validato successivamente
+  groupSearchBase: z.string().optional().or(z.literal('')),
+  groupSearchFilter: z.string().optional().or(z.literal('')),
+  roleMapping: z
+    .string()
+    .optional()
+    .or(z.literal(''))
+    .refine(
+      val => {
+        if (!val || val.trim() === '') return true; // Vuoto è valido
+        try {
+          JSON.parse(val);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      { message: 'Role Mapping deve essere un JSON valido' }
+    ),
   strategy: z.enum(['local-first', 'ldap-first', 'local-only', 'ldap-only']),
 });
 

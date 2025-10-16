@@ -535,7 +535,7 @@ export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
     roleMapping = {};
   }
 
-  return {
+  const result = {
     enabled,
     url,
     bindDN,
@@ -547,4 +547,6 @@ export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
     roleMapping,
     strategy,
   };
+
+  return result;
 }

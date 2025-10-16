@@ -52,6 +52,78 @@ function isFieldLocked(user: any, field: string): boolean {
 }
 
 /**
+ * Handler comune per soft delete utente
+ * Imposta isActive = false invece di eliminare il record
+ */
+async function deleteUserHandler({
+  input,
+  ctx,
+}: {
+  input: z.infer<typeof UserIdSchema>;
+  ctx: any;
+}) {
+  const user = await ctx.prisma.user.findUnique({
+    where: { id: input.id },
+  });
+
+  if (!user) {
+    throw new TRPCError({
+      code: 'NOT_FOUND',
+      message: 'Utente non trovato',
+    });
+  }
+
+  // Protezione: impedisci auto-eliminazione
+  if (user.id === ctx.session.user.id) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'Non puoi disattivare il tuo stesso account',
+    });
+  }
+
+  // Protezione: impedisci eliminazione dell'ultimo admin
+  if (user.role === 'admin') {
+    const adminCount = await ctx.prisma.user.count({
+      where: {
+        role: 'admin',
+        isActive: true,
+      },
+    });
+
+    if (adminCount <= 1) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: "Non puoi eliminare l'ultimo amministratore del sistema",
+      });
+    }
+  }
+
+  // Soft delete: imposta isActive = false
+  const deletedUser = await ctx.prisma.user.update({
+    where: { id: input.id },
+    data: {
+      isActive: false,
+      updatedAt: new Date(),
+    },
+  });
+
+  // Log audit per disattivazione utente
+  await logUserDisable(ctx, input.id);
+
+  return {
+    id: deletedUser.id,
+    email: deletedUser.email,
+    username: deletedUser.username,
+    firstName: deletedUser.firstName,
+    lastName: deletedUser.lastName,
+    role: deletedUser.role,
+    isActive: deletedUser.isActive,
+    createdAt: deletedUser.createdAt,
+    updatedAt: deletedUser.updatedAt,
+  };
+}
+
+/**
  * Schema per ID utente
  */
 const UserIdSchema = z.object({
@@ -447,71 +519,17 @@ export const usersRouter = router({
 
   /**
    * Elimina un utente (soft delete)
+   * @deprecated Usa `softDelete` per evitare conflitti con checker tRPC
    * Richiede ruolo admin
    */
-  delete: adminProcedure
-    .input(UserIdSchema)
-    .mutation(async ({ input, ctx }) => {
-      const user = await ctx.prisma.user.findUnique({
-        where: { id: input.id },
-      });
+  delete: adminProcedure.input(UserIdSchema).mutation(deleteUserHandler),
 
-      if (!user) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Utente non trovato',
-        });
-      }
-
-      // Protezione: impedisci auto-eliminazione
-      if (user.id === ctx.session.user.id) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'Non puoi disattivare il tuo stesso account',
-        });
-      }
-
-      // Protezione: impedisci eliminazione dell'ultimo admin
-      if (user.role === 'admin') {
-        const adminCount = await ctx.prisma.user.count({
-          where: {
-            role: 'admin',
-            isActive: true,
-          },
-        });
-
-        if (adminCount <= 1) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: "Non puoi eliminare l'ultimo amministratore del sistema",
-          });
-        }
-      }
-
-      // Soft delete: imposta isActive = false
-      const deletedUser = await ctx.prisma.user.update({
-        where: { id: input.id },
-        data: {
-          isActive: false,
-          updatedAt: new Date(),
-        },
-      });
-
-      // Log audit per disattivazione utente
-      await logUserDisable(ctx, input.id);
-
-      return {
-        id: deletedUser.id,
-        email: deletedUser.email,
-        username: deletedUser.username,
-        firstName: deletedUser.firstName,
-        lastName: deletedUser.lastName,
-        role: deletedUser.role,
-        isActive: deletedUser.isActive,
-        createdAt: deletedUser.createdAt,
-        updatedAt: deletedUser.updatedAt,
-      };
-    }),
+  /**
+   * Elimina un utente (soft delete)
+   * Imposta isActive = false invece di eliminare il record
+   * Richiede ruolo admin
+   */
+  softDelete: adminProcedure.input(UserIdSchema).mutation(deleteUserHandler),
 
   /**
    * Hard delete di un utente (elimina completamente dal database)

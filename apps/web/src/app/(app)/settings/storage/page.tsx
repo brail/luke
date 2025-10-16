@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Button } from '../../../../components/ui/button';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
@@ -41,9 +41,7 @@ export default function StoragePage() {
     message: string;
   } | null>(null);
 
-  const saveConfigMutation = (
-    trpc as any
-  ).integrations.storage.saveConfig.useMutation({
+  const saveConfigMutation = trpc.integrations.storage.saveConfig.useMutation({
     onSuccess: (data: any) => {
       alert(data.message);
     },
@@ -52,20 +50,25 @@ export default function StoragePage() {
     },
   });
 
-  const testConnectionQuery = (
-    trpc as any
-  ).integrations.storage.testConnection.useQuery(
+  const testConnectionQuery = trpc.integrations.storage.testConnection.useQuery(
     { provider },
     {
       enabled: false,
-      onSuccess: (data: any) => {
-        setTestResult(data);
-      },
-      onError: (error: any) => {
-        setTestResult({ success: false, message: error.message });
-      },
     }
   );
+
+  // Gestisci i risultati della query
+  React.useEffect(() => {
+    if (testConnectionQuery.data) {
+      setTestResult(testConnectionQuery.data);
+    }
+    if (testConnectionQuery.error) {
+      setTestResult({
+        success: false,
+        message: testConnectionQuery.error.message,
+      });
+    }
+  }, [testConnectionQuery.data, testConnectionQuery.error]);
 
   const handleSaveConfig = () => {
     const config = provider === 'smb' ? smbConfig : driveConfig;

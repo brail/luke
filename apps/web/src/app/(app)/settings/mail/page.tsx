@@ -29,9 +29,7 @@ export default function MailPage() {
     message: string;
   } | null>(null);
 
-  const saveConfigMutation = (
-    trpc as any
-  ).integrations.mail.saveConfig.useMutation({
+  const saveConfigMutation = trpc.integrations.mail.saveConfig.useMutation({
     onSuccess: (data: any) => {
       alert(data.message);
     },
@@ -40,7 +38,7 @@ export default function MailPage() {
     },
   });
 
-  const testMailMutation = (trpc as any).integrations.mail.test.useMutation({
+  const testMailMutation = trpc.integrations.mail.test.useMutation({
     onSuccess: (data: any) => {
       setTestResult(data);
     },

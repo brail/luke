@@ -27,27 +27,27 @@ export default function ImportExportPage() {
     url?: string;
   } | null>(null);
 
-  const importMutation = (
-    trpc as any
-  ).integrations.importExport.startImport.useMutation({
-    onSuccess: (data: any) => {
-      setImportResult(data);
-    },
-    onError: (error: any) => {
-      setImportResult({ success: false, message: error.message });
-    },
-  });
+  const importMutation = trpc.integrations.importExport.startImport.useMutation(
+    {
+      onSuccess: (data: any) => {
+        setImportResult(data);
+      },
+      onError: (error: any) => {
+        setImportResult({ success: false, message: error.message });
+      },
+    }
+  );
 
-  const exportMutation = (
-    trpc as any
-  ).integrations.importExport.startExport.useMutation({
-    onSuccess: (data: any) => {
-      setExportResult(data);
-    },
-    onError: (error: any) => {
-      setExportResult({ success: false, message: error.message });
-    },
-  });
+  const exportMutation = trpc.integrations.importExport.startExport.useMutation(
+    {
+      onSuccess: (data: any) => {
+        setExportResult(data);
+      },
+      onError: (error: any) => {
+        setExportResult({ success: false, message: error.message });
+      },
+    }
+  );
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] || null;
