@@ -19,6 +19,7 @@ import {
 } from './observability/pinoTrace';
 import { runReadinessChecks } from './observability/readiness';
 import { idempotencyMiddleware } from './lib/idempotency';
+import { buildCorsAllowedOrigins } from './lib/cors';
 
 /**
  * Configurazione del logger Pino con serializers per sicurezza
@@ -95,45 +96,68 @@ async function registerSecurityPlugins() {
     }),
   });
 
-  // Helmet per security headers con CSP strict
+  // Helmet per security headers con CSP minimale per API JSON-only
   await fastify.register(helmet, {
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"], // Rimuovi 'unsafe-inline'
-        styleSrc: ["'self'", "'unsafe-inline'"], // Mantieni per Tailwind
-        imgSrc: ["'self'", 'data:', 'https:'],
-        connectSrc: ["'self'"],
-        fontSrc: ["'self'"],
-        objectSrc: ["'none'"],
-        mediaSrc: ["'self'"],
-        frameSrc: ["'none'"],
-      },
-    },
-    hsts: {
-      maxAge: 31536000, // 1 anno
-      includeSubDomains: true,
-      preload: true,
-    },
+    contentSecurityPolicy: isDevelopment
+      ? false // Disabilita CSP in dev per evitare problemi
+      : {
+          directives: {
+            defaultSrc: ["'none'"],
+            frameAncestors: ["'none'"],
+            baseUri: ["'none'"],
+          },
+        },
+    hsts: isDevelopment
+      ? false // Disabilita HSTS in dev
+      : {
+          maxAge: 15552000, // 180 giorni
+          includeSubDomains: true,
+          preload: false, // Non forzare preload
+        },
+    // Header aggiuntivi per sicurezza
+    noSniff: true, // X-Content-Type-Options: nosniff
+    referrerPolicy: { policy: 'no-referrer' }, // Referrer-Policy: no-referrer
+    frameguard: { action: 'deny' }, // X-Frame-Options: DENY
+    dnsPrefetchControl: false, // X-DNS-Prefetch-Control: off
   });
 
-  // CORS per cross-origin requests
-  await fastify.register(cors, {
-    origin: true, // In development, accetta tutte le origini
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'x-luke-trace-id',
-      'Accept',
-      'Origin',
-      'X-Requested-With',
-    ],
-    exposedHeaders: ['Content-Type', 'x-luke-trace-id'],
-    preflightContinue: false,
-    optionsSuccessStatus: 204,
-  });
+  // CORS ibrido con priorità AppConfig → ENV → default
+  const corsConfig = buildCorsAllowedOrigins(
+    (process.env.NODE_ENV as 'development' | 'production' | 'test') ||
+      'development'
+  );
+
+  // Log informativo CORS (non stampare lista completa in prod)
+  if (
+    corsConfig.source === 'default-prod-deny' &&
+    corsConfig.origins.length === 0
+  ) {
+    fastify.log.info('CORS source=default-prod-deny (no origins configured)');
+  } else {
+    fastify.log.info(
+      `CORS source=${corsConfig.source} (${corsConfig.origins.length} origins)`
+    );
+  }
+
+  // Registra CORS solo se ci sono origini configurate o siamo in dev
+  if (corsConfig.origins.length > 0 || isDevelopment) {
+    await fastify.register(cors, {
+      origin: isDevelopment ? true : corsConfig.origins,
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+      allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'x-luke-trace-id',
+        'Accept',
+        'Origin',
+        'X-Requested-With',
+      ],
+      exposedHeaders: ['Content-Type', 'x-luke-trace-id'],
+      preflightContinue: false,
+      optionsSuccessStatus: 204,
+    });
+  }
 
   // Middleware per correlazione trace ID con log Pino
   fastify.addHook('onRequest', pinoTraceMiddleware);

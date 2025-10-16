@@ -19,6 +19,7 @@ import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
 import { toast } from 'sonner';
 import React from 'react';
+import { debugLog } from '../../../../lib/debug';
 import {
   ChevronUp,
   ChevronDown,
@@ -170,9 +171,9 @@ export default function UsersPage() {
 
   const handleDeleteUser = (user: any) => {
     // Debug: verifica i valori
-    console.log('handleDeleteUser - user.id:', user.id);
-    console.log('handleDeleteUser - session.user.id:', session?.user?.id);
-    console.log('handleDeleteUser - isSelf:', user.id === session?.user?.id);
+    debugLog('handleDeleteUser - user.id:', user.id);
+    debugLog('handleDeleteUser - session.user.id:', session?.user?.id);
+    debugLog('handleDeleteUser - isSelf:', user.id === session?.user?.id);
 
     setConfirmAction({
       type: 'disable',

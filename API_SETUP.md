@@ -523,6 +523,58 @@ Le seguenti chiavi non possono essere eliminate per motivi di sicurezza e funzio
 - **Pino**: Logging strutturato
 - **Graceful shutdown**: Chiusura pulita
 
+## 🔒 Security Headers & CORS
+
+### Helmet Configuration
+
+Luke API utilizza `@fastify/helmet` per security headers ottimizzati per API JSON-only:
+
+**CSP (Content Security Policy)**:
+
+- **Produzione**: `default-src 'none'; frame-ancestors 'none'; base-uri 'none'` (minimale, no inline)
+- **Sviluppo**: CSP disabilitata per evitare problemi di sviluppo
+
+**HSTS (HTTP Strict Transport Security)**:
+
+- **Produzione**: `maxAge: 15552000` (180 giorni), `includeSubDomains: true`, `preload: false`
+- **Sviluppo**: Disabilitato
+
+**Header aggiuntivi**:
+
+- `X-Content-Type-Options: nosniff`
+- `Referrer-Policy: no-referrer`
+- `X-Frame-Options: DENY`
+- `X-DNS-Prefetch-Control: off`
+
+### CORS Strategy
+
+Luke implementa una strategia CORS ibrida con priorità:
+
+1. **AppConfig**: `appConfig.security.cors.allowedOrigins` (se presente)
+2. **Environment**: `LUKE_CORS_ALLOWED_ORIGINS` (CSV, es. `https://app.example.com,https://admin.example.com`)
+3. **Default**:
+   - **Dev**: `['http://localhost:3000', 'http://localhost:5173']`
+   - **Prod**: `[]` (deny-by-default)
+
+**Configurazione ENV**:
+
+```bash
+# Esempio per produzione
+export LUKE_CORS_ALLOWED_ORIGINS="https://app.example.com,https://admin.example.com"
+```
+
+**Logging**: Il server logga la fonte CORS all'avvio senza esporre liste complete in produzione.
+
+### Debug UI
+
+Per abilitare logging di debug nel frontend in ambienti demo:
+
+```bash
+export NEXT_PUBLIC_LUKE_DEBUG_UI=true
+```
+
+Questo abilita `debugLog()`, `debugWarn()`, `debugError()` anche in produzione.
+
 ## 🚧 Prossimi Passi
 
 1. **Autenticazione JWT**: Middleware per proteggere endpoint

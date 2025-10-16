@@ -139,6 +139,19 @@ pnpm --filter @luke/core build  # Solo core package
 - **Configurabile**: Parametri via AppConfig con fallback hardcoded
 - **Dev mode**: Limiti permissivi (1000/100 req/min)
 
+### Security Headers
+
+- **CSP minimale**: `default-src 'none'; frame-ancestors 'none'; base-uri 'none'` (prod), disabilitata (dev)
+- **HSTS**: Solo in produzione (180 giorni, includeSubDomains, no preload)
+- **Header aggiuntivi**: `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, `X-DNS-Prefetch-Control: off`
+
+### CORS
+
+- **Strategia ibrida**: AppConfig → ENV → default
+- **ENV**: `LUKE_CORS_ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com`
+- **Default**: Dev → localhost, Prod → deny-by-default
+- **Logging**: Fonte CORS loggata all'avvio senza esporre liste complete in prod
+
 ### Idempotency
 
 - **Header**: `Idempotency-Key: <uuid-v4>`

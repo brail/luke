@@ -31,6 +31,7 @@ import { trpc } from '../../../../lib/trpc';
 import { useToast } from '../../../../hooks/use-toast';
 import { ldapConfigSchema, type LdapConfigInput } from '@luke/core';
 import { CheckCircle, XCircle } from 'lucide-react';
+import { debugLog, debugWarn } from '../../../../lib/debug';
 
 export default function LdapSettingsPage() {
   const { data: session, status } = useSession();
@@ -101,7 +102,7 @@ export default function LdapSettingsPage() {
       toast.error('Errore durante il salvataggio', {
         description: err.message,
       });
-      console.debug('LDAP save error:', err);
+      debugWarn('LDAP save error:', err);
     },
   });
 
@@ -116,20 +117,20 @@ export default function LdapSettingsPage() {
           description: err.message,
         });
         setTestConnectionStatus('error');
-        console.debug('LDAP connection test error:', err);
+        debugWarn('LDAP connection test error:', err);
       },
     });
 
   const testSearchMutation = trpc.integrations.auth.testLdapSearch.useMutation({
     onSuccess: (data: any) => {
       toast.success(`Test ricerca LDAP: ${data.message}`);
-      console.log('LDAP Search Results:', data);
+      debugLog('LDAP Search Results:', data);
     },
     onError: (err: any) => {
       toast.error('Test ricerca fallito', {
         description: err.message,
       });
-      console.debug('LDAP search test error:', err);
+      debugWarn('LDAP search test error:', err);
     },
   });
 
@@ -255,7 +256,6 @@ export default function LdapSettingsPage() {
         title="Configurazione LDAP"
         description="Configura l'autenticazione enterprise via LDAP con mapping dei ruoli"
       />
-
 
       <SectionCard
         title="Parametri LDAP"
