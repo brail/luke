@@ -9,6 +9,14 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import { authenticateRequest, type UserSession } from './auth';
 import { randomUUID } from 'crypto';
 import { type Role } from '@luke/core';
+import {
+  withRole,
+  roleIn,
+  adminOnly,
+  adminOrEditor,
+  adminOrManager,
+  authenticatedOnly,
+} from './rbac';
 
 /**
  * Context per tRPC
@@ -207,3 +215,15 @@ export const adminOrEditorMiddleware = t.middleware(async ({ ctx, next }) => {
 export const adminOrEditorProcedure = publicProcedure
   .use(loggingMiddleware)
   .use(adminOrEditorMiddleware);
+
+/**
+ * Esporta le guardie RBAC per uso nei router
+ */
+export {
+  withRole,
+  roleIn,
+  adminOnly,
+  adminOrEditor,
+  adminOrManager,
+  authenticatedOnly,
+};

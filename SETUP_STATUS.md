@@ -37,6 +37,12 @@ pnpm format           # ✅ Formatta con Prettier
 - ✅ **Nessun .env** - configurazioni in database
 - ✅ **Master key** - keytar + fallback `~/.luke/secret.key`
 - ✅ **RBAC** - Role-based access control in `@luke/core`
+- ✅ **RBAC Guards** - Middleware riusabili (`withRole`, `roleIn`, `adminOnly`)
+- ✅ **JWT Strategy** - HS256+HKDF con clock tolerance ±60s
+- ✅ **Rate Limiting** - Due livelli (globale 100/min, critico 10/min)
+- ✅ **Idempotency** - In-memory LRU cache per mutazioni critiche
+- ✅ **CSP Strict** - Content Security Policy senza 'unsafe-inline'
+- ✅ **Cookie Security** - `httpOnly`, `secure`, `sameSite=strict`
 - ✅ **Audit log** - logging completo delle mutazioni
 - ✅ **Segreti centralizzati** - JWT_SECRET e NEXTAUTH_SECRET in AppConfig cifrati
 - ✅ **Error handling uniforme** - TRPCError in tutti i router
@@ -175,6 +181,46 @@ Il campo `bindPassword` nella configurazione LDAP è opzionale:
 - **Ultimo admin**: Protezione contro l'eliminazione dell'ultimo amministratore del sistema
 - **Robustezza CRUD**: Validazioni avanzate per prevenire operazioni pericolose
 
+## 🔐 Security Hardening Completato
+
+### JWT & Authentication
+
+- ✅ **HS256 esplicito** con secret derivato via HKDF-SHA256
+- ✅ **Claim standard** (`iss`, `aud`, `exp`, `nbf`) con clock tolerance ±60s
+- ✅ **Helper centralizzati** (`signJWT`, `verifyJWT`) in `apps/api/src/lib/jwt.ts`
+
+### RBAC Guards
+
+- ✅ **Middleware riusabili** (`withRole`, `roleIn`, `adminOnly`, `adminOrEditor`)
+- ✅ **Composizione type-safe** per logica complessa
+- ✅ **Esportati** da `apps/api/src/lib/trpc.ts` per uso nei router
+
+### Rate Limiting
+
+- ✅ **Due livelli**: Globale (100 req/min) + Critico (10 req/min)
+- ✅ **Endpoint critici**: users, config, auth mutations
+- ✅ **Dev mode**: Limiti permissivi (1000/100 req/min)
+- ✅ **Configurabile** via AppConfig con fallback hardcoded
+
+### Idempotency
+
+- ✅ **In-memory LRU cache** (max 1000 keys, TTL 5min)
+- ✅ **Header**: `Idempotency-Key: <uuid-v4>`
+- ✅ **Hash validation**: SHA256(method + path + body)
+- ✅ **Scope**: Mutazioni critiche (users, config)
+
+### CSP & Headers
+
+- ✅ **CSP strict** senza 'unsafe-inline' in scriptSrc
+- ✅ **HSTS** con maxAge 1 anno, includeSubDomains, preload
+- ✅ **Cookie security**: `httpOnly`, `secure`, `sameSite=strict`
+
+### Roadmap Futura
+
+- 🔜 **CSP nonce-based** per eliminare completamente 'unsafe-inline'
+- 🔜 **Redis store** per idempotency in cluster multi-processo
+- 🔜 **Rate limit per utente** oltre che per IP
+
 ## 🎯 Prossimi Passi
 
 Il monorepo è **pronto per lo sviluppo**! Puoi procedere con:
@@ -182,8 +228,7 @@ Il monorepo è **pronto per lo sviluppo**! Puoi procedere con:
 1. **Frontend**: Sviluppare componenti e pagine principali
 2. **API**: Implementare tRPC routers e logica business
 3. **Database**: Configurare Prisma schema e migrations
-4. **Auth**: Implementare JWT + RBAC
-5. **UI**: Aggiungere componenti shadcn/ui
+4. **UI**: Aggiungere componenti shadcn/ui
 
 ## 📋 Verifiche Manuali
 

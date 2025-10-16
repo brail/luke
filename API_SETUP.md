@@ -57,6 +57,7 @@ curl "http://localhost:3001/trpc/users.list?input=%7B%7D"
 ```bash
 curl -X POST http://localhost:3001/trpc/users.create \
   -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
   -d '{"email":"user@example.com","username":"user","password":"password123","role":"viewer"}'
 ```
 
@@ -71,6 +72,7 @@ curl "http://localhost:3001/trpc/users.getById?input=%7B%22id%22%3A%22USER_ID%22
 ```bash
 curl -X POST http://localhost:3001/trpc/users.update \
   -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
   -d '{"id":"USER_ID","email":"newemail@example.com","role":"editor"}'
 ```
 
@@ -79,6 +81,7 @@ curl -X POST http://localhost:3001/trpc/users.update \
 ```bash
 curl -X POST http://localhost:3001/trpc/users.delete \
   -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
   -d '{"id":"USER_ID"}'
 ```
 
@@ -206,6 +209,7 @@ curl -H "Authorization: Bearer YOUR_TOKEN" -H "x-luke-trace-id: trace-123" "http
 curl -X POST http://localhost:3001/trpc/config.set \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Idempotency-Key: $(uuidgen)" \
   -d '{"key":"app.name","value":"Luke","encrypt":false}'
 ```
 
@@ -215,6 +219,7 @@ curl -X POST http://localhost:3001/trpc/config.set \
 curl -X POST http://localhost:3001/trpc/config.set \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Idempotency-Key: $(uuidgen)" \
   -d '{"key":"auth.ldap.password","value":"secret-password","encrypt":true}'
 ```
 
@@ -225,6 +230,7 @@ curl -X POST http://localhost:3001/trpc/config.delete \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "x-luke-trace-id: trace-123" \
+  -H "Idempotency-Key: $(uuidgen)" \
   -d '{"key":"config.key"}'
 ```
 
@@ -373,9 +379,11 @@ I valori sensibili sono cifrati con **AES-256-GCM**.
 
 ### JWT Token Signing
 
-- **Algoritmo**: HS256 (HMAC-SHA256)
+- **Algoritmo**: HS256 (HMAC-SHA256) esplicito
 - **Secret**: Derivato via HKDF-SHA256 dalla master key
 - **Parametri HKDF**: salt='luke', info='api.jwt', length=32 bytes
+- **Claim standard**: `iss: 'urn:luke'`, `aud: 'luke.api'`, `exp`, `nbf`
+- **Clock tolerance**: ±60 secondi per gestire skew temporale
 - **Scope**: Server-only, mai esposto via HTTP
 - **Rotazione**: Rigenera master key per invalidare tutti i token
 - **Nessun endpoint pubblico**: Il secret JWT non è mai esposto via API
@@ -388,6 +396,26 @@ I valori sensibili sono cifrati con **AES-256-GCM**.
 - **Output**: Base64url string
 - **Scope**: Server-only, mai esposto via HTTP
 - **Nessun database**: Il secret non è mai salvato, solo derivato on-demand
+
+### Rate Limiting
+
+- **Due livelli**: Globale (100 req/min) + Critico (10 req/min)
+- **Endpoint critici**: `/trpc/users.*`, `/trpc/config.*`, `/trpc/auth.login`
+- **Configurabile**: Parametri via AppConfig con fallback hardcoded
+- **Dev mode**: Limiti permissivi (1000/100 req/min)
+
+### Idempotency
+
+- **Header**: `Idempotency-Key: <uuid-v4>`
+- **Store**: In-memory LRU cache (max 1000 keys, TTL 5min)
+- **Scope**: Mutazioni critiche (users, config)
+- **Hash**: SHA256(method + path + body) per validazione
+
+### RBAC Guards
+
+- **Middleware riusabili**: `withRole()`, `roleIn()`, `adminOnly`, `adminOrEditor`
+- **Composizione**: Guardie combinabili per logica complessa
+- **Type-safe**: Context tRPC con session garantita
 
 ### Sicurezza Config Router
 
@@ -526,15 +554,65 @@ pnpm --filter @luke/api dev
 PORT=3002 pnpm --filter @luke/api dev
 ```
 
+## 🔍 Observability
+
+### OpenTelemetry Tracing
+
+Luke API integra OpenTelemetry per distributed tracing enterprise-grade.
+
+**Configurazione** (env vars):
+
+- `OTEL_EXPORTER_OTLP_ENDPOINT`: Collector gRPC endpoint (es. `http://localhost:4317`)
+- `OTEL_ENABLED`: Esplicita disabilitazione (`false`), default `true` se endpoint presente
+
+**Collector locale** (esempio con Jaeger):
+
+```bash
+docker run -d --name jaeger \
+  -p 4317:4317 -p 16686:16686 \
+  jaegertracing/all-in-one:latest
+```
+
+**Traces inclusi**: HTTP, Fastify routes, Prisma queries, LDAP calls (futuro).
+
+**Correlazione log**: Ogni log Pino include `traceId`, `spanId` (OTel) + `xTraceId` (business ID frontend).
+
+### Probe Kubernetes
+
+- **`/livez`**: Liveness probe (200 se process alive)
+- **`/readyz`**: Readiness probe (200 solo se DB + secrets + LDAP OK)
+
+**Esempio deployment**:
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /livez
+    port: 3001
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 3001
+  periodSeconds: 5
+  failureThreshold: 3
+```
+
+### Sicurezza Log
+
+Pino serializer automatico redige: `password`, `secret`, `token`, `bindPassword`, valori cifrati AppConfig.
+
 ## 🏥 Health & Readiness
 
 ### Differenza Liveness vs Readiness
 
-- **Liveness (`/healthz`)**: Verifica che il processo sia vivo e l'event loop responsive. Sempre 200 se il server è attivo.
+- **Liveness (`/livez`)**: Verifica che il processo sia vivo e l'event loop responsive. Sempre 200 se il server è attivo.
 - **Readiness (`/readyz`)**: Verifica che il sistema sia pronto a servire richieste:
   - Database connesso
   - Master key accessibile
   - Segreti JWT derivabili
+  - LDAP server raggiungibile (se abilitato)
 
 **Implicazioni Deploy**:
 
@@ -542,19 +620,19 @@ PORT=3002 pnpm --filter @luke/api dev
 - Readiness failure → Kubernetes rimuove il pod dal load balancer (senza riavvio)
 - Fail-fast al boot → Server termina con exit(1) se segreti non disponibili
 
-### Liveness Probe (`/healthz`)
+### Liveness Probe (`/livez`)
 
 Verifica che il processo sia attivo.
 
 ```bash
-curl http://localhost:3001/healthz
+curl http://localhost:3001/livez
 ```
 
 **Output atteso**:
 
 ```json
 {
-  "status": "ok",
+  "status": "alive",
   "timestamp": "2024-01-15T10:30:00.000Z"
 }
 ```
@@ -566,6 +644,7 @@ Verifica che il sistema sia pronto:
 - Database connesso
 - Master key disponibile
 - Segreti JWT derivabili
+- LDAP server raggiungibile (se abilitato)
 
 ```bash
 curl http://localhost:3001/readyz
@@ -579,7 +658,8 @@ curl http://localhost:3001/readyz
   "timestamp": "2024-01-15T10:30:00.000Z",
   "checks": {
     "database": "ok",
-    "secrets": "ok"
+    "secrets": "ok",
+    "ldap": "ok"
   }
 }
 ```
@@ -589,7 +669,12 @@ curl http://localhost:3001/readyz
 ```json
 {
   "status": "not_ready",
-  "error": "Master key non disponibile"
+  "timestamp": "2024-01-15T10:30:00.000Z",
+  "checks": {
+    "database": "ok",
+    "secrets": "ok",
+    "ldap": "failed: LDAP timeout"
+  }
 }
 ```
 
@@ -598,7 +683,7 @@ curl http://localhost:3001/readyz
 ```yaml
 livenessProbe:
   httpGet:
-    path: /healthz
+    path: /livez
     port: 3001
 readinessProbe:
   httpGet:

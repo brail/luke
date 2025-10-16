@@ -8,6 +8,7 @@ import { authRouter } from './auth';
 import { usersRouter } from './users';
 import { configRouter } from './config';
 import { integrationsRouter } from './integrations';
+import { publicRouter } from './public';
 
 /**
  * Router principale dell'applicazione
@@ -18,6 +19,7 @@ export const appRouter = router({
   users: usersRouter,
   config: configRouter,
   integrations: integrationsRouter,
+  public: publicRouter,
 });
 
 /**

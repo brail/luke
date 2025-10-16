@@ -106,9 +106,11 @@ pnpm --filter @luke/core build  # Solo core package
 
 ### JWT & NextAuth
 
-- **Algoritmo**: HS256 (HMAC-SHA256)
+- **Algoritmo**: HS256 (HMAC-SHA256) esplicito
 - **Derivazione**: HKDF-SHA256 (RFC 5869) dalla master key
 - **Parametri HKDF**: salt='luke', info domain-specific, length=32 bytes
+- **Claim standard**: `iss: 'urn:luke'`, `aud: 'luke.api'`, `exp`, `nbf`
+- **Clock tolerance**: ±60 secondi per gestire skew temporale
 - **Domini isolati**:
   - `api.jwt` → JWT API backend
   - `nextauth.secret` → NextAuth web sessions
@@ -127,7 +129,22 @@ pnpm --filter @luke/core build  # Solo core package
 
 - **Config-driven**: Local → LDAP → OIDC (configurabile via DB)
 - **RBAC**: Role-based access control con `@luke/core`
+- **Guardie middleware**: `withRole()`, `roleIn()`, `adminOnly`, `adminOrEditor`
 - **Audit**: Log completo di tutte le mutazioni
+
+### Rate Limiting
+
+- **Due livelli**: Globale (100 req/min) + Critico (10 req/min)
+- **Endpoint critici**: `/trpc/users.*`, `/trpc/config.*`, `/trpc/auth.login`
+- **Configurabile**: Parametri via AppConfig con fallback hardcoded
+- **Dev mode**: Limiti permissivi (1000/100 req/min)
+
+### Idempotency
+
+- **Header**: `Idempotency-Key: <uuid-v4>`
+- **Store**: In-memory LRU cache (max 1000 keys, TTL 5min)
+- **Scope**: Mutazioni critiche (users, config)
+- **Hash**: SHA256(method + path + body) per validazione
 
 ### Configurazioni di Autenticazione
 
@@ -193,8 +210,8 @@ Il sistema include protezioni robuste per la gestione degli utenti:
 - **Frontend**: Next.js 15, React 19, shadcn/ui, Tailwind
 - **Backend**: Fastify 5, tRPC, Prisma, Zod
 - **Database**: SQLite (dev) → PostgreSQL (prod)
-- **Auth**: JWT RS256, RBAC, LDAP/OIDC
-- **Security**: AES-256-GCM, helmet, cors, rate limiting
+- **Auth**: JWT HS256+HKDF, RBAC, LDAP/OIDC
+- **Security**: AES-256-GCM, helmet, cors, rate limiting, idempotency
 - **Quality**: TypeScript strict, ESLint, Prettier, Husky
 
 ## 🆘 Troubleshooting

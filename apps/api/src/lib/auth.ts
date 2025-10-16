@@ -4,23 +4,15 @@
  * JWT secret derivato dalla master key via HKDF-SHA256
  */
 
-import jwt from 'jsonwebtoken';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import type { User } from '@luke/core';
 import type { PrismaClient } from '@prisma/client';
-import { deriveSecret } from '@luke/core/server';
+import { signJWT, verifyJWT, type JWTPayload } from './jwt';
 
 /**
- * Interfaccia per il payload JWT
+ * Interfaccia per il payload JWT (re-export da jwt.ts)
  */
-export interface JWTPayload {
-  userId: string;
-  email: string;
-  username: string;
-  role: string;
-  iat: number;
-  exp: number;
-}
+export type { JWTPayload } from './jwt';
 
 /**
  * Interfaccia per la sessione utente
@@ -35,14 +27,7 @@ export interface UserSession {
 }
 
 /**
- * Ottiene il JWT secret derivato dalla master key via HKDF
- */
-function getJWTSecret(): string {
-  return deriveSecret('api.jwt');
-}
-
-/**
- * Configurazione JWT
+ * Configurazione JWT (migrata a jwt.ts)
  */
 const JWT_EXPIRES_IN = '7d';
 
@@ -55,19 +40,16 @@ export function createToken(user: {
   username: string;
   role: string;
 }): string {
-  const payload: Omit<JWTPayload, 'iat' | 'exp'> = {
-    userId: user.id,
-    email: user.email,
-    username: user.username,
-    role: user.role,
-  };
-
-  return jwt.sign(
-    payload,
-    getJWTSecret() as jwt.Secret,
+  return signJWT(
+    {
+      userId: user.id,
+      email: user.email,
+      username: user.username,
+      role: user.role,
+    },
     {
       expiresIn: JWT_EXPIRES_IN,
-    } as jwt.SignOptions
+    }
   );
 }
 
@@ -75,16 +57,7 @@ export function createToken(user: {
  * Verifica e decodifica un JWT token
  */
 export function verifyToken(token: string): JWTPayload | null {
-  try {
-    const decoded = jwt.verify(
-      token,
-      getJWTSecret() as jwt.Secret
-    ) as JWTPayload;
-    return decoded;
-  } catch (error) {
-    console.error('Errore verifica token:', error);
-    return null;
-  }
+  return verifyJWT(token);
 }
 
 /**
@@ -160,7 +133,7 @@ export function setSessionCookie(reply: FastifyReply, token: string): void {
   (reply as any).cookie('luke_session', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite: 'strict',
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 giorni
     path: '/',
   });

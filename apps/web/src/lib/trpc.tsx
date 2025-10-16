@@ -4,6 +4,7 @@ import { createTRPCReact, httpBatchLink } from '@trpc/react-query';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React, { useState } from 'react';
 import { useSession } from 'next-auth/react';
+// Usa crypto.randomUUID() del browser invece di Node.js crypto
 import type { AppRouter } from '../../../api/src/routers';
 
 /**
@@ -45,10 +46,14 @@ export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
         links: [
           httpBatchLink({
             url: `${getBaseUrl()}/trpc`,
-            // Headers per autenticazione e Content-Type
+            // Headers per autenticazione, Content-Type e trace correlation
             headers() {
               const headers: Record<string, string> = {
                 'Content-Type': 'application/json',
+                'x-luke-trace-id':
+                  crypto.randomUUID?.() ||
+                  Math.random().toString(36).substring(2) +
+                    Date.now().toString(36), // Nuovo per ogni batch request
               };
 
               // Aggiungi token JWT se disponibile
