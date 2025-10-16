@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React, { useState } from 'react';
 import { useSession } from 'next-auth/react';
 // Usa crypto.randomUUID() del browser invece di Node.js crypto
-import type { AppRouter } from '../../../api/src/routers';
+import type { AppRouter } from '@luke/api';
 
 /**
  * Client tRPC per React Query

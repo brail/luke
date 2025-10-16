@@ -26,7 +26,4 @@ export * from './utils/money';
 // Re-export pricing
 export * from './pricing';
 
-// Re-export tRPC types
-export * from './trpc/types';
-
 // Note: crypto utilities are server-only and exported via @luke/core/server
