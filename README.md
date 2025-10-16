@@ -120,10 +120,10 @@ pnpm --filter @luke/core build  # Solo core package
 
 ### Health & Readiness
 
-- **`/healthz`** (Liveness): Processo attivo, event loop responsive
+- **`/livez`** (Liveness): Processo attivo, event loop responsive
 - **`/readyz`** (Readiness): Sistema pronto (DB connesso, segreti disponibili)
 - **Fail-fast**: Server termina con exit(1) se segreti non derivabili al boot
-- **Kubernetes**: Usa `/healthz` per liveness, `/readyz` per readiness probe
+- **Kubernetes**: Usa `/livez` per liveness, `/readyz` per readiness probe
 
 ### Autenticazione
 

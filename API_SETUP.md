@@ -625,15 +625,14 @@ Pino serializer automatico redige: `password`, `secret`, `token`, `bindPassword`
 Verifica che il processo sia attivo.
 
 ```bash
-curl http://localhost:3001/livez
+curl -sSf http://localhost:3001/livez
 ```
 
 **Output atteso**:
 
 ```json
 {
-  "status": "alive",
-  "timestamp": "2024-01-15T10:30:00.000Z"
+  "status": "ok"
 }
 ```
 
@@ -647,7 +646,7 @@ Verifica che il sistema sia pronto:
 - LDAP server raggiungibile (se abilitato)
 
 ```bash
-curl http://localhost:3001/readyz
+curl -sSf http://localhost:3001/readyz
 ```
 
 **Output atteso (ready)**:
@@ -668,7 +667,7 @@ curl http://localhost:3001/readyz
 
 ```json
 {
-  "status": "not_ready",
+  "status": "unready",
   "timestamp": "2024-01-15T10:30:00.000Z",
   "checks": {
     "database": "ok",
@@ -677,6 +676,12 @@ curl http://localhost:3001/readyz
   }
 }
 ```
+
+**Note importanti**:
+
+- Il server termina con `exit(1)` se la master key o i segreti non sono disponibili all'avvio (fail-fast)
+- I provider opzionali come LDAP hanno timeout breve (2s) e non bloccano il readiness se falliscono
+- I dettagli degli errori sono loggati internamente ma non esposti nella risposta HTTP per sicurezza
 
 **Uso in Kubernetes**:
 

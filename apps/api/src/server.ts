@@ -218,10 +218,7 @@ async function registerTRPCPlugin() {
 async function registerHealthRoute() {
   // Liveness: processo attivo (sempre 200 se process vivo)
   fastify.get('/livez', async (request, reply) => {
-    return {
-      status: 'alive',
-      timestamp: new Date().toISOString(),
-    };
+    return { status: 'ok' };
   });
 
   // Readiness: sistema pronto per servire richieste
@@ -230,12 +227,14 @@ async function registerHealthRoute() {
 
     if (!result.allOk) {
       reply.status(503);
+      // Log interno senza esporre in risposta HTTP
+      fastify.log.warn({ checks: result.checks }, 'Readiness check failed');
     }
 
     return {
-      status: result.allOk ? 'ready' : 'not_ready',
+      status: result.allOk ? 'ready' : 'unready',
       timestamp: result.timestamp,
-      checks: result.checks,
+      checks: result.checks, // OK esporre status per debug K8s
     };
   });
 
@@ -333,7 +332,7 @@ const start = async () => {
       deriveSecret('api.jwt');
       fastify.log.info('✅ Segreti JWT derivati con successo');
     } catch (error: any) {
-      fastify.log.error('❌ Impossibile derivare segreti JWT:', error);
+      fastify.log.error('❌ Impossibile derivare segreti JWT');
       process.exit(1);
     }
 
