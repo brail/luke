@@ -11,6 +11,7 @@ import {
   getLdapConfig,
   type LdapConfig,
 } from '../lib/configManager';
+import { ldapConfigSchema } from '@luke/core';
 import * as nodemailer from 'nodemailer';
 import * as ldap from 'ldapjs';
 import { TRPCError } from '@trpc/server';
@@ -46,19 +47,7 @@ const smtpConfigSchema = z.object({
   from: z.string().email('Email mittente non valida'),
 });
 
-// Schema per configurazione LDAP
-const ldapConfigSchema = z.object({
-  enabled: z.boolean(),
-  url: z.string().min(1, 'URL LDAP è obbligatorio'),
-  bindDN: z.string(),
-  bindPassword: z.string().optional(),
-  searchBase: z.string().min(1, 'Search Base è obbligatorio'),
-  searchFilter: z.string().min(1, 'Search Filter è obbligatorio'),
-  groupSearchBase: z.string(),
-  groupSearchFilter: z.string(),
-  roleMapping: z.string(), // JSON string validato successivamente
-  strategy: z.enum(['local-first', 'ldap-first', 'local-only', 'ldap-only']),
-});
+// Schema LDAP ora importato da @luke/core
 
 export const integrationsRouter = router({
   // Endpoint di test per verificare che le mutation funzionino

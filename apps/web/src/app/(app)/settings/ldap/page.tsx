@@ -8,21 +8,13 @@ import { Label } from '../../../../components/ui/label';
 import { SectionCard } from '../../../../components/SectionCard';
 import { PageHeader } from '../../../../components/PageHeader';
 import { trpc } from '../../../../lib/trpc';
+import type { LdapConfigInput } from '@luke/core';
 
-interface LdapConfig {
-  enabled: boolean;
-  url: string;
-  bindDN: string;
+// Usa i tipi da @luke/core per type-safety
+type LdapConfig = LdapConfigInput & {
   hasBindDN: boolean;
   hasBindPassword: boolean;
-  bindPassword: string;
-  searchBase: string;
-  searchFilter: string;
-  groupSearchBase: string;
-  groupSearchFilter: string;
-  roleMapping: string;
-  strategy: 'local-first' | 'ldap-first' | 'local-only' | 'ldap-only';
-}
+};
 
 export default function LdapSettingsPage() {
   const { data: session, status } = useSession();

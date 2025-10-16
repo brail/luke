@@ -9,11 +9,9 @@ import { TRPCProvider } from '../lib/trpc';
  * Combina SessionProvider (Auth.js) e TRPCProvider (tRPC + React Query)
  */
 export default function Providers({ children }: { children: React.ReactNode }) {
-  const TRPCProviderComponent = TRPCProvider as any;
-  
   return (
     <SessionProvider>
-      <TRPCProviderComponent>{children}</TRPCProviderComponent>
+      <TRPCProvider>{children}</TRPCProvider>
     </SessionProvider>
   );
 }

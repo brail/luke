@@ -4,10 +4,10 @@ import { createTRPCReact, httpBatchLink } from '@trpc/react-query';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React, { useState } from 'react';
 import { useSession } from 'next-auth/react';
-
 /**
  * Client tRPC per React Query
- * Usa any per evitare problemi di tipo nel monorepo
+ * TODO: Tipizzare con AppRouter reale quando risolto conflitto con metodi built-in
+ * Attualmente usa any per evitare conflitti con metodi built-in tRPC
  */
 export const trpc = createTRPCReact<any>();
 
