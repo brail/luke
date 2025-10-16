@@ -9,6 +9,7 @@ import { usersRouter } from './users';
 import { configRouter } from './config';
 import { integrationsRouter } from './integrations';
 import { publicRouter } from './public';
+import { meRouter } from './me';
 
 /**
  * Router principale dell'applicazione
@@ -20,6 +21,7 @@ export const appRouter = router({
   config: configRouter,
   integrations: integrationsRouter,
   public: publicRouter,
+  me: meRouter,
 });
 
 /**

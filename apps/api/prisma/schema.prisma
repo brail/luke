@@ -32,6 +32,8 @@ model User {
   lastName  String   @default("")
   role      Role
   isActive  Boolean  @default(true)
+  locale    String   @default("it-IT")
+  timezone  String   @default("Europe/Rome")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

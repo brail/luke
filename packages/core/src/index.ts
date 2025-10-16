@@ -13,6 +13,7 @@
 
 // Re-export schemas
 export * from './schemas/user';
+export * from './schemas/userProfile';
 export * from './schemas/appConfig';
 export * from './schemas/ldap';
 
