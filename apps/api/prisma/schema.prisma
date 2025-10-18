@@ -25,17 +25,18 @@ enum Provider {
 
 // Models
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  username  String   @unique
-  firstName String   @default("")
-  lastName  String   @default("")
-  role      Role
-  isActive  Boolean  @default(true)
-  locale    String   @default("it-IT")
-  timezone  String   @default("Europe/Rome")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(uuid())
+  email        String   @unique
+  username     String   @unique
+  firstName    String   @default("")
+  lastName     String   @default("")
+  role         Role
+  isActive     Boolean  @default(true)
+  locale       String   @default("it-IT")
+  timezone     String   @default("Europe/Rome")
+  tokenVersion Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   // Relations
   identities Identity[]

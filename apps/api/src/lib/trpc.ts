@@ -19,6 +19,60 @@ import {
 } from './rbac';
 
 /**
+ * Cache in-memory per tokenVersion con TTL
+ * Evita query DB ad ogni richiesta per verificare tokenVersion
+ */
+const tokenVersionCache = new Map<
+  string,
+  { version: number; timestamp: number }
+>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minuti
+
+/**
+ * Verifica tokenVersion con cache
+ * @param userId - ID utente
+ * @param tokenVersion - Versione dal JWT
+ * @param prisma - Client Prisma
+ * @returns true se valido, false se invalidato
+ */
+async function verifyTokenVersion(
+  userId: string,
+  tokenVersion: number | undefined,
+  prisma: PrismaClient
+): Promise<boolean> {
+  // Se JWT non ha tokenVersion, force re-login (opzione 4b)
+  if (tokenVersion === undefined) {
+    return false;
+  }
+
+  // Controlla cache
+  const cached = tokenVersionCache.get(userId);
+  const now = Date.now();
+
+  if (cached && now - cached.timestamp < CACHE_TTL) {
+    return cached.version === tokenVersion;
+  }
+
+  // Query DB per tokenVersion corrente
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { tokenVersion: true },
+  });
+
+  if (!user) {
+    return false;
+  }
+
+  // Aggiorna cache
+  tokenVersionCache.set(userId, {
+    version: user.tokenVersion,
+    timestamp: now,
+  });
+
+  return user.tokenVersion === tokenVersion;
+}
+
+/**
  * Context per tRPC
  * Contiene il client Prisma, la sessione utente e altre dipendenze
  */
@@ -108,13 +162,27 @@ export const loggingMiddleware = t.middleware(
 
 /**
  * Middleware per autenticazione
- * Verifica che l'utente sia autenticato
+ * Verifica che l'utente sia autenticato e che il tokenVersion sia valido
  */
 export const authMiddleware = t.middleware(async ({ ctx, next }) => {
   if (!ctx.session) {
     throw new TRPCError({
       code: 'UNAUTHORIZED',
       message: 'Devi essere autenticato per accedere a questa risorsa',
+    });
+  }
+
+  // Verifica tokenVersion con cache
+  const isTokenVersionValid = await verifyTokenVersion(
+    ctx.session.user.id,
+    ctx.session.user.tokenVersion,
+    ctx.prisma
+  );
+
+  if (!isTokenVersionValid) {
+    throw new TRPCError({
+      code: 'UNAUTHORIZED',
+      message: 'Sessione scaduta, effettua nuovamente il login',
     });
   }
 

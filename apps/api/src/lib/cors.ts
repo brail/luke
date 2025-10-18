@@ -55,3 +55,4 @@ export function buildCorsAllowedOrigins(
     origins: [],
   };
 }
+

@@ -265,7 +265,32 @@ export default function UsersPage() {
     if (dialogMode === 'create') {
       createUserMutation.mutate(data);
     } else {
-      updateUserMutation.mutate({ id: selectedUser.id, ...data });
+      // Filtra i campi per self-edit
+      const isSelfEdit = selectedUser?.id === session?.user?.id;
+      const updateData: any = { id: selectedUser.id };
+
+      // Aggiungi solo i campi modificati
+      if (data.email !== selectedUser.email) updateData.email = data.email;
+      if (data.username !== selectedUser.username)
+        updateData.username = data.username;
+      if (data.firstName !== selectedUser.firstName)
+        updateData.firstName = data.firstName;
+      if (data.lastName !== selectedUser.lastName)
+        updateData.lastName = data.lastName;
+      if (data.isActive !== selectedUser.isActive)
+        updateData.isActive = data.isActive;
+
+      // Password solo se non vuota
+      if (data.password && data.password.trim() !== '') {
+        updateData.password = data.password;
+      }
+
+      // Ruolo solo se non è self-edit
+      if (!isSelfEdit && data.role !== selectedUser.role) {
+        updateData.role = data.role;
+      }
+
+      updateUserMutation.mutate(updateData);
     }
   };
 

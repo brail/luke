@@ -132,10 +132,19 @@ pnpm --filter @luke/core build  # Solo core package
 - **Guardie middleware**: `withRole()`, `roleIn()`, `adminOnly`, `adminOrEditor`
 - **Audit**: Log completo di tutte le mutazioni
 
+### Security — Session Invalidation
+
+- **TokenVersion**: Campo incrementale per invalidazione sessioni
+- **Cambio password**: Incrementa `tokenVersion` → invalida tutte le sessioni precedenti
+- **Cache TTL**: Verifica `tokenVersion` con cache in-memory (5min) per performance
+- **Backward compatibility**: JWT senza `tokenVersion` → force re-login (development mode)
+- **Defense in depth**: Verifica sia lato API (JWT) che lato web (NextAuth session)
+
 ### Rate Limiting
 
 - **Due livelli**: Globale (100 req/min) + Critico (10 req/min)
 - **Endpoint critici**: `/trpc/users.*`, `/trpc/config.*`, `/trpc/auth.login`
+- **Cambio password**: Rate-limit specifico per `me.changePassword` (5/15min in prod, 20/15min in dev)
 - **Configurabile**: Parametri via AppConfig con fallback hardcoded
 - **Dev mode**: Limiti permissivi (1000/100 req/min)
 

@@ -41,7 +41,7 @@ export const CreateUserInputSchema = z.object({
   username: z.string().min(3, 'Username deve essere di almeno 3 caratteri'),
   firstName: z.string().optional().or(z.literal('')),
   lastName: z.string().optional().or(z.literal('')),
-  password: z.string().min(8, 'Password deve essere di almeno 8 caratteri'),
+  password: z.string().min(12, 'Password deve essere di almeno 12 caratteri'),
   role: z.enum(['admin', 'editor', 'viewer']),
 });
 

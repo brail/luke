@@ -23,6 +23,7 @@ export interface UserSession {
     email: string;
     username: string;
     role: string;
+    tokenVersion?: number;
   };
 }
 
@@ -39,6 +40,7 @@ export function createToken(user: {
   email: string;
   username: string;
   role: string;
+  tokenVersion?: number;
 }): string {
   return signJWT(
     {
@@ -46,6 +48,7 @@ export function createToken(user: {
       email: user.email,
       username: user.username,
       role: user.role,
+      tokenVersion: user.tokenVersion,
     },
     {
       expiresIn: JWT_EXPIRES_IN,
@@ -98,6 +101,7 @@ export function createUserSession(token: string): UserSession | null {
       email: payload.email,
       username: payload.username,
       role: payload.role,
+      tokenVersion: payload.tokenVersion,
     },
   };
 }

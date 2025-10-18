@@ -6,7 +6,7 @@
 import { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
 import { randomBytes } from 'crypto';
-import { encryptValue } from '../src/lib/configManager';
+import { encryptValue } from '../src/lib/configManager.js';
 
 /**
  * Inizializza Prisma Client
@@ -134,13 +134,28 @@ async function main() {
         encrypt: false,
       },
       {
-        key: 'security.session.timeout',
-        value: '3600', // 1 ora in secondi
-        encrypt: true,
+        key: 'security.password.minLength',
+        value: '12',
+        encrypt: false,
       },
       {
-        key: 'security.password.minLength',
-        value: '8',
+        key: 'security.password.requireUppercase',
+        value: 'true',
+        encrypt: false,
+      },
+      {
+        key: 'security.password.requireLowercase',
+        value: 'true',
+        encrypt: false,
+      },
+      {
+        key: 'security.password.requireDigit',
+        value: 'true',
+        encrypt: false,
+      },
+      {
+        key: 'security.password.requireSpecialChar',
+        value: 'true',
         encrypt: false,
       },
       {

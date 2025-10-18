@@ -69,6 +69,7 @@ export const config = {
             firstName: authResult.user.firstName,
             lastName: authResult.user.lastName,
             role: authResult.user.role,
+            tokenVersion: authResult.user.tokenVersion,
             accessToken: authResult.token,
           };
         } catch (error) {
@@ -89,6 +90,7 @@ export const config = {
         token.accessToken = (user as any).accessToken;
         token.firstName = (user as any).firstName;
         token.lastName = (user as any).lastName;
+        token.tokenVersion = (user as any).tokenVersion;
       }
       return token;
     },
@@ -99,6 +101,7 @@ export const config = {
         session.user.role = token.role as string;
         session.user.firstName = token.firstName as string;
         session.user.lastName = token.lastName as string;
+        session.user.tokenVersion = token.tokenVersion as number;
         session.accessToken = token.accessToken as string;
       }
       return session;

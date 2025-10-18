@@ -7,6 +7,7 @@ declare module 'next-auth' {
     role?: string;
     firstName?: string;
     lastName?: string;
+    tokenVersion?: number;
   }
 
   // eslint-disable-next-line no-unused-vars
@@ -19,6 +20,7 @@ declare module 'next-auth' {
       role?: string;
       firstName?: string;
       lastName?: string;
+      tokenVersion?: number;
     };
     accessToken?: string;
   }
@@ -32,5 +34,6 @@ declare module 'next-auth/jwt' {
     accessToken?: string;
     firstName?: string;
     lastName?: string;
+    tokenVersion?: number;
   }
 }

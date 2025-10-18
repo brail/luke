@@ -203,13 +203,36 @@ export const meRouter = router({
         });
       }
 
+      // Verifica che la nuova password non sia uguale alla password attuale
+      const isSamePassword = await verifyPassword(
+        input.newPassword,
+        localIdentity.localCredential.passwordHash
+      );
+
+      if (isSamePassword) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message:
+            'La nuova password deve essere diversa dalla password attuale',
+        });
+      }
+
       // Genera hash per la nuova password
       const newPasswordHash = await hashPassword(input.newPassword);
 
-      // Aggiorna la password nel database
-      await ctx.prisma.localCredential.update({
-        where: { identityId: localIdentity.id },
-        data: { passwordHash: newPasswordHash },
+      // Aggiorna la password e incrementa tokenVersion in transazione
+      await ctx.prisma.$transaction(async trx => {
+        // Aggiorna password hash
+        await trx.localCredential.update({
+          where: { identityId: localIdentity.id },
+          data: { passwordHash: newPasswordHash },
+        });
+
+        // Incrementa tokenVersion per invalidare tutte le sessioni precedenti
+        await trx.user.update({
+          where: { id: ctx.session.user.id },
+          data: { tokenVersion: { increment: 1 } },
+        });
       });
 
       // Log audit per il cambio password

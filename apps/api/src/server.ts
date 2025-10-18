@@ -174,28 +174,50 @@ async function registerSecurityPlugins() {
       '/trpc/config.delete',
       '/trpc/auth.login',
       '/trpc/auth.changePassword',
+      '/trpc/me.changePassword',
     ];
 
     if (criticalPaths.some(path => request.url.includes(path))) {
       // Rate limit più stretto per operazioni critiche
       const criticalMax = isDevelopment ? 100 : 10; // 100 req/min in dev, 10 in prod
 
-      try {
-        // Rate limit critico implementato come hook separato
-        // Per ora, logga l'accesso per monitoraggio
-        fastify.log.info({
-          message: 'Critical endpoint accessed',
-          path: request.url,
-          ip: request.ip,
-        });
-      } catch (error) {
-        // Se rate limit critico fallisce, restituisci errore
-        reply.status(429).send({
-          error: 'Critical rate limit exceeded',
-          message: `Too many critical requests from ${request.ip}`,
-          retryAfter: 60,
-        });
-        return;
+      // Rate limit specifico per me.changePassword
+      if (request.url.includes('/trpc/me.changePassword')) {
+        const changePasswordMax = isDevelopment ? 20 : 5; // 20/15min in dev, 5/15min in prod
+
+        try {
+          // Rate limit specifico per cambio password
+          // TODO: Implementare rate limiting specifico con storage dedicato
+          fastify.log.info({
+            message: 'Change password endpoint accessed',
+            path: request.url,
+            ip: request.ip,
+            rateLimit: `${changePasswordMax}/15min`,
+          });
+        } catch (error) {
+          reply.status(429).send({
+            error: 'Change password rate limit exceeded',
+            message: `Too many password change attempts from ${request.ip}`,
+            retryAfter: 900, // 15 minuti
+          });
+          return;
+        }
+      } else {
+        // Rate limit generico per altri endpoint critici
+        try {
+          fastify.log.info({
+            message: 'Critical endpoint accessed',
+            path: request.url,
+            ip: request.ip,
+          });
+        } catch (error) {
+          reply.status(429).send({
+            error: 'Critical rate limit exceeded',
+            message: `Too many critical requests from ${request.ip}`,
+            retryAfter: 60,
+          });
+          return;
+        }
       }
     }
   });

@@ -69,16 +69,6 @@ const LoginSchema = z.object({
 });
 
 /**
- * Schema per cambio password
- */
-const ChangePasswordSchema = z.object({
-  currentPassword: z.string().min(1, 'Password attuale richiesta'),
-  newPassword: z
-    .string()
-    .min(8, 'Nuova password deve essere di almeno 8 caratteri'),
-});
-
-/**
  * Router per autenticazione
  */
 export const authRouter = router({
@@ -203,12 +193,13 @@ export const authRouter = router({
         });
       }
 
-      // Crea il token JWT
+      // Crea il token JWT con tokenVersion
       const token = createToken({
         id: authenticatedUser.id,
         email: authenticatedUser.email,
         username: authenticatedUser.username,
         role: authenticatedUser.role,
+        tokenVersion: authenticatedUser.tokenVersion,
       });
 
       // Imposta il cookie di sessione
@@ -264,70 +255,4 @@ export const authRouter = router({
       user: ctx.session.user,
     };
   }),
-
-  /**
-   * Cambia password utente
-   */
-  changePassword: protectedProcedure
-    .input(ChangePasswordSchema)
-    .mutation(async ({ input, ctx }) => {
-      const { currentPassword, newPassword } = input;
-      const userId = ctx.session.user.id;
-
-      // Trova l'utente e la sua identità locale
-      const user = await ctx.prisma.user.findUnique({
-        where: { id: userId },
-        include: {
-          identities: {
-            where: {
-              provider: 'LOCAL',
-            },
-            include: {
-              localCredential: true,
-            },
-          },
-        },
-      });
-
-      if (!user || !user.identities[0]?.localCredential) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Utente non trovato',
-        });
-      }
-
-      // Verifica la password attuale
-      const isValidPassword = await argon2.verify(
-        user.identities[0].localCredential.passwordHash,
-        currentPassword
-      );
-
-      if (!isValidPassword) {
-        throw new TRPCError({
-          code: 'UNAUTHORIZED',
-          message: 'Password attuale non corretta',
-        });
-      }
-
-      // Hash della nuova password
-      const newPasswordHash = await argon2.hash(newPassword, {
-        type: argon2.argon2id,
-        timeCost: 3,
-        memoryCost: 65536,
-        parallelism: 1,
-      });
-
-      // Aggiorna la password
-      await ctx.prisma.localCredential.update({
-        where: {
-          id: user.identities[0].localCredential.id,
-        },
-        data: {
-          passwordHash: newPasswordHash,
-          updatedAt: new Date(),
-        },
-      });
-
-      return { success: true, message: 'Password aggiornata con successo' };
-    }),
 });

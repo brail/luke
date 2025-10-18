@@ -20,6 +20,7 @@ export interface JWTPayload {
   email: string;
   username: string;
   role: string;
+  tokenVersion?: number;
   iat: number;
   exp: number;
   nbf: number;
@@ -61,7 +62,10 @@ function getJWTSecret(): string {
  * @returns JWT token firmato
  */
 export function signJWT(
-  payload: Pick<JWTPayload, 'userId' | 'email' | 'username' | 'role'>,
+  payload: Pick<
+    JWTPayload,
+    'userId' | 'email' | 'username' | 'role' | 'tokenVersion'
+  >,
   options: JWTSignOptions = {}
 ): string {
   const now = Math.floor(Date.now() / 1000);
@@ -71,6 +75,7 @@ export function signJWT(
     email: payload.email,
     username: payload.username,
     role: payload.role,
+    tokenVersion: payload.tokenVersion,
     iss: JWT_CONFIG.issuer,
     aud: JWT_CONFIG.audience,
   };
