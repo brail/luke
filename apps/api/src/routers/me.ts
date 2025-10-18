@@ -16,6 +16,8 @@ import {
 import { TRPCError } from '@trpc/server';
 import { hashPassword, verifyPassword } from '../lib/password';
 import { logAudit } from '../lib/auditLog';
+import { withRateLimit } from '../lib/ratelimit';
+import { withIdempotency } from '../lib/idempotencyTrpc';
 import { z } from 'zod';
 
 export const meRouter = router({
@@ -173,6 +175,8 @@ export const meRouter = router({
    * Disponibile solo per utenti con provider LOCAL
    */
   changePassword: protectedProcedure
+    .use(withRateLimit('passwordChange'))
+    .use(withIdempotency())
     .input(ChangePasswordSchema)
     .mutation(async ({ ctx, input }) => {
       // Verifica che l'utente abbia provider LOCAL

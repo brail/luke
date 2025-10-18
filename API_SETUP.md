@@ -399,17 +399,27 @@ I valori sensibili sono cifrati con **AES-256-GCM**.
 
 ### Rate Limiting
 
-- **Due livelli**: Globale (100 req/min) + Critico (10 req/min)
-- **Endpoint critici**: `/trpc/users.*`, `/trpc/config.*`, `/trpc/auth.login`
-- **Configurabile**: Parametri via AppConfig con fallback hardcoded
-- **Dev mode**: Limiti permissivi (1000/100 req/min)
+- **Per-rotta**: Limiti specifici per endpoint sensibili
+- **Configurazione hardcoded**: Valori conservativi per sicurezza
+- **Key extraction**: IP per endpoint pubblici, userId per endpoint autenticati
+- **Store**: In-memory LRU cache con TTL e cleanup automatico
+
+**Limiti per rotta**:
+
+| Endpoint            | Limite | Window | Key By |
+| ------------------- | ------ | ------ | ------ |
+| `auth.login`        | 5 req  | 1 min  | IP     |
+| `me.changePassword` | 3 req  | 15 min | userId |
+| `config.*`          | 20 req | 1 min  | userId |
+| `users.*`           | 10 req | 1 min  | userId |
 
 ### Idempotency
 
 - **Header**: `Idempotency-Key: <uuid-v4>`
 - **Store**: In-memory LRU cache (max 1000 keys, TTL 5min)
-- **Scope**: Mutazioni critiche (users, config)
+- **Scope**: Mutazioni critiche (login, password change, config, users)
 - **Hash**: SHA256(method + path + body) per validazione
+- **tRPC middleware**: Wrapper che riusa IdempotencyStore esistente
 
 ### RBAC Guards
 
@@ -575,10 +585,76 @@ export NEXT_PUBLIC_LUKE_DEBUG_UI=true
 
 Questo abilita `debugLog()`, `debugWarn()`, `debugError()` anche in produzione.
 
+## 🛡️ Rate-Limit e Idempotency
+
+### Rate-Limit per-rotta
+
+Luke API implementa rate limiting mirato per proteggere endpoint sensibili:
+
+**Configurazione**:
+
+```typescript
+// apps/api/src/lib/ratelimit.ts
+export const RATE_LIMIT_CONFIG = {
+  login: { max: 5, windowMs: 60_000, keyBy: 'ip' },
+  passwordChange: { max: 3, windowMs: 900_000, keyBy: 'userId' },
+  configMutations: { max: 20, windowMs: 60_000, keyBy: 'userId' },
+  userMutations: { max: 10, windowMs: 60_000, keyBy: 'userId' },
+};
+```
+
+**Applicazione**:
+
+```typescript
+// Esempio: auth.login
+login: publicProcedure
+  .use(withRateLimit('login'))
+  .use(withIdempotency())
+  .input(LoginSchema)
+  .mutation(async ({ input, ctx }) => { ... })
+```
+
+**Comportamento**:
+
+- **IP-based**: Per endpoint pubblici (login)
+- **User-based**: Per endpoint autenticati (config, users)
+- **TTL**: Window sliding con cleanup automatico
+- **Error**: `TOO_MANY_REQUESTS` con retry-after
+
+### Idempotency per mutate critiche
+
+Prevenzione di richieste duplicate con header `Idempotency-Key`:
+
+**Header richiesto**:
+
+```bash
+curl -X POST http://localhost:3001/trpc/auth.login \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"username":"admin","password":"changeme"}'
+```
+
+**Comportamento**:
+
+- **Prima richiesta**: Esegue mutation, salva risultato
+- **Richieste duplicate**: Ritorna risultato cached (stesso input)
+- **Input diverso**: Esegue nuova mutation
+- **TTL**: 5 minuti di cache
+- **Scope**: Solo mutation (query non hanno bisogno di idempotency)
+
+**Endpoint protetti**:
+
+- `auth.login` - Prevenzione doppi login
+- `me.changePassword` - Prevenzione doppi cambi password
+- `config.set/update` - Prevenzione doppi aggiornamenti config
+- `users.create/update` - Prevenzione doppi aggiornamenti utenti
+
+**Nota**: Delete operations non hanno idempotency per sicurezza (delete deve essere esplicito).
+
 ## 🚧 Prossimi Passi
 
-1. **Autenticazione JWT**: Middleware per proteggere endpoint
-2. **Rate Limiting**: Protezione da abusi
+1. ✅ **Rate Limiting**: Implementato per-rotta
+2. ✅ **Idempotency**: Implementato per mutate critiche
 3. **Audit Log**: Logging automatico delle azioni
 4. **Validazione Input**: Middleware per validazione avanzata
 5. **Testing**: Suite di test unitari e integrazione

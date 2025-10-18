@@ -14,6 +14,8 @@ import {
   deleteConfig,
 } from '../lib/configManager';
 import { logAudit } from '../lib/auditLog';
+import { withRateLimit } from '../lib/ratelimit';
+import { withIdempotency } from '../lib/idempotencyTrpc';
 
 /**
  * Chiavi critiche che non possono essere eliminate
@@ -349,6 +351,8 @@ export const configRouter = router({
    * Imposta una configurazione
    */
   set: adminProcedure
+    .use(withRateLimit('configMutations'))
+    .use(withIdempotency())
     .input(SetConfigSchema)
     .mutation(async ({ input, ctx }) => {
       // Valida la chiave
@@ -384,6 +388,7 @@ export const configRouter = router({
    * Elimina una configurazione
    */
   delete: adminProcedure
+    .use(withRateLimit('configMutations'))
     .input(DeleteConfigSchema)
     .mutation(async ({ input, ctx }) => {
       // Verifica che la configurazione esista
@@ -425,6 +430,8 @@ export const configRouter = router({
    * Aggiorna una configurazione esistente
    */
   update: adminProcedure
+    .use(withRateLimit('configMutations'))
+    .use(withIdempotency())
     .input(SetConfigSchema)
     .mutation(async ({ input, ctx }) => {
       // Valida la chiave

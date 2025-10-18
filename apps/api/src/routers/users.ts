@@ -27,6 +27,8 @@ import {
   logUserHardDelete,
   logAudit,
 } from '../lib/auditLog';
+import { withRateLimit } from '../lib/ratelimit';
+import { withIdempotency } from '../lib/idempotencyTrpc';
 
 /**
  * Helper per determinare i campi bloccati in base al provider
@@ -298,6 +300,8 @@ export const usersRouter = router({
    * Richiede ruolo admin
    */
   create: adminProcedure
+    .use(withRateLimit('userMutations'))
+    .use(withIdempotency())
     .input(CreateUserInputSchema)
     .mutation(async ({ input, ctx }) => {
       // Verifica che email e username non esistano già
@@ -386,6 +390,8 @@ export const usersRouter = router({
    * Richiede ruolo admin
    */
   update: adminProcedure
+    .use(withRateLimit('userMutations'))
+    .use(withIdempotency())
     .input(UpdateUserInputSchema)
     .mutation(async ({ input, ctx }) => {
       const { id, ...updateData } = input;
@@ -524,14 +530,20 @@ export const usersRouter = router({
    * @deprecated Usa `softDelete` per evitare conflitti con checker tRPC
    * Richiede ruolo admin
    */
-  delete: adminProcedure.input(UserIdSchema).mutation(deleteUserHandler),
+  delete: adminProcedure
+    .use(withRateLimit('userMutations'))
+    .input(UserIdSchema)
+    .mutation(deleteUserHandler),
 
   /**
    * Elimina un utente (soft delete)
    * Imposta isActive = false invece di eliminare il record
    * Richiede ruolo admin
    */
-  softDelete: adminProcedure.input(UserIdSchema).mutation(deleteUserHandler),
+  softDelete: adminProcedure
+    .use(withRateLimit('userMutations'))
+    .input(UserIdSchema)
+    .mutation(deleteUserHandler),
 
   /**
    * Hard delete di un utente (elimina completamente dal database)
@@ -539,6 +551,7 @@ export const usersRouter = router({
    * Richiede ruolo admin
    */
   hardDelete: adminProcedure
+    .use(withRateLimit('userMutations'))
     .input(UserIdSchema)
     .mutation(async ({ input, ctx }) => {
       const user = await ctx.prisma.user.findUnique({

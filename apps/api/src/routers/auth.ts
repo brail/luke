@@ -10,6 +10,8 @@ import { createToken } from '../lib/auth';
 import { getConfig } from '../lib/configManager';
 import { authenticateViaLdap } from '../lib/ldapAuth';
 import { logAudit } from '../lib/auditLog';
+import { withRateLimit } from '../lib/ratelimit';
+import { withIdempotency } from '../lib/idempotencyTrpc';
 import { TRPCError } from '@trpc/server';
 import type { PrismaClient, User } from '@prisma/client';
 
@@ -76,50 +78,77 @@ export const authRouter = router({
   /**
    * Login utente con fallback LDAP configurabile
    */
-  login: publicProcedure.input(LoginSchema).mutation(async ({ input, ctx }) => {
-    const { username, password } = input;
+  login: publicProcedure
+    .use(withRateLimit('login'))
+    .use(withIdempotency())
+    .input(LoginSchema)
+    .mutation(async ({ input, ctx }) => {
+      const { username, password } = input;
 
-    // Recupera la strategia di autenticazione
-    const strategy =
-      (await getConfig(ctx.prisma, 'auth.strategy', false)) || 'local-first';
+      // Recupera la strategia di autenticazione
+      const strategy =
+        (await getConfig(ctx.prisma, 'auth.strategy', false)) || 'local-first';
 
-    console.log(`Authentication strategy: ${strategy} for user: ${username}`);
+      console.log(`Authentication strategy: ${strategy} for user: ${username}`);
 
-    let authenticatedUser = null;
-    let authMethod = '';
+      let authenticatedUser = null;
+      let authMethod = '';
 
-    try {
-      switch (strategy) {
-        case 'local-only':
-          authenticatedUser = await authenticateLocal(
-            ctx.prisma,
-            username,
-            password
-          );
-          authMethod = 'local';
-          break;
+      try {
+        switch (strategy) {
+          case 'local-only':
+            authenticatedUser = await authenticateLocal(
+              ctx.prisma,
+              username,
+              password
+            );
+            authMethod = 'local';
+            break;
 
-        case 'ldap-only':
-          authenticatedUser = await authenticateViaLdap(
-            ctx.prisma,
-            username,
-            password
-          );
-          authMethod = 'ldap';
-          break;
+          case 'ldap-only':
+            authenticatedUser = await authenticateViaLdap(
+              ctx.prisma,
+              username,
+              password
+            );
+            authMethod = 'ldap';
+            break;
 
-        case 'local-first':
-          // Prova prima autenticazione locale
-          authenticatedUser = await authenticateLocal(
-            ctx.prisma,
-            username,
-            password
-          );
-          authMethod = 'local';
+          case 'local-first':
+            // Prova prima autenticazione locale
+            authenticatedUser = await authenticateLocal(
+              ctx.prisma,
+              username,
+              password
+            );
+            authMethod = 'local';
 
-          // Se fallisce, prova LDAP
-          if (!authenticatedUser) {
-            console.log(`Local auth failed for ${username}, trying LDAP...`);
+            // Se fallisce, prova LDAP
+            if (!authenticatedUser) {
+              console.log(`Local auth failed for ${username}, trying LDAP...`);
+              try {
+                authenticatedUser = await authenticateViaLdap(
+                  ctx.prisma,
+                  username,
+                  password
+                );
+                authMethod = 'ldap';
+              } catch (ldapError: unknown) {
+                const errorMessage =
+                  ldapError instanceof Error
+                    ? ldapError.message
+                    : 'Unknown LDAP error';
+                console.log(
+                  `LDAP connection error for ${username}:`,
+                  errorMessage
+                );
+                // Se LDAP non è raggiungibile, mantieni null (autenticazione fallita)
+              }
+            }
+            break;
+
+          case 'ldap-first':
+            // Prova prima LDAP
             try {
               authenticatedUser = await authenticateViaLdap(
                 ctx.prisma,
@@ -127,33 +156,29 @@ export const authRouter = router({
                 password
               );
               authMethod = 'ldap';
+
+              // Se fallisce, prova autenticazione locale
+              if (!authenticatedUser) {
+                console.log(
+                  `LDAP auth failed for ${username}, trying local...`
+                );
+                authenticatedUser = await authenticateLocal(
+                  ctx.prisma,
+                  username,
+                  password
+                );
+                authMethod = 'local';
+              }
             } catch (ldapError: unknown) {
               const errorMessage =
                 ldapError instanceof Error
                   ? ldapError.message
                   : 'Unknown LDAP error';
               console.log(
-                `LDAP connection error for ${username}:`,
+                `LDAP connection error for ${username}, falling back to local:`,
                 errorMessage
               );
-              // Se LDAP non è raggiungibile, mantieni null (autenticazione fallita)
-            }
-          }
-          break;
-
-        case 'ldap-first':
-          // Prova prima LDAP
-          try {
-            authenticatedUser = await authenticateViaLdap(
-              ctx.prisma,
-              username,
-              password
-            );
-            authMethod = 'ldap';
-
-            // Se fallisce, prova autenticazione locale
-            if (!authenticatedUser) {
-              console.log(`LDAP auth failed for ${username}, trying local...`);
+              // Se LDAP non è raggiungibile, fallback a locale
               authenticatedUser = await authenticateLocal(
                 ctx.prisma,
                 username,
@@ -161,115 +186,98 @@ export const authRouter = router({
               );
               authMethod = 'local';
             }
-          } catch (ldapError: unknown) {
-            const errorMessage =
-              ldapError instanceof Error
-                ? ldapError.message
-                : 'Unknown LDAP error';
-            console.log(
-              `LDAP connection error for ${username}, falling back to local:`,
-              errorMessage
-            );
-            // Se LDAP non è raggiungibile, fallback a locale
-            authenticatedUser = await authenticateLocal(
-              ctx.prisma,
-              username,
-              password
-            );
-            authMethod = 'local';
-          }
-          break;
+            break;
 
-        default:
-          throw new TRPCError({
-            code: 'INTERNAL_SERVER_ERROR',
-            message: `Strategia di autenticazione non valida: ${strategy}`,
+          default:
+            throw new TRPCError({
+              code: 'INTERNAL_SERVER_ERROR',
+              message: `Strategia di autenticazione non valida: ${strategy}`,
+            });
+        }
+
+        if (!authenticatedUser) {
+          // Log tentativo di login fallito
+          await logAudit(ctx, {
+            action: 'login_failed',
+            resource: 'auth',
+            ipAddress: ctx.req.ip,
+            metadata: {
+              username: input.username,
+              reason: 'invalid_credentials',
+              strategy,
+            },
           });
-      }
 
-      if (!authenticatedUser) {
-        // Log tentativo di login fallito
+          throw new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Credenziali non valide',
+          });
+        }
+
+        // Aggiorna statistiche login
+        await ctx.prisma.user.update({
+          where: { id: authenticatedUser.id },
+          data: {
+            lastLoginAt: new Date(),
+            loginCount: { increment: 1 },
+          },
+        });
+
+        // Log accesso in AuditLog
         await logAudit(ctx, {
-          action: 'login_failed',
+          action: 'login',
           resource: 'auth',
+          targetUserId: authenticatedUser.id,
           ipAddress: ctx.req.ip,
           metadata: {
-            username: input.username,
-            reason: 'invalid_credentials',
+            provider: authMethod,
+            success: true,
+            userAgent: ctx.req.headers['user-agent'],
             strategy,
           },
         });
 
+        // Crea il token JWT con tokenVersion
+        const token = createToken({
+          id: authenticatedUser.id,
+          email: authenticatedUser.email,
+          username: authenticatedUser.username,
+          role: authenticatedUser.role,
+          tokenVersion: authenticatedUser.tokenVersion,
+        });
+
+        // Cookie API rimosso: Web usa solo Authorization header
+
+        console.log(
+          `Authentication successful for ${username} via ${authMethod}`
+        );
+
+        // Restituisce i dati utente per la sessione
+        return {
+          user: {
+            id: authenticatedUser.id,
+            email: authenticatedUser.email,
+            username: authenticatedUser.username,
+            firstName: authenticatedUser.firstName,
+            lastName: authenticatedUser.lastName,
+            role: authenticatedUser.role,
+            isActive: authenticatedUser.isActive,
+          },
+          token,
+          authMethod,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+
+        console.error(`Authentication error for ${username}:`, error);
         throw new TRPCError({
           code: 'UNAUTHORIZED',
           message: 'Credenziali non valide',
         });
       }
-
-      // Aggiorna statistiche login
-      await ctx.prisma.user.update({
-        where: { id: authenticatedUser.id },
-        data: {
-          lastLoginAt: new Date(),
-          loginCount: { increment: 1 },
-        },
-      });
-
-      // Log accesso in AuditLog
-      await logAudit(ctx, {
-        action: 'login',
-        resource: 'auth',
-        targetUserId: authenticatedUser.id,
-        ipAddress: ctx.req.ip,
-        metadata: {
-          provider: authMethod,
-          success: true,
-          userAgent: ctx.req.headers['user-agent'],
-          strategy,
-        },
-      });
-
-      // Crea il token JWT con tokenVersion
-      const token = createToken({
-        id: authenticatedUser.id,
-        email: authenticatedUser.email,
-        username: authenticatedUser.username,
-        role: authenticatedUser.role,
-        tokenVersion: authenticatedUser.tokenVersion,
-      });
-
-      // Cookie API rimosso: Web usa solo Authorization header
-
-      console.log(
-        `Authentication successful for ${username} via ${authMethod}`
-      );
-
-      // Restituisce i dati utente per la sessione
-      return {
-        user: {
-          id: authenticatedUser.id,
-          email: authenticatedUser.email,
-          username: authenticatedUser.username,
-          firstName: authenticatedUser.firstName,
-          lastName: authenticatedUser.lastName,
-          role: authenticatedUser.role,
-          isActive: authenticatedUser.isActive,
-        },
-        token,
-        authMethod,
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) {
-        throw error;
-      }
-
-      console.error(`Authentication error for ${username}:`, error);
-      throw new TRPCError({
-        code: 'UNAUTHORIZED',
-        message: 'Credenziali non valide',
-      });
-    }
-  }),
+    }),
 
   /**
    * Logout utente (soft logout)
