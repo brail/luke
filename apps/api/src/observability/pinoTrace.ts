@@ -9,6 +9,52 @@ import { randomUUID } from 'crypto';
 import serializers from 'pino-std-serializers';
 
 /**
+ * Pattern per identificare campi sensibili da redigere
+ */
+const sensitivePatterns = [
+  /password/i,
+  /secret/i,
+  /token/i,
+  /key/i,
+  /authorization/i,
+  /bearer/i,
+  /credential/i,
+  /bindPassword/i,
+  /jwt/i,
+  /session/i,
+  /cookie/i,
+];
+
+/**
+ * Funzione helper per redigere oggetti nested ricorsivamente
+ */
+function redactSensitiveFields(obj: any): any {
+  if (obj === null || obj === undefined) return obj;
+
+  if (Array.isArray(obj)) {
+    return obj.map(redactSensitiveFields);
+  }
+
+  if (typeof obj === 'object') {
+    const redacted = { ...obj };
+
+    for (const key of Object.keys(redacted)) {
+      // Controlla se la chiave contiene pattern sensibili
+      if (sensitivePatterns.some(pattern => pattern.test(key))) {
+        redacted[key] = '[REDACTED]';
+      } else if (typeof redacted[key] === 'object') {
+        // Ricorsione per oggetti nested
+        redacted[key] = redactSensitiveFields(redacted[key]);
+      }
+    }
+
+    return redacted;
+  }
+
+  return obj;
+}
+
+/**
  * Serializer con redaction automatica di campi sensibili
  */
 export const pinoSerializers = {
@@ -16,28 +62,8 @@ export const pinoSerializers = {
   res: serializers.res,
   err: serializers.err,
 
-  // Custom: redact sensitive fields
-  config: (value: any) => {
-    if (typeof value === 'object' && value !== null) {
-      const redacted = { ...value };
-      const sensitiveKeys = [
-        'password',
-        'secret',
-        'token',
-        'key',
-        'bindPassword',
-        'authorization',
-      ];
-
-      for (const key of Object.keys(redacted)) {
-        if (sensitiveKeys.some(s => key.toLowerCase().includes(s))) {
-          redacted[key] = '[REDACTED]';
-        }
-      }
-      return redacted;
-    }
-    return value;
-  },
+  // Custom: redact sensitive fields con pattern wildcard
+  config: (value: any) => redactSensitiveFields(value),
 
   // Redact PII in user objects
   user: (value: any) => {
@@ -52,6 +78,9 @@ export const pinoSerializers = {
     }
     return value;
   },
+
+  // Redaction generica per qualsiasi oggetto
+  sensitive: (value: any) => redactSensitiveFields(value),
 };
 
 /**
@@ -99,5 +128,3 @@ export function createTraceLogger(
     ...additionalFields,
   });
 }
-
-

@@ -9,6 +9,9 @@
     "build": "tsc",
     "start": "node --require ./dist/instrument.js dist/server.js",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:studio": "prisma studio",
@@ -49,8 +52,10 @@
     "@types/ldapjs": "^2.2.5",
     "@types/node": "^20.0.0",
     "@types/nodemailer": "^6.4.0",
+    "@vitest/ui": "^1.0.0",
     "ts-node": "^10.9.2",
     "tsx": "^4.0.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
   }
 }

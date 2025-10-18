@@ -90,6 +90,7 @@ export interface Context {
   req: FastifyRequest;
   res: FastifyReply;
   traceId: string;
+  logger: any; // Logger Pino da req.log
 }
 
 /**
@@ -118,6 +119,7 @@ export async function createContext({
     req,
     res,
     traceId,
+    logger: req.log,
   };
 }
 

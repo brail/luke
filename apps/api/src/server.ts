@@ -369,16 +369,16 @@ const start = async () => {
 
     // Test master key availability
     if (!validateMasterKey()) {
-      fastify.log.error('❌ Master key non disponibile o invalida');
+      fastify.log.error('Master key non disponibile o invalida');
       process.exit(1);
     }
 
     // Test secret derivation
     try {
       deriveSecret('api.jwt');
-      fastify.log.info('✅ Segreti JWT derivati con successo');
+      fastify.log.info('Segreti JWT derivati con successo');
     } catch (error: any) {
-      fastify.log.error('❌ Impossibile derivare segreti JWT');
+      fastify.log.error('Impossibile derivare segreti JWT');
       process.exit(1);
     }
 
@@ -396,19 +396,17 @@ const start = async () => {
 
     await fastify.listen({ port, host });
 
-    fastify.log.info(`🚀 Luke API server listening on http://${host}:${port}`);
-    fastify.log.info(`💓 Liveness probe: http://${host}:${port}/livez`);
-    fastify.log.info(`✅ Readiness probe: http://${host}:${port}/readyz`);
-    fastify.log.info(`🔗 tRPC endpoint: http://${host}:${port}/trpc`);
+    fastify.log.info(`Luke API server listening on http://${host}:${port}`);
+    fastify.log.info(`Liveness probe: http://${host}:${port}/livez`);
+    fastify.log.info(`Readiness probe: http://${host}:${port}/readyz`);
+    fastify.log.info(`tRPC endpoint: http://${host}:${port}/trpc`);
 
     if (process.env.NODE_ENV === 'development') {
-      fastify.log.info(
-        `🗄️  Prisma Studio: pnpm --filter @luke/api prisma:studio`
-      );
+      fastify.log.info(`Prisma Studio: pnpm --filter @luke/api prisma:studio`);
     }
   } catch (err: any) {
     fastify.log.error('Errore avvio server:', err);
-    console.error('Errore dettagliato:', err);
+    fastify.log.error('Errore dettagliato:', err);
     process.exit(1);
   }
 };

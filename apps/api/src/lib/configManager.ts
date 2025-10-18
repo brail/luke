@@ -9,6 +9,10 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 import type { PrismaClient } from '@prisma/client';
+import pino from 'pino';
+
+// Logger interno per config manager
+const logger = pino({ level: 'info' });
 
 /**
  * Interfaccia per configurazione LDAP
@@ -49,7 +53,7 @@ export function getMasterKey(): Buffer {
     const masterKey = randomBytes(KEY_LENGTH);
     writeFileSync(MASTER_KEY_PATH, masterKey, { mode: 0o600 });
 
-    console.log(`🔑 Master key creata in: ${MASTER_KEY_PATH}`);
+    logger.info({ path: MASTER_KEY_PATH }, 'Master key creata');
   }
 
   const keyBuffer = readFileSync(MASTER_KEY_PATH);
@@ -186,7 +190,13 @@ export async function getConfig(
     try {
       return decryptValue(config.value);
     } catch (error) {
-      console.error(`Errore decifratura config ${key}:`, error);
+      logger.error(
+        {
+          key,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        },
+        'Errore decifratura config'
+      );
       throw new Error(`Impossibile decifrare configurazione: ${key}`);
     }
   }
@@ -216,7 +226,14 @@ export async function listConfigs(
             try {
               return decryptValue(config.value);
             } catch (error) {
-              console.error(`Errore decifratura config ${config.key}:`, error);
+              logger.error(
+                {
+                  key: config.key,
+                  error:
+                    error instanceof Error ? error.message : 'Unknown error',
+                },
+                'Errore decifratura config'
+              );
               return '[ERRORE DECIFRATURA]';
             }
           })()
@@ -442,7 +459,10 @@ export async function getSecret(
   try {
     return decryptValue(config.value);
   } catch (error) {
-    console.error(`Errore decifratura segreto ${key}:`, error);
+    logger.error(
+      { key, error: error instanceof Error ? error.message : 'Unknown error' },
+      'Errore decifratura segreto'
+    );
     throw new Error(`Impossibile decifrare segreto: ${key}`);
   }
 }
@@ -531,7 +551,10 @@ export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
   try {
     roleMapping = JSON.parse(roleMappingStr);
   } catch (error) {
-    console.warn('Errore parsing roleMapping, usando mapping vuoto:', error);
+    logger.warn(
+      { error: error instanceof Error ? error.message : 'Unknown error' },
+      'Errore parsing roleMapping, usando mapping vuoto'
+    );
     roleMapping = {};
   }
 

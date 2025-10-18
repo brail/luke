@@ -27,7 +27,10 @@ export const publicRouter = router({
       };
     } catch (error) {
       // Fallback completo se database non disponibile
-      console.warn('Fallback to default app info:', error);
+      ctx.logger.warn(
+        { error: error instanceof Error ? error.message : 'Unknown error' },
+        'Fallback to default app info'
+      );
       return {
         name: 'Luke',
         version: '1.0.0',

@@ -313,7 +313,13 @@ export const configRouter = router({
             const { decryptValue } = await import('../lib/configManager');
             value = decryptValue(config.value);
           } catch (error) {
-            console.error(`Errore decifratura config ${input.key}:`, error);
+            ctx.logger.error(
+              {
+                key: input.key,
+                error: error instanceof Error ? error.message : 'Unknown error',
+              },
+              'Errore decifratura config'
+            );
             throw new TRPCError({
               code: 'INTERNAL_SERVER_ERROR',
               message: `Impossibile decifrare configurazione: ${input.key}`,

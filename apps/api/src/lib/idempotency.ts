@@ -10,6 +10,10 @@
  */
 
 import { createHash } from 'crypto';
+import pino from 'pino';
+
+// Logger interno per idempotency
+const logger = pino({ level: 'info' });
 
 /**
  * Entry nel store idempotency
@@ -169,9 +173,7 @@ class IdempotencyStore {
     expiredKeys.forEach(key => this.cache.delete(key));
 
     if (expiredKeys.length > 0) {
-      console.log(
-        `Idempotency cleanup: removed ${expiredKeys.length} expired entries`
-      );
+      logger.info({ removedCount: expiredKeys.length }, 'Idempotency cleanup');
     }
   }
 

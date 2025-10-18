@@ -135,12 +135,14 @@ pnpm --filter @luke/core build  # Solo core package
 ### Security — Session Invalidation & Hardening
 
 #### Architettura JWT Sincronizzata
+
 - **NextAuth JWT**: `maxAge: 8h`, `updateAge: 4h` (refresh automatico ogni 4h)
 - **API JWT**: `expiresIn: 8h` (allineato con NextAuth)
 - **Cookie Policy**: `httpOnly: true`, `secure: production`, `sameSite: 'lax'`
 - **Clock Tolerance**: `±30s` (ridotto da 60s per maggiore sicurezza)
 
 #### TokenVersion Enforcement Multi-Layer
+
 - **API Middleware**: Verifica `tokenVersion` in ogni chiamata protetta con cache 5min
 - **NextAuth Callback**: Verifica `tokenVersion` durante refresh JWT chiamando API
 - **Middleware Next.js**: Verifica `tokenVersion` su navigazione tra pagine
@@ -148,23 +150,27 @@ pnpm --filter @luke/core build  # Solo core package
 - **Cache Invalidation**: Immediata su revoca sessioni, cambio password, logout hard
 
 #### Logout & Revoca Sessioni
+
 - **Soft Logout**: `auth.logout` (solo clear cookie/session)
 - **Hard Logout**: `auth.logoutAll` + `me.revokeAllSessions` (incrementa `tokenVersion`)
 - **Revoca Admin**: Admin può revocare sessioni di altri utenti con invalidazione immediata
 - **Redirect Immediato**: Utente target viene logout automaticamente in < 1s
 
 #### JWT Claims Standardizzati
+
 - **NextAuth**: `nbf`, `aud: 'luke.web'`, `iss: 'urn:luke'`
 - **API JWT**: `nbf`, `aud: 'luke.api'`, `iss: 'urn:luke'`
 - **Logging Sicuro**: Token prefix limitato a 10 caratteri per sicurezza
 
 #### Architettura Semplificata
+
 - **Cookie API Rimosso**: Solo Authorization header per coerenza e riduzione superficie attacco
 - **Segreti HKDF Distinti**: `nextauth.secret` vs `api.jwt` con domini isolati
 - **Verifica Multi-Livello**: Server-side (middleware) + Client-side (hook periodico)
 - **Performance**: Cache intelligente 5min con invalidazione proattiva
 
 #### Flusso di Invalidazione Sessioni
+
 ```
 Admin revoca sessioni → tokenVersion incrementato nel DB
 ├── API: Verifica tokenVersion → 401 Unauthorized ✅
@@ -174,6 +180,7 @@ Admin revoca sessioni → tokenVersion incrementato nel DB
 ```
 
 #### Sicurezza Enterprise-Level
+
 - **Sincronizzazione Perfetta**: NextAuth e API JWT allineati (8h TTL)
 - **Invalidazione Immediata**: Cache invalidata in < 1ms su revoca
 - **Redirect Automatico**: Utente logout in < 1s quando sessioni revocate
@@ -251,6 +258,15 @@ Il sistema include protezioni robuste per la gestione degli utenti:
 - **Security**: helmet, cors, rate limiting
 - **Logging**: Pino per structured logging
 - **Monitoring**: Audit log per compliance
+
+### Logging Policy
+
+- **Server (API)**: Solo Pino structured logging, nessun `console.*`
+- **Redaction automatica**: Campi sensibili (`*password*`, `*token*`, `*secret*`, `*key*`, `authorization`) redatti con `[REDACTED]`
+- **Livelli**: `info` (business events), `warn` (anomalie), `error` (fault)
+- **Client (Web)**: `debugLog()` condizionale (dev only)
+- **PII/Secrets**: Mai loggati in plaintext
+- **Enforcement**: ESLint `no-console` attivo in `apps/api`
 
 ## 🗄️ Database
 

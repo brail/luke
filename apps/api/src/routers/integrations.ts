@@ -53,8 +53,8 @@ export const integrationsRouter = router({
   // Endpoint di test per verificare che le mutation funzionino
   test: publicProcedure
     .input(z.object({ message: z.string() }))
-    .mutation(async ({ input }) => {
-      console.log('🔍 Test mutation received:', input);
+    .mutation(async ({ input, ctx }) => {
+      ctx.logger.info({ input }, 'Test mutation received');
       return {
         success: true,
         message: `Test mutation received: ${input.message}`,
@@ -62,7 +62,7 @@ export const integrationsRouter = router({
     }),
 
   storage: router({
-    saveConfig: publicProcedure
+    saveConfig: adminProcedure
       .input(
         z.object({
           provider: z.enum(['smb', 'drive']),
@@ -71,7 +71,10 @@ export const integrationsRouter = router({
       )
       .mutation(async ({ input, ctx }) => {
         try {
-          console.log('🔍 Received input:', JSON.stringify(input, null, 2));
+          ctx.logger.info(
+            { provider: input.provider },
+            'Storage config save request'
+          );
           const { provider, config } = input;
           const configKey = `storage.${provider}`;
           const logger = new SecureLogger(console);
@@ -119,7 +122,7 @@ export const integrationsRouter = router({
         }
       }),
 
-    testConnection: publicProcedure
+    testConnection: adminProcedure
       .input(
         z.object({
           provider: z.string(),
@@ -130,7 +133,7 @@ export const integrationsRouter = router({
 
         // Per ora restituisce un placeholder
         // In futuro qui si implementerà la logica di test reale
-        console.log(`🔍 Test connessione storage ${provider} (placeholder)`);
+        ctx.logger.info({ provider }, 'Test connessione storage (placeholder)');
 
         return {
           success: true,
@@ -140,7 +143,7 @@ export const integrationsRouter = router({
   }),
 
   mail: router({
-    saveConfig: publicProcedure
+    saveConfig: adminProcedure
       .input(smtpConfigSchema)
       .mutation(async ({ input, ctx }) => {
         const configKey = 'mail.smtp';
@@ -155,7 +158,10 @@ export const integrationsRouter = router({
         const configValue = JSON.stringify(input);
         await saveConfig(ctx.prisma, configKey, configValue, true);
 
-        console.log('📧 Configurazione SMTP salvata:', configToSave);
+        ctx.logger.info(
+          { config: configToSave },
+          'Configurazione SMTP salvata'
+        );
 
         return {
           success: true,
@@ -163,7 +169,7 @@ export const integrationsRouter = router({
         };
       }),
 
-    test: publicProcedure.mutation(async ({ ctx }) => {
+    test: adminProcedure.mutation(async ({ ctx }) => {
       try {
         const logger = new SecureLogger(console);
 
@@ -222,7 +228,7 @@ export const integrationsRouter = router({
   }),
 
   importExport: router({
-    startImport: publicProcedure
+    startImport: adminProcedure
       .input(
         z.object({
           filename: z.string().min(1, 'Nome file è obbligatorio'),
@@ -231,7 +237,7 @@ export const integrationsRouter = router({
       .mutation(async ({ input, ctx }) => {
         const { filename } = input;
 
-        console.log(`📥 Import avviato per file: ${filename}`);
+        ctx.logger.info({ filename }, 'Import avviato');
 
         // Placeholder per la logica di import
         // In futuro qui si implementerà l'import reale
@@ -242,7 +248,7 @@ export const integrationsRouter = router({
         };
       }),
 
-    startExport: publicProcedure
+    startExport: adminProcedure
       .input(
         z.object({
           type: z.string().min(1, 'Tipo export è obbligatorio'),
@@ -251,7 +257,7 @@ export const integrationsRouter = router({
       .mutation(async ({ input, ctx }) => {
         const { type } = input;
 
-        console.log(`📤 Export avviato per tipo: ${type}`);
+        ctx.logger.info({ type }, 'Export avviato');
 
         // Placeholder per la logica di export
         // In futuro qui si implementerà l'export reale
@@ -364,7 +370,10 @@ export const integrationsRouter = router({
             throw error;
           }
 
-          console.error('Error saving LDAP config:', error);
+          ctx.logger.error(
+            { error: error.message },
+            'Error saving LDAP config'
+          );
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
             message: 'Errore durante salvataggio configurazione LDAP',
@@ -398,7 +407,7 @@ export const integrationsRouter = router({
           strategy: config.strategy,
         };
       } catch (error: any) {
-        console.error('Error getting LDAP config:', error);
+        ctx.logger.error({ error: error.message }, 'Error getting LDAP config');
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Errore durante recupero configurazione LDAP',
@@ -426,7 +435,7 @@ export const integrationsRouter = router({
           });
         }
 
-        console.log('Testing LDAP connection...');
+        ctx.logger.info('Testing LDAP connection');
 
         // Crea client LDAP
         client = ldap.createClient({
@@ -437,7 +446,7 @@ export const integrationsRouter = router({
 
         // Gestisci errori non catturati del client
         client.on('error', err => {
-          console.error('LDAP client error:', err);
+          ctx.logger.error({ error: err.message }, 'LDAP client error');
         });
 
         // Testa connessione e bind
@@ -454,7 +463,10 @@ export const integrationsRouter = router({
           client!.bind(config.bindDN, config.bindPassword, err => {
             clearTimeout(timeout);
             if (err) {
-              console.error('LDAP connection test failed:', err);
+              ctx.logger.error(
+                { error: err.message },
+                'LDAP connection test failed'
+              );
               reject(
                 new TRPCError({
                   code: 'INTERNAL_SERVER_ERROR',
@@ -462,7 +474,7 @@ export const integrationsRouter = router({
                 })
               );
             } else {
-              console.log('LDAP connection test successful');
+              ctx.logger.info('LDAP connection test successful');
               resolve();
             }
           });
@@ -477,7 +489,10 @@ export const integrationsRouter = router({
           throw error;
         }
 
-        console.error('LDAP connection test error:', error);
+        ctx.logger.error(
+          { error: error.message },
+          'LDAP connection test error'
+        );
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Errore durante test connessione LDAP',
@@ -489,13 +504,21 @@ export const integrationsRouter = router({
             await new Promise<void>(resolve => {
               client!.unbind(err => {
                 if (err) {
-                  console.warn('Error closing LDAP test connection:', err);
+                  ctx.logger.warn(
+                    { error: err.message },
+                    'Error closing LDAP test connection'
+                  );
                 }
                 resolve();
               });
             });
           } catch (error) {
-            console.warn('Error closing LDAP test connection:', error);
+            ctx.logger.warn(
+              {
+                error: error instanceof Error ? error.message : 'Unknown error',
+              },
+              'Error closing LDAP test connection'
+            );
           }
         }
       }
@@ -543,9 +566,14 @@ export const integrationsRouter = router({
             /\$\{username\}/g,
             input.username
           );
-          console.log(`Testing LDAP search for: ${input.username}`);
-          console.log(`Search Base: ${config.searchBase}`);
-          console.log(`Search Filter: ${searchFilter}`);
+          ctx.logger.info(
+            {
+              username: input.username,
+              searchBase: config.searchBase,
+              searchFilter,
+            },
+            'Testing LDAP search'
+          );
 
           const results: any[] = [];
 
@@ -587,7 +615,10 @@ export const integrationsRouter = router({
                     ),
                   };
                   results.push(result);
-                  console.log(`Found: ${result.dn}`, result.attributes);
+                  ctx.logger.info(
+                    { dn: result.dn },
+                    'LDAP search result found'
+                  );
                 });
 
                 res.on('error', err => {
@@ -621,7 +652,7 @@ export const integrationsRouter = router({
             throw error;
           }
 
-          console.error('LDAP search test error:', error);
+          ctx.logger.error({ error: error.message }, 'LDAP search test error');
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
             message: 'Errore durante test ricerca LDAP',
@@ -635,7 +666,13 @@ export const integrationsRouter = router({
                 });
               });
             } catch (error) {
-              console.error('Error closing LDAP connection:', error);
+              ctx.logger.error(
+                {
+                  error:
+                    error instanceof Error ? error.message : 'Unknown error',
+                },
+                'Error closing LDAP connection'
+              );
             }
           }
         }

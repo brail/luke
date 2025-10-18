@@ -11,6 +11,10 @@
 
 import jwt from 'jsonwebtoken';
 import { getApiJwtSecret } from '@luke/core/server';
+import pino from 'pino';
+
+// Logger interno per JWT
+const logger = pino({ level: 'info' });
 
 /**
  * Interfaccia per il payload JWT standardizzato
@@ -107,11 +111,14 @@ export function verifyJWT(token: string): JWTPayload | null {
     return decoded;
   } catch (error) {
     // Log solo metadata, mai il token completo
-    console.error('JWT verification failed:', {
-      error: error instanceof Error ? error.message : 'Unknown error',
-      tokenLength: token.length,
-      tokenPrefix: token.substring(0, 10) + '...', // Ridotto da 20 a 10 char per sicurezza
-    });
+    logger.error(
+      {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        tokenLength: token.length,
+        tokenPrefix: token.substring(0, 10) + '...', // Ridotto da 20 a 10 char per sicurezza
+      },
+      'JWT verification failed'
+    );
     return null;
   }
 }
