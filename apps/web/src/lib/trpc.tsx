@@ -6,6 +6,8 @@ import React, { useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useUnauthorizedHandler } from '../hooks/use-unauthorized-handler';
 // Usa crypto.randomUUID() del browser invece di Node.js crypto
+// Import type-only dall'API per type-safety end-to-end tRPC
+// Nota: safe in monorepo; se separassimo i repo, considerare @luke/core/server
 import type { AppRouter } from '@luke/api';
 
 /**
