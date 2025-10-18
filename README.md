@@ -282,6 +282,17 @@ Il sistema include protezioni robuste per la gestione degli utenti:
 3. **Deploy**: CI/CD con Turborepo caching
 4. **Monitor**: Audit log + structured logging
 
+## 📖 Architecture Decision Records (ADR)
+
+Le decisioni architetturali chiave del progetto sono documentate in ADR:
+
+- [ADR-001: JWT HS256 con HKDF-SHA256](docs/adr/001-jwt-hs256-hkdf.md) - Gestione segreti JWT con derivazione crittografica
+- [ADR-002: RBAC Policy e Enforcement](docs/adr/002-rbac-policy.md) - Controllo accessi basato su ruoli
+- [ADR-003: Core Package Server-Only Exports](docs/adr/003-core-server-only.md) - Isolamento codice server-only
+- [ADR-004: Prisma Select-Only Pattern](docs/adr/004-prisma-select-only.md) - Prevenzione data leakage
+
+Per contribuire al progetto, consulta le ADR per comprendere le convenzioni e i pattern adottati.
+
 ## 📚 Tecnologie
 
 - **Monorepo**: pnpm workspaces + Turborepo
