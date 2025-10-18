@@ -349,6 +349,7 @@ const start = async () => {
   } catch (err: any) {
     fastify.log.error('Errore avvio server:', err);
     fastify.log.error('Errore dettagliato:', err);
+    console.error('STACK TRACE:', err.stack);
     process.exit(1);
   }
 };
