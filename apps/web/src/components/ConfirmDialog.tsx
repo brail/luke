@@ -24,7 +24,7 @@ interface ConfirmDialogProps {
   onConfirm: () => void;
   isLoading?: boolean;
   userEmail?: string;
-  actionType?: 'delete' | 'disable' | 'hardDelete';
+  actionType?: 'delete' | 'disable' | 'hardDelete' | 'revokeSessions';
 }
 
 /**

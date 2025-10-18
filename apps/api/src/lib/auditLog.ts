@@ -19,6 +19,8 @@ export interface AuditParams {
   changes?: Record<string, { old: any; new: any }>;
   /** Metadati aggiuntivi */
   metadata?: Record<string, any>;
+  /** Indirizzo IP dell'utente (opzionale) */
+  ipAddress?: string;
 }
 
 /**

@@ -13,6 +13,11 @@
       "types": "./dist/server/index.d.ts",
       "import": "./dist/server/index.js",
       "require": "./dist/server/index.js"
+    },
+    "./utils/date": {
+      "types": "./dist/utils/date.d.ts",
+      "import": "./dist/utils/date.js",
+      "require": "./dist/utils/date.js"
     }
   },
   "files": [

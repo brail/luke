@@ -11,6 +11,7 @@ import {
   protectedProcedure,
   adminProcedure,
   adminOrEditorProcedure,
+  invalidateTokenVersionCache,
 } from '../lib/trpc';
 import {
   UserSchema,
@@ -24,6 +25,7 @@ import {
   logUserUpdate,
   logUserDisable,
   logUserHardDelete,
+  logAudit,
 } from '../lib/auditLog';
 
 /**
@@ -585,5 +587,67 @@ export const usersRouter = router({
       });
 
       return { success: true, message: 'Utente eliminato definitivamente' };
+    }),
+
+  /**
+   * Revoca tutte le sessioni di un utente specifico
+   * Richiede ruolo admin
+   */
+  revokeUserSessions: adminProcedure
+    .input(UserIdSchema)
+    .mutation(async ({ ctx, input }) => {
+      // Verifica che l'utente esista
+      const targetUser = await ctx.prisma.user.findUnique({
+        where: { id: input.id },
+        select: { id: true, email: true, firstName: true, lastName: true },
+      });
+
+      if (!targetUser) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Utente non trovato',
+        });
+      }
+
+      // Protezione: impedisci auto-revoca (usa me.revokeAllSessions invece)
+      if (targetUser.id === ctx.session.user.id) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message:
+            'Non puoi revocare le tue stesse sessioni da qui. Usa il profilo personale.',
+        });
+      }
+
+      // Incrementa tokenVersion per invalidare tutte le sessioni dell'utente
+      await ctx.prisma.user.update({
+        where: { id: input.id },
+        data: { tokenVersion: { increment: 1 } },
+      });
+
+      // Invalida la cache tokenVersion per questo utente
+      invalidateTokenVersionCache(input.id);
+
+      // Log audit per revoca sessioni
+      await logAudit(ctx, {
+        action: 'admin_revoke_sessions',
+        resource: 'security',
+        targetUserId: input.id,
+        metadata: {
+          targetUser: {
+            email: targetUser.email,
+            firstName: targetUser.firstName,
+            lastName: targetUser.lastName,
+          },
+          adminUser: {
+            id: ctx.session.user.id,
+            email: ctx.session.user.email,
+          },
+        },
+      });
+
+      return {
+        success: true,
+        message: `Sessioni revocate per ${targetUser.firstName} ${targetUser.lastName}`,
+      };
     }),
 });

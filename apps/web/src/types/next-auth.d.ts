@@ -7,6 +7,8 @@ declare module 'next-auth' {
     role?: string;
     firstName?: string;
     lastName?: string;
+    locale?: string;
+    timezone?: string;
     tokenVersion?: number;
   }
 
@@ -20,6 +22,8 @@ declare module 'next-auth' {
       role?: string;
       firstName?: string;
       lastName?: string;
+      locale?: string;
+      timezone?: string;
       tokenVersion?: number;
     };
     accessToken?: string;
@@ -34,6 +38,11 @@ declare module 'next-auth/jwt' {
     accessToken?: string;
     firstName?: string;
     lastName?: string;
+    locale?: string;
+    timezone?: string;
     tokenVersion?: number;
+    nbf?: number; // not-before claim
+    aud?: string; // audience claim
+    iss?: string; // issuer claim
   }
 }

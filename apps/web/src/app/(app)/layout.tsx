@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import AppSidebar from '../../components/AppSidebar';
@@ -11,6 +11,13 @@ import BreadcrumbNav from '../../components/BreadcrumbNav';
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const router = useRouter();
+
+  // Redirect a login se non autenticato (evita setState durante render)
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.push('/login');
+    }
+  }, [status, router]);
 
   if (status === 'loading') {
     return (
@@ -24,8 +31,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   if (!session) {
-    router.push('/login');
-    return null;
+    return null; // Mostra nulla mentre useEffect fa il redirect
   }
 
   return (

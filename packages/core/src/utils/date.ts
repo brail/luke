@@ -102,3 +102,146 @@ export function formatDateTime(date: Date, locale: string = 'it-IT'): string {
 export function isValidDate(date: Date): boolean {
   return date instanceof Date && !isNaN(date.getTime());
 }
+
+/**
+ * Formatta una data con timezone specifico
+ *
+ * @param date - La data da formattare (Date o string ISO)
+ * @param timezone - Il timezone IANA (es: 'Europe/Rome', 'America/New_York')
+ * @param options - Opzioni di formattazione Intl.DateTimeFormat
+ * @param locale - Il locale per la formattazione (default: 'it-IT')
+ * @returns Stringa formattata della data nel timezone specificato
+ *
+ * @example
+ * ```typescript
+ * formatDateWithTimezone(
+ *   new Date('2024-01-15T10:30:00Z'),
+ *   'Europe/Rome',
+ *   { year: 'numeric', month: '2-digit', day: '2-digit' }
+ * ) // "15/01/2024"
+ * ```
+ */
+export function formatDateWithTimezone(
+  date: Date | string,
+  timezone: string,
+  options: Intl.DateTimeFormatOptions,
+  locale: string = 'it-IT'
+): string {
+  try {
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+
+    if (!isValidDate(dateObj)) {
+      return 'Data non valida';
+    }
+
+    return new Intl.DateTimeFormat(locale, {
+      ...options,
+      timeZone: timezone,
+    }).format(dateObj);
+  } catch (error) {
+    // Fallback se timezone non valido
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    return new Intl.DateTimeFormat(locale, options).format(dateObj);
+  }
+}
+
+/**
+ * Formatta data breve con timezone (es: "15/01/2024")
+ *
+ * @param date - La data da formattare
+ * @param timezone - Il timezone IANA
+ * @param locale - Il locale per la formattazione (default: 'it-IT')
+ * @returns Stringa formattata
+ */
+export function formatShortDate(
+  date: Date | string,
+  timezone: string,
+  locale: string = 'it-IT'
+): string {
+  return formatDateWithTimezone(
+    date,
+    timezone,
+    {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    },
+    locale
+  );
+}
+
+/**
+ * Formatta data e ora con timezone (es: "15/01/2024, 14:30")
+ *
+ * @param date - La data da formattare
+ * @param timezone - Il timezone IANA
+ * @param locale - Il locale per la formattazione (default: 'it-IT')
+ * @returns Stringa formattata
+ */
+export function formatDateTimeWithTimezone(
+  date: Date | string,
+  timezone: string,
+  locale: string = 'it-IT'
+): string {
+  return formatDateWithTimezone(
+    date,
+    timezone,
+    {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    },
+    locale
+  );
+}
+
+/**
+ * Formatta data compatta (es: "15 gen 2024")
+ *
+ * @param date - La data da formattare
+ * @param timezone - Il timezone IANA
+ * @param locale - Il locale per la formattazione (default: 'it-IT')
+ * @returns Stringa formattata
+ */
+export function formatCompactDate(
+  date: Date | string,
+  timezone: string,
+  locale: string = 'it-IT'
+): string {
+  return formatDateWithTimezone(
+    date,
+    timezone,
+    {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    },
+    locale
+  );
+}
+
+/**
+ * Formatta solo ora (es: "14:30")
+ *
+ * @param date - La data da formattare
+ * @param timezone - Il timezone IANA
+ * @param locale - Il locale per la formattazione (default: 'it-IT')
+ * @returns Stringa formattata
+ */
+export function formatTime(
+  date: Date | string,
+  timezone: string,
+  locale: string = 'it-IT'
+): string {
+  return formatDateWithTimezone(
+    date,
+    timezone,
+    {
+      hour: '2-digit',
+      minute: '2-digit',
+    },
+    locale
+  );
+}

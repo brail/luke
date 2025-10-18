@@ -43,6 +43,19 @@ export const UserProfileSchema = z.object({
 });
 
 /**
+ * Schema Zod per aggiornamento parziale profilo (solo timezone)
+ * Permette di aggiornare solo il timezone senza richiedere tutti i campi
+ */
+export const UpdateTimezoneSchema = z.object({
+  /** Timezone dell'utente (es. Europe/Rome, America/New_York) */
+  timezone: z
+    .string()
+    .trim()
+    .min(1, 'Timezone obbligatorio')
+    .max(64, 'Timezone troppo lungo'),
+});
+
+/**
  * Schema Zod per cambio password
  * Include validazione policy password e conferma
  */
@@ -51,7 +64,7 @@ export const ChangePasswordSchema = z
     /** Password corrente (per verifica) */
     currentPassword: z
       .string()
-      .min(8, 'Password corrente obbligatoria')
+      .min(1, 'Password corrente obbligatoria')
       .max(128, 'Password troppo lunga'),
 
     /** Nuova password con policy forte */
@@ -79,6 +92,11 @@ export const ChangePasswordSchema = z
  * Tipo TypeScript per input aggiornamento profilo
  */
 export type UserProfileInput = z.infer<typeof UserProfileSchema>;
+
+/**
+ * Tipo TypeScript per input aggiornamento timezone
+ */
+export type UpdateTimezoneInput = z.infer<typeof UpdateTimezoneSchema>;
 
 /**
  * Tipo TypeScript per input cambio password

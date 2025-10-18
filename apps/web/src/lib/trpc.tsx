@@ -4,6 +4,7 @@ import { createTRPCReact, httpBatchLink } from '@trpc/react-query';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React, { useState } from 'react';
 import { useSession } from 'next-auth/react';
+import { useUnauthorizedHandler } from '../hooks/use-unauthorized-handler';
 // Usa crypto.randomUUID() del browser invece di Node.js crypto
 import type { AppRouter } from '@luke/api';
 
@@ -27,6 +28,9 @@ export function getBaseUrl() {
  */
 export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
   const { data: session } = useSession();
+
+  // Gestione globale degli errori UNAUTHORIZED
+  useUnauthorizedHandler();
 
   const [queryClient] = useState(
     () =>

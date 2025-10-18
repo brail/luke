@@ -41,7 +41,7 @@ export interface JWTSignOptions {
  */
 const JWT_CONFIG = {
   algorithm: 'HS256' as const,
-  clockTolerance: 60, // ±60 secondi
+  clockTolerance: 30, // ±30 secondi (ridotto da 60s)
   issuer: 'urn:luke',
   audience: 'luke.api',
   defaultExpiresIn: '7d',
@@ -110,7 +110,7 @@ export function verifyJWT(token: string): JWTPayload | null {
     console.error('JWT verification failed:', {
       error: error instanceof Error ? error.message : 'Unknown error',
       tokenLength: token.length,
-      tokenPrefix: token.substring(0, 20) + '...',
+      tokenPrefix: token.substring(0, 10) + '...', // Ridotto da 20 a 10 char per sicurezza
     });
     return null;
   }

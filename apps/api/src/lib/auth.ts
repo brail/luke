@@ -30,7 +30,7 @@ export interface UserSession {
 /**
  * Configurazione JWT (migrata a jwt.ts)
  */
-const JWT_EXPIRES_IN = '7d';
+const JWT_EXPIRES_IN = '8h'; // Allineato a NextAuth maxAge
 
 /**
  * Crea un JWT token per un utente
@@ -65,22 +65,15 @@ export function verifyToken(token: string): JWTPayload | null {
 
 /**
  * Estrae il token JWT dalla richiesta
- * Supporta Authorization header e cookie
+ * Supporta solo Authorization header (cookie API rimosso)
  */
 export function extractTokenFromRequest(
   request: FastifyRequest
 ): string | null {
-  // Prova prima l'Authorization header
+  // Solo Authorization header (cookie API rimosso)
   const authHeader = request.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     return authHeader.substring(7);
-  }
-
-  // Prova poi il cookie
-  const cookies = (request as any).cookies;
-  const token = cookies?.luke_session;
-  if (token) {
-    return token;
   }
 
   return null;
@@ -131,23 +124,27 @@ export async function authenticateRequest(
 }
 
 /**
+ * @deprecated Cookie API rimosso: Web usa solo Authorization header
  * Imposta il cookie di sessione
  */
 export function setSessionCookie(reply: FastifyReply, token: string): void {
-  (reply as any).cookie('luke_session', token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 giorni
-    path: '/',
-  });
+  // DEPRECATED: Cookie API non più utilizzato
+  // (reply as any).cookie('luke_session', token, {
+  //   httpOnly: true,
+  //   secure: process.env.NODE_ENV === 'production',
+  //   sameSite: 'strict',
+  //   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 giorni
+  //   path: '/',
+  // });
 }
 
 /**
+ * @deprecated Cookie API rimosso: Web usa solo Authorization header
  * Rimuove il cookie di sessione
  */
 export function clearSessionCookie(reply: FastifyReply): void {
-  (reply as any).clearCookie('luke_session', {
-    path: '/',
-  });
+  // DEPRECATED: Cookie API non più utilizzato
+  // (reply as any).clearCookie('luke_session', {
+  //   path: '/',
+  // });
 }

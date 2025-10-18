@@ -261,12 +261,6 @@ export default function AppSidebar() {
                 <span>Profilo</span>
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/profile/test">
-                <User className="mr-2 h-4 w-4" />
-                <span>Profilo Test</span>
-              </Link>
-            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={handleSignOut}

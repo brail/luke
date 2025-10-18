@@ -35,6 +35,8 @@ model User {
   locale       String   @default("it-IT")
   timezone     String   @default("Europe/Rome")
   tokenVersion Int      @default(0)
+  lastLoginAt  DateTime?
+  loginCount   Int      @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

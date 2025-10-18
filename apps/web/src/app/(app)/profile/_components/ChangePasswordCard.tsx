@@ -17,12 +17,17 @@ import { signOut } from 'next-auth/react';
 interface ChangePasswordCardProps {
   /** Se il componente deve essere visibile */
   visible: boolean;
+  /** Callback chiamato quando il cambio password ha successo */
+  onSuccess?: () => void;
 }
 
 /**
  * Componente per il cambio password con validazione policy in tempo reale
  */
-export function ChangePasswordCard({ visible }: ChangePasswordCardProps) {
+export function ChangePasswordCard({
+  visible,
+  onSuccess,
+}: ChangePasswordCardProps) {
   const [showPasswords, setShowPasswords] = useState({
     current: false,
     new: false,
@@ -50,6 +55,10 @@ export function ChangePasswordCard({ visible }: ChangePasswordCardProps) {
       toast.success('Password cambiata con successo');
       reset(); // Reset form
       setShowPasswords({ current: false, new: false, confirm: false });
+      // Chiama callback se fornito
+      if (onSuccess) {
+        onSuccess();
+      }
       // Forza logout dopo cambio password per invalidare tutte le sessioni
       setTimeout(() => {
         signOut({ callbackUrl: '/login' });
@@ -58,6 +67,12 @@ export function ChangePasswordCard({ visible }: ChangePasswordCardProps) {
     onError: error => {
       // Gestisce errori UNAUTHORIZED per invalidazione sessioni
       if (error?.data?.code === 'UNAUTHORIZED') {
+        // Se il messaggio è "Password corrente non valida", non forzare logout
+        if (error.message === 'Password corrente non valida') {
+          toast.error('Password corrente non valida');
+          return;
+        }
+        // Altrimenti è un errore di sessione scaduta
         console.log('Sessione invalidata, forzando logout...');
         signOut({ callbackUrl: '/login' });
         return;
@@ -68,6 +83,7 @@ export function ChangePasswordCard({ visible }: ChangePasswordCardProps) {
 
   // Handler per submit form
   const onSubmit = (data: ChangePasswordInput) => {
+    // Zod gestisce già tutta la validazione lato client
     changePasswordMutation.mutate(data);
   };
 

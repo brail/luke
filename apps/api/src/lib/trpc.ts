@@ -29,6 +29,14 @@ const tokenVersionCache = new Map<
 const CACHE_TTL = 5 * 60 * 1000; // 5 minuti
 
 /**
+ * Invalida la cache tokenVersion per un utente specifico
+ * Chiamata dopo revoca sessioni o cambio password
+ */
+export function invalidateTokenVersionCache(userId: string): void {
+  tokenVersionCache.delete(userId);
+}
+
+/**
  * Verifica tokenVersion con cache
  * @param userId - ID utente
  * @param tokenVersion - Versione dal JWT

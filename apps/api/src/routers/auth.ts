@@ -6,9 +6,10 @@
 import { z } from 'zod';
 import argon2 from 'argon2';
 import { router, publicProcedure, protectedProcedure } from '../lib/trpc';
-import { createToken, setSessionCookie, clearSessionCookie } from '../lib/auth';
+import { createToken } from '../lib/auth';
 import { getConfig } from '../lib/configManager';
 import { authenticateViaLdap } from '../lib/ldapAuth';
+import { logAudit } from '../lib/auditLog';
 import { TRPCError } from '@trpc/server';
 import type { PrismaClient, User } from '@prisma/client';
 
@@ -187,11 +188,46 @@ export const authRouter = router({
       }
 
       if (!authenticatedUser) {
+        // Log tentativo di login fallito
+        await logAudit(ctx, {
+          action: 'login_failed',
+          resource: 'auth',
+          ipAddress: ctx.req.ip,
+          metadata: {
+            username: input.username,
+            reason: 'invalid_credentials',
+            strategy,
+          },
+        });
+
         throw new TRPCError({
           code: 'UNAUTHORIZED',
           message: 'Credenziali non valide',
         });
       }
+
+      // Aggiorna statistiche login
+      await ctx.prisma.user.update({
+        where: { id: authenticatedUser.id },
+        data: {
+          lastLoginAt: new Date(),
+          loginCount: { increment: 1 },
+        },
+      });
+
+      // Log accesso in AuditLog
+      await logAudit(ctx, {
+        action: 'login',
+        resource: 'auth',
+        targetUserId: authenticatedUser.id,
+        ipAddress: ctx.req.ip,
+        metadata: {
+          provider: authMethod,
+          success: true,
+          userAgent: ctx.req.headers['user-agent'],
+          strategy,
+        },
+      });
 
       // Crea il token JWT con tokenVersion
       const token = createToken({
@@ -202,8 +238,7 @@ export const authRouter = router({
         tokenVersion: authenticatedUser.tokenVersion,
       });
 
-      // Imposta il cookie di sessione
-      setSessionCookie(ctx.res, token);
+      // Cookie API rimosso: Web usa solo Authorization header
 
       console.log(
         `Authentication successful for ${username} via ${authMethod}`
@@ -237,13 +272,45 @@ export const authRouter = router({
   }),
 
   /**
-   * Logout utente
+   * Logout utente (soft logout)
+   * Rimuove solo la sessione corrente, mantiene altre sessioni attive
    */
   logout: protectedProcedure.mutation(async ({ ctx }) => {
-    // Rimuovi il cookie di sessione
-    clearSessionCookie(ctx.res);
-
+    // Cookie API rimosso: Web gestisce logout tramite NextAuth signOut()
     return { success: true, message: 'Logout effettuato con successo' };
+  }),
+
+  /**
+   * Logout hard - Revoca tutte le sessioni dell'utente
+   * Invalida tokenVersion per forzare re-login su tutti i dispositivi
+   */
+  logoutAll: protectedProcedure.mutation(async ({ ctx }) => {
+    // Incrementa tokenVersion per invalidare tutte le sessioni
+    await ctx.prisma.user.update({
+      where: { id: ctx.session.user.id },
+      data: { tokenVersion: { increment: 1 } },
+    });
+
+    // Invalida la cache tokenVersion per questo utente
+    const { invalidateTokenVersionCache } = await import('../lib/trpc');
+    invalidateTokenVersionCache(ctx.session.user.id);
+
+    // Log audit per revoca sessioni
+    await logAudit(ctx, {
+      action: 'logout_all_sessions',
+      resource: 'security',
+      targetUserId: ctx.session.user.id,
+      metadata: {
+        success: true,
+        reason: 'user_initiated',
+      },
+    });
+
+    return {
+      success: true,
+      message:
+        'Tutte le sessioni sono state revocate. Effettua nuovamente il login.',
+    };
   }),
 
   /**

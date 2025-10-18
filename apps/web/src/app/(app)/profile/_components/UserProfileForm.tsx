@@ -41,7 +41,6 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
     register,
     handleSubmit,
     formState: { errors, isDirty, isSubmitting },
-    reset,
   } = useForm<UserProfileInput>({
     resolver: zodResolver(UserProfileSchema),
     defaultValues: {
@@ -55,10 +54,10 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
 
   // Mutation per aggiornamento profilo
   const updateProfileMutation = trpc.me.updateProfile.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success('Profilo aggiornato con successo');
       utils.me.get.invalidate();
-      reset(); // Reset form per rimuovere dirty state
+      // I dati si aggiornano automaticamente tramite tRPC invalidation
     },
     onError: error => {
       toast.error(`Errore nell'aggiornamento: ${error.message}`);

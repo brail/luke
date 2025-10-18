@@ -28,6 +28,7 @@ import {
   Edit,
   UserX,
   Trash2,
+  LogOut,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -58,7 +59,7 @@ export default function UsersPage() {
   // Stato per modal di conferma
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{
-    type: 'delete' | 'disable' | 'hardDelete';
+    type: 'delete' | 'disable' | 'hardDelete' | 'revokeSessions';
     user: any;
     handler: () => void;
   } | null>(null);
@@ -105,6 +106,16 @@ export default function UsersPage() {
     },
     onError: (error: any) => {
       toast.error(`Errore nella creazione: ${error.message}`);
+    },
+  });
+
+  const revokeUserSessionsMutation = trpc.users.revokeUserSessions.useMutation({
+    onSuccess: data => {
+      toast.success(data.message);
+      refetch();
+    },
+    onError: (error: any) => {
+      toast.error(`Errore nella revoca sessioni: ${error.message}`);
     },
   });
 
@@ -196,6 +207,24 @@ export default function UsersPage() {
     if (confirmAction) {
       confirmAction.handler();
     }
+  };
+
+  const handleRevokeUserSessions = (user: any) => {
+    // Protezione: impedisci auto-revoca
+    if (user.id === session?.user?.id) {
+      toast.error(
+        'Non puoi revocare le tue stesse sessioni da qui. Usa il profilo personale.'
+      );
+      return;
+    }
+
+    // Conferma prima di procedere
+    setConfirmAction({
+      type: 'revokeSessions',
+      user,
+      handler: () => revokeUserSessionsMutation.mutate({ id: user.id }),
+    });
+    setConfirmDialogOpen(true);
   };
 
   const handleSort = (
@@ -478,6 +507,13 @@ export default function UsersPage() {
                               Disattiva
                             </DropdownMenuItem>
                             <DropdownMenuItem
+                              onClick={() => handleRevokeUserSessions(user)}
+                              className="text-orange-600 focus:text-orange-600"
+                            >
+                              <LogOut className="mr-2 h-4 w-4" />
+                              Logout da tutti i dispositivi
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
                               onClick={() => {
                                 // Doppia protezione: controlla anche qui prima di procedere
                                 if (user.id === session?.user?.id) {
@@ -558,27 +594,35 @@ export default function UsersPage() {
               ? 'Disattiva Utente'
               : confirmAction.type === 'hardDelete'
                 ? 'Elimina Definitivamente'
-                : 'Conferma Azione'
+                : confirmAction.type === 'revokeSessions'
+                  ? 'Revoca Sessioni Utente'
+                  : 'Conferma Azione'
           }
           description={
             confirmAction.type === 'disable'
               ? "L'utente non potrà più accedere al sistema. L'operazione può essere annullata riattivando l'utente."
               : confirmAction.type === 'hardDelete'
                 ? "Questa operazione è irreversibile. Tutti i dati dell'utente verranno eliminati permanentemente dal database."
-                : 'Sei sicuro di voler procedere con questa azione?'
+                : confirmAction.type === 'revokeSessions'
+                  ? "L'utente verrà disconnesso da tutti i dispositivi e dovrà effettuare nuovamente il login. Questa operazione è utile per motivi di sicurezza."
+                  : 'Sei sicuro di voler procedere con questa azione?'
           }
           confirmText={
             confirmAction.type === 'disable'
               ? 'Disattiva'
               : confirmAction.type === 'hardDelete'
                 ? 'Elimina Definitivamente'
-                : 'Conferma'
+                : confirmAction.type === 'revokeSessions'
+                  ? 'Revoca Sessioni'
+                  : 'Conferma'
           }
           cancelText="Annulla"
           variant="destructive"
           onConfirm={handleConfirmAction}
           isLoading={
-            deleteUserMutation.isPending || hardDeleteUserMutation.isPending
+            deleteUserMutation.isPending ||
+            hardDeleteUserMutation.isPending ||
+            revokeUserSessionsMutation.isPending
           }
           userEmail={confirmAction.user?.email}
           actionType={confirmAction.type}
