@@ -181,10 +181,10 @@ export const usersRouter = router({
 
       if (search && search.trim()) {
         where.OR = [
-          { email: { contains: search, mode: 'insensitive' } },
-          { username: { contains: search, mode: 'insensitive' } },
-          { firstName: { contains: search, mode: 'insensitive' } },
-          { lastName: { contains: search, mode: 'insensitive' } },
+          { email: { contains: search } },
+          { username: { contains: search } },
+          { firstName: { contains: search } },
+          { lastName: { contains: search } },
         ];
       }
 

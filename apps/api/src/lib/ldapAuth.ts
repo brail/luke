@@ -352,10 +352,11 @@ async function createOrUpdateUser(
     availableAttributes: Object.keys(userAttributes),
   });
 
-  // Cerca utente esistente
+  // Cerca utente esistente (solo utenti attivi)
   let user = await prisma.user.findFirst({
     where: {
       username,
+      isActive: true, // Solo utenti attivi possono autenticarsi
     },
   });
 

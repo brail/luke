@@ -6,6 +6,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../../../../../components/ui/dropdown-menu';
 import { MoreHorizontal, Edit, UserX, LogOut, Trash2 } from 'lucide-react';
@@ -82,6 +83,7 @@ export function UserActionsMenu({
           <UserX className="mr-2 h-4 w-4" />
           Disattiva
         </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={handleRevokeSessions}
           className="text-orange-600 focus:text-orange-600"
