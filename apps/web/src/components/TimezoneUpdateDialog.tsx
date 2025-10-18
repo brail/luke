@@ -17,12 +17,13 @@ import { Globe } from 'lucide-react';
 
 /**
  * Dialog per aggiornare il timezone dell'utente
- * Si mostra automaticamente quando rileva un cambio di timezone dal browser
+ * Si mostra automaticamente solo al primo accesso post-login quando rileva un cambio di timezone dal browser
  */
 export function TimezoneUpdateDialog() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const [open, setOpen] = useState(false);
   const [detectedTimezone, setDetectedTimezone] = useState<string | null>(null);
+  const [hasShownForSession, setHasShownForSession] = useState(false);
   const utils = trpc.useUtils();
 
   // Usa i dati aggiornati dall'API invece della sessione NextAuth
@@ -43,24 +44,34 @@ export function TimezoneUpdateDialog() {
   });
 
   useEffect(() => {
-    // Rileva timezone dal browser
-    try {
-      const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const userTz = userData?.timezone; // Usa dati dall'API
-
-      // Rileva se timezone browser è diverso da quello utente
-
-      // Se diverso e sessione attiva, mostra dialog
-      if (browserTz && userTz && browserTz !== userTz && session?.user) {
-        setDetectedTimezone(browserTz);
-        // Mostra dialog solo dopo 2 secondi per evitare flash al caricamento
-        setTimeout(() => setOpen(true), 2000);
-      }
-    } catch (error) {
-      // Ignora errori di rilevamento timezone
-      console.warn('Impossibile rilevare timezone browser:', error);
+    // Reset flag quando la sessione cambia (login/logout)
+    if (status === 'unauthenticated') {
+      setHasShownForSession(false);
+      setDetectedTimezone(null);
+      setOpen(false);
+      return;
     }
-  }, [userData?.timezone, session?.user]);
+
+    // Mostra dialog solo al primo accesso post-login
+    if (status === 'authenticated' && !hasShownForSession) {
+      // Rileva timezone dal browser
+      try {
+        const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const userTz = userData?.timezone; // Usa dati dall'API
+
+        // Se diverso e sessione attiva, mostra dialog solo una volta per sessione
+        if (browserTz && userTz && browserTz !== userTz && session?.user) {
+          setDetectedTimezone(browserTz);
+          setHasShownForSession(true);
+          // Mostra dialog solo dopo 2 secondi per evitare flash al caricamento
+          setTimeout(() => setOpen(true), 2000);
+        }
+      } catch (error) {
+        // Ignora errori di rilevamento timezone
+        console.warn('Impossibile rilevare timezone browser:', error);
+      }
+    }
+  }, [userData?.timezone, session?.user, status, hasShownForSession]);
 
   const handleUpdate = () => {
     if (!detectedTimezone) return;

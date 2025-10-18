@@ -125,9 +125,6 @@ export default function ProfilePage() {
   // Calcola statistiche da dati reali
   const userStats = {
     lastLogin: user.lastLoginAt || new Date(),
-    accountCreated: user.createdAt || new Date(),
-    sessionsActive: 1, // Sempre 1 (sessione corrente)
-    loginCount: user.loginCount || 0,
   };
 
   const handleCopyEmail = () => {
@@ -148,7 +145,6 @@ export default function ProfilePage() {
       provider: user.provider,
       createdAt: user.createdAt,
       lastLogin: userStats.lastLogin,
-      loginCount: userStats.loginCount,
     };
 
     const blob = new Blob([JSON.stringify(profileData, null, 2)], {
@@ -207,14 +203,6 @@ export default function ProfilePage() {
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">
-                  Membro dal
-                </span>
-                <span className="text-sm font-medium">
-                  {formatDate.compactDate(userStats.accountCreated)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
                   Ultimo accesso
                 </span>
                 <span className="text-sm font-medium">
@@ -224,20 +212,8 @@ export default function ProfilePage() {
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
-                  Accessi totali
-                </span>
-                <span className="text-sm font-medium">
-                  {userStats.loginCount}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
-                  Sessioni attive
-                </span>
-                <span className="text-sm font-medium">
-                  {userStats.sessionsActive}
-                </span>
+                <span className="text-sm text-muted-foreground">Posizione</span>
+                <span className="text-sm font-medium">Milano, Italia</span>
               </div>
             </CardContent>
           </Card>
