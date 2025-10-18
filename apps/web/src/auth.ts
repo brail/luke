@@ -1,7 +1,7 @@
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import type { NextAuthConfig } from 'next-auth';
-import { getNextAuthSecret } from '@luke/core/server';
+import { getNextAuthSecret } from '../../../packages/core/src/crypto/secrets.server';
 
 /**
  * Helper per chiamare l'API tRPC

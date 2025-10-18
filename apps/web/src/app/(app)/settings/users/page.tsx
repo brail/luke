@@ -3,39 +3,15 @@
 import { useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { trpc } from '../../../../lib/trpc';
-import { Button } from '../../../../components/ui/button';
-import { Input } from '../../../../components/ui/input';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '../../../../components/ui/table';
 import { UserDialog } from '../../../../components/UserDialog';
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
 import { toast } from 'sonner';
-import React from 'react';
 import { debugLog } from '../../../../lib/debug';
-import {
-  ChevronUp,
-  ChevronDown,
-  ChevronsUpDown,
-  MoreHorizontal,
-  Edit,
-  UserX,
-  Trash2,
-  LogOut,
-} from 'lucide-react';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../../../../components/ui/dropdown-menu';
+import { UsersToolbar } from './_components/UsersToolbar';
+import { UsersTable } from './_components/UsersTable';
+import { SortColumn, SortOrder } from './_components/types';
 
 /**
  * Pagina gestione utenti con CRUD completo
@@ -65,17 +41,8 @@ export default function UsersPage() {
   } | null>(null);
 
   // Stato per ordinamento
-  const [sortBy, setSortBy] = useState<
-    | 'email'
-    | 'username'
-    | 'firstName'
-    | 'lastName'
-    | 'role'
-    | 'isActive'
-    | 'createdAt'
-    | 'provider'
-  >('createdAt');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [sortBy, setSortBy] = useState<SortColumn>('createdAt');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
   // Query tRPC per lista utenti con paginazione e filtri
   const {
@@ -227,17 +194,7 @@ export default function UsersPage() {
     setConfirmDialogOpen(true);
   };
 
-  const handleSort = (
-    column:
-      | 'email'
-      | 'username'
-      | 'firstName'
-      | 'lastName'
-      | 'role'
-      | 'isActive'
-      | 'createdAt'
-      | 'provider'
-  ) => {
+  const handleSort = (column: SortColumn) => {
     if (sortBy === column) {
       // Se è la stessa colonna, inverte l'ordinamento
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
@@ -248,46 +205,6 @@ export default function UsersPage() {
     }
     // Reset alla prima pagina quando si cambia ordinamento
     setCurrentPage(1);
-  };
-
-  // Componente helper per header ordinabile
-  const SortableHeader = ({
-    column,
-    children,
-  }: {
-    column:
-      | 'email'
-      | 'username'
-      | 'firstName'
-      | 'lastName'
-      | 'role'
-      | 'isActive'
-      | 'createdAt'
-      | 'provider';
-    children: React.ReactNode;
-  }) => {
-    const isActive = sortBy === column;
-    const getSortIcon = () => {
-      if (!isActive)
-        return <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />;
-      return sortOrder === 'asc' ? (
-        <ChevronUp className="h-4 w-4 text-primary" />
-      ) : (
-        <ChevronDown className="h-4 w-4 text-primary" />
-      );
-    };
-
-    return (
-      <TableHead
-        className="cursor-pointer hover:bg-muted/50 select-none"
-        onClick={() => handleSort(column)}
-      >
-        <div className="flex items-center gap-2">
-          {children}
-          {getSortIcon()}
-        </div>
-      </TableHead>
-    );
   };
 
   const handleFormSubmit = (data: any) => {
@@ -348,33 +265,18 @@ export default function UsersPage() {
         title="Ricerca e Filtri"
         description="Cerca e filtra gli utenti del sistema"
       >
-        <div className="flex gap-4 items-center mb-4">
-          <div className="flex-1">
-            <Input
-              placeholder="Cerca per email o username..."
-              value={searchTerm}
-              onChange={e => handleSearch(e.target.value)}
-            />
-          </div>
-          <div>
-            <select
-              value={roleFilter}
-              onChange={e => handleRoleFilter(e.target.value)}
-              className="flex h-10 w-32 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <option value="">Tutti i ruoli</option>
-              <option value="admin">Admin</option>
-              <option value="editor">Editor</option>
-              <option value="viewer">Viewer</option>
-            </select>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Button onClick={handleCreateUser}>Nuovo Utente</Button>
-          <Button variant="outline" onClick={() => refetch()}>
-            Aggiorna
-          </Button>
-        </div>
+        <UsersToolbar
+          searchTerm={searchTerm}
+          roleFilter={roleFilter}
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalUsers={usersData?.total || 0}
+          onSearchChange={handleSearch}
+          onRoleFilterChange={handleRoleFilter}
+          onCreateUser={handleCreateUser}
+          onRefresh={() => refetch()}
+          onPageChange={setCurrentPage}
+        />
       </SectionCard>
 
       {/* Tabella Utenti */}
@@ -389,186 +291,20 @@ export default function UsersPage() {
           </div>
         )}
 
-        {isLoading && session?.accessToken && (
-          <div className="text-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-            <p>Caricamento utenti...</p>
-          </div>
-        )}
-
-        {error && (
-          <div className="text-center py-8">
-            <div className="text-destructive mb-2">
-              Errore nel caricamento utenti
-            </div>
-            <p className="text-sm text-muted-foreground mb-4">
-              {error.message}
-            </p>
-            <Button variant="outline" onClick={() => refetch()}>
-              Riprova
-            </Button>
-          </div>
-        )}
-
-        {users && !isLoading && session?.accessToken && (
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <SortableHeader column="email">Email</SortableHeader>
-                  <SortableHeader column="username">Username</SortableHeader>
-                  <SortableHeader column="firstName">Nome</SortableHeader>
-                  <SortableHeader column="lastName">Cognome</SortableHeader>
-                  <SortableHeader column="provider">Provider</SortableHeader>
-                  <SortableHeader column="role">Ruolo</SortableHeader>
-                  <SortableHeader column="isActive">Stato</SortableHeader>
-                  <SortableHeader column="createdAt">Creato</SortableHeader>
-                  <TableHead>Azioni</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.length === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={9}
-                      className="text-center py-8 text-muted-foreground"
-                    >
-                      Nessun utente trovato
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  users.map((user: any) => (
-                    <TableRow key={user.id}>
-                      <TableCell>{user.email}</TableCell>
-                      <TableCell>{user.username}</TableCell>
-                      <TableCell>{user.firstName || '-'}</TableCell>
-                      <TableCell>{user.lastName || '-'}</TableCell>
-                      <TableCell>
-                        <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-1 text-xs font-medium">
-                          {user.identities?.[0]?.provider || 'LOCAL'}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <span className="inline-flex items-center rounded-full bg-secondary px-2 py-1 text-xs font-medium">
-                          {user.role}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <span
-                          className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
-                            user.isActive
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-red-100 text-red-800'
-                          }`}
-                        >
-                          {user.isActive ? 'Attivo' : 'Disattivo'}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        {user.createdAt
-                          ? new Date(user.createdAt).toLocaleDateString('it-IT')
-                          : 'N/A'}
-                      </TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0"
-                            >
-                              <span className="sr-only">Apri menu</span>
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => handleEditUser(user)}
-                            >
-                              <Edit className="mr-2 h-4 w-4" />
-                              Modifica
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                // Doppia protezione: controlla anche qui prima di procedere
-                                if (user.id === session?.user?.id) {
-                                  toast.error(
-                                    'Non puoi disattivare il tuo stesso account'
-                                  );
-                                  return;
-                                }
-                                handleDeleteUser(user);
-                              }}
-                              disabled={
-                                !user.isActive || user.id === session?.user?.id
-                              }
-                            >
-                              <UserX className="mr-2 h-4 w-4" />
-                              Disattiva
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => handleRevokeUserSessions(user)}
-                              className="text-orange-600 focus:text-orange-600"
-                            >
-                              <LogOut className="mr-2 h-4 w-4" />
-                              Logout da tutti i dispositivi
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                // Doppia protezione: controlla anche qui prima di procedere
-                                if (user.id === session?.user?.id) {
-                                  toast.error(
-                                    'Non puoi eliminare il tuo stesso account'
-                                  );
-                                  return;
-                                }
-                                handleHardDeleteUser(user);
-                              }}
-                              disabled={user.id === session?.user?.id}
-                              className="text-destructive focus:text-destructive"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Elimina
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-
-        {/* Paginazione */}
-        {totalPages > 1 && session?.accessToken && (
-          <div className="flex justify-between items-center pt-4">
-            <div className="text-sm text-muted-foreground">
-              Pagina {currentPage} di {totalPages} ({usersData?.total || 0}{' '}
-              utenti totali)
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-              >
-                Precedente
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  setCurrentPage(prev => Math.min(totalPages, prev + 1))
-                }
-                disabled={currentPage === totalPages}
-              >
-                Successiva
-              </Button>
-            </div>
-          </div>
+        {session?.accessToken && (
+          <UsersTable
+            users={users}
+            currentUserId={session?.user?.id || ''}
+            isLoading={isLoading}
+            error={error}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            onSort={handleSort}
+            onEdit={handleEditUser}
+            onDisable={handleDeleteUser}
+            onHardDelete={handleHardDeleteUser}
+            onRevokeSessions={handleRevokeUserSessions}
+          />
         )}
       </SectionCard>
 
