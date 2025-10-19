@@ -554,56 +554,43 @@ export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
     },
   });
 
-  // Verifica che tutte le configurazioni esistano
-  const foundKeys = configs.map(c => c.key);
-  const missingKeys = configKeys.filter(key => !foundKeys.includes(key));
-
-  if (missingKeys.length > 0) {
-    throw new Error(`Configurazioni LDAP mancanti: ${missingKeys.join(', ')}`);
-  }
-
   // Crea mappa per accesso rapido
   const configMap = new Map(configs.map(c => [c.key, c]));
 
-  // Recupera e decifra i valori
+  // Se non ci sono configurazioni LDAP, restituisci configurazione di default
+  if (configs.length === 0) {
+    return {
+      enabled: false,
+      url: '',
+      bindDN: '',
+      bindPassword: '',
+      searchBase: '',
+      searchFilter: '',
+      groupSearchBase: '',
+      groupSearchFilter: '',
+      roleMapping: {},
+      strategy: 'local-first',
+    };
+  }
+
+  // Helper per recuperare valore con fallback
+  const getConfigValue = (key: string, defaultValue: string = ''): string => {
+    const config = configMap.get(key);
+    if (!config) return defaultValue;
+    return config.isEncrypted ? decryptValue(config.value) : config.value;
+  };
+
+  // Recupera e decifra i valori con fallback per chiavi mancanti
   const enabled = configMap.get('auth.ldap.enabled')?.value === 'true';
-  const url = configMap.get('auth.ldap.url')?.isEncrypted
-    ? decryptValue(configMap.get('auth.ldap.url')!.value)
-    : configMap.get('auth.ldap.url')?.value || '';
-
-  const bindDN = configMap.get('auth.ldap.bindDN')?.isEncrypted
-    ? decryptValue(configMap.get('auth.ldap.bindDN')!.value)
-    : configMap.get('auth.ldap.bindDN')?.value || '';
-
-  const bindPassword = configMap.get('auth.ldap.bindPassword')?.isEncrypted
-    ? decryptValue(configMap.get('auth.ldap.bindPassword')!.value)
-    : configMap.get('auth.ldap.bindPassword')?.value || '';
-
-  const searchBase = configMap.get('auth.ldap.searchBase')?.isEncrypted
-    ? decryptValue(configMap.get('auth.ldap.searchBase')!.value)
-    : configMap.get('auth.ldap.searchBase')?.value || '';
-
-  const searchFilter = configMap.get('auth.ldap.searchFilter')?.isEncrypted
-    ? decryptValue(configMap.get('auth.ldap.searchFilter')!.value)
-    : configMap.get('auth.ldap.searchFilter')?.value || '';
-
-  const groupSearchBase = configMap.get('auth.ldap.groupSearchBase')
-    ?.isEncrypted
-    ? decryptValue(configMap.get('auth.ldap.groupSearchBase')!.value)
-    : configMap.get('auth.ldap.groupSearchBase')?.value || '';
-
-  const groupSearchFilter = configMap.get('auth.ldap.groupSearchFilter')
-    ?.isEncrypted
-    ? decryptValue(configMap.get('auth.ldap.groupSearchFilter')!.value)
-    : configMap.get('auth.ldap.groupSearchFilter')?.value || '';
-
-  const roleMappingStr = configMap.get('auth.ldap.roleMapping')?.isEncrypted
-    ? decryptValue(configMap.get('auth.ldap.roleMapping')!.value)
-    : configMap.get('auth.ldap.roleMapping')?.value || '{}';
-
-  const strategy =
-    (configMap.get('auth.strategy')?.value as LdapConfig['strategy']) ||
-    'local-first';
+  const url = getConfigValue('auth.ldap.url');
+  const bindDN = getConfigValue('auth.ldap.bindDN');
+  const bindPassword = getConfigValue('auth.ldap.bindPassword');
+  const searchBase = getConfigValue('auth.ldap.searchBase');
+  const searchFilter = getConfigValue('auth.ldap.searchFilter');
+  const groupSearchBase = getConfigValue('auth.ldap.groupSearchBase');
+  const groupSearchFilter = getConfigValue('auth.ldap.groupSearchFilter');
+  const roleMappingStr = getConfigValue('auth.ldap.roleMapping', '{}');
+  const strategy = (configMap.get('auth.strategy')?.value as LdapConfig['strategy']) || 'local-first';
 
   // Parsa roleMapping da JSON
   let roleMapping: Record<string, string>;

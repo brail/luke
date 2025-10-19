@@ -78,6 +78,8 @@ function extractSafeMetadata(input: any, result: any): Record<string, any> {
       'timezone',
       'key',
       'isEncrypted',
+      'firstName',
+      'lastName',
     ];
     for (const field of safeInputFields) {
       if (input[field] !== undefined) {

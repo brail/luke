@@ -348,8 +348,153 @@ describe('AuditLog Integration', () => {
       expect(auditLogs).toHaveLength(1);
       const log = auditLogs[0];
 
-      // Verifica che i metadata siano null (il middleware non estrae metadata dall'input)
-      expect(log.metadata).toBeNull();
+      // Verifica che i metadata contengano informazioni utili ma non password
+      expect(log.metadata).toBeTruthy();
+      expect(log.metadata).toHaveProperty('input_username');
+      expect(log.metadata).toHaveProperty('input_email');
+      expect(log.metadata).toHaveProperty('input_role');
+
+      // Verifica che non ci siano password in metadata
+      const metadataStr = JSON.stringify(log.metadata);
+      expect(metadataStr).not.toContain('password');
+      expect(metadataStr).not.toContain('SecurePass');
+    });
+  });
+
+  describe('USER_HARD_DELETE con targetId corretto', () => {
+    it('dovrebbe loggare targetId corretto per hard delete', async () => {
+      const { user: admin, session } = await createTestUser('admin');
+      const { user: targetUser } = await createTestUser('viewer');
+      const ctx = createTestContext(session);
+      const caller = appRouter.createCaller(ctx);
+
+      await caller.users.hardDelete({ id: targetUser.id });
+
+      const auditLogs = await testPrisma.auditLog.findMany({
+        where: {
+          action: 'USER_HARD_DELETE',
+          targetId: targetUser.id, // Ora deve essere popolato!
+        },
+      });
+
+      expect(auditLogs).toHaveLength(1);
+      expect(auditLogs[0]).toMatchObject({
+        action: 'USER_HARD_DELETE',
+        targetType: 'User',
+        targetId: targetUser.id,
+        result: 'SUCCESS',
+      });
+    });
+  });
+
+  describe('CONFIG_VIEW_VALUE con targetId', () => {
+    it('dovrebbe loggare targetId per visualizzazione valore raw', async () => {
+      const { user: admin, session } = await createTestUser('admin');
+      const ctx = createTestContext(session);
+      const caller = appRouter.createCaller(ctx);
+
+      // Prima crea una config
+      await caller.config.set({
+        key: 'app.test.secret',
+        value: 'secret123',
+        encrypt: true,
+      });
+
+      // Poi visualizzala in modalità raw
+      await caller.config.viewValue({
+        key: 'app.test.secret',
+        mode: 'raw',
+      });
+
+      const auditLogs = await testPrisma.auditLog.findMany({
+        where: {
+          action: 'CONFIG_VIEW_VALUE',
+          targetId: 'app.test.secret',
+        },
+      });
+
+      expect(auditLogs).toHaveLength(1);
+      expect(auditLogs[0].targetId).toBe('app.test.secret');
+    });
+  });
+
+  describe('CONFIG_UPSERT per LDAP', () => {
+    it('dovrebbe loggare evento aggregato per salvataggio LDAP', async () => {
+      const { user: admin, session } = await createTestUser('admin');
+      const ctx = createTestContext(session);
+      const caller = appRouter.createCaller(ctx);
+
+      await caller.integrations.auth.saveLdapConfig({
+        enabled: true,
+        url: 'ldaps://ldap.example.com',
+        bindDN: 'cn=admin,dc=example,dc=com',
+        bindPassword: 'supersecret123',
+        searchBase: 'ou=users,dc=example,dc=com',
+        searchFilter: '(uid={username})',
+        groupSearchBase: '',
+        groupSearchFilter: '',
+        roleMapping: '',
+        strategy: 'local-first',
+      });
+
+      const auditLogs = await testPrisma.auditLog.findMany({
+        where: {
+          action: 'CONFIG_UPSERT',
+          targetId: 'auth.ldap',
+        },
+      });
+
+      expect(auditLogs).toHaveLength(1);
+      const log = auditLogs[0];
+
+      expect(log).toMatchObject({
+        action: 'CONFIG_UPSERT',
+        targetType: 'AppConfig',
+        targetId: 'auth.ldap',
+        actorId: admin.id,
+        result: 'SUCCESS',
+      });
+
+      // Verifica metadata redatti
+      const metadataStr = JSON.stringify(log.metadata);
+      expect(metadataStr).not.toContain('supersecret123');
+      expect(metadataStr).not.toContain('bindPassword');
+      expect(metadataStr).toContain('configKeys');
+      expect(log.metadata).toHaveProperty('ldapEnabled');
+    });
+
+    it('dovrebbe loggare FAILURE per errore LDAP', async () => {
+      const { user: admin, session } = await createTestUser('admin');
+      const ctx = createTestContext(session);
+      const caller = appRouter.createCaller(ctx);
+
+      await expect(
+        caller.integrations.auth.saveLdapConfig({
+          enabled: true,
+          url: 'invalid-url',
+          bindDN: '',
+          bindPassword: '',
+          searchBase: '',
+          searchFilter: '',
+          groupSearchBase: '',
+          groupSearchFilter: '',
+          roleMapping: '',
+          strategy: 'local-first',
+        })
+      ).rejects.toThrow();
+
+      const auditLogs = await testPrisma.auditLog.findMany({
+        where: {
+          action: 'CONFIG_UPSERT',
+          targetId: 'auth.ldap',
+          result: 'FAILURE',
+        },
+      });
+
+      expect(auditLogs.length).toBeGreaterThan(0);
+      const log = auditLogs[0];
+      expect(log.result).toBe('FAILURE');
+      expect(log.metadata).toHaveProperty('errorCode');
     });
   });
 });

@@ -336,6 +336,7 @@ export const configRouter = router({
         await logAudit(ctx, {
           action: 'CONFIG_VIEW_VALUE',
           targetType: 'Config',
+          targetId: input.key,
           result: 'SUCCESS',
           metadata: { key: input.key, mode: 'raw' },
         });

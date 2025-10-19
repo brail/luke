@@ -541,7 +541,6 @@ export const usersRouter = router({
    */
   hardDelete: adminProcedure
     .use(withRateLimit('userMutations'))
-    .use(withAuditLog('USER_HARD_DELETE', 'User'))
     .input(UserIdSchema)
     .mutation(async ({ input, ctx }) => {
       const user = await ctx.prisma.user.findUnique({
@@ -581,14 +580,40 @@ export const usersRouter = router({
         }
       }
 
-      // Audit logging gestito automaticamente dal middleware withAuditLog
-
       // Hard delete: elimina utente e tutte le relazioni (cascade)
-      await ctx.prisma.user.delete({
-        where: { id: input.id },
-      });
+      try {
+        await ctx.prisma.user.delete({
+          where: { id: input.id },
+        });
 
-      return { success: true, message: 'Utente eliminato definitivamente' };
+        // Log SUCCESS dopo delete riuscita
+        await logAudit(ctx, {
+          action: 'USER_HARD_DELETE',
+          targetType: 'User',
+          targetId: input.id,
+          result: 'SUCCESS',
+          metadata: {
+            deletedEmail: user.email,
+            deletedUsername: user.username,
+            deletedRole: user.role,
+          },
+        });
+
+        return { success: true, message: 'Utente eliminato definitivamente' };
+      } catch (error) {
+        // Log FAILURE in catch
+        await logAudit(ctx, {
+          action: 'USER_HARD_DELETE',
+          targetType: 'User',
+          targetId: input.id,
+          result: 'FAILURE',
+          metadata: {
+            errorCode: (error as any).code || 'UNKNOWN',
+            errorMessage: (error as any).message?.substring(0, 100),
+          },
+        });
+        throw error;
+      }
     }),
 
   /**

@@ -25,23 +25,23 @@ CREATE TABLE audit_logs (
 
 ### Mappatura Azioni
 
-| Azione                   | targetType | targetId | Descrizione                    |
-| ------------------------ | ---------- | -------- | ------------------------------ |
-| USER_CREATE              | User       | userId   | Creazione utente               |
-| USER_UPDATE              | User       | userId   | Modifica profilo/ruolo         |
-| USER_DELETE              | User       | userId   | Soft delete (isActive=false)   |
-| USER_HARD_DELETE         | User       | userId   | Eliminazione definitiva        |
-| USER_PASSWORD_CHANGE     | User       | userId   | Cambio password self-service   |
-| USER_UPDATE_PROFILE      | User       | userId   | Aggiornamento profilo utente   |
-| USER_UPDATE_TIMEZONE     | User       | userId   | Cambio timezone utente         |
-| USER_REVOKE_SESSIONS     | User       | userId   | Revoca sessioni utente         |
-| USER_REVOKE_ALL_SESSIONS | User       | userId   | Revoca tutte le sessioni       |
-| AUTH_LOGIN               | Auth       | userId   | Login riuscito                 |
-| AUTH_LOGIN_FAILED        | Auth       | null     | Login fallito                  |
-| AUTH_LOGOUT_ALL          | Auth       | userId   | Logout da tutti i dispositivi  |
-| CONFIG_UPSERT            | Config     | null     | Creazione/aggiornamento config |
-| CONFIG_DELETE            | Config     | null     | Eliminazione config            |
-| CONFIG_VIEW_VALUE        | Config     | null     | Visualizzazione valore raw     |
+| Azione                   | targetType       | targetId                | Descrizione                    |
+| ------------------------ | ---------------- | ----------------------- | ------------------------------ |
+| USER_CREATE              | User             | userId                  | Creazione utente               |
+| USER_UPDATE              | User             | userId                  | Modifica profilo/ruolo         |
+| USER_DELETE              | User             | userId                  | Soft delete (isActive=false)   |
+| USER_HARD_DELETE         | User             | userId                  | Eliminazione definitiva        |
+| USER_PASSWORD_CHANGE     | User             | userId                  | Cambio password self-service   |
+| USER_UPDATE_PROFILE      | User             | userId                  | Aggiornamento profilo utente   |
+| USER_UPDATE_TIMEZONE     | User             | userId                  | Cambio timezone utente         |
+| USER_REVOKE_SESSIONS     | User             | userId                  | Revoca sessioni utente         |
+| USER_REVOKE_ALL_SESSIONS | User             | userId                  | Revoca tutte le sessioni       |
+| AUTH_LOGIN               | Auth             | userId                  | Login riuscito                 |
+| AUTH_LOGIN_FAILED        | Auth             | null                    | Login fallito                  |
+| AUTH_LOGOUT_ALL          | Auth             | userId                  | Logout da tutti i dispositivi  |
+| CONFIG_UPSERT            | AppConfig/Config | configKey o 'auth.ldap' | Creazione/aggiornamento config |
+| CONFIG_DELETE            | Config           | null                    | Eliminazione config            |
+| CONFIG_VIEW_VALUE        | Config           | null                    | Visualizzazione valore raw     |
 
 ### Policy di Redazione
 
@@ -134,6 +134,15 @@ SELECT action, targetType, actorId, createdAt, metadata
 FROM audit_logs
 WHERE action LIKE 'CONFIG_%'
   AND createdAt > datetime('now', '-30 days')
+ORDER BY createdAt DESC;
+```
+
+#### Audit modifiche LDAP aggregate
+
+```sql
+SELECT action, targetId, actorId, result, createdAt, metadata
+FROM audit_logs
+WHERE targetId = 'auth.ldap'
 ORDER BY createdAt DESC;
 ```
 

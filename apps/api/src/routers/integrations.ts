@@ -15,6 +15,7 @@ import { ldapConfigSchema } from '@luke/core';
 import * as nodemailer from 'nodemailer';
 import * as ldap from 'ldapjs';
 import { TRPCError } from '@trpc/server';
+import { logAudit } from '../lib/auditLog';
 import {
   ErrorCode,
   createStandardError,
@@ -361,11 +362,47 @@ export const integrationsRouter = router({
             hasBindPassword: !!input.bindPassword,
           });
 
+          // Log audit aggregato per LDAP
+          await logAudit(ctx, {
+            action: 'CONFIG_UPSERT',
+            targetType: 'AppConfig',
+            targetId: 'auth.ldap',
+            result: 'SUCCESS',
+            metadata: {
+              configKeys: [
+                'auth.ldap.enabled',
+                'auth.ldap.url',
+                'auth.ldap.bindDN',
+                'auth.ldap.searchBase',
+                'auth.ldap.searchFilter',
+                'auth.ldap.groupSearchBase',
+                'auth.ldap.groupSearchFilter',
+                'auth.ldap.roleMapping',
+                'auth.strategy',
+              ],
+              ldapEnabled: input.enabled,
+              strategy: input.strategy,
+              hasBindPassword: !!input.bindPassword,
+            },
+          });
+
           return {
             success: true,
             message: 'Configurazione LDAP salvata con successo',
           };
         } catch (error: any) {
+          // Log audit FAILURE
+          await logAudit(ctx, {
+            action: 'CONFIG_UPSERT',
+            targetType: 'AppConfig',
+            targetId: 'auth.ldap',
+            result: 'FAILURE',
+            metadata: {
+              errorCode: error.code || 'UNKNOWN',
+              errorMessage: error.message?.substring(0, 100),
+            },
+          });
+
           if (error instanceof TRPCError) {
             throw error;
           }
@@ -408,6 +445,23 @@ export const integrationsRouter = router({
         };
       } catch (error: any) {
         ctx.logger.error({ error: error.message }, 'Error getting LDAP config');
+        
+        // Se è un errore di configurazioni mancanti, restituisci configurazione di default
+        if (error.message.includes('Configurazioni LDAP mancanti')) {
+          return {
+            enabled: false,
+            url: '',
+            hasBindDN: false,
+            hasBindPassword: false,
+            searchBase: '',
+            searchFilter: '',
+            groupSearchBase: '',
+            groupSearchFilter: '',
+            roleMapping: '{}',
+            strategy: 'local-first' as const,
+          };
+        }
+        
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Errore durante recupero configurazione LDAP',
