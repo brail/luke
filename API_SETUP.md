@@ -458,6 +458,8 @@ Suite completa in `apps/api/test/session.hardening.spec.ts`:
 - **Key extraction**: IP per endpoint pubblici, userId per endpoint autenticati
 - **Store**: In-memory LRU cache con TTL e cleanup automatico
 
+> 📖 **Documentazione Operativa**: Per configurazioni dettagliate, esempi per ambiente e comandi di testing, consulta [OPERATIONS.md](../OPERATIONS.md#-rate-limiting).
+
 #### Rate Limiting Configuration
 
 **AppConfig (database)**:
@@ -505,6 +507,9 @@ Override individual routes:
 - **Store**: In-memory LRU cache (max 1000 keys, TTL 5min)
 - **Scope**: Mutazioni critiche (login, password change, config, users)
 - **Hash**: SHA256(method + path + body) per validazione
+
+> 📖 **Documentazione Operativa**: Per esempi pratici, testing collisioni e best practices, consulta [OPERATIONS.md](../OPERATIONS.md#-idempotency).
+
 - **tRPC middleware**: Wrapper che riusa IdempotencyStore esistente
 
 ### RBAC Guards
@@ -964,6 +969,8 @@ readinessProbe:
 Pino serializer automatico redige: `password`, `secret`, `token`, `bindPassword`, valori cifrati AppConfig.
 
 ## 🏥 Health & Readiness
+
+> 📖 **Documentazione Operativa**: Per troubleshooting dettagliato, esempi di failure scenarios e configurazione Kubernetes, consulta [OPERATIONS.md](../OPERATIONS.md#-readiness--health-checks).
 
 ### Differenza Liveness vs Readiness
 

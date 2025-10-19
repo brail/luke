@@ -187,6 +187,10 @@ Admin revoca sessioni → tokenVersion incrementato nel DB
 - **Defense in Depth**: 4 livelli di verifica tokenVersion
 - **Zero Over-Engineering**: Architettura pulita, DRY, best practices
 
+### Operational Tuning
+
+Per configurazioni runtime, rate-limiting, idempotency, session TTL, security headers e readiness checks, consulta la [documentazione operativa](OPERATIONS.md) dedicata a SRE/DevOps.
+
 ### Rate Limiting
 
 - **Due livelli**: Globale (100 req/min) + Critico (10 req/min)
