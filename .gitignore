@@ -104,3 +104,4 @@ Thumbs.db
 
 # Prisma
 prisma/migrations/
+apps/api/prisma/dev.db.backup.*
