@@ -153,6 +153,11 @@ export async function createContext({
 const t = initTRPC.context<Context>().create();
 
 /**
+ * Esporta t per uso in middleware personalizzati
+ */
+export { t };
+
+/**
  * Router base per tRPC
  */
 export const router = t.router;

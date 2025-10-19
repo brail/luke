@@ -335,7 +335,8 @@ export const configRouter = router({
         // Log audit per visualizzazione raw
         await logAudit(ctx, {
           action: 'CONFIG_VIEW_VALUE',
-          resource: 'config',
+          targetType: 'Config',
+          result: 'SUCCESS',
           metadata: { key: input.key, mode: 'raw' },
         });
       }
@@ -387,8 +388,9 @@ export const configRouter = router({
 
       // Log audit con azione appropriata
       await logAudit(ctx, {
-        action: existingConfig ? 'CONFIG_UPDATE' : 'CONFIG_CREATE',
-        resource: 'config',
+        action: 'CONFIG_UPSERT',
+        targetType: 'Config',
+        result: 'SUCCESS',
         metadata: {
           key: input.key,
           isEncrypted: input.encrypt,
@@ -436,7 +438,8 @@ export const configRouter = router({
       // Log audit
       await logAudit(ctx, {
         action: 'CONFIG_DELETE',
-        resource: 'config',
+        targetType: 'Config',
+        result: 'SUCCESS',
         metadata: { key: input.key },
       });
 
@@ -492,8 +495,9 @@ export const configRouter = router({
 
       // Log audit
       await logAudit(ctx, {
-        action: 'CONFIG_UPDATE',
-        resource: 'config',
+        action: 'CONFIG_UPSERT',
+        targetType: 'Config',
+        result: 'SUCCESS',
         metadata: {
           key: input.key,
           isEncrypted: input.encrypt,
@@ -584,8 +588,9 @@ export const configRouter = router({
 
             // Log audit granulare per ogni configurazione
             await logAudit(ctx, {
-              action: existingConfig ? 'CONFIG_UPDATE' : 'CONFIG_CREATE',
-              resource: 'config',
+              action: 'CONFIG_UPSERT',
+              targetType: 'Config',
+              result: 'SUCCESS',
               metadata: {
                 key: config.key,
                 isEncrypted: config.encrypt,
@@ -667,7 +672,8 @@ export const configRouter = router({
       // Log audit aggregato
       await logAudit(ctx, {
         action: 'CONFIG_EXPORT',
-        resource: 'config',
+        targetType: 'Config',
+        result: 'SUCCESS',
         metadata: {
           includeValues: input.includeValues,
           count: configs.length,
@@ -716,8 +722,9 @@ export const configRouter = router({
 
           // Log audit granulare per ogni chiave importata
           await logAudit(ctx, {
-            action: existingConfig ? 'CONFIG_UPDATE' : 'CONFIG_CREATE',
-            resource: 'config',
+            action: 'CONFIG_UPSERT',
+            targetType: 'Config',
+            result: 'SUCCESS',
             metadata: {
               key: item.key,
               isEncrypted: shouldEncrypt,

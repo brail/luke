@@ -89,18 +89,22 @@ model AppConfig {
 }
 
 model AuditLog {
-  id           String   @id @default(uuid())
-  userId       String?
-  targetUserId String?
-  action       String
-  resource     String
-  metadata     Json?
-  traceId      String?
-  ipAddress    String?
-  timestamp    DateTime @default(now())
-
+  id         String   @id @default(uuid())
+  actorId    String?  // Sostituisce userId (più chiaro)
+  action     String   // SCREAMING_SNAKE_CASE (es. USER_CREATE)
+  targetType String   // Tipo risorsa (User, Config, Auth)
+  targetId   String?  // ID risorsa target (opzionale)
+  result     String   // SUCCESS o FAILURE (esplicito)
+  metadata   Json?    // Dati redatti
+  traceId    String?
+  ip         String?  // Rinomina da ipAddress per brevità
+  createdAt  DateTime @default(now()) // Rinomina da timestamp
+  
   // Relations
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
-
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  
+  @@index([action, createdAt])
+  @@index([actorId, createdAt])
+  @@index([targetType, targetId])
   @@map("audit_logs")
 }

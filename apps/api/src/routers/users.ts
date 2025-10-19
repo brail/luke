@@ -20,13 +20,8 @@ import {
   type LockedFields,
 } from '@luke/core';
 import { TRPCError } from '@trpc/server';
-import {
-  logUserCreate,
-  logUserUpdate,
-  logUserDisable,
-  logUserHardDelete,
-  logAudit,
-} from '../lib/auditLog';
+import { logAudit } from '../lib/auditLog';
+import { withAuditLog } from '../lib/auditMiddleware';
 import { withRateLimit } from '../lib/ratelimit';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 
@@ -111,8 +106,7 @@ async function deleteUserHandler({
     },
   });
 
-  // Log audit per disattivazione utente
-  await logUserDisable(ctx, input.id);
+  // Audit logging gestito automaticamente dal middleware withAuditLog
 
   return {
     id: deletedUser.id,
@@ -302,6 +296,7 @@ export const usersRouter = router({
   create: adminProcedure
     .use(withRateLimit('userMutations'))
     .use(withIdempotency())
+    .use(withAuditLog('USER_CREATE', 'User'))
     .input(CreateUserInputSchema)
     .mutation(async ({ input, ctx }) => {
       // Verifica che email e username non esistano già
@@ -363,14 +358,7 @@ export const usersRouter = router({
         return user;
       });
 
-      // Log audit per creazione utente
-      await logUserCreate(ctx, result.id, {
-        email: result.email,
-        username: result.username,
-        firstName: result.firstName,
-        lastName: result.lastName,
-        role: result.role,
-      });
+      // Audit logging gestito automaticamente dal middleware withAuditLog
 
       return {
         id: result.id,
@@ -392,6 +380,7 @@ export const usersRouter = router({
   update: adminProcedure
     .use(withRateLimit('userMutations'))
     .use(withIdempotency())
+    .use(withAuditLog('USER_UPDATE', 'User'))
     .input(UpdateUserInputSchema)
     .mutation(async ({ input, ctx }) => {
       const { id, ...updateData } = input;
@@ -509,8 +498,7 @@ export const usersRouter = router({
         },
       });
 
-      // Log audit per aggiornamento utente
-      await logUserUpdate(ctx, id, existingUser, updatedUser);
+      // Audit logging gestito automaticamente dal middleware withAuditLog
 
       return {
         id: updatedUser.id,
@@ -542,6 +530,7 @@ export const usersRouter = router({
    */
   softDelete: adminProcedure
     .use(withRateLimit('userMutations'))
+    .use(withAuditLog('USER_DELETE', 'User'))
     .input(UserIdSchema)
     .mutation(deleteUserHandler),
 
@@ -552,6 +541,7 @@ export const usersRouter = router({
    */
   hardDelete: adminProcedure
     .use(withRateLimit('userMutations'))
+    .use(withAuditLog('USER_HARD_DELETE', 'User'))
     .input(UserIdSchema)
     .mutation(async ({ input, ctx }) => {
       const user = await ctx.prisma.user.findUnique({
@@ -591,8 +581,7 @@ export const usersRouter = router({
         }
       }
 
-      // Log audit prima dell'eliminazione
-      await logUserHardDelete(ctx, input.id);
+      // Audit logging gestito automaticamente dal middleware withAuditLog
 
       // Hard delete: elimina utente e tutte le relazioni (cascade)
       await ctx.prisma.user.delete({
@@ -607,6 +596,7 @@ export const usersRouter = router({
    * Richiede ruolo admin
    */
   revokeUserSessions: adminProcedure
+    .use(withAuditLog('USER_REVOKE_SESSIONS', 'User'))
     .input(UserIdSchema)
     .mutation(async ({ ctx, input }) => {
       // Verifica che l'utente esista
@@ -640,23 +630,7 @@ export const usersRouter = router({
       // Invalida la cache tokenVersion per questo utente
       invalidateTokenVersionCache(input.id);
 
-      // Log audit per revoca sessioni
-      await logAudit(ctx, {
-        action: 'admin_revoke_sessions',
-        resource: 'security',
-        targetUserId: input.id,
-        metadata: {
-          targetUser: {
-            email: targetUser.email,
-            firstName: targetUser.firstName,
-            lastName: targetUser.lastName,
-          },
-          adminUser: {
-            id: ctx.session.user.id,
-            email: ctx.session.user.email,
-          },
-        },
-      });
+      // Audit logging gestito automaticamente dal middleware withAuditLog
 
       return {
         success: true,

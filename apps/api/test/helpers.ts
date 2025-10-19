@@ -21,13 +21,25 @@ let testPrisma: PrismaClient;
  * Inizializza il database di test
  */
 export async function setupTestDb(): Promise<PrismaClient> {
+  // Usa il database principale per i test (dev.db) per evitare problemi di migrazione
   testPrisma = new PrismaClient({
     datasources: {
       db: {
-        url: 'file:./test.db',
+        url: 'file:./dev.db',
       },
     },
   });
+
+  // Applica le migrazioni al database di test
+  const { execSync } = await import('child_process');
+  try {
+    execSync('npx prisma migrate deploy', {
+      cwd: process.cwd(),
+      stdio: 'pipe',
+    });
+  } catch (error) {
+    console.warn('Failed to apply migrations:', error);
+  }
 
   // Pulisci il database in modo sicuro (ignora errori se le tabelle non esistono)
   try {

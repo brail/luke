@@ -155,15 +155,18 @@ export const meRouter = router({
 
       // Log audit per l'aggiornamento
       await logAudit(ctx, {
-        action: 'me.updateProfile',
-        resource: 'user',
-        targetUserId: ctx.session.user.id,
-        changes: {
-          email: { old: userWithProvider.id, new: input.email }, // Placeholder per old value
-          firstName: { old: userWithProvider.id, new: input.firstName },
-          lastName: { old: userWithProvider.id, new: input.lastName },
-          locale: { old: userWithProvider.id, new: input.locale },
-          timezone: { old: userWithProvider.id, new: input.timezone },
+        action: 'USER_UPDATE_PROFILE',
+        targetType: 'User',
+        targetId: ctx.session.user.id,
+        result: 'SUCCESS',
+        metadata: {
+          changes: {
+            email: input.email,
+            firstName: input.firstName,
+            lastName: input.lastName,
+            locale: input.locale,
+            timezone: input.timezone,
+          },
         },
       });
 
@@ -266,9 +269,10 @@ export const meRouter = router({
 
       // Log audit per il cambio password
       await logAudit(ctx, {
-        action: 'me.changePassword',
-        resource: 'user',
-        targetUserId: ctx.session.user.id,
+        action: 'USER_PASSWORD_CHANGE',
+        targetType: 'User',
+        targetId: ctx.session.user.id,
+        result: 'SUCCESS',
         metadata: {
           success: true,
         },
@@ -286,18 +290,18 @@ export const meRouter = router({
     .query(async ({ ctx, input }) => {
       const logs = await ctx.prisma.auditLog.findMany({
         where: {
-          userId: ctx.session.user.id,
-          action: { in: ['login', 'login_failed'] },
+          actorId: ctx.session.user.id,
+          action: { in: ['AUTH_LOGIN', 'AUTH_LOGIN_FAILED'] },
         },
-        orderBy: { timestamp: 'desc' },
+        orderBy: { createdAt: 'desc' },
         take: input?.limit || 10,
       });
 
       return logs.map(log => ({
         id: log.id,
-        timestamp: log.timestamp,
-        success: log.action === 'login',
-        ipAddress: log.ipAddress,
+        timestamp: log.createdAt,
+        success: log.action === 'AUTH_LOGIN',
+        ipAddress: log.ip,
         // Estrai location da metadata se disponibile
         location: (log.metadata as any)?.location || 'Unknown',
       }));
@@ -319,9 +323,10 @@ export const meRouter = router({
 
     // Log audit
     await logAudit(ctx, {
-      action: 'revoke_all_sessions',
-      resource: 'security',
-      targetUserId: ctx.session.user.id,
+      action: 'USER_REVOKE_ALL_SESSIONS',
+      targetType: 'User',
+      targetId: ctx.session.user.id,
+      result: 'SUCCESS',
       metadata: {
         success: true,
       },
@@ -353,9 +358,10 @@ export const meRouter = router({
 
       // Log audit
       await logAudit(ctx, {
-        action: 'update_timezone',
-        resource: 'user',
-        targetUserId: ctx.session.user.id,
+        action: 'USER_UPDATE_TIMEZONE',
+        targetType: 'User',
+        targetId: ctx.session.user.id,
+        result: 'SUCCESS',
         metadata: {
           newTimezone: input.timezone,
         },

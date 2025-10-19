@@ -9,71 +9,85 @@ import type { Context } from './trpc';
  * Parametri per logging audit
  */
 export interface AuditParams {
-  /** Azione eseguita (es: 'user.create', 'user.update') */
+  /** Azione eseguita (SCREAMING_SNAKE_CASE: es. 'USER_CREATE', 'AUTH_LOGIN') */
   action: string;
-  /** Tipo di risorsa (es: 'user', 'config') */
-  resource: string;
-  /** ID dell'utente target dell'operazione (opzionale) */
-  targetUserId?: string;
-  /** Cambiamenti effettuati (solo campi modificati) */
-  changes?: Record<string, { old: any; new: any }>;
-  /** Metadati aggiuntivi */
+  /** Tipo di risorsa (User, Config, Auth) */
+  targetType: string;
+  /** ID della risorsa target dell'operazione (opzionale) */
+  targetId?: string;
+  /** Risultato dell'operazione (default: SUCCESS) */
+  result?: 'SUCCESS' | 'FAILURE';
+  /** Metadati aggiuntivi (saranno redatti automaticamente) */
   metadata?: Record<string, any>;
-  /** Indirizzo IP dell'utente (opzionale) */
-  ipAddress?: string;
 }
 
 /**
- * Calcola i cambiamenti tra due oggetti
- * Ritorna solo i campi effettivamente modificati
+ * Chiavi sicure per metadata (whitelist approach)
+ * Approccio secure-by-default: solo questi campi sono considerati safe
  */
-function calculateChanges(
-  before: Record<string, any>,
-  after: Record<string, any>
-): Record<string, { old: any; new: any }> {
-  const changes: Record<string, { old: any; new: any }> = {};
-
-  // Controlla tutti i campi di 'after'
-  for (const [key, newValue] of Object.entries(after)) {
-    const oldValue = before[key];
-
-    // Se il valore è cambiato (confronto shallow)
-    if (oldValue !== newValue) {
-      changes[key] = { old: oldValue, new: newValue };
-    }
-  }
-
-  // Controlla campi rimossi (presenti in 'before' ma non in 'after')
-  for (const [key, oldValue] of Object.entries(before)) {
-    if (!(key in after)) {
-      changes[key] = { old: oldValue, new: undefined };
-    }
-  }
-
-  return changes;
-}
+const SAFE_KEYS = new Set([
+  'username',
+  'email',
+  'role',
+  'action',
+  'timestamp',
+  'provider',
+  'success',
+  'reason',
+  'key',
+  'isEncrypted',
+  'locale',
+  'timezone',
+  'firstName',
+  'lastName',
+  'isActive',
+  'strategy',
+  'userAgent',
+  'createdAt',
+  'updatedAt',
+  'lastLoginAt',
+  'loginCount',
+  'id',
+  'count',
+]);
 
 /**
- * Filtra password e altri campi sensibili dai metadati
+ * Redazione ricorsiva dei metadati con whitelist + blacklist
+ * Approccio secure-by-default: redatta tutto tranne whitelist + blacklist esplicita
  */
-function sanitizeMetadata(metadata: Record<string, any>): Record<string, any> {
-  const sanitized = { ...metadata };
+function sanitizeMetadata(obj: any, depth = 0): any {
+  // Limite ricorsione (DoS protection)
+  if (depth > 5) return '[REDACTED:MAX_DEPTH]';
 
-  // Rimuovi campi sensibili
-  delete sanitized.password;
-  delete sanitized.passwordHash;
-  delete sanitized.confirmPassword;
-
-  // Se ci sono changes, sanitizza anche quelli
-  if (sanitized.changes) {
-    const sanitizedChanges = { ...sanitized.changes };
-    delete sanitizedChanges.password;
-    delete sanitizedChanges.passwordHash;
-    delete sanitizedChanges.confirmPassword;
-    sanitized.changes = sanitizedChanges;
+  if (Array.isArray(obj)) {
+    return obj.map(item => sanitizeMetadata(item, depth + 1));
   }
 
-  return sanitized;
+  if (obj && typeof obj === 'object') {
+    const sanitized: Record<string, any> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      // Prima controlla whitelist, poi blacklist
+      if (SAFE_KEYS.has(key)) {
+        sanitized[key] = sanitizeMetadata(value, depth + 1);
+      } else if (/password|token|secret|key|auth|credential|bind/i.test(key)) {
+        sanitized[key] = '***REDACTED***';
+      } else {
+        // Default: redatta chiavi non whitelisted
+        if (typeof value === 'string') {
+          sanitized[key] = '[REDACTED]';
+        } else if (Array.isArray(value)) {
+          sanitized[key] = sanitizeMetadata(value, depth + 1);
+        } else if (value && typeof value === 'object') {
+          sanitized[key] = sanitizeMetadata(value, depth + 1);
+        } else {
+          sanitized[key] = '[REDACTED]';
+        }
+      }
+    }
+    return sanitized;
+  }
+
+  return obj; // Primitives safe
 }
 
 /**
@@ -89,25 +103,19 @@ export async function logAudit(
     // Sanitizza i metadati per rimuovere campi sensibili
     const sanitizedMetadata = params.metadata
       ? sanitizeMetadata(params.metadata)
-      : {};
+      : undefined;
 
-    // Aggiungi changes ai metadati se presenti
-    const finalMetadata = {
-      ...sanitizedMetadata,
-      ...(params.changes && { changes: params.changes }),
-    };
-
-    // Crea record AuditLog
+    // Crea record AuditLog con nuovo schema
     await ctx.prisma.auditLog.create({
       data: {
-        userId: ctx.session?.user?.id || null,
-        targetUserId: params.targetUserId || null,
+        actorId: ctx.session?.user?.id || null,
         action: params.action,
-        resource: params.resource,
-        metadata:
-          Object.keys(finalMetadata).length > 0 ? finalMetadata : undefined,
+        targetType: params.targetType,
+        targetId: params.targetId || null,
+        result: params.result || 'SUCCESS',
+        metadata: sanitizedMetadata,
         traceId: ctx.traceId,
-        ipAddress: ctx.req.ip || null,
+        ip: ctx.req.ip || null,
       },
     });
 
@@ -115,82 +123,20 @@ export async function logAudit(
     ctx.req.log.info({
       traceId: ctx.traceId,
       action: params.action,
-      resource: params.resource,
-      targetUserId: params.targetUserId,
-      userId: ctx.session?.user?.id,
-      message: `Audit: ${params.action} on ${params.resource}`,
+      targetType: params.targetType,
+      result: params.result || 'SUCCESS',
+      message: `Audit: ${params.action}`,
     });
   } catch (error) {
     // Log errore ma non bloccare l'operazione principale
     ctx.req.log.error({
       traceId: ctx.traceId,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: error instanceof Error ? error.message : 'Unknown',
       action: params.action,
-      resource: params.resource,
       message: 'Failed to log audit event',
     });
   }
 }
 
-/**
- * Helper per loggare creazione utente
- */
-export async function logUserCreate(
-  ctx: Context,
-  userId: string,
-  userData: Record<string, any>
-): Promise<void> {
-  await logAudit(ctx, {
-    action: 'user.create',
-    resource: 'user',
-    targetUserId: userId,
-    metadata: sanitizeMetadata(userData),
-  });
-}
-
-/**
- * Helper per loggare aggiornamento utente
- */
-export async function logUserUpdate(
-  ctx: Context,
-  userId: string,
-  before: Record<string, any>,
-  after: Record<string, any>
-): Promise<void> {
-  const changes = calculateChanges(before, after);
-
-  await logAudit(ctx, {
-    action: 'user.update',
-    resource: 'user',
-    targetUserId: userId,
-    changes: Object.keys(changes).length > 0 ? changes : undefined,
-  });
-}
-
-/**
- * Helper per loggare disattivazione utente
- */
-export async function logUserDisable(
-  ctx: Context,
-  userId: string
-): Promise<void> {
-  await logAudit(ctx, {
-    action: 'user.disable',
-    resource: 'user',
-    targetUserId: userId,
-  });
-}
-
-/**
- * Helper per loggare eliminazione definitiva utente
- */
-export async function logUserHardDelete(
-  ctx: Context,
-  userId: string
-): Promise<void> {
-  await logAudit(ctx, {
-    action: 'user.hardDelete',
-    resource: 'user',
-    targetUserId: userId,
-  });
-}
+// Helper specifici rimossi - tutto centralizzato in logAudit() per DRY
+// Usa direttamente logAudit() con i nuovi parametri standardizzati

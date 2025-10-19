@@ -198,9 +198,9 @@ export const authRouter = router({
         if (!authenticatedUser) {
           // Log tentativo di login fallito
           await logAudit(ctx, {
-            action: 'login_failed',
-            resource: 'auth',
-            ipAddress: ctx.req.ip,
+            action: 'AUTH_LOGIN_FAILED',
+            targetType: 'Auth',
+            result: 'FAILURE',
             metadata: {
               username: input.username,
               reason: 'invalid_credentials',
@@ -225,10 +225,10 @@ export const authRouter = router({
 
         // Log accesso in AuditLog
         await logAudit(ctx, {
-          action: 'login',
-          resource: 'auth',
-          targetUserId: authenticatedUser.id,
-          ipAddress: ctx.req.ip,
+          action: 'AUTH_LOGIN',
+          targetType: 'Auth',
+          targetId: authenticatedUser.id,
+          result: 'SUCCESS',
           metadata: {
             provider: authMethod,
             success: true,
@@ -306,9 +306,10 @@ export const authRouter = router({
 
     // Log audit per revoca sessioni
     await logAudit(ctx, {
-      action: 'logout_all_sessions',
-      resource: 'security',
-      targetUserId: ctx.session.user.id,
+      action: 'AUTH_LOGOUT_ALL',
+      targetType: 'Auth',
+      targetId: ctx.session.user.id,
+      result: 'SUCCESS',
       metadata: {
         success: true,
         reason: 'user_initiated',

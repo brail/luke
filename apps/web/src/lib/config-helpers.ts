@@ -75,12 +75,14 @@ export function formatValue(
 ): string {
   if (isEncrypted) return '••••••';
   if (!value) return '';
-  
+
   // Per JSON, usa un limite più alto per mostrare più contenuto
   const isJson = value.startsWith('{') && value.includes('"');
   const actualTruncate = isJson ? Math.max(truncate, 100) : truncate;
-  
-  return value.length > actualTruncate ? value.slice(0, actualTruncate) + '...' : value;
+
+  return value.length > actualTruncate
+    ? value.slice(0, actualTruncate) + '...'
+    : value;
 }
 
 /**

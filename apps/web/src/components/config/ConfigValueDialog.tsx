@@ -14,7 +14,10 @@ import {
 import { Button } from '../ui/button';
 import { Copy, Check, Code } from 'lucide-react';
 import { toast } from 'sonner';
-import { formatJsonExpanded, formatJsonCompact } from '../../lib/config-helpers';
+import {
+  formatJsonExpanded,
+  formatJsonCompact,
+} from '../../lib/config-helpers';
 
 interface ConfigValueDialogProps {
   onOpenChange: () => void;
@@ -32,8 +35,10 @@ export function ConfigValueDialog({
 
   // Verifica se il valore è un JSON
   const isJson = value.startsWith('{') && value.includes('"');
-  const displayValue = isJson 
-    ? (isJsonExpanded ? formatJsonExpanded(value) : formatJsonCompact(value))
+  const displayValue = isJson
+    ? isJsonExpanded
+      ? formatJsonExpanded(value)
+      : formatJsonCompact(value)
     : value;
 
   const handleCopy = async () => {
@@ -84,7 +89,7 @@ export function ConfigValueDialog({
                 {isJsonExpanded ? 'Compatto' : 'Espandi'}
               </Button>
             )}
-            
+
             <Button
               variant="outline"
               size="sm"
