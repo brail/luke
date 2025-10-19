@@ -6,7 +6,7 @@
 import { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
 import { randomBytes } from 'crypto';
-import { encryptValue } from '../src/lib/configManager.js';
+import { encryptValue } from '../src/lib/configManager';
 
 /**
  * Inizializza Prisma Client
@@ -104,21 +104,6 @@ async function main() {
         encrypt: true,
       },
       {
-        key: 'auth.providers.local.enabled',
-        value: 'true',
-        encrypt: true,
-      },
-      {
-        key: 'auth.providers.ldap.enabled',
-        value: 'false',
-        encrypt: true,
-      },
-      {
-        key: 'auth.providers.oidc.enabled',
-        value: 'false',
-        encrypt: true,
-      },
-      {
         key: 'app.name',
         value: 'Luke',
         encrypt: false,
@@ -161,11 +146,6 @@ async function main() {
       {
         key: 'security.tokenVersionCacheTTL',
         value: '60000', // 60 secondi default
-        encrypt: false,
-      },
-      {
-        key: 'logging.level',
-        value: process.env.NODE_ENV === 'production' ? 'warn' : 'info',
         encrypt: false,
       },
       // Configurazioni LDAP
@@ -217,6 +197,62 @@ async function main() {
       {
         key: 'auth.strategy',
         value: 'local-first',
+        encrypt: false,
+      },
+      // Rate Limiting (JSON object unico)
+      {
+        key: 'rateLimit',
+        value: JSON.stringify({
+          login: { max: 5, timeWindow: '1m', keyBy: 'ip' },
+          passwordChange: { max: 3, timeWindow: '15m', keyBy: 'userId' },
+          configMutations: { max: 20, timeWindow: '1m', keyBy: 'userId' },
+          userMutations: { max: 10, timeWindow: '1m', keyBy: 'userId' },
+        }),
+        encrypt: false,
+      },
+      // LDAP Timeouts
+      {
+        key: 'integrations.ldap.timeout',
+        value: '10000', // ms
+        encrypt: false,
+      },
+      {
+        key: 'integrations.ldap.connectTimeout',
+        value: '5000', // ms
+        encrypt: false,
+      },
+      // CORS Development Fallback (CSV)
+      {
+        key: 'security.cors.developmentOrigins',
+        value: 'http://localhost:3000,http://localhost:5173',
+        encrypt: false,
+      },
+      // Session Configuration
+      {
+        key: 'security.session.maxAge',
+        value: '28800', // 8h in secondi
+        encrypt: false,
+      },
+      {
+        key: 'security.session.updateAge',
+        value: '14400', // 4h in secondi
+        encrypt: false,
+      },
+      // SMTP Timeout
+      {
+        key: 'integrations.smtp.timeout',
+        value: '10000', // 10s
+        encrypt: false,
+      },
+      // App Locale/Timezone
+      {
+        key: 'app.locale',
+        value: 'it-IT',
+        encrypt: false,
+      },
+      {
+        key: 'app.defaultTimezone',
+        value: 'Europe/Rome',
         encrypt: false,
       },
     ];

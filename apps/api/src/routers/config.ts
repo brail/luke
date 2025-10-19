@@ -24,19 +24,20 @@ import { withIdempotency } from '../lib/idempotencyTrpc';
 const CRITICAL_KEYS = new Set([
   // Autenticazione e autorizzazione
   'auth.strategy',
+  'auth.nextAuthSecret', // Legacy, ancora presente nel seed
   'auth.ldap.url',
   'auth.ldap.searchBase',
   'auth.ldap.searchFilter',
-  'nextauth.secret',
-  'jwt.secret',
 
-  // Sicurezza e cifratura
-  'security.encryption.key',
+  // Rimuovere chiavi inesistenti (derivate via HKDF, non in DB):
+  // 'nextauth.secret', // NON esiste nel DB, derivato via HKDF
+  // 'jwt.secret', // NON esiste nel DB, derivato via HKDF
+  // 'security.encryption.key', // NON esiste, master key in ~/.luke/secret.key
 
-  // Servizi esterni critici
-  'mail.smtp',
-  'storage.smb',
-  'storage.drive',
+  // Mail e Storage (on-demand, non critiche per boot)
+  // 'mail.smtp', // On-demand, creato dall'admin
+  // 'storage.smb', // On-demand, creato dall'admin
+  // 'storage.drive', // On-demand, creato dall'admin
 ]);
 
 /**
@@ -358,6 +359,25 @@ export const configRouter = router({
       // Valida la chiave
       validateKey(input.key);
 
+      // Validazione speciale per password policy (sicurezza)
+      if (input.key === 'security.password.minLength') {
+        const minLength = parseInt(input.value, 10);
+        if (isNaN(minLength) || minLength < 8) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'Password minLength non può essere inferiore a 8 caratteri',
+          });
+        }
+        if (minLength > 128) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'Password minLength non può essere superiore a 128 caratteri',
+          });
+        }
+      }
+
       // Verifica se la configurazione esiste già
       const existingConfig = await ctx.prisma.appConfig.findUnique({
         where: { key: input.key },
@@ -436,6 +456,25 @@ export const configRouter = router({
     .mutation(async ({ input, ctx }) => {
       // Valida la chiave
       validateKey(input.key);
+
+      // Validazione speciale per password policy (sicurezza)
+      if (input.key === 'security.password.minLength') {
+        const minLength = parseInt(input.value, 10);
+        if (isNaN(minLength) || minLength < 8) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'Password minLength non può essere inferiore a 8 caratteri',
+          });
+        }
+        if (minLength > 128) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'Password minLength non può essere superiore a 128 caratteri',
+          });
+        }
+      }
 
       // Verifica che la configurazione esista
       const existingConfig = await ctx.prisma.appConfig.findUnique({
