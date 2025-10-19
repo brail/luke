@@ -57,6 +57,75 @@ pnpm -F @luke/api test
 pnpm -F @luke/api build
 ```
 
+## Health & Readiness Checks
+
+L'API implementa un sistema completo di health checks per Kubernetes e monitoring.
+
+### Endpoints Disponibili
+
+| Endpoint      | Scopo           | Status Code | Descrizione                                              |
+| ------------- | --------------- | ----------- | -------------------------------------------------------- |
+| `/livez`      | Liveness Probe  | 200         | Verifica che il processo sia attivo                      |
+| `/readyz`     | Readiness Probe | 200/503     | Verifica che il sistema sia pronto per servire richieste |
+| `/healthz`    | Legacy Health   | 200         | Endpoint di compatibilità                                |
+| `/api/health` | Detailed Health | 200         | Status dettagliato con uptime e versione                 |
+
+### Comportamento Readiness (`/readyz`)
+
+Il sistema esegue verifiche modulari in parallelo:
+
+- **Database**: Connessione e query di test
+- **Secrets**: Verifica derivazione segreti JWT
+- **LDAP**: Connessione LDAP (se abilitato)
+
+**Status Codes:**
+
+- `200`: Tutti i check passano → sistema pronto
+- `503`: Almeno un check fallisce → sistema non pronto
+
+**Payload di Risposta:**
+
+```json
+{
+  "status": "ready|unready",
+  "timestamp": "2024-01-01T00:00:00.000Z",
+  "checks": {
+    "database": "ok",
+    "secrets": "ok",
+    "ldap": "ok"
+  }
+}
+```
+
+### Bootstrap Fail-Fast
+
+Durante l'avvio, il server esegue verifiche critiche che devono passare:
+
+1. **Database Connection**: `prisma.$connect()`
+2. **Master Key**: `validateMasterKey()`
+3. **Secret Derivation**: `deriveSecret('api.jwt')`
+
+Se qualsiasi verifica fallisce, il processo termina con `process.exit(1)` per garantire che il server non si avvii in uno stato inconsistente.
+
+### Configurazione Kubernetes
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /livez
+    port: 3001
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 3001
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  failureThreshold: 3
+```
+
 ## Endpoints
 
 - **Health**: `/api/health` - Status dell'API

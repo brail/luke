@@ -4,7 +4,8 @@
  */
 
 import type { PrismaClient } from '@prisma/client';
-import { deriveSecret } from '@luke/core/server';
+import type { FastifyLoggerInstance } from 'fastify';
+import { deriveSecret, validateMasterKey } from '@luke/core/server';
 import { getLdapConfig } from '../lib/configManager';
 import * as ldap from 'ldapjs';
 
@@ -135,4 +136,47 @@ export async function runReadinessChecks(prisma: PrismaClient): Promise<{
   };
 }
 
+/**
+ * Verifica dipendenze critiche durante bootstrap (fail-fast)
+ * Esegue controlli che devono passare prima che il server si avvii
+ * Lancia errori dettagliati in caso di fallimento per debugging
+ */
+export async function checkBootstrapDependencies(
+  prisma: PrismaClient,
+  logger: FastifyLoggerInstance
+): Promise<void> {
+  try {
+    // Test connessione database
+    await prisma.$connect();
+    logger.info('Connessione database stabilita');
 
+    // Test master key availability
+    if (!validateMasterKey()) {
+      const error = new Error('Master key non disponibile o invalida');
+      logger.error(error.message);
+      throw error;
+    }
+
+    // Test secret derivation
+    try {
+      deriveSecret('api.jwt');
+      logger.info('Segreti JWT derivati con successo');
+    } catch (error: any) {
+      const secretError = new Error(
+        `Impossibile derivare segreti JWT: ${error.message}`
+      );
+      logger.error(secretError.message);
+      throw secretError;
+    }
+  } catch (error: any) {
+    // Re-throw con messaggio dettagliato per debugging
+    const bootstrapError = new Error(
+      `Bootstrap dependency check failed: ${error.message}`
+    );
+    logger.error(
+      { error: bootstrapError },
+      'Errore verifica dipendenze bootstrap'
+    );
+    throw bootstrapError;
+  }
+}

@@ -12,12 +12,15 @@ import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import { PrismaClient } from '@prisma/client';
 import { appRouter } from './routers';
 import { createContext } from './lib/trpc';
-import { validateMasterKey, deriveSecret } from '@luke/core/server';
 import {
   pinoTraceMiddleware,
   pinoSerializers,
 } from './observability/pinoTrace';
-import { runReadinessChecks } from './observability/readiness';
+import {
+  runReadinessChecks,
+  checkBootstrapDependencies,
+} from './observability/readiness';
+import { deriveSecret } from '@luke/core/server';
 import { buildCorsAllowedOrigins } from './lib/cors';
 import { buildHelmetConfig } from './lib/helmet';
 
@@ -283,24 +286,8 @@ function setupGracefulShutdown() {
  */
 const start = async () => {
   try {
-    // Test connessione database
-    await prisma.$connect();
-    fastify.log.info('Connessione database stabilita');
-
-    // Test master key availability
-    if (!validateMasterKey()) {
-      fastify.log.error('Master key non disponibile o invalida');
-      process.exit(1);
-    }
-
-    // Test secret derivation
-    try {
-      deriveSecret('api.jwt');
-      fastify.log.info('Segreti JWT derivati con successo');
-    } catch (error: any) {
-      fastify.log.error('Impossibile derivare segreti JWT');
-      process.exit(1);
-    }
+    // Verifica dipendenze critiche (fail-fast)
+    await checkBootstrapDependencies(prisma, fastify.log);
 
     // Registra plugin e route nell'ordine corretto
     await registerSecurityPlugins(); // CORS deve essere registrato prima di tRPC
