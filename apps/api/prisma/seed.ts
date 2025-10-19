@@ -159,6 +159,11 @@ async function main() {
         encrypt: false,
       },
       {
+        key: 'security.tokenVersionCacheTTL',
+        value: '60000', // 60 secondi default
+        encrypt: false,
+      },
+      {
         key: 'logging.level',
         value: process.env.NODE_ENV === 'production' ? 'warn' : 'info',
         encrypt: false,

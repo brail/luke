@@ -388,6 +388,60 @@ I valori sensibili sono cifrati con **AES-256-GCM**.
 - **Rotazione**: Rigenera master key per invalidare tutti i token
 - **Nessun endpoint pubblico**: Il secret JWT non è mai esposto via API
 
+### Session Hardening
+
+#### tokenVersion
+
+Ogni utente ha un campo `tokenVersion` (default: 0) che viene incrementato quando:
+
+- Cambia password (`me.changePassword`)
+- Revoca tutte le sessioni (`me.revokeAllSessions`)
+- Admin disabilita utente o cambia ruolo (opzionale)
+
+**Validazione:**
+
+- Ogni richiesta tRPC protetta verifica che `JWT.tokenVersion === DB.tokenVersion`
+- Se mismatch → `UNAUTHORIZED` (sessione invalidata)
+- JWT senza `tokenVersion` → **rifiutati immediatamente** (no backward-compat)
+
+**Cache:**
+
+- `tokenVersion` cachato in-memory per ridurre query DB
+- TTL configurabile via AppConfig: `security.tokenVersionCacheTTL` (default: 60000ms = 60s)
+- Cache invalidata manualmente dopo increment tokenVersion
+
+#### Cookie Flags (Produzione)
+
+```typescript
+cookies: {
+  sessionToken: {
+    name: 'next-auth.session-token',
+    options: {
+      httpOnly: true,
+      secure: true, // Solo HTTPS in prod
+      sameSite: 'lax',
+      path: '/',
+    },
+  },
+}
+```
+
+#### TTL Sessioni
+
+- **maxAge**: 8 ore (28800s)
+- **updateAge**: 4 ore (14400s) — refresh silenzioso al 50% lifetime
+- API JWT: 8 ore (allineato a NextAuth)
+
+#### Test
+
+Suite completa in `apps/api/test/session.hardening.spec.ts`:
+
+- Login → changePassword → UNAUTHORIZED con vecchio token
+- revokeAllSessions → vecchio token rifiutato
+- JWT senza tokenVersion → UNAUTHORIZED
+- Token scaduto → UNAUTHORIZED
+- Utente disabilitato → UNAUTHORIZED
+
 ### NextAuth Secret Derivation
 
 - **Algoritmo**: HKDF-SHA256 (RFC 5869)

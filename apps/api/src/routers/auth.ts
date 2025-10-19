@@ -262,6 +262,7 @@ export const authRouter = router({
             lastName: authenticatedUser.lastName,
             role: authenticatedUser.role,
             isActive: authenticatedUser.isActive,
+            tokenVersion: authenticatedUser.tokenVersion,
           },
           token,
           authMethod,

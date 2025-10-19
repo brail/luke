@@ -17,6 +17,7 @@ import {
   adminOrManager,
   authenticatedOnly,
 } from './rbac';
+import { getTokenVersionCacheTTL } from './configManager';
 
 /**
  * Cache in-memory per tokenVersion con TTL
@@ -26,7 +27,11 @@ const tokenVersionCache = new Map<
   string,
   { version: number; timestamp: number }
 >();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minuti
+
+// Cache per TTL dinamico da AppConfig
+let cachedTTLValue: number | null = null;
+let cachedTTLTimestamp: number = 0;
+const TTL_REFRESH_INTERVAL = 5 * 60 * 1000; // Refresh config ogni 5min
 
 /**
  * Invalida la cache tokenVersion per un utente specifico
@@ -34,6 +39,25 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minuti
  */
 export function invalidateTokenVersionCache(userId: string): void {
   tokenVersionCache.delete(userId);
+}
+
+/**
+ * Ottiene il TTL della cache da AppConfig con refresh periodico
+ * @param prisma - Client Prisma
+ * @returns TTL in millisecondi
+ */
+async function getCacheTTL(prisma: PrismaClient): Promise<number> {
+  const now = Date.now();
+
+  if (
+    cachedTTLValue === null ||
+    now - cachedTTLTimestamp > TTL_REFRESH_INTERVAL
+  ) {
+    cachedTTLValue = await getTokenVersionCacheTTL(prisma);
+    cachedTTLTimestamp = now;
+  }
+
+  return cachedTTLValue;
 }
 
 /**
@@ -48,26 +72,26 @@ async function verifyTokenVersion(
   tokenVersion: number | undefined,
   prisma: PrismaClient
 ): Promise<boolean> {
-  // Se JWT non ha tokenVersion, force re-login (opzione 4b)
-  if (tokenVersion === undefined) {
+  // OPZIONE 1b: Rifiuta JWT senza tokenVersion
+  if (tokenVersion === undefined || tokenVersion === null) {
     return false;
   }
 
-  // Controlla cache
   const cached = tokenVersionCache.get(userId);
   const now = Date.now();
+  const cacheTTL = await getCacheTTL(prisma);
 
-  if (cached && now - cached.timestamp < CACHE_TTL) {
+  if (cached && now - cached.timestamp < cacheTTL) {
     return cached.version === tokenVersion;
   }
 
   // Query DB per tokenVersion corrente
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { tokenVersion: true },
+    select: { tokenVersion: true, isActive: true },
   });
 
-  if (!user) {
+  if (!user || !user.isActive) {
     return false;
   }
 

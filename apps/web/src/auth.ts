@@ -124,6 +124,12 @@ export const config = {
         token.aud = 'luke.web';
         token.iss = 'urn:luke';
       } else if (token.sub && trigger !== 'update') {
+        // Se tokenVersion manca, forza re-login (opzione 1b)
+        if (token.tokenVersion === undefined || token.tokenVersion === null) {
+          console.log('JWT senza tokenVersion, forzo logout');
+          return null;
+        }
+
         // Refresh token: verifica tokenVersion chiamando API
         try {
           const apiUrl =

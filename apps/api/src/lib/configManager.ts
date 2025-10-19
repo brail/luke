@@ -468,6 +468,34 @@ export async function getSecret(
 }
 
 /**
+ * Recupera il TTL della cache tokenVersion da AppConfig
+ * @param prisma - Client Prisma
+ * @returns TTL in millisecondi (default: 60000ms = 60s)
+ */
+export async function getTokenVersionCacheTTL(
+  prisma: PrismaClient
+): Promise<number> {
+  const config = await getConfig(
+    prisma,
+    'security.tokenVersionCacheTTL',
+    false
+  );
+
+  if (!config) {
+    return 60000; // Default: 60 secondi
+  }
+
+  const ttl = parseInt(config, 10);
+
+  // Validazione: min 10s, max 10min
+  if (isNaN(ttl) || ttl < 10000 || ttl > 600000) {
+    return 60000;
+  }
+
+  return ttl;
+}
+
+/**
  * Recupera la configurazione LDAP completa dal database
  * @param prisma - Client Prisma
  * @returns Configurazione LDAP decifrata e tipizzata

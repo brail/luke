@@ -48,7 +48,7 @@ export function createToken(user: {
       email: user.email,
       username: user.username,
       role: user.role,
-      tokenVersion: user.tokenVersion,
+      tokenVersion: user.tokenVersion ?? 0, // Default a 0 se undefined
     },
     {
       expiresIn: JWT_EXPIRES_IN,
