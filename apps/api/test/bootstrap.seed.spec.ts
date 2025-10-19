@@ -1,0 +1,165 @@
+/**
+ * Test per validare l'idempotenza e funzionalità del seed
+ *
+ * Verifica:
+ * - seedAdminUser crea admin se non esiste
+ * - seedAdminUser è idempotente (nessuna duplicazione)
+ * - seedAppConfigs crea configurazioni base
+ * - seedAppConfigs è idempotente (nessuna duplicazione)
+ * - Nessuna configurazione LDAP nel seed
+ */
+
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { PrismaClient } from '@prisma/client';
+import { seedAdminUser, seedAppConfigs } from '../prisma/seed';
+
+describe('Bootstrap & Seed', () => {
+  let prisma: PrismaClient;
+
+  beforeAll(() => {
+    prisma = new PrismaClient();
+  });
+
+  afterAll(async () => {
+    await prisma.$disconnect();
+  });
+
+  beforeEach(async () => {
+    // Pulisci il database prima di ogni test
+    await prisma.localCredential.deleteMany();
+    await prisma.identity.deleteMany();
+    await prisma.user.deleteMany();
+    await prisma.appConfig.deleteMany();
+  });
+
+  it('seedAdminUser crea admin se non esiste', async () => {
+    await seedAdminUser(prisma);
+
+    const admin = await prisma.user.findFirst({
+      where: { username: 'admin' },
+      include: {
+        identities: {
+          include: {
+            localCredential: true,
+          },
+        },
+      },
+    });
+
+    expect(admin).toBeTruthy();
+    expect(admin?.email).toBe('admin@luke.local');
+    expect(admin?.role).toBe('admin');
+    expect(admin?.isActive).toBe(true);
+    expect(admin?.identities).toHaveLength(1);
+    expect(admin?.identities[0].provider).toBe('LOCAL');
+    expect(admin?.identities[0].localCredential).toBeTruthy();
+  });
+
+  it('seedAdminUser è idempotente', async () => {
+    // Prima esecuzione
+    await seedAdminUser(prisma);
+    const count1 = await prisma.user.count();
+    const admin1 = await prisma.user.findFirst({
+      where: { username: 'admin' },
+    });
+
+    // Seconda esecuzione
+    await seedAdminUser(prisma);
+    const count2 = await prisma.user.count();
+    const admin2 = await prisma.user.findFirst({
+      where: { username: 'admin' },
+    });
+
+    expect(count2).toBe(count1); // Nessuna duplicazione
+    expect(admin1?.id).toBe(admin2?.id); // Stesso utente
+  });
+
+  it('seedAppConfigs crea configurazioni base', async () => {
+    await seedAppConfigs(prisma);
+
+    const [nextAuthSecret, appName, passwordMinLength, authStrategy] =
+      await Promise.all([
+        prisma.appConfig.findUnique({ where: { key: 'auth.nextAuthSecret' } }),
+        prisma.appConfig.findUnique({ where: { key: 'app.name' } }),
+        prisma.appConfig.findUnique({
+          where: { key: 'security.password.minLength' },
+        }),
+        prisma.appConfig.findUnique({ where: { key: 'auth.strategy' } }),
+      ]);
+
+    expect(nextAuthSecret).toBeTruthy();
+    expect(nextAuthSecret?.isEncrypted).toBe(true);
+    expect(appName?.value).toBe('Luke');
+    expect(passwordMinLength?.value).toBe('12');
+    expect(authStrategy?.value).toBe('local-first');
+  });
+
+  it('seedAppConfigs è idempotente', async () => {
+    // Prima esecuzione
+    await seedAppConfigs(prisma);
+    const count1 = await prisma.appConfig.count();
+
+    // Seconda esecuzione
+    await seedAppConfigs(prisma);
+    const count2 = await prisma.appConfig.count();
+
+    expect(count2).toBe(count1); // Nessuna duplicazione
+  });
+
+  it('nessuna configurazione LDAP nel seed', async () => {
+    await seedAppConfigs(prisma);
+
+    const ldapConfigs = await prisma.appConfig.findMany({
+      where: { key: { startsWith: 'auth.ldap.' } },
+    });
+
+    expect(ldapConfigs.length).toBe(0);
+  });
+
+  it('configurazioni critiche sono presenti', async () => {
+    await seedAppConfigs(prisma);
+
+    const criticalKeys = [
+      'auth.nextAuthSecret',
+      'app.name',
+      'security.password.minLength',
+      'auth.strategy',
+      'app.locale',
+      'app.defaultTimezone',
+    ];
+
+    const configs = await prisma.appConfig.findMany({
+      where: { key: { in: criticalKeys } },
+    });
+
+    expect(configs).toHaveLength(criticalKeys.length);
+
+    // Verifica valori specifici
+    const appName = configs.find(c => c.key === 'app.name');
+    const authStrategy = configs.find(c => c.key === 'auth.strategy');
+    const locale = configs.find(c => c.key === 'app.locale');
+
+    expect(appName?.value).toBe('Luke');
+    expect(authStrategy?.value).toBe('local-first');
+    expect(locale?.value).toBe('it-IT');
+  });
+
+  it('rateLimit è un JSON valido', async () => {
+    await seedAppConfigs(prisma);
+
+    const rateLimitConfig = await prisma.appConfig.findUnique({
+      where: { key: 'rateLimit' },
+    });
+
+    expect(rateLimitConfig).toBeTruthy();
+    expect(rateLimitConfig?.isEncrypted).toBe(false);
+
+    const rateLimit = JSON.parse(rateLimitConfig!.value);
+    expect(rateLimit).toHaveProperty('login');
+    expect(rateLimit).toHaveProperty('passwordChange');
+    expect(rateLimit).toHaveProperty('configMutations');
+    expect(rateLimit).toHaveProperty('userMutations');
+
+    expect(rateLimit.login).toEqual({ max: 5, timeWindow: '1m', keyBy: 'ip' });
+  });
+});

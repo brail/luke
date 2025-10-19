@@ -15,7 +15,12 @@
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:studio": "prisma studio",
-    "seed": "prisma db push && tsx prisma/seed.ts"
+    "db:reset": "prisma migrate reset --force --skip-seed",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:bootstrap": "tsx scripts/dev-bootstrap.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

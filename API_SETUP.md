@@ -17,7 +17,54 @@ pnpm --filter @luke/api prisma:generate
 ### 3. Setup Database e Seed
 
 ```bash
-pnpm --filter @luke/api seed
+# Bootstrap completo (reset + migrations + seed + verifiche)
+pnpm -w -F @luke/api db:bootstrap
+```
+
+**Cosa fa lo script**:
+
+1. Verifica master key in `~/.luke/secret.key`
+2. Backup automatico di `dev.db` (se esistente) con timestamp
+3. Reset completo del database (drop + migrations)
+4. Seed idempotente (admin user + configurazioni base)
+5. Sanity checks automatici (utente admin, config critiche)
+
+### Setup Manuale (Alternative)
+
+```bash
+# Reset database (senza seed)
+pnpm -w -F @luke/api db:reset
+
+# Esegui solo seed (idempotente)
+pnpm -w -F @luke/api db:seed
+
+# Genera Prisma client
+pnpm -w -F @luke/api prisma:generate
+```
+
+### Note Importanti
+
+- **Master Key**: La master key in `~/.luke/secret.key` è sempre preservata
+- **Backup**: I backup di `dev.db` sono in `apps/api/prisma/dev.db.backup.*`
+- **Idempotenza**: Il seed può essere eseguito multiple volte senza duplicazioni
+- **LDAP**: Le configurazioni LDAP vanno aggiunte via UI (non nel seed)
+- **Segreti**: I log non mostrano mai segreti in chiaro, solo metadati
+
+### Troubleshooting
+
+**Errore "Master key non accessibile"**:
+
+```bash
+# La master key sarà creata automaticamente al primo avvio
+# Con permessi 0600 in ~/.luke/secret.key
+```
+
+**Errore "Database locked"**:
+
+```bash
+# Ferma tutti i processi che usano il DB
+pkill -f "tsx.*server.ts"
+pnpm -w -F @luke/api db:bootstrap
 ```
 
 ### 4. Avvio Server
@@ -27,6 +74,84 @@ pnpm --filter @luke/api dev
 ```
 
 Il server sarà disponibile su `http://localhost:3001`
+
+## 🔧 Bootstrap Sviluppo
+
+### Setup Iniziale Completo
+
+Per configurare il database di sviluppo da zero:
+
+```bash
+# Bootstrap completo (reset + migrations + seed + verifiche)
+pnpm -w -F @luke/api db:bootstrap
+```
+
+**Cosa fa lo script**:
+
+1. Verifica master key in `~/.luke/secret.key`
+2. Backup automatico di `dev.db` (se esistente) con timestamp
+3. Reset completo del database (drop + migrations)
+4. Seed idempotente (admin user + configurazioni base)
+5. Sanity checks automatici (utente admin, config critiche)
+
+### Setup Manuale (Alternative)
+
+```bash
+# Reset database (senza seed)
+pnpm -w -F @luke/api db:reset
+
+# Esegui solo seed (idempotente)
+pnpm -w -F @luke/api db:seed
+
+# Genera Prisma client
+pnpm -w -F @luke/api prisma:generate
+```
+
+### Note Importanti
+
+- **Master Key**: La master key in `~/.luke/secret.key` è sempre preservata
+- **Backup**: I backup di `dev.db` sono in `apps/api/prisma/dev.db.backup.*`
+- **Idempotenza**: Il seed può essere eseguito multiple volte senza duplicazioni
+- **LDAP**: Le configurazioni LDAP vanno aggiunte via UI (non nel seed)
+- **Segreti**: I log non mostrano mai segreti in chiaro, solo metadati
+
+### Troubleshooting
+
+**Errore "Master key non accessibile"**:
+
+```bash
+# La master key sarà creata automaticamente al primo avvio
+# Con permessi 0600 in ~/.luke/secret.key
+```
+
+**Errore "Database locked"**:
+
+```bash
+# Ferma tutti i processi che usano il DB
+pkill -f "tsx.*server.ts"
+pnpm -w -F @luke/api db:bootstrap
+```
+
+**Errore "Prisma AI safety check"**:
+
+```bash
+# Prisma blocca comandi pericolosi quando eseguiti da AI agents
+# Esegui manualmente il reset:
+cd apps/api
+pnpm prisma migrate reset --force --skip-seed
+
+# Poi esegui solo il seed:
+pnpm -w -F @luke/api db:seed
+```
+
+**Errore "Reset database fallito"**:
+
+```bash
+# Se il bootstrap fallisce al reset, esegui i passi manualmente:
+cd apps/api
+pnpm prisma migrate reset --force --skip-seed
+pnpm -w -F @luke/api db:seed
+```
 
 ## 📊 Endpoint Disponibili
 
