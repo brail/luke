@@ -705,6 +705,152 @@ curl -X POST http://localhost:3001/trpc/auth.login \
 
 **Nota**: Delete operations non hanno idempotency per sicurezza (delete deve essere esplicito).
 
+### Rate-Limiting Per-Rotta
+
+#### Limiti Configurati
+
+| Procedura         | Max Richieste | Finestra | Key Type |
+| ----------------- | ------------- | -------- | -------- |
+| auth.login        | 5             | 1 min    | IP       |
+| me.changePassword | 3             | 15 min   | userId   |
+| users.\*          | 10            | 1 min    | userId   |
+| config.set/update | 20            | 1 min    | userId   |
+
+**Errore restituito**: `TOO_MANY_REQUESTS` con messaggio e finestra.
+
+#### Esempi Pratici
+
+**Login rate limiting**:
+
+```bash
+# Prime 5 richieste OK
+for i in {1..5}; do
+  curl -X POST http://localhost:3001/trpc/auth.login \
+    -H "Content-Type: application/json" \
+    -d '{"username":"admin","password":"wrong"}'
+done
+
+# 6a richiesta → TOO_MANY_REQUESTS
+curl -X POST http://localhost:3001/trpc/auth.login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"wrong"}'
+```
+
+**Output errore**:
+
+```json
+{
+  "error": {
+    "code": "TOO_MANY_REQUESTS",
+    "message": "Rate limit exceeded for login. Max 5 requests per 1 minute(s)."
+  }
+}
+```
+
+### Idempotency-Key
+
+#### Header e Formato
+
+**Header**: `Idempotency-Key: <UUID-v4>`
+
+**Procedura supportate**: `create`, `update` mutations.
+
+**Comportamento**:
+
+- Prima richiesta con key → esegue e salva risultato (TTL 5min)
+- Richiesta duplicata (stesso body) → ritorna risultato cached (no side-effect)
+- Stessa key con body diverso → **409 Conflict**
+
+#### Esempi Pratici
+
+**Creazione utente idempotente**:
+
+```bash
+# Prima chiamata: crea utente
+curl -X POST http://localhost:3001/trpc/users.create \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000" \
+  -d '{"username":"test","email":"test@test.com","password":"Test123!","role":"viewer"}'
+
+# Seconda chiamata con stessa key → ritorna stesso risultato (no duplicato)
+curl -X POST http://localhost:3001/trpc/users.create \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000" \
+  -d '{"username":"test","email":"test@test.com","password":"Test123!","role":"viewer"}'
+```
+
+**Conflitto con body diverso**:
+
+```bash
+# Prima chiamata
+curl -X POST http://localhost:3001/trpc/users.create \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000" \
+  -d '{"username":"user1","email":"user1@test.com","password":"Test123!","role":"viewer"}'
+
+# Seconda chiamata con body diverso → 409 Conflict
+curl -X POST http://localhost:3001/trpc/users.create \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000" \
+  -d '{"username":"user2","email":"user2@test.com","password":"Test123!","role":"viewer"}'
+```
+
+**Output conflitto**:
+
+```json
+{
+  "error": {
+    "code": "CONFLICT",
+    "message": "Idempotency-Key already used with different request body. Each key must identify a single operation."
+  }
+}
+```
+
+#### Validazione UUID
+
+**Formato richiesto**: UUID v4 (es. `550e8400-e29b-41d4-a716-446655440000`)
+
+**Esempi validi**:
+
+- `550e8400-e29b-41d4-a716-446655440000`
+- `6ba7b810-9dad-11d1-80b4-00c04fd430c8`
+
+**Esempi non validi**:
+
+- `not-a-uuid`
+- `550e8400-e29b-41d4-a716` (troppo corto)
+- `550e8400-e29b-41d4-a716-446655440000-extra` (troppo lungo)
+
+**Errore formato non valido**:
+
+```json
+{
+  "error": {
+    "code": "BAD_REQUEST",
+    "message": "Invalid Idempotency-Key format. Must be a valid UUID v4."
+  }
+}
+```
+
+#### TTL e Cleanup
+
+- **TTL**: 5 minuti (configurabile via `IDEMPOTENCY_CONFIG.defaultTtlMs`)
+- **Cleanup**: Automatico ogni minuto
+- **Storage**: In-memory LRU cache (max 1000 keys)
+- **Hash**: SHA256(method + path + body) per validazione univoca
+
+#### Best Practices
+
+1. **Genera UUID v4** per ogni operazione unica
+2. **Usa stessa key** per retry della stessa operazione
+3. **Non riutilizzare key** per operazioni diverse
+4. **Gestisci 409 Conflict** nel client (nuova key per operazione diversa)
+5. **Non usare per query** (solo mutation hanno bisogno di idempotency)
+
 ## 🚧 Prossimi Passi
 
 1. ✅ **Rate Limiting**: Implementato per-rotta

@@ -39,6 +39,8 @@ interface IdempotencyResult {
   response?: any;
   /** Timestamp della richiesta originale */
   originalTimestamp?: number;
+  /** true se c'è conflitto (stessa key, body diverso) */
+  conflict?: boolean;
 }
 
 /**
@@ -107,9 +109,8 @@ class IdempotencyStore {
     // Verifica che l'hash della richiesta corrisponda
     if (entry.requestHash !== requestHash) {
       // Hash diverso = richiesta diversa con stessa key
-      // Rimuovi entry esistente per evitare conflitti
-      this.cache.delete(key);
-      return { hit: false };
+      // Ritorna conflitto invece di rimuovere entry
+      return { hit: false, conflict: true };
     }
 
     return {

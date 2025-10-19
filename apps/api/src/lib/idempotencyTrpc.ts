@@ -61,10 +61,19 @@ export function withIdempotency() {
       return result.response;
     }
 
+    // Se c'è conflitto (stessa key, body diverso), ritorna 409 Conflict
+    if (result.conflict) {
+      throw new TRPCError({
+        code: 'CONFLICT',
+        message:
+          'Idempotency-Key already used with different request body. Each key must identify a single operation.',
+      });
+    }
+
     // Esegui la mutation originale
     const mutationResult = await next();
 
-    // Memorizza la risposta solo se è un successo (2xx)
+    // Memorizza la risposta solo se è un successo
     // Per tRPC, assumiamo che se non c'è eccezione = successo
     try {
       idempotencyStore.store(

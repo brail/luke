@@ -18,7 +18,6 @@ import {
   pinoSerializers,
 } from './observability/pinoTrace';
 import { runReadinessChecks } from './observability/readiness';
-import { idempotencyMiddleware } from './lib/idempotency';
 import { buildCorsAllowedOrigins } from './lib/cors';
 
 /**
@@ -164,10 +163,7 @@ async function registerSecurityPlugins() {
 
   // Rate limiting ora gestito via tRPC middleware per-rotta
 
-  // Idempotency middleware per mutazioni critiche
-  fastify.addHook('preHandler', async (request, reply) => {
-    await idempotencyMiddleware(request, reply, async () => {});
-  });
+  // Idempotency è gestito a livello tRPC middleware per procedure specifiche
 }
 
 /**

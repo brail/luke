@@ -196,6 +196,56 @@ export function createAnonymousCaller() {
 }
 
 /**
+ * Crea un caller tRPC con idempotency-key specifica
+ */
+export function createCallerWithIdempotency(
+  idempotencyKey: string,
+  role: 'admin' | 'editor' | 'viewer' | null = null
+) {
+  const ctx = createTestContext(role ? createTestUser(role).session : null);
+
+  // Aggiungi idempotency-key agli headers
+  ctx.req.headers['idempotency-key'] = idempotencyKey;
+
+  return appRouter.createCaller(ctx);
+}
+
+/**
+ * Crea un mock request con header specifico
+ */
+export function mockReqWithHeader(
+  headerName: string,
+  value: string,
+  ip: string = '127.0.0.1'
+) {
+  return {
+    ip,
+    headers: {
+      [headerName]: value,
+      'x-luke-trace-id': randomUUID(),
+    },
+    log: {
+      info: () => {},
+      error: () => {},
+      warn: () => {},
+      debug: () => {},
+    },
+  };
+}
+
+/**
+ * Crea un caller tRPC con IP specifico (per test rate-limit)
+ */
+export function createCallerWithIP(
+  ip: string,
+  role: 'admin' | 'editor' | 'viewer' | null = null
+) {
+  const ctx = createTestContext(role ? createTestUser(role).session : null);
+  ctx.req.ip = ip;
+  return appRouter.createCaller(ctx);
+}
+
+/**
  * Helper per aspettare che una promessa venga risolta o rifiutata
  */
 export async function expectToThrow<T>(
