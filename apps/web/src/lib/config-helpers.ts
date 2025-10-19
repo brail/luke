@@ -75,7 +75,40 @@ export function formatValue(
 ): string {
   if (isEncrypted) return '••••••';
   if (!value) return '';
-  return value.length > truncate ? value.slice(0, truncate) + '...' : value;
+  
+  // Per JSON, usa un limite più alto per mostrare più contenuto
+  const isJson = value.startsWith('{') && value.includes('"');
+  const actualTruncate = isJson ? Math.max(truncate, 100) : truncate;
+  
+  return value.length > actualTruncate ? value.slice(0, actualTruncate) + '...' : value;
+}
+
+/**
+ * Formatta un JSON per la visualizzazione compatta
+ * @param jsonString - Stringa JSON da formattare
+ * @returns JSON formattato in modo compatto
+ */
+export function formatJsonCompact(jsonString: string): string {
+  try {
+    const parsed = JSON.parse(jsonString);
+    return JSON.stringify(parsed, null, 0); // Compatto ma leggibile
+  } catch {
+    return jsonString; // Se non è JSON valido, ritorna originale
+  }
+}
+
+/**
+ * Formatta un JSON per la visualizzazione espansa
+ * @param jsonString - Stringa JSON da formattare
+ * @returns JSON formattato con indentazione
+ */
+export function formatJsonExpanded(jsonString: string): string {
+  try {
+    const parsed = JSON.parse(jsonString);
+    return JSON.stringify(parsed, null, 2); // Con indentazione
+  } catch {
+    return jsonString; // Se non è JSON valido, ritorna originale
+  }
 }
 
 /**

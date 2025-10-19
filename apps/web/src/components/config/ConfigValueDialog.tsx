@@ -12,8 +12,9 @@ import {
   DialogDescription,
 } from '../ui/dialog';
 import { Button } from '../ui/button';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, Code } from 'lucide-react';
 import { toast } from 'sonner';
+import { formatJsonExpanded, formatJsonCompact } from '../../lib/config-helpers';
 
 interface ConfigValueDialogProps {
   onOpenChange: () => void;
@@ -27,6 +28,13 @@ export function ConfigValueDialog({
   keyName,
 }: ConfigValueDialogProps) {
   const [copied, setCopied] = useState(false);
+  const [isJsonExpanded, setIsJsonExpanded] = useState(false);
+
+  // Verifica se il valore è un JSON
+  const isJson = value.startsWith('{') && value.includes('"');
+  const displayValue = isJson 
+    ? (isJsonExpanded ? formatJsonExpanded(value) : formatJsonCompact(value))
+    : value;
 
   const handleCopy = async () => {
     try {
@@ -60,11 +68,23 @@ export function ConfigValueDialog({
         <div className="space-y-4">
           <div className="bg-muted p-4 rounded-lg">
             <pre className="whitespace-pre-wrap break-words text-sm overflow-auto max-h-96">
-              {value}
+              {displayValue}
             </pre>
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex justify-between">
+            {isJson && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsJsonExpanded(!isJsonExpanded)}
+                className="flex items-center gap-2"
+              >
+                <Code className="w-4 h-4" />
+                {isJsonExpanded ? 'Compatto' : 'Espandi'}
+              </Button>
+            )}
+            
             <Button
               variant="outline"
               size="sm"
