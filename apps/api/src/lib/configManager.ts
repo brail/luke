@@ -496,6 +496,41 @@ export async function getTokenVersionCacheTTL(
 }
 
 /**
+ * Recupera la password policy da AppConfig
+ * @param prisma - Client Prisma
+ * @returns Password policy con validazioni hard minimum per sicurezza
+ */
+export async function getPasswordPolicy(prisma: PrismaClient): Promise<{
+  minLength: number;
+  requireUppercase: boolean;
+  requireLowercase: boolean;
+  requireDigit: boolean;
+  requireSpecialChar: boolean;
+}> {
+  const [
+    minLength,
+    requireUppercase,
+    requireLowercase,
+    requireDigit,
+    requireSpecialChar,
+  ] = await Promise.all([
+    getConfig(prisma, 'security.password.minLength', false),
+    getConfig(prisma, 'security.password.requireUppercase', false),
+    getConfig(prisma, 'security.password.requireLowercase', false),
+    getConfig(prisma, 'security.password.requireDigit', false),
+    getConfig(prisma, 'security.password.requireSpecialChar', false),
+  ]);
+
+  return {
+    minLength: Math.max(parseInt(minLength || '12', 10), 8), // Min assoluto: 8 caratteri
+    requireUppercase: requireUppercase === 'true',
+    requireLowercase: requireLowercase === 'true',
+    requireDigit: requireDigit === 'true',
+    requireSpecialChar: requireSpecialChar === 'true',
+  };
+}
+
+/**
  * Recupera la configurazione LDAP completa dal database
  * @param prisma - Client Prisma
  * @returns Configurazione LDAP decifrata e tipizzata
