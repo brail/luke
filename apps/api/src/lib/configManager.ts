@@ -396,17 +396,24 @@ export async function listConfigsPaged(
   ]);
 
   // Processa i risultati
-  const items = itemsRaw.map(item => ({
-    key: item.key,
-    category: item.key.split('.')[0] || 'misc',
-    isEncrypted: item.isEncrypted,
-    valuePreview: item.isEncrypted
-      ? null
-      : item.value.length > 80
-        ? item.value.slice(0, 77) + '…'
-        : item.value,
-    updatedAt: item.updatedAt.toISOString(),
-  }));
+  const items = itemsRaw.map(item => {
+    // Per JSON, usa un limite più alto per mostrare più contenuto
+    const isJson = !item.isEncrypted && item.value.startsWith('{') && item.value.includes('"');
+    const truncateLimit = isJson ? 150 : 80;
+    const truncateSlice = isJson ? 147 : 77;
+    
+    return {
+      key: item.key,
+      category: item.key.split('.')[0] || 'misc',
+      isEncrypted: item.isEncrypted,
+      valuePreview: item.isEncrypted
+        ? null
+        : item.value.length > truncateLimit
+          ? item.value.slice(0, truncateSlice) + '…'
+          : item.value,
+      updatedAt: item.updatedAt.toISOString(),
+    };
+  });
 
   return {
     items,
