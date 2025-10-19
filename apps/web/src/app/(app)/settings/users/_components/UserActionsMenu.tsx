@@ -1,6 +1,9 @@
 'use client';
 
+import { MoreHorizontal, Edit, UserX, LogOut, Trash2 } from 'lucide-react';
 import React from 'react';
+import { toast } from 'sonner';
+
 import { Button } from '../../../../../components/ui/button';
 import {
   DropdownMenu,
@@ -9,9 +12,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../../../../../components/ui/dropdown-menu';
-import { MoreHorizontal, Edit, UserX, LogOut, Trash2 } from 'lucide-react';
+
 import { UserListItem, UserActionHandlers } from './types';
-import { toast } from 'sonner';
+
 
 interface UserActionsMenuProps {
   user: UserListItem;

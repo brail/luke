@@ -1,5 +1,6 @@
-/* eslint-disable no-unused-vars */
 'use client';
+
+import { AlertTriangle, Trash2, UserX } from 'lucide-react';
 
 import {
   AlertDialog,
@@ -11,7 +12,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from './ui/alert-dialog';
-import { AlertTriangle, Trash2, UserX } from 'lucide-react';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -44,8 +44,7 @@ export function ConfirmDialog({
   userEmail,
   actionType = 'delete',
 }: ConfirmDialogProps) {
-  // eslint-disable-next-line no-unused-vars
-  const _ = open; // Usa il parametro open per evitare warning
+  void open; // Usa il parametro open per evitare warning
   const handleConfirm = () => {
     onConfirm();
     onOpenChange(false);

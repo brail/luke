@@ -3,19 +3,20 @@
  * Implementa CRUD per AppConfig con supporto per valori cifrati
  */
 
-import { z } from 'zod';
-import { router, loggedProcedure, adminProcedure } from '../lib/trpc';
 import { TRPCError } from '@trpc/server';
+import { z } from 'zod';
+
+import { logAudit } from '../lib/auditLog';
 import {
   saveConfig,
   getConfig,
-  listConfigs,
+  // listConfigs,
   listConfigsPaged,
   deleteConfig,
 } from '../lib/configManager';
-import { logAudit } from '../lib/auditLog';
-import { withRateLimit } from '../lib/ratelimit';
 import { withIdempotency } from '../lib/idempotencyTrpc';
+import { withRateLimit } from '../lib/ratelimit';
+import { router, loggedProcedure, adminProcedure } from '../lib/trpc';
 
 /**
  * Chiavi critiche che non possono essere eliminate
@@ -381,9 +382,9 @@ export const configRouter = router({
       }
 
       // Verifica se la configurazione esiste già
-      const existingConfig = await ctx.prisma.appConfig.findUnique({
-        where: { key: input.key },
-      });
+      // const existingConfig = await ctx.prisma.appConfig.findUnique({
+      //   where: { key: input.key },
+      // });
 
       await saveConfig(ctx.prisma, input.key, input.value, input.encrypt);
 
@@ -578,9 +579,9 @@ export const configRouter = router({
             validateKey(config.key);
 
             // Verifica se la configurazione esiste già
-            const existingConfig = await ctx.prisma.appConfig.findUnique({
-              where: { key: config.key },
-            });
+            // const existingConfig = await ctx.prisma.appConfig.findUnique({
+            //   where: { key: config.key },
+            // });
 
             await saveConfig(
               ctx.prisma,
@@ -718,9 +719,9 @@ export const configRouter = router({
           const shouldEncrypt = item.encrypt === true;
 
           // Verifica se la configurazione esiste già
-          const existingConfig = await ctx.prisma.appConfig.findUnique({
-            where: { key: item.key },
-          });
+          // const existingConfig = await ctx.prisma.appConfig.findUnique({
+          //   where: { key: item.key },
+          // });
 
           await saveConfig(ctx.prisma, item.key, item.value, shouldEncrypt);
 

@@ -1,8 +1,10 @@
 'use client';
 
-import React from 'react';
-import { TableHead } from '../../../../../components/ui/table';
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
+import React from 'react';
+
+import { TableHead } from '../../../../../components/ui/table';
+
 import { SortColumn, SortOrder } from './types';
 
 interface SortableHeaderProps {

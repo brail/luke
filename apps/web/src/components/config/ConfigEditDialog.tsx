@@ -4,6 +4,14 @@
  */
 
 import React, { useState, useEffect } from 'react';
+
+import {
+  CATEGORIES,
+  validateConfigKey,
+  validateConfigValue,
+  getCategoryFromKey,
+} from '../../lib/config-helpers';
+import { Button } from '../ui/button';
 import {
   Dialog,
   DialogContent,
@@ -11,10 +19,8 @@ import {
   DialogTitle,
   DialogDescription,
 } from '../ui/dialog';
-import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
-import { Textarea } from '../ui/textarea';
 import {
   Select,
   SelectContent,
@@ -22,12 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../ui/select';
-import {
-  CATEGORIES,
-  validateConfigKey,
-  validateConfigValue,
-  getCategoryFromKey,
-} from '../../lib/config-helpers';
+import { Textarea } from '../ui/textarea';
 
 interface ConfigEditDialogProps {
   onOpenChange: () => void;

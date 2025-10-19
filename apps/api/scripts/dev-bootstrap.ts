@@ -10,10 +10,12 @@
  * 6. Exit code 0 se successo, 1 se fallimento
  */
 
-import { PrismaClient } from '@prisma/client';
+import { execSync } from 'child_process';
 import { existsSync, copyFileSync } from 'fs';
 import { join } from 'path';
-import { execSync } from 'child_process';
+
+import { PrismaClient } from '@prisma/client';
+
 import { getMasterKey } from '@luke/core/server';
 
 /**

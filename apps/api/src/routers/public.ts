@@ -3,8 +3,8 @@
  * Accessibile senza autenticazione per informazioni dell'app
  */
 
-import { router, publicProcedure } from '../lib/trpc';
 import { getConfig } from '../lib/configManager';
+import { router, publicProcedure } from '../lib/trpc';
 
 export const publicRouter = router({
   /**

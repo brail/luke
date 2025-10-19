@@ -1,0 +1,64 @@
+
+> @luke/monorepo@0.1.0 lint /Users/brail/code/cursor/luke
+> turbo run lint
+
+turbo 2.5.8
+
+• Packages in scope: @luke/api, @luke/core, @luke/web
+• Running lint in 3 packages
+• Remote caching disabled
+@luke/core:build: cache miss, executing cf00fcf1c4b4086a
+@luke/core:build: 
+@luke/core:build: > @luke/core@0.1.0 build /Users/brail/code/cursor/luke/packages/core
+@luke/core:build: > tsc
+@luke/core:build: 
+@luke/api:build: cache miss, executing d2edc60c361eb976
+@luke/api:build: 
+@luke/api:build: > @luke/api@0.1.0 build /Users/brail/code/cursor/luke/apps/api
+@luke/api:build: > tsc
+@luke/api:build: 
+@luke/api:build: src/lib/auditMiddleware.ts(16,43): error TS6133: 'path' is declared but its value is never read.
+@luke/api:build: src/lib/auth.ts(8,1): error TS6133: 'User' is declared but its value is never read.
+@luke/api:build: src/lib/auth.ts(9,1): error TS6133: 'PrismaClient' is declared but its value is never read.
+@luke/api:build: src/lib/auth.ts(130,34): error TS6133: 'reply' is declared but its value is never read.
+@luke/api:build: src/lib/auth.ts(130,55): error TS6133: 'token' is declared but its value is never read.
+@luke/api:build: src/lib/auth.ts(145,36): error TS6133: 'reply' is declared but its value is never read.
+@luke/api:build: src/lib/configManager.ts(36,7): error TS6133: 'TAG_LENGTH' is declared but its value is never read.
+@luke/api:build: src/lib/errorHandler.ts(71,9): error TS6133: 'httpStatus' is declared but its value is never read.
+@luke/api:build: src/lib/jwt.ts(75,9): error TS6133: 'now' is declared but its value is never read.
+@luke/api:build: src/lib/ldapAuth.ts(253,32): error TS6133: 'reject' is declared but its value is never read.
+@luke/api:build: src/lib/ldapAuth.ts(326,3): error TS6133: 'userDN' is declared but its value is never read.
+@luke/api:build: src/lib/rbac.ts(16,28): error TS6133: 'TInput' is declared but its value is never read.
+@luke/api:build: src/routers/auth.ts(287,46): error TS6133: 'ctx' is declared but its value is never read.
+@luke/api:build: src/routers/config.ts(12,3): error TS6133: 'listConfigs' is declared but its value is never read.
+@luke/api:build: src/routers/config.ts(384,13): error TS6133: 'existingConfig' is declared but its value is never read.
+@luke/api:build: src/routers/config.ts(581,19): error TS6133: 'existingConfig' is declared but its value is never read.
+@luke/api:build: src/routers/config.ts(721,17): error TS6133: 'existingConfig' is declared but its value is never read.
+@luke/api:build: src/routers/integrations.ts(12,8): error TS6133: 'LdapConfig' is declared but its value is never read.
+@luke/api:build: src/routers/users.ts(10,3): error TS6133: 'publicProcedure' is declared but its value is never read.
+@luke/api:build: src/routers/users.ts(17,3): error TS6133: 'UserSchema' is declared but its value is never read.
+@luke/api:build: src/routers/users.ts(47,10): error TS6133: 'isFieldLocked' is declared but its value is never read.
+@luke/api:build: src/server.ts(18,3): error TS6133: 'pinoSerializers' is declared but its value is never read.
+@luke/api:build: src/server.ts(55,4): error TS6133: 'req' is declared but its value is never read.
+@luke/api:build: src/server.ts(172,16): error TS6133: 'registerTRPCOptions' is declared but its value is never read.
+@luke/api:build: src/server.ts(174,37): error TS6133: 'request' is declared but its value is never read.
+@luke/api:build: src/server.ts(204,32): error TS6133: 'request' is declared but its value is never read.
+@luke/api:build: src/server.ts(204,41): error TS6133: 'reply' is declared but its value is never read.
+@luke/api:build: src/server.ts(209,33): error TS6133: 'request' is declared but its value is never read.
+@luke/api:build: src/server.ts(226,34): error TS6133: 'request' is declared but its value is never read.
+@luke/api:build: src/server.ts(226,43): error TS6133: 'reply' is declared but its value is never read.
+@luke/api:build: src/server.ts(233,37): error TS6133: 'request' is declared but its value is never read.
+@luke/api:build: src/server.ts(233,46): error TS6133: 'reply' is declared but its value is never read.
+@luke/api:build: src/server.ts(244,27): error TS6133: 'request' is declared but its value is never read.
+@luke/api:build: src/server.ts(244,36): error TS6133: 'reply' is declared but its value is never read.
+@luke/api:build:  ELIFECYCLE  Command failed with exit code 2.
+@luke/api:build: ERROR: command finished with error: command (/Users/brail/code/cursor/luke/apps/api) /Users/brail/.nvm/versions/node/v24.6.0/bin/pnpm run build exited (2)
+@luke/api#build: command (/Users/brail/code/cursor/luke/apps/api) /Users/brail/.nvm/versions/node/v24.6.0/bin/pnpm run build exited (2)
+
+ Tasks:    1 successful, 2 total
+Cached:    0 cached, 2 total
+  Time:    2.799s 
+Failed:    @luke/api#build
+
+ ERROR  run failed: command  exited (2)
+ ELIFECYCLE  Command failed with exit code 2.

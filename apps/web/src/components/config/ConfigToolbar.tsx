@@ -3,6 +3,9 @@
  * Include ricerca, filtri e azioni principali
  */
 
+import { Search } from 'lucide-react';
+
+import { CATEGORIES } from '../../lib/config-helpers';
 import { Input } from '../ui/input';
 import {
   Select,
@@ -11,8 +14,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../ui/select';
-import { Search } from 'lucide-react';
-import { CATEGORIES } from '../../lib/config-helpers';
 
 interface ConfigToolbarProps {
   searchTerm: string;

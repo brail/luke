@@ -1,6 +1,8 @@
 'use client';
 
 import React from 'react';
+
+import { Button } from '../../../../../components/ui/button';
 import {
   Table,
   TableBody,
@@ -9,9 +11,8 @@ import {
   TableHeader,
   TableRow,
 } from '../../../../../components/ui/table';
-import { Button } from '../../../../../components/ui/button';
+
 import { SortableHeader } from './SortableHeader';
-import { UserActionsMenu } from './UserActionsMenu';
 import {
   SortColumn,
   SortOrder,
@@ -19,6 +20,7 @@ import {
   SortHandlers,
   TableProps,
 } from './types';
+import { UserActionsMenu } from './UserActionsMenu';
 
 interface UsersTableProps extends TableProps, SortHandlers, UserActionHandlers {
   sortBy: SortColumn;

@@ -12,7 +12,7 @@ export function debugLog(...args: unknown[]) {
     process.env.NODE_ENV !== 'production' ||
     process.env.NEXT_PUBLIC_LUKE_DEBUG_UI === 'true'
   ) {
-    // eslint-disable-next-line no-console
+     
     console.log(...args);
   }
 }
@@ -26,7 +26,7 @@ export function debugWarn(...args: unknown[]) {
     process.env.NODE_ENV !== 'production' ||
     process.env.NEXT_PUBLIC_LUKE_DEBUG_UI === 'true'
   ) {
-    // eslint-disable-next-line no-console
+     
     console.warn(...args);
   }
 }
@@ -40,7 +40,7 @@ export function debugError(...args: unknown[]) {
     process.env.NODE_ENV !== 'production' ||
     process.env.NEXT_PUBLIC_LUKE_DEBUG_UI === 'true'
   ) {
-    // eslint-disable-next-line no-console
+     
     console.error(...args);
   }
 }

@@ -20,9 +20,10 @@
  * ```
  */
 
-import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
 import { toast } from 'sonner';
+
 import { trpc } from './trpc';
 
 /**

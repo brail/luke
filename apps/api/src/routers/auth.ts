@@ -3,16 +3,18 @@
  * Gestisce login, logout e verifica sessione
  */
 
-import { z } from 'zod';
+import { TRPCError } from '@trpc/server';
 import argon2 from 'argon2';
-import { router, publicProcedure, protectedProcedure } from '../lib/trpc';
+import { z } from 'zod';
+
+import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
 import { getConfig } from '../lib/configManager';
-import { authenticateViaLdap } from '../lib/ldapAuth';
-import { logAudit } from '../lib/auditLog';
-import { withRateLimit } from '../lib/ratelimit';
 import { withIdempotency } from '../lib/idempotencyTrpc';
-import { TRPCError } from '@trpc/server';
+import { authenticateViaLdap } from '../lib/ldapAuth';
+import { withRateLimit } from '../lib/ratelimit';
+import { router, publicProcedure, protectedProcedure } from '../lib/trpc';
+
 import type { PrismaClient, User } from '@prisma/client';
 
 /**
@@ -284,7 +286,7 @@ export const authRouter = router({
    * Logout utente (soft logout)
    * Rimuove solo la sessione corrente, mantiene altre sessioni attive
    */
-  logout: protectedProcedure.mutation(async ({ ctx }) => {
+  logout: protectedProcedure.mutation(async ({ ctx: _ctx }) => {
     // Cookie API rimosso: Web gestisce logout tramite NextAuth signOut()
     return { success: true, message: 'Logout effettuato con successo' };
   }),

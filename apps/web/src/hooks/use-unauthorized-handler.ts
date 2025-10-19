@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect } from 'react';
 import { useSession } from 'next-auth/react';
+import { useEffect } from 'react';
 
 /**
  * Hook per gestire errori UNAUTHORIZED globalmente

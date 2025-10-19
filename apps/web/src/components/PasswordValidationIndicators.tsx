@@ -1,7 +1,8 @@
 'use client';
 
-import React from 'react';
 import { Check, X } from 'lucide-react';
+import React from 'react';
+
 import { usePasswordValidation } from '../hooks/use-password-validation';
 
 interface PasswordValidationIndicatorsProps {

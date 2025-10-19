@@ -3,13 +3,15 @@
  * Verifica tokenVersion, invalidazione sessioni, TTL
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { setupTestDb, teardownTestDb, createTestContext } from './helpers';
 import { PrismaClient } from '@prisma/client';
-import { appRouter } from '../src/routers/index';
-import { hashPassword } from '../src/lib/password';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+
 import { signJWT } from '../src/lib/jwt';
+import { hashPassword } from '../src/lib/password';
 import { invalidateTokenVersionCache } from '../src/lib/trpc';
+import { appRouter } from '../src/routers/index';
+
+import { setupTestDb, teardownTestDb, createTestContext } from './helpers';
 
 let prisma: PrismaClient;
 

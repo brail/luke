@@ -1,5 +1,6 @@
-import { auth } from './auth';
 import { NextResponse } from 'next/server';
+
+import { auth } from './auth';
 
 /**
  * Middleware per proteggere le rotte del dashboard

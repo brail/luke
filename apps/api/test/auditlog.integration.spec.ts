@@ -3,8 +3,11 @@
  * Verifica end-to-end che ogni azione sensibile produca entry coerenti
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { PrismaClient } from '@prisma/client';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+
+import { appRouter } from '../src/routers';
+
 import {
   setupTestDb,
   teardownTestDb,
@@ -12,7 +15,7 @@ import {
   createTestContext,
   createCallerAs,
 } from './helpers';
-import { appRouter } from '../src/routers';
+
 
 describe('AuditLog Integration', () => {
   let testPrisma: PrismaClient;

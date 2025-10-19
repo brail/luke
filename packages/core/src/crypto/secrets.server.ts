@@ -13,14 +13,14 @@
  */
 
 // Runtime check: fail se eseguito nel browser
+import { hkdfSync, randomBytes } from 'crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
+
 if (typeof window !== 'undefined') {
   throw new Error('secrets.server.ts può essere importato solo server-side');
 }
-
-import { hkdfSync, randomBytes } from 'crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { join } from 'path';
-import { homedir } from 'os';
 
 const MASTER_KEY_PATH = join(homedir(), '.luke', 'secret.key');
 const KEY_LENGTH = 32; // 256 bits per AES-256

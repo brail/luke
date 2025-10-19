@@ -3,7 +3,10 @@
  * Include protezione per chiavi critiche e input di conferma
  */
 
+import { AlertTriangle, Lock } from 'lucide-react';
 import { useState } from 'react';
+
+import { isCriticalKey } from '../../lib/config-helpers';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,11 +17,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../ui/alert-dialog';
+import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
-import { Badge } from '../ui/badge';
-import { AlertTriangle, Lock } from 'lucide-react';
-import { isCriticalKey } from '../../lib/config-helpers';
 
 interface ConfigDeleteDialogProps {
   onOpenChange: () => void;

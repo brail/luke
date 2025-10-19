@@ -3,10 +3,12 @@
  * Middleware per correlazione log-trace e redaction PII/secrets
  */
 
-import { trace } from '@opentelemetry/api';
-import type { FastifyRequest, FastifyReply } from 'fastify';
 import { randomUUID } from 'crypto';
+
+import { trace } from '@opentelemetry/api';
 import serializers from 'pino-std-serializers';
+
+import type { FastifyRequest, FastifyReply } from 'fastify';
 
 /**
  * Pattern per identificare campi sensibili da redigere

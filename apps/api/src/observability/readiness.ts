@@ -3,11 +3,15 @@
  * Sistema modulare per verifiche di readiness (DB, secrets, LDAP, integrations future)
  */
 
+import * as ldap from 'ldapjs';
+
+import { deriveSecret, validateMasterKey } from '@luke/core/server';
+
+import { getLdapConfig } from '../lib/configManager';
+
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyLoggerInstance } from 'fastify';
-import { deriveSecret, validateMasterKey } from '@luke/core/server';
-import { getLdapConfig } from '../lib/configManager';
-import * as ldap from 'ldapjs';
+
 
 /**
  * Interfaccia per check di readiness

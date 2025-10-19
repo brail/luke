@@ -7,13 +7,15 @@
  */
 
 import { TRPCError } from '@trpc/server';
+
 import type { Role } from '@luke/core';
+
 import type { UserSession } from './auth';
 
 /**
  * Middleware function type per tRPC
  */
-type MiddlewareFunction = <TInput, TOutput>(opts: {
+type MiddlewareFunction = <_TInput, TOutput>(opts: {
   ctx: { session: UserSession | null };
   next: () => Promise<TOutput>;
 }) => Promise<TOutput>;

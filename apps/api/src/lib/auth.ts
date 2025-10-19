@@ -4,10 +4,8 @@
  * JWT secret derivato dalla master key via HKDF-SHA256
  */
 
-import type { FastifyRequest, FastifyReply } from 'fastify';
-import type { User } from '@luke/core';
-import type { PrismaClient } from '@prisma/client';
 import { signJWT, verifyJWT, type JWTPayload } from './jwt';
+import type { FastifyRequest, FastifyReply } from 'fastify';
 
 /**
  * Interfaccia per il payload JWT (re-export da jwt.ts)
@@ -127,7 +125,7 @@ export async function authenticateRequest(
  * @deprecated Cookie API rimosso: Web usa solo Authorization header
  * Imposta il cookie di sessione
  */
-export function setSessionCookie(reply: FastifyReply, token: string): void {
+export function setSessionCookie(_reply: FastifyReply, _token: string): void {
   // DEPRECATED: Cookie API non più utilizzato
   // (reply as any).cookie('luke_session', token, {
   //   httpOnly: true,
@@ -142,7 +140,7 @@ export function setSessionCookie(reply: FastifyReply, token: string): void {
  * @deprecated Cookie API rimosso: Web usa solo Authorization header
  * Rimuove il cookie di sessione
  */
-export function clearSessionCookie(reply: FastifyReply): void {
+export function clearSessionCookie(_reply: FastifyReply): void {
   // DEPRECATED: Cookie API non più utilizzato
   // (reply as any).clearCookie('luke_session', {
   //   path: '/',

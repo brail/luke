@@ -3,8 +3,9 @@
  * Mostra informazioni sulla pagina corrente e controlli di navigazione
  */
 
-import { Button } from '../ui/button';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+
+import { Button } from '../ui/button';
 
 interface ConfigTablePaginationProps {
   page: number;

@@ -1,7 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Globe } from 'lucide-react';
 import { useSession } from 'next-auth/react';
+import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
+
+import { trpc } from '../lib/trpc';
+
+import { Button } from './ui/button';
 import {
   Dialog,
   DialogContent,
@@ -10,10 +16,8 @@ import {
   DialogDescription,
   DialogFooter,
 } from './ui/dialog';
-import { Button } from './ui/button';
-import { trpc } from '../lib/trpc';
-import { toast } from 'sonner';
-import { Globe } from 'lucide-react';
+
+
 
 /**
  * Dialog per aggiornare il timezone dell'utente

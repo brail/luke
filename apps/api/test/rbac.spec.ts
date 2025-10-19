@@ -4,6 +4,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+
 import { RBAC_TEST_CONFIG } from './helpers';
 
 describe('RBAC Coverage & Guard Rails', () => {

@@ -1,18 +1,23 @@
 'use client';
 
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Loader2, Eye, EyeOff } from 'lucide-react';
+import { signOut } from 'next-auth/react';
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
+import { toast } from 'sonner';
+
 import { ChangePasswordSchema, type ChangePasswordInput } from '@luke/core';
-import { trpc } from '../../../../lib/trpc';
+
+import { PasswordValidationIndicators } from '../../../../components/PasswordValidationIndicators';
+import { SectionCard } from '../../../../components/SectionCard';
 import { Button } from '../../../../components/ui/button';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
-import { toast } from 'sonner';
-import { Loader2, Eye, EyeOff } from 'lucide-react';
-import { SectionCard } from '../../../../components/SectionCard';
-import { PasswordValidationIndicators } from '../../../../components/PasswordValidationIndicators';
-import { signOut } from 'next-auth/react';
+import { trpc } from '../../../../lib/trpc';
+
+
+
 
 interface ChangePasswordCardProps {
   /** Se il componente deve essere visibile */

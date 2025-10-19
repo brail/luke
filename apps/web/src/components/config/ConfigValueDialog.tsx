@@ -3,7 +3,15 @@
  * Read-only con possibilità di copiare il valore
  */
 
+import { Copy, Check, Code } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
+
+import {
+  formatJsonExpanded,
+  formatJsonCompact,
+} from '../../lib/config-helpers';
+import { Button } from '../ui/button';
 import {
   Dialog,
   DialogContent,
@@ -11,13 +19,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from '../ui/dialog';
-import { Button } from '../ui/button';
-import { Copy, Check, Code } from 'lucide-react';
-import { toast } from 'sonner';
-import {
-  formatJsonExpanded,
-  formatJsonCompact,
-} from '../../lib/config-helpers';
 
 interface ConfigValueDialogProps {
   onOpenChange: () => void;

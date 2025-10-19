@@ -332,6 +332,34 @@ Per contribuire al progetto, consulta le ADR per comprendere le convenzioni e i 
 - **Security**: AES-256-GCM, helmet, cors, rate limiting, idempotency
 - **Quality**: TypeScript strict, ESLint, Prettier, Husky
 
+## 🧹 Manutenzione Import
+
+Il progetto include strumenti automatizzati per la pulizia e ottimizzazione degli import:
+
+```bash
+# Pulizia automatica import non utilizzati e ordinamento
+pnpm -w exec eslint . --ext .ts,.tsx --fix
+
+# Verifica variabili non utilizzate
+pnpm typecheck
+
+# Verifica errori lint residui
+pnpm lint
+
+# Validazione boundary client/server
+npx tsx tools/scripts/validate-client-server-boundaries.ts
+
+# Report import non utilizzati
+npx tsx tools/scripts/detect-unused-imports.ts
+```
+
+#### Regole Import Applicate
+
+- **Ordinamento**: `builtin` → `external` → `internal` → `parent` → `sibling` → `index` → `type`
+- **Rimozione automatica**: Import non utilizzati e variabili non utilizzate
+- **Boundary client/server**: Validazione import `@luke/core/server` e moduli `node:`
+- **Formattazione**: Prettier per consistenza
+
 ## 🆘 Troubleshooting
 
 ### Errori comuni

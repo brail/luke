@@ -4,23 +4,6 @@
  */
 
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '../ui/table';
-import { Button } from '../ui/button';
-import { Badge } from '../ui/badge';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../ui/dropdown-menu';
-import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
-import {
   MoreHorizontal,
   Lock,
   FileText,
@@ -32,13 +15,35 @@ import {
   ArrowUp,
   ArrowDown,
 } from 'lucide-react';
-import { ConfigKeyBadge } from './ConfigKeyBadge';
+import { toast } from 'sonner';
+
 import {
   formatValue,
   formatDate,
   isCriticalKey,
 } from '../../lib/config-helpers';
-import { toast } from 'sonner';
+import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../ui/table';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
+
+
+import { ConfigKeyBadge } from './ConfigKeyBadge';
+
+
 
 interface Config {
   key: string;
@@ -51,12 +56,12 @@ interface Config {
 
 interface ConfigTableProps {
   configs: Config[];
-  onEdit: (config: Config) => void; // eslint-disable-line no-unused-vars
-  onDelete: (config: Config) => void; // eslint-disable-line no-unused-vars
-  onViewValue: (config: Config) => void; // eslint-disable-line no-unused-vars
+  onEdit: (config: Config) => void;  
+  onDelete: (config: Config) => void;  
+  onViewValue: (config: Config) => void;  
   sortBy: 'key' | 'updatedAt';
   sortDir: 'asc' | 'desc';
-  onSort: (field: 'key' | 'updatedAt') => void; // eslint-disable-line no-unused-vars
+  onSort: (field: 'key' | 'updatedAt') => void;  
 }
 
 export function ConfigTable({

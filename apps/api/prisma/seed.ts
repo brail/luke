@@ -7,8 +7,10 @@
  * - seedAppConfigs(prisma): Crea configurazioni base (no LDAP)
  */
 
-import { PrismaClient } from '@prisma/client';
 import { randomBytes } from 'crypto';
+
+import { PrismaClient } from '@prisma/client';
+
 import { encryptValue } from '../src/lib/configManager';
 import { hashPassword } from '../src/lib/password';
 

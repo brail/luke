@@ -3,9 +3,10 @@
  * Verifica tokenVersion ogni 30 secondi per rilevare revoca sessioni da admin
  */
 
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { useEffect, useRef } from 'react';
+
 import { trpc } from '../lib/trpc';
 
 export function useSessionVerification() {

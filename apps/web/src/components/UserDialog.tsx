@@ -1,4 +1,3 @@
-/* eslint-disable no-unused-vars */
 'use client';
 
 import {
@@ -67,8 +66,7 @@ export function UserDialog({
   syncedFields,
   isSelfEdit = false,
 }: UserDialogProps) {
-  // eslint-disable-next-line no-unused-vars
-  const _ = open; // Usa il parametro open per evitare warning
+  void open; // Usa il parametro open per evitare warning
 
   const handleSubmit = (userData: {
     email: string;

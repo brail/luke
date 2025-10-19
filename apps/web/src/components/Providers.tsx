@@ -1,10 +1,12 @@
 'use client';
 
-import React from 'react';
 import { SessionProvider } from 'next-auth/react';
+import React from 'react';
+
 import { TRPCProvider } from '../lib/trpc';
-import { TimezoneUpdateDialog } from './TimezoneUpdateDialog';
+
 import { SessionVerification } from './SessionVerification';
+import { TimezoneUpdateDialog } from './TimezoneUpdateDialog';
 
 /**
  * Provider globale per l'applicazione

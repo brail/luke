@@ -1,7 +1,7 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
-import { trpc } from '../lib/trpc';
+
 import {
   formatDateWithTimezone,
   formatShortDate,
@@ -9,6 +9,8 @@ import {
   formatCompactDate,
   formatTime,
 } from '@luke/core/utils/date';
+
+import { trpc } from '../lib/trpc';
 
 /**
  * Hook per formattare date con timezone dell'utente corrente

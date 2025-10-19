@@ -3,10 +3,12 @@
  * Gestisce connessione, ricerca utenti e mapping ruoli
  */
 
-import * as ldap from 'ldapjs';
-import type { PrismaClient, User } from '@prisma/client';
-import { getLdapConfig, type LdapConfig } from './configManager';
 import { TRPCError } from '@trpc/server';
+import * as ldap from 'ldapjs';
+
+import { getLdapConfig, type LdapConfig } from './configManager';
+
+import type { PrismaClient, User } from '@prisma/client';
 
 /**
  * Autentica un utente via LDAP
@@ -250,7 +252,7 @@ async function searchUserGroups(
     return [];
   }
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve, _reject) => {
     const groupFilter = config.groupSearchFilter.replace(
       /\$\{userDN\}/g,
       userDN
@@ -323,7 +325,7 @@ function determineUserRole(
 async function createOrUpdateUser(
   prisma: PrismaClient,
   username: string,
-  userDN: string,
+  _userDN: string,
   role: 'admin' | 'editor' | 'viewer',
   userAttributes: any
 ): Promise<User> {

@@ -3,9 +3,11 @@
  * Verifica che tutti gli header di sicurezza siano presenti e corretti
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+
 import { buildTestServer } from './helpers';
+
 import type { FastifyInstance } from 'fastify';
 
 describe('Security Headers', () => {

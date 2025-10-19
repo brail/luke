@@ -1,0 +1,546 @@
+{
+  "timestamp": "2025-10-19T22:20:39.315Z",
+  "totalReplacements": 77,
+  "appliedReplacements": 77,
+  "replacements": [
+    {
+      "file": "/apps/web/src/app/(app)/dashboard/page.tsx",
+      "line": 5,
+      "oldImport": "../../../components/PageHeader",
+      "newImport": "@/components/PageHeader",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/dashboard/page.tsx",
+      "line": 6,
+      "oldImport": "../../../components/SectionCard",
+      "newImport": "@/components/SectionCard",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/profile/_components/ChangePasswordCard.tsx",
+      "line": 12,
+      "oldImport": "../../../../components/PasswordValidationIndicators",
+      "newImport": "@/components/PasswordValidationIndicators",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/profile/_components/ChangePasswordCard.tsx",
+      "line": 13,
+      "oldImport": "../../../../components/SectionCard",
+      "newImport": "@/components/SectionCard",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/profile/_components/ChangePasswordCard.tsx",
+      "line": 14,
+      "oldImport": "../../../../components/ui/button",
+      "newImport": "@/components/ui/button",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/profile/_components/ChangePasswordCard.tsx",
+      "line": 15,
+      "oldImport": "../../../../components/ui/input",
+      "newImport": "@/components/ui/input",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/profile/_components/ChangePasswordCard.tsx",
+      "line": 16,
+      "oldImport": "../../../../components/ui/label",
+      "newImport": "@/components/ui/label",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/profile/_components/ChangePasswordCard.tsx",
+      "line": 17,
+      "oldImport": "../../../../lib/trpc",
+      "newImport": "@/lib/trpc",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/profile/_components/UserProfileForm.tsx",
+      "line": 11,
+      "oldImport": "../../../../components/ui/button",
+      "newImport": "@/components/ui/button",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/profile/_components/UserProfileForm.tsx",
+      "line": 12,
+      "oldImport": "../../../../components/ui/input",
+      "newImport": "@/components/ui/input",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/profile/_components/UserProfileForm.tsx",
+      "line": 13,
+      "oldImport": "../../../../components/ui/label",
+      "newImport": "@/components/ui/label",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/profile/_components/UserProfileForm.tsx",
+      "line": 20,
+      "oldImport": "../../../../lib/i18n/locales",
+      "newImport": "@/lib/i18n/locales",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/profile/_components/UserProfileForm.tsx",
+      "line": 21,
+      "oldImport": "../../../../lib/i18n/timezones",
+      "newImport": "@/lib/i18n/timezones",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/profile/_components/UserProfileForm.tsx",
+      "line": 22,
+      "oldImport": "../../../../lib/trpc",
+      "newImport": "@/lib/trpc",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/profile/page.tsx",
+      "line": 15,
+      "oldImport": "../../../components/PageHeader",
+      "newImport": "@/components/PageHeader",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/profile/page.tsx",
+      "line": 16,
+      "oldImport": "../../../components/ui/badge",
+      "newImport": "@/components/ui/badge",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/profile/page.tsx",
+      "line": 17,
+      "oldImport": "../../../components/ui/button",
+      "newImport": "@/components/ui/button",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/profile/page.tsx",
+      "line": 30,
+      "oldImport": "../../../components/UserAvatar",
+      "newImport": "@/components/UserAvatar",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/profile/page.tsx",
+      "line": 31,
+      "oldImport": "../../../hooks/use-format-date",
+      "newImport": "@/hooks/use-format-date",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/profile/page.tsx",
+      "line": 32,
+      "oldImport": "../../../lib/trpc",
+      "newImport": "@/lib/trpc",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/config/page.tsx",
+      "line": 6,
+      "oldImport": "../../../../components/config/ConfigDeleteDialog",
+      "newImport": "@/components/config/ConfigDeleteDialog",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/config/page.tsx",
+      "line": 7,
+      "oldImport": "../../../../components/config/ConfigEditDialog",
+      "newImport": "@/components/config/ConfigEditDialog",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/config/page.tsx",
+      "line": 8,
+      "oldImport": "../../../../components/config/ConfigExportButton",
+      "newImport": "@/components/config/ConfigExportButton",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/config/page.tsx",
+      "line": 9,
+      "oldImport": "../../../../components/config/ConfigImportDialog",
+      "newImport": "@/components/config/ConfigImportDialog",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/config/page.tsx",
+      "line": 10,
+      "oldImport": "../../../../components/config/ConfigTable",
+      "newImport": "@/components/config/ConfigTable",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/config/page.tsx",
+      "line": 11,
+      "oldImport": "../../../../components/config/ConfigTablePagination",
+      "newImport": "@/components/config/ConfigTablePagination",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/config/page.tsx",
+      "line": 12,
+      "oldImport": "../../../../components/config/ConfigToolbar",
+      "newImport": "@/components/config/ConfigToolbar",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/config/page.tsx",
+      "line": 13,
+      "oldImport": "../../../../components/config/ConfigValueDialog",
+      "newImport": "@/components/config/ConfigValueDialog",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/config/page.tsx",
+      "line": 14,
+      "oldImport": "../../../../components/PageHeader",
+      "newImport": "@/components/PageHeader",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/config/page.tsx",
+      "line": 15,
+      "oldImport": "../../../../components/SectionCard",
+      "newImport": "@/components/SectionCard",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/config/page.tsx",
+      "line": 16,
+      "oldImport": "../../../../components/ui/button",
+      "newImport": "@/components/ui/button",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/config/page.tsx",
+      "line": 17,
+      "oldImport": "../../../../components/ui/skeleton",
+      "newImport": "@/components/ui/skeleton",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/import-export/page.tsx",
+      "line": 5,
+      "oldImport": "../../../../components/PageHeader",
+      "newImport": "@/components/PageHeader",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/import-export/page.tsx",
+      "line": 6,
+      "oldImport": "../../../../components/SectionCard",
+      "newImport": "@/components/SectionCard",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/import-export/page.tsx",
+      "line": 7,
+      "oldImport": "../../../../components/ui/button",
+      "newImport": "@/components/ui/button",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/import-export/page.tsx",
+      "line": 8,
+      "oldImport": "../../../../components/ui/input",
+      "newImport": "@/components/ui/input",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/import-export/page.tsx",
+      "line": 9,
+      "oldImport": "../../../../components/ui/label",
+      "newImport": "@/components/ui/label",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/import-export/page.tsx",
+      "line": 10,
+      "oldImport": "../../../../lib/trpc",
+      "newImport": "@/lib/trpc",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/ldap/page.tsx",
+      "line": 11,
+      "oldImport": "../../../../components/PageHeader",
+      "newImport": "@/components/PageHeader",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/ldap/page.tsx",
+      "line": 12,
+      "oldImport": "../../../../components/SectionCard",
+      "newImport": "@/components/SectionCard",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/ldap/page.tsx",
+      "line": 13,
+      "oldImport": "../../../../components/ui/button",
+      "newImport": "@/components/ui/button",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/ldap/page.tsx",
+      "line": 23,
+      "oldImport": "../../../../components/ui/input",
+      "newImport": "@/components/ui/input",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/ldap/page.tsx",
+      "line": 24,
+      "oldImport": "../../../../components/ui/password-input",
+      "newImport": "@/components/ui/password-input",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/ldap/page.tsx",
+      "line": 32,
+      "oldImport": "../../../../components/ui/switch",
+      "newImport": "@/components/ui/switch",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/ldap/page.tsx",
+      "line": 33,
+      "oldImport": "../../../../components/ui/textarea",
+      "newImport": "@/components/ui/textarea",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/ldap/page.tsx",
+      "line": 34,
+      "oldImport": "../../../../hooks/use-toast",
+      "newImport": "@/hooks/use-toast",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/ldap/page.tsx",
+      "line": 35,
+      "oldImport": "../../../../lib/debug",
+      "newImport": "@/lib/debug",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/ldap/page.tsx",
+      "line": 36,
+      "oldImport": "../../../../lib/trpc",
+      "newImport": "@/lib/trpc",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/mail/page.tsx",
+      "line": 5,
+      "oldImport": "../../../../components/PageHeader",
+      "newImport": "@/components/PageHeader",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/mail/page.tsx",
+      "line": 6,
+      "oldImport": "../../../../components/SectionCard",
+      "newImport": "@/components/SectionCard",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/mail/page.tsx",
+      "line": 7,
+      "oldImport": "../../../../components/ui/button",
+      "newImport": "@/components/ui/button",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/mail/page.tsx",
+      "line": 8,
+      "oldImport": "../../../../components/ui/input",
+      "newImport": "@/components/ui/input",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/mail/page.tsx",
+      "line": 9,
+      "oldImport": "../../../../components/ui/label",
+      "newImport": "@/components/ui/label",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/mail/page.tsx",
+      "line": 10,
+      "oldImport": "../../../../lib/trpc",
+      "newImport": "@/lib/trpc",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/storage/page.tsx",
+      "line": 5,
+      "oldImport": "../../../../components/PageHeader",
+      "newImport": "@/components/PageHeader",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/storage/page.tsx",
+      "line": 6,
+      "oldImport": "../../../../components/SectionCard",
+      "newImport": "@/components/SectionCard",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/storage/page.tsx",
+      "line": 7,
+      "oldImport": "../../../../components/ui/button",
+      "newImport": "@/components/ui/button",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/storage/page.tsx",
+      "line": 8,
+      "oldImport": "../../../../components/ui/input",
+      "newImport": "@/components/ui/input",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/storage/page.tsx",
+      "line": 9,
+      "oldImport": "../../../../components/ui/label",
+      "newImport": "@/components/ui/label",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/storage/page.tsx",
+      "line": 10,
+      "oldImport": "../../../../lib/trpc",
+      "newImport": "@/lib/trpc",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/users/_components/SortableHeader.tsx",
+      "line": 6,
+      "oldImport": "../../../../../components/ui/table",
+      "newImport": "@/components/ui/table",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/users/_components/UserActionsMenu.tsx",
+      "line": 7,
+      "oldImport": "../../../../../components/ui/button",
+      "newImport": "@/components/ui/button",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/users/_components/UsersTable.tsx",
+      "line": 5,
+      "oldImport": "../../../../../components/ui/button",
+      "newImport": "@/components/ui/button",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/users/_components/UsersToolbar.tsx",
+      "line": 5,
+      "oldImport": "../../../../../components/ui/button",
+      "newImport": "@/components/ui/button",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/users/_components/UsersToolbar.tsx",
+      "line": 6,
+      "oldImport": "../../../../../components/ui/input",
+      "newImport": "@/components/ui/input",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/users/page.tsx",
+      "line": 7,
+      "oldImport": "../../../../components/ConfirmDialog",
+      "newImport": "@/components/ConfirmDialog",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/users/page.tsx",
+      "line": 8,
+      "oldImport": "../../../../components/PageHeader",
+      "newImport": "@/components/PageHeader",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/users/page.tsx",
+      "line": 9,
+      "oldImport": "../../../../components/SectionCard",
+      "newImport": "@/components/SectionCard",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/users/page.tsx",
+      "line": 10,
+      "oldImport": "../../../../components/UserDialog",
+      "newImport": "@/components/UserDialog",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/users/page.tsx",
+      "line": 11,
+      "oldImport": "../../../../lib/debug",
+      "newImport": "@/lib/debug",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(app)/settings/users/page.tsx",
+      "line": 12,
+      "oldImport": "../../../../lib/trpc",
+      "newImport": "@/lib/trpc",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(public)/login/page.tsx",
+      "line": 7,
+      "oldImport": "../../../components/Logo",
+      "newImport": "@/components/Logo",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(public)/login/page.tsx",
+      "line": 8,
+      "oldImport": "../../../components/ui/button",
+      "newImport": "@/components/ui/button",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(public)/login/page.tsx",
+      "line": 16,
+      "oldImport": "../../../components/ui/input",
+      "newImport": "@/components/ui/input",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(public)/login/page.tsx",
+      "line": 17,
+      "oldImport": "../../../components/ui/label",
+      "newImport": "@/components/ui/label",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/(public)/login/page.tsx",
+      "line": 18,
+      "oldImport": "../../../hooks/use-app-config",
+      "newImport": "@/hooks/use-app-config",
+      "type": "relative-to-alias"
+    },
+    {
+      "file": "/apps/web/src/app/api/auth/[...nextauth]/route.ts",
+      "line": 1,
+      "oldImport": "../../../../auth",
+      "newImport": "@/auth",
+      "type": "relative-to-alias"
+    }
+  ]
+}

@@ -9,8 +9,9 @@
  * - Cleanup automatico ogni minuto
  */
 
-import pino from 'pino';
 import { TRPCError } from '@trpc/server';
+import pino from 'pino';
+
 import { resolveRateLimitPolicy } from './rateLimitPolicy';
 
 // Logger interno per rate-limit

@@ -3,22 +3,24 @@
  * Configurazione completa con tRPC, Prisma, sicurezza e logging
  */
 
-import Fastify from 'fastify';
+import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
-import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
-import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import { PrismaClient } from '@prisma/client';
-import { appRouter } from './routers';
-import { createContext } from './lib/trpc';
+import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
+import Fastify from 'fastify';
+
 import { validateMasterKey, deriveSecret } from '@luke/core/server';
+
+import { buildCorsAllowedOrigins } from './lib/cors';
+import { createContext } from './lib/trpc';
 import {
   pinoTraceMiddleware,
-  pinoSerializers,
+  // pinoSerializers,
 } from './observability/pinoTrace';
 import { runReadinessChecks } from './observability/readiness';
-import { buildCorsAllowedOrigins } from './lib/cors';
+import { appRouter } from './routers';
 
 /**
  * Configurazione del logger Pino con serializers per sicurezza
@@ -52,7 +54,7 @@ const fastify = Fastify({
 fastify.addContentTypeParser(
   /^application\/json/,
   { parseAs: 'string' },
-  (req, body, done) => {
+  (_req, body, done) => {
     try {
       const json = JSON.parse(body as string);
       done(null, json);
@@ -166,16 +168,16 @@ async function registerSecurityPlugins() {
   // Idempotency è gestito a livello tRPC middleware per procedure specifiche
 }
 
-/**
- * Registra route OPTIONS per tRPC (gestione CORS preflight)
- */
-async function registerTRPCOptions() {
-  // Gestisci richieste OPTIONS per tRPC
-  fastify.options('/trpc/*', async (request, reply) => {
-    // CORS headers sono già gestiti dal plugin CORS
-    reply.status(204).send();
-  });
-}
+// /**
+//  * Registra route OPTIONS per tRPC (gestione CORS preflight)
+//  */
+// async function _registerTRPCOptions() {
+//   // Gestisci richieste OPTIONS per tRPC
+//   fastify.options('/trpc/*', async (_request, reply) => {
+//     // CORS headers sono già gestiti dal plugin CORS
+//     reply.status(204).send();
+//   });
+// }
 
 /**
  * Registra tRPC plugin
@@ -201,12 +203,12 @@ async function registerTRPCPlugin() {
  */
 async function registerHealthRoute() {
   // Liveness: processo attivo (sempre 200 se process vivo)
-  fastify.get('/livez', async (request, reply) => {
+  fastify.get('/livez', async (_request, _reply) => {
     return { status: 'ok' };
   });
 
   // Readiness: sistema pronto per servire richieste
-  fastify.get('/readyz', async (request, reply) => {
+  fastify.get('/readyz', async (_request, reply) => {
     const result = await runReadinessChecks(prisma);
 
     if (!result.allOk) {
@@ -223,14 +225,14 @@ async function registerHealthRoute() {
   });
 
   // Route legacy per retrocompatibilità
-  fastify.get('/healthz', async (request, reply) => {
+  fastify.get('/healthz', async (_request, _reply) => {
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
     };
   });
 
-  fastify.get('/api/health', async (request, reply) => {
+  fastify.get('/api/health', async (_request, _reply) => {
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
@@ -241,7 +243,7 @@ async function registerHealthRoute() {
   });
 
   // Route root per compatibilità
-  fastify.get('/', async (request, reply) => {
+  fastify.get('/', async (_request, _reply) => {
     return {
       message: 'Luke API is running!',
       version: process.env.npm_package_version || '0.1.0',

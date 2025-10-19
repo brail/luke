@@ -4,12 +4,14 @@
  * usando AES-256-GCM con master key da file ~/.luke/secret.key
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { join } from 'path';
-import { homedir } from 'os';
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
-import type { PrismaClient } from '@prisma/client';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
+
 import pino from 'pino';
+
+import type { PrismaClient } from '@prisma/client';
 
 // Logger interno per config manager
 const logger = pino({ level: 'info' });
@@ -33,7 +35,7 @@ export interface LdapConfig {
 const MASTER_KEY_PATH = join(homedir(), '.luke', 'secret.key');
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16; // 128 bits
-const TAG_LENGTH = 16; // 128 bits
+// const TAG_LENGTH = 16; // 128 bits
 const KEY_LENGTH = 32; // 256 bits
 
 /**
@@ -590,7 +592,9 @@ export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
   const groupSearchBase = getConfigValue('auth.ldap.groupSearchBase');
   const groupSearchFilter = getConfigValue('auth.ldap.groupSearchFilter');
   const roleMappingStr = getConfigValue('auth.ldap.roleMapping', '{}');
-  const strategy = (configMap.get('auth.strategy')?.value as LdapConfig['strategy']) || 'local-first';
+  const strategy =
+    (configMap.get('auth.strategy')?.value as LdapConfig['strategy']) ||
+    'local-first';
 
   // Parsa roleMapping da JSON
   let roleMapping: Record<string, string>;

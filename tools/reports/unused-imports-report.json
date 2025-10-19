@@ -1,0 +1,508 @@
+{
+  "timestamp": "2025-10-19T22:19:53.966Z",
+  "totalFound": 68,
+  "totalRemoved": 4,
+  "files": 12,
+  "details": {
+    "src/lib/auditMiddleware.ts": [
+      {
+        "file": "src/lib/auditMiddleware.ts",
+        "line": 16,
+        "column": 43,
+        "variable": "path",
+        "type": "variable"
+      },
+      {
+        "file": "src/lib/auditMiddleware.ts",
+        "line": 16,
+        "column": 43,
+        "variable": "path",
+        "type": "variable"
+      }
+    ],
+    "src/lib/auth.ts": [
+      {
+        "file": "src/lib/auth.ts",
+        "line": 7,
+        "column": 1,
+        "variable": "User",
+        "type": "variable"
+      },
+      {
+        "file": "src/lib/auth.ts",
+        "line": 11,
+        "column": 1,
+        "variable": "PrismaClient",
+        "type": "variable"
+      },
+      {
+        "file": "src/lib/auth.ts",
+        "line": 132,
+        "column": 34,
+        "variable": "reply",
+        "type": "variable"
+      },
+      {
+        "file": "src/lib/auth.ts",
+        "line": 132,
+        "column": 55,
+        "variable": "token",
+        "type": "variable"
+      },
+      {
+        "file": "src/lib/auth.ts",
+        "line": 147,
+        "column": 36,
+        "variable": "reply",
+        "type": "variable"
+      },
+      {
+        "file": "src/lib/auth.ts",
+        "line": 7,
+        "column": 1,
+        "variable": "User",
+        "type": "variable"
+      },
+      {
+        "file": "src/lib/auth.ts",
+        "line": 11,
+        "column": 1,
+        "variable": "PrismaClient",
+        "type": "variable"
+      },
+      {
+        "file": "src/lib/auth.ts",
+        "line": 132,
+        "column": 34,
+        "variable": "reply",
+        "type": "variable"
+      },
+      {
+        "file": "src/lib/auth.ts",
+        "line": 132,
+        "column": 55,
+        "variable": "token",
+        "type": "variable"
+      },
+      {
+        "file": "src/lib/auth.ts",
+        "line": 147,
+        "column": 36,
+        "variable": "reply",
+        "type": "variable"
+      }
+    ],
+    "src/lib/configManager.ts": [
+      {
+        "file": "src/lib/configManager.ts",
+        "line": 39,
+        "column": 7,
+        "variable": "TAG_LENGTH",
+        "type": "variable"
+      },
+      {
+        "file": "src/lib/configManager.ts",
+        "line": 39,
+        "column": 7,
+        "variable": "TAG_LENGTH",
+        "type": "variable"
+      }
+    ],
+    "src/lib/errorHandler.ts": [
+      {
+        "file": "src/lib/errorHandler.ts",
+        "line": 71,
+        "column": 9,
+        "variable": "httpStatus",
+        "type": "variable"
+      },
+      {
+        "file": "src/lib/errorHandler.ts",
+        "line": 71,
+        "column": 9,
+        "variable": "httpStatus",
+        "type": "variable"
+      }
+    ],
+    "src/lib/jwt.ts": [
+      {
+        "file": "src/lib/jwt.ts",
+        "line": 76,
+        "column": 9,
+        "variable": "now",
+        "type": "variable"
+      },
+      {
+        "file": "src/lib/jwt.ts",
+        "line": 76,
+        "column": 9,
+        "variable": "now",
+        "type": "variable"
+      }
+    ],
+    "src/lib/ldapAuth.ts": [
+      {
+        "file": "src/lib/ldapAuth.ts",
+        "line": 255,
+        "column": 32,
+        "variable": "reject",
+        "type": "variable"
+      },
+      {
+        "file": "src/lib/ldapAuth.ts",
+        "line": 328,
+        "column": 3,
+        "variable": "userDN",
+        "type": "variable"
+      },
+      {
+        "file": "src/lib/ldapAuth.ts",
+        "line": 255,
+        "column": 32,
+        "variable": "reject",
+        "type": "variable"
+      },
+      {
+        "file": "src/lib/ldapAuth.ts",
+        "line": 328,
+        "column": 3,
+        "variable": "userDN",
+        "type": "variable"
+      }
+    ],
+    "src/lib/rbac.ts": [
+      {
+        "file": "src/lib/rbac.ts",
+        "line": 18,
+        "column": 28,
+        "variable": "TInput",
+        "type": "variable"
+      },
+      {
+        "file": "src/lib/rbac.ts",
+        "line": 18,
+        "column": 28,
+        "variable": "TInput",
+        "type": "variable"
+      }
+    ],
+    "src/routers/auth.ts": [
+      {
+        "file": "src/routers/auth.ts",
+        "line": 290,
+        "column": 46,
+        "variable": "ctx",
+        "type": "variable"
+      },
+      {
+        "file": "src/routers/auth.ts",
+        "line": 290,
+        "column": 46,
+        "variable": "ctx",
+        "type": "variable"
+      }
+    ],
+    "src/routers/config.ts": [
+      {
+        "file": "src/routers/config.ts",
+        "line": 13,
+        "column": 3,
+        "variable": "listConfigs",
+        "type": "variable"
+      },
+      {
+        "file": "src/routers/config.ts",
+        "line": 385,
+        "column": 13,
+        "variable": "existingConfig",
+        "type": "variable"
+      },
+      {
+        "file": "src/routers/config.ts",
+        "line": 582,
+        "column": 19,
+        "variable": "existingConfig",
+        "type": "variable"
+      },
+      {
+        "file": "src/routers/config.ts",
+        "line": 722,
+        "column": 17,
+        "variable": "existingConfig",
+        "type": "variable"
+      },
+      {
+        "file": "src/routers/config.ts",
+        "line": 13,
+        "column": 3,
+        "variable": "listConfigs",
+        "type": "variable"
+      },
+      {
+        "file": "src/routers/config.ts",
+        "line": 385,
+        "column": 13,
+        "variable": "existingConfig",
+        "type": "variable"
+      },
+      {
+        "file": "src/routers/config.ts",
+        "line": 582,
+        "column": 19,
+        "variable": "existingConfig",
+        "type": "variable"
+      },
+      {
+        "file": "src/routers/config.ts",
+        "line": 722,
+        "column": 17,
+        "variable": "existingConfig",
+        "type": "variable"
+      }
+    ],
+    "src/routers/integrations.ts": [
+      {
+        "file": "src/routers/integrations.ts",
+        "line": 18,
+        "column": 8,
+        "variable": "LdapConfig",
+        "type": "variable"
+      },
+      {
+        "file": "src/routers/integrations.ts",
+        "line": 18,
+        "column": 8,
+        "variable": "LdapConfig",
+        "type": "variable"
+      }
+    ],
+    "src/routers/users.ts": [
+      {
+        "file": "src/routers/users.ts",
+        "line": 11,
+        "column": 3,
+        "variable": "UserSchema",
+        "type": "variable"
+      },
+      {
+        "file": "src/routers/users.ts",
+        "line": 23,
+        "column": 3,
+        "variable": "publicProcedure",
+        "type": "variable"
+      },
+      {
+        "file": "src/routers/users.ts",
+        "line": 49,
+        "column": 10,
+        "variable": "isFieldLocked",
+        "type": "variable"
+      },
+      {
+        "file": "src/routers/users.ts",
+        "line": 11,
+        "column": 3,
+        "variable": "UserSchema",
+        "type": "variable"
+      },
+      {
+        "file": "src/routers/users.ts",
+        "line": 23,
+        "column": 3,
+        "variable": "publicProcedure",
+        "type": "variable"
+      },
+      {
+        "file": "src/routers/users.ts",
+        "line": 49,
+        "column": 10,
+        "variable": "isFieldLocked",
+        "type": "variable"
+      }
+    ],
+    "src/server.ts": [
+      {
+        "file": "src/server.ts",
+        "line": 20,
+        "column": 3,
+        "variable": "pinoSerializers",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 57,
+        "column": 4,
+        "variable": "req",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 174,
+        "column": 16,
+        "variable": "registerTRPCOptions",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 176,
+        "column": 37,
+        "variable": "request",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 206,
+        "column": 32,
+        "variable": "request",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 206,
+        "column": 41,
+        "variable": "reply",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 211,
+        "column": 33,
+        "variable": "request",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 228,
+        "column": 34,
+        "variable": "request",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 228,
+        "column": 43,
+        "variable": "reply",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 235,
+        "column": 37,
+        "variable": "request",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 235,
+        "column": 46,
+        "variable": "reply",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 246,
+        "column": 27,
+        "variable": "request",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 246,
+        "column": 36,
+        "variable": "reply",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 20,
+        "column": 3,
+        "variable": "pinoSerializers",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 57,
+        "column": 4,
+        "variable": "req",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 174,
+        "column": 16,
+        "variable": "registerTRPCOptions",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 176,
+        "column": 37,
+        "variable": "request",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 206,
+        "column": 32,
+        "variable": "request",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 206,
+        "column": 41,
+        "variable": "reply",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 211,
+        "column": 33,
+        "variable": "request",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 228,
+        "column": 34,
+        "variable": "request",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 228,
+        "column": 43,
+        "variable": "reply",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 235,
+        "column": 37,
+        "variable": "request",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 235,
+        "column": 46,
+        "variable": "reply",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 246,
+        "column": 27,
+        "variable": "request",
+        "type": "variable"
+      },
+      {
+        "file": "src/server.ts",
+        "line": 246,
+        "column": 36,
+        "variable": "reply",
+        "type": "variable"
+      }
+    ]
+  }
+}

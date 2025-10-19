@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useEffect } from 'react';
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
+import React, { useEffect } from 'react';
+
 import AppSidebar from '../../components/AppSidebar';
-import { SidebarProvider, SidebarTrigger } from '../../components/ui/sidebar';
-import LoadingLogo from '../../components/LoadingLogo';
 import BreadcrumbNav from '../../components/BreadcrumbNav';
+import LoadingLogo from '../../components/LoadingLogo';
+import { SidebarProvider, SidebarTrigger } from '../../components/ui/sidebar';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();

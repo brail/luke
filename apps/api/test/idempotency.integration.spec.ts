@@ -3,8 +3,12 @@
  * Verifica idempotency end-to-end con chiamate tRPC reali
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { randomUUID } from 'crypto';
+
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+
+import { idempotencyStore } from '../src/lib/idempotency';
+
 import {
   setupTestDb,
   teardownTestDb,
@@ -12,7 +16,7 @@ import {
   createCallerAs,
   expectToThrow,
 } from './helpers';
-import { idempotencyStore } from '../src/lib/idempotency';
+
 
 describe('Idempotency Integration', () => {
   beforeEach(async () => {

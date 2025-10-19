@@ -3,8 +3,6 @@
  * Mostra icona e colore appropriati per ogni categoria
  */
 
-import { Badge } from '../ui/badge';
-import { getCategoryIcon, getCategoryColor } from '../../lib/config-helpers';
 import {
   Shield,
   Settings,
@@ -14,6 +12,9 @@ import {
   DollarSign,
   Palette,
 } from 'lucide-react';
+
+import { getCategoryIcon, getCategoryColor } from '../../lib/config-helpers';
+import { Badge } from '../ui/badge';
 
 interface ConfigKeyBadgeProps {
   category: string;

@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
-import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { signIn } from 'next-auth/react';
+import React, { useState } from 'react';
+
+import Logo from '../../../components/Logo';
 import { Button } from '../../../components/ui/button';
-import { Input } from '../../../components/ui/input';
-import { Label } from '../../../components/ui/label';
 import {
   Card,
   CardContent,
@@ -13,8 +13,9 @@ import {
   CardHeader,
   CardTitle,
 } from '../../../components/ui/card';
+import { Input } from '../../../components/ui/input';
+import { Label } from '../../../components/ui/label';
 import { useAppConfig } from '../../../hooks/use-app-config';
-import Logo from '../../../components/Logo';
 
 /**
  * Pagina di login con form e integrazione Auth.js

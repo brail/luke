@@ -3,18 +3,18 @@
  * Eseguito prima di qualsiasi import per catturare startup completo
  */
 
-import { NodeSDK } from '@opentelemetry/sdk-node';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
+import { FastifyInstrumentation } from '@opentelemetry/instrumentation-fastify';
+import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
+import { UndiciInstrumentation } from '@opentelemetry/instrumentation-undici';
 import { Resource } from '@opentelemetry/resources';
+import { NodeSDK } from '@opentelemetry/sdk-node';
 import {
   SEMRESATTRS_SERVICE_NAME,
   SEMRESATTRS_SERVICE_VERSION,
   SEMRESATTRS_DEPLOYMENT_ENVIRONMENT,
 } from '@opentelemetry/semantic-conventions';
 import { PrismaInstrumentation } from '@prisma/instrumentation';
-import { FastifyInstrumentation } from '@opentelemetry/instrumentation-fastify';
-import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
-import { UndiciInstrumentation } from '@opentelemetry/instrumentation-undici';
 
 // Config via env vars (12-factor)
 const otelEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || '';

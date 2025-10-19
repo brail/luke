@@ -1,21 +1,16 @@
 'use client';
 
-import React, { useEffect } from 'react';
-import { useSession } from 'next-auth/react';
-import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { CheckCircle, XCircle } from 'lucide-react';
+import { useSession } from 'next-auth/react';
+import React, { useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+
+import { ldapConfigSchema, type LdapConfigInput } from '@luke/core';
+
+import { PageHeader } from '../../../../components/PageHeader';
+import { SectionCard } from '../../../../components/SectionCard';
 import { Button } from '../../../../components/ui/button';
-import { Input } from '../../../../components/ui/input';
-import { PasswordInput } from '../../../../components/ui/password-input';
-import { Switch } from '../../../../components/ui/switch';
-import { Textarea } from '../../../../components/ui/textarea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../../../../components/ui/select';
 import {
   Form,
   FormControl,
@@ -25,13 +20,22 @@ import {
   FormLabel,
   FormMessage,
 } from '../../../../components/ui/form';
-import { SectionCard } from '../../../../components/SectionCard';
-import { PageHeader } from '../../../../components/PageHeader';
-import { trpc } from '../../../../lib/trpc';
+import { Input } from '../../../../components/ui/input';
+import { PasswordInput } from '../../../../components/ui/password-input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../../../components/ui/select';
+import { Switch } from '../../../../components/ui/switch';
+import { Textarea } from '../../../../components/ui/textarea';
 import { useToast } from '../../../../hooks/use-toast';
-import { ldapConfigSchema, type LdapConfigInput } from '@luke/core';
-import { CheckCircle, XCircle } from 'lucide-react';
 import { debugLog, debugWarn } from '../../../../lib/debug';
+import { trpc } from '../../../../lib/trpc';
+
+
 
 export default function LdapSettingsPage() {
   const { data: session, status } = useSession();

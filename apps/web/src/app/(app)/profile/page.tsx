@@ -1,18 +1,5 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useSession, signOut } from 'next-auth/react';
-import { trpc } from '../../../lib/trpc';
-import { PageHeader } from '../../../components/PageHeader';
-import { UserAvatar } from '../../../components/UserAvatar';
-import { Button } from '../../../components/ui/button';
-import { Badge } from '../../../components/ui/badge';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '../../../components/ui/card';
 import {
   Shield,
   Copy,
@@ -21,16 +8,32 @@ import {
   AlertCircle,
   User,
 } from 'lucide-react';
+import { useSession, signOut } from 'next-auth/react';
+import React, { useState } from 'react';
 import { toast } from 'sonner';
-import { useFormatDate } from '../../../hooks/use-format-date';
-import { UserProfileForm } from './_components/UserProfileForm';
-import { ChangePasswordCard } from './_components/ChangePasswordCard';
+
+import { PageHeader } from '../../../components/PageHeader';
+import { Badge } from '../../../components/ui/badge';
+import { Button } from '../../../components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '../../../components/ui/card';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from '../../../components/ui/dialog';
+import { UserAvatar } from '../../../components/UserAvatar';
+import { useFormatDate } from '../../../hooks/use-format-date';
+import { trpc } from '../../../lib/trpc';
+
+import { ChangePasswordCard } from './_components/ChangePasswordCard';
+import { UserProfileForm } from './_components/UserProfileForm';
+
 
 /**
  * Pagina Profilo Utente Semplificata

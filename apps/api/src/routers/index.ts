@@ -4,12 +4,13 @@
  */
 
 import { router } from '../lib/trpc';
+
 import { authRouter } from './auth';
-import { usersRouter } from './users';
 import { configRouter } from './config';
 import { integrationsRouter } from './integrations';
-import { publicRouter } from './public';
 import { meRouter } from './me';
+import { publicRouter } from './public';
+import { usersRouter } from './users';
 
 /**
  * Router principale dell'applicazione

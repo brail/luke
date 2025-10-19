@@ -3,8 +3,10 @@
  * Implementa la cascata di risoluzione: AppConfig → ENV → Default
  */
 
-import { getConfig } from './configManager';
 import { RateLimitConfigSchema, type RateLimitPolicy } from '@luke/core';
+
+import { getConfig } from './configManager';
+
 import type { PrismaClient } from '@prisma/client';
 
 /**

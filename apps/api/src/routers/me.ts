@@ -3,22 +3,24 @@
  * Gestisce lettura e aggiornamento del profilo personale
  */
 
-import {
-  protectedProcedure,
-  router,
-  invalidateTokenVersionCache,
-} from '../lib/trpc';
+import { TRPCError } from '@trpc/server';
+import { z } from 'zod';
+
 import {
   UserProfileSchema,
   ChangePasswordSchema,
   UpdateTimezoneSchema,
 } from '@luke/core';
-import { TRPCError } from '@trpc/server';
-import { hashPassword, verifyPassword } from '../lib/password';
+
 import { logAudit } from '../lib/auditLog';
-import { withRateLimit } from '../lib/ratelimit';
 import { withIdempotency } from '../lib/idempotencyTrpc';
-import { z } from 'zod';
+import { hashPassword, verifyPassword } from '../lib/password';
+import { withRateLimit } from '../lib/ratelimit';
+import {
+  protectedProcedure,
+  router,
+  invalidateTokenVersionCache,
+} from '../lib/trpc';
 
 export const meRouter = router({
   /**

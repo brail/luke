@@ -3,8 +3,8 @@
  * Utilizza Server-Sent Events (SSE) per notifiche immediate da admin
  */
 
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { useEffect, useRef } from 'react';
 
 export function useSessionInvalidation() {

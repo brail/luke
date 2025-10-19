@@ -3,8 +3,8 @@
  * Gestisce automaticamente logging SUCCESS/FAILURE per tutte le mutation
  */
 
-import { t } from './trpc';
 import { logAudit } from './auditLog';
+import { t } from './trpc';
 
 /**
  * Middleware per logging automatico di audit
@@ -13,7 +13,7 @@ import { logAudit } from './auditLog';
  * @returns Middleware tRPC
  */
 export function withAuditLog(action: string, targetType: string) {
-  return t.middleware(async ({ ctx, next, path, type, input }) => {
+  return t.middleware(async ({ ctx, next, type, input }) => {
     // Solo mutation (query non hanno bisogno di audit)
     if (type !== 'mutation') {
       return next();

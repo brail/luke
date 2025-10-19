@@ -10,8 +10,9 @@
  */
 
 import jwt from 'jsonwebtoken';
-import { getApiJwtSecret } from '@luke/core/server';
 import pino from 'pino';
+
+import { getApiJwtSecret } from '@luke/core/server';
 
 // Logger interno per JWT
 const logger = pino({ level: 'info' });
@@ -72,7 +73,7 @@ export function signJWT(
   >,
   options: JWTSignOptions = {}
 ): string {
-  const now = Math.floor(Date.now() / 1000);
+  // const now = Math.floor(Date.now() / 1000);
 
   const jwtPayload: Omit<JWTPayload, 'iat' | 'exp' | 'nbf'> = {
     userId: payload.userId,

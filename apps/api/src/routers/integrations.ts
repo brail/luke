@@ -3,19 +3,20 @@
  * Gestisce configurazioni e test per Storage, Mail e Import/Export
  */
 
+import { TRPCError } from '@trpc/server';
+import * as ldap from 'ldapjs';
+import * as nodemailer from 'nodemailer';
 import { z } from 'zod';
-import { router, publicProcedure, adminProcedure } from '../lib/trpc';
+
+import { ldapConfigSchema } from '@luke/core';
+
+import { logAudit } from '../lib/auditLog';
 import {
   saveConfig,
   getConfig,
   getLdapConfig,
-  type LdapConfig,
+  // type LdapConfig,
 } from '../lib/configManager';
-import { ldapConfigSchema } from '@luke/core';
-import * as nodemailer from 'nodemailer';
-import * as ldap from 'ldapjs';
-import { TRPCError } from '@trpc/server';
-import { logAudit } from '../lib/auditLog';
 import {
   ErrorCode,
   createStandardError,
@@ -23,6 +24,7 @@ import {
   IntegrationErrorHandler,
   SecureLogger,
 } from '../lib/errorHandler';
+import { router, publicProcedure, adminProcedure } from '../lib/trpc';
 
 // Schema per configurazione SMB
 const smbConfigSchema = z.object({
@@ -445,7 +447,7 @@ export const integrationsRouter = router({
         };
       } catch (error: any) {
         ctx.logger.error({ error: error.message }, 'Error getting LDAP config');
-        
+
         // Se è un errore di configurazioni mancanti, restituisci configurazione di default
         if (error.message.includes('Configurazioni LDAP mancanti')) {
           return {
@@ -461,7 +463,7 @@ export const integrationsRouter = router({
             strategy: 'local-first' as const,
           };
         }
-        
+
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Errore durante recupero configurazione LDAP',

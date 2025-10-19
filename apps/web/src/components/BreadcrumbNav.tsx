@@ -1,9 +1,10 @@
 'use client';
 
-import React from 'react';
+import { Home } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home } from 'lucide-react';
+import React from 'react';
+
 import {
   Breadcrumb,
   BreadcrumbItem,

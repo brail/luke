@@ -1,21 +1,5 @@
 'use client';
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useSession, signOut } from 'next-auth/react';
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupLabel,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
-} from './ui/sidebar';
 import {
   Home,
   Users,
@@ -29,6 +13,13 @@ import {
   LogOut,
   User,
 } from 'lucide-react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useSession, signOut } from 'next-auth/react';
+import { useState } from 'react';
+
+import Logo from './Logo';
+import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import {
   Collapsible,
   CollapsibleContent,
@@ -41,9 +32,19 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
-import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
-import { useState } from 'react';
-import Logo from './Logo';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+} from './ui/sidebar';
 
 export default function AppSidebar() {
   const pathname = usePathname();

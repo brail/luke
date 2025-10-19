@@ -3,12 +3,14 @@
  * Definisce il context e le procedure base per i router
  */
 
-import { initTRPC, TRPCError } from '@trpc/server';
-import type { PrismaClient } from '@prisma/client';
-import type { FastifyRequest, FastifyReply } from 'fastify';
-import { authenticateRequest, type UserSession } from './auth';
 import { randomUUID } from 'crypto';
+
+import { initTRPC, TRPCError } from '@trpc/server';
+
 import { type Role } from '@luke/core';
+
+import { authenticateRequest, type UserSession } from './auth';
+import { getTokenVersionCacheTTL } from './configManager';
 import {
   withRole,
   roleIn,
@@ -17,7 +19,10 @@ import {
   adminOrManager,
   authenticatedOnly,
 } from './rbac';
-import { getTokenVersionCacheTTL } from './configManager';
+
+import type { PrismaClient } from '@prisma/client';
+import type { FastifyRequest, FastifyReply } from 'fastify';
+
 
 /**
  * Cache in-memory per tokenVersion con TTL

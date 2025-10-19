@@ -3,6 +3,7 @@
  * Verifica comportamento bootstrap fail-fast e endpoint /readyz
  */
 
+import { PrismaClient } from '@prisma/client';
 import {
   describe,
   it,
@@ -12,12 +13,15 @@ import {
   vi,
   type MockedFunction,
 } from 'vitest';
-import { PrismaClient } from '@prisma/client';
+
+import { deriveSecret, validateMasterKey } from '@luke/core/server';
+
 import {
   checkBootstrapDependencies,
   runReadinessChecks,
 } from '../src/observability/readiness';
-import { deriveSecret, validateMasterKey } from '@luke/core/server';
+
+
 import { setupTestDb, teardownTestDb } from './helpers';
 
 // Mock della configurazione LDAP

@@ -1,23 +1,25 @@
 'use client';
 
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Loader2, Info } from 'lucide-react';
 import React from 'react';
 import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
+import { toast } from 'sonner';
+
 import { UserProfileSchema, type UserProfileInput } from '@luke/core';
-import { trpc } from '../../../../lib/trpc';
+
 import { Button } from '../../../../components/ui/button';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
-import { toast } from 'sonner';
-import { Loader2, Info } from 'lucide-react';
-import { LOCALES } from '../../../../lib/i18n/locales';
-import { TIMEZONES } from '../../../../lib/i18n/timezones';
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '../../../../components/ui/tooltip';
+import { LOCALES } from '../../../../lib/i18n/locales';
+import { TIMEZONES } from '../../../../lib/i18n/timezones';
+import { trpc } from '../../../../lib/trpc';
 
 interface UserProfileFormProps {
   /** Dati utente correnti */

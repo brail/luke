@@ -3,27 +3,29 @@
  * Implementa CRUD completo per User, Identity e LocalCredential
  */
 
-import { z } from 'zod';
+import { TRPCError } from '@trpc/server';
 import argon2 from 'argon2';
+import { z } from 'zod';
+
+import {
+  // UserSchema,
+  CreateUserInputSchema,
+  UpdateUserInputSchema,
+  type LockedFields,
+} from '@luke/core';
+
+import { logAudit } from '../lib/auditLog';
+import { withAuditLog } from '../lib/auditMiddleware';
+import { withIdempotency } from '../lib/idempotencyTrpc';
+import { withRateLimit } from '../lib/ratelimit';
 import {
   router,
-  publicProcedure,
+  // publicProcedure,
   protectedProcedure,
   adminProcedure,
   adminOrEditorProcedure,
   invalidateTokenVersionCache,
 } from '../lib/trpc';
-import {
-  UserSchema,
-  CreateUserInputSchema,
-  UpdateUserInputSchema,
-  type LockedFields,
-} from '@luke/core';
-import { TRPCError } from '@trpc/server';
-import { logAudit } from '../lib/auditLog';
-import { withAuditLog } from '../lib/auditMiddleware';
-import { withRateLimit } from '../lib/ratelimit';
-import { withIdempotency } from '../lib/idempotencyTrpc';
 
 /**
  * Helper per determinare i campi bloccati in base al provider
@@ -41,14 +43,14 @@ function getLockedFields(provider: string): LockedFields[] {
   return ['firstName', 'lastName', 'password'];
 }
 
-/**
- * Verifica se un campo è bloccato per l'utente
- */
-function isFieldLocked(user: any, field: string): boolean {
-  const provider = user?.identities?.[0]?.provider || 'LOCAL';
-  const lockedFields = getLockedFields(provider);
-  return lockedFields.includes(field as LockedFields);
-}
+// /**
+//  * Verifica se un campo è bloccato per l'utente
+//  */
+// function _isFieldLocked(user: any, field: string): boolean {
+//   const provider = user?.identities?.[0]?.provider || 'LOCAL';
+//   const lockedFields = getLockedFields(provider);
+//   return lockedFields.includes(field as LockedFields);
+// }
 
 /**
  * Handler comune per soft delete utente

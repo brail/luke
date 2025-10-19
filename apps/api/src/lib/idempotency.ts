@@ -10,6 +10,7 @@
  */
 
 import { createHash } from 'crypto';
+
 import pino from 'pino';
 
 // Logger interno per idempotency
