@@ -19,6 +19,7 @@ import {
 } from './observability/pinoTrace';
 import { runReadinessChecks } from './observability/readiness';
 import { buildCorsAllowedOrigins } from './lib/cors';
+import { buildHelmetConfig } from './lib/helmet';
 
 /**
  * Configurazione del logger Pino con serializers per sicurezza
@@ -95,30 +96,11 @@ async function registerSecurityPlugins() {
     }),
   });
 
-  // Helmet per security headers con CSP minimale per API JSON-only
-  await fastify.register(helmet, {
-    contentSecurityPolicy: isDevelopment
-      ? false // Disabilita CSP in dev per evitare problemi
-      : {
-          directives: {
-            defaultSrc: ["'none'"],
-            frameAncestors: ["'none'"],
-            baseUri: ["'none'"],
-          },
-        },
-    hsts: isDevelopment
-      ? false // Disabilita HSTS in dev
-      : {
-          maxAge: 15552000, // 180 giorni
-          includeSubDomains: true,
-          preload: false, // Non forzare preload
-        },
-    // Header aggiuntivi per sicurezza
-    noSniff: true, // X-Content-Type-Options: nosniff
-    referrerPolicy: { policy: 'no-referrer' }, // Referrer-Policy: no-referrer
-    frameguard: { action: 'deny' }, // X-Frame-Options: DENY
-    dnsPrefetchControl: false, // X-DNS-Prefetch-Control: off
-  });
+  // Helmet per security headers con configurazione centralizzata
+  await fastify.register(
+    helmet,
+    buildHelmetConfig(process.env.NODE_ENV || 'development')
+  );
 
   // CORS ibrido con priorità AppConfig → ENV → default
   const corsConfig = buildCorsAllowedOrigins(

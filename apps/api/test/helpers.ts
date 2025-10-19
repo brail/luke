@@ -8,6 +8,9 @@ import { appRouter } from '../src/routers/index';
 import { createContext, type Context } from '../src/lib/trpc';
 import { randomUUID } from 'crypto';
 import type { UserSession } from '../src/lib/auth';
+import Fastify from 'fastify';
+import helmet from '@fastify/helmet';
+import { buildHelmetConfig } from '../src/lib/helmet';
 
 /**
  * Database di test isolato
@@ -307,6 +310,41 @@ export async function expectUnauthorized(
       );
     }
   }
+}
+
+/**
+ * Crea un server Fastify isolato per test HTTP
+ * Registra solo i plugin essenziali per testare security headers
+ */
+export async function buildTestServer() {
+  const fastify = Fastify({
+    logger: false, // Disabilita logging per test
+  });
+
+  // Registra Helmet con configurazione per test
+  await fastify.register(helmet, buildHelmetConfig('test'));
+
+  // Registra route di test per verificare headers
+  fastify.get('/api/health', async (request, reply) => {
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      version: 'test',
+      environment: 'test',
+    };
+  });
+
+  // Route root per test
+  fastify.get('/', async (request, reply) => {
+    return {
+      message: 'Luke API Test Server',
+      version: 'test',
+    };
+  });
+
+  await fastify.ready();
+  return fastify;
 }
 
 /**
