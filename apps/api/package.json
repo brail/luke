@@ -15,7 +15,7 @@
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:studio": "prisma studio",
-    "seed": "prisma db push && ts-node prisma/seed.ts"
+    "seed": "prisma db push && tsx prisma/seed.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
