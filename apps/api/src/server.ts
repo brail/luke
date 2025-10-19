@@ -12,17 +12,13 @@ import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import { PrismaClient } from '@prisma/client';
 import { appRouter } from './routers';
 import { createContext } from './lib/trpc';
+import { validateMasterKey, deriveSecret } from '@luke/core/server';
 import {
   pinoTraceMiddleware,
   pinoSerializers,
 } from './observability/pinoTrace';
-import {
-  runReadinessChecks,
-  checkBootstrapDependencies,
-} from './observability/readiness';
-import { deriveSecret } from '@luke/core/server';
+import { runReadinessChecks } from './observability/readiness';
 import { buildCorsAllowedOrigins } from './lib/cors';
-import { buildHelmetConfig } from './lib/helmet';
 
 /**
  * Configurazione del logger Pino con serializers per sicurezza
@@ -99,11 +95,30 @@ async function registerSecurityPlugins() {
     }),
   });
 
-  // Helmet per security headers con configurazione centralizzata
-  await fastify.register(
-    helmet,
-    buildHelmetConfig(process.env.NODE_ENV || 'development')
-  );
+  // Helmet per security headers con CSP minimale per API JSON-only
+  await fastify.register(helmet, {
+    contentSecurityPolicy: isDevelopment
+      ? false // Disabilita CSP in dev per evitare problemi
+      : {
+          directives: {
+            defaultSrc: ["'none'"],
+            frameAncestors: ["'none'"],
+            baseUri: ["'none'"],
+          },
+        },
+    hsts: isDevelopment
+      ? false // Disabilita HSTS in dev
+      : {
+          maxAge: 15552000, // 180 giorni
+          includeSubDomains: true,
+          preload: false, // Non forzare preload
+        },
+    // Header aggiuntivi per sicurezza
+    noSniff: true, // X-Content-Type-Options: nosniff
+    referrerPolicy: { policy: 'no-referrer' }, // Referrer-Policy: no-referrer
+    frameguard: { action: 'deny' }, // X-Frame-Options: DENY
+    dnsPrefetchControl: false, // X-DNS-Prefetch-Control: off
+  });
 
   // CORS ibrido con priorità AppConfig → ENV → default
   const corsConfig = buildCorsAllowedOrigins(
@@ -286,8 +301,24 @@ function setupGracefulShutdown() {
  */
 const start = async () => {
   try {
-    // Verifica dipendenze critiche (fail-fast)
-    await checkBootstrapDependencies(prisma, fastify.log);
+    // Test connessione database
+    await prisma.$connect();
+    fastify.log.info('Connessione database stabilita');
+
+    // Test master key availability
+    if (!validateMasterKey()) {
+      fastify.log.error('Master key non disponibile o invalida');
+      process.exit(1);
+    }
+
+    // Test secret derivation
+    try {
+      deriveSecret('api.jwt');
+      fastify.log.info('Segreti JWT derivati con successo');
+    } catch (error: any) {
+      fastify.log.error('Impossibile derivare segreti JWT');
+      process.exit(1);
+    }
 
     // Registra plugin e route nell'ordine corretto
     await registerSecurityPlugins(); // CORS deve essere registrato prima di tRPC

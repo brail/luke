@@ -437,26 +437,11 @@ export const integrationsRouter = router({
 
         ctx.logger.info('Testing LDAP connection');
 
-        // Leggi timeout da AppConfig con fallback
-        const timeout = parseInt(
-          (await getConfig(ctx.prisma, 'integrations.ldap.timeout', false)) ||
-            '10000',
-          10
-        );
-        const connectTimeout = parseInt(
-          (await getConfig(
-            ctx.prisma,
-            'integrations.ldap.connectTimeout',
-            false
-          )) || '5000',
-          10
-        );
-
         // Crea client LDAP
         client = ldap.createClient({
           url: config.url,
-          timeout,
-          connectTimeout,
+          timeout: 10000,
+          connectTimeout: 5000,
         });
 
         // Gestisci errori non catturati del client
@@ -554,17 +539,10 @@ export const integrationsRouter = router({
             });
           }
 
-          // Leggi timeout da AppConfig con fallback
-          const timeout = parseInt(
-            (await getConfig(ctx.prisma, 'integrations.ldap.timeout', false)) ||
-              '10000',
-            10
-          );
-
           // Crea client LDAP
           client = ldap.createClient({
             url: config.url,
-            timeout,
+            timeout: 10000,
           });
 
           // Bind amministrativo

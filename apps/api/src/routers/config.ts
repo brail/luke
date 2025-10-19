@@ -390,6 +390,7 @@ export const configRouter = router({
       await logAudit(ctx, {
         action: 'CONFIG_UPSERT',
         targetType: 'Config',
+        targetId: input.key,
         result: 'SUCCESS',
         metadata: {
           key: input.key,
@@ -497,6 +498,7 @@ export const configRouter = router({
       await logAudit(ctx, {
         action: 'CONFIG_UPSERT',
         targetType: 'Config',
+        targetId: input.key,
         result: 'SUCCESS',
         metadata: {
           key: input.key,
@@ -590,6 +592,7 @@ export const configRouter = router({
             await logAudit(ctx, {
               action: 'CONFIG_UPSERT',
               targetType: 'Config',
+              targetId: config.key,
               result: 'SUCCESS',
               metadata: {
                 key: config.key,
@@ -724,6 +727,7 @@ export const configRouter = router({
           await logAudit(ctx, {
             action: 'CONFIG_UPSERT',
             targetType: 'Config',
+            targetId: item.key,
             result: 'SUCCESS',
             metadata: {
               key: item.key,

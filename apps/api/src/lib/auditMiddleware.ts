@@ -19,27 +19,31 @@ export function withAuditLog(action: string, targetType: string) {
       return next();
     }
 
-        try {
-          const result = await next();
+    try {
+      const result = await next();
 
-          // SUCCESS: estrai targetId se presente nel result o input
-          const targetId = (result as any)?.data?.id || (result as any)?.id || (input as any)?.id || undefined;
+      // SUCCESS: estrai targetId se presente nel result o input
+      const targetId =
+        (result as any)?.data?.id ||
+        (result as any)?.id ||
+        (input as any)?.id ||
+        undefined;
 
-          // Estrai metadata safe da input/result
-          const safeMetadata = extractSafeMetadata(input, result);
+      // Estrai metadata safe da input/result
+      const safeMetadata = extractSafeMetadata(input, result);
 
-          await logAudit(ctx, {
-            action,
-            targetType,
-            targetId,
-            result: 'SUCCESS',
-            metadata: safeMetadata,
-          });
+      await logAudit(ctx, {
+        action,
+        targetType,
+        targetId,
+        result: 'SUCCESS',
+        metadata: safeMetadata,
+      });
 
-          return result;
-        } catch (error) {
-          // FAILURE: logga errore senza PII
-          const targetId = (input as any)?.id || undefined;
+      return result;
+    } catch (error) {
+      // FAILURE: logga errore senza PII
+      const targetId = (input as any)?.id || undefined;
 
       await logAudit(ctx, {
         action,
@@ -100,5 +104,5 @@ function extractSafeMetadata(input: any, result: any): Record<string, any> {
     }
   }
 
-      return Object.keys(metadata).length > 0 ? metadata : {};
+  return Object.keys(metadata).length > 0 ? metadata : {};
 }
