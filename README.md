@@ -219,14 +219,39 @@ Per configurazioni runtime, rate-limiting, idempotency, session TTL, security he
 - **Scope**: Mutazioni critiche (users, config)
 - **Hash**: SHA256(method + path + body) per validazione
 
-### Configurazioni di Autenticazione
+### Configurazioni AppConfig
 
-**IMPORTANTE: Le configurazioni di autenticazione sono GLOBALI per l'applicazione**
+Il sistema utilizza un database centralizzato per tutte le configurazioni, eliminando la necessità di file `.env`:
 
-- **Natura globale**: Tutte le configurazioni LDAP e di autenticazione sono salvate con chiavi globali (`auth.*`) nel database
-- **Accesso uniforme**: Tutti gli amministratori vedono e modificano le stesse configurazioni di autenticazione
-- **Nessuna configurazione per-utente**: Non esistono configurazioni di autenticazione specifiche per singoli utenti
-- **Cifratura**: I parametri sensibili (bindDN, bindPassword) sono cifrati con AES-256-GCM
+#### Chiavi AppConfig (29 totali)
+
+| Categoria        | Chiave                             | Tipo    | Cifrato | Uso               | Default             |
+| ---------------- | ---------------------------------- | ------- | ------- | ----------------- | ------------------- |
+| **Auth**         | `auth.nextAuthSecret`              | Secret  | ✓       | NextAuth sessions | Random 32 bytes     |
+|                  | `auth.ldap.*`                      | LDAP    | ✓       | Enterprise auth   | Esempi placeholder  |
+|                  | `auth.strategy`                    | Enum    | -       | Auth fallback     | `local-first`       |
+| **App**          | `app.name`                         | String  | -       | App info          | `Luke`              |
+|                  | `app.version`                      | String  | -       | App info          | `0.1.0`             |
+|                  | `app.environment`                  | String  | -       | App info          | `development`       |
+|                  | `app.locale`                       | String  | -       | Localization      | `it-IT`             |
+|                  | `app.defaultTimezone`              | String  | -       | Localization      | `Europe/Rome`       |
+| **Security**     | `security.password.*`              | Policy  | -       | Password rules    | 12 char, mixed case |
+|                  | `security.tokenVersionCacheTTL`    | Number  | -       | Cache TTL         | 60000ms             |
+|                  | `security.cors.developmentOrigins` | CSV     | -       | CORS dev          | localhost:3000,5173 |
+|                  | `security.session.maxAge`          | Number  | -       | Session duration  | 28800s (8h)         |
+|                  | `security.session.updateAge`       | Number  | -       | Session refresh   | 14400s (4h)         |
+| **Rate Limit**   | `rateLimit`                        | JSON    | -       | Rate policies     | Vedi seed           |
+| **Integrations** | `integrations.ldap.timeout`        | Number  | -       | LDAP timeout      | 10000ms             |
+|                  | `integrations.ldap.connectTimeout` | Number  | -       | LDAP connect      | 5000ms              |
+|                  | `integrations.smtp.timeout`        | Number  | -       | SMTP timeout      | 10000ms             |
+| **On-Demand**    | `mail.smtp`                        | SMTP    | ✓       | Email service     | Creato dall'admin   |
+|                  | `storage.smb`, `storage.drive`     | Storage | ✓       | File storage      | Creato dall'admin   |
+
+#### Caratteristiche
+
+- **Nessun .env**: Tutte le configurazioni sono in database (AppConfig)
+- **Cifratura**: AES-256-GCM per segreti sensibili
+- **Visualizzazione controllata**: modalità masked/raw con audit obbligatorio per raw
 - **Protezione accesso**: Solo gli amministratori possono accedere alle pagine di configurazione (`/settings/*`)
 - **Reset automatico**: Al cambio di sessione (logout/login), i form si resettano completamente
 

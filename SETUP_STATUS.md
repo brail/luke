@@ -82,15 +82,27 @@ pnpm --filter @luke/api run seed
 
 ### Segreti Generati
 
-- **auth.jwtSecret**: 32 bytes random, cifrato con AES-256-GCM
 - **auth.nextAuthSecret**: 32 bytes random, cifrato con AES-256-GCM
 - **Master key**: `~/.luke/secret.key` (creata automaticamente)
+- **JWT secret**: Derivato via HKDF-SHA256 dalla master key (non in DB)
+
+### Configurazioni AppConfig (29 totali)
+
+| Categoria        | Chiavi                                                                            | Cifrato  | Uso                     |
+| ---------------- | --------------------------------------------------------------------------------- | -------- | ----------------------- |
+| **Auth**         | `auth.nextAuthSecret`, `auth.ldap.*`, `auth.strategy`                             | Parziale | Autenticazione          |
+| **App**          | `app.name`, `app.version`, `app.environment`, `app.locale`, `app.defaultTimezone` | -        | Metadati app            |
+| **Security**     | `security.password.*`, `security.session.*`, `security.cors.*`                    | -        | Policy sicurezza        |
+| **Rate Limit**   | `rateLimit` (JSON)                                                                | -        | Politiche rate limiting |
+| **Integrations** | `integrations.ldap.*`, `integrations.smtp.*`                                      | -        | Timeout connessioni     |
+| **On-Demand**    | `mail.smtp`, `storage.*`                                                          | ✓        | Configurazioni admin    |
 
 ### Configurazioni LDAP
 
 - **Parametri server LDAP**: url, bindDN, bindPassword, searchBase, searchFilter, groupSearchBase, groupSearchFilter (tutti cifrati)
 - **Role mapping JSON**: mappa gruppi LDAP a ruoli app (admin/editor/viewer)
 - **Strategia autenticazione**: local-first, ldap-first, local-only, ldap-only
+- **Timeout configurabili**: `integrations.ldap.timeout` (10s), `integrations.ldap.connectTimeout` (5s)
 
 ### Rotazione Segreti
 
@@ -200,7 +212,7 @@ Il campo `bindPassword` nella configurazione LDAP è opzionale:
 - ✅ **Due livelli**: Globale (100 req/min) + Critico (10 req/min)
 - ✅ **Endpoint critici**: users, config, auth mutations
 - ✅ **Dev mode**: Limiti permissivi (1000/100 req/min)
-- ✅ **Configurabile** via AppConfig con fallback hardcoded
+- ✅ **Configurabile** via AppConfig `rateLimit` (JSON) con fallback hardcoded
 
 ### Idempotency
 

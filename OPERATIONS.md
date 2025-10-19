@@ -8,8 +8,104 @@ Documentazione operativa per SRE/DevOps su configurazioni runtime, rate-limiting
 - [Idempotency](#-idempotency)
 - [Session Management](#-session-management)
 - [Security Headers](#-security-headers)
+- [Security Hardcoded Values](#-security-hardcoded-values)
 - [Readiness & Health Checks](#-readiness--health-checks)
 - [Configurazioni per Ambiente](#-configurazioni-per-ambiente)
+
+---
+
+## 🔒 Security Hardcoded Values
+
+Alcuni valori di sicurezza sono **intenzionalmente hardcoded** per prevenire misconfigurazioni e garantire la sicurezza del sistema:
+
+### JWT Configuration
+
+```typescript
+// apps/api/src/lib/jwt.ts
+const JWT_CONFIG = {
+  algorithm: 'HS256', // Fisso: algoritmo sicuro
+  clockTolerance: 30, // Fisso: 30 secondi di tolleranza
+  defaultExpiresIn: '7d', // Fisso: 7 giorni di validità
+  issuer: 'luke-api', // Fisso: identificatore issuer
+  audience: 'luke-web', // Fisso: identificatore audience
+};
+```
+
+### HSTS Configuration
+
+```typescript
+// apps/api/src/lib/helmet.ts
+const HSTS_CONFIG = {
+  maxAge: 15552000, // Fisso: 180 giorni (NIST recommendation)
+  includeSubDomains: true, // Fisso: include sottodomini
+  preload: true, // Fisso: abilita preload
+};
+```
+
+### CSP Directives
+
+```typescript
+// apps/api/src/lib/helmet.ts
+const CSP_DIRECTIVES = {
+  defaultSrc: ["'self'"], // Fisso: solo self
+  scriptSrc: ["'self'"], // Fisso: no inline scripts
+  styleSrc: ["'self'", "'unsafe-inline'"], // Fisso: inline styles permessi
+  imgSrc: ["'self'", 'data:', 'https:'], // Fisso: immagini sicure
+  connectSrc: ["'self'"], // Fisso: solo self per XHR
+  fontSrc: ["'self'"], // Fisso: solo self per font
+  objectSrc: ["'none'"], // Fisso: no object/embed
+  mediaSrc: ["'self'"], // Fisso: solo self per media
+  frameSrc: ["'none'"], // Fisso: no iframe
+  baseUri: ["'self'"], // Fisso: solo self per base
+  formAction: ["'self'"], // Fisso: solo self per form
+  frameAncestors: ["'none'"], // Fisso: no embedding
+  upgradeInsecureRequests: [], // Fisso: upgrade HTTP a HTTPS
+};
+```
+
+### Encryption Configuration
+
+```typescript
+// apps/api/src/lib/configManager.ts
+const ENCRYPTION_CONFIG = {
+  algorithm: 'aes-256-gcm', // Fisso: algoritmo sicuro
+  keyLength: 32, // Fisso: 256 bit
+  ivLength: 16, // Fisso: 128 bit IV
+  tagLength: 16, // Fisso: 128 bit tag
+  saltLength: 32, // Fisso: 256 bit salt
+};
+```
+
+### Password Hashing
+
+```typescript
+// apps/api/src/lib/password.ts
+const ARGON2_CONFIG = {
+  type: argon2.argon2id, // Fisso: argon2id (resistente a side-channel)
+  memoryCost: 2 ** 16, // Fisso: 64 MB
+  timeCost: 3, // Fisso: 3 iterazioni
+  parallelism: 1, // Fisso: 1 thread
+  hashLength: 32, // Fisso: 256 bit hash
+};
+```
+
+### Perché Hardcoded?
+
+1. **Sicurezza**: Prevenire misconfigurazioni che potrebbero compromettere la sicurezza
+2. **Consistenza**: Garantire che tutti gli ambienti usino configurazioni sicure
+3. **Audit**: Valori fissi sono più facili da auditare e verificare
+4. **Performance**: Evitare overhead di lettura da database per valori critici
+5. **Compliance**: Rispettare standard di sicurezza (NIST, OWASP)
+
+### Configurazioni Parametrizzabili
+
+Le seguenti configurazioni **possono** essere modificate via AppConfig:
+
+- Rate limiting policies
+- Session duration e refresh
+- LDAP/SMTP timeouts
+- Password policy (con minimi hardcoded)
+- CORS origins (con fallback sicuri)
 
 ---
 
