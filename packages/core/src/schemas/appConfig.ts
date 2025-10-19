@@ -25,3 +25,35 @@ export const AppConfigSchema = z.object({
  * Tipo TypeScript inferito dallo schema AppConfig
  */
 export type AppConfig = z.infer<typeof AppConfigSchema>;
+
+/**
+ * Schema per una singola policy di rate limiting
+ */
+export const RateLimitPolicySchema = z.object({
+  /** Numero massimo di richieste consentite */
+  max: z.number().int().positive(),
+  /** Finestra temporale (es. '1m', '15m', '2h') */
+  timeWindow: z.string().min(2),
+  /** Tipo di chiave per il rate limiting */
+  keyBy: z.enum(['ip', 'userId']).default('ip'),
+});
+
+/**
+ * Schema per la configurazione completa del rate limiting
+ */
+export const RateLimitConfigSchema = z.object({
+  /** Policy per endpoint di login */
+  login: RateLimitPolicySchema.optional(),
+  /** Policy per cambio password */
+  passwordChange: RateLimitPolicySchema.optional(),
+  /** Policy per mutazioni di configurazione */
+  configMutations: RateLimitPolicySchema.optional(),
+  /** Policy per mutazioni di utenti */
+  userMutations: RateLimitPolicySchema.optional(),
+});
+
+/**
+ * Tipi TypeScript per rate limiting
+ */
+export type RateLimitPolicy = z.infer<typeof RateLimitPolicySchema>;
+export type RateLimitConfig = z.infer<typeof RateLimitConfigSchema>;

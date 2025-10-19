@@ -3,7 +3,7 @@
  * Verifica funzionalità di rate limiting per-rotta
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { rateLimitStore, RATE_LIMIT_CONFIG } from '../src/lib/ratelimit';
 
 describe('Rate-Limit Store', () => {
@@ -43,22 +43,50 @@ describe('Rate-Limit Store', () => {
       expect(rateLimitStore.isLimited(routeName, key, config)).toBe(true);
     });
 
-    it('should reset after window expires', async () => {
+    it('should reset after window expires with fake timers', () => {
+      vi.useFakeTimers();
+
       const routeName = 'login';
       const key = '192.168.1.1';
       const config = RATE_LIMIT_CONFIG[routeName];
 
-      // Raggiungi il limite
+      // Raggiungi limite
       for (let i = 0; i < config.max; i++) {
         rateLimitStore.record(routeName, key, config);
       }
-
       expect(rateLimitStore.isLimited(routeName, key, config)).toBe(true);
 
-      // Simula scadenza window (in test reale dovresti usare fake timers)
-      // Per ora testiamo che il cleanup funzioni
-      rateLimitStore.clear();
+      // Avanza il tempo di 61 secondi (oltre il window di 60s)
+      vi.advanceTimersByTime(61_000);
+
+      // Dovrebbe essere di nuovo permesso
       expect(rateLimitStore.isLimited(routeName, key, config)).toBe(false);
+
+      vi.useRealTimers();
+    });
+
+    it('should reset passwordChange after 15min window', () => {
+      vi.useFakeTimers();
+
+      const routeName = 'passwordChange';
+      const key = 'user-123';
+      const config = RATE_LIMIT_CONFIG[routeName];
+
+      // Raggiungi limite (3 req)
+      for (let i = 0; i < config.max; i++) {
+        rateLimitStore.record(routeName, key, config);
+      }
+      expect(rateLimitStore.isLimited(routeName, key, config)).toBe(true);
+
+      // Avanza 14min → ancora bloccato
+      vi.advanceTimersByTime(14 * 60 * 1000);
+      expect(rateLimitStore.isLimited(routeName, key, config)).toBe(true);
+
+      // Avanza 2min (totale 16min) → sbloccato
+      vi.advanceTimersByTime(2 * 60 * 1000);
+      expect(rateLimitStore.isLimited(routeName, key, config)).toBe(false);
+
+      vi.useRealTimers();
     });
   });
 

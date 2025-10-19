@@ -454,11 +454,39 @@ Suite completa in `apps/api/test/session.hardening.spec.ts`:
 ### Rate Limiting
 
 - **Per-rotta**: Limiti specifici per endpoint sensibili
-- **Configurazione hardcoded**: Valori conservativi per sicurezza
+- **Configurazione dinamica**: AppConfig → ENV → Default
 - **Key extraction**: IP per endpoint pubblici, userId per endpoint autenticati
 - **Store**: In-memory LRU cache con TTL e cleanup automatico
 
-**Limiti per rotta**:
+#### Rate Limiting Configuration
+
+**AppConfig (database)**:
+Store a JSON object in `rateLimit` key:
+
+```json
+{
+  "login": { "max": 10, "timeWindow": "2m", "keyBy": "ip" },
+  "passwordChange": { "max": 5, "timeWindow": "20m", "keyBy": "userId" },
+  "configMutations": { "max": 30, "timeWindow": "1m", "keyBy": "userId" },
+  "userMutations": { "max": 15, "timeWindow": "1m", "keyBy": "userId" }
+}
+```
+
+**Environment Variables**:
+Override individual routes:
+
+- `LUKE_RATE_LIMIT_LOGIN_MAX=10`
+- `LUKE_RATE_LIMIT_LOGIN_WINDOW=2m`
+- `LUKE_RATE_LIMIT_LOGIN_KEY_BY=ip`
+- `LUKE_RATE_LIMIT_PASSWORDCHANGE_MAX=5`
+- `LUKE_RATE_LIMIT_PASSWORDCHANGE_WINDOW=20m`
+- `LUKE_RATE_LIMIT_PASSWORDCHANGE_KEY_BY=userId`
+- `LUKE_RATE_LIMIT_CONFIGMUTATIONS_MAX=30`
+- `LUKE_RATE_LIMIT_CONFIGMUTATIONS_WINDOW=1m`
+- `LUKE_RATE_LIMIT_USERMUTATIONS_MAX=15`
+- `LUKE_RATE_LIMIT_USERMUTATIONS_WINDOW=1m`
+
+**Default Values (fallback)**:
 
 | Endpoint            | Limite | Window | Key By |
 | ------------------- | ------ | ------ | ------ |
@@ -466,6 +494,10 @@ Suite completa in `apps/api/test/session.hardening.spec.ts`:
 | `me.changePassword` | 3 req  | 15 min | userId |
 | `config.*`          | 20 req | 1 min  | userId |
 | `users.*`           | 10 req | 1 min  | userId |
+
+**Resolution Order**: AppConfig → ENV → Defaults
+
+**Time Window Format**: Supporta `30s`, `1m`, `2h` (secondi, minuti, ore)
 
 ### Idempotency
 

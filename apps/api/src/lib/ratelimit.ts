@@ -11,6 +11,7 @@
 
 import pino from 'pino';
 import { TRPCError } from '@trpc/server';
+import { resolveRateLimitPolicy } from './rateLimitPolicy';
 
 // Logger interno per rate-limit
 const logger = pino({ level: 'info' });
@@ -268,15 +269,24 @@ export function extractRateLimitKey(
 /**
  * Middleware tRPC per rate-limit
  * Factory che crea middleware per una specifica rotta
+ * Usa risoluzione dinamica: AppConfig → ENV → Default
  *
  * @param routeName - Nome della rotta (deve essere in RATE_LIMIT_CONFIG)
  * @returns Middleware tRPC
  */
 export function withRateLimit(routeName: keyof typeof RATE_LIMIT_CONFIG) {
   return async ({ ctx, next }: any) => {
-    const config = RATE_LIMIT_CONFIG[routeName];
-
     try {
+      // Risolvi policy dinamicamente
+      const config = await resolveRateLimitPolicy(
+        routeName as
+          | 'login'
+          | 'passwordChange'
+          | 'configMutations'
+          | 'userMutations',
+        ctx.prisma
+      );
+
       // Estrai chiave per rate-limit
       const key = extractRateLimitKey(ctx, config.keyBy);
 

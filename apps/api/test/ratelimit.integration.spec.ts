@@ -211,4 +211,76 @@ describe('Rate-Limit Integration', () => {
       expect(stats.maxSize).toBe(1000);
     });
   });
+
+  describe('ENV-based rate limits', () => {
+    it('should apply custom limit from ENV variables', async () => {
+      // Simula ENV override per login: 3 req/1min
+      process.env.LUKE_RATE_LIMIT_LOGIN_MAX = '3';
+      process.env.LUKE_RATE_LIMIT_LOGIN_WINDOW = '1m';
+
+      const caller = createCallerWithIP('192.168.1.100', null);
+
+      // Con limite custom di 3, la 4a richiesta dovrebbe essere bloccata
+      for (let i = 0; i < 3; i++) {
+        await expectToThrow(
+          caller.auth.login({ username: 'test', password: 'wrong' }),
+          { code: 'UNAUTHORIZED' }
+        );
+      }
+
+      await expectToThrow(
+        caller.auth.login({ username: 'test', password: 'wrong' }),
+        { code: 'TOO_MANY_REQUESTS' }
+      );
+
+      // Cleanup
+      delete process.env.LUKE_RATE_LIMIT_LOGIN_MAX;
+      delete process.env.LUKE_RATE_LIMIT_LOGIN_WINDOW;
+    });
+
+    it('should apply custom keyBy from ENV variables', async () => {
+      // Simula ENV override per passwordChange: 2 req/5min con keyBy IP
+      process.env.LUKE_RATE_LIMIT_PASSWORDCHANGE_MAX = '2';
+      process.env.LUKE_RATE_LIMIT_PASSWORDCHANGE_WINDOW = '5m';
+      process.env.LUKE_RATE_LIMIT_PASSWORDCHANGE_KEY_BY = 'ip';
+
+      const caller = createCallerWithIP('192.168.1.100', null);
+
+      // Crea un utente per testare cambio password
+      const adminCaller = createCallerAs('admin');
+      const testUser = await adminCaller.users.create({
+        username: 'testuser',
+        email: 'testuser@test.com',
+        password: 'Test123!',
+        role: 'viewer',
+      });
+
+      // Crea caller per l'utente test
+      const userCaller = createCallerAs('viewer');
+
+      // Con limite custom di 2, la 3a richiesta dovrebbe essere bloccata
+      for (let i = 0; i < 2; i++) {
+        await expectToThrow(
+          userCaller.me.changePassword({
+            currentPassword: 'WrongPassword',
+            newPassword: 'NewPassword123!',
+          }),
+          { code: 'UNAUTHORIZED' }
+        );
+      }
+
+      await expectToThrow(
+        userCaller.me.changePassword({
+          currentPassword: 'WrongPassword',
+          newPassword: 'NewPassword123!',
+        }),
+        { code: 'TOO_MANY_REQUESTS' }
+      );
+
+      // Cleanup
+      delete process.env.LUKE_RATE_LIMIT_PASSWORDCHANGE_MAX;
+      delete process.env.LUKE_RATE_LIMIT_PASSWORDCHANGE_WINDOW;
+      delete process.env.LUKE_RATE_LIMIT_PASSWORDCHANGE_KEY_BY;
+    });
+  });
 });
