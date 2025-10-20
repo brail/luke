@@ -10,12 +10,10 @@ import { PrismaClient } from '@prisma/client';
 import Fastify from 'fastify';
 
 import { buildHelmetConfig } from '../src/lib/helmet';
-import { createContext, type Context } from '../src/lib/trpc';
+import { type Context } from '../src/lib/trpc';
 import { appRouter } from '../src/routers/index';
 
 import type { UserSession } from '../src/lib/auth';
-
-
 
 /**
  * Database di test isolato
@@ -26,11 +24,12 @@ let testPrisma: PrismaClient;
  * Inizializza il database di test
  */
 export async function setupTestDb(): Promise<PrismaClient> {
-  // Usa il database principale per i test (dev.db) per evitare problemi di migrazione
+  // Usa un database di test completamente separato
+  const testDbPath = './test.db';
   testPrisma = new PrismaClient({
     datasources: {
       db: {
-        url: 'file:./dev.db',
+        url: `file:${testDbPath}`,
       },
     },
   });
@@ -41,40 +40,13 @@ export async function setupTestDb(): Promise<PrismaClient> {
     execSync('npx prisma migrate deploy', {
       cwd: process.cwd(),
       stdio: 'pipe',
+      env: {
+        ...process.env,
+        DATABASE_URL: `file:${testDbPath}`,
+      },
     });
   } catch (error) {
     console.warn('Failed to apply migrations:', error);
-  }
-
-  // Pulisci il database in modo sicuro (ignora errori se le tabelle non esistono)
-  try {
-    await testPrisma.auditLog.deleteMany();
-  } catch (error) {
-    // Ignora errori se la tabella non esiste
-  }
-
-  try {
-    await testPrisma.localCredential.deleteMany();
-  } catch (error) {
-    // Ignora errori se la tabella non esiste
-  }
-
-  try {
-    await testPrisma.identity.deleteMany();
-  } catch (error) {
-    // Ignora errori se la tabella non esiste
-  }
-
-  try {
-    await testPrisma.user.deleteMany();
-  } catch (error) {
-    // Ignora errori se la tabella non esiste
-  }
-
-  try {
-    await testPrisma.appConfig.deleteMany();
-  } catch (error) {
-    // Ignora errori se la tabella non esiste
   }
 
   return testPrisma;
@@ -85,38 +57,14 @@ export async function setupTestDb(): Promise<PrismaClient> {
  */
 export async function teardownTestDb(): Promise<void> {
   if (testPrisma) {
-    // Pulisci il database in modo sicuro
-    try {
-      await testPrisma.auditLog.deleteMany();
-    } catch (error) {
-      // Ignora errori se la tabella non esiste
-    }
-
-    try {
-      await testPrisma.localCredential.deleteMany();
-    } catch (error) {
-      // Ignora errori se la tabella non esiste
-    }
-
-    try {
-      await testPrisma.identity.deleteMany();
-    } catch (error) {
-      // Ignora errori se la tabella non esiste
-    }
-
-    try {
-      await testPrisma.user.deleteMany();
-    } catch (error) {
-      // Ignora errori se la tabella non esiste
-    }
-
-    try {
-      await testPrisma.appConfig.deleteMany();
-    } catch (error) {
-      // Ignora errori se la tabella non esiste
-    }
-
     await testPrisma.$disconnect();
+
+    // Rimuovi il file del database di test
+    const { unlinkSync, existsSync } = await import('fs');
+    const testDbPath = './test.db';
+    if (existsSync(testDbPath)) {
+      unlinkSync(testDbPath);
+    }
   }
 }
 
@@ -169,6 +117,12 @@ export function createTestContext(session: UserSession | null = null): Context {
   return {
     prisma: testPrisma,
     session,
+    logger: {
+      info: () => {},
+      error: () => {},
+      warn: () => {},
+      debug: () => {},
+    },
     req: {
       headers: { 'x-luke-trace-id': randomUUID() },
       ip: '127.0.0.1',
@@ -187,7 +141,9 @@ export function createTestContext(session: UserSession | null = null): Context {
 /**
  * Crea un caller tRPC per un ruolo specifico
  */
-export function createCallerAs(role: 'admin' | 'editor' | 'viewer' | null) {
+export async function createCallerAs(
+  role: 'admin' | 'editor' | 'viewer' | null
+) {
   if (role === null) {
     // Nessuna sessione (non autenticato)
     const ctx = createTestContext(null);
@@ -195,7 +151,7 @@ export function createCallerAs(role: 'admin' | 'editor' | 'viewer' | null) {
   }
 
   // Crea utente e sessione per il ruolo
-  const { session } = createTestUser(role);
+  const { session } = await createTestUser(role);
   const ctx = createTestContext(session);
   return appRouter.createCaller(ctx);
 }
@@ -218,15 +174,20 @@ export function createAnonymousCaller() {
 /**
  * Crea un caller tRPC con idempotency-key specifica
  */
-export function createCallerWithIdempotency(
+export async function createCallerWithIdempotency(
   idempotencyKey: string,
   role: 'admin' | 'editor' | 'viewer' | null = null
 ) {
-  const ctx = createTestContext(role ? createTestUser(role).session : null);
-
-  // Aggiungi idempotency-key agli headers
-  ctx.req.headers['idempotency-key'] = idempotencyKey;
-
+  const base = role
+    ? createTestContext((await createTestUser(role)).session)
+    : createTestContext(null);
+  const ctx: Context = {
+    ...base,
+    req: {
+      ...base.req,
+      headers: { ...base.req.headers, 'idempotency-key': idempotencyKey },
+    },
+  };
   return appRouter.createCaller(ctx);
 }
 
@@ -256,12 +217,14 @@ export function mockReqWithHeader(
 /**
  * Crea un caller tRPC con IP specifico (per test rate-limit)
  */
-export function createCallerWithIP(
+export async function createCallerWithIP(
   ip: string,
   role: 'admin' | 'editor' | 'viewer' | null = null
 ) {
-  const ctx = createTestContext(role ? createTestUser(role).session : null);
-  ctx.req.ip = ip;
+  const base = role
+    ? createTestContext((await createTestUser(role)).session)
+    : createTestContext(null);
+  const ctx: Context = { ...base, req: { ...base.req, ip } };
   return appRouter.createCaller(ctx);
 }
 
@@ -342,7 +305,7 @@ export async function buildTestServer() {
   await fastify.register(helmet, buildHelmetConfig('test'));
 
   // Registra route di test per verificare headers
-  fastify.get('/api/health', async (request, reply) => {
+  fastify.get('/api/health', async () => {
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
@@ -353,7 +316,7 @@ export async function buildTestServer() {
   });
 
   // Route root per test
-  fastify.get('/', async (request, reply) => {
+  fastify.get('/', async () => {
     return {
       message: 'Luke API Test Server',
       version: 'test',

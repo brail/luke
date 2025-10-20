@@ -53,7 +53,30 @@ export const RateLimitConfigSchema = z.object({
 });
 
 /**
+ * Schema per la configurazione di resilienza LDAP
+ */
+export const LdapResilienceSchema = z.object({
+  /** Timeout per operazione LDAP in millisecondi */
+  timeoutMs: z.number().int().positive().default(3000),
+  /** Numero massimo di retry per operazioni fallite */
+  maxRetries: z.number().int().min(0).default(2),
+  /** Delay base per exponential backoff in millisecondi */
+  baseDelayMs: z.number().int().min(10).default(200),
+  /** Soglia di failure per aprire il circuit breaker */
+  breakerFailureThreshold: z.number().int().min(1).default(5),
+  /** Cooldown del circuit breaker in millisecondi */
+  breakerCooldownMs: z.number().int().min(500).default(10000),
+  /** Numero massimo di tentativi in stato half-open */
+  halfOpenMaxAttempts: z.number().int().min(1).default(1),
+});
+
+/**
  * Tipi TypeScript per rate limiting
  */
 export type RateLimitPolicy = z.infer<typeof RateLimitPolicySchema>;
 export type RateLimitConfig = z.infer<typeof RateLimitConfigSchema>;
+
+/**
+ * Tipo TypeScript per configurazione resilienza LDAP
+ */
+export type LdapResilienceConfig = z.infer<typeof LdapResilienceSchema>;

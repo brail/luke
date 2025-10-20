@@ -46,7 +46,7 @@ export async function setupTestDb(): Promise<PrismaClient> {
       stdio: 'pipe',
     });
 
-    execSync('pnpm prisma db push', {
+    execSync('pnpm prisma migrate deploy', {
       cwd: join(__dirname, '../../'),
       stdio: 'pipe',
       env: {

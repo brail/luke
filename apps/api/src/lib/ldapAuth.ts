@@ -4,9 +4,14 @@
  */
 
 import { TRPCError } from '@trpc/server';
-import * as ldap from 'ldapjs';
+import pino from 'pino';
 
-import { getLdapConfig, type LdapConfig } from './configManager';
+import {
+  getLdapConfig,
+  getLdapResilienceConfig,
+  type LdapConfig,
+} from './configManager';
+import { ResilientLdapClient } from './ldapClient';
 
 import type { PrismaClient, User } from '@prisma/client';
 
@@ -22,59 +27,46 @@ export async function authenticateViaLdap(
   username: string,
   password: string
 ): Promise<User | null> {
-  let client: ldap.Client | null = null;
+  const logger = pino({ level: 'info' });
+  let ldapClient: ResilientLdapClient | null = null;
 
   try {
-    // Recupera configurazione LDAP
-    const config = await getLdapConfig(prisma);
+    // Recupera configurazioni LDAP
+    const [config, resilienceConfig] = await Promise.all([
+      getLdapConfig(prisma),
+      getLdapResilienceConfig(prisma),
+    ]);
 
     // Verifica che LDAP sia abilitato
     if (!config.enabled) {
-      console.log('LDAP authentication disabled');
+      logger.debug('LDAP authentication disabled');
       return null;
     }
 
     // Verifica che la configurazione sia completa
     if (!config.url || !config.searchBase || !config.searchFilter) {
-      console.error('LDAP configuration incomplete');
+      logger.error('LDAP configuration incomplete');
       throw new TRPCError({
         code: 'INTERNAL_SERVER_ERROR',
         message: 'Configurazione LDAP incompleta',
       });
     }
 
-    console.log(`Attempting LDAP authentication for user: ${username}`);
+    logger.info({ username }, 'Attempting LDAP authentication');
 
-    // Crea client LDAP
-    client = ldap.createClient({
-      url: config.url,
-      timeout: 10000, // 10 secondi timeout
-      connectTimeout: 5000, // 5 secondi per connessione
-    });
+    // Crea client LDAP resiliente
+    ldapClient = new ResilientLdapClient(config, resilienceConfig, logger);
+    await ldapClient.connect();
 
     // Bind amministrativo per cercare l'utente
     if (config.bindDN && config.bindPassword) {
-      await new Promise<void>((resolve, reject) => {
-        client!.bind(config.bindDN, config.bindPassword, err => {
-          if (err) {
-            console.error('LDAP admin bind failed:', err);
-            reject(
-              new TRPCError({
-                code: 'INTERNAL_SERVER_ERROR',
-                message: 'Impossibile connettersi al server LDAP',
-              })
-            );
-          } else {
-            resolve();
-          }
-        });
-      });
+      await ldapClient.bind(config.bindDN, config.bindPassword);
     }
 
     // Cerca l'utente
-    const userResult = await searchUser(client, config, username);
+    const userResult = await searchUser(ldapClient, config, username);
     if (!userResult) {
-      console.log(`User ${username} not found in LDAP`);
+      logger.info({ username }, 'User not found in LDAP');
       return null;
     }
 
@@ -82,17 +74,17 @@ export async function authenticateViaLdap(
 
     // Verifica le credenziali dell'utente
     const isValidCredentials = await verifyUserCredentials(
-      client,
+      ldapClient,
       userDN,
       password
     );
     if (!isValidCredentials) {
-      console.log(`Invalid credentials for user ${username}`);
+      logger.info({ username }, 'Invalid credentials for user');
       return null;
     }
 
     // Cerca i gruppi dell'utente
-    const userGroups = await searchUserGroups(client, config, userDN);
+    const userGroups = await searchUserGroups(ldapClient, config, userDN);
 
     // Determina il ruolo basato sui gruppi
     const role = determineUserRole(userGroups, config.roleMapping);
@@ -106,31 +98,31 @@ export async function authenticateViaLdap(
       userAttributes
     );
 
-    console.log(
-      `LDAP authentication successful for user: ${username}, role: ${role}`
-    );
+    logger.info({ username, role }, 'LDAP authentication successful');
     return user;
   } catch (error) {
     if (error instanceof TRPCError) {
       throw error;
     }
 
-    console.error('LDAP authentication error:', error);
+    logger.error(
+      { error: error instanceof Error ? error.message : 'Unknown error' },
+      'LDAP authentication error'
+    );
     throw new TRPCError({
       code: 'INTERNAL_SERVER_ERROR',
       message: 'Errore durante autenticazione LDAP',
     });
   } finally {
     // Chiudi connessione LDAP
-    if (client) {
+    if (ldapClient) {
       try {
-        await new Promise<void>(resolve => {
-          client!.unbind(() => {
-            resolve();
-          });
-        });
+        await ldapClient.unbind();
       } catch (error) {
-        console.warn('Error closing LDAP connection:', error);
+        logger.warn(
+          { error: error instanceof Error ? error.message : 'Unknown error' },
+          'Error closing LDAP connection'
+        );
       }
     }
   }
@@ -140,160 +132,99 @@ export async function authenticateViaLdap(
  * Cerca un utente nel server LDAP
  */
 async function searchUser(
-  client: ldap.Client,
+  client: ResilientLdapClient,
   config: LdapConfig,
   username: string
 ): Promise<{ dn: string; attributes: any } | null> {
-  return new Promise((resolve, reject) => {
-    const searchFilter = config.searchFilter.replace(
-      /\$\{username\}/g,
-      username
-    );
+  const searchFilter = config.searchFilter.replace(/\$\{username\}/g, username);
 
-    console.log(`LDAP Search - Base: ${config.searchBase}`);
-    console.log(`LDAP Search - Filter: ${searchFilter}`);
-    console.log(`LDAP Search - Username: ${username}`);
+  const options = {
+    filter: searchFilter,
+    scope: 'sub' as const,
+    attributes: [
+      'dn',
+      'cn',
+      'mail',
+      'uid',
+      'displayName',
+      'givenName',
+      'sn',
+      'firstName',
+      'lastName',
+    ],
+  };
 
-    client.search(
-      config.searchBase,
-      {
-        filter: searchFilter,
-        scope: 'sub',
-        attributes: [
-          'dn',
-          'cn',
-          'mail',
-          'uid',
-          'displayName',
-          'givenName',
-          'sn',
-          'firstName',
-          'lastName',
-        ],
-      },
-      (err, res) => {
-        if (err) {
-          console.error('LDAP search error:', err);
-          reject(
-            new TRPCError({
-              code: 'INTERNAL_SERVER_ERROR',
-              message: 'Errore durante ricerca utente LDAP',
-            })
-          );
-          return;
-        }
+  try {
+    const entries = await client.search(config.searchBase, options);
 
-        let foundUser: { dn: string; attributes: any } | null = null;
+    if (entries.length === 0) {
+      return null;
+    }
 
-        res.on('searchEntry', entry => {
-          const dn = entry.dn.toString();
-          const attributes = entry.attributes.reduce((acc: any, attr: any) => {
-            acc[attr.type] = attr.values;
-            return acc;
-          }, {});
+    // Prendi il primo risultato
+    const entry = entries[0];
+    const dn = entry.dn.toString();
+    const attributes = entry.attributes.reduce((acc: any, attr: any) => {
+      acc[attr.type] = attr.values;
+      return acc;
+    }, {});
 
-          foundUser = { dn, attributes };
-          console.log(`Found user DN: ${dn}`);
-          console.log(`User attributes:`, attributes);
-        });
-
-        res.on('error', err => {
-          console.error('LDAP search stream error:', err);
-          reject(
-            new TRPCError({
-              code: 'INTERNAL_SERVER_ERROR',
-              message: 'Errore durante ricerca utente LDAP',
-            })
-          );
-        });
-
-        res.on('end', () => {
-          console.log(
-            `LDAP search completed. Found user: ${foundUser ? foundUser.dn : 'none'}`
-          );
-          resolve(foundUser);
-        });
-      }
-    );
-  });
+    return { dn, attributes };
+  } catch (error) {
+    // Il client resiliente gestisce già la mappatura degli errori
+    throw error;
+  }
 }
 
 /**
  * Verifica le credenziali dell'utente
  */
 async function verifyUserCredentials(
-  client: ldap.Client,
+  client: ResilientLdapClient,
   userDN: string,
   password: string
 ): Promise<boolean> {
-  return new Promise(resolve => {
-    client.bind(userDN, password, err => {
-      if (err) {
-        console.log(`LDAP bind failed for ${userDN}:`, err.message);
-        resolve(false);
-      } else {
-        console.log(`LDAP bind successful for ${userDN}`);
-        resolve(true);
-      }
-    });
-  });
+  try {
+    await client.bind(userDN, password);
+    return true;
+  } catch (error) {
+    // Se è un errore di credenziali, restituisci false
+    if (error instanceof TRPCError && error.code === 'UNAUTHORIZED') {
+      return false;
+    }
+    // Per altri errori (rete, timeout), rilancia
+    throw error;
+  }
 }
 
 /**
  * Cerca i gruppi dell'utente
  */
 async function searchUserGroups(
-  client: ldap.Client,
+  client: ResilientLdapClient,
   config: LdapConfig,
   userDN: string
 ): Promise<string[]> {
   if (!config.groupSearchBase || !config.groupSearchFilter) {
-    console.log('Group search not configured, skipping group lookup');
     return [];
   }
 
-  return new Promise((resolve, _reject) => {
-    const groupFilter = config.groupSearchFilter.replace(
-      /\$\{userDN\}/g,
-      userDN
-    );
+  const groupFilter = config.groupSearchFilter.replace(/\$\{userDN\}/g, userDN);
 
-    client.search(
-      config.groupSearchBase,
-      {
-        filter: groupFilter,
-        scope: 'sub',
-        attributes: ['cn', 'dn'],
-      },
-      (err, res) => {
-        if (err) {
-          console.error('LDAP group search error:', err);
-          // Non fallire l'autenticazione per errori di ricerca gruppi
-          resolve([]);
-          return;
-        }
+  const options = {
+    filter: groupFilter,
+    scope: 'sub' as const,
+    attributes: ['cn', 'dn'],
+  };
 
-        const groups: string[] = [];
-
-        res.on('searchEntry', entry => {
-          const groupDN = entry.dn.toString();
-          groups.push(groupDN);
-          console.log(`Found user group: ${groupDN}`);
-        });
-
-        res.on('error', err => {
-          console.error('LDAP group search stream error:', err);
-          // Non fallire l'autenticazione per errori di ricerca gruppi
-          resolve([]);
-        });
-
-        res.on('end', () => {
-          console.log(`User belongs to ${groups.length} groups`);
-          resolve(groups);
-        });
-      }
-    );
-  });
+  try {
+    const entries = await client.search(config.groupSearchBase, options);
+    return entries.map(entry => entry.dn.toString());
+  } catch (error) {
+    // Non fallire l'autenticazione per errori di ricerca gruppi
+    // Log dell'errore ma continua
+    return [];
+  }
 }
 
 /**

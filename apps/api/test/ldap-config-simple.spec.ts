@@ -72,3 +72,4 @@ describe('LDAP Config Management (Simple)', () => {
     expect(config.roleMapping).toEqual({}); // Valore di default
   });
 });
+

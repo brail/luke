@@ -107,6 +107,80 @@ pnpm -w -F @luke/api db:seed
 pnpm -w -F @luke/api prisma:generate
 ```
 
+## 🔒 LDAP Resilienza
+
+### Panoramica
+
+Il sistema LDAP include meccanismi di resilienza per gestire errori di rete, timeout e indisponibilità del servizio senza impattare la disponibilità dell'applicazione.
+
+### Circuit Breaker
+
+Il circuit breaker gestisce automaticamente la disponibilità del servizio LDAP:
+
+```
+CLOSED → (5 failures) → OPEN → (10s cooldown) → HALF_OPEN → (1 success) → CLOSED
+```
+
+**Stati**:
+
+- **CLOSED**: Operazioni normali, contatore failure attivo
+- **OPEN**: Servizio considerato down, richieste rifiutate immediatamente
+- **HALF_OPEN**: Stato di prova, accetta 1 richiesta per testare il servizio
+
+### Parametri Configurabili (AppConfig)
+
+Configurazione tramite UI in `auth.ldap.resilience.*`:
+
+| Parametro                 | Default | Descrizione                               |
+| ------------------------- | ------- | ----------------------------------------- |
+| `timeoutMs`               | 3000    | Timeout per operazione LDAP (ms)          |
+| `maxRetries`              | 2       | Numero massimo di retry                   |
+| `baseDelayMs`             | 200     | Delay base per exponential backoff (ms)   |
+| `breakerFailureThreshold` | 5       | Soglia failure per aprire circuit breaker |
+| `breakerCooldownMs`       | 10000   | Cooldown circuit breaker (ms)             |
+| `halfOpenMaxAttempts`     | 1       | Tentativi max in stato half-open          |
+
+### Error Mapping
+
+Gli errori LDAP vengono mappati in `TRPCError` per gestione semantica:
+
+| Errore LDAP                               | TRPCError Code        | Fallback Sicuro? | Descrizione                   |
+| ----------------------------------------- | --------------------- | ---------------- | ----------------------------- |
+| Network errors (timeout/refused/notfound) | `SERVICE_UNAVAILABLE` | ✅ Sì            | LDAP non raggiungibile        |
+| Circuit breaker open                      | `SERVICE_UNAVAILABLE` | ✅ Sì            | Servizio temporaneamente down |
+| Invalid credentials (bind 49)             | `UNAUTHORIZED`        | ❌ No            | Credenziali errate            |
+| Operation network failure                 | `BAD_GATEWAY`         | ✅ Sì            | Errore durante operazione     |
+| Invalid filter/syntax                     | `BAD_REQUEST`         | ❌ No            | Errore di configurazione      |
+
+### Strategie di Autenticazione
+
+**`local-first`**: Prova locale → LDAP (fallback sicuro)
+**`ldap-first`**: Prova LDAP → locale (solo per errori infrastrutturali)
+
+⚠️ **Sicurezza**: Con `ldap-first`, il fallback locale avviene **solo** per errori `SERVICE_UNAVAILABLE`/`BAD_GATEWAY`, mai per `UNAUTHORIZED` (credenziali errate).
+
+### Esempio Configurazione
+
+```json
+{
+  "auth.ldap.resilience.timeoutMs": "5000",
+  "auth.ldap.resilience.maxRetries": "3",
+  "auth.ldap.resilience.baseDelayMs": "300",
+  "auth.ldap.resilience.breakerFailureThreshold": "3",
+  "auth.ldap.resilience.breakerCooldownMs": "15000",
+  "auth.ldap.resilience.halfOpenMaxAttempts": "2"
+}
+```
+
+### Monitoraggio
+
+I log includono:
+
+- Transizioni circuit breaker con timestamp
+- Retry attempts con delay
+- Error mapping con traceId
+- Redazione automatica password/credenziali
+
 ### Note Importanti
 
 - **Master Key**: La master key in `~/.luke/secret.key` è sempre preservata

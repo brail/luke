@@ -136,15 +136,30 @@ export const authRouter = router({
                 );
                 authMethod = 'ldap';
               } catch (ldapError: unknown) {
-                const errorMessage =
-                  ldapError instanceof Error
-                    ? ldapError.message
-                    : 'Unknown LDAP error';
-                console.log(
-                  `LDAP connection error for ${username}:`,
-                  errorMessage
-                );
-                // Se LDAP non è raggiungibile, mantieni null (autenticazione fallita)
+                if (ldapError instanceof TRPCError) {
+                  if (
+                    ldapError.code === 'SERVICE_UNAVAILABLE' ||
+                    ldapError.code === 'BAD_GATEWAY'
+                  ) {
+                    console.log(
+                      `LDAP unavailable for ${username}, skipping fallback`
+                    );
+                    // LDAP down - mantieni null (autenticazione fallita)
+                  } else {
+                    // UNAUTHORIZED, BAD_REQUEST, etc. - non fare fallback per sicurezza
+                    throw ldapError;
+                  }
+                } else {
+                  const errorMessage =
+                    ldapError instanceof Error
+                      ? ldapError.message
+                      : 'Unknown LDAP error';
+                  console.log(
+                    `LDAP connection error for ${username}:`,
+                    errorMessage
+                  );
+                  // Se LDAP non è raggiungibile, mantieni null (autenticazione fallita)
+                }
               }
             }
             break;
@@ -172,21 +187,42 @@ export const authRouter = router({
                 authMethod = 'local';
               }
             } catch (ldapError: unknown) {
-              const errorMessage =
-                ldapError instanceof Error
-                  ? ldapError.message
-                  : 'Unknown LDAP error';
-              console.log(
-                `LDAP connection error for ${username}, falling back to local:`,
-                errorMessage
-              );
-              // Se LDAP non è raggiungibile, fallback a locale
-              authenticatedUser = await authenticateLocal(
-                ctx.prisma,
-                username,
-                password
-              );
-              authMethod = 'local';
+              if (ldapError instanceof TRPCError) {
+                // SOLO fallback per errori infrastrutturali
+                if (
+                  ldapError.code === 'SERVICE_UNAVAILABLE' ||
+                  ldapError.code === 'BAD_GATEWAY'
+                ) {
+                  console.log(
+                    `LDAP unavailable for ${username}, falling back to local`
+                  );
+                  authenticatedUser = await authenticateLocal(
+                    ctx.prisma,
+                    username,
+                    password
+                  );
+                  authMethod = 'local';
+                } else {
+                  // UNAUTHORIZED, BAD_REQUEST, etc. - NON fare fallback per sicurezza
+                  throw ldapError;
+                }
+              } else {
+                const errorMessage =
+                  ldapError instanceof Error
+                    ? ldapError.message
+                    : 'Unknown LDAP error';
+                console.log(
+                  `LDAP connection error for ${username}, falling back to local:`,
+                  errorMessage
+                );
+                // Se LDAP non è raggiungibile, fallback a locale
+                authenticatedUser = await authenticateLocal(
+                  ctx.prisma,
+                  username,
+                  password
+                );
+                authMethod = 'local';
+              }
             }
             break;
 

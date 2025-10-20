@@ -10,6 +10,7 @@ import { homedir } from 'os';
 import { join } from 'path';
 
 import pino from 'pino';
+import { LdapResilienceSchema, type LdapResilienceConfig } from '@luke/core';
 
 import type { PrismaClient } from '@prisma/client';
 
@@ -622,4 +623,67 @@ export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
   };
 
   return result;
+}
+
+/**
+ * Recupera la configurazione di resilienza LDAP dal database
+ * @param prisma - Client Prisma
+ * @returns Configurazione resilienza LDAP con fallback ai default dello schema
+ */
+export async function getLdapResilienceConfig(
+  prisma: PrismaClient
+): Promise<LdapResilienceConfig> {
+  const configKeys = [
+    'auth.ldap.resilience.timeoutMs',
+    'auth.ldap.resilience.maxRetries',
+    'auth.ldap.resilience.baseDelayMs',
+    'auth.ldap.resilience.breakerFailureThreshold',
+    'auth.ldap.resilience.breakerCooldownMs',
+    'auth.ldap.resilience.halfOpenMaxAttempts',
+  ];
+
+  const configs = await prisma.appConfig.findMany({
+    where: {
+      key: {
+        in: configKeys,
+      },
+    },
+  });
+
+  // Crea mappa per accesso rapido
+  const configMap = new Map(configs.map(c => [c.key, c]));
+
+  // Helper per recuperare valore numerico con fallback
+  const getNumericValue = (key: string, defaultValue: number): number => {
+    const config = configMap.get(key);
+    if (!config) return defaultValue;
+
+    const value = config.isEncrypted
+      ? decryptValue(config.value)
+      : config.value;
+    const parsed = parseInt(value, 10);
+    return isNaN(parsed) ? defaultValue : parsed;
+  };
+
+  // Recupera i valori con fallback ai default dello schema
+  const rawConfig = {
+    timeoutMs: getNumericValue('auth.ldap.resilience.timeoutMs', 3000),
+    maxRetries: getNumericValue('auth.ldap.resilience.maxRetries', 2),
+    baseDelayMs: getNumericValue('auth.ldap.resilience.baseDelayMs', 200),
+    breakerFailureThreshold: getNumericValue(
+      'auth.ldap.resilience.breakerFailureThreshold',
+      5
+    ),
+    breakerCooldownMs: getNumericValue(
+      'auth.ldap.resilience.breakerCooldownMs',
+      10000
+    ),
+    halfOpenMaxAttempts: getNumericValue(
+      'auth.ldap.resilience.halfOpenMaxAttempts',
+      1
+    ),
+  };
+
+  // Valida e normalizza usando lo schema Zod
+  return LdapResilienceSchema.parse(rawConfig);
 }
