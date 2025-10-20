@@ -114,6 +114,7 @@ pnpm --filter @luke/core build  # Solo core package
 - **Domini isolati**:
   - `api.jwt` → JWT API backend
   - `nextauth.secret` → NextAuth web sessions
+  - `cookie.secret` → Fastify cookie firmati
 - **Scope**: Server-only, mai esposto via HTTP
 - **Rotazione**: Rigenera `~/.luke/secret.key` per invalidare tutti i token
 - **Nessun endpoint pubblico**: Segreti mai esposti via API

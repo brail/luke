@@ -11,7 +11,11 @@ import { PrismaClient } from '@prisma/client';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import Fastify from 'fastify';
 
-import { validateMasterKey, deriveSecret } from '@luke/core/server';
+import {
+  validateMasterKey,
+  deriveSecret,
+  HKDF_INFO_COOKIE,
+} from '@luke/core/server';
 
 import { buildCorsAllowedOrigins } from './lib/cors';
 import { createContext } from './lib/trpc';
@@ -85,8 +89,9 @@ const prisma = new PrismaClient({
  */
 async function registerSecurityPlugins() {
   // Cookie plugin per gestione sessioni
+  // Secret derivato via HKDF-SHA256 dalla master key (dominio: cookie.secret)
   await fastify.register(cookie, {
-    secret: deriveSecret('cookie.secret'),
+    secret: deriveSecret(HKDF_INFO_COOKIE),
   });
 
   // Rate limiting globale (permissivo)

@@ -47,6 +47,9 @@ const apiSecret = deriveSecret('api.jwt');
 
 // Web Sessions
 const nextAuthSecret = deriveSecret('nextauth.secret');
+
+// Fastify Cookies
+const cookieSecret = deriveSecret('cookie.secret');
 ```
 
 ### Rotazione Segreti

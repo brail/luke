@@ -200,6 +200,7 @@ Il campo `bindPassword` nella configurazione LDAP è opzionale:
 - ✅ **HS256 esplicito** con secret derivato via HKDF-SHA256
 - ✅ **Claim standard** (`iss`, `aud`, `exp`, `nbf`) con clock tolerance ±60s
 - ✅ **Helper centralizzati** (`signJWT`, `verifyJWT`) in `apps/api/src/lib/jwt.ts`
+- ✅ **Cookie secret** derivato via HKDF-SHA256 dalla master key (dominio: `cookie.secret`)
 
 ### RBAC Guards
 

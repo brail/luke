@@ -27,6 +27,7 @@ const KEY_LENGTH = 32; // 256 bits per AES-256
 const HKDF_SALT = 'luke';
 const HKDF_INFO_NEXTAUTH = 'nextauth.secret';
 const HKDF_INFO_API_JWT = 'api.jwt';
+const HKDF_INFO_COOKIE = 'cookie.secret';
 const HKDF_LENGTH = 32; // 256 bits
 
 /**
@@ -151,3 +152,6 @@ export function validateMasterKey(): boolean {
     return false;
   }
 }
+
+// Export costanti per uso esterno (eliminare magic strings)
+export { HKDF_INFO_NEXTAUTH, HKDF_INFO_API_JWT, HKDF_INFO_COOKIE };
