@@ -291,6 +291,37 @@ Il campo `bindPassword` nella configurazione LDAP è opzionale:
 - 🔜 **Redis store** per idempotency in cluster multi-processo
 - 🔜 **Rate limit per utente** oltre che per IP
 
+## 🎨 UI Settings Standard (DRY)
+
+### Componenti Riusabili Implementati
+
+Luke implementa un sistema standardizzato di componenti DRY per pagine di configurazione:
+
+- ✅ **SettingsFormShell**: Wrapper uniforme con gestione loading/error automatica
+- ✅ **SettingsActions**: Bottoni azione standardizzati (Save + Test) con stati pending
+- ✅ **SensitiveField**: Campo password sicuro con toggle show/hide e placeholder mascherato
+- ✅ **TestStatusBanner**: Banner uniforme per risultati test (success/error/idle)
+- ✅ **KeyValueGrid**: Grid responsive per layout uniforme campi form
+- ✅ **FeatureToggleCard**: Card per toggle abilitazione feature
+
+### Pattern Standardizzati
+
+- ✅ **React Hook Form + Zod**: Validazione end-to-end uniforme
+- ✅ **Schema centralizzati**: `mailSmtpConfigSchema`, `ldapConfigSchema` in `@luke/core`
+- ✅ **Toast uniformi**: Success/Error messaggi coerenti
+- ✅ **Gestione segreti**: `hasValue` flag, mai mostrare valori in chiaro
+- ✅ **Accessibilità**: `aria-busy`, `role="status"`, `aria-live="polite"`
+
+### Pagine Migrate
+
+- ✅ **Mail Settings** (`/settings/mail`): Migrata a RHF+Zod con componenti DRY
+- ✅ **LDAP Settings** (`/settings/ldap`): Refactor con componenti DRY e Dialog per test ricerca
+
+### Documentazione
+
+- ✅ **README.md**: Sezione completa "UI Settings Standard" con esempi
+- ✅ **SETUP_STATUS.md**: Checkpoint standard DRY completato
+
 ## 🎯 Prossimi Passi
 
 Il monorepo è **pronto per lo sviluppo**! Puoi procedere con:

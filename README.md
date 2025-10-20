@@ -433,6 +433,177 @@ export default function CriticalPage() {
 
 Pagine già protette: `settings/users`, `settings/config`.
 
+## 🎨 UI Settings Standard
+
+Il progetto implementa un sistema DRY di componenti riusabili per pagine di configurazione, garantendo UX uniforme e codice pulito.
+
+### Componenti Disponibili
+
+#### SettingsFormShell
+
+Wrapper standardizzato per pagine settings con gestione automatica di loading/error.
+
+```tsx
+import { SettingsFormShell } from '@/components/settings/SettingsFormShell';
+
+<SettingsFormShell
+  title="Configurazione Mail"
+  description="Gestisci l'integrazione SMTP"
+  isLoading={isLoading}
+  error={error}
+>
+  {/* Contenuto pagina */}
+</SettingsFormShell>;
+```
+
+#### SettingsActions
+
+Bottoni azione standardizzati (Save + Test opzionale) con stati loading e accessibilità.
+
+```tsx
+import { SettingsActions } from '@/components/settings/SettingsActions';
+
+<SettingsActions
+  isSaving={mutation.isPending}
+  onTest={handleTest}
+  isTesting={testMutation.isPending}
+  disabled={!formValid}
+/>;
+```
+
+#### SensitiveField
+
+Campo password con toggle show/hide per gestione sicura di credenziali.
+
+```tsx
+<FormField
+  control={form.control}
+  name="password"
+  render={({ field }) => (
+    <SensitiveField
+      label="Password SMTP"
+      description="Password per autenticazione"
+      hasValue={hasPassword}
+      placeholder="Inserisci password"
+      field={field}
+    />
+  )}
+/>
+```
+
+**Caratteristiche:**
+
+- Toggle visibilità con icona Eye/EyeOff
+- Placeholder mascherato quando `hasValue=true`
+- Mai mostra valori esistenti (sicurezza)
+- Integrato con React Hook Form
+
+#### TestStatusBanner
+
+Banner uniforme per risultati test connessione/configurazione.
+
+```tsx
+import { TestStatusBanner } from '@/components/settings/TestStatusBanner';
+
+<TestStatusBanner
+  status={testStatus} // 'idle' | 'success' | 'error'
+  message={testMessage}
+/>;
+```
+
+**Accessibilità:** `role="status"`, `aria-live="polite"`
+
+#### KeyValueGrid
+
+Grid responsive per layout uniforme di campi form.
+
+```tsx
+import { KeyValueGrid } from '@/components/settings/KeyValueGrid';
+
+<KeyValueGrid cols={2}>
+  <FormField name="host" ... />
+  <FormField name="port" ... />
+  <FormField name="username" ... />
+  <FormField name="from" ... />
+</KeyValueGrid>
+```
+
+#### FeatureToggleCard
+
+Card per toggle abilitazione feature (es. LDAP, Mail, Storage).
+
+```tsx
+import { FeatureToggleCard } from '@/components/settings/FeatureToggleCard';
+
+<FeatureToggleCard
+  title="Abilita LDAP"
+  description="Attiva autenticazione enterprise"
+  enabled={enabled}
+  onToggle={setEnabled}
+/>;
+```
+
+### Pattern Standard
+
+#### React Hook Form + Zod
+
+Tutte le pagine settings usano RHF con validazione Zod:
+
+```tsx
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { mailSmtpConfigSchema, type MailSmtpConfigInput } from '@luke/core';
+
+const form = useForm<MailSmtpConfigInput>({
+  resolver: zodResolver(mailSmtpConfigSchema),
+  defaultValues: { ... }
+});
+```
+
+#### Toast Uniformi
+
+```tsx
+// Success
+toast.success('Configurazione salvata con successo');
+
+// Error
+toast.error('Errore durante il salvataggio', {
+  description: error.message,
+});
+```
+
+#### Gestione Segreti
+
+- Campo sensibile usa `SensitiveField` con `hasValue` flag
+- Backend espone `hasPassword: boolean`, mai valori in chiaro
+- Payload esclude password se vuota (mantiene esistente)
+- Validazione Zod end-to-end
+
+### Pagine Implementate
+
+- **Mail Settings** (`/settings/mail`): Configurazione SMTP con test email
+- **LDAP Settings** (`/settings/ldap`): Autenticazione enterprise con test connessione/ricerca
+
+### Schema Zod Centrali
+
+Gli schema di validazione sono in `@luke/core/schemas`:
+
+```tsx
+import {
+  mailSmtpConfigSchema,
+  ldapConfigSchema,
+  type MailSmtpConfigInput,
+  type LdapConfigInput,
+} from '@luke/core';
+```
+
+**Vantaggi:**
+
+- Validazione end-to-end (frontend ↔ backend)
+- Type-safety completa
+- Single source of truth
+- DRY: zero duplicazione
+
 ## 📚 Tecnologie
 
 - **Monorepo**: pnpm workspaces + Turborepo

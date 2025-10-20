@@ -1,16 +1,27 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { CheckCircle, XCircle } from 'lucide-react';
 import { useSession } from 'next-auth/react';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { ldapConfigSchema, type LdapConfigInput } from '@luke/core';
 
-import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
+import { KeyValueGrid } from '../../../../components/settings/KeyValueGrid';
+import { SensitiveField } from '../../../../components/settings/SensitiveField';
+import { SettingsActions } from '../../../../components/settings/SettingsActions';
+import { SettingsFormShell } from '../../../../components/settings/SettingsFormShell';
+import { TestStatusBanner } from '../../../../components/settings/TestStatusBanner';
 import { Button } from '../../../../components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../../../../components/ui/dialog';
 import {
   Form,
   FormControl,
@@ -21,7 +32,6 @@ import {
   FormMessage,
 } from '../../../../components/ui/form';
 import { Input } from '../../../../components/ui/input';
-import { PasswordInput } from '../../../../components/ui/password-input';
 import {
   Select,
   SelectContent,
@@ -34,8 +44,6 @@ import { Textarea } from '../../../../components/ui/textarea';
 import { useToast } from '../../../../hooks/use-toast';
 import { debugLog, debugWarn } from '../../../../lib/debug';
 import { trpc } from '../../../../lib/trpc';
-
-
 
 export default function LdapSettingsPage() {
   const { data: session, status } = useSession();
@@ -64,6 +72,12 @@ export default function LdapSettingsPage() {
   const [testConnectionStatus, setTestConnectionStatus] = React.useState<
     'idle' | 'success' | 'error'
   >('idle');
+  const [testConnectionMessage, setTestConnectionMessage] =
+    React.useState<string>('');
+
+  // Dialog per test ricerca
+  const [showSearchDialog, setShowSearchDialog] = useState(false);
+  const [searchUsername, setSearchUsername] = useState('');
 
   // Carica configurazione esistente (solo se admin)
   const {
@@ -80,8 +94,8 @@ export default function LdapSettingsPage() {
       form.reset({
         enabled: existingConfig.enabled,
         url: existingConfig.url,
-        bindDN: '', // Non mostrare il valore esistente per sicurezza
-        bindPassword: '', // Non mostrare il valore esistente per sicurezza
+        bindDN: '',
+        bindPassword: '',
         searchBase: existingConfig.searchBase,
         searchFilter: existingConfig.searchFilter,
         groupSearchBase: existingConfig.groupSearchBase,
@@ -90,7 +104,6 @@ export default function LdapSettingsPage() {
         strategy: existingConfig.strategy,
       });
 
-      // Aggiorna i flag per i campi sensibili
       setHasBindDN(existingConfig.hasBindDN);
       setHasBindPassword(existingConfig.hasBindPassword);
     }
@@ -99,8 +112,9 @@ export default function LdapSettingsPage() {
   // Mutations (solo se admin)
   const saveConfigMutation = trpc.integrations.auth.saveLdapConfig.useMutation({
     onSuccess: () => {
-      toast.success('Configurazione LDAP salvata con successo!');
+      toast.success('Configurazione LDAP salvata con successo');
       setTestConnectionStatus('idle');
+      setTestConnectionMessage('');
     },
     onError: (err: any) => {
       toast.error('Errore durante il salvataggio', {
@@ -113,14 +127,18 @@ export default function LdapSettingsPage() {
   const testConnectionMutation =
     trpc.integrations.auth.testLdapConnection.useMutation({
       onSuccess: () => {
-        toast.success('Test connessione LDAP riuscito!');
+        toast.success('Test connessione LDAP riuscito');
         setTestConnectionStatus('success');
+        setTestConnectionMessage(
+          'Connessione al server LDAP stabilita con successo'
+        );
       },
       onError: (err: any) => {
         toast.error('Test connessione fallito', {
           description: err.message,
         });
         setTestConnectionStatus('error');
+        setTestConnectionMessage(err.message);
         debugWarn('LDAP connection test error:', err);
       },
     });
@@ -129,6 +147,8 @@ export default function LdapSettingsPage() {
     onSuccess: (data: any) => {
       toast.success(`Test ricerca LDAP: ${data.message}`);
       debugLog('LDAP Search Results:', data);
+      setShowSearchDialog(false);
+      setSearchUsername('');
     },
     onError: (err: any) => {
       toast.error('Test ricerca fallito', {
@@ -141,22 +161,22 @@ export default function LdapSettingsPage() {
   // Controllo accesso admin
   if (status === 'loading') {
     return (
-      <div className="space-y-6">
-        <PageHeader title="Configurazione LDAP" description="Caricamento..." />
-        <SectionCard
-          title="Caricamento"
-          description="Verifica accesso in corso"
-        >
-          <div className="text-center">Caricamento...</div>
-        </SectionCard>
-      </div>
+      <SettingsFormShell
+        title="Configurazione LDAP"
+        description="Caricamento..."
+        isLoading={true}
+      >
+        <div />
+      </SettingsFormShell>
     );
   }
 
   if (!session || session.user.role !== 'admin') {
     return (
-      <div className="space-y-6">
-        <PageHeader title="Configurazione LDAP" description="Accesso negato" />
+      <SettingsFormShell
+        title="Configurazione LDAP"
+        description="Accesso negato"
+      >
         <SectionCard
           title="Accesso Negato"
           description="Permessi insufficienti"
@@ -173,7 +193,7 @@ export default function LdapSettingsPage() {
             </Button>
           </div>
         </SectionCard>
-      </div>
+      </SettingsFormShell>
     );
   }
 
@@ -195,6 +215,8 @@ export default function LdapSettingsPage() {
       return;
     }
 
+    setTestConnectionStatus('idle');
+    setTestConnectionMessage('');
     testConnectionMutation.mutate();
   };
 
@@ -204,63 +226,22 @@ export default function LdapSettingsPage() {
       toast.error('Abilita LDAP prima di testare la ricerca');
       return;
     }
-    const username = prompt('Inserisci username da cercare:');
-    if (username) {
-      testSearchMutation.mutate({ username });
+    setShowSearchDialog(true);
+  };
+
+  const handleSearchDialogSubmit = () => {
+    if (searchUsername.trim()) {
+      testSearchMutation.mutate({ username: searchUsername.trim() });
     }
   };
 
-  if (isLoadingConfig) {
-    return (
-      <div className="space-y-6">
-        <PageHeader
-          title="Configurazione LDAP"
-          description="Caricamento configurazione..."
-        />
-        <SectionCard
-          title="Caricamento"
-          description="Recupero configurazione esistente"
-        >
-          <div className="text-center">Caricamento configurazione...</div>
-        </SectionCard>
-      </div>
-    );
-  }
-
-  if (configError) {
-    return (
-      <div className="space-y-6">
-        <PageHeader
-          title="Configurazione LDAP"
-          description="Errore nel caricamento"
-        />
-        <SectionCard
-          title="Errore"
-          description="Impossibile caricare la configurazione"
-        >
-          <div className="text-center space-y-4">
-            <div className="text-destructive text-lg font-semibold">
-              Errore nel caricamento
-            </div>
-            <p className="text-muted-foreground">
-              {configError.message || 'Errore sconosciuto'}
-            </p>
-            <Button asChild variant="outline">
-              <a href="/dashboard">Torna alla Dashboard</a>
-            </Button>
-          </div>
-        </SectionCard>
-      </div>
-    );
-  }
-
   return (
-    <div key={session?.user?.id} className="space-y-6">
-      <PageHeader
-        title="Configurazione LDAP"
-        description="Configura l'autenticazione enterprise via LDAP con mapping dei ruoli"
-      />
-
+    <SettingsFormShell
+      title="Configurazione LDAP"
+      description="Configura l'autenticazione enterprise via LDAP con mapping dei ruoli"
+      isLoading={isLoadingConfig}
+      error={configError}
+    >
       <SectionCard
         title="Parametri LDAP"
         description="Configurazione completa per l'autenticazione LDAP"
@@ -331,50 +312,139 @@ export default function LdapSettingsPage() {
               )}
             />
 
-            {/* URL LDAP */}
-            <FormField
-              control={form.control}
-              name="url"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>URL LDAP *</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="ldap://server.example.com:389"
-                      disabled={!form.watch('enabled')}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    URL del server LDAP (es. ldap://server.example.com:389)
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <KeyValueGrid cols={2}>
+              {/* URL LDAP */}
+              <FormField
+                control={form.control}
+                name="url"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      URL LDAP <span className="text-red-500">*</span>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="ldap://server.example.com:389"
+                        disabled={!form.watch('enabled')}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      URL del server LDAP (es. ldap://server.example.com:389)
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Search Base */}
+              <FormField
+                control={form.control}
+                name="searchBase"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      Search Base <span className="text-red-500">*</span>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="dc=example,dc=com"
+                        disabled={!form.watch('enabled')}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Base DN dove cercare gli utenti
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Search Filter */}
+              <FormField
+                control={form.control}
+                name="searchFilter"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      Search Filter <span className="text-red-500">*</span>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="(uid=${username})"
+                        disabled={!form.watch('enabled')}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Filtro LDAP per cercare utenti (usa ${'{username}'} come
+                      placeholder)
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Group Search Base */}
+              <FormField
+                control={form.control}
+                name="groupSearchBase"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Group Search Base</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="ou=groups,dc=example,dc=com"
+                        disabled={!form.watch('enabled')}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Base DN dove cercare i gruppi dell&apos;utente
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Group Search Filter */}
+              <FormField
+                control={form.control}
+                name="groupSearchFilter"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Group Search Filter</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="(member=${userDN})"
+                        disabled={!form.watch('enabled')}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Filtro LDAP per cercare gruppi (usa ${'{userDN}'} come
+                      placeholder)
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </KeyValueGrid>
 
             {/* Bind DN */}
             <FormField
               control={form.control}
               name="bindDN"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Bind DN</FormLabel>
-                  <FormControl>
-                    <PasswordInput
-                      placeholder={
-                        hasBindDN ? '••••••••' : 'cn=admin,dc=example,dc=com'
-                      }
-                      disabled={!form.watch('enabled')}
-                      hasValue={hasBindDN}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    DN dell&apos;account amministrativo per cercare gli utenti
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <SensitiveField
+                  label="Bind DN"
+                  description="DN dell'account amministrativo per cercare gli utenti"
+                  hasValue={hasBindDN}
+                  placeholder="cn=admin,dc=example,dc=com"
+                  disabled={!form.watch('enabled')}
+                  field={field}
+                />
               )}
             />
 
@@ -383,113 +453,14 @@ export default function LdapSettingsPage() {
               control={form.control}
               name="bindPassword"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Bind Password</FormLabel>
-                  <FormControl>
-                    <PasswordInput
-                      placeholder={
-                        hasBindPassword ? '••••••••' : 'Inserisci password'
-                      }
-                      disabled={!form.watch('enabled')}
-                      hasValue={hasBindPassword}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Password dell&apos;account amministrativo
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Search Base */}
-            <FormField
-              control={form.control}
-              name="searchBase"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Search Base *</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="dc=example,dc=com"
-                      disabled={!form.watch('enabled')}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Base DN dove cercare gli utenti
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Search Filter */}
-            <FormField
-              control={form.control}
-              name="searchFilter"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Search Filter *</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="(uid=${username})"
-                      disabled={!form.watch('enabled')}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Filtro LDAP per cercare utenti (usa ${'{username}'} come
-                    placeholder)
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Group Search Base */}
-            <FormField
-              control={form.control}
-              name="groupSearchBase"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Group Search Base</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="ou=groups,dc=example,dc=com"
-                      disabled={!form.watch('enabled')}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Base DN dove cercare i gruppi dell&apos;utente
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Group Search Filter */}
-            <FormField
-              control={form.control}
-              name="groupSearchFilter"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Group Search Filter</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="(member=${userDN})"
-                      disabled={!form.watch('enabled')}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Filtro LDAP per cercare gruppi (usa ${'{userDN}'} come
-                    placeholder)
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <SensitiveField
+                  label="Bind Password"
+                  description="Password dell'account amministrativo"
+                  hasValue={hasBindPassword}
+                  placeholder="Inserisci password"
+                  disabled={!form.watch('enabled')}
+                  field={field}
+                />
               )}
             />
 
@@ -521,7 +492,7 @@ export default function LdapSettingsPage() {
               )}
             />
 
-            {/* Bottoni */}
+            {/* Bottoni Test */}
             <div className="flex justify-end space-x-2 pt-4">
               <Button
                 type="button"
@@ -531,20 +502,11 @@ export default function LdapSettingsPage() {
                   saveConfigMutation.isPending ||
                   testConnectionMutation.isPending
                 }
+                aria-busy={testConnectionMutation.isPending}
               >
-                {testConnectionMutation.isPending ? (
-                  'Test in corso...'
-                ) : (
-                  <>
-                    Test Connessione
-                    {testConnectionStatus === 'success' && (
-                      <CheckCircle className="ml-2 h-4 w-4 text-green-500" />
-                    )}
-                    {testConnectionStatus === 'error' && (
-                      <XCircle className="ml-2 h-4 w-4 text-red-500" />
-                    )}
-                  </>
-                )}
+                {testConnectionMutation.isPending
+                  ? 'Test in corso...'
+                  : 'Test Connessione'}
               </Button>
               <Button
                 type="button"
@@ -553,20 +515,70 @@ export default function LdapSettingsPage() {
                 disabled={
                   saveConfigMutation.isPending || testSearchMutation.isPending
                 }
+                aria-busy={testSearchMutation.isPending}
               >
                 {testSearchMutation.isPending
                   ? 'Ricerca in corso...'
                   : 'Test Ricerca'}
               </Button>
-              <Button type="submit" disabled={saveConfigMutation.isPending}>
-                {saveConfigMutation.isPending
-                  ? 'Salvataggio...'
-                  : 'Salva Configurazione'}
-              </Button>
             </div>
+
+            {/* Banner Test Status */}
+            <TestStatusBanner
+              status={testConnectionStatus}
+              message={testConnectionMessage}
+            />
+
+            {/* Bottone Salva */}
+            <SettingsActions
+              isSaving={saveConfigMutation.isPending}
+              disabled={
+                saveConfigMutation.isPending ||
+                testConnectionMutation.isPending ||
+                testSearchMutation.isPending
+              }
+            />
           </form>
         </Form>
       </SectionCard>
-    </div>
+
+      {/* Dialog Test Ricerca */}
+      <Dialog open={showSearchDialog} onOpenChange={setShowSearchDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Test Ricerca LDAP</DialogTitle>
+            <DialogDescription>
+              Inserisci un username per testare la ricerca nel server LDAP
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              placeholder="Username da cercare"
+              value={searchUsername}
+              onChange={e => setSearchUsername(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  handleSearchDialogSubmit();
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowSearchDialog(false)}
+            >
+              Annulla
+            </Button>
+            <Button
+              onClick={handleSearchDialogSubmit}
+              disabled={!searchUsername.trim() || testSearchMutation.isPending}
+            >
+              {testSearchMutation.isPending ? 'Ricerca...' : 'Cerca'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </SettingsFormShell>
   );
 }
