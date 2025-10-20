@@ -10,7 +10,6 @@ import { ldapConfigSchema, type LdapConfigInput } from '@luke/core';
 import { SectionCard } from '../../../../components/SectionCard';
 import { KeyValueGrid } from '../../../../components/settings/KeyValueGrid';
 import { SensitiveField } from '../../../../components/settings/SensitiveField';
-import { SettingsActions } from '../../../../components/settings/SettingsActions';
 import { SettingsFormShell } from '../../../../components/settings/SettingsFormShell';
 import { TestStatusBanner } from '../../../../components/settings/TestStatusBanner';
 import { Button } from '../../../../components/ui/button';
@@ -529,15 +528,33 @@ export default function LdapSettingsPage() {
               message={testConnectionMessage}
             />
 
-            {/* Bottone Salva */}
-            <SettingsActions
-              isSaving={saveConfigMutation.isPending}
-              disabled={
-                saveConfigMutation.isPending ||
-                testConnectionMutation.isPending ||
-                testSearchMutation.isPending
-              }
-            />
+            {/* Pulsanti Azione */}
+            <div className="flex justify-end space-x-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => form.reset()}
+                disabled={
+                  saveConfigMutation.isPending ||
+                  testConnectionMutation.isPending ||
+                  testSearchMutation.isPending
+                }
+              >
+                Reset
+              </Button>
+              <Button
+                type="submit"
+                disabled={
+                  saveConfigMutation.isPending ||
+                  testConnectionMutation.isPending ||
+                  testSearchMutation.isPending
+                }
+              >
+                {saveConfigMutation.isPending
+                  ? 'Salvataggio...'
+                  : 'Salva Configurazione'}
+              </Button>
+            </div>
           </form>
         </Form>
       </SectionCard>

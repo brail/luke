@@ -364,7 +364,9 @@ export default function StoragePage() {
                     type="submit"
                     disabled={isLoadingConfig || saveConfigMutation.isPending}
                   >
-                    {saveConfigMutation.isPending ? 'Salvataggio...' : 'Salva'}
+                    {saveConfigMutation.isPending
+                      ? 'Salvataggio...'
+                      : 'Salva Configurazione'}
                   </Button>
                 </div>
               </form>

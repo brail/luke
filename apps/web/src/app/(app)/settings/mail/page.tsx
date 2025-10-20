@@ -12,7 +12,7 @@ import { SensitiveField } from '../../../../components/settings/SensitiveField';
 import { SettingsActions } from '../../../../components/settings/SettingsActions';
 import { SettingsFormShell } from '../../../../components/settings/SettingsFormShell';
 import { TestStatusBanner } from '../../../../components/settings/TestStatusBanner';
-import { Alert, AlertDescription } from '../../../../components/ui/alert';
+import { Button } from '../../../../components/ui/button';
 import {
   Form,
   FormControl,
@@ -340,73 +340,96 @@ export default function MailPage() {
             />
 
             {/* Note per provider comuni */}
-            <Alert className="mt-6">
-              <AlertDescription>
-                <h4 className="font-medium mb-2">
-                  Configurazione provider comuni:
-                </h4>
-                <ul className="text-sm space-y-1">
-                  <li>
-                    <strong>Google Workspace/Gmail:</strong> Host:
-                    smtp.gmail.com, Porta: 587, STARTTLS. Usa{' '}
-                    <strong>App Password</strong> (richiede 2FA attiva)
-                  </li>
-                  <li>
-                    <strong>Microsoft 365/Outlook:</strong> Host:
-                    smtp.office365.com, Porta: 587, STARTTLS
-                  </li>
-                  <li>
-                    <strong>SendGrid:</strong> Host: smtp.sendgrid.net, Porta:
-                    587, STARTTLS. User: &quot;apikey&quot;, Pass: tua_api_key
-                  </li>
-                  <li>
-                    <strong>Amazon SES:</strong> Host:
-                    email-smtp.[region].amazonaws.com, Porta: 587, STARTTLS. Usa
-                    SMTP credentials di IAM
-                  </li>
-                </ul>
-              </AlertDescription>
-            </Alert>
-
-            {/* Pulsanti Azione */}
-            <SettingsActions
-              isSaving={saveConfigMutation.isPending}
-              disabled={
-                saveConfigMutation.isPending || testMailMutation.isPending
-              }
-            />
-
-            {/* Test Email */}
-            <div className="border-t pt-4 space-y-3">
-              <Label htmlFor="test-email">Email Test (opzionale)</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="test-email"
-                  type="email"
-                  value={testEmail}
-                  onChange={e => setTestEmail(e.target.value)}
-                  placeholder={
-                    form.watch('from') || 'Destinatario email di test'
-                  }
-                  className="flex-1"
-                />
-                <SettingsActions
-                  onTest={handleTestMail}
-                  isTesting={testMailMutation.isPending}
-                  disabled={testMailMutation.isPending || !form.watch('host')}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Se lasciato vuoto, l&apos;email di test verrà inviata
-                all&apos;indirizzo mittente configurato (
-                <code>{form.watch('from') || '(non configurato)'}</code>)
-              </p>
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-300">
+              <h4 className="mb-2 font-semibold">
+                ℹ️ Configurazione provider comuni
+              </h4>
+              <ul className="list-inside list-disc space-y-1">
+                <li>
+                  <strong>Google Workspace/Gmail:</strong> Host: smtp.gmail.com,
+                  Porta: 587, STARTTLS. Usa <strong>App Password</strong>{' '}
+                  (richiede 2FA attiva)
+                </li>
+                <li>
+                  <strong>Microsoft 365/Outlook:</strong> Host:
+                  smtp.office365.com, Porta: 587, STARTTLS
+                </li>
+                <li>
+                  <strong>SendGrid:</strong> Host: smtp.sendgrid.net, Porta:
+                  587, STARTTLS. User: &quot;apikey&quot;, Pass: tua_api_key
+                </li>
+                <li>
+                  <strong>Amazon SES:</strong> Host:
+                  email-smtp.[region].amazonaws.com, Porta: 587, STARTTLS. Usa
+                  SMTP credentials di IAM
+                </li>
+              </ul>
             </div>
 
-            {/* Risultato Test */}
-            <TestStatusBanner status={testStatus} message={testMessage} />
+            {/* Pulsanti Azione */}
+            <div className="flex justify-end space-x-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => form.reset()}
+                disabled={
+                  saveConfigMutation.isPending || testMailMutation.isPending
+                }
+              >
+                Reset
+              </Button>
+              <Button
+                type="submit"
+                disabled={
+                  saveConfigMutation.isPending || testMailMutation.isPending
+                }
+              >
+                {saveConfigMutation.isPending
+                  ? 'Salvataggio...'
+                  : 'Salva Configurazione'}
+              </Button>
+            </div>
           </form>
         </Form>
+      </SectionCard>
+
+      {/* Test Email */}
+      <SectionCard
+        title="Test Connessione SMTP"
+        description="Invia un'email di test per verificare la configurazione"
+      >
+        <div className="space-y-4">
+          <div className="flex items-end gap-3">
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="test-email">Email Destinatario (opzionale)</Label>
+              <Input
+                id="test-email"
+                type="email"
+                value={testEmail}
+                onChange={e => setTestEmail(e.target.value)}
+                placeholder={form.watch('from') || 'Destinatario email di test'}
+                disabled={testMailMutation.isPending || !form.watch('host')}
+              />
+            </div>
+            <SettingsActions
+              onTest={handleTestMail}
+              isTesting={testMailMutation.isPending}
+              disabled={testMailMutation.isPending || !form.watch('host')}
+            />
+          </div>
+
+          <p className="text-sm text-muted-foreground">
+            Se lasciato vuoto, l&apos;email di test verrà inviata
+            all&apos;indirizzo mittente configurato (
+            <code className="rounded bg-muted px-1 py-0.5">
+              {form.watch('from') || '(non configurato)'}
+            </code>
+            )
+          </p>
+
+          {/* Risultato Test */}
+          <TestStatusBanner status={testStatus} message={testMessage} />
+        </div>
       </SectionCard>
     </SettingsFormShell>
   );
