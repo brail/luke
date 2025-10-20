@@ -3,8 +3,6 @@
  * Implementa CRUD completo per User, Identity e LocalCredential
  */
 
-import { randomBytes, createHash } from 'crypto';
-
 import { TRPCError } from '@trpc/server';
 import argon2 from 'argon2';
 import { z } from 'zod';
@@ -18,9 +16,8 @@ import {
 
 import { logAudit } from '../lib/auditLog';
 import { withAuditLog } from '../lib/auditMiddleware';
-import { getConfig } from '../lib/configManager';
+import { sendVerificationEmail } from '../lib/emailHelpers';
 import { withIdempotency } from '../lib/idempotencyTrpc';
-import { sendEmailVerificationEmail } from '../lib/mailer';
 import { withRateLimit } from '../lib/ratelimit';
 import {
   router,
@@ -158,6 +155,7 @@ export const usersRouter = router({
               'lastName',
               'role',
               'isActive',
+              'emailVerifiedAt',
               'createdAt',
               'provider',
             ])
@@ -205,6 +203,7 @@ export const usersRouter = router({
             lastName: true,
             role: true,
             isActive: true,
+            emailVerifiedAt: true,
             createdAt: true,
             updatedAt: true,
             identities: {
@@ -366,83 +365,7 @@ export const usersRouter = router({
 
       // Audit logging gestito automaticamente dal middleware withAuditLog
 
-      // Invio automatico email di verifica (best effort, non blocca se fallisce)
-      let emailSent = false;
-      try {
-        // Genera token random (32 byte = 64 caratteri hex)
-        const token = randomBytes(32).toString('hex');
-        const tokenHash = createHash('sha256').update(token).digest('hex');
-
-        // Calcola scadenza: 24 ore
-        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-        // Salva token hash in DB
-        await ctx.prisma.userToken.create({
-          data: {
-            userId: result.id,
-            type: 'VERIFY',
-            tokenHash,
-            expiresAt,
-          },
-        });
-
-        // Recupera base URL
-        const baseUrl =
-          (await getConfig(ctx.prisma, 'app.baseUrl', false)) ||
-          process.env.APP_BASE_URL ||
-          'http://localhost:3000';
-
-        // Invia email di verifica
-        await sendEmailVerificationEmail(
-          ctx.prisma,
-          result.email,
-          token,
-          baseUrl
-        );
-
-        emailSent = true;
-
-        ctx.logger.info('✉️ Email di verifica inviata automaticamente', {
-          userId: result.id,
-          email: result.email,
-        });
-
-        // Log audit SUCCESS
-        await logAudit(ctx, {
-          action: 'EMAIL_VERIFICATION_SENT',
-          targetType: 'Auth',
-          targetId: result.id,
-          result: 'SUCCESS',
-          metadata: {
-            automatic: true,
-            expiresAt: expiresAt.toISOString(),
-          },
-        });
-      } catch (error) {
-        // Silent fail: non blocca la creazione utente
-        ctx.logger.warn(
-          '⚠️ Email di verifica non inviata (SMTP non configurato o errore)',
-          {
-            userId: result.id,
-            email: result.email,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          }
-        );
-
-        // Log audit WARNING (non FAILURE)
-        await logAudit(ctx, {
-          action: 'EMAIL_VERIFICATION_SENT',
-          targetType: 'Auth',
-          targetId: result.id,
-          result: 'FAILURE',
-          metadata: {
-            automatic: true,
-            reason: 'smtp_not_configured_or_error',
-            error: error instanceof Error ? error.message : 'Unknown error',
-          },
-        });
-      }
-
+      // Invio email gestito via UI dialog post-creazione
       return {
         id: result.id,
         email: result.email,
@@ -453,7 +376,6 @@ export const usersRouter = router({
         isActive: result.isActive,
         createdAt: result.createdAt,
         updatedAt: result.updatedAt,
-        emailVerificationSent: emailSent, // Indica se l'email è stata inviata
       };
     }),
 
@@ -745,5 +667,111 @@ export const usersRouter = router({
         success: true,
         message: `Sessioni revocate per ${targetUser.firstName} ${targetUser.lastName}`,
       };
+    }),
+
+  /**
+   * Forza verifica email per un utente (admin only)
+   * Imposta o rimuove emailVerifiedAt bypassando il token
+   */
+  forceVerifyEmail: adminProcedure
+    .use(withAuditLog('EMAIL_VERIFICATION_FORCED', 'User'))
+    .input(
+      z.object({
+        userId: z.string().uuid(),
+        verified: z.boolean(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { userId, verified } = input;
+
+      const user = await ctx.prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true },
+      });
+
+      if (!user) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Utente non trovato',
+        });
+      }
+
+      await ctx.prisma.user.update({
+        where: { id: userId },
+        data: { emailVerifiedAt: verified ? new Date() : null },
+      });
+
+      return {
+        success: true,
+        message: verified ? 'Email verificata' : 'Verifica rimossa',
+      };
+    }),
+
+  /**
+   * Cambio email per utente autenticato
+   * Reset automatico di emailVerifiedAt + invio email verifica
+   */
+  changeEmail: protectedProcedure
+    .use(withRateLimit('userMutations'))
+    .input(
+      z.object({
+        newEmail: z.string().email('Email non valida').toLowerCase().trim(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { newEmail } = input;
+      const userId = ctx.session.user.id;
+
+      // Verifica unicità email
+      const existing = await ctx.prisma.user.findFirst({
+        where: { email: newEmail, id: { not: userId } },
+      });
+
+      if (existing) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'Email già in uso',
+        });
+      }
+
+      // Aggiorna email + reset verification
+      await ctx.prisma.user.update({
+        where: { id: userId },
+        data: { email: newEmail, emailVerifiedAt: null },
+      });
+
+      // Audit EMAIL_CHANGED (senza PII)
+      await logAudit(ctx, {
+        action: 'EMAIL_CHANGED',
+        targetType: 'User',
+        targetId: userId,
+        result: 'SUCCESS',
+        metadata: {},
+      });
+
+      // Invia verifica usando helper DRY
+      try {
+        await sendVerificationEmail(
+          ctx.prisma,
+          {
+            userId,
+            reason: 'email_changed',
+            actorId: userId,
+          },
+          ctx
+        );
+
+        return {
+          success: true,
+          message:
+            'Email aggiornata. Controlla la nuova casella per verificarla.',
+        };
+      } catch {
+        return {
+          success: true,
+          message:
+            'Email aggiornata ma invio verifica fallito. Richiedi un nuovo link.',
+        };
+      }
     }),
 });

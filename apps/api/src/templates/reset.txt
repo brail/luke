@@ -1,0 +1,17 @@
+LUKE - Reset Password
+
+Ciao!
+
+Abbiamo ricevuto una richiesta per reimpostare la password del tuo account Luke.
+
+Per procedere con il reset della password, clicca sul link qui sotto:
+
+{{resetUrl}}
+
+Questo link è valido per 30 minuti.
+
+Se non hai richiesto il reset della password, ignora questa email e la tua password rimarrà invariata.
+
+---
+© {{year}} Luke. Tutti i diritti riservati.
+

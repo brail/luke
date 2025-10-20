@@ -36,6 +36,7 @@ export function UsersTable({
   currentUserId,
   isLoading = false,
   error = null,
+  refetch,
   sortBy,
   sortOrder,
   onSort,
@@ -115,6 +116,14 @@ export function UsersTable({
                 onSort={onSort}
               >
                 Provider
+              </SortableHeader>
+              <SortableHeader
+                column="emailVerifiedAt"
+                currentSort={sortBy}
+                sortOrder={sortOrder}
+                onSort={onSort}
+              >
+                Email
               </SortableHeader>
               <SortableHeader
                 column="role"
@@ -204,6 +213,14 @@ export function UsersTable({
               Provider
             </SortableHeader>
             <SortableHeader
+              column="emailVerifiedAt"
+              currentSort={sortBy}
+              sortOrder={sortOrder}
+              onSort={onSort}
+            >
+              Email
+            </SortableHeader>
+            <SortableHeader
               column="role"
               currentSort={sortBy}
               sortOrder={sortOrder}
@@ -242,6 +259,13 @@ export function UsersTable({
                   {user.identities?.[0]?.provider || 'LOCAL'}
                 </span>
               </TableCell>
+              <TableCell className="text-center">
+                {user.emailVerifiedAt ? (
+                  <span className="text-green-600 font-bold">✓</span>
+                ) : (
+                  <span className="text-muted-foreground">✗</span>
+                )}
+              </TableCell>
               <TableCell>
                 <span className="inline-flex items-center rounded-full bg-secondary px-2 py-1 text-xs font-medium">
                   {user.role}
@@ -273,6 +297,7 @@ export function UsersTable({
                     onHardDelete,
                     onRevokeSessions,
                   }}
+                  refetch={refetch}
                 />
               </TableCell>
             </TableRow>

@@ -59,6 +59,13 @@ export const ConfirmEmailVerificationSchema = z.object({
     ),
 });
 
+/**
+ * Schema per richiesta verifica email da admin (by userId)
+ */
+export const RequestEmailVerificationAdminSchema = z.object({
+  userId: z.string().uuid('ID utente non valido'),
+});
+
 // Export types
 export type RequestPasswordResetInput = z.infer<
   typeof RequestPasswordResetSchema
@@ -72,4 +79,6 @@ export type RequestEmailVerificationInput = z.infer<
 export type ConfirmEmailVerificationInput = z.infer<
   typeof ConfirmEmailVerificationSchema
 >;
-
+export type RequestEmailVerificationAdminInput = z.infer<
+  typeof RequestEmailVerificationAdminSchema
+>;

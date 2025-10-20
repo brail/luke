@@ -1,0 +1,17 @@
+LUKE - Verifica Email
+
+Ciao!
+
+Grazie per esserti registrato su Luke.
+
+Per completare la configurazione del tuo account, verifica il tuo indirizzo email cliccando sul link qui sotto:
+
+{{verifyUrl}}
+
+Questo link è valido per 24 ore.
+
+Se non hai richiesto questa verifica, ignora questa email.
+
+---
+© {{year}} Luke. Tutti i diritti riservati.
+

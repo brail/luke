@@ -39,7 +39,7 @@ function VerifyEmailContent() {
       return;
     }
 
-    // Auto-trigger della verifica
+    // Auto-trigger della verifica (solo al mount)
     const verifyEmail = async () => {
       try {
         const result = await verifyEmailMutation.mutateAsync({ token });
@@ -55,7 +55,7 @@ function VerifyEmailContent() {
     };
 
     verifyEmail();
-  }, [token, verifyEmailMutation]);
+  }, [token]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/50 p-4">

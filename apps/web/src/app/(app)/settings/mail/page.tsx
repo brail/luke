@@ -321,7 +321,7 @@ export default function MailPage() {
         </div>
 
         {/* Note per provider comuni */}
-        <Alert>
+        <Alert className="mt-6">
           <AlertDescription>
             <h4 className="font-medium mb-2">
               📧 Configurazione provider comuni:
@@ -350,7 +350,7 @@ export default function MailPage() {
         </Alert>
 
         {/* Pulsanti Azione */}
-        <div className="flex gap-4">
+        <div className="flex gap-4 mt-6">
           <Button
             onClick={handleSaveConfig}
             disabled={saveConfigMutation.isPending}
@@ -407,46 +407,6 @@ export default function MailPage() {
             </AlertDescription>
           </Alert>
         )}
-      </SectionCard>
-
-      {/* Info aggiuntive */}
-      <SectionCard
-        title="Email Transazionali"
-        description="Funzionalità abilitate con questa configurazione"
-      >
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="border rounded-lg p-4">
-              <h4 className="font-medium mb-2">🔑 Reset Password</h4>
-              <p className="text-sm text-muted-foreground">
-                Permette agli utenti di reimpostare la password tramite link via
-                email. Token valido 30 minuti.
-              </p>
-              <p className="text-xs text-muted-foreground mt-2">
-                URL: <code>/auth/reset?token=...</code>
-              </p>
-            </div>
-
-            <div className="border rounded-lg p-4">
-              <h4 className="font-medium mb-2">✉️ Verifica Email</h4>
-              <p className="text-sm text-muted-foreground">
-                Verifica l&apos;indirizzo email degli utenti con identity LOCAL.
-                Token valido 24 ore.
-              </p>
-              <p className="text-xs text-muted-foreground mt-2">
-                URL: <code>/auth/verify?token=...</code>
-              </p>
-            </div>
-          </div>
-
-          <Alert>
-            <AlertDescription className="text-sm">
-              <strong>Nota:</strong> Gli utenti con provider LDAP/OIDC non
-              richiedono verifica email (autenticati esternamente). Le email
-              transazionali funzionano solo per utenti con identity LOCAL.
-            </AlertDescription>
-          </Alert>
-        </div>
       </SectionCard>
     </div>
   );

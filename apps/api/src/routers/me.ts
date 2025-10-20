@@ -40,6 +40,7 @@ export const meRouter = router({
         timezone: true,
         role: true,
         isActive: true,
+        emailVerifiedAt: true,
         createdAt: true,
         updatedAt: true,
         lastLoginAt: true,

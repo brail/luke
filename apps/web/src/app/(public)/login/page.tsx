@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import React, { useState } from 'react';
@@ -51,7 +52,14 @@ export default function LoginPage() {
       });
 
       if (result?.error) {
-        setError('Credenziali non valide');
+        // Gestione specifica per email non verificata
+        if (result.error.includes('Email non verificata')) {
+          setError(
+            'Email non verificata. Controlla la tua casella di posta per il link di verifica.'
+          );
+        } else {
+          setError('Credenziali non valide');
+        }
       } else {
         // Redirect a dashboard dopo login riuscito
         router.push('/dashboard');
@@ -112,6 +120,11 @@ export default function LoginPage() {
               {isLoading ? 'Accesso...' : 'Accedi'}
             </Button>
           </form>
+          <div className="text-center text-sm mt-2">
+            <Link href="/auth/reset" className="text-primary hover:underline">
+              Password dimenticata?
+            </Link>
+          </div>
           <div className="mt-4 text-xs text-muted-foreground text-center">
             <p>{displayText}</p>
           </div>

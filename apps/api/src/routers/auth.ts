@@ -14,11 +14,13 @@ import {
   ConfirmPasswordResetSchema,
   RequestEmailVerificationSchema,
   ConfirmEmailVerificationSchema,
+  RequestEmailVerificationAdminSchema,
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
 import { getConfig, getPasswordPolicy } from '../lib/configManager';
+import { sendVerificationEmail } from '../lib/emailHelpers';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { authenticateViaLdap } from '../lib/ldapAuth';
 import {
@@ -27,7 +29,12 @@ import {
 } from '../lib/mailer';
 import { validatePassword } from '../lib/password';
 import { withRateLimit } from '../lib/ratelimit';
-import { router, publicProcedure, protectedProcedure } from '../lib/trpc';
+import {
+  router,
+  publicProcedure,
+  protectedProcedure,
+  adminProcedure,
+} from '../lib/trpc';
 
 import type { PrismaClient, User } from '@prisma/client';
 
@@ -466,6 +473,26 @@ export const authRouter = router({
         };
       }
 
+      // BLOCCO LDAP: reset password non disponibile per utenti LDAP
+      if (user.identities[0].provider !== 'LOCAL') {
+        await logAudit(ctx, {
+          action: 'PASSWORD_RESET_REQUESTED',
+          targetType: 'Auth',
+          targetId: user.id,
+          result: 'FAILURE',
+          metadata: {
+            reason: 'ldap_user_not_allowed',
+            provider: user.identities[0].provider,
+          },
+        });
+
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message:
+            "Reset password non disponibile per utenti LDAP. Contatta l'amministratore di sistema.",
+        });
+      }
+
       // Genera token random di 32 byte (64 caratteri hex)
       const token = randomBytes(32).toString('hex');
       const tokenHash = createHash('sha256').update(token).digest('hex');
@@ -852,5 +879,36 @@ export const authRouter = router({
         success: true,
         message: 'Email verificata con successo!',
       };
+    }),
+
+  /**
+   * Richiesta verifica email da admin (by userId)
+   * Usa helper DRY per evitare duplicazione codice
+   */
+  requestEmailVerificationAdmin: adminProcedure
+    .use(withRateLimit('userMutations'))
+    .input(RequestEmailVerificationAdminSchema)
+    .mutation(async ({ input, ctx }) => {
+      const { userId } = input;
+
+      try {
+        const result = await sendVerificationEmail(
+          ctx.prisma,
+          {
+            userId,
+            reason: 'admin_initiated',
+            actorId: ctx.session.user.id,
+          },
+          ctx
+        );
+
+        return result;
+      } catch (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message:
+            error instanceof Error ? error.message : 'Errore invio email',
+        });
+      }
     }),
 });

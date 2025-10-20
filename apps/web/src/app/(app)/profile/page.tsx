@@ -7,6 +7,7 @@ import {
   LogOut,
   AlertCircle,
   User,
+  CheckCircle,
 } from 'lucide-react';
 import { useSession, signOut } from 'next-auth/react';
 import React, { useState } from 'react';
@@ -33,7 +34,6 @@ import { trpc } from '../../../lib/trpc';
 
 import { ChangePasswordCard } from './_components/ChangePasswordCard';
 import { UserProfileForm } from './_components/UserProfileForm';
-
 
 /**
  * Pagina Profilo Utente Semplificata
@@ -64,6 +64,10 @@ export default function ProfilePage() {
       toast.error(`Errore: ${error.message}`);
     },
   });
+
+  // Mutation per richiesta email verifica
+  const requestVerifyMutation =
+    trpc.auth.requestEmailVerification.useMutation();
 
   // Loading state
   if (status === 'loading' || isLoading) {
@@ -192,7 +196,7 @@ export default function ProfilePage() {
               <CardTitle className="text-xl">
                 {user.firstName} {user.lastName}
               </CardTitle>
-              <div className="flex items-center justify-center gap-2 mt-2">
+              <div className="flex items-center justify-center gap-2 mt-2 flex-wrap">
                 <Badge
                   variant={user.provider === 'LOCAL' ? 'default' : 'secondary'}
                 >
@@ -201,6 +205,23 @@ export default function ProfilePage() {
                 <Badge variant="outline">
                   {user.isActive ? 'Attivo' : 'Inattivo'}
                 </Badge>
+                {user.emailVerifiedAt ? (
+                  <Badge
+                    variant="default"
+                    className="flex items-center gap-1 bg-green-600"
+                  >
+                    <CheckCircle className="h-3 w-3" />
+                    Email verificata
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="destructive"
+                    className="flex items-center gap-1"
+                  >
+                    <AlertCircle className="h-3 w-3" />
+                    Non verificata
+                  </Badge>
+                )}
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -218,6 +239,32 @@ export default function ProfilePage() {
                 <span className="text-sm text-muted-foreground">Posizione</span>
                 <span className="text-sm font-medium">Milano, Italia</span>
               </div>
+              {!user.emailVerifiedAt && (
+                <div className="flex items-center justify-between border-t pt-4 mt-4">
+                  <span className="text-sm text-muted-foreground">
+                    Verifica email
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        await requestVerifyMutation.mutateAsync({
+                          email: user.email,
+                        });
+                        toast.success('Email di verifica inviata');
+                      } catch (err: any) {
+                        toast.error(err?.message || 'Errore invio email');
+                      }
+                    }}
+                    disabled={requestVerifyMutation.isPending}
+                  >
+                    {requestVerifyMutation.isPending
+                      ? 'Invio...'
+                      : 'Invia verifica'}
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
 

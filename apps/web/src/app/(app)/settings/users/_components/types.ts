@@ -12,6 +12,7 @@ export interface UserListItem {
   lastName: string | null;
   role: 'admin' | 'editor' | 'viewer';
   isActive: boolean;
+  emailVerifiedAt: string | null;
   createdAt: string;
   updatedAt: string;
   identities: Array<{
@@ -29,6 +30,7 @@ export type SortColumn =
   | 'lastName'
   | 'role'
   | 'isActive'
+  | 'emailVerifiedAt'
   | 'createdAt'
   | 'provider';
 
@@ -81,4 +83,5 @@ export interface TableProps {
   currentUserId: string;
   isLoading?: boolean;
   error?: any;
+  refetch?: () => void;
 }

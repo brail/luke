@@ -2,7 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2, Info } from 'lucide-react';
-import React from 'react';
+import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
@@ -32,11 +32,15 @@ interface UserProfileFormProps {
     locale: string;
     timezone: string;
     provider: string;
+    emailVerifiedAt: string | null;
   };
 }
 
 export function UserProfileForm({ user }: UserProfileFormProps) {
   const utils = trpc.useUtils();
+
+  // Stato per cambio email
+  const [newEmail, setNewEmail] = useState('');
 
   // Form setup con validazione Zod
   const {
@@ -66,6 +70,20 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
     },
   });
 
+  // Mutation per cambio email
+  const changeEmailMutation = trpc.users.changeEmail.useMutation({
+    onSuccess: async data => {
+      toast.success(data.message);
+      setNewEmail('');
+      utils.me.get.invalidate();
+      // Ricarica pagina per aggiornare sessione
+      window.location.reload();
+    },
+    onError: error => {
+      toast.error(error.message || 'Errore cambio email');
+    },
+  });
+
   // Handler per submit form
   const onSubmit = (data: UserProfileInput) => {
     updateProfileMutation.mutate(data);
@@ -77,20 +95,51 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-      {/* Email */}
+      {/* Email (read-only) */}
       <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
+        <Label htmlFor="email">Email Attuale</Label>
         <Input
           id="email"
           type="email"
-          {...register('email')}
-          className={errors.email ? 'border-destructive' : ''}
-          aria-invalid={!!errors.email}
-          aria-describedby={errors.email ? 'email-error' : undefined}
+          value={user.email}
+          disabled
+          className="bg-muted"
         />
-        {errors.email && (
-          <p id="email-error" className="text-sm text-destructive">
-            {errors.email.message}
+      </div>
+
+      {/* Cambia Email */}
+      <div className="space-y-2">
+        <Label htmlFor="newEmail">Cambia Email</Label>
+        <div className="flex gap-2">
+          <Input
+            id="newEmail"
+            type="email"
+            value={newEmail}
+            onChange={e => setNewEmail(e.target.value)}
+            placeholder="nuova@email.com"
+            disabled={changeEmailMutation.isPending}
+          />
+          <Button
+            type="button"
+            onClick={() => {
+              if (!newEmail) return;
+              changeEmailMutation.mutate({ newEmail });
+            }}
+            disabled={changeEmailMutation.isPending || !newEmail}
+          >
+            {changeEmailMutation.isPending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Aggiorno...
+              </>
+            ) : (
+              'Aggiorna'
+            )}
+          </Button>
+        </div>
+        {user.emailVerifiedAt === null && (
+          <p className="text-xs text-amber-600">
+            ⚠️ Email attuale non verificata. Controlla la casella di posta.
           </p>
         )}
       </div>

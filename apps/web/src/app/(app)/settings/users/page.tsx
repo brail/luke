@@ -12,6 +12,7 @@ import { UserDialog } from '../../../../components/UserDialog';
 import { debugLog } from '../../../../lib/debug';
 import { trpc } from '../../../../lib/trpc';
 
+import { SendVerificationDialog } from './_components/SendVerificationDialog';
 import { SortColumn, SortOrder } from './_components/types';
 import { UsersTable } from './_components/UsersTable';
 import { UsersToolbar } from './_components/UsersToolbar';
@@ -47,6 +48,10 @@ export default function UsersPage() {
   const [sortBy, setSortBy] = useState<SortColumn>('createdAt');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
+  // Stato per dialog invio email verifica post-creazione
+  const [createdUserId, setCreatedUserId] = useState<string | null>(null);
+  const [showVerifyDialog, setShowVerifyDialog] = useState(false);
+
   // Query tRPC per lista utenti con paginazione e filtri
   const {
     data: usersData,
@@ -69,10 +74,13 @@ export default function UsersPage() {
 
   // Mutations tRPC
   const createUserMutation = trpc.users.create.useMutation({
-    onSuccess: () => {
+    onSuccess: data => {
       toast.success('Utente creato con successo');
       setDialogOpen(false);
       refetch();
+      // Mostra dialog per invio email verifica
+      setCreatedUserId(data.id);
+      setShowVerifyDialog(true);
     },
     onError: (error: any) => {
       toast.error(`Errore nella creazione: ${error.message}`);
@@ -301,6 +309,7 @@ export default function UsersPage() {
               currentUserId={session?.user?.id || ''}
               isLoading={isLoading}
               error={error}
+              refetch={refetch}
               sortBy={sortBy}
               sortOrder={sortOrder}
               onSort={handleSort}
@@ -370,6 +379,13 @@ export default function UsersPage() {
             actionType={confirmAction.type}
           />
         )}
+
+        {/* Dialog invio email verifica post-creazione */}
+        <SendVerificationDialog
+          userId={createdUserId}
+          open={showVerifyDialog}
+          onOpenChange={setShowVerifyDialog}
+        />
       </div>
     </ErrorBoundary>
   );
