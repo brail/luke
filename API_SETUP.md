@@ -1,6 +1,23 @@
 # Luke API - Setup e Utilizzo
 
-## 🚀 Avvio Rapido
+## Indice
+
+- [Avvio Rapido](#avvio-rapido)
+- [Bootstrap Sviluppo](#bootstrap-sviluppo)
+- [LDAP Resilienza](#ldap-resilienza)
+- [Endpoint Disponibili](#endpoint-disponibili)
+- [tRPC Endpoints](#trpc-endpoints)
+- [Credenziali Admin](#credenziali-admin)
+- [Database](#database)
+- [Sicurezza](#sicurezza)
+- [Architettura](#architettura)
+- [Observability](#observability)
+- [Health & Readiness](#health--readiness)
+- [Troubleshooting](#troubleshooting)
+- [Note](#note)
+- [Riferimenti Correlati](#riferimenti-correlati)
+
+## Avvio Rapido
 
 ### 1. Installazione Dipendenze
 
@@ -75,7 +92,7 @@ pnpm --filter @luke/api dev
 
 Il server sarà disponibile su `http://localhost:3001`
 
-## 🔧 Bootstrap Sviluppo
+## Bootstrap Sviluppo
 
 ### Setup Iniziale Completo
 
@@ -107,7 +124,7 @@ pnpm -w -F @luke/api db:seed
 pnpm -w -F @luke/api prisma:generate
 ```
 
-## 🔒 LDAP Resilienza
+## LDAP Resilienza
 
 ### Panoramica
 
@@ -227,7 +244,7 @@ pnpm prisma migrate reset --force --skip-seed
 pnpm -w -F @luke/api db:seed
 ```
 
-## 📊 Endpoint Disponibili
+## Endpoint Disponibili
 
 ### Health Check
 
@@ -241,7 +258,7 @@ curl http://localhost:3001/healthz
 curl http://localhost:3001/
 ```
 
-## 🔗 tRPC Endpoints
+## tRPC Endpoints
 
 ### Users Router
 
@@ -530,7 +547,7 @@ curl -X POST "http://localhost:3001/trpc/config.importJson" \
 
 **Nota**: L'item con `value: null` viene saltato automaticamente.
 
-## 🔑 Credenziali Admin
+## Credenziali Admin
 
 Dopo il seed, è disponibile un utente admin:
 
@@ -541,7 +558,7 @@ Dopo il seed, è disponibile un utente admin:
 
 ⚠️ **IMPORTANTE**: Cambia la password admin al primo login!
 
-## 🗄️ Database
+## Database
 
 ### Prisma Studio
 
@@ -562,7 +579,7 @@ rm apps/api/prisma/dev.db*
 pnpm --filter @luke/api seed
 ```
 
-## 🔐 Sicurezza
+## Sicurezza
 
 ### Master Key
 
@@ -650,66 +667,14 @@ Suite completa in `apps/api/test/session.hardening.spec.ts`:
 - **Scope**: Server-only, mai esposto via HTTP
 - **Nessun database**: Il secret non è mai salvato, solo derivato on-demand
 
-### Rate Limiting
+### Rate Limiting & Idempotency
 
-- **Per-rotta**: Limiti specifici per endpoint sensibili
-- **Configurazione dinamica**: AppConfig → ENV → Default
-- **Key extraction**: IP per endpoint pubblici, userId per endpoint autenticati
-- **Store**: In-memory LRU cache con TTL e cleanup automatico
+Il sistema implementa rate limiting per-rotta e idempotency per mutazioni critiche.
 
-> 📖 **Documentazione Operativa**: Per configurazioni dettagliate, esempi per ambiente e comandi di testing, consulta [OPERATIONS.md](../OPERATIONS.md#-rate-limiting).
+Per configurazioni dettagliate, esempi pratici e best practices, consulta:
 
-#### Rate Limiting Configuration
-
-**AppConfig (database)**:
-Store a JSON object in `rateLimit` key:
-
-```json
-{
-  "login": { "max": 10, "timeWindow": "2m", "keyBy": "ip" },
-  "passwordChange": { "max": 5, "timeWindow": "20m", "keyBy": "userId" },
-  "configMutations": { "max": 30, "timeWindow": "1m", "keyBy": "userId" },
-  "userMutations": { "max": 15, "timeWindow": "1m", "keyBy": "userId" }
-}
-```
-
-**Environment Variables**:
-Override individual routes:
-
-- `LUKE_RATE_LIMIT_LOGIN_MAX=10`
-- `LUKE_RATE_LIMIT_LOGIN_WINDOW=2m`
-- `LUKE_RATE_LIMIT_LOGIN_KEY_BY=ip`
-- `LUKE_RATE_LIMIT_PASSWORDCHANGE_MAX=5`
-- `LUKE_RATE_LIMIT_PASSWORDCHANGE_WINDOW=20m`
-- `LUKE_RATE_LIMIT_PASSWORDCHANGE_KEY_BY=userId`
-- `LUKE_RATE_LIMIT_CONFIGMUTATIONS_MAX=30`
-- `LUKE_RATE_LIMIT_CONFIGMUTATIONS_WINDOW=1m`
-- `LUKE_RATE_LIMIT_USERMUTATIONS_MAX=15`
-- `LUKE_RATE_LIMIT_USERMUTATIONS_WINDOW=1m`
-
-**Default Values (fallback)**:
-
-| Endpoint            | Limite | Window | Key By |
-| ------------------- | ------ | ------ | ------ |
-| `auth.login`        | 5 req  | 1 min  | IP     |
-| `me.changePassword` | 3 req  | 15 min | userId |
-| `config.*`          | 20 req | 1 min  | userId |
-| `users.*`           | 10 req | 1 min  | userId |
-
-**Resolution Order**: AppConfig → ENV → Defaults
-
-**Time Window Format**: Supporta `30s`, `1m`, `2h` (secondi, minuti, ore)
-
-### Idempotency
-
-- **Header**: `Idempotency-Key: <uuid-v4>`
-- **Store**: In-memory LRU cache (max 1000 keys, TTL 5min)
-- **Scope**: Mutazioni critiche (login, password change, config, users)
-- **Hash**: SHA256(method + path + body) per validazione
-
-> 📖 **Documentazione Operativa**: Per esempi pratici, testing collisioni e best practices, consulta [OPERATIONS.md](../OPERATIONS.md#-idempotency).
-
-- **tRPC middleware**: Wrapper che riusa IdempotencyStore esistente
+- [OPERATIONS.md - Rate Limiting](OPERATIONS.md#rate-limiting)
+- [OPERATIONS.md - Idempotency](OPERATIONS.md#idempotency)
 
 ### RBAC Guards
 
@@ -717,86 +682,21 @@ Override individual routes:
 - **Composizione**: Guardie combinabili per logica complessa
 - **Type-safe**: Context tRPC con session garantita
 
-### Sicurezza Config Router
+### Configurazioni (AppConfig)
 
-#### Regole di Sicurezza
+Il sistema utilizza configurazioni centralizzate in database con cifratura AES-256-GCM per segreti.
 
-- **Mai decrittare in bulk**: La lista configurazioni non restituisce mai valori in chiaro per chiavi cifrate
-- **RBAC rigoroso**: Solo admin può creare/modificare/eliminare configurazioni
-- **Validazione chiavi**: Formato `prefix.subkey` con prefissi ammessi: `app`, `auth`, `mail`, `storage`, `security`, `integrations`
-- **Protezione chiavi critiche**: Chiavi essenziali (es: `auth.strategy`, `jwt.secret`) non possono essere eliminate
-- **Audit log granulare**: Ogni visualizzazione raw genera log con metadati redatti
-- **Export sicuro**: I segreti cifrati nell'export mostrano sempre `[ENCRYPTED]`, mai il plaintext
-- **Tracing distribuito**: Header `x-luke-trace-id` per correlazione log cross-service
+Per dettagli completi su:
 
-#### RBAC (Role-Based Access Control)
+- Schema delle 29 chiavi AppConfig
+- Policy di cifratura e validazione
+- RBAC e protezione chiavi critiche
+- Import/Export JSON sicuro
+- Audit log e tracing
 
-| Procedura                        | Ruolo Richiesto   | Descrizione                  |
-| -------------------------------- | ----------------- | ---------------------------- |
-| `config.list`                    | `loggedProcedure` | Qualsiasi utente autenticato |
-| `config.get`                     | `loggedProcedure` | Qualsiasi utente autenticato |
-| `config.viewValue` (mode=masked) | `loggedProcedure` | Qualsiasi utente autenticato |
-| `config.viewValue` (mode=raw)    | `adminProcedure`  | Solo admin                   |
-| `config.exists`                  | `loggedProcedure` | Qualsiasi utente autenticato |
-| `config.getMultiple`             | `loggedProcedure` | Qualsiasi utente autenticato |
-| `config.set`                     | `adminProcedure`  | Solo admin                   |
-| `config.update`                  | `adminProcedure`  | Solo admin                   |
-| `config.delete`                  | `adminProcedure`  | Solo admin                   |
-| `config.setMultiple`             | `adminProcedure`  | Solo admin                   |
-| `config.exportJson`              | `adminProcedure`  | Solo admin                   |
-| `config.importJson`              | `adminProcedure`  | Solo admin                   |
+Consulta [APP_CONFIG.md](APP_CONFIG.md).
 
-#### Audit & Tracing
-
-**Metadati Audit Log**:
-
-- `CONFIG_VIEW_VALUE` (mode=raw): `{ key, mode: 'raw' }`
-- `CONFIG_CREATE/UPDATE`: `{ key, isEncrypted, valueRedacted: '[ENCRYPTED]' | redact(value, 32) }`
-- `CONFIG_DELETE`: `{ key }`
-- `CONFIG_EXPORT`: `{ includeValues, count }`
-- `CONFIG_IMPORT`: `{ key, isEncrypted, valueRedacted, source: 'import' }`
-
-**Header Tracing**:
-
-- `x-luke-trace-id`: generato automaticamente dal server per correlazione log
-- Usato per tracciare operazioni cross-service e debugging distribuito
-
-#### Chiavi Critiche Protette
-
-Le seguenti chiavi non possono essere eliminate per motivi di sicurezza e funzionamento del sistema:
-
-**Autenticazione e Autorizzazione:**
-
-- `auth.strategy` - Strategia di autenticazione principale
-- `auth.ldap.url` - URL server LDAP
-- `auth.ldap.searchBase` - Base di ricerca LDAP
-- `auth.ldap.searchFilter` - Filtro di ricerca LDAP
-- `nextauth.secret` - Secret per NextAuth.js
-- `jwt.secret` - Secret per firma token JWT
-
-**Sicurezza e Cifratura:**
-
-- `security.encryption.key` - Chiave master per cifratura
-
-**Servizi Esterni Critici:**
-
-- `mail.smtp` - Configurazione SMTP per email
-- `storage.smb` - Configurazione storage SMB
-- `storage.drive` - Configurazione storage drive
-
-**Gestione Edge Cases:**
-
-- Per eliminare una chiave critica, contattare l'amministratore di sistema
-- In caso di emergenza, la chiave può essere temporaneamente rinominata invece di eliminata
-
-#### Formato Chiavi Valido
-
-- **Regex**: `/^(categories)(\\.[a-zA-Z0-9_-]+)+$/` (permette maiuscole per acronimi)
-- **Prefissi ammessi**: `app`, `auth`, `mail`, `storage`, `security`, `integrations`
-- **Esempi validi**: `auth.ldap.url`, `mail.smtp.host`, `storage.smb.password`, `auth.SAML.url`
-- **Esempi non validi**: `app` (manca separatore), `auth.` (termina con punto), `invalid.prefix.key` (prefisso non ammesso)
-
-## 🏗️ Architettura
+## Architettura
 
 ### Modelli Database
 
@@ -823,279 +723,15 @@ Le seguenti chiavi non possono essere eliminate per motivi di sicurezza e funzio
 - **Pino**: Logging strutturato
 - **Graceful shutdown**: Chiusura pulita
 
-## 🔒 Security Headers & CORS
+## Security Headers & CORS
 
-### Helmet Configuration
+Luke implementa security headers standard (CSP, HSTS, X-Frame-Options) e strategia CORS ibrida.
 
-Luke API utilizza `@fastify/helmet` per security headers ottimizzati per API JSON-only:
+Per configurazioni dettagliate, esempi per ambiente e test, consulta:
 
-**CSP (Content Security Policy)**:
+- [OPERATIONS.md - Security Headers](OPERATIONS.md#security-headers)
 
-- **Produzione**: `default-src 'none'; frame-ancestors 'none'; base-uri 'none'` (minimale, no inline)
-- **Sviluppo**: CSP disabilitata per evitare problemi di sviluppo
-
-**HSTS (HTTP Strict Transport Security)**:
-
-- **Produzione**: `maxAge: 15552000` (180 giorni), `includeSubDomains: true`, `preload: false`
-- **Sviluppo**: Disabilitato
-
-**Header aggiuntivi**:
-
-- `X-Content-Type-Options: nosniff`
-- `Referrer-Policy: no-referrer`
-- `X-Frame-Options: DENY`
-- `X-DNS-Prefetch-Control: off`
-
-### CORS Strategy
-
-Luke implementa una strategia CORS ibrida con priorità:
-
-1. **AppConfig**: `appConfig.security.cors.allowedOrigins` (se presente)
-2. **Environment**: `LUKE_CORS_ALLOWED_ORIGINS` (CSV, es. `https://app.example.com,https://admin.example.com`)
-3. **Default**:
-   - **Dev**: `['http://localhost:3000', 'http://localhost:5173']`
-   - **Prod**: `[]` (deny-by-default)
-
-**Configurazione ENV**:
-
-```bash
-# Esempio per produzione
-export LUKE_CORS_ALLOWED_ORIGINS="https://app.example.com,https://admin.example.com"
-```
-
-**Logging**: Il server logga la fonte CORS all'avvio senza esporre liste complete in produzione.
-
-### Debug UI
-
-Per abilitare logging di debug nel frontend in ambienti demo:
-
-```bash
-export NEXT_PUBLIC_LUKE_DEBUG_UI=true
-```
-
-Questo abilita `debugLog()`, `debugWarn()`, `debugError()` anche in produzione.
-
-## 🛡️ Rate-Limit e Idempotency
-
-### Rate-Limit per-rotta
-
-Luke API implementa rate limiting mirato per proteggere endpoint sensibili:
-
-**Configurazione**:
-
-```typescript
-// apps/api/src/lib/ratelimit.ts
-export const RATE_LIMIT_CONFIG = {
-  login: { max: 5, windowMs: 60_000, keyBy: 'ip' },
-  passwordChange: { max: 3, windowMs: 900_000, keyBy: 'userId' },
-  configMutations: { max: 20, windowMs: 60_000, keyBy: 'userId' },
-  userMutations: { max: 10, windowMs: 60_000, keyBy: 'userId' },
-};
-```
-
-**Applicazione**:
-
-```typescript
-// Esempio: auth.login
-login: publicProcedure
-  .use(withRateLimit('login'))
-  .use(withIdempotency())
-  .input(LoginSchema)
-  .mutation(async ({ input, ctx }) => { ... })
-```
-
-**Comportamento**:
-
-- **IP-based**: Per endpoint pubblici (login)
-- **User-based**: Per endpoint autenticati (config, users)
-- **TTL**: Window sliding con cleanup automatico
-- **Error**: `TOO_MANY_REQUESTS` con retry-after
-
-### Idempotency per mutate critiche
-
-Prevenzione di richieste duplicate con header `Idempotency-Key`:
-
-**Header richiesto**:
-
-```bash
-curl -X POST http://localhost:3001/trpc/auth.login \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: $(uuidgen)" \
-  -d '{"username":"admin","password":"changeme"}'
-```
-
-**Comportamento**:
-
-- **Prima richiesta**: Esegue mutation, salva risultato
-- **Richieste duplicate**: Ritorna risultato cached (stesso input)
-- **Input diverso**: Esegue nuova mutation
-- **TTL**: 5 minuti di cache
-- **Scope**: Solo mutation (query non hanno bisogno di idempotency)
-
-**Endpoint protetti**:
-
-- `auth.login` - Prevenzione doppi login
-- `me.changePassword` - Prevenzione doppi cambi password
-- `config.set/update` - Prevenzione doppi aggiornamenti config
-- `users.create/update` - Prevenzione doppi aggiornamenti utenti
-
-**Nota**: Delete operations non hanno idempotency per sicurezza (delete deve essere esplicito).
-
-### Rate-Limiting Per-Rotta
-
-#### Limiti Configurati
-
-| Procedura         | Max Richieste | Finestra | Key Type |
-| ----------------- | ------------- | -------- | -------- |
-| auth.login        | 5             | 1 min    | IP       |
-| me.changePassword | 3             | 15 min   | userId   |
-| users.\*          | 10            | 1 min    | userId   |
-| config.set/update | 20            | 1 min    | userId   |
-
-**Errore restituito**: `TOO_MANY_REQUESTS` con messaggio e finestra.
-
-#### Esempi Pratici
-
-**Login rate limiting**:
-
-```bash
-# Prime 5 richieste OK
-for i in {1..5}; do
-  curl -X POST http://localhost:3001/trpc/auth.login \
-    -H "Content-Type: application/json" \
-    -d '{"username":"admin","password":"wrong"}'
-done
-
-# 6a richiesta → TOO_MANY_REQUESTS
-curl -X POST http://localhost:3001/trpc/auth.login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"wrong"}'
-```
-
-**Output errore**:
-
-```json
-{
-  "error": {
-    "code": "TOO_MANY_REQUESTS",
-    "message": "Rate limit exceeded for login. Max 5 requests per 1 minute(s)."
-  }
-}
-```
-
-### Idempotency-Key
-
-#### Header e Formato
-
-**Header**: `Idempotency-Key: <UUID-v4>`
-
-**Procedura supportate**: `create`, `update` mutations.
-
-**Comportamento**:
-
-- Prima richiesta con key → esegue e salva risultato (TTL 5min)
-- Richiesta duplicata (stesso body) → ritorna risultato cached (no side-effect)
-- Stessa key con body diverso → **409 Conflict**
-
-#### Esempi Pratici
-
-**Creazione utente idempotente**:
-
-```bash
-# Prima chiamata: crea utente
-curl -X POST http://localhost:3001/trpc/users.create \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000" \
-  -d '{"username":"test","email":"test@test.com","password":"Test123!","role":"viewer"}'
-
-# Seconda chiamata con stessa key → ritorna stesso risultato (no duplicato)
-curl -X POST http://localhost:3001/trpc/users.create \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000" \
-  -d '{"username":"test","email":"test@test.com","password":"Test123!","role":"viewer"}'
-```
-
-**Conflitto con body diverso**:
-
-```bash
-# Prima chiamata
-curl -X POST http://localhost:3001/trpc/users.create \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000" \
-  -d '{"username":"user1","email":"user1@test.com","password":"Test123!","role":"viewer"}'
-
-# Seconda chiamata con body diverso → 409 Conflict
-curl -X POST http://localhost:3001/trpc/users.create \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000" \
-  -d '{"username":"user2","email":"user2@test.com","password":"Test123!","role":"viewer"}'
-```
-
-**Output conflitto**:
-
-```json
-{
-  "error": {
-    "code": "CONFLICT",
-    "message": "Idempotency-Key already used with different request body. Each key must identify a single operation."
-  }
-}
-```
-
-#### Validazione UUID
-
-**Formato richiesto**: UUID v4 (es. `550e8400-e29b-41d4-a716-446655440000`)
-
-**Esempi validi**:
-
-- `550e8400-e29b-41d4-a716-446655440000`
-- `6ba7b810-9dad-11d1-80b4-00c04fd430c8`
-
-**Esempi non validi**:
-
-- `not-a-uuid`
-- `550e8400-e29b-41d4-a716` (troppo corto)
-- `550e8400-e29b-41d4-a716-446655440000-extra` (troppo lungo)
-
-**Errore formato non valido**:
-
-```json
-{
-  "error": {
-    "code": "BAD_REQUEST",
-    "message": "Invalid Idempotency-Key format. Must be a valid UUID v4."
-  }
-}
-```
-
-#### TTL e Cleanup
-
-- **TTL**: 5 minuti (configurabile via `IDEMPOTENCY_CONFIG.defaultTtlMs`)
-- **Cleanup**: Automatico ogni minuto
-- **Storage**: In-memory LRU cache (max 1000 keys)
-- **Hash**: SHA256(method + path + body) per validazione univoca
-
-#### Best Practices
-
-1. **Genera UUID v4** per ogni operazione unica
-2. **Usa stessa key** per retry della stessa operazione
-3. **Non riutilizzare key** per operazioni diverse
-4. **Gestisci 409 Conflict** nel client (nuova key per operazione diversa)
-5. **Non usare per query** (solo mutation hanno bisogno di idempotency)
-
-## 🚧 Prossimi Passi
-
-1. ✅ **Rate Limiting**: Implementato per-rotta
-2. ✅ **Idempotency**: Implementato per mutate critiche
-3. **Audit Log**: Logging automatico delle azioni
-4. **Validazione Input**: Middleware per validazione avanzata
-5. **Testing**: Suite di test unitari e integrazione
-
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Errore "Master key deve essere di 32 bytes"
 
@@ -1118,7 +754,7 @@ pnpm --filter @luke/api dev
 PORT=3002 pnpm --filter @luke/api dev
 ```
 
-## 🔍 Observability
+## Observability
 
 ### OpenTelemetry Tracing
 
@@ -1167,9 +803,11 @@ readinessProbe:
 
 Pino serializer automatico redige: `password`, `secret`, `token`, `bindPassword`, valori cifrati AppConfig.
 
-## 🏥 Health & Readiness
+## Health & Readiness
 
-> 📖 **Documentazione Operativa**: Per troubleshooting dettagliato, esempi di failure scenarios e configurazione Kubernetes, consulta [OPERATIONS.md](../OPERATIONS.md#-readiness--health-checks).
+Per troubleshooting dettagliato, esempi di failure scenarios e configurazione Kubernetes, consulta:
+
+- [OPERATIONS.md - Readiness & Health Checks](OPERATIONS.md#readiness--health-checks)
 
 ### Differenza Liveness vs Readiness
 
@@ -1262,9 +900,17 @@ readinessProbe:
     port: 3001
 ```
 
-## 📝 Note
+## Note
 
 - Il server usa **SQLite** per sviluppo, **PostgreSQL** per production
 - Tutti gli endpoint sono **pubblici** (autenticazione da implementare)
 - Le query tRPC usano **GET**, le mutation usano **POST**
 - Il formato tRPC è compatibile con client TypeScript end-to-end
+
+## Riferimenti Correlati
+
+- [README.md](README.md) - Documentazione principale del progetto
+- [APP_CONFIG.md](APP_CONFIG.md) - Gestione configurazioni centralizzate (AppConfig)
+- [OPERATIONS.md](OPERATIONS.md) - Documentazione operativa per SRE/DevOps
+- [SETUP_STATUS.md](SETUP_STATUS.md) - Registro tecnico interno e roadmap
+- [docs/adr/](docs/adr/) - Architecture Decision Records

@@ -2,19 +2,21 @@
 
 Documentazione operativa per SRE/DevOps su configurazioni runtime, rate-limiting, idempotency, session management, security headers e health checks.
 
-## 📋 Indice
+## Indice
 
-- [Rate Limiting](#-rate-limiting)
-- [Idempotency](#-idempotency)
-- [Session Management](#-session-management)
-- [Security Headers](#-security-headers)
-- [Security Hardcoded Values](#-security-hardcoded-values)
-- [Readiness & Health Checks](#-readiness--health-checks)
-- [Configurazioni per Ambiente](#-configurazioni-per-ambiente)
+- [Security Hardcoded Values](#security-hardcoded-values)
+- [Rate Limiting](#rate-limiting)
+- [Idempotency](#idempotency)
+- [Session Management](#session-management)
+- [Security Headers](#security-headers)
+- [Readiness & Health Checks](#readiness--health-checks)
+- [Configurazioni per Ambiente](#configurazioni-per-ambiente)
+- [Test Automatici](#test-automatici)
+- [Riferimenti Correlati](#riferimenti-correlati)
 
 ---
 
-## 🔒 Security Hardcoded Values
+## Security Hardcoded Values
 
 Alcuni valori di sicurezza sono **intenzionalmente hardcoded** per prevenire misconfigurazioni e garantire la sicurezza del sistema:
 
@@ -109,7 +111,7 @@ Le seguenti configurazioni **possono** essere modificate via AppConfig:
 
 ---
 
-## 🚦 Rate Limiting
+## Rate Limiting
 
 ### Configurazione per Rotta
 
@@ -208,7 +210,7 @@ done
 
 ---
 
-## 🔄 Idempotency
+## Idempotency
 
 ### Header e Formato
 
@@ -314,7 +316,7 @@ curl -X POST http://localhost:3001/trpc/users.create \
 
 ---
 
-## 🔐 Session Management
+## Session Management
 
 ### TTL Configurazione per Ambiente
 
@@ -419,7 +421,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 ---
 
-## 🛡️ Security Headers
+## Security Headers
 
 ### Headers per Ambiente
 
@@ -484,7 +486,7 @@ I test verificano:
 
 ---
 
-## 🏥 Readiness & Health Checks
+## Readiness & Health Checks
 
 ### Endpoint Disponibili
 
@@ -621,7 +623,7 @@ curl http://localhost:3001/trpc/config.get?input=%7B%22key%22%3A%22auth.ldap.url
 
 ---
 
-## 🌍 Configurazioni per Ambiente
+## Configurazioni per Ambiente
 
 ### Rate Limiting
 
@@ -703,13 +705,7 @@ export LUKE_CORS_ALLOWED_ORIGINS="https://app.example.com,https://admin.example.
 
 ---
 
-## 🔗 Riferimenti
-
-- [README.md](README.md) - Documentazione principale del progetto
-- [API_SETUP.md](API_SETUP.md) - Setup e utilizzo dell'API
-- [apps/api/README.md](apps/api/README.md) - Documentazione specifica API
-
-## 🧪 Test Automatici
+## Test Automatici
 
 ```bash
 # Test security headers
@@ -730,4 +726,13 @@ pnpm -F @luke/api test readyz.spec.ts
 
 ---
 
-**Luke** - Operational tuning per applicazioni enterprise sicure e scalabili 🚀
+## Riferimenti Correlati
+
+- [README.md](README.md) - Documentazione principale del progetto
+- [API_SETUP.md](API_SETUP.md) - Setup e utilizzo dell'API con esempi pratici
+- [APP_CONFIG.md](APP_CONFIG.md) - Gestione configurazioni centralizzate (AppConfig)
+- [SETUP_STATUS.md](SETUP_STATUS.md) - Registro tecnico interno e roadmap
+
+---
+
+**Luke** - Operational tuning per applicazioni enterprise sicure e scalabili

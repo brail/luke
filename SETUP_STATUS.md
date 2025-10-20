@@ -1,8 +1,8 @@
 # Luke Monorepo - Status Setup
 
-## ✅ Completato con Successo
+## Completato con Successo
 
-### 🏗️ Struttura Monorepo
+### Struttura Monorepo
 
 - ✅ **pnpm workspaces** configurato (`pnpm-workspace.yaml`)
 - ✅ **Turborepo** configurato (`turbo.json`) con pipeline build/dev/lint
@@ -10,18 +10,18 @@
 - ✅ **ESLint + Prettier + Husky** pre-commit hooks
 - ✅ **Node.js v20** specificato (`.nvmrc`)
 
-### 📦 Workspaces
+### Workspaces
 
 - ✅ **@luke/web** (Next.js 15 + Tailwind CSS)
 - ✅ **@luke/api** (Fastify 5 + tRPC + Prisma)
 - ✅ **@luke/core** (Zod schemas + RBAC + utils)
 
-### 🚀 Servizi Attivi
+### Servizi Attivi
 
 - ✅ **Frontend**: http://localhost:3000 (Next.js 15 + Tailwind CSS)
 - ✅ **API**: http://localhost:3001 (Fastify 5) - risponde `{"message":"Luke API is running!"}`
 
-### 🛠️ Comandi Funzionanti
+### Comandi Funzionanti
 
 ```bash
 pnpm install          # ✅ Installa dipendenze
@@ -32,7 +32,7 @@ pnpm lint             # ✅ Lint tutti i file
 pnpm format           # ✅ Formatta con Prettier
 ```
 
-### 🔐 Sicurezza Configurata
+### Sicurezza Configurata
 
 - ✅ **Nessun .env** - configurazioni in database
 - ✅ **Master key** - keytar + fallback `~/.luke/secret.key`
@@ -52,7 +52,7 @@ pnpm format           # ✅ Formatta con Prettier
 - ✅ **Visualizzazione sicura** - con modalità masked/raw e audit log
 - ✅ **Email transazionali** - reset password e verifica email con token hash SHA-256
 
-## ⚠️ Note
+## Note
 
 ### Frontend (Next.js)
 
@@ -72,7 +72,7 @@ pnpm format           # ✅ Formatta con Prettier
 - ✅ **TypeScript** strict mode
 - ✅ **Build** funzionante
 
-## 🔐 Gestione Segreti
+## Gestione Segreti
 
 ### Processo Seed
 
@@ -118,7 +118,7 @@ pnpm --filter @luke/api run seed
 - ✅ Master key protetta con permessi 600
 - ✅ Cache in-memory per performance (nessuna query DB per ogni token)
 
-## 🔐 Autenticazione LDAP
+## Autenticazione LDAP
 
 ### Configurazione Enterprise
 
@@ -157,7 +157,7 @@ Luke supporta autenticazione enterprise via LDAP con le seguenti funzionalità:
 - **Indicatore visivo**: Nota "Campo sincronizzato esternamente" sotto ogni campo disabilitato
 - **Colonna Provider**: La tabella utenti mostra il provider di ogni utente (LOCAL/LDAP/OIDC)
 
-## 📧 Email Transazionali
+## Email Transazionali
 
 ### Flussi Implementati
 
@@ -213,7 +213,7 @@ Per deliverability ottimale configurare:
 - **DKIM**: Firma digitale autenticità
 - **DMARC**: Policy anti-spoofing (opzionale)
 
-## 🔐 Gestione Configurazioni Sensibili
+## Gestione Configurazioni Sensibili
 
 ### Visualizzazione Valori Cifrati
 
@@ -250,7 +250,7 @@ Il campo `bindPassword` nella configurazione LDAP è opzionale:
 - **Ultimo admin**: Protezione contro l'eliminazione dell'ultimo amministratore del sistema
 - **Robustezza CRUD**: Validazioni avanzate per prevenire operazioni pericolose
 
-## 🔐 Security Hardening Completato
+## Security Hardening Completato
 
 ### JWT & Authentication
 
@@ -291,7 +291,7 @@ Il campo `bindPassword` nella configurazione LDAP è opzionale:
 - 🔜 **Redis store** per idempotency in cluster multi-processo
 - 🔜 **Rate limit per utente** oltre che per IP
 
-## 🎨 UI Settings Standard (DRY)
+## UI Settings Standard (DRY)
 
 ### Componenti Riusabili Implementati
 
@@ -322,7 +322,7 @@ Luke implementa un sistema standardizzato di componenti DRY per pagine di config
 - ✅ **README.md**: Sezione completa "UI Settings Standard" con esempi
 - ✅ **SETUP_STATUS.md**: Checkpoint standard DRY completato
 
-## 🎯 Prossimi Passi
+## Prossimi Passi
 
 Il monorepo è **pronto per lo sviluppo**! Puoi procedere con:
 
@@ -331,7 +331,7 @@ Il monorepo è **pronto per lo sviluppo**! Puoi procedere con:
 3. **Database**: Configurare Prisma schema e migrations
 4. **UI**: Aggiungere componenti shadcn/ui
 
-## 📋 Verifiche Manuali
+## Verifiche Manuali
 
 ```bash
 # Test Frontend
@@ -358,4 +358,13 @@ pnpm --filter @luke/api prisma:studio
 
 ---
 
-**Status**: ✅ **BOOTSTRAP COMPLETATO** - Pronto per sviluppo! 🚀
+## Riferimenti Correlati
+
+- [README.md](README.md) - Documentazione principale del progetto
+- [API_SETUP.md](API_SETUP.md) - Setup e utilizzo dell'API con esempi pratici
+- [APP_CONFIG.md](APP_CONFIG.md) - Gestione configurazioni centralizzate (AppConfig)
+- [OPERATIONS.md](OPERATIONS.md) - Documentazione operativa per SRE/DevOps
+
+---
+
+**Status**: BOOTSTRAP COMPLETATO - Pronto per sviluppo

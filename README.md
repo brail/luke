@@ -2,7 +2,27 @@
 
 Monorepo enterprise con pnpm + Turborepo per applicazioni web moderne con focus su sicurezza, audit e qualità.
 
-## 🏗️ Struttura
+## Indice
+
+- [Struttura](#struttura)
+- [Quick Start](#quick-start)
+- [Workspaces](#workspaces)
+- [Scripts Disponibili](#scripts-disponibili)
+- [Convenzioni Naming](#convenzioni-naming)
+- [Sicurezza](#sicurezza)
+- [Qualità](#qualità)
+- [Database](#database)
+- [Workflow](#workflow)
+- [Architecture Decision Records (ADR)](#architecture-decision-records-adr)
+- [Error UX & User Experience](#error-ux--user-experience)
+- [UI Settings Standard](#ui-settings-standard)
+- [Tecnologie](#tecnologie)
+- [Manutenzione Import](#manutenzione-import)
+- [Troubleshooting](#troubleshooting)
+- [Note](#note)
+- [Riferimenti Correlati](#riferimenti-correlati)
+
+## Struttura
 
 ```
 luke/
@@ -14,7 +34,7 @@ luke/
 └── [config files]    # pnpm, turbo, typescript, eslint, prettier
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisiti
 
@@ -40,7 +60,7 @@ pnpm --filter @luke/api run seed
 pnpm dev
 ```
 
-## 📦 Workspaces
+## Workspaces
 
 ### `@luke/web` (apps/web)
 
@@ -62,7 +82,7 @@ pnpm dev
 - **RBAC**: Role-based access control
 - **Utils**: Funzioni condivise tra frontend/backend
 
-## 🛠️ Scripts Disponibili
+## Scripts Disponibili
 
 ```bash
 # Sviluppo
@@ -81,7 +101,7 @@ pnpm --filter @luke/api dev     # Solo backend
 pnpm --filter @luke/core build  # Solo core package
 ```
 
-## 🏷️ Convenzioni Naming
+## Convenzioni Naming
 
 - **Packages**: `@luke/*` (es. `@luke/web`, `@luke/api`, `@luke/core`)
 - **Environment**: `LUKE_*` (es. `LUKE_DB_URL`, `LUKE_JWT_SECRET`)
@@ -89,7 +109,7 @@ pnpm --filter @luke/core build  # Solo core package
 - **HTTP Headers**: `x-luke-trace-id` per tracing
 - **Git**: Conventional commits
 
-## 🔐 Sicurezza
+## Sicurezza
 
 ### Configurazione
 
@@ -252,73 +272,24 @@ Configura `auth.requireEmailVerification = true` in AppConfig per:
 - Bloccare login di utenti LOCAL con email non verificata
 - Utenti LDAP/OIDC non soggetti a verifica (autenticati esternamente)
 
-### Operational Tuning
+### Configurazioni Runtime
 
-Per configurazioni runtime, rate-limiting, idempotency, session TTL, security headers e readiness checks, consulta la [documentazione operativa](OPERATIONS.md) dedicata a SRE/DevOps.
+Per dettagli su rate-limiting, idempotency, session management, security headers e readiness checks, consulta:
 
-### Rate Limiting
+- [OPERATIONS.md](OPERATIONS.md) - Documentazione operativa per SRE/DevOps
+- [APP_CONFIG.md](APP_CONFIG.md) - Gestione configurazioni centralizzate
 
-- **Due livelli**: Globale (100 req/min) + Critico (10 req/min)
-- **Endpoint critici**: `/trpc/users.*`, `/trpc/config.*`, `/trpc/auth.login`
-- **Cambio password**: Rate-limit specifico per `me.changePassword` (5/15min in prod, 20/15min in dev)
-- **Configurabile**: Parametri via AppConfig con fallback hardcoded
-- **Dev mode**: Limiti permissivi (1000/100 req/min)
+### Configurazioni AppConfig (Overview)
 
-### Security Headers
+Il sistema utilizza un database centralizzato (29 chiavi) per tutte le configurazioni, eliminando la necessità di file `.env`:
 
-- **CSP minimale**: `default-src 'none'; frame-ancestors 'none'; base-uri 'none'` (prod), disabilitata (dev)
-- **HSTS**: Solo in produzione (180 giorni, includeSubDomains, no preload)
-- **Header aggiuntivi**: `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, `X-DNS-Prefetch-Control: off`
+- **Categorie**: Auth, App, Security, Rate Limit, Integrations, On-Demand
+- **Cifratura**: AES-256-GCM per segreti sensibili (LDAP, SMTP, Storage)
+- **Visualizzazione controllata**: Modalità masked/raw con audit obbligatorio
+- **Protezione accesso**: Solo amministratori possono modificare configurazioni
+- **Reset automatico**: Form si resettano al cambio di sessione
 
-### CORS
-
-- **Strategia ibrida**: AppConfig → ENV → default
-- **ENV**: `LUKE_CORS_ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com`
-- **Default**: Dev → localhost, Prod → deny-by-default
-- **Logging**: Fonte CORS loggata all'avvio senza esporre liste complete in prod
-
-### Idempotency
-
-- **Header**: `Idempotency-Key: <uuid-v4>`
-- **Store**: In-memory LRU cache (max 1000 keys, TTL 5min)
-- **Scope**: Mutazioni critiche (users, config)
-- **Hash**: SHA256(method + path + body) per validazione
-
-### Configurazioni AppConfig
-
-Il sistema utilizza un database centralizzato per tutte le configurazioni, eliminando la necessità di file `.env`:
-
-#### Chiavi AppConfig (29 totali)
-
-| Categoria        | Chiave                             | Tipo    | Cifrato | Uso               | Default             |
-| ---------------- | ---------------------------------- | ------- | ------- | ----------------- | ------------------- |
-| **Auth**         | `auth.nextAuthSecret`              | Secret  | ✓       | NextAuth sessions | Random 32 bytes     |
-|                  | `auth.ldap.*`                      | LDAP    | ✓       | Enterprise auth   | Esempi placeholder  |
-|                  | `auth.strategy`                    | Enum    | -       | Auth fallback     | `local-first`       |
-| **App**          | `app.name`                         | String  | -       | App info          | `Luke`              |
-|                  | `app.version`                      | String  | -       | App info          | `0.1.0`             |
-|                  | `app.environment`                  | String  | -       | App info          | `development`       |
-|                  | `app.locale`                       | String  | -       | Localization      | `it-IT`             |
-|                  | `app.defaultTimezone`              | String  | -       | Localization      | `Europe/Rome`       |
-| **Security**     | `security.password.*`              | Policy  | -       | Password rules    | 12 char, mixed case |
-|                  | `security.tokenVersionCacheTTL`    | Number  | -       | Cache TTL         | 60000ms             |
-|                  | `security.cors.developmentOrigins` | CSV     | -       | CORS dev          | localhost:3000,5173 |
-|                  | `security.session.maxAge`          | Number  | -       | Session duration  | 28800s (8h)         |
-|                  | `security.session.updateAge`       | Number  | -       | Session refresh   | 14400s (4h)         |
-| **Rate Limit**   | `rateLimit`                        | JSON    | -       | Rate policies     | Vedi seed           |
-| **Integrations** | `integrations.ldap.timeout`        | Number  | -       | LDAP timeout      | 10000ms             |
-|                  | `integrations.ldap.connectTimeout` | Number  | -       | LDAP connect      | 5000ms              |
-|                  | `integrations.smtp.timeout`        | Number  | -       | SMTP timeout      | 10000ms             |
-| **On-Demand**    | `mail.smtp`                        | SMTP    | ✓       | Email service     | Creato dall'admin   |
-|                  | `storage.smb`, `storage.drive`     | Storage | ✓       | File storage      | Creato dall'admin   |
-
-#### Caratteristiche
-
-- **Nessun .env**: Tutte le configurazioni sono in database (AppConfig)
-- **Cifratura**: AES-256-GCM per segreti sensibili
-- **Visualizzazione controllata**: modalità masked/raw con audit obbligatorio per raw
-- **Protezione accesso**: Solo gli amministratori possono accedere alle pagine di configurazione (`/settings/*`)
-- **Reset automatico**: Al cambio di sessione (logout/login), i form si resettano completamente
+Per la tabella completa delle chiavi, policy di cifratura e best practices, consulta [APP_CONFIG.md](APP_CONFIG.md).
 
 ### Sincronizzazione Utenti
 
@@ -344,7 +315,7 @@ Il sistema include protezioni robuste per la gestione degli utenti:
 - **Ultimo admin**: Non è possibile eliminare o rimuovere il ruolo admin dall'ultimo amministratore del sistema
 - **Preservazione modifiche**: Email e ruolo modificati manualmente non vengono sovrascritti dalla sincronizzazione LDAP
 
-## 🎯 Qualità
+## Qualità
 
 - **TypeScript**: Strict mode abilitato
 - **Validation**: Zod per runtime type checking
@@ -362,21 +333,21 @@ Il sistema include protezioni robuste per la gestione degli utenti:
 - **PII/Secrets**: Mai loggati in plaintext
 - **Enforcement**: ESLint `no-console` attivo in `apps/api`
 
-## 🗄️ Database
+## Database
 
 - **Sviluppo**: SQLite (file locale)
 - **Produzione**: PostgreSQL (Prisma compatibile)
 - **Migrations**: Prisma migrate
 - **Schema**: Definito in `apps/api/prisma/schema.prisma`
 
-## 🔄 Workflow
+## Workflow
 
 1. **Sviluppo**: `pnpm dev` avvia frontend + backend
 2. **Build**: `pnpm build` compila tutto per produzione
 3. **Deploy**: CI/CD con Turborepo caching
 4. **Monitor**: Audit log + structured logging
 
-## 📖 Architecture Decision Records (ADR)
+## Architecture Decision Records (ADR)
 
 Le decisioni architetturali chiave del progetto sono documentate in ADR:
 
@@ -387,7 +358,7 @@ Le decisioni architetturali chiave del progetto sono documentate in ADR:
 
 Per contribuire al progetto, consulta le ADR per comprendere le convenzioni e i pattern adottati.
 
-## 🎨 Error UX & User Experience
+## Error UX & User Experience
 
 Il frontend implementa un sistema di gestione errori professionale e coerente:
 
@@ -433,7 +404,7 @@ export default function CriticalPage() {
 
 Pagine già protette: `settings/users`, `settings/config`.
 
-## 🎨 UI Settings Standard
+## UI Settings Standard
 
 Il progetto implementa un sistema DRY di componenti riusabili per pagine di configurazione, garantendo UX uniforme e codice pulito.
 
@@ -604,7 +575,7 @@ import {
 - Single source of truth
 - DRY: zero duplicazione
 
-## 📚 Tecnologie
+## Tecnologie
 
 - **Monorepo**: pnpm workspaces + Turborepo
 - **Frontend**: Next.js 15, React 19, shadcn/ui, Tailwind
@@ -614,7 +585,7 @@ import {
 - **Security**: AES-256-GCM, helmet, cors, rate limiting, idempotency
 - **Quality**: TypeScript strict, ESLint, Prettier, Husky
 
-## 🧹 Manutenzione Import
+## Manutenzione Import
 
 Il progetto include strumenti automatizzati per la pulizia e ottimizzazione degli import:
 
@@ -642,7 +613,7 @@ npx tsx tools/scripts/detect-unused-imports.ts
 - **Boundary client/server**: Validazione import `@luke/core/server` e moduli `node:`
 - **Formattazione**: Prettier per consistenza
 
-## 🆘 Troubleshooting
+## Troubleshooting
 
 ### Errori comuni
 
@@ -661,7 +632,7 @@ rm pnpm-lock.yaml
 pnpm install
 ```
 
-## 📝 Note
+## Note
 
 - **Master Key**: La prima volta, crea `~/.luke/secret.key` con una chiave AES-256
 - **Database**: SQLite file viene creato automaticamente al primo avvio
@@ -672,6 +643,14 @@ pnpm install
 - **Nessun .env**: I segreti non devono mai essere committati in file .env (solo NEXT*PUBLIC*\* se necessario)
 - **Export sicuro**: I segreti cifrati nell'export mostrano sempre `[ENCRYPTED]`, mai il plaintext
 
+## Riferimenti Correlati
+
+- [API_SETUP.md](API_SETUP.md) - Setup e utilizzo dell'API con esempi pratici
+- [APP_CONFIG.md](APP_CONFIG.md) - Gestione configurazioni centralizzate (AppConfig)
+- [OPERATIONS.md](OPERATIONS.md) - Documentazione operativa per SRE/DevOps
+- [SETUP_STATUS.md](SETUP_STATUS.md) - Registro tecnico interno e roadmap
+- [docs/adr/](docs/adr/) - Architecture Decision Records
+
 ---
 
-**Luke** - Enterprise monorepo per applicazioni sicure e scalabili 🚀
+**Luke** - Enterprise monorepo per applicazioni sicure e scalabili
