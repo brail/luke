@@ -15,6 +15,7 @@ import { validateMasterKey, deriveSecret } from '@luke/core/server';
 
 import { buildCorsAllowedOrigins } from './lib/cors';
 import { createContext } from './lib/trpc';
+import { setGlobalErrorHandler } from './lib/error';
 import {
   pinoTraceMiddleware,
   // pinoSerializers,
@@ -45,7 +46,12 @@ const loggerConfig = {
  */
 const fastify = Fastify({
   logger: loggerConfig,
+  requestTimeout: 20_000,
+  connectionTimeout: 10_000,
 });
+
+// Registra handler/onError globali per logging e risposta sicura
+setGlobalErrorHandler(fastify);
 
 /**
  * Parser JSON personalizzato per gestire Content-Type con charset
@@ -189,8 +195,16 @@ async function registerTRPCPlugin() {
       router: appRouter,
       createContext: async ({ req, res }: any) =>
         createContext({ prisma, req, res }),
-      onError: ({ path, error }: any) => {
-        fastify.log.error(`tRPC Error on '${path}': ${error.message}`);
+      onError: ({ path, error, ctx }: any) => {
+        const traceId = ctx?.traceId;
+        fastify.log.error(
+          {
+            path,
+            err: { message: error.message, code: (error as any).code },
+            traceId,
+          },
+          'tRPC error'
+        );
       },
     },
     // Gestisci richieste OPTIONS per CORS
@@ -256,23 +270,38 @@ async function registerHealthRoute() {
       },
     };
   });
+
+  if (process.env.NODE_ENV === 'test') {
+    fastify.get('/__test__/boom', async () => {
+      throw new Error('Boom test error');
+    });
+  }
 }
 
 /**
  * Configura graceful shutdown
  */
 function setupGracefulShutdown() {
+  const closeWithTimeout = async (ms: number) => {
+    const timeout = new Promise((_resolve, reject) =>
+      setTimeout(() => reject(new Error('close timeout')), ms)
+    );
+    await Promise.race([
+      (async () => {
+        await fastify.close();
+        await prisma.$disconnect();
+      })(),
+      timeout,
+    ]);
+  };
+
   const gracefulShutdown = async (signal: string) => {
     fastify.log.info(`Ricevuto segnale ${signal}, avvio shutdown graceful...`);
 
     try {
       // Chiudi server HTTP
-      await fastify.close();
+      await closeWithTimeout(5_000);
       fastify.log.info('Server HTTP chiuso');
-
-      // Chiudi connessione Prisma
-      await prisma.$disconnect();
-      fastify.log.info('Connessione database chiusa');
 
       fastify.log.info('Shutdown completato');
       process.exit(0);
@@ -287,14 +316,23 @@ function setupGracefulShutdown() {
   process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
   // Gestisci errori non catturati
+  const onFatal = async (reason: any, type: string) => {
+    try {
+      fastify.log.fatal({ reason }, `${type}: shutting down`);
+      await closeWithTimeout(5_000);
+    } catch (e) {
+      fastify.log.error({ e }, 'Errore durante close su fatal');
+    } finally {
+      process.exit(1);
+    }
+  };
+
   process.on('uncaughtException', (error: any) => {
-    fastify.log.error('Uncaught Exception:', error);
-    gracefulShutdown('uncaughtException');
+    void onFatal(error, 'uncaughtException');
   });
 
-  process.on('unhandledRejection', (reason: any, promise: any) => {
-    fastify.log.error('Unhandled Rejection at:', promise, 'reason:', reason);
-    gracefulShutdown('unhandledRejection');
+  process.on('unhandledRejection', (reason: any) => {
+    void onFatal(reason, 'unhandledRejection');
   });
 }
 

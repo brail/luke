@@ -6,6 +6,7 @@
 import { randomUUID } from 'crypto';
 
 import { initTRPC, TRPCError } from '@trpc/server';
+import { trpcErrorFormatter } from './error';
 
 import { type Role } from '@luke/core';
 
@@ -22,7 +23,6 @@ import {
 
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyRequest, FastifyReply } from 'fastify';
-
 
 /**
  * Cache in-memory per tokenVersion con TTL
@@ -155,7 +155,9 @@ export async function createContext({
 /**
  * Inizializza tRPC con il context
  */
-const t = initTRPC.context<Context>().create();
+const t = initTRPC.context<Context>().create({
+  errorFormatter: trpcErrorFormatter as any,
+});
 
 /**
  * Esporta t per uso in middleware personalizzati
