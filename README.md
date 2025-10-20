@@ -322,6 +322,52 @@ Le decisioni architetturali chiave del progetto sono documentate in ADR:
 
 Per contribuire al progetto, consulta le ADR per comprendere le convenzioni e i pattern adottati.
 
+## 🎨 Error UX & User Experience
+
+Il frontend implementa un sistema di gestione errori professionale e coerente:
+
+### Pagine di Sistema
+
+- **404 (Not Found)**: `apps/web/src/app/not-found.tsx`
+  - Layout coerente con `PageHeader`, `SectionCard`, `Logo` con aspect-ratio corretto
+  - CTA verso `/dashboard` e `/support`
+- **Error Runtime**: `apps/web/src/app/error.tsx`
+  - Gestisce errori a livello di segment con `ErrorState` e `RetryButton`
+  - Integrato con Next.js App Router (`error`, `reset`)
+- **Global Error**: `apps/web/src/app/global-error.tsx`
+  - Fallback root-level per errori applicativi critici
+
+### Componenti Riusabili
+
+- **`ErrorState`**: Display strutturato di errori con slot personalizzabili
+- **`EmptyState`**: Messaggi per dataset vuoti con azioni suggerite
+- **`RetryButton`**: Bottone "Riprova" con gestione auto-refresh o callback
+- **`ErrorBoundary`**: Class component per wrapping di sezioni critiche
+
+### Best Practices
+
+- **A11y**: Focus management, `aria-label`, `aria-live="polite"`
+- **Dark Mode**: Coerente via shadcn/ui design tokens
+- **App-wide**: Ogni nuova route eredita automaticamente la UX di errore
+- **DRY**: Componenti system riusabili in `apps/web/src/components/system/`
+- **Sicurezza**: Mai mostrare stacktrace in produzione, solo messaggi neutri
+
+### Utilizzo ErrorBoundary
+
+```tsx
+import { ErrorBoundary } from '../components/system/ErrorBoundary';
+
+export default function CriticalPage() {
+  return (
+    <ErrorBoundary>
+      <YourComponent />
+    </ErrorBoundary>
+  );
+}
+```
+
+Pagine già protette: `settings/users`, `settings/config`.
+
 ## 📚 Tecnologie
 
 - **Monorepo**: pnpm workspaces + Turborepo

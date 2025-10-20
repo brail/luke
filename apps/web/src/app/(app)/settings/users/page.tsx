@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
+import { ErrorBoundary } from '../../../../components/system/ErrorBoundary';
 import { UserDialog } from '../../../../components/UserDialog';
 import { debugLog } from '../../../../lib/debug';
 import { trpc } from '../../../../lib/trpc';
@@ -256,116 +257,120 @@ export default function UsersPage() {
   const totalPages = usersData?.totalPages || 0;
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Gestione Utenti"
-        description="Gestisci gli utenti del sistema"
-      />
-
-      {/* Azioni e Filtri */}
-      <SectionCard
-        title="Ricerca e Filtri"
-        description="Cerca e filtra gli utenti del sistema"
-      >
-        <UsersToolbar
-          searchTerm={searchTerm}
-          roleFilter={roleFilter}
-          currentPage={currentPage}
-          totalPages={totalPages}
-          totalUsers={usersData?.total || 0}
-          onSearchChange={handleSearch}
-          onRoleFilterChange={handleRoleFilter}
-          onCreateUser={handleCreateUser}
-          onRefresh={() => refetch()}
-          onPageChange={setCurrentPage}
+    <ErrorBoundary>
+      <div className="space-y-6">
+        <PageHeader
+          title="Gestione Utenti"
+          description="Gestisci gli utenti del sistema"
         />
-      </SectionCard>
 
-      {/* Tabella Utenti */}
-      <SectionCard
-        title="Utenti Sistema"
-        description="Lista completa degli utenti registrati"
-      >
-        {!session?.accessToken && (
-          <div className="text-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-            <p>Caricamento sessione...</p>
-          </div>
-        )}
+        {/* Azioni e Filtri */}
+        <SectionCard
+          title="Ricerca e Filtri"
+          description="Cerca e filtra gli utenti del sistema"
+        >
+          <UsersToolbar
+            searchTerm={searchTerm}
+            roleFilter={roleFilter}
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalUsers={usersData?.total || 0}
+            onSearchChange={handleSearch}
+            onRoleFilterChange={handleRoleFilter}
+            onCreateUser={handleCreateUser}
+            onRefresh={() => refetch()}
+            onPageChange={setCurrentPage}
+          />
+        </SectionCard>
 
-        {session?.accessToken && (
-          <UsersTable
-            users={users}
-            currentUserId={session?.user?.id || ''}
-            isLoading={isLoading}
-            error={error}
-            sortBy={sortBy}
-            sortOrder={sortOrder}
-            onSort={handleSort}
-            onEdit={handleEditUser}
-            onDisable={handleDeleteUser}
-            onHardDelete={handleHardDeleteUser}
-            onRevokeSessions={handleRevokeUserSessions}
+        {/* Tabella Utenti */}
+        <SectionCard
+          title="Utenti Sistema"
+          description="Lista completa degli utenti registrati"
+        >
+          {!session?.accessToken && (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+              <p>Caricamento sessione...</p>
+            </div>
+          )}
+
+          {session?.accessToken && (
+            <UsersTable
+              users={users}
+              currentUserId={session?.user?.id || ''}
+              isLoading={isLoading}
+              error={error}
+              sortBy={sortBy}
+              sortOrder={sortOrder}
+              onSort={handleSort}
+              onEdit={handleEditUser}
+              onDisable={handleDeleteUser}
+              onHardDelete={handleHardDeleteUser}
+              onRevokeSessions={handleRevokeUserSessions}
+            />
+          )}
+        </SectionCard>
+
+        {/* User Dialog */}
+        <UserDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          mode={dialogMode}
+          user={selectedUser}
+          onSubmit={handleFormSubmit}
+          isLoading={
+            createUserMutation.isPending || updateUserMutation.isPending
+          }
+          syncedFields={syncedFields}
+          isSelfEdit={selectedUser?.id === session?.user?.id}
+        />
+
+        {/* Confirm Dialog */}
+        {confirmAction && (
+          <ConfirmDialog
+            open={confirmDialogOpen}
+            onOpenChange={setConfirmDialogOpen}
+            title={
+              confirmAction.type === 'disable'
+                ? 'Disattiva Utente'
+                : confirmAction.type === 'hardDelete'
+                  ? 'Elimina Definitivamente'
+                  : confirmAction.type === 'revokeSessions'
+                    ? 'Revoca Sessioni Utente'
+                    : 'Conferma Azione'
+            }
+            description={
+              confirmAction.type === 'disable'
+                ? "L'utente non potrà più accedere al sistema. L'operazione può essere annullata riattivando l'utente."
+                : confirmAction.type === 'hardDelete'
+                  ? "Questa operazione è irreversibile. Tutti i dati dell'utente verranno eliminati permanentemente dal database."
+                  : confirmAction.type === 'revokeSessions'
+                    ? "L'utente verrà disconnesso da tutti i dispositivi e dovrà effettuare nuovamente il login. Questa operazione è utile per motivi di sicurezza."
+                    : 'Sei sicuro di voler procedere con questa azione?'
+            }
+            confirmText={
+              confirmAction.type === 'disable'
+                ? 'Disattiva'
+                : confirmAction.type === 'hardDelete'
+                  ? 'Elimina Definitivamente'
+                  : confirmAction.type === 'revokeSessions'
+                    ? 'Revoca Sessioni'
+                    : 'Conferma'
+            }
+            cancelText="Annulla"
+            variant="destructive"
+            onConfirm={handleConfirmAction}
+            isLoading={
+              deleteUserMutation.isPending ||
+              hardDeleteUserMutation.isPending ||
+              revokeUserSessionsMutation.isPending
+            }
+            userEmail={confirmAction.user?.email}
+            actionType={confirmAction.type}
           />
         )}
-      </SectionCard>
-
-      {/* User Dialog */}
-      <UserDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        mode={dialogMode}
-        user={selectedUser}
-        onSubmit={handleFormSubmit}
-        isLoading={createUserMutation.isPending || updateUserMutation.isPending}
-        syncedFields={syncedFields}
-        isSelfEdit={selectedUser?.id === session?.user?.id}
-      />
-
-      {/* Confirm Dialog */}
-      {confirmAction && (
-        <ConfirmDialog
-          open={confirmDialogOpen}
-          onOpenChange={setConfirmDialogOpen}
-          title={
-            confirmAction.type === 'disable'
-              ? 'Disattiva Utente'
-              : confirmAction.type === 'hardDelete'
-                ? 'Elimina Definitivamente'
-                : confirmAction.type === 'revokeSessions'
-                  ? 'Revoca Sessioni Utente'
-                  : 'Conferma Azione'
-          }
-          description={
-            confirmAction.type === 'disable'
-              ? "L'utente non potrà più accedere al sistema. L'operazione può essere annullata riattivando l'utente."
-              : confirmAction.type === 'hardDelete'
-                ? "Questa operazione è irreversibile. Tutti i dati dell'utente verranno eliminati permanentemente dal database."
-                : confirmAction.type === 'revokeSessions'
-                  ? "L'utente verrà disconnesso da tutti i dispositivi e dovrà effettuare nuovamente il login. Questa operazione è utile per motivi di sicurezza."
-                  : 'Sei sicuro di voler procedere con questa azione?'
-          }
-          confirmText={
-            confirmAction.type === 'disable'
-              ? 'Disattiva'
-              : confirmAction.type === 'hardDelete'
-                ? 'Elimina Definitivamente'
-                : confirmAction.type === 'revokeSessions'
-                  ? 'Revoca Sessioni'
-                  : 'Conferma'
-          }
-          cancelText="Annulla"
-          variant="destructive"
-          onConfirm={handleConfirmAction}
-          isLoading={
-            deleteUserMutation.isPending ||
-            hardDeleteUserMutation.isPending ||
-            revokeUserSessionsMutation.isPending
-          }
-          userEmail={confirmAction.user?.email}
-          actionType={confirmAction.type}
-        />
-      )}
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }

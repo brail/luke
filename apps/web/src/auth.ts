@@ -5,6 +5,9 @@ import { getNextAuthSecret } from '@luke/core/server';
 
 import type { NextAuthConfig } from 'next-auth';
 
+// Forza runtime Node.js: necessari moduli Node in @luke/core/server
+export const runtime = 'nodejs';
+
 /**
  * Helper per chiamare l'API tRPC
  */

@@ -24,7 +24,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="text-center">
-          <LoadingLogo size="lg" className="text-primary mx-auto mb-4" />
+          <div className="mx-auto aspect-square w-24 max-w-full text-primary mb-4">
+            <LoadingLogo size="xl" className="w-full h-full object-contain" />
+          </div>
           <p>Caricamento...</p>
         </div>
       </div>

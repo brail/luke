@@ -13,6 +13,7 @@ import { ConfigToolbar } from '../../../../components/config/ConfigToolbar';
 import { ConfigValueDialog } from '../../../../components/config/ConfigValueDialog';
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
+import { ErrorBoundary } from '../../../../components/system/ErrorBoundary';
 import { Button } from '../../../../components/ui/button';
 import { Skeleton } from '../../../../components/ui/skeleton';
 import {
@@ -145,163 +146,171 @@ export default function ConfigPage() {
   );
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Configurazioni Sistema"
-        description="Gestisci le configurazioni del sistema con ricerca, filtri e protezioni di sicurezza"
-      />
-
-      {/* Toolbar con ricerca e filtri */}
-      <SectionCard
-        title="Ricerca e Filtri"
-        description="Cerca e filtra le configurazioni del sistema"
-      >
-        <ConfigToolbar
-          searchTerm={searchTerm}
-          onSearchChange={setSearchTerm}
-          filterEncrypted={filterEncrypted}
-          onFilterEncryptedChange={setFilterEncrypted}
-          filterCategory={filterCategory}
-          onFilterCategoryChange={setFilterCategory}
+    <ErrorBoundary>
+      <div className="space-y-6">
+        <PageHeader
+          title="Configurazioni Sistema"
+          description="Gestisci le configurazioni del sistema con ricerca, filtri e protezioni di sicurezza"
         />
 
-        {/* Azioni in seconda riga */}
-        <div className="flex gap-2 mt-4">
-          <ConfigExportButton />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleOpenImport}
-            className="flex items-center gap-2"
-          >
-            <Upload className="w-4 h-4" />
-            Importa
-          </Button>
-          <Button onClick={handleNewConfig} className="flex items-center gap-2">
-            Nuova Config
-          </Button>
-        </div>
-      </SectionCard>
+        {/* Toolbar con ricerca e filtri */}
+        <SectionCard
+          title="Ricerca e Filtri"
+          description="Cerca e filtra le configurazioni del sistema"
+        >
+          <ConfigToolbar
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            filterEncrypted={filterEncrypted}
+            onFilterEncryptedChange={setFilterEncrypted}
+            filterCategory={filterCategory}
+            onFilterCategoryChange={setFilterCategory}
+          />
 
-      {/* Tabella Configurazioni */}
-      <SectionCard
-        title="Configurazioni Sistema"
-        description="Lista delle configurazioni con ordinamento e paginazione"
-      >
-        {isLoading && (
-          <div className="space-y-2">
-            <div className="rounded-md border">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="h-12 px-4 text-left">Chiave</th>
-                    <th className="h-12 px-4 text-left">Valore</th>
-                    <th className="h-12 px-4 text-left">Tipo</th>
-                    <th className="h-12 px-4 text-left">Aggiornato</th>
-                    <th className="h-12 px-4 text-left">Azioni</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <SkeletonRow key={i} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {error && (
-          <div className="text-center py-8">
-            <div className="text-destructive mb-2">
-              Errore nel caricamento configurazioni
-            </div>
-            <p className="text-sm text-muted-foreground mb-4">
-              {error.message}
-            </p>
-            <Button variant="outline" onClick={() => window.location.reload()}>
-              Riprova
+          {/* Azioni in seconda riga */}
+          <div className="flex gap-2 mt-4">
+            <ConfigExportButton />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleOpenImport}
+              className="flex items-center gap-2"
+            >
+              <Upload className="w-4 h-4" />
+              Importa
+            </Button>
+            <Button
+              onClick={handleNewConfig}
+              className="flex items-center gap-2"
+            >
+              Nuova Config
             </Button>
           </div>
-        )}
+        </SectionCard>
 
-        {data && !isLoading && (
-          <>
-            <ConfigTable
-              configs={data.items}
-              onEdit={handleEditConfig}
-              onDelete={handleDeleteConfig}
-              onViewValue={handleViewValue}
-              sortBy={sortBy}
-              sortDir={sortDir}
-              onSort={handleSort}
-            />
+        {/* Tabella Configurazioni */}
+        <SectionCard
+          title="Configurazioni Sistema"
+          description="Lista delle configurazioni con ordinamento e paginazione"
+        >
+          {isLoading && (
+            <div className="space-y-2">
+              <div className="rounded-md border">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="h-12 px-4 text-left">Chiave</th>
+                      <th className="h-12 px-4 text-left">Valore</th>
+                      <th className="h-12 px-4 text-left">Tipo</th>
+                      <th className="h-12 px-4 text-left">Aggiornato</th>
+                      <th className="h-12 px-4 text-left">Azioni</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <SkeletonRow key={i} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
-            {data.total > pageSize && (
-              <ConfigTablePagination
-                page={page}
-                pageSize={pageSize}
-                total={data.total}
-                onPageChange={handlePageChange}
+          {error && (
+            <div className="text-center py-8">
+              <div className="text-destructive mb-2">
+                Errore nel caricamento configurazioni
+              </div>
+              <p className="text-sm text-muted-foreground mb-4">
+                {error.message}
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => window.location.reload()}
+              >
+                Riprova
+              </Button>
+            </div>
+          )}
+
+          {data && !isLoading && (
+            <>
+              <ConfigTable
+                configs={data.items}
+                onEdit={handleEditConfig}
+                onDelete={handleDeleteConfig}
+                onViewValue={handleViewValue}
+                sortBy={sortBy}
+                sortDir={sortDir}
+                onSort={handleSort}
               />
-            )}
-          </>
+
+              {data.total > pageSize && (
+                <ConfigTablePagination
+                  page={page}
+                  pageSize={pageSize}
+                  total={data.total}
+                  onPageChange={handlePageChange}
+                />
+              )}
+            </>
+          )}
+
+          {data && !isLoading && data.items.length === 0 && (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground mb-4">
+                Nessuna configurazione trovata
+              </p>
+              <Button onClick={handleNewConfig}>
+                Aggiungi la prima configurazione
+              </Button>
+            </div>
+          )}
+        </SectionCard>
+
+        {/* Dialog per modifica/creazione */}
+        {editDialogOpen && (
+          <ConfigEditDialog
+            onOpenChange={() => {
+              setEditDialogOpen(false);
+              setSelectedConfig(null);
+            }}
+            config={selectedConfig}
+            onSave={handleSaveConfig}
+            isLoading={isAnyLoading}
+          />
         )}
 
-        {data && !isLoading && data.items.length === 0 && (
-          <div className="text-center py-8">
-            <p className="text-muted-foreground mb-4">
-              Nessuna configurazione trovata
-            </p>
-            <Button onClick={handleNewConfig}>
-              Aggiungi la prima configurazione
-            </Button>
-          </div>
+        {/* Dialog per eliminazione */}
+        {deleteConfigKey && (
+          <ConfigDeleteDialog
+            onOpenChange={() => setDeleteConfigKey(null)}
+            configKey={deleteConfigKey}
+            onConfirm={handleConfirmDelete}
+            isLoading={isAnyLoading}
+          />
         )}
-      </SectionCard>
 
-      {/* Dialog per modifica/creazione */}
-      {editDialogOpen && (
-        <ConfigEditDialog
-          onOpenChange={() => {
-            setEditDialogOpen(false);
-            setSelectedConfig(null);
-          }}
-          config={selectedConfig}
-          onSave={handleSaveConfig}
-          isLoading={isAnyLoading}
-        />
-      )}
+        {/* Dialog per visualizzazione valore */}
+        {viewValue && (
+          <ConfigValueDialog
+            onOpenChange={() => {
+              setViewValue('');
+              setViewValueKey('');
+            }}
+            value={viewValue}
+            keyName={viewValueKey}
+          />
+        )}
 
-      {/* Dialog per eliminazione */}
-      {deleteConfigKey && (
-        <ConfigDeleteDialog
-          onOpenChange={() => setDeleteConfigKey(null)}
-          configKey={deleteConfigKey}
-          onConfirm={handleConfirmDelete}
-          isLoading={isAnyLoading}
-        />
-      )}
-
-      {/* Dialog per visualizzazione valore */}
-      {viewValue && (
-        <ConfigValueDialog
-          onOpenChange={() => {
-            setViewValue('');
-            setViewValueKey('');
-          }}
-          value={viewValue}
-          keyName={viewValueKey}
-        />
-      )}
-
-      {/* Dialog per import */}
-      {importDialogOpen && (
-        <ConfigImportDialog
-          onOpenChange={() => setImportDialogOpen(false)}
-          onSuccess={handleImportSuccess}
-        />
-      )}
-    </div>
+        {/* Dialog per import */}
+        {importDialogOpen && (
+          <ConfigImportDialog
+            onOpenChange={() => setImportDialogOpen(false)}
+            onSuccess={handleImportSuccess}
+          />
+        )}
+      </div>
+    </ErrorBoundary>
   );
 }
