@@ -116,3 +116,4 @@ export async function sendVerificationEmail(
     throw new Error('Impossibile inviare email. Verifica configurazione SMTP.');
   }
 }
+

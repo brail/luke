@@ -8,10 +8,10 @@ import {
   HardDrive,
   Mail,
   Shield,
-  FolderTree,
   ChevronRight,
   LogOut,
   User,
+  FolderTree,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';

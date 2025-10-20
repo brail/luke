@@ -25,8 +25,13 @@ export * from './rbac';
 // Re-export utilities
 export * from './utils/date';
 export * from './utils/money';
+export * from './utils/sanitize';
 
 // Re-export pricing
 export * from './pricing';
+
+// Re-export storage types and config
+export * from './storage/types';
+export * from './storage/config';
 
 // Note: crypto utilities are server-only and exported via @luke/core/server

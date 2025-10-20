@@ -10,6 +10,7 @@ import { configRouter } from './config';
 import { integrationsRouter } from './integrations';
 import { meRouter } from './me';
 import { publicRouter } from './public';
+import { storageRouter } from './storage';
 import { usersRouter } from './users';
 
 /**
@@ -23,6 +24,7 @@ export const appRouter = router({
   integrations: integrationsRouter,
   public: publicRouter,
   me: meRouter,
+  storage: storageRouter,
 });
 
 /**

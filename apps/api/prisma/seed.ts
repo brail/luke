@@ -255,6 +255,27 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       value: '5000', // ms
       encrypt: false,
     },
+    // Storage configurazione
+    {
+      key: 'storage.type',
+      value: 'local',
+      encrypt: false,
+    },
+    {
+      key: 'storage.local.basePath',
+      value: '/tmp/luke-storage', // Development default
+      encrypt: false,
+    },
+    {
+      key: 'storage.local.maxFileSizeMB',
+      value: '50',
+      encrypt: false,
+    },
+    {
+      key: 'storage.local.buckets',
+      value: '["uploads","exports","assets"]',
+      encrypt: false,
+    },
   ];
 
   let configsCreated = 0;

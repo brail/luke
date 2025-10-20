@@ -25,6 +25,7 @@ import {
   // pinoSerializers,
 } from './observability/pinoTrace';
 import { runReadinessChecks } from './observability/readiness';
+import { storagePlugin } from './plugins/storage-upload';
 import { appRouter } from './routers';
 
 /**
@@ -218,6 +219,13 @@ async function registerTRPCPlugin() {
 }
 
 /**
+ * Registra storage plugin per upload/download
+ */
+async function registerStoragePlugin() {
+  await fastify.register(storagePlugin, { prisma });
+}
+
+/**
  * Registra route di health check e readiness
  */
 async function registerHealthRoute() {
@@ -368,6 +376,7 @@ const start = async () => {
     // Registra plugin e route nell'ordine corretto
     await registerSecurityPlugins(); // CORS deve essere registrato prima di tRPC
     await registerTRPCPlugin();
+    await registerStoragePlugin(); // Storage upload/download routes
     await registerHealthRoute();
 
     // Configura graceful shutdown
