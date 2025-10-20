@@ -3,6 +3,8 @@
  * Implementa CRUD completo per User, Identity e LocalCredential
  */
 
+import { randomBytes, createHash } from 'crypto';
+
 import { TRPCError } from '@trpc/server';
 import argon2 from 'argon2';
 import { z } from 'zod';
@@ -16,7 +18,9 @@ import {
 
 import { logAudit } from '../lib/auditLog';
 import { withAuditLog } from '../lib/auditMiddleware';
+import { getConfig } from '../lib/configManager';
 import { withIdempotency } from '../lib/idempotencyTrpc';
+import { sendEmailVerificationEmail } from '../lib/mailer';
 import { withRateLimit } from '../lib/ratelimit';
 import {
   router,
@@ -362,6 +366,83 @@ export const usersRouter = router({
 
       // Audit logging gestito automaticamente dal middleware withAuditLog
 
+      // Invio automatico email di verifica (best effort, non blocca se fallisce)
+      let emailSent = false;
+      try {
+        // Genera token random (32 byte = 64 caratteri hex)
+        const token = randomBytes(32).toString('hex');
+        const tokenHash = createHash('sha256').update(token).digest('hex');
+
+        // Calcola scadenza: 24 ore
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+        // Salva token hash in DB
+        await ctx.prisma.userToken.create({
+          data: {
+            userId: result.id,
+            type: 'VERIFY',
+            tokenHash,
+            expiresAt,
+          },
+        });
+
+        // Recupera base URL
+        const baseUrl =
+          (await getConfig(ctx.prisma, 'app.baseUrl', false)) ||
+          process.env.APP_BASE_URL ||
+          'http://localhost:3000';
+
+        // Invia email di verifica
+        await sendEmailVerificationEmail(
+          ctx.prisma,
+          result.email,
+          token,
+          baseUrl
+        );
+
+        emailSent = true;
+
+        ctx.logger.info('✉️ Email di verifica inviata automaticamente', {
+          userId: result.id,
+          email: result.email,
+        });
+
+        // Log audit SUCCESS
+        await logAudit(ctx, {
+          action: 'EMAIL_VERIFICATION_SENT',
+          targetType: 'Auth',
+          targetId: result.id,
+          result: 'SUCCESS',
+          metadata: {
+            automatic: true,
+            expiresAt: expiresAt.toISOString(),
+          },
+        });
+      } catch (error) {
+        // Silent fail: non blocca la creazione utente
+        ctx.logger.warn(
+          '⚠️ Email di verifica non inviata (SMTP non configurato o errore)',
+          {
+            userId: result.id,
+            email: result.email,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          }
+        );
+
+        // Log audit WARNING (non FAILURE)
+        await logAudit(ctx, {
+          action: 'EMAIL_VERIFICATION_SENT',
+          targetType: 'Auth',
+          targetId: result.id,
+          result: 'FAILURE',
+          metadata: {
+            automatic: true,
+            reason: 'smtp_not_configured_or_error',
+            error: error instanceof Error ? error.message : 'Unknown error',
+          },
+        });
+      }
+
       return {
         id: result.id,
         email: result.email,
@@ -372,6 +453,7 @@ export const usersRouter = router({
         isActive: result.isActive,
         createdAt: result.createdAt,
         updatedAt: result.updatedAt,
+        emailVerificationSent: emailSent, // Indica se l'email è stata inviata
       };
     }),
 

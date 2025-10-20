@@ -16,6 +16,7 @@ export * from './schemas/user';
 export * from './schemas/userProfile';
 export * from './schemas/appConfig';
 export * from './schemas/ldap';
+export * from './schemas/auth';
 
 // Re-export RBAC
 export * from './rbac';

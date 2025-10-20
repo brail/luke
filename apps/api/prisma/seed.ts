@@ -66,6 +66,7 @@ export async function seedAdminUser(prisma: PrismaClient): Promise<void> {
           username: 'admin',
           role: 'admin',
           isActive: true,
+          emailVerifiedAt: new Date(), // Admin pre-verificato
         },
       });
 
@@ -93,6 +94,40 @@ export async function seedAdminUser(prisma: PrismaClient): Promise<void> {
       `✅ Utente admin creato: ${adminUser.email} (ID: ${adminUser.id})`
     );
   }
+}
+
+/**
+ * Aggiorna utenti esistenti con emailVerifiedAt
+ * Imposta tutti gli utenti esistenti (senza emailVerifiedAt) come verificati
+ */
+export async function updateExistingUsersVerification(
+  prisma: PrismaClient
+): Promise<void> {
+  console.log('📧 Aggiornamento verifica email utenti esistenti...');
+
+  const usersToUpdate = await prisma.user.findMany({
+    where: {
+      emailVerifiedAt: null,
+    },
+  });
+
+  if (usersToUpdate.length === 0) {
+    console.log('✅ Nessun utente da aggiornare');
+    return;
+  }
+
+  await prisma.user.updateMany({
+    where: {
+      emailVerifiedAt: null,
+    },
+    data: {
+      emailVerifiedAt: new Date(),
+    },
+  });
+
+  console.log(
+    `✅ ${usersToUpdate.length} utenti aggiornati con emailVerifiedAt`
+  );
 }
 
 /**
@@ -138,8 +173,18 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       encrypt: false,
     },
     {
+      key: 'app.baseUrl',
+      value: 'http://localhost:3000',
+      encrypt: false,
+    },
+    {
       key: 'auth.strategy',
       value: 'local-first',
+      encrypt: false,
+    },
+    {
+      key: 'auth.requireEmailVerification',
+      value: 'false',
       encrypt: false,
     },
     {
@@ -193,6 +238,7 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       value: JSON.stringify({
         login: { max: 5, timeWindow: '1m', keyBy: 'ip' },
         passwordChange: { max: 3, timeWindow: '15m', keyBy: 'userId' },
+        passwordReset: { max: 3, timeWindow: '15m', keyBy: 'ip' },
         configMutations: { max: 20, timeWindow: '1m', keyBy: 'userId' },
         userMutations: { max: 10, timeWindow: '1m', keyBy: 'userId' },
       }),
@@ -255,6 +301,9 @@ async function main() {
   try {
     // Seeding utente admin
     await seedAdminUser(prisma);
+
+    // Aggiorna utenti esistenti con emailVerifiedAt
+    await updateExistingUsersVerification(prisma);
 
     // Seeding configurazioni
     await seedAppConfigs(prisma);

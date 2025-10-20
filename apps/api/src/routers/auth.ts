@@ -3,15 +3,29 @@
  * Gestisce login, logout e verifica sessione
  */
 
+import { randomBytes, createHash } from 'crypto';
+
 import { TRPCError } from '@trpc/server';
 import argon2 from 'argon2';
 import { z } from 'zod';
 
+import {
+  RequestPasswordResetSchema,
+  ConfirmPasswordResetSchema,
+  RequestEmailVerificationSchema,
+  ConfirmEmailVerificationSchema,
+} from '@luke/core';
+
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
-import { getConfig } from '../lib/configManager';
+import { getConfig, getPasswordPolicy } from '../lib/configManager';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { authenticateViaLdap } from '../lib/ldapAuth';
+import {
+  sendPasswordResetEmail,
+  sendEmailVerificationEmail,
+} from '../lib/mailer';
+import { validatePassword } from '../lib/password';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, publicProcedure, protectedProcedure } from '../lib/trpc';
 
@@ -252,6 +266,38 @@ export const authRouter = router({
           });
         }
 
+        // Verifica se l'email è verificata (solo per utenti LOCAL)
+        const requireEmailVerification =
+          (await getConfig(
+            ctx.prisma,
+            'auth.requireEmailVerification',
+            false
+          )) === 'true';
+
+        if (
+          requireEmailVerification &&
+          authMethod === 'local' &&
+          !authenticatedUser.emailVerifiedAt
+        ) {
+          await logAudit(ctx, {
+            action: 'AUTH_LOGIN_FAILED',
+            targetType: 'Auth',
+            targetId: authenticatedUser.id,
+            result: 'FAILURE',
+            metadata: {
+              username: input.username,
+              reason: 'email_not_verified',
+              strategy,
+            },
+          });
+
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message:
+              'Email non verificata. Controlla la tua casella di posta per il link di verifica.',
+          });
+        }
+
         // Aggiorna statistiche login
         await ctx.prisma.user.update({
           where: { id: authenticatedUser.id },
@@ -370,4 +416,441 @@ export const authRouter = router({
       user: ctx.session.user,
     };
   }),
+
+  /**
+   * Richiesta reset password
+   * Genera token e invia email con link di reset
+   */
+  requestPasswordReset: publicProcedure
+    .use(withRateLimit('passwordReset'))
+    .input(RequestPasswordResetSchema)
+    .mutation(async ({ input, ctx }) => {
+      const { email } = input;
+
+      // Trova l'utente con identity LOCAL
+      const user = await ctx.prisma.user.findFirst({
+        where: {
+          email: email.toLowerCase(),
+          isActive: true,
+        },
+        include: {
+          identities: {
+            where: {
+              provider: 'LOCAL',
+            },
+            include: {
+              localCredential: true,
+            },
+          },
+        },
+      });
+
+      // Per sicurezza, rispondiamo sempre con successo anche se l'utente non esiste
+      // Questo previene attacchi di enumerazione utenti
+      if (!user || user.identities.length === 0) {
+        // Log audit con FAILURE
+        await logAudit(ctx, {
+          action: 'PASSWORD_RESET_REQUESTED',
+          targetType: 'Auth',
+          result: 'FAILURE',
+          metadata: {
+            reason: 'user_not_found',
+          },
+        });
+
+        // Restituiamo successo per non rivelare se l'email esiste
+        return {
+          success: true,
+          message:
+            "Se l'email esiste nel sistema, riceverai un link per il reset della password.",
+        };
+      }
+
+      // Genera token random di 32 byte (64 caratteri hex)
+      const token = randomBytes(32).toString('hex');
+      const tokenHash = createHash('sha256').update(token).digest('hex');
+
+      // Calcola scadenza: 30 minuti da ora
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+
+      // Salva token hash in DB
+      await ctx.prisma.userToken.create({
+        data: {
+          userId: user.id,
+          type: 'RESET',
+          tokenHash,
+          expiresAt,
+        },
+      });
+
+      // Recupera base URL
+      const baseUrl =
+        (await getConfig(ctx.prisma, 'app.baseUrl', false)) ||
+        process.env.APP_BASE_URL ||
+        'http://localhost:3000';
+
+      // Invia email con token in chiaro
+      try {
+        await sendPasswordResetEmail(ctx.prisma, email, token, baseUrl);
+
+        // Log audit SUCCESS
+        await logAudit(ctx, {
+          action: 'PASSWORD_RESET_REQUESTED',
+          targetType: 'Auth',
+          targetId: user.id,
+          result: 'SUCCESS',
+          metadata: {
+            expiresAt: expiresAt.toISOString(),
+          },
+        });
+
+        return {
+          success: true,
+          message: 'Email di reset password inviata con successo.',
+        };
+      } catch (error) {
+        // Log audit FAILURE
+        await logAudit(ctx, {
+          action: 'PASSWORD_RESET_REQUESTED',
+          targetType: 'Auth',
+          targetId: user.id,
+          result: 'FAILURE',
+          metadata: {
+            reason: 'email_send_failed',
+            error: error instanceof Error ? error.message : 'Unknown error',
+          },
+        });
+
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Impossibile inviare email. Riprova più tardi.',
+        });
+      }
+    }),
+
+  /**
+   * Conferma reset password
+   * Valida token e aggiorna password
+   */
+  confirmPasswordReset: publicProcedure
+    .input(ConfirmPasswordResetSchema)
+    .mutation(async ({ input, ctx }) => {
+      const { token, newPassword } = input;
+
+      // Hash del token per lookup
+      const tokenHash = createHash('sha256').update(token).digest('hex');
+
+      // Trova token valido (non scaduto)
+      const userToken = await ctx.prisma.userToken.findFirst({
+        where: {
+          type: 'RESET',
+          tokenHash,
+          expiresAt: {
+            gt: new Date(),
+          },
+        },
+        include: {
+          user: {
+            include: {
+              identities: {
+                where: {
+                  provider: 'LOCAL',
+                },
+                include: {
+                  localCredential: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!userToken || !userToken.user.identities[0]?.localCredential) {
+        await logAudit(ctx, {
+          action: 'PASSWORD_CHANGED',
+          targetType: 'Auth',
+          result: 'FAILURE',
+          metadata: {
+            reason: 'invalid_or_expired_token',
+          },
+        });
+
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Token non valido o scaduto.',
+        });
+      }
+
+      // Valida password con policy
+      const passwordPolicy = await getPasswordPolicy(ctx.prisma);
+      const passwordValidation = validatePassword(newPassword, passwordPolicy);
+
+      if (!passwordValidation.isValid) {
+        await logAudit(ctx, {
+          action: 'PASSWORD_CHANGED',
+          targetType: 'Auth',
+          targetId: userToken.userId,
+          result: 'FAILURE',
+          metadata: {
+            reason: 'weak_password',
+            errors: passwordValidation.errors,
+          },
+        });
+
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Password non valida: ${passwordValidation.errors.join(', ')}`,
+        });
+      }
+
+      // Hash nuova password
+      const passwordHash = await argon2.hash(newPassword, {
+        type: argon2.argon2id,
+        timeCost: 3,
+        memoryCost: 65536,
+        parallelism: 1,
+      });
+
+      // Aggiorna password e incrementa tokenVersion in transazione
+      await ctx.prisma.$transaction([
+        // Aggiorna password
+        ctx.prisma.localCredential.update({
+          where: {
+            identityId: userToken.user.identities[0].id,
+          },
+          data: {
+            passwordHash,
+            updatedAt: new Date(),
+          },
+        }),
+        // Incrementa tokenVersion per invalidare tutte le sessioni
+        ctx.prisma.user.update({
+          where: { id: userToken.userId },
+          data: {
+            tokenVersion: { increment: 1 },
+          },
+        }),
+        // Elimina il token usato
+        ctx.prisma.userToken.delete({
+          where: { id: userToken.id },
+        }),
+      ]);
+
+      // Invalida cache tokenVersion
+      const { invalidateTokenVersionCache } = await import('../lib/trpc');
+      invalidateTokenVersionCache(userToken.userId);
+
+      // Log audit SUCCESS
+      await logAudit(ctx, {
+        action: 'PASSWORD_CHANGED',
+        targetType: 'Auth',
+        targetId: userToken.userId,
+        result: 'SUCCESS',
+        metadata: {
+          method: 'reset',
+          sessionsInvalidated: true,
+        },
+      });
+
+      return {
+        success: true,
+        message:
+          'Password reimpostata con successo. Tutte le sessioni sono state invalidate.',
+      };
+    }),
+
+  /**
+   * Richiesta verifica email
+   * Genera token e invia email con link di verifica
+   */
+  requestEmailVerification: publicProcedure
+    .use(withRateLimit('passwordReset')) // Usa stessa policy
+    .input(RequestEmailVerificationSchema)
+    .mutation(async ({ input, ctx }) => {
+      const { email } = input;
+
+      // Trova l'utente con identity LOCAL
+      const user = await ctx.prisma.user.findFirst({
+        where: {
+          email: email.toLowerCase(),
+          isActive: true,
+        },
+        include: {
+          identities: {
+            where: {
+              provider: 'LOCAL',
+            },
+          },
+        },
+      });
+
+      // Per sicurezza, rispondiamo sempre con successo
+      if (!user || user.identities.length === 0) {
+        await logAudit(ctx, {
+          action: 'EMAIL_VERIFICATION_SENT',
+          targetType: 'Auth',
+          result: 'FAILURE',
+          metadata: {
+            reason: 'user_not_found',
+          },
+        });
+
+        return {
+          success: true,
+          message:
+            "Se l'email esiste nel sistema, riceverai un link di verifica.",
+        };
+      }
+
+      // Se già verificata, non inviare email
+      if (user.emailVerifiedAt) {
+        await logAudit(ctx, {
+          action: 'EMAIL_VERIFICATION_SENT',
+          targetType: 'Auth',
+          targetId: user.id,
+          result: 'FAILURE',
+          metadata: {
+            reason: 'already_verified',
+          },
+        });
+
+        return {
+          success: true,
+          message: 'Email già verificata.',
+        };
+      }
+
+      // Genera token random di 32 byte (64 caratteri hex)
+      const token = randomBytes(32).toString('hex');
+      const tokenHash = createHash('sha256').update(token).digest('hex');
+
+      // Calcola scadenza: 24 ore da ora
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+      // Salva token hash in DB
+      await ctx.prisma.userToken.create({
+        data: {
+          userId: user.id,
+          type: 'VERIFY',
+          tokenHash,
+          expiresAt,
+        },
+      });
+
+      // Recupera base URL
+      const baseUrl =
+        (await getConfig(ctx.prisma, 'app.baseUrl', false)) ||
+        process.env.APP_BASE_URL ||
+        'http://localhost:3000';
+
+      // Invia email con token in chiaro
+      try {
+        await sendEmailVerificationEmail(ctx.prisma, email, token, baseUrl);
+
+        // Log audit SUCCESS
+        await logAudit(ctx, {
+          action: 'EMAIL_VERIFICATION_SENT',
+          targetType: 'Auth',
+          targetId: user.id,
+          result: 'SUCCESS',
+          metadata: {
+            expiresAt: expiresAt.toISOString(),
+          },
+        });
+
+        return {
+          success: true,
+          message: 'Email di verifica inviata con successo.',
+        };
+      } catch (error) {
+        // Log audit FAILURE
+        await logAudit(ctx, {
+          action: 'EMAIL_VERIFICATION_SENT',
+          targetType: 'Auth',
+          targetId: user.id,
+          result: 'FAILURE',
+          metadata: {
+            reason: 'email_send_failed',
+            error: error instanceof Error ? error.message : 'Unknown error',
+          },
+        });
+
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Impossibile inviare email. Riprova più tardi.',
+        });
+      }
+    }),
+
+  /**
+   * Conferma verifica email
+   * Valida token e marca email come verificata
+   */
+  confirmEmailVerification: publicProcedure
+    .input(ConfirmEmailVerificationSchema)
+    .mutation(async ({ input, ctx }) => {
+      const { token } = input;
+
+      // Hash del token per lookup
+      const tokenHash = createHash('sha256').update(token).digest('hex');
+
+      // Trova token valido (non scaduto)
+      const userToken = await ctx.prisma.userToken.findFirst({
+        where: {
+          type: 'VERIFY',
+          tokenHash,
+          expiresAt: {
+            gt: new Date(),
+          },
+        },
+        include: {
+          user: true,
+        },
+      });
+
+      if (!userToken) {
+        await logAudit(ctx, {
+          action: 'EMAIL_VERIFIED',
+          targetType: 'Auth',
+          result: 'FAILURE',
+          metadata: {
+            reason: 'invalid_or_expired_token',
+          },
+        });
+
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Token non valido o scaduto.',
+        });
+      }
+
+      // Aggiorna emailVerifiedAt ed elimina token in transazione
+      await ctx.prisma.$transaction([
+        ctx.prisma.user.update({
+          where: { id: userToken.userId },
+          data: {
+            emailVerifiedAt: new Date(),
+          },
+        }),
+        ctx.prisma.userToken.delete({
+          where: { id: userToken.id },
+        }),
+      ]);
+
+      // Log audit SUCCESS
+      await logAudit(ctx, {
+        action: 'EMAIL_VERIFIED',
+        targetType: 'Auth',
+        targetId: userToken.userId,
+        result: 'SUCCESS',
+        metadata: {
+          verifiedAt: new Date().toISOString(),
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Email verificata con successo!',
+      };
+    }),
 });

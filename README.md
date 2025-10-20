@@ -188,6 +188,70 @@ Admin revoca sessioni → tokenVersion incrementato nel DB
 - **Defense in Depth**: 4 livelli di verifica tokenVersion
 - **Zero Over-Engineering**: Architettura pulita, DRY, best practices
 
+### Email Transazionali
+
+Luke supporta email transazionali per funzionalità di sicurezza essenziali:
+
+#### Flussi Supportati
+
+1. **Reset Password**
+   - Utenti con identità LOCAL possono richiedere reset password via email
+   - Token monouso valido 30 minuti, hash SHA-256 salvato in DB
+   - Link: `{baseUrl}/auth/reset?token={token}`
+   - Invalidazione automatica sessioni attive dopo reset
+
+2. **Verifica Email**
+   - Verifica indirizzo email per utenti LOCAL
+   - Token monouso valido 24 ore, hash SHA-256 salvato in DB
+   - Link: `{baseUrl}/auth/verify?token={token}`
+   - Configurabile come obbligatoria per login (`auth.requireEmailVerification`)
+   - **Invio Automatico**: Quando un admin crea un nuovo utente LOCAL, l'email di verifica viene inviata automaticamente (best-effort, non blocca la creazione se SMTP non è configurato)
+
+#### Configurazione SMTP
+
+Richiede configurazione in `AppConfig`:
+
+```typescript
+smtp.host; // Host server SMTP (es. smtp.gmail.com)
+smtp.port; // Porta (es. 587, 465)
+smtp.secure; // true per TLS/SSL, false per STARTTLS
+smtp.user; // Username autenticazione
+smtp.pass; // Password (cifrata con AES-256-GCM)
+smtp.from; // Indirizzo mittente (es. noreply@example.com)
+app.baseUrl; // URL base per link nelle email
+```
+
+**Test Email**: Il sistema permette di inviare un'email di test per verificare la configurazione SMTP. È possibile specificare un destinatario personalizzato o lasciare vuoto per inviare l'email all'indirizzo mittente configurato (`smtp.from`).
+
+**Invio Automatico**: Quando viene creato un nuovo utente con identità LOCAL, il sistema tenta automaticamente di inviare l'email di verifica. Se SMTP non è configurato o l'invio fallisce, la creazione dell'utente **non viene bloccata** (silent fail). L'esito dell'invio è tracciato nei log e nell'audit trail.
+
+#### Sicurezza Token
+
+- **Token 32 byte random** (64 caratteri hex)
+- **Solo hash SHA-256 salvato in DB**, mai in chiaro
+- **Token usa-e-getta**: eliminato dopo uso o scadenza
+- **Rate limiting**: max 3 richieste ogni 15 minuti per IP
+- **Nessun segreto in AuditLog**: logging sicuro senza PII
+
+#### DNS & Deliverability
+
+Per produzione, configurare:
+
+- **SPF Record**: Autorizza server SMTP a inviare per il tuo dominio
+- **DKIM**: Firma digitale per autenticità email
+- **DMARC**: Policy anti-spoofing (opzionale ma raccomandato)
+
+#### Template Email
+
+Template HTML + testo plain minimali inline, senza dipendenze esterne. Facilmente personalizzabili in `apps/api/src/lib/mailer.ts`.
+
+#### Verifica Email Obbligatoria (Opzionale)
+
+Configura `auth.requireEmailVerification = true` in AppConfig per:
+
+- Bloccare login di utenti LOCAL con email non verificata
+- Utenti LDAP/OIDC non soggetti a verifica (autenticati esternamente)
+
 ### Operational Tuning
 
 Per configurazioni runtime, rate-limiting, idempotency, session TTL, security headers e readiness checks, consulta la [documentazione operativa](OPERATIONS.md) dedicata a SRE/DevOps.

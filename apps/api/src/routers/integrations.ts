@@ -45,9 +45,11 @@ const driveConfigSchema = z.object({
 const smtpConfigSchema = z.object({
   host: z.string().min(1, 'Host SMTP è obbligatorio'),
   port: z.number().min(1).max(65535, 'Porta deve essere tra 1 e 65535'),
-  username: z.string().min(1, 'Username è obbligatorio'),
-  password: z.string().min(1, 'Password è obbligatoria'),
-  from: z.string().email('Email mittente non valida'),
+  secure: z.boolean().default(false),
+  user: z.string().min(1, 'User SMTP è obbligatorio'),
+  pass: z.string().optional(), // Opzionale per aggiornamento senza cambiare password
+  from: z.string().min(1, 'Email mittente è obbligatoria'),
+  baseUrl: z.string().url('Base URL deve essere un URL valido'),
 });
 
 // Schema LDAP ora importato da @luke/core
@@ -149,22 +151,49 @@ export const integrationsRouter = router({
     saveConfig: adminProcedure
       .input(smtpConfigSchema)
       .mutation(async ({ input, ctx }) => {
-        const configKey = 'mail.smtp';
+        // Salva ogni campo separatamente in AppConfig
+        await saveConfig(ctx.prisma, 'smtp.host', input.host, false);
+        await saveConfig(ctx.prisma, 'smtp.port', input.port.toString(), false);
+        await saveConfig(
+          ctx.prisma,
+          'smtp.secure',
+          input.secure.toString(),
+          false
+        );
+        await saveConfig(ctx.prisma, 'smtp.user', input.user, false);
+        await saveConfig(ctx.prisma, 'smtp.from', input.from, false);
+        await saveConfig(ctx.prisma, 'app.baseUrl', input.baseUrl, false);
 
-        // Cifra la password
-        const configToSave = {
-          ...input,
-          password: '[REDACTED]', // Per i log
-        };
-
-        // Salva la configurazione cifrata
-        const configValue = JSON.stringify(input);
-        await saveConfig(ctx.prisma, configKey, configValue, true);
+        // Salva password solo se fornita (cifrata)
+        if (input.pass && input.pass.length > 0) {
+          await saveConfig(ctx.prisma, 'smtp.pass', input.pass, true);
+        }
 
         ctx.logger.info(
-          { config: configToSave },
+          {
+            host: input.host,
+            port: input.port,
+            secure: input.secure,
+            user: input.user,
+            from: input.from,
+            baseUrl: input.baseUrl,
+            passwordUpdated: !!input.pass,
+          },
           'Configurazione SMTP salvata'
         );
+
+        // Log audit
+        await logAudit(ctx, {
+          action: 'CONFIG_SMTP_UPDATE',
+          targetType: 'Config',
+          result: 'SUCCESS',
+          metadata: {
+            host: input.host,
+            port: input.port,
+            secure: input.secure,
+            passwordUpdated: !!input.pass,
+          },
+        });
 
         return {
           success: true,
@@ -172,62 +201,78 @@ export const integrationsRouter = router({
         };
       }),
 
-    test: adminProcedure.mutation(async ({ ctx }) => {
-      try {
-        const logger = new SecureLogger(console);
+    test: adminProcedure
+      .input(
+        z.object({
+          testEmail: z.string().email().optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        try {
+          const logger = new SecureLogger(console);
 
-        // Recupera la configurazione SMTP
-        const configValue = await getConfig(ctx.prisma, 'mail.smtp', true);
+          // Recupera la configurazione SMTP dai singoli campi AppConfig
+          const [host, port, secure, user, pass, from] = await Promise.all([
+            getConfig(ctx.prisma, 'smtp.host', false),
+            getConfig(ctx.prisma, 'smtp.port', false),
+            getConfig(ctx.prisma, 'smtp.secure', false),
+            getConfig(ctx.prisma, 'smtp.user', false),
+            getConfig(ctx.prisma, 'smtp.pass', true), // Decifra password
+            getConfig(ctx.prisma, 'smtp.from', false),
+          ]);
 
-        if (!configValue) {
-          const standardError = createStandardError(
-            ErrorCode.CONFIG_ERROR,
-            'Configurazione SMTP non trovata'
-          );
+          // Verifica che tutti i campi siano configurati
+          if (!host || !port || !user || !pass || !from) {
+            const standardError = createStandardError(
+              ErrorCode.CONFIG_ERROR,
+              'Configurazione SMTP incompleta. Verifica che tutti i campi siano configurati.'
+            );
+            throw toTRPCError(standardError);
+          }
+
+          // Crea transporter nodemailer
+          const transporter = nodemailer.createTransport({
+            host,
+            port: parseInt(port, 10),
+            secure: secure === 'true', // true per SSL/TLS, false per STARTTLS
+            auth: {
+              user,
+              pass,
+            },
+          });
+
+          // Verifica la connessione
+          await transporter.verify();
+
+          // Determina il destinatario: parametro o mittente configurato
+          const recipient = input.testEmail || from;
+
+          // Invia email di test
+          const testEmail = {
+            from,
+            to: recipient,
+            subject: 'Luke - Test Email Configurazione SMTP',
+            text: "Questa è un'email di test da Luke. Se ricevi questa email, la configurazione SMTP funziona correttamente!",
+            html: "<p>Questa è un'email di test da <strong>Luke</strong>.</p><p>Se ricevi questa email, la configurazione SMTP funziona correttamente! ✅</p>",
+          };
+
+          await transporter.sendMail(testEmail);
+
+          logger.info('✅ Email di test inviata con successo', {
+            to: recipient,
+            subject: testEmail.subject,
+          });
+
+          return {
+            success: true,
+            message: 'Email di test inviata con successo',
+            sentTo: recipient,
+          };
+        } catch (error: any) {
+          const standardError = IntegrationErrorHandler.handleSMTPError(error);
           throw toTRPCError(standardError);
         }
-
-        const config = JSON.parse(configValue);
-
-        // Crea transporter nodemailer
-        const transporter = nodemailer.createTransport({
-          host: config.host,
-          port: config.port,
-          secure: config.port === 465, // true per 465, false per altri
-          auth: {
-            user: config.username,
-            pass: config.password,
-          },
-        });
-
-        // Verifica la connessione
-        await transporter.verify();
-
-        // Invia email di test
-        const testEmail = {
-          from: config.from,
-          to: config.from, // Invia a se stesso per il test
-          subject: 'Luke - Test Email',
-          text: "Questa è un'email di test da Luke.",
-          html: "<p>Questa è un'email di test da <strong>Luke</strong>.</p>",
-        };
-
-        await transporter.sendMail(testEmail);
-
-        logger.info('✅ Email di test inviata con successo', {
-          to: config.from,
-          subject: testEmail.subject,
-        });
-
-        return {
-          success: true,
-          message: 'Email di test inviata con successo',
-        };
-      } catch (error: any) {
-        const standardError = IntegrationErrorHandler.handleSMTPError(error);
-        throw toTRPCError(standardError);
-      }
-    }),
+      }),
   }),
 
   importExport: router({

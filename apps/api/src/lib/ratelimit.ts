@@ -32,6 +32,11 @@ export const RATE_LIMIT_CONFIG = {
     windowMs: 900_000, // 15 minuti
     keyBy: 'userId' as const,
   },
+  passwordReset: {
+    max: 3, // 3 tentativi
+    windowMs: 900_000, // 15 minuti
+    keyBy: 'ip' as const,
+  },
   configMutations: {
     max: 20, // 20 richieste
     windowMs: 60_000, // 1 minuto

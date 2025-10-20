@@ -49,3 +49,68 @@ export async function verifyPassword(
     return false;
   }
 }
+
+/**
+ * Interfaccia per password policy
+ */
+export interface PasswordPolicy {
+  minLength: number;
+  requireUppercase: boolean;
+  requireLowercase: boolean;
+  requireDigit: boolean;
+  requireSpecialChar: boolean;
+}
+
+/**
+ * Risultato della validazione password
+ */
+export interface PasswordValidationResult {
+  isValid: boolean;
+  errors: string[];
+}
+
+/**
+ * Valida una password contro una policy
+ * @param password - Password da validare
+ * @param policy - Password policy da applicare
+ * @returns Risultato validazione con lista errori
+ */
+export function validatePassword(
+  password: string,
+  policy: PasswordPolicy
+): PasswordValidationResult {
+  const errors: string[] = [];
+
+  // Verifica lunghezza minima
+  if (password.length < policy.minLength) {
+    errors.push(`Lunghezza minima: ${policy.minLength} caratteri`);
+  }
+
+  // Verifica maiuscola
+  if (policy.requireUppercase && !/[A-Z]/.test(password)) {
+    errors.push('Richiesta almeno una lettera maiuscola');
+  }
+
+  // Verifica minuscola
+  if (policy.requireLowercase && !/[a-z]/.test(password)) {
+    errors.push('Richiesta almeno una lettera minuscola');
+  }
+
+  // Verifica cifra
+  if (policy.requireDigit && !/[0-9]/.test(password)) {
+    errors.push('Richiesta almeno una cifra');
+  }
+
+  // Verifica carattere speciale
+  if (
+    policy.requireSpecialChar &&
+    !/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)
+  ) {
+    errors.push('Richiesto almeno un carattere speciale');
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+  };
+}

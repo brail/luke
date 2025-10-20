@@ -23,26 +23,33 @@ enum Provider {
   OIDC
 }
 
+enum TokenType {
+  RESET
+  VERIFY
+}
+
 // Models
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  username     String   @unique
-  firstName    String   @default("")
-  lastName     String   @default("")
-  role         Role
-  isActive     Boolean  @default(true)
-  locale       String   @default("it-IT")
-  timezone     String   @default("Europe/Rome")
-  tokenVersion Int      @default(0)
-  lastLoginAt  DateTime?
-  loginCount   Int      @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                String    @id @default(uuid())
+  email             String    @unique
+  username          String    @unique
+  firstName         String    @default("")
+  lastName          String    @default("")
+  role              Role
+  isActive          Boolean   @default(true)
+  locale            String    @default("it-IT")
+  timezone          String    @default("Europe/Rome")
+  tokenVersion      Int       @default(0)
+  emailVerifiedAt   DateTime?
+  lastLoginAt       DateTime?
+  loginCount        Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   // Relations
   identities Identity[]
   auditLogs  AuditLog[]
+  tokens     UserToken[]
 
   @@map("users")
 }
@@ -107,4 +114,19 @@ model AuditLog {
   @@index([actorId, createdAt])
   @@index([targetType, targetId])
   @@map("audit_logs")
+}
+
+model UserToken {
+  id         String    @id @default(uuid())
+  userId     String
+  type       TokenType
+  tokenHash  String
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([type, tokenHash])
+  @@map("user_tokens")
 }

@@ -46,6 +46,8 @@ export const RateLimitConfigSchema = z.object({
   login: RateLimitPolicySchema.optional(),
   /** Policy per cambio password */
   passwordChange: RateLimitPolicySchema.optional(),
+  /** Policy per reset password */
+  passwordReset: RateLimitPolicySchema.optional(),
   /** Policy per mutazioni di configurazione */
   configMutations: RateLimitPolicySchema.optional(),
   /** Policy per mutazioni di utenti */

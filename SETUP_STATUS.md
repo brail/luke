@@ -50,6 +50,7 @@ pnpm format           # ✅ Formatta con Prettier
 - ✅ **Principio "mai decrypt in bulk"** - implementato nel config router
 - ✅ **Paginazione e filtri** - per config.list con output strutturato
 - ✅ **Visualizzazione sicura** - con modalità masked/raw e audit log
+- ✅ **Email transazionali** - reset password e verifica email con token hash SHA-256
 
 ## ⚠️ Note
 
@@ -155,6 +156,62 @@ Luke supporta autenticazione enterprise via LDAP con le seguenti funzionalità:
 - **Campi preservati**: Email e ruolo modificati manualmente non vengono sovrascritti dalla sincronizzazione
 - **Indicatore visivo**: Nota "Campo sincronizzato esternamente" sotto ogni campo disabilitato
 - **Colonna Provider**: La tabella utenti mostra il provider di ogni utente (LOCAL/LDAP/OIDC)
+
+## 📧 Email Transazionali
+
+### Flussi Implementati
+
+Luke supporta email transazionali per due flussi di sicurezza essenziali:
+
+#### Reset Password
+
+- **Endpoint tRPC**: `auth.requestPasswordReset`, `auth.confirmPasswordReset`
+- **Validità token**: 30 minuti
+- **URL frontend**: `/auth/reset?token={token}`
+- **Sicurezza**: Token hash SHA-256, una-tantum, invalida sessioni attive dopo reset
+- **Rate limiting**: max 3 richieste ogni 15 minuti per IP
+
+#### Verifica Email
+
+- **Endpoint tRPC**: `auth.requestEmailVerification`, `auth.confirmEmailVerification`
+- **Validità token**: 24 ore
+- **URL frontend**: `/auth/verify?token={token}`
+- **Configurazione**: `auth.requireEmailVerification` (default: false)
+- **Applicabilità**: Solo utenti LOCAL (LDAP/OIDC autenticati esternamente)
+
+### Configurazione SMTP Richiesta
+
+Configurare in `AppConfig` le seguenti chiavi:
+
+```
+smtp.host         # es. smtp.gmail.com
+smtp.port         # es. 587 (STARTTLS) o 465 (SSL/TLS)
+smtp.secure       # true per SSL/TLS, false per STARTTLS
+smtp.user         # username autenticazione
+smtp.pass         # password (cifrata AES-256-GCM)
+smtp.from         # indirizzo mittente
+app.baseUrl       # URL base per link nelle email
+```
+
+### Sicurezza Token
+
+- **Token 32 byte random** (64 caratteri hex)
+- **Solo hash SHA-256 in DB**, mai token in chiaro
+- **Token usa-e-getta**: eliminato automaticamente dopo uso o scadenza
+- **Nessun PII in AuditLog**: logging sicuro senza email/token
+- **Eventi auditati**: `PASSWORD_RESET_REQUESTED`, `PASSWORD_CHANGED`, `EMAIL_VERIFICATION_SENT`, `EMAIL_VERIFIED`
+
+### Template Email
+
+Template HTML + testo plain minimali inline in `apps/api/src/lib/mailer.ts`. Personalizzabili senza dipendenze esterne.
+
+### DNS Raccomandazioni (Produzione)
+
+Per deliverability ottimale configurare:
+
+- **SPF Record**: Autorizza server SMTP
+- **DKIM**: Firma digitale autenticità
+- **DMARC**: Policy anti-spoofing (opzionale)
 
 ## 🔐 Gestione Configurazioni Sensibili
 

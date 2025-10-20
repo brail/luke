@@ -16,6 +16,7 @@ import type { PrismaClient } from '@prisma/client';
 const DEFAULTS: Record<string, RateLimitPolicy> = {
   login: { max: 5, timeWindow: '1m', keyBy: 'ip' },
   passwordChange: { max: 3, timeWindow: '15m', keyBy: 'userId' },
+  passwordReset: { max: 3, timeWindow: '15m', keyBy: 'ip' },
   configMutations: { max: 20, timeWindow: '1m', keyBy: 'userId' },
   userMutations: { max: 10, timeWindow: '1m', keyBy: 'userId' },
 };
