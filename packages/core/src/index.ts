@@ -21,7 +21,6 @@ export * from './schemas/auth';
 
 // Re-export RBAC
 export * from './rbac';
-export * from './rbac/hasSectionAccess';
 
 // Re-export RBAC schemas
 export * from './schemas/rbac';
@@ -40,5 +39,7 @@ export * from './pricing';
 // Re-export storage types and config
 export * from './storage/types';
 export * from './storage/config';
+
+// Note: server utilities are exported via @luke/core/server
 
 // Note: crypto utilities are server-only and exported via @luke/core/server

@@ -21,7 +21,7 @@ export async function assertSectionAccess(section: Section) {
     redirect('/login');
   }
 
-  // Fetch override da API (server-to-server)
+  // Fetch override da API (server-to-server) - manteniamo per ora
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
   let override: { enabled?: boolean } | undefined;
 
@@ -43,16 +43,19 @@ export async function assertSectionAccess(section: Section) {
     console.warn('Errore fetch override sezione:', err);
   }
 
+  // Per ora, usiamo solo override e RBAC classico
+  // TODO: Implementare fetch RBAC config via API quando necessario
   const allowed = effectiveSectionAccess({
     role: session.user.role as string,
     roleToPermissions:
       permissions[session.user.role as keyof typeof permissions] || {},
-    sectionAccessDefaults: {},
+    sectionAccessDefaults: {}, // TODO: fetch da API
     userOverride: override,
     section,
+    disabledSections: [], // TODO: fetch da API
   });
 
   if (!allowed) {
-    redirect('/app/dashboard' as any); // o pagina 403
+    redirect('/app/dashboard' as any);
   }
 }

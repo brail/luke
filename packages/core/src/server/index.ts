@@ -1,14 +1,10 @@
 /**
- * @luke/core/server - Moduli server-only
+ * @luke/core/server - Server-side utilities
  *
- * Questo entry point esporta moduli che possono essere utilizzati
- * esclusivamente in ambiente server-side (Node.js, API, SSR).
- *
- * ⚠️ IMPORTANTE: Non importare questi moduli in componenti client
- *
- * @version 0.1.0
- * @author Luke Team
+ * Questo modulo fornisce utilities server-side riusabili
+ * tra API e Web per evitare duplicazione e garantire
+ * consistency
  */
 
-// Export crypto utilities (server-only)
-export * from '../crypto/secrets.server.js';
+export * from './rbacConfig';
+export * from '../crypto/secrets.server';

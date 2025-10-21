@@ -1,14 +1,13 @@
 /**
  * Middleware tRPC per controllo accesso alle sezioni
- * Implementa la precedenza: deny > allow > role
+ * Implementa la precedenza: kill switch > deny > allow > role
  */
 
 import { TRPCError } from '@trpc/server';
-import { effectiveSectionAccess } from '@luke/core';
-import { permissions } from '@luke/core';
+import { effectiveSectionAccess, permissions } from '@luke/core';
+import { getRbacConfig, getSectionsDisabled } from '@luke/core/server';
 import type { Section } from '@luke/core';
 import { getOverride } from '../services/sectionAccess.service';
-import { getRbacConfig } from '../services/appConfig.service';
 import type { Context } from './trpc';
 
 /**
@@ -27,15 +26,14 @@ export function withSectionAccess(section: Section) {
 
     const user = ctx.session.user;
 
-    // Recupera override per l'utente e sezione
-    const override = await getOverride(ctx.prisma, user.id, section).catch(
-      () => null
-    );
+    // Recupera override, RBAC config e disabled sections in parallelo
+    const [override, rbacConfig, disabledSections] = await Promise.all([
+      getOverride(ctx.prisma, user.id, section).catch(() => null),
+      getRbacConfig(ctx.prisma),
+      getSectionsDisabled(ctx.prisma),
+    ]);
 
-    // Recupera configurazione RBAC con cache
-    const rbacConfig = await getRbacConfig(ctx.prisma);
-
-    // Valuta accesso considerando override, default ruolo e RBAC
+    // Valuta accesso considerando kill switch, override, default ruolo e RBAC
     const allowed = effectiveSectionAccess({
       role: user.role,
       roleToPermissions:
@@ -43,6 +41,7 @@ export function withSectionAccess(section: Section) {
       sectionAccessDefaults: rbacConfig.sectionAccessDefaults,
       userOverride: override ? { enabled: override.enabled } : undefined,
       section,
+      disabledSections,
     });
 
     if (!allowed) {

@@ -55,7 +55,7 @@ export function ConfigValueDialog({
 
   return (
     <Dialog open={true} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh]">
+      <DialogContent className="max-w-4xl max-h-[80vh] w-full">
         <DialogHeader>
           <DialogTitle>
             Valore Configurazione
@@ -73,7 +73,7 @@ export function ConfigValueDialog({
 
         <div className="space-y-4">
           <div className="bg-muted p-4 rounded-lg">
-            <pre className="whitespace-pre-wrap break-words text-sm overflow-auto max-h-96">
+            <pre className="whitespace-pre-wrap break-all text-sm overflow-auto max-h-96 font-mono">
               {displayValue}
             </pre>
           </div>

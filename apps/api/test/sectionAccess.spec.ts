@@ -5,16 +5,17 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { PrismaClient } from '@prisma/client';
-import { effectiveSectionAccess } from '@luke/core/rbac/hasSectionAccess';
-import { permissions } from '@luke/core/rbac';
+import { effectiveSectionAccess } from '@luke/core';
+import { permissions } from '@luke/core';
 
 describe('Section Access Overrides', () => {
   describe('effectiveSectionAccess', () => {
     it('should allow access when override is enabled=true', () => {
       const result = effectiveSectionAccess({
         role: 'viewer',
-        rolePermissions: permissions.viewer,
-        override: { enabled: true },
+        roleToPermissions: permissions,
+        sectionAccessDefaults: {},
+        userOverride: { enabled: true },
         section: 'settings',
       });
 
@@ -24,8 +25,9 @@ describe('Section Access Overrides', () => {
     it('should deny access when override is enabled=false', () => {
       const result = effectiveSectionAccess({
         role: 'admin',
-        rolePermissions: permissions.admin,
-        override: { enabled: false },
+        roleToPermissions: permissions,
+        sectionAccessDefaults: {},
+        userOverride: { enabled: false },
         section: 'settings',
       });
 
@@ -36,8 +38,9 @@ describe('Section Access Overrides', () => {
       // Admin ha accesso a settings
       const adminResult = effectiveSectionAccess({
         role: 'admin',
-        rolePermissions: permissions.admin,
-        override: undefined,
+        roleToPermissions: permissions,
+        sectionAccessDefaults: {},
+        userOverride: undefined,
         section: 'settings',
       });
       expect(adminResult).toBe(true);
@@ -45,8 +48,9 @@ describe('Section Access Overrides', () => {
       // Viewer non ha accesso a settings
       const viewerResult = effectiveSectionAccess({
         role: 'viewer',
-        rolePermissions: permissions.viewer,
-        override: undefined,
+        roleToPermissions: permissions,
+        sectionAccessDefaults: {},
+        userOverride: undefined,
         section: 'settings',
       });
       expect(viewerResult).toBe(false);
@@ -54,8 +58,9 @@ describe('Section Access Overrides', () => {
       // Editor ha accesso read a settings
       const editorResult = effectiveSectionAccess({
         role: 'editor',
-        rolePermissions: permissions.editor,
-        override: undefined,
+        roleToPermissions: permissions,
+        sectionAccessDefaults: {},
+        userOverride: undefined,
         section: 'settings',
       });
       expect(editorResult).toBe(true);
@@ -65,8 +70,9 @@ describe('Section Access Overrides', () => {
       // Override deny dovrebbe sempre negare
       const denyResult = effectiveSectionAccess({
         role: 'admin',
-        rolePermissions: permissions.admin,
-        override: { enabled: false },
+        roleToPermissions: permissions,
+        sectionAccessDefaults: {},
+        userOverride: { enabled: false },
         section: 'settings',
       });
       expect(denyResult).toBe(false);
@@ -74,11 +80,36 @@ describe('Section Access Overrides', () => {
       // Override allow dovrebbe sempre permettere
       const allowResult = effectiveSectionAccess({
         role: 'viewer',
-        rolePermissions: permissions.viewer,
-        override: { enabled: true },
+        roleToPermissions: permissions,
+        sectionAccessDefaults: {},
+        userOverride: { enabled: true },
         section: 'settings',
       });
       expect(allowResult).toBe(true);
+    });
+
+    it('should deny access when section is globally disabled', () => {
+      const result = effectiveSectionAccess({
+        role: 'admin',
+        roleToPermissions: permissions,
+        sectionAccessDefaults: {},
+        userOverride: undefined,
+        section: 'settings',
+        disabledSections: ['settings'],
+      });
+      expect(result).toBe(false);
+    });
+
+    it('should allow access when section is not globally disabled', () => {
+      const result = effectiveSectionAccess({
+        role: 'admin',
+        roleToPermissions: permissions,
+        sectionAccessDefaults: {},
+        userOverride: undefined,
+        section: 'settings',
+        disabledSections: ['maintenance'], // settings not disabled
+      });
+      expect(result).toBe(true);
     });
   });
 

@@ -88,12 +88,14 @@ export function formatValue(
 /**
  * Formatta un JSON per la visualizzazione compatta
  * @param jsonString - Stringa JSON da formattare
- * @returns JSON formattato in modo compatto
+ * @returns JSON formattato in modo compatto ma con spazi per il wrapping
  */
 export function formatJsonCompact(jsonString: string): string {
   try {
     const parsed = JSON.parse(jsonString);
-    return JSON.stringify(parsed, null, 0); // Compatto ma leggibile
+    const compact = JSON.stringify(parsed, null, 0);
+    // Aggiungi spazi dopo virgole e due punti per facilitare il wrapping
+    return compact.replace(/,/g, ', ').replace(/:/g, ': ').replace(/\s+/g, ' '); // Normalizza spazi multipli
   } catch {
     return jsonString; // Se non è JSON valido, ritorna originale
   }

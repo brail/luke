@@ -35,6 +35,7 @@ interface ConfigEditDialogProps {
   config?: {
     key: string;
     value: string;
+    valuePreview?: string | null;
     isEncrypted: boolean;
   } | null;
   onSave: (formData: {
@@ -67,7 +68,11 @@ export function ConfigEditDialog({
       // Modalità edit: popola form con dati esistenti
       setFormData({
         key: config.key,
-        value: config.value,
+        // Per valori cifrati, non pre-popolare il campo valore
+        // Per valori non cifrati, usa valuePreview se disponibile, altrimenti value
+        value: config.isEncrypted
+          ? ''
+          : config.valuePreview || config.value || '',
         encrypt: config.isEncrypted,
         category: getCategoryFromKey(config.key),
       });
@@ -166,11 +171,24 @@ export function ConfigEditDialog({
 
           <div className="space-y-2">
             <Label htmlFor="value">Valore</Label>
+            {isEdit && config?.isEncrypted && (
+              <div className="bg-amber-50 border border-amber-200 rounded-md p-3">
+                <p className="text-sm text-amber-800">
+                  <strong>Valore cifrato:</strong> Il valore attuale è cifrato e
+                  non può essere visualizzato. Inserisci il nuovo valore che
+                  sostituirà quello esistente.
+                </p>
+              </div>
+            )}
             <Textarea
               id="value"
               value={formData.value}
               onChange={e => handleInputChange('value', e.target.value)}
-              placeholder="Inserisci il valore della configurazione"
+              placeholder={
+                isEdit && config?.isEncrypted
+                  ? 'Inserisci il nuovo valore (sostituirà quello cifrato esistente)'
+                  : 'Inserisci il valore della configurazione'
+              }
               rows={4}
               disabled={isLoading}
               className={errors.value ? 'border-destructive' : ''}
@@ -209,11 +227,16 @@ export function ConfigEditDialog({
               id="encrypt"
               checked={formData.encrypt}
               onChange={e => handleInputChange('encrypt', e.target.checked)}
-              disabled={isLoading}
+              disabled={isLoading || (isEdit && config?.isEncrypted)}
               className="rounded border-gray-300"
             />
             <Label htmlFor="encrypt" className="text-sm">
               Cifra il valore (AES-256-GCM)
+              {isEdit && config?.isEncrypted && (
+                <span className="text-amber-600 ml-1">
+                  (impostato per valore cifrato esistente)
+                </span>
+              )}
             </Label>
           </div>
 

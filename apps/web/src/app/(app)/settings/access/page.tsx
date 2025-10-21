@@ -67,6 +67,8 @@ export default function SectionAccessPage() {
   // Mutation per salvare override
   const setOverrideMutation = trpc.sectionAccess.set.useMutation();
 
+  const utils = trpc.useUtils();
+
   const { mutate: saveOverride, isPending: isSaving } = useStandardMutation({
     mutateFn: setOverrideMutation.mutateAsync,
     onSuccessMessage: 'Override salvato con successo',
@@ -79,6 +81,10 @@ export default function SectionAccessPage() {
         settings: 'auto',
         maintenance: 'auto',
       });
+
+      // Invalida query per aggiornare i dati
+      utils.sectionAccess.getByUser.invalidate();
+      utils.me.invalidate();
     },
   });
 

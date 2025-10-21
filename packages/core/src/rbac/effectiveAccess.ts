@@ -18,10 +18,13 @@ type EffectiveAccessParams = {
   userOverride: { enabled?: boolean | null } | null | undefined;
   /** Sezione da valutare */
   section: Section;
+  /** Sezioni disabilitate globalmente (kill switch) */
+  disabledSections?: string[];
 };
 
 /**
  * Valuta l'accesso effettivo a una sezione considerando la precedenza:
+ * 0. Kill switch globale (disabled sections)
  * 1. Override utente (disabled > enabled > manca)
  * 2. Default di ruolo (disabled > enabled > auto)
  * 3. RBAC di ruolo (hasPermission)
@@ -35,8 +38,12 @@ export function effectiveSectionAccess({
   sectionAccessDefaults,
   userOverride,
   section,
+  disabledSections,
 }: EffectiveAccessParams): boolean {
-  // 1) Override utente - precedenza massima
+  // 0) Kill switch globale - precedenza massima
+  if (disabledSections?.includes(section)) return false;
+
+  // 1) Override utente - precedenza alta
   if (userOverride?.enabled === false) return false;
   if (userOverride?.enabled === true) return true;
 
