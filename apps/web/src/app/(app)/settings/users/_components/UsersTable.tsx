@@ -36,7 +36,6 @@ export function UsersTable({
   currentUserId,
   isLoading = false,
   error = null,
-  refetch,
   sortBy,
   sortOrder,
   onSort,
@@ -297,7 +296,6 @@ export function UsersTable({
                     onHardDelete,
                     onRevokeSessions,
                   }}
-                  refetch={refetch}
                 />
               </TableCell>
             </TableRow>

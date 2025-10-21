@@ -43,6 +43,10 @@ export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
           queries: {
             staleTime: 60 * 1000, // 1 minuto
             retry: 1,
+            refetchOnWindowFocus: false, // Evita refetch automatici non necessari
+          },
+          mutations: {
+            retry: false, // No retry automatico per evitare duplicazioni
           },
         },
       })

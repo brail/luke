@@ -22,7 +22,6 @@ export function UsersToolbar({
   onSearchChange,
   onRoleFilterChange,
   onCreateUser,
-  onRefresh,
   onPageChange,
 }: UsersToolbarProps) {
   return (
@@ -55,9 +54,6 @@ export function UsersToolbar({
       {/* Azioni */}
       <div className="flex gap-2">
         <Button onClick={onCreateUser}>Nuovo Utente</Button>
-        <Button variant="outline" onClick={onRefresh}>
-          Aggiorna
-        </Button>
       </div>
 
       {/* Paginazione */}

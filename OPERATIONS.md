@@ -12,6 +12,7 @@ Documentazione operativa per SRE/DevOps su configurazioni runtime, rate-limiting
 - [Readiness & Health Checks](#readiness--health-checks)
 - [Configurazioni per Ambiente](#configurazioni-per-ambiente)
 - [Test Automatici](#test-automatici)
+- [Standard Aggiornamento Dati Client](#standard-aggiornamento-dati-client)
 - [Riferimenti Correlati](#riferimenti-correlati)
 
 ---
@@ -723,6 +724,96 @@ pnpm -F @luke/api test idempotency.spec.ts
 # Test readiness
 pnpm -F @luke/api test readyz.spec.ts
 ```
+
+---
+
+## Standard Aggiornamento Dati Client
+
+Il frontend utilizza uno standard uniforme per l'aggiornamento dei dati dopo le mutation, eliminando duplicazioni e garantendo coerenza.
+
+### Pattern Consigliato
+
+Usare `useStandardMutation` per tutte le mutation tRPC:
+
+```typescript
+import { useStandardMutation } from '@/lib/useStandardMutation';
+import { useRefresh } from '@/lib/refresh';
+import { trpc } from '@/lib/trpc';
+
+const refresh = useRefresh();
+
+const { mutate, isPending } = useStandardMutation({
+  mutateFn: trpc.endpoint.mutateAsync,
+  invalidate: refresh.resourceName,
+  onSuccessMessage: 'Operazione completata con successo',
+  onErrorMessage: 'Errore durante l'operazione',
+});
+
+// Uso
+await mutate({ ...data });
+```
+
+### Invalidazioni Disponibili
+
+Il hook `useRefresh()` fornisce invalidazioni standardizzate:
+
+- **`refresh.me()`** - Profilo utente corrente
+- **`refresh.users()`** - Lista utenti
+- **`refresh.storageConfig()`** - Configurazione storage
+- **`refresh.storageFiles(bucket?)`** - File storage
+- **`refresh.ldapConfig()`** - Configurazione LDAP
+- **`refresh.allStorage()`** - Storage config + files
+
+### Callback Personalizzate
+
+Per logica aggiuntiva dopo successo/errore:
+
+```typescript
+const { mutate } = useStandardMutation({
+  mutateFn: trpc.users.create.mutateAsync,
+  invalidate: refresh.users,
+  onSuccessMessage: 'Utente creato',
+  onSuccess: data => {
+    setDialogOpen(false);
+    router.push(`/users/${data.id}`);
+  },
+});
+```
+
+### Anti-Pattern da Evitare
+
+❌ **NO**: Chiamate manuali a `refetch()`  
+✅ **SÌ**: Invalidazioni centralizzate via `refresh.*`
+
+❌ **NO**: Duplicazione di `onSuccess`/`onError` ad-hoc  
+✅ **SÌ**: Messaggi standardizzati via `onSuccessMessage`
+
+❌ **NO**: `refetchOnWindowFocus: true` (default React Query)  
+✅ **SÌ**: Disabilitato globalmente per evitare refetch non necessari
+
+### Configurazione React Query
+
+Le mutation hanno i seguenti default:
+
+```typescript
+// apps/web/src/lib/trpc.tsx
+defaultOptions: {
+  queries: {
+    staleTime: 60 * 1000, // 1 minuto
+    retry: 1,
+    refetchOnWindowFocus: false, // No refetch automatici
+  },
+  mutations: {
+    retry: false, // No retry per evitare duplicazioni
+  },
+}
+```
+
+### File Coinvolti
+
+- `apps/web/src/lib/refresh.ts` - Invalidazioni centralizzate
+- `apps/web/src/lib/useStandardMutation.ts` - Wrapper mutation standard
+- `apps/web/src/lib/trpc.tsx` - Configurazione React Query defaults
 
 ---
 

@@ -19,7 +19,9 @@ import {
 } from '../../../../components/ui/tooltip';
 import { LOCALES } from '../../../../lib/i18n/locales';
 import { TIMEZONES } from '../../../../lib/i18n/timezones';
+import { useRefresh } from '../../../../lib/refresh';
 import { trpc } from '../../../../lib/trpc';
+import { useStandardMutation } from '../../../../lib/useStandardMutation';
 
 interface UserProfileFormProps {
   /** Dati utente correnti */
@@ -37,7 +39,7 @@ interface UserProfileFormProps {
 }
 
 export function UserProfileForm({ user }: UserProfileFormProps) {
-  const utils = trpc.useUtils();
+  const refresh = useRefresh();
 
   // Stato per cambio email
   const [newEmail, setNewEmail] = useState('');
@@ -58,35 +60,34 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
     },
   });
 
-  // Mutation per aggiornamento profilo
-  const updateProfileMutation = trpc.me.updateProfile.useMutation({
-    onSuccess: async () => {
-      toast.success('Profilo aggiornato con successo');
-      utils.me.get.invalidate();
-      // I dati si aggiornano automaticamente tramite tRPC invalidation
-    },
-    onError: error => {
-      toast.error(`Errore nell'aggiornamento: ${error.message}`);
-    },
+  // Mutation tRPC
+  const updateProfileMutation = trpc.me.updateProfile.useMutation();
+  const changeEmailMutation = trpc.users.changeEmail.useMutation();
+
+  // Mutation standardizzate
+  const { mutate: updateProfile } = useStandardMutation({
+    mutateFn: updateProfileMutation.mutateAsync,
+    invalidate: refresh.me,
+    onSuccessMessage: 'Profilo aggiornato con successo',
+    onErrorMessage: "Errore durante l'aggiornamento del profilo",
   });
 
-  // Mutation per cambio email
-  const changeEmailMutation = trpc.users.changeEmail.useMutation({
-    onSuccess: async data => {
-      toast.success(data.message);
-      setNewEmail('');
-      utils.me.get.invalidate();
-      // Ricarica pagina per aggiornare sessione
-      window.location.reload();
-    },
-    onError: error => {
-      toast.error(error.message || 'Errore cambio email');
-    },
-  });
+  const { mutate: changeEmail, isPending: isChangingEmail } =
+    useStandardMutation({
+      mutateFn: changeEmailMutation.mutateAsync,
+      invalidate: refresh.me,
+      onSuccess: (data: any) => {
+        toast.success(data.message);
+        setNewEmail('');
+        // Ricarica pagina per aggiornare sessione
+        window.location.reload();
+      },
+      onErrorMessage: 'Errore cambio email',
+    });
 
   // Handler per submit form
   const onSubmit = (data: UserProfileInput) => {
-    updateProfileMutation.mutate(data);
+    updateProfile(data);
   };
 
   // Determina se i campi sono read-only per provider esterni
@@ -117,17 +118,17 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
             value={newEmail}
             onChange={e => setNewEmail(e.target.value)}
             placeholder="nuova@email.com"
-            disabled={changeEmailMutation.isPending}
+            disabled={isChangingEmail}
           />
           <Button
             type="button"
             onClick={() => {
               if (!newEmail) return;
-              changeEmailMutation.mutate({ newEmail });
+              changeEmail({ newEmail });
             }}
-            disabled={changeEmailMutation.isPending || !newEmail}
+            disabled={isChangingEmail || !newEmail}
           >
-            {changeEmailMutation.isPending ? (
+            {isChangingEmail ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Aggiorno...

@@ -58,7 +58,6 @@ export interface ToolbarHandlers {
   onSearchChange: (value: string) => void;
   onRoleFilterChange: (value: string) => void;
   onCreateUser: () => void;
-  onRefresh: () => void;
   onPageChange: (page: number) => void;
 }
 
@@ -83,5 +82,4 @@ export interface TableProps {
   currentUserId: string;
   isLoading?: boolean;
   error?: any;
-  refetch?: () => void;
 }

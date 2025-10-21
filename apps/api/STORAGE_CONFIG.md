@@ -345,3 +345,4 @@ Implementazione completa e funzionante:
 - ✅ Migrazione DB applicata
 - ✅ Provider estensibile per futuri adapter (SMB, GDrive)
 
+

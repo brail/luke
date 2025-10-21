@@ -3,9 +3,10 @@
 import { Globe } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
 
+import { useRefresh } from '../lib/refresh';
 import { trpc } from '../lib/trpc';
+import { useStandardMutation } from '../lib/useStandardMutation';
 
 import { Button } from './ui/button';
 import {
@@ -17,8 +18,6 @@ import {
   DialogFooter,
 } from './ui/dialog';
 
-
-
 /**
  * Dialog per aggiornare il timezone dell'utente
  * Si mostra automaticamente solo al primo accesso post-login quando rileva un cambio di timezone dal browser
@@ -28,7 +27,7 @@ export function TimezoneUpdateDialog() {
   const [open, setOpen] = useState(false);
   const [detectedTimezone, setDetectedTimezone] = useState<string | null>(null);
   const [hasShownForSession, setHasShownForSession] = useState(false);
-  const utils = trpc.useUtils();
+  const refresh = useRefresh();
 
   // Usa i dati aggiornati dall'API invece della sessione NextAuth
   const { data: userData } = trpc.me.get.useQuery(undefined, {
@@ -36,16 +35,17 @@ export function TimezoneUpdateDialog() {
     staleTime: 5 * 60 * 1000, // 5 minuti - riduce richieste API
   });
 
-  const updateMutation = trpc.me.updateTimezone.useMutation({
-    onSuccess: async () => {
-      toast.success('Fuso orario aggiornato con successo');
-      setOpen(false);
-      utils.me.get.invalidate(); // Invalida la query per aggiornare i dati
-    },
-    onError: error => {
-      toast.error(`Errore aggiornamento: ${error.message}`);
-    },
-  });
+  // Mutation tRPC
+  const updateTimezoneMutation = trpc.me.updateTimezone.useMutation();
+
+  const { mutate: updateTimezone, isPending: isUpdatingTimezone } =
+    useStandardMutation({
+      mutateFn: updateTimezoneMutation.mutateAsync,
+      invalidate: refresh.me,
+      onSuccessMessage: 'Fuso orario aggiornato con successo',
+      onErrorMessage: 'Errore aggiornamento',
+      onSuccess: () => setOpen(false),
+    });
 
   useEffect(() => {
     // Reset flag quando la sessione cambia (login/logout)
@@ -81,7 +81,7 @@ export function TimezoneUpdateDialog() {
     if (!detectedTimezone) return;
 
     // Invia solo il timezone aggiornato
-    updateMutation.mutate({
+    updateTimezone({
       timezone: detectedTimezone,
     });
   };
@@ -129,10 +129,10 @@ export function TimezoneUpdateDialog() {
           </Button>
           <Button
             onClick={handleUpdate}
-            disabled={updateMutation.isPending}
+            disabled={isUpdatingTimezone}
             className="w-full sm:w-auto"
           >
-            {updateMutation.isPending ? 'Aggiornamento...' : 'Aggiorna'}
+            {isUpdatingTimezone ? 'Aggiornamento...' : 'Aggiorna'}
           </Button>
         </DialogFooter>
       </DialogContent>

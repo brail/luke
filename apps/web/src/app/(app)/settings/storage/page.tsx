@@ -27,7 +27,9 @@ import {
   TabsTrigger,
 } from '../../../../components/ui/tabs';
 import { useToast } from '../../../../hooks/use-toast';
+import { useRefresh } from '../../../../lib/refresh';
 import { trpc } from '../../../../lib/trpc';
+import { useStandardMutation } from '../../../../lib/useStandardMutation';
 
 /**
  * Schema per form storage locale
@@ -71,6 +73,7 @@ interface DriveConfig {
 export default function StoragePage() {
   const { data: session, status } = useSession();
   const toast = useToast();
+  const refresh = useRefresh();
 
   // ========== TAB STORAGE LOCALE ==========
 
@@ -83,25 +86,21 @@ export default function StoragePage() {
     },
   });
 
-  const {
-    data: existingConfig,
-    isLoading: isLoadingConfig,
-    refetch: refetchConfig,
-  } = trpc.storage.getConfig.useQuery(undefined, {
-    enabled: session?.user?.role === 'admin',
-  });
+  const { data: existingConfig, isLoading: isLoadingConfig } =
+    trpc.storage.getConfig.useQuery(undefined, {
+      enabled: session?.user?.role === 'admin',
+    });
 
-  const saveConfigMutation = trpc.storage.saveConfig.useMutation({
-    onSuccess: () => {
-      toast.success('Configurazione storage salvata con successo');
-      refetchConfig();
-    },
-    onError: error => {
-      toast.error('Errore durante il salvataggio', {
-        description: error.message,
-      });
-    },
-  });
+  // Ottieni la mutation tRPC per passare mutateAsync
+  const saveConfigMutation = trpc.storage.saveConfig.useMutation();
+
+  const { mutate: saveStorageConfig, isPending: isSavingConfig } =
+    useStandardMutation({
+      mutateFn: saveConfigMutation.mutateAsync,
+      invalidate: refresh.storageConfig,
+      onSuccessMessage: 'Configurazione storage salvata con successo',
+      onErrorMessage: 'Errore durante il salvataggio',
+    });
 
   useEffect(() => {
     if (existingConfig) {
@@ -116,7 +115,7 @@ export default function StoragePage() {
   }, [existingConfig, form]);
 
   const onSubmitLocal = (data: StorageConfigForm) => {
-    saveConfigMutation.mutate(data);
+    saveStorageConfig(data);
   };
 
   // ========== TAB PROVIDER ESTERNI ==========
@@ -234,9 +233,7 @@ export default function StoragePage() {
                         <Input
                           {...field}
                           placeholder="/var/lib/luke/storage"
-                          disabled={
-                            isLoadingConfig || saveConfigMutation.isPending
-                          }
+                          disabled={isLoadingConfig || isSavingConfig}
                         />
                       </FormControl>
                       <FormDescription>
@@ -266,9 +263,7 @@ export default function StoragePage() {
                           type="number"
                           min={1}
                           max={1000}
-                          disabled={
-                            isLoadingConfig || saveConfigMutation.isPending
-                          }
+                          disabled={isLoadingConfig || isSavingConfig}
                         />
                       </FormControl>
                       <FormDescription>
@@ -306,10 +301,7 @@ export default function StoragePage() {
                                       : current.filter(b => b !== bucket)
                                   );
                                 }}
-                                disabled={
-                                  isLoadingConfig ||
-                                  saveConfigMutation.isPending
-                                }
+                                disabled={isLoadingConfig || isSavingConfig}
                                 className="rounded border-gray-300"
                               />
                               <span className="capitalize">{bucket}</span>
@@ -356,17 +348,15 @@ export default function StoragePage() {
                     type="button"
                     variant="outline"
                     onClick={() => form.reset()}
-                    disabled={isLoadingConfig || saveConfigMutation.isPending}
+                    disabled={isLoadingConfig || isSavingConfig}
                   >
                     Reset
                   </Button>
                   <Button
                     type="submit"
-                    disabled={isLoadingConfig || saveConfigMutation.isPending}
+                    disabled={isLoadingConfig || isSavingConfig}
                   >
-                    {saveConfigMutation.isPending
-                      ? 'Salvataggio...'
-                      : 'Salva Configurazione'}
+                    {isSavingConfig ? 'Salvataggio...' : 'Salva Configurazione'}
                   </Button>
                 </div>
               </form>

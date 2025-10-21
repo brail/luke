@@ -10,7 +10,9 @@ import { SectionCard } from '../../../../components/SectionCard';
 import { ErrorBoundary } from '../../../../components/system/ErrorBoundary';
 import { UserDialog } from '../../../../components/UserDialog';
 import { debugLog } from '../../../../lib/debug';
+import { useRefresh } from '../../../../lib/refresh';
 import { trpc } from '../../../../lib/trpc';
+import { useStandardMutation } from '../../../../lib/useStandardMutation';
 
 import { SendVerificationDialog } from './_components/SendVerificationDialog';
 import { SortColumn, SortOrder } from './_components/types';
@@ -52,12 +54,13 @@ export default function UsersPage() {
   const [createdUserId, setCreatedUserId] = useState<string | null>(null);
   const [showVerifyDialog, setShowVerifyDialog] = useState(false);
 
+  const refresh = useRefresh();
+
   // Query tRPC per lista utenti con paginazione e filtri
   const {
     data: usersData,
     isLoading,
     error,
-    refetch,
   } = trpc.users.list.useQuery(
     {
       page: currentPage,
@@ -72,61 +75,64 @@ export default function UsersPage() {
     }
   );
 
-  // Mutations tRPC
-  const createUserMutation = trpc.users.create.useMutation({
-    onSuccess: data => {
-      toast.success('Utente creato con successo');
-      setDialogOpen(false);
-      refetch();
-      // Mostra dialog per invio email verifica
-      setCreatedUserId(data.id);
-      setShowVerifyDialog(true);
-    },
-    onError: (error: any) => {
-      toast.error(`Errore nella creazione: ${error.message}`);
-    },
-  });
+  // Mutation tRPC
+  const createUserMutation = trpc.users.create.useMutation();
+  const updateUserMutation = trpc.users.update.useMutation();
+  const deleteUserMutation = trpc.users.delete.useMutation();
+  const hardDeleteUserMutation = trpc.users.hardDelete.useMutation();
+  const revokeUserSessionsMutation =
+    trpc.users.revokeUserSessions.useMutation();
 
-  const revokeUserSessionsMutation = trpc.users.revokeUserSessions.useMutation({
-    onSuccess: data => {
-      toast.success(data.message);
-      refetch();
-    },
-    onError: (error: any) => {
-      toast.error(`Errore nella revoca sessioni: ${error.message}`);
-    },
-  });
+  // Mutations standardizzate
+  const { mutate: createUser, isPending: isCreatingUser } = useStandardMutation(
+    {
+      mutateFn: createUserMutation.mutateAsync,
+      invalidate: refresh.users,
+      onSuccessMessage: 'Utente creato con successo',
+      onErrorMessage: 'Errore nella creazione',
+      onSuccess: (data: any) => {
+        setDialogOpen(false);
+        // Mostra dialog per invio email verifica
+        setCreatedUserId(data.id);
+        setShowVerifyDialog(true);
+      },
+    }
+  );
 
-  const updateUserMutation = trpc.users.update.useMutation({
-    onSuccess: () => {
-      toast.success('Utente aggiornato con successo');
-      setDialogOpen(false);
-      refetch();
-    },
-    onError: (error: any) => {
-      toast.error(`Errore nell'aggiornamento: ${error.message}`);
-    },
-  });
+  const { mutate: updateUser, isPending: isUpdatingUser } = useStandardMutation(
+    {
+      mutateFn: updateUserMutation.mutateAsync,
+      invalidate: refresh.users,
+      onSuccessMessage: 'Utente aggiornato con successo',
+      onErrorMessage: "Errore nell'aggiornamento",
+      onSuccess: () => setDialogOpen(false),
+    }
+  );
 
-  const deleteUserMutation = trpc.users['delete'].useMutation({
-    onSuccess: () => {
-      toast.success('Utente disattivato con successo');
-      refetch();
-    },
-    onError: (error: any) => {
-      toast.error(`Errore nella disattivazione: ${error.message}`);
-    },
-  });
+  const { mutate: deleteUser, isPending: isDeletingUser } = useStandardMutation(
+    {
+      mutateFn: deleteUserMutation.mutateAsync,
+      invalidate: refresh.users,
+      onSuccessMessage: 'Utente disattivato con successo',
+      onErrorMessage: 'Errore nella disattivazione',
+    }
+  );
 
-  const hardDeleteUserMutation = trpc.users.hardDelete.useMutation({
-    onSuccess: () => {
-      toast.success('Utente eliminato definitivamente');
-      refetch();
-    },
-    onError: (error: any) => {
-      toast.error(`Errore nell'eliminazione: ${error.message}`);
-    },
-  });
+  const { mutate: hardDeleteUser, isPending: isHardDeletingUser } =
+    useStandardMutation({
+      mutateFn: hardDeleteUserMutation.mutateAsync,
+      invalidate: refresh.users,
+      onSuccessMessage: 'Utente eliminato definitivamente',
+      onErrorMessage: "Errore nell'eliminazione",
+    });
+
+  const { mutate: revokeUserSessions, isPending: isRevokingSessions } =
+    useStandardMutation({
+      mutateFn: revokeUserSessionsMutation.mutateAsync,
+      invalidate: refresh.users,
+      onSuccess: (data: any) => toast.success(data.message),
+      onErrorMessage: 'Errore nella revoca sessioni',
+    });
 
   // Handlers per le azioni
 
@@ -167,7 +173,7 @@ export default function UsersPage() {
     setConfirmAction({
       type: 'disable',
       user,
-      handler: () => deleteUserMutation.mutate({ id: user.id }),
+      handler: () => deleteUser({ id: user.id }),
     });
     setConfirmDialogOpen(true);
   };
@@ -176,7 +182,7 @@ export default function UsersPage() {
     setConfirmAction({
       type: 'hardDelete',
       user,
-      handler: () => hardDeleteUserMutation.mutate({ id: user.id }),
+      handler: () => hardDeleteUser({ id: user.id }),
     });
     setConfirmDialogOpen(true);
   };
@@ -200,7 +206,7 @@ export default function UsersPage() {
     setConfirmAction({
       type: 'revokeSessions',
       user,
-      handler: () => revokeUserSessionsMutation.mutate({ id: user.id }),
+      handler: () => revokeUserSessions({ id: user.id }),
     });
     setConfirmDialogOpen(true);
   };
@@ -220,7 +226,7 @@ export default function UsersPage() {
 
   const handleFormSubmit = (data: any) => {
     if (dialogMode === 'create') {
-      createUserMutation.mutate(data);
+      createUser(data);
     } else {
       // Filtra i campi per self-edit
       const isSelfEdit = selectedUser?.id === session?.user?.id;
@@ -247,7 +253,7 @@ export default function UsersPage() {
         updateData.role = data.role;
       }
 
-      updateUserMutation.mutate(updateData);
+      updateUser(updateData);
     }
   };
 
@@ -286,7 +292,6 @@ export default function UsersPage() {
             onSearchChange={handleSearch}
             onRoleFilterChange={handleRoleFilter}
             onCreateUser={handleCreateUser}
-            onRefresh={() => refetch()}
             onPageChange={setCurrentPage}
           />
         </SectionCard>
@@ -309,7 +314,6 @@ export default function UsersPage() {
               currentUserId={session?.user?.id || ''}
               isLoading={isLoading}
               error={error}
-              refetch={refetch}
               sortBy={sortBy}
               sortOrder={sortOrder}
               onSort={handleSort}
@@ -328,9 +332,7 @@ export default function UsersPage() {
           mode={dialogMode}
           user={selectedUser}
           onSubmit={handleFormSubmit}
-          isLoading={
-            createUserMutation.isPending || updateUserMutation.isPending
-          }
+          isLoading={isCreatingUser || isUpdatingUser}
           syncedFields={syncedFields}
           isSelfEdit={selectedUser?.id === session?.user?.id}
         />
@@ -371,9 +373,7 @@ export default function UsersPage() {
             variant="destructive"
             onConfirm={handleConfirmAction}
             isLoading={
-              deleteUserMutation.isPending ||
-              hardDeleteUserMutation.isPending ||
-              revokeUserSessionsMutation.isPending
+              isDeletingUser || isHardDeletingUser || isRevokingSessions
             }
             userEmail={confirmAction.user?.email}
             actionType={confirmAction.type}

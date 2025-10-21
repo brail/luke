@@ -21,7 +21,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../../../../../components/ui/dropdown-menu';
+import { useRefresh } from '../../../../../lib/refresh';
 import { trpc } from '../../../../../lib/trpc';
+import { useStandardMutation } from '../../../../../lib/useStandardMutation';
 
 import { UserListItem, UserActionHandlers } from './types';
 
@@ -29,7 +31,6 @@ interface UserActionsMenuProps {
   user: UserListItem;
   currentUserId: string;
   handlers: UserActionHandlers;
-  refetch?: () => void;
 }
 
 /**
@@ -40,29 +41,27 @@ export function UserActionsMenu({
   user,
   currentUserId,
   handlers,
-  refetch,
 }: UserActionsMenuProps) {
   const isSelfAction = user.id === currentUserId;
+  const refresh = useRefresh();
 
-  // Mutations per email verification
+  // Mutation tRPC
   const sendVerifyMutation =
-    trpc.auth.requestEmailVerificationAdmin.useMutation({
-      onSuccess: () => {
-        toast.success('Email di verifica inviata');
-      },
-      onError: err => {
-        toast.error(err?.message || 'Errore invio email');
-      },
-    });
+    trpc.auth.requestEmailVerificationAdmin.useMutation();
+  const forceVerifyMutation = trpc.users.forceVerifyEmail.useMutation();
 
-  const forceVerifyMutation = trpc.users.forceVerifyEmail.useMutation({
-    onSuccess: data => {
-      toast.success(data.message);
-      refetch?.();
-    },
-    onError: err => {
-      toast.error(err?.message || 'Errore');
-    },
+  // Mutations standardizzate
+  const { mutate: sendVerify } = useStandardMutation({
+    mutateFn: sendVerifyMutation.mutateAsync,
+    onSuccessMessage: 'Email di verifica inviata',
+    onErrorMessage: 'Errore invio email',
+  });
+
+  const { mutate: forceVerify } = useStandardMutation({
+    mutateFn: forceVerifyMutation.mutateAsync,
+    invalidate: refresh.users,
+    onSuccess: (data: any) => toast.success(data.message),
+    onErrorMessage: 'Errore',
   });
 
   const handleEdit = () => {
@@ -123,21 +122,19 @@ export function UserActionsMenu({
           <>
             <DropdownMenuItem
               onClick={async () => {
-                await sendVerifyMutation.mutateAsync({ userId: user.id });
+                await sendVerify({ userId: user.id });
               }}
-              disabled={sendVerifyMutation.isPending}
             >
               <Mail className="mr-2 h-4 w-4" />
               Invia email verifica
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={async () => {
-                await forceVerifyMutation.mutateAsync({
+                await forceVerify({
                   userId: user.id,
                   verified: true,
                 });
               }}
-              disabled={forceVerifyMutation.isPending}
             >
               <Shield className="mr-2 h-4 w-4" />
               Forza verifica
@@ -147,12 +144,11 @@ export function UserActionsMenu({
         {user.emailVerifiedAt && (
           <DropdownMenuItem
             onClick={async () => {
-              await forceVerifyMutation.mutateAsync({
+              await forceVerify({
                 userId: user.id,
                 verified: false,
               });
             }}
-            disabled={forceVerifyMutation.isPending}
           >
             <X className="mr-2 h-4 w-4" />
             Rimuovi verifica
