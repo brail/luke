@@ -9,7 +9,6 @@ import { auth } from './auth';
  * Verifica tokenVersion per invalidazione sessioni
  */
 export default auth(async req => {
-  const { pathname } = req.nextUrl;
   const session = req.auth;
 
   // Se non autenticato, NextAuth gestirà il redirect
@@ -40,22 +39,8 @@ export default auth(async req => {
     }
   }
 
-  // Protezione route admin-only
-  if (pathname.startsWith('/settings/')) {
-    // Se autenticato ma non admin, nega accesso
-    if (session.user?.role !== 'admin') {
-      return new NextResponse(
-        JSON.stringify({
-          error: 'Accesso negato: richiesto ruolo admin',
-          message: 'Solo gli amministratori possono accedere alle impostazioni',
-        }),
-        {
-          status: 403,
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
-    }
-  }
+  // Protezione route admin-only ora gestita dai layout guards server-side
+  // Il controllo hard-coded è stato rimosso in favore di controlli granulari per sezione
 
   return NextResponse.next();
 });

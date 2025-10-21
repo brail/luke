@@ -37,7 +37,7 @@ import {
  * Utilizza il hook `useConfigQuery` per centralizzare la logica tRPC e ridurre
  * il boilerplate del componente.
  */
-export default function ConfigPage() {
+export default function MaintenanceConfigPage() {
   // Stati per ricerca e filtri
   const [searchTerm, setSearchTerm] = useState('');
   const [filterEncrypted, setFilterEncrypted] = useState<boolean | undefined>();

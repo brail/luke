@@ -8,6 +8,8 @@ import {
   HardDrive,
   Mail,
   Shield,
+  ShieldPlus,
+  Wrench,
   ChevronRight,
   LogOut,
   User,
@@ -51,6 +53,9 @@ export default function AppSidebar() {
   const { data: session } = useSession();
   const [isSettingsOpen, setIsSettingsOpen] = useState(
     pathname.startsWith('/settings/')
+  );
+  const [isMaintenanceOpen, setIsMaintenanceOpen] = useState(
+    pathname.startsWith('/maintenance/')
   );
 
   const isActive = (href: string) => pathname.startsWith(href);
@@ -119,10 +124,12 @@ export default function AppSidebar() {
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
+      </SidebarContent>
 
-        {/* Sezione Impostazioni */}
+      {/* Sezione Sistema in basso */}
+      <SidebarFooter>
         <SidebarGroup>
-          <SidebarGroupLabel>Impostazioni</SidebarGroupLabel>
+          <SidebarGroupLabel>Sistema</SidebarGroupLabel>
           <SidebarMenu>
             <Collapsible
               open={isSettingsOpen}
@@ -188,6 +195,63 @@ export default function AppSidebar() {
                         </Link>
                       </SidebarMenuSubButton>
                     </SidebarMenuSubItem>
+                    <SidebarMenuSubItem>
+                      <SidebarMenuSubButton
+                        asChild
+                        isActive={isActive('/settings/access')}
+                      >
+                        <Link href="/settings/access">
+                          <ShieldPlus size={16} />
+                          <span>Accesso</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  </SidebarMenuSub>
+                </CollapsibleContent>
+              </SidebarMenuItem>
+            </Collapsible>
+            <Collapsible
+              open={isMaintenanceOpen}
+              onOpenChange={setIsMaintenanceOpen}
+              className="group/collapsible"
+            >
+              <SidebarMenuItem>
+                <CollapsibleTrigger asChild>
+                  <SidebarMenuButton>
+                    <Wrench size={18} />
+                    <span>Manutenzione</span>
+                    <ChevronRight
+                      size={16}
+                      className={`ml-auto transition-transform duration-200 ${
+                        isMaintenanceOpen ? 'rotate-90' : ''
+                      }`}
+                    />
+                  </SidebarMenuButton>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <SidebarMenuSub>
+                    <SidebarMenuSubItem>
+                      <SidebarMenuSubButton
+                        asChild
+                        isActive={isActive('/maintenance/config')}
+                      >
+                        <Link href={'/maintenance/config' as any}>
+                          <ServerCog size={16} />
+                          <span>Configurazioni</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                    <SidebarMenuSubItem>
+                      <SidebarMenuSubButton
+                        asChild
+                        isActive={isActive('/maintenance/import-export')}
+                      >
+                        <Link href={'/maintenance/import-export' as any}>
+                          <FolderTree size={16} />
+                          <span>Import/Export</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
                   </SidebarMenuSub>
                 </CollapsibleContent>
               </SidebarMenuItem>
@@ -195,38 +259,7 @@ export default function AppSidebar() {
           </SidebarMenu>
         </SidebarGroup>
 
-        {/* Sezione Manutenzione */}
-        <SidebarGroup>
-          <SidebarGroupLabel>Manutenzione</SidebarGroupLabel>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                isActive={isActive('/settings/config')}
-              >
-                <Link href="/settings/config">
-                  <ServerCog size={18} />
-                  <span>Configurazioni</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                isActive={isActive('/settings/import-export')}
-              >
-                <Link href="/settings/import-export">
-                  <FolderTree size={18} />
-                  <span>Import/Export</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroup>
-      </SidebarContent>
-
-      {/* Footer con dropdown utente */}
-      <SidebarFooter>
+        {/* Footer con dropdown utente */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <div className="flex items-center gap-3 p-2 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors">

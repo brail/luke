@@ -15,7 +15,7 @@ const EXPORT_TYPES = [
   { value: 'audit', label: 'Log di Audit' },
 ] as const;
 
-export default function ImportExportPage() {
+export default function MaintenanceImportExportPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [exportType, setExportType] = useState<string>('users');
   const [importResult, setImportResult] = useState<{

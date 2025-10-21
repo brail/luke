@@ -19,11 +19,13 @@ const pathLabels: Record<string, string> = {
   '/dashboard': 'Dashboard',
   '/settings': 'Impostazioni',
   '/settings/users': 'Utenti',
-  '/settings/config': 'Configurazioni',
   '/settings/storage': 'Storage',
   '/settings/mail': 'Mail',
   '/settings/ldap': 'Auth LDAP',
-  '/settings/import-export': 'Import/Export',
+  '/settings/access': 'Accesso',
+  '/maintenance': 'Manutenzione',
+  '/maintenance/config': 'Configurazioni',
+  '/maintenance/import-export': 'Import/Export',
 };
 
 // Mappa dei percorsi per i link di navigazione
@@ -31,11 +33,13 @@ const pathLinks: Record<string, string> = {
   '/dashboard': '/dashboard',
   '/settings': '/settings',
   '/settings/users': '/settings/users',
-  '/settings/config': '/settings/config',
   '/settings/storage': '/settings/storage',
   '/settings/mail': '/settings/mail',
   '/settings/ldap': '/settings/ldap',
-  '/settings/import-export': '/settings/import-export',
+  '/settings/access': '/settings/access',
+  '/maintenance': '/maintenance',
+  '/maintenance/config': '/maintenance/config',
+  '/maintenance/import-export': '/maintenance/import-export',
 };
 
 // Tipo per gli elementi del breadcrumb
