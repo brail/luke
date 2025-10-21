@@ -23,18 +23,27 @@ export const permissions: Record<Role, Record<string, string[]>> = {
     config: ['*'],
     pricing: ['*'],
     audit: ['*'],
+    dashboard: ['*'], // NEW: dashboard access
+    settings: ['*'], // NEW
+    maintenance: ['*'], // NEW
   },
   editor: {
     users: ['read', 'update'],
     config: ['read', 'update'],
     pricing: ['read', 'write'],
     audit: ['read'],
+    dashboard: ['read'], // NEW: dashboard access
+    settings: ['read'], // NEW
+    maintenance: [], // NEW: no access
   },
   viewer: {
     users: ['read'],
     config: ['read'],
     pricing: ['read'],
     audit: ['read'],
+    dashboard: ['read'], // NEW: dashboard access
+    settings: [], // NEW: no access
+    maintenance: [], // NEW: no access
   },
 };
 

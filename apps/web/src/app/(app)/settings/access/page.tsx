@@ -23,12 +23,21 @@ import {
   TableHeader,
   TableRow,
 } from '../../../../components/ui/table';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '../../../../components/ui/tabs';
 import { trpc } from '../../../../lib/trpc';
 import { useStandardMutation } from '../../../../lib/useStandardMutation';
 
+import { EffectivePreview } from './_components/EffectivePreview';
+import { RoleSectionDefaultsMatrix } from './_components/RoleSectionDefaultsMatrix';
+
 /**
- * Pagina per gestione override di accesso alle sezioni
- * Permette agli amministratori di impostare override per utente
+ * Pagina per gestione accessi alle sezioni
+ * Due modalità: override per utente e default per ruolo
  */
 export default function SectionAccessPage() {
   const [selectedUserId, setSelectedUserId] = useState<string>('');
@@ -36,6 +45,7 @@ export default function SectionAccessPage() {
   const [overrides, setOverrides] = useState<
     Record<string, 'auto' | 'enabled' | 'disabled'>
   >({
+    dashboard: 'auto',
     settings: 'auto',
     maintenance: 'auto',
   });
@@ -64,7 +74,11 @@ export default function SectionAccessPage() {
     onSuccess: () => {
       // Reset form
       setSelectedUserId('');
-      setOverrides({ settings: 'auto', maintenance: 'auto' });
+      setOverrides({
+        dashboard: 'auto',
+        settings: 'auto',
+        maintenance: 'auto',
+      });
     },
   });
 
@@ -72,6 +86,7 @@ export default function SectionAccessPage() {
   React.useEffect(() => {
     if (userOverrides) {
       const newOverrides: Record<string, 'auto' | 'enabled' | 'disabled'> = {
+        dashboard: 'auto',
         settings: 'auto',
         maintenance: 'auto',
       };
@@ -99,7 +114,7 @@ export default function SectionAccessPage() {
       const enabled = value === 'auto' ? null : value === 'enabled';
       return saveOverride({
         userId: selectedUserId,
-        section: section as 'settings' | 'maintenance',
+        section: section as 'dashboard' | 'settings' | 'maintenance',
         enabled,
       });
     });
@@ -108,6 +123,7 @@ export default function SectionAccessPage() {
   };
 
   const sections = [
+    { key: 'dashboard', label: 'Dashboard' },
     { key: 'settings', label: 'Settings' },
     { key: 'maintenance', label: 'Maintenance' },
   ];
@@ -115,103 +131,128 @@ export default function SectionAccessPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Gestione Accessi Sezione"
-        description="Imposta override di accesso per utenti specifici"
+        title="Gestione Accessi Sezioni"
+        description="Gestisci accessi alle sezioni tramite override utente o default per ruolo"
       />
 
-      <SectionCard
-        title="Selezione Utente"
-        description="Seleziona l'utente per cui modificare gli accessi"
-      >
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="user-search">Cerca utente</Label>
-            <Input
-              id="user-search"
-              placeholder="Nome, email o username..."
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-            />
-          </div>
+      <Tabs defaultValue="user-overrides" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="user-overrides">Per Utente</TabsTrigger>
+          <TabsTrigger value="role-defaults">Default per Ruolo</TabsTrigger>
+        </TabsList>
 
-          {isLoadingUsers ? (
-            <p>Caricamento utenti...</p>
-          ) : (
-            <div className="space-y-2">
-              <Label>Seleziona utente</Label>
-              <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleziona un utente" />
-                </SelectTrigger>
-                <SelectContent>
-                  {usersData?.users.map(user => (
-                    <SelectItem key={user.id} value={user.id}>
-                      {user.firstName} {user.lastName} ({user.email}) -{' '}
-                      {user.role}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+        <TabsContent value="user-overrides" className="space-y-6">
+          <SectionCard
+            title="Selezione Utente"
+            description="Seleziona l'utente per cui modificare gli accessi"
+          >
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="user-search">Cerca utente</Label>
+                <Input
+                  id="user-search"
+                  placeholder="Nome, email o username..."
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                />
+              </div>
+
+              {isLoadingUsers ? (
+                <p>Caricamento utenti...</p>
+              ) : (
+                <div className="space-y-2">
+                  <Label>Seleziona utente</Label>
+                  <Select
+                    value={selectedUserId}
+                    onValueChange={setSelectedUserId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleziona un utente" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {usersData?.users.map(user => (
+                        <SelectItem key={user.id} value={user.id}>
+                          {user.firstName} {user.lastName} ({user.email}) -{' '}
+                          {user.role}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
+          </SectionCard>
+
+          {selectedUserId && (
+            <SectionCard
+              title="Override Accessi"
+              description="Imposta l'accesso per ogni sezione"
+            >
+              <div className="space-y-4">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Sezione</TableHead>
+                      <TableHead>Stato</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sections.map(section => (
+                      <TableRow key={section.key}>
+                        <TableCell className="font-medium">
+                          {section.label}
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={overrides[section.key]}
+                            onValueChange={value =>
+                              setOverrides(prev => ({
+                                ...prev,
+                                [section.key]: value as
+                                  | 'auto'
+                                  | 'enabled'
+                                  | 'disabled',
+                              }))
+                            }
+                          >
+                            <SelectTrigger className="w-48">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="auto">
+                                Auto (da ruolo)
+                              </SelectItem>
+                              <SelectItem value="enabled">Abilitata</SelectItem>
+                              <SelectItem value="disabled">
+                                Disabilitata
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+
+                <div className="flex justify-end">
+                  <Button
+                    onClick={handleSave}
+                    disabled={isSaving}
+                    className="w-32"
+                  >
+                    {isSaving ? 'Salvataggio...' : 'Salva modifiche'}
+                  </Button>
+                </div>
+              </div>
+            </SectionCard>
           )}
-        </div>
-      </SectionCard>
+        </TabsContent>
 
-      {selectedUserId && (
-        <SectionCard
-          title="Override Accessi"
-          description="Imposta l'accesso per ogni sezione"
-        >
-          <div className="space-y-4">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Sezione</TableHead>
-                  <TableHead>Stato</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sections.map(section => (
-                  <TableRow key={section.key}>
-                    <TableCell className="font-medium">
-                      {section.label}
-                    </TableCell>
-                    <TableCell>
-                      <Select
-                        value={overrides[section.key]}
-                        onValueChange={value =>
-                          setOverrides(prev => ({
-                            ...prev,
-                            [section.key]: value as
-                              | 'auto'
-                              | 'enabled'
-                              | 'disabled',
-                          }))
-                        }
-                      >
-                        <SelectTrigger className="w-48">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="auto">Auto (da ruolo)</SelectItem>
-                          <SelectItem value="enabled">Abilitata</SelectItem>
-                          <SelectItem value="disabled">Disabilitata</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-
-            <div className="flex justify-end">
-              <Button onClick={handleSave} disabled={isSaving} className="w-32">
-                {isSaving ? 'Salvataggio...' : 'Salva modifiche'}
-              </Button>
-            </div>
-          </div>
-        </SectionCard>
-      )}
+        <TabsContent value="role-defaults" className="space-y-6">
+          <RoleSectionDefaultsMatrix />
+          <EffectivePreview />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

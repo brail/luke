@@ -8,8 +8,11 @@ import { router } from '../lib/trpc';
 import { authRouter } from './auth';
 import { configRouter } from './config';
 import { integrationsRouter } from './integrations';
+import { maintenanceRouter } from './maintenance';
 import { meRouter } from './me';
 import { publicRouter } from './public';
+import { rbacRouter } from './rbac';
+import { sectionAccessRouter } from './sectionAccess';
 import { storageRouter } from './storage';
 import { usersRouter } from './users';
 
@@ -22,8 +25,11 @@ export const appRouter = router({
   users: usersRouter,
   config: configRouter,
   integrations: integrationsRouter,
+  maintenance: maintenanceRouter,
   public: publicRouter,
   me: meRouter,
+  rbac: rbacRouter,
+  sectionAccess: sectionAccessRouter,
   storage: storageRouter,
 });
 

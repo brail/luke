@@ -49,6 +49,9 @@ const SAFE_KEYS = new Set([
   'loginCount',
   'id',
   'count',
+  'targetUserId',
+  'section',
+  'enabled',
 ]);
 
 /**

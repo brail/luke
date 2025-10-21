@@ -10,7 +10,7 @@ import {
   Shield,
   ShieldPlus,
   Wrench,
-  ChevronRight,
+  ChevronDown,
   LogOut,
   User,
   FolderTree,
@@ -18,15 +18,11 @@ import {
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
-import { useState } from 'react';
+
+import { useMenuAccess } from '../hooks/useMenuAccess';
 
 import Logo from './Logo';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from './ui/collapsible';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,20 +39,12 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
 } from './ui/sidebar';
 
 export default function AppSidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
-  const [isSettingsOpen, setIsSettingsOpen] = useState(
-    pathname.startsWith('/settings/')
-  );
-  const [isMaintenanceOpen, setIsMaintenanceOpen] = useState(
-    pathname.startsWith('/maintenance/')
-  );
+  const menuAccess = useMenuAccess();
 
   const isActive = (href: string) => pathname.startsWith(href);
 
@@ -110,156 +98,136 @@ export default function AppSidebar() {
           </div>
         </div>
 
-        {/* Sezione Generale */}
-        <SidebarGroup>
-          <SidebarGroupLabel>Generale</SidebarGroupLabel>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild isActive={isActive('/dashboard')}>
-                <Link href="/dashboard">
-                  <Home size={18} />
-                  <span>Dashboard</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroup>
+        {/* Sezione Generale - Solo se ha almeno una voce abilitata */}
+        {menuAccess.showGeneralSection && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Generale</SidebarGroupLabel>
+            <SidebarMenu>
+              {/* Dashboard - Solo se accesso consentito */}
+              {menuAccess.dashboard && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={isActive('/dashboard')}>
+                    <Link href="/dashboard">
+                      <Home size={18} />
+                      <span>Dashboard</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+            </SidebarMenu>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
-      {/* Sezione Sistema in basso */}
-      <SidebarFooter>
-        <SidebarGroup>
-          <SidebarGroupLabel>Sistema</SidebarGroupLabel>
-          <SidebarMenu>
-            <Collapsible
-              open={isSettingsOpen}
-              onOpenChange={setIsSettingsOpen}
-              className="group/collapsible"
-            >
-              <SidebarMenuItem>
-                <CollapsibleTrigger asChild>
-                  <SidebarMenuButton>
-                    <Settings size={18} />
-                    <span>Impostazioni</span>
-                    <ChevronRight
-                      size={16}
-                      className={`ml-auto transition-transform duration-200 ${
-                        isSettingsOpen ? 'rotate-90' : ''
-                      }`}
-                    />
-                  </SidebarMenuButton>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <SidebarMenuSub>
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={isActive('/settings/users')}
-                      >
-                        <Link href="/settings/users">
-                          <Users size={16} />
+      {/* Sezione Sistema - Solo se ha almeno una voce abilitata */}
+      {menuAccess.showSystemSection && (
+        <SidebarFooter>
+          <SidebarGroup>
+            <SidebarGroupLabel>Sistema</SidebarGroupLabel>
+            <SidebarMenu>
+              {/* Dropdown Impostazioni - Solo se accesso consentito */}
+              {menuAccess.settings && (
+                <SidebarMenuItem>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <SidebarMenuButton>
+                        <Settings size={18} />
+                        <span>Impostazioni</span>
+                        <ChevronDown size={16} className="ml-auto" />
+                      </SidebarMenuButton>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-56">
+                      <DropdownMenuItem asChild>
+                        <Link
+                          href="/settings/users"
+                          className="flex items-center"
+                        >
+                          <Users className="mr-2 h-4 w-4" />
                           <span>Utenti</span>
                         </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={isActive('/settings/storage')}
-                      >
-                        <Link href="/settings/storage">
-                          <HardDrive size={16} />
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link
+                          href="/settings/storage"
+                          className="flex items-center"
+                        >
+                          <HardDrive className="mr-2 h-4 w-4" />
                           <span>Storage</span>
                         </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={isActive('/settings/mail')}
-                      >
-                        <Link href="/settings/mail">
-                          <Mail size={16} />
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link
+                          href="/settings/mail"
+                          className="flex items-center"
+                        >
+                          <Mail className="mr-2 h-4 w-4" />
                           <span>Mail</span>
                         </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={isActive('/settings/ldap')}
-                      >
-                        <Link href="/settings/ldap">
-                          <Shield size={16} />
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link
+                          href="/settings/ldap"
+                          className="flex items-center"
+                        >
+                          <Shield className="mr-2 h-4 w-4" />
                           <span>Auth LDAP</span>
                         </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={isActive('/settings/access')}
-                      >
-                        <Link href="/settings/access">
-                          <ShieldPlus size={16} />
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link
+                          href="/settings/access"
+                          className="flex items-center"
+                        >
+                          <ShieldPlus className="mr-2 h-4 w-4" />
                           <span>Accesso</span>
                         </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                  </SidebarMenuSub>
-                </CollapsibleContent>
-              </SidebarMenuItem>
-            </Collapsible>
-            <Collapsible
-              open={isMaintenanceOpen}
-              onOpenChange={setIsMaintenanceOpen}
-              className="group/collapsible"
-            >
-              <SidebarMenuItem>
-                <CollapsibleTrigger asChild>
-                  <SidebarMenuButton>
-                    <Wrench size={18} />
-                    <span>Manutenzione</span>
-                    <ChevronRight
-                      size={16}
-                      className={`ml-auto transition-transform duration-200 ${
-                        isMaintenanceOpen ? 'rotate-90' : ''
-                      }`}
-                    />
-                  </SidebarMenuButton>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <SidebarMenuSub>
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={isActive('/maintenance/config')}
-                      >
-                        <Link href={'/maintenance/config' as any}>
-                          <ServerCog size={16} />
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </SidebarMenuItem>
+              )}
+
+              {/* Dropdown Manutenzione - Solo se accesso consentito */}
+              {menuAccess.maintenance && (
+                <SidebarMenuItem>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <SidebarMenuButton>
+                        <Wrench size={18} />
+                        <span>Manutenzione</span>
+                        <ChevronDown size={16} className="ml-auto" />
+                      </SidebarMenuButton>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-56">
+                      <DropdownMenuItem asChild>
+                        <Link
+                          href="/maintenance/config"
+                          className="flex items-center"
+                        >
+                          <ServerCog className="mr-2 h-4 w-4" />
                           <span>Configurazioni</span>
                         </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={isActive('/maintenance/import-export')}
-                      >
-                        <Link href={'/maintenance/import-export' as any}>
-                          <FolderTree size={16} />
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link
+                          href="/maintenance/import-export"
+                          className="flex items-center"
+                        >
+                          <FolderTree className="mr-2 h-4 w-4" />
                           <span>Import/Export</span>
                         </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                  </SidebarMenuSub>
-                </CollapsibleContent>
-              </SidebarMenuItem>
-            </Collapsible>
-          </SidebarMenu>
-        </SidebarGroup>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </SidebarMenuItem>
+              )}
+            </SidebarMenu>
+          </SidebarGroup>
+        </SidebarFooter>
+      )}
 
-        {/* Footer con dropdown utente */}
+      {/* Footer con dropdown utente - sempre visibile */}
+      <SidebarFooter>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <div className="flex items-center gap-3 p-2 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors">

@@ -47,6 +47,11 @@ export const RATE_LIMIT_CONFIG = {
     windowMs: 60_000, // 1 minuto
     keyBy: 'userId' as const,
   },
+  sectionAccessSet: {
+    max: 20, // 20 richieste
+    windowMs: 60_000, // 1 minuto
+    keyBy: 'userId' as const,
+  },
 } as const;
 
 /**

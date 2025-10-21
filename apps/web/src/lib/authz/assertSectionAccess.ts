@@ -45,9 +45,10 @@ export async function assertSectionAccess(section: Section) {
 
   const allowed = effectiveSectionAccess({
     role: session.user.role as string,
-    rolePermissions:
+    roleToPermissions:
       permissions[session.user.role as keyof typeof permissions] || {},
-    override,
+    sectionAccessDefaults: {},
+    userOverride: override,
     section,
   });
 

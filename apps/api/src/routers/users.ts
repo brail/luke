@@ -19,6 +19,7 @@ import { withAuditLog } from '../lib/auditMiddleware';
 import { sendVerificationEmail } from '../lib/emailHelpers';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { withRateLimit } from '../lib/ratelimit';
+import { withSectionAccess } from '../lib/sectionAccessMiddleware';
 import {
   router,
   // publicProcedure,
@@ -140,6 +141,7 @@ export const usersRouter = router({
    * Richiede ruolo admin o editor
    */
   list: adminOrEditorProcedure
+    .use(withSectionAccess('settings'))
     .input(
       z
         .object({
@@ -299,6 +301,7 @@ export const usersRouter = router({
    * Richiede ruolo admin
    */
   create: adminProcedure
+    .use(withSectionAccess('settings'))
     .use(withRateLimit('userMutations'))
     .use(withIdempotency())
     .use(withAuditLog('USER_CREATE', 'User'))
@@ -384,6 +387,7 @@ export const usersRouter = router({
    * Richiede ruolo admin
    */
   update: adminProcedure
+    .use(withSectionAccess('settings'))
     .use(withRateLimit('userMutations'))
     .use(withIdempotency())
     .use(withAuditLog('USER_UPDATE', 'User'))
@@ -525,6 +529,7 @@ export const usersRouter = router({
    * Richiede ruolo admin
    */
   delete: adminProcedure
+    .use(withSectionAccess('settings'))
     .use(withRateLimit('userMutations'))
     .input(UserIdSchema)
     .mutation(deleteUserHandler),

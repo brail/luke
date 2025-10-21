@@ -11,6 +11,7 @@ import { isValidBucket, localStorageConfigSchema } from '@luke/core';
 
 import { adminOnly, adminOrEditor } from '../lib/rbac';
 import { router, protectedProcedure } from '../lib/trpc';
+import { withSectionAccess } from '../lib/sectionAccessMiddleware';
 import { getConfig, saveConfig } from '../lib/configManager';
 import { getObjectMetadata, listObjects, deleteObject } from '../storage';
 import { signDownloadToken } from '../utils/downloadToken';
@@ -257,30 +258,33 @@ export const storageRouter = router({
    * Ottieni configurazione storage locale
    * Solo admin
    */
-  getConfig: protectedProcedure.use(adminOnly).query(async ({ ctx }) => {
-    const [storageType, basePath, maxFileSizeMB, bucketsStr] =
-      await Promise.all([
-        getConfig(ctx.prisma, 'storage.type', false),
-        getConfig(ctx.prisma, 'storage.local.basePath', false),
-        getConfig(ctx.prisma, 'storage.local.maxFileSizeMB', false),
-        getConfig(ctx.prisma, 'storage.local.buckets', false),
-      ]);
+  getConfig: protectedProcedure
+    .use(adminOnly)
+    .use(withSectionAccess('settings'))
+    .query(async ({ ctx }) => {
+      const [storageType, basePath, maxFileSizeMB, bucketsStr] =
+        await Promise.all([
+          getConfig(ctx.prisma, 'storage.type', false),
+          getConfig(ctx.prisma, 'storage.local.basePath', false),
+          getConfig(ctx.prisma, 'storage.local.maxFileSizeMB', false),
+          getConfig(ctx.prisma, 'storage.local.buckets', false),
+        ]);
 
-    // Parse buckets
-    let buckets: string[];
-    try {
-      buckets = bucketsStr ? JSON.parse(bucketsStr) : ['uploads'];
-    } catch {
-      buckets = ['uploads'];
-    }
+      // Parse buckets
+      let buckets: string[];
+      try {
+        buckets = bucketsStr ? JSON.parse(bucketsStr) : ['uploads'];
+      } catch {
+        buckets = ['uploads'];
+      }
 
-    return {
-      type: storageType || 'local',
-      basePath: basePath || '/tmp/luke-storage',
-      maxFileSizeMB: parseInt(maxFileSizeMB || '50', 10),
-      buckets,
-    };
-  }),
+      return {
+        type: storageType || 'local',
+        basePath: basePath || '/tmp/luke-storage',
+        maxFileSizeMB: parseInt(maxFileSizeMB || '50', 10),
+        buckets,
+      };
+    }),
 
   /**
    * Salva configurazione storage locale
@@ -288,6 +292,7 @@ export const storageRouter = router({
    */
   saveConfig: protectedProcedure
     .use(adminOnly)
+    .use(withSectionAccess('settings'))
     .input(SaveStorageConfigSchema)
     .mutation(async ({ input, ctx }) => {
       // Valida con schema Zod

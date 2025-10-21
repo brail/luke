@@ -25,6 +25,7 @@ import {
   SecureLogger,
 } from '../lib/errorHandler';
 import { router, publicProcedure, adminProcedure } from '../lib/trpc';
+import { withSectionAccess } from '../lib/sectionAccessMiddleware';
 
 // Schema per configurazione SMB
 const smbConfigSchema = z.object({
@@ -149,6 +150,7 @@ export const integrationsRouter = router({
 
   mail: router({
     saveConfig: adminProcedure
+      .use(withSectionAccess('settings'))
       .input(smtpConfigSchema)
       .mutation(async ({ input, ctx }) => {
         // Salva ogni campo separatamente in AppConfig
@@ -327,6 +329,7 @@ export const integrationsRouter = router({
      * Le chiavi sono salvate come 'auth.ldap.*' senza riferimenti a userId.
      */
     saveLdapConfig: adminProcedure
+      .use(withSectionAccess('settings'))
       .input(ldapConfigSchema)
       .mutation(async ({ input, ctx }) => {
         try {
@@ -516,114 +519,117 @@ export const integrationsRouter = router({
       }
     }),
 
-    testLdapConnection: adminProcedure.mutation(async ({ ctx }) => {
-      let client: ldap.Client | null = null;
+    testLdapConnection: adminProcedure
+      .use(withSectionAccess('settings'))
+      .mutation(async ({ ctx }) => {
+        let client: ldap.Client | null = null;
 
-      try {
-        const config = await getLdapConfig(ctx.prisma);
+        try {
+          const config = await getLdapConfig(ctx.prisma);
 
-        if (!config.enabled) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'LDAP non è abilitato',
+          if (!config.enabled) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'LDAP non è abilitato',
+            });
+          }
+
+          if (!config.url || !config.bindDN || !config.bindPassword) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Configurazione LDAP incompleta per il test',
+            });
+          }
+
+          ctx.logger.info('Testing LDAP connection');
+
+          // Crea client LDAP
+          client = ldap.createClient({
+            url: config.url,
+            timeout: 10000,
+            connectTimeout: 5000,
           });
-        }
 
-        if (!config.url || !config.bindDN || !config.bindPassword) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'Configurazione LDAP incompleta per il test',
+          // Gestisci errori non catturati del client
+          client.on('error', err => {
+            ctx.logger.error({ error: err.message }, 'LDAP client error');
           });
-        }
 
-        ctx.logger.info('Testing LDAP connection');
-
-        // Crea client LDAP
-        client = ldap.createClient({
-          url: config.url,
-          timeout: 10000,
-          connectTimeout: 5000,
-        });
-
-        // Gestisci errori non catturati del client
-        client.on('error', err => {
-          ctx.logger.error({ error: err.message }, 'LDAP client error');
-        });
-
-        // Testa connessione e bind
-        await new Promise<void>((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            reject(
-              new TRPCError({
-                code: 'INTERNAL_SERVER_ERROR',
-                message: 'Timeout connessione LDAP (10 secondi)',
-              })
-            );
-          }, 10000);
-
-          client!.bind(config.bindDN, config.bindPassword, err => {
-            clearTimeout(timeout);
-            if (err) {
-              ctx.logger.error(
-                { error: err.message },
-                'LDAP connection test failed'
-              );
+          // Testa connessione e bind
+          await new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(() => {
               reject(
                 new TRPCError({
                   code: 'INTERNAL_SERVER_ERROR',
-                  message: `Connessione LDAP fallita: ${err.message}`,
+                  message: 'Timeout connessione LDAP (10 secondi)',
                 })
               );
-            } else {
-              ctx.logger.info('LDAP connection test successful');
-              resolve();
-            }
-          });
-        });
+            }, 10000);
 
-        return {
-          success: true,
-          message: 'Connessione LDAP riuscita',
-        };
-      } catch (error: any) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-
-        ctx.logger.error(
-          { error: error.message },
-          'LDAP connection test error'
-        );
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'Errore durante test connessione LDAP',
-        });
-      } finally {
-        // Chiudi connessione
-        if (client) {
-          try {
-            await new Promise<void>(resolve => {
-              client!.unbind(err => {
-                if (err) {
-                  ctx.logger.warn(
-                    { error: err.message },
-                    'Error closing LDAP test connection'
-                  );
-                }
+            client!.bind(config.bindDN, config.bindPassword, err => {
+              clearTimeout(timeout);
+              if (err) {
+                ctx.logger.error(
+                  { error: err.message },
+                  'LDAP connection test failed'
+                );
+                reject(
+                  new TRPCError({
+                    code: 'INTERNAL_SERVER_ERROR',
+                    message: `Connessione LDAP fallita: ${err.message}`,
+                  })
+                );
+              } else {
+                ctx.logger.info('LDAP connection test successful');
                 resolve();
-              });
+              }
             });
-          } catch (error) {
-            ctx.logger.warn(
-              {
-                error: error instanceof Error ? error.message : 'Unknown error',
-              },
-              'Error closing LDAP test connection'
-            );
+          });
+
+          return {
+            success: true,
+            message: 'Connessione LDAP riuscita',
+          };
+        } catch (error: any) {
+          if (error instanceof TRPCError) {
+            throw error;
+          }
+
+          ctx.logger.error(
+            { error: error.message },
+            'LDAP connection test error'
+          );
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'Errore durante test connessione LDAP',
+          });
+        } finally {
+          // Chiudi connessione
+          if (client) {
+            try {
+              await new Promise<void>(resolve => {
+                client!.unbind(err => {
+                  if (err) {
+                    ctx.logger.warn(
+                      { error: err.message },
+                      'Error closing LDAP test connection'
+                    );
+                  }
+                  resolve();
+                });
+              });
+            } catch (error) {
+              ctx.logger.warn(
+                {
+                  error:
+                    error instanceof Error ? error.message : 'Unknown error',
+                },
+                'Error closing LDAP test connection'
+              );
+            }
           }
         }
-      }
-    }),
+      }),
 
     testLdapSearch: adminProcedure
       .input(z.object({ username: z.string() }))

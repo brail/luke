@@ -21,6 +21,13 @@ export * from './schemas/auth';
 
 // Re-export RBAC
 export * from './rbac';
+export * from './rbac/hasSectionAccess';
+
+// Re-export RBAC schemas
+export * from './schemas/rbac';
+
+// Re-export effective access with explicit exports to avoid conflicts
+export { effectiveSectionAccess } from './rbac/effectiveAccess';
 
 // Re-export utilities
 export * from './utils/date';

@@ -17,6 +17,7 @@ import {
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, loggedProcedure, adminProcedure } from '../lib/trpc';
+import { withSectionAccess } from '../lib/sectionAccessMiddleware';
 
 /**
  * Chiavi critiche che non possono essere eliminate
@@ -413,6 +414,7 @@ export const configRouter = router({
    * Elimina una configurazione
    */
   delete: adminProcedure
+    .use(withSectionAccess('maintenance'))
     .use(withRateLimit('configMutations'))
     .input(DeleteConfigSchema)
     .mutation(async ({ input, ctx }) => {
@@ -456,6 +458,7 @@ export const configRouter = router({
    * Aggiorna una configurazione esistente
    */
   update: adminProcedure
+    .use(withSectionAccess('maintenance'))
     .use(withRateLimit('configMutations'))
     .use(withIdempotency())
     .input(SetConfigSchema)

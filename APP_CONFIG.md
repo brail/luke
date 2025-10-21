@@ -545,6 +545,27 @@ Configurazioni storage cifrate create on-demand per integrazioni file storage.
 | `config.exportJson`              | `adminProcedure`  | Solo admin                   |
 | `config.importJson`              | `adminProcedure`  | Solo admin                   |
 
+### Section Access Overrides
+
+Sistema di override per controllare l'accesso alle sezioni del sistema per singoli utenti.
+
+#### Precedenza
+
+deny (enabled=false) > allow (enabled=true) > role (fallback RBAC)
+
+#### Sezioni Disponibili
+
+- `settings`: Configurazioni di sistema (users, storage, auth, mail)
+- `maintenance`: Strumenti di manutenzione (config, import/export)
+
+#### Safety Rule
+
+Non è possibile rimuovere l'accesso ai settings all'ultimo amministratore per evitare lock-out amministrativo.
+
+#### Gestione
+
+UI amministrativa: `/settings/access`
+
 ### Frontend Protection
 
 - **Route `/settings/*`**: Solo amministratori possono accedere

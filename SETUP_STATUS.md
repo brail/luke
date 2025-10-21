@@ -48,6 +48,7 @@ pnpm format           # ✅ Formatta con Prettier
 - ✅ **Error handling uniforme** - TRPCError in tutti i router
 - ✅ **LDAP enterprise authentication** - con role mapping e strategia configurabile
 - ✅ **Principio "mai decrypt in bulk"** - implementato nel config router
+- ✅ **Section Access Overrides** - sistema override per sezioni con precedenza deny > allow > role
 - ✅ **Paginazione e filtri** - per config.list con output strutturato
 - ✅ **Visualizzazione sicura** - con modalità masked/raw e audit log
 - ✅ **Email transazionali** - reset password e verifica email con token hash SHA-256
