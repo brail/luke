@@ -101,7 +101,11 @@ export default function BrandsPage() {
 
   // Handler per eliminazione brand
   const handleDeleteBrand = async (brand: any) => {
-    if (globalThis.confirm(`Sei sicuro di voler eliminare il brand "${brand.name}"?`)) {
+    if (
+      globalThis.confirm(
+        `Sei sicuro di voler eliminare il brand "${brand.name}"?`
+      )
+    ) {
       await removeMutation.mutateAsync({ id: brand.id });
     }
   };
