@@ -37,6 +37,9 @@ export function useRefresh() {
     // LDAP integration
     ldapConfig: () => utils.integrations.auth.getLdapConfig.invalidate(),
 
+    // Context management
+    context: () => utils.context.get.invalidate(),
+
     // Helper compositi per invalidazioni multiple
     allStorage: () =>
       Promise.all([

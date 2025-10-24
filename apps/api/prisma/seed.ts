@@ -314,6 +314,44 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
 }
 
 /**
+ * Crea Brand e Season minimi per il context layer
+ * Funzione idempotente: può essere eseguita multiple volte senza duplicazioni
+ */
+export async function seedContextData(prisma: PrismaClient): Promise<void> {
+  console.log('🏢 Seeding context data (Brand & Season)...');
+
+  // Seed Brand
+  const brand = await prisma.brand.upsert({
+    where: { code: 'ACME' },
+    update: { isActive: true },
+    create: {
+      code: 'ACME',
+      name: 'ACME',
+      isActive: true,
+      logoUrl: null,
+    },
+  });
+
+  console.log(`✅ Brand '${brand.code}' ready (ID: ${brand.id})`);
+
+  // Seed Season
+  const season = await prisma.season.upsert({
+    where: { code_year: { code: 'SS', year: 2026 } },
+    update: { isActive: true },
+    create: {
+      code: 'SS',
+      year: 2026,
+      name: 'Spring/Summer 2026',
+      isActive: true,
+    },
+  });
+
+  console.log(
+    `✅ Season '${season.code}${season.year}' ready (ID: ${season.id})`
+  );
+}
+
+/**
  * Funzione principale di seed
  */
 async function main() {
@@ -328,6 +366,9 @@ async function main() {
 
     // Seeding configurazioni
     await seedAppConfigs(prisma);
+
+    // Seeding context data
+    await seedContextData(prisma);
 
     // Log finale
     console.log('\n🎉 Seed completato con successo!');

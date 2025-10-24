@@ -163,3 +163,40 @@ model UserSectionAccess {
   @@index([userId, section])
   @@map("user_section_access")
 }
+
+model Brand {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  logoUrl   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("brands")
+}
+
+model Season {
+  id        String   @id @default(uuid())
+  code      String
+  year      Int
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@unique([code, year])
+  @@index([code, year])
+  @@map("seasons")
+}
+
+model UserPreference {
+  userId       String   @id
+  lastBrandId  String?
+  lastSeasonId String?
+  pinnedContexts Json?
+  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now())
+  
+  @@map("user_preferences")
+}

@@ -14,7 +14,8 @@
     "typecheck": "turbo run typecheck",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "deps:latest": "pnpm update --latest",
-    "prepare": "husky install"
+    "prepare": "husky install",
+    "db:seed": "pnpm --filter @luke/api db:seed"
   },
   "devDependencies": {
     "@eslint/js": "^9.38.0",

@@ -6,8 +6,11 @@ import React, { useEffect } from 'react';
 
 import AppSidebar from '../../components/AppSidebar';
 import BreadcrumbNav from '../../components/BreadcrumbNav';
+import { ContextGate } from '../../components/context/ContextGate';
+import { ContextSelector } from '../../components/context/ContextSelector';
 import LoadingLogo from '../../components/LoadingLogo';
 import { SidebarProvider, SidebarTrigger } from '../../components/ui/sidebar';
+import { AppContextProvider } from '../../contexts/AppContextProvider';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
@@ -38,22 +41,30 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <SidebarProvider>
-      <div className="flex min-h-screen w-full bg-background">
-        <AppSidebar />
-        <div className="flex-1 flex flex-col">
-          {/* Header comune */}
-          <header className="border-b bg-card">
-            <div className="flex items-center gap-4 px-4 py-4">
-              <SidebarTrigger />
-              <BreadcrumbNav />
-            </div>
-          </header>
+    <AppContextProvider>
+      <SidebarProvider>
+        <div className="flex min-h-screen w-full bg-background">
+          <AppSidebar />
+          <div className="flex-1 flex flex-col">
+            {/* Header comune */}
+            <header className="border-b bg-card">
+              <div className="flex items-center gap-4 justify-between px-4 py-4">
+                <div className="flex items-center gap-4">
+                  <SidebarTrigger />
+                  <BreadcrumbNav />
+                </div>
+                <ContextSelector />
+              </div>
+            </header>
 
-          {/* Contenuto principale */}
-          <main className="flex-1 p-6 overflow-y-auto">{children}</main>
+            {/* Contenuto principale */}
+            <main className="flex-1 p-6 overflow-y-auto">{children}</main>
+          </div>
         </div>
-      </div>
-    </SidebarProvider>
+
+        {/* Modale bloccante per setup context */}
+        <ContextGate />
+      </SidebarProvider>
+    </AppContextProvider>
   );
 }

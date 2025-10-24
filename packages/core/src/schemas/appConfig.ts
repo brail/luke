@@ -82,3 +82,22 @@ export type RateLimitConfig = z.infer<typeof RateLimitConfigSchema>;
  * Tipo TypeScript per configurazione resilienza LDAP
  */
 export type LdapResilienceConfig = z.infer<typeof LdapResilienceSchema>;
+
+/**
+ * Schema per i defaults del context (Brand/Season)
+ * Utilizzato per configurare i default organizzativi
+ */
+export const AppContextDefaultsSchema = z.object({
+  context: z
+    .object({
+      brandId: z.string().uuid().optional(),
+      seasonId: z.string().uuid().optional(),
+    })
+    .optional()
+    .default({}),
+});
+
+/**
+ * Tipo TypeScript per defaults del context
+ */
+export type AppContextDefaults = z.infer<typeof AppContextDefaultsSchema>;
