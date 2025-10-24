@@ -69,7 +69,7 @@ export default fp(
           });
         }
 
-        // Calcola size accumulando chunks
+        // Consuma correttamente lo stream multipart
         const chunks: Buffer[] = [];
         for await (const chunk of data.file) {
           chunks.push(chunk as Buffer);

@@ -41,7 +41,8 @@ export class LocalFsProvider implements IStorageProvider {
   private realBasePath?: string;
 
   constructor(config: LocalStorageConfig) {
-    this.basePath = config.basePath;
+    // Usa path.resolve per root assoluta
+    this.basePath = resolve(config.basePath);
     this.maxFileSizeBytes = config.maxFileSizeMB * 1024 * 1024;
     this.buckets = config.buckets;
   }
@@ -68,6 +69,17 @@ export class LocalFsProvider implements IStorageProvider {
       // Crea directory .tmp per atomic writes
       const tmpPath = join(bucketPath, '.tmp');
       await mkdir(tmpPath, { recursive: true, mode: 0o700 });
+    }
+
+    // Crea esplicitamente directory brand-logos se manca
+    const brandLogosPath = join(this.basePath, 'brand-logos');
+    try {
+      await mkdir(brandLogosPath, { recursive: true, mode: 0o700 });
+      const brandLogosTmpPath = join(brandLogosPath, '.tmp');
+      await mkdir(brandLogosTmpPath, { recursive: true, mode: 0o700 });
+    } catch (error) {
+      // Log ma non fallire se già esiste
+      console.warn('Directory brand-logos creation warning:', error);
     }
   }
 

@@ -243,8 +243,12 @@ async function registerStaticFiles() {
     (await getConfig(prisma, 'storage.local.basePath', false)) ||
     '/tmp/luke-storage';
 
+  // Usa path.resolve per root assoluta
+  const { resolve } = await import('path');
+  const absoluteRoot = resolve(basePath);
+
   await fastify.register(fastifyStatic, {
-    root: basePath,
+    root: absoluteRoot,
     prefix: '/uploads/',
     decorateReply: false,
   });
