@@ -41,8 +41,7 @@ export class LocalFsProvider implements IStorageProvider {
   private realBasePath?: string;
 
   constructor(config: LocalStorageConfig) {
-    // Usa path.resolve per root assoluta
-    this.basePath = resolve(config.basePath);
+    this.basePath = config.basePath;
     this.maxFileSizeBytes = config.maxFileSizeMB * 1024 * 1024;
     this.buckets = config.buckets;
   }
