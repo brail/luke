@@ -6,10 +6,14 @@ import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
  * Props per BrandAvatar
  */
 interface BrandAvatarProps {
-  /** URL del logo del brand */
-  logoUrl: string | null;
-  /** Codice del brand per fallback */
-  code: string;
+  /** Oggetto brand completo */
+  brand: {
+    id: string;
+    code: string;
+    name: string;
+    logoUrl: string | null;
+    isActive: boolean;
+  };
   /** Dimensione dell'avatar */
   size?: 'sm' | 'md' | 'lg';
   /** Classi CSS aggiuntive */
@@ -23,8 +27,7 @@ interface BrandAvatarProps {
  * le prime 2 lettere del codice come fallback.
  */
 export function BrandAvatar({
-  logoUrl,
-  code,
+  brand,
   size = 'sm',
   className,
 }: BrandAvatarProps) {
@@ -36,14 +39,14 @@ export function BrandAvatar({
   };
 
   // Genera le iniziali dal codice (prime 2 caratteri)
-  const initials = code.substring(0, 2).toUpperCase();
+  const initials = brand.code.substring(0, 2).toUpperCase();
 
   return (
     <Avatar className={`${sizeClasses[size]} ${className || ''}`}>
-      {logoUrl && (
+      {brand.logoUrl && (
         <AvatarImage
-          src={logoUrl}
-          alt={`Logo ${code}`}
+          src={brand.logoUrl}
+          alt={`Logo ${brand.code}`}
           className="object-cover"
         />
       )}

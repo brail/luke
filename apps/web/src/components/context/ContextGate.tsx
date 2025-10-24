@@ -118,14 +118,7 @@ export function ContextGate() {
                     brands.find(b => b.id === selectedBrandId) && (
                       <div className="flex items-center gap-2">
                         <BrandAvatar
-                          logoUrl={
-                            brands.find(b => b.id === selectedBrandId)
-                              ?.logoUrl || null
-                          }
-                          code={
-                            brands.find(b => b.id === selectedBrandId)?.code ||
-                            ''
-                          }
+                          brand={brands.find(b => b.id === selectedBrandId)!}
                           size="sm"
                         />
                         <span>
@@ -140,11 +133,7 @@ export function ContextGate() {
                 {brands.map(brand => (
                   <SelectItem key={brand.id} value={brand.id}>
                     <div className="flex items-center gap-2">
-                      <BrandAvatar
-                        logoUrl={brand.logoUrl}
-                        code={brand.code}
-                        size="sm"
-                      />
+                      <BrandAvatar brand={brand} size="sm" />
                       <span>
                         {brand.code} - {brand.name}
                       </span>

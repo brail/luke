@@ -19,6 +19,7 @@ const DEFAULTS: Record<string, RateLimitPolicy> = {
   passwordReset: { max: 3, timeWindow: '15m', keyBy: 'ip' },
   configMutations: { max: 20, timeWindow: '1m', keyBy: 'userId' },
   userMutations: { max: 10, timeWindow: '1m', keyBy: 'userId' },
+  brandMutations: { max: 10, timeWindow: '1m', keyBy: 'userId' },
 };
 
 /**

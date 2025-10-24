@@ -68,11 +68,7 @@ export function ContextSelector() {
           <SelectValue placeholder="Brand">
             {brand && (
               <div className="flex items-center gap-2">
-                <BrandAvatar
-                  logoUrl={brand.logoUrl}
-                  code={brand.code}
-                  size="sm"
-                />
+                <BrandAvatar brand={brand} size="sm" />
                 <span className="truncate">
                   {brand.code} - {brand.name}
                 </span>
@@ -84,11 +80,7 @@ export function ContextSelector() {
           {brands.map(brandItem => (
             <SelectItem key={brandItem.id} value={brandItem.id}>
               <div className="flex items-center gap-2">
-                <BrandAvatar
-                  logoUrl={brandItem.logoUrl}
-                  code={brandItem.code}
-                  size="sm"
-                />
+                <BrandAvatar brand={brandItem} size="sm" />
                 <span>
                   {brandItem.code} - {brandItem.name}
                 </span>

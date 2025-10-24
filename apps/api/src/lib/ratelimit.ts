@@ -52,6 +52,11 @@ export const RATE_LIMIT_CONFIG = {
     windowMs: 60_000, // 1 minuto
     keyBy: 'userId' as const,
   },
+  brandMutations: {
+    max: 10, // 10 richieste
+    windowMs: 60_000, // 1 minuto
+    keyBy: 'userId' as const,
+  },
 } as const;
 
 /**
@@ -294,7 +299,8 @@ export function withRateLimit(routeName: keyof typeof RATE_LIMIT_CONFIG) {
           | 'login'
           | 'passwordChange'
           | 'configMutations'
-          | 'userMutations',
+          | 'userMutations'
+          | 'brandMutations',
         ctx.prisma
       );
 

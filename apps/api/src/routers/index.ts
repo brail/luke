@@ -6,6 +6,7 @@
 import { router } from '../lib/trpc';
 
 import { authRouter } from './auth';
+import { brandRouter } from './brand';
 import { catalogRouter } from './catalog';
 import { configRouter } from './config';
 import { contextRouter } from './context';
@@ -25,6 +26,7 @@ import { usersRouter } from './users';
  */
 export const appRouter = router({
   auth: authRouter,
+  brand: brandRouter,
   catalog: catalogRouter,
   config: configRouter,
   context: contextRouter,

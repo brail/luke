@@ -14,6 +14,7 @@ import {
   LogOut,
   User,
   FolderTree,
+  Building2,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -144,6 +145,15 @@ export default function AppSidebar() {
                         >
                           <Users className="mr-2 h-4 w-4" />
                           <span>Utenti</span>
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link
+                          href="/settings/brands"
+                          className="flex items-center"
+                        >
+                          <Building2 className="mr-2 h-4 w-4" />
+                          <span>Brand</span>
                         </Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>
