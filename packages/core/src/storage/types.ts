@@ -14,7 +14,7 @@
  * - exports: File esportati dal sistema
  * - assets: Asset statici e risorse
  */
-export type StorageBucket = 'uploads' | 'exports' | 'assets';
+export type StorageBucket = 'uploads' | 'exports' | 'assets' | 'brand-logos';
 
 /**
  * Metadati di un file memorizzato
@@ -170,6 +170,3 @@ export interface IStorageProvider {
    */
   list(params: StorageListParams): Promise<StorageListResult>;
 }
-
-
-

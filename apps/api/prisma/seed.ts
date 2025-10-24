@@ -273,7 +273,12 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     },
     {
       key: 'storage.local.buckets',
-      value: '["uploads","exports","assets"]',
+      value: '["uploads","exports","assets","brand-logos"]',
+      encrypt: false,
+    },
+    {
+      key: 'storage.local.publicBaseUrl',
+      value: 'http://localhost:3001/uploads',
       encrypt: false,
     },
   ];

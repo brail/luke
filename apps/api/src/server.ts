@@ -7,6 +7,7 @@ import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
+import fastifyStatic from '@fastify/static';
 import { PrismaClient } from '@prisma/client';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import Fastify from 'fastify';
@@ -20,12 +21,14 @@ import {
 import { buildCorsAllowedOrigins } from './lib/cors';
 import { createContext } from './lib/trpc';
 import { setGlobalErrorHandler } from './lib/error';
+import { getConfig } from './lib/configManager';
 import {
   pinoTraceMiddleware,
   // pinoSerializers,
 } from './observability/pinoTrace';
 import { runReadinessChecks } from './observability/readiness';
 import { storagePlugin } from './plugins/storage-upload';
+import brandLogoRoutes from './routes/brandLogo.routes';
 import { appRouter } from './routers';
 
 /**
@@ -226,6 +229,28 @@ async function registerStoragePlugin() {
 }
 
 /**
+ * Registra brand logo routes
+ */
+async function registerBrandLogoRoutes() {
+  await fastify.register(brandLogoRoutes, { prisma });
+}
+
+/**
+ * Registra static file server per uploads
+ */
+async function registerStaticFiles() {
+  const basePath =
+    (await getConfig(prisma, 'storage.local.basePath', false)) ||
+    '/tmp/luke-storage';
+
+  await fastify.register(fastifyStatic, {
+    root: basePath,
+    prefix: '/uploads/',
+    decorateReply: false,
+  });
+}
+
+/**
  * Registra route di health check e readiness
  */
 async function registerHealthRoute() {
@@ -377,6 +402,8 @@ const start = async () => {
     await registerSecurityPlugins(); // CORS deve essere registrato prima di tRPC
     await registerTRPCPlugin();
     await registerStoragePlugin(); // Storage upload/download routes
+    await registerBrandLogoRoutes(); // Brand logo upload routes
+    await registerStaticFiles(); // Static file server per uploads
     await registerHealthRoute();
 
     // Configura graceful shutdown

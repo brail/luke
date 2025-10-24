@@ -34,8 +34,8 @@ export const localStorageConfigSchema = z.object({
    * Default: ['uploads', 'exports', 'assets']
    */
   buckets: z
-    .array(z.enum(['uploads', 'exports', 'assets']))
-    .default(['uploads', 'exports', 'assets']),
+    .array(z.enum(['uploads', 'exports', 'assets', 'brand-logos']))
+    .default(['uploads', 'exports', 'assets', 'brand-logos']),
 });
 
 /**
@@ -57,8 +57,5 @@ export type StorageType = z.infer<typeof storageTypeSchema>;
  * Helper per validare bucket
  */
 export function isValidBucket(bucket: string): bucket is StorageBucket {
-  return ['uploads', 'exports', 'assets'].includes(bucket);
+  return ['uploads', 'exports', 'assets', 'brand-logos'].includes(bucket);
 }
-
-
-

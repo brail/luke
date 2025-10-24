@@ -52,6 +52,8 @@ const SAFE_KEYS = new Set([
   'targetUserId',
   'section',
   'enabled',
+  'filename',
+  'contentType',
 ]);
 
 /**
