@@ -7,9 +7,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { logAudit } from '../lib/auditLog';
-import { withAuditLog } from '../lib/auditMiddleware';
 import { withRateLimit } from '../lib/ratelimit';
-import { withSectionAccess } from '../lib/sectionAccessMiddleware';
 import { router, adminOrEditorProcedure } from '../lib/trpc';
 
 /**
@@ -38,7 +36,6 @@ export const brandRouter = router({
    * Richiede ruolo admin o editor
    */
   list: adminOrEditorProcedure
-    .use(withSectionAccess('settings'))
     .input(
       z
         .object({
@@ -83,9 +80,7 @@ export const brandRouter = router({
    * Richiede ruolo admin o editor
    */
   create: adminOrEditorProcedure
-    .use(withSectionAccess('settings'))
     .use(withRateLimit('brandMutations'))
-    .use(withAuditLog('BRAND_CREATE', 'Brand'))
     .input(brandInputSchema)
     .mutation(async ({ input, ctx }) => {
       // Verifica che il codice non esista già
@@ -122,9 +117,7 @@ export const brandRouter = router({
    * Richiede ruolo admin o editor
    */
   update: adminOrEditorProcedure
-    .use(withSectionAccess('settings'))
     .use(withRateLimit('brandMutations'))
-    .use(withAuditLog('BRAND_UPDATE', 'Brand'))
     .input(
       z.object({
         id: z.string().uuid(),
@@ -187,9 +180,7 @@ export const brandRouter = router({
    * Richiede ruolo admin o editor
    */
   remove: adminOrEditorProcedure
-    .use(withSectionAccess('settings'))
     .use(withRateLimit('brandMutations'))
-    .use(withAuditLog('BRAND_DELETE', 'Brand'))
     .input(brandIdSchema)
     .mutation(async ({ input, ctx }) => {
       const { id } = input;
@@ -234,7 +225,6 @@ export const brandRouter = router({
    * Richiede ruolo admin o editor
    */
   hardDelete: adminOrEditorProcedure
-    .use(withSectionAccess('settings'))
     .use(withRateLimit('brandMutations'))
     .input(brandIdSchema)
     .mutation(async ({ input, ctx }) => {
