@@ -12,9 +12,9 @@
  */
 
 import { createHash, randomUUID } from 'crypto';
-import { createReadStream, createWriteStream } from 'fs';
+import { createReadStream, createWriteStream, realpathSync } from 'fs';
 import { readdir, mkdir, unlink, stat, realpath } from 'fs/promises';
-import { join, dirname, resolve } from 'path';
+import { join, dirname, resolve, basename, relative, isAbsolute } from 'path';
 import { pipeline } from 'stream/promises';
 
 import type {
@@ -83,39 +83,48 @@ export class LocalFsProvider implements IStorageProvider {
   }
 
   /**
-   * Valida path safety contro traversal attacks
+   * Valida path safety contro traversal attacks e ritorna path canonico
    */
-  private async validatePathSafety(targetPath: string): Promise<void> {
+  private validatePathSafety(candidateSubpath: string): string {
     if (!this.realBasePath) {
       throw new Error('Provider non inizializzato');
     }
 
-    // Verifica path segment sicuro
-    if (!isPathSafe(targetPath)) {
+    // Pre-check con isPathSafe (blocca ../ e path assoluti)
+    if (!isPathSafe(candidateSubpath)) {
       throw new Error('Path non sicuro: caratteri invalidi o traversal');
     }
 
-    // Resolve path completo
-    const fullPath = resolve(this.basePath, targetPath);
+    // Canonicalizza base (già fatto in init, ma per sicurezza)
+    const baseReal = this.realBasePath;
 
-    // Ottieni realpath della directory parent (il file potrebbe non esistere ancora)
-    let realTargetDir: string;
+    // Resolve target assoluto
+    const targetAbs = resolve(baseReal, candidateSubpath);
+
+    // Canonicalizza directory parent (sync per evitare race)
+    const dirAbs = dirname(targetAbs);
+    let dirReal: string;
+    
     try {
-      realTargetDir = await realpath(dirname(fullPath));
+      // Usa realpathSync.native per risolvere symlink
+      dirReal = realpathSync.native(dirAbs);
     } catch {
-      // Directory non esiste ancora, è OK per PUT
-      // Verifichiamo che il path risolto inizi con basePath
-      const resolvedDir = resolve(dirname(fullPath));
-      if (!resolvedDir.startsWith(this.realBasePath)) {
-        throw new Error('Path traversal rilevato');
-      }
-      return;
+      // Directory non esiste ancora - verifica con resolve
+      dirReal = resolve(dirAbs);
     }
 
-    // Verifica che il realpath inizi con realBasePath
-    if (!realTargetDir.startsWith(this.realBasePath)) {
+    // Ricostruisci path finale canonico
+    const finalAbs = join(dirReal, basename(targetAbs));
+
+    // Verifica con path.relative (sicuro se relativo e non contiene ..)
+    const rel = relative(baseReal, finalAbs);
+    
+    if (isAbsolute(rel) || rel.startsWith('..')) {
       throw new Error('Path traversal rilevato');
     }
+
+    // Ritorna path finale canonico per evitare ulteriori normalize
+    return finalAbs;
   }
 
   /**
@@ -205,15 +214,14 @@ export class LocalFsProvider implements IStorageProvider {
     const tmpFileName = `${randomUUID()}.part`;
     const tmpPath = join(params.bucket, '.tmp', tmpFileName);
 
-    // Valida path safety
-    await this.validatePathSafety(finalPath);
-    await this.validatePathSafety(tmpPath);
-
-    // Path assoluti
-    const absTmpPath = join(this.basePath, tmpPath);
-    const absFinalPath = join(this.basePath, finalPath);
+    // Valida e ottieni path canonici
+    const absFinalPath = this.validatePathSafety(finalPath);
+    const absTmpPath = this.validatePathSafety(tmpPath);
 
     try {
+      // Crea directory parent per tmp
+      await mkdir(dirname(absTmpPath), { recursive: true, mode: 0o700 });
+
       // Scrivi su file temporaneo
       const size = await this.writeStreamToFile(
         params.stream,
@@ -228,10 +236,6 @@ export class LocalFsProvider implements IStorageProvider {
       await mkdir(dirname(absFinalPath), { recursive: true, mode: 0o700 });
 
       // Atomic rename
-      await realpath(absTmpPath); // Verifica che il file temp esista
-      await mkdir(dirname(absFinalPath), { recursive: true, mode: 0o700 });
-
-      // Rinomina atomicamente
       const { rename } = await import('fs/promises');
       await rename(absTmpPath, absFinalPath);
 
@@ -241,12 +245,10 @@ export class LocalFsProvider implements IStorageProvider {
         size,
       };
     } catch (error) {
-      // Cleanup: rimuovi file temporaneo se esiste
+      // Cleanup
       try {
         await unlink(absTmpPath);
-      } catch {
-        // Ignora errore cleanup
-      }
+      } catch {}
 
       throw new Error(
         `Errore upload file: ${error instanceof Error ? error.message : 'Unknown'}`
@@ -259,13 +261,8 @@ export class LocalFsProvider implements IStorageProvider {
    */
   async get(params: StorageGetParams): Promise<StorageGetResult> {
     const filePath = join(params.bucket, params.key);
+    const absPath = this.validatePathSafety(filePath);
 
-    // Valida path safety
-    await this.validatePathSafety(filePath);
-
-    const absPath = join(this.basePath, filePath);
-
-    // Verifica esistenza file
     try {
       const stats = await stat(absPath);
       if (!stats.isFile()) {
@@ -295,11 +292,7 @@ export class LocalFsProvider implements IStorageProvider {
    */
   async delete(params: StorageDeleteParams): Promise<void> {
     const filePath = join(params.bucket, params.key);
-
-    // Valida path safety
-    await this.validatePathSafety(filePath);
-
-    const absPath = join(this.basePath, filePath);
+    const absPath = this.validatePathSafety(filePath);
 
     try {
       await unlink(absPath);
@@ -317,12 +310,11 @@ export class LocalFsProvider implements IStorageProvider {
    * Lista file in un bucket
    */
   async list(params: StorageListParams): Promise<StorageListResult> {
-    const bucketPath = join(this.basePath, params.bucket);
     const prefix = params.prefix || '';
     const limit = params.limit || 100;
 
-    // Valida path safety
-    await this.validatePathSafety(params.bucket);
+    // Valida path safety e ottieni path canonico del bucket
+    const bucketPath = this.validatePathSafety(params.bucket);
 
     const items: StorageListResult['items'] = [];
 
