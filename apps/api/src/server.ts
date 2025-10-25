@@ -251,10 +251,19 @@ async function registerStaticFiles() {
     root: absoluteRoot,
     prefix: '/uploads/',
     decorateReply: false,
-    setHeaders: (res) => {
+    setHeaders: (res, path) => {
       // Aggiungi header CORS per permettere l'accesso alle immagini dal frontend
       res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3000');
       res.setHeader('Access-Control-Allow-Credentials', 'true');
+      
+      // Imposta content-type corretto per le immagini
+      if (path.endsWith('.png')) {
+        res.setHeader('Content-Type', 'image/png');
+      } else if (path.endsWith('.jpg') || path.endsWith('.jpeg')) {
+        res.setHeader('Content-Type', 'image/jpeg');
+      } else if (path.endsWith('.webp')) {
+        res.setHeader('Content-Type', 'image/webp');
+      }
     },
   });
 }
