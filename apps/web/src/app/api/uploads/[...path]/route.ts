@@ -5,28 +5,32 @@ export async function GET(
   { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {
-    // Ricostruisci il path dell'immagine
     const resolvedParams = await params;
-    const imagePath = resolvedParams.path.join('/');
-
+    const filePath = resolvedParams.path.join('/');
+    
     // URL dell'API backend
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-    const backendUrl = `${apiUrl}/uploads/${imagePath}`;
+    const backendUrl = `${apiUrl}/uploads/${filePath}`;
 
-    // Inoltra la richiesta al backend
-    const response = await fetch(backendUrl);
+    // Inoltra la richiesta al backend per ottenere il file
+    const response = await fetch(backendUrl, {
+      method: 'GET',
+      headers: {
+        // Inoltra i cookie di sessione per l'autenticazione se necessario
+        Cookie: request.headers.get('cookie') || '',
+      },
+    });
 
     if (!response.ok) {
-      return new NextResponse('Image not found', { status: 404 });
+      return new NextResponse('File not found', { status: 404 });
     }
 
-    // Ottieni i dati dell'immagine
-    const imageData = await response.arrayBuffer();
-    const contentType =
-      response.headers.get('content-type') || 'application/octet-stream';
+    // Ottieni il contenuto del file
+    const fileBuffer = await response.arrayBuffer();
+    const contentType = response.headers.get('content-type') || 'application/octet-stream';
 
-    // Ritorna l'immagine con i header corretti
-    return new NextResponse(imageData, {
+    // Restituisci il file con gli header appropriati
+    return new NextResponse(fileBuffer, {
       status: 200,
       headers: {
         'Content-Type': contentType,
@@ -34,7 +38,7 @@ export async function GET(
       },
     });
   } catch (error) {
-    console.error('Proxy image error:', error);
+    console.error('Proxy file error:', error);
     return new NextResponse('Internal Server Error', { status: 500 });
   }
 }

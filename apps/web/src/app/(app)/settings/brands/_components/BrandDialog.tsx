@@ -123,7 +123,7 @@ export function BrandDialog({
       // Se stiamo modificando un brand esistente, usa il suo ID
       const brandId = brand?.id || 'temp';
 
-      const response = await fetch(`/upload/brand-logo/${brandId}`, {
+      const response = await fetch(`/api/upload/brand-logo/${brandId}`, {
         method: 'POST',
         body: formData,
       });

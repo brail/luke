@@ -60,10 +60,7 @@ export async function uploadBrandLogo(
   });
 
   // Costruisci URL relativo per il frontend (usa il proxy)
-  const relativeUrl = `/api/uploads/brand-logos/${fileObject.key}`;
-  
-  // Per il database, salviamo l'URL relativo
-  const logoUrl = relativeUrl;
+  const logoUrl = `/api/uploads/brand-logos/${fileObject.key}`;
 
   // Aggiorna Brand.logoUrl
   await ctx.prisma.brand.update({
@@ -89,5 +86,5 @@ export async function uploadBrandLogo(
     ctx.logger?.warn({ auditError }, 'Audit log failed for brand logo upload');
   }
 
-  return { url: relativeUrl };
+  return { url: logoUrl };
 }
