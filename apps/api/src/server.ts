@@ -264,6 +264,9 @@ async function registerStaticFiles() {
       } else if (path.endsWith('.webp')) {
         res.setHeader('Content-Type', 'image/webp');
       }
+      
+      // Imposta CSP permissivo per le immagini
+      res.setHeader('Content-Security-Policy', "img-src 'self' http://localhost:3001 data:; default-src 'none'");
     },
   });
 }
