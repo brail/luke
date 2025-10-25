@@ -41,9 +41,14 @@ export default function BrandsPage() {
     onSuccess: () => {
       refetch();
       setIsDialogOpen(false);
+      setEditingBrand(null);
+      toast.success('Brand creato con successo');
       // Invalida context e catalog per aggiornare selettori
       utils.context.get.invalidate();
       utils.catalog.brands.invalidate();
+    },
+    onError: (error) => {
+      toast.error(`Errore durante la creazione: ${error.message}`);
     },
   });
 
@@ -52,6 +57,7 @@ export default function BrandsPage() {
       refetch();
       setIsDialogOpen(false);
       setEditingBrand(null);
+      toast.success('Brand aggiornato con successo');
 
       // Invalida context e catalog
       utils.context.get.invalidate();
@@ -66,11 +72,15 @@ export default function BrandsPage() {
         );
       }
     },
+    onError: (error) => {
+      toast.error(`Errore durante l'aggiornamento: ${error.message}`);
+    },
   });
 
   const removeMutation = trpc.brand.remove.useMutation({
     onSuccess: removedBrand => {
       refetch();
+      toast.success('Brand eliminato con successo');
 
       // Invalida context e catalog
       utils.context.get.invalidate();
@@ -84,6 +94,9 @@ export default function BrandsPage() {
           'Brand eliminato. Il contesto verrà ripristinato automaticamente.'
         );
       }
+    },
+    onError: (error) => {
+      toast.error(`Errore durante l'eliminazione: ${error.message}`);
     },
   });
 

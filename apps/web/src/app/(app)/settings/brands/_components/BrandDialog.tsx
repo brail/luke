@@ -32,7 +32,9 @@ import { Switch } from '../../../../../components/ui/switch';
 const brandFormSchema = z.object({
   code: z.string().min(1, 'Codice obbligatorio').max(16, 'Max 16 caratteri'),
   name: z.string().min(1, 'Nome obbligatorio').max(128, 'Max 128 caratteri'),
-  logoUrl: z.string().url('URL non valido').nullable().optional(),
+  logoUrl: z
+    .union([z.string().url('URL non valido'), z.null(), z.undefined()])
+    .optional(),
   isActive: z.boolean().default(true),
 });
 
@@ -120,9 +122,8 @@ export function BrandDialog({
 
       // Se stiamo modificando un brand esistente, usa il suo ID
       const brandId = brand?.id || 'temp';
-      
-      // Usa il proxy del frontend invece di chiamare direttamente il backend
-      const response = await fetch(`/api/upload/brand-logo/${brandId}`, {
+
+      const response = await fetch(`/upload/brand-logo/${brandId}`, {
         method: 'POST',
         body: formData,
       });
@@ -156,10 +157,11 @@ export function BrandDialog({
   const handleSubmit = async (data: BrandFormData) => {
     try {
       await onSubmit(data);
-      toast.success(brand ? 'Brand aggiornato' : 'Brand creato');
+      // Non chiudiamo il modal qui - lo gestisce il componente padre
     } catch (error) {
       console.error('Errore submit form:', error);
-      toast.error('Errore durante il salvataggio');
+      // L'errore viene già gestito dal componente padre
+      throw error;
     }
   };
 
@@ -176,10 +178,10 @@ export function BrandDialog({
         </DialogHeader>
 
         <Form {...form}>
-          <form
-            onSubmit={form.handleSubmit(handleSubmit)}
-            className="space-y-6"
-          >
+            <form
+              onSubmit={form.handleSubmit(handleSubmit)}
+              className="space-y-6"
+            >
             {/* Logo Upload */}
             <div className="space-y-4">
               <FormLabel>Logo</FormLabel>

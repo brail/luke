@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { path: string[] } }
+  { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {
     // Ricostruisci il path dell'immagine
-    const imagePath = params.path.join('/');
-    
+    const resolvedParams = await params;
+    const imagePath = resolvedParams.path.join('/');
+
     // URL dell'API backend
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
     const backendUrl = `${apiUrl}/uploads/${imagePath}`;
@@ -21,7 +22,8 @@ export async function GET(
 
     // Ottieni i dati dell'immagine
     const imageData = await response.arrayBuffer();
-    const contentType = response.headers.get('content-type') || 'application/octet-stream';
+    const contentType =
+      response.headers.get('content-type') || 'application/octet-stream';
 
     // Ritorna l'immagine con i header corretti
     return new NextResponse(imageData, {
