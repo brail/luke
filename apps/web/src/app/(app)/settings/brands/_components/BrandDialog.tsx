@@ -117,13 +117,17 @@ export function BrandDialog({
     setIsUploading(true);
 
     try {
+      // Per i brand nuovi, non possiamo fare upload finché non sono creati
+      if (!brand?.id) {
+        toast.error('Salva prima il brand per caricare il logo');
+        setIsUploading(false);
+        return;
+      }
+
       const formData = new globalThis.FormData();
       formData.append('file', file);
 
-      // Se stiamo modificando un brand esistente, usa il suo ID
-      const brandId = brand?.id || 'temp';
-
-      const response = await fetch(`/api/upload/brand-logo/${brandId}`, {
+      const response = await fetch(`/api/upload/brand-logo/${brand.id}`, {
         method: 'POST',
         body: formData,
       });
@@ -209,9 +213,9 @@ export function BrandDialog({
                     type="button"
                     variant="outline"
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploading}
+                    disabled={isUploading || !brand?.id}
                   >
-                    {isUploading ? 'Caricamento...' : 'Carica Logo'}
+                    {isUploading ? 'Caricamento...' : brand?.id ? 'Carica Logo' : 'Salva prima il brand'}
                   </Button>
                   <input
                     ref={fileInputRef}
