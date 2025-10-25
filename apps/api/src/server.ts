@@ -251,6 +251,11 @@ async function registerStaticFiles() {
     root: absoluteRoot,
     prefix: '/uploads/',
     decorateReply: false,
+    setHeaders: (res) => {
+      // Aggiungi header CORS per permettere l'accesso alle immagini dal frontend
+      res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3000');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    },
   });
 }
 

@@ -129,7 +129,8 @@ export function BrandDialog({
         headers.Authorization = `Bearer ${session.accessToken}`;
       }
       
-      const response = await fetch(`/upload/brand-logo/${brandId}`, {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${apiUrl}/upload/brand-logo/${brandId}`, {
         method: 'POST',
         headers,
         body: formData,
