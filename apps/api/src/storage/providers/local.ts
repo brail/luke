@@ -104,7 +104,7 @@ export class LocalFsProvider implements IStorageProvider {
     // Canonicalizza directory parent (sync per evitare race)
     const dirAbs = dirname(targetAbs);
     let dirReal: string;
-    
+
     try {
       // Usa realpathSync.native per risolvere symlink
       dirReal = realpathSync.native(dirAbs);
@@ -118,7 +118,7 @@ export class LocalFsProvider implements IStorageProvider {
 
     // Verifica con path.relative (sicuro se relativo e non contiene ..)
     const rel = relative(baseReal, finalAbs);
-    
+
     if (isAbsolute(rel) || rel.startsWith('..')) {
       throw new Error('Path traversal rilevato');
     }

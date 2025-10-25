@@ -42,16 +42,16 @@ describe('LocalFsProvider - Path Traversal Protection', () => {
 
   it('should handle symlink on base directory', async () => {
     const symlinkPath = join(tmpdir(), `luke-symlink-test-${Date.now()}`);
-    
+
     try {
       symlinkSync(testDir, symlinkPath);
-      
+
       const providerSymlink = new LocalFsProvider({
         basePath: symlinkPath,
         maxFileSizeMB: 10,
         buckets: ['uploads'],
       });
-      
+
       // Should not throw
       await expect(providerSymlink.init()).resolves.not.toThrow();
     } finally {
@@ -70,7 +70,9 @@ describe('LocalFsProvider - Path Traversal Protection', () => {
   });
 
   it('should handle nested directory paths', () => {
-    const result = provider['validatePathSafety']('uploads/2025/01/15/test.txt');
+    const result = provider['validatePathSafety'](
+      'uploads/2025/01/15/test.txt'
+    );
     expect(result).toContain(testDir);
     expect(result).toContain('uploads/2025/01/15/test.txt');
   });
