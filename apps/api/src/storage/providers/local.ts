@@ -130,14 +130,35 @@ export class LocalFsProvider implements IStorageProvider {
   /**
    * Genera chiave server-side con partizionamento temporale
    */
-  private generateKey(): string {
+  private generateKey(contentType?: string): string {
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
     const uuid = randomUUID();
 
-    return `${year}/${month}/${day}/${uuid}`;
+    // Aggiungi estensione basata sul content-type
+    const extension = this.getExtensionFromContentType(contentType);
+    return `${year}/${month}/${day}/${uuid}${extension}`;
+  }
+
+  /**
+   * Determina estensione file dal content-type
+   */
+  private getExtensionFromContentType(contentType?: string): string {
+    if (!contentType) return '';
+    
+    switch (contentType) {
+      case 'image/png':
+        return '.png';
+      case 'image/jpeg':
+      case 'image/jpg':
+        return '.jpg';
+      case 'image/webp':
+        return '.webp';
+      default:
+        return '';
+    }
   }
 
   /**
@@ -206,8 +227,8 @@ export class LocalFsProvider implements IStorageProvider {
    * Upload file nello storage
    */
   async put(params: StoragePutParams): Promise<StoragePutResult> {
-    // Genera chiave server-side
-    const key = this.generateKey();
+    // Genera chiave server-side con estensione
+    const key = this.generateKey(params.contentType);
 
     // Path finale e temporaneo
     const finalPath = join(params.bucket, key);
