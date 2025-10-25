@@ -78,7 +78,7 @@ export default function BrandsPage() {
   });
 
   const removeMutation = trpc.brand.remove.useMutation({
-    onSuccess: removedBrand => {
+    onSuccess: (removedBrand) => {
       refetch();
       toast.success('Brand eliminato con successo');
 
