@@ -1,7 +1,6 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useSession } from 'next-auth/react';
 import React, { useState, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -58,7 +57,6 @@ export function BrandDialog({
   onSubmit,
   isLoading,
 }: BrandDialogProps) {
-  const { data: session } = useSession();
   const [logoUrl, setLogoUrl] = useState<string | null>(brand?.logoUrl || null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -123,16 +121,9 @@ export function BrandDialog({
       // Se stiamo modificando un brand esistente, usa il suo ID
       const brandId = brand?.id || 'temp';
       
-      // Prepara headers con autenticazione
-      const headers: Record<string, string> = {};
-      if (session?.accessToken) {
-        headers.Authorization = `Bearer ${session.accessToken}`;
-      }
-      
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${apiUrl}/upload/brand-logo/${brandId}`, {
+      // Usa il proxy del frontend invece di chiamare direttamente il backend
+      const response = await fetch(`/api/upload/brand-logo/${brandId}`, {
         method: 'POST',
-        headers,
         body: formData,
       });
 

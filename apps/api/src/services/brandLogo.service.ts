@@ -4,7 +4,6 @@
  */
 
 import { TRPCError } from '@trpc/server';
-import { getConfig } from '../lib/configManager';
 import { putObject } from '../storage';
 import { logAudit } from '../lib/auditLog';
 import type { Context } from '../lib/trpc';
@@ -60,11 +59,11 @@ export async function uploadBrandLogo(
     stream: params.file.stream,
   });
 
-  // Costruisci URL pubblico
-  const publicBaseUrl =
-    (await getConfig(ctx.prisma, 'storage.local.publicBaseUrl', false)) ||
-    'http://localhost:3001/uploads';
-  const logoUrl = `${publicBaseUrl}/brand-logos/${fileObject.key}`;
+  // Costruisci URL relativo per il frontend (usa il proxy)
+  const relativeUrl = `/api/uploads/brand-logos/${fileObject.key}`;
+  
+  // Per il database, salviamo l'URL relativo
+  const logoUrl = relativeUrl;
 
   // Aggiorna Brand.logoUrl
   await ctx.prisma.brand.update({
@@ -90,5 +89,5 @@ export async function uploadBrandLogo(
     ctx.logger?.warn({ auditError }, 'Audit log failed for brand logo upload');
   }
 
-  return { url: logoUrl };
+  return { url: relativeUrl };
 }
