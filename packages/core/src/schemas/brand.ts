@@ -11,10 +11,18 @@ import { z } from 'zod';
  */
 export const BrandInputSchema = z.object({
   /** Codice univoco del brand (max 16 caratteri) */
-  code: z.string().min(1, 'Codice obbligatorio').max(16, 'Max 16 caratteri'),
+  code: z
+    .string()
+    .min(1, 'Codice obbligatorio')
+    .max(16, 'Max 16 caratteri')
+    .regex(/^[A-Z0-9_-]+$/, 'Solo maiuscole, numeri, _ e -'),
 
   /** Nome del brand (max 128 caratteri) */
-  name: z.string().min(1, 'Nome obbligatorio').max(128, 'Max 128 caratteri'),
+  name: z
+    .string()
+    .min(1, 'Nome obbligatorio')
+    .max(128, 'Max 128 caratteri')
+    .trim(),
 
   /** URL del logo (opzionale, nullable) */
   logoUrl: z

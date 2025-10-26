@@ -200,5 +200,6 @@ model UserPreference {
   updatedAt    DateTime @updatedAt
   createdAt    DateTime @default(now())
   
+  @@index([lastBrandId])
   @@map("user_preferences")
 }

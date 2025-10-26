@@ -227,6 +227,22 @@ export const brandRouter = router({
         });
       }
 
+      // Check integrità referenziale: verifica se brand è in uso nelle preferenze utente
+      const referencedInPreferences = await ctx.prisma.userPreference.findFirst(
+        {
+          where: { lastBrandId: id },
+          select: { userId: true },
+        }
+      );
+
+      if (referencedInPreferences) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message:
+            'Impossibile eliminare: brand in uso nelle preferenze utente',
+        });
+      }
+
       // Hard delete: elimina brand dal database
       try {
         await ctx.prisma.brand.delete({
@@ -247,6 +263,15 @@ export const brandRouter = router({
 
         return { success: true, message: 'Brand eliminato definitivamente' };
       } catch (error) {
+        // Gestione errori Prisma FK constraints
+        if ((error as any).code === 'P2003') {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message:
+              'Impossibile eliminare: brand referenziato da altre entità',
+          });
+        }
+
         // Log FAILURE in catch
         await logAudit(ctx, {
           action: 'BRAND_HARD_DELETE',

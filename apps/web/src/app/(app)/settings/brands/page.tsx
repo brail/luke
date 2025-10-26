@@ -9,6 +9,7 @@ import { Button } from '../../../../components/ui/button';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
 import { useAppContext } from '../../../../contexts/AppContextProvider';
+import { useInvalidateContext } from '../../../../contexts/useInvalidateContext';
 import { trpc } from '../../../../lib/trpc';
 
 import { BrandDialog } from './_components/BrandDialog';
@@ -33,21 +34,19 @@ export default function BrandsPage() {
     search: searchTerm || undefined,
   });
 
-  // Utils per invalidazione context
-  const utils = trpc.useUtils();
+  // Hook centralizzato per invalidazione cache
+  const invalidateContext = useInvalidateContext();
 
   // Mutation per creare/aggiornare brand
   const createMutation = trpc.brand.create.useMutation({
     onSuccess: () => {
       refetch();
+      invalidateContext();
       setIsDialogOpen(false);
       setEditingBrand(null);
       toast.success('Brand creato con successo');
-      // Invalida context e catalog per aggiornare selettori
-      utils.context.get.invalidate();
-      utils.catalog.brands.invalidate();
     },
-    onError: (error) => {
+    onError: error => {
       toast.error(`Errore durante la creazione: ${error.message}`);
     },
   });
@@ -55,13 +54,10 @@ export default function BrandsPage() {
   const updateMutation = trpc.brand.update.useMutation({
     onSuccess: updatedBrand => {
       refetch();
+      invalidateContext(updatedBrand.id);
       setIsDialogOpen(false);
       setEditingBrand(null);
       toast.success('Brand aggiornato con successo');
-
-      // Invalida context e catalog
-      utils.context.get.invalidate();
-      utils.catalog.brands.invalidate();
 
       // Se il brand corrente è stato disattivato, gestisci il context
       if (currentBrand?.id === updatedBrand.id && !updatedBrand.isActive) {
@@ -72,19 +68,16 @@ export default function BrandsPage() {
         );
       }
     },
-    onError: (error) => {
+    onError: error => {
       toast.error(`Errore durante l'aggiornamento: ${error.message}`);
     },
   });
 
   const removeMutation = trpc.brand.remove.useMutation({
-    onSuccess: (removedBrand) => {
+    onSuccess: removedBrand => {
       refetch();
+      invalidateContext(removedBrand.id);
       toast.success('Brand eliminato con successo');
-
-      // Invalida context e catalog
-      utils.context.get.invalidate();
-      utils.catalog.brands.invalidate();
 
       // Se il brand corrente è stato eliminato, gestisci il context
       if (currentBrand?.id === removedBrand.id) {
@@ -95,7 +88,7 @@ export default function BrandsPage() {
         );
       }
     },
-    onError: (error) => {
+    onError: error => {
       toast.error(`Errore durante l'eliminazione: ${error.message}`);
     },
   });

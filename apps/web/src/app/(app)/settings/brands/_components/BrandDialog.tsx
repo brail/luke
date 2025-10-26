@@ -136,8 +136,9 @@ export function BrandDialog({
       form.setValue('logoUrl', result.url);
       toast.success('Logo caricato con successo');
     } catch (error) {
-      console.error('Errore upload logo:', error);
-      toast.error('Errore durante il caricamento del logo');
+      const message = error instanceof Error ? error.message : 'Errore upload';
+      toast.error(`Upload fallito: ${message}`);
+      // Mantieni UI in stato safe (non aggiornare logoUrl)
     } finally {
       setIsUploading(false);
     }
@@ -303,7 +304,7 @@ export function BrandDialog({
               >
                 Annulla
               </Button>
-              <Button type="submit" disabled={isLoading}>
+              <Button type="submit" disabled={isLoading || isUploading}>
                 {isLoading ? 'Salvataggio...' : brand ? 'Aggiorna' : 'Crea'}
               </Button>
             </DialogFooter>

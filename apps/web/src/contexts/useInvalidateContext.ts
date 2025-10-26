@@ -14,12 +14,22 @@ export function useInvalidateContext() {
   /**
    * Invalida tutte le query context-aware
    *
-   * Per ora invalida solo context.get, ma può essere esteso
-   * con future query che dipendono dal context.
+   * @param brandId - ID del brand modificato (opzionale)
+   * Se fornito, invalida anche le query brand-specifiche
    */
-  const invalidateContextQueries = () => {
+  const invalidateContextQueries = (brandId?: string) => {
     // Invalida il context principale
     utils.context.get.invalidate();
+
+    // Invalida lista brand per aggiornare UI
+    utils.brand.list.invalidate();
+
+    // Se brandId fornito, invalida anche query specifiche del brand
+    if (brandId) {
+      // Le query specifiche del brand saranno invalidate automaticamente
+      // quando context.get viene invalidato, ma possiamo essere espliciti
+      utils.brand.list.invalidate();
+    }
 
     // TODO: Aggiungere qui future query context-aware
     // es: utils.products.list.invalidate({ brandId, seasonId })
