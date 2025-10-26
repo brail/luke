@@ -29,6 +29,9 @@ export * from './schemas/rbac';
 // Re-export effective access with explicit exports to avoid conflicts
 export { effectiveSectionAccess } from './rbac/effectiveAccess';
 
+// Re-export auth/permissions
+export * from './auth/permissions';
+
 // Re-export utilities
 export * from './utils/date';
 export * from './utils/money';

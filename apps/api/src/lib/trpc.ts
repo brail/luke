@@ -120,6 +120,7 @@ export interface Context {
   res: FastifyReply;
   traceId: string;
   logger: any; // Logger Pino da req.log
+  _permissionsCache?: Map<string, boolean>; // Cache per-request delle permissions
 }
 
 /**
@@ -325,6 +326,8 @@ export const adminOrEditorMiddleware = t.middleware(async ({ ctx, next }) => {
 
 /**
  * Procedure per admin o editor (richiede ruolo admin o editor)
+ * DEPRECATED: Usa requirePermission() per nuovo sistema Resource:Action
+ * Mantenuto per backward compatibility
  */
 export const adminOrEditorProcedure = publicProcedure
   .use(loggingMiddleware)

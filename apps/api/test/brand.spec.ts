@@ -8,7 +8,8 @@ import { TRPCError } from '@trpc/server';
 
 // import { brandRouter } from '../src/routers/brand'; // Non utilizzato, usa testBrandRouter locale
 import { createTestContext } from './helpers/testContext';
-import { router, adminOrEditorProcedure } from '../src/lib/trpc';
+import { router, publicProcedure } from '../src/lib/trpc';
+import { requirePermission } from '../src/lib/permissions';
 import {
   BrandInputSchema,
   BrandIdSchema,
@@ -17,9 +18,10 @@ import {
   normalizeCode,
 } from '@luke/core';
 
-// Creo un router di test senza rate limiting
+// Creo un router di test senza rate limiting per testare le nuove permissions
 const testBrandRouter = router({
-  list: adminOrEditorProcedure
+  list: publicProcedure
+    .use(requirePermission('brands:read'))
     .input(BrandListInputSchema.optional())
     .query(async ({ ctx, input }) => {
       const cursor = input?.cursor;
@@ -52,7 +54,8 @@ const testBrandRouter = router({
       };
     }),
 
-  create: adminOrEditorProcedure
+  create: publicProcedure
+    .use(requirePermission('brands:create'))
     .input(BrandInputSchema)
     .mutation(async ({ input, ctx }) => {
       const normalizedCode = normalizeCode(input.code);
@@ -85,7 +88,8 @@ const testBrandRouter = router({
       });
     }),
 
-  update: adminOrEditorProcedure
+  update: publicProcedure
+    .use(requirePermission('brands:update'))
     .input(BrandUpdateInputSchema)
     .mutation(async ({ input, ctx }) => {
       return ctx.prisma.$transaction(async tx => {
@@ -139,7 +143,8 @@ const testBrandRouter = router({
       });
     }),
 
-  hardDelete: adminOrEditorProcedure
+  hardDelete: publicProcedure
+    .use(requirePermission('brands:delete'))
     .input(BrandIdSchema)
     .mutation(async ({ input, ctx }) => {
       return ctx.prisma.$transaction(async tx => {
@@ -765,6 +770,265 @@ describe('Brand Router', () => {
           isActive: true,
         })
       ).rejects.toThrow();
+    });
+  });
+
+  describe('Permission-based access control', () => {
+    let adminContext: any;
+    let editorContext: any;
+    let viewerContext: any;
+
+    beforeEach(async () => {
+      // Crea utenti con diversi ruoli
+      const adminUser = await testContext.prisma.user.create({
+        data: {
+          email: 'admin@example.com',
+          username: 'admin',
+          firstName: 'Admin',
+          lastName: 'User',
+          role: 'admin',
+        },
+      });
+
+      const editorUser = await testContext.prisma.user.create({
+        data: {
+          email: 'editor@example.com',
+          username: 'editor',
+          firstName: 'Editor',
+          lastName: 'User',
+          role: 'editor',
+        },
+      });
+
+      const viewerUser = await testContext.prisma.user.create({
+        data: {
+          email: 'viewer@example.com',
+          username: 'viewer',
+          firstName: 'Viewer',
+          lastName: 'User',
+          role: 'viewer',
+        },
+      });
+
+      // Crea context per ogni ruolo
+      adminContext = {
+        ...testContext,
+        session: {
+          user: adminUser,
+          accessToken: 'admin-token',
+        },
+      };
+
+      editorContext = {
+        ...testContext,
+        session: {
+          user: editorUser,
+          accessToken: 'editor-token',
+        },
+      };
+
+      viewerContext = {
+        ...testContext,
+        session: {
+          user: viewerUser,
+          accessToken: 'viewer-token',
+        },
+      };
+    });
+
+    describe('list operation', () => {
+      it('should allow admin to list brands', async () => {
+        const caller = testBrandRouter.createCaller(adminContext);
+        const result = await caller.list();
+        expect(result.items).toBeDefined();
+        expect(Array.isArray(result.items)).toBe(true);
+      });
+
+      it('should allow editor to list brands', async () => {
+        const caller = testBrandRouter.createCaller(editorContext);
+        const result = await caller.list();
+        expect(result.items).toBeDefined();
+        expect(Array.isArray(result.items)).toBe(true);
+      });
+
+      it('should allow viewer to list brands', async () => {
+        const caller = testBrandRouter.createCaller(viewerContext);
+        const result = await caller.list();
+        expect(result.items).toBeDefined();
+        expect(Array.isArray(result.items)).toBe(true);
+      });
+    });
+
+    describe('create operation', () => {
+      it('should allow admin to create brands', async () => {
+        const caller = testBrandRouter.createCaller(adminContext);
+        const result = await caller.create({
+          code: 'ADMIN_BRAND',
+          name: 'Admin Brand',
+          isActive: true,
+        });
+        expect(result.id).toBeDefined();
+        expect(result.code).toBe('ADMIN_BRAND');
+      });
+
+      it('should allow editor to create brands', async () => {
+        const caller = testBrandRouter.createCaller(editorContext);
+        const result = await caller.create({
+          code: 'EDITOR_BRAND',
+          name: 'Editor Brand',
+          isActive: true,
+        });
+        expect(result.id).toBeDefined();
+        expect(result.code).toBe('EDITOR_BRAND');
+      });
+
+      it('should deny viewer from creating brands', async () => {
+        const caller = testBrandRouter.createCaller(viewerContext);
+        await expect(
+          caller.create({
+            code: 'VIEWER_BRAND',
+            name: 'Viewer Brand',
+            isActive: true,
+          })
+        ).rejects.toThrow(TRPCError);
+        const error = await caller
+          .create({
+            code: 'VIEWER_BRAND',
+            name: 'Viewer Brand',
+            isActive: true,
+          })
+          .catch(e => e);
+        expect(error.code).toBe('FORBIDDEN');
+      });
+    });
+
+    describe('update operation', () => {
+      it('should allow admin to update brands', async () => {
+        const caller = testBrandRouter.createCaller(adminContext);
+        const result = await caller.update({
+          id: testBrand.id,
+          data: {
+            name: 'Updated by Admin',
+          },
+        });
+        expect(result.name).toBe('Updated by Admin');
+      });
+
+      it('should allow editor to update brands', async () => {
+        const caller = testBrandRouter.createCaller(editorContext);
+        const result = await caller.update({
+          id: testBrand.id,
+          data: {
+            name: 'Updated by Editor',
+          },
+        });
+        expect(result.name).toBe('Updated by Editor');
+      });
+
+      it('should deny viewer from updating brands', async () => {
+        const caller = testBrandRouter.createCaller(viewerContext);
+        await expect(
+          caller.update({
+            id: testBrand.id,
+            data: {
+              name: 'Updated by Viewer',
+            },
+          })
+        ).rejects.toThrow(TRPCError);
+        const error = await caller
+          .update({
+            id: testBrand.id,
+            data: {
+              name: 'Updated by Viewer',
+            },
+          })
+          .catch(e => e);
+        expect(error.code).toBe('FORBIDDEN');
+      });
+    });
+
+    describe('hardDelete operation', () => {
+      it('should allow admin to hard delete brands', async () => {
+        const caller = testBrandRouter.createCaller(adminContext);
+        const result = await caller.hardDelete({ id: testBrand.id });
+        expect(result.success).toBe(true);
+        expect(result.message).toBe('Brand eliminato definitivamente');
+      });
+
+      it('should allow editor to hard delete brands', async () => {
+        const caller = testBrandRouter.createCaller(editorContext);
+        const result = await caller.hardDelete({ id: testBrand.id });
+        expect(result.success).toBe(true);
+        expect(result.message).toBe('Brand eliminato definitivamente');
+      });
+
+      it('should deny viewer from hard deleting brands', async () => {
+        const caller = testBrandRouter.createCaller(viewerContext);
+        await expect(caller.hardDelete({ id: testBrand.id })).rejects.toThrow(
+          TRPCError
+        );
+        const error = await caller
+          .hardDelete({ id: testBrand.id })
+          .catch(e => e);
+        expect(error.code).toBe('FORBIDDEN');
+      });
+    });
+
+    describe('unauthenticated access', () => {
+      it('should deny unauthenticated access to all operations', async () => {
+        const unauthenticatedContext = {
+          ...testContext,
+          session: null,
+        };
+
+        const caller = testBrandRouter.createCaller(unauthenticatedContext);
+
+        await expect(caller.list()).rejects.toThrow(TRPCError);
+        const listError = await caller.list().catch(e => e);
+        expect(listError.code).toBe('UNAUTHORIZED');
+
+        await expect(
+          caller.create({
+            code: 'UNAUTH_BRAND',
+            name: 'Unauth Brand',
+            isActive: true,
+          })
+        ).rejects.toThrow(TRPCError);
+        const createError = await caller
+          .create({
+            code: 'UNAUTH_BRAND',
+            name: 'Unauth Brand',
+            isActive: true,
+          })
+          .catch(e => e);
+        expect(createError.code).toBe('UNAUTHORIZED');
+
+        await expect(
+          caller.update({
+            id: testBrand.id,
+            data: {
+              name: 'Updated by Unauth',
+            },
+          })
+        ).rejects.toThrow(TRPCError);
+        const updateError = await caller
+          .update({
+            id: testBrand.id,
+            data: {
+              name: 'Updated by Unauth',
+            },
+          })
+          .catch(e => e);
+        expect(updateError.code).toBe('UNAUTHORIZED');
+
+        await expect(caller.hardDelete({ id: testBrand.id })).rejects.toThrow(
+          TRPCError
+        );
+        const deleteError = await caller
+          .hardDelete({ id: testBrand.id })
+          .catch(e => e);
+        expect(deleteError.code).toBe('UNAUTHORIZED');
+      });
     });
   });
 });

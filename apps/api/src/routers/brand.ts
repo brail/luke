@@ -15,7 +15,8 @@ import {
 
 import { logAudit } from '../lib/auditLog';
 import { withRateLimit } from '../lib/ratelimit';
-import { router, adminOrEditorProcedure } from '../lib/trpc';
+import { router, publicProcedure } from '../lib/trpc';
+import { requirePermission } from '../lib/permissions';
 import { deleteObject } from '../storage';
 import { moveTempLogoToBrand } from '../services/brandLogo.service';
 
@@ -65,9 +66,10 @@ function extractKeyFromUrl(logoUrl: string): string {
 export const brandRouter = router({
   /**
    * Lista tutti i brand con filtri opzionali e cursor pagination
-   * Richiede ruolo admin o editor
+   * Richiede permission brands:read
    */
-  list: adminOrEditorProcedure
+  list: publicProcedure
+    .use(requirePermission('brands:read'))
     .input(BrandListInputSchema.optional())
     .query(async ({ ctx, input }) => {
       const cursor = input?.cursor;
@@ -102,9 +104,10 @@ export const brandRouter = router({
 
   /**
    * Crea un nuovo brand
-   * Richiede ruolo admin o editor
+   * Richiede permission brands:create
    */
-  create: adminOrEditorProcedure
+  create: publicProcedure
+    .use(requirePermission('brands:create'))
     .use(withRateLimit('brandMutations'))
     .input(BrandInputSchema)
     .mutation(async ({ input, ctx }) => {
@@ -161,9 +164,10 @@ export const brandRouter = router({
 
   /**
    * Aggiorna un brand esistente
-   * Richiede ruolo admin o editor
+   * Richiede permission brands:update
    */
-  update: adminOrEditorProcedure
+  update: publicProcedure
+    .use(requirePermission('brands:update'))
     .use(withRateLimit('brandMutations'))
     .input(BrandUpdateInputSchema)
     .mutation(async ({ input, ctx }) => {
@@ -226,9 +230,10 @@ export const brandRouter = router({
   /**
    * Elimina un brand (soft delete)
    * Imposta isActive = false invece di eliminare il record
-   * Richiede ruolo admin o editor
+   * Richiede permission brands:delete
    */
-  remove: adminOrEditorProcedure
+  remove: publicProcedure
+    .use(requirePermission('brands:delete'))
     .use(withRateLimit('brandMutations'))
     .input(BrandIdSchema)
     .mutation(async ({ input, ctx }) => {
@@ -271,9 +276,10 @@ export const brandRouter = router({
   /**
    * Hard delete di un brand (elimina completamente dal database)
    * ATTENZIONE: Questa operazione è irreversibile
-   * Richiede ruolo admin o editor
+   * Richiede permission brands:delete
    */
-  hardDelete: adminOrEditorProcedure
+  hardDelete: publicProcedure
+    .use(requirePermission('brands:delete'))
     .use(withRateLimit('brandMutations'))
     .input(BrandIdSchema)
     .mutation(async ({ input, ctx }) => {
