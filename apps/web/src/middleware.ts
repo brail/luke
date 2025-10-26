@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+import { buildTrpcUrl } from '@luke/core';
+
 import { auth } from './auth';
 
 /**
@@ -19,8 +21,7 @@ export default auth(async req => {
   // Verifica tokenVersion se abbiamo accessToken
   if (session.accessToken) {
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${apiUrl}/trpc/me.get`, {
+      const response = await fetch(buildTrpcUrl('me.get'), {
         method: 'GET',
         headers: {
           Authorization: `Bearer ${session.accessToken}`,

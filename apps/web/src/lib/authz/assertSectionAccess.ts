@@ -5,7 +5,7 @@
 
 import { redirect } from 'next/navigation';
 
-import { effectiveSectionAccess, permissions } from '@luke/core';
+import { effectiveSectionAccess, permissions, buildTrpcUrl } from '@luke/core';
 import type { Section } from '@luke/core';
 
 import { auth } from '../../auth';
@@ -22,11 +22,10 @@ export async function assertSectionAccess(section: Section) {
   }
 
   // Fetch override da API (server-to-server) - manteniamo per ora
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
   let override: { enabled?: boolean } | undefined;
 
   try {
-    const res = await fetch(`${apiUrl}/trpc/sectionAccess.getForMe`, {
+    const res = await fetch(buildTrpcUrl('sectionAccess.getForMe'), {
       headers: {
         Authorization: `Bearer ${session.accessToken}`,
         'Content-Type': 'application/json',

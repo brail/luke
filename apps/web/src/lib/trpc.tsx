@@ -6,8 +6,10 @@ import { useSession } from 'next-auth/react';
 import React, { useState } from 'react';
 
 import type { AppRouter } from '@luke/api';
+import { getApiBaseUrl } from '@luke/core';
 
 import { useUnauthorizedHandler } from '../hooks/use-unauthorized-handler';
+
 // Usa crypto.randomUUID() del browser invece di Node.js crypto
 // Import type-only dall'API per type-safety end-to-end tRPC
 // Nota: safe in monorepo; se separassimo i repo, considerare @luke/core/server
@@ -18,14 +20,6 @@ import { useUnauthorizedHandler } from '../hooks/use-unauthorized-handler';
  * TODO futuro: Migrare a import da @luke/core se web/api si separano in repository diversi
  */
 export const trpc = createTRPCReact<AppRouter>();
-
-/**
- * Helper per ottenere l'URL base dell'API
- * Sempre porta 3001 per l'API tRPC
- */
-export function getBaseUrl() {
-  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-}
 
 /**
  * Provider tRPC con configurazione React Query
@@ -57,7 +51,7 @@ export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
       trpc.createClient({
         links: [
           httpBatchLink({
-            url: `${getBaseUrl()}/trpc`,
+            url: `${getApiBaseUrl()}/trpc`,
             // Headers per autenticazione, Content-Type e trace correlation
             headers() {
               const headers: Record<string, string> = {

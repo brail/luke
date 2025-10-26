@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { buildApiUrl } from '@luke/core';
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
@@ -9,8 +11,7 @@ export async function GET(
     const filePath = resolvedParams.path.join('/');
 
     // URL dell'API backend
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-    const backendUrl = `${apiUrl}/uploads/${filePath}`;
+    const backendUrl = buildApiUrl(`/uploads/${filePath}`);
 
     // Inoltra la richiesta al backend per ottenere il file
     const response = await fetch(backendUrl, {

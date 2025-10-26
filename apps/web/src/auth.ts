@@ -1,6 +1,7 @@
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 
+import { buildTrpcUrl } from '@luke/core';
 import { getNextAuthSecret } from '@luke/core/server';
 
 import type { NextAuthConfig } from 'next-auth';
@@ -13,19 +14,16 @@ export const runtime = 'nodejs';
  */
 async function callTRPCAuth(username: string, password: string) {
   try {
-    const response = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/trpc/auth.login`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          username,
-          password,
-        }),
-      }
-    );
+    const response = await fetch(buildTrpcUrl('auth.login'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        username,
+        password,
+      }),
+    });
 
     if (!response.ok) {
       return null;
@@ -137,9 +135,7 @@ export const config = {
 
         // Refresh token: verifica tokenVersion chiamando API
         try {
-          const apiUrl =
-            process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-          const response = await fetch(`${apiUrl}/trpc/me.get`, {
+          const response = await fetch(buildTrpcUrl('me.get'), {
             method: 'GET',
             headers: {
               Authorization: `Bearer ${token.accessToken}`,

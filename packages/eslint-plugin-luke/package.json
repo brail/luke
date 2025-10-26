@@ -1,0 +1,24 @@
+{
+  "name": "@luke/eslint-plugin-luke",
+  "version": "0.1.0",
+  "description": "Custom ESLint rules for Luke monorepo",
+  "main": "index.js",
+  "keywords": [
+    "eslint",
+    "eslintplugin",
+    "luke",
+    "monorepo"
+  ],
+  "author": "Luke Team",
+  "license": "MIT",
+  "peerDependencies": {
+    "eslint": ">=8.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "index.js",
+    "rules/"
+  ]
+}

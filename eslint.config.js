@@ -2,6 +2,7 @@ import js from '@eslint/js';
 import typescript from '@typescript-eslint/eslint-plugin';
 import typescriptParser from '@typescript-eslint/parser';
 import importPlugin from 'eslint-plugin-import';
+import lukePlugin from './packages/eslint-plugin-luke/index.js';
 
 export default [
   js.configs.recommended,
@@ -69,6 +70,7 @@ export default [
     plugins: {
       '@typescript-eslint': typescript,
       import: importPlugin,
+      '@luke': lukePlugin,
     },
     rules: {
       'prefer-const': 'error',
@@ -118,6 +120,13 @@ export default [
       'import/no-duplicates': 'error',
       'import/first': 'error',
       'import/newline-after-import': 'error',
+    },
+  },
+  {
+    files: ['apps/web/src/**/*.{ts,tsx}'],
+    rules: {
+      // Apply Luke-specific rules only to frontend
+      // '@luke/no-hardcoded-url': 'error', // Temporarily disabled for testing
     },
   },
   {

@@ -15,7 +15,9 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "deps:latest": "pnpm update --latest",
     "prepare": "husky install",
-    "db:seed": "pnpm --filter @luke/api db:seed"
+    "db:seed": "pnpm --filter @luke/api db:seed",
+    "codemod:eliminate-urls": "tsx tools/codemods/eliminate-hardcoded-urls.ts",
+    "codemod:check-urls": "tsx tools/codemods/eliminate-hardcoded-urls.ts --dry-run"
   },
   "devDependencies": {
     "@eslint/js": "^9.38.0",
@@ -27,6 +29,8 @@
     "eslint-plugin-import": "^2.32.0",
     "husky": "^9.1.7",
     "prettier": "^3.6.2",
+    "ts-morph": "^23.0.0",
+    "tsx": "^4.19.2",
     "turbo": "^2.5.8",
     "typescript": "^5.9.3"
   }

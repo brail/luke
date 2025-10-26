@@ -5,12 +5,7 @@
 
 import { createTRPCClient, httpBatchLink } from '@trpc/client';
 
-/**
- * Helper per ottenere l'URL base dell'API
- */
-function getBaseUrl() {
-  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-}
+import { getApiBaseUrl } from '@luke/core';
 
 /**
  * Client tRPC per autenticazione
@@ -19,7 +14,7 @@ function getBaseUrl() {
 export const trpcAuth = createTRPCClient<any>({
   links: [
     httpBatchLink({
-      url: `${getBaseUrl()}/trpc`,
+      url: `${getApiBaseUrl()}/trpc`,
       headers() {
         return {
           'Content-Type': 'application/json',
