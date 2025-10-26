@@ -22,13 +22,13 @@ export function useInvalidateContext() {
     utils.context.get.invalidate();
 
     // Invalida lista brand per aggiornare UI
-    utils.brand.list.invalidate();
+    utils.catalog.brands.invalidate();
 
     // Se brandId fornito, invalida anche query specifiche del brand
     if (brandId) {
       // Le query specifiche del brand saranno invalidate automaticamente
       // quando context.get viene invalidato, ma possiamo essere espliciti
-      utils.brand.list.invalidate();
+      utils.catalog.brands.invalidate();
     }
 
     // TODO: Aggiungere qui future query context-aware

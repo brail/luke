@@ -31,7 +31,7 @@ export default function BrandsPage() {
     isLoading,
     error,
     refetch,
-  } = trpc.brand.list.useQuery({
+  } = trpc.catalog.brands.useQuery({
     search: searchTerm || undefined,
   });
 
