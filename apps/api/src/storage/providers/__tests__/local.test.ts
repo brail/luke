@@ -14,6 +14,7 @@ describe('LocalFsProvider - Path Traversal Protection', () => {
       basePath: testDir,
       maxFileSizeMB: 10,
       buckets: ['uploads', 'brand-logos'],
+      enableProxy: false,
     });
     await provider.init();
   });
@@ -50,6 +51,7 @@ describe('LocalFsProvider - Path Traversal Protection', () => {
         basePath: symlinkPath,
         maxFileSizeMB: 10,
         buckets: ['uploads'],
+        enableProxy: false,
       });
 
       // Should not throw

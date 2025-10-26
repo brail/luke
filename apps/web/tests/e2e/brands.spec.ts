@@ -23,7 +23,7 @@ test.describe('Brands E2E Tests', () => {
   });
 
   test.describe('Brand Creation', () => {
-    test('should create a new brand successfully', async ({ page }) => {
+    test('should create a new brand successfully', async ({ page: _page }) => {
       await navHelper.goToBrands();
 
       // Crea un nuovo brand
@@ -36,7 +36,7 @@ test.describe('Brands E2E Tests', () => {
       await toastHelper.expectSuccessToast('Brand creato con successo');
     });
 
-    test('should create brand with logo upload', async ({ page }) => {
+    test('should create brand with logo upload', async ({ page: _page }) => {
       await navHelper.goToBrands();
 
       // Clicca su "Nuovo Brand"
@@ -72,7 +72,7 @@ test.describe('Brands E2E Tests', () => {
       await brandHelper.expectBrandExists('BRAND_WITH_LOGO');
     });
 
-    test('should reject duplicate brand code', async ({ page }) => {
+    test('should reject duplicate brand code', async ({ page: _page }) => {
       await navHelper.goToBrands();
 
       // Crea il primo brand
@@ -94,7 +94,7 @@ test.describe('Brands E2E Tests', () => {
       );
     });
 
-    test('should validate required fields', async ({ page }) => {
+    test('should validate required fields', async ({ page: _page }) => {
       await navHelper.goToBrands();
 
       await page.click('[data-testid="new-brand-button"]');
@@ -116,7 +116,7 @@ test.describe('Brands E2E Tests', () => {
       await brandHelper.createBrand('EDIT_TEST_BRAND', 'Original Name');
     });
 
-    test('should edit brand name successfully', async ({ page }) => {
+    test('should edit brand name successfully', async ({ page: _page }) => {
       await navHelper.goToBrands();
 
       // Modifica il brand
@@ -131,7 +131,7 @@ test.describe('Brands E2E Tests', () => {
       await toastHelper.expectSuccessToast('Brand aggiornato con successo');
     });
 
-    test('should edit brand code successfully', async ({ page }) => {
+    test('should edit brand code successfully', async ({ page: _page }) => {
       await navHelper.goToBrands();
 
       // Clicca sul pulsante edit
@@ -147,7 +147,7 @@ test.describe('Brands E2E Tests', () => {
       await brandHelper.expectBrandNotExists('EDIT_TEST_BRAND');
     });
 
-    test('should replace brand logo', async ({ page }) => {
+    test('should replace brand logo', async ({ page: _page }) => {
       await navHelper.goToBrands();
 
       // Clicca sul pulsante edit
@@ -185,7 +185,7 @@ test.describe('Brands E2E Tests', () => {
       await brandHelper.createBrand('DELETE_TEST_BRAND', 'Brand to Delete');
     });
 
-    test('should soft delete brand successfully', async ({ page }) => {
+    test('should soft delete brand successfully', async ({ page: _page }) => {
       await navHelper.goToBrands();
 
       // Elimina il brand
@@ -226,7 +226,7 @@ test.describe('Brands E2E Tests', () => {
   });
 
   test.describe('Brand Validation', () => {
-    test('should show error for invalid file type', async ({ page }) => {
+    test('should show error for invalid file type', async ({ page: _page }) => {
       await navHelper.goToBrands();
 
       await page.click('[data-testid="new-brand-button"]');
@@ -261,7 +261,7 @@ test.describe('Brands E2E Tests', () => {
       }
     });
 
-    test('should show error for file too large', async ({ page }) => {
+    test('should show error for file too large', async ({ page: _page }) => {
       await navHelper.goToBrands();
 
       await page.click('[data-testid="new-brand-button"]');
@@ -296,7 +296,7 @@ test.describe('Brands E2E Tests', () => {
       }
     });
 
-    test('should validate brand code format', async ({ page }) => {
+    test('should validate brand code format', async ({ page: _page }) => {
       await navHelper.goToBrands();
 
       await page.click('[data-testid="new-brand-button"]');
@@ -322,7 +322,7 @@ test.describe('Brands E2E Tests', () => {
       await brandHelper.createBrand('SEARCH_BRAND_3', 'Puma');
     });
 
-    test('should display all brands in list', async ({ page }) => {
+    test('should display all brands in list', async ({ page: _page }) => {
       await navHelper.goToBrands();
 
       // Verifica che tutti i brand siano visibili
@@ -331,7 +331,7 @@ test.describe('Brands E2E Tests', () => {
       await brandHelper.expectBrandExists('SEARCH_BRAND_3');
     });
 
-    test('should filter brands by search term', async ({ page }) => {
+    test('should filter brands by search term', async ({ page: _page }) => {
       await navHelper.goToBrands();
 
       // Usa la ricerca
@@ -343,7 +343,7 @@ test.describe('Brands E2E Tests', () => {
       await brandHelper.expectBrandNotExists('SEARCH_BRAND_3');
     });
 
-    test('should clear search and show all brands', async ({ page }) => {
+    test('should clear search and show all brands', async ({ page: _page }) => {
       await navHelper.goToBrands();
 
       // Applica filtro
@@ -363,12 +363,16 @@ test.describe('Brands E2E Tests', () => {
   });
 
   test.describe('Access Control', () => {
-    test('should allow admin to access brands page', async ({ page }) => {
+    test('should allow admin to access brands page', async ({
+      page: _page,
+    }) => {
       await navHelper.goToBrands();
       await expect(page.locator('[data-testid="brands-page"]')).toBeVisible();
     });
 
-    test('should allow editor to access brands page', async ({ page }) => {
+    test('should allow editor to access brands page', async ({
+      page: _page,
+    }) => {
       // Logout e login come editor
       await authHelper.logout();
       await authHelper.loginAsEditor();
@@ -377,7 +381,9 @@ test.describe('Brands E2E Tests', () => {
       await expect(page.locator('[data-testid="brands-page"]')).toBeVisible();
     });
 
-    test('should redirect unauthorized users to login', async ({ page }) => {
+    test('should redirect unauthorized users to login', async ({
+      page: _page,
+    }) => {
       // Logout
       await authHelper.logout();
 

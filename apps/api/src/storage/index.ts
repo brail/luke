@@ -56,11 +56,25 @@ async function loadStorageConfig(prisma: PrismaClient) {
     '["uploads","exports","assets","brand-logos","temp-brand-logos"]';
   const buckets = JSON.parse(bucketsStr);
 
+  const publicBaseUrl = await getConfig(
+    prisma,
+    'storage.local.publicBaseUrl',
+    false
+  );
+  const enableProxyStr = await getConfig(
+    prisma,
+    'storage.local.enableProxy',
+    false
+  );
+  const enableProxy = enableProxyStr ? enableProxyStr === 'true' : true; // default true
+
   // Valida con schema Zod
   const config = localStorageConfigSchema.parse({
     basePath,
     maxFileSizeMB,
     buckets,
+    publicBaseUrl: publicBaseUrl || undefined,
+    enableProxy,
   });
 
   return config;

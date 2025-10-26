@@ -50,6 +50,20 @@ export const localStorageConfigSchema = z.object({
       'brand-logos',
       'temp-brand-logos',
     ]),
+
+  /**
+   * URL base pubblico per accesso diretto ai file
+   * Esempio: http://localhost:3001 (DEV) o https://api.example.com (PROD)
+   * Opzionale: se non fornito, usa proxy Next.js
+   */
+  publicBaseUrl: z.string().url().optional(),
+
+  /**
+   * Abilita proxy Next.js per file serving
+   * Default: true (DEV), false (PROD)
+   * Se true, genera URL /api/uploads/... invece di URL assoluti
+   */
+  enableProxy: z.boolean().default(true),
 });
 
 /**

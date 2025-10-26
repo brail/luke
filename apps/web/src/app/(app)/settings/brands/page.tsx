@@ -40,6 +40,34 @@ export default function BrandsPage() {
   // Hook centralizzato per invalidazione cache
   const invalidateContext = useInvalidateContext();
 
+  // Funzione helper per mappare errori a messaggi user-friendly
+  const getErrorMessage = (error: any): string => {
+    // Errori tRPC con codice specifico
+    if (error.data?.code === 'CONFLICT') {
+      return 'Nome o codice brand già in uso';
+    }
+    if (error.data?.code === 'UNAUTHORIZED') {
+      return 'Sessione scaduta, rieffettua il login';
+    }
+    if (error.data?.code === 'BAD_REQUEST') {
+      return error.message || 'Dati non validi';
+    }
+
+    // Errori HTTP diretti
+    if (error.status === 409) {
+      return 'Nome o codice brand già in uso';
+    }
+    if (error.status === 401) {
+      return 'Sessione scaduta, rieffettua il login';
+    }
+    if (error.status === 400) {
+      return error.message || 'Dati non validi';
+    }
+
+    // Messaggio generico con retry
+    return error.message || "Errore durante l'operazione. Riprova.";
+  };
+
   // Mutation per creare/aggiornare brand
   const createMutation = trpc.brand.create.useMutation({
     onSuccess: () => {
@@ -49,7 +77,7 @@ export default function BrandsPage() {
       toast.success('Brand creato con successo');
     },
     onError: error => {
-      toast.error(`Errore durante la creazione: ${error.message}`);
+      toast.error(getErrorMessage(error));
     },
   });
 
@@ -70,7 +98,7 @@ export default function BrandsPage() {
       }
     },
     onError: error => {
-      toast.error(`Errore durante l'aggiornamento: ${error.message}`);
+      toast.error(getErrorMessage(error));
     },
   });
 
@@ -89,7 +117,7 @@ export default function BrandsPage() {
       }
     },
     onError: error => {
-      toast.error(`Errore durante l'eliminazione: ${error.message}`);
+      toast.error(getErrorMessage(error));
     },
   });
 

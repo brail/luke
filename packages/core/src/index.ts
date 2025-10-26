@@ -40,6 +40,7 @@ export * from './pricing';
 // Re-export storage types and config
 export * from './storage/types';
 export * from './storage/config';
+export * from './storage/contracts';
 
 // Note: server utilities are exported via @luke/core/server
 

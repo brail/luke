@@ -26,7 +26,13 @@ import {
   FormMessage,
 } from '../../../../../components/ui/form';
 import { Input } from '../../../../../components/ui/input';
+import { Progress } from '../../../../../components/ui/progress';
 import { Switch } from '../../../../../components/ui/switch';
+import { useInvalidateContext } from '../../../../../contexts/useInvalidateContext';
+import {
+  buildBrandLogoUploadUrl,
+  buildTempBrandLogoUploadUrl,
+} from '../../../../../lib/api';
 
 // Schema per form con isActive obbligatorio (per React Hook Form)
 const BrandFormSchema = BrandInputSchema.extend({
@@ -58,8 +64,12 @@ export function BrandDialog({
   const [tempLogoId, setTempLogoId] = useState<string | null>(null);
   const [tempLogoUrl, setTempLogoUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [codePreview, setCodePreview] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Hook per invalidazione cache
+  const invalidateContext = useInvalidateContext();
 
   const form = useForm<BrandFormData>({
     resolver: zodResolver(BrandFormSchema),
@@ -84,6 +94,7 @@ export function BrandDialog({
       setTempLogoId(null);
       setTempLogoUrl(null);
       setCodePreview('');
+      setUploadProgress(0);
     } else {
       form.reset({
         code: '',
@@ -95,6 +106,7 @@ export function BrandDialog({
       setTempLogoId(null);
       setTempLogoUrl(null);
       setCodePreview('');
+      setUploadProgress(0);
     }
   }, [
     brand?.id,
@@ -124,10 +136,11 @@ export function BrandDialog({
       setTempLogoId(null);
       setTempLogoUrl(null);
       setCodePreview('');
+      setUploadProgress(0);
     }
   }, [open, form]);
 
-  // Handler per upload logo (normale o temporaneo)
+  // Handler per upload logo (normale o temporaneo) con progress tracking
   const handleLogoUpload = async (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
@@ -148,53 +161,115 @@ export function BrandDialog({
     }
 
     setIsUploading(true);
+    setUploadProgress(0);
 
     try {
       const formData = new globalThis.FormData();
       formData.append('file', file);
 
       if (brand?.id) {
-        // Upload normale per brand esistente
-        const response = await fetch(`/api/upload/brand-logo/${brand.id}`, {
-          method: 'POST',
-          body: formData,
+        // Upload normale per brand esistente con progress tracking
+        const xhr = new globalThis.XMLHttpRequest();
+
+        // Track progress
+        xhr.upload.addEventListener('progress', e => {
+          if (e.lengthComputable) {
+            const percentComplete = Math.round((e.loaded / e.total) * 100);
+            setUploadProgress(percentComplete);
+          }
         });
 
-        if (!response.ok) {
-          throw new Error('Upload fallito');
-        }
+        // Handle response
+        xhr.addEventListener('load', () => {
+          if (xhr.status === 200) {
+            try {
+              const result = JSON.parse(xhr.responseText);
+              // Usa publicUrl dalla nuova response API
+              const logoUrlWithTimestamp = `${result.publicUrl}?t=${Date.now()}`;
+              setLogoUrl(logoUrlWithTimestamp);
+              form.setValue('logoUrl', logoUrlWithTimestamp);
+              toast.success('Logo caricato con successo');
 
-        const result = await response.json();
-        setLogoUrl(result.url);
-        form.setValue('logoUrl', result.url);
-        toast.success('Logo caricato con successo');
+              // Invalida cache per aggiornare lista
+              invalidateContext();
+            } catch (_parseError) {
+              toast.error('Errore durante il parsing della risposta');
+            }
+          } else {
+            try {
+              const errorData = JSON.parse(xhr.responseText);
+              toast.error(errorData.message || 'Upload fallito');
+            } catch {
+              toast.error('Upload fallito');
+            }
+          }
+          setIsUploading(false);
+          setUploadProgress(0);
+        });
+
+        xhr.addEventListener('error', () => {
+          toast.error('Errore di rete durante upload');
+          setIsUploading(false);
+          setUploadProgress(0);
+        });
+
+        xhr.open('POST', buildBrandLogoUploadUrl(brand.id));
+        xhr.send(formData);
       } else {
-        // Upload temporaneo per brand nuovo
+        // Upload temporaneo per brand nuovo con progress tracking
         const tempId = crypto.randomUUID();
         formData.append('tempId', tempId);
 
-        const response = await fetch('/api/upload/brand-logo/temp', {
-          method: 'POST',
-          body: formData,
+        const xhr = new globalThis.XMLHttpRequest();
+
+        // Track progress
+        xhr.upload.addEventListener('progress', e => {
+          if (e.lengthComputable) {
+            const percentComplete = Math.round((e.loaded / e.total) * 100);
+            setUploadProgress(percentComplete);
+          }
         });
 
-        if (!response.ok) {
-          throw new Error('Upload temporaneo fallito');
-        }
+        // Handle response
+        xhr.addEventListener('load', () => {
+          if (xhr.status === 200) {
+            try {
+              const result = JSON.parse(xhr.responseText);
+              // Usa publicUrl dalla nuova response API
+              setTempLogoId(result.tempLogoId);
+              setTempLogoUrl(result.publicUrl);
+              toast.success(
+                'Logo caricato (verrà associato al brand dopo il salvataggio)'
+              );
+            } catch (_parseError) {
+              toast.error('Errore durante il parsing della risposta');
+            }
+          } else {
+            try {
+              const errorData = JSON.parse(xhr.responseText);
+              toast.error(errorData.message || 'Upload temporaneo fallito');
+            } catch {
+              toast.error('Upload temporaneo fallito');
+            }
+          }
+          setIsUploading(false);
+          setUploadProgress(0);
+        });
 
-        const result = await response.json();
-        setTempLogoId(result.tempLogoId);
-        setTempLogoUrl(result.tempLogoUrl);
-        toast.success(
-          'Logo caricato (verrà associato al brand dopo il salvataggio)'
-        );
+        xhr.addEventListener('error', () => {
+          toast.error('Errore di rete durante upload temporaneo');
+          setIsUploading(false);
+          setUploadProgress(0);
+        });
+
+        xhr.open('POST', buildTempBrandLogoUploadUrl());
+        xhr.send(formData);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Errore upload';
       toast.error(`Upload fallito: ${message}`);
-      // Mantieni UI in stato safe
-    } finally {
       setIsUploading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -216,7 +291,7 @@ export function BrandDialog({
       const brandInput: BrandInput = {
         code: data.code,
         name: data.name,
-        logoUrl: data.logoUrl,
+        logoUrl: data.logoUrl || null, // Assicurati che sia null se vuoto
         tempLogoId: tempLogoId || undefined,
         isActive: data.isActive,
       };
@@ -251,7 +326,18 @@ export function BrandDialog({
             <FormField
               control={form.control}
               name="logoUrl"
-              render={({ field }) => <input type="hidden" {...field} />}
+              render={({ field }) => (
+                <input
+                  type="hidden"
+                  {...field}
+                  value={field.value || ''}
+                  onChange={e => {
+                    // Gestisci correttamente i valori null/undefined
+                    const value = e.target.value === '' ? null : e.target.value;
+                    field.onChange(value);
+                  }}
+                />
+              )}
             />
 
             {/* Logo Upload */}
@@ -291,7 +377,16 @@ export function BrandDialog({
                     accept="image/png,image/jpeg,image/webp"
                     onChange={handleLogoUpload}
                     className="hidden"
+                    disabled={isUploading || isLoading}
                   />
+                  {isUploading && (
+                    <div className="space-y-1">
+                      <Progress value={uploadProgress} className="h-2" />
+                      <p className="text-xs text-muted-foreground text-center">
+                        {uploadProgress}% completato
+                      </p>
+                    </div>
+                  )}
                   <p className="text-xs text-muted-foreground">
                     PNG, JPEG, WebP. Max 2MB.
                     {tempLogoUrl && !brand?.id && (
@@ -380,6 +475,7 @@ export function BrandDialog({
                 type="button"
                 variant="outline"
                 onClick={() => onOpenChange(false)}
+                disabled={isLoading || isUploading}
               >
                 Annulla
               </Button>

@@ -7,6 +7,8 @@ import { TRPCError } from '@trpc/server';
 import path from 'path';
 import { Readable } from 'stream';
 
+import { getPublicUrl, extractKeyFromUrl, type UrlConfig } from '@luke/core';
+
 import { putObject, deleteObject, getStorageProvider } from '../storage';
 import { logAudit } from '../lib/auditLog';
 import type { Context } from '../lib/trpc';
@@ -27,20 +29,27 @@ async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
 }
 
 /**
- * Estrae key dal logoUrl per cleanup
+ * Ottiene configurazione URL dal context
  */
-function extractKeyFromUrl(logoUrl: string): string {
-  // logoUrl format: /api/uploads/brand-logos/{year}/{month}/{day}/{filename}
-  // oppure: /uploads/brand-logos/{year}/{month}/{day}/{filename}
-  const urlParts = logoUrl.split('/');
-  const brandLogosIndex = urlParts.findIndex(part => part === 'brand-logos');
+async function getUrlConfig(ctx: Context): Promise<UrlConfig> {
+  const { getConfig } = await import('../lib/configManager');
 
-  if (brandLogosIndex === -1) {
-    throw new Error(`Invalid logoUrl format: ${logoUrl}`);
-  }
+  const publicBaseUrl = await getConfig(
+    ctx.prisma,
+    'storage.local.publicBaseUrl',
+    false
+  );
+  const enableProxyStr = await getConfig(
+    ctx.prisma,
+    'storage.local.enableProxy',
+    false
+  );
+  const enableProxy = enableProxyStr ? enableProxyStr === 'true' : true; // default true
 
-  // Ritorna tutto dopo 'brand-logos/'
-  return urlParts.slice(brandLogosIndex + 1).join('/');
+  return {
+    publicBaseUrl: publicBaseUrl || undefined,
+    enableProxy,
+  };
 }
 
 /**
@@ -79,7 +88,7 @@ export async function uploadTempBrandLogo(
       size: number;
     };
   }
-): Promise<{ tempLogoId: string; tempLogoUrl: string }> {
+): Promise<{ publicUrl: string; tempLogoId: string }> {
   // Validazioni MIME type
   if (!ALLOWED_MIMES.includes(params.file.mimetype)) {
     throw new TRPCError({
@@ -133,8 +142,9 @@ export async function uploadTempBrandLogo(
     stream: newStream,
   });
 
-  // Costruisci URL relativo per il frontend (usa il proxy)
-  const tempLogoUrl = `/api/uploads/temp-brand-logos/${fileObject.key}`;
+  // Genera URL pubblico usando contratti
+  const urlConfig = await getUrlConfig(ctx);
+  const publicUrl = getPublicUrl('temp-brand-logos', fileObject.key, urlConfig);
 
   // Log audit per upload temporaneo
   try {
@@ -160,8 +170,8 @@ export async function uploadTempBrandLogo(
   }
 
   return {
+    publicUrl,
     tempLogoId: params.tempId,
-    tempLogoUrl,
   };
 }
 
@@ -176,7 +186,7 @@ export async function uploadBrandLogo(
       size: number;
     };
   }
-): Promise<{ url: string }> {
+): Promise<{ publicUrl: string; bucket: string; key: string }> {
   // Validazioni MIME type
   if (!ALLOWED_MIMES.includes(params.file.mimetype)) {
     throw new TRPCError({
@@ -242,13 +252,14 @@ export async function uploadBrandLogo(
     stream: newStream,
   });
 
-  // Costruisci URL relativo per il frontend (usa il proxy)
-  const logoUrl = `/api/uploads/brand-logos/${fileObject.key}`;
+  // Genera URL pubblico usando contratti
+  const urlConfig = await getUrlConfig(ctx);
+  const publicUrl = getPublicUrl('brand-logos', fileObject.key, urlConfig);
 
-  // Aggiorna Brand.logoUrl
+  // Aggiorna Brand.logoUrl con URL pubblico
   await ctx.prisma.brand.update({
     where: { id: params.brandId },
-    data: { logoUrl },
+    data: { logoUrl: publicUrl },
   });
 
   // Cleanup vecchio logo (best-effort)
@@ -256,7 +267,9 @@ export async function uploadBrandLogo(
     setImmediate(async () => {
       try {
         const oldKey = extractKeyFromUrl(brand.logoUrl!);
-        await deleteObject(ctx, oldKey);
+        if (oldKey) {
+          await deleteObject(ctx, oldKey);
+        }
       } catch (err) {
         ctx.logger?.warn({ err }, 'Failed to cleanup old logo');
       }
@@ -283,7 +296,11 @@ export async function uploadBrandLogo(
     ctx.logger?.warn({ auditError }, 'Audit log failed for brand logo upload');
   }
 
-  return { url: logoUrl };
+  return {
+    publicUrl,
+    bucket: 'brand-logos',
+    key: fileObject.key,
+  };
 }
 
 /**
@@ -334,13 +351,14 @@ export async function moveTempLogoToBrand(
     stream,
   });
 
-  // Costruisci URL finale
-  const logoUrl = `/api/uploads/brand-logos/${newFileObject.key}`;
+  // Genera URL pubblico usando contratti
+  const urlConfig = await getUrlConfig(ctx);
+  const publicUrl = getPublicUrl('brand-logos', newFileObject.key, urlConfig);
 
-  // Aggiorna Brand.logoUrl
+  // Aggiorna Brand.logoUrl con URL pubblico
   await ctx.prisma.brand.update({
     where: { id: params.brandId },
-    data: { logoUrl },
+    data: { logoUrl: publicUrl },
   });
 
   // Cleanup file temporaneo (best-effort)
@@ -378,5 +396,5 @@ export async function moveTempLogoToBrand(
     ctx.logger?.warn({ auditError }, 'Audit log failed for temp logo move');
   }
 
-  return { url: logoUrl };
+  return { url: publicUrl };
 }

@@ -279,6 +279,9 @@ async function registerStaticFiles() {
         'Content-Security-Policy',
         "img-src 'self' http://localhost:3001 data:; default-src 'none'"
       );
+
+      // Cache headers per assets statici
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     },
   });
 }

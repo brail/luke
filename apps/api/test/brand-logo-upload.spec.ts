@@ -111,13 +111,15 @@ describe('Brand Logo Upload Service', () => {
         file: testFile,
       });
 
-      expect(result.url).toMatch(/^\/api\/uploads\/brand-logos\//);
+      expect(result.publicUrl).toMatch(/^\/api\/uploads\/brand-logos\//);
+      expect(result.bucket).toBe('brand-logos');
+      expect(result.key).toBeDefined();
 
       // Verifica che il brand sia stato aggiornato con il logoUrl
       const updatedBrand = await testContext.prisma.brand.findUnique({
         where: { id: testBrand.id },
       });
-      expect(updatedBrand?.logoUrl).toBe(result.url);
+      expect(updatedBrand?.logoUrl).toBe(result.publicUrl);
     });
 
     it('should upload valid JPEG logo successfully', async () => {
@@ -134,7 +136,7 @@ describe('Brand Logo Upload Service', () => {
         file: testFile,
       });
 
-      expect(result.url).toMatch(/^\/api\/uploads\/brand-logos\//);
+      expect(result.publicUrl).toMatch(/^\/api\/uploads\/brand-logos\//);
     });
 
     it('should reject invalid MIME type', async () => {
@@ -262,13 +264,13 @@ describe('Brand Logo Upload Service', () => {
         file: testFile2,
       });
 
-      expect(result2.url).not.toBe(result1.url);
+      expect(result2.publicUrl).not.toBe(result1.publicUrl);
 
       // Verifica che il brand abbia il nuovo logo
       const updatedBrand = await testContext.prisma.brand.findUnique({
         where: { id: testBrand.id },
       });
-      expect(updatedBrand?.logoUrl).toBe(result2.url);
+      expect(updatedBrand?.logoUrl).toBe(result2.publicUrl);
     });
 
     it('should sanitize filename to prevent path traversal', async () => {
@@ -286,8 +288,8 @@ describe('Brand Logo Upload Service', () => {
       });
 
       // Il filename dovrebbe essere sanitizzato
-      expect(result.url).not.toContain('../');
-      expect(result.url).not.toContain('etc/passwd');
+      expect(result.publicUrl).not.toContain('../');
+      expect(result.publicUrl).not.toContain('etc/passwd');
     });
   });
 
@@ -308,7 +310,7 @@ describe('Brand Logo Upload Service', () => {
       });
 
       expect(result.tempLogoId).toBe(tempId);
-      expect(result.tempLogoUrl).toMatch(/^\/api\/uploads\/temp-brand-logos\//);
+      expect(result.publicUrl).toMatch(/^\/api\/uploads\/temp-brand-logos\//);
     });
 
     it('should reject invalid MIME type for temp upload', async () => {
@@ -391,7 +393,7 @@ describe('Brand Logo Upload Service', () => {
         brandId: testBrand.id,
       });
 
-      expect(result.url).toMatch(/^\/api\/uploads\/brand-logos\//);
+      expect(result.publicUrl).toMatch(/^\/api\/uploads\/brand-logos\//);
 
       // Verifica che il brand sia stato aggiornato
       const updatedBrand = await testContext.prisma.brand.findUnique({

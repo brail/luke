@@ -73,12 +73,14 @@ describe('Brand Logo Upload Integration', () => {
     });
 
     vi.mocked(uploadBrandLogo).mockResolvedValue({
-      url: '/api/uploads/brand-logos/mock-key',
+      publicUrl: '/api/uploads/brand-logos/mock-key',
+      bucket: 'brand-logos',
+      key: 'mock-key',
     });
 
     vi.mocked(uploadTempBrandLogo).mockResolvedValue({
+      publicUrl: '/api/uploads/temp-brand-logos/temp-123/mock-key',
       tempLogoId: 'temp-123',
-      tempLogoUrl: '/api/uploads/temp-brand-logos/temp-123/mock-key',
     });
 
     // Crea app Fastify per test
@@ -140,8 +142,11 @@ describe('Brand Logo Upload Integration', () => {
         .attach('file', pngBuffer, 'test-logo.png')
         .expect(200);
 
-      expect(response.body).toHaveProperty('url');
-      expect(response.body.url).toMatch(/^\/api\/uploads\/brand-logos\//);
+      expect(response.body).toHaveProperty('publicUrl');
+      expect(response.body).toHaveProperty('bucket');
+      expect(response.body).toHaveProperty('key');
+      expect(response.body.publicUrl).toMatch(/^\/api\/uploads\/brand-logos\//);
+      expect(response.body.bucket).toBe('brand-logos');
     });
 
     it('should reject request without authentication', async () => {
@@ -229,9 +234,12 @@ describe('Brand Logo Upload Integration', () => {
         .attach('file', pngBuffer, 'temp-logo.png')
         .expect(200);
 
+      expect(response.body).toHaveProperty('publicUrl');
       expect(response.body).toHaveProperty('tempLogoId');
-      expect(response.body).toHaveProperty('tempLogoUrl');
       expect(response.body.tempLogoId).toBe('temp-123');
+      expect(response.body.publicUrl).toMatch(
+        /^\/api\/uploads\/temp-brand-logos\//
+      );
     });
 
     it('should reject request without authentication', async () => {
@@ -344,7 +352,7 @@ describe('Brand Logo Upload Integration', () => {
         .attach('file', pngBuffer, 'test@#$%^&*().png')
         .expect(200);
 
-      expect(response.body).toHaveProperty('url');
+      expect(response.body).toHaveProperty('publicUrl');
     });
 
     it('should handle very long filename', async () => {
