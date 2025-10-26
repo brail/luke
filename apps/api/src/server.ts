@@ -252,10 +252,18 @@ async function registerStaticFiles() {
     prefix: '/uploads/',
     decorateReply: false,
     setHeaders: (res, path) => {
-      // Aggiungi header CORS per permettere l'accesso alle immagini dal frontend
-      res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3000');
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
-      
+      // Usa configurazione CORS dinamica invece di hardcodare localhost:3000
+      const corsConfig = buildCorsAllowedOrigins(
+        (process.env.NODE_ENV as 'development' | 'production' | 'test') ||
+          'development'
+      );
+
+      // Setta header CORS solo se ci sono origini configurate
+      if (corsConfig.origins.length > 0) {
+        res.setHeader('Access-Control-Allow-Origin', corsConfig.origins[0]); // Fastify static supporta solo un'origine
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+      }
+
       // Imposta content-type corretto per le immagini
       if (path.endsWith('.png')) {
         res.setHeader('Content-Type', 'image/png');
@@ -264,9 +272,12 @@ async function registerStaticFiles() {
       } else if (path.endsWith('.webp')) {
         res.setHeader('Content-Type', 'image/webp');
       }
-      
+
       // Imposta CSP permissivo per le immagini
-      res.setHeader('Content-Security-Policy', "img-src 'self' http://localhost:3001 data:; default-src 'none'");
+      res.setHeader(
+        'Content-Security-Policy',
+        "img-src 'self' http://localhost:3001 data:; default-src 'none'"
+      );
     },
   });
 }

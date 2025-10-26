@@ -18,6 +18,7 @@ export * from './schemas/appConfig';
 export * from './schemas/ldap';
 export * from './schemas/mail';
 export * from './schemas/auth';
+export * from './schemas/brand';
 
 // Re-export RBAC
 export * from './rbac';

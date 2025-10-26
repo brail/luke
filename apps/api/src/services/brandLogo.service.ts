@@ -4,12 +4,15 @@
  */
 
 import { TRPCError } from '@trpc/server';
+import path from 'path';
+
 import { putObject } from '../storage';
 import { logAudit } from '../lib/auditLog';
 import type { Context } from '../lib/trpc';
 
 const ALLOWED_MIMES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
 const MAX_SIZE = 2 * 1024 * 1024; // 2MB
+const ALLOWED_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp'];
 
 export async function uploadBrandLogo(
   ctx: Context,
@@ -23,7 +26,7 @@ export async function uploadBrandLogo(
     };
   }
 ): Promise<{ url: string }> {
-  // Validazioni
+  // Validazioni MIME type
   if (!ALLOWED_MIMES.includes(params.file.mimetype)) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
@@ -31,10 +34,25 @@ export async function uploadBrandLogo(
     });
   }
 
+  // Validazione dimensione file
   if (params.file.size > MAX_SIZE) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
       message: `File troppo grande. Max 2MB`,
+    });
+  }
+
+  // Sanitizzazione filename per prevenire path traversal
+  const sanitizedFilename = path
+    .basename(params.file.filename)
+    .replace(/[^a-zA-Z0-9._-]/g, '_');
+
+  // Validazione estensione file (oltre MIME type)
+  const ext = path.extname(sanitizedFilename).toLowerCase();
+  if (!ALLOWED_EXTENSIONS.includes(ext)) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: `Estensione file non valida. Usa: ${ALLOWED_EXTENSIONS.join(', ')}`,
     });
   }
 
@@ -50,10 +68,10 @@ export async function uploadBrandLogo(
     });
   }
 
-  // Upload file tramite storage service
+  // Upload file tramite storage service con filename sanitizzato
   const fileObject = await putObject(ctx, {
     bucket: 'brand-logos',
-    originalName: params.file.filename,
+    originalName: sanitizedFilename,
     contentType: params.file.mimetype,
     size: params.file.size,
     stream: params.file.stream,
@@ -76,7 +94,8 @@ export async function uploadBrandLogo(
       targetId: params.brandId,
       result: 'SUCCESS',
       metadata: {
-        filename: params.file.filename,
+        filename: sanitizedFilename,
+        originalFilename: params.file.filename,
         size: params.file.size,
         contentType: params.file.mimetype,
       },

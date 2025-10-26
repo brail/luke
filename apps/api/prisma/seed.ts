@@ -341,7 +341,12 @@ export async function seedContextData(prisma: PrismaClient): Promise<void> {
 
   // Seed Season
   const season = await prisma.season.upsert({
-    where: { code_year: { code: 'SS', year: 2026 } },
+    where: {
+      code_year: {
+        code: 'SS',
+        year: 2026,
+      },
+    },
     update: { isActive: true },
     create: {
       code: 'SS',

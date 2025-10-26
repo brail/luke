@@ -6,6 +6,8 @@ import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
+import { BrandInputSchema, type BrandInput } from '@luke/core';
+
 import { Button } from '../../../../../components/ui/button';
 import {
   Dialog,
@@ -26,25 +28,18 @@ import {
 import { Input } from '../../../../../components/ui/input';
 import { Switch } from '../../../../../components/ui/switch';
 
-/**
- * Schema per validazione form Brand
- */
-const brandFormSchema = z.object({
-  code: z.string().min(1, 'Codice obbligatorio').max(16, 'Max 16 caratteri'),
-  name: z.string().min(1, 'Nome obbligatorio').max(128, 'Max 128 caratteri'),
-  logoUrl: z
-    .union([z.string().url('URL non valido'), z.null(), z.undefined()])
-    .optional(),
-  isActive: z.boolean().default(true),
+// Schema per form con isActive obbligatorio (per React Hook Form)
+const BrandFormSchema = BrandInputSchema.extend({
+  isActive: z.boolean(),
 });
 
-type BrandFormData = z.infer<typeof brandFormSchema>;
+type BrandFormData = z.infer<typeof BrandFormSchema>;
 
 interface BrandDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   brand?: any;
-  onSubmit: (data: BrandFormData) => Promise<void>;
+  onSubmit: (data: BrandInput) => Promise<void>;
   isLoading: boolean;
 }
 
@@ -64,7 +59,7 @@ export function BrandDialog({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const form = useForm<BrandFormData>({
-    resolver: zodResolver(brandFormSchema),
+    resolver: zodResolver(BrandFormSchema),
     defaultValues: {
       code: brand?.code || '',
       name: brand?.name || '',
@@ -160,7 +155,15 @@ export function BrandDialog({
   // Handler per submit form
   const handleSubmit = async (data: BrandFormData) => {
     try {
-      await onSubmit(data);
+      // Converti BrandFormData a BrandInput per il backend
+      const brandInput: BrandInput = {
+        code: data.code,
+        name: data.name,
+        logoUrl: data.logoUrl,
+        isActive: data.isActive,
+      };
+
+      await onSubmit(brandInput);
       // Non chiudiamo il modal qui - lo gestisce il componente padre
     } catch (error) {
       console.error('Errore submit form:', error);
@@ -182,10 +185,10 @@ export function BrandDialog({
         </DialogHeader>
 
         <Form {...form}>
-            <form
-              onSubmit={form.handleSubmit(handleSubmit)}
-              className="space-y-6"
-            >
+          <form
+            onSubmit={form.handleSubmit(handleSubmit)}
+            className="space-y-6"
+          >
             {/* Logo Upload */}
             <div className="space-y-4">
               <FormLabel>Logo</FormLabel>
@@ -214,8 +217,17 @@ export function BrandDialog({
                     variant="outline"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isUploading || !brand?.id}
+                    title={
+                      !brand?.id
+                        ? 'Salva prima il brand per caricare il logo'
+                        : undefined
+                    }
                   >
-                    {isUploading ? 'Caricamento...' : brand?.id ? 'Carica Logo' : 'Salva prima il brand'}
+                    {isUploading
+                      ? 'Caricamento...'
+                      : brand?.id
+                        ? 'Carica Logo'
+                        : 'Salva prima il brand'}
                   </Button>
                   <input
                     ref={fileInputRef}

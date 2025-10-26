@@ -6,26 +6,11 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { BrandInputSchema, BrandIdSchema } from '@luke/core';
+
 import { logAudit } from '../lib/auditLog';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, adminOrEditorProcedure } from '../lib/trpc';
-
-/**
- * Schema per input Brand
- */
-const brandInputSchema = z.object({
-  code: z.string().min(1, 'Codice obbligatorio').max(16, 'Max 16 caratteri'),
-  name: z.string().min(1, 'Nome obbligatorio').max(128, 'Max 128 caratteri'),
-  logoUrl: z.string().nullable().optional(),
-  isActive: z.boolean().default(true),
-});
-
-/**
- * Schema per ID Brand
- */
-const brandIdSchema = z.object({
-  id: z.string().uuid('ID brand non valido'),
-});
 
 /**
  * Router per gestione Brand
@@ -81,7 +66,7 @@ export const brandRouter = router({
    */
   create: adminOrEditorProcedure
     .use(withRateLimit('brandMutations'))
-    .input(brandInputSchema)
+    .input(BrandInputSchema)
     .mutation(async ({ input, ctx }) => {
       // Verifica che il codice non esista già
       const existingBrand = await ctx.prisma.brand.findUnique({
@@ -121,7 +106,7 @@ export const brandRouter = router({
     .input(
       z.object({
         id: z.string().uuid(),
-        data: brandInputSchema.partial(),
+        data: BrandInputSchema.partial(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -181,7 +166,7 @@ export const brandRouter = router({
    */
   remove: adminOrEditorProcedure
     .use(withRateLimit('brandMutations'))
-    .input(brandIdSchema)
+    .input(BrandIdSchema)
     .mutation(async ({ input, ctx }) => {
       const { id } = input;
 
@@ -226,7 +211,7 @@ export const brandRouter = router({
    */
   hardDelete: adminOrEditorProcedure
     .use(withRateLimit('brandMutations'))
-    .input(brandIdSchema)
+    .input(BrandIdSchema)
     .mutation(async ({ input, ctx }) => {
       const { id } = input;
 
