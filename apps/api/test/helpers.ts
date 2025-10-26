@@ -77,14 +77,20 @@ export async function createTestUser(
   user: any;
   session: UserSession;
 }> {
+  // Genera identificatori univoci usando timestamp + random
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 8);
+  const uniqueId = `${timestamp}-${random}`;
+  
   const user = await testPrisma.user.create({
     data: {
-      email: `${role}@test.com`,
-      username: role,
+      email: `${role}-${uniqueId}@test.com`,
+      username: `${role}-${uniqueId}`,
       firstName: role.charAt(0).toUpperCase() + role.slice(1),
       lastName: 'User',
       role,
       isActive: true,
+      emailVerifiedAt: new Date(), // Campo richiesto per i test
     },
   });
 
@@ -93,7 +99,7 @@ export async function createTestUser(
     data: {
       userId: user.id,
       provider: 'LOCAL',
-      providerId: role,
+      providerId: `${role}-${uniqueId}`, // Assicura unicità
     },
   });
 

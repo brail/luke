@@ -16,7 +16,7 @@ import { router, adminOrEditorProcedure } from '../lib/trpc';
 const brandInputSchema = z.object({
   code: z.string().min(1, 'Codice obbligatorio').max(16, 'Max 16 caratteri'),
   name: z.string().min(1, 'Nome obbligatorio').max(128, 'Max 128 caratteri'),
-  logoUrl: z.string().url('URL non valido').nullable().optional(),
+  logoUrl: z.string().nullable().optional(),
   isActive: z.boolean().default(true),
 });
 
