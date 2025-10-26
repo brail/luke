@@ -1,5 +1,6 @@
 'use client';
 
+import { useSession } from 'next-auth/react';
 import React, { createContext, useContext, useState } from 'react';
 
 import { trpc } from '../lib/trpc';
@@ -43,11 +44,13 @@ interface AppContextProviderProps {
  * Carica il context corrente e gestisce lo stato di setup
  */
 export function AppContextProvider({ children }: AppContextProviderProps) {
+  const { data: session } = useSession();
   const [needsSetup, setNeedsSetup] = useState(false);
 
-  // Query per ottenere il context corrente
+  // Query per ottenere il context corrente - solo se autenticato
   const contextQuery = trpc.context.get.useQuery(undefined, {
     retry: false,
+    enabled: !!session?.user, // Abilita solo se l'utente è autenticato
   });
 
   // Gestione errori con useEffect

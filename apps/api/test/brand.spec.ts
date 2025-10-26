@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { TRPCError } from '@trpc/server';
 
-import { brandRouter } from '../src/routers/brand';
+// import { brandRouter } from '../src/routers/brand'; // Non utilizzato, usa testBrandRouter locale
 import { createTestContext } from './helpers/testContext';
 import { router, adminOrEditorProcedure } from '../src/lib/trpc';
 import {
@@ -392,7 +392,7 @@ describe('Brand Router', () => {
     });
 
     it('should reject update with duplicate code', async () => {
-      // Crea un secondo brand
+      // Crea un secondo brand per testare conflitto codice
       const secondBrand = await testContext.prisma.brand.create({
         data: {
           code: 'SECOND_BRAND',
@@ -400,6 +400,9 @@ describe('Brand Router', () => {
           isActive: true,
         },
       });
+
+      // Verifica che il secondo brand sia stato creato correttamente
+      expect(secondBrand.code).toBe('SECOND_BRAND');
 
       const caller = testBrandRouter.createCaller(testContext);
 
@@ -521,6 +524,247 @@ describe('Brand Router', () => {
 
       expect(activeBrands.items).toHaveLength(1);
       expect(inactiveBrands.items).toHaveLength(1);
+    });
+
+    it('should handle empty search results', async () => {
+      const caller = testBrandRouter.createCaller(testContext);
+
+      const result = await caller.list({ search: 'NONEXISTENT' });
+
+      expect(result.items).toHaveLength(0);
+      expect(result.hasMore).toBe(false);
+      expect(result.nextCursor).toBeNull();
+    });
+
+    it('should handle limit edge cases', async () => {
+      const caller = testBrandRouter.createCaller(testContext);
+
+      // Test limit 0
+      const resultZero = await caller.list({ limit: 0 });
+      expect(resultZero.items).toHaveLength(0);
+
+      // Test limit molto alto
+      const resultHigh = await caller.list({ limit: 1000 });
+      expect(resultHigh.items).toHaveLength(1);
+      expect(resultHigh.hasMore).toBe(false);
+    });
+  });
+
+  describe('normalizeCode edge cases', () => {
+    it('should handle special characters in code normalization', async () => {
+      const caller = testBrandRouter.createCaller(testContext);
+
+      const testCases = [
+        { input: 'test@brand#1', expected: 'TEST@BRAND#1' },
+        { input: 'brand-with-dashes', expected: 'BRAND-WITH-DASHES' },
+        { input: 'brand_with_underscores', expected: 'BRAND_WITH_UNDERSCORES' },
+        { input: 'brand.with.dots', expected: 'BRAND.WITH.DOTS' },
+        { input: 'brand with spaces', expected: 'BRAND WITH SPACES' },
+        { input: 'BRAND123', expected: 'BRAND123' },
+      ];
+
+      for (const testCase of testCases) {
+        const brandData = {
+          code: testCase.input,
+          name: `Test Brand ${testCase.input}`,
+          isActive: true,
+        };
+
+        const result = await caller.create(brandData);
+        expect(result.code).toBe(testCase.expected);
+
+        // Cleanup per il prossimo test
+        await testContext.prisma.brand.delete({
+          where: { id: result.id },
+        });
+      }
+    });
+
+    it('should handle unicode characters in code', async () => {
+      const caller = testBrandRouter.createCaller(testContext);
+
+      const brandData = {
+        code: 'café-brand',
+        name: 'Café Brand',
+        isActive: true,
+      };
+
+      const result = await caller.create(brandData);
+      expect(result.code).toBe('CAFÉ-BRAND');
+    });
+  });
+
+  describe('concurrency tests', () => {
+    it('should handle concurrent brand creation with same code', async () => {
+      const caller = testBrandRouter.createCaller(testContext);
+
+      const brandData = {
+        code: 'CONCURRENT_TEST',
+        name: 'Concurrent Test Brand',
+        isActive: true,
+      };
+
+      // Simula creazione concorrente
+      const promises = Array.from({ length: 3 }, () =>
+        caller.create(brandData).catch(error => error)
+      );
+
+      const results = await Promise.all(promises);
+
+      // Solo uno dovrebbe riuscire, gli altri dovrebbero fallire con CONFLICT
+      const successes = results.filter(r => !r.code);
+      const conflicts = results.filter(r => r.code === 'CONFLICT');
+
+      expect(successes).toHaveLength(1);
+      expect(conflicts).toHaveLength(2);
+    });
+
+    it('should handle concurrent updates to same brand', async () => {
+      const caller = testBrandRouter.createCaller(testContext);
+
+      // Crea un secondo brand per testare update concorrente
+      const secondBrand = await testContext.prisma.brand.create({
+        data: {
+          code: 'CONCURRENT_UPDATE',
+          name: 'Concurrent Update Brand',
+          isActive: true,
+        },
+      });
+
+      const updatePromises = Array.from({ length: 3 }, (_, i) =>
+        caller
+          .update({
+            id: secondBrand.id,
+            data: { name: `Updated Name ${i}` },
+          })
+          .catch(error => error)
+      );
+
+      const results = await Promise.all(updatePromises);
+
+      // Tutti dovrebbero riuscire (update non ha conflitti di codice)
+      const successes = results.filter(r => !r.code);
+      expect(successes).toHaveLength(3);
+    });
+  });
+
+  describe('soft delete vs hard delete', () => {
+    it('should implement soft delete correctly', async () => {
+      const caller = testBrandRouter.createCaller(testContext);
+
+      // Crea un brand per soft delete
+      const brandToSoftDelete = await testContext.prisma.brand.create({
+        data: {
+          code: 'SOFT_DELETE_TEST',
+          name: 'Soft Delete Test',
+          isActive: true,
+        },
+      });
+
+      // Soft delete (remove) - non implementato nel test router, ma testiamo il comportamento
+      // Simuliamo soft delete direttamente nel DB
+      await testContext.prisma.brand.update({
+        where: { id: brandToSoftDelete.id },
+        data: { isActive: false },
+      });
+
+      // Verifica che il brand sia ancora nel DB ma inattivo
+      const softDeletedBrand = await testContext.prisma.brand.findUnique({
+        where: { id: brandToSoftDelete.id },
+      });
+
+      expect(softDeletedBrand).toBeDefined();
+      expect(softDeletedBrand?.isActive).toBe(false);
+
+      // Verifica che non appaia nelle liste attive
+      const activeBrands = await caller.list({ isActive: true });
+      const inactiveBrands = await caller.list({ isActive: false });
+
+      expect(
+        activeBrands.items.find(b => b.id === brandToSoftDelete.id)
+      ).toBeUndefined();
+      expect(
+        inactiveBrands.items.find(b => b.id === brandToSoftDelete.id)
+      ).toBeDefined();
+    });
+
+    it('should handle hard delete with proper cleanup', async () => {
+      const caller = testBrandRouter.createCaller(testContext);
+
+      // Crea un brand per hard delete
+      const brandToHardDelete = await testContext.prisma.brand.create({
+        data: {
+          code: 'HARD_DELETE_TEST',
+          name: 'Hard Delete Test',
+          isActive: true,
+        },
+      });
+
+      // Hard delete
+      const result = await caller.hardDelete({ id: brandToHardDelete.id });
+
+      expect(result).toEqual({
+        success: true,
+        message: 'Brand eliminato definitivamente',
+      });
+
+      // Verifica che il brand sia completamente rimosso dal DB
+      const deletedBrand = await testContext.prisma.brand.findUnique({
+        where: { id: brandToHardDelete.id },
+      });
+
+      expect(deletedBrand).toBeNull();
+    });
+  });
+
+  describe('edge cases and error handling', () => {
+    it('should handle very long brand names', async () => {
+      const caller = testBrandRouter.createCaller(testContext);
+
+      const longName = 'A'.repeat(500); // Nome molto lungo
+      const brandData = {
+        code: 'LONG_NAME_TEST',
+        name: longName,
+        isActive: true,
+      };
+
+      const result = await caller.create(brandData);
+      expect(result.name).toBe(longName);
+    });
+
+    it('should handle empty string inputs gracefully', async () => {
+      const caller = testBrandRouter.createCaller(testContext);
+
+      // Test con nome vuoto
+      await expect(
+        caller.create({
+          code: 'EMPTY_NAME_TEST',
+          name: '',
+          isActive: true,
+        })
+      ).rejects.toThrow();
+
+      // Test con codice vuoto
+      await expect(
+        caller.create({
+          code: '',
+          name: 'Empty Code Test',
+          isActive: true,
+        })
+      ).rejects.toThrow();
+    });
+
+    it('should handle null and undefined values', async () => {
+      const caller = testBrandRouter.createCaller(testContext);
+
+      // Test con valori null
+      await expect(
+        caller.create({
+          code: 'NULL_TEST',
+          name: null as any,
+          isActive: true,
+        })
+      ).rejects.toThrow();
     });
   });
 });
