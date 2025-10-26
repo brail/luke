@@ -27,12 +27,14 @@ export default function BrandsPage() {
 
   // Query per ottenere la lista dei brand
   const {
-    data: brands = [],
+    data: brandsData = { items: [], nextCursor: null, hasMore: false },
     isLoading,
     refetch,
   } = trpc.brand.list.useQuery({
     search: searchTerm || undefined,
   });
+
+  const brands = brandsData.items;
 
   // Hook centralizzato per invalidazione cache
   const invalidateContext = useInvalidateContext();

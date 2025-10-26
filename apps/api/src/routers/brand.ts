@@ -4,50 +4,71 @@
  */
 
 import { TRPCError } from '@trpc/server';
-import { z } from 'zod';
 
-import { BrandInputSchema, BrandIdSchema } from '@luke/core';
+import {
+  BrandInputSchema,
+  BrandIdSchema,
+  BrandListInputSchema,
+  BrandUpdateInputSchema,
+  normalizeCode,
+} from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, adminOrEditorProcedure } from '../lib/trpc';
+import { deleteObject } from '../storage';
+
+/**
+ * Costruisce la clausola WHERE per le query Brand
+ */
+function buildWhereClause(filters: {
+  isActive?: boolean;
+  search?: string;
+}): any {
+  const where: any = {};
+
+  if (typeof filters.isActive === 'boolean') {
+    where.isActive = filters.isActive;
+  }
+
+  if (filters.search && filters.search.trim()) {
+    where.OR = [
+      { code: { contains: filters.search } },
+      { name: { contains: filters.search } },
+    ];
+  }
+
+  return where;
+}
+
+/**
+ * Estrae key dal logoUrl per cleanup
+ */
+function extractKeyFromUrl(logoUrl: string): string {
+  // logoUrl format: /api/uploads/brand-logos/{key}
+  const parts = logoUrl.split('/');
+  return parts[parts.length - 1];
+}
 
 /**
  * Router per gestione Brand
  */
 export const brandRouter = router({
   /**
-   * Lista tutti i brand con filtri opzionali
+   * Lista tutti i brand con filtri opzionali e cursor pagination
    * Richiede ruolo admin o editor
    */
   list: adminOrEditorProcedure
-    .input(
-      z
-        .object({
-          isActive: z.boolean().optional(),
-          search: z.string().optional(),
-        })
-        .optional()
-    )
+    .input(BrandListInputSchema.optional())
     .query(async ({ ctx, input }) => {
-      const { isActive, search } = input || {};
+      const cursor = input?.cursor;
+      const limit = input?.limit ?? 50;
 
-      const where: any = {};
-
-      if (typeof isActive === 'boolean') {
-        where.isActive = isActive;
-      }
-
-      if (search && search.trim()) {
-        where.OR = [
-          { code: { contains: search } },
-          { name: { contains: search } },
-        ];
-      }
-
-      return ctx.prisma.brand.findMany({
-        where,
-        orderBy: [{ name: 'asc' }],
+      const items = await ctx.prisma.brand.findMany({
+        where: buildWhereClause(input || {}),
+        take: limit + 1, // Prendi uno in più per determinare se ci sono altri risultati
+        cursor: cursor ? { id: cursor } : undefined,
+        orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }], // Ordine deterministico per cursor
         select: {
           id: true,
           code: true,
@@ -58,6 +79,16 @@ export const brandRouter = router({
           updatedAt: true,
         },
       });
+
+      const hasMore = items.length > limit;
+      const results = hasMore ? items.slice(0, limit) : items;
+      const nextCursor = hasMore ? results[results.length - 1].id : null;
+
+      return {
+        items: results,
+        nextCursor,
+        hasMore: !!nextCursor,
+      };
     }),
 
   /**
@@ -68,33 +99,37 @@ export const brandRouter = router({
     .use(withRateLimit('brandMutations'))
     .input(BrandInputSchema)
     .mutation(async ({ input, ctx }) => {
-      // Verifica che il codice non esista già
-      const existingBrand = await ctx.prisma.brand.findUnique({
-        where: { code: input.code },
-      });
+      const normalizedCode = normalizeCode(input.code);
 
-      if (existingBrand) {
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: 'Codice brand già esistente',
+      return ctx.prisma.$transaction(async tx => {
+        // Verifica che il codice normalizzato non esista già
+        const existingBrand = await tx.brand.findUnique({
+          where: { code: normalizedCode },
         });
-      }
 
-      const created = await ctx.prisma.brand.create({
-        data: input,
+        if (existingBrand) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: 'Codice brand già esistente',
+          });
+        }
+
+        const created = await tx.brand.create({
+          data: { ...input, code: normalizedCode },
+        });
+
+        // Audit logging gestito automaticamente dal middleware withAuditLog
+
+        return {
+          id: created.id,
+          code: created.code,
+          name: created.name,
+          logoUrl: created.logoUrl,
+          isActive: created.isActive,
+          createdAt: created.createdAt,
+          updatedAt: created.updatedAt,
+        };
       });
-
-      // Audit logging gestito automaticamente dal middleware withAuditLog
-
-      return {
-        id: created.id,
-        code: created.code,
-        name: created.name,
-        logoUrl: created.logoUrl,
-        isActive: created.isActive,
-        createdAt: created.createdAt,
-        updatedAt: created.updatedAt,
-      };
     }),
 
   /**
@@ -103,60 +138,62 @@ export const brandRouter = router({
    */
   update: adminOrEditorProcedure
     .use(withRateLimit('brandMutations'))
-    .input(
-      z.object({
-        id: z.string().uuid(),
-        data: BrandInputSchema.partial(),
-      })
-    )
+    .input(BrandUpdateInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const { id, data } = input;
-
-      // Verifica che il brand esista
-      const existingBrand = await ctx.prisma.brand.findUnique({
-        where: { id },
-      });
-
-      if (!existingBrand) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Brand non trovato',
-        });
-      }
-
-      // Se si sta aggiornando il codice, verifica che non esista già
-      if (data.code && data.code !== existingBrand.code) {
-        const conflictingBrand = await ctx.prisma.brand.findUnique({
-          where: { code: data.code },
+      return ctx.prisma.$transaction(async tx => {
+        // Verifica che il brand esista
+        const existingBrand = await tx.brand.findUnique({
+          where: { id: input.id },
         });
 
-        if (conflictingBrand) {
+        if (!existingBrand) {
           throw new TRPCError({
-            code: 'CONFLICT',
-            message: 'Codice brand già esistente',
+            code: 'NOT_FOUND',
+            message: 'Brand non trovato',
           });
         }
-      }
 
-      const updated = await ctx.prisma.brand.update({
-        where: { id },
-        data: {
-          ...data,
-          updatedAt: new Date(),
-        },
+        // Se si sta aggiornando il codice, verifica che non esista già
+        if (input.data.code && input.data.code !== existingBrand.code) {
+          const normalizedCode = normalizeCode(input.data.code);
+          const conflictingBrand = await tx.brand.findFirst({
+            where: {
+              code: normalizedCode,
+              id: { not: input.id },
+            },
+          });
+
+          if (conflictingBrand) {
+            throw new TRPCError({
+              code: 'CONFLICT',
+              message: 'Codice brand già esistente',
+            });
+          }
+
+          // Aggiorna il codice con la versione normalizzata
+          input.data.code = normalizedCode;
+        }
+
+        const updated = await tx.brand.update({
+          where: { id: input.id },
+          data: {
+            ...input.data,
+            updatedAt: new Date(),
+          },
+        });
+
+        // Audit logging gestito automaticamente dal middleware withAuditLog
+
+        return {
+          id: updated.id,
+          code: updated.code,
+          name: updated.name,
+          logoUrl: updated.logoUrl,
+          isActive: updated.isActive,
+          createdAt: updated.createdAt,
+          updatedAt: updated.updatedAt,
+        };
       });
-
-      // Audit logging gestito automaticamente dal middleware withAuditLog
-
-      return {
-        id: updated.id,
-        code: updated.code,
-        name: updated.name,
-        logoUrl: updated.logoUrl,
-        isActive: updated.isActive,
-        createdAt: updated.createdAt,
-        updatedAt: updated.updatedAt,
-      };
     }),
 
   /**
@@ -213,77 +250,66 @@ export const brandRouter = router({
     .use(withRateLimit('brandMutations'))
     .input(BrandIdSchema)
     .mutation(async ({ input, ctx }) => {
-      const { id } = input;
-
-      // Verifica che il brand esista
-      const existingBrand = await ctx.prisma.brand.findUnique({
-        where: { id },
-      });
-
-      if (!existingBrand) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Brand non trovato',
+      return ctx.prisma.$transaction(async tx => {
+        // Verifica che il brand esista
+        const brand = await tx.brand.findUnique({
+          where: { id: input.id },
         });
-      }
 
-      // Check integrità referenziale: verifica se brand è in uso nelle preferenze utente
-      const referencedInPreferences = await ctx.prisma.userPreference.findFirst(
-        {
-          where: { lastBrandId: id },
-          select: { userId: true },
+        if (!brand) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Brand non trovato',
+          });
         }
-      );
 
-      if (referencedInPreferences) {
-        throw new TRPCError({
-          code: 'PRECONDITION_FAILED',
-          message:
-            'Impossibile eliminare: brand in uso nelle preferenze utente',
+        // Check integrità referenziale: verifica se brand è in uso nelle preferenze utente
+        const referencedInPreferences = await tx.userPreference.findFirst({
+          where: { lastBrandId: input.id },
+          select: { userId: true },
         });
-      }
 
-      // Hard delete: elimina brand dal database
-      try {
-        await ctx.prisma.brand.delete({
-          where: { id },
+        if (referencedInPreferences) {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message:
+              'Impossibile eliminare: brand in uso nelle preferenze utente',
+          });
+        }
+
+        // Hard delete: elimina brand dal database
+        await tx.brand.delete({
+          where: { id: input.id },
         });
+
+        // Cleanup logo file (best-effort, fuori transazione)
+        if (brand.logoUrl) {
+          setImmediate(async () => {
+            try {
+              const key = extractKeyFromUrl(brand.logoUrl!);
+              await deleteObject(ctx, key);
+            } catch (err) {
+              ctx.logger?.warn(
+                { err },
+                'Failed to delete logo during hardDelete'
+              );
+            }
+          });
+        }
 
         // Log SUCCESS dopo delete riuscita
         await logAudit(ctx, {
           action: 'BRAND_HARD_DELETE',
           targetType: 'Brand',
-          targetId: id,
+          targetId: input.id,
           result: 'SUCCESS',
           metadata: {
-            deletedCode: existingBrand.code,
-            deletedName: existingBrand.name,
+            deletedCode: brand.code,
+            deletedName: brand.name,
           },
         });
 
         return { success: true, message: 'Brand eliminato definitivamente' };
-      } catch (error) {
-        // Gestione errori Prisma FK constraints
-        if ((error as any).code === 'P2003') {
-          throw new TRPCError({
-            code: 'PRECONDITION_FAILED',
-            message:
-              'Impossibile eliminare: brand referenziato da altre entità',
-          });
-        }
-
-        // Log FAILURE in catch
-        await logAudit(ctx, {
-          action: 'BRAND_HARD_DELETE',
-          targetType: 'Brand',
-          targetId: id,
-          result: 'FAILURE',
-          metadata: {
-            errorCode: (error as any).code || 'UNKNOWN',
-            errorMessage: (error as any).message?.substring(0, 100),
-          },
-        });
-        throw error;
-      }
+      });
     }),
 });

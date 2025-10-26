@@ -15,7 +15,7 @@ export const BrandInputSchema = z.object({
     .string()
     .min(1, 'Codice obbligatorio')
     .max(16, 'Max 16 caratteri')
-    .regex(/^[A-Z0-9_-]+$/, 'Solo maiuscole, numeri, _ e -'),
+    .regex(/^[A-Za-z0-9_-]+$/, 'Solo lettere, numeri, _ e -'),
 
   /** Nome del brand (max 128 caratteri) */
   name: z
@@ -70,8 +70,8 @@ export const BrandSchema = z.object({
 });
 
 /**
- * Schema per lista Brand con filtri opzionali
- * Utilizzato per query con filtri
+ * Schema per lista Brand con filtri opzionali e cursor pagination
+ * Utilizzato per query con filtri e paginazione
  */
 export const BrandListInputSchema = z.object({
   /** Filtro per brand attivi/disattivi */
@@ -79,6 +79,12 @@ export const BrandListInputSchema = z.object({
 
   /** Termine di ricerca per nome o codice */
   search: z.string().optional(),
+
+  /** Cursor per paginazione (UUID del brand) */
+  cursor: z.string().uuid().optional(),
+
+  /** Limite risultati per pagina (1-100, default 50) */
+  limit: z.number().min(1).max(100).default(50),
 });
 
 /**
@@ -124,3 +130,19 @@ export const BrandLogoUploadSchema = z.object({
 });
 
 export type BrandLogoUpload = z.infer<typeof BrandLogoUploadSchema>;
+
+/**
+ * Normalizza il codice brand per consistency
+ * - Trimma spazi bianchi
+ * - Converte in maiuscolo
+ * - Rimuove caratteri non validi (mantiene solo A-Z, 0-9, _, -)
+ *
+ * @param code - Codice brand da normalizzare
+ * @returns Codice normalizzato
+ */
+export function normalizeCode(code: string): string {
+  return code
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9_-]/g, '');
+}

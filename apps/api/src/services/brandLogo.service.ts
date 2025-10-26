@@ -98,18 +98,6 @@ export async function uploadBrandLogo(
     });
   }
 
-  // Verifica Brand esiste
-  const brand = await ctx.prisma.brand.findUnique({
-    where: { id: params.brandId },
-  });
-
-  if (!brand) {
-    throw new TRPCError({
-      code: 'NOT_FOUND',
-      message: 'Brand non trovato',
-    });
-  }
-
   // Converti stream in buffer per validazione magic bytes
   const buffer = await streamToBuffer(params.file.stream);
 
@@ -121,20 +109,22 @@ export async function uploadBrandLogo(
     });
   }
 
-  // Cleanup logo precedente se esiste
-  if (brand.logoUrl) {
-    try {
-      const oldKey = extractKeyFromUrl(brand.logoUrl);
-      await deleteObject(ctx, oldKey);
-    } catch (err) {
-      ctx.logger?.warn({ err }, 'Failed to delete old logo');
-    }
-  }
-
   // Ricrea stream dal buffer per upload
   const newStream = Readable.from(buffer);
 
-  // Upload file tramite storage service con filename sanitizzato
+  // Verifica Brand esiste prima dell'upload
+  const brand = await ctx.prisma.brand.findUnique({
+    where: { id: params.brandId },
+  });
+
+  if (!brand) {
+    throw new TRPCError({
+      code: 'NOT_FOUND',
+      message: 'Brand non trovato',
+    });
+  }
+
+  // Upload nuovo logo tramite storage service con filename sanitizzato
   const fileObject = await putObject(ctx, {
     bucket: 'brand-logos',
     originalName: sanitizedFilename,
@@ -151,6 +141,18 @@ export async function uploadBrandLogo(
     where: { id: params.brandId },
     data: { logoUrl },
   });
+
+  // Cleanup vecchio logo (best-effort)
+  if (brand.logoUrl) {
+    setImmediate(async () => {
+      try {
+        const oldKey = extractKeyFromUrl(brand.logoUrl!);
+        await deleteObject(ctx, oldKey);
+      } catch (err) {
+        ctx.logger?.warn({ err }, 'Failed to cleanup old logo');
+      }
+    });
+  }
 
   // Audit log in try/catch per non fallire la response
   try {

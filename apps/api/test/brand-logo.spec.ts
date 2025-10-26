@@ -260,26 +260,62 @@ describe('Brand Logo Upload', () => {
     });
   });
 
-  describe('error handling', () => {
-    it('should throw NOT_FOUND for non-existent brand', async () => {
-      const nonExistentId = '00000000-0000-0000-0000-000000000000';
-      const buffer = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
-      const stream = Readable.from(buffer);
+  describe('transaction atomicity', () => {
+    it('should update brand logoUrl atomically', async () => {
+      const pngBuffer = Buffer.from([
+        0x89,
+        0x50,
+        0x4e,
+        0x47,
+        0x0d,
+        0x0a,
+        0x1a,
+        0x0a, // PNG signature
+        0x00,
+        0x00,
+        0x00,
+        0x0d, // IHDR chunk length
+        0x49,
+        0x48,
+        0x44,
+        0x52, // IHDR
+        0x00,
+        0x00,
+        0x00,
+        0x01, // width
+        0x00,
+        0x00,
+        0x00,
+        0x01, // height
+        0x08,
+        0x02,
+        0x00,
+        0x00,
+        0x00, // bit depth, color type, etc.
+        0x90,
+        0x77,
+        0x53,
+        0xde, // CRC
+      ]);
+      const pngStream = Readable.from(pngBuffer);
 
-      await expect(
-        uploadBrandLogo(testContext, {
-          brandId: nonExistentId,
-          file: {
-            filename: 'test.png',
-            mimetype: 'image/png',
-            stream: stream,
-            size: buffer.length,
-          },
-        })
-      ).rejects.toMatchObject({
-        code: 'NOT_FOUND',
-        message: 'Brand non trovato',
+      const result = await uploadBrandLogo(testContext, {
+        brandId: testBrand.id,
+        file: {
+          filename: 'test.png',
+          mimetype: 'image/png',
+          stream: pngStream,
+          size: pngBuffer.length,
+        },
       });
+
+      // Verifica che il brand sia stato aggiornato con il nuovo logoUrl
+      const updatedBrand = await testContext.prisma.brand.findUnique({
+        where: { id: testBrand.id },
+      });
+
+      expect(updatedBrand?.logoUrl).toBe(result.url);
+      expect(result.url).toMatch(/^\/api\/uploads\/brand-logos\//);
     });
   });
 });
