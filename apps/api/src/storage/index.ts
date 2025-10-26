@@ -53,7 +53,7 @@ async function loadStorageConfig(prisma: PrismaClient) {
 
   const bucketsStr =
     (await getConfig(prisma, 'storage.local.buckets', false)) ||
-    '["uploads","exports","assets","brand-logos"]';
+    '["uploads","exports","assets","brand-logos","temp-brand-logos"]';
   const buckets = JSON.parse(bucketsStr);
 
   // Valida con schema Zod

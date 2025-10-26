@@ -30,6 +30,7 @@ import { runReadinessChecks } from './observability/readiness';
 import { storagePlugin } from './plugins/storage-upload';
 import brandLogoRoutes from './routes/brandLogo.routes';
 import { appRouter } from './routers';
+import { getStorageProvider } from './storage';
 
 /**
  * Configurazione del logger Pino con serializers per sicurezza
@@ -349,6 +350,68 @@ async function registerHealthRoute() {
 }
 
 /**
+ * Cron job per cleanup file temporanei più vecchi di 1 ora
+ */
+function setupTempFileCleanup() {
+  const cleanupInterval = 30 * 60 * 1000; // 30 minuti
+
+  const cleanupTempFiles = async () => {
+    try {
+      const provider = await getStorageProvider(prisma);
+
+      // Trova file temporanei più vecchi di 1 ora
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      const tempFiles = await prisma.fileObject.findMany({
+        where: {
+          bucket: 'temp-brand-logos',
+          createdAt: { lt: oneHourAgo },
+        },
+      });
+
+      if (tempFiles.length > 0) {
+        fastify.log.info(
+          `Cleaning up ${tempFiles.length} temp files older than 1 hour`
+        );
+
+        for (const file of tempFiles) {
+          try {
+            // Cancella file dallo storage
+            await provider.delete({
+              bucket: 'temp-brand-logos',
+              key: file.key,
+            });
+
+            // Cancella metadati dal DB
+            await prisma.fileObject.delete({
+              where: { id: file.id },
+            });
+
+            fastify.log.debug(`Cleaned up temp file: ${file.key}`);
+          } catch (err) {
+            fastify.log.warn(
+              { err, fileKey: file.key },
+              'Failed to cleanup temp file'
+            );
+          }
+        }
+
+        fastify.log.info(
+          `Cleanup completed: ${tempFiles.length} temp files removed`
+        );
+      }
+    } catch (err) {
+      fastify.log.error({ err }, 'Temp file cleanup job failed');
+    }
+  };
+
+  // Avvia cleanup immediato e poi ogni 30 minuti
+  setImmediate(cleanupTempFiles);
+  setInterval(cleanupTempFiles, cleanupInterval);
+
+  fastify.log.info('Temp file cleanup job started (every 30 minutes)');
+}
+
+/**
  * Configura graceful shutdown
  */
 function setupGracefulShutdown() {
@@ -437,6 +500,9 @@ const start = async () => {
     await registerBrandLogoRoutes(); // Brand logo upload routes
     await registerStaticFiles(); // Static file server per uploads
     await registerHealthRoute();
+
+    // Configura cleanup file temporanei
+    setupTempFileCleanup();
 
     // Configura graceful shutdown
     setupGracefulShutdown();

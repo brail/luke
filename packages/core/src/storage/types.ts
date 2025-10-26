@@ -13,8 +13,15 @@
  * - uploads: File caricati dagli utenti
  * - exports: File esportati dal sistema
  * - assets: Asset statici e risorse
+ * - brand-logos: Logo dei brand
+ * - temp-brand-logos: File temporanei per logo durante creazione brand
  */
-export type StorageBucket = 'uploads' | 'exports' | 'assets' | 'brand-logos';
+export type StorageBucket =
+  | 'uploads'
+  | 'exports'
+  | 'assets'
+  | 'brand-logos'
+  | 'temp-brand-logos';
 
 /**
  * Metadati di un file memorizzato

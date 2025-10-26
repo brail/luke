@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 
@@ -41,11 +41,17 @@ export function BrandAvatar({
   // Genera le iniziali dal codice (prime 2 caratteri)
   const initials = brand.code.substring(0, 2).toUpperCase();
 
+  // Cache-busting stabile basato sull'ID del brand invece di Date.now()
+  const logoUrlWithCacheBust = useMemo(() => {
+    if (!brand.logoUrl) return null;
+    return `${brand.logoUrl}?v=${brand.id}`;
+  }, [brand.logoUrl, brand.id]);
+
   return (
     <Avatar className={`${sizeClasses[size]} ${className || ''}`}>
-      {brand.logoUrl && (
+      {logoUrlWithCacheBust && (
         <AvatarImage
-          src={brand.logoUrl}
+          src={logoUrlWithCacheBust}
           alt={`Logo ${brand.code}`}
           className="object-cover"
         />

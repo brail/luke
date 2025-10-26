@@ -28,8 +28,10 @@ interface Brand {
 interface BrandTableProps {
   brands: Brand[];
   isLoading: boolean;
+  error?: any; // tRPC error type
   onEdit: (brand: Brand) => void;
   onDelete: (brand: Brand) => void;
+  onRetry?: () => void;
 }
 
 /**
@@ -39,9 +41,26 @@ interface BrandTableProps {
 export function BrandTable({
   brands,
   isLoading,
+  error,
   onEdit,
   onDelete,
+  onRetry,
 }: BrandTableProps) {
+  if (error) {
+    return (
+      <div className="text-center py-8">
+        <p className="text-destructive mb-4">
+          Errore caricamento brand: {error.message}
+        </p>
+        {onRetry && (
+          <Button onClick={onRetry} variant="outline">
+            Riprova
+          </Button>
+        )}
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="space-y-4">

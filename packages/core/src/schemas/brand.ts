@@ -29,6 +29,9 @@ export const BrandInputSchema = z.object({
     .union([z.string().url('URL non valido'), z.null(), z.undefined()])
     .optional(),
 
+  /** ID temporaneo per logo durante creazione brand (opzionale) */
+  tempLogoId: z.string().uuid('ID temporaneo non valido').optional(),
+
   /** Stato attivo del brand (default: true) */
   isActive: z.boolean().default(true),
 });

@@ -29,6 +29,7 @@ export default function BrandsPage() {
   const {
     data: brandsData = { items: [], nextCursor: null, hasMore: false },
     isLoading,
+    error,
     refetch,
   } = trpc.brand.list.useQuery({
     search: searchTerm || undefined,
@@ -42,7 +43,6 @@ export default function BrandsPage() {
   // Mutation per creare/aggiornare brand
   const createMutation = trpc.brand.create.useMutation({
     onSuccess: () => {
-      refetch();
       invalidateContext();
       setIsDialogOpen(false);
       setEditingBrand(null);
@@ -55,7 +55,6 @@ export default function BrandsPage() {
 
   const updateMutation = trpc.brand.update.useMutation({
     onSuccess: updatedBrand => {
-      refetch();
       invalidateContext(updatedBrand.id);
       setIsDialogOpen(false);
       setEditingBrand(null);
@@ -77,7 +76,6 @@ export default function BrandsPage() {
 
   const removeMutation = trpc.brand.remove.useMutation({
     onSuccess: removedBrand => {
-      refetch();
       invalidateContext(removedBrand.id);
       toast.success('Brand eliminato con successo');
 
@@ -169,8 +167,10 @@ export default function BrandsPage() {
         <BrandTable
           brands={brands}
           isLoading={isLoading}
+          error={error}
           onEdit={handleEditBrand}
           onDelete={handleDeleteBrand}
+          onRetry={() => refetch()}
         />
       </SectionCard>
 

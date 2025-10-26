@@ -33,8 +33,8 @@ export async function POST(
     const response = await fetch(backendUrl, {
       method: 'POST',
       headers: {
-        // Inoltra i cookie di sessione per l'autenticazione
-        Cookie: request.headers.get('cookie') || '',
+        // Passa il token JWT per l'autenticazione
+        Authorization: `Bearer ${session.accessToken}`,
         // Aggiungi trace-id per correlazione
         'x-luke-trace-id': traceId,
       },

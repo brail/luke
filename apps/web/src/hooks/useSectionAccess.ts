@@ -19,7 +19,7 @@ export function useSectionAccess() {
   const { data: userOverrides } = trpc.sectionAccess.getForMe.useQuery(
     undefined,
     {
-      enabled: !!session?.user,
+      enabled: !!session?.user && session.user.role === 'admin',
       retry: false, // Non riprovare se 403
     }
   );
@@ -28,7 +28,7 @@ export function useSectionAccess() {
   const { data: roleDefaults } = trpc.rbac.sectionDefaults.get.useQuery(
     undefined,
     {
-      enabled: !!session?.user,
+      enabled: !!session?.user && session.user.role === 'admin',
       retry: false, // Non riprovare se 403
     }
   );

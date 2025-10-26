@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
-import { BrandInputSchema, type BrandInput } from '@luke/core';
+import { BrandInputSchema, type BrandInput, normalizeCode } from '@luke/core';
 
 import { Button } from '../../../../../components/ui/button';
 import {
@@ -55,7 +55,10 @@ export function BrandDialog({
   isLoading,
 }: BrandDialogProps) {
   const [logoUrl, setLogoUrl] = useState<string | null>(brand?.logoUrl || null);
+  const [tempLogoId, setTempLogoId] = useState<string | null>(null);
+  const [tempLogoUrl, setTempLogoUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [codePreview, setCodePreview] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const form = useForm<BrandFormData>({
@@ -63,7 +66,7 @@ export function BrandDialog({
     defaultValues: {
       code: brand?.code || '',
       name: brand?.name || '',
-      logoUrl: brand?.logoUrl || null,
+      logoUrl: brand?.logoUrl || '',
       isActive: brand?.isActive ?? true,
     },
   });
@@ -74,22 +77,57 @@ export function BrandDialog({
       form.reset({
         code: brand.code,
         name: brand.name,
-        logoUrl: brand.logoUrl,
+        logoUrl: brand.logoUrl || '',
         isActive: brand.isActive,
       });
       setLogoUrl(brand.logoUrl);
+      setTempLogoId(null);
+      setTempLogoUrl(null);
+      setCodePreview('');
     } else {
       form.reset({
         code: '',
         name: '',
-        logoUrl: null,
+        logoUrl: '',
         isActive: true,
       });
       setLogoUrl(null);
+      setTempLogoId(null);
+      setTempLogoUrl(null);
+      setCodePreview('');
     }
-  }, [brand, form]);
+  }, [
+    brand?.id,
+    brand?.code,
+    brand?.name,
+    brand?.logoUrl,
+    brand?.isActive,
+    form,
+  ]);
 
-  // Handler per upload logo
+  // Auto-focus su campo code quando dialog si apre
+  React.useEffect(() => {
+    if (open) {
+      // Delay per permettere al dialog di renderizzare
+      setTimeout(() => {
+        const codeInput = document.querySelector(
+          'input[placeholder="es. nike-2024"]'
+        ) as HTMLInputElement;
+        if (codeInput) {
+          codeInput.focus();
+        }
+      }, 100);
+    } else {
+      // Reset form quando dialog si chiude
+      form.reset();
+      setLogoUrl(null);
+      setTempLogoId(null);
+      setTempLogoUrl(null);
+      setCodePreview('');
+    }
+  }, [open, form]);
+
+  // Handler per upload logo (normale o temporaneo)
   const handleLogoUpload = async (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
@@ -112,33 +150,49 @@ export function BrandDialog({
     setIsUploading(true);
 
     try {
-      // Per i brand nuovi, non possiamo fare upload finché non sono creati
-      if (!brand?.id) {
-        toast.error('Salva prima il brand per caricare il logo');
-        setIsUploading(false);
-        return;
-      }
-
       const formData = new globalThis.FormData();
       formData.append('file', file);
 
-      const response = await fetch(`/api/upload/brand-logo/${brand.id}`, {
-        method: 'POST',
-        body: formData,
-      });
+      if (brand?.id) {
+        // Upload normale per brand esistente
+        const response = await fetch(`/api/upload/brand-logo/${brand.id}`, {
+          method: 'POST',
+          body: formData,
+        });
 
-      if (!response.ok) {
-        throw new Error('Upload fallito');
+        if (!response.ok) {
+          throw new Error('Upload fallito');
+        }
+
+        const result = await response.json();
+        setLogoUrl(result.url);
+        form.setValue('logoUrl', result.url);
+        toast.success('Logo caricato con successo');
+      } else {
+        // Upload temporaneo per brand nuovo
+        const tempId = crypto.randomUUID();
+        formData.append('tempId', tempId);
+
+        const response = await fetch('/api/upload/brand-logo/temp', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          throw new Error('Upload temporaneo fallito');
+        }
+
+        const result = await response.json();
+        setTempLogoId(result.tempLogoId);
+        setTempLogoUrl(result.tempLogoUrl);
+        toast.success(
+          'Logo caricato (verrà associato al brand dopo il salvataggio)'
+        );
       }
-
-      const result = await response.json();
-      setLogoUrl(result.url);
-      form.setValue('logoUrl', result.url);
-      toast.success('Logo caricato con successo');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Errore upload';
       toast.error(`Upload fallito: ${message}`);
-      // Mantieni UI in stato safe (non aggiornare logoUrl)
+      // Mantieni UI in stato safe
     } finally {
       setIsUploading(false);
     }
@@ -147,6 +201,8 @@ export function BrandDialog({
   // Handler per rimozione logo
   const handleLogoRemove = () => {
     setLogoUrl(null);
+    setTempLogoId(null);
+    setTempLogoUrl(null);
     form.setValue('logoUrl', null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -161,6 +217,7 @@ export function BrandDialog({
         code: data.code,
         name: data.name,
         logoUrl: data.logoUrl,
+        tempLogoId: tempLogoId || undefined,
         isActive: data.isActive,
       };
 
@@ -190,14 +247,21 @@ export function BrandDialog({
             onSubmit={form.handleSubmit(handleSubmit)}
             className="space-y-6"
           >
+            {/* Campo nascosto per logoUrl */}
+            <FormField
+              control={form.control}
+              name="logoUrl"
+              render={({ field }) => <input type="hidden" {...field} />}
+            />
+
             {/* Logo Upload */}
             <div className="space-y-4">
               <FormLabel>Logo</FormLabel>
               <div className="flex items-center gap-4">
-                {logoUrl && (
+                {(logoUrl || tempLogoUrl) && (
                   <div className="relative">
                     <img
-                      src={logoUrl}
+                      src={logoUrl || tempLogoUrl || ''}
                       alt="Logo brand"
                       className="h-16 w-16 rounded-lg object-cover border"
                     />
@@ -217,18 +281,9 @@ export function BrandDialog({
                     type="button"
                     variant="outline"
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploading || !brand?.id}
-                    title={
-                      !brand?.id
-                        ? 'Salva prima il brand per caricare il logo'
-                        : undefined
-                    }
+                    disabled={isUploading || isLoading}
                   >
-                    {isUploading
-                      ? 'Caricamento...'
-                      : brand?.id
-                        ? 'Carica Logo'
-                        : 'Salva prima il brand'}
+                    {isUploading ? 'Caricamento...' : 'Carica Logo'}
                   </Button>
                   <input
                     ref={fileInputRef}
@@ -239,6 +294,11 @@ export function BrandDialog({
                   />
                   <p className="text-xs text-muted-foreground">
                     PNG, JPEG, WebP. Max 2MB.
+                    {tempLogoUrl && !brand?.id && (
+                      <span className="block text-blue-600">
+                        Logo temporaneo caricato
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -252,8 +312,23 @@ export function BrandDialog({
                 <FormItem>
                   <FormLabel>Codice</FormLabel>
                   <FormControl>
-                    <Input placeholder="es. NIKE, ADIDAS" {...field} />
+                    <Input
+                      placeholder="es. nike-2024"
+                      disabled={isLoading}
+                      {...field}
+                      onChange={e => {
+                        field.onChange(e);
+                        // Mostra anteprima normalizzata
+                        const normalized = normalizeCode(e.target.value);
+                        setCodePreview(normalized);
+                      }}
+                    />
                   </FormControl>
+                  {codePreview && codePreview !== field.value && (
+                    <p className="text-xs text-muted-foreground">
+                      Verrà salvato come: <strong>{codePreview}</strong>
+                    </p>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}
@@ -267,7 +342,11 @@ export function BrandDialog({
                 <FormItem>
                   <FormLabel>Nome</FormLabel>
                   <FormControl>
-                    <Input placeholder="es. Nike, Adidas" {...field} />
+                    <Input
+                      placeholder="es. Nike, Adidas"
+                      disabled={isLoading}
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

@@ -17,6 +17,7 @@ import { logAudit } from '../lib/auditLog';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, adminOrEditorProcedure } from '../lib/trpc';
 import { deleteObject } from '../storage';
+import { moveTempLogoToBrand } from '../services/brandLogo.service';
 
 /**
  * Costruisce la clausola WHERE per le query Brand
@@ -45,9 +46,17 @@ function buildWhereClause(filters: {
  * Estrae key dal logoUrl per cleanup
  */
 function extractKeyFromUrl(logoUrl: string): string {
-  // logoUrl format: /api/uploads/brand-logos/{key}
-  const parts = logoUrl.split('/');
-  return parts[parts.length - 1];
+  // logoUrl format: /api/uploads/brand-logos/{year}/{month}/{day}/{filename}
+  // oppure: /uploads/brand-logos/{year}/{month}/{day}/{filename}
+  const urlParts = logoUrl.split('/');
+  const brandLogosIndex = urlParts.findIndex(part => part === 'brand-logos');
+
+  if (brandLogosIndex === -1) {
+    throw new Error(`Invalid logoUrl format: ${logoUrl}`);
+  }
+
+  // Ritorna tutto dopo 'brand-logos/'
+  return urlParts.slice(brandLogosIndex + 1).join('/');
 }
 
 /**
@@ -118,13 +127,31 @@ export const brandRouter = router({
           data: { ...input, code: normalizedCode },
         });
 
+        // Se presente tempLogoId, sposta file temporaneo
+        let finalLogoUrl = created.logoUrl;
+        if (input.tempLogoId) {
+          try {
+            const moveResult = await moveTempLogoToBrand(ctx, {
+              tempLogoId: input.tempLogoId,
+              brandId: created.id,
+            });
+            finalLogoUrl = moveResult.url;
+          } catch (moveError) {
+            // Log errore ma non fallire la creazione del brand
+            ctx.logger?.warn(
+              { moveError },
+              'Failed to move temp logo to brand'
+            );
+          }
+        }
+
         // Audit logging gestito automaticamente dal middleware withAuditLog
 
         return {
           id: created.id,
           code: created.code,
           name: created.name,
-          logoUrl: created.logoUrl,
+          logoUrl: finalLogoUrl,
           isActive: created.isActive,
           createdAt: created.createdAt,
           updatedAt: created.updatedAt,
