@@ -11,7 +11,7 @@ import type { IPrismaConfigClient } from '../runtime/env';
 export interface IPrismaConfigClientWithWrite extends IPrismaConfigClient {
   appConfig: IPrismaConfigClient['appConfig'] & {
     upsert(args: any): Promise<any>;
-  }
+  };
 }
 
 /**
@@ -32,7 +32,9 @@ export function invalidateRbacCache(): void {
  * @param prisma - Client Prisma
  * @returns Configurazione RBAC completa
  */
-export async function getRbacConfig(prisma: IPrismaConfigClient): Promise<RbacConfig> {
+export async function getRbacConfig(
+  prisma: IPrismaConfigClient
+): Promise<RbacConfig> {
   const cached = cache.get('rbac');
   if (cached && Date.now() - cached.ts < TTL) {
     return cached.data;
@@ -115,7 +117,9 @@ export async function setRbacSectionDefaults(
  * @param prisma - Client Prisma
  * @returns Array di sezioni disabilitate
  */
-export async function getSectionsDisabled(prisma: IPrismaConfigClient): Promise<string[]> {
+export async function getSectionsDisabled(
+  prisma: IPrismaConfigClient
+): Promise<string[]> {
   const config = await prisma.appConfig.findUnique({
     where: { key: 'app.sections.disabled' },
   });

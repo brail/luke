@@ -25,9 +25,11 @@ export interface EnvConfig {
 // Minimal interface to avoid full PrismaClient dependency issues in core
 export interface IPrismaConfigClient {
   appConfig: {
-    findUnique(args: { where: { key: string } }): Promise<{ value: string; isEncrypted?: boolean } | null>;
+    findUnique(args: {
+      where: { key: string };
+    }): Promise<{ value: string; isEncrypted?: boolean } | null>;
     [key: string]: any;
-  }
+  };
   [key: string]: any;
 }
 
@@ -169,7 +171,9 @@ export async function getConfigValue(
  * @param prisma - Prisma client instance
  * @returns API base URL
  */
-export async function getApiBaseUrlFromConfig(prisma: IPrismaConfigClient): Promise<string> {
+export async function getApiBaseUrlFromConfig(
+  prisma: IPrismaConfigClient
+): Promise<string> {
   const envUrl = process.env.NEXT_PUBLIC_API_URL;
   if (envUrl) {
     return envUrl;

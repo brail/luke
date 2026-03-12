@@ -16,7 +16,12 @@ import {
 } from '../lib/configManager';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { withRateLimit } from '../lib/ratelimit';
-import { router, loggedProcedure, adminProcedure, type Context } from '../lib/trpc';
+import {
+  router,
+  loggedProcedure,
+  adminProcedure,
+  type Context,
+} from '../lib/trpc';
 import { withSectionAccess } from '../lib/sectionAccessMiddleware';
 
 /**
@@ -537,12 +542,7 @@ export const configRouter = router({
       const results = await Promise.all(
         input.configs.map(async config => {
           try {
-            await upsertConfig(
-              ctx,
-              config.key,
-              config.value,
-              config.encrypt
-            );
+            await upsertConfig(ctx, config.key, config.value, config.encrypt);
 
             return {
               key: config.key,

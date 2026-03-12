@@ -268,10 +268,7 @@ function determineUserRole(
       const role = roleMapping[groupDN];
       if (['admin', 'editor', 'viewer'].includes(role)) {
         if (log) {
-          log.info(
-             { groupDN, role },
-             `Role mapping found`
-          );
+          log.info({ groupDN, role }, `Role mapping found`);
         }
         return role as 'admin' | 'editor' | 'viewer';
       }
@@ -310,12 +307,15 @@ async function createOrUpdateUser(
     userAttributes.cn?.[0]?.split(' ').slice(1).join(' ') ||
     '';
 
-  logger.info({
-    email: ldapEmail,
-    firstName,
-    lastName,
-    availableAttributes: Object.keys(userAttributes),
-  }, `LDAP attributes for ${username}`);
+  logger.info(
+    {
+      email: ldapEmail,
+      firstName,
+      lastName,
+      availableAttributes: Object.keys(userAttributes),
+    },
+    `LDAP attributes for ${username}`
+  );
 
   // Cerca utente esistente (solo utenti attivi)
   let user = await prisma.user.findFirst({
@@ -326,7 +326,10 @@ async function createOrUpdateUser(
   });
 
   if (user) {
-    logger.info({ username }, `User already exists, syncing firstName/lastName from LDAP`);
+    logger.info(
+      { username },
+      `User already exists, syncing firstName/lastName from LDAP`
+    );
 
     // Aggiorna firstName e lastName se sono diversi
     if (user.firstName !== firstName || user.lastName !== lastName) {
@@ -337,7 +340,10 @@ async function createOrUpdateUser(
           lastName,
         },
       });
-      logger.info({ username, firstName, lastName }, `Updated firstName/lastName for user`);
+      logger.info(
+        { username, firstName, lastName },
+        `Updated firstName/lastName for user`
+      );
     }
 
     // Verifica che abbia un'identità LDAP — usa una transaction per evitare race condition
@@ -383,7 +389,10 @@ async function createOrUpdateUser(
         },
       });
 
-      logger.info({ username, role, firstName, lastName }, `Created new LDAP user`);
+      logger.info(
+        { username, role, firstName, lastName },
+        `Created new LDAP user`
+      );
       return newUser;
     });
   }

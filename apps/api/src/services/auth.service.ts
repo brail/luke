@@ -19,7 +19,6 @@ import {
 } from '../lib/mailer';
 import { validatePassword } from '../lib/password';
 
-
 /**
  * Autentica un utente con credenziali locali
  */
@@ -88,14 +87,11 @@ export async function authenticateUser(
         ldapError.code === 'SERVICE_UNAVAILABLE' ||
         ldapError.code === 'BAD_GATEWAY'
       ) {
-        ctx.logger.warn(
-          { username, code: ldapError.code },
-          `LDAP unavailable`
-        );
+        ctx.logger.warn({ username, code: ldapError.code }, `LDAP unavailable`);
         // LDAP down - return null (auth fail) unless fallback logic catches it
-        return null; 
+        return null;
       } else {
-        // NON fare fallback per errori di autorizzazione 
+        // NON fare fallback per errori di autorizzazione
         throw ldapError;
       }
     } else {
@@ -129,7 +125,7 @@ export async function authenticateUser(
         authMethod = 'ldap';
       } catch (e) {
         // Passa l'errore per gestione corretta delle eccezioni tRPC
-        handleLdapError(e); 
+        handleLdapError(e);
         // Se handleLdapError non lancia, significa che è un errore di connessione/tech
         // e authenticatedUser resta null
       }
@@ -172,20 +168,34 @@ export async function authenticateUser(
       } catch (e) {
         if (e instanceof TRPCError) {
           if (e.code === 'SERVICE_UNAVAILABLE' || e.code === 'BAD_GATEWAY') {
-            ctx.logger.warn({ code: e.code }, 'LDAP unavailable, fallback to local');
+            ctx.logger.warn(
+              { code: e.code },
+              'LDAP unavailable, fallback to local'
+            );
           } else {
             throw e;
           }
         } else {
           ctx.logger.warn({ error: e }, 'LDAP error, fallback to local');
         }
-        authenticatedUser = await authenticateLocal(ctx.prisma, username, password);
+        authenticatedUser = await authenticateLocal(
+          ctx.prisma,
+          username,
+          password
+        );
         authMethod = 'local';
       }
 
       if (!authenticatedUser && authMethod === 'ldap') {
-        ctx.logger.info({ username }, 'LDAP auth failed, trying local fallback...');
-        authenticatedUser = await authenticateLocal(ctx.prisma, username, password);
+        ctx.logger.info(
+          { username },
+          'LDAP auth failed, trying local fallback...'
+        );
+        authenticatedUser = await authenticateLocal(
+          ctx.prisma,
+          username,
+          password
+        );
         authMethod = 'local';
       }
       break;
@@ -332,19 +342,17 @@ export async function logoutAllSessions(ctx: Context) {
 
   return {
     success: true,
-    message: 'Tutte le sessioni sono state revocate. Effettua nuovamente il login.',
+    message:
+      'Tutte le sessioni sono state revocate. Effettua nuovamente il login.',
   };
 }
 
 /**
  * Richiede reset password
  */
-export async function requestPasswordReset(
-  ctx: Context,
-  email: string
-) {
+export async function requestPasswordReset(ctx: Context, email: string) {
   const normalizedEmail = email.toLowerCase();
-  
+
   const user = await ctx.prisma.user.findFirst({
     where: {
       email: normalizedEmail,
@@ -368,7 +376,8 @@ export async function requestPasswordReset(
     });
     return {
       success: true,
-      message: "Se l'email esiste nel sistema, riceverai un link per il reset della password.",
+      message:
+        "Se l'email esiste nel sistema, riceverai un link per il reset della password.",
     };
   }
 
@@ -393,7 +402,7 @@ export async function requestPasswordReset(
 
   try {
     await sendPasswordResetEmail(ctx.prisma, normalizedEmail, token, baseUrl);
-    
+
     await logAudit(ctx, {
       action: 'PASSWORD_RESET_REQUESTED',
       targetType: 'Auth',
@@ -483,7 +492,7 @@ export async function confirmPasswordReset(
   const passwordValidation = validatePassword(newPassword, passwordPolicy);
 
   if (!passwordValidation.isValid) {
-     await logAudit(ctx, {
+    await logAudit(ctx, {
       action: 'PASSWORD_CHANGED',
       targetType: 'Auth',
       targetId: userToken.userId,
@@ -543,12 +552,9 @@ export async function confirmPasswordReset(
 /**
  * Richiede verifica email
  */
-export async function requestEmailVerification(
-  ctx: Context,
-  email: string
-) {
+export async function requestEmailVerification(ctx: Context, email: string) {
   const normalizedEmail = email.toLowerCase();
-  
+
   const user = await ctx.prisma.user.findFirst({
     where: {
       email: normalizedEmail,
@@ -562,7 +568,7 @@ export async function requestEmailVerification(
   });
 
   if (!user || user.identities.length === 0) {
-     await logAudit(ctx, {
+    await logAudit(ctx, {
       action: 'EMAIL_VERIFICATION_SENT',
       targetType: 'Auth',
       result: 'FAILURE',
@@ -575,7 +581,7 @@ export async function requestEmailVerification(
   }
 
   if (user.emailVerifiedAt) {
-     await logAudit(ctx, {
+    await logAudit(ctx, {
       action: 'EMAIL_VERIFICATION_SENT',
       targetType: 'Auth',
       targetId: user.id,
@@ -607,8 +613,13 @@ export async function requestEmailVerification(
     'http://localhost:3000';
 
   try {
-    await sendEmailVerificationEmail(ctx.prisma, normalizedEmail, token, baseUrl);
-    
+    await sendEmailVerificationEmail(
+      ctx.prisma,
+      normalizedEmail,
+      token,
+      baseUrl
+    );
+
     await logAudit(ctx, {
       action: 'EMAIL_VERIFICATION_SENT',
       targetType: 'Auth',

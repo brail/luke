@@ -80,9 +80,7 @@ export async function assertSectionAccess(section: Section) {
 
     if (overrideRes.ok) {
       const data = await overrideRes.json();
-      const found = data.result?.data?.find(
-        (o: any) => o.section === section
-      );
+      const found = data.result?.data?.find((o: any) => o.section === section);
       if (found) override = { enabled: found.enabled };
     }
   } catch (err) {
@@ -101,15 +99,17 @@ export async function assertSectionAccess(section: Section) {
 
   // 2) Nuovo sistema permissions: Resource:Action
   const permission = SECTION_TO_PERMISSION[section];
-  if (permission && hasPermission({ role: userRole as any }, permission as any)) {
+  if (
+    permission &&
+    hasPermission({ role: userRole as any }, permission as any)
+  ) {
     return;
   }
 
   // 3) Fallback sistema legacy effectiveSectionAccess
   const allowed = effectiveSectionAccess({
     role: userRole,
-    roleToPermissions:
-      permissions[userRole as keyof typeof permissions] || {},
+    roleToPermissions: permissions[userRole as keyof typeof permissions] || {},
     sectionAccessDefaults: rbacConfig.sectionAccessDefaults,
     userOverride: override,
     section,

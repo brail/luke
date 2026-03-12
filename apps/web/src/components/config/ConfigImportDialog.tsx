@@ -44,8 +44,6 @@ import {
   TableRow,
 } from '../ui/table';
 
-
-
 interface ImportConfig {
   key: string;
   value: string;

@@ -84,9 +84,7 @@ function verifySignature(payload: string, signature: string): boolean {
   // Decode provided signature from base64url to raw bytes
   let actualBuffer: Buffer;
   try {
-    const base64 = (signature || '')
-      .replace(/-/g, '+')
-      .replace(/_/g, '/');
+    const base64 = (signature || '').replace(/-/g, '+').replace(/_/g, '/');
     const padded = base64.padEnd(
       base64.length + ((4 - (base64.length % 4)) % 4),
       '='
@@ -231,5 +229,3 @@ export function isValidDownloadToken(token: string): boolean {
     return false;
   }
 }
-
-
