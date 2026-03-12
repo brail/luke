@@ -318,11 +318,11 @@ export function withRateLimit(routeName: keyof typeof RATE_LIMIT_CONFIG) {
         });
       }
 
+      // Record BEFORE awaiting next() so concurrent requests see updated count
+      rateLimitStore.record(routeName, key, config);
+
       // Esegui la procedura
       const result = await next();
-
-      // Registra la richiesta
-      rateLimitStore.record(routeName, key, config);
 
       return result;
     } catch (error) {

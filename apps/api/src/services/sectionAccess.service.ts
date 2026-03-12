@@ -45,20 +45,11 @@ export async function setOverride(
     return null;
   }
 
-  // Upsert override - prima elimina se esiste, poi crea
-  await prisma.userSectionAccess.deleteMany({
-    where: {
-      userId,
-      section,
-    },
-  });
-
-  return prisma.userSectionAccess.create({
-    data: {
-      userId,
-      section,
-      enabled,
-    },
+  // Upsert override atomically to avoid DELETE+CREATE race condition
+  return prisma.userSectionAccess.upsert({
+    where: { userId_section: { userId, section } },
+    update: { enabled },
+    create: { userId, section, enabled },
   });
 }
 

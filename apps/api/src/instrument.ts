@@ -15,6 +15,14 @@ import {
   SEMRESATTRS_DEPLOYMENT_ENVIRONMENT,
 } from '@opentelemetry/semantic-conventions';
 import { PrismaInstrumentation } from '@prisma/instrumentation';
+import pino from 'pino';
+
+const logger = pino({
+  level: process.env.LOG_LEVEL || 'info',
+  formatters: {
+    level: label => ({ level: label }),
+  },
+});
 
 // Config via env vars (12-factor)
 const otelEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT || '';
@@ -44,24 +52,34 @@ if (otelEnabled) {
   });
 
   sdk.start();
-  console.log('✅ OpenTelemetry SDK started:', { endpoint: otelEndpoint });
+  logger.info({ endpoint: otelEndpoint }, '✅ OpenTelemetry SDK started');
 } else {
-  console.log('ℹ️  OpenTelemetry disabled (no endpoint configured)');
+  logger.info('ℹ️  OpenTelemetry disabled (no endpoint configured)');
 }
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   if (sdk) {
-    console.log('🔄 Shutting down OpenTelemetry SDK...');
-    await sdk.shutdown();
+    logger.info('Shutting down OpenTelemetry SDK...');
+    try {
+      await sdk.shutdown();
+    } catch (err) {
+      logger.error({ err }, 'Error shutting down OpenTelemetry SDK');
+    }
   }
+  process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   if (sdk) {
-    console.log('🔄 Shutting down OpenTelemetry SDK...');
-    await sdk.shutdown();
+    logger.info('Shutting down OpenTelemetry SDK...');
+    try {
+      await sdk.shutdown();
+    } catch (err) {
+      logger.error({ err }, 'Error shutting down OpenTelemetry SDK');
+    }
   }
+  process.exit(0);
 });
 
 

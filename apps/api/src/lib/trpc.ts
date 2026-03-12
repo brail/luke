@@ -282,9 +282,11 @@ export const protectedProcedure = publicProcedure
 
 /**
  * Procedure admin (richiede ruolo admin)
+ * Chains authMiddleware so tokenVersion is verified before the role check.
  */
 export const adminProcedure = publicProcedure
   .use(loggingMiddleware)
+  .use(authMiddleware)
   .use(adminMiddleware);
 
 /**
@@ -331,6 +333,7 @@ export const adminOrEditorMiddleware = t.middleware(async ({ ctx, next }) => {
  */
 export const adminOrEditorProcedure = publicProcedure
   .use(loggingMiddleware)
+  .use(authMiddleware)
   .use(adminOrEditorMiddleware);
 
 /**

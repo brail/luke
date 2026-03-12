@@ -58,6 +58,11 @@ export async function sendVerificationEmail(
   const tokenHash = createHash('sha256').update(token).digest('hex');
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
 
+  // Invalida token VERIFY precedenti per questo utente prima di crearne uno nuovo
+  await prisma.userToken.deleteMany({
+    where: { userId: user.id, type: 'VERIFY' },
+  });
+
   // Salva token in DB
   await prisma.userToken.create({
     data: { userId: user.id, type: 'VERIFY', tokenHash, expiresAt },

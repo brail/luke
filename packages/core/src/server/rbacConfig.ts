@@ -3,7 +3,16 @@
  * Shared between API and Web for zero-latency access
  */
 
+import { z } from 'zod';
 import { rbacConfigSchema, type RbacConfig } from '../schemas/rbac';
+import type { IPrismaConfigClient } from '../runtime/env';
+
+// Extend interface for write operations if needed
+export interface IPrismaConfigClientWithWrite extends IPrismaConfigClient {
+  appConfig: IPrismaConfigClient['appConfig'] & {
+    upsert(args: any): Promise<any>;
+  }
+}
 
 /**
  * Cache in-memory per configurazioni RBAC
@@ -23,7 +32,7 @@ export function invalidateRbacCache(): void {
  * @param prisma - Client Prisma
  * @returns Configurazione RBAC completa
  */
-export async function getRbacConfig(prisma: any): Promise<RbacConfig> {
+export async function getRbacConfig(prisma: IPrismaConfigClient): Promise<RbacConfig> {
   const cached = cache.get('rbac');
   if (cached && Date.now() - cached.ts < TTL) {
     return cached.data;
@@ -69,12 +78,16 @@ export async function getRbacConfig(prisma: any): Promise<RbacConfig> {
  * @param sectionAccessDefaults - Default per ruolo e sezione
  */
 export async function setRbacSectionDefaults(
-  prisma: any,
+  prisma: IPrismaConfigClientWithWrite,
   sectionAccessDefaults: Record<string, Partial<Record<string, string>>>
 ): Promise<void> {
   // Valida con schema Zod
   const validated = rbacConfigSchema.parse({
-    roleToPermissions: {},
+    roleToPermissions: {
+      admin: ['*'],
+      editor: ['read', 'update'],
+      viewer: ['read'],
+    },
     sectionAccessDefaults,
   });
 
@@ -102,7 +115,7 @@ export async function setRbacSectionDefaults(
  * @param prisma - Client Prisma
  * @returns Array di sezioni disabilitate
  */
-export async function getSectionsDisabled(prisma: any): Promise<string[]> {
+export async function getSectionsDisabled(prisma: IPrismaConfigClient): Promise<string[]> {
   const config = await prisma.appConfig.findUnique({
     where: { key: 'app.sections.disabled' },
   });
@@ -110,7 +123,8 @@ export async function getSectionsDisabled(prisma: any): Promise<string[]> {
   if (!config) return [];
 
   try {
-    return JSON.parse(config.value);
+    const parsed = JSON.parse(config.value);
+    return z.array(z.string()).parse(parsed);
   } catch (error) {
     console.warn(
       'Errore parsing app.sections.disabled, usando array vuoto:',

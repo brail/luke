@@ -67,8 +67,12 @@ export function useSessionVerification() {
       document.addEventListener('visibilitychange', handleVisibilityChange);
       window.addEventListener('focus', handleFocus);
 
-      // Cleanup event listeners
+      // Cleanup: clear interval AND remove event listeners
       return () => {
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
         document.removeEventListener(
           'visibilitychange',
           handleVisibilityChange

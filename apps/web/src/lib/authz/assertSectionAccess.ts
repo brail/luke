@@ -5,10 +5,21 @@
 
 import { redirect } from 'next/navigation';
 
-import { effectiveSectionAccess, permissions, buildTrpcUrl } from '@luke/core';
+import {
+  effectiveSectionAccess,
+  hasPermission,
+  permissions,
+  buildTrpcUrl,
+} from '@luke/core';
 import type { Section } from '@luke/core';
 
 import { auth } from '../../auth';
+
+const SECTION_TO_PERMISSION: Record<Section, string> = {
+  dashboard: 'dashboard:read',
+  settings: 'settings:read',
+  maintenance: 'maintenance:read',
+};
 
 /**
  * Verifica accesso a una sezione e redirige se negato
@@ -21,37 +32,88 @@ export async function assertSectionAccess(section: Section) {
     redirect('/login');
   }
 
-  // Fetch override da API (server-to-server) - manteniamo per ora
+  // Fetch RBAC config from API — cache: 'no-store' per enforcement immediato
+  const rbacConfig = {
+    sectionAccessDefaults: {},
+    disabledSections: [] as any[],
+  };
   let override: { enabled?: boolean } | undefined;
 
   try {
-    const res = await fetch(buildTrpcUrl('sectionAccess.getForMe'), {
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    });
+    const [defaultsRes, disabledRes, overrideRes] = await Promise.all([
+      fetch(buildTrpcUrl('rbac.sectionDefaults.get'), {
+        cache: 'no-store',
+        headers: {
+          Authorization: `Bearer ${session.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      }),
+      fetch(buildTrpcUrl('rbac.disabledSections.get'), {
+        cache: 'no-store',
+        headers: {
+          Authorization: `Bearer ${session.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      }),
+      fetch(buildTrpcUrl('sectionAccess.getForMe'), {
+        cache: 'no-store',
+        headers: {
+          Authorization: `Bearer ${session.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      }),
+    ]);
 
-    if (res.ok) {
-      const data = await res.json();
-      const found = data.result?.data?.find((o: any) => o.section === section);
+    if (defaultsRes.ok) {
+      const data = await defaultsRes.json();
+      if (data.result?.data) {
+        rbacConfig.sectionAccessDefaults = data.result.data;
+      }
+    }
+
+    if (disabledRes.ok) {
+      const data = await disabledRes.json();
+      if (data.result?.data) {
+        rbacConfig.disabledSections = data.result.data;
+      }
+    }
+
+    if (overrideRes.ok) {
+      const data = await overrideRes.json();
+      const found = data.result?.data?.find(
+        (o: any) => o.section === section
+      );
       if (found) override = { enabled: found.enabled };
     }
   } catch (err) {
-    // Log ma non bloccare; fallback a ruolo
-    console.warn('Errore fetch override sezione:', err);
+    console.warn('Errore fetch RBAC config:', err);
   }
 
-  // Per ora, usiamo solo override e RBAC classico
-  // TODO: Implementare fetch RBAC config via API quando necessario
+  const userRole = session.user.role as string;
+
+  // 1) User override esplicito
+  if (override?.enabled === false) {
+    redirect('/app/dashboard' as any);
+  }
+  if (override?.enabled === true) {
+    return;
+  }
+
+  // 2) Nuovo sistema permissions: Resource:Action
+  const permission = SECTION_TO_PERMISSION[section];
+  if (permission && hasPermission({ role: userRole as any }, permission as any)) {
+    return;
+  }
+
+  // 3) Fallback sistema legacy effectiveSectionAccess
   const allowed = effectiveSectionAccess({
-    role: session.user.role as string,
+    role: userRole,
     roleToPermissions:
-      permissions[session.user.role as keyof typeof permissions] || {},
-    sectionAccessDefaults: {}, // TODO: fetch da API
+      permissions[userRole as keyof typeof permissions] || {},
+    sectionAccessDefaults: rbacConfig.sectionAccessDefaults,
     userOverride: override,
     section,
-    disabledSections: [], // TODO: fetch da API
+    disabledSections: rbacConfig.disabledSections,
   });
 
   if (!allowed) {

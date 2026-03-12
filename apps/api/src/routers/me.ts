@@ -92,6 +92,7 @@ export const meRouter = router({
         where: { id: ctx.session.user.id },
         select: {
           id: true,
+          email: true,
           identities: {
             select: {
               provider: true,
@@ -134,6 +135,7 @@ export const meRouter = router({
       }
 
       // Aggiorna i campi consentiti
+      const emailChanged = input.email !== userWithProvider.email;
       const updated = await ctx.prisma.user.update({
         where: { id: ctx.session.user.id },
         data: {
@@ -142,8 +144,8 @@ export const meRouter = router({
           lastName: input.lastName,
           locale: input.locale,
           timezone: input.timezone,
-          // Aggiorna lastLoginAt quando cambia timezone per mostrare la differenza
-          lastLoginAt: new Date(),
+          // Reset email verification when address changes
+          ...(emailChanged ? { emailVerifiedAt: null } : {}),
         },
         select: {
           id: true,
@@ -349,8 +351,6 @@ export const meRouter = router({
         where: { id: ctx.session.user.id },
         data: {
           timezone: input.timezone,
-          // Aggiorna lastLoginAt quando cambia timezone per mostrare la differenza
-          lastLoginAt: new Date(),
         },
         select: {
           id: true,

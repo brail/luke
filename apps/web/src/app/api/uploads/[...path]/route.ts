@@ -2,41 +2,55 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { buildApiUrl } from '@luke/core';
 
+import { auth } from '../../../../auth';
+
+// Allow only safe path segments: alphanumeric, dots, dashes, underscores
+// Rejects '..' traversal and any segment with shell-special characters
+const SAFE_SEGMENT_RE = /^[a-zA-Z0-9._-]+$/;
+
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
 ) {
+  // Require authentication to prevent unauthenticated SSRF via this proxy
+  const session = await auth();
+  if (!session) {
+    return new NextResponse('Unauthorized', { status: 401 });
+  }
+
   try {
     const resolvedParams = await params;
-    const filePath = resolvedParams.path.join('/');
+    const segments = resolvedParams.path;
 
-    // URL dell'API backend
+    // Validate each segment to prevent path traversal attacks
+    if (
+      segments.length === 0 ||
+      segments.some(seg => !SAFE_SEGMENT_RE.test(seg))
+    ) {
+      return new NextResponse('Bad Request', { status: 400 });
+    }
+
+    const filePath = segments.join('/');
     const backendUrl = buildApiUrl(`/uploads/${filePath}`);
 
-    // Inoltra la richiesta al backend per ottenere il file
+    // Do NOT forward client cookies to the internal backend service
     const response = await fetch(backendUrl, {
       method: 'GET',
-      headers: {
-        // Inoltra i cookie di sessione per l'autenticazione se necessario
-        Cookie: request.headers.get('cookie') || '',
-      },
     });
 
     if (!response.ok) {
       return new NextResponse('File not found', { status: 404 });
     }
 
-    // Ottieni il contenuto del file
     const fileBuffer = await response.arrayBuffer();
     const contentType =
       response.headers.get('content-type') || 'application/octet-stream';
 
-    // Restituisci il file con gli header appropriati
     return new NextResponse(fileBuffer, {
       status: 200,
       headers: {
         'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=31536000, immutable', // Cache per 1 anno
+        'Cache-Control': 'public, max-age=31536000, immutable',
       },
     });
   } catch (error) {

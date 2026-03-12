@@ -22,6 +22,8 @@ import { buildCorsAllowedOrigins } from './lib/cors';
 import { createContext } from './lib/trpc';
 import { setGlobalErrorHandler } from './lib/error';
 import { getConfig } from './lib/configManager';
+import { idempotencyStore } from './lib/idempotency';
+import { rateLimitStore } from './lib/ratelimit';
 import {
   pinoTraceMiddleware,
   // pinoSerializers,
@@ -253,17 +255,8 @@ async function registerStaticFiles() {
     prefix: '/uploads/',
     decorateReply: false,
     setHeaders: (res, path) => {
-      // Usa configurazione CORS dinamica invece di hardcodare localhost:3000
-      const corsConfig = buildCorsAllowedOrigins(
-        (process.env.NODE_ENV as 'development' | 'production' | 'test') ||
-          'development'
-      );
-
-      // Setta header CORS solo se ci sono origini configurate
-      if (corsConfig.origins.length > 0) {
-        res.setHeader('Access-Control-Allow-Origin', corsConfig.origins[0]); // Fastify static supporta solo un'origine
-        res.setHeader('Access-Control-Allow-Credentials', 'true');
-      }
+      // CORS per le immagini statiche è gestito dal plugin @fastify/cors globale
+      // che supporta dynamic origin matching su tutti i path incluso /uploads/
 
       // Imposta content-type corretto per le immagini
       if (path.endsWith('.png')) {
@@ -376,30 +369,33 @@ function setupTempFileCleanup() {
           `Cleaning up ${tempFiles.length} temp files older than 1 hour`
         );
 
+        // Delete physical files first (best-effort), collect succeeded IDs
+        const succeededIds: string[] = [];
         for (const file of tempFiles) {
           try {
-            // Cancella file dallo storage
             await provider.delete({
               bucket: 'temp-brand-logos',
               key: file.key,
             });
-
-            // Cancella metadati dal DB
-            await prisma.fileObject.delete({
-              where: { id: file.id },
-            });
-
+            succeededIds.push(file.id);
             fastify.log.debug(`Cleaned up temp file: ${file.key}`);
           } catch (err) {
             fastify.log.warn(
               { err, fileKey: file.key },
-              'Failed to cleanup temp file'
+              'Failed to delete temp file from storage'
             );
           }
         }
 
+        // Batch delete DB records only for files successfully removed from storage
+        if (succeededIds.length > 0) {
+          await prisma.fileObject.deleteMany({
+            where: { id: { in: succeededIds } },
+          });
+        }
+
         fastify.log.info(
-          `Cleanup completed: ${tempFiles.length} temp files removed`
+          `Cleanup completed: ${succeededIds.length}/${tempFiles.length} temp files removed`
         );
       }
     } catch (err) {
@@ -435,6 +431,10 @@ function setupGracefulShutdown() {
     fastify.log.info(`Ricevuto segnale ${signal}, avvio shutdown graceful...`);
 
     try {
+      // Stop in-memory cleanup intervals before closing HTTP server
+      rateLimitStore.stop();
+      idempotencyStore.stop();
+
       // Chiudi server HTTP
       await closeWithTimeout(5_000);
       fastify.log.info('Server HTTP chiuso');

@@ -77,6 +77,21 @@ export async function storagePlugin(
         return;
       }
 
+      // Enforce bucket-level RBAC: not all roles can write to all buckets
+      const bucketRoles: Record<string, string[]> = {
+        uploads: ['admin', 'editor', 'viewer'],
+        exports: ['admin', 'editor'],
+        assets: ['admin'],
+      };
+      const allowedRoles = bucketRoles[bucket] ?? [];
+      if (!allowedRoles.includes(session.user.role)) {
+        reply.code(403).send({
+          error: 'Forbidden',
+          message: 'Non autorizzato per questo bucket',
+        });
+        return;
+      }
+
       // Determina content type
       const contentType = data.mimetype || 'application/octet-stream';
 

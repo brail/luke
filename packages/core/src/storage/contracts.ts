@@ -11,6 +11,18 @@
 import type { StorageBucket } from './types';
 import type { LocalStorageConfig } from './config';
 
+const VALID_BUCKETS: readonly StorageBucket[] = [
+  'uploads',
+  'exports',
+  'assets',
+  'brand-logos',
+  'temp-brand-logos',
+];
+
+function isValidBucket(value: string): value is StorageBucket {
+  return (VALID_BUCKETS as readonly string[]).includes(value);
+}
+
 /**
  * Configurazione per URL generation
  */
@@ -49,7 +61,7 @@ export function getPublicUrl(
   key: string,
   config: UrlConfig = {}
 ): string {
-  const { enableProxy = true, publicBaseUrl, frontendBaseUrl } = config;
+  const { enableProxy = true, publicBaseUrl } = config;
 
   // Sanitizza key per sicurezza
   const sanitizedKey = sanitizeKey(key);
@@ -157,13 +169,17 @@ export function extractBucketFromUrl(url: string): StorageBucket | null {
     // Pattern per URL proxy: /api/uploads/{bucket}/{key}
     const proxyMatch = url.match(/\/api\/uploads\/([^/]+)\//);
     if (proxyMatch) {
-      return proxyMatch[1] as StorageBucket;
+      const candidate = proxyMatch[1];
+      if (!isValidBucket(candidate)) return null;
+      return candidate;
     }
 
     // Pattern per URL diretto: {base}/uploads/{bucket}/{key}
     const directMatch = url.match(/\/uploads\/([^/]+)\//);
     if (directMatch) {
-      return directMatch[1] as StorageBucket;
+      const candidate = directMatch[1];
+      if (!isValidBucket(candidate)) return null;
+      return candidate;
     }
 
     return null;
@@ -259,7 +275,7 @@ export function storageConfigToUrlConfig(
 }
 
 /**
- * TODO: Presigned upload support
+ * Presigned upload support
  *
  * Future implementation for presigned upload URLs:
  * - generatePresignedUploadUrl(bucket, key, expiresIn)

@@ -82,26 +82,26 @@ export async function sendEmail(
   const retries = 3;
   const backoffMs = [250, 500, 1000];
 
+  // Load SMTP config once instead of on every retry attempt
+  const smtpConfig = await getSmtpConfig(prisma);
+
+  const mailOptions: Mail.Options = {
+    from: smtpConfig.from,
+    to,
+    subject,
+    text,
+    html,
+  };
+
   for (let attempt = 0; attempt < retries; attempt++) {
+    const transporter = nodemailer.createTransport({
+      host: smtpConfig.host,
+      port: smtpConfig.port,
+      secure: smtpConfig.secure,
+      auth: smtpConfig.auth,
+    });
+
     try {
-      const smtpConfig = await getSmtpConfig(prisma);
-
-      // Crea transporter Nodemailer
-      const transporter = nodemailer.createTransport({
-        host: smtpConfig.host,
-        port: smtpConfig.port,
-        secure: smtpConfig.secure,
-        auth: smtpConfig.auth,
-      });
-
-      const mailOptions: Mail.Options = {
-        from: smtpConfig.from,
-        to,
-        subject,
-        text,
-        html,
-      };
-
       await transporter.sendMail(mailOptions);
 
       logger.info({ to, subject, attempt: attempt + 1 }, 'Email inviata');
@@ -124,6 +124,9 @@ export async function sendEmail(
       }
       // Backoff esponenziale prima del prossimo tentativo
       await new Promise(resolve => setTimeout(resolve, backoffMs[attempt]));
+    } finally {
+      // Always close the TCP connection to the SMTP server
+      transporter.close();
     }
   }
 }

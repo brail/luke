@@ -540,6 +540,7 @@ export const usersRouter = router({
    * Richiede ruolo admin
    */
   softDelete: adminProcedure
+    .use(withSectionAccess('settings'))
     .use(withRateLimit('userMutations'))
     .use(withAuditLog('USER_DELETE', 'User'))
     .input(UserIdSchema)
@@ -551,6 +552,7 @@ export const usersRouter = router({
    * Richiede ruolo admin
    */
   hardDelete: adminProcedure
+    .use(withSectionAccess('settings'))
     .use(withRateLimit('userMutations'))
     .input(UserIdSchema)
     .mutation(async ({ input, ctx }) => {

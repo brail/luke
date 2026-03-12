@@ -55,7 +55,7 @@ function VerifyEmailContent() {
     };
 
     verifyEmail();
-  }, [token]);
+  }, [token, verifyEmailMutation]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/50 p-4">

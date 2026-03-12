@@ -48,12 +48,15 @@ export * from './storage/contracts';
 // Re-export runtime environment utilities
 export {
   getApiBaseUrl as getEnvApiBaseUrl,
-  getFrontendBaseUrl,
+  getFrontendBaseUrl as getEnvFrontendBaseUrl,
   isDevelopment,
   isProduction,
   isServer,
   getEnvConfig,
   validateEnvConfig,
+  getConfigValue,
+  getApiBaseUrlFromConfig,
+  getFrontendBaseUrlFromConfig,
 } from './runtime/env';
 
 // Re-export network URL utilities

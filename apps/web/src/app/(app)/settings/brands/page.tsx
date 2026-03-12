@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { toast } from 'sonner';
 
+import type { RouterOutputs } from '@luke/api';
+
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
 import { Button } from '../../../../components/ui/button';
@@ -15,6 +17,8 @@ import { trpc } from '../../../../lib/trpc';
 import { BrandDialog } from './_components/BrandDialog';
 import { BrandTable } from './_components/BrandTable';
 
+type BrandItem = RouterOutputs['brand']['list']['items'][number];
+
 /**
  * Pagina per gestione Brand
  * CRUD completo con upload logo e integrazione context
@@ -22,7 +26,7 @@ import { BrandTable } from './_components/BrandTable';
 export default function BrandsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingBrand, setEditingBrand] = useState<any>(null);
+  const [editingBrand, setEditingBrand] = useState<BrandItem | null>(null);
   const { brand: currentBrand } = useAppContext();
 
   // Query per ottenere la lista dei brand
@@ -31,7 +35,7 @@ export default function BrandsPage() {
     isLoading,
     error,
     refetch,
-  } = trpc.catalog.brands.useQuery({
+  } = trpc.brand.list.useQuery({
     search: searchTerm || undefined,
   });
 
@@ -90,9 +94,7 @@ export default function BrandsPage() {
 
       // Se il brand corrente è stato disattivato, gestisci il context
       if (currentBrand?.id === updatedBrand.id && !updatedBrand.isActive) {
-        // Il context.get potrebbe fallire se non ci sono più brand attivi
-        // AppContextProvider gestirà automaticamente needsSetup=true
-        toast.success(
+        toast.info(
           'Brand disattivato. Il contesto verrà ripristinato automaticamente.'
         );
       }
@@ -109,9 +111,7 @@ export default function BrandsPage() {
 
       // Se il brand corrente è stato eliminato, gestisci il context
       if (currentBrand?.id === removedBrand.id) {
-        // Il context.get potrebbe fallire se non ci sono più brand attivi
-        // AppContextProvider gestirà automaticamente needsSetup=true
-        toast.success(
+        toast.info(
           'Brand eliminato. Il contesto verrà ripristinato automaticamente.'
         );
       }
@@ -128,13 +128,13 @@ export default function BrandsPage() {
   };
 
   // Handler per apertura dialog modifica
-  const handleEditBrand = (brand: any) => {
+  const handleEditBrand = (brand: BrandItem) => {
     setEditingBrand(brand);
     setIsDialogOpen(true);
   };
 
   // Handler per eliminazione brand
-  const handleDeleteBrand = async (brand: any) => {
+  const handleDeleteBrand = async (brand: BrandItem) => {
     if (
       globalThis.confirm(
         `Sei sicuro di voler eliminare il brand "${brand.name}"?`

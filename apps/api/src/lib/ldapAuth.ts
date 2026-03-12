@@ -15,6 +15,21 @@ import { ResilientLdapClient } from './ldapClient';
 
 import type { PrismaClient, User } from '@prisma/client';
 
+const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
+
+/**
+ * Escapa i caratteri speciali LDAP in un valore da inserire in un filtro di ricerca.
+ * Segue RFC 4515 (Section 3).
+ */
+function escapeLdapFilter(value: string): string {
+  return value
+    .replace(/\\/g, '\\5c')
+    .replace(/\*/g, '\\2a')
+    .replace(/\(/g, '\\28')
+    .replace(/\)/g, '\\29')
+    .replace(/\0/g, '\\00');
+}
+
 /**
  * Autentica un utente via LDAP
  * @param prisma - Client Prisma
@@ -27,7 +42,6 @@ export async function authenticateViaLdap(
   username: string,
   password: string
 ): Promise<User | null> {
-  const logger = pino({ level: 'info' });
   let ldapClient: ResilientLdapClient | null = null;
 
   try {
@@ -83,17 +97,21 @@ export async function authenticateViaLdap(
       return null;
     }
 
+    // Ripristina il bind amministrativo per la ricerca gruppi,
+    // poiché verifyUserCredentials lega il client come utente finale
+    if (config.bindDN && config.bindPassword) {
+      await ldapClient.bind(config.bindDN, config.bindPassword);
+    }
+
     // Cerca i gruppi dell'utente
     const userGroups = await searchUserGroups(ldapClient, config, userDN);
 
-    // Determina il ruolo basato sui gruppi
-    const role = determineUserRole(userGroups, config.roleMapping);
+    const role = determineUserRole(userGroups, config.roleMapping, logger);
 
     // Crea o aggiorna l'utente nel database
     const user = await createOrUpdateUser(
       prisma,
       username,
-      userDN,
       role,
       userAttributes
     );
@@ -136,7 +154,10 @@ async function searchUser(
   config: LdapConfig,
   username: string
 ): Promise<{ dn: string; attributes: any } | null> {
-  const searchFilter = config.searchFilter.replace(/\$\{username\}/g, username);
+  const searchFilter = config.searchFilter.replace(
+    /\$\{username\}/g,
+    escapeLdapFilter(username)
+  );
 
   const options = {
     filter: searchFilter,
@@ -209,7 +230,10 @@ async function searchUserGroups(
     return [];
   }
 
-  const groupFilter = config.groupSearchFilter.replace(/\$\{userDN\}/g, userDN);
+  const groupFilter = config.groupSearchFilter.replace(
+    /\$\{userDN\}/g,
+    escapeLdapFilter(userDN)
+  );
 
   const options = {
     filter: groupFilter,
@@ -222,7 +246,10 @@ async function searchUserGroups(
     return entries.map(entry => entry.dn.toString());
   } catch (error) {
     // Non fallire l'autenticazione per errori di ricerca gruppi
-    // Log dell'errore ma continua
+    logger.warn(
+      { error: error instanceof Error ? error.message : 'Unknown error' },
+      'Group search failed, proceeding without group membership'
+    );
     return [];
   }
 }
@@ -232,21 +259,29 @@ async function searchUserGroups(
  */
 function determineUserRole(
   userGroups: string[],
-  roleMapping: Record<string, string>
+  roleMapping: Record<string, string>,
+  log?: any
 ): 'admin' | 'editor' | 'viewer' {
   // Cerca il mapping più specifico
   for (const groupDN of userGroups) {
     if (roleMapping[groupDN]) {
       const role = roleMapping[groupDN];
       if (['admin', 'editor', 'viewer'].includes(role)) {
-        console.log(`Role mapping found: ${groupDN} -> ${role}`);
+        if (log) {
+          log.info(
+             { groupDN, role },
+             `Role mapping found`
+          );
+        }
         return role as 'admin' | 'editor' | 'viewer';
       }
     }
   }
 
   // Default a viewer se nessun mapping trovato
-  console.log('No role mapping found, defaulting to viewer');
+  if (log) {
+    log.info('No role mapping found, defaulting to viewer');
+  }
   return 'viewer';
 }
 
@@ -256,7 +291,6 @@ function determineUserRole(
 async function createOrUpdateUser(
   prisma: PrismaClient,
   username: string,
-  _userDN: string,
   role: 'admin' | 'editor' | 'viewer',
   userAttributes: any
 ): Promise<User> {
@@ -264,41 +298,35 @@ async function createOrUpdateUser(
   const ldapEmail = userAttributes.mail?.[0] || `${username}@ldap.local`;
 
   // Estrai firstName e lastName dagli attributi LDAP
-  // Prova diversi attributi comuni per firstName
   const firstName =
     userAttributes.givenName?.[0] ||
     userAttributes.firstName?.[0] ||
     userAttributes.cn?.[0]?.split(' ')[0] ||
     '';
 
-  // Prova diversi attributi comuni per lastName
   const lastName =
     userAttributes.sn?.[0] ||
     userAttributes.lastName?.[0] ||
     userAttributes.cn?.[0]?.split(' ').slice(1).join(' ') ||
     '';
 
-  console.log(`LDAP attributes for ${username}:`, {
+  logger.info({
     email: ldapEmail,
     firstName,
     lastName,
     availableAttributes: Object.keys(userAttributes),
-  });
+  }, `LDAP attributes for ${username}`);
 
   // Cerca utente esistente (solo utenti attivi)
   let user = await prisma.user.findFirst({
     where: {
       username,
-      isActive: true, // Solo utenti attivi possono autenticarsi
+      isActive: true,
     },
   });
 
   if (user) {
-    // Per utenti esistenti, aggiorniamo firstName e lastName da LDAP
-    // ma NON email e ruolo per preservare modifiche manuali
-    console.log(
-      `User ${username} already exists, syncing firstName/lastName from LDAP`
-    );
+    logger.info({ username }, `User already exists, syncing firstName/lastName from LDAP`);
 
     // Aggiorna firstName e lastName se sono diversi
     if (user.firstName !== firstName || user.lastName !== lastName) {
@@ -309,47 +337,44 @@ async function createOrUpdateUser(
           lastName,
         },
       });
-      console.log(
-        `Updated firstName/lastName for user ${username}: ${firstName} ${lastName}`
-      );
+      logger.info({ username, firstName, lastName }, `Updated firstName/lastName for user`);
     }
 
-    // Verifica che abbia un'identità LDAP
-    const ldapIdentity = await prisma.identity.findFirst({
-      where: {
-        userId: user.id,
-        provider: 'LDAP',
-        providerId: username,
-      },
-    });
-
-    if (!ldapIdentity) {
-      // Crea identità LDAP se non esiste
-      await prisma.identity.create({
-        data: {
-          userId: user.id,
+    // Verifica che abbia un'identità LDAP — usa una transaction per evitare race condition
+    await prisma.$transaction(async tx => {
+      const ldapIdentity = await tx.identity.findFirst({
+        where: {
+          userId: user!.id,
           provider: 'LDAP',
           providerId: username,
         },
       });
-      console.log(`Created LDAP identity for user ${username}`);
-    }
+
+      if (!ldapIdentity) {
+        await tx.identity.create({
+          data: {
+            userId: user!.id,
+            provider: 'LDAP',
+            providerId: username,
+          },
+        });
+        logger.info({ username }, `Created LDAP identity for user`);
+      }
+    });
   } else {
     // Crea nuovo utente
     user = await prisma.$transaction(async tx => {
-      // Crea utente
       const newUser = await tx.user.create({
         data: {
-          email: ldapEmail, // Email reale da LDAP
+          email: ldapEmail,
           username,
-          firstName, // Sincronizza firstName da LDAP
-          lastName, // Sincronizza lastName da LDAP
+          firstName,
+          lastName,
           role,
           isActive: true,
         },
       });
 
-      // Crea identità LDAP
       await tx.identity.create({
         data: {
           userId: newUser.id,
@@ -358,9 +383,7 @@ async function createOrUpdateUser(
         },
       });
 
-      console.log(
-        `Created new LDAP user: ${username} with role ${role}, firstName: ${firstName}, lastName: ${lastName}`
-      );
+      logger.info({ username, role, firstName, lastName }, `Created new LDAP user`);
       return newUser;
     });
   }

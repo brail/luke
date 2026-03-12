@@ -28,6 +28,8 @@ import { LocalFsProvider } from './providers/local';
  * Istanza singleton del provider storage
  */
 let providerInstance: IStorageProvider | null = null;
+// Promise-based init lock: concurrent callers await the same initialisation
+let providerInitPromise: Promise<IStorageProvider> | null = null;
 
 /**
  * Carica configurazione storage da AppConfig
@@ -86,17 +88,23 @@ async function loadStorageConfig(prisma: PrismaClient) {
 export async function getStorageProvider(
   prisma: PrismaClient
 ): Promise<IStorageProvider> {
-  if (!providerInstance) {
-    const config = await loadStorageConfig(prisma);
-    const provider = new LocalFsProvider(config);
-
-    // Inizializza provider (crea directory)
-    await provider.init();
-
-    providerInstance = provider;
+  if (providerInstance) {
+    return providerInstance;
   }
 
-  return providerInstance;
+  // Reuse in-flight initialisation to prevent TOCTOU: two concurrent callers
+  // that both see providerInstance === null will now share one init promise
+  if (!providerInitPromise) {
+    providerInitPromise = (async () => {
+      const config = await loadStorageConfig(prisma);
+      const provider = new LocalFsProvider(config);
+      await provider.init();
+      providerInstance = provider;
+      return provider;
+    })();
+  }
+
+  return providerInitPromise;
 }
 
 /**
@@ -104,6 +112,7 @@ export async function getStorageProvider(
  */
 export function resetStorageProvider(): void {
   providerInstance = null;
+  providerInitPromise = null;
 }
 
 /**
@@ -302,16 +311,13 @@ export async function listObjects(
   if (params.bucket) {
     where.bucket = params.bucket;
   }
-  if (params.cursor) {
-    where.id = {
-      gt: params.cursor,
-    };
-  }
-
+  // Use Prisma's built-in cursor (consistent with orderBy: createdAt desc)
+  // Avoids id > cursor / createdAt desc mismatch that caused skipped/duplicated pages
   const items = await prisma.fileObject.findMany({
     where,
     orderBy: { createdAt: 'desc' },
-    take: limit + 1, // +1 per determinare hasMore
+    take: limit + 1,
+    ...(params.cursor ? { cursor: { id: params.cursor }, skip: 1 } : {}),
   });
 
   const hasMore = items.length > limit;

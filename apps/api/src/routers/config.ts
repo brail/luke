@@ -16,7 +16,7 @@ import {
 } from '../lib/configManager';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { withRateLimit } from '../lib/ratelimit';
-import { router, loggedProcedure, adminProcedure } from '../lib/trpc';
+import { router, loggedProcedure, adminProcedure, type Context } from '../lib/trpc';
 import { withSectionAccess } from '../lib/sectionAccessMiddleware';
 
 /**
@@ -230,10 +230,79 @@ const ImportJsonSchema = z.object({
 /**
  * Router per gestione configurazioni
  */
+/**
+ * Helper per upsert di una configurazione
+ * Gestisce validazione, salvataggio e audit log
+ */
+async function upsertConfig(
+  ctx: Context,
+  key: string,
+  value: string,
+  encrypt: boolean,
+  options: { strictUpdate?: boolean; source?: string } = {}
+) {
+  // Valida la chiave
+  validateKey(key);
+
+  // Validazione speciale per password policy (sicurezza)
+  if (key === 'security.password.minLength') {
+    const minLength = parseInt(value, 10);
+    if (isNaN(minLength) || minLength < 8) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Password minLength non può essere inferiore a 8 caratteri',
+      });
+    }
+    if (minLength > 128) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Password minLength non può essere superiore a 128 caratteri',
+      });
+    }
+  }
+
+  // Se strictUpdate=true, verifica che la configurazione esista
+  if (options.strictUpdate) {
+    const existingConfig = await ctx.prisma.appConfig.findUnique({
+      where: { key },
+    });
+
+    if (!existingConfig) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: `Configurazione '${key}' non trovata. Usa 'set' per creare una nuova configurazione.`,
+      });
+    }
+  }
+
+  await saveConfig(ctx.prisma, key, value, encrypt);
+
+  // Log audit
+  await logAudit(ctx, {
+    action: 'CONFIG_UPSERT',
+    targetType: 'Config',
+    targetId: key,
+    result: 'SUCCESS',
+    metadata: {
+      key,
+      isEncrypted: encrypt,
+      valueRedacted: encrypt ? '[ENCRYPTED]' : redact(value),
+      source: options.source,
+    },
+  });
+
+  return {
+    key,
+    value: encrypt ? '[CIFRATO]' : value,
+    isEncrypted: encrypt,
+    message: `Configurazione '${key}' ${
+      options.strictUpdate ? 'aggiornata' : 'salvata'
+    } con successo`,
+  };
+}
+
 export const configRouter = router({
-  /**
-   * Lista configurazioni con paginazione e filtri
-   */
+  // ... (list, get, viewValue - unchanged) ...
   list: loggedProcedure
     .input(ListConfigsSchema)
     .query(async ({ input, ctx }) => {
@@ -248,9 +317,6 @@ export const configRouter = router({
       });
     }),
 
-  /**
-   * Ottiene una configurazione specifica
-   */
   get: loggedProcedure.input(GetConfigSchema).query(async ({ input, ctx }) => {
     // Se decrypt=true, verifica che l'utente sia admin
     if (input.decrypt && ctx.session?.user?.role !== 'admin') {
@@ -260,29 +326,32 @@ export const configRouter = router({
       });
     }
 
-    const value = await getConfig(ctx.prisma, input.key, input.decrypt);
+    const config = await ctx.prisma.appConfig.findUnique({
+      where: { key: input.key },
+    });
 
-    if (value === null) {
+    if (!config) {
       throw new TRPCError({
         code: 'NOT_FOUND',
         message: `Configurazione '${input.key}' non trovata`,
       });
     }
 
-    // Se non decrittato e il valore è cifrato, mostra placeholder
-    const finalValue =
-      !input.decrypt && value.includes(':') ? '[ENCRYPTED]' : value;
+    let finalValue = config.value;
+    if (input.decrypt && config.isEncrypted) {
+      const { decryptValue } = await import('../lib/configManager');
+      finalValue = decryptValue(config.value);
+    } else if (!input.decrypt && config.isEncrypted) {
+      finalValue = '[ENCRYPTED]';
+    }
 
     return {
       key: input.key,
       value: finalValue,
-      isEncrypted: !input.decrypt ? undefined : false,
+      isEncrypted: config.isEncrypted,
     };
   }),
 
-  /**
-   * Visualizza valore configurazione con modalità masked/raw
-   */
   viewValue: loggedProcedure
     .input(ViewValueSchema)
     .query(async ({ input, ctx }) => {
@@ -352,67 +421,15 @@ export const configRouter = router({
       };
     }),
 
-  /**
-   * Imposta una configurazione
-   */
   set: adminProcedure
+    .use(withSectionAccess('maintenance'))
     .use(withRateLimit('configMutations'))
     .use(withIdempotency())
     .input(SetConfigSchema)
     .mutation(async ({ input, ctx }) => {
-      // Valida la chiave
-      validateKey(input.key);
-
-      // Validazione speciale per password policy (sicurezza)
-      if (input.key === 'security.password.minLength') {
-        const minLength = parseInt(input.value, 10);
-        if (isNaN(minLength) || minLength < 8) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message:
-              'Password minLength non può essere inferiore a 8 caratteri',
-          });
-        }
-        if (minLength > 128) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message:
-              'Password minLength non può essere superiore a 128 caratteri',
-          });
-        }
-      }
-
-      // Verifica se la configurazione esiste già
-      // const existingConfig = await ctx.prisma.appConfig.findUnique({
-      //   where: { key: input.key },
-      // });
-
-      await saveConfig(ctx.prisma, input.key, input.value, input.encrypt);
-
-      // Log audit con azione appropriata
-      await logAudit(ctx, {
-        action: 'CONFIG_UPSERT',
-        targetType: 'Config',
-        targetId: input.key,
-        result: 'SUCCESS',
-        metadata: {
-          key: input.key,
-          isEncrypted: input.encrypt,
-          valueRedacted: input.encrypt ? '[ENCRYPTED]' : redact(input.value),
-        },
-      });
-
-      return {
-        key: input.key,
-        value: input.encrypt ? '[CIFRATO]' : input.value,
-        isEncrypted: input.encrypt,
-        message: `Configurazione '${input.key}' salvata con successo`,
-      };
+      return await upsertConfig(ctx, input.key, input.value, input.encrypt);
     }),
 
-  /**
-   * Elimina una configurazione
-   */
   delete: adminProcedure
     .use(withSectionAccess('maintenance'))
     .use(withRateLimit('configMutations'))
@@ -454,82 +471,24 @@ export const configRouter = router({
       };
     }),
 
-  /**
-   * Aggiorna una configurazione esistente
-   */
   update: adminProcedure
     .use(withSectionAccess('maintenance'))
     .use(withRateLimit('configMutations'))
     .use(withIdempotency())
     .input(SetConfigSchema)
     .mutation(async ({ input, ctx }) => {
-      // Valida la chiave
-      validateKey(input.key);
-
-      // Validazione speciale per password policy (sicurezza)
-      if (input.key === 'security.password.minLength') {
-        const minLength = parseInt(input.value, 10);
-        if (isNaN(minLength) || minLength < 8) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message:
-              'Password minLength non può essere inferiore a 8 caratteri',
-          });
-        }
-        if (minLength > 128) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message:
-              'Password minLength non può essere superiore a 128 caratteri',
-          });
-        }
-      }
-
-      // Verifica che la configurazione esista
-      const existingConfig = await ctx.prisma.appConfig.findUnique({
-        where: { key: input.key },
+      return await upsertConfig(ctx, input.key, input.value, input.encrypt, {
+        strictUpdate: true,
       });
-
-      if (!existingConfig) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: `Configurazione '${input.key}' non trovata. Usa 'set' per creare una nuova configurazione.`,
-        });
-      }
-
-      await saveConfig(ctx.prisma, input.key, input.value, input.encrypt);
-
-      // Log audit
-      await logAudit(ctx, {
-        action: 'CONFIG_UPSERT',
-        targetType: 'Config',
-        targetId: input.key,
-        result: 'SUCCESS',
-        metadata: {
-          key: input.key,
-          isEncrypted: input.encrypt,
-          valueRedacted: input.encrypt ? '[ENCRYPTED]' : redact(input.value),
-        },
-      });
-
-      return {
-        key: input.key,
-        value: input.encrypt ? '[CIFRATO]' : input.value,
-        isEncrypted: input.encrypt,
-        message: `Configurazione '${input.key}' aggiornata con successo`,
-      };
     }),
 
-  /**
-   * Ottiene configurazioni multiple in una singola chiamata
-   */
   getMultiple: loggedProcedure
     .input(
       z.object({
         keys: z.array(
           z.string().min(1, 'Chiave configurazione non può essere vuota')
         ),
-        decrypt: z.boolean().optional().default(true),
+        decrypt: z.boolean().optional().default(false),
       })
     )
     .query(async ({ input, ctx }) => {
@@ -557,10 +516,10 @@ export const configRouter = router({
       return results;
     }),
 
-  /**
-   * Imposta configurazioni multiple in una singola chiamata
-   */
   setMultiple: adminProcedure
+    .use(withSectionAccess('maintenance'))
+    .use(withRateLimit('configMutations'))
+    .use(withIdempotency())
     .input(
       z.object({
         configs: z.array(
@@ -578,35 +537,12 @@ export const configRouter = router({
       const results = await Promise.all(
         input.configs.map(async config => {
           try {
-            // Valida la chiave
-            validateKey(config.key);
-
-            // Verifica se la configurazione esiste già
-            // const existingConfig = await ctx.prisma.appConfig.findUnique({
-            //   where: { key: config.key },
-            // });
-
-            await saveConfig(
-              ctx.prisma,
+            await upsertConfig(
+              ctx,
               config.key,
               config.value,
               config.encrypt
             );
-
-            // Log audit granulare per ogni configurazione
-            await logAudit(ctx, {
-              action: 'CONFIG_UPSERT',
-              targetType: 'Config',
-              targetId: config.key,
-              result: 'SUCCESS',
-              metadata: {
-                key: config.key,
-                isEncrypted: config.encrypt,
-                valueRedacted: config.encrypt
-                  ? '[ENCRYPTED]'
-                  : redact(config.value),
-              },
-            });
 
             return {
               key: config.key,
@@ -627,9 +563,6 @@ export const configRouter = router({
       return results;
     }),
 
-  /**
-   * Verifica se una configurazione esiste
-   */
   exists: loggedProcedure
     .input(
       z.object({
@@ -649,9 +582,6 @@ export const configRouter = router({
       };
     }),
 
-  /**
-   * Esporta configurazioni in formato JSON
-   */
   exportJson: adminProcedure
     .input(ExportJsonSchema)
     .mutation(async ({ input, ctx }) => {
@@ -696,9 +626,6 @@ export const configRouter = router({
       };
     }),
 
-  /**
-   * Importa configurazioni da formato JSON
-   */
   importJson: adminProcedure
     .input(ImportJsonSchema)
     .mutation(async ({ input, ctx }) => {
@@ -710,36 +637,16 @@ export const configRouter = router({
 
       for (const item of input.items) {
         try {
-          // Valida la chiave
-          validateKey(item.key);
-
           // Se value è null, salta questo item
           if (item.value === null) {
             continue;
           }
 
-          // Determina se cifrare
+          // Determina se cifrare (default false se non specificato)
           const shouldEncrypt = item.encrypt === true;
 
-          // Verifica se la configurazione esiste già
-          // const existingConfig = await ctx.prisma.appConfig.findUnique({
-          //   where: { key: item.key },
-          // });
-
-          await saveConfig(ctx.prisma, item.key, item.value, shouldEncrypt);
-
-          // Log audit granulare per ogni chiave importata
-          await logAudit(ctx, {
-            action: 'CONFIG_UPSERT',
-            targetType: 'Config',
-            targetId: item.key,
-            result: 'SUCCESS',
-            metadata: {
-              key: item.key,
-              isEncrypted: shouldEncrypt,
-              valueRedacted: shouldEncrypt ? '[ENCRYPTED]' : redact(item.value),
-              source: 'import',
-            },
+          await upsertConfig(ctx, item.key, item.value, shouldEncrypt, {
+            source: 'import',
           });
 
           results.successCount++;

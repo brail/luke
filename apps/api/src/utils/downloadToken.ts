@@ -66,19 +66,41 @@ function signPayload(payload: string): string {
  * @param signature - Firma da verificare (base64url)
  * @returns true se la firma è valida
  */
+/**
+ * Verifica una firma HMAC in modo timing-safe
+ *
+ * Compares raw 32-byte HMAC digests directly so the comparison has constant
+ * length regardless of the provided signature string, eliminating the timing
+ * side-channel that would otherwise leak whether the signature is well-formed.
+ */
 function verifySignature(payload: string, signature: string): boolean {
-  const expectedSignature = signPayload(payload);
+  // Re-compute expected signature as raw bytes
+  const expectedBuffer = (() => {
+    const h = createHmac('sha256', HMAC_KEY);
+    h.update(payload);
+    return h.digest(); // Always 32 bytes for HMAC-SHA256
+  })();
 
-  // Converti entrambe le stringhe in Buffer per timing-safe compare
-  const expected = Buffer.from(expectedSignature, 'utf8');
-  const actual = Buffer.from(signature, 'utf8');
-
-  // Se lunghezze diverse, fallisce subito (ma timing-safe)
-  if (expected.length !== actual.length) {
+  // Decode provided signature from base64url to raw bytes
+  let actualBuffer: Buffer;
+  try {
+    const base64 = (signature || '')
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+    const padded = base64.padEnd(
+      base64.length + ((4 - (base64.length % 4)) % 4),
+      '='
+    );
+    actualBuffer = Buffer.from(padded, 'base64');
+  } catch {
     return false;
   }
 
-  return timingSafeEqual(expected, actual);
+  if (actualBuffer.length !== expectedBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(expectedBuffer, actualBuffer);
 }
 
 /**

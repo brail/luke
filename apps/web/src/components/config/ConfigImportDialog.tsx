@@ -71,12 +71,12 @@ export function ConfigImportDialog({
   const [step, setStep] = useState<'upload' | 'preview' | 'importing'>(
     'upload'
   );
-  const [, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<ImportPreview[]>([]);
   const [progress, setProgress] = useState(0);
   const [importing, setImporting] = useState(false);
 
   const importMutation = trpc.config.importJson.useMutation();
+  const utils = trpc.useUtils();
 
   const validateConfig = useCallback(
     (config: ImportConfig): { valid: boolean; error?: string } => {
@@ -104,8 +104,6 @@ export function ConfigImportDialog({
       return;
     }
 
-    setFile(selectedFile);
-
     const reader = new FileReader();
     reader.onload = async e => {
       try {
@@ -116,8 +114,27 @@ export function ConfigImportDialog({
           throw new Error('Formato file non valido: manca array "configs"');
         }
 
+        // Check existence of valid keys
+        const validKeys = data.configs
+          .filter((c: any) => validateConfig(c).valid)
+          .map((c: any) => c.key);
+
+        const existingKeys = new Set<string>();
+        if (validKeys.length > 0) {
+          try {
+            const results = await utils.config.getMultiple.fetch({
+              keys: validKeys,
+              decrypt: false,
+            });
+            results.forEach(r => {
+              if (r.found) existingKeys.add(r.key);
+            });
+          } catch (err) {
+            console.warn('Failed to check existing configs:', err);
+          }
+        }
+
         // Valida e determina status per ogni configurazione
-        // Questo step distingue tra nuove configurazioni e aggiornamenti
         const previewData: ImportPreview[] = await Promise.all(
           data.configs.map(async (config: any) => {
             const validation = validateConfig(config);
@@ -129,11 +146,11 @@ export function ConfigImportDialog({
               };
             }
 
-            // Per ora assume sempre "new" per evitare chiamate async complesse
-            // TODO: Implementare verifica esistenza in modo più elegante
             return {
               config,
-              status: 'new' as const,
+              status: existingKeys.has(config.key)
+                ? ('update' as const)
+                : ('new' as const),
             };
           })
         );
@@ -167,9 +184,11 @@ export function ConfigImportDialog({
     setImporting(true);
     setProgress(0);
 
+    let progressInterval: ReturnType<typeof setInterval> | null = null;
+
     try {
       // Progress bar funzionale durante l'import
-      const progressInterval = setInterval(() => {
+      progressInterval = setInterval(() => {
         setProgress(prev => Math.min(prev + 10, 90));
       }, 200);
 
@@ -177,7 +196,6 @@ export function ConfigImportDialog({
         items: validConfigs,
       });
 
-      clearInterval(progressInterval);
       setProgress(100); // Completa la progress bar
 
       if (result.successCount > 0) {
@@ -199,13 +217,13 @@ export function ConfigImportDialog({
       }
 
       // Reset form
-      setFile(null);
       setPreview([]);
       setStep('upload');
     } catch (error) {
       console.error("Errore durante l'import:", error);
       toast.error("Errore durante l'importazione");
     } finally {
+      if (progressInterval !== null) clearInterval(progressInterval);
       setImporting(false);
       // Mantieni progress a 100% per un momento prima di resettare
       setTimeout(() => setProgress(0), 1000);
@@ -214,7 +232,6 @@ export function ConfigImportDialog({
 
   const handleClose = () => {
     if (!importing) {
-      setFile(null);
       setPreview([]);
       setStep('upload');
       onOpenChange();

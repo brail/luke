@@ -1,10 +1,10 @@
 /**
- * @luke/core/runtime - Environment variables management
+ * @luke/core/runtime - Configuration management
  *
- * Typed environment variables with runtime validation and safe defaults.
- * Centralizes environment configuration for both client and server contexts.
+ * Centralized configuration management using AppConfig system.
+ * Provides typed configuration access for both client and server contexts.
  *
- * @version 0.1.0
+ * @version 0.2.0
  * @author Luke Team
  */
 
@@ -22,51 +22,57 @@ export interface EnvConfig {
   isServer: boolean;
 }
 
+// Minimal interface to avoid full PrismaClient dependency issues in core
+export interface IPrismaConfigClient {
+  appConfig: {
+    findUnique(args: { where: { key: string } }): Promise<{ value: string; isEncrypted?: boolean } | null>;
+    [key: string]: any;
+  }
+  [key: string]: any;
+}
+
 /**
- * Gets the API base URL from environment variables
+ * Gets the API base URL synchronously (client-side compatible)
  *
- * @param fallback - Fallback URL if NEXT_PUBLIC_API_URL is not set
+ * Priority:
+ * 1. NEXT_PUBLIC_API_URL environment variable
+ * 2. Development fallback (localhost:3001)
+ * 3. Build-time fallback (localhost:3001)
+ *
  * @returns API base URL
- *
- * @example
- * // Development
- * getApiBaseUrl() // → 'http://localhost:3001'
- *
- * @example
- * // Production with env var
- * process.env.NEXT_PUBLIC_API_URL = 'https://api.example.com'
- * getApiBaseUrl() // → 'https://api.example.com'
  */
-export function getApiBaseUrl(
-  fallback: string = 'http://localhost:3001'
-): string {
-  // In browser, process.env.NEXT_PUBLIC_API_URL is available
-  // In server, we can also access it directly
+export function getApiBaseUrl(): string {
   const envUrl = process.env.NEXT_PUBLIC_API_URL;
 
   if (envUrl) {
     return envUrl;
   }
 
-  return fallback;
+  // Always use localhost fallback for development and build
+  // This prevents build errors during prerendering
+  return 'http://localhost:3001';
 }
 
 /**
- * Gets the frontend base URL from environment variables
+ * Gets the frontend base URL synchronously (client-side compatible)
  *
- * @param fallback - Fallback URL if NEXT_PUBLIC_FRONTEND_URL is not set
+ * Priority:
+ * 1. NEXT_PUBLIC_FRONTEND_URL environment variable
+ * 2. Development fallback (localhost:3000)
+ * 3. Build-time fallback (localhost:3000)
+ *
  * @returns Frontend base URL
  */
-export function getFrontendBaseUrl(
-  fallback: string = 'http://localhost:3000'
-): string {
+export function getFrontendBaseUrl(): string {
   const envUrl = process.env.NEXT_PUBLIC_FRONTEND_URL;
 
   if (envUrl) {
     return envUrl;
   }
 
-  return fallback;
+  // Always use localhost fallback for development and build
+  // This prevents build errors during prerendering
+  return 'http://localhost:3000';
 }
 
 /**
@@ -126,4 +132,86 @@ export function validateEnvConfig(): void {
   if (config.isProduction) {
     // Add production-specific validations here
   }
+}
+
+/**
+ * Gets configuration value from AppConfig (server-side only)
+ *
+ * This function is intended for server-side use where Prisma is available.
+ * For client-side configuration, use environment variables or tRPC calls.
+ *
+ * @param prisma - Prisma client instance
+ * @param key - Configuration key (e.g., 'app.urls.apiBase')
+ * @param defaultValue - Default value if not found
+ * @returns Configuration value or default
+ */
+export async function getConfigValue(
+  prisma: IPrismaConfigClient,
+  key: string,
+  defaultValue?: string
+): Promise<string | undefined> {
+  try {
+    const config = await prisma.appConfig.findUnique({
+      where: { key },
+    });
+
+    return config?.value ?? defaultValue;
+  } catch (error) {
+    console.warn(`Failed to get config value for key '${key}':`, error);
+    return defaultValue;
+  }
+}
+
+/**
+ * Gets API base URL from AppConfig (server-side only)
+ * Falls back to environment variable or localhost
+ *
+ * @param prisma - Prisma client instance
+ * @returns API base URL
+ */
+export async function getApiBaseUrlFromConfig(prisma: IPrismaConfigClient): Promise<string> {
+  const envUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (envUrl) {
+    return envUrl;
+  }
+
+  try {
+    const config = await getConfigValue(prisma, 'app.apiBaseUrl');
+    if (config) {
+      return config;
+    }
+  } catch (error) {
+    console.warn('Failed to get API base URL from AppConfig:', error);
+  }
+
+  // Fallback to localhost
+  return 'http://localhost:3001';
+}
+
+/**
+ * Gets frontend base URL from AppConfig (server-side only)
+ * Falls back to environment variable or localhost
+ *
+ * @param prisma - Prisma client instance
+ * @returns Frontend base URL
+ */
+export async function getFrontendBaseUrlFromConfig(
+  prisma: IPrismaConfigClient
+): Promise<string> {
+  const envUrl = process.env.NEXT_PUBLIC_FRONTEND_URL;
+  if (envUrl) {
+    return envUrl;
+  }
+
+  try {
+    const config = await getConfigValue(prisma, 'app.baseUrl');
+    if (config) {
+      return config;
+    }
+  } catch (error) {
+    console.warn('Failed to get frontend base URL from AppConfig:', error);
+  }
+
+  // Fallback to localhost
+  return 'http://localhost:3000';
 }

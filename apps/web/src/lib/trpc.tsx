@@ -17,7 +17,7 @@ import { useUnauthorizedHandler } from '../hooks/use-unauthorized-handler';
 /**
  * Client tRPC per React Query
  * Tipizzato con AppRouter reale per inferenza end-to-end
- * TODO futuro: Migrare a import da @luke/core se web/api si separano in repository diversi
+ * Nota futura: Migrare a import da @luke/core se web/api si separano in repository diversi
  */
 export const trpc = createTRPCReact<AppRouter>();
 

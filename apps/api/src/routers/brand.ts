@@ -15,7 +15,7 @@ import {
 
 import { logAudit } from '../lib/auditLog';
 import { withRateLimit } from '../lib/ratelimit';
-import { router, publicProcedure } from '../lib/trpc';
+import { router, protectedProcedure } from '../lib/trpc';
 import { requirePermission } from '../lib/permissions';
 import { deleteObject } from '../storage';
 import { moveTempLogoToBrand } from '../services/brandLogo.service';
@@ -68,7 +68,7 @@ export const brandRouter = router({
    * Lista tutti i brand con filtri opzionali e cursor pagination
    * Richiede permission brands:read
    */
-  list: publicProcedure
+  list: protectedProcedure
     .use(requirePermission('brands:read'))
     .input(BrandListInputSchema.optional())
     .query(async ({ ctx, input }) => {
@@ -106,7 +106,7 @@ export const brandRouter = router({
    * Crea un nuovo brand
    * Richiede permission brands:create
    */
-  create: publicProcedure
+  create: protectedProcedure
     .use(requirePermission('brands:create'))
     .use(withRateLimit('brandMutations'))
     .input(BrandInputSchema)
@@ -166,7 +166,7 @@ export const brandRouter = router({
    * Aggiorna un brand esistente
    * Richiede permission brands:update
    */
-  update: publicProcedure
+  update: protectedProcedure
     .use(requirePermission('brands:update'))
     .use(withRateLimit('brandMutations'))
     .input(BrandUpdateInputSchema)
@@ -232,7 +232,7 @@ export const brandRouter = router({
    * Imposta isActive = false invece di eliminare il record
    * Richiede permission brands:delete
    */
-  remove: publicProcedure
+  remove: protectedProcedure
     .use(requirePermission('brands:delete'))
     .use(withRateLimit('brandMutations'))
     .input(BrandIdSchema)
@@ -278,7 +278,7 @@ export const brandRouter = router({
    * ATTENZIONE: Questa operazione è irreversibile
    * Richiede permission brands:delete
    */
-  hardDelete: publicProcedure
+  hardDelete: protectedProcedure
     .use(requirePermission('brands:delete'))
     .use(withRateLimit('brandMutations'))
     .input(BrandIdSchema)

@@ -3,4 +3,9 @@
  * Utilizzate dal front-end per type-safety
  */
 
-export type { AppRouter } from './routers';
+import type { inferRouterOutputs, inferRouterInputs } from '@trpc/server';
+import type { AppRouter } from './routers';
+
+export type { AppRouter };
+export type RouterOutputs = inferRouterOutputs<AppRouter>;
+export type RouterInputs = inferRouterInputs<AppRouter>;

@@ -314,11 +314,12 @@ export async function moveTempLogoToBrand(
     brandId: string;
   }
 ): Promise<{ url: string }> {
-  // Recupera metadati file temporaneo
+  // Recupera metadati file temporaneo con ownership check
   const tempFile = await ctx.prisma.fileObject.findFirst({
     where: {
       bucket: 'temp-brand-logos',
       key: { startsWith: params.tempLogoId },
+      createdBy: ctx.session!.user.id,
     },
   });
 

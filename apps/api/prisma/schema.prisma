@@ -7,7 +7,7 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = "file:./dev.db"
+  url      = env("DATABASE_URL")
 }
 
 // Enums
@@ -129,6 +129,7 @@ model UserToken {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([type, tokenHash])
+  @@index([userId, type])
   @@map("user_tokens")
 }
 
@@ -146,6 +147,7 @@ model FileObject {
   @@unique([bucket, key])
   @@index([bucket, key])
   @@index([createdAt])
+  @@index([createdBy])
   @@map("file_objects")
 }
 

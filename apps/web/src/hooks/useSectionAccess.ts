@@ -8,8 +8,6 @@ import type { Section } from '@luke/core';
 
 import { trpc } from '../lib/trpc';
 
-import { useAccess } from './useAccess';
-
 /**
  * Mapping sezioni -> permissions per nuovo sistema
  * Mantiene consistency con API middleware
@@ -28,7 +26,6 @@ const SECTION_TO_PERMISSION: Record<Section, string> = {
  */
 export function useSectionAccess() {
   const { data: session } = useSession();
-  const { can } = useAccess();
 
   // Query per override dell'utente corrente (solo se admin)
   const { data: userOverrides } = trpc.sectionAccess.getForMe.useQuery(
@@ -36,15 +33,30 @@ export function useSectionAccess() {
     {
       enabled: !!session?.user && session.user.role === 'admin',
       retry: false, // Non riprovare se 403
+      // Disabilita batching per evitare batch troppo grandi
+      trpc: {
+        context: {
+          skipBatch: true,
+        },
+      },
     }
   );
 
-  // Query per default di ruolo (solo se admin)
+  // Query per default di ruolo (disponibile per tutti gli utenti loggati)
   const { data: roleDefaults } = trpc.rbac.sectionDefaults.get.useQuery(
     undefined,
     {
-      enabled: !!session?.user && session.user.role === 'admin',
-      retry: false, // Non riprovare se 403
+      enabled: !!session?.user,
+      retry: false,
+    }
+  );
+
+  // Query per sezioni disabilitate globalmente
+  const { data: disabledSections } = trpc.rbac.disabledSections.get.useQuery(
+    undefined,
+    {
+      enabled: !!session?.user,
+      retry: false,
     }
   );
 
@@ -83,7 +95,7 @@ export function useSectionAccess() {
         sectionAccessDefaults: roleDefaults || {},
         userOverride: override ? { enabled: override.enabled } : undefined,
         section,
-        disabledSections: [], // TODO: fetch da API se necessario
+        disabledSections: disabledSections || [],
       });
     };
 
@@ -92,7 +104,7 @@ export function useSectionAccess() {
       settings: checkAccess('settings'),
       maintenance: checkAccess('maintenance'),
     };
-  }, [session?.user, userOverrides, roleDefaults, can]);
+  }, [session?.user, userOverrides, roleDefaults, disabledSections]);
 
   return sectionAccess;
 }

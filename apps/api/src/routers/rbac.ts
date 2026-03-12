@@ -4,12 +4,13 @@
  */
 
 import { z } from 'zod';
-import { router, adminProcedure } from '../lib/trpc';
+import { router, adminProcedure, loggedProcedure } from '../lib/trpc';
 import { TRPCError } from '@trpc/server';
 import { sectionEnum, sectionDefaultEnum } from '@luke/core';
 import {
   getRbacConfig,
   setRbacSectionDefaults,
+  getSectionsDisabled,
 } from '../services/appConfig.service';
 import { wouldLockAllAdminsFromSettings } from '../services/rbac.service';
 import { logAudit } from '../lib/auditLog';
@@ -34,7 +35,7 @@ export const rbacRouter = router({
    * Ottiene i default di accesso alle sezioni per ruolo
    */
   sectionDefaults: router({
-    get: adminProcedure.query(async ({ ctx }) => {
+    get: loggedProcedure.query(async ({ ctx }) => {
       const rbacConfig = await getRbacConfig(ctx.prisma);
       return rbacConfig.sectionAccessDefaults;
     }),
@@ -74,5 +75,14 @@ export const rbacRouter = router({
 
         return { ok: true };
       }),
+  }),
+
+  /**
+   * Ottiene le sezioni disabilitate globalmente
+   */
+  disabledSections: router({
+    get: loggedProcedure.query(async ({ ctx }) => {
+      return await getSectionsDisabled(ctx.prisma);
+    }),
   }),
 });
