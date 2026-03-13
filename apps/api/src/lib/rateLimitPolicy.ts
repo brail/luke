@@ -32,6 +32,11 @@ const DEFAULTS: Record<string, RateLimitPolicy> = {
     timeWindow: '1m',
     keyBy: 'userId',
   },
+  sectionAccessSet: {
+    max: process.env.NODE_ENV === 'development' ? 100 : 20,
+    timeWindow: '1m',
+    keyBy: 'userId',
+  },
 };
 
 /**

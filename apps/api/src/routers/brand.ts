@@ -112,9 +112,10 @@ export const brandRouter = router({
     .input(BrandInputSchema)
     .mutation(async ({ input, ctx }) => {
       const normalizedCode = normalizeCode(input.code);
+      const { tempLogoId, ...brandData } = input;
 
-      return ctx.prisma.$transaction(async tx => {
-        // Verifica che il codice normalizzato non esista già
+      // Transazione: solo creazione brand (senza I/O file)
+      const created = await ctx.prisma.$transaction(async tx => {
         const existingBrand = await tx.brand.findUnique({
           where: { code: normalizedCode },
         });
@@ -126,40 +127,37 @@ export const brandRouter = router({
           });
         }
 
-        const created = await tx.brand.create({
-          data: { ...input, code: normalizedCode },
+        return tx.brand.create({
+          data: { ...brandData, code: normalizedCode },
         });
+      }, { timeout: 15000 });
 
-        // Se presente tempLogoId, sposta file temporaneo
-        let finalLogoUrl = created.logoUrl;
-        if (input.tempLogoId) {
-          try {
-            const moveResult = await moveTempLogoToBrand(ctx, {
-              tempLogoId: input.tempLogoId,
-              brandId: created.id,
-            });
-            finalLogoUrl = moveResult.url;
-          } catch (moveError) {
-            // Log errore ma non fallire la creazione del brand
-            ctx.logger?.warn(
-              { moveError },
-              'Failed to move temp logo to brand'
-            );
-          }
+      // Dopo il commit: sposta logo temporaneo (usa ctx.prisma, brand ora esiste)
+      let finalLogoUrl = created.logoUrl;
+      if (tempLogoId) {
+        try {
+          const moveResult = await moveTempLogoToBrand(ctx, {
+            tempLogoId,
+            brandId: created.id,
+          });
+          finalLogoUrl = moveResult.url;
+        } catch (moveError) {
+          ctx.logger?.warn(
+            { moveError },
+            'Failed to move temp logo to brand'
+          );
         }
+      }
 
-        // Audit logging gestito automaticamente dal middleware withAuditLog
-
-        return {
-          id: created.id,
-          code: created.code,
-          name: created.name,
-          logoUrl: finalLogoUrl,
-          isActive: created.isActive,
-          createdAt: created.createdAt,
-          updatedAt: created.updatedAt,
-        };
-      });
+      return {
+        id: created.id,
+        code: created.code,
+        name: created.name,
+        logoUrl: finalLogoUrl,
+        isActive: created.isActive,
+        createdAt: created.createdAt,
+        updatedAt: created.updatedAt,
+      };
     }),
 
   /**
@@ -205,10 +203,11 @@ export const brandRouter = router({
           input.data.code = normalizedCode;
         }
 
+        const { tempLogoId: _tempLogoId, ...brandUpdateData } = input.data;
         const updated = await tx.brand.update({
           where: { id: input.id },
           data: {
-            ...input.data,
+            ...brandUpdateData,
             updatedAt: new Date(),
           },
         });
@@ -224,7 +223,7 @@ export const brandRouter = router({
           createdAt: updated.createdAt,
           updatedAt: updated.updatedAt,
         };
-      });
+      }, { timeout: 15000 });
     }),
 
   /**

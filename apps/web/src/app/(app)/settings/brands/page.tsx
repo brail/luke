@@ -12,10 +12,11 @@ import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
 import { useAppContext } from '../../../../contexts/AppContextProvider';
 import { useInvalidateContext } from '../../../../contexts/useInvalidateContext';
+import { useBrandPermissions } from '../../../../hooks/useBrandPermissions';
 import { trpc } from '../../../../lib/trpc';
 
-import { BrandDialog } from './_components/BrandDialog';
-import { BrandTable } from './_components/BrandTable';
+import { BrandDialogWithPermissions } from './_components/BrandDialogWithPermissions';
+import { BrandTableWithPermissions } from './_components/BrandTableWithPermissions';
 
 type BrandItem = RouterOutputs['brand']['list']['items'][number];
 
@@ -28,6 +29,7 @@ export default function BrandsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingBrand, setEditingBrand] = useState<BrandItem | null>(null);
   const { brand: currentBrand } = useAppContext();
+  const brandPerms = useBrandPermissions();
 
   // Query per ottenere la lista dei brand
   const {
@@ -50,6 +52,9 @@ export default function BrandsPage() {
     if (error.data?.code === 'CONFLICT') {
       return 'Nome o codice brand già in uso';
     }
+    if (error.data?.code === 'FORBIDDEN') {
+      return 'Non hai i permessi per eseguire questa operazione';
+    }
     if (error.data?.code === 'UNAUTHORIZED') {
       return 'Sessione scaduta, rieffettua il login';
     }
@@ -58,6 +63,9 @@ export default function BrandsPage() {
     }
 
     // Errori HTTP diretti
+    if (error.status === 403) {
+      return 'Non hai i permessi per eseguire questa operazione';
+    }
     if (error.status === 409) {
       return 'Nome o codice brand già in uso';
     }
@@ -181,9 +189,11 @@ export default function BrandsPage() {
               onChange={e => setSearchTerm(e.target.value)}
             />
           </div>
-          <div className="flex items-end">
-            <Button onClick={handleCreateBrand}>Nuovo Brand</Button>
-          </div>
+          {brandPerms.canCreate && (
+            <div className="flex items-end">
+              <Button onClick={handleCreateBrand}>Nuovo Brand</Button>
+            </div>
+          )}
         </div>
       </SectionCard>
 
@@ -192,7 +202,7 @@ export default function BrandsPage() {
         title="Brand Sistema"
         description="Lista completa dei brand configurati"
       >
-        <BrandTable
+        <BrandTableWithPermissions
           brands={brands}
           isLoading={isLoading}
           error={error}
@@ -203,7 +213,7 @@ export default function BrandsPage() {
       </SectionCard>
 
       {/* Dialog per creazione/modifica */}
-      <BrandDialog
+      <BrandDialogWithPermissions
         open={isDialogOpen}
         onOpenChange={handleDialogClose}
         brand={editingBrand}

@@ -5,13 +5,14 @@
 
 import { randomUUID } from 'crypto';
 
-import { initTRPC, TRPCError } from '@trpc/server';
-import { trpcErrorFormatter } from './error';
+import { TRPCError } from '@trpc/server';
 
 import { type Role } from '@luke/core';
 
 import { authenticateRequest, type UserSession } from './auth';
 import { getTokenVersionCacheTTL } from './configManager';
+import { t } from './t';
+import type { Context } from './context';
 import {
   withRole,
   roleIn,
@@ -22,7 +23,6 @@ import {
 } from './rbac';
 
 import type { PrismaClient } from '@prisma/client';
-import type { FastifyRequest, FastifyReply } from 'fastify';
 
 /**
  * Cache in-memory per tokenVersion con TTL
@@ -110,20 +110,6 @@ async function verifyTokenVersion(
 }
 
 /**
- * Context per tRPC
- * Contiene il client Prisma, la sessione utente e altre dipendenze
- */
-export interface Context {
-  prisma: PrismaClient;
-  session: UserSession | null;
-  req: FastifyRequest;
-  res: FastifyReply;
-  traceId: string;
-  logger: any; // Logger Pino da req.log
-  _permissionsCache?: Map<string, boolean>; // Cache per-request delle permissions
-}
-
-/**
  * Crea il context per tRPC
  * @param context - Oggetto contenente le dipendenze
  * @returns Context per tRPC
@@ -134,8 +120,8 @@ export async function createContext({
   res,
 }: {
   prisma: PrismaClient;
-  req: FastifyRequest;
-  res: FastifyReply;
+  req: any;
+  res: any;
 }): Promise<Context> {
   // Autentica la richiesta e ottieni la sessione
   const session = await authenticateRequest(req, res);
@@ -155,20 +141,18 @@ export async function createContext({
 
 /**
  * Inizializza tRPC con il context
+ * NOTA: `t` è importato da './t.ts' per evitare circular dependencies
  */
-const t = initTRPC.context<Context>().create({
-  errorFormatter: trpcErrorFormatter as any,
-});
-
-/**
- * Esporta t per uso in middleware personalizzati
- */
-export { t };
 
 /**
  * Router base per tRPC
  */
 export const router = t.router;
+
+/**
+ * Esporta t per uso in middleware personalizzati
+ */
+export { t };
 
 /**
  * Procedure pubblica (senza autenticazione)
@@ -347,3 +331,8 @@ export {
   adminOrManager,
   authenticatedOnly,
 };
+
+/**
+ * Re-esporta Context da ./context per backward compatibility
+ */
+export type { Context };

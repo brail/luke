@@ -24,6 +24,7 @@ import {
 } from '../services/auth.service';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { withRateLimit } from '../lib/ratelimit';
+import { requirePermission } from '../lib/permissions';
 import {
   router,
   publicProcedure,
@@ -134,6 +135,7 @@ export const authRouter = router({
    * Usa helper DRY per evitare duplicazione codice
    */
   requestEmailVerificationAdmin: adminProcedure
+    .use(requirePermission('users:update'))
     .use(withRateLimit('userMutations'))
     .input(RequestEmailVerificationAdminSchema)
     .mutation(async ({ input, ctx }) => {

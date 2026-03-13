@@ -7,7 +7,7 @@ import { TRPCError } from '@trpc/server';
 import path from 'path';
 import { Readable } from 'stream';
 
-import { getPublicUrl, extractKeyFromUrl, type UrlConfig } from '@luke/core';
+import { getPublicUrl, extractKeyFromUrl, type UrlConfig, type StorageBucket } from '@luke/core';
 
 import { putObject, deleteObject, getStorageProvider } from '../storage';
 import { logAudit } from '../lib/auditLog';
@@ -314,11 +314,13 @@ export async function moveTempLogoToBrand(
     brandId: string;
   }
 ): Promise<{ url: string }> {
-  // Recupera metadati file temporaneo con ownership check
+  // Recupera metadati file temporaneo con ownership check.
+  // La chiave storage è generata server-side (UUID), ma originalName contiene tempId come prefisso.
+  // sanitizeFileName sostituisce '/' con '-', quindi il prefisso è "<tempId>-".
   const tempFile = await ctx.prisma.fileObject.findFirst({
     where: {
       bucket: 'temp-brand-logos',
-      key: { startsWith: params.tempLogoId },
+      originalName: { startsWith: params.tempLogoId },
       createdBy: ctx.session!.user.id,
     },
   });
@@ -330,8 +332,8 @@ export async function moveTempLogoToBrand(
     });
   }
 
-  // Estrai filename dal key (rimuovi tempId/)
-  const filename = tempFile.key.replace(`${params.tempLogoId}/`, '');
+  // Estrai filename da originalName (formato: "<tempId>-<filename>")
+  const filename = tempFile.originalName.replace(`${params.tempLogoId}-`, '');
 
   // Nuovo key per brand-logos
   const newKey = `${params.brandId}/${filename}`;
@@ -398,4 +400,155 @@ export async function moveTempLogoToBrand(
   }
 
   return { url: publicUrl };
+}
+
+/**
+ * Elimina un file con retry logic e exponential backoff
+ * Aggiorna FileObject.cleanupStatus per tracking
+ *
+ * @param ctx - Context
+ * @param params - { bucket: StorageBucket, key: string, fileId?: string }
+ * @param maxRetries - Numero massimo di tentativi (default 3)
+ * @param baseDelay - Delay iniziale in ms (default 100)
+ * @returns true se successo, false se tutti i retry falliscono
+ */
+export async function deleteFileWithRetry(
+  ctx: Context,
+  params: {
+    bucket: StorageBucket;
+    key: string;
+    fileId?: string;
+  },
+  maxRetries: number = 3,
+  baseDelay: number = 100
+): Promise<boolean> {
+  const { bucket, key, fileId } = params;
+  const now = new Date();
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const provider = await getStorageProvider(ctx.prisma);
+      await provider.delete({ bucket, key });
+
+      // Aggiorna status nel database se fileId fornito
+      if (fileId) {
+        try {
+          await ctx.prisma.fileObject.update({
+            where: { id: fileId },
+            data: {
+              cleanupStatus: 'SUCCESS',
+              lastCleanupAt: now,
+            },
+          });
+        } catch (updateError) {
+          ctx.logger?.warn(
+            { updateError, fileId },
+            'Failed to update cleanup status after successful delete'
+          );
+        }
+      }
+
+      ctx.logger?.info(
+        { bucket, key, attempt: attempt + 1 },
+        'File deleted successfully'
+      );
+      return true;
+    } catch (error) {
+      if (attempt === maxRetries - 1) {
+        // Final attempt failed
+        if (fileId) {
+          try {
+            await ctx.prisma.fileObject.update({
+              where: { id: fileId },
+              data: {
+                cleanupStatus: 'FAILED',
+                cleanupAttempts: attempt + 1,
+                lastCleanupAt: now,
+              },
+            });
+          } catch (updateError) {
+            ctx.logger?.warn(
+              { updateError, fileId },
+              'Failed to update cleanup status after all retries failed'
+            );
+          }
+        }
+
+        ctx.logger?.warn(
+          { error, bucket, key, attempts: attempt + 1 },
+          'File delete failed after all retries'
+        );
+        return false;
+      }
+
+      // Exponential backoff
+      const delay = baseDelay * Math.pow(2, attempt);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      ctx.logger?.debug(
+        { bucket, key, attempt: attempt + 1, nextDelay: delay },
+        'File delete attempt failed, retrying...'
+      );
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Background job per riprovare cleanup dei file falliti
+ * Viene eseguito periodicamente per ripulire file con status FAILED
+ *
+ * @param ctx - Context
+ * @returns Numero di file ripuliti con successo
+ */
+export async function retryFailedCleanups(ctx: Context): Promise<number> {
+  try {
+    // Trova file con cleanup fallito e poco recente
+    const failedFiles = await ctx.prisma.fileObject.findMany({
+      where: {
+        cleanupStatus: 'FAILED',
+        cleanupAttempts: { lt: 5 }, // Max 5 tentativi totali
+        lastCleanupAt: { lt: new Date(Date.now() - 60 * 60 * 1000) }, // Almeno 1 ora fa
+      },
+      select: {
+        id: true,
+        bucket: true,
+        key: true,
+      },
+    });
+
+    let successCount = 0;
+
+    for (const file of failedFiles) {
+      const success = await deleteFileWithRetry(
+        ctx,
+        {
+          bucket: file.bucket as StorageBucket,
+          key: file.key,
+          fileId: file.id,
+        },
+        3,
+        100
+      );
+
+      if (success) {
+        successCount++;
+      }
+    }
+
+    if (successCount > 0 || failedFiles.length > 0) {
+      ctx.logger?.info(
+        { total: failedFiles.length, succeeded: successCount },
+        'Cleanup retry job completed'
+      );
+    }
+
+    return successCount;
+  } catch (error) {
+    ctx.logger?.error(
+      { error },
+      'Fatal error in retryFailedCleanups background job'
+    );
+    return 0;
+  }
 }

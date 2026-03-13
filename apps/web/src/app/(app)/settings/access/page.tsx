@@ -34,6 +34,7 @@ import { useStandardMutation } from '../../../../lib/useStandardMutation';
 
 import { EffectivePreview } from './_components/EffectivePreview';
 import { RoleSectionDefaultsMatrix } from './_components/RoleSectionDefaultsMatrix';
+import { UserPermissionsGrid } from './_components/UserPermissionsGrid';
 
 /**
  * Pagina per gestione accessi alle sezioni
@@ -137,7 +138,7 @@ export default function SectionAccessPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Gestione Accessi Sezioni"
+        title="Gestione Accessi"
         description="Gestisci accessi alle sezioni tramite override utente o default per ruolo"
       />
 
@@ -250,6 +251,18 @@ export default function SectionAccessPage() {
                   </Button>
                 </div>
               </div>
+            </SectionCard>
+          )}
+
+          {selectedUserId && (
+            <SectionCard
+              title="Permessi per Risorsa"
+              description="Gestisci accesso in lettura e modifica per ciascuna risorsa del sistema"
+            >
+              <UserPermissionsGrid
+                userId={selectedUserId}
+                userRole={usersData?.users.find(u => u.id === selectedUserId)?.role || 'viewer'}
+              />
             </SectionCard>
           )}
         </TabsContent>

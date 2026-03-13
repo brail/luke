@@ -4,14 +4,14 @@
  */
 
 import { router, protectedProcedure } from '../lib/trpc';
-import { withSectionAccess } from '../lib/sectionAccessMiddleware';
+import { requirePermission } from '../lib/permissions';
 
 export const maintenanceRouter = router({
   /**
    * Ottiene lo stato del sistema
    */
   getStatus: protectedProcedure
-    .use(withSectionAccess('maintenance'))
+    .use(requirePermission('maintenance:update'))
     .query(async () => {
       return {
         status: 'operational',

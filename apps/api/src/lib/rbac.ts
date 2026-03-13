@@ -9,16 +9,9 @@
 import { TRPCError } from '@trpc/server';
 
 import type { Role } from '@luke/core';
+import { t } from './t';
 
 import type { UserSession } from './auth';
-
-/**
- * Middleware function type per tRPC
- */
-type MiddlewareFunction = <_TInput, TOutput>(opts: {
-  ctx: { session: UserSession | null };
-  next: () => Promise<TOutput>;
-}) => Promise<TOutput>;
 
 /**
  * Verifica se l'utente ha uno dei ruoli autorizzati
@@ -48,51 +41,51 @@ function ensureRoles(session: UserSession | null, allowedRoles: Role[]): void {
  * Crea un middleware per un singolo ruolo
  *
  * @param role - Ruolo richiesto
- * @returns Middleware function per tRPC
+ * @returns Middleware per tRPC
  */
-export function withRole(role: Role): MiddlewareFunction {
-  return async ({ ctx, next }) => {
+export function withRole(role: Role) {
+  return t.middleware(async ({ ctx, next }: { ctx: any; next: any }) => {
     ensureRoles(ctx.session, [role]);
     return next();
-  };
+  });
 }
 
 /**
  * Crea un middleware per uno o più ruoli
  *
  * @param roles - Array di ruoli autorizzati
- * @returns Middleware function per tRPC
+ * @returns Middleware per tRPC
  */
-export function roleIn(roles: Role[]): MiddlewareFunction {
-  return async ({ ctx, next }) => {
+export function roleIn(roles: Role[]) {
+  return t.middleware(async ({ ctx, next }: { ctx: any; next: any }) => {
     ensureRoles(ctx.session, roles);
     return next();
-  };
+  });
 }
 
 /**
  * Middleware per ruolo admin
  * Alias per withRole('admin')
  */
-export const adminOnly: MiddlewareFunction = withRole('admin');
+export const adminOnly = withRole('admin');
 
 /**
  * Middleware per ruoli admin o editor
  * Alias per roleIn(['admin', 'editor'])
  */
-export const adminOrEditor: MiddlewareFunction = roleIn(['admin', 'editor']);
+export const adminOrEditor = roleIn(['admin', 'editor']);
 
 /**
  * Middleware per ruoli admin o editor (alias per adminOrEditor)
  * Utile per operazioni che richiedono privilegi elevati ma non necessariamente admin
  */
-export const adminOrManager: MiddlewareFunction = roleIn(['admin', 'editor']);
+export const adminOrManager = roleIn(['admin', 'editor']);
 
 /**
  * Middleware per tutti i ruoli autenticati
  * Verifica solo che l'utente sia autenticato (qualsiasi ruolo)
  */
-export const authenticatedOnly: MiddlewareFunction = async ({ ctx, next }) => {
+export const authenticatedOnly = t.middleware(async ({ ctx, next }: { ctx: any; next: any }) => {
   if (!ctx.session) {
     throw new TRPCError({
       code: 'UNAUTHORIZED',
@@ -100,7 +93,7 @@ export const authenticatedOnly: MiddlewareFunction = async ({ ctx, next }) => {
     });
   }
   return next();
-};
+});
 
 /**
  * Helper per verificare se un utente può accedere a una risorsa

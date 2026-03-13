@@ -12,6 +12,7 @@
 import { TRPCError } from '@trpc/server';
 import pino from 'pino';
 
+import { t } from './t';
 import { resolveRateLimitPolicy } from './rateLimitPolicy';
 
 // Logger interno per rate-limit
@@ -291,7 +292,7 @@ export function extractRateLimitKey(
  * @returns Middleware tRPC
  */
 export function withRateLimit(routeName: keyof typeof RATE_LIMIT_CONFIG) {
-  return async ({ ctx, next }: any) => {
+  return t.middleware(async ({ ctx, next }: { ctx: any; next: any }) => {
     try {
       // Risolvi policy dinamicamente
       const config = await resolveRateLimitPolicy(
@@ -300,7 +301,8 @@ export function withRateLimit(routeName: keyof typeof RATE_LIMIT_CONFIG) {
           | 'passwordChange'
           | 'configMutations'
           | 'userMutations'
-          | 'brandMutations',
+          | 'brandMutations'
+          | 'sectionAccessSet',
         ctx.prisma
       );
 
@@ -338,7 +340,7 @@ export function withRateLimit(routeName: keyof typeof RATE_LIMIT_CONFIG) {
         message: 'Rate limit check failed',
       });
     }
-  };
+  });
 }
 
 /**

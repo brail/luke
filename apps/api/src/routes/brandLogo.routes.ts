@@ -135,40 +135,47 @@ export default fp(
       };
 
       try {
-        // Ricevi file multipart
-        const data = await req.file();
-        if (!data) {
+        // Leggi tutte le parti multipart (campi + file) indipendentemente dall'ordine
+        let tempId: string | null = null;
+        let fileBuffer: Buffer | null = null;
+        let filename = 'upload';
+        let mimetype = 'application/octet-stream';
+
+        for await (const part of req.parts()) {
+          if (part.type === 'field' && part.fieldname === 'tempId') {
+            tempId = String(part.value);
+          } else if (part.type === 'file') {
+            const chunks: Buffer[] = [];
+            for await (const chunk of part.file) {
+              chunks.push(chunk as Buffer);
+            }
+            fileBuffer = Buffer.concat(chunks);
+            filename = part.filename;
+            mimetype = part.mimetype;
+          }
+        }
+
+        if (!tempId) {
+          return reply.code(400).send({
+            error: 'Bad Request',
+            message: 'tempId richiesto',
+          });
+        }
+        if (!fileBuffer) {
           return reply.code(400).send({
             error: 'Bad Request',
             message: 'Nessun file ricevuto',
           });
         }
 
-        // Ricevi tempId dal FormData
-        const tempIdField = data.fields?.tempId;
-        if (!tempIdField || typeof tempIdField !== 'string') {
-          return reply.code(400).send({
-            error: 'Bad Request',
-            message: 'tempId richiesto',
-          });
-        }
-        const tempId = tempIdField;
-
-        // Consuma correttamente lo stream multipart
-        const chunks: Buffer[] = [];
-        for await (const chunk of data.file) {
-          chunks.push(chunk as Buffer);
-        }
-        const buffer = Buffer.concat(chunks);
-
         // Upload temporaneo tramite service
         const result = await uploadTempBrandLogo(ctx, {
           tempId,
           file: {
-            filename: data.filename,
-            mimetype: data.mimetype,
-            stream: require('stream').Readable.from(buffer),
-            size: buffer.length,
+            filename,
+            mimetype,
+            stream: require('stream').Readable.from(fileBuffer),
+            size: fileBuffer.length,
           },
         });
 

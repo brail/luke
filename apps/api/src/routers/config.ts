@@ -19,10 +19,10 @@ import { withRateLimit } from '../lib/ratelimit';
 import {
   router,
   loggedProcedure,
-  adminProcedure,
+  protectedProcedure,
   type Context,
 } from '../lib/trpc';
-import { withSectionAccess } from '../lib/sectionAccessMiddleware';
+import { requirePermission } from '../lib/permissions';
 
 /**
  * Chiavi critiche che non possono essere eliminate
@@ -426,8 +426,8 @@ export const configRouter = router({
       };
     }),
 
-  set: adminProcedure
-    .use(withSectionAccess('maintenance'))
+  set: protectedProcedure
+    .use(requirePermission('config:update'))
     .use(withRateLimit('configMutations'))
     .use(withIdempotency())
     .input(SetConfigSchema)
@@ -435,8 +435,8 @@ export const configRouter = router({
       return await upsertConfig(ctx, input.key, input.value, input.encrypt);
     }),
 
-  delete: adminProcedure
-    .use(withSectionAccess('maintenance'))
+  delete: protectedProcedure
+    .use(requirePermission('config:update'))
     .use(withRateLimit('configMutations'))
     .input(DeleteConfigSchema)
     .mutation(async ({ input, ctx }) => {
@@ -476,8 +476,8 @@ export const configRouter = router({
       };
     }),
 
-  update: adminProcedure
-    .use(withSectionAccess('maintenance'))
+  update: protectedProcedure
+    .use(requirePermission('config:update'))
     .use(withRateLimit('configMutations'))
     .use(withIdempotency())
     .input(SetConfigSchema)
@@ -521,8 +521,8 @@ export const configRouter = router({
       return results;
     }),
 
-  setMultiple: adminProcedure
-    .use(withSectionAccess('maintenance'))
+  setMultiple: protectedProcedure
+    .use(requirePermission('config:update'))
     .use(withRateLimit('configMutations'))
     .use(withIdempotency())
     .input(
@@ -582,7 +582,8 @@ export const configRouter = router({
       };
     }),
 
-  exportJson: adminProcedure
+  exportJson: protectedProcedure
+    .use(requirePermission('config:update'))
     .input(ExportJsonSchema)
     .mutation(async ({ input, ctx }) => {
       const configs = await ctx.prisma.appConfig.findMany({
@@ -626,7 +627,8 @@ export const configRouter = router({
       };
     }),
 
-  importJson: adminProcedure
+  importJson: protectedProcedure
+    .use(requirePermission('config:update'))
     .input(ImportJsonSchema)
     .mutation(async ({ input, ctx }) => {
       const results = {

@@ -59,6 +59,7 @@ const fastify = Fastify({
   logger: loggerConfig,
   requestTimeout: 20_000,
   connectionTimeout: 10_000,
+  maxParamLength: 5000, // tRPC batch requests contain multiple procedure names in the URL param
 });
 
 // Registra handler/onError globali per logging e risposta sicura
@@ -525,8 +526,7 @@ const start = async () => {
       fastify.log.info(`Prisma Studio: pnpm --filter @luke/api prisma:studio`);
     }
   } catch (err: any) {
-    fastify.log.error('Errore avvio server:', err);
-    fastify.log.error('Errore dettagliato:', err);
+    fastify.log.error({ err }, 'Errore avvio server');
     process.exit(1);
   }
 };

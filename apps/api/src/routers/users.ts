@@ -19,13 +19,11 @@ import { withAuditLog } from '../lib/auditMiddleware';
 import { sendVerificationEmail } from '../lib/emailHelpers';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { withRateLimit } from '../lib/ratelimit';
-import { withSectionAccess } from '../lib/sectionAccessMiddleware';
+import { requirePermission } from '../lib/permissions';
 import {
   router,
   // publicProcedure,
   protectedProcedure,
-  adminProcedure,
-  adminOrEditorProcedure,
   invalidateTokenVersionCache,
 } from '../lib/trpc';
 
@@ -138,10 +136,10 @@ const UserIdSchema = z.object({
 export const usersRouter = router({
   /**
    * Lista tutti gli utenti con paginazione e filtri
-   * Richiede ruolo admin o editor
+   * Richiede permission users:read
    */
-  list: adminOrEditorProcedure
-    .use(withSectionAccess('settings'))
+  list: protectedProcedure
+    .use(requirePermission('users:read'))
     .input(
       z
         .object({
@@ -248,9 +246,10 @@ export const usersRouter = router({
 
   /**
    * Ottiene un utente per ID
-   * Richiede autenticazione - solo self-profile o admin
+   * Richiede permission users:read - solo self-profile o admin
    */
   getById: protectedProcedure
+    .use(requirePermission('users:read'))
     .input(UserIdSchema)
     .query(async ({ input, ctx }) => {
       // RBAC: solo self-profile o admin
@@ -298,10 +297,10 @@ export const usersRouter = router({
 
   /**
    * Crea un nuovo utente con identità locale
-   * Richiede ruolo admin
+   * Richiede permission users:create
    */
-  create: adminProcedure
-    .use(withSectionAccess('settings'))
+  create: protectedProcedure
+    .use(requirePermission('users:create'))
     .use(withRateLimit('userMutations'))
     .use(withIdempotency())
     .use(withAuditLog('USER_CREATE', 'User'))
@@ -384,10 +383,10 @@ export const usersRouter = router({
 
   /**
    * Aggiorna un utente esistente
-   * Richiede ruolo admin
+   * Richiede permission users:update
    */
-  update: adminProcedure
-    .use(withSectionAccess('settings'))
+  update: protectedProcedure
+    .use(requirePermission('users:update'))
     .use(withRateLimit('userMutations'))
     .use(withIdempotency())
     .use(withAuditLog('USER_UPDATE', 'User'))
@@ -526,10 +525,10 @@ export const usersRouter = router({
   /**
    * Elimina un utente (soft delete)
    * @deprecated Usa `softDelete` per evitare conflitti con checker tRPC
-   * Richiede ruolo admin
+   * Richiede permission users:delete
    */
-  delete: adminProcedure
-    .use(withSectionAccess('settings'))
+  delete: protectedProcedure
+    .use(requirePermission('users:delete'))
     .use(withRateLimit('userMutations'))
     .input(UserIdSchema)
     .mutation(deleteUserHandler),
@@ -537,10 +536,10 @@ export const usersRouter = router({
   /**
    * Elimina un utente (soft delete)
    * Imposta isActive = false invece di eliminare il record
-   * Richiede ruolo admin
+   * Richiede permission users:delete
    */
-  softDelete: adminProcedure
-    .use(withSectionAccess('settings'))
+  softDelete: protectedProcedure
+    .use(requirePermission('users:delete'))
     .use(withRateLimit('userMutations'))
     .use(withAuditLog('USER_DELETE', 'User'))
     .input(UserIdSchema)
@@ -549,10 +548,10 @@ export const usersRouter = router({
   /**
    * Hard delete di un utente (elimina completamente dal database)
    * ATTENZIONE: Questa operazione è irreversibile
-   * Richiede ruolo admin
+   * Richiede permission users:delete
    */
-  hardDelete: adminProcedure
-    .use(withSectionAccess('settings'))
+  hardDelete: protectedProcedure
+    .use(requirePermission('users:delete'))
     .use(withRateLimit('userMutations'))
     .input(UserIdSchema)
     .mutation(async ({ input, ctx }) => {
@@ -631,9 +630,10 @@ export const usersRouter = router({
 
   /**
    * Revoca tutte le sessioni di un utente specifico
-   * Richiede ruolo admin
+   * Richiede permission users:update
    */
-  revokeUserSessions: adminProcedure
+  revokeUserSessions: protectedProcedure
+    .use(requirePermission('users:update'))
     .use(withAuditLog('USER_REVOKE_SESSIONS', 'User'))
     .input(UserIdSchema)
     .mutation(async ({ ctx, input }) => {
@@ -679,8 +679,10 @@ export const usersRouter = router({
   /**
    * Forza verifica email per un utente (admin only)
    * Imposta o rimuove emailVerifiedAt bypassando il token
+   * Richiede permission users:update
    */
-  forceVerifyEmail: adminProcedure
+  forceVerifyEmail: protectedProcedure
+    .use(requirePermission('users:update'))
     .use(withAuditLog('EMAIL_VERIFICATION_FORCED', 'User'))
     .input(
       z.object({
@@ -717,8 +719,10 @@ export const usersRouter = router({
   /**
    * Cambio email per utente autenticato
    * Reset automatico di emailVerifiedAt + invio email verifica
+   * Richiede permission users:update
    */
   changeEmail: protectedProcedure
+    .use(requirePermission('users:update'))
     .use(withRateLimit('userMutations'))
     .input(
       z.object({

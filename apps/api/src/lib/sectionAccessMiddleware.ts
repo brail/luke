@@ -13,8 +13,8 @@ import {
   type Role,
 } from '@luke/core';
 import { getRbacConfig, getSectionsDisabled } from '@luke/core/server';
+import { t } from './t';
 import { getOverride } from '../services/sectionAccess.service';
-import type { Context } from './trpc';
 
 /**
  * Mapping sezioni -> permissions per nuovo sistema
@@ -36,7 +36,7 @@ const SECTION_TO_PERMISSION: Record<Section, string> = {
  * @returns Middleware tRPC
  */
 export function withSectionAccess(section: Section) {
-  return async ({ ctx, next }: { ctx: Context; next: any }) => {
+  return t.middleware(async ({ ctx, next }: { ctx: any; next: any }) => {
     if (!ctx.session?.user) {
       throw new TRPCError({
         code: 'UNAUTHORIZED',
@@ -101,5 +101,5 @@ export function withSectionAccess(section: Section) {
     }
 
     return next();
-  };
+  });
 }

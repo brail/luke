@@ -8,11 +8,15 @@
 import { TRPCError } from '@trpc/server';
 import {
   hasPermission,
+  hasPermissionWithGrants,
   type Permission,
+  type PermissionDeclaration,
   type PermissionContext,
 } from '@luke/core';
 import type { Role } from '@luke/core';
-import type { Context } from './trpc';
+import { t } from './t';
+import type { Context } from './context';
+import { loadUserGrants } from '../services/permissions.service';
 
 /**
  * Cache per-request delle permissions verificate
@@ -23,16 +27,18 @@ type PermissionsCache = Map<string, boolean>;
 /**
  * Estende il Context con cache permissions
  */
-declare module './trpc' {
+declare module './context' {
   interface Context {
     _permissionsCache?: PermissionsCache;
+    userGrants?: string[];
   }
 }
 
 /**
  * Factory per middleware che richiede una o più permissions
+ * Supporta sia role-based che user-granted permissions
  *
- * @param permissions - Permission singola o array di permissions richieste
+ * @param permissions - Permission singola, array di permissions, o PermissionDeclaration
  * @returns Middleware tRPC che verifica le permissions
  *
  * @example
@@ -42,19 +48,32 @@ declare module './trpc' {
  *
  * // Multiple permissions (OR logic)
  * requirePermission(['brands:create', 'brands:update'])
+ *
+ * // Con PermissionDeclaration
+ * requirePermission({
+ *   required: 'brands:delete',
+ *   description: 'Delete brand',
+ *   context: { checkOwnership: true }
+ * })
  * ```
  */
 export function requirePermission(
-  permissions: Permission | Permission[]
-): <TOutput>(opts: {
-  ctx: Context;
-  next: () => Promise<TOutput>;
-}) => Promise<TOutput> {
-  const permissionArray = Array.isArray(permissions)
-    ? permissions
-    : [permissions];
+  permission: Permission | Permission[] | PermissionDeclaration
+) {
+  // Normalizza input in PermissionDeclaration
+  const declaration: PermissionDeclaration = typeof permission === 'string' ||
+    Array.isArray(permission)
+    ? {
+        required: permission,
+        description: '',
+      }
+    : permission;
 
-  return async ({ ctx, next }) => {
+  const permissionArray = Array.isArray(declaration.required)
+    ? declaration.required
+    : [declaration.required];
+
+  return t.middleware(async ({ ctx, next }: { ctx: any; next: any }) => {
     // Verifica autenticazione
     if (!ctx.session?.user) {
       throw new TRPCError({
@@ -70,12 +89,22 @@ export function requirePermission(
       ctx._permissionsCache = new Map();
     }
 
+    // Carica user grants una sola volta per request
+    if (!ctx.userGrants && user.id) {
+      try {
+        ctx.userGrants = await loadUserGrants(ctx.prisma, user.id);
+      } catch (error) {
+        ctx.logger?.warn({ userId: user.id, error }, 'Failed to load user grants');
+        ctx.userGrants = [];
+      }
+    }
+
     // Verifica se l'utente ha almeno una delle permissions richieste (OR logic)
     let hasAnyPermission = false;
     const deniedPermissions: Permission[] = [];
 
-    for (const permission of permissionArray) {
-      const cacheKey = `${user.role}:${permission}`;
+    for (const perm of permissionArray) {
+      const cacheKey = `${user.role}:${user.id}:${perm}`;
 
       // Controlla cache prima
       if (ctx._permissionsCache.has(cacheKey)) {
@@ -84,12 +113,16 @@ export function requirePermission(
           hasAnyPermission = true;
           break;
         }
-        deniedPermissions.push(permission);
+        deniedPermissions.push(perm);
         continue;
       }
 
-      // Verifica permission
-      const allowed = hasPermission({ role: user.role as Role }, permission);
+      // Verifica permission (role-based + grants)
+      const allowed = hasPermissionWithGrants(
+        { role: user.role as Role, id: user.id },
+        perm,
+        ctx.userGrants || []
+      );
 
       // Cache risultato
       ctx._permissionsCache.set(cacheKey, allowed);
@@ -98,7 +131,7 @@ export function requirePermission(
         hasAnyPermission = true;
         break;
       } else {
-        deniedPermissions.push(permission);
+        deniedPermissions.push(perm);
       }
     }
 
@@ -113,7 +146,7 @@ export function requirePermission(
         timestamp: new Date().toISOString(),
       };
 
-      console.warn('Permission denied:', logData);
+      ctx.logger?.warn(logData, 'Permission denied');
 
       throw new TRPCError({
         code: 'FORBIDDEN',
@@ -122,7 +155,7 @@ export function requirePermission(
     }
 
     return next();
-  };
+  });
 }
 
 /**

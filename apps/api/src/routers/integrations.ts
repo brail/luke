@@ -24,8 +24,8 @@ import {
   IntegrationErrorHandler,
   SecureLogger,
 } from '../lib/errorHandler';
-import { router, publicProcedure, adminProcedure } from '../lib/trpc';
-import { withSectionAccess } from '../lib/sectionAccessMiddleware';
+import { router, publicProcedure, protectedProcedure } from '../lib/trpc';
+import { requirePermission } from '../lib/permissions';
 
 // Schema per configurazione SMB
 const smbConfigSchema = z.object({
@@ -68,7 +68,7 @@ export const integrationsRouter = router({
     }),
 
   storage: router({
-    saveConfig: adminProcedure
+    saveConfig: protectedProcedure.use(requirePermission('config:update'))
       .input(
         z.object({
           provider: z.enum(['smb', 'drive']),
@@ -128,7 +128,7 @@ export const integrationsRouter = router({
         }
       }),
 
-    testConnection: adminProcedure
+    testConnection: protectedProcedure.use(requirePermission('config:read'))
       .input(
         z.object({
           provider: z.string(),
@@ -149,8 +149,7 @@ export const integrationsRouter = router({
   }),
 
   mail: router({
-    saveConfig: adminProcedure
-      .use(withSectionAccess('settings'))
+    saveConfig: protectedProcedure.use(requirePermission('config:update'))
       .input(smtpConfigSchema)
       .mutation(async ({ input, ctx }) => {
         // Salva ogni campo separatamente in AppConfig
@@ -203,7 +202,7 @@ export const integrationsRouter = router({
         };
       }),
 
-    test: adminProcedure
+    test: protectedProcedure.use(requirePermission('config:read'))
       .input(
         z.object({
           testEmail: z.string().email().optional(),
@@ -278,7 +277,7 @@ export const integrationsRouter = router({
   }),
 
   importExport: router({
-    startImport: adminProcedure
+    startImport: protectedProcedure.use(requirePermission('config:update'))
       .input(
         z.object({
           filename: z.string().min(1, 'Nome file è obbligatorio'),
@@ -298,7 +297,7 @@ export const integrationsRouter = router({
         };
       }),
 
-    startExport: adminProcedure
+    startExport: protectedProcedure.use(requirePermission('config:read'))
       .input(
         z.object({
           type: z.string().min(1, 'Tipo export è obbligatorio'),
@@ -328,8 +327,7 @@ export const integrationsRouter = router({
      * Tutti gli amministratori vedono e modificano la stessa configurazione.
      * Le chiavi sono salvate come 'auth.ldap.*' senza riferimenti a userId.
      */
-    saveLdapConfig: adminProcedure
-      .use(withSectionAccess('settings'))
+    saveLdapConfig: protectedProcedure.use(requirePermission('config:update'))
       .input(ldapConfigSchema)
       .mutation(async ({ input, ctx }) => {
         try {
@@ -473,7 +471,7 @@ export const integrationsRouter = router({
      * IMPORTANTE: Restituisce sempre la stessa configurazione per tutti gli amministratori.
      * Non ci sono filtri basati su userId - la configurazione è globale.
      */
-    getLdapConfig: adminProcedure.query(async ({ ctx }) => {
+    getLdapConfig: protectedProcedure.use(requirePermission('config:read')).query(async ({ ctx }) => {
       try {
         const config = await getLdapConfig(ctx.prisma);
 
@@ -519,8 +517,7 @@ export const integrationsRouter = router({
       }
     }),
 
-    testLdapConnection: adminProcedure
-      .use(withSectionAccess('settings'))
+    testLdapConnection: protectedProcedure.use(requirePermission('config:read'))
       .mutation(async ({ ctx }) => {
         let client: ldap.Client | null = null;
 
@@ -631,7 +628,7 @@ export const integrationsRouter = router({
         }
       }),
 
-    testLdapSearch: adminProcedure
+    testLdapSearch: protectedProcedure.use(requirePermission('config:read'))
       .input(z.object({ username: z.string() }))
       .mutation(async ({ input, ctx }) => {
         let client: ldap.Client | null = null;
