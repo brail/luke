@@ -58,7 +58,10 @@ function getGrantLevel(section: UserSection): Level {
  * - Checkbox grigio/disabilitato = permesso dal ruolo (non modificabile)
  * - Checkbox attivo = grant esplicito (modificabile)
  */
-export function UserPermissionsGrid({ userId, userRole }: UserPermissionsGridProps) {
+export function UserPermissionsGrid({
+  userId,
+  userRole,
+}: UserPermissionsGridProps) {
   const [pendingChanges, setPendingChanges] = useState<
     Record<ResourceKey, Level>
   >({} as Record<ResourceKey, Level>);
@@ -76,7 +79,11 @@ export function UserPermissionsGrid({ userId, userRole }: UserPermissionsGridPro
     setPendingChanges({} as Record<ResourceKey, Level>);
   }, [userId]);
 
-  const handleChange = (resource: ResourceKey, type: 'read' | 'write', checked: boolean) => {
+  const handleChange = (
+    resource: ResourceKey,
+    type: 'read' | 'write',
+    checked: boolean
+  ) => {
     const section = data?.sections.find(s => s.resource === resource);
     if (!section) return;
 
@@ -88,7 +95,11 @@ export function UserPermissionsGrid({ userId, userRole }: UserPermissionsGridPro
 
     let newLevel: Level;
     if (type === 'write') {
-      newLevel = checked ? 'write' : (section.roleRead || currentGrant === 'read' ? 'read' : 'none');
+      newLevel = checked
+        ? 'write'
+        : section.roleRead || currentGrant === 'read'
+          ? 'read'
+          : 'none';
     } else {
       // type === 'read'
       if (checked) {
@@ -133,7 +144,9 @@ export function UserPermissionsGrid({ userId, userRole }: UserPermissionsGridPro
   };
 
   if (isLoading) {
-    return <p className="text-sm text-muted-foreground">Caricamento permessi...</p>;
+    return (
+      <p className="text-sm text-muted-foreground">Caricamento permessi...</p>
+    );
   }
 
   if (!data) return null;
@@ -144,10 +157,12 @@ export function UserPermissionsGrid({ userId, userRole }: UserPermissionsGridPro
     <div className="space-y-4">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <span>Ruolo base:</span>
-        <Badge variant="outline" className="capitalize">{userRole}</Badge>
+        <Badge variant="outline" className="capitalize">
+          {userRole}
+        </Badge>
         <span className="ml-4">
-          I permessi grigi derivano dal ruolo e non possono essere rimossi.
-          I permessi colorati sono grant espliciti.
+          I permessi grigi derivano dal ruolo e non possono essere rimossi. I
+          permessi colorati sono grant espliciti.
         </span>
       </div>
 
@@ -162,21 +177,32 @@ export function UserPermissionsGrid({ userId, userRole }: UserPermissionsGridPro
         </TableHeader>
         <TableBody>
           {data.sections.map(section => {
-            const currentLevel = pendingChanges[section.resource] ?? getGrantLevel(section);
-            const effectiveRead = section.roleRead || currentLevel === 'read' || currentLevel === 'write';
-            const effectiveWrite = section.roleWrite || currentLevel === 'write';
+            const currentLevel =
+              pendingChanges[section.resource] ?? getGrantLevel(section);
+            const effectiveRead =
+              section.roleRead ||
+              currentLevel === 'read' ||
+              currentLevel === 'write';
+            const effectiveWrite =
+              section.roleWrite || currentLevel === 'write';
             const hasPendingChange = section.resource in pendingChanges;
 
             const readChecked = effectiveRead;
             const writeChecked = effectiveWrite;
 
             return (
-              <TableRow key={section.resource} className={hasPendingChange ? 'bg-yellow-50' : ''}>
+              <TableRow
+                key={section.resource}
+                className={hasPendingChange ? 'bg-yellow-50' : ''}
+              >
                 <TableCell className="font-medium">
                   <div className="flex items-center gap-2">
                     {section.label}
                     {hasPendingChange && (
-                      <Badge variant="outline" className="text-xs border-yellow-400 text-yellow-700">
+                      <Badge
+                        variant="outline"
+                        className="text-xs border-yellow-400 text-yellow-700"
+                      >
                         modificato
                       </Badge>
                     )}
@@ -189,13 +215,15 @@ export function UserPermissionsGrid({ userId, userRole }: UserPermissionsGridPro
                     <Switch
                       checked={readChecked}
                       disabled={section.roleRead}
-                      onCheckedChange={(checked) =>
+                      onCheckedChange={checked =>
                         handleChange(section.resource, 'read', checked)
                       }
                       className={section.roleRead ? 'opacity-50' : ''}
                     />
                     {section.roleRead && (
-                      <span className="text-xs text-muted-foreground">da ruolo</span>
+                      <span className="text-xs text-muted-foreground">
+                        da ruolo
+                      </span>
                     )}
                   </div>
                 </TableCell>
@@ -207,13 +235,15 @@ export function UserPermissionsGrid({ userId, userRole }: UserPermissionsGridPro
                       <Switch
                         checked={writeChecked}
                         disabled={section.roleWrite}
-                        onCheckedChange={(checked) =>
+                        onCheckedChange={checked =>
                           handleChange(section.resource, 'write', checked)
                         }
                         className={section.roleWrite ? 'opacity-50' : ''}
                       />
                       {section.roleWrite && (
-                        <span className="text-xs text-muted-foreground">da ruolo</span>
+                        <span className="text-xs text-muted-foreground">
+                          da ruolo
+                        </span>
                       )}
                     </div>
                   ) : (
@@ -239,7 +269,12 @@ export function UserPermissionsGrid({ userId, userRole }: UserPermissionsGridPro
             Hai {Object.keys(pendingChanges).length} modifica/he non salvata/e
           </p>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={handleReset} disabled={isSaving}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleReset}
+              disabled={isSaving}
+            >
               Annulla
             </Button>
             <Button size="sm" onClick={handleSave} disabled={isSaving}>

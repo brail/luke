@@ -33,8 +33,6 @@ import {
 } from '../lib/trpc';
 import { sendVerificationEmail } from '../lib/emailHelpers';
 
-
-
 /**
  * Schema per login
  */
@@ -117,8 +115,6 @@ export const authRouter = router({
     .mutation(async ({ input, ctx }) => {
       return await requestEmailVerification(ctx, input.email);
     }),
-
-
 
   /**
    * Conferma verifica email

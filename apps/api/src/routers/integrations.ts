@@ -68,7 +68,8 @@ export const integrationsRouter = router({
     }),
 
   storage: router({
-    saveConfig: protectedProcedure.use(requirePermission('config:update'))
+    saveConfig: protectedProcedure
+      .use(requirePermission('config:update'))
       .input(
         z.object({
           provider: z.enum(['smb', 'drive']),
@@ -128,7 +129,8 @@ export const integrationsRouter = router({
         }
       }),
 
-    testConnection: protectedProcedure.use(requirePermission('config:read'))
+    testConnection: protectedProcedure
+      .use(requirePermission('config:read'))
       .input(
         z.object({
           provider: z.string(),
@@ -149,7 +151,8 @@ export const integrationsRouter = router({
   }),
 
   mail: router({
-    saveConfig: protectedProcedure.use(requirePermission('config:update'))
+    saveConfig: protectedProcedure
+      .use(requirePermission('config:update'))
       .input(smtpConfigSchema)
       .mutation(async ({ input, ctx }) => {
         // Salva ogni campo separatamente in AppConfig
@@ -202,7 +205,8 @@ export const integrationsRouter = router({
         };
       }),
 
-    test: protectedProcedure.use(requirePermission('config:read'))
+    test: protectedProcedure
+      .use(requirePermission('config:read'))
       .input(
         z.object({
           testEmail: z.string().email().optional(),
@@ -277,7 +281,8 @@ export const integrationsRouter = router({
   }),
 
   importExport: router({
-    startImport: protectedProcedure.use(requirePermission('config:update'))
+    startImport: protectedProcedure
+      .use(requirePermission('config:update'))
       .input(
         z.object({
           filename: z.string().min(1, 'Nome file è obbligatorio'),
@@ -297,7 +302,8 @@ export const integrationsRouter = router({
         };
       }),
 
-    startExport: protectedProcedure.use(requirePermission('config:read'))
+    startExport: protectedProcedure
+      .use(requirePermission('config:read'))
       .input(
         z.object({
           type: z.string().min(1, 'Tipo export è obbligatorio'),
@@ -327,7 +333,8 @@ export const integrationsRouter = router({
      * Tutti gli amministratori vedono e modificano la stessa configurazione.
      * Le chiavi sono salvate come 'auth.ldap.*' senza riferimenti a userId.
      */
-    saveLdapConfig: protectedProcedure.use(requirePermission('config:update'))
+    saveLdapConfig: protectedProcedure
+      .use(requirePermission('config:update'))
       .input(ldapConfigSchema)
       .mutation(async ({ input, ctx }) => {
         try {
@@ -471,53 +478,59 @@ export const integrationsRouter = router({
      * IMPORTANTE: Restituisce sempre la stessa configurazione per tutti gli amministratori.
      * Non ci sono filtri basati su userId - la configurazione è globale.
      */
-    getLdapConfig: protectedProcedure.use(requirePermission('config:read')).query(async ({ ctx }) => {
-      try {
-        const config = await getLdapConfig(ctx.prisma);
+    getLdapConfig: protectedProcedure
+      .use(requirePermission('config:read'))
+      .query(async ({ ctx }) => {
+        try {
+          const config = await getLdapConfig(ctx.prisma);
 
-        // Converti roleMapping object a JSON string per il frontend
-        const roleMappingJson = JSON.stringify(config.roleMapping, null, 2);
+          // Converti roleMapping object a JSON string per il frontend
+          const roleMappingJson = JSON.stringify(config.roleMapping, null, 2);
 
-        // Per sicurezza, omettere dati sensibili
-        return {
-          enabled: config.enabled,
-          url: config.url,
-          hasBindDN: !!config.bindDN,
-          hasBindPassword: !!config.bindPassword,
-          searchBase: config.searchBase,
-          searchFilter: config.searchFilter,
-          groupSearchBase: config.groupSearchBase,
-          groupSearchFilter: config.groupSearchFilter,
-          roleMapping: roleMappingJson,
-          strategy: config.strategy,
-        };
-      } catch (error: any) {
-        ctx.logger.error({ error: error.message }, 'Error getting LDAP config');
-
-        // Se è un errore di configurazioni mancanti, restituisci configurazione di default
-        if (error.message.includes('Configurazioni LDAP mancanti')) {
+          // Per sicurezza, omettere dati sensibili
           return {
-            enabled: false,
-            url: '',
-            hasBindDN: false,
-            hasBindPassword: false,
-            searchBase: '',
-            searchFilter: '',
-            groupSearchBase: '',
-            groupSearchFilter: '',
-            roleMapping: '{}',
-            strategy: 'local-first' as const,
+            enabled: config.enabled,
+            url: config.url,
+            hasBindDN: !!config.bindDN,
+            hasBindPassword: !!config.bindPassword,
+            searchBase: config.searchBase,
+            searchFilter: config.searchFilter,
+            groupSearchBase: config.groupSearchBase,
+            groupSearchFilter: config.groupSearchFilter,
+            roleMapping: roleMappingJson,
+            strategy: config.strategy,
           };
+        } catch (error: any) {
+          ctx.logger.error(
+            { error: error.message },
+            'Error getting LDAP config'
+          );
+
+          // Se è un errore di configurazioni mancanti, restituisci configurazione di default
+          if (error.message.includes('Configurazioni LDAP mancanti')) {
+            return {
+              enabled: false,
+              url: '',
+              hasBindDN: false,
+              hasBindPassword: false,
+              searchBase: '',
+              searchFilter: '',
+              groupSearchBase: '',
+              groupSearchFilter: '',
+              roleMapping: '{}',
+              strategy: 'local-first' as const,
+            };
+          }
+
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'Errore durante recupero configurazione LDAP',
+          });
         }
+      }),
 
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'Errore durante recupero configurazione LDAP',
-        });
-      }
-    }),
-
-    testLdapConnection: protectedProcedure.use(requirePermission('config:read'))
+    testLdapConnection: protectedProcedure
+      .use(requirePermission('config:read'))
       .mutation(async ({ ctx }) => {
         let client: ldap.Client | null = null;
 
@@ -628,7 +641,8 @@ export const integrationsRouter = router({
         }
       }),
 
-    testLdapSearch: protectedProcedure.use(requirePermission('config:read'))
+    testLdapSearch: protectedProcedure
+      .use(requirePermission('config:read'))
       .input(z.object({ username: z.string() }))
       .mutation(async ({ input, ctx }) => {
         let client: ldap.Client | null = null;

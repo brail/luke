@@ -261,7 +261,10 @@ export default function SectionAccessPage() {
             >
               <UserPermissionsGrid
                 userId={selectedUserId}
-                userRole={usersData?.users.find(u => u.id === selectedUserId)?.role || 'viewer'}
+                userRole={
+                  usersData?.users.find(u => u.id === selectedUserId)?.role ||
+                  'viewer'
+                }
               />
             </SectionCard>
           )}

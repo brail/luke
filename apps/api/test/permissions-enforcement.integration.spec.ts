@@ -956,11 +956,7 @@ describe('Permissions Enforcement - Audit Logging', () => {
     });
 
     // Check audit trail
-    const auditTrail = await getUserPermissionAudit(
-      prisma,
-      testUser.id,
-      10
-    );
+    const auditTrail = await getUserPermissionAudit(prisma, testUser.id, 10);
 
     expect(auditTrail.length).toBeGreaterThan(0);
 
@@ -1004,11 +1000,7 @@ describe('Permissions Enforcement - Audit Logging', () => {
     });
 
     // Check audit trail
-    const auditTrail = await getUserPermissionAudit(
-      prisma,
-      testUser.id,
-      20
-    );
+    const auditTrail = await getUserPermissionAudit(prisma, testUser.id, 20);
 
     expect(auditTrail.length).toBeGreaterThan(0);
 

@@ -281,7 +281,7 @@ export const RESOURCE_SECTIONS = [
   },
 ] as const;
 
-export type ResourceKey = typeof RESOURCE_SECTIONS[number]['resource'];
+export type ResourceKey = (typeof RESOURCE_SECTIONS)[number]['resource'];
 
 export interface SectionPermissionState {
   resource: ResourceKey;
@@ -303,17 +303,22 @@ export function buildPermissionGrid(
   grants: string[]
 ): SectionPermissionState[] {
   return RESOURCE_SECTIONS.map(section => {
-    const roleRead = section.readPerms.length > 0
-      ? hasPermission({ role }, section.readPerms[0] as Permission)
-      : false;
-    const roleWrite = section.writePerms.length > 0
-      ? section.writePerms.every((p: string) => hasPermission({ role }, p as Permission))
-      : false;
+    const roleRead =
+      section.readPerms.length > 0
+        ? hasPermission({ role }, section.readPerms[0] as Permission)
+        : false;
+    const roleWrite =
+      section.writePerms.length > 0
+        ? section.writePerms.every((p: string) =>
+            hasPermission({ role }, p as Permission)
+          )
+        : false;
 
     const grantRead = section.readPerms.some((p: string) => grants.includes(p));
-    const grantWrite = section.writePerms.length > 0
-      ? section.writePerms.every((p: string) => grants.includes(p))
-      : false;
+    const grantWrite =
+      section.writePerms.length > 0
+        ? section.writePerms.every((p: string) => grants.includes(p))
+        : false;
 
     return {
       resource: section.resource,

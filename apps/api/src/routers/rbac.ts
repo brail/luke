@@ -17,7 +17,11 @@ import { logAudit } from '../lib/auditLog';
 import { withRateLimit } from '../lib/ratelimit';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { requirePermission } from '../lib/permissions';
-import { loadUserGrants, buildPermissionGrid, setResourceAccess } from '../services/permissions.service';
+import {
+  loadUserGrants,
+  buildPermissionGrid,
+  setResourceAccess,
+} from '../services/permissions.service';
 
 /**
  * Schema per salvare i default di sezione
@@ -106,7 +110,10 @@ export const rbacRouter = router({
         });
 
         if (!user) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente non trovato' });
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Utente non trovato',
+          });
         }
 
         const grants = await loadUserGrants(ctx.prisma, input.userId);

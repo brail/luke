@@ -72,7 +72,7 @@ export function PermissionContextProvider({
 
   // Calcola le permissions dell'utente
   const userRole = useMemo(
-    () => (session?.user?.role as Role | undefined),
+    () => session?.user?.role as Role | undefined,
     [session?.user?.role]
   );
 
@@ -120,7 +120,10 @@ export function PermissionContextProvider({
   const getRoleCallback = useCallback(() => userRole, [userRole]);
 
   // Verifica se è autenticato
-  const checkAuthenticated = useCallback(() => !!session?.user, [session?.user]);
+  const checkAuthenticated = useCallback(
+    () => !!session?.user,
+    [session?.user]
+  );
 
   // Verifica se è admin
   const checkIsAdmin = useCallback(() => userRole === 'admin', [userRole]);

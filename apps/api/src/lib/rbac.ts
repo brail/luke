@@ -85,15 +85,17 @@ export const adminOrManager = roleIn(['admin', 'editor']);
  * Middleware per tutti i ruoli autenticati
  * Verifica solo che l'utente sia autenticato (qualsiasi ruolo)
  */
-export const authenticatedOnly = t.middleware(async ({ ctx, next }: { ctx: any; next: any }) => {
-  if (!ctx.session) {
-    throw new TRPCError({
-      code: 'UNAUTHORIZED',
-      message: 'Devi essere autenticato per accedere a questa risorsa',
-    });
+export const authenticatedOnly = t.middleware(
+  async ({ ctx, next }: { ctx: any; next: any }) => {
+    if (!ctx.session) {
+      throw new TRPCError({
+        code: 'UNAUTHORIZED',
+        message: 'Devi essere autenticato per accedere a questa risorsa',
+      });
+    }
+    return next();
   }
-  return next();
-});
+);
 
 /**
  * Helper per verificare se un utente può accedere a una risorsa

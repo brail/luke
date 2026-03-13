@@ -293,7 +293,10 @@ export function BrandDialogWithPermissions({
 
         xhr.open('POST', buildBrandLogoUploadUrl(brand.id));
         if (session?.accessToken) {
-          xhr.setRequestHeader('Authorization', `Bearer ${session.accessToken}`);
+          xhr.setRequestHeader(
+            'Authorization',
+            `Bearer ${session.accessToken}`
+          );
         }
         xhr.send(formData);
       } else {
@@ -349,7 +352,10 @@ export function BrandDialogWithPermissions({
 
         xhr.open('POST', buildTempBrandLogoUploadUrl());
         if (session?.accessToken) {
-          xhr.setRequestHeader('Authorization', `Bearer ${session.accessToken}`);
+          xhr.setRequestHeader(
+            'Authorization',
+            `Bearer ${session.accessToken}`
+          );
         }
         xhr.send(tempFormData);
       }
@@ -459,11 +465,16 @@ export function BrandDialogWithPermissions({
                   </div>
                 )}
                 <div className="space-y-2">
-                  <DisabledFieldWrapper disabled={!brandPerms.canUpdate} tooltip={disabledFieldTooltip}>
+                  <DisabledFieldWrapper
+                    disabled={!brandPerms.canUpdate}
+                    tooltip={disabledFieldTooltip}
+                  >
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => setTimeout(() => fileInputRef.current?.click(), 0)}
+                      onClick={() =>
+                        setTimeout(() => fileInputRef.current?.click(), 0)
+                      }
                       disabled={
                         isUploading || isLoading || !brandPerms.canUpdate
                       }
@@ -506,7 +517,10 @@ export function BrandDialogWithPermissions({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Codice</FormLabel>
-                  <DisabledFieldWrapper disabled={isFormDisabled} tooltip={disabledFieldTooltip}>
+                  <DisabledFieldWrapper
+                    disabled={isFormDisabled}
+                    tooltip={disabledFieldTooltip}
+                  >
                     <FormControl>
                       <Input
                         placeholder="es. nike-2024"
@@ -537,7 +551,10 @@ export function BrandDialogWithPermissions({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Nome</FormLabel>
-                  <DisabledFieldWrapper disabled={isFormDisabled} tooltip={disabledFieldTooltip}>
+                  <DisabledFieldWrapper
+                    disabled={isFormDisabled}
+                    tooltip={disabledFieldTooltip}
+                  >
                     <FormControl>
                       <Input
                         placeholder="es. Nike, Adidas"
@@ -563,7 +580,10 @@ export function BrandDialogWithPermissions({
                       Il brand sarà disponibile per la selezione
                     </p>
                   </div>
-                  <DisabledFieldWrapper disabled={isFormDisabled} tooltip={disabledFieldTooltip}>
+                  <DisabledFieldWrapper
+                    disabled={isFormDisabled}
+                    tooltip={disabledFieldTooltip}
+                  >
                     <FormControl>
                       <Switch
                         checked={field.value}

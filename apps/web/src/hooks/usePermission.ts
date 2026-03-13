@@ -46,10 +46,7 @@ export function usePermission() {
         return false;
       }
 
-      return hasPermission(
-        { role: session.user.role as Role },
-        permission
-      );
+      return hasPermission({ role: session.user.role as Role }, permission);
     },
     [session?.user?.role]
   );

@@ -27,7 +27,7 @@ export const RESOURCES = {
   DASHBOARD: 'dashboard',
 } as const;
 
-export type Resource = typeof RESOURCES[keyof typeof RESOURCES];
+export type Resource = (typeof RESOURCES)[keyof typeof RESOURCES];
 
 /**
  * Azioni disponibili sulle risorse - Const Enum
@@ -41,7 +41,7 @@ export const ACTIONS = {
   UPLOAD: 'upload',
 } as const;
 
-export type Action = typeof ACTIONS[keyof typeof ACTIONS] | '*';
+export type Action = (typeof ACTIONS)[keyof typeof ACTIONS] | '*';
 
 /**
  * Permission = Resource:Action
@@ -67,8 +67,8 @@ export interface PermissionDeclaration {
   required: Permission | Permission[];
   description: string;
   context?: {
-    checkOwnership?: boolean;  // Verifica solo il tuo dato
-    requireAdmin?: boolean;    // Che sia admin
+    checkOwnership?: boolean; // Verifica solo il tuo dato
+    requireAdmin?: boolean; // Che sia admin
   };
 }
 
@@ -258,7 +258,7 @@ export function isAction(value: string): value is Action {
     return true;
   }
   const actions = Object.values(ACTIONS);
-  return actions.includes(value as typeof actions[number]);
+  return actions.includes(value as (typeof actions)[number]);
 }
 
 /**
@@ -380,9 +380,7 @@ export function hasPermissionWithGrants(
 export function getAllPermissions(): Permission[] {
   const all: Permission[] = ['*:*'];
 
-  for (const [resource, actions] of Object.entries(
-    VALID_RESOURCE_ACTIONS
-  )) {
+  for (const [resource, actions] of Object.entries(VALID_RESOURCE_ACTIONS)) {
     // Aggiungi wildcard per risorsa
     all.push(`${resource}:*` as Permission);
 
@@ -466,9 +464,7 @@ export function validatePermissionMatrix(): {
   for (const [role, permissions] of Object.entries(ROLE_PERMISSIONS)) {
     for (const permission of permissions) {
       if (!isPermission(permission)) {
-        errors.push(
-          `Role '${role}' ha permission invalida '${permission}'`
-        );
+        errors.push(`Role '${role}' ha permission invalida '${permission}'`);
       }
     }
   }
@@ -483,9 +479,7 @@ export function validatePermissionMatrix(): {
 
     for (const action of actions) {
       if (!isAction(action)) {
-        errors.push(
-          `Resource '${resource}' ha action invalida '${action}'`
-        );
+        errors.push(`Resource '${resource}' ha action invalida '${action}'`);
       }
     }
   }

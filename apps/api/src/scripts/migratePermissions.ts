@@ -100,13 +100,13 @@ function logSection(title: string) {
  * Prompt user for confirmation
  */
 async function promptConfirmation(message: string): Promise<boolean> {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
     });
 
-    rl.question(`${colors.yellow}${message}${colors.reset} `, (answer) => {
+    rl.question(`${colors.yellow}${message}${colors.reset} `, answer => {
       rl.close();
       resolve(answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes');
     });
@@ -127,14 +127,11 @@ function formatNumber(num: number): string {
   return num.toLocaleString();
 }
 
-
 // ============================================================================
 // Phase 1: Validation
 // ============================================================================
 
-async function validatePhase(
-  prisma: PrismaClient
-): Promise<{
+async function validatePhase(prisma: PrismaClient): Promise<{
   sourceCount: number;
   targetCount: number;
   firstAdminId?: string;
@@ -154,7 +151,9 @@ async function validatePhase(
     log(`Found ${formatNumber(sourceCount)} UserSectionAccess records\n`);
 
     if (sourceCount === 0) {
-      logWarning('No UserSectionAccess records found. Migration is not needed.');
+      logWarning(
+        'No UserSectionAccess records found. Migration is not needed.'
+      );
       return {
         sourceCount: 0,
         targetCount: 0,
@@ -165,7 +164,9 @@ async function validatePhase(
     // Check existing target records
     logInfo('Checking for existing UserGrantedPermission entries...');
     const targetCount = await prisma.userGrantedPermission.count();
-    log(`Found ${formatNumber(targetCount)} existing UserGrantedPermission records\n`);
+    log(
+      `Found ${formatNumber(targetCount)} existing UserGrantedPermission records\n`
+    );
 
     // Find first admin user
     logInfo('Searching for admin user...');
@@ -175,7 +176,9 @@ async function validatePhase(
     });
 
     if (!firstAdmin) {
-      logError('No admin user found in database. Cannot assign grantedBy user.');
+      logError(
+        'No admin user found in database. Cannot assign grantedBy user.'
+      );
       return {
         sourceCount,
         targetCount,
@@ -192,9 +195,9 @@ async function validatePhase(
       distinct: ['section'],
     });
 
-    const sectionNames = sections.map((s) => s.section);
+    const sectionNames = sections.map(s => s.section);
     const unmappedSections = sectionNames.filter(
-      (s) => !SECTION_TO_PERMISSIONS[s.toLowerCase()]
+      s => !SECTION_TO_PERMISSIONS[s.toLowerCase()]
     );
 
     if (unmappedSections.length > 0) {
@@ -215,7 +218,9 @@ async function validatePhase(
       canProceed: true,
     };
   } catch (error) {
-    logError(`Validation failed: ${error instanceof Error ? error.message : String(error)}`);
+    logError(
+      `Validation failed: ${error instanceof Error ? error.message : String(error)}`
+    );
     return {
       sourceCount: 0,
       targetCount: 0,
@@ -247,12 +252,16 @@ async function backupPhase(prisma: PrismaClient): Promise<BackupData> {
       sourceRecords,
     };
 
-    logSuccess(`Backup created with ${formatNumber(sourceRecords.length)} records`);
+    logSuccess(
+      `Backup created with ${formatNumber(sourceRecords.length)} records`
+    );
     logInfo(`Backup timestamp: ${backup.timestamp}\n`);
 
     return backup;
   } catch (error) {
-    logError(`Backup failed: ${error instanceof Error ? error.message : String(error)}`);
+    logError(
+      `Backup failed: ${error instanceof Error ? error.message : String(error)}`
+    );
     throw error;
   }
 }
@@ -284,7 +293,9 @@ async function migrationPhase(
       },
     });
 
-    logSuccess(`Found ${formatNumber(sourceRecords.length)} records to migrate\n`);
+    logSuccess(
+      `Found ${formatNumber(sourceRecords.length)} records to migrate\n`
+    );
 
     const results: MigrationResult[] = [];
     const createdPermissions: Array<{
@@ -329,7 +340,9 @@ async function migrationPhase(
 
       // Show progress
       if ((i + 1) % 100 === 0) {
-        logInfo(`Processed ${formatNumber(i + 1)}/${formatNumber(sourceRecords.length)} records`);
+        logInfo(
+          `Processed ${formatNumber(i + 1)}/${formatNumber(sourceRecords.length)} records`
+        );
       }
     }
 
@@ -385,13 +398,17 @@ async function migrationPhase(
         throw error;
       }
     } else if (dryRun) {
-      logInfo(`Would create ${formatNumber(createdPermissions.length)} UserGrantedPermission entries`);
+      logInfo(
+        `Would create ${formatNumber(createdPermissions.length)} UserGrantedPermission entries`
+      );
     }
 
     log('');
     return results;
   } catch (error) {
-    logError(`Migration failed: ${error instanceof Error ? error.message : String(error)}`);
+    logError(
+      `Migration failed: ${error instanceof Error ? error.message : String(error)}`
+    );
     throw error;
   }
 }
@@ -411,20 +428,22 @@ async function auditPhase(
   try {
     const stats: MigrationStats = {
       totalSourceRecords: migrationResults.length,
-      totalMigrated: migrationResults.filter((r) => r.success).length,
-      totalFailed: migrationResults.filter((r) => !r.success).length,
+      totalMigrated: migrationResults.filter(r => r.success).length,
+      totalFailed: migrationResults.filter(r => !r.success).length,
       permissionsMapped: new Map(),
     };
 
     // Count permissions by type
-    migrationResults.forEach((result) => {
-      result.permissions.forEach((perm) => {
+    migrationResults.forEach(result => {
+      result.permissions.forEach(perm => {
         const current = stats.permissionsMapped.get(perm) || 0;
         stats.permissionsMapped.set(perm, current + 1);
       });
     });
 
-    logInfo(`Total records processed: ${formatNumber(stats.totalSourceRecords)}`);
+    logInfo(
+      `Total records processed: ${formatNumber(stats.totalSourceRecords)}`
+    );
     logInfo(`Successfully migrated: ${formatNumber(stats.totalMigrated)}`);
     logInfo(`Failed: ${formatNumber(stats.totalFailed)}\n`);
 
@@ -459,7 +478,9 @@ async function auditPhase(
     log('');
     return stats;
   } catch (error) {
-    logError(`Audit phase failed: ${error instanceof Error ? error.message : String(error)}`);
+    logError(
+      `Audit phase failed: ${error instanceof Error ? error.message : String(error)}`
+    );
     throw error;
   }
 }
@@ -493,9 +514,9 @@ async function postMigrationValidation(
       where: {
         NOT: {
           permission: {
-            in: Array.from(new Set(
-              Object.values(SECTION_TO_PERMISSIONS).flat()
-            )),
+            in: Array.from(
+              new Set(Object.values(SECTION_TO_PERMISSIONS).flat())
+            ),
           },
         },
       },
@@ -505,7 +526,7 @@ async function postMigrationValidation(
 
     if (invalidPermissions.length > 0) {
       logWarning(`Found ${invalidPermissions.length} invalid permissions`);
-      invalidPermissions.forEach((p) => {
+      invalidPermissions.forEach(p => {
         logWarning(`  - ${p.permission}`);
       });
       return false;
@@ -550,12 +571,21 @@ function generateReport(
 ) {
   logSection('MIGRATION REPORT');
 
-  log(`Status: ${validationPassed ? 'PASSED' : 'FAILED'}`, validationPassed ? 'green' : 'red');
-  log(`Mode: ${dryRun ? 'DRY RUN' : 'LIVE MIGRATION'}`, dryRun ? 'yellow' : 'green');
+  log(
+    `Status: ${validationPassed ? 'PASSED' : 'FAILED'}`,
+    validationPassed ? 'green' : 'red'
+  );
+  log(
+    `Mode: ${dryRun ? 'DRY RUN' : 'LIVE MIGRATION'}`,
+    dryRun ? 'yellow' : 'green'
+  );
   log(`Timestamp: ${backup.timestamp}`);
   log(`Total records processed: ${formatNumber(stats.totalSourceRecords)}`);
   log(`Successfully migrated: ${formatNumber(stats.totalMigrated)}`, 'green');
-  log(`Failed: ${formatNumber(stats.totalFailed)}`, stats.totalFailed > 0 ? 'yellow' : 'green');
+  log(
+    `Failed: ${formatNumber(stats.totalFailed)}`,
+    stats.totalFailed > 0 ? 'yellow' : 'green'
+  );
 
   log('\nPermissions mapped:');
   stats.permissionsMapped.forEach((count, perm) => {
@@ -570,7 +600,10 @@ function generateReport(
     log('\nDRY RUN: No changes were made to the database.', 'yellow');
     log('To apply the migration, run again with --confirm flag.\n', 'yellow');
   } else {
-    log('\nMigration completed successfully!', validationPassed ? 'green' : 'yellow');
+    log(
+      '\nMigration completed successfully!',
+      validationPassed ? 'green' : 'yellow'
+    );
     log(
       'Note: Old UserSectionAccess records are still in the database for manual verification.\n',
       'dim'
@@ -584,7 +617,9 @@ function generateReport(
 
 async function main() {
   const prisma = new PrismaClient({
-    log: process.env.DEBUG_MIGRATIONS ? ['query', 'info', 'warn', 'error'] : ['error'],
+    log: process.env.DEBUG_MIGRATIONS
+      ? ['query', 'info', 'warn', 'error']
+      : ['error'],
   });
 
   const isDryRun = process.argv.includes('--dry-run');
@@ -617,7 +652,9 @@ async function main() {
 
     if (!isDryRun && !isConfirm) {
       log('\nReview the migration details above.\n');
-      const confirmed = await promptConfirmation('Proceed with migration? (yes/no)');
+      const confirmed = await promptConfirmation(
+        'Proceed with migration? (yes/no)'
+      );
 
       if (!confirmed) {
         logWarning('Migration cancelled by user.');
@@ -625,10 +662,19 @@ async function main() {
       }
     }
 
-    const migrationResults = await migrationPhase(prisma, firstAdminId!, isDryRun);
+    const migrationResults = await migrationPhase(
+      prisma,
+      firstAdminId!,
+      isDryRun
+    );
 
     // Phase 4: Audit
-    const stats = await auditPhase(prisma, migrationResults, firstAdminId!, isDryRun);
+    const stats = await auditPhase(
+      prisma,
+      migrationResults,
+      firstAdminId!,
+      isDryRun
+    );
 
     // Phase 5: Post-migration validation
     let validationPassed = true;
@@ -644,7 +690,9 @@ async function main() {
     // Exit code
     process.exit(validationPassed ? 0 : 1);
   } catch (error) {
-    logError(`Migration failed with error: ${error instanceof Error ? error.message : String(error)}`);
+    logError(
+      `Migration failed with error: ${error instanceof Error ? error.message : String(error)}`
+    );
     if (error instanceof Error && error.stack) {
       logError(error.stack);
     }
@@ -658,7 +706,9 @@ async function main() {
 // Execution
 // ============================================================================
 
-main().catch((error) => {
-  logError(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
+main().catch(error => {
+  logError(
+    `Unexpected error: ${error instanceof Error ? error.message : String(error)}`
+  );
   process.exit(1);
 });

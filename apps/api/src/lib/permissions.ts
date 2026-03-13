@@ -61,13 +61,13 @@ export function requirePermission(
   permission: Permission | Permission[] | PermissionDeclaration
 ) {
   // Normalizza input in PermissionDeclaration
-  const declaration: PermissionDeclaration = typeof permission === 'string' ||
-    Array.isArray(permission)
-    ? {
-        required: permission,
-        description: '',
-      }
-    : permission;
+  const declaration: PermissionDeclaration =
+    typeof permission === 'string' || Array.isArray(permission)
+      ? {
+          required: permission,
+          description: '',
+        }
+      : permission;
 
   const permissionArray = Array.isArray(declaration.required)
     ? declaration.required
@@ -94,7 +94,10 @@ export function requirePermission(
       try {
         ctx.userGrants = await loadUserGrants(ctx.prisma, user.id);
       } catch (error) {
-        ctx.logger?.warn({ userId: user.id, error }, 'Failed to load user grants');
+        ctx.logger?.warn(
+          { userId: user.id, error },
+          'Failed to load user grants'
+        );
         ctx.userGrants = [];
       }
     }

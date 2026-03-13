@@ -127,11 +127,7 @@ export function BrandTableWithPermissions({
     }
 
     return (
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => onEdit(brand)}
-      >
+      <Button variant="outline" size="sm" onClick={() => onEdit(brand)}>
         Modifica
       </Button>
     );
