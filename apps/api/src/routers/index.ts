@@ -16,6 +16,7 @@ import { maintenanceRouter } from './maintenance';
 import { meRouter } from './me';
 import { publicRouter } from './public';
 import { rbacRouter } from './rbac';
+import { seasonRouter } from './season';
 import { sectionAccessRouter } from './sectionAccess';
 import { storageRouter } from './storage';
 import { usersRouter } from './users';
@@ -36,6 +37,7 @@ export const appRouter = router({
   public: publicRouter,
   me: meRouter,
   rbac: rbacRouter,
+  season: seasonRouter,
   sectionAccess: sectionAccessRouter,
   storage: storageRouter,
   users: usersRouter,

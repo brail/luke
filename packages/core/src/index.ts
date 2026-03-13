@@ -19,6 +19,7 @@ export * from './schemas/ldap';
 export * from './schemas/mail';
 export * from './schemas/auth';
 export * from './schemas/brand';
+export * from './schemas/season';
 
 // Re-export RBAC
 export * from './rbac';

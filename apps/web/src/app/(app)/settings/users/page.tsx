@@ -13,6 +13,7 @@ import { debugLog } from '../../../../lib/debug';
 import { useRefresh } from '../../../../lib/refresh';
 import { trpc } from '../../../../lib/trpc';
 import { useStandardMutation } from '../../../../lib/useStandardMutation';
+import { usePermission } from '../../../../hooks/usePermission';
 
 import { SendVerificationDialog } from './_components/SendVerificationDialog';
 import { SortColumn, SortOrder } from './_components/types';
@@ -26,6 +27,7 @@ import { UsersToolbar } from './_components/UsersToolbar';
  */
 export default function UsersPage() {
   const { data: session } = useSession();
+  const { can } = usePermission();
 
   // Stato per dialog e paginazione
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -293,6 +295,7 @@ export default function UsersPage() {
             onRoleFilterChange={handleRoleFilter}
             onCreateUser={handleCreateUser}
             onPageChange={setCurrentPage}
+            canCreate={can('users:create')}
           />
         </SectionCard>
 

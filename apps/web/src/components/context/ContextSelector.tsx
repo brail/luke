@@ -64,14 +64,12 @@ export function ContextSelector() {
         onValueChange={handleBrandChange}
         disabled={isPending}
       >
-        <SelectTrigger className="w-40">
+        <SelectTrigger className="w-52">
           <SelectValue placeholder="Brand">
             {brand && (
               <div className="flex items-center gap-2">
                 <BrandAvatar brand={brand} size="sm" />
-                <span className="truncate">
-                  {brand.code} - {brand.name}
-                </span>
+                <span className="truncate">{brand.name}</span>
               </div>
             )}
           </SelectValue>
@@ -81,9 +79,7 @@ export function ContextSelector() {
             <SelectItem key={brandItem.id} value={brandItem.id}>
               <div className="flex items-center gap-2">
                 <BrandAvatar brand={brandItem} size="sm" />
-                <span>
-                  {brandItem.code} - {brandItem.name}
-                </span>
+                <span>{brandItem.name}</span>
               </div>
             </SelectItem>
           ))}
@@ -96,21 +92,17 @@ export function ContextSelector() {
         onValueChange={handleSeasonChange}
         disabled={isPending}
       >
-        <SelectTrigger className="w-40">
+        <SelectTrigger className="w-32">
           <SelectValue placeholder="Season">
             {season && (
-              <span className="truncate">
-                {season.code} {season.year} - {season.name}
-              </span>
+              <span className="truncate">{season.code} {season.year}</span>
             )}
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
           {seasons.map(seasonItem => (
             <SelectItem key={seasonItem.id} value={seasonItem.id}>
-              <span>
-                {seasonItem.code} {seasonItem.year} - {seasonItem.name}
-              </span>
+              <span>{seasonItem.code} {seasonItem.year}</span>
             </SelectItem>
           ))}
         </SelectContent>

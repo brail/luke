@@ -15,6 +15,7 @@ import {
   User,
   FolderTree,
   Building2,
+  CalendarDays,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -154,6 +155,15 @@ export default function AppSidebar() {
                         >
                           <Building2 className="mr-2 h-4 w-4" />
                           <span>Brand</span>
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link
+                          href="/settings/seasons"
+                          className="flex items-center"
+                        >
+                          <CalendarDays className="mr-2 h-4 w-4" />
+                          <span>Stagioni</span>
                         </Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>

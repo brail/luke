@@ -2,7 +2,6 @@
 
 import React from 'react';
 
-import { BrandAvatar } from '../../../../../components/context/BrandAvatar';
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
 import { Skeleton } from '../../../../../components/ui/skeleton';
@@ -22,51 +21,43 @@ import {
 } from '../../../../../components/ui/tooltip';
 import { usePermission } from '../../../../../hooks/usePermission';
 
-interface Brand {
+interface Season {
   id: string;
   code: string;
+  year: number;
   name: string;
-  logoUrl: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-interface BrandTableWithPermissionsProps {
-  brands: Brand[];
+interface SeasonTableProps {
+  seasons: Season[];
   isLoading: boolean;
   error?: any;
-  onEdit: (brand: Brand) => void;
-  onDelete: (brand: Brand) => void;
+  onEdit: (season: Season) => void;
+  onDelete: (season: Season) => void;
   onRetry?: () => void;
 }
 
-/**
- * Tabella per visualizzazione e gestione Brand con permission-aware actions
- *
- * Features:
- * - Nasconde pulsanti di azione se l'utente non ha permessi
- * - Mostra tooltip sui pulsanti disabilitati
- * - Adatta il comportamento in base al ruolo (viewer, editor, admin)
- */
-export function BrandTableWithPermissions({
-  brands,
+export function SeasonTable({
+  seasons,
   isLoading,
   error,
   onEdit,
   onDelete,
   onRetry,
-}: BrandTableWithPermissionsProps) {
+}: SeasonTableProps) {
   const { can } = usePermission();
-  const canUpdate = can('brands:update');
-  const canDelete = can('brands:delete');
-  const canRead = can('brands:read');
+  const canUpdate = can('seasons:update');
+  const canDelete = can('seasons:delete');
+  const canRead = can('seasons:read');
 
   if (error) {
     return (
       <div className="text-center py-8">
         <p className="text-destructive mb-4">
-          Errore caricamento brand: {error.message}
+          Errore caricamento stagioni: {error.message}
         </p>
         {onRetry && (
           <Button onClick={onRetry} variant="outline">
@@ -82,7 +73,6 @@ export function BrandTableWithPermissions({
       <div className="space-y-4">
         {Array.from({ length: 3 }).map((_, i) => (
           <div key={i} className="flex items-center space-x-4">
-            <Skeleton className="h-10 w-10 rounded-full" />
             <div className="space-y-2">
               <Skeleton className="h-4 w-[200px]" />
               <Skeleton className="h-4 w-[100px]" />
@@ -93,20 +83,20 @@ export function BrandTableWithPermissions({
     );
   }
 
-  if (brands.length === 0) {
+  if (seasons.length === 0) {
     return (
       <div className="text-center py-8">
         <p className="text-muted-foreground">
-          Nessun brand trovato.
-          {can('brands:create') && (
-            <span> Crea il primo brand per iniziare.</span>
+          Nessuna stagione trovata.
+          {can('seasons:create') && (
+            <span> Crea la prima stagione per iniziare.</span>
           )}
         </p>
       </div>
     );
   }
 
-  const EditButton = ({ brand }: { brand: Brand }) => {
+  const EditButton = ({ season }: { season: Season }) => {
     if (!canUpdate) {
       return (
         <TooltipProvider>
@@ -116,19 +106,19 @@ export function BrandTableWithPermissions({
                 Modifica
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Non hai i permessi per modificare i brand</TooltipContent>
+            <TooltipContent>Non hai i permessi per modificare le stagioni</TooltipContent>
           </Tooltip>
         </TooltipProvider>
       );
     }
     return (
-      <Button variant="outline" size="sm" onClick={() => onEdit(brand)}>
+      <Button variant="outline" size="sm" onClick={() => onEdit(season)}>
         Modifica
       </Button>
     );
   };
 
-  const DeleteButton = ({ brand }: { brand: Brand }) => {
+  const DeleteButton = ({ season }: { season: Season }) => {
     if (!canDelete) {
       return (
         <TooltipProvider>
@@ -143,7 +133,7 @@ export function BrandTableWithPermissions({
                 Elimina
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Non hai i permessi per eliminare i brand</TooltipContent>
+            <TooltipContent>Non hai i permessi per eliminare le stagioni</TooltipContent>
           </Tooltip>
         </TooltipProvider>
       );
@@ -152,7 +142,7 @@ export function BrandTableWithPermissions({
       <Button
         variant="outline"
         size="sm"
-        onClick={() => onDelete(brand)}
+        onClick={() => onDelete(season)}
         className="text-destructive hover:text-destructive"
       >
         Elimina
@@ -165,8 +155,8 @@ export function BrandTableWithPermissions({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Logo</TableHead>
             <TableHead>Codice</TableHead>
+            <TableHead>Anno</TableHead>
             <TableHead>Nome</TableHead>
             <TableHead>Stato</TableHead>
             <TableHead>Aggiornato</TableHead>
@@ -174,35 +164,24 @@ export function BrandTableWithPermissions({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {brands.map(brand => (
-            <TableRow key={brand.id}>
+          {seasons.map(season => (
+            <TableRow key={season.id}>
+              <TableCell className="font-mono text-sm">{season.code}</TableCell>
+              <TableCell className="font-mono text-sm">{season.year}</TableCell>
+              <TableCell className="font-medium">{season.name}</TableCell>
               <TableCell>
-                <BrandAvatar
-                  brand={{
-                    id: brand.id,
-                    code: brand.code,
-                    name: brand.name,
-                    logoUrl: brand.logoUrl,
-                    isActive: brand.isActive,
-                  }}
-                  size="sm"
-                />
-              </TableCell>
-              <TableCell className="font-mono text-sm">{brand.code}</TableCell>
-              <TableCell className="font-medium">{brand.name}</TableCell>
-              <TableCell>
-                <Badge variant={brand.isActive ? 'default' : 'secondary'}>
-                  {brand.isActive ? 'Attivo' : 'Disattivo'}
+                <Badge variant={season.isActive ? 'default' : 'secondary'}>
+                  {season.isActive ? 'Attiva' : 'Disattiva'}
                 </Badge>
               </TableCell>
               <TableCell className="text-sm text-muted-foreground">
-                {new Date(brand.updatedAt).toLocaleDateString('it-IT')}
+                {new Date(season.updatedAt).toLocaleDateString('it-IT')}
               </TableCell>
               <TableCell className="text-right">
                 {canRead && (
                   <div className="flex items-center justify-end gap-2">
-                    <EditButton brand={brand} />
-                    <DeleteButton brand={brand} />
+                    <EditButton season={season} />
+                    <DeleteButton season={season} />
                   </div>
                 )}
               </TableCell>

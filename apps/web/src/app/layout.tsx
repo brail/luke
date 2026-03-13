@@ -25,7 +25,7 @@ export default function RootLayout({
     <html lang="it">
       <body className="bg-background text-foreground">
         <Providers>{children}</Providers>
-        <Toaster position="top-right" richColors />
+        <Toaster position="top-right" richColors duration={2000} visibleToasts={3} />
       </body>
     </html>
   );

@@ -21,6 +21,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../../../../../components/ui/dropdown-menu';
+import { usePermission } from '../../../../../hooks/usePermission';
 import { useRefresh } from '../../../../../lib/refresh';
 import { trpc } from '../../../../../lib/trpc';
 import { useStandardMutation } from '../../../../../lib/useStandardMutation';
@@ -44,6 +45,10 @@ export function UserActionsMenu({
 }: UserActionsMenuProps) {
   const isSelfAction = user.id === currentUserId;
   const refresh = useRefresh();
+  const { can } = usePermission();
+
+  const canUpdate = can('users:update');
+  const canDelete = can('users:delete');
 
   // Mutation tRPC
   const sendVerifyMutation =
@@ -63,6 +68,9 @@ export function UserActionsMenu({
     onSuccess: (data: any) => toast.success(data.message),
     onErrorMessage: 'Errore',
   });
+
+  // Se non ha nessun permesso di modifica, non mostrare il menu
+  if (!canUpdate && !canDelete) return null;
 
   const handleEdit = () => {
     handlers.onEdit(user);
@@ -106,19 +114,23 @@ export function UserActionsMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={handleEdit}>
-          <Edit className="mr-2 h-4 w-4" />
-          Modifica
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={handleDisable}
-          disabled={!user.isActive || isSelfAction}
-        >
-          <UserX className="mr-2 h-4 w-4" />
-          Disattiva
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        {!user.emailVerifiedAt && (
+        {canUpdate && (
+          <DropdownMenuItem onClick={handleEdit}>
+            <Edit className="mr-2 h-4 w-4" />
+            Modifica
+          </DropdownMenuItem>
+        )}
+        {canUpdate && (
+          <DropdownMenuItem
+            onClick={handleDisable}
+            disabled={!user.isActive || isSelfAction}
+          >
+            <UserX className="mr-2 h-4 w-4" />
+            Disattiva
+          </DropdownMenuItem>
+        )}
+        {canUpdate && <DropdownMenuSeparator />}
+        {canUpdate && !user.emailVerifiedAt && (
           <>
             <DropdownMenuItem
               onClick={async () => {
@@ -141,7 +153,7 @@ export function UserActionsMenu({
             </DropdownMenuItem>
           </>
         )}
-        {user.emailVerifiedAt && (
+        {canUpdate && user.emailVerifiedAt && (
           <DropdownMenuItem
             onClick={async () => {
               await forceVerify({
@@ -154,22 +166,28 @@ export function UserActionsMenu({
             Rimuovi verifica
           </DropdownMenuItem>
         )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onClick={handleRevokeSessions}
-          className="text-orange-600 focus:text-orange-600"
-        >
-          <LogOut className="mr-2 h-4 w-4" />
-          Logout da tutti i dispositivi
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={handleHardDelete}
-          disabled={isSelfAction}
-          className="text-destructive focus:text-destructive"
-        >
-          <Trash2 className="mr-2 h-4 w-4" />
-          Elimina
-        </DropdownMenuItem>
+        {canUpdate && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={handleRevokeSessions}
+              className="text-orange-600 focus:text-orange-600"
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              Logout da tutti i dispositivi
+            </DropdownMenuItem>
+          </>
+        )}
+        {canDelete && (
+          <DropdownMenuItem
+            onClick={handleHardDelete}
+            disabled={isSelfAction}
+            className="text-destructive focus:text-destructive"
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            Elimina
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

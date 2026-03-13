@@ -2,12 +2,15 @@
 
 import React from 'react';
 
+import { CreateActionButton } from '../../../../../components/CreateActionButton';
 import { Button } from '../../../../../components/ui/button';
 import { Input } from '../../../../../components/ui/input';
 
 import { ToolbarProps, ToolbarHandlers } from './types';
 
-interface UsersToolbarProps extends ToolbarProps, ToolbarHandlers {}
+interface UsersToolbarProps extends ToolbarProps, ToolbarHandlers {
+  canCreate?: boolean;
+}
 
 /**
  * Toolbar per ricerca, filtri e paginazione utenti
@@ -23,6 +26,7 @@ export function UsersToolbar({
   onRoleFilterChange,
   onCreateUser,
   onPageChange,
+  canCreate = true,
 }: UsersToolbarProps) {
   return (
     <div className="space-y-4">
@@ -52,9 +56,12 @@ export function UsersToolbar({
       </div>
 
       {/* Azioni */}
-      <div className="flex gap-2">
-        <Button onClick={onCreateUser}>Nuovo Utente</Button>
-      </div>
+      <CreateActionButton
+        label="Nuovo Utente"
+        onClick={onCreateUser}
+        canCreate={canCreate}
+        resourceName="utente"
+      />
 
       {/* Paginazione */}
       {totalPages > 1 && (

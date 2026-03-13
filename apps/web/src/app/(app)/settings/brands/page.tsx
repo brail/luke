@@ -5,14 +5,14 @@ import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
 
+import { CreateActionButton } from '../../../../components/CreateActionButton';
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
-import { Button } from '../../../../components/ui/button';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
 import { useAppContext } from '../../../../contexts/AppContextProvider';
 import { useInvalidateContext } from '../../../../contexts/useInvalidateContext';
-import { useBrandPermissions } from '../../../../hooks/useBrandPermissions';
+import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
 
 import { BrandDialogWithPermissions } from './_components/BrandDialogWithPermissions';
@@ -29,7 +29,7 @@ export default function BrandsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingBrand, setEditingBrand] = useState<BrandItem | null>(null);
   const { brand: currentBrand } = useAppContext();
-  const brandPerms = useBrandPermissions();
+  const { can } = usePermission();
 
   // Query per ottenere la lista dei brand
   const {
@@ -179,7 +179,7 @@ export default function BrandsPage() {
         title="Ricerca e Filtri"
         description="Cerca e filtra i brand del sistema"
       >
-        <div className="flex items-center gap-4">
+        <div className="flex items-end gap-4">
           <div className="flex-1">
             <Label htmlFor="search">Cerca brand</Label>
             <Input
@@ -189,11 +189,13 @@ export default function BrandsPage() {
               onChange={e => setSearchTerm(e.target.value)}
             />
           </div>
-          {brandPerms.canCreate && (
-            <div className="flex items-end">
-              <Button onClick={handleCreateBrand}>Nuovo Brand</Button>
-            </div>
-          )}
+          <CreateActionButton
+            label="Nuovo Brand"
+            onClick={handleCreateBrand}
+            canCreate={can('brands:create')}
+            resourceName="brand"
+            isLoading={createMutation.isPending}
+          />
         </div>
       </SectionCard>
 
