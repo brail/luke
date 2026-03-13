@@ -46,7 +46,7 @@ import { debugLog, debugWarn } from '../../../../lib/debug';
 import { trpc } from '../../../../lib/trpc';
 
 export default function LdapSettingsPage() {
-  const { data: session, status } = useSession();
+  const { data: _session, status } = useSession();
   const toast = useToast();
   const { can } = usePermission();
   const canUpdate = can('config:update');

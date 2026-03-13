@@ -17,7 +17,10 @@ import { router, protectedProcedure } from '../lib/trpc';
 import { requirePermission } from '../lib/permissions';
 
 function normalizeSeasonCode(code: string): string {
-  return code.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+  return code
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9_-]/g, '');
 }
 
 export const seasonRouter = router({
@@ -111,7 +114,10 @@ export const seasonRouter = router({
       });
 
       if (!season) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Stagione non trovata' });
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Stagione non trovata',
+        });
       }
 
       const updateData: any = { ...input.data };
@@ -164,7 +170,10 @@ export const seasonRouter = router({
       });
 
       if (!season) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Stagione non trovata' });
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Stagione non trovata',
+        });
       }
 
       return ctx.prisma.season.update({

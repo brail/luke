@@ -31,8 +31,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../../../components/ui/select';
-import { usePermission } from '../../../../hooks/usePermission';
 import { useToast } from '../../../../hooks/use-toast';
+import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
 
 export default function MailPage() {
@@ -376,7 +376,9 @@ export default function MailPage() {
                 variant="outline"
                 onClick={() => form.reset()}
                 disabled={
-                  saveConfigMutation.isPending || testMailMutation.isPending || !canUpdate
+                  saveConfigMutation.isPending ||
+                  testMailMutation.isPending ||
+                  !canUpdate
                 }
               >
                 Reset
@@ -384,7 +386,9 @@ export default function MailPage() {
               <Button
                 type="submit"
                 disabled={
-                  saveConfigMutation.isPending || testMailMutation.isPending || !canUpdate
+                  saveConfigMutation.isPending ||
+                  testMailMutation.isPending ||
+                  !canUpdate
                 }
               >
                 {saveConfigMutation.isPending
@@ -411,13 +415,19 @@ export default function MailPage() {
                 value={testEmail}
                 onChange={e => setTestEmail(e.target.value)}
                 placeholder={form.watch('from') || 'Destinatario email di test'}
-                disabled={testMailMutation.isPending || !form.watch('host') || !canUpdate}
+                disabled={
+                  testMailMutation.isPending ||
+                  !form.watch('host') ||
+                  !canUpdate
+                }
               />
             </div>
             <SettingsActions
               onTest={handleTestMail}
               isTesting={testMailMutation.isPending}
-              disabled={testMailMutation.isPending || !form.watch('host') || !canUpdate}
+              disabled={
+                testMailMutation.isPending || !form.watch('host') || !canUpdate
+              }
             />
           </div>
 

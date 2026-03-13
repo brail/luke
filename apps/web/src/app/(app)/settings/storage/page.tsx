@@ -72,7 +72,7 @@ interface DriveConfig {
 }
 
 export default function StoragePage() {
-  const { data: session, status } = useSession();
+  const { data: _session, status } = useSession();
   const toast = useToast();
   const refresh = useRefresh();
   const { can } = usePermission();
@@ -195,7 +195,8 @@ export default function StoragePage() {
     return (
       <div className="p-8">
         <div className="rounded-lg border border-destructive bg-destructive/10 p-4 text-destructive">
-          Non hai i permessi per accedere a questa pagina. Contatta un amministratore.
+          Non hai i permessi per accedere a questa pagina. Contatta un
+          amministratore.
         </div>
       </div>
     );

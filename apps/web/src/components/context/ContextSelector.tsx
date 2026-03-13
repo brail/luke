@@ -95,14 +95,18 @@ export function ContextSelector() {
         <SelectTrigger className="w-32">
           <SelectValue placeholder="Season">
             {season && (
-              <span className="truncate">{season.code} {season.year}</span>
+              <span className="truncate">
+                {season.code} {season.year}
+              </span>
             )}
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
           {seasons.map(seasonItem => (
             <SelectItem key={seasonItem.id} value={seasonItem.id}>
-              <span>{seasonItem.code} {seasonItem.year}</span>
+              <span>
+                {seasonItem.code} {seasonItem.year}
+              </span>
             </SelectItem>
           ))}
         </SelectContent>

@@ -36,7 +36,9 @@ export function CreateActionButton({
               {label}
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Non hai i permessi per creare {resourceName}</TooltipContent>
+          <TooltipContent>
+            Non hai i permessi per creare {resourceName}
+          </TooltipContent>
         </Tooltip>
       </TooltipProvider>
     );

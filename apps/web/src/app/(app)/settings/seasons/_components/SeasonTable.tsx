@@ -102,11 +102,18 @@ export function SeasonTable({
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="outline" size="sm" disabled className="opacity-50 cursor-not-allowed">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled
+                className="opacity-50 cursor-not-allowed"
+              >
                 Modifica
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Non hai i permessi per modificare le stagioni</TooltipContent>
+            <TooltipContent>
+              Non hai i permessi per modificare le stagioni
+            </TooltipContent>
           </Tooltip>
         </TooltipProvider>
       );
@@ -133,7 +140,9 @@ export function SeasonTable({
                 Elimina
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Non hai i permessi per eliminare le stagioni</TooltipContent>
+            <TooltipContent>
+              Non hai i permessi per eliminare le stagioni
+            </TooltipContent>
           </Tooltip>
         </TooltipProvider>
       );

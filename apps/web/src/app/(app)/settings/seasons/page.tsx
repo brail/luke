@@ -36,8 +36,10 @@ export default function SeasonsPage() {
   const seasons = seasonsData.items;
 
   const getErrorMessage = (error: any): string => {
-    if (error.data?.code === 'CONFLICT') return 'Stagione con questo codice e anno già esistente';
-    if (error.data?.code === 'FORBIDDEN') return 'Non hai i permessi per eseguire questa operazione';
+    if (error.data?.code === 'CONFLICT')
+      return 'Stagione con questo codice e anno già esistente';
+    if (error.data?.code === 'FORBIDDEN')
+      return 'Non hai i permessi per eseguire questa operazione';
     if (error.data?.code === 'NOT_FOUND') return 'Stagione non trovata';
     return error.message || "Errore durante l'operazione. Riprova.";
   };
@@ -86,7 +88,11 @@ export default function SeasonsPage() {
   };
 
   const handleDelete = async (season: SeasonItem) => {
-    if (globalThis.confirm(`Sei sicuro di voler eliminare la stagione "${season.code} ${season.year}"?`)) {
+    if (
+      globalThis.confirm(
+        `Sei sicuro di voler eliminare la stagione "${season.code} ${season.year}"?`
+      )
+    ) {
       await removeMutation.mutateAsync({ id: season.id });
     }
   };
