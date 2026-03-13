@@ -14,6 +14,7 @@ import { useAppContext } from '../../../../contexts/AppContextProvider';
 import { useInvalidateContext } from '../../../../contexts/useInvalidateContext';
 import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 import { BrandDialogWithPermissions } from './_components/BrandDialogWithPermissions';
 import { BrandTableWithPermissions } from './_components/BrandTableWithPermissions';
@@ -46,39 +47,8 @@ export default function BrandsPage() {
   // Hook centralizzato per invalidazione cache
   const invalidateContext = useInvalidateContext();
 
-  // Funzione helper per mappare errori a messaggi user-friendly
-  const getErrorMessage = (error: any): string => {
-    // Errori tRPC con codice specifico
-    if (error.data?.code === 'CONFLICT') {
-      return 'Nome o codice brand già in uso';
-    }
-    if (error.data?.code === 'FORBIDDEN') {
-      return 'Non hai i permessi per eseguire questa operazione';
-    }
-    if (error.data?.code === 'UNAUTHORIZED') {
-      return 'Sessione scaduta, rieffettua il login';
-    }
-    if (error.data?.code === 'BAD_REQUEST') {
-      return error.message || 'Dati non validi';
-    }
-
-    // Errori HTTP diretti
-    if (error.status === 403) {
-      return 'Non hai i permessi per eseguire questa operazione';
-    }
-    if (error.status === 409) {
-      return 'Nome o codice brand già in uso';
-    }
-    if (error.status === 401) {
-      return 'Sessione scaduta, rieffettua il login';
-    }
-    if (error.status === 400) {
-      return error.message || 'Dati non validi';
-    }
-
-    // Messaggio generico con retry
-    return error.message || "Errore durante l'operazione. Riprova.";
-  };
+  const getErrorMessage = (error: any) =>
+    getTrpcErrorMessage(error, { CONFLICT: 'Nome o codice brand già in uso' });
 
   // Mutation per creare/aggiornare brand
   const createMutation = trpc.brand.create.useMutation({

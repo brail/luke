@@ -78,34 +78,6 @@ export function toTRPCError(error: StandardError): TRPCError {
 }
 
 /**
- * Mappa i codici di errore ai codici HTTP
- */
-// function _getHttpStatusFromErrorCode(code: ErrorCode): number {
-//   switch (code) {
-//     case ErrorCode.VALIDATION_ERROR:
-//     case ErrorCode.INVALID_INPUT:
-//       return 400;
-//     case ErrorCode.UNAUTHORIZED:
-//       return 401;
-//     case ErrorCode.FORBIDDEN:
-//       return 403;
-//     case ErrorCode.NOT_FOUND:
-//       return 404;
-//     case ErrorCode.CONFLICT:
-//       return 409;
-//     case ErrorCode.CONFIG_ERROR:
-//     case ErrorCode.CONNECTION_ERROR:
-//     case ErrorCode.DATABASE_ERROR:
-//     case ErrorCode.INTEGRATION_ERROR:
-//     case ErrorCode.SMTP_ERROR:
-//     case ErrorCode.STORAGE_ERROR:
-//     case ErrorCode.INTERNAL_ERROR:
-//     default:
-//       return 500;
-//   }
-// }
-
-/**
  * Mappa i codici di errore ai codici tRPC
  */
 function getTRPCCodeFromErrorCode(

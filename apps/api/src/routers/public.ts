@@ -5,6 +5,7 @@
 
 import { getConfig } from '../lib/configManager';
 import { router, publicProcedure } from '../lib/trpc';
+import { isDevelopment } from '@luke/core';
 
 export const publicRouter = router({
   /**
@@ -22,7 +23,7 @@ export const publicRouter = router({
       return {
         name: appName || 'Luke',
         version: appVersion || '1.0.0',
-        environment: process.env.NODE_ENV || 'development',
+        environment: isDevelopment() ? 'development' : 'production',
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
@@ -34,7 +35,7 @@ export const publicRouter = router({
       return {
         name: 'Luke',
         version: '1.0.0',
-        environment: process.env.NODE_ENV || 'development',
+        environment: isDevelopment() ? 'development' : 'production',
         timestamp: new Date().toISOString(),
       };
     }

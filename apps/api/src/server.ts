@@ -17,6 +17,7 @@ import {
   deriveSecret,
   HKDF_INFO_COOKIE,
 } from '@luke/core/server';
+import { isDevelopment, isProduction } from '@luke/core';
 
 import { buildCorsAllowedOrigins } from './lib/cors';
 import { createContext } from './lib/trpc';
@@ -38,18 +39,17 @@ import { getStorageProvider } from './storage';
  * Configurazione del logger Pino con serializers per sicurezza
  */
 const loggerConfig = {
-  level: process.env.NODE_ENV === 'production' ? 'warn' : 'info',
-  transport:
-    process.env.NODE_ENV === 'development'
-      ? {
-          target: 'pino-pretty',
-          options: {
-            colorize: true,
-            translateTime: 'HH:MM:ss Z',
-            ignore: 'pid,hostname',
-          },
-        }
-      : undefined,
+  level: isProduction() ? 'warn' : 'info',
+  transport: isDevelopment()
+    ? {
+        target: 'pino-pretty',
+        options: {
+          colorize: true,
+          translateTime: 'HH:MM:ss Z',
+          ignore: 'pid,hostname',
+        },
+      }
+    : undefined,
 } as any;
 
 /**
@@ -86,10 +86,7 @@ fastify.addContentTypeParser(
  * Inizializza Prisma Client
  */
 const prisma = new PrismaClient({
-  log:
-    process.env.NODE_ENV === 'development'
-      ? ['query', 'info', 'warn', 'error']
-      : ['error'],
+  log: isDevelopment() ? ['query', 'info', 'warn', 'error'] : ['error'],
 });
 
 /**
@@ -103,9 +100,8 @@ async function registerSecurityPlugins() {
   });
 
   // Rate limiting globale (permissivo)
-  const isDevelopment = process.env.NODE_ENV === 'development';
   await fastify.register(rateLimit, {
-    max: isDevelopment ? 1000 : 100, // 1000 req/min in dev, 100 in prod
+    max: isDevelopment() ? 1000 : 100, // 1000 req/min in dev, 100 in prod
     timeWindow: '1 minute',
     cache: 10000,
     skipOnError: true,
@@ -118,7 +114,7 @@ async function registerSecurityPlugins() {
 
   // Helmet per security headers con CSP minimale per API JSON-only
   await fastify.register(helmet, {
-    contentSecurityPolicy: isDevelopment
+    contentSecurityPolicy: isDevelopment()
       ? false // Disabilita CSP in dev per evitare problemi
       : {
           directives: {
@@ -127,7 +123,7 @@ async function registerSecurityPlugins() {
             baseUri: ["'none'"],
           },
         },
-    hsts: isDevelopment
+    hsts: isDevelopment()
       ? false // Disabilita HSTS in dev
       : {
           maxAge: 15552000, // 180 giorni
@@ -142,10 +138,8 @@ async function registerSecurityPlugins() {
   });
 
   // CORS ibrido con priorità AppConfig → ENV → default
-  const corsConfig = buildCorsAllowedOrigins(
-    (process.env.NODE_ENV as 'development' | 'production' | 'test') ||
-      'development'
-  );
+  const envName = isDevelopment() ? 'development' : isProduction() ? 'production' : 'test';
+  const corsConfig = buildCorsAllowedOrigins(envName);
 
   // Log informativo CORS (non stampare lista completa in prod)
   if (
@@ -160,9 +154,9 @@ async function registerSecurityPlugins() {
   }
 
   // Registra CORS solo se ci sono origini configurate o siamo in dev
-  if (corsConfig.origins.length > 0 || isDevelopment) {
+  if (corsConfig.origins.length > 0 || isDevelopment()) {
     await fastify.register(cors, {
-      origin: isDevelopment ? true : corsConfig.origins,
+      origin: isDevelopment() ? true : corsConfig.origins,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
       allowedHeaders: [
@@ -243,13 +237,20 @@ async function registerBrandLogoRoutes() {
  * Registra static file server per uploads
  */
 async function registerStaticFiles() {
+  const { resolve } = await import('path');
+  const { realpath, mkdir } = await import('fs/promises');
+  const { homedir } = await import('os');
+
+  const defaultBasePath = resolve(homedir(), '.luke', 'storage');
   const basePath =
     (await getConfig(prisma, 'storage.local.basePath', false)) ||
-    '/tmp/luke-storage';
+    defaultBasePath;
 
-  // Usa path.resolve per root assoluta
-  const { resolve } = await import('path');
-  const absoluteRoot = resolve(basePath);
+  // Ensure directory exists, then resolve symlinks for consistent path matching
+  // with LocalFsProvider which also uses fs.realpath internally
+  const resolvedPath = resolve(basePath);
+  await mkdir(resolvedPath, { recursive: true });
+  const absoluteRoot = await realpath(resolvedPath);
 
   await fastify.register(fastifyStatic, {
     root: absoluteRoot,
@@ -320,7 +321,7 @@ async function registerHealthRoute() {
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       version: process.env.npm_package_version || '0.1.0',
-      environment: process.env.NODE_ENV || 'development',
+      environment: isDevelopment() ? 'development' : 'production',
     };
   });
 
@@ -522,7 +523,7 @@ const start = async () => {
     fastify.log.info(`Readiness probe: http://${host}:${port}/readyz`);
     fastify.log.info(`tRPC endpoint: http://${host}:${port}/trpc`);
 
-    if (process.env.NODE_ENV === 'development') {
+    if (isDevelopment()) {
       fastify.log.info(`Prisma Studio: pnpm --filter @luke/api prisma:studio`);
     }
   } catch (err: any) {

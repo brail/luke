@@ -22,6 +22,7 @@ import {
 import { authenticateRequest } from '../lib/auth';
 import type { FastifyInstance } from 'fastify';
 import type { PrismaClient } from '@prisma/client';
+import { isDevelopment } from '@luke/core';
 
 export default fp(
   async (app: FastifyInstance, options: { prisma: PrismaClient }) => {
@@ -35,7 +36,7 @@ export default fp(
 
     // Rate limiting scoped solo per upload - più permissivo in dev
     await app.register(rateLimit, {
-      max: process.env.NODE_ENV === 'development' ? 100 : 10,
+      max: isDevelopment() ? 100 : 10,
       timeWindow: '1 minute',
       keyGenerator: req => req.ip,
     });

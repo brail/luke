@@ -12,6 +12,7 @@ import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
 import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 import { SeasonDialog } from './_components/SeasonDialog';
 import { SeasonTable } from './_components/SeasonTable';
@@ -35,14 +36,11 @@ export default function SeasonsPage() {
 
   const seasons = seasonsData.items;
 
-  const getErrorMessage = (error: any): string => {
-    if (error.data?.code === 'CONFLICT')
-      return 'Stagione con questo codice e anno già esistente';
-    if (error.data?.code === 'FORBIDDEN')
-      return 'Non hai i permessi per eseguire questa operazione';
-    if (error.data?.code === 'NOT_FOUND') return 'Stagione non trovata';
-    return error.message || "Errore durante l'operazione. Riprova.";
-  };
+  const getErrorMessage = (error: any) =>
+    getTrpcErrorMessage(error, {
+      CONFLICT: 'Stagione con questo codice e anno già esistente',
+      NOT_FOUND: 'Stagione non trovata',
+    });
 
   const utils = trpc.useUtils();
 

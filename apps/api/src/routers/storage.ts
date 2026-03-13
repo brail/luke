@@ -5,11 +5,13 @@
  */
 
 import { TRPCError } from '@trpc/server';
+import { homedir } from 'os';
+import { join } from 'path';
 import { z } from 'zod';
 
 import { isValidBucket, localStorageConfigSchema } from '@luke/core';
 
-import { adminOnly, adminOrEditor } from '../lib/rbac';
+import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 import { withSectionAccess } from '../lib/sectionAccessMiddleware';
 import { getConfig, saveConfig } from '../lib/configManager';
@@ -233,7 +235,7 @@ export const storageRouter = router({
    * Solo admin e editor possono cancellare file
    */
   delete: protectedProcedure
-    .use(adminOrEditor)
+    .use(requirePermission('config:update'))
     .input(DeleteFileSchema)
     .mutation(async ({ input, ctx }) => {
       // Verifica esistenza
@@ -259,7 +261,7 @@ export const storageRouter = router({
    * Solo admin
    */
   getConfig: protectedProcedure
-    .use(adminOnly)
+    .use(requirePermission('config:read'))
     .use(withSectionAccess('settings'))
     .query(async ({ ctx }) => {
       const [storageType, basePath, maxFileSizeMB, bucketsStr] =
@@ -280,7 +282,7 @@ export const storageRouter = router({
 
       return {
         type: storageType || 'local',
-        basePath: basePath || '/tmp/luke-storage',
+        basePath: basePath || join(homedir(), '.luke', 'storage'),
         maxFileSizeMB: parseInt(maxFileSizeMB || '50', 10),
         buckets,
       };
@@ -291,7 +293,7 @@ export const storageRouter = router({
    * Solo admin
    */
   saveConfig: protectedProcedure
-    .use(adminOnly)
+    .use(requirePermission('config:update'))
     .use(withSectionAccess('settings'))
     .input(SaveStorageConfigSchema)
     .mutation(async ({ input, ctx }) => {

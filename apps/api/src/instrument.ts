@@ -16,6 +16,7 @@ import {
 } from '@opentelemetry/semantic-conventions';
 import { PrismaInstrumentation } from '@prisma/instrumentation';
 import pino from 'pino';
+import { isDevelopment } from '@luke/core';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -34,7 +35,7 @@ if (otelEnabled) {
   const resource = new Resource({
     [SEMRESATTRS_SERVICE_NAME]: '@luke/api',
     [SEMRESATTRS_SERVICE_VERSION]: process.env.npm_package_version || '0.1.0',
-    [SEMRESATTRS_DEPLOYMENT_ENVIRONMENT]: process.env.NODE_ENV || 'development',
+    [SEMRESATTRS_DEPLOYMENT_ENVIRONMENT]: isDevelopment() ? 'development' : 'production',
   });
 
   sdk = new NodeSDK({

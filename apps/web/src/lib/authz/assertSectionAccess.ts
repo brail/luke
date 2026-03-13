@@ -10,16 +10,11 @@ import {
   hasPermission,
   permissions,
   buildTrpcUrl,
+  SECTION_TO_PERMISSION,
 } from '@luke/core';
 import type { Section } from '@luke/core';
 
 import { auth } from '../../auth';
-
-const SECTION_TO_PERMISSION: Record<Section, string> = {
-  dashboard: 'dashboard:read',
-  settings: 'settings:read',
-  maintenance: 'maintenance:read',
-};
 
 /**
  * Verifica accesso a una sezione e redirige se negato

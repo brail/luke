@@ -3,7 +3,7 @@
  * Implementa la cascata di risoluzione: AppConfig → ENV → Default
  */
 
-import { RateLimitConfigSchema, type RateLimitPolicy } from '@luke/core';
+import { RateLimitConfigSchema, type RateLimitPolicy, isDevelopment } from '@luke/core';
 
 import { getConfig } from './configManager';
 
@@ -18,22 +18,22 @@ const DEFAULTS: Record<string, RateLimitPolicy> = {
   passwordChange: { max: 3, timeWindow: '15m', keyBy: 'userId' },
   passwordReset: { max: 3, timeWindow: '15m', keyBy: 'ip' },
   configMutations: {
-    max: process.env.NODE_ENV === 'development' ? 100 : 20,
+    max: isDevelopment() ? 100 : 20,
     timeWindow: '1m',
     keyBy: 'userId',
   },
   userMutations: {
-    max: process.env.NODE_ENV === 'development' ? 100 : 10,
+    max: isDevelopment() ? 100 : 10,
     timeWindow: '1m',
     keyBy: 'userId',
   },
   brandMutations: {
-    max: process.env.NODE_ENV === 'development' ? 100 : 10,
+    max: isDevelopment() ? 100 : 10,
     timeWindow: '1m',
     keyBy: 'userId',
   },
   sectionAccessSet: {
-    max: process.env.NODE_ENV === 'development' ? 100 : 20,
+    max: isDevelopment() ? 100 : 20,
     timeWindow: '1m',
     keyBy: 'userId',
   },

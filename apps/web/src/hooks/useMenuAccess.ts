@@ -23,6 +23,7 @@ export function useMenuAccess() {
       dashboard: sectionAccess.dashboard,
       settings: sectionAccess.settings,
       maintenance: sectionAccess.maintenance,
+      product: sectionAccess.product,
 
       // Controllo per macrosezioni
       showGeneralSection: hasGeneralItems,

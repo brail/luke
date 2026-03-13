@@ -3,7 +3,7 @@ import { z } from 'zod';
 /**
  * Enum per le sezioni del sistema
  */
-export const sectionEnum = z.enum(['dashboard', 'settings', 'maintenance']);
+export const sectionEnum = z.enum(['dashboard', 'settings', 'maintenance', 'product']);
 export type Section = z.infer<typeof sectionEnum>;
 
 /**
@@ -32,3 +32,15 @@ export const rbacConfigSchema = z.object({
  * Tipo TypeScript per la configurazione RBAC
  */
 export type RbacConfig = z.infer<typeof rbacConfigSchema>;
+
+/**
+ * Mapping sezioni → permissions nel sistema Resource:Action
+ * Unica source of truth, condivisa tra API e Web
+ */
+export const SECTION_TO_PERMISSION: Record<Section, string> = {
+  dashboard: 'dashboard:read',
+  settings: 'settings:read',
+  maintenance: 'maintenance:read',
+  product: 'pricing:read',
+} as const;
+

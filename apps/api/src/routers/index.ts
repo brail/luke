@@ -14,6 +14,7 @@ import { healthRouter } from './health';
 import { integrationsRouter } from './integrations';
 import { maintenanceRouter } from './maintenance';
 import { meRouter } from './me';
+import { pricingRouter } from './pricing';
 import { publicRouter } from './public';
 import { rbacRouter } from './rbac';
 import { seasonRouter } from './season';
@@ -36,6 +37,7 @@ export const appRouter = router({
   maintenance: maintenanceRouter,
   public: publicRouter,
   me: meRouter,
+  pricing: pricingRouter,
   rbac: rbacRouter,
   season: seasonRouter,
   sectionAccess: sectionAccessRouter,

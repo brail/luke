@@ -7,20 +7,10 @@ import { randomUUID } from 'crypto';
 
 import { TRPCError } from '@trpc/server';
 
-import { type Role } from '@luke/core';
-
-import { authenticateRequest, type UserSession } from './auth';
+import { authenticateRequest } from './auth';
 import { getTokenVersionCacheTTL } from './configManager';
 import { t } from './t';
 import type { Context } from './context';
-import {
-  withRole,
-  roleIn,
-  adminOnly,
-  adminOrEditor,
-  adminOrManager,
-  authenticatedOnly,
-} from './rbac';
 
 import type { PrismaClient } from '@prisma/client';
 
@@ -272,65 +262,6 @@ export const adminProcedure = publicProcedure
   .use(loggingMiddleware)
   .use(authMiddleware)
   .use(adminMiddleware);
-
-/**
- * Helper per verificare se utente ha uno dei ruoli autorizzati
- */
-export function ensureRoles(
-  session: UserSession | null,
-  allowedRoles: Role[]
-): void {
-  if (!session) {
-    throw new TRPCError({
-      code: 'UNAUTHORIZED',
-      message: 'Devi essere autenticato per accedere a questa risorsa',
-    });
-  }
-
-  if (!allowedRoles.includes(session.user.role as Role)) {
-    throw new TRPCError({
-      code: 'FORBIDDEN',
-      message: `Accesso negato: richiesto uno dei ruoli ${allowedRoles.join(', ')}`,
-    });
-  }
-}
-
-/**
- * Middleware per autorizzazione admin + editor
- * Verifica che l'utente sia autenticato e abbia ruolo admin o editor
- */
-export const adminOrEditorMiddleware = t.middleware(async ({ ctx, next }) => {
-  ensureRoles(ctx.session, ['admin', 'editor']);
-
-  return next({
-    ctx: {
-      ...ctx,
-      session: ctx.session!, // Type-safe: session non è più null
-    },
-  });
-});
-
-/**
- * Procedure per admin o editor (richiede ruolo admin o editor)
- * DEPRECATED: Usa requirePermission() per nuovo sistema Resource:Action
- * Mantenuto per backward compatibility
- */
-export const adminOrEditorProcedure = publicProcedure
-  .use(loggingMiddleware)
-  .use(authMiddleware)
-  .use(adminOrEditorMiddleware);
-
-/**
- * Esporta le guardie RBAC per uso nei router
- */
-export {
-  withRole,
-  roleIn,
-  adminOnly,
-  adminOrEditor,
-  adminOrManager,
-  authenticatedOnly,
-};
 
 /**
  * Re-esporta Context da ./context per backward compatibility

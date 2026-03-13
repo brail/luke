@@ -6,6 +6,8 @@
  */
 
 import { randomUUID } from 'crypto';
+import { homedir } from 'os';
+import { join } from 'path';
 
 import type { PrismaClient } from '@prisma/client';
 
@@ -47,7 +49,7 @@ async function loadStorageConfig(prisma: PrismaClient) {
   // Carica config locale
   const basePath =
     (await getConfig(prisma, 'storage.local.basePath', false)) ||
-    '/tmp/luke-storage';
+    join(homedir(), '.luke', 'storage');
 
   const maxFileSizeMBStr =
     (await getConfig(prisma, 'storage.local.maxFileSizeMB', false)) || '50';

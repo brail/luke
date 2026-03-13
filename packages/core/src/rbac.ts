@@ -21,29 +21,26 @@ export const permissions: Record<Role, Record<string, string[]>> = {
   admin: {
     users: ['*'],
     config: ['*'],
-    pricing: ['*'],
     audit: ['*'],
-    dashboard: ['*'], // NEW: dashboard access
-    settings: ['*'], // NEW
-    maintenance: ['*'], // NEW
+    dashboard: ['*'],
+    settings: ['*'],
+    maintenance: ['*'],
   },
   editor: {
     users: ['read', 'update'],
     config: ['read', 'update'],
-    pricing: ['read', 'write'],
     audit: ['read'],
-    dashboard: ['read'], // NEW: dashboard access
-    settings: ['read'], // NEW
-    maintenance: [], // NEW: no access
+    dashboard: ['read'],
+    settings: ['read'],
+    maintenance: [],
   },
   viewer: {
     users: ['read'],
     config: ['read'],
-    pricing: ['read'],
     audit: ['read'],
-    dashboard: ['read'], // NEW: dashboard access
-    settings: [], // NEW: no access
-    maintenance: [], // NEW: no access
+    dashboard: ['read'],
+    settings: [],
+    maintenance: [],
   },
 };
 
@@ -88,22 +85,5 @@ export function canPerform(
   return resourcePermissions.includes(action);
 }
 
-/**
- * Ottiene tutte le permissions per un ruolo specifico
- *
- * @param role - Il ruolo di cui ottenere le permissions
- * @returns Record con tutte le permissions del ruolo
- */
-export function getRolePermissions(role: Role): Record<string, string[]> {
-  return permissions[role] || {};
-}
 
-/**
- * Verifica se un ruolo esiste nel sistema
- *
- * @param role - Il ruolo da verificare
- * @returns true se il ruolo esiste, false altrimenti
- */
-export function isValidRole(role: string): role is Role {
-  return Roles.includes(role as Role);
-}
+

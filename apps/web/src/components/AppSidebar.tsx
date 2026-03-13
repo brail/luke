@@ -16,6 +16,8 @@ import {
   FolderTree,
   Building2,
   CalendarDays,
+  Calculator,
+  TrendingUp,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -116,6 +118,37 @@ export default function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )}
+            </SidebarMenu>
+          </SidebarGroup>
+        )}
+
+        {/* Sezione Prodotto - Solo se ha accesso */}
+        {menuAccess.product && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Prodotto</SidebarGroupLabel>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <SidebarMenuButton isActive={isActive('/product')}>
+                      <Calculator size={18} />
+                      <span>Prodotto</span>
+                      <ChevronDown size={16} className="ml-auto" />
+                    </SidebarMenuButton>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-56">
+                    <DropdownMenuItem asChild>
+                      <Link
+                        href="/product/pricing"
+                        className="flex items-center"
+                      >
+                        <TrendingUp className="mr-2 h-4 w-4" />
+                        <span>Costi e Prezzi</span>
+                      </Link>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroup>
         )}

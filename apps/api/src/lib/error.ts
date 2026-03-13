@@ -9,8 +9,9 @@ import type {
   FastifyReply,
 } from 'fastify';
 import { TRPCError } from '@trpc/server';
+import { isProduction } from '@luke/core';
 
-const isProd = process.env.NODE_ENV === 'production';
+const isProd = isProduction();
 
 export function getTraceId(req: FastifyRequest): string | undefined {
   const header = req.headers['x-luke-trace-id'];

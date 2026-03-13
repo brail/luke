@@ -121,28 +121,3 @@ export async function authenticateRequest(
   return session;
 }
 
-/**
- * @deprecated Cookie API rimosso: Web usa solo Authorization header
- * Imposta il cookie di sessione
- */
-export function setSessionCookie(_reply: FastifyReply, _token: string): void {
-  // DEPRECATED: Cookie API non più utilizzato
-  // (reply as any).cookie('luke_session', token, {
-  //   httpOnly: true,
-  //   secure: process.env.NODE_ENV === 'production',
-  //   sameSite: 'strict',
-  //   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 giorni
-  //   path: '/',
-  // });
-}
-
-/**
- * @deprecated Cookie API rimosso: Web usa solo Authorization header
- * Rimuove il cookie di sessione
- */
-export function clearSessionCookie(_reply: FastifyReply): void {
-  // DEPRECATED: Cookie API non più utilizzato
-  // (reply as any).clearCookie('luke_session', {
-  //   path: '/',
-  // });
-}

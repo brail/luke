@@ -215,17 +215,3 @@ export function verifyDownloadToken(token: string): DownloadTokenPayload {
   return payload;
 }
 
-/**
- * Verifica se un token è valido senza lanciare eccezioni
- *
- * @param token - Token da verificare
- * @returns true se valido, false altrimenti
- */
-export function isValidDownloadToken(token: string): boolean {
-  try {
-    verifyDownloadToken(token);
-    return true;
-  } catch {
-    return false;
-  }
-}

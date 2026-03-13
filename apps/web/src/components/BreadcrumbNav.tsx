@@ -28,6 +28,8 @@ const pathLabels: Record<string, string> = {
   '/maintenance': 'Manutenzione',
   '/maintenance/config': 'Configurazioni',
   '/maintenance/import-export': 'Import/Export',
+  '/product': 'Prodotto',
+  '/product/pricing': 'Costi e Prezzi',
 };
 
 // Mappa dei percorsi per i link di navigazione
@@ -44,6 +46,8 @@ const pathLinks: Record<string, string> = {
   '/maintenance': '/maintenance',
   '/maintenance/config': '/maintenance/config',
   '/maintenance/import-export': '/maintenance/import-export',
+  '/product': '/product/pricing',
+  '/product/pricing': '/product/pricing',
 };
 
 // Tipo per gli elementi del breadcrumb

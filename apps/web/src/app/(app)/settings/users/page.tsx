@@ -80,7 +80,7 @@ export default function UsersPage() {
   // Mutation tRPC
   const createUserMutation = trpc.users.create.useMutation();
   const updateUserMutation = trpc.users.update.useMutation();
-  const deleteUserMutation = trpc.users.delete.useMutation();
+  const deleteUserMutation = trpc.users.softDelete.useMutation();
   const hardDeleteUserMutation = trpc.users.hardDelete.useMutation();
   const revokeUserSessionsMutation =
     trpc.users.revokeUserSessions.useMutation();

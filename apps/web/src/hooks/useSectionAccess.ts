@@ -3,20 +3,10 @@
 import { useSession } from 'next-auth/react';
 import { useMemo } from 'react';
 
-import { effectiveSectionAccess, permissions, hasPermission } from '@luke/core';
+import { effectiveSectionAccess, permissions, hasPermission, SECTION_TO_PERMISSION } from '@luke/core';
 import type { Section } from '@luke/core';
 
 import { trpc } from '../lib/trpc';
-
-/**
- * Mapping sezioni -> permissions per nuovo sistema
- * Mantiene consistency con API middleware
- */
-const SECTION_TO_PERMISSION: Record<Section, string> = {
-  dashboard: 'dashboard:read',
-  settings: 'settings:read',
-  maintenance: 'maintenance:read',
-};
 
 /**
  * Hook per verificare l'accesso alle sezioni per l'utente corrente
@@ -103,6 +93,7 @@ export function useSectionAccess() {
       dashboard: checkAccess('dashboard'),
       settings: checkAccess('settings'),
       maintenance: checkAccess('maintenance'),
+      product: checkAccess('product'),
     };
   }, [session?.user, userOverrides, roleDefaults, disabledSections]);
 

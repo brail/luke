@@ -8,6 +8,10 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 
 import { BrandInputSchema, type BrandInput, normalizeCode } from '@luke/core';
+import {
+  buildBrandLogoUploadUrl,
+  buildTempBrandLogoUploadUrl,
+} from '@luke/core';
 
 import { Button } from '../../../../../components/ui/button';
 import {
@@ -37,10 +41,6 @@ import {
 } from '../../../../../components/ui/tooltip';
 import { useInvalidateContext } from '../../../../../contexts/useInvalidateContext';
 import { useBrandPermissions } from '../../../../../hooks/useBrandPermissions';
-import {
-  buildBrandLogoUploadUrl,
-  buildTempBrandLogoUploadUrl,
-} from '../../../../../lib/api';
 
 // Schema per form con isActive obbligatorio (per React Hook Form)
 // logoUrl accetta qualsiasi stringa (anche percorsi relativi in DEV) o null/undefined

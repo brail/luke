@@ -9,22 +9,13 @@ import {
   effectiveSectionAccess,
   permissions,
   hasPermission,
+  SECTION_TO_PERMISSION,
   type Section,
   type Role,
 } from '@luke/core';
 import { getRbacConfig, getSectionsDisabled } from '@luke/core/server';
 import { t } from './t';
 import { getOverride } from '../services/sectionAccess.service';
-
-/**
- * Mapping sezioni -> permissions per nuovo sistema
- * Mantiene backward compatibility con UserSectionAccess
- */
-const SECTION_TO_PERMISSION: Record<Section, string> = {
-  dashboard: 'dashboard:read',
-  settings: 'settings:read',
-  maintenance: 'maintenance:read',
-};
 
 /**
  * Factory middleware per controllo accesso sezione

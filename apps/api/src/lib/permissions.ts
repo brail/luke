@@ -213,57 +213,5 @@ export function can(
   return allowed;
 }
 
-/**
- * Helper per verificare se l'utente è admin
- * Shortcut per permission checking
- *
- * @param ctx - Context tRPC
- * @returns true se l'utente è admin
- */
-export function isAdmin(ctx: Context): boolean {
-  return ctx.session?.user?.role === 'admin';
-}
 
-/**
- * Helper per verificare se l'utente è admin o editor
- * Shortcut per permission checking
- *
- * @param ctx - Context tRPC
- * @returns true se l'utente è admin o editor
- */
-export function isAdminOrEditor(ctx: Context): boolean {
-  const role = ctx.session?.user?.role;
-  return role === 'admin' || role === 'editor';
-}
 
-/**
- * Helper per verificare se l'utente può modificare un'altro utente
- * Admin può modificare tutti, altri utenti solo se stessi
- *
- * @param ctx - Context tRPC
- * @param targetUserId - ID dell'utente da modificare
- * @returns true se può modificare
- */
-export function canModifyUser(ctx: Context, targetUserId: string): boolean {
-  if (!ctx.session?.user) {
-    return false;
-  }
-
-  const user = ctx.session.user;
-
-  // Admin può modificare tutti
-  if (isAdmin(ctx)) {
-    return true;
-  }
-
-  // Utenti possono modificare solo se stessi
-  return user.id === targetUserId;
-}
-
-/**
- * Configurazione middleware esportata per test e debugging
- */
-export const PERMISSIONS_MIDDLEWARE_CONFIG = {
-  cacheEnabled: true,
-  logDenied: true,
-} as const;

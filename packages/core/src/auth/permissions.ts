@@ -25,6 +25,7 @@ export const RESOURCES = {
   SETTINGS: 'settings',
   MAINTENANCE: 'maintenance',
   DASHBOARD: 'dashboard',
+  PRICING: 'pricing',
 } as const;
 
 export type Resource = (typeof RESOURCES)[keyof typeof RESOURCES];
@@ -72,12 +73,7 @@ export interface PermissionDeclaration {
   };
 }
 
-/**
- * Validazione delle risorse - ogni risorsa ha azioni valide
- */
-export type ResourceMap = Record<Resource, readonly Action[]>;
-
-export const VALID_RESOURCE_ACTIONS: ResourceMap = {
+export const VALID_RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
   [RESOURCES.BRANDS]: ['create', 'read', 'update', 'delete'] as const,
   [RESOURCES.SEASONS]: ['create', 'read', 'update', 'delete'] as const,
   [RESOURCES.USERS]: ['create', 'read', 'update', 'delete'] as const,
@@ -86,6 +82,7 @@ export const VALID_RESOURCE_ACTIONS: ResourceMap = {
   [RESOURCES.SETTINGS]: ['read', 'update'] as const,
   [RESOURCES.MAINTENANCE]: ['read', 'update'] as const,
   [RESOURCES.DASHBOARD]: ['read'] as const,
+  [RESOURCES.PRICING]: ['read', 'update'] as const,
 } as const;
 
 /**
@@ -113,6 +110,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'dashboard:read',
     // Settings: lettura
     'settings:read',
+    // Pricing: lettura e modifica
+    'pricing:read',
+    'pricing:update',
   ],
   viewer: [
     // Brands: solo lettura
@@ -127,6 +127,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'audit:read',
     // Dashboard: lettura
     'dashboard:read',
+    // Pricing: solo lettura
+    'pricing:read',
   ],
 };
 
@@ -204,6 +206,7 @@ export function expandRole(role: Role): Permission[] {
       'settings',
       'maintenance',
       'dashboard',
+      'pricing',
     ];
     const actions: Action[] = ['create', 'read', 'update', 'delete', 'upload'];
 
@@ -237,107 +240,10 @@ export function expandRole(role: Role): Permission[] {
   return expanded;
 }
 
-/**
- * Type guard: verifica se una stringa è una Resource valida
- *
- * @param value - Valore da verificare
- * @returns true se è una Resource valida
- */
-export function isResource(value: string): value is Resource {
-  return Object.values(RESOURCES).includes(value as Resource);
-}
-
-/**
- * Type guard: verifica se una stringa è una Action valida
- *
- * @param value - Valore da verificare
- * @returns true se è una Action valida
- */
-export function isAction(value: string): value is Action {
-  if (value === '*') {
-    return true;
-  }
-  const actions = Object.values(ACTIONS);
-  return actions.includes(value as (typeof actions)[number]);
-}
-
-/**
- * Type guard: verifica se una stringa è una Permission valida
- * Valida sia il formato resource:action che i valori specifici per resource
- *
- * @param value - Valore da verificare
- * @returns true se la permission è valida
- */
-export function isPermission(value: string): value is Permission {
-  if (value === '*:*') {
-    return true;
-  }
-
-  const [resource, action] = value.split(':');
-
-  if (!resource || !action) {
-    return false;
-  }
-
-  // Valida che resource sia una Resource conosciuta
-  if (!isResource(resource)) {
-    return false;
-  }
-
-  // Se action è *, accetta per qualsiasi resource
-  if (action === '*') {
-    return true;
-  }
-
-  // Valida che l'action sia valida per questo resource
-  if (!isAction(action)) {
-    return false;
-  }
-
-  // Verifica che l'action sia nella lista di azioni valide per il resource
-  const validActions = VALID_RESOURCE_ACTIONS[resource as Resource];
-  return validActions.includes(action as Action);
-}
-
-/**
- * Verifica se una permission è valida (backward compatibility)
- * @deprecated Usa isPermission() invece
- */
-export function isValidPermission(
-  permission: string
-): permission is Permission {
-  return isPermission(permission);
-}
-
-/**
- * Helper per creare permission string
- *
- * @param resource - Risorsa
- * @param action - Azione
- * @returns Permission string formattata
- */
-export function createPermission(
-  resource: Resource,
-  action: Action
-): Permission {
-  return `${resource}:${action}` as Permission;
-}
 
 /**
  * Verifica se un utente ha una permission considerando sia ruolo che grants espliciti
  * Integra ROLE_PERMISSIONS con UserGrantedPermission dal database
- *
- * @param user - Oggetto utente con ruolo e id
- * @param permission - Permission da verificare (es. 'brands:create')
- * @param userGrants - Array di permissions concesse esplicitamente (da UserGrantedPermission)
- * @param context - Context opzionale per ABAC (futuro)
- * @returns true se l'utente ha la permission
- *
- * @example
- * ```typescript
- * hasPermissionWithGrants({role: 'viewer', id: 'user1'}, 'brands:create', ['brands:create'])
- * // true - ha permission esplicita anche se viewer normalmente non potrebbe creare
- * ```
  */
 export function hasPermissionWithGrants(
   user: { role: Role; id: string },
@@ -372,174 +278,3 @@ export function hasPermissionWithGrants(
 
   return false;
 }
-
-/**
- * Elenco di tutte le permissions possibili nel sistema
- * Generato dal cartesiano di resources × actions validi
- */
-export function getAllPermissions(): Permission[] {
-  const all: Permission[] = ['*:*'];
-
-  for (const [resource, actions] of Object.entries(VALID_RESOURCE_ACTIONS)) {
-    // Aggiungi wildcard per risorsa
-    all.push(`${resource}:*` as Permission);
-
-    // Aggiungi azioni specifiche
-    for (const action of actions) {
-      all.push(`${resource}:${action}` as Permission);
-    }
-  }
-
-  return all;
-}
-
-/**
- * Interfaccia per la matrice di permissions
- */
-export interface PermissionMatrix {
-  resources: Resource[];
-  actions: Action[];
-  validResourceActions: Record<Resource, Action[]>;
-  rolePermissions: Record<Role, Permission[]>;
-  expandedRolePermissions: Record<Role, Permission[]>;
-  allPermissions: Permission[];
-}
-
-/**
- * Esporta la matrice completa di permissions per debugging, audit, e documentazione
- *
- * @returns Struttura completa della matrice di permissions
- */
-export function getPermissionMatrix(): PermissionMatrix {
-  const allPerms = getAllPermissions();
-
-  // Costruisci validResourceActions preservando i tipi
-  const validResourceActions: Record<Resource, Action[]> = {} as Record<
-    Resource,
-    Action[]
-  >;
-  for (const [resource, actions] of Object.entries(VALID_RESOURCE_ACTIONS)) {
-    validResourceActions[resource as Resource] = [...actions];
-  }
-
-  // Costruisci rolePermissions preservando i tipi
-  const rolePermissions: Record<Role, Permission[]> = {} as Record<
-    Role,
-    Permission[]
-  >;
-  for (const [role, perms] of Object.entries(ROLE_PERMISSIONS)) {
-    rolePermissions[role as Role] = [...perms];
-  }
-
-  return {
-    resources: Object.values(RESOURCES),
-    actions: Object.values(ACTIONS),
-    validResourceActions,
-    rolePermissions,
-    expandedRolePermissions: {
-      admin: expandRole('admin'),
-      editor: expandRole('editor'),
-      viewer: expandRole('viewer'),
-    },
-    allPermissions: allPerms,
-  };
-}
-
-/**
- * Valida la coerenza della matrice di permissions
- * Controlla che:
- * - Tutte le permissions in ROLE_PERMISSIONS siano valide
- * - Nessun resource/action ricevano azioni non dichiarate
- * - Non ci siano gaps nelle definizioni
- *
- * @returns { valid: boolean; errors: string[] }
- */
-export function validatePermissionMatrix(): {
-  valid: boolean;
-  errors: string[];
-} {
-  const errors: string[] = [];
-
-  // 1. Valida ROLE_PERMISSIONS
-  for (const [role, permissions] of Object.entries(ROLE_PERMISSIONS)) {
-    for (const permission of permissions) {
-      if (!isPermission(permission)) {
-        errors.push(`Role '${role}' ha permission invalida '${permission}'`);
-      }
-    }
-  }
-
-  // 2. Valida VALID_RESOURCE_ACTIONS
-  for (const [resource, actions] of Object.entries(VALID_RESOURCE_ACTIONS)) {
-    if (!isResource(resource)) {
-      errors.push(
-        `VALID_RESOURCE_ACTIONS contiene resource invalida '${resource}'`
-      );
-    }
-
-    for (const action of actions) {
-      if (!isAction(action)) {
-        errors.push(`Resource '${resource}' ha action invalida '${action}'`);
-      }
-    }
-  }
-
-  // 3. Controlla che ogni Resource in RESOURCES abbia un entry in VALID_RESOURCE_ACTIONS
-  for (const resource of Object.values(RESOURCES)) {
-    if (!(resource in VALID_RESOURCE_ACTIONS)) {
-      errors.push(
-        `Resource '${resource}' non ha entry in VALID_RESOURCE_ACTIONS`
-      );
-    }
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-  };
-}
-
-/**
- * Esporta la matrice di permissions in formato CSV per documentazione
- * Formato: Resource,Action,Admin,Editor,Viewer
- *
- * @returns String CSV con header e dati
- */
-export function permissionMatrixToCSV(): string {
-  const lines: string[] = ['Resource,Action,Admin,Editor,Viewer'];
-
-  const expandedAdmin = expandRole('admin');
-  const expandedEditor = expandRole('editor');
-  const expandedViewer = expandRole('viewer');
-
-  for (const resource of Object.values(RESOURCES)) {
-    const actions = VALID_RESOURCE_ACTIONS[resource];
-
-    for (const action of actions) {
-      const perm = `${resource}:${action}` as Permission;
-
-      const adminHas = expandedAdmin.includes(perm);
-      const editorHas = expandedEditor.includes(perm);
-      const viewerHas = expandedViewer.includes(perm);
-
-      lines.push(
-        `"${resource}","${action}",${adminHas ? 'Yes' : 'No'},${editorHas ? 'Yes' : 'No'},${viewerHas ? 'Yes' : 'No'}`
-      );
-    }
-  }
-
-  return lines.join('\n');
-}
-
-/**
- * Configurazione permissions esportata per test e debugging
- */
-export const PERMISSIONS_CONFIG = {
-  resources: Object.values(RESOURCES),
-  actions: ['create', 'read', 'update', 'delete', 'upload', '*'] as const,
-  rolePermissions: ROLE_PERMISSIONS,
-  validResourceActions: VALID_RESOURCE_ACTIONS,
-  getMatrix: getPermissionMatrix,
-  validateMatrix: validatePermissionMatrix,
-  toCSV: permissionMatrixToCSV,
-} as const;
