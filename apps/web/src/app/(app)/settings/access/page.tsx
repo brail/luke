@@ -29,6 +29,7 @@ import {
   TabsList,
   TabsTrigger,
 } from '../../../../components/ui/tabs';
+import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
 import { useStandardMutation } from '../../../../lib/useStandardMutation';
 
@@ -43,6 +44,8 @@ import { UserPermissionsGrid } from './_components/UserPermissionsGrid';
 export default function SectionAccessPage() {
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
+  const { can } = usePermission();
+  const canManageAccess = can('config:update');
   const [overrides, setOverrides] = useState<
     Record<string, 'auto' | 'enabled' | 'disabled'>
   >({
@@ -111,6 +114,10 @@ export default function SectionAccessPage() {
   }, [userOverrides]);
 
   const handleSave = () => {
+    if (!canManageAccess) {
+      toast.error('Non hai i permessi per modificare gli accessi');
+      return;
+    }
     if (!selectedUserId) {
       toast.error('Seleziona un utente');
       return;
@@ -244,7 +251,7 @@ export default function SectionAccessPage() {
                 <div className="flex justify-end">
                   <Button
                     onClick={handleSave}
-                    disabled={isSaving}
+                    disabled={isSaving || !canManageAccess}
                     className="w-32"
                   >
                     {isSaving ? 'Salvataggio...' : 'Salva modifiche'}

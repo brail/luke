@@ -27,6 +27,7 @@ import {
   TabsTrigger,
 } from '../../../../components/ui/tabs';
 import { useToast } from '../../../../hooks/use-toast';
+import { usePermission } from '../../../../hooks/usePermission';
 import { useRefresh } from '../../../../lib/refresh';
 import { trpc } from '../../../../lib/trpc';
 import { useStandardMutation } from '../../../../lib/useStandardMutation';
@@ -74,6 +75,8 @@ export default function StoragePage() {
   const { data: session, status } = useSession();
   const toast = useToast();
   const refresh = useRefresh();
+  const { can } = usePermission();
+  const canUpdate = can('config:update');
 
   // ========== TAB STORAGE LOCALE ==========
 
@@ -88,7 +91,7 @@ export default function StoragePage() {
 
   const { data: existingConfig, isLoading: isLoadingConfig } =
     trpc.storage.getConfig.useQuery(undefined, {
-      enabled: session?.user?.role === 'admin',
+      enabled: canUpdate,
     });
 
   // Ottieni la mutation tRPC per passare mutateAsync
@@ -188,11 +191,11 @@ export default function StoragePage() {
     );
   }
 
-  if (session?.user?.role !== 'admin') {
+  if (!canUpdate) {
     return (
       <div className="p-8">
         <div className="rounded-lg border border-destructive bg-destructive/10 p-4 text-destructive">
-          ⚠️ Solo gli amministratori possono accedere a questa pagina.
+          Non hai i permessi per accedere a questa pagina. Contatta un amministratore.
         </div>
       </div>
     );

@@ -41,12 +41,15 @@ import {
 import { Switch } from '../../../../components/ui/switch';
 import { Textarea } from '../../../../components/ui/textarea';
 import { useToast } from '../../../../hooks/use-toast';
+import { usePermission } from '../../../../hooks/usePermission';
 import { debugLog, debugWarn } from '../../../../lib/debug';
 import { trpc } from '../../../../lib/trpc';
 
 export default function LdapSettingsPage() {
   const { data: session, status } = useSession();
   const toast = useToast();
+  const { can } = usePermission();
+  const canUpdate = can('config:update');
 
   // Form con react-hook-form e validazione Zod
   const form = useForm<LdapConfigInput>({
@@ -84,7 +87,7 @@ export default function LdapSettingsPage() {
     isLoading: isLoadingConfig,
     error: configError,
   } = trpc.integrations.auth.getLdapConfig.useQuery(undefined, {
-    enabled: session?.user?.role === 'admin',
+    enabled: canUpdate,
   });
 
   // Aggiorna form quando arriva la configurazione esistente
@@ -170,7 +173,7 @@ export default function LdapSettingsPage() {
     );
   }
 
-  if (!session || session.user.role !== 'admin') {
+  if (!canUpdate) {
     return (
       <SettingsFormShell
         title="Configurazione LDAP"
@@ -185,7 +188,7 @@ export default function LdapSettingsPage() {
               Accesso Negato
             </div>
             <p className="text-muted-foreground">
-              Solo gli amministratori possono gestire la configurazione LDAP.
+              Non hai i permessi per gestire la configurazione LDAP.
             </p>
             <Button asChild variant="outline">
               <a href="/dashboard">Torna alla Dashboard</a>

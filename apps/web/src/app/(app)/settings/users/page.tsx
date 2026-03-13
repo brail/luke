@@ -9,11 +9,11 @@ import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
 import { ErrorBoundary } from '../../../../components/system/ErrorBoundary';
 import { UserDialog } from '../../../../components/UserDialog';
+import { usePermission } from '../../../../hooks/usePermission';
 import { debugLog } from '../../../../lib/debug';
 import { useRefresh } from '../../../../lib/refresh';
 import { trpc } from '../../../../lib/trpc';
 import { useStandardMutation } from '../../../../lib/useStandardMutation';
-import { usePermission } from '../../../../hooks/usePermission';
 
 import { SendVerificationDialog } from './_components/SendVerificationDialog';
 import { SortColumn, SortOrder } from './_components/types';

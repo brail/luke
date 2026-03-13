@@ -1,8 +1,8 @@
 'use client';
 
+import { zodResolver } from '@hookform/resolvers/zod';
 import React from 'react';
 import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 
 import { SeasonInputSchema } from '@luke/core';
@@ -80,7 +80,7 @@ export function SeasonDialog({
       );
     }
     // intentionally limited to open: avoid stale closures on season changes
-  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const handleSubmit = async (data: SeasonFormData) => {
     await onSubmit(data);
