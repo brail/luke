@@ -184,6 +184,7 @@ model Brand {
   updatedAt DateTime @updatedAt
 
   pricingParameterSets PricingParameterSet[]
+  collectionLayouts    CollectionLayout[]
 
   @@index([name])
   @@index([isActive, name])
@@ -200,6 +201,7 @@ model Season {
   updatedAt DateTime @updatedAt
 
   pricingParameterSets PricingParameterSet[]
+  collectionLayouts    CollectionLayout[]
 
   @@unique([code, year])
   @@index([code, year])
@@ -294,8 +296,102 @@ model PricingParameterSet {
 
   brand  Brand  @relation(fields: [brandId], references: [id])
   season Season @relation(fields: [seasonId], references: [id])
+  collectionLayoutRows CollectionLayoutRow[]
 
   @@unique([brandId, seasonId, name])
   @@index([brandId, seasonId])
   @@map("pricing_parameter_sets")
+}
+
+/**
+ * Collection Layout — unico per brand+stagione
+ * Rappresenta l'elenco delle linee che compongono una collezione stagionale
+ */
+model CollectionLayout {
+  id            String   @id @default(uuid())
+  brandId       String
+  seasonId      String
+  skuBudget     Int?
+  hiddenColumns Json?    // String[] — colonne nascoste, null = tutte visibili
+  brand         Brand    @relation(fields: [brandId], references: [id])
+  season        Season   @relation(fields: [seasonId], references: [id])
+  groups        CollectionGroup[]
+  rows          CollectionLayoutRow[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([brandId, seasonId])
+  @@index([brandId, seasonId])
+  @@map("collection_layouts")
+}
+
+/**
+ * Gruppo di righe all'interno di un Collection Layout
+ * Es. "Collezione Uomo", "Collezione Donna", "Special Edition"
+ */
+model CollectionGroup {
+  id                 String           @id @default(uuid())
+  collectionLayoutId String
+  collectionLayout   CollectionLayout @relation(fields: [collectionLayoutId], references: [id], onDelete: Cascade)
+  name               String
+  order              Int              @default(0)
+  skuBudget          Int?
+  rows               CollectionLayoutRow[]
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([collectionLayoutId])
+  @@map("collection_groups")
+}
+
+/**
+ * Singola riga del Collection Layout
+ * Rappresenta una linea/stile all'interno di una collezione
+ */
+model CollectionLayoutRow {
+  id                     String                @id @default(uuid())
+  collectionLayoutId     String
+  collectionLayout       CollectionLayout      @relation(fields: [collectionLayoutId], references: [id], onDelete: Cascade)
+  groupId                String
+  group                  CollectionGroup       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  order                  Int                   @default(0)
+
+  // Required fields
+  gender                 String                // MAN | WOMAN
+  supplier               String
+  line                   String
+  status                 String                // CARRY_OVER | NEW
+  skuForecast            Int
+  qtyForecast            Int
+  productCategory        String
+
+  // Optional — identification/progress
+  strategy               String?               // CORE | INNOVATION
+  styleStatus            String?               // CARRY_OVER | NEW (STYLE STATUS)
+  progress               String?               // 01–06 stages
+  designer               String?
+  pictureUrl             String?
+
+  // Optional — notes
+  styleNotes             String?
+  materialNotes          String?
+  colorNotes             String?
+  priceNotes             String?
+  toolingNotes           String?
+
+  // Optional — pricing
+  dutyCategory           String?               // PELLE | SINTETICO_TESSUTO
+  pricingParameterSetId  String?
+  pricingParameterSet    PricingParameterSet?  @relation(fields: [pricingParameterSetId], references: [id], onDelete: SetNull)
+  retailTargetPrice      Float?
+  buyingTargetPrice      Float?
+  supplierFirstQuotation Float?
+  toolingQuotation       Float?
+
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+
+  @@index([collectionLayoutId])
+  @@index([groupId])
+  @@map("collection_layout_rows")
 }

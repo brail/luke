@@ -3,7 +3,12 @@
 import { useSession } from 'next-auth/react';
 import { useMemo } from 'react';
 
-import { effectiveSectionAccess, permissions, hasPermission, SECTION_TO_PERMISSION } from '@luke/core';
+import {
+  effectiveSectionAccess,
+  permissions,
+  hasPermission,
+  SECTION_TO_PERMISSION,
+} from '@luke/core';
 import type { Section } from '@luke/core';
 
 import { trpc } from '../lib/trpc';

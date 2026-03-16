@@ -35,7 +35,9 @@ if (otelEnabled) {
   const resource = new Resource({
     [SEMRESATTRS_SERVICE_NAME]: '@luke/api',
     [SEMRESATTRS_SERVICE_VERSION]: process.env.npm_package_version || '0.1.0',
-    [SEMRESATTRS_DEPLOYMENT_ENVIRONMENT]: isDevelopment() ? 'development' : 'production',
+    [SEMRESATTRS_DEPLOYMENT_ENVIRONMENT]: isDevelopment()
+      ? 'development'
+      : 'production',
   });
 
   sdk = new NodeSDK({

@@ -1,45 +1,43 @@
 /**
- * Plugin Fastify per upload logo Brand
- * Endpoint: POST /upload/brand-logo/:brandId
+ * Plugin Fastify per upload foto CollectionLayoutRow
+ * Endpoint: POST /upload/collection-row-picture/:rowId
+ *           POST /upload/collection-row-picture/temp
  *
  * Features:
  * - Autenticazione richiesta
- * - Rate limiting: 10 req/min per IP
+ * - Rate limiting: 30 req/min per utente autenticato
  * - Validazione MIME: png, jpeg, webp
- * - Size limit: 2MB
+ * - Size limit: 5MB
  * - Upload tramite storage service
- * - Aggiornamento Brand.logoUrl
- * - Audit log
+ * - Aggiornamento CollectionLayoutRow.pictureUrl
  */
 
-import fp from 'fastify-plugin';
 import rateLimit from '@fastify/rate-limit';
 import {
-  uploadBrandLogo,
-  uploadTempBrandLogo,
-} from '../services/brandLogo.service';
+  uploadCollectionRowPicture,
+  uploadTempCollectionRowPicture,
+} from '../services/collectionRowPicture.service';
 import { authenticateRequest } from '../lib/auth';
 import type { FastifyInstance } from 'fastify';
 import type { PrismaClient } from '@prisma/client';
 import { isDevelopment } from '@luke/core';
 
-export default fp(
-  async (app: FastifyInstance, options: { prisma: PrismaClient }) => {
-    // Rate limiting per utente autenticato (con fallback a IP se non autenticato)
-    await app.register(rateLimit, {
-      max: isDevelopment() ? 100 : 30, // 30 req/min in prod per utente
-      timeWindow: '1 minute',
-      keyGenerator: (req: any) => {
-        // Se autenticato, usa user ID; altrimenti usa IP
-        // Accedi a session tramite il custom decorator o il context
-        return (req as any).session?.user?.id || req.ip;
-      },
-    });
-
+export default async function collectionRowPictureRoutes(
+  app: FastifyInstance,
+  options: { prisma: PrismaClient }
+) {
+  // Rate limiting per utente autenticato (con fallback a IP se non autenticato)
+  await app.register(rateLimit, {
+    max: isDevelopment() ? 100 : 30, // 30 req/min in prod per utente
+    timeWindow: '1 minute',
+    keyGenerator: (req: any) => {
+      // Se autenticato, usa user ID; altrimenti usa IP
+      return (req as any).session?.user?.id || req.ip;
+    },
+  });
     app.post<{
-      Params: { brandId: string };
-    }>('/upload/brand-logo/:brandId', async (req, reply) => {
-      // Autenticazione
+      Params: { rowId: string };
+    }>('/upload/collection-row-picture/:rowId', async (req, reply) => {
       const session = await authenticateRequest(req, reply);
       if (!session) {
         return reply.code(401).send({
@@ -48,7 +46,6 @@ export default fp(
         });
       }
 
-      // Context per service layer
       const ctx = {
         session,
         prisma: options.prisma,
@@ -59,7 +56,6 @@ export default fp(
       };
 
       try {
-        // Ricevi file multipart
         const data = await req.file();
         if (!data) {
           return reply.code(400).send({
@@ -68,16 +64,14 @@ export default fp(
           });
         }
 
-        // Consuma correttamente lo stream multipart
         const chunks: Buffer[] = [];
         for await (const chunk of data.file) {
           chunks.push(chunk as Buffer);
         }
         const buffer = Buffer.concat(chunks);
 
-        // Upload tramite service
-        const result = await uploadBrandLogo(ctx, {
-          brandId: req.params.brandId,
+        const result = await uploadCollectionRowPicture(ctx, {
+          rowId: req.params.rowId,
           file: {
             filename: data.filename,
             mimetype: data.mimetype,
@@ -89,8 +83,8 @@ export default fp(
         return reply.code(200).send(result);
       } catch (error: any) {
         req.log.error(
-          { error: error.message, brandId: req.params.brandId },
-          'Brand logo upload error'
+          { error: error.message, rowId: req.params.rowId },
+          'Collection row picture upload error'
         );
 
         if (error.code === 'BAD_REQUEST' || error.code === 'NOT_FOUND') {
@@ -102,16 +96,12 @@ export default fp(
 
         return reply.code(500).send({
           error: 'Internal Server Error',
-          message: 'Errore durante upload logo',
+          message: 'Errore durante upload foto',
         });
       }
     });
 
-    // Endpoint per upload temporaneo durante creazione brand
-    app.post<{
-      Body: { tempId: string };
-    }>('/upload/brand-logo/temp', async (req, reply) => {
-      // Autenticazione
+    app.post('/upload/collection-row-picture/temp', async (req, reply) => {
       const session = await authenticateRequest(req, reply);
       if (!session) {
         return reply.code(401).send({
@@ -120,7 +110,6 @@ export default fp(
         });
       }
 
-      // Context per service layer
       const ctx = {
         session,
         prisma: options.prisma,
@@ -131,7 +120,6 @@ export default fp(
       };
 
       try {
-        // Leggi tutte le parti multipart (campi + file) indipendentemente dall'ordine
         let tempId: string | null = null;
         let fileBuffer: Buffer | null = null;
         let filename = 'upload';
@@ -164,8 +152,7 @@ export default fp(
           });
         }
 
-        // Upload temporaneo tramite service
-        const result = await uploadTempBrandLogo(ctx, {
+        const result = await uploadTempCollectionRowPicture(ctx, {
           tempId,
           file: {
             filename,
@@ -178,8 +165,8 @@ export default fp(
         return reply.code(200).send(result);
       } catch (error: any) {
         req.log.error(
-          { error: error.message, tempId: (req.body as any)?.tempId },
-          'Temp brand logo upload error'
+          { error: error.message },
+          'Temp collection row picture upload error'
         );
 
         if (error.code === 'BAD_REQUEST' || error.code === 'NOT_FOUND') {
@@ -191,9 +178,8 @@ export default fp(
 
         return reply.code(500).send({
           error: 'Internal Server Error',
-          message: 'Errore durante upload temporaneo logo',
+          message: 'Errore durante upload temporaneo foto',
         });
       }
     });
-  }
-);
+}

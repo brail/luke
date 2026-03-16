@@ -108,6 +108,25 @@ export function buildTempBrandLogoUploadUrl(options: UrlOptions = {}): string {
 }
 
 /**
+ * Builds URL for collection row picture upload
+ */
+export function buildCollectionRowPictureUploadUrl(
+  rowId: string,
+  options: UrlOptions = {}
+): string {
+  return buildApiUrl(`/upload/collection-row-picture/${rowId}`, options);
+}
+
+/**
+ * Builds URL for temporary collection row picture upload
+ */
+export function buildTempCollectionRowPictureUploadUrl(
+  options: UrlOptions = {}
+): string {
+  return buildApiUrl('/upload/collection-row-picture/temp', options);
+}
+
+/**
  * Builds URL for tRPC endpoint
  *
  * @param procedure - tRPC procedure path (e.g., 'auth.login')

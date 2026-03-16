@@ -6,7 +6,11 @@ import { isDevelopment, isProduction } from '@luke/core';
 
 // Configurazioni statiche (non dipendenti dal database)
 export const appConfig = {
-  environment: isDevelopment() ? 'development' : isProduction() ? 'production' : 'test',
+  environment: isDevelopment()
+    ? 'development'
+    : isProduction()
+      ? 'production'
+      : 'test',
   isDevelopment: isDevelopment(),
   isProduction: isProduction(),
   isTest: !isDevelopment() && !isProduction(),

@@ -38,7 +38,8 @@ export default function PricingPage() {
   // Quando arrivano nuovi set, seleziona il default
   useEffect(() => {
     if (parameterSets.length > 0 && !selectedSetId) {
-      const defaultSet = parameterSets.find(s => s.isDefault) ?? parameterSets[0];
+      const defaultSet =
+        parameterSets.find(s => s.isDefault) ?? parameterSets[0];
       setSelectedSetId(defaultSet.id);
     }
   }, [parameterSets, selectedSetId]);
@@ -60,7 +61,11 @@ export default function PricingPage() {
       invalidateSets();
     },
     onError: err =>
-      toast.error(getTrpcErrorMessage(err, { CONFLICT: 'Una variante con questo nome esiste già' })),
+      toast.error(
+        getTrpcErrorMessage(err, {
+          CONFLICT: 'Una variante con questo nome esiste già',
+        })
+      ),
   });
 
   const updateMutation = trpc.pricing.parameterSets.update.useMutation({
@@ -69,7 +74,11 @@ export default function PricingPage() {
       invalidateSets();
     },
     onError: err =>
-      toast.error(getTrpcErrorMessage(err, { CONFLICT: 'Nome già in uso per questa stagione' })),
+      toast.error(
+        getTrpcErrorMessage(err, {
+          CONFLICT: 'Nome già in uso per questa stagione',
+        })
+      ),
   });
 
   const removeMutation = trpc.pricing.parameterSets.remove.useMutation({
@@ -125,7 +134,8 @@ export default function PricingPage() {
       {!brand || !season ? (
         <SectionCard title="Contesto non selezionato">
           <p className="text-sm text-muted-foreground">
-            Seleziona un brand e una stagione dalla barra in alto per usare la calcolatrice.
+            Seleziona un brand e una stagione dalla barra in alto per usare la
+            calcolatrice.
           </p>
         </SectionCard>
       ) : parameterSets.length === 0 ? (
@@ -134,7 +144,11 @@ export default function PricingPage() {
             brandId={brand.id}
             seasonId={season.id}
             onCreateSet={data =>
-              createMutation.mutate({ brandId: brand.id, seasonId: season.id, data })
+              createMutation.mutate({
+                brandId: brand.id,
+                seasonId: season.id,
+                data,
+              })
             }
             isLoading={isMutating}
           />
@@ -159,16 +173,32 @@ export default function PricingPage() {
                 selectedSetId={selectedSetId}
                 onSelectSet={setSelectedSetId}
                 onCreateSet={data =>
-                  createMutation.mutate({ brandId: brand.id, seasonId: season.id, data })
+                  createMutation.mutate({
+                    brandId: brand.id,
+                    seasonId: season.id,
+                    data,
+                  })
                 }
                 onUpdateSet={(id, data) =>
-                  updateMutation.mutate({ brandId: brand.id, seasonId: season.id, data: { ...data, id } })
+                  updateMutation.mutate({
+                    brandId: brand.id,
+                    seasonId: season.id,
+                    data: { ...data, id },
+                  })
                 }
                 onDeleteSet={id =>
-                  removeMutation.mutate({ id, brandId: brand.id, seasonId: season.id })
+                  removeMutation.mutate({
+                    id,
+                    brandId: brand.id,
+                    seasonId: season.id,
+                  })
                 }
                 onSetDefault={id =>
-                  setDefaultMutation.mutate({ id, brandId: brand.id, seasonId: season.id })
+                  setDefaultMutation.mutate({
+                    id,
+                    brandId: brand.id,
+                    seasonId: season.id,
+                  })
                 }
                 isLoading={isMutating}
               />

@@ -129,5 +129,3 @@ export const trpcErrorFormatter = ({ shape }: any) => {
     message: isProd ? 'Internal server error' : shape.message,
   };
 };
-
-

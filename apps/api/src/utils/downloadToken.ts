@@ -214,4 +214,3 @@ export function verifyDownloadToken(token: string): DownloadTokenPayload {
 
   return payload;
 }
-

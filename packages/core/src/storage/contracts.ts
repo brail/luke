@@ -17,6 +17,8 @@ const VALID_BUCKETS: readonly StorageBucket[] = [
   'assets',
   'brand-logos',
   'temp-brand-logos',
+  'collection-row-pictures',
+  'temp-collection-row-pictures',
 ];
 
 function isValidBucket(value: string): value is StorageBucket {

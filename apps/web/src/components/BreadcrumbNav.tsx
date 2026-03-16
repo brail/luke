@@ -30,6 +30,7 @@ const pathLabels: Record<string, string> = {
   '/maintenance/import-export': 'Import/Export',
   '/product': 'Prodotto',
   '/product/pricing': 'Costi e Prezzi',
+  '/product/collection-layout': 'Collection Layout',
 };
 
 // Mappa dei percorsi per i link di navigazione
@@ -48,6 +49,7 @@ const pathLinks: Record<string, string> = {
   '/maintenance/import-export': '/maintenance/import-export',
   '/product': '/product/pricing',
   '/product/pricing': '/product/pricing',
+  '/product/collection-layout': '/product/collection-layout',
 };
 
 // Tipo per gli elementi del breadcrumb

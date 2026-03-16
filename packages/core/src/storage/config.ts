@@ -31,7 +31,7 @@ export const localStorageConfigSchema = z.object({
 
   /**
    * Bucket abilitati
-   * Default: ['uploads', 'exports', 'assets', 'brand-logos', 'temp-brand-logos']
+   * Default: ['uploads', 'exports', 'assets', 'brand-logos', 'temp-brand-logos', 'collection-row-pictures', 'temp-collection-row-pictures']
    */
   buckets: z
     .array(
@@ -41,6 +41,8 @@ export const localStorageConfigSchema = z.object({
         'assets',
         'brand-logos',
         'temp-brand-logos',
+        'collection-row-pictures',
+        'temp-collection-row-pictures',
       ])
     )
     .default([
@@ -49,6 +51,8 @@ export const localStorageConfigSchema = z.object({
       'assets',
       'brand-logos',
       'temp-brand-logos',
+      'collection-row-pictures',
+      'temp-collection-row-pictures',
     ]),
 
   /**
@@ -91,5 +95,7 @@ export function isValidBucket(bucket: string): bucket is StorageBucket {
     'assets',
     'brand-logos',
     'temp-brand-logos',
+    'collection-row-pictures',
+    'temp-collection-row-pictures',
   ].includes(bucket);
 }

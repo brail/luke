@@ -8,6 +8,7 @@ import { router } from '../lib/trpc';
 import { authRouter } from './auth';
 import { brandRouter } from './brand';
 import { catalogRouter } from './catalog';
+import { collectionLayoutRouter } from './collectionLayout';
 import { configRouter } from './config';
 import { contextRouter } from './context';
 import { healthRouter } from './health';
@@ -30,6 +31,7 @@ export const appRouter = router({
   auth: authRouter,
   brand: brandRouter,
   catalog: catalogRouter,
+  collectionLayout: collectionLayoutRouter,
   config: configRouter,
   context: contextRouter,
   health: healthRouter,

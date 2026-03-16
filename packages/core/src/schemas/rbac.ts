@@ -3,7 +3,12 @@ import { z } from 'zod';
 /**
  * Enum per le sezioni del sistema
  */
-export const sectionEnum = z.enum(['dashboard', 'settings', 'maintenance', 'product']);
+export const sectionEnum = z.enum([
+  'dashboard',
+  'settings',
+  'maintenance',
+  'product',
+]);
 export type Section = z.infer<typeof sectionEnum>;
 
 /**
@@ -43,4 +48,3 @@ export const SECTION_TO_PERMISSION: Record<Section, string> = {
   maintenance: 'maintenance:read',
   product: 'pricing:read',
 } as const;
-

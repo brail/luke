@@ -18,6 +18,7 @@ import {
   CalendarDays,
   Calculator,
   TrendingUp,
+  LayoutGrid,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -144,6 +145,15 @@ export default function AppSidebar() {
                       >
                         <TrendingUp className="mr-2 h-4 w-4" />
                         <span>Costi e Prezzi</span>
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link
+                        href="/product/collection-layout"
+                        className="flex items-center"
+                      >
+                        <LayoutGrid className="mr-2 h-4 w-4" />
+                        <span>Collection Layout</span>
                       </Link>
                     </DropdownMenuItem>
                   </DropdownMenuContent>

@@ -57,7 +57,7 @@ async function loadStorageConfig(prisma: PrismaClient) {
 
   const bucketsStr =
     (await getConfig(prisma, 'storage.local.buckets', false)) ||
-    '["uploads","exports","assets","brand-logos","temp-brand-logos"]';
+    '["uploads","exports","assets","brand-logos","temp-brand-logos","collection-row-pictures","temp-collection-row-pictures"]';
   const buckets = JSON.parse(bucketsStr);
 
   const publicBaseUrl = await getConfig(
@@ -290,6 +290,49 @@ export async function deleteObject(ctx: Context, id: string): Promise<void> {
       originalName: metadata.originalName,
     },
   });
+}
+
+/**
+ * Cancella file dallo storage e DB tramite bucket+key (senza conoscerne l'ID).
+ * Usato per cleanup delle vecchie versioni di file (brand logo, row picture, ecc.)
+ * dove si conosce solo la key estratta dall'URL salvato in DB.
+ */
+export async function deleteObjectByKey(
+  ctx: Context,
+  params: { bucket: StorageBucket; key: string }
+): Promise<void> {
+  const provider = await getStorageProvider(ctx.prisma);
+
+  // Cancella da provider (best-effort: non bloccare se il file fisico non esiste)
+  try {
+    await provider.delete({ bucket: params.bucket, key: params.key });
+  } catch (err) {
+    ctx.logger?.warn(
+      { err, bucket: params.bucket, key: params.key },
+      'Physical file delete failed (may already be gone)'
+    );
+  }
+
+  // Cancella metadati da DB se esistono
+  const fileObject = await ctx.prisma.fileObject.findFirst({
+    where: { bucket: params.bucket, key: params.key },
+  });
+
+  if (fileObject) {
+    await ctx.prisma.fileObject.delete({ where: { id: fileObject.id } });
+
+    await logAudit(ctx, {
+      action: 'FILE_DELETED',
+      targetType: 'FileObject',
+      targetId: fileObject.id,
+      result: 'SUCCESS',
+      metadata: {
+        bucket: params.bucket,
+        key: params.key,
+        originalName: fileObject.originalName,
+      },
+    });
+  }
 }
 
 /**

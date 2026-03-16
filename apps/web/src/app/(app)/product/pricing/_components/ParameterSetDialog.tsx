@@ -105,15 +105,14 @@ export function ParameterSetDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Calculator className="h-5 w-5" />
-            {mode === 'create' ? 'Nuova variante parametri' : 'Modifica parametri'}
+            {mode === 'create'
+              ? 'Nuova variante parametri'
+              : 'Modifica parametri'}
           </DialogTitle>
         </DialogHeader>
 
         <Form {...form}>
-          <form
-            onSubmit={form.handleSubmit(onSubmit)}
-            className="space-y-6"
-          >
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             {/* Nome variante */}
             <FormField
               control={form.control}
@@ -194,7 +193,9 @@ export function ParameterSetDialog({
             </div>
 
             <div className="border-t pt-4">
-              <p className="text-sm font-medium text-muted-foreground mb-3">Costi e Tasse</p>
+              <p className="text-sm font-medium text-muted-foreground mb-3">
+                Costi e Tasse
+              </p>
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
@@ -322,7 +323,9 @@ export function ParameterSetDialog({
             </div>
 
             <div className="border-t pt-4">
-              <p className="text-sm font-medium text-muted-foreground mb-3">Moltiplicatori e Margini</p>
+              <p className="text-sm font-medium text-muted-foreground mb-3">
+                Moltiplicatori e Margini
+              </p>
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
@@ -370,7 +373,9 @@ export function ParameterSetDialog({
                 <div className="space-y-2">
                   <label className="text-sm font-medium leading-none">
                     Moltiplicatore Aziendale{' '}
-                    <Badge variant="secondary" className="ml-1 text-xs">calcolato</Badge>
+                    <Badge variant="secondary" className="ml-1 text-xs">
+                      calcolato
+                    </Badge>
                   </label>
                   <div className="flex h-9 w-full items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
                     {companyMultiplier > 0 ? companyMultiplier.toFixed(2) : '—'}

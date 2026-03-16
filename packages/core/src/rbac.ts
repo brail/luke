@@ -84,6 +84,3 @@ export function canPerform(
   // Controlla se l'azione specifica è permessa
   return resourcePermissions.includes(action);
 }
-
-
-

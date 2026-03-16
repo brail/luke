@@ -21,6 +21,7 @@ export * from './schemas/auth';
 export * from './schemas/brand';
 export * from './schemas/season';
 export * from './schemas/pricing';
+export * from './schemas/collectionLayout';
 
 // Re-export RBAC
 export * from './rbac';
@@ -63,6 +64,8 @@ export {
   buildApiUrl,
   buildBrandLogoUploadUrl,
   buildTempBrandLogoUploadUrl,
+  buildCollectionRowPictureUploadUrl,
+  buildTempCollectionRowPictureUploadUrl,
   buildTrpcUrl,
   isLocalhostUrl,
   isApiUrl,

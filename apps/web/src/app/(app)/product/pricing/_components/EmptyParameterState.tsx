@@ -6,7 +6,6 @@ import { toast } from 'sonner';
 
 import type { PricingParameterSetInput } from '@luke/core';
 
-
 import { Button } from '../../../../../components/ui/button';
 import {
   Dialog,
@@ -36,10 +35,11 @@ export function EmptyParameterState({
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isCopyPreviewOpen, setIsCopyPreviewOpen] = useState(false);
 
-  const previousQuery = trpc.pricing.parameterSets.copyFromPreviousSeason.useQuery(
-    { brandId, seasonId },
-    { retry: false }
-  );
+  const previousQuery =
+    trpc.pricing.parameterSets.copyFromPreviousSeason.useQuery(
+      { brandId, seasonId },
+      { retry: false }
+    );
 
   const hasPrevious = !!previousQuery.data;
   const previousSeason = previousQuery.data?.season;
@@ -76,8 +76,8 @@ export function EmptyParameterState({
       <div className="space-y-1">
         <h3 className="text-lg font-semibold">Nessun parametro configurato</h3>
         <p className="text-sm text-muted-foreground max-w-sm">
-          Non esistono parametri di pricing per la combinazione brand+stagione corrente.
-          Configura i parametri per iniziare a usare la calcolatrice.
+          Non esistono parametri di pricing per la combinazione brand+stagione
+          corrente. Configura i parametri per iniziare a usare la calcolatrice.
         </p>
       </div>
 
@@ -92,7 +92,10 @@ export function EmptyParameterState({
             Copia da {previousSeason?.code} {previousSeason?.year}
           </Button>
         )}
-        <Button onClick={() => setIsCreateDialogOpen(true)} disabled={isLoading}>
+        <Button
+          onClick={() => setIsCreateDialogOpen(true)}
+          disabled={isLoading}
+        >
           <Plus className="h-4 w-4 mr-2" />
           Inserisci da zero
         </Button>
@@ -106,7 +109,8 @@ export function EmptyParameterState({
               Copia parametri da {previousSeason?.code} {previousSeason?.year}
             </DialogTitle>
             <DialogDescription>
-              Verranno copiate {previousSets.length} variant{previousSets.length > 1 ? 'i' : 'e'}:
+              Verranno copiate {previousSets.length} variant
+              {previousSets.length > 1 ? 'i' : 'e'}:
             </DialogDescription>
           </DialogHeader>
 
@@ -126,7 +130,10 @@ export function EmptyParameterState({
           </p>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCopyPreviewOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setIsCopyPreviewOpen(false)}
+            >
               Annulla
             </Button>
             <Button onClick={handleCopyAndCreate} disabled={isLoading}>

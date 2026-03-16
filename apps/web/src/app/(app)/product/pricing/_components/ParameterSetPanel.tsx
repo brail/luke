@@ -1,6 +1,13 @@
 'use client';
 
-import { ChevronDown, ChevronUp, Star, Pencil, Trash2, Plus } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronUp,
+  Star,
+  Pencil,
+  Trash2,
+  Plus,
+} from 'lucide-react';
 import { useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
@@ -25,7 +32,8 @@ import { usePermission } from '../../../../../hooks/usePermission';
 
 import { ParameterSetDialog } from './ParameterSetDialog';
 
-type PricingParameterSet = RouterOutputs['pricing']['parameterSets']['list'][number];
+type PricingParameterSet =
+  RouterOutputs['pricing']['parameterSets']['list'][number];
 
 interface ParameterSetPanelProps {
   sets: PricingParameterSet[];
@@ -58,8 +66,14 @@ function buildRows(set: PricingParameterSet) {
       label: 'Costi accessori Italia',
       value: `${set.italyAccessoryCosts.toFixed(2)} ${set.sellingCurrency}`,
     },
-    { label: 'Stampi', value: `${set.tools.toFixed(2)} ${set.purchaseCurrency}` },
-    { label: 'Moltiplicatore retail', value: `×${set.retailMultiplier.toFixed(2)}` },
+    {
+      label: 'Stampi',
+      value: `${set.tools.toFixed(2)} ${set.purchaseCurrency}`,
+    },
+    {
+      label: 'Moltiplicatore retail',
+      value: `×${set.retailMultiplier.toFixed(2)}`,
+    },
     { label: 'Margine target', value: `${set.optimalMargin}%` },
     {
       label: 'Moltiplicatore aziendale',
@@ -83,8 +97,12 @@ export function ParameterSetPanel({
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [editingSet, setEditingSet] = useState<PricingParameterSet | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<PricingParameterSet | null>(null);
+  const [editingSet, setEditingSet] = useState<PricingParameterSet | null>(
+    null
+  );
+  const [deleteTarget, setDeleteTarget] = useState<PricingParameterSet | null>(
+    null
+  );
 
   const toggleExpand = (id: string) => {
     setExpandedIds(prev => {
@@ -123,7 +141,9 @@ export function ParameterSetPanel({
                   Nuova variante
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Non hai i permessi per creare parametri</TooltipContent>
+              <TooltipContent>
+                Non hai i permessi per creare parametri
+              </TooltipContent>
             </Tooltip>
           </TooltipProvider>
         )}
@@ -152,10 +172,15 @@ export function ParameterSetPanel({
 
                 <div className="flex items-center gap-1.5">
                   {set.isDefault && (
-                    <Badge variant="secondary" className="text-xs">Default</Badge>
+                    <Badge variant="secondary" className="text-xs">
+                      Default
+                    </Badge>
                   )}
                   {isSelected && (
-                    <Badge variant="outline" className="text-xs text-primary border-primary/40">
+                    <Badge
+                      variant="outline"
+                      className="text-xs text-primary border-primary/40"
+                    >
                       In uso
                     </Badge>
                   )}
@@ -210,14 +235,16 @@ export function ParameterSetPanel({
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>Non hai i permessi per modificare i parametri</TooltipContent>
+                        <TooltipContent>
+                          Non hai i permessi per modificare i parametri
+                        </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
                   )}
 
                   {/* Elimina (solo se più di un set) */}
-                  {sets.length > 1 && (
-                    canUpdate ? (
+                  {sets.length > 1 &&
+                    (canUpdate ? (
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -243,8 +270,7 @@ export function ParameterSetPanel({
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
-                    )
-                  )}
+                    ))}
                 </div>
 
                 {/* Expand toggle */}
@@ -274,7 +300,9 @@ export function ParameterSetPanel({
                           <TableCell className="text-muted-foreground text-sm w-1/2 py-2">
                             {row.label}
                           </TableCell>
-                          <TableCell className="font-medium text-sm py-2">{row.value}</TableCell>
+                          <TableCell className="font-medium text-sm py-2">
+                            {row.value}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -317,7 +345,9 @@ export function ParameterSetPanel({
       {/* Dialog conferma eliminazione */}
       <ConfirmDialog
         open={!!deleteTarget}
-        onOpenChange={open => { if (!open) setDeleteTarget(null); }}
+        onOpenChange={open => {
+          if (!open) setDeleteTarget(null);
+        }}
         title="Elimina variante"
         description={`Sei sicuro di voler eliminare la variante "${deleteTarget?.name}"? Questa operazione è irreversibile.`}
         confirmText="Elimina"

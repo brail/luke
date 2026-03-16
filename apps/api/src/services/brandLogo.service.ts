@@ -10,11 +10,12 @@ import { Readable } from 'stream';
 import {
   getPublicUrl,
   extractKeyFromUrl,
-  type UrlConfig,
+  extractBucketFromUrl,
   type StorageBucket,
 } from '@luke/core';
 
-import { putObject, deleteObject, getStorageProvider } from '../storage';
+import { putObject, deleteObjectByKey, getStorageProvider } from '../storage';
+import { getStorageUrlConfig } from '../lib/storageUrl';
 import { logAudit } from '../lib/auditLog';
 import type { Context } from '../lib/trpc';
 
@@ -22,39 +23,12 @@ const ALLOWED_MIMES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
 const MAX_SIZE = 2 * 1024 * 1024; // 2MB
 const ALLOWED_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp'];
 
-/**
- * Converte stream in buffer per validazione magic bytes
- */
 async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of stream) {
     chunks.push(chunk as Buffer);
   }
   return Buffer.concat(chunks);
-}
-
-/**
- * Ottiene configurazione URL dal context
- */
-async function getUrlConfig(ctx: Context): Promise<UrlConfig> {
-  const { getConfig } = await import('../lib/configManager');
-
-  const publicBaseUrl = await getConfig(
-    ctx.prisma,
-    'storage.local.publicBaseUrl',
-    false
-  );
-  const enableProxyStr = await getConfig(
-    ctx.prisma,
-    'storage.local.enableProxy',
-    false
-  );
-  const enableProxy = enableProxyStr ? enableProxyStr === 'true' : true; // default true
-
-  return {
-    publicBaseUrl: publicBaseUrl || undefined,
-    enableProxy,
-  };
 }
 
 /**
@@ -148,7 +122,7 @@ export async function uploadTempBrandLogo(
   });
 
   // Genera URL pubblico usando contratti
-  const urlConfig = await getUrlConfig(ctx);
+  const urlConfig = await getStorageUrlConfig(ctx.prisma);
   const publicUrl = getPublicUrl('temp-brand-logos', fileObject.key, urlConfig);
 
   // Log audit per upload temporaneo
@@ -258,7 +232,7 @@ export async function uploadBrandLogo(
   });
 
   // Genera URL pubblico usando contratti
-  const urlConfig = await getUrlConfig(ctx);
+  const urlConfig = await getStorageUrlConfig(ctx.prisma);
   const publicUrl = getPublicUrl('brand-logos', fileObject.key, urlConfig);
 
   // Aggiorna Brand.logoUrl con URL pubblico
@@ -272,8 +246,9 @@ export async function uploadBrandLogo(
     setImmediate(async () => {
       try {
         const oldKey = extractKeyFromUrl(brand.logoUrl!);
-        if (oldKey) {
-          await deleteObject(ctx, oldKey);
+        const oldBucket = extractBucketFromUrl(brand.logoUrl!);
+        if (oldKey && oldBucket) {
+          await deleteObjectByKey(ctx, { bucket: oldBucket, key: oldKey });
         }
       } catch (err) {
         ctx.logger?.warn({ err }, 'Failed to cleanup old logo');
@@ -360,7 +335,7 @@ export async function moveTempLogoToBrand(
   });
 
   // Genera URL pubblico usando contratti
-  const urlConfig = await getUrlConfig(ctx);
+  const urlConfig = await getStorageUrlConfig(ctx.prisma);
   const publicUrl = getPublicUrl('brand-logos', newFileObject.key, urlConfig);
 
   // Aggiorna Brand.logoUrl con URL pubblico

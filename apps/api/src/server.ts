@@ -6,6 +6,7 @@
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
+import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import { PrismaClient } from '@prisma/client';
@@ -32,6 +33,7 @@ import {
 import { runReadinessChecks } from './observability/readiness';
 import { storagePlugin } from './plugins/storage-upload';
 import brandLogoRoutes from './routes/brandLogo.routes';
+import collectionRowPictureRoutes from './routes/collectionRowPicture.routes';
 import { appRouter } from './routers';
 import { getStorageProvider } from './storage';
 
@@ -220,6 +222,19 @@ async function registerTRPCPlugin() {
 }
 
 /**
+ * Registra multipart plugin globalmente per tutti i route di upload
+ * Limite 50MB (massimo per storage-upload generale); i service applicano limiti più stringenti per specifiche entità
+ */
+async function registerMultipart() {
+  await fastify.register(multipart, {
+    limits: {
+      fileSize: 50 * 1024 * 1024, // 50MB
+      files: 1,
+    },
+  });
+}
+
+/**
  * Registra storage plugin per upload/download
  */
 async function registerStoragePlugin() {
@@ -231,6 +246,13 @@ async function registerStoragePlugin() {
  */
 async function registerBrandLogoRoutes() {
   await fastify.register(brandLogoRoutes, { prisma });
+}
+
+/**
+ * Registra collection row picture routes
+ */
+async function registerCollectionRowPictureRoutes() {
+  await fastify.register(collectionRowPictureRoutes, { prisma });
 }
 
 /**
@@ -361,7 +383,7 @@ function setupTempFileCleanup() {
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
       const tempFiles = await prisma.fileObject.findMany({
         where: {
-          bucket: 'temp-brand-logos',
+          bucket: { in: ['temp-brand-logos', 'temp-collection-row-pictures'] },
           createdAt: { lt: oneHourAgo },
         },
       });
@@ -376,7 +398,7 @@ function setupTempFileCleanup() {
         for (const file of tempFiles) {
           try {
             await provider.delete({
-              bucket: 'temp-brand-logos',
+              bucket: file.bucket as 'temp-brand-logos' | 'temp-collection-row-pictures',
               key: file.key,
             });
             succeededIds.push(file.id);
@@ -501,8 +523,10 @@ const start = async () => {
     // Registra plugin e route nell'ordine corretto
     await registerSecurityPlugins(); // CORS deve essere registrato prima di tRPC
     await registerTRPCPlugin();
+    await registerMultipart(); // Multipart globale (richiesto da tutti i route di upload)
     await registerStoragePlugin(); // Storage upload/download routes
     await registerBrandLogoRoutes(); // Brand logo upload routes
+    await registerCollectionRowPictureRoutes(); // Collection row picture upload routes
     await registerStaticFiles(); // Static file server per uploads
     await registerHealthRoute();
 

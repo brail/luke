@@ -144,11 +144,7 @@ const parameterSetsRouter = router({
       })
     )
     .query(async ({ input, ctx }) => {
-      return getPreviousSeasonSets(
-        input.brandId,
-        input.seasonId,
-        ctx.prisma
-      );
+      return getPreviousSeasonSets(input.brandId, input.seasonId, ctx.prisma);
     }),
 });
 

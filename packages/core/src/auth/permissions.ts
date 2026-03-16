@@ -26,6 +26,7 @@ export const RESOURCES = {
   MAINTENANCE: 'maintenance',
   DASHBOARD: 'dashboard',
   PRICING: 'pricing',
+  COLLECTION_LAYOUT: 'collection_layout',
 } as const;
 
 export type Resource = (typeof RESOURCES)[keyof typeof RESOURCES];
@@ -83,6 +84,7 @@ export const VALID_RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
   [RESOURCES.MAINTENANCE]: ['read', 'update'] as const,
   [RESOURCES.DASHBOARD]: ['read'] as const,
   [RESOURCES.PRICING]: ['read', 'update'] as const,
+  [RESOURCES.COLLECTION_LAYOUT]: ['read', 'update'] as const,
 } as const;
 
 /**
@@ -113,6 +115,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // Pricing: lettura e modifica
     'pricing:read',
     'pricing:update',
+    // Collection Layout: lettura e modifica
+    'collection_layout:read',
+    'collection_layout:update',
   ],
   viewer: [
     // Brands: solo lettura
@@ -129,6 +134,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'dashboard:read',
     // Pricing: solo lettura
     'pricing:read',
+    // Collection Layout: solo lettura
+    'collection_layout:read',
   ],
 };
 
@@ -207,6 +214,7 @@ export function expandRole(role: Role): Permission[] {
       'maintenance',
       'dashboard',
       'pricing',
+      'collection_layout',
     ];
     const actions: Action[] = ['create', 'read', 'update', 'delete', 'upload'];
 

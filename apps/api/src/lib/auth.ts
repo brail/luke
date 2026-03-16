@@ -120,4 +120,3 @@ export async function authenticateRequest(
 
   return session;
 }
-

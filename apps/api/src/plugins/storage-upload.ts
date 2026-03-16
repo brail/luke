@@ -3,9 +3,10 @@
  *
  * - POST /storage/upload/:uploadId - Upload multipart
  * - GET /storage/download?token=... - Download con token firmato
+ *
+ * Note: @fastify/multipart è registrato globalmente in server.ts
  */
 
-import multipart from '@fastify/multipart';
 import type { FastifyInstance } from 'fastify';
 import { type PrismaClient } from '@prisma/client';
 
@@ -26,13 +27,8 @@ export async function storagePlugin(
 ) {
   const { prisma } = options;
 
-  // Registra multipart plugin con limiti
-  await fastify.register(multipart, {
-    limits: {
-      fileSize: 50 * 1024 * 1024, // 50 MB (dovrebbe venire da AppConfig)
-      files: 1, // Un solo file per volta
-    },
-  });
+  // Note: @fastify/multipart è già registrato globalmente in server.ts
+  // Non registrare di nuovo qui per evitare conflitti
 
   /**
    * POST /storage/upload/:uploadId

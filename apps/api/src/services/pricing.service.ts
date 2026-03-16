@@ -316,7 +316,10 @@ export async function getPreviousSeasonSets(
   brandId: string,
   currentSeasonId: string,
   prisma: PrismaClient
-): Promise<{ season: { id: string; code: string; year: number; name: string }; sets: PricingParameterSet[] } | null> {
+): Promise<{
+  season: { id: string; code: string; year: number; name: string };
+  sets: PricingParameterSet[];
+} | null> {
   // Trova la stagione corrente per confrontare year
   const currentSeason = await prisma.season.findUnique({
     where: { id: currentSeasonId },
@@ -403,8 +406,10 @@ export async function createParameterSet(
     prisma.season.findUnique({ where: { id: seasonId }, select: { id: true } }),
   ]);
 
-  if (!brand) throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand non trovato' });
-  if (!season) throw new TRPCError({ code: 'NOT_FOUND', message: 'Stagione non trovata' });
+  if (!brand)
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand non trovato' });
+  if (!season)
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Stagione non trovata' });
 
   // Controlla unicità nome per brand+season
   const existing = await prisma.pricingParameterSet.findUnique({
@@ -459,7 +464,10 @@ export async function updateParameterSet(
   });
 
   if (!existing) {
-    throw new TRPCError({ code: 'NOT_FOUND', message: 'Set parametri non trovato' });
+    throw new TRPCError({
+      code: 'NOT_FOUND',
+      message: 'Set parametri non trovato',
+    });
   }
 
   // Controlla unicità nome (esclude sé stesso)
@@ -508,7 +516,10 @@ export async function removeParameterSet(
   });
 
   if (!target) {
-    throw new TRPCError({ code: 'NOT_FOUND', message: 'Set parametri non trovato' });
+    throw new TRPCError({
+      code: 'NOT_FOUND',
+      message: 'Set parametri non trovato',
+    });
   }
 
   await prisma.$transaction(async tx => {
