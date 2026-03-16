@@ -1,0 +1,70 @@
+services:
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       luke
+      POSTGRES_USER:     luke
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U luke -d luke"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Fastify API ──────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV:        production
+      PORT:            3001
+      DATABASE_URL:    postgresql://luke:${POSTGRES_PASSWORD}@postgres:5432/luke
+      # CORS: only the web container calls the API (server-to-server, no browser CORS needed).
+      # Set to empty to deny all cross-origin browser requests directly to the API.
+      LUKE_CORS_ALLOWED_ORIGINS: ""
+    volumes:
+      # Persistent volume for master key (~/.luke/secret.key) and local file storage
+      # (~/.luke/storage/). Both live under the same home dir path.
+      # ⚠️  Never delete this volume — all JWT tokens and sessions derive from the master key.
+      - api_data:/root/.luke
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Next.js web ───────────────────────────────────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Baked into the client JS bundle — must match the public hostname
+        NEXT_PUBLIC_API_URL: http://${PUBLIC_HOSTNAME:-luke.febos.local}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV:         production
+      # Internal Docker URL used by Next.js server-side code (SSR, middleware, rewrites)
+      INTERNAL_API_URL: http://api:3001
+      # NextAuth
+      NEXTAUTH_URL:     http://${PUBLIC_HOSTNAME:-luke.febos.local}
+      NEXTAUTH_SECRET:  ${NEXTAUTH_SECRET}
+
+volumes:
+  postgres_data:
+  api_data:

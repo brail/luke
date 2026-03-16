@@ -1,0 +1,48 @@
+# Version control
+.git
+.gitignore
+
+# Node
+node_modules
+**/node_modules
+
+# Next.js build output (rebuilt inside Docker)
+apps/web/.next
+apps/web/out
+
+# TypeScript build info
+**/*.tsbuildinfo
+**/tsconfig.tsbuildinfo
+
+# Compiled API output (rebuilt inside Docker)
+apps/api/dist
+packages/core/dist
+
+# Local dev databases
+**/*.db
+**/*.db-shm
+**/*.db-wal
+
+# Local secrets & env files
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+
+# Editor & OS
+.DS_Store
+.vscode
+*.swp
+
+# Test output
+coverage
+**/.vitest-cache
+
+# Docs
+docs/
+*.md
+!apps/api/prisma/migrations/**/*.md
+
+# External apps
+EXTERNAL_APPS/

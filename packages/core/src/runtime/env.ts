@@ -44,14 +44,18 @@ export interface IPrismaConfigClient {
  * @returns API base URL
  */
 export function getApiBaseUrl(): string {
-  const envUrl = process.env.NEXT_PUBLIC_API_URL;
-
-  if (envUrl) {
-    return envUrl;
+  // Server-side (SSR, middleware, Next.js API routes): use internal Docker URL directly
+  // to avoid looping through the public hostname
+  if (typeof window === 'undefined') {
+    const internalUrl = process.env.INTERNAL_API_URL;
+    if (internalUrl) return internalUrl;
   }
 
-  // Always use localhost fallback for development and build
-  // This prevents build errors during prerendering
+  // Client-side (browser): use the public-facing URL
+  const envUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (envUrl) return envUrl;
+
+  // Dev / build fallback
   return 'http://localhost:3001';
 }
 
