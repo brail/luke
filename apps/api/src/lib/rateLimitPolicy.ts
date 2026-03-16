@@ -3,9 +3,13 @@
  * Implementa la cascata di risoluzione: AppConfig → ENV → Default
  */
 
+import pino from 'pino';
+
 import { RateLimitConfigSchema, type RateLimitPolicy, isDevelopment } from '@luke/core';
 
 import { getConfig } from './configManager';
+
+const logger = pino({ level: 'info' });
 
 import type { PrismaClient } from '@prisma/client';
 
@@ -106,7 +110,7 @@ export async function resolveRateLimitPolicy(
     }
   } catch (error) {
     // Log errore ma continua con fallback
-    console.warn(`Failed to parse AppConfig rateLimit:`, error);
+    logger.warn({ err: error }, 'Failed to parse AppConfig rateLimit');
   }
 
   // 2) Fallback ENV (es. LUKE_RATE_LIMIT_LOGIN_MAX, LUKE_RATE_LIMIT_LOGIN_WINDOW, LUKE_RATE_LIMIT_LOGIN_KEY_BY)
@@ -126,7 +130,7 @@ export async function resolveRateLimitPolicy(
         keyBy: (keyByEnv as 'ip' | 'userId') || def.keyBy,
       };
     } catch (error) {
-      console.warn(`Invalid ENV rate limit config for ${routeName}:`, error);
+      logger.warn({ err: error, routeName }, 'Invalid ENV rate limit config');
       // Fallback ai default se ENV è malformato
     }
   }

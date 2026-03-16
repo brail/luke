@@ -294,7 +294,7 @@ async function registerStaticFiles() {
       // Imposta CSP permissivo per le immagini
       res.setHeader(
         'Content-Security-Policy',
-        "img-src 'self' http://localhost:3001 data:; default-src 'none'"
+        "img-src 'self' data:; default-src 'none'"
       );
 
       // Cache headers per assets statici

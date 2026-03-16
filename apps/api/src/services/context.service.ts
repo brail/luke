@@ -4,8 +4,11 @@
  */
 
 import { TRPCError } from '@trpc/server';
+import pino from 'pino';
 import type { PrismaClient } from '@prisma/client';
 import { AppContextDefaultsSchema, type AppContextDefaults } from '@luke/core';
+
+const logger = pino({ level: 'info' });
 
 /**
  * Risultato del context resolver
@@ -76,10 +79,7 @@ export async function resolveContext(
       const parsed = JSON.parse(appConfig.value);
       contextDefaults = AppContextDefaultsSchema.parse(parsed);
     } catch (error) {
-      console.warn(
-        'Errore parsing app.context.defaults, usando default vuoto:',
-        error
-      );
+      logger.warn({ err: error }, 'Errore parsing app.context.defaults, usando default vuoto');
     }
   }
 

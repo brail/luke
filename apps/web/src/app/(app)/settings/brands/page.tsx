@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
 
+import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { CreateActionButton } from '../../../../components/CreateActionButton';
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
@@ -29,6 +30,7 @@ export default function BrandsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingBrand, setEditingBrand] = useState<BrandItem | null>(null);
+  const [deletingBrand, setDeletingBrand] = useState<BrandItem | null>(null);
   const { brand: currentBrand } = useAppContext();
   const { can } = usePermission();
 
@@ -112,14 +114,8 @@ export default function BrandsPage() {
   };
 
   // Handler per eliminazione brand
-  const handleDeleteBrand = async (brand: BrandItem) => {
-    if (
-      globalThis.confirm(
-        `Sei sicuro di voler eliminare il brand "${brand.name}"?`
-      )
-    ) {
-      await removeMutation.mutateAsync({ id: brand.id });
-    }
+  const handleDeleteBrand = (brand: BrandItem) => {
+    setDeletingBrand(brand);
   };
 
   // Handler per chiusura dialog
@@ -183,6 +179,20 @@ export default function BrandsPage() {
           onRetry={() => refetch()}
         />
       </SectionCard>
+
+      {/* Dialog di conferma eliminazione */}
+      <ConfirmDialog
+        open={!!deletingBrand}
+        onOpenChange={open => { if (!open) setDeletingBrand(null); }}
+        title="Elimina brand"
+        description={`Sei sicuro di voler eliminare il brand "${deletingBrand?.name}"? Questa operazione è irreversibile.`}
+        confirmText="Elimina"
+        cancelText="Annulla"
+        variant="destructive"
+        actionType="delete"
+        onConfirm={() => { if (deletingBrand) removeMutation.mutate({ id: deletingBrand.id }); }}
+        isLoading={removeMutation.isPending}
+      />
 
       {/* Dialog per creazione/modifica */}
       <BrandDialogWithPermissions

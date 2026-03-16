@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
 
+import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { CreateActionButton } from '../../../../components/CreateActionButton';
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
@@ -23,6 +24,7 @@ export default function SeasonsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSeason, setEditingSeason] = useState<SeasonItem | null>(null);
+  const [deletingSeason, setDeletingSeason] = useState<SeasonItem | null>(null);
   const { can } = usePermission();
 
   const {
@@ -85,14 +87,8 @@ export default function SeasonsPage() {
     setIsDialogOpen(true);
   };
 
-  const handleDelete = async (season: SeasonItem) => {
-    if (
-      globalThis.confirm(
-        `Sei sicuro di voler eliminare la stagione "${season.code} ${season.year}"?`
-      )
-    ) {
-      await removeMutation.mutateAsync({ id: season.id });
-    }
+  const handleDelete = (season: SeasonItem) => {
+    setDeletingSeason(season);
   };
 
   const handleFormSubmit = async (data: any) => {
@@ -144,6 +140,19 @@ export default function SeasonsPage() {
           onRetry={() => refetch()}
         />
       </SectionCard>
+
+      <ConfirmDialog
+        open={!!deletingSeason}
+        onOpenChange={open => { if (!open) setDeletingSeason(null); }}
+        title="Elimina stagione"
+        description={`Sei sicuro di voler eliminare la stagione "${deletingSeason?.code} ${deletingSeason?.year}"? Questa operazione è irreversibile.`}
+        confirmText="Elimina"
+        cancelText="Annulla"
+        variant="destructive"
+        actionType="delete"
+        onConfirm={() => { if (deletingSeason) removeMutation.mutate({ id: deletingSeason.id }); }}
+        isLoading={removeMutation.isPending}
+      />
 
       <SeasonDialog
         open={isDialogOpen}

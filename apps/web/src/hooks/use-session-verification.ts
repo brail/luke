@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useEffect, useRef } from 'react';
 
+import { debugError, debugLog } from '../lib/debug';
 import { trpc } from '../lib/trpc';
 
 export function useSessionVerification() {
@@ -24,22 +25,22 @@ export function useSessionVerification() {
   useEffect(() => {
     // Solo se autenticato e abbiamo accessToken
     if (status === 'authenticated' && session?.accessToken) {
-      console.log('Avvio verifica sessione immediata e periodica');
+      debugLog('Avvio verifica sessione immediata e periodica');
 
       // Verifica immediata al mount
       const verifyImmediately = async () => {
         try {
-          console.log('Verifica tokenVersion immediata...');
+          debugLog('Verifica tokenVersion immediata...');
           const result = await verifySession();
 
           if (!result.data) {
-            console.log('Sessione invalida rilevata, redirect a login');
+            debugLog('Sessione invalida rilevata, redirect a login');
             router.push('/login');
             return;
           }
         } catch (error) {
-          console.error('Errore verifica sessione:', error);
-          console.log('Sessione invalida rilevata, redirect a login');
+          debugError('Errore verifica sessione:', error);
+          debugLog('Sessione invalida rilevata, redirect a login');
           router.push('/login');
           return;
         }
@@ -54,13 +55,13 @@ export function useSessionVerification() {
       // Verifica quando l'utente torna alla tab (focus/visibility change)
       const handleVisibilityChange = () => {
         if (!document.hidden) {
-          console.log('Tab riattivata, verifica sessione...');
+          debugLog('Tab riattivata, verifica sessione...');
           verifyImmediately();
         }
       };
 
       const handleFocus = () => {
-        console.log('Window focus, verifica sessione...');
+        debugLog('Window focus, verifica sessione...');
         verifyImmediately();
       };
 
@@ -84,7 +85,7 @@ export function useSessionVerification() {
     // Cleanup interval quando il componente si smonta o la sessione cambia
     return () => {
       if (intervalRef.current) {
-        console.log('Stop verifica periodica sessione');
+        debugLog('Stop verifica periodica sessione');
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }

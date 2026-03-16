@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { buildTrpcUrl } from '@luke/core';
 
 import { auth } from './auth';
+import { debugError, debugLog } from './lib/debug';
 
 /**
  * Middleware per proteggere le rotte del dashboard
@@ -31,11 +32,11 @@ export default auth(async req => {
 
       // Se la chiamata API fallisce (401), il tokenVersion è invalido
       if (!response.ok) {
-        console.log('TokenVersion invalido, redirect a login');
+        debugLog('TokenVersion invalido, redirect a login');
         return NextResponse.redirect(new URL('/login', req.url));
       }
     } catch (error) {
-      console.error('Errore verifica tokenVersion:', error);
+      debugError('Errore verifica tokenVersion:', error);
       // In caso di errore di rete, permetti l'accesso ma logga l'errore
     }
   }

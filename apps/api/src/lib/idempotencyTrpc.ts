@@ -10,8 +10,11 @@
  */
 
 import { TRPCError } from '@trpc/server';
+import pino from 'pino';
 
 import { idempotencyStore } from './idempotency';
+
+const logger = pino({ level: 'info' });
 
 /**
  * Middleware tRPC per idempotency
@@ -86,7 +89,7 @@ export function withIdempotency() {
       );
     } catch (error) {
       // Log errore ma non bloccare la risposta
-      console.warn('Failed to store idempotency result:', error);
+      logger.warn({ err: error }, 'Failed to store idempotency result');
     }
 
     return mutationResult;

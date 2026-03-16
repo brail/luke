@@ -12,6 +12,9 @@
  */
 
 import { createHash, randomUUID } from 'crypto';
+import pino from 'pino';
+
+const logger = pino({ level: 'info' });
 import { createReadStream, createWriteStream, realpathSync } from 'fs';
 import { readdir, mkdir, unlink, stat, realpath } from 'fs/promises';
 import { join, dirname, resolve, basename, relative, isAbsolute } from 'path';
@@ -78,7 +81,7 @@ export class LocalFsProvider implements IStorageProvider {
       await mkdir(brandLogosTmpPath, { recursive: true, mode: 0o700 });
     } catch (error) {
       // Log ma non fallire se già esiste
-      console.warn('Directory brand-logos creation warning:', error);
+      logger.warn({ err: error }, 'Directory brand-logos creation warning');
     }
   }
 
