@@ -25,6 +25,8 @@ build/
 *.sqlite
 *.sqlite3
 *.db
+*.db-shm
+*.db-wal
 
 # Logs
 *.log
@@ -110,4 +112,4 @@ Thumbs.db
 
 # Prisma
 prisma/migrations/
-apps/api/prisma/dev.db.backup.*
+apps/api/prisma/dev.db.backup*
