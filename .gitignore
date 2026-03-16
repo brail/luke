@@ -1,3 +1,6 @@
+# External apps (not part of the monorepo)
+EXTERNAL_APPS/
+
 # Dependencies
 node_modules/
 .pnpm-store/
