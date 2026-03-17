@@ -34,7 +34,6 @@ export default function CollectionLayoutPage() {
       { brandId: brand?.id ?? '', seasonId: season?.id ?? '' },
       { enabled }
     );
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const layout: CollectionLayoutData | null = (layoutData as any) ?? null;
 
   const { data: parameterSets = [] } = trpc.pricing.parameterSets.list.useQuery(
