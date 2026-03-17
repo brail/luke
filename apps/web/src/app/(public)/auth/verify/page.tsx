@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import React, { useEffect, useState, Suspense } from 'react';
+import React, { useEffect, useRef, useState, Suspense } from 'react';
 
 import Logo from '../../../../components/Logo';
 import { Alert, AlertDescription } from '../../../../components/ui/alert';
@@ -28,34 +28,31 @@ function VerifyEmailContent() {
   );
   const [message, setMessage] = useState('');
 
-  // tRPC mutation
   const verifyEmailMutation = trpc.auth.confirmEmailVerification.useMutation();
+  // Ref to ensure the mutation fires exactly once even in React StrictMode
+  const calledRef = useRef(false);
 
   useEffect(() => {
-    // Se non c'è token, mostra errore
+    if (calledRef.current) return;
+    calledRef.current = true;
+
     if (!token) {
       setStatus('error');
       setMessage("Token di verifica mancante. Controlla il link nell'email.");
       return;
     }
 
-    // Auto-trigger della verifica (solo al mount)
-    const verifyEmail = async () => {
-      try {
-        const result = await verifyEmailMutation.mutateAsync({ token });
-        setStatus('success');
-        setMessage(result.message || 'Email verificata con successo!');
-      } catch (err: any) {
-        setStatus('error');
-        setMessage(
-          err?.message ||
-            'Errore durante la verifica. Il token potrebbe essere scaduto o non valido.'
-        );
-      }
-    };
-
-    verifyEmail();
-  }, [token, verifyEmailMutation]);
+    verifyEmailMutation.mutateAsync({ token }).then(result => {
+      setStatus('success');
+      setMessage(result.message || 'Email verificata con successo!');
+    }).catch((err: any) => {
+      setStatus('error');
+      setMessage(
+        err?.message ||
+          'Errore durante la verifica. Il token potrebbe essere scaduto o non valido.'
+      );
+    });
+  }, [token]); // verifyEmailMutation excluded intentionally — new ref each render
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/50 p-4">

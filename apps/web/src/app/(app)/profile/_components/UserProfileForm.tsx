@@ -62,7 +62,7 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
 
   // Mutation tRPC
   const updateProfileMutation = trpc.me.updateProfile.useMutation();
-  const changeEmailMutation = trpc.users.changeEmail.useMutation();
+  const changeEmailMutation = trpc.me.changeEmail.useMutation();
 
   // Mutation standardizzate
   const { mutate: updateProfile } = useStandardMutation({

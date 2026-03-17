@@ -13,6 +13,7 @@ import {
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
+import { sendVerificationEmail } from '../lib/emailHelpers';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { hashPassword, verifyPassword } from '../lib/password';
 import { withRateLimit } from '../lib/ratelimit';
@@ -176,6 +177,60 @@ export const meRouter = router({
       });
 
       return updated;
+    }),
+
+  /**
+   * Cambia l'email dell'utente corrente (self-service, nessun permesso extra)
+   * Invia email di verifica al nuovo indirizzo
+   */
+  changeEmail: protectedProcedure
+    .use(withRateLimit('userMutations'))
+    .input(
+      z.object({
+        newEmail: z.string().email('Email non valida').toLowerCase().trim(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { newEmail } = input;
+      const userId = ctx.session.user.id;
+
+      const existing = await ctx.prisma.user.findFirst({
+        where: { email: newEmail, id: { not: userId } },
+      });
+
+      if (existing) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'Email già in uso' });
+      }
+
+      await ctx.prisma.user.update({
+        where: { id: userId },
+        data: { email: newEmail, emailVerifiedAt: null },
+      });
+
+      await logAudit(ctx, {
+        action: 'EMAIL_CHANGED',
+        targetType: 'User',
+        targetId: userId,
+        result: 'SUCCESS',
+        metadata: {},
+      });
+
+      try {
+        await sendVerificationEmail(
+          ctx.prisma,
+          { userId, reason: 'email_changed', actorId: userId },
+          ctx
+        );
+        return {
+          success: true,
+          message: 'Email aggiornata. Controlla la nuova casella per verificarla.',
+        };
+      } catch {
+        return {
+          success: true,
+          message: 'Email aggiornata. Invio verifica non riuscito: aggiornala dalla pagina profilo.',
+        };
+      }
     }),
 
   /**
