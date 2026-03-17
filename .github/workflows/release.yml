@@ -1,0 +1,120 @@
+name: Release
+
+# Triggered by a version tag: git tag v1.2.3 && git push --tags
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  REGISTRY: ghcr.io
+  API_IMAGE: ghcr.io/brail/luke-api
+  WEB_IMAGE: ghcr.io/brail/luke-web
+  PNPM_VERSION: '10.18.2'
+
+jobs:
+  # ── Build & push API image ───────────────────────────────────────────────────
+  build-api:
+    name: Build API image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.API_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+  # ── Build & push Web image ───────────────────────────────────────────────────
+  build-web:
+    name: Build Web image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.WEB_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # PUBLIC_HOSTNAME must be set as a repository variable in GitHub:
+          # Settings → Variables → Actions → New repository variable
+          build-args: |
+            NEXT_PUBLIC_API_URL=http://${{ vars.PUBLIC_HOSTNAME }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+
+  # ── Notify Portainer (optional) ──────────────────────────────────────────────
+  # To enable: add PORTAINER_WEBHOOK_URL as a repository secret in GitHub.
+  # Get the URL from Portainer: Stacks → <stack> → Webhooks → Enable → Copy URL
+  deploy-portainer:
+    name: Trigger Portainer redeploy
+    runs-on: ubuntu-latest
+    needs: [build-api, build-web]
+    # secrets are empty strings when not set — job is skipped automatically
+    if: secrets.PORTAINER_WEBHOOK_URL != ''
+
+    steps:
+      - name: Call Portainer webhook
+        run: |
+          curl -s -X POST "${{ secrets.PORTAINER_WEBHOOK_URL }}"
+          echo "Portainer redeploy triggered for tag ${{ github.ref_name }}"
