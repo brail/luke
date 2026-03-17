@@ -8,9 +8,14 @@ FROM base AS builder
 WORKDIR /app
 
 # NEXT_PUBLIC_API_URL is baked into the client JS bundle at build time.
-# Pass the production public hostname via --build-arg.
 ARG NEXT_PUBLIC_API_URL=http://luke.febos.local
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
+# INTERNAL_API_URL is used by next.config.js rewrites() which runs at build time.
+# The value must be the Docker service name — overridable via --build-arg.
+ARG INTERNAL_API_URL=http://api:3001
+ENV INTERNAL_API_URL=$INTERNAL_API_URL
+
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
