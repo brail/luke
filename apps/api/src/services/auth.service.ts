@@ -326,7 +326,7 @@ export async function logoutAllSessions(ctx: Context) {
   // Invalida cache (import dinamico per evitare cicli se necessario, o diretto se lib/trpc safe)
   // Qui assumiamo che lib/trpc sia importabile. Se crea ciclo, meglio spostare la cache logic.
   // Per ora importiamo dinamicamente come faceva il router per sicurezza.
-  const { invalidateTokenVersionCache } = await import('../lib/trpc');
+  const { invalidateTokenVersionCache } = await import('../lib/trpc.js');
   invalidateTokenVersionCache(userId);
 
   await logAudit(ctx, {
@@ -529,7 +529,7 @@ export async function confirmPasswordReset(
     }),
   ]);
 
-  const { invalidateTokenVersionCache } = await import('../lib/trpc');
+  const { invalidateTokenVersionCache } = await import('../lib/trpc.js');
   invalidateTokenVersionCache(userToken.userId);
 
   await logAudit(ctx, {

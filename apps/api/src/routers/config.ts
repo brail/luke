@@ -344,7 +344,7 @@ export const configRouter = router({
 
     let finalValue = config.value;
     if (input.decrypt && config.isEncrypted) {
-      const { decryptValue } = await import('../lib/configManager');
+      const { decryptValue } = await import('../lib/configManager.js');
       finalValue = decryptValue(config.value);
     } else if (!input.decrypt && config.isEncrypted) {
       finalValue = '[ENCRYPTED]';
@@ -389,7 +389,7 @@ export const configRouter = router({
         // Modalità raw: decritta se cifrato, altrimenti valore normale
         if (config.isEncrypted) {
           try {
-            const { decryptValue } = await import('../lib/configManager');
+            const { decryptValue } = await import('../lib/configManager.js');
             value = decryptValue(config.value);
           } catch (error) {
             ctx.logger.error(
