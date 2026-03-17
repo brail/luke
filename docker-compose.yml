@@ -64,6 +64,8 @@ services:
       # NextAuth
       NEXTAUTH_URL:     http://${PUBLIC_HOSTNAME:-luke.febos.local}
       NEXTAUTH_SECRET:  ${NEXTAUTH_SECRET}
+      # Set to "false" when serving over HTTP (no SSL termination at the proxy)
+      COOKIE_SECURE:    ${COOKIE_SECURE:-false}
 
 volumes:
   postgres_data:

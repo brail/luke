@@ -94,7 +94,10 @@ export const config = {
       name: 'next-auth.session-token',
       options: {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
+        // COOKIE_SECURE=false in .env quando si usa HTTP (NPM senza SSL)
+        secure:
+          process.env.NODE_ENV === 'production' &&
+          process.env.COOKIE_SECURE !== 'false',
         sameSite: 'lax', // 'strict' se stesso dominio senza cross-origin
         path: '/',
         // domain: '.example.com' se Web e API su sottodomini diversi
