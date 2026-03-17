@@ -41,6 +41,9 @@ COPY --from=builder /app/apps/api/dist            ./apps/api/dist
 COPY --from=builder /app/apps/api/prisma          ./apps/api/prisma
 COPY --from=builder /app/apps/api/node_modules    ./apps/api/node_modules
 
+# Email templates (plain text — tsc does not copy non-TS files)
+COPY --from=builder /app/apps/api/src/templates   ./apps/api/dist/templates
+
 # Entrypoint script
 COPY apps/api/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
