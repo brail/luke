@@ -17,6 +17,10 @@ ENV NODE_ENV=production
 COPY . .
 RUN pnpm install --frozen-lockfile
 
+# Generate Prisma client BEFORE building — Next.js type-checks API source
+# files (via @luke/api path alias) which import from @prisma/client
+RUN pnpm --filter @luke/api exec prisma generate
+
 # Build shared packages first
 RUN pnpm --filter @luke/core build
 
