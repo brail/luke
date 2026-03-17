@@ -12,12 +12,12 @@ COPY . .
 
 RUN pnpm install --frozen-lockfile
 
+# Generate Prisma client BEFORE tsc — TypeScript needs the generated types to compile
+RUN pnpm --filter @luke/api exec prisma generate
+
 # Build shared packages first, then the API
 RUN pnpm --filter @luke/core build
 RUN pnpm --filter @luke/api build
-
-# Generate Prisma client for the production target (postgresql)
-RUN pnpm --filter @luke/api exec prisma generate
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 FROM base AS runner
