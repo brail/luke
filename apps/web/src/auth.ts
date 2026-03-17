@@ -180,6 +180,10 @@ export const config = {
   pages: {
     signIn: '/login',
   },
+  // Required when running behind a reverse proxy (NPM, nginx, etc.)
+  // Auth.js v5 validates the Host header; trustHost bypasses that check
+  // and relies on NEXTAUTH_URL being set correctly instead.
+  trustHost: true,
   // Secret derivato deterministicamente dalla master key via HKDF-SHA256
   // Nessuna esposizione HTTP, nessun valore in database
   secret: getNextAuthSecret(),
