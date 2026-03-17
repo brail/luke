@@ -6,7 +6,6 @@ import { useSession } from 'next-auth/react';
 import React, { useState } from 'react';
 
 import type { AppRouter } from '@luke/api';
-import { getApiBaseUrl } from '@luke/core';
 
 import { useUnauthorizedHandler } from '../hooks/use-unauthorized-handler';
 
@@ -51,7 +50,9 @@ export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
       trpc.createClient({
         links: [
           httpBatchLink({
-            url: `${getApiBaseUrl()}/trpc`,
+            // Relative path — Next.js rewrites proxy /trpc/* → http://api:3001/trpc/*
+            // This works whether the browser hits port 80 (via NPM) or port 3000 directly.
+            url: '/trpc',
             // Headers per autenticazione, Content-Type e trace correlation
             headers() {
               const headers: Record<string, string> = {
