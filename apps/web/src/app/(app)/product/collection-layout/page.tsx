@@ -34,7 +34,7 @@ export default function CollectionLayoutPage() {
       { brandId: brand?.id ?? '', seasonId: season?.id ?? '' },
       { enabled }
     );
-  const layout: CollectionLayoutData | null = (layoutData as CollectionLayoutData | undefined) ?? null;
+  const layout = (layoutData ?? null) as CollectionLayoutData | null;
 
   const { data: parameterSets = [] } = trpc.pricing.parameterSets.list.useQuery(
     { brandId: brand?.id ?? '', seasonId: season?.id ?? '' },
