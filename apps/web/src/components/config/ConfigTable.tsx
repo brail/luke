@@ -56,12 +56,13 @@ interface Config {
 
 interface ConfigTableProps {
   configs: Config[];
-  onEdit: (config: Config) => void;  
-  onDelete: (config: Config) => void;  
-  onViewValue: (config: Config) => void;  
+  onEdit: (config: Config) => void;
+  onDelete: (config: Config) => void;
+  onViewValue: (config: Config) => void;
   sortBy: 'key' | 'updatedAt';
   sortDir: 'asc' | 'desc';
-  onSort: (field: 'key' | 'updatedAt') => void;  
+  onSort: (field: 'key' | 'updatedAt') => void;
+  canUpdate?: boolean;
 }
 
 export function ConfigTable({
@@ -72,6 +73,7 @@ export function ConfigTable({
   sortBy,
   sortDir,
   onSort,
+  canUpdate = true,
 }: ConfigTableProps) {
   const handleCopyKey = async (key: string) => {
     try {
@@ -217,7 +219,10 @@ export function ConfigTable({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => onEdit(config)}>
+                    <DropdownMenuItem
+                      onClick={() => onEdit(config)}
+                      disabled={!canUpdate}
+                    >
                       <Edit className="w-4 h-4 mr-2" />
                       Modifica
                     </DropdownMenuItem>
@@ -236,9 +241,9 @@ export function ConfigTable({
 
                     <DropdownMenuItem
                       onClick={() => onDelete(config)}
-                      disabled={isCriticalKey(config.key)}
+                      disabled={!canUpdate || isCriticalKey(config.key)}
                       className={
-                        isCriticalKey(config.key)
+                        !canUpdate || isCriticalKey(config.key)
                           ? 'text-muted-foreground'
                           : 'text-destructive'
                       }

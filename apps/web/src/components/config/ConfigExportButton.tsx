@@ -13,9 +13,10 @@ import { Button } from '../ui/button';
 
 interface ConfigExportButtonProps {
   className?: string;
+  disabled?: boolean;
 }
 
-export function ConfigExportButton({ className }: ConfigExportButtonProps) {
+export function ConfigExportButton({ className, disabled }: ConfigExportButtonProps) {
   const [isExporting, setIsExporting] = useState(false);
 
   const exportMutation = trpc.config.exportJson.useMutation();
@@ -70,7 +71,7 @@ export function ConfigExportButton({ className }: ConfigExportButtonProps) {
       variant="outline"
       size="sm"
       onClick={handleExport}
-      disabled={isExporting}
+      disabled={isExporting || disabled}
       className={className}
     >
       {isExporting ? (

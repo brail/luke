@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../../components/ui/dialog';
+import { usePermission } from '../../../../../hooks/usePermission';
 import { trpc } from '../../../../../lib/trpc';
 
 interface EmptyCollectionLayoutStateProps {
@@ -29,6 +30,9 @@ export function EmptyCollectionLayoutState({
   onCopyFromSeason,
   isLoading = false,
 }: EmptyCollectionLayoutStateProps) {
+  const { can } = usePermission();
+  const canUpdate = can('collection_layout:update');
+
   const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false);
   const [selectedFromSeasonId, setSelectedFromSeasonId] = useState<string | null>(null);
 
@@ -64,13 +68,13 @@ export function EmptyCollectionLayoutState({
           <Button
             variant="outline"
             onClick={() => setIsCopyDialogOpen(true)}
-            disabled={isLoading}
+            disabled={!canUpdate || isLoading}
           >
             <Copy className="h-4 w-4 mr-2" />
             Copia da stagione precedente
           </Button>
         )}
-        <Button onClick={onCreateEmpty} disabled={isLoading}>
+        <Button onClick={onCreateEmpty} disabled={!canUpdate || isLoading}>
           <Plus className="h-4 w-4 mr-2" />
           Crea layout vuoto
         </Button>
@@ -114,7 +118,7 @@ export function EmptyCollectionLayoutState({
             </Button>
             <Button
               onClick={handleCopy}
-              disabled={!selectedFromSeasonId || isLoading}
+              disabled={!canUpdate || !selectedFromSeasonId || isLoading}
             >
               Copia layout
             </Button>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
 
 import Logo from '../../../../components/Logo';
 import { Button } from '../../../../components/ui/button';
@@ -22,7 +22,7 @@ import { useStandardMutation } from '../../../../lib/useStandardMutation';
  * L'account è stato creato ma deve essere approvato da un admin.
  * Se l'email non è disponibile da LDAP, l'utente può fornirla qui.
  */
-export default function PendingApprovalPage() {
+function PendingApprovalContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -118,5 +118,13 @@ export default function PendingApprovalPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function PendingApprovalPage() {
+  return (
+    <Suspense>
+      <PendingApprovalContent />
+    </Suspense>
   );
 }

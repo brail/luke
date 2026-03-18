@@ -4,7 +4,6 @@
  */
 
 import { z } from 'zod';
-import { rbacConfigSchema, type RbacConfig } from '../schemas/rbac';
 import type { IPrismaConfigClient } from '../runtime/env';
 
 // Extend interface for write operations if needed
@@ -12,6 +11,11 @@ export interface IPrismaConfigClientWithWrite extends IPrismaConfigClient {
   appConfig: IPrismaConfigClient['appConfig'] & {
     upsert(args: any): Promise<any>;
   };
+}
+
+interface RbacConfig {
+  roleToPermissions: Record<string, string[]>;
+  sectionAccessDefaults: Record<string, Record<string, string>>;
 }
 
 /**
@@ -80,27 +84,17 @@ export async function setRbacSectionDefaults(
   prisma: IPrismaConfigClientWithWrite,
   sectionAccessDefaults: Record<string, Partial<Record<string, string>>>
 ): Promise<void> {
-  // Valida con schema Zod
-  const validated = rbacConfigSchema.parse({
-    roleToPermissions: {
-      admin: ['*'],
-      editor: ['read', 'update'],
-      viewer: ['read'],
-    },
-    sectionAccessDefaults,
-  });
-
   // Salva in AppConfig
   await prisma.appConfig.upsert({
     where: { key: 'rbac.sectionAccessDefaults' },
     update: {
-      value: JSON.stringify(validated.sectionAccessDefaults),
+      value: JSON.stringify(sectionAccessDefaults),
       isEncrypted: false,
       updatedAt: new Date(),
     },
     create: {
       key: 'rbac.sectionAccessDefaults',
-      value: JSON.stringify(validated.sectionAccessDefaults),
+      value: JSON.stringify(sectionAccessDefaults),
       isEncrypted: false,
     },
   });

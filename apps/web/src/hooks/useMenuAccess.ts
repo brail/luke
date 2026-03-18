@@ -25,7 +25,6 @@ export function useMenuAccess() {
       storage: s.settings && s['settings.storage'],
       mail: s.settings && s['settings.mail'],
       ldap: s.settings && s['settings.ldap'],
-      access: s.settings && s['settings.access'],
     };
     const showSettings = Object.values(settingsItems).some(Boolean);
 

@@ -15,7 +15,6 @@ export const sectionEnum = z.enum([
   'settings.storage',
   'settings.mail',
   'settings.ldap',
-  'settings.access',
   // Manutenzione e relative sotto-sezioni
   'maintenance',
   'maintenance.config',
@@ -40,7 +39,6 @@ export const SECTION_TO_PERMISSION: Record<Section, string> = {
   'settings.storage': 'config:read',
   'settings.mail': 'config:read',
   'settings.ldap': 'config:read',
-  'settings.access': 'config:read',
   maintenance: 'maintenance:read',
   'maintenance.config': 'maintenance:read',
   'maintenance.import_export': 'maintenance:read',
@@ -77,7 +75,6 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       'settings.storage': true,
       'settings.mail': true,
       'settings.ldap': true,
-      'settings.access': true,
       maintenance: true,
       'maintenance.config': true,
       'maintenance.import_export': true,
@@ -94,7 +91,6 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       'settings.storage': false,
       'settings.mail': false,
       'settings.ldap': false,
-      'settings.access': false,
       maintenance: false,
       'maintenance.config': false,
       'maintenance.import_export': false,
@@ -111,7 +107,6 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       'settings.storage': false,
       'settings.mail': false,
       'settings.ldap': false,
-      'settings.access': false,
       maintenance: false,
       'maintenance.config': false,
       'maintenance.import_export': false,
@@ -121,29 +116,3 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
     },
   };
 
-/**
- * Enum per i default di accesso alle sezioni (legacy — per rbacConfig in DB)
- */
-export const sectionDefaultEnum = z.enum(['auto', 'enabled', 'disabled']);
-export type SectionDefault = z.infer<typeof sectionDefaultEnum>;
-
-/**
- * Schema per la configurazione RBAC completa (legacy — usato dal router rbac)
- */
-export const rbacConfigSchema = z.object({
-  /** Mapping ruoli -> permessi (esistente) */
-  roleToPermissions: z.record(z.string(), z.array(z.string())),
-
-  /** Default di accesso alle sezioni per ruolo */
-  sectionAccessDefaults: z
-    .record(
-      z.string(), // role name
-      z.record(sectionEnum, sectionDefaultEnum) // per ogni role, mapping sezione->default
-    )
-    .default({}),
-});
-
-/**
- * Tipo TypeScript per la configurazione RBAC
- */
-export type RbacConfig = z.infer<typeof rbacConfigSchema>;

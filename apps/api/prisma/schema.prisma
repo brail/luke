@@ -53,10 +53,6 @@ model User {
   auditLogs  AuditLog[]
   tokens     UserToken[]
   sectionAccess UserSectionAccess[]
-  grantedPermissions UserGrantedPermission[]
-  permissionsGrantedBy UserGrantedPermission[] @relation("PermissionGranter")
-  permissionAudits PermissionAudit[]
-  permissionAuditsAsActor PermissionAudit[] @relation("PermissionAuditActor")
   brandAccess UserBrandAccess[]
   seasonAccess UserSeasonAccess[]
 
@@ -265,54 +261,6 @@ model UserPreference {
   @@map("user_preferences")
 }
 
-/**
- * Permissions espliciti concessi agli utenti
- * Integra le permissions di base definite dal ruolo
- * Supporta grant temporanei e revoca granulare
- */
-model UserGrantedPermission {
-  id        String   @id @default(uuid())
-  userId    String
-  permission String   // Formato 'resource:action' (es. 'brands:create')
-  grantedBy String?  // ID dell'admin che ha concesso (nullable per onDelete: SetNull)
-  reason    String?  // Motivo della concessione (audit)
-  expiresAt DateTime? // Null = no expiration
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  user         User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  grantedByUser User? @relation("PermissionGranter", fields: [grantedBy], references: [id], onDelete: SetNull)
-
-  @@unique([userId, permission])
-  @@index([userId])
-  @@index([permission])
-  @@index([expiresAt])
-  @@map("user_granted_permissions")
-}
-
-/**
- * Audit trail per cambamenti di permissions
- * Registra tutte le operazioni di grant, revoke, e cambamenti di ruolo
- */
-model PermissionAudit {
-  id         String   @id @default(uuid())
-  actorId    String?  // Admin che ha effettuato l'azione (nullable per onDelete: SetNull)
-  action     String   // 'GRANT' | 'REVOKE' | 'ROLE_CHANGE' | 'PERMISSION_EXPIRED'
-  userId     String   // Utente interessato
-  permission String?  // Permission interessata (null per ROLE_CHANGE)
-  oldRole    Role?    // Ruolo precedente (per ROLE_CHANGE)
-  newRole    Role?    // Nuovo ruolo (per ROLE_CHANGE)
-  reason     String?  // Motivo dell'azione
-  createdAt  DateTime @default(now())
-
-  actor User? @relation("PermissionAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
-  user  User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([action, createdAt])
-  @@index([userId])
-  @@index([actorId])
-  @@map("permission_audits")
-}
 
 /**
  * Set di parametri di pricing per brand+season

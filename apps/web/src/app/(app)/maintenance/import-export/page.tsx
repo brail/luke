@@ -7,6 +7,7 @@ import { SectionCard } from '../../../../components/SectionCard';
 import { Button } from '../../../../components/ui/button';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
+import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
 
 const EXPORT_TYPES = [
@@ -16,6 +17,9 @@ const EXPORT_TYPES = [
 ] as const;
 
 export default function MaintenanceImportExportPage() {
+  const { can } = usePermission();
+  const canUpdate = can('config:update');
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [exportType, setExportType] = useState<string>('users');
   const [importResult, setImportResult] = useState<{
@@ -99,7 +103,7 @@ export default function MaintenanceImportExportPage() {
 
         <Button
           onClick={handleImport}
-          disabled={!selectedFile || importMutation.isPending}
+          disabled={!canUpdate || !selectedFile || importMutation.isPending}
           className="w-full"
         >
           {importMutation.isPending ? 'Import in corso...' : 'Avvia Import'}
@@ -144,7 +148,7 @@ export default function MaintenanceImportExportPage() {
 
         <Button
           onClick={handleExport}
-          disabled={exportMutation.isPending}
+          disabled={!canUpdate || exportMutation.isPending}
           className="w-full"
         >
           {exportMutation.isPending ? 'Export in corso...' : 'Avvia Export'}

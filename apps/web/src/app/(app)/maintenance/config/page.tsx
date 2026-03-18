@@ -16,6 +16,7 @@ import { SectionCard } from '../../../../components/SectionCard';
 import { ErrorBoundary } from '../../../../components/system/ErrorBoundary';
 import { Button } from '../../../../components/ui/button';
 import { Skeleton } from '../../../../components/ui/skeleton';
+import { usePermission } from '../../../../hooks/usePermission';
 import {
   useConfigQuery,
   type ConfigFormData,
@@ -38,6 +39,9 @@ import {
  * il boilerplate del componente.
  */
 export default function MaintenanceConfigPage() {
+  const { can } = usePermission();
+  const canUpdate = can('config:update');
+
   // Stati per ricerca e filtri
   const [searchTerm, setSearchTerm] = useState('');
   const [filterEncrypted, setFilterEncrypted] = useState<boolean | undefined>();
@@ -169,11 +173,12 @@ export default function MaintenanceConfigPage() {
 
           {/* Azioni in seconda riga */}
           <div className="flex gap-2 mt-4">
-            <ConfigExportButton />
+            <ConfigExportButton disabled={!canUpdate} />
             <Button
               variant="outline"
               size="sm"
               onClick={handleOpenImport}
+              disabled={!canUpdate}
               className="flex items-center gap-2"
             >
               <Upload className="w-4 h-4" />
@@ -181,6 +186,7 @@ export default function MaintenanceConfigPage() {
             </Button>
             <Button
               onClick={handleNewConfig}
+              disabled={!canUpdate}
               className="flex items-center gap-2"
             >
               Nuova Config
@@ -243,6 +249,7 @@ export default function MaintenanceConfigPage() {
                 sortBy={sortBy}
                 sortDir={sortDir}
                 onSort={handleSort}
+                canUpdate={canUpdate}
               />
 
               {data.total > pageSize && (
@@ -261,7 +268,7 @@ export default function MaintenanceConfigPage() {
               <p className="text-muted-foreground mb-4">
                 Nessuna configurazione trovata
               </p>
-              <Button onClick={handleNewConfig}>
+              <Button onClick={handleNewConfig} disabled={!canUpdate}>
                 Aggiungi la prima configurazione
               </Button>
             </div>

@@ -90,9 +90,7 @@ export default function StoragePage() {
   });
 
   const { data: existingConfig, isLoading: isLoadingConfig } =
-    trpc.storage.getConfig.useQuery(undefined, {
-      enabled: canUpdate,
-    });
+    trpc.storage.getConfig.useQuery(undefined);
 
   // Ottieni la mutation tRPC per passare mutateAsync
   const saveConfigMutation = trpc.storage.saveConfig.useMutation();
@@ -191,17 +189,6 @@ export default function StoragePage() {
     );
   }
 
-  if (!canUpdate) {
-    return (
-      <div className="p-8">
-        <div className="rounded-lg border border-destructive bg-destructive/10 p-4 text-destructive">
-          Non hai i permessi per accedere a questa pagina. Contatta un
-          amministratore.
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -237,7 +224,7 @@ export default function StoragePage() {
                         <Input
                           {...field}
                           placeholder="/var/lib/luke/storage"
-                          disabled={isLoadingConfig || isSavingConfig}
+                          disabled={!canUpdate || isLoadingConfig || isSavingConfig}
                         />
                       </FormControl>
                       <FormDescription>
@@ -267,7 +254,7 @@ export default function StoragePage() {
                           type="number"
                           min={1}
                           max={1000}
-                          disabled={isLoadingConfig || isSavingConfig}
+                          disabled={!canUpdate || isLoadingConfig || isSavingConfig}
                         />
                       </FormControl>
                       <FormDescription>
@@ -305,7 +292,7 @@ export default function StoragePage() {
                                       : current.filter(b => b !== bucket)
                                   );
                                 }}
-                                disabled={isLoadingConfig || isSavingConfig}
+                                disabled={!canUpdate || isLoadingConfig || isSavingConfig}
                                 className="rounded border-gray-300"
                               />
                               <span className="capitalize">{bucket}</span>
@@ -352,13 +339,13 @@ export default function StoragePage() {
                     type="button"
                     variant="outline"
                     onClick={() => form.reset()}
-                    disabled={isLoadingConfig || isSavingConfig}
+                    disabled={!canUpdate || isLoadingConfig || isSavingConfig}
                   >
                     Reset
                   </Button>
                   <Button
                     type="submit"
-                    disabled={isLoadingConfig || isSavingConfig}
+                    disabled={!canUpdate || isLoadingConfig || isSavingConfig}
                   >
                     {isSavingConfig ? 'Salvataggio...' : 'Salva Configurazione'}
                   </Button>
@@ -566,7 +553,7 @@ export default function StoragePage() {
               <div className="flex space-x-4">
                 <Button
                   onClick={handleSaveExternalConfig}
-                  disabled={saveExternalConfigMutation.isPending}
+                  disabled={!canUpdate || saveExternalConfigMutation.isPending}
                   className="flex-1"
                 >
                   {saveExternalConfigMutation.isPending
@@ -575,7 +562,7 @@ export default function StoragePage() {
                 </Button>
                 <Button
                   onClick={handleTestConnection}
-                  disabled={testConnectionQuery.isFetching}
+                  disabled={!canUpdate || testConnectionQuery.isFetching}
                   variant="outline"
                   className="flex-1"
                 >

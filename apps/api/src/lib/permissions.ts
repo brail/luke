@@ -16,7 +16,6 @@ import {
 import type { Role } from '@luke/core';
 import { t } from './t';
 import type { Context } from './context';
-import { loadUserGrants } from '../services/permissions.service';
 
 /**
  * Cache per-request delle permissions verificate
@@ -89,17 +88,9 @@ export function requirePermission(
       ctx._permissionsCache = new Map();
     }
 
-    // Carica user grants una sola volta per request
-    if (!ctx.userGrants && user.id) {
-      try {
-        ctx.userGrants = await loadUserGrants(ctx.prisma, user.id);
-      } catch (error) {
-        ctx.logger?.warn(
-          { userId: user.id, error },
-          'Failed to load user grants'
-        );
-        ctx.userGrants = [];
-      }
+    // Grants espliciti rimossi — sempre array vuoto (sistema grants deprecato)
+    if (!ctx.userGrants) {
+      ctx.userGrants = [];
     }
 
     // Verifica se l'utente ha almeno una delle permissions richieste (OR logic)

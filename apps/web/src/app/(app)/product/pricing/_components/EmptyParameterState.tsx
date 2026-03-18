@@ -15,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../../components/ui/dialog';
+import { usePermission } from '../../../../../hooks/usePermission';
 import { trpc } from '../../../../../lib/trpc';
 
 import { ParameterSetDialog } from './ParameterSetDialog';
@@ -32,6 +33,9 @@ export function EmptyParameterState({
   onCreateSet,
   isLoading = false,
 }: EmptyParameterStateProps) {
+  const { can } = usePermission();
+  const canUpdate = can('pricing:update');
+
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isCopyPreviewOpen, setIsCopyPreviewOpen] = useState(false);
 
@@ -86,7 +90,7 @@ export function EmptyParameterState({
           <Button
             variant="outline"
             onClick={() => setIsCopyPreviewOpen(true)}
-            disabled={isLoading}
+            disabled={!canUpdate || isLoading}
           >
             <Copy className="h-4 w-4 mr-2" />
             Copia da {previousSeason?.code} {previousSeason?.year}
@@ -94,7 +98,7 @@ export function EmptyParameterState({
         )}
         <Button
           onClick={() => setIsCreateDialogOpen(true)}
-          disabled={isLoading}
+          disabled={!canUpdate || isLoading}
         >
           <Plus className="h-4 w-4 mr-2" />
           Inserisci da zero
@@ -136,7 +140,7 @@ export function EmptyParameterState({
             >
               Annulla
             </Button>
-            <Button onClick={handleCopyAndCreate} disabled={isLoading}>
+            <Button onClick={handleCopyAndCreate} disabled={!canUpdate || isLoading}>
               Conferma copia
             </Button>
           </DialogFooter>

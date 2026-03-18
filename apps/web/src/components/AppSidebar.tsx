@@ -8,7 +8,6 @@ import {
   HardDrive,
   Mail,
   Shield,
-  ShieldPlus,
   Wrench,
   ChevronDown,
   LogOut,
@@ -227,14 +226,6 @@ export default function AppSidebar() {
                           <Link href="/settings/ldap" className="flex items-center">
                             <Shield className="mr-2 h-4 w-4" />
                             <span>Auth LDAP</span>
-                          </Link>
-                        </DropdownMenuItem>
-                      )}
-                      {menuAccess.settingsItems.access && (
-                        <DropdownMenuItem asChild>
-                          <Link href="/settings/access" className="flex items-center">
-                            <ShieldPlus className="mr-2 h-4 w-4" />
-                            <span>Accesso</span>
                           </Link>
                         </DropdownMenuItem>
                       )}

@@ -1,5 +1,7 @@
 import { canPerform } from '../rbac';
-import type { Section, SectionDefault } from '../schemas/rbac';
+import type { Section } from '../schemas/rbac';
+
+type SectionDefault = 'auto' | 'enabled' | 'disabled';
 
 /**
  * Parametri per la valutazione dell'accesso effettivo

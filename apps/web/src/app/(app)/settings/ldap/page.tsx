@@ -86,9 +86,7 @@ export default function LdapSettingsPage() {
     data: existingConfig,
     isLoading: isLoadingConfig,
     error: configError,
-  } = trpc.integrations.auth.getLdapConfig.useQuery(undefined, {
-    enabled: canUpdate,
-  });
+  } = trpc.integrations.auth.getLdapConfig.useQuery(undefined);
 
   // Aggiorna form quando arriva la configurazione esistente
   useEffect(() => {
@@ -173,32 +171,6 @@ export default function LdapSettingsPage() {
     );
   }
 
-  if (!canUpdate) {
-    return (
-      <SettingsFormShell
-        title="Configurazione LDAP"
-        description="Accesso negato"
-      >
-        <SectionCard
-          title="Accesso Negato"
-          description="Permessi insufficienti"
-        >
-          <div className="text-center space-y-4">
-            <div className="text-destructive text-lg font-semibold">
-              Accesso Negato
-            </div>
-            <p className="text-muted-foreground">
-              Non hai i permessi per gestire la configurazione LDAP.
-            </p>
-            <Button asChild variant="outline">
-              <a href="/dashboard">Torna alla Dashboard</a>
-            </Button>
-          </div>
-        </SectionCard>
-      </SettingsFormShell>
-    );
-  }
-
   const onSubmit = (data: LdapConfigInput) => {
     // Prepara payload escludendo bindPassword se vuoto
     const { bindPassword, ...payloadWithoutPassword } = data;
@@ -268,6 +240,7 @@ export default function LdapSettingsPage() {
                     <Switch
                       checked={field.value}
                       onCheckedChange={field.onChange}
+                      disabled={!canUpdate}
                     />
                   </FormControl>
                 </FormItem>
@@ -284,6 +257,7 @@ export default function LdapSettingsPage() {
                   <Select
                     onValueChange={field.onChange}
                     defaultValue={field.value}
+                    disabled={!canUpdate}
                   >
                     <FormControl>
                       <SelectTrigger>
@@ -327,7 +301,7 @@ export default function LdapSettingsPage() {
                     <FormControl>
                       <Input
                         placeholder="ldap://server.example.com:389"
-                        disabled={!form.watch('enabled')}
+                        disabled={!canUpdate || !form.watch('enabled')}
                         {...field}
                       />
                     </FormControl>
@@ -351,7 +325,7 @@ export default function LdapSettingsPage() {
                     <FormControl>
                       <Input
                         placeholder="dc=example,dc=com"
-                        disabled={!form.watch('enabled')}
+                        disabled={!canUpdate || !form.watch('enabled')}
                         {...field}
                       />
                     </FormControl>
@@ -375,7 +349,7 @@ export default function LdapSettingsPage() {
                     <FormControl>
                       <Input
                         placeholder="(uid=${username})"
-                        disabled={!form.watch('enabled')}
+                        disabled={!canUpdate || !form.watch('enabled')}
                         {...field}
                       />
                     </FormControl>
@@ -398,7 +372,7 @@ export default function LdapSettingsPage() {
                     <FormControl>
                       <Input
                         placeholder="ou=groups,dc=example,dc=com"
-                        disabled={!form.watch('enabled')}
+                        disabled={!canUpdate || !form.watch('enabled')}
                         {...field}
                       />
                     </FormControl>
@@ -420,7 +394,7 @@ export default function LdapSettingsPage() {
                     <FormControl>
                       <Input
                         placeholder="(member=${userDN})"
-                        disabled={!form.watch('enabled')}
+                        disabled={!canUpdate || !form.watch('enabled')}
                         {...field}
                       />
                     </FormControl>
@@ -444,7 +418,7 @@ export default function LdapSettingsPage() {
                   description="DN dell'account amministrativo per cercare gli utenti"
                   hasValue={hasBindDN}
                   placeholder="cn=admin,dc=example,dc=com"
-                  disabled={!form.watch('enabled')}
+                  disabled={!canUpdate || !form.watch('enabled')}
                   field={field}
                 />
               )}
@@ -460,7 +434,7 @@ export default function LdapSettingsPage() {
                   description="Password dell'account amministrativo"
                   hasValue={hasBindPassword}
                   placeholder="Inserisci password"
-                  disabled={!form.watch('enabled')}
+                  disabled={!canUpdate || !form.watch('enabled')}
                   field={field}
                 />
               )}
@@ -480,7 +454,7 @@ export default function LdapSettingsPage() {
   "CN=Editors,DC=example,DC=com": "editor",
   "CN=Users,DC=example,DC=com": "viewer"
 }`}
-                      disabled={!form.watch('enabled')}
+                      disabled={!canUpdate || !form.watch('enabled')}
                       className="min-h-[120px] font-mono"
                       {...field}
                     />
@@ -501,6 +475,7 @@ export default function LdapSettingsPage() {
                 variant="outline"
                 onClick={handleTestConnection}
                 disabled={
+                  !canUpdate ||
                   saveConfigMutation.isPending ||
                   testConnectionMutation.isPending
                 }
@@ -515,7 +490,9 @@ export default function LdapSettingsPage() {
                 variant="outline"
                 onClick={handleTestSearch}
                 disabled={
-                  saveConfigMutation.isPending || testSearchMutation.isPending
+                  !canUpdate ||
+                  saveConfigMutation.isPending ||
+                  testSearchMutation.isPending
                 }
                 aria-busy={testSearchMutation.isPending}
               >
@@ -538,6 +515,7 @@ export default function LdapSettingsPage() {
                 variant="outline"
                 onClick={() => form.reset()}
                 disabled={
+                  !canUpdate ||
                   saveConfigMutation.isPending ||
                   testConnectionMutation.isPending ||
                   testSearchMutation.isPending
@@ -548,6 +526,7 @@ export default function LdapSettingsPage() {
               <Button
                 type="submit"
                 disabled={
+                  !canUpdate ||
                   saveConfigMutation.isPending ||
                   testConnectionMutation.isPending ||
                   testSearchMutation.isPending
