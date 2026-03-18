@@ -162,8 +162,7 @@ export async function getConfigValue(
     });
 
     return config?.value ?? defaultValue;
-  } catch (error) {
-    console.warn(`Failed to get config value for key '${key}':`, error);
+  } catch {
     return defaultValue;
   }
 }
@@ -188,8 +187,8 @@ export async function getApiBaseUrlFromConfig(
     if (config) {
       return config;
     }
-  } catch (error) {
-    console.warn('Failed to get API base URL from AppConfig:', error);
+  } catch {
+    // silently fall through to localhost default
   }
 
   // Fallback to localhost
@@ -216,8 +215,8 @@ export async function getFrontendBaseUrlFromConfig(
     if (config) {
       return config;
     }
-  } catch (error) {
-    console.warn('Failed to get frontend base URL from AppConfig:', error);
+  } catch {
+    // silently fall through to localhost default
   }
 
   // Fallback to localhost

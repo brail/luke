@@ -27,7 +27,7 @@ import { getOverride } from '../services/sectionAccess.service';
  * @returns Middleware tRPC
  */
 export function withSectionAccess(section: Section) {
-  return t.middleware(async ({ ctx, next }: { ctx: any; next: any }) => {
+  return t.middleware(async ({ ctx, next }) => {
     if (!ctx.session?.user) {
       throw new TRPCError({
         code: 'UNAUTHORIZED',

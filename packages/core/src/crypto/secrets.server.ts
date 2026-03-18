@@ -49,8 +49,6 @@ export function getMasterKey(): Buffer {
     // Genera nuova master key
     const masterKey = randomBytes(KEY_LENGTH);
     writeFileSync(MASTER_KEY_PATH, masterKey, { mode: 0o600 });
-
-    console.log(`🔑 Master key creata in: ${MASTER_KEY_PATH}`);
   }
 
   const keyBuffer = readFileSync(MASTER_KEY_PATH);
@@ -91,8 +89,7 @@ export function deriveSecret(purpose: string): string {
       .replace(/\+/g, '-')
       .replace(/\//g, '_')
       .replace(/=/g, '');
-  } catch (error) {
-    console.error(`❌ Errore derivazione segreto per '${purpose}':`, error);
+  } catch {
     throw new Error(`Impossibile derivare segreto per scopo: ${purpose}`);
   }
 }
@@ -109,11 +106,8 @@ export function deriveSecret(purpose: string): string {
  */
 export function getNextAuthSecret(): string {
   try {
-    const secret = deriveSecret(HKDF_INFO_NEXTAUTH);
-    console.log('🔐 NextAuth secret derivato via HKDF-SHA256');
-    return secret;
-  } catch (error) {
-    console.error('❌ Errore derivazione NextAuth secret:', error);
+    return deriveSecret(HKDF_INFO_NEXTAUTH);
+  } catch {
     throw new Error('Impossibile derivare NextAuth secret dalla master key');
   }
 }
@@ -130,11 +124,8 @@ export function getNextAuthSecret(): string {
  */
 export function getApiJwtSecret(): string {
   try {
-    const secret = deriveSecret(HKDF_INFO_API_JWT);
-    console.log('🔐 API JWT secret derivato via HKDF-SHA256');
-    return secret;
-  } catch (error) {
-    console.error('❌ Errore derivazione API JWT secret:', error);
+    return deriveSecret(HKDF_INFO_API_JWT);
+  } catch {
     throw new Error('Impossibile derivare API JWT secret dalla master key');
   }
 }

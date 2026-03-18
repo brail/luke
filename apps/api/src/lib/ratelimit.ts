@@ -292,7 +292,7 @@ export function extractRateLimitKey(
  * @returns Middleware tRPC
  */
 export function withRateLimit(routeName: keyof typeof RATE_LIMIT_CONFIG) {
-  return t.middleware(async ({ ctx, next }: { ctx: any; next: any }) => {
+  return t.middleware(async ({ ctx, next }) => {
     try {
       // Risolvi policy dinamicamente
       const config = await resolveRateLimitPolicy(

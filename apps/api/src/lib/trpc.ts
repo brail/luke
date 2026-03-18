@@ -7,6 +7,8 @@ import { randomUUID } from 'crypto';
 
 import { TRPCError } from '@trpc/server';
 
+import type { FastifyReply, FastifyRequest } from 'fastify';
+
 import { authenticateRequest } from './auth';
 import { getTokenVersionCacheTTL } from './configManager';
 import { t } from './t';
@@ -110,8 +112,8 @@ export async function createContext({
   res,
 }: {
   prisma: PrismaClient;
-  req: any;
-  res: any;
+  req: FastifyRequest;
+  res: FastifyReply;
 }): Promise<Context> {
   // Autentica la richiesta e ottieni la sessione
   const session = await authenticateRequest(req, res);

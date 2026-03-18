@@ -1,6 +1,9 @@
 # External apps (not part of the monorepo)
 EXTERNAL_APPS/
 
+# Claude Code local settings
+.claude/
+
 # Dependencies
 node_modules/
 .pnpm-store/
@@ -27,6 +30,7 @@ build/
 *.db
 *.db-shm
 *.db-wal
+*.db.backup*
 
 # Logs
 *.log

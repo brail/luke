@@ -73,7 +73,7 @@ export function requirePermission(
     ? declaration.required
     : [declaration.required];
 
-  return t.middleware(async ({ ctx, next }: { ctx: any; next: any }) => {
+  return t.middleware(async ({ ctx, next }) => {
     // Verifica autenticazione
     if (!ctx.session?.user) {
       throw new TRPCError({

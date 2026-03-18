@@ -50,11 +50,8 @@ export async function getRbacConfig(
   if (config) {
     try {
       sectionAccessDefaults = JSON.parse(config.value);
-    } catch (error) {
-      console.warn(
-        'Errore parsing rbac.sectionAccessDefaults, usando default vuoto:',
-        error
-      );
+    } catch {
+      // parsing error — usa default vuoto
     }
   }
 
@@ -129,11 +126,7 @@ export async function getSectionsDisabled(
   try {
     const parsed = JSON.parse(config.value);
     return z.array(z.string()).parse(parsed);
-  } catch (error) {
-    console.warn(
-      'Errore parsing app.sections.disabled, usando array vuoto:',
-      error
-    );
+  } catch {
     return [];
   }
 }
