@@ -497,10 +497,68 @@ function setupGracefulShutdown() {
 }
 
 /**
+ * POLICY: Bootstrap env guard (API server)
+ *
+ * Solo variabili di infrastruttura sono ammesse in process.env.
+ * Qualsiasi configurazione applicativa (credenziali, segreti, endpoint esterni)
+ * deve vivere in AppConfig (database). Se viene rilevata una variabile vietata:
+ *   - in produzione: il server termina con exit(1)
+ *   - in sviluppo: viene emesso un warning esplicito
+ *
+ * Variabili ammesse (API):
+ *   DATABASE_URL              — Prisma, necessario prima del boot DB
+ *   PORT, HOST                — bind server
+ *   NODE_ENV, npm_package_version — runtime standard
+ *   LUKE_CORS_ALLOWED_ORIGINS — override CORS di deploy (non segreto)
+ *   OTEL_*, LOG_LEVEL         — observability infra
+ *
+ * Eccezioni web container (non toccate da questo guard):
+ *   NEXTAUTH_SECRET, NEXTAUTH_URL — vincolo framework NextAuth
+ *   INTERNAL_API_URL              — Next.js rewrites, risolto a build-time
+ *   NEXT_PUBLIC_*                 — baked nel bundle client, impossibile da DB
+ *   COOKIE_SECURE                 — setting deploy HTTP vs HTTPS
+ */
+const FORBIDDEN_ENV_PATTERNS: RegExp[] = [
+  /^SMTP_/i,
+  /^LDAP_/i,
+  /^JWT_/i,
+  /^NEXTAUTH_/i,
+  /.*_SECRET$/i,
+  /.*_PASSWORD$/i,
+  /.*_API_KEY$/i,
+  /.*_TOKEN$/i,
+];
+
+function assertEnvPolicy(): void {
+  const violations = Object.keys(process.env).filter(key =>
+    FORBIDDEN_ENV_PATTERNS.some(p => p.test(key))
+  );
+
+  if (violations.length === 0) return;
+
+  const msg = `[env-policy] Variabili applicative trovate in process.env — devono stare in AppConfig: ${violations.join(', ')}`;
+
+  if (isProduction()) {
+    // In produzione è un errore bloccante: un .env con segreti è inaccettabile
+    // eslint-disable-next-line no-console
+    console.error(msg);
+    process.exit(1);
+  } else {
+    // In sviluppo è un warning: potrebbe essere intenzionale durante il debug
+    // Il log Fastify non è ancora disponibile a questo punto, usiamo console
+    // eslint-disable-next-line no-console
+    console.warn(msg);
+  }
+}
+
+/**
  * Avvia il server
  */
 const start = async () => {
   try {
+    // Verifica policy env var PRIMA di tutto il resto
+    assertEnvPolicy();
+
     // Test connessione database
     await prisma.$connect();
     fastify.log.info('Connessione database stabilita');

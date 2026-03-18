@@ -419,7 +419,6 @@ export async function requestPasswordReset(ctx: Context, email: string) {
 
   const baseUrl =
     (await getConfig(ctx.prisma, 'app.baseUrl', false)) ||
-    process.env.APP_BASE_URL ||
     'http://localhost:3000';
 
   try {
@@ -631,7 +630,6 @@ export async function requestEmailVerification(ctx: Context, email: string) {
 
   const baseUrl =
     (await getConfig(ctx.prisma, 'app.baseUrl', false)) ||
-    process.env.APP_BASE_URL ||
     'http://localhost:3000';
 
   try {

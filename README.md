@@ -113,7 +113,7 @@ pnpm --filter @luke/core build  # Solo core package
 
 ### Configurazione
 
-- **Nessun .env**: Tutte le configurazioni sono in database (AppConfig)
+- **Config-in-DB**: Tutte le configurazioni applicative (credenziali, segreti, endpoint) vivono in AppConfig (database). I file `.env` sono riservati esclusivamente al bootstrap infrastrutturale — vedi [Policy env var](#policy-env-var)
 - **Cifratura**: AES-256-GCM per segreti sensibili
 - **Principio "mai decrypt in bulk"**: liste configurazioni non espongono mai valori cifrati in chiaro
 - **Visualizzazione controllata**: modalità masked/raw con audit obbligatorio per raw
@@ -130,7 +130,7 @@ pnpm --filter @luke/core build  # Solo core package
 - **Derivazione**: HKDF-SHA256 (RFC 5869) dalla master key
 - **Parametri HKDF**: salt='luke', info domain-specific, length=32 bytes
 - **Claim standard**: `iss: 'urn:luke'`, `aud: 'luke.api'`, `exp`, `nbf`
-- **Clock tolerance**: ±60 secondi per gestire skew temporale
+- **Clock tolerance**: ±30 secondi per gestire skew temporale
 - **Domini isolati**:
   - `api.jwt` → JWT API backend
   - `nextauth.secret` → NextAuth web sessions
@@ -149,8 +149,8 @@ pnpm --filter @luke/core build  # Solo core package
 ### Autenticazione
 
 - **Config-driven**: Local → LDAP → OIDC (configurabile via DB)
-- **RBAC**: Role-based access control con `@luke/core`
-- **Guardie middleware**: `withRole()`, `roleIn()`, `adminOnly`, `adminOrEditor`
+- **RBAC**: Resource:Action permissions con `@luke/core`
+- **Guardie middleware**: `requirePermission('resource:action')` in `apps/api/src/lib/permissions.ts`
 - **Audit**: Log completo di tutte le mutazioni
 
 ### Security — Session Invalidation & Hardening
@@ -160,7 +160,7 @@ pnpm --filter @luke/core build  # Solo core package
 - **NextAuth JWT**: `maxAge: 8h`, `updateAge: 4h` (refresh automatico ogni 4h)
 - **API JWT**: `expiresIn: 8h` (allineato con NextAuth)
 - **Cookie Policy**: `httpOnly: true`, `secure: production`, `sameSite: 'lax'`
-- **Clock Tolerance**: `±30s` (ridotto da 60s per maggiore sicurezza)
+- **Clock Tolerance**: `±30s`
 
 #### TokenVersion Enforcement Multi-Layer
 
@@ -272,6 +272,42 @@ Configura `auth.requireEmailVerification = true` in AppConfig per:
 - Bloccare login di utenti LOCAL con email non verificata
 - Utenti LDAP/OIDC non soggetti a verifica (autenticati esternamente)
 
+### Policy env var
+
+Luke adotta una separazione netta tra **bootstrap infrastrutturale** e **configurazione applicativa**.
+
+#### Cosa può stare in `.env` — API
+
+| Variabile | Motivo |
+|---|---|
+| `DATABASE_URL` | Prisma richiede l'URL DB prima del boot |
+| `PORT` / `HOST` | Override porta/bind opzionale |
+| `NODE_ENV` | Runtime mode |
+| `LUKE_CORS_ALLOWED_ORIGINS` | Override CORS di deploy (non segreto) |
+| `OTEL_*`, `LOG_LEVEL` | Observability infra standard |
+
+#### Cosa può stare in `.env` — Web (eccezioni framework)
+
+| Variabile | Motivo |
+|---|---|
+| `INTERNAL_API_URL` | Next.js rewrites — risolto a build-time, non disponibile a runtime |
+| `NEXT_PUBLIC_API_URL` | Baked nel bundle client-side — impossibile venire da DB nel browser |
+| `NEXTAUTH_URL`, `NEXTAUTH_SECRET` | Vincolo framework NextAuth — non può leggere da DB |
+| `COOKIE_SECURE` | Setting deploy (HTTP vs HTTPS), letto prima del DB |
+
+#### Cosa NON può stare in `.env`
+
+Qualsiasi configurazione applicativa deve vivere in **AppConfig** (database):
+credenziali SMTP, bind LDAP, chiavi API, token, `app.baseUrl`, endpoint storage, ecc.
+
+#### Enforcement automatico (API server)
+
+Al boot, `assertEnvPolicy()` in `server.ts` verifica che nessuna variabile vietata sia presente.
+Pattern bloccati: `SMTP_*`, `LDAP_*`, `JWT_*`, `NEXTAUTH_*`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, `*_TOKEN`.
+
+- **Produzione**: `exit(1)` — il server non parte
+- **Sviluppo**: warning esplicito in console
+
 ### Configurazioni Runtime
 
 Per dettagli su rate-limiting, idempotency, session management, security headers e readiness checks, consulta:
@@ -281,7 +317,7 @@ Per dettagli su rate-limiting, idempotency, session management, security headers
 
 ### Configurazioni AppConfig (Overview)
 
-Il sistema utilizza un database centralizzato (29 chiavi) per tutte le configurazioni, eliminando la necessità di file `.env`:
+Il sistema utilizza un database centralizzato (27 chiavi) per tutte le configurazioni sensibili:
 
 - **Categorie**: Auth, App, Security, Rate Limit, Integrations, On-Demand
 - **Cifratura**: AES-256-GCM per segreti sensibili (LDAP, SMTP, Storage)
