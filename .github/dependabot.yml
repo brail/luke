@@ -1,0 +1,53 @@
+version: 2
+
+updates:
+  # ── npm/pnpm dependencies ────────────────────────────────────────────────────
+  # Only security alerts — no routine update PRs (do those manually, quarterly)
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    ignore:
+      # Ignore all version updates — Dependabot will still open PRs for security fixes
+      - dependency-name: '*'
+        update-types:
+          - version-update:semver-patch
+          - version-update:semver-minor
+          - version-update:semver-major
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - security
+
+  # ── GitHub Actions ───────────────────────────────────────────────────────────
+  # Keep actions up to date automatically — low risk, no code changes
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+      timezone: Europe/Rome
+    groups:
+      actions-updates:
+        patterns: ['*']
+    labels:
+      - dependencies
+      - github-actions
+
+  # ── Docker base images ───────────────────────────────────────────────────────
+  - package-ecosystem: docker
+    directory: /apps/api
+    schedule:
+      interval: monthly
+      timezone: Europe/Rome
+    labels:
+      - dependencies
+      - docker
+
+  - package-ecosystem: docker
+    directory: /apps/web
+    schedule:
+      interval: monthly
+      timezone: Europe/Rome
+    labels:
+      - dependencies
+      - docker
