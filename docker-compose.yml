@@ -38,10 +38,11 @@ services:
       # ⚠️  Never delete this volume — all JWT tokens and sessions derive from the master key.
       - api_data:/root/.luke
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/healthz || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 60s
 
   # ── Next.js web ───────────────────────────────────────────────────────────────
   web:

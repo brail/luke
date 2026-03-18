@@ -15,19 +15,18 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 services:
-
   # ── PostgreSQL ───────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB:       luke
-      POSTGRES_USER:     luke
+      POSTGRES_DB: luke
+      POSTGRES_USER: luke
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U luke -d luke"]
+      test: ['CMD-SHELL', 'pg_isready -U luke -d luke']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -40,17 +39,17 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      NODE_ENV:        production
-      PORT:            3001
-      DATABASE_URL:    postgresql://luke:${POSTGRES_PASSWORD}@postgres:5432/luke
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://luke:${POSTGRES_PASSWORD}@postgres:5432/luke
       # CORS: browser requests go through the web container (no direct API access)
-      LUKE_CORS_ALLOWED_ORIGINS: ""
+      LUKE_CORS_ALLOWED_ORIGINS: ''
     volumes:
       # Persistent volume for master key (~/.luke/secret.key) and local file storage.
       # NEVER delete this volume — all JWT tokens derive from the master key.
       - api_data:/root/.luke
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health || exit 1"]
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3001/healthz || exit 1']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -64,16 +63,16 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "3000:3000"
+      - '3000:3000'
     environment:
-      NODE_ENV:         production
+      NODE_ENV: production
       # Internal Docker URL used by Next.js SSR and middleware
       INTERNAL_API_URL: http://api:3001
       # NextAuth
-      NEXTAUTH_URL:     http://${PUBLIC_HOSTNAME}
-      NEXTAUTH_SECRET:  ${NEXTAUTH_SECRET}
+      NEXTAUTH_URL: http://${PUBLIC_HOSTNAME}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
       # Set to "true" when serving over HTTPS, "false" for plain HTTP
-      COOKIE_SECURE:    ${COOKIE_SECURE:-false}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
 
 volumes:
   postgres_data:
