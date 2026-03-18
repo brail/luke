@@ -24,6 +24,7 @@ import { useStandardMutation } from '../../../../lib/useStandardMutation';
 import { PendingUsersTab } from './_components/PendingUsersTab';
 import { SendVerificationDialog } from './_components/SendVerificationDialog';
 import { SortColumn, SortOrder } from './_components/types';
+import { UserAccessDialog } from './_components/UserAccessDialog';
 import { UsersTable } from './_components/UsersTable';
 import { UsersToolbar } from './_components/UsersToolbar';
 
@@ -62,6 +63,9 @@ export default function UsersPage() {
   // Stato per dialog invio email verifica post-creazione
   const [createdUserId, setCreatedUserId] = useState<string | null>(null);
   const [showVerifyDialog, setShowVerifyDialog] = useState(false);
+
+  // Stato per dialog gestione accesso
+  const [accessDialogUser, setAccessDialogUser] = useState<any>(null);
 
   const refresh = useRefresh();
 
@@ -338,6 +342,7 @@ export default function UsersPage() {
                   onDisable={handleDeleteUser}
                   onHardDelete={handleHardDeleteUser}
                   onRevokeSessions={handleRevokeUserSessions}
+                  onManageAccess={setAccessDialogUser}
                 />
               )}
             </SectionCard>
@@ -405,6 +410,15 @@ export default function UsersPage() {
             }
             userEmail={confirmAction.user?.email}
             actionType={confirmAction.type}
+          />
+        )}
+
+        {/* Dialog gestione accesso sezioni + brand/season */}
+        {accessDialogUser && (
+          <UserAccessDialog
+            user={accessDialogUser}
+            open={!!accessDialogUser}
+            onOpenChange={open => { if (!open) setAccessDialogUser(null); }}
           />
         )}
 

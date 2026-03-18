@@ -4,103 +4,76 @@ import { useSession } from 'next-auth/react';
 import { useMemo } from 'react';
 
 import {
-  effectiveSectionAccess,
-  permissions,
-  hasPermission,
-  SECTION_TO_PERMISSION,
+  SECTION_ACCESS_DEFAULTS,
+  getParentSection,
 } from '@luke/core';
-import type { Section } from '@luke/core';
+import type { Role, Section } from '@luke/core';
 
 import { trpc } from '../lib/trpc';
 
 /**
  * Hook per verificare l'accesso alle sezioni per l'utente corrente
- * Integra nuovo sistema Resource:Action con UserSectionAccess legacy
  *
- * Precedenza: user override > permission check > role default
+ * Logica a 2 livelli (in ordine di precedenza):
+ * 1. Override per-utente (da UserSectionAccess in DB)
+ * 2. Default di ruolo (da SECTION_ACCESS_DEFAULTS in @luke/core)
+ *
+ * Per le sotto-sezioni (es. product.pricing), se non c'è un override specifico
+ * si controlla anche l'override della sezione padre, poi il default di ruolo.
  */
 export function useSectionAccess() {
   const { data: session } = useSession();
 
-  // Query per override dell'utente corrente (solo se admin)
   const { data: userOverrides } = trpc.sectionAccess.getForMe.useQuery(
     undefined,
     {
-      enabled: !!session?.user && session.user.role === 'admin',
-      retry: false, // Non riprovare se 403
-      // Disabilita batching per evitare batch troppo grandi
-      trpc: {
-        context: {
-          skipBatch: true,
-        },
-      },
-    }
-  );
-
-  // Query per default di ruolo (disponibile per tutti gli utenti loggati)
-  const { data: roleDefaults } = trpc.rbac.sectionDefaults.get.useQuery(
-    undefined,
-    {
       enabled: !!session?.user,
       retry: false,
-    }
-  );
-
-  // Query per sezioni disabilitate globalmente
-  const { data: disabledSections } = trpc.rbac.disabledSections.get.useQuery(
-    undefined,
-    {
-      enabled: !!session?.user,
-      retry: false,
+      trpc: { context: { skipBatch: true } },
     }
   );
 
   const sectionAccess = useMemo(() => {
-    if (!session?.user) {
-      return {
-        dashboard: false,
-        settings: false,
-        maintenance: false,
-      };
-    }
-
-    const userRole = session.user.role as string;
-    const rolePermissions =
-      permissions[userRole as keyof typeof permissions] || {};
+    const role = session?.user?.role as Role | undefined;
 
     const checkAccess = (section: Section): boolean => {
-      // 1) User override: se l'utente ha un override specifico, rispettalo
+      // 1. Override specifico per questa sezione
       const override = userOverrides?.find(o => o.section === section);
       if (override?.enabled === false) return false;
       if (override?.enabled === true) return true;
 
-      // 2) Nuovo sistema permissions: verifica permission specifica
-      const permission = SECTION_TO_PERMISSION[section];
-      if (
-        permission &&
-        hasPermission({ role: userRole as any }, permission as any)
-      ) {
-        return true;
+      // 2. Override sulla sezione padre (per le sotto-sezioni)
+      const parent = getParentSection(section);
+      if (parent) {
+        const parentOverride = userOverrides?.find(o => o.section === parent);
+        if (parentOverride?.enabled === false) return false;
+        // parent enabled → fallthrough to role default for this sub-section
       }
 
-      // 3) Fallback: sistema legacy effectiveSectionAccess
-      return effectiveSectionAccess({
-        role: userRole,
-        roleToPermissions: rolePermissions,
-        sectionAccessDefaults: roleDefaults || {},
-        userOverride: override ? { enabled: override.enabled } : undefined,
-        section,
-        disabledSections: disabledSections || [],
-      });
+      // 3. Default di ruolo
+      if (!role) return false;
+      const roleDefaults = SECTION_ACCESS_DEFAULTS[role];
+      return roleDefaults?.[section] ?? false;
     };
 
     return {
       dashboard: checkAccess('dashboard'),
       settings: checkAccess('settings'),
+      'settings.users': checkAccess('settings.users'),
+      'settings.brands': checkAccess('settings.brands'),
+      'settings.seasons': checkAccess('settings.seasons'),
+      'settings.storage': checkAccess('settings.storage'),
+      'settings.mail': checkAccess('settings.mail'),
+      'settings.ldap': checkAccess('settings.ldap'),
+      'settings.access': checkAccess('settings.access'),
       maintenance: checkAccess('maintenance'),
+      'maintenance.config': checkAccess('maintenance.config'),
+      'maintenance.import_export': checkAccess('maintenance.import_export'),
       product: checkAccess('product'),
+      'product.pricing': checkAccess('product.pricing'),
+      'product.collection_layout': checkAccess('product.collection_layout'),
     };
-  }, [session?.user, userOverrides, roleDefaults, disabledSections]);
+  }, [session?.user, userOverrides]);
 
   return sectionAccess;
 }

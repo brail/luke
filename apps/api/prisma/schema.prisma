@@ -57,6 +57,8 @@ model User {
   permissionsGrantedBy UserGrantedPermission[] @relation("PermissionGranter")
   permissionAudits PermissionAudit[]
   permissionAuditsAsActor PermissionAudit[] @relation("PermissionAuditActor")
+  brandAccess UserBrandAccess[]
+  seasonAccess UserSeasonAccess[]
 
   @@map("users")
 }
@@ -187,6 +189,8 @@ model Brand {
 
   pricingParameterSets PricingParameterSet[]
   collectionLayouts    CollectionLayout[]
+  userBrandAccess      UserBrandAccess[]
+  userSeasonAccess     UserSeasonAccess[]
 
   @@index([name])
   @@index([isActive, name])
@@ -204,10 +208,49 @@ model Season {
 
   pricingParameterSets PricingParameterSet[]
   collectionLayouts    CollectionLayout[]
+  userSeasonAccess     UserSeasonAccess[]
 
   @@unique([code, year])
   @@index([code, year])
   @@map("seasons")
+}
+
+/**
+ * Whitelist brand per utente.
+ * Se NON esistono righe per un utente → accesso a tutti i brand (default).
+ * Se esistono righe → accesso solo ai brand elencati.
+ */
+model UserBrandAccess {
+  id      String @id @default(uuid())
+  userId  String
+  brandId String
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, brandId])
+  @@index([userId])
+  @@map("user_brand_access")
+}
+
+/**
+ * Whitelist stagioni per utente+brand.
+ * Se NON esistono righe per (userId, brandId) → accesso a tutte le stagioni di quel brand.
+ * Se esistono righe → accesso solo alle stagioni elencate.
+ */
+model UserSeasonAccess {
+  id       String @id @default(uuid())
+  userId   String
+  brandId  String
+  seasonId String
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brand  Brand  @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  season Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, brandId, seasonId])
+  @@index([userId, brandId])
+  @@map("user_season_access")
 }
 
 model UserPreference {

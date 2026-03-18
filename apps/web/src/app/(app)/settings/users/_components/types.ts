@@ -46,6 +46,7 @@ export interface UserActionHandlers {
   onDisable: (user: UserListItem) => void;
   onHardDelete: (user: UserListItem) => void;
   onRevokeSessions: (user: UserListItem) => void;
+  onManageAccess: (user: UserListItem) => void;
 }
 
 // Props per gestione sort

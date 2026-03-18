@@ -1,21 +1,33 @@
 /**
  * Router tRPC per catalog (Brand/Season)
- * Implementa liste master per selezione context
+ * Implementa liste master per selezione context, filtrate per whitelist utente.
  */
 
+import { z } from 'zod';
+
 import { router, protectedProcedure } from '../lib/trpc';
+import {
+  getUserAllowedBrandIds,
+  getUserAllowedSeasonIds,
+} from '../services/context.service';
 
 /**
  * Router per catalog master data
  */
 export const catalogRouter = router({
   /**
-   * Lista tutti i brand attivi
-   * Ordinati per nome alfabetico
+   * Lista i brand attivi accessibili all'utente corrente.
+   * Se l'utente ha un whitelist brand, restituisce solo quelli.
    */
   brands: protectedProcedure.query(async ({ ctx }) => {
+    const userId = ctx.session.user.id;
+    const allowedBrandIds = await getUserAllowedBrandIds(userId, ctx.prisma);
+
     return ctx.prisma.brand.findMany({
-      where: { isActive: true },
+      where: {
+        isActive: true,
+        ...(allowedBrandIds ? { id: { in: allowedBrandIds } } : {}),
+      },
       orderBy: [{ name: 'asc' }],
       select: {
         id: true,
@@ -30,22 +42,33 @@ export const catalogRouter = router({
   }),
 
   /**
-   * Lista tutte le season attive
-   * Ordinati per anno decrescente, poi per codice
+   * Lista le season attive accessibili all'utente corrente.
+   * Se brandId è fornito, filtra anche per il whitelist stagioni di quel brand.
    */
-  seasons: protectedProcedure.query(async ({ ctx }) => {
-    return ctx.prisma.season.findMany({
-      where: { isActive: true },
-      orderBy: [{ year: 'desc' }, { code: 'asc' }],
-      select: {
-        id: true,
-        code: true,
-        year: true,
-        name: true,
-        isActive: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
-  }),
+  seasons: protectedProcedure
+    .input(z.object({ brandId: z.string().uuid().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+
+      const allowedSeasonIds = input?.brandId
+        ? await getUserAllowedSeasonIds(userId, input.brandId, ctx.prisma)
+        : null;
+
+      return ctx.prisma.season.findMany({
+        where: {
+          isActive: true,
+          ...(allowedSeasonIds ? { id: { in: allowedSeasonIds } } : {}),
+        },
+        orderBy: [{ year: 'desc' }, { code: 'asc' }],
+        select: {
+          id: true,
+          code: true,
+          year: true,
+          name: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+    }),
 });

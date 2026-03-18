@@ -42,7 +42,10 @@ export function ContextGate() {
   const { data: brands = [], isLoading: brandsLoading } =
     trpc.catalog.brands.useQuery();
   const { data: seasons = [], isLoading: seasonsLoading } =
-    trpc.catalog.seasons.useQuery();
+    trpc.catalog.seasons.useQuery(
+      { brandId: selectedBrandId || undefined },
+      { enabled: !!selectedBrandId }
+    );
 
   // Handler per conferma selezione
   const handleConfirm = async () => {
@@ -63,7 +66,7 @@ export function ContextGate() {
   const isConfirmEnabled = selectedBrandId && selectedSeasonId && !isPending;
 
   // Loading state
-  if (brandsLoading || seasonsLoading) {
+  if (brandsLoading || (!!selectedBrandId && seasonsLoading)) {
     return (
       <Dialog open={needsSetup} onOpenChange={() => {}}>
         <DialogContent

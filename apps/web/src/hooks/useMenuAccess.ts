@@ -6,30 +6,54 @@ import { useSectionAccess } from './useSectionAccess';
 
 /**
  * Hook per verificare l'accesso ai menu della sidebar
- * Mostra una macrosezione solo se ha almeno una voce di menu abilitata
+ *
+ * Il parent (settings/maintenance) fa da master switch:
+ * - se il parent è false, nessun sub-item è visibile
+ * - se il parent è true, ogni sub-item è visibile solo se anche la sua
+ *   sotto-sezione è abilitata
+ * La voce dropdown del parent appare solo se almeno un sub-item è visibile.
  */
 export function useMenuAccess() {
-  const sectionAccess = useSectionAccess();
+  const s = useSectionAccess();
 
-  const menuAccess = useMemo(() => {
-    // Macrosezione "Generale" - mostra solo se Dashboard è accessibile
-    const hasGeneralItems = sectionAccess.dashboard;
+  return useMemo(() => {
+    // Settings: ogni sub-item richiede parent + sottosezione
+    const settingsItems = {
+      users: s.settings && s['settings.users'],
+      brands: s.settings && s['settings.brands'],
+      seasons: s.settings && s['settings.seasons'],
+      storage: s.settings && s['settings.storage'],
+      mail: s.settings && s['settings.mail'],
+      ldap: s.settings && s['settings.ldap'],
+      access: s.settings && s['settings.access'],
+    };
+    const showSettings = Object.values(settingsItems).some(Boolean);
 
-    // Macrosezione "Sistema" - mostra solo se almeno una delle voci è accessibile
-    const hasSystemItems = sectionAccess.settings || sectionAccess.maintenance;
+    // Maintenance: ogni sub-item richiede parent + sottosezione
+    const maintenanceItems = {
+      config: s.maintenance && s['maintenance.config'],
+      import_export: s.maintenance && s['maintenance.import_export'],
+    };
+    const showMaintenance = Object.values(maintenanceItems).some(Boolean);
 
     return {
-      // Controllo per singole voci (per i dropdown)
-      dashboard: sectionAccess.dashboard,
-      settings: sectionAccess.settings,
-      maintenance: sectionAccess.maintenance,
-      product: sectionAccess.product,
+      // Singole voci
+      dashboard: s.dashboard,
 
-      // Controllo per macrosezioni
-      showGeneralSection: hasGeneralItems,
-      showSystemSection: hasSystemItems,
+      // Settings con sub-items
+      settings: showSettings,
+      settingsItems,
+
+      // Maintenance con sub-items
+      maintenance: showMaintenance,
+      maintenanceItems,
+
+      // Prodotto
+      product: s.product,
+
+      // Macrosezioni
+      showGeneralSection: s.dashboard,
+      showSystemSection: showSettings || showMaintenance,
     };
-  }, [sectionAccess]);
-
-  return menuAccess;
+  }, [s]);
 }

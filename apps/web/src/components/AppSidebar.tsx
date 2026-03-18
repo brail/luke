@@ -170,7 +170,7 @@ export default function AppSidebar() {
           <SidebarGroup>
             <SidebarGroupLabel>Sistema</SidebarGroupLabel>
             <SidebarMenu>
-              {/* Dropdown Impostazioni - Solo se accesso consentito */}
+              {/* Dropdown Impostazioni */}
               {menuAccess.settings && (
                 <SidebarMenuItem>
                   <DropdownMenu>
@@ -182,75 +182,68 @@ export default function AppSidebar() {
                       </SidebarMenuButton>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" className="w-56">
-                      <DropdownMenuItem asChild>
-                        <Link
-                          href="/settings/users"
-                          className="flex items-center"
-                        >
-                          <Users className="mr-2 h-4 w-4" />
-                          <span>Utenti</span>
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link
-                          href="/settings/brands"
-                          className="flex items-center"
-                        >
-                          <Building2 className="mr-2 h-4 w-4" />
-                          <span>Brand</span>
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link
-                          href="/settings/seasons"
-                          className="flex items-center"
-                        >
-                          <CalendarDays className="mr-2 h-4 w-4" />
-                          <span>Stagioni</span>
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link
-                          href="/settings/storage"
-                          className="flex items-center"
-                        >
-                          <HardDrive className="mr-2 h-4 w-4" />
-                          <span>Storage</span>
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link
-                          href="/settings/mail"
-                          className="flex items-center"
-                        >
-                          <Mail className="mr-2 h-4 w-4" />
-                          <span>Mail</span>
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link
-                          href="/settings/ldap"
-                          className="flex items-center"
-                        >
-                          <Shield className="mr-2 h-4 w-4" />
-                          <span>Auth LDAP</span>
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link
-                          href="/settings/access"
-                          className="flex items-center"
-                        >
-                          <ShieldPlus className="mr-2 h-4 w-4" />
-                          <span>Accesso</span>
-                        </Link>
-                      </DropdownMenuItem>
+                      {menuAccess.settingsItems.users && (
+                        <DropdownMenuItem asChild>
+                          <Link href="/settings/users" className="flex items-center">
+                            <Users className="mr-2 h-4 w-4" />
+                            <span>Utenti</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      {menuAccess.settingsItems.brands && (
+                        <DropdownMenuItem asChild>
+                          <Link href="/settings/brands" className="flex items-center">
+                            <Building2 className="mr-2 h-4 w-4" />
+                            <span>Brand</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      {menuAccess.settingsItems.seasons && (
+                        <DropdownMenuItem asChild>
+                          <Link href="/settings/seasons" className="flex items-center">
+                            <CalendarDays className="mr-2 h-4 w-4" />
+                            <span>Stagioni</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      {menuAccess.settingsItems.storage && (
+                        <DropdownMenuItem asChild>
+                          <Link href="/settings/storage" className="flex items-center">
+                            <HardDrive className="mr-2 h-4 w-4" />
+                            <span>Storage</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      {menuAccess.settingsItems.mail && (
+                        <DropdownMenuItem asChild>
+                          <Link href="/settings/mail" className="flex items-center">
+                            <Mail className="mr-2 h-4 w-4" />
+                            <span>Mail</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      {menuAccess.settingsItems.ldap && (
+                        <DropdownMenuItem asChild>
+                          <Link href="/settings/ldap" className="flex items-center">
+                            <Shield className="mr-2 h-4 w-4" />
+                            <span>Auth LDAP</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      {menuAccess.settingsItems.access && (
+                        <DropdownMenuItem asChild>
+                          <Link href="/settings/access" className="flex items-center">
+                            <ShieldPlus className="mr-2 h-4 w-4" />
+                            <span>Accesso</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </SidebarMenuItem>
               )}
 
-              {/* Dropdown Manutenzione - Solo se accesso consentito */}
+              {/* Dropdown Manutenzione */}
               {menuAccess.maintenance && (
                 <SidebarMenuItem>
                   <DropdownMenu>
@@ -262,24 +255,22 @@ export default function AppSidebar() {
                       </SidebarMenuButton>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" className="w-56">
-                      <DropdownMenuItem asChild>
-                        <Link
-                          href="/maintenance/config"
-                          className="flex items-center"
-                        >
-                          <ServerCog className="mr-2 h-4 w-4" />
-                          <span>Configurazioni</span>
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link
-                          href="/maintenance/import-export"
-                          className="flex items-center"
-                        >
-                          <FolderTree className="mr-2 h-4 w-4" />
-                          <span>Import/Export</span>
-                        </Link>
-                      </DropdownMenuItem>
+                      {menuAccess.maintenanceItems.config && (
+                        <DropdownMenuItem asChild>
+                          <Link href="/maintenance/config" className="flex items-center">
+                            <ServerCog className="mr-2 h-4 w-4" />
+                            <span>Configurazioni</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      {menuAccess.maintenanceItems.import_export && (
+                        <DropdownMenuItem asChild>
+                          <Link href="/maintenance/import-export" className="flex items-center">
+                            <FolderTree className="mr-2 h-4 w-4" />
+                            <span>Import/Export</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </SidebarMenuItem>

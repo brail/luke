@@ -43,6 +43,7 @@ export function UsersTable({
   onDisable,
   onHardDelete,
   onRevokeSessions,
+  onManageAccess,
 }: UsersTableProps) {
   // Loading state
   if (isLoading) {
@@ -295,6 +296,7 @@ export function UsersTable({
                     onDisable,
                     onHardDelete,
                     onRevokeSessions,
+                    onManageAccess,
                   }}
                 />
               </TableCell>

@@ -7,6 +7,7 @@ import {
   LogOut,
   Trash2,
   Mail,
+  Settings2,
   Shield,
   X,
 } from 'lucide-react';
@@ -118,6 +119,12 @@ export function UserActionsMenu({
           <DropdownMenuItem onClick={handleEdit}>
             <Edit className="mr-2 h-4 w-4" />
             Modifica
+          </DropdownMenuItem>
+        )}
+        {canUpdate && (
+          <DropdownMenuItem onClick={() => handlers.onManageAccess(user)}>
+            <Settings2 className="mr-2 h-4 w-4" />
+            Gestisci accesso
           </DropdownMenuItem>
         )}
         {canUpdate && (

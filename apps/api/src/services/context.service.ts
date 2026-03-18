@@ -31,8 +31,40 @@ export interface ContextResult {
 }
 
 /**
+ * Restituisce i brand ID consentiti per un utente.
+ * Se l'utente non ha restrizioni, restituisce null (= tutti i brand).
+ */
+export async function getUserAllowedBrandIds(
+  userId: string,
+  prisma: PrismaClient
+): Promise<string[] | null> {
+  const rows = await prisma.userBrandAccess.findMany({
+    where: { userId },
+    select: { brandId: true },
+  });
+  return rows.length > 0 ? rows.map(r => r.brandId) : null;
+}
+
+/**
+ * Restituisce i season ID consentiti per un utente+brand.
+ * Se l'utente non ha restrizioni per quel brand, restituisce null (= tutte le stagioni).
+ */
+export async function getUserAllowedSeasonIds(
+  userId: string,
+  brandId: string,
+  prisma: PrismaClient
+): Promise<string[] | null> {
+  const rows = await prisma.userSeasonAccess.findMany({
+    where: { userId, brandId },
+    select: { seasonId: true },
+  });
+  return rows.length > 0 ? rows.map(r => r.seasonId) : null;
+}
+
+/**
  * Risolve il context per un utente con algoritmo deterministico
  * Priorità: lastUsed → orgDefault → firstActive
+ * Rispetta il whitelist brand/season dell'utente.
  *
  * @param userId - ID dell'utente
  * @param prisma - Client Prisma
@@ -43,18 +75,35 @@ export async function resolveContext(
   prisma: PrismaClient
 ): Promise<ContextResult> {
   // Carica dati in parallelo per performance
-  const [prefs, brands, seasons, appConfig] = await Promise.all([
+  const [prefs, allowedBrandIds, appConfig] = await Promise.all([
     prisma.userPreference.findUnique({ where: { userId } }),
-    prisma.brand.findMany({
-      where: { isActive: true },
-      orderBy: [{ updatedAt: 'desc' }, { name: 'asc' }],
-    }),
-    prisma.season.findMany({
-      where: { isActive: true },
-      orderBy: [{ updatedAt: 'desc' }, { year: 'desc' }],
-    }),
+    getUserAllowedBrandIds(userId, prisma),
     prisma.appConfig.findUnique({ where: { key: 'app.context.defaults' } }),
   ]);
+
+  const brands = await prisma.brand.findMany({
+    where: {
+      isActive: true,
+      ...(allowedBrandIds ? { id: { in: allowedBrandIds } } : {}),
+    },
+    orderBy: [{ updatedAt: 'desc' }, { name: 'asc' }],
+  });
+
+  // Determina il brand corrente per filtrare le stagioni
+  const prefs_brandId = prefs?.lastBrandId;
+  const activeBrandId = brands.find(b => b.id === prefs_brandId)?.id ?? brands[0]?.id;
+
+  const allowedSeasonIds = activeBrandId
+    ? await getUserAllowedSeasonIds(userId, activeBrandId, prisma)
+    : null;
+
+  const seasons = await prisma.season.findMany({
+    where: {
+      isActive: true,
+      ...(allowedSeasonIds ? { id: { in: allowedSeasonIds } } : {}),
+    },
+    orderBy: [{ updatedAt: 'desc' }, { year: 'desc' }],
+  });
 
   // Verifica che ci siano brand e season attivi
   if (!brands.length || !seasons.length) {

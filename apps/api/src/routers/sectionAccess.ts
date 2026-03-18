@@ -13,9 +13,10 @@ import {
 } from '../services/sectionAccess.service';
 import { logAudit } from '../lib/auditLog';
 import { withRateLimit } from '../lib/ratelimit';
+import { sectionEnum } from '@luke/core';
 import type { Section } from '@luke/core';
 
-const sectionSchema = z.enum(['dashboard', 'settings', 'maintenance']);
+const sectionSchema = sectionEnum;
 
 const setInput = z.object({
   userId: z.string().min(1),

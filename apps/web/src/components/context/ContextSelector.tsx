@@ -21,19 +21,25 @@ import { BrandAvatar } from './BrandAvatar';
  *
  * Due Select indipendenti che permettono di cambiare Brand e Season
  * mantenendo l'altro valore corrente.
+ * Le liste sono filtrate per il whitelist brand/stagioni dell'utente.
  */
 export function ContextSelector() {
   const { brand, season } = useAppContext();
   const { setContext, isPending } = useContextMutation();
 
-  // Query per ottenere le liste di Brand e Season
+  // Brand filtrati per whitelist utente
   const { data: brands = [], isLoading: brandsLoading } =
     trpc.catalog.brands.useQuery();
+
+  // Stagioni filtrate per whitelist utente nel brand corrente
   const { data: seasons = [], isLoading: seasonsLoading } =
-    trpc.catalog.seasons.useQuery();
+    trpc.catalog.seasons.useQuery(
+      { brandId: brand?.id },
+      { enabled: !!brand?.id }
+    );
 
   // Loading state
-  if (brandsLoading || seasonsLoading) {
+  if (brandsLoading || (!!brand?.id && seasonsLoading)) {
     return (
       <div className="flex items-center gap-2">
         <Skeleton className="h-8 w-32" />
@@ -42,7 +48,7 @@ export function ContextSelector() {
     );
   }
 
-  // Handler per cambio Brand
+  // Handler per cambio Brand: mantieni stagione se ancora accessibile, altrimenti prima disponibile
   const handleBrandChange = (brandId: string) => {
     if (season) {
       setContext({ brandId, seasonId: season.id });
