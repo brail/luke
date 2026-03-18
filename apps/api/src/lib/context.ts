@@ -4,7 +4,8 @@
  */
 
 import type { PrismaClient } from '@prisma/client';
-import type { FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyRequest, FastifyReply, FastifyBaseLogger } from 'fastify';
+
 import type { UserSession } from './auth';
 
 /**
@@ -17,6 +18,6 @@ export interface Context {
   req: FastifyRequest;
   res: FastifyReply;
   traceId: string;
-  logger: any; // Logger Pino da req.log
+  logger: FastifyBaseLogger; // req.log (FastifyBaseLogger, superset di pino.BaseLogger)
   _permissionsCache?: Map<string, boolean>; // Cache per-request delle permissions
 }

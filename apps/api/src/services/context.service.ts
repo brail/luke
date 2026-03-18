@@ -161,10 +161,7 @@ export async function getContextDefaults(
     const parsed = JSON.parse(appConfig.value);
     return AppContextDefaultsSchema.parse(parsed);
   } catch (error) {
-    console.warn(
-      'Errore parsing app.context.defaults, usando default vuoto:',
-      error
-    );
+    logger.warn({ err: error }, 'Errore parsing app.context.defaults, usando default vuoto');
     return { context: {} };
   }
 }

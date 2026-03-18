@@ -4,7 +4,7 @@
  */
 
 import { TRPCError } from '@trpc/server';
-import * as ldap from 'ldapjs';
+import { Client } from 'ldapts';
 import * as nodemailer from 'nodemailer';
 import { z } from 'zod';
 
@@ -532,7 +532,7 @@ export const integrationsRouter = router({
     testLdapConnection: protectedProcedure
       .use(requirePermission('config:read'))
       .mutation(async ({ ctx }) => {
-        let client: ldap.Client | null = null;
+        let client: Client | null = null;
 
         try {
           const config = await getLdapConfig(ctx.prisma);
@@ -553,48 +553,27 @@ export const integrationsRouter = router({
 
           ctx.logger.info('Testing LDAP connection');
 
-          // Crea client LDAP
-          client = ldap.createClient({
+          // Crea client LDAP (ldapts: connessione lazy al primo bind)
+          client = new Client({
             url: config.url,
             timeout: 10000,
             connectTimeout: 5000,
           });
 
-          // Gestisci errori non catturati del client
-          client.on('error', err => {
-            ctx.logger.error({ error: err.message }, 'LDAP client error');
-          });
-
           // Testa connessione e bind
-          await new Promise<void>((resolve, reject) => {
-            const timeout = setTimeout(() => {
-              reject(
-                new TRPCError({
-                  code: 'INTERNAL_SERVER_ERROR',
-                  message: 'Timeout connessione LDAP (10 secondi)',
-                })
-              );
-            }, 10000);
-
-            client!.bind(config.bindDN, config.bindPassword, err => {
-              clearTimeout(timeout);
-              if (err) {
-                ctx.logger.error(
-                  { error: err.message },
-                  'LDAP connection test failed'
-                );
-                reject(
-                  new TRPCError({
-                    code: 'INTERNAL_SERVER_ERROR',
-                    message: `Connessione LDAP fallita: ${err.message}`,
-                  })
-                );
-              } else {
-                ctx.logger.info('LDAP connection test successful');
-                resolve();
-              }
+          try {
+            await client.bind(config.bindDN, config.bindPassword);
+            ctx.logger.info('LDAP connection test successful');
+          } catch (err: any) {
+            ctx.logger.error(
+              { error: err.message },
+              'LDAP connection test failed'
+            );
+            throw new TRPCError({
+              code: 'INTERNAL_SERVER_ERROR',
+              message: `Connessione LDAP fallita: ${err.message}`,
             });
-          });
+          }
 
           return {
             success: true,
@@ -617,17 +596,7 @@ export const integrationsRouter = router({
           // Chiudi connessione
           if (client) {
             try {
-              await new Promise<void>(resolve => {
-                client!.unbind(err => {
-                  if (err) {
-                    ctx.logger.warn(
-                      { error: err.message },
-                      'Error closing LDAP test connection'
-                    );
-                  }
-                  resolve();
-                });
-              });
+              await client.unbind();
             } catch (error) {
               ctx.logger.warn(
                 {
@@ -645,7 +614,7 @@ export const integrationsRouter = router({
       .use(requirePermission('config:read'))
       .input(z.object({ username: z.string() }))
       .mutation(async ({ input, ctx }) => {
-        let client: ldap.Client | null = null;
+        let client: Client | null = null;
 
         try {
           const config = await getLdapConfig(ctx.prisma);
@@ -657,27 +626,21 @@ export const integrationsRouter = router({
             });
           }
 
-          // Crea client LDAP
-          client = ldap.createClient({
+          // Crea client LDAP (ldapts: connessione lazy al primo bind)
+          client = new Client({
             url: config.url,
             timeout: 10000,
           });
 
           // Bind amministrativo
-          await new Promise<void>((resolve, reject) => {
-            client!.bind(config.bindDN, config.bindPassword, err => {
-              if (err) {
-                reject(
-                  new TRPCError({
-                    code: 'INTERNAL_SERVER_ERROR',
-                    message: `Bind LDAP fallito: ${err.message}`,
-                  })
-                );
-              } else {
-                resolve();
-              }
+          try {
+            await client.bind(config.bindDN, config.bindPassword);
+          } catch (err: any) {
+            throw new TRPCError({
+              code: 'INTERNAL_SERVER_ERROR',
+              message: `Bind LDAP fallito: ${err.message}`,
             });
-          });
+          }
 
           // Testa ricerca utente
           const searchFilter = config.searchFilter.replace(
@@ -693,66 +656,38 @@ export const integrationsRouter = router({
             'Testing LDAP search'
           );
 
-          const results: any[] = [];
+          let searchEntries;
+          try {
+            const result = await client.search(config.searchBase, {
+              filter: searchFilter,
+              scope: 'sub',
+              attributes: [
+                'dn',
+                'cn',
+                'mail',
+                'uid',
+                'sAMAccountName',
+                'userPrincipalName',
+              ],
+            });
+            searchEntries = result.searchEntries;
+          } catch (err: any) {
+            throw new TRPCError({
+              code: 'INTERNAL_SERVER_ERROR',
+              message: `Ricerca LDAP fallita: ${err.message}`,
+            });
+          }
 
-          await new Promise<void>((resolve, reject) => {
-            client!.search(
-              config.searchBase,
-              {
-                filter: searchFilter,
-                scope: 'sub',
-                attributes: [
-                  'dn',
-                  'cn',
-                  'mail',
-                  'uid',
-                  'sAMAccountName',
-                  'userPrincipalName',
-                ],
-              },
-              (err, res) => {
-                if (err) {
-                  reject(
-                    new TRPCError({
-                      code: 'INTERNAL_SERVER_ERROR',
-                      message: `Ricerca LDAP fallita: ${err.message}`,
-                    })
-                  );
-                  return;
-                }
-
-                res.on('searchEntry', entry => {
-                  const result = {
-                    dn: entry.dn.toString(),
-                    attributes: entry.attributes.reduce(
-                      (acc: any, attr: any) => {
-                        acc[attr.type] = attr.values;
-                        return acc;
-                      },
-                      {}
-                    ),
-                  };
-                  results.push(result);
-                  ctx.logger.info(
-                    { dn: result.dn },
-                    'LDAP search result found'
-                  );
-                });
-
-                res.on('error', err => {
-                  reject(
-                    new TRPCError({
-                      code: 'INTERNAL_SERVER_ERROR',
-                      message: `Errore stream ricerca: ${err.message}`,
-                    })
-                  );
-                });
-
-                res.on('end', () => {
-                  resolve();
-                });
-              }
-            );
+          // ldapts restituisce entry flat: { dn: string; [key]: string | string[] }
+          const results = searchEntries.map(entry => {
+            const attributes: Record<string, string | string[]> = {};
+            for (const key of Object.keys(entry)) {
+              if (key === 'dn') continue;
+              attributes[key] = entry[key] as string | string[];
+            }
+            const result = { dn: entry.dn, attributes };
+            ctx.logger.info({ dn: entry.dn }, 'LDAP search result found');
+            return result;
           });
 
           return {
@@ -778,11 +713,7 @@ export const integrationsRouter = router({
         } finally {
           if (client) {
             try {
-              await new Promise<void>(resolve => {
-                client!.unbind(() => {
-                  resolve();
-                });
-              });
+              await client.unbind();
             } catch (error) {
               ctx.logger.error(
                 {

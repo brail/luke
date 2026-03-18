@@ -3,7 +3,7 @@
  * Sistema modulare per verifiche di readiness (DB, secrets, LDAP, integrations future)
  */
 
-import * as ldap from 'ldapjs';
+import { Client } from 'ldapts';
 
 import { deriveSecret, validateMasterKey } from '@luke/core/server';
 
@@ -62,30 +62,25 @@ export async function checkLdap(
       return { ok: true, message: 'LDAP disabled, skipped' };
     }
 
-    // Ping LDAP con timeout breve
-    return await new Promise(resolve => {
-      const client = ldap.createClient({
-        url: config.url,
-        timeout: 2000,
-        connectTimeout: 2000,
-      });
-
-      const timer = setTimeout(() => {
-        client.destroy();
-        resolve({ ok: false, message: 'LDAP timeout' });
-      }, 2000);
-
-      client.bind(config.bindDN, config.bindPassword, err => {
-        clearTimeout(timer);
-        client.unbind(() => {});
-
-        if (err) {
-          resolve({ ok: false, message: `LDAP bind failed: ${err.message}` });
-        } else {
-          resolve({ ok: true });
-        }
-      });
+    // Ping LDAP con timeout breve (ldapts: connessione lazy al primo bind)
+    const client = new Client({
+      url: config.url,
+      timeout: 2000,
+      connectTimeout: 2000,
     });
+
+    try {
+      await client.bind(config.bindDN, config.bindPassword);
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, message: `LDAP bind failed: ${err.message}` };
+    } finally {
+      try {
+        await client.unbind();
+      } catch {
+        // ignore
+      }
+    }
   } catch (error: any) {
     return { ok: false, message: error.message };
   }

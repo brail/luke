@@ -6,7 +6,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  // sqlite = local dev | postgresql = production (patched by Dockerfile before prisma generate)
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 

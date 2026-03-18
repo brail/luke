@@ -1,4 +1,14 @@
 packages:
-  - 'apps/*'
-  - 'packages/*'
-  - 'tools/*'
+  - apps/*
+  - packages/*
+  - tools/*
+
+onlyBuiltDependencies:
+  - '@prisma/client'
+  - '@prisma/engines'
+  - argon2
+  - esbuild
+  - prisma
+  - protobufjs
+  - sharp
+  - unrs-resolver

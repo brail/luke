@@ -524,17 +524,6 @@ export const usersRouter = router({
 
   /**
    * Elimina un utente (soft delete)
-   * @deprecated Usa `softDelete` per evitare conflitti con checker tRPC
-   * Richiede permission users:delete
-   */
-  delete: protectedProcedure
-    .use(requirePermission('users:delete'))
-    .use(withRateLimit('userMutations'))
-    .input(UserIdSchema)
-    .mutation(deleteUserHandler),
-
-  /**
-   * Elimina un utente (soft delete)
    * Imposta isActive = false invece di eliminare il record
    * Richiede permission users:delete
    */

@@ -4,7 +4,8 @@
  */
 
 import { TRPCError } from '@trpc/server';
-import * as ldap from 'ldapjs';
+import { Client, InvalidCredentialsError } from 'ldapts';
+import type { SearchOptions, Entry } from 'ldapts';
 import pino from 'pino';
 
 import type { LdapConfig } from './configManager';
@@ -108,7 +109,7 @@ class CircuitBreaker {
  * Client LDAP resiliente con retry, timeout e circuit breaker
  */
 export class ResilientLdapClient {
-  private client: ldap.Client | null = null;
+  private _client: Client | null = null;
   private breaker: CircuitBreaker;
 
   constructor(
@@ -121,35 +122,24 @@ export class ResilientLdapClient {
 
   /**
    * Connette al server LDAP
+   * ldapts usa connessione lazy: il Client viene creato qui,
+   * la connessione TCP avviene al primo bind().
    */
   async connect(): Promise<void> {
     return this.breaker.execute(async () => {
       return this.retryWithBackoff(async () => {
-        if (this.client) {
-          this.client.destroy();
+        if (this._client) {
+          try {
+            await this._client.unbind();
+          } catch {
+            // ignore
+          }
         }
 
-        this.client = ldap.createClient({
+        this._client = new Client({
           url: this.ldapConfig.url,
           timeout: this.resilienceConfig.timeoutMs,
           connectTimeout: Math.min(this.resilienceConfig.timeoutMs, 5000),
-        });
-
-        // Setup error handlers
-        this.client.on('error', err => {
-          this.logger.error({ error: err.message }, 'LDAP client error');
-        });
-
-        this.client.on('connect', () => {
-          this.logger.debug('LDAP client connected');
-        });
-
-        this.client.on('connectTimeout', () => {
-          this.logger.warn('LDAP connection timeout');
-        });
-
-        this.client.on('connectError', err => {
-          this.logger.error({ error: err.message }, 'LDAP connection error');
         });
       });
     });
@@ -158,17 +148,15 @@ export class ResilientLdapClient {
   /**
    * Bind con credenziali
    */
-  async bind(dn: string, password: string, timeoutMs?: number): Promise<void> {
+  async bind(dn: string, password: string): Promise<void> {
     return this.breaker.execute(async () => {
       return this.retryWithBackoff(async () => {
-        const controller = new AbortController();
-        const timeout = setTimeout(
-          () => controller.abort(),
-          timeoutMs ?? this.resilienceConfig.timeoutMs
-        );
+        if (!this._client) {
+          throw new Error('LDAP client not connected');
+        }
 
         try {
-          await this.bindWithSignal(dn, password, controller.signal);
+          await this._client.bind(dn, password);
         } catch (error) {
           // Map LDAP error code 49 (InvalidCredentials) → UNAUTHORIZED
           if (this.isInvalidCredentialsError(error)) {
@@ -178,8 +166,6 @@ export class ResilientLdapClient {
             });
           }
           throw error;
-        } finally {
-          clearTimeout(timeout);
         }
       });
     });
@@ -190,19 +176,17 @@ export class ResilientLdapClient {
    */
   async search(
     base: string,
-    options: ldap.SearchOptions,
-    timeoutMs?: number
-  ): Promise<ldap.SearchEntry[]> {
+    options: SearchOptions
+  ): Promise<Entry[]> {
     return this.breaker.execute(async () => {
       return this.retryWithBackoff(async () => {
-        const controller = new AbortController();
-        const timeout = setTimeout(
-          () => controller.abort(),
-          timeoutMs ?? this.resilienceConfig.timeoutMs
-        );
+        if (!this._client) {
+          throw new Error('LDAP client not connected');
+        }
 
         try {
-          return await this.searchWithSignal(base, options, controller.signal);
+          const { searchEntries } = await this._client.search(base, options);
+          return searchEntries;
         } catch (error) {
           // Map search errors
           if (this.isNetworkError(error)) {
@@ -218,8 +202,6 @@ export class ResilientLdapClient {
             });
           }
           throw error;
-        } finally {
-          clearTimeout(timeout);
         }
       });
     });
@@ -229,25 +211,16 @@ export class ResilientLdapClient {
    * Chiude connessione LDAP
    */
   async unbind(): Promise<void> {
-    if (this.client) {
+    if (this._client) {
       try {
-        await new Promise<void>((resolve, reject) => {
-          this.client!.unbind(err => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve();
-            }
-          });
-        });
+        await this._client.unbind();
       } catch (error) {
         this.logger.warn(
           { error: error instanceof Error ? error.message : 'Unknown error' },
           'Error during LDAP unbind'
         );
       } finally {
-        this.client?.destroy();
-        this.client = null;
+        this._client = null;
       }
     }
   }
@@ -255,10 +228,14 @@ export class ResilientLdapClient {
   /**
    * Distrugge il client e chiude tutte le connessioni
    */
-  destroy(): void {
-    if (this.client) {
-      this.client.destroy();
-      this.client = null;
+  async destroy(): Promise<void> {
+    if (this._client) {
+      try {
+        await this._client.unbind();
+      } catch {
+        // ignore
+      }
+      this._client = null;
     }
   }
 
@@ -314,95 +291,6 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Bind con AbortSignal
-   */
-  private async bindWithSignal(
-    dn: string,
-    password: string,
-    signal: AbortSignal
-  ): Promise<void> {
-    if (!this.client) {
-      throw new Error('LDAP client not connected');
-    }
-
-    return new Promise((resolve, reject) => {
-      const cleanup = () => {
-        signal.removeEventListener('abort', onAbort);
-      };
-
-      const onAbort = () => {
-        cleanup();
-        reject(new Error('Operation aborted'));
-      };
-
-      signal.addEventListener('abort', onAbort);
-
-      this.client!.bind(dn, password, err => {
-        cleanup();
-        if (err) {
-          reject(err);
-        } else {
-          resolve();
-        }
-      });
-    });
-  }
-
-  /**
-   * Search con AbortSignal
-   */
-  private async searchWithSignal(
-    base: string,
-    options: ldap.SearchOptions,
-    signal: AbortSignal
-  ): Promise<ldap.SearchEntry[]> {
-    if (!this.client) {
-      throw new Error('LDAP client not connected');
-    }
-
-    return new Promise((resolve, reject) => {
-      const entries: ldap.SearchEntry[] = [];
-      let searchResult: any = null;
-
-      const cleanup = () => {
-        signal.removeEventListener('abort', onAbort);
-        if (searchResult) {
-          searchResult.removeAllListeners();
-        }
-      };
-
-      const onAbort = () => {
-        cleanup();
-        reject(new Error('Operation aborted'));
-      };
-
-      signal.addEventListener('abort', onAbort);
-
-      searchResult = this.client!.search(base, options, (err, res) => {
-        if (err) {
-          cleanup();
-          reject(err);
-          return;
-        }
-
-        res.on('searchEntry', entry => {
-          entries.push(entry);
-        });
-
-        res.on('error', searchErr => {
-          cleanup();
-          reject(searchErr);
-        });
-
-        res.on('end', () => {
-          cleanup();
-          resolve(entries);
-        });
-      });
-    });
-  }
-
-  /**
    * Calcola delay per exponential backoff con jitter
    */
   private calculateBackoffDelay(attempt: number): number {
@@ -423,15 +311,7 @@ export class ResilientLdapClient {
    * Verifica se l'errore è di credenziali invalide (non retryable)
    */
   private isInvalidCredentialsError(error: unknown): boolean {
-    if (error instanceof Error) {
-      // LDAP error code 49 = InvalidCredentials
-      return (
-        error.message.includes('InvalidCredentials') ||
-        error.message.includes('49') ||
-        error.message.includes('invalid credentials')
-      );
-    }
-    return false;
+    return error instanceof InvalidCredentialsError;
   }
 
   /**

@@ -4,6 +4,7 @@
  */
 
 import { TRPCError } from '@trpc/server';
+import type { Entry } from 'ldapts';
 import pino from 'pino';
 
 import {
@@ -12,6 +13,16 @@ import {
   type LdapConfig,
 } from './configManager';
 import { ResilientLdapClient } from './ldapClient';
+
+/**
+ * Helper per normalizzare un attributo ldapts a array di stringhe
+ */
+function getAttr(entry: Entry, key: string): string[] {
+  const v = entry[key];
+  if (!v) return [];
+  if (Array.isArray(v)) return (v as (Buffer | string)[]).filter((x): x is string => typeof x === 'string');
+  return typeof v === 'string' ? [v] : [];
+}
 
 import type { PrismaClient, User } from '@prisma/client';
 
@@ -153,7 +164,7 @@ async function searchUser(
   client: ResilientLdapClient,
   config: LdapConfig,
   username: string
-): Promise<{ dn: string; attributes: any } | null> {
+): Promise<{ dn: string; attributes: Record<string, string[]> } | null> {
   const searchFilter = config.searchFilter.replace(
     /\$\{username\}/g,
     escapeLdapFilter(username)
@@ -183,12 +194,14 @@ async function searchUser(
     }
 
     // Prendi il primo risultato
+    // ldapts restituisce entry flat: { dn: string; [key]: string | string[] }
     const entry = entries[0];
-    const dn = entry.dn.toString();
-    const attributes = entry.attributes.reduce((acc: any, attr: any) => {
-      acc[attr.type] = attr.values;
-      return acc;
-    }, {});
+    const dn = entry.dn;
+    const attributes: Record<string, string[]> = {};
+    for (const key of Object.keys(entry)) {
+      if (key === 'dn') continue;
+      attributes[key] = getAttr(entry, key);
+    }
 
     return { dn, attributes };
   } catch (error) {
@@ -243,7 +256,7 @@ async function searchUserGroups(
 
   try {
     const entries = await client.search(config.groupSearchBase, options);
-    return entries.map(entry => entry.dn.toString());
+    return entries.map(entry => entry.dn);
   } catch (error) {
     // Non fallire l'autenticazione per errori di ricerca gruppi
     logger.warn(

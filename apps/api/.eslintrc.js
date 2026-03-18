@@ -2,7 +2,7 @@
 module.exports = {
   extends: ['../../.eslintrc.js'],
   rules: {
-    'no-console': 'warn', // Warn per permettere fix graduale
+    'no-console': ['error', { allow: ['warn', 'error'] }],
   },
   overrides: [
     {

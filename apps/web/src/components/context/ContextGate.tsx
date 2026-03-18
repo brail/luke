@@ -53,9 +53,8 @@ export function ContextGate() {
           seasonId: selectedSeasonId,
         });
         // La modale si chiuderà automaticamente quando needsSetup diventa false
-      } catch (error) {
-        // L'errore è già gestito da useStandardMutation
-        console.error('Errore durante la selezione del context:', error);
+      } catch {
+        // L'errore è già gestito da useContextMutation
       }
     }
   };
