@@ -58,6 +58,11 @@ export const RATE_LIMIT_CONFIG = {
     windowMs: 60_000, // 1 minuto
     keyBy: 'userId' as const,
   },
+  pendingEmail: {
+    max: 10, // 10 tentativi per IP
+    windowMs: 900_000, // 15 minuti
+    keyBy: 'ip' as const,
+  },
 } as const;
 
 /**

@@ -17,6 +17,7 @@ import {
 import { Input } from '../../../components/ui/input';
 import { Label } from '../../../components/ui/label';
 import { useAppConfig } from '../../../hooks/use-app-config';
+import { trpc } from '../../../lib/trpc';
 
 /**
  * Pagina di login con form e integrazione Auth.js
@@ -30,6 +31,7 @@ export default function LoginPage() {
   const router = useRouter();
 
   const { name, version, isLoading: configLoading, hasError } = useAppConfig();
+  const utils = trpc.useUtils();
 
   const displayText = configLoading
     ? 'Caricamento...'
@@ -52,6 +54,18 @@ export default function LoginPage() {
       });
 
       if (result?.error) {
+        // Auth.js v5 appiattisce sempre gli errori di authorize() in "CredentialsSignin".
+        // Dopo un fallimento, verifica se l'utente è in attesa di approvazione LDAP.
+        if (result.error === 'CredentialsSignin') {
+          const pending = await utils.auth.getPendingStatus.fetch({ username });
+          if (pending.isPending) {
+            router.push(
+              `/auth/pending?u=${encodeURIComponent(username)}&se=${pending.needsEmail ? '1' : '0'}`
+            );
+            return;
+          }
+        }
+
         // Gestione specifica per email non verificata
         if (result.error.includes('Email non verificata')) {
           setError(

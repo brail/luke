@@ -330,7 +330,7 @@ async function createOrUpdateUser(
     `LDAP attributes for ${username}`
   );
 
-  // Cerca utente esistente (solo utenti attivi)
+  // Cerca utente esistente (attivi, inclusi quelli in attesa di approvazione)
   let user = await prisma.user.findFirst({
     where: {
       username,
@@ -391,6 +391,7 @@ async function createOrUpdateUser(
           lastName,
           role,
           isActive: true,
+          pendingApproval: true,
         },
       });
 

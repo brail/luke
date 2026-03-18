@@ -227,3 +227,35 @@ export async function sendEmailVerificationEmail(
 
   await sendEmail(prisma, to, subject, html, text);
 }
+
+/**
+ * Invia email di notifica attivazione account (approvazione admin)
+ */
+export async function sendAccountApprovedEmail(
+  prisma: PrismaClient,
+  to: string,
+  firstName: string,
+  baseUrl: string
+): Promise<void> {
+  const loginUrl = `${baseUrl}/login`;
+  const subject = 'Account Attivato - Luke';
+
+  const displayName = firstName || 'Utente';
+
+  const html = generateBrandedHtml(
+    'Account Attivato - Luke',
+    'Il tuo account è stato attivato!',
+    `Ciao ${displayName}! Il tuo account su Luke è stato approvato da un amministratore. Puoi ora accedere al sistema con le tue credenziali.`,
+    'Accedi ora',
+    loginUrl,
+    'Se non hai richiesto questo account, contatta il tuo amministratore di sistema.'
+  );
+
+  const text = loadTextTemplate('approved', {
+    firstName: displayName,
+    loginUrl,
+    year: new Date().getFullYear().toString(),
+  });
+
+  await sendEmail(prisma, to, subject, html, text);
+}

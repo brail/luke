@@ -26,6 +26,12 @@ async function callTRPCAuth(username: string, password: string) {
     });
 
     if (!response.ok) {
+      // Propaga errori specifici per gestione frontend
+      const errorData = await response.json().catch(() => null);
+      const message: string = errorData?.error?.message || '';
+      if (message.startsWith('ACCOUNT_PENDING_APPROVAL')) {
+        return { pendingApproval: true, needsEmail: message.includes('NEEDS_EMAIL') };
+      }
       return null;
     }
 
@@ -61,6 +67,9 @@ export const config = {
             credentials.password as string
           );
 
+          // Utente LDAP in attesa di approvazione: Auth.js non permette di
+          // propagare errori custom da authorize(), ritorniamo null.
+          // Il login page rileva il pending con una chiamata separata.
           if (!authResult?.user) {
             return null;
           }

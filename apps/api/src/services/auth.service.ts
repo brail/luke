@@ -225,6 +225,28 @@ export async function authenticateUser(
     });
   }
 
+  // Blocca login se utente LDAP in attesa di approvazione admin
+  if (authenticatedUser.pendingApproval) {
+    const hasSyntheticEmail = authenticatedUser.email.endsWith('@ldap.local');
+
+    await logAudit(ctx, {
+      action: 'AUTH_LOGIN_FAILED',
+      targetType: 'Auth',
+      targetId: authenticatedUser.id,
+      result: 'FAILURE',
+      metadata: {
+        username: input.username,
+        reason: 'account_pending_approval',
+        strategy,
+      },
+    });
+
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: `ACCOUNT_PENDING_APPROVAL${hasSyntheticEmail ? ':NEEDS_EMAIL' : ''}`,
+    });
+  }
+
   // Verifica email (solo LOCAL)
   const requireEmailVerification =
     (await getConfig(ctx.prisma, 'auth.requireEmailVerification', false)) ===

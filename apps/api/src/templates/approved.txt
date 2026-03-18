@@ -1,0 +1,17 @@
+LUKE - Account Attivato
+
+Ciao {{firstName}}!
+
+Il tuo account su Luke è stato attivato da un amministratore.
+
+Puoi ora accedere al sistema con il tuo username:
+
+{{loginUrl}}
+
+Se hai domande, contatta il tuo amministratore di sistema.
+
+---
+© {{year}} Luke. Tutti i diritti riservati.
+
+
+

@@ -24,8 +24,13 @@ export function useRefresh() {
     // User profile
     me: () => utils.me.get.invalidate(),
 
-    // Users list
-    users: () => utils.users.list.invalidate(),
+    // Users list (attivi e pending)
+    users: async () => {
+      await Promise.all([
+        utils.users.list.invalidate(),
+        utils.users.listPending.invalidate(),
+      ]);
+    },
 
     // Storage config
     storageConfig: () => utils.storage.getConfig.invalidate(),

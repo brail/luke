@@ -8,6 +8,12 @@ import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
 import { ErrorBoundary } from '../../../../components/system/ErrorBoundary';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '../../../../components/ui/tabs';
 import { UserDialog } from '../../../../components/UserDialog';
 import { usePermission } from '../../../../hooks/usePermission';
 import { debugLog } from '../../../../lib/debug';
@@ -15,6 +21,7 @@ import { useRefresh } from '../../../../lib/refresh';
 import { trpc } from '../../../../lib/trpc';
 import { useStandardMutation } from '../../../../lib/useStandardMutation';
 
+import { PendingUsersTab } from './_components/PendingUsersTab';
 import { SendVerificationDialog } from './_components/SendVerificationDialog';
 import { SortColumn, SortOrder } from './_components/types';
 import { UsersTable } from './_components/UsersTable';
@@ -280,53 +287,71 @@ export default function UsersPage() {
           description="Gestisci gli utenti del sistema"
         />
 
-        {/* Azioni e Filtri */}
-        <SectionCard
-          title="Ricerca e Filtri"
-          description="Cerca e filtra gli utenti del sistema"
-        >
-          <UsersToolbar
-            searchTerm={searchTerm}
-            roleFilter={roleFilter}
-            currentPage={currentPage}
-            totalPages={totalPages}
-            totalUsers={usersData?.total || 0}
-            onSearchChange={handleSearch}
-            onRoleFilterChange={handleRoleFilter}
-            onCreateUser={handleCreateUser}
-            onPageChange={setCurrentPage}
-            canCreate={can('users:create')}
-          />
-        </SectionCard>
+        <Tabs defaultValue="active">
+          <TabsList>
+            <TabsTrigger value="active">Utenti attivi</TabsTrigger>
+            <TabsTrigger value="pending">In attesa di approvazione</TabsTrigger>
+          </TabsList>
 
-        {/* Tabella Utenti */}
-        <SectionCard
-          title="Utenti Sistema"
-          description="Lista completa degli utenti registrati"
-        >
-          {!session?.accessToken && (
-            <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-              <p>Caricamento sessione...</p>
-            </div>
-          )}
+          <TabsContent value="active" className="space-y-6 mt-4">
+            {/* Azioni e Filtri */}
+            <SectionCard
+              title="Ricerca e Filtri"
+              description="Cerca e filtra gli utenti del sistema"
+            >
+              <UsersToolbar
+                searchTerm={searchTerm}
+                roleFilter={roleFilter}
+                currentPage={currentPage}
+                totalPages={totalPages}
+                totalUsers={usersData?.total || 0}
+                onSearchChange={handleSearch}
+                onRoleFilterChange={handleRoleFilter}
+                onCreateUser={handleCreateUser}
+                onPageChange={setCurrentPage}
+                canCreate={can('users:create')}
+              />
+            </SectionCard>
 
-          {session?.accessToken && (
-            <UsersTable
-              users={users}
-              currentUserId={session?.user?.id || ''}
-              isLoading={isLoading}
-              error={error}
-              sortBy={sortBy}
-              sortOrder={sortOrder}
-              onSort={handleSort}
-              onEdit={handleEditUser}
-              onDisable={handleDeleteUser}
-              onHardDelete={handleHardDeleteUser}
-              onRevokeSessions={handleRevokeUserSessions}
-            />
-          )}
-        </SectionCard>
+            {/* Tabella Utenti */}
+            <SectionCard
+              title="Utenti Sistema"
+              description="Lista completa degli utenti registrati"
+            >
+              {!session?.accessToken && (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                  <p>Caricamento sessione...</p>
+                </div>
+              )}
+
+              {session?.accessToken && (
+                <UsersTable
+                  users={users}
+                  currentUserId={session?.user?.id || ''}
+                  isLoading={isLoading}
+                  error={error}
+                  sortBy={sortBy}
+                  sortOrder={sortOrder}
+                  onSort={handleSort}
+                  onEdit={handleEditUser}
+                  onDisable={handleDeleteUser}
+                  onHardDelete={handleHardDeleteUser}
+                  onRevokeSessions={handleRevokeUserSessions}
+                />
+              )}
+            </SectionCard>
+          </TabsContent>
+
+          <TabsContent value="pending" className="mt-4">
+            <SectionCard
+              title="Richieste di accesso in attesa"
+              description="Utenti LDAP che si sono autenticati per la prima volta e attendono approvazione"
+            >
+              <PendingUsersTab />
+            </SectionCard>
+          </TabsContent>
+        </Tabs>
 
         {/* User Dialog */}
         <UserDialog

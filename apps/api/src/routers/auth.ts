@@ -22,6 +22,7 @@ import {
   requestEmailVerification,
   confirmEmailVerification,
 } from '../services/auth.service';
+import { logAudit } from '../lib/auditLog';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { withRateLimit } from '../lib/ratelimit';
 import { requirePermission } from '../lib/permissions';
@@ -124,6 +125,104 @@ export const authRouter = router({
     .input(ConfirmEmailVerificationSchema)
     .mutation(async ({ input, ctx }) => {
       return await confirmEmailVerification(ctx, input);
+    }),
+
+  /**
+   * Controlla se un username corrisponde a un utente LDAP in attesa di approvazione.
+   * Usato dal login page dopo un CredentialsSignin fallito per distinguere
+   * "credenziali errate" da "account pending". Non richiede password.
+   */
+  getPendingStatus: publicProcedure
+    .use(withRateLimit('pendingEmail'))
+    .input(z.object({ username: z.string().min(1) }))
+    .query(async ({ input, ctx }) => {
+      const user = await ctx.prisma.user.findFirst({
+        where: {
+          username: input.username,
+          isActive: true,
+          pendingApproval: true,
+        },
+        select: { email: true },
+      });
+
+      if (!user) return { isPending: false, needsEmail: false };
+
+      return {
+        isPending: true,
+        needsEmail: user.email.endsWith('@ldap.local'),
+      };
+    }),
+
+  /**
+   * Salva l'email fornita da un utente LDAP in attesa di approvazione
+   * Endpoint pubblico — usato dalla pagina /auth/pending
+   */
+  submitPendingEmail: publicProcedure
+    .use(withRateLimit('pendingEmail'))
+    .input(
+      z.object({
+        username: z.string().min(1),
+        email: z.string().email('Email non valida').toLowerCase().trim(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { username, email } = input;
+
+      // Trova utente LDAP in attesa di approvazione
+      const user = await ctx.prisma.user.findFirst({
+        where: {
+          username,
+          isActive: true,
+          pendingApproval: true,
+        },
+        include: {
+          identities: { where: { provider: 'LDAP' } },
+        },
+      });
+
+      if (!user || user.identities.length === 0) {
+        // Risposta generica per evitare enumerazione
+        return { success: true };
+      }
+
+      // Verifica unicità email (esclude l'utente stesso)
+      const existing = await ctx.prisma.user.findFirst({
+        where: { email, id: { not: user.id } },
+      });
+
+      if (existing) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'Email già in uso da un altro account',
+        });
+      }
+
+      await ctx.prisma.user.update({
+        where: { id: user.id },
+        data: { email },
+      });
+
+      await logAudit(ctx, {
+        action: 'PENDING_USER_EMAIL_SUBMITTED',
+        targetType: 'User',
+        targetId: user.id,
+        result: 'SUCCESS',
+        metadata: { username },
+      });
+
+      // Invia email di verifica all'indirizzo appena fornito
+      try {
+        await sendVerificationEmail(
+          ctx.prisma,
+          { userId: user.id, reason: 'user_requested' },
+          ctx
+        );
+      } catch {
+        // Non bloccare la risposta se SMTP non è configurato
+        ctx.logger.warn({ username }, 'Failed to send verification email for pending user');
+      }
+
+      return { success: true };
     }),
 
   /**

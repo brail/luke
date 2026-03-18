@@ -41,6 +41,11 @@ const DEFAULTS: Record<string, RateLimitPolicy> = {
     timeWindow: '1m',
     keyBy: 'userId',
   },
+  pendingEmail: {
+    max: isDevelopment() ? 100 : 10,
+    timeWindow: '15m',
+    keyBy: 'ip',
+  },
 };
 
 /**

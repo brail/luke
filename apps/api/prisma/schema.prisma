@@ -38,6 +38,7 @@ model User {
   lastName          String    @default("")
   role              Role
   isActive          Boolean   @default(true)
+  pendingApproval   Boolean   @default(false)
   locale            String    @default("it-IT")
   timezone          String    @default("Europe/Rome")
   tokenVersion      Int       @default(0)

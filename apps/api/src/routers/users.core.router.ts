@@ -61,7 +61,7 @@ export const usersCoreRouter = router({
       } = input || {};
       const skip = (page - 1) * limit;
 
-      const where: any = {};
+      const where: any = { pendingApproval: false };
 
       if (search && search.trim()) {
         where.OR = [
