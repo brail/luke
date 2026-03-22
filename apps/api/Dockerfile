@@ -12,9 +12,6 @@ COPY . .
 
 RUN pnpm install --frozen-lockfile
 
-# Patch Prisma schema: sqlite (local dev default) → postgresql (production)
-RUN sed -i 's/provider = "sqlite"/provider = "postgresql"/' apps/api/prisma/schema.prisma
-
 # Generate Prisma client BEFORE tsc — TypeScript needs the generated types to compile
 RUN pnpm --filter @luke/api exec prisma generate
 

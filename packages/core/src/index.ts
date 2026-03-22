@@ -12,6 +12,7 @@
  */
 
 // Re-export schemas
+export * from './schemas/config';
 export * from './schemas/user';
 export * from './schemas/userProfile';
 export * from './schemas/appConfig';

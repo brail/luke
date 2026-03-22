@@ -185,7 +185,7 @@ describe('Role Expansion', () => {
       const expanded = expandRole('admin');
 
       // Should contain many permissions
-      expect(expanded.length).toBeGreaterThan(30);
+      expect(expanded.length).toBeGreaterThan(20);
 
       // Should contain specific permissions
       expect(expanded).toContain('brands:create');
@@ -235,8 +235,9 @@ describe('Role Expansion', () => {
       // Should contain dashboard read
       expect(expanded).toContain('dashboard:read');
 
-      // Should contain settings read
-      expect(expanded).toContain('settings:read');
+      // Should NOT contain settings (editor has no settings permissions)
+      expect(expanded).not.toContain('settings:read');
+      expect(expanded).not.toContain('settings:update');
     });
 
     it('should expand viewer role to read-only permissions', () => {
@@ -628,7 +629,7 @@ describe('Matrix Functions', () => {
       expect(matrix.resources).toContain('settings');
       expect(matrix.resources).toContain('maintenance');
       expect(matrix.resources).toContain('dashboard');
-      expect(matrix.resources.length).toBe(8);
+      expect(matrix.resources.length).toBe(Object.keys(RESOURCES).length);
     });
 
     it('should include all basic actions', () => {
@@ -667,7 +668,7 @@ describe('Matrix Functions', () => {
       expect(matrix.expandedRolePermissions.viewer).toBeDefined();
 
       // Admin expanded should have many permissions
-      expect(matrix.expandedRolePermissions.admin.length).toBeGreaterThan(30);
+      expect(matrix.expandedRolePermissions.admin.length).toBeGreaterThan(20);
 
       // All expanded permissions should be valid
       matrix.expandedRolePermissions.admin.forEach(perm => {
@@ -1026,7 +1027,7 @@ describe('Integration Tests', () => {
     const matrix = getPermissionMatrix();
 
     // Validate the exported matrix
-    expect(matrix.resources.length).toBe(8);
+    expect(matrix.resources.length).toBe(Object.keys(RESOURCES).length);
     expect(matrix.actions.length).toBe(5);
 
     // Expanded permissions should match expandRole

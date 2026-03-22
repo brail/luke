@@ -23,7 +23,7 @@ import { isDevelopment, isProduction } from '@luke/core';
 import { buildCorsAllowedOrigins } from './lib/cors';
 import { createContext } from './lib/trpc';
 import { setGlobalErrorHandler } from './lib/error';
-import { getConfig } from './lib/configManager';
+import { getConfig, validateCriticalConfig } from './lib/configManager';
 import { idempotencyStore } from './lib/idempotency';
 import { rateLimitStore } from './lib/ratelimit';
 import {
@@ -562,6 +562,9 @@ const start = async () => {
     // Test connessione database
     await prisma.$connect();
     fastify.log.info('Connessione database stabilita');
+
+    // Valida chiavi critiche in AppConfig
+    await validateCriticalConfig(prisma);
 
     // Test master key availability
     if (!validateMasterKey()) {

@@ -200,44 +200,21 @@ export function expandRole(role: Role): Permission[] {
     return [];
   }
 
-  // Se ha wildcard totale, espandi a tutte le permissions possibili
+  // Se ha wildcard totale, espandi a tutte le permissions valide per risorsa
   if (rolePermissions.includes('*:*' as Permission)) {
-    const resources: Resource[] = [
-      'brands',
-      'seasons',
-      'users',
-      'config',
-      'audit',
-      'settings',
-      'maintenance',
-      'dashboard',
-      'pricing',
-      'collection_layout',
-    ];
-    const actions: Action[] = ['create', 'read', 'update', 'delete', 'upload'];
-
-    return resources.flatMap(resource =>
-      actions.map(action => `${resource}:${action}` as Permission)
+    return Object.entries(VALID_RESOURCE_ACTIONS).flatMap(([resource, actions]) =>
+      (actions as readonly Action[]).map(action => `${resource}:${action}` as Permission),
     );
   }
 
-  // Espandi wildcard per risorsa
+  // Espandi wildcard per risorsa usando solo le azioni valide per quella risorsa
   const expanded: Permission[] = [];
 
   for (const permission of rolePermissions) {
     if (permission.endsWith(':*')) {
       const resource = permission.slice(0, -2) as Resource;
-      const actions: Action[] = [
-        'create',
-        'read',
-        'update',
-        'delete',
-        'upload',
-      ];
-
-      expanded.push(
-        ...actions.map(action => `${resource}:${action}` as Permission)
-      );
+      const actions = VALID_RESOURCE_ACTIONS[resource] ?? [];
+      expanded.push(...(actions as readonly Action[]).map(action => `${resource}:${action}` as Permission));
     } else {
       expanded.push(permission);
     }
@@ -246,6 +223,125 @@ export function expandRole(role: Role): Permission[] {
   return expanded;
 }
 
+
+// ── Type guards ──────────────────────────────────────────────────────────────
+
+const RESOURCE_VALUES = Object.values(RESOURCES) as string[];
+const ACTION_VALUES: string[] = [...Object.values(ACTIONS), '*'];
+
+export function isResource(v: unknown): v is Resource {
+  return typeof v === 'string' && RESOURCE_VALUES.includes(v);
+}
+
+export function isAction(v: unknown): v is Action {
+  return typeof v === 'string' && ACTION_VALUES.includes(v);
+}
+
+export function isPermission(v: unknown): v is Permission {
+  if (typeof v !== 'string') return false;
+  if (v === '*:*') return true;
+
+  const parts = v.split(':');
+  if (parts.length !== 2) return false;
+
+  const [resource, action] = parts;
+  if (!isResource(resource)) return false;
+
+  // resource:* wildcard
+  if (action === '*') return true;
+
+  // resource:action — must be in VALID_RESOURCE_ACTIONS for that resource
+  const validActions = VALID_RESOURCE_ACTIONS[resource as Resource] as readonly string[];
+  return validActions.includes(action);
+}
+
+// ── Matrix utilities ──────────────────────────────────────────────────────────
+
+/** Restituisce tutte le permissions valide (wildcards + specifiche) */
+export function getAllPermissions(): Permission[] {
+  const result: Permission[] = ['*:*'];
+
+  for (const resource of Object.values(RESOURCES)) {
+    result.push(`${resource}:*` as Permission);
+    const actions = VALID_RESOURCE_ACTIONS[resource as Resource];
+    for (const action of actions) {
+      result.push(`${resource}:${action}` as Permission);
+    }
+  }
+
+  return result;
+}
+
+/** Restituisce una struttura completa per ispezione/debug della matrice */
+export function getPermissionMatrix(): {
+  resources: Resource[];
+  actions: Action[];
+  validResourceActions: typeof VALID_RESOURCE_ACTIONS;
+  rolePermissions: typeof ROLE_PERMISSIONS;
+  expandedRolePermissions: Record<Role, Permission[]>;
+  allPermissions: Permission[];
+} {
+  const roles: Role[] = ['admin', 'editor', 'viewer'];
+  const expandedRolePermissions = Object.fromEntries(
+    roles.map(role => [role, expandRole(role)]),
+  ) as Record<Role, Permission[]>;
+
+  return {
+    resources: Object.values(RESOURCES) as Resource[],
+    actions: Object.values(ACTIONS) as Action[],
+    validResourceActions: VALID_RESOURCE_ACTIONS,
+    rolePermissions: ROLE_PERMISSIONS,
+    expandedRolePermissions,
+    allPermissions: getAllPermissions(),
+  };
+}
+
+/** Valida l'integrità della matrice di permissions */
+export function validatePermissionMatrix(): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  // Ogni risorsa deve avere almeno un'azione valida
+  for (const resource of Object.values(RESOURCES)) {
+    const actions = VALID_RESOURCE_ACTIONS[resource as Resource];
+    if (!actions || actions.length === 0) {
+      errors.push(`Resource '${resource}' has no valid actions`);
+    }
+  }
+
+  // Ogni resource in VALID_RESOURCE_ACTIONS deve corrispondere a una risorsa definita
+  for (const resource of Object.keys(VALID_RESOURCE_ACTIONS)) {
+    if (!isResource(resource)) {
+      errors.push(`VALID_RESOURCE_ACTIONS references unknown resource '${resource}'`);
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+/** Esporta la matrice in formato CSV (Resource,Action,Admin,Editor,Viewer) */
+export function permissionMatrixToCSV(): string {
+  const roles: Role[] = ['admin', 'editor', 'viewer'];
+  const rows: string[] = ['Resource,Action,Admin,Editor,Viewer'];
+
+  for (const resource of Object.values(RESOURCES) as Resource[]) {
+    const actions = VALID_RESOURCE_ACTIONS[resource];
+    for (const action of actions) {
+      const perm = `${resource}:${action}` as Permission;
+      const cols = roles.map(role => {
+        const user = { role, id: '' };
+        return hasPermission(user, perm) ? 'Yes' : 'No';
+      });
+      rows.push([`"${resource}"`, `"${action}"`, ...cols].join(','));
+    }
+  }
+
+  return rows.join('\n');
+}
+
+/** Crea una stringa di permission tipizzata da resource e action */
+export function createPermission(resource: Resource, action: Action): Permission {
+  return `${resource}:${action}` as Permission;
+}
 
 /**
  * Verifica se un utente ha una permission considerando sia ruolo che grants espliciti

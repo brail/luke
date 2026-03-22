@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB:       luke
+      POSTGRES_USER:     luke
+      POSTGRES_PASSWORD: luke_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U luke -d luke"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_dev_data:

@@ -10,7 +10,14 @@ import { homedir } from 'os';
 import { join } from 'path';
 
 import pino from 'pino';
-import { LdapResilienceSchema, type LdapResilienceConfig } from '@luke/core';
+import {
+  type AppConfigKey,
+  type AppConfigValue,
+  parseConfigValue,
+  CRITICAL_CONFIG_KEYS,
+  LdapResilienceSchema,
+  type LdapResilienceConfig,
+} from '@luke/core';
 
 import type { PrismaClient } from '@prisma/client';
 
@@ -208,6 +215,57 @@ export async function getConfig(
 }
 
 /**
+ * Recupera e valida una configurazione usando il registry tipizzato.
+ * Restituisce il valore già parsato nel tipo corretto (number, boolean, ecc.)
+ * secondo lo schema Zod definito in AppConfigRegistry.
+ *
+ * @throws Error se la chiave non esiste nel DB
+ * @throws ZodError se il valore non supera la validazione
+ */
+export async function getTypedConfig<K extends AppConfigKey>(
+  prisma: PrismaClient,
+  key: K,
+): Promise<AppConfigValue<K>> {
+  const raw = await getConfig(prisma, key);
+  if (raw === null) {
+    throw new Error(`Configurazione '${key}' non trovata`);
+  }
+  return parseConfigValue(key, raw);
+}
+
+/**
+ * Verifica al boot che le chiavi critiche siano presenti e valide nel DB.
+ * In produzione: lancia un'eccezione se una chiave è mancante o malformata.
+ * In sviluppo: logga solo un warning.
+ */
+export async function validateCriticalConfig(prisma: PrismaClient): Promise<void> {
+  const errors: string[] = [];
+
+  await Promise.all(
+    CRITICAL_CONFIG_KEYS.map(async key => {
+      try {
+        await getTypedConfig(prisma, key);
+      } catch (err) {
+        errors.push(`${key}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }),
+  );
+
+  if (errors.length === 0) {
+    logger.info('AppConfig validation OK');
+    return;
+  }
+
+  const message = `AppConfig validation failed:\n${errors.map(e => `  - ${e}`).join('\n')}`;
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(message);
+  } else {
+    logger.warn(message);
+  }
+}
+
+/**
  * Lista tutte le configurazioni
  * @param prisma - Client Prisma
  * @param decrypt - Se true, decifra i valori cifrati
@@ -319,23 +377,11 @@ export async function listConfigsPaged(
   if (q && category) {
     // Se abbiamo sia ricerca che categoria, combina i filtri
     where.AND = [
-      {
-        key: {
-          contains: q,
-          // SQLite non supporta mode: 'insensitive'
-        },
-      },
-      {
-        key: {
-          startsWith: `${category}.`,
-        },
-      },
+      { key: { contains: q, mode: 'insensitive' } },
+      { key: { startsWith: `${category}.` } },
     ];
   } else if (q) {
-    where.key = {
-      contains: q,
-      // SQLite non supporta mode: 'insensitive'
-    };
+    where.key = { contains: q, mode: 'insensitive' };
   } else if (category) {
     where.key = {
       startsWith: `${category}.`,
@@ -349,32 +395,17 @@ export async function listConfigsPaged(
   // Calcola skip per paginazione
   const skip = (page - 1) * pageSize;
 
-  // Crea where clause per count (senza mode: 'insensitive' che non è supportato)
   const countWhere: any = {};
 
   if (q && category) {
     countWhere.AND = [
-      {
-        key: {
-          contains: q,
-          // Rimuovi mode per count()
-        },
-      },
-      {
-        key: {
-          startsWith: `${category}.`,
-        },
-      },
+      { key: { contains: q, mode: 'insensitive' } },
+      { key: { startsWith: `${category}.` } },
     ];
   } else if (q) {
-    countWhere.key = {
-      contains: q,
-      // Rimuovi mode per count()
-    };
+    countWhere.key = { contains: q, mode: 'insensitive' };
   } else if (category) {
-    countWhere.key = {
-      startsWith: `${category}.`,
-    };
+    countWhere.key = { startsWith: `${category}.` };
   }
 
   if (typeof isEncrypted === 'boolean') {
@@ -506,26 +537,21 @@ export async function getPasswordPolicy(prisma: PrismaClient): Promise<{
   requireDigit: boolean;
   requireSpecialChar: boolean;
 }> {
-  const [
-    minLength,
+  const [minLength, requireUppercase, requireLowercase, requireDigit, requireSpecialChar] =
+    await Promise.all([
+      getTypedConfig(prisma, 'security.password.minLength').catch(() => 12),
+      getTypedConfig(prisma, 'security.password.requireUppercase').catch(() => true),
+      getTypedConfig(prisma, 'security.password.requireLowercase').catch(() => true),
+      getTypedConfig(prisma, 'security.password.requireDigit').catch(() => true),
+      getTypedConfig(prisma, 'security.password.requireSpecialChar').catch(() => true),
+    ]);
+
+  return {
+    minLength: Math.max(minLength, 8), // Min assoluto: 8 caratteri
     requireUppercase,
     requireLowercase,
     requireDigit,
     requireSpecialChar,
-  ] = await Promise.all([
-    getConfig(prisma, 'security.password.minLength', false),
-    getConfig(prisma, 'security.password.requireUppercase', false),
-    getConfig(prisma, 'security.password.requireLowercase', false),
-    getConfig(prisma, 'security.password.requireDigit', false),
-    getConfig(prisma, 'security.password.requireSpecialChar', false),
-  ]);
-
-  return {
-    minLength: Math.max(parseInt(minLength || '12', 10), 8), // Min assoluto: 8 caratteri
-    requireUppercase: requireUppercase === 'true',
-    requireLowercase: requireLowercase === 'true',
-    requireDigit: requireDigit === 'true',
-    requireSpecialChar: requireSpecialChar === 'true',
   };
 }
 
@@ -631,59 +657,24 @@ export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
  * @returns Configurazione resilienza LDAP con fallback ai default dello schema
  */
 export async function getLdapResilienceConfig(
-  prisma: PrismaClient
+  prisma: PrismaClient,
 ): Promise<LdapResilienceConfig> {
-  const configKeys = [
-    'auth.ldap.resilience.timeoutMs',
-    'auth.ldap.resilience.maxRetries',
-    'auth.ldap.resilience.baseDelayMs',
-    'auth.ldap.resilience.breakerFailureThreshold',
-    'auth.ldap.resilience.breakerCooldownMs',
-    'auth.ldap.resilience.halfOpenMaxAttempts',
-  ];
+  const [timeoutMs, maxRetries, baseDelayMs, breakerFailureThreshold, breakerCooldownMs, halfOpenMaxAttempts] =
+    await Promise.all([
+      getTypedConfig(prisma, 'auth.ldap.resilience.timeoutMs').catch(() => 3000),
+      getTypedConfig(prisma, 'auth.ldap.resilience.maxRetries').catch(() => 2),
+      getTypedConfig(prisma, 'auth.ldap.resilience.baseDelayMs').catch(() => 200),
+      getTypedConfig(prisma, 'auth.ldap.resilience.breakerFailureThreshold').catch(() => 5),
+      getTypedConfig(prisma, 'auth.ldap.resilience.breakerCooldownMs').catch(() => 10000),
+      getTypedConfig(prisma, 'auth.ldap.resilience.halfOpenMaxAttempts').catch(() => 1),
+    ]);
 
-  const configs = await prisma.appConfig.findMany({
-    where: {
-      key: {
-        in: configKeys,
-      },
-    },
+  return LdapResilienceSchema.parse({
+    timeoutMs,
+    maxRetries,
+    baseDelayMs,
+    breakerFailureThreshold,
+    breakerCooldownMs,
+    halfOpenMaxAttempts,
   });
-
-  // Crea mappa per accesso rapido
-  const configMap = new Map(configs.map(c => [c.key, c]));
-
-  // Helper per recuperare valore numerico con fallback
-  const getNumericValue = (key: string, defaultValue: number): number => {
-    const config = configMap.get(key);
-    if (!config) return defaultValue;
-
-    const value = config.isEncrypted
-      ? decryptValue(config.value)
-      : config.value;
-    const parsed = parseInt(value, 10);
-    return isNaN(parsed) ? defaultValue : parsed;
-  };
-
-  // Recupera i valori con fallback ai default dello schema
-  const rawConfig = {
-    timeoutMs: getNumericValue('auth.ldap.resilience.timeoutMs', 3000),
-    maxRetries: getNumericValue('auth.ldap.resilience.maxRetries', 2),
-    baseDelayMs: getNumericValue('auth.ldap.resilience.baseDelayMs', 200),
-    breakerFailureThreshold: getNumericValue(
-      'auth.ldap.resilience.breakerFailureThreshold',
-      5
-    ),
-    breakerCooldownMs: getNumericValue(
-      'auth.ldap.resilience.breakerCooldownMs',
-      10000
-    ),
-    halfOpenMaxAttempts: getNumericValue(
-      'auth.ldap.resilience.halfOpenMaxAttempts',
-      1
-    ),
-  };
-
-  // Valida e normalizza usando lo schema Zod
-  return LdapResilienceSchema.parse(rawConfig);
 }
