@@ -29,7 +29,7 @@ export async function assertSectionAccess(section: Section) {
 
   // Fetch user-specific section overrides from API
   const rbacConfig = {
-    sectionAccessDefaults: {} as Record<string, unknown>,
+    sectionAccessDefaults: {},
     disabledSections: [] as any[],
   };
   let override: { enabled?: boolean } | undefined;
