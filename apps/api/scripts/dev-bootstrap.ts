@@ -3,15 +3,15 @@
  *
  * Responsabilità:
  * 1. Verifica master key (fail-fast se mancante)
- * 2. Backup opzionale di dev.db con timestamp
- * 3. Reset completo database (drop + migrations)
- * 4. Seed idempotente (admin user + configurazioni base)
- * 5. Sanity checks post-seed
- * 6. Exit code 0 se successo, 1 se fallimento
+ * 2. Reset completo database (drop + migrations)
+ * 3. Seed idempotente (admin user + configurazioni base)
+ * 4. Sanity checks post-seed
+ * 5. Exit code 0 se successo, 1 se fallimento
+ *
+ * Prerequisiti: docker-compose -f docker-compose.dev.yml up -d
  */
 
 import { execSync } from 'child_process';
-import { existsSync, copyFileSync } from 'fs';
 import { join } from 'path';
 
 import { PrismaClient } from '@prisma/client';
@@ -33,21 +33,7 @@ async function bootstrap() {
     process.exit(1);
   }
 
-  // 2. Backup dev.db (opzionale)
-  const dbPath = join(__dirname, '../prisma/dev.db');
-  if (existsSync(dbPath)) {
-    const timestamp = new Date()
-      .toISOString()
-      .replace(/[:.]/g, '-')
-      .split('T')
-      .join('_')
-      .slice(0, 17);
-    const backupPath = join(__dirname, `../prisma/dev.db.backup.${timestamp}`);
-    copyFileSync(dbPath, backupPath);
-    console.log(`💾 Backup creato: ${backupPath}\n`);
-  }
-
-  // 3. Reset database
+  // 2. Reset database
   console.log('🗑️  Reset database...');
   try {
     execSync('pnpm prisma migrate reset --force --skip-seed', {

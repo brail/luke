@@ -7,14 +7,8 @@ import { PrismaClient } from '@prisma/client';
 import type { Context } from '../src/lib/trpc';
 
 export async function createTestContext(): Promise<Context> {
-  // Crea istanza Prisma per test
-  const prisma = new PrismaClient({
-    datasources: {
-      db: {
-        url: 'file:./test.db',
-      },
-    },
-  });
+  // Crea istanza Prisma per test (usa DATABASE_URL da env)
+  const prisma = new PrismaClient();
 
   // Mock session per test
   const mockSession = {
