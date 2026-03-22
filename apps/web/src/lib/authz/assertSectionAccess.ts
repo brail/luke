@@ -27,51 +27,21 @@ export async function assertSectionAccess(section: Section) {
     redirect('/login');
   }
 
-  // Fetch RBAC config from API — cache: 'no-store' per enforcement immediato
+  // Fetch user-specific section overrides from API
   const rbacConfig = {
-    sectionAccessDefaults: {},
+    sectionAccessDefaults: {} as Record<string, unknown>,
     disabledSections: [] as any[],
   };
   let override: { enabled?: boolean } | undefined;
 
   try {
-    const [defaultsRes, disabledRes, overrideRes] = await Promise.all([
-      fetch(buildTrpcUrl('rbac.sectionDefaults.get'), {
-        cache: 'no-store',
-        headers: {
-          Authorization: `Bearer ${session.accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      }),
-      fetch(buildTrpcUrl('rbac.disabledSections.get'), {
-        cache: 'no-store',
-        headers: {
-          Authorization: `Bearer ${session.accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      }),
-      fetch(buildTrpcUrl('sectionAccess.getForMe'), {
-        cache: 'no-store',
-        headers: {
-          Authorization: `Bearer ${session.accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      }),
-    ]);
-
-    if (defaultsRes.ok) {
-      const data = await defaultsRes.json();
-      if (data.result?.data) {
-        rbacConfig.sectionAccessDefaults = data.result.data;
-      }
-    }
-
-    if (disabledRes.ok) {
-      const data = await disabledRes.json();
-      if (data.result?.data) {
-        rbacConfig.disabledSections = data.result.data;
-      }
-    }
+    const overrideRes = await fetch(buildTrpcUrl('sectionAccess.getForMe'), {
+      cache: 'no-store',
+      headers: {
+        Authorization: `Bearer ${session.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
 
     if (overrideRes.ok) {
       const data = await overrideRes.json();
@@ -79,7 +49,7 @@ export async function assertSectionAccess(section: Section) {
       if (found) override = { enabled: found.enabled };
     }
   } catch (err) {
-    console.warn('Errore fetch RBAC config:', err);
+    console.warn('Errore fetch section access:', err);
   }
 
   const userRole = session.user.role as string;
