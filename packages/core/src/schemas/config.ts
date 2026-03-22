@@ -96,8 +96,6 @@ export function parseConfigValue<K extends AppConfigKey>(
  */
 export const CRITICAL_CONFIG_KEYS: AppConfigKey[] = [
   'auth.strategy',
-  'auth.nextAuthSecret',
-  'app.baseUrl',
 ] satisfies AppConfigKey[];
 
 // Re-export LdapResilienceSchema for use in configManager (avoids double-import)
