@@ -43,6 +43,9 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
+  SidebarMenuSub,
+  SidebarMenuSubItem,
+  SidebarMenuSubButton,
 } from './ui/sidebar';
 
 export default function AppSidebar() {
@@ -128,35 +131,28 @@ export default function AppSidebar() {
             <SidebarGroupLabel>Prodotto</SidebarGroupLabel>
             <SidebarMenu>
               <SidebarMenuItem>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <SidebarMenuButton isActive={isActive('/product')}>
-                      <Calculator size={18} />
-                      <span>Prodotto</span>
-                      <ChevronDown size={16} className="ml-auto" />
-                    </SidebarMenuButton>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-56">
-                    <DropdownMenuItem asChild>
-                      <Link
-                        href="/product/pricing"
-                        className="flex items-center"
-                      >
-                        <TrendingUp className="mr-2 h-4 w-4" />
+                <SidebarMenuButton isActive={isActive('/product')}>
+                  <Calculator size={18} />
+                  <span>Prodotto</span>
+                </SidebarMenuButton>
+                <SidebarMenuSub>
+                  <SidebarMenuSubItem>
+                    <SidebarMenuSubButton asChild isActive={isActive('/product/pricing')}>
+                      <Link href="/product/pricing">
+                        <TrendingUp size={16} />
                         <span>Costi e Prezzi</span>
                       </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                      <Link
-                        href="/product/collection-layout"
-                        className="flex items-center"
-                      >
-                        <LayoutGrid className="mr-2 h-4 w-4" />
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
+                  <SidebarMenuSubItem>
+                    <SidebarMenuSubButton asChild isActive={isActive('/product/collection-layout')}>
+                      <Link href="/product/collection-layout">
+                        <LayoutGrid size={16} />
                         <span>Collection Layout</span>
                       </Link>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
+                </SidebarMenuSub>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroup>
