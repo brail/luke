@@ -20,6 +20,7 @@ export interface UserListItem {
     provider: 'LOCAL' | 'LDAP' | 'OIDC';
     providerId: string;
   }>;
+  isOnline: boolean;
 }
 
 // Colonne ordinabili della tabella
