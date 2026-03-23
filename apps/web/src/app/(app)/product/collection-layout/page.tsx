@@ -79,7 +79,7 @@ export default function CollectionLayoutPage() {
       toast.success('Collection Layout creato');
       invalidateLayout();
     },
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
   });
 
   const copyFromSeasonMutation = trpc.collectionLayout.copyFromSeason.useMutation({
@@ -87,7 +87,7 @@ export default function CollectionLayoutPage() {
       toast.success('Layout copiato dalla stagione selezionata');
       invalidateLayout();
     },
-    onError: err =>
+    onError: (err: unknown) =>
       toast.error(
         getTrpcErrorMessage(err, {
           CONFLICT: 'Un layout esiste già per questa stagione',
@@ -102,7 +102,7 @@ export default function CollectionLayoutPage() {
       setGroupDialog(null);
       invalidateLayout();
     },
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
   });
 
   const updateGroupMutation = trpc.collectionLayout.groups.update.useMutation({
@@ -111,7 +111,7 @@ export default function CollectionLayoutPage() {
       setGroupDialog(null);
       invalidateLayout();
     },
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
   });
 
   const deleteGroupMutation = trpc.collectionLayout.groups.delete.useMutation({
@@ -119,7 +119,7 @@ export default function CollectionLayoutPage() {
       toast.success('Gruppo eliminato');
       invalidateLayout();
     },
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
   });
 
   const createRowMutation = trpc.collectionLayout.rows.create.useMutation({
@@ -128,7 +128,7 @@ export default function CollectionLayoutPage() {
       setRowDrawer(null);
       invalidateLayout();
     },
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
   });
 
   const updateRowMutation = trpc.collectionLayout.rows.update.useMutation({
@@ -137,7 +137,7 @@ export default function CollectionLayoutPage() {
       setRowDrawer(null);
       invalidateLayout();
     },
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
   });
 
   const deleteRowMutation = trpc.collectionLayout.rows.delete.useMutation({
@@ -145,7 +145,7 @@ export default function CollectionLayoutPage() {
       toast.success('Riga eliminata');
       invalidateLayout();
     },
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
   });
 
   const duplicateRowMutation = trpc.collectionLayout.rows.duplicate.useMutation({
@@ -153,12 +153,12 @@ export default function CollectionLayoutPage() {
       toast.success('Riga duplicata');
       invalidateLayout();
     },
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
   });
 
   const updateSettingsMutation = trpc.collectionLayout.updateSettings.useMutation({
     onSuccess: () => invalidateLayout(),
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
   });
 
   const isMutating =
