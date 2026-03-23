@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import React, { useState } from 'react';
 
+import { BackendStatus } from '../../../components/BackendStatus';
 import Logo from '../../../components/Logo';
 import { Button } from '../../../components/ui/button';
 import {
@@ -16,7 +17,6 @@ import {
 } from '../../../components/ui/card';
 import { Input } from '../../../components/ui/input';
 import { Label } from '../../../components/ui/label';
-import { useAppConfig } from '../../../hooks/use-app-config';
 import { trpc } from '../../../lib/trpc';
 
 /**
@@ -30,16 +30,7 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
-  const { name, version, isLoading: configLoading, hasError } = useAppConfig();
   const utils = trpc.useUtils();
-
-  const displayText = configLoading
-    ? 'Caricamento...'
-    : hasError
-      ? 'Backend non disponibile'
-      : name && version
-        ? `${name} v${version} (Development)`
-        : 'Connessione al backend...';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,8 +130,8 @@ export default function LoginPage() {
               Password dimenticata?
             </Link>
           </div>
-          <div className="mt-4 text-xs text-muted-foreground text-center">
-            <p>{displayText}</p>
+          <div className="mt-4">
+            <BackendStatus />
           </div>
         </CardContent>
       </Card>

@@ -43,12 +43,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <AppContextProvider>
       <SidebarProvider>
-        <div className="flex min-h-screen w-full bg-background">
+        <div className="flex h-screen w-full bg-background">
           <AppSidebar />
-          <div className="flex-1 flex flex-col">
+          <div className="flex-1 flex flex-col overflow-y-auto">
             {/* Header comune */}
-            <header className="border-b bg-card">
-              <div className="flex items-center gap-4 justify-between px-4 py-4">
+            <header className="sticky top-0 z-10 shrink-0 border-b bg-card">
+              <div className="flex items-center gap-4 justify-between px-4 py-2">
                 <div className="flex items-center gap-4">
                   <SidebarTrigger />
                   <BreadcrumbNav />
@@ -58,7 +58,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </header>
 
             {/* Contenuto principale */}
-            <main className="flex-1 p-6 overflow-y-auto">{children}</main>
+            <main className="flex-1 p-6">{children}</main>
           </div>
         </div>
 

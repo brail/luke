@@ -14,27 +14,22 @@ export const publicRouter = router({
    */
   appInfo: publicProcedure.query(async ({ ctx }) => {
     try {
-      // Prova a recuperare da database
-      const [appName, appVersion] = await Promise.all([
-        getConfig(ctx.prisma, 'app.name', false).catch(() => null),
-        getConfig(ctx.prisma, 'app.version', false).catch(() => null),
-      ]);
+      const appName = await getConfig(ctx.prisma, 'app.name', false).catch(() => null);
 
       return {
         name: appName || 'Luke',
-        version: appVersion || '1.0.0',
+        version: process.env.APP_VERSION ?? 'dev',
         environment: isDevelopment() ? 'development' : 'production',
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
-      // Fallback completo se database non disponibile
       ctx.logger.warn(
         { error: error instanceof Error ? error.message : 'Unknown error' },
         'Fallback to default app info'
       );
       return {
         name: 'Luke',
-        version: '1.0.0',
+        version: process.env.APP_VERSION ?? 'dev',
         environment: isDevelopment() ? 'development' : 'production',
         timestamp: new Date().toISOString(),
       };

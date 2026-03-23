@@ -53,6 +53,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            APP_VERSION=${{ github.ref_name }}
           cache-from: type=gha,scope=api
           cache-to: type=gha,scope=api,mode=max
 
@@ -100,6 +102,7 @@ jobs:
           # Settings → Variables → Actions → New repository variable
           build-args: |
             NEXT_PUBLIC_API_URL=http://${{ vars.PUBLIC_HOSTNAME }}
+            APP_VERSION=${{ github.ref_name }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,scope=web,mode=max
 

@@ -267,6 +267,13 @@ export default function AppSidebar() {
         </SidebarFooter>
       )}
 
+      {/* Versione app — solo in development */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="px-3 pb-1 text-xs text-muted-foreground/60 select-none">
+          {[process.env.NEXT_PUBLIC_APP_VERSION, 'dev'].filter(Boolean).join(' · ')}
+        </div>
+      )}
+
       {/* Footer con dropdown utente - sempre visibile */}
       <SidebarFooter>
         <DropdownMenu>

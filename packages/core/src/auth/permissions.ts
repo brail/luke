@@ -110,9 +110,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'audit:read',
     // Dashboard: lettura
     'dashboard:read',
-    // Pricing: lettura e modifica
+    // Pricing: solo lettura (modifica varianti riservata ad admin)
     'pricing:read',
-    'pricing:update',
     // Collection Layout: lettura e modifica
     'collection_layout:read',
     'collection_layout:update',

@@ -16,6 +16,11 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ARG INTERNAL_API_URL=http://api:3001
 ENV INTERNAL_API_URL=$INTERNAL_API_URL
 
+# APP_VERSION is injected at build time from the git tag (e.g. v1.2.3).
+# Falls back to "dev" when building locally without a tag.
+ARG APP_VERSION=dev
+ENV NEXT_PUBLIC_APP_VERSION=$APP_VERSION
+
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 

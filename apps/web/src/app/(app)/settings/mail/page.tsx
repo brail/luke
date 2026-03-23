@@ -302,8 +302,8 @@ export default function MailPage() {
                   </FormLabel>
                   <FormControl>
                     <Input
-                      type="email"
-                      placeholder='es. "Luke" <noreply@example.com>'
+                      type="text"
+                      placeholder='es. noreply@example.com oppure Luke <noreply@example.com>'
                       {...field}
                     />
                   </FormControl>

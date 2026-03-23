@@ -408,7 +408,7 @@ export async function requestPasswordReset(ctx: Context, email: string) {
   const tokenHash = createHash('sha256').update(token).digest('hex');
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
-  await ctx.prisma.userToken.create({
+  const userToken = await ctx.prisma.userToken.create({
     data: {
       userId: user.id,
       type: 'RESET',
@@ -421,6 +421,12 @@ export async function requestPasswordReset(ctx: Context, email: string) {
     (await getConfig(ctx.prisma, 'app.baseUrl', false)) ||
     'http://localhost:3000';
 
+  const genericResponse = {
+    success: true,
+    message:
+      "Se l'email esiste nel sistema, riceverai un link per il reset della password.",
+  };
+
   try {
     await sendPasswordResetEmail(ctx.prisma, normalizedEmail, token, baseUrl);
 
@@ -432,11 +438,18 @@ export async function requestPasswordReset(ctx: Context, email: string) {
       metadata: { expiresAt: expiresAt.toISOString() },
     });
 
-    return {
-      success: true,
-      message: 'Email di reset password inviata con successo.',
-    };
+    return genericResponse;
   } catch (error) {
+    // L'invio email è fallito (es. SMTP non configurato).
+    // Elimina il token orfano e logga l'errore lato server.
+    // Non esponiamo il problema all'utente per mantenere la protezione da enumeration.
+    await ctx.prisma.userToken.delete({ where: { id: userToken.id } }).catch(() => {});
+
+    ctx.logger.error(
+      { error: error instanceof Error ? error.message : 'Unknown error', userId: user.id },
+      'Password reset email failed — check SMTP config in AppConfig'
+    );
+
     await logAudit(ctx, {
       action: 'PASSWORD_RESET_REQUESTED',
       targetType: 'Auth',
@@ -447,10 +460,8 @@ export async function requestPasswordReset(ctx: Context, email: string) {
         error: error instanceof Error ? error.message : 'Unknown error',
       },
     });
-    throw new TRPCError({
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'Impossibile inviare email.',
-    });
+
+    return genericResponse;
   }
 }
 

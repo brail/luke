@@ -14,7 +14,13 @@ export const mailSmtpConfigSchema = z.object({
   secure: z.boolean(),
   user: z.string().min(1, 'Username richiesto'),
   pass: z.string().optional().or(z.literal('')),
-  from: z.string().email('Email valida richiesta'),
+  from: z
+    .string()
+    .min(1, 'Mittente richiesto')
+    .refine(
+      v => /^[^<>]+<[^\s@]+@[^\s@]+\.[^\s@]+>$/.test(v) || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v),
+      'Formato valido: email@dominio.com oppure Nome <email@dominio.com>'
+    ),
   baseUrl: z.string().url('URL valido richiesto'),
 });
 

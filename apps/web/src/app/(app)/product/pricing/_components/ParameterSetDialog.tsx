@@ -2,7 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Calculator } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import {
@@ -36,12 +36,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../../../../components/ui/select';
+import { Switch } from '../../../../../components/ui/switch';
 
 interface ParameterSetDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  initialData?: PricingParameterSetInput & { id?: string };
-  onSubmit: (data: PricingParameterSetInput) => void;
+  initialData?: PricingParameterSetInput & { id?: string; isDefault?: boolean };
+  onSubmit: (data: PricingParameterSetInput, makeDefault?: boolean) => void;
   isLoading?: boolean;
   mode: 'create' | 'edit';
 }
@@ -54,6 +55,8 @@ export function ParameterSetDialog({
   isLoading = false,
   mode,
 }: ParameterSetDialogProps) {
+  const [makeDefault, setMakeDefault] = useState(initialData?.isDefault ?? false);
+
   const form = useForm<PricingParameterSetInput>({
     resolver: zodResolver(PricingParameterSetInputSchema),
     defaultValues: initialData ?? {
@@ -71,9 +74,10 @@ export function ParameterSetDialog({
     },
   });
 
-  // Reset del form quando il dialog si apre
+  // Reset del form e dello stato makeDefault quando il dialog si apre
   useEffect(() => {
     if (open) {
+      setMakeDefault(initialData?.isDefault ?? false);
       form.reset(
         initialData ?? {
           name: '',
@@ -112,7 +116,7 @@ export function ParameterSetDialog({
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <form onSubmit={form.handleSubmit(data => onSubmit(data, makeDefault))} className="space-y-6">
             {/* Nome variante */}
             <FormField
               control={form.control}
@@ -131,6 +135,25 @@ export function ParameterSetDialog({
                 </FormItem>
               )}
             />
+
+            {/* Imposta come default (solo in edit) */}
+            {mode === 'edit' && (
+              <div className="flex items-center justify-between rounded-md border px-4 py-3">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-medium">Variante default</p>
+                  <p className="text-xs text-muted-foreground">
+                    {initialData?.isDefault
+                      ? 'Questa variante è già quella di default'
+                      : 'Seleziona per impostare questa variante come default'}
+                  </p>
+                </div>
+                <Switch
+                  checked={makeDefault}
+                  onCheckedChange={setMakeDefault}
+                  disabled={isLoading || initialData?.isDefault}
+                />
+              </div>
+            )}
 
             {/* Valute */}
             <div className="grid grid-cols-2 gap-4">

@@ -153,11 +153,6 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       encrypt: false,
     },
     {
-      key: 'app.version',
-      value: '0.1.0',
-      encrypt: false,
-    },
-    {
       key: 'app.environment',
       value: process.env.NODE_ENV || 'development',
       encrypt: false,

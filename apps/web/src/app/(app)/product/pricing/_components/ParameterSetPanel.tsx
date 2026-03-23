@@ -262,14 +262,23 @@ export function ParameterSetPanel({
                         </Tooltip>
                       </TooltipProvider>
                     ) : (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 opacity-50 cursor-not-allowed"
-                        disabled
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 opacity-50 cursor-not-allowed"
+                              disabled
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Non hai i permessi per eliminare le varianti
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     ))}
                 </div>
 
@@ -335,8 +344,9 @@ export function ParameterSetPanel({
           }}
           mode="edit"
           initialData={editingSet}
-          onSubmit={data => {
+          onSubmit={(data, makeDefault) => {
             onUpdateSet(editingSet.id, data);
+            if (makeDefault && !editingSet.isDefault) onSetDefault(editingSet.id);
             setEditingSet(null);
           }}
           isLoading={isLoading}

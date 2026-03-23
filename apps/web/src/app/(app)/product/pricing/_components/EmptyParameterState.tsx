@@ -15,6 +15,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../../components/ui/dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '../../../../../components/ui/tooltip';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { trpc } from '../../../../../lib/trpc';
 
@@ -87,22 +93,58 @@ export function EmptyParameterState({
 
       <div className="flex gap-3 flex-wrap justify-center">
         {hasPrevious && (
-          <Button
-            variant="outline"
-            onClick={() => setIsCopyPreviewOpen(true)}
-            disabled={!canUpdate || isLoading}
-          >
-            <Copy className="h-4 w-4 mr-2" />
-            Copia da {previousSeason?.code} {previousSeason?.year}
-          </Button>
+          canUpdate ? (
+            <Button
+              variant="outline"
+              onClick={() => setIsCopyPreviewOpen(true)}
+              disabled={isLoading}
+            >
+              <Copy className="h-4 w-4 mr-2" />
+              Copia da {previousSeason?.code} {previousSeason?.year}
+            </Button>
+          ) : (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    disabled
+                    className="opacity-50 cursor-not-allowed"
+                  >
+                    <Copy className="h-4 w-4 mr-2" />
+                    Copia da {previousSeason?.code} {previousSeason?.year}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Non hai i permessi per creare parametri
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )
         )}
-        <Button
-          onClick={() => setIsCreateDialogOpen(true)}
-          disabled={!canUpdate || isLoading}
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Inserisci da zero
-        </Button>
+        {canUpdate ? (
+          <Button
+            onClick={() => setIsCreateDialogOpen(true)}
+            disabled={isLoading}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Inserisci da zero
+          </Button>
+        ) : (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button disabled className="opacity-50 cursor-not-allowed">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Inserisci da zero
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Non hai i permessi per creare parametri
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
       </div>
 
       {/* Dialog conferma copia */}

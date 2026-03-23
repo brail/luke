@@ -24,6 +24,10 @@ FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
+# APP_VERSION is injected at build time from the git tag (e.g. v1.2.3).
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
+
 # Workspace manifests (needed for pnpm resolution at runtime)
 COPY --from=builder /app/package.json /app/pnpm-workspace.yaml ./
 

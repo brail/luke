@@ -3,27 +3,19 @@
 import { trpc } from '../lib/trpc';
 
 /**
- * Hook per recuperare le informazioni pubbliche dell'app
- * Usa endpoint pubblico che non richiede autenticazione
+ * Probe di connettività verso il backend.
+ * La versione dell'app è disponibile a build time via NEXT_PUBLIC_APP_VERSION.
  */
 export function useAppConfig() {
-  const {
-    data: appInfo,
-    isLoading,
-    error,
-  } = trpc.public.appInfo.useQuery(undefined, {
-    staleTime: 5 * 60 * 1000, // 5 minuti
+  const { isLoading, error } = trpc.public.appInfo.useQuery(undefined, {
+    staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     retry: 2,
     retryDelay: 1000,
   });
 
   return {
-    name: appInfo?.name || 'Luke',
-    version: appInfo?.version || '1.0.0',
-    environment: appInfo?.environment || 'development',
     isLoading,
     hasError: !!error,
-    error: error ? "Impossibile caricare le informazioni dell'app" : null,
   };
 }
