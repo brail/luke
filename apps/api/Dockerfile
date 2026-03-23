@@ -17,6 +17,7 @@ RUN pnpm --filter @luke/api exec prisma generate
 
 # Build shared packages first, then the API
 RUN pnpm --filter @luke/core build
+RUN pnpm --filter @luke/nav build
 RUN pnpm --filter @luke/api build
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────

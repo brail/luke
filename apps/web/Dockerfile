@@ -33,6 +33,7 @@ RUN pnpm --filter @luke/api exec prisma generate
 
 # Build shared packages first
 RUN pnpm --filter @luke/core build
+RUN pnpm --filter @luke/nav build
 
 # Build Next.js app
 RUN pnpm --filter @luke/web build
@@ -53,6 +54,11 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages/core/package.json ./packages/core/package.json
 COPY --from=builder /app/packages/core/dist          ./packages/core/dist
 COPY --from=builder /app/packages/core/node_modules  ./packages/core/node_modules
+
+# @luke/nav — dist only (importato da @luke/api/src per i tipi tRPC)
+COPY --from=builder /app/packages/nav/package.json ./packages/nav/package.json
+COPY --from=builder /app/packages/nav/dist          ./packages/nav/dist
+COPY --from=builder /app/packages/nav/node_modules  ./packages/nav/node_modules
 
 # @luke/api types (needed for tRPC type inference at runtime imports)
 COPY --from=builder /app/apps/api/package.json  ./apps/api/package.json
