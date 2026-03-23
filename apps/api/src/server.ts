@@ -24,6 +24,7 @@ import { buildCorsAllowedOrigins } from './lib/cors';
 import { createContext } from './lib/trpc';
 import { setGlobalErrorHandler } from './lib/error';
 import { getConfig, validateCriticalConfig } from './lib/configManager';
+import { registerNavSyncScheduler } from './lib/navSyncScheduler';
 import { idempotencyStore } from './lib/idempotency';
 import { rateLimitStore } from './lib/ratelimit';
 import {
@@ -593,6 +594,9 @@ const start = async () => {
 
     // Configura cleanup file temporanei
     setupTempFileCleanup();
+
+    // Registra scheduler sync NAV (onReady + onClose)
+    registerNavSyncScheduler(fastify, prisma);
 
     // Configura graceful shutdown
     setupGracefulShutdown();
