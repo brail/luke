@@ -200,6 +200,109 @@ function NavSyncTab({
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
+      {/* ── Pannello filtro ──────────────────────────────────────────────── */}
+      <SectionCard
+        title="Filtro di sincronizzazione"
+        description="Configura quali record vengono inclusi nel sync automatico"
+      >
+        <div className="space-y-4">
+          {/* Badge contatore */}
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="text-sm">
+              {selectedNavNos.size} su {allRecords.length} selezionati
+            </Badge>
+            {filterQuery.data?.updatedAt && (
+              <span className="text-xs text-muted-foreground">
+                Ultimo salvataggio:{' '}
+                {new Date(filterQuery.data.updatedAt).toLocaleString('it-IT')}
+              </span>
+            )}
+          </div>
+
+          {/* Radio mode */}
+          <div className="space-y-2">
+            {(
+              [
+                { value: 'all', label: 'Sincronizza tutti' },
+                { value: 'whitelist', label: 'Solo selezionati' },
+                { value: 'exclude', label: 'Escludi selezionati' },
+              ] as const
+            ).map(opt => (
+              <label key={opt.value} className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="radio"
+                  name={`sync-mode-${entity}`}
+                  value={opt.value}
+                  checked={mode === opt.value}
+                  onChange={() => setMode(opt.value)}
+                  className="accent-primary h-4 w-4"
+                />
+                <span className="text-sm">{opt.label}</span>
+              </label>
+            ))}
+          </div>
+
+          {/* Nota contestuale — si aggiorna in tempo reale */}
+          <ModeNote mode={mode} entityLabel={entityLabel} />
+
+          <Button
+            onClick={handleSaveFilter}
+            disabled={saveFilterMutation.isPending}
+            size="sm"
+          >
+            {saveFilterMutation.isPending ? 'Salvataggio…' : 'Salva filtro'}
+          </Button>
+        </div>
+      </SectionCard>
+
+      {/* ── Azioni sync ──────────────────────────────────────────────────── */}
+      <SectionCard
+        title="Esegui sync"
+        description="Avvia manualmente la sincronizzazione per questa entità"
+      >
+        <div className="space-y-3">
+          {/* Banner avviso sync disabilitato */}
+          {statusQuery.data && !statusQuery.data.syncEnabled && (
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+              ⚠️ La sincronizzazione è disabilitata. Abilitala in{' '}
+              <strong>Impostazioni › Microsoft NAV</strong> prima di eseguire il sync.
+            </p>
+          )}
+
+          <Button
+            onClick={handleRunSync}
+            disabled={runSyncMutation.isPending}
+            className="gap-2"
+          >
+            <RefreshCw size={16} className={runSyncMutation.isPending ? 'animate-spin' : ''} />
+            {runSyncMutation.isPending ? 'Sincronizzazione in corso…' : 'Esegui sync ora'}
+          </Button>
+
+          {syncRunResult && !runSyncMutation.isPending && (
+            syncRunResult.syncDisabled ? (
+              <p className="text-sm text-amber-600 dark:text-amber-400">
+                ⚠️ Sync saltato — sincronizzazione disabilitata in AppConfig.
+              </p>
+            ) : (() => {
+              const r = syncRunResult.results.find(x => x.entity === entity) ?? syncRunResult.results[0];
+              if (!r) return null;
+              return (
+                <p className="text-sm text-green-600 dark:text-green-400">
+                  ✓{' '}
+                  {r.skipped
+                    ? `Sync saltato (filtro entità disabilitato)`
+                    : `${r.upserted} record sincronizzati in ${(r.durationMs / 1000).toFixed(1)}s`}
+                </p>
+              );
+            })()
+          )}
+
+          {runSyncMutation.isError && (
+            <p className="text-sm text-destructive">{runSyncMutation.error.message}</p>
+          )}
+        </div>
+      </SectionCard>
+
       {/* ── Tabella preview ─────────────────────────────────────────────── */}
       <SectionCard
         title={`Anteprima ${entityLabel}`}
@@ -314,109 +417,6 @@ function NavSyncTab({
               : `${filteredRecords.length} di ${allRecords.length} record (filtrati)`}
           </p>
         )}
-      </SectionCard>
-
-      {/* ── Pannello filtro ──────────────────────────────────────────────── */}
-      <SectionCard
-        title="Filtro di sincronizzazione"
-        description="Configura quali record vengono inclusi nel sync automatico"
-      >
-        <div className="space-y-4">
-          {/* Badge contatore */}
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="text-sm">
-              {selectedNavNos.size} su {allRecords.length} selezionati
-            </Badge>
-            {filterQuery.data?.updatedAt && (
-              <span className="text-xs text-muted-foreground">
-                Ultimo salvataggio:{' '}
-                {new Date(filterQuery.data.updatedAt).toLocaleString('it-IT')}
-              </span>
-            )}
-          </div>
-
-          {/* Radio mode */}
-          <div className="space-y-2">
-            {(
-              [
-                { value: 'all', label: 'Sincronizza tutti' },
-                { value: 'whitelist', label: 'Solo selezionati' },
-                { value: 'exclude', label: 'Escludi selezionati' },
-              ] as const
-            ).map(opt => (
-              <label key={opt.value} className="flex cursor-pointer items-center gap-2">
-                <input
-                  type="radio"
-                  name={`sync-mode-${entity}`}
-                  value={opt.value}
-                  checked={mode === opt.value}
-                  onChange={() => setMode(opt.value)}
-                  className="accent-primary h-4 w-4"
-                />
-                <span className="text-sm">{opt.label}</span>
-              </label>
-            ))}
-          </div>
-
-          {/* Nota contestuale — si aggiorna in tempo reale */}
-          <ModeNote mode={mode} entityLabel={entityLabel} />
-
-          <Button
-            onClick={handleSaveFilter}
-            disabled={saveFilterMutation.isPending}
-            size="sm"
-          >
-            {saveFilterMutation.isPending ? 'Salvataggio…' : 'Salva filtro'}
-          </Button>
-        </div>
-      </SectionCard>
-
-      {/* ── Azioni sync ──────────────────────────────────────────────────── */}
-      <SectionCard
-        title="Esegui sync"
-        description="Avvia manualmente la sincronizzazione per questa entità"
-      >
-        <div className="space-y-3">
-          {/* Banner avviso sync disabilitato */}
-          {statusQuery.data && !statusQuery.data.syncEnabled && (
-            <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
-              ⚠️ La sincronizzazione è disabilitata. Abilitala in{' '}
-              <strong>Impostazioni › Microsoft NAV</strong> prima di eseguire il sync.
-            </p>
-          )}
-
-          <Button
-            onClick={handleRunSync}
-            disabled={runSyncMutation.isPending}
-            className="gap-2"
-          >
-            <RefreshCw size={16} className={runSyncMutation.isPending ? 'animate-spin' : ''} />
-            {runSyncMutation.isPending ? 'Sincronizzazione in corso…' : 'Esegui sync ora'}
-          </Button>
-
-          {syncRunResult && !runSyncMutation.isPending && (
-            syncRunResult.syncDisabled ? (
-              <p className="text-sm text-amber-600 dark:text-amber-400">
-                ⚠️ Sync saltato — sincronizzazione disabilitata in AppConfig.
-              </p>
-            ) : (() => {
-              const r = syncRunResult.results.find(x => x.entity === entity) ?? syncRunResult.results[0];
-              if (!r) return null;
-              return (
-                <p className="text-sm text-green-600 dark:text-green-400">
-                  ✓{' '}
-                  {r.skipped
-                    ? `Sync saltato (filtro entità disabilitato)`
-                    : `${r.upserted} record sincronizzati in ${(r.durationMs / 1000).toFixed(1)}s`}
-                </p>
-              );
-            })()
-          )}
-
-          {runSyncMutation.isError && (
-            <p className="text-sm text-destructive">{runSyncMutation.error.message}</p>
-          )}
-        </div>
       </SectionCard>
     </div>
   );

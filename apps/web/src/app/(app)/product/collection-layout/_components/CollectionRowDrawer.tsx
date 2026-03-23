@@ -176,47 +176,49 @@ export function CollectionRowDrawer({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-2xl overflow-y-auto" side="right">
-        <SheetHeader className="pb-4 border-b">
+      <SheetContent className="w-full sm:max-w-2xl flex flex-col" side="right">
+        <SheetHeader className="pb-4 border-b shrink-0">
           <SheetTitle className="text-lg">{title}</SheetTitle>
         </SheetHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 py-6">
-            <IdentificationSection
-              control={form.control}
-              canUpdate={canUpdate}
-              mode={mode}
-              pictureUrl={pictureUrl}
-              fileInputRef={fileInputRef}
-              onRemovePicture={() => form.setValue('pictureUrl', null)}
-              onUploadPicture={handlePictureUpload}
-            />
+          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
+            <div className="flex-1 overflow-y-auto space-y-6 py-6 px-1">
+              <IdentificationSection
+                control={form.control}
+                canUpdate={canUpdate}
+                mode={mode}
+                pictureUrl={pictureUrl}
+                fileInputRef={fileInputRef}
+                onRemovePicture={() => form.setValue('pictureUrl', null)}
+                onUploadPicture={handlePictureUpload}
+              />
 
-            <Separator />
+              <Separator />
 
-            <ForecastGroupSection
-              control={form.control}
-              canUpdate={canUpdate}
-              groups={groups}
-            />
+              <ForecastGroupSection
+                control={form.control}
+                canUpdate={canUpdate}
+                groups={groups}
+              />
 
-            <Separator />
+              <Separator />
 
-            <PricingSection
-              control={form.control}
-              canUpdate={canUpdate}
-              parameterSets={parameterSets}
-              selectedParamSet={selectedParamSet}
-              marginCalc={marginCalc}
-            />
+              <PricingSection
+                control={form.control}
+                canUpdate={canUpdate}
+                parameterSets={parameterSets}
+                selectedParamSet={selectedParamSet}
+                marginCalc={marginCalc}
+              />
 
-            <Separator />
+              <Separator />
 
-            <NotesSection control={form.control} canUpdate={canUpdate} />
+              <NotesSection control={form.control} canUpdate={canUpdate} />
+            </div>
 
-            {/* Footer */}
-            <div className="flex justify-end gap-3 pt-4 border-t sticky bottom-0 bg-background pb-4">
+            {/* Footer fisso al fondo */}
+            <div className="flex justify-end gap-3 px-1 py-4 border-t shrink-0">
               <Button
                 type="button"
                 variant="outline"

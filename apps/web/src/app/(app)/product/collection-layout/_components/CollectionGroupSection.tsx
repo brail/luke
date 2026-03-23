@@ -483,7 +483,7 @@ export function CollectionGroupSection({
                     <FilterableHeader col="gender" label="Gender" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.gender} options={GENDER_OPTIONS} />
                   )}
                   {show('supplier') && (
-                    <FilterableHeader col="supplier" label="Fornitore" type="text" {...sortProps} {...filterProps} filterValue={columnFilters.supplier} />
+                    <FilterableHeader col="supplier" label="Fornitore" type="text" {...sortProps} {...filterProps} filterValue={columnFilters.supplier} className="w-36" />
                   )}
                   {show('productCategory') && (
                     <FilterableHeader col="productCategory" label="Categoria" type="text" {...sortProps} {...filterProps} filterValue={columnFilters.productCategory} />
@@ -550,8 +550,10 @@ export function CollectionGroupSection({
                         <TableCell className="text-sm text-muted-foreground">{row.gender}</TableCell>
                       )}
                       {show('supplier') && (
-                        <TableCell className="text-sm text-muted-foreground">
-                          {row.navVendor?.searchName ?? row.navVendor?.name ?? '—'}
+                        <TableCell className="w-36 max-w-[9rem] text-sm text-muted-foreground">
+                          <span className="block truncate">
+                            {row.navVendor?.searchName ?? row.navVendor?.name ?? '—'}
+                          </span>
                         </TableCell>
                       )}
                       {show('productCategory') && (

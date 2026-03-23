@@ -10,8 +10,6 @@ export const sectionEnum = z.enum([
   // Settings e relative sotto-sezioni
   'settings',
   'settings.users',
-  'settings.brands',
-  'settings.seasons',
   'settings.storage',
   'settings.mail',
   'settings.ldap',
@@ -24,8 +22,10 @@ export const sectionEnum = z.enum([
   'product',
   'product.pricing',
   'product.collection_layout',
-  // Amministrazione (solo admin)
+  // Amministrazione
   'admin',
+  'admin.brands',
+  'admin.seasons',
   'admin.nav_sync',
 ]);
 export type Section = z.infer<typeof sectionEnum>;
@@ -38,8 +38,6 @@ export const SECTION_TO_PERMISSION: Record<Section, string> = {
   dashboard: 'dashboard:read',
   settings: 'settings:read',
   'settings.users': 'users:read',
-  'settings.brands': 'brands:read',
-  'settings.seasons': 'seasons:read',
   'settings.storage': 'config:read',
   'settings.mail': 'config:read',
   'settings.ldap': 'config:read',
@@ -51,6 +49,8 @@ export const SECTION_TO_PERMISSION: Record<Section, string> = {
   'product.pricing': 'pricing:read',
   'product.collection_layout': 'collection_layout:read',
   admin: 'maintenance:read',
+  'admin.brands': 'brands:read',
+  'admin.seasons': 'seasons:read',
   'admin.nav_sync': 'maintenance:read',
 } as const;
 
@@ -77,8 +77,6 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       dashboard: true,
       settings: true,
       'settings.users': true,
-      'settings.brands': true,
-      'settings.seasons': true,
       'settings.storage': true,
       'settings.mail': true,
       'settings.ldap': true,
@@ -90,14 +88,14 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       'product.pricing': true,
       'product.collection_layout': true,
       admin: true,
+      'admin.brands': true,
+      'admin.seasons': true,
       'admin.nav_sync': true,
     },
     editor: {
       dashboard: true,
       settings: false,
       'settings.users': false,
-      'settings.brands': false,
-      'settings.seasons': false,
       'settings.storage': false,
       'settings.mail': false,
       'settings.ldap': false,
@@ -109,14 +107,14 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       'product.pricing': true,
       'product.collection_layout': true,
       admin: false,
+      'admin.brands': false,
+      'admin.seasons': false,
       'admin.nav_sync': false,
     },
     viewer: {
       dashboard: true,
       settings: false,
       'settings.users': false,
-      'settings.brands': false,
-      'settings.seasons': false,
       'settings.storage': false,
       'settings.mail': false,
       'settings.ldap': false,
@@ -128,6 +126,8 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       'product.pricing': true,
       'product.collection_layout': true,
       admin: false,
+      'admin.brands': false,
+      'admin.seasons': false,
       'admin.nav_sync': false,
     },
   };

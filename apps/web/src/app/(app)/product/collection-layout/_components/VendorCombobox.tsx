@@ -52,7 +52,7 @@ export function VendorCombobox({ value, onChange, disabled }: VendorComboboxProp
             !displayLabel && 'text-muted-foreground',
           )}
         >
-          {displayLabel ?? 'Seleziona fornitore…'}
+          <span className="truncate">{displayLabel ?? 'Seleziona fornitore…'}</span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>

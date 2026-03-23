@@ -60,8 +60,6 @@ export function useSectionAccess() {
       dashboard: checkAccess('dashboard'),
       settings: checkAccess('settings'),
       'settings.users': checkAccess('settings.users'),
-      'settings.brands': checkAccess('settings.brands'),
-      'settings.seasons': checkAccess('settings.seasons'),
       'settings.storage': checkAccess('settings.storage'),
       'settings.mail': checkAccess('settings.mail'),
       'settings.ldap': checkAccess('settings.ldap'),
@@ -73,6 +71,8 @@ export function useSectionAccess() {
       'product.pricing': checkAccess('product.pricing'),
       'product.collection_layout': checkAccess('product.collection_layout'),
       admin: checkAccess('admin'),
+      'admin.brands': checkAccess('admin.brands'),
+      'admin.seasons': checkAccess('admin.seasons'),
       'admin.nav_sync': checkAccess('admin.nav_sync'),
     };
   }, [session?.user, userOverrides]);

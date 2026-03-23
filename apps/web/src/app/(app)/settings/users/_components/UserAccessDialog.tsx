@@ -33,8 +33,6 @@ const SECTION_LABELS: Record<Section, string> = {
   dashboard: 'Dashboard',
   settings: 'Impostazioni',
   'settings.users': '↳ Utenti',
-  'settings.brands': '↳ Brand',
-  'settings.seasons': '↳ Stagioni',
   'settings.storage': '↳ Storage',
   'settings.mail': '↳ Mail',
   'settings.ldap': '↳ Auth LDAP',
@@ -46,6 +44,8 @@ const SECTION_LABELS: Record<Section, string> = {
   'product.pricing': '↳ Pricing',
   'product.collection_layout': '↳ Collection Layout',
   admin: 'Amministrazione',
+  'admin.brands': '↳ Brand',
+  'admin.seasons': '↳ Stagioni',
   'admin.nav_sync': '↳ Sync NAV',
 };
 
@@ -53,8 +53,6 @@ const ALL_SECTIONS: Section[] = [
   'dashboard',
   'settings',
   'settings.users',
-  'settings.brands',
-  'settings.seasons',
   'settings.storage',
   'settings.mail',
   'settings.ldap',
@@ -66,6 +64,8 @@ const ALL_SECTIONS: Section[] = [
   'product.pricing',
   'product.collection_layout',
   'admin',
+  'admin.brands',
+  'admin.seasons',
   'admin.nav_sync',
 ];
 

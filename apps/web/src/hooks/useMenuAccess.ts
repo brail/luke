@@ -20,8 +20,6 @@ export function useMenuAccess() {
     // Settings: ogni sub-item richiede parent + sottosezione
     const settingsItems = {
       users: s.settings && s['settings.users'],
-      brands: s.settings && s['settings.brands'],
-      seasons: s.settings && s['settings.seasons'],
       storage: s.settings && s['settings.storage'],
       mail: s.settings && s['settings.mail'],
       ldap: s.settings && s['settings.ldap'],
@@ -38,6 +36,8 @@ export function useMenuAccess() {
 
     // Admin: ogni sub-item richiede parent + sottosezione
     const adminItems = {
+      brands: s.admin && s['admin.brands'],
+      seasons: s.admin && s['admin.seasons'],
       nav_sync: s.admin && s['admin.nav_sync'],
     };
     const showAdmin = Object.values(adminItems).some(Boolean);

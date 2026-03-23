@@ -168,6 +168,47 @@ export default function AppSidebar() {
           <SidebarGroup>
             <SidebarGroupLabel>Sistema</SidebarGroupLabel>
             <SidebarMenu>
+              {/* Dropdown Amministrazione */}
+              {menuAccess.admin && (
+                <SidebarMenuItem>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <SidebarMenuButton>
+                        <ShieldCheck size={18} />
+                        <span>Amministrazione</span>
+                        <ChevronDown size={16} className="ml-auto" />
+                      </SidebarMenuButton>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-56">
+                      {menuAccess.adminItems.brands && (
+                        <DropdownMenuItem asChild>
+                          <Link href="/settings/brands" className="flex items-center">
+                            <Building2 className="mr-2 h-4 w-4" />
+                            <span>Brand</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      {menuAccess.adminItems.seasons && (
+                        <DropdownMenuItem asChild>
+                          <Link href="/settings/seasons" className="flex items-center">
+                            <CalendarDays className="mr-2 h-4 w-4" />
+                            <span>Stagioni</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      {menuAccess.adminItems.nav_sync && (
+                        <DropdownMenuItem asChild>
+                          <Link href="/admin/nav-sync" className="flex items-center">
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            <span>Sync NAV</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </SidebarMenuItem>
+              )}
+
               {/* Dropdown Impostazioni */}
               {menuAccess.settings && (
                 <SidebarMenuItem>
@@ -185,22 +226,6 @@ export default function AppSidebar() {
                           <Link href="/settings/users" className="flex items-center">
                             <Users className="mr-2 h-4 w-4" />
                             <span>Utenti</span>
-                          </Link>
-                        </DropdownMenuItem>
-                      )}
-                      {menuAccess.settingsItems.brands && (
-                        <DropdownMenuItem asChild>
-                          <Link href="/settings/brands" className="flex items-center">
-                            <Building2 className="mr-2 h-4 w-4" />
-                            <span>Brand</span>
-                          </Link>
-                        </DropdownMenuItem>
-                      )}
-                      {menuAccess.settingsItems.seasons && (
-                        <DropdownMenuItem asChild>
-                          <Link href="/settings/seasons" className="flex items-center">
-                            <CalendarDays className="mr-2 h-4 w-4" />
-                            <span>Stagioni</span>
                           </Link>
                         </DropdownMenuItem>
                       )}
@@ -233,31 +258,6 @@ export default function AppSidebar() {
                           <Link href="/settings/nav" className="flex items-center">
                             <Database className="mr-2 h-4 w-4" />
                             <span>Microsoft NAV</span>
-                          </Link>
-                        </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </SidebarMenuItem>
-              )}
-
-              {/* Dropdown Amministrazione */}
-              {menuAccess.admin && (
-                <SidebarMenuItem>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <SidebarMenuButton>
-                        <ShieldCheck size={18} />
-                        <span>Amministrazione</span>
-                        <ChevronDown size={16} className="ml-auto" />
-                      </SidebarMenuButton>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-56">
-                      {menuAccess.adminItems.nav_sync && (
-                        <DropdownMenuItem asChild>
-                          <Link href="/admin/nav-sync" className="flex items-center">
-                            <RefreshCw className="mr-2 h-4 w-4" />
-                            <span>Sync NAV</span>
                           </Link>
                         </DropdownMenuItem>
                       )}
