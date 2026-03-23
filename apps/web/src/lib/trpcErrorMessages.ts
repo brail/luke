@@ -16,28 +16,33 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   UNAUTHORIZED: 'Sessione scaduta, rieffettua il login',
 };
 
+interface TrpcErrorLike {
+  message?: string;
+  data?: { code?: string };
+  status?: number;
+}
+
 /**
  * Mappa un errore tRPC/HTTP a un messaggio user-friendly in italiano
  *
- * @param error - Errore tRPC o HTTP
+ * @param error - Errore tRPC o HTTP (accetta unknown, cast interno)
  * @param entityMessages - Override per codici specifici dell'entità (es. CONFLICT, NOT_FOUND)
  * @returns Messaggio localizzato
  */
 export function getTrpcErrorMessage(
-  error: any,
+  error: unknown,
   entityMessages?: Record<string, string>
 ): string {
+  const e = error as TrpcErrorLike;
   const code: string | undefined =
-    error.data?.code ??
-    (error.status != null
-      ? HTTP_STATUS_TO_CODE[error.status as number]
-      : undefined);
+    e.data?.code ??
+    (e.status != null ? HTTP_STATUS_TO_CODE[e.status] : undefined);
 
-  if (!code) return error.message ?? "Errore durante l'operazione. Riprova.";
+  if (!code) return e.message ?? "Errore durante l'operazione. Riprova.";
 
   if (entityMessages?.[code]) return entityMessages[code];
-  if (code === 'BAD_REQUEST') return error.message ?? 'Dati non validi';
+  if (code === 'BAD_REQUEST') return e.message ?? 'Dati non validi';
   if (DEFAULT_MESSAGES[code]) return DEFAULT_MESSAGES[code];
 
-  return error.message ?? "Errore durante l'operazione. Riprova.";
+  return e.message ?? "Errore durante l'operazione. Riprova.";
 }
