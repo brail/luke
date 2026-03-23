@@ -13,7 +13,6 @@ export const COLLECTION_TABLE_COLUMNS = [
   { key: 'gender',          label: 'Gender' },
   { key: 'designer',        label: 'Designer' },
   { key: 'styleStatus',     label: 'Style Status' },
-  { key: 'dutyCategory',    label: 'Duty Cat.' },
 ] as const;
 
 export const COLLECTION_COLUMNS_MAX_VISIBLE = 7;
@@ -23,7 +22,6 @@ export const COLLECTION_COLUMNS_DEFAULT_HIDDEN = [
   'gender',
   'designer',
   'styleStatus',
-  'dutyCategory',
 ] as const;
 
 export const COLLECTION_GENDER = ['MAN', 'WOMAN'] as const;
@@ -34,9 +32,6 @@ export type CollectionStrategy = (typeof COLLECTION_STRATEGY)[number];
 
 export const COLLECTION_STATUS = ['CARRY_OVER', 'NEW'] as const;
 export type CollectionStatus = (typeof COLLECTION_STATUS)[number];
-
-export const COLLECTION_DUTY_CATEGORY = ['PELLE', 'SINTETICO_TESSUTO'] as const;
-export type CollectionDutyCategory = (typeof COLLECTION_DUTY_CATEGORY)[number];
 
 export const COLLECTION_PROGRESS = [
   '01 - FASE DI DESIGN',
@@ -84,7 +79,6 @@ export const CollectionLayoutRowInputSchema = z.object({
   priceNotes: z.string().optional().nullable(),
   toolingNotes: z.string().optional().nullable(),
   // Optional — pricing
-  dutyCategory: z.enum(COLLECTION_DUTY_CATEGORY).optional().nullable(),
   pricingParameterSetId: z.string().optional().nullable(),
   retailTargetPrice: z.number().positive().optional().nullable(),
   buyingTargetPrice: z.number().positive().optional().nullable(),

@@ -172,6 +172,7 @@ export async function createGroup(
       collectionLayoutId,
       name: input.name,
       order: input.order ?? existingCount,
+      skuBudget: input.skuBudget ?? null,
     },
   });
 }
@@ -260,7 +261,6 @@ export async function createRow(
       colorNotes: rowData.colorNotes ?? null,
       priceNotes: rowData.priceNotes ?? null,
       toolingNotes: rowData.toolingNotes ?? null,
-      dutyCategory: rowData.dutyCategory ?? null,
       pricingParameterSetId: rowData.pricingParameterSetId ?? null,
       retailTargetPrice: rowData.retailTargetPrice ?? null,
       buyingTargetPrice: rowData.buyingTargetPrice ?? null,

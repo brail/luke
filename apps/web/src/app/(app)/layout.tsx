@@ -8,6 +8,7 @@ import AppSidebar from '../../components/AppSidebar';
 import BreadcrumbNav from '../../components/BreadcrumbNav';
 import { ContextGate } from '../../components/context/ContextGate';
 import { ContextSelector } from '../../components/context/ContextSelector';
+import { HeartbeatTicker } from '../../components/HeartbeatTicker';
 import LoadingLogo from '../../components/LoadingLogo';
 import { SidebarProvider, SidebarTrigger } from '../../components/ui/sidebar';
 import { AppContextProvider } from '../../contexts/AppContextProvider';
@@ -64,6 +65,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Modale bloccante per setup context */}
         <ContextGate />
+
+        {/* Heartbeat silenzioso per presenza online */}
+        <HeartbeatTicker />
       </SidebarProvider>
     </AppContextProvider>
   );

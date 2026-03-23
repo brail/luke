@@ -84,7 +84,8 @@ export default function UsersPage() {
       sortOrder,
     },
     {
-      enabled: !!session?.accessToken, // Aspetta che la sessione sia caricata
+      enabled: !!session?.accessToken,
+      refetchInterval: 60_000, // Allineato all'intervallo heartbeat
     }
   );
 

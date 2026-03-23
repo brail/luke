@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
@@ -51,6 +52,16 @@ export default function CollectionLayoutPage() {
   };
 
   // ─── UI state ───────────────────────────────────────────────────
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Chiudi fullscreen con Escape
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setIsFullscreen(false); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isFullscreen]);
+
   const [groupDialog, setGroupDialog] = useState<{
     mode: 'create' | 'edit';
     group?: CollectionGroupData;
@@ -261,8 +272,50 @@ export default function CollectionLayoutPage() {
               })
             }
             isDeletingRow={deleteRowMutation.isPending}
+            onToggleFullscreen={() => setIsFullscreen(true)}
           />
         </SectionCard>
+      )}
+
+      {/* Fullscreen overlay — renderizzato nel body per uscire dallo stacking context del SidebarProvider */}
+      {isFullscreen && layout && createPortal(
+        <div className="fixed inset-0 z-50 bg-background flex flex-col">
+          <div className="shrink-0 border-b px-6 py-3 flex items-center justify-between bg-card">
+            <div className="flex items-center gap-3">
+              <span className="font-semibold text-sm">Collection Layout</span>
+              {brand && season && (
+                <span className="text-sm text-muted-foreground">
+                  {brand.name} — {season.code} {season.year}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-6">
+            <CollectionLayoutTable
+              layout={layout}
+              canUpdate={canUpdate}
+              onAddGroup={() => setGroupDialog({ mode: 'create' })}
+              onAddRow={groupId =>
+                setRowDrawer({ mode: 'create', defaultGroupId: groupId })
+              }
+              onEditRow={row => openEditRow(row)}
+              onDuplicateRow={rowId => duplicateRowMutation.mutate({ rowId })}
+              onDeleteRow={rowId => deleteRowMutation.mutate({ rowId })}
+              onRenameGroup={group => setGroupDialog({ mode: 'edit', group })}
+              onDeleteGroup={groupId => deleteGroupMutation.mutate({ groupId })}
+              onUpdateSettings={settings =>
+                updateSettingsMutation.mutate({
+                  collectionLayoutId: layout.id,
+                  ...settings,
+                })
+              }
+              isDeletingRow={deleteRowMutation.isPending}
+              isFullscreen
+              onToggleFullscreen={() => setIsFullscreen(false)}
+            />
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* Group create/edit dialog */}

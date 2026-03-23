@@ -347,7 +347,6 @@ async function main() {
         colorNotes:            (r.colorNotes as string) ?? null,
         priceNotes:            (r.priceNotes as string) ?? null,
         toolingNotes:          (r.toolingNotes as string) ?? null,
-        dutyCategory:          (r.dutyCategory as string) ?? null,
         pricingParameterSetId: (r.pricingParameterSetId as string) ?? null,
         retailTargetPrice:     (r.retailTargetPrice as number) ?? null,
         buyingTargetPrice:     (r.buyingTargetPrice as number) ?? null,

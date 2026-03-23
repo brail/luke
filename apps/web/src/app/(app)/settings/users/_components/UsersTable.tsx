@@ -11,6 +11,12 @@ import {
   TableHeader,
   TableRow,
 } from '../../../../../components/ui/table';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '../../../../../components/ui/tooltip';
 
 import { SortableHeader } from './SortableHeader';
 import {
@@ -250,7 +256,25 @@ export function UsersTable({
         <TableBody>
           {users.map(user => (
             <TableRow key={user.id}>
-              <TableCell>{user.email}</TableCell>
+              <TableCell>
+                <div className="flex items-center gap-2">
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span
+                          className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                            user.isOnline ? 'bg-green-500' : 'bg-gray-300'
+                          }`}
+                        />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {user.isOnline ? 'Online' : 'Offline'}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  {user.email}
+                </div>
+              </TableCell>
               <TableCell>{user.username}</TableCell>
               <TableCell>{user.firstName || '-'}</TableCell>
               <TableCell>{user.lastName || '-'}</TableCell>

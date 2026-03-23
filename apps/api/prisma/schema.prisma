@@ -372,7 +372,6 @@ model CollectionLayoutRow {
   toolingNotes           String?
 
   // Optional — pricing
-  dutyCategory           String?               // PELLE | SINTETICO_TESSUTO
   pricingParameterSetId  String?
   pricingParameterSet    PricingParameterSet?  @relation(fields: [pricingParameterSetId], references: [id], onDelete: SetNull)
   retailTargetPrice      Float?

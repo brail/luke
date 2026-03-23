@@ -1,11 +1,10 @@
 'use client';
 
 import { Image, Upload, X } from 'lucide-react';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
 import {
-  COLLECTION_DUTY_CATEGORY,
   COLLECTION_GENDER,
   COLLECTION_PROGRESS,
   COLLECTION_STATUS,
@@ -62,11 +61,6 @@ const STRATEGY_LABELS: Record<string, string> = {
   INNOVATION: 'Innovation',
 };
 
-const DUTY_LABELS: Record<string, string> = {
-  PELLE: 'Pelle',
-  SINTETICO_TESSUTO: 'Sintetico / Tessuto',
-};
-
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 /** Intestazione di sezione con stile uniforme. */
@@ -105,6 +99,9 @@ export function IdentificationSection({
   onRemovePicture,
   onUploadPicture,
 }: IdentificationSectionProps) {
+  const [imgFailed, setImgFailed] = useState(false);
+  useEffect(() => { setImgFailed(false); }, [pictureUrl]);
+
   return (
     <div className="space-y-4">
       <SectionHeader title="Identificazione" />
@@ -340,12 +337,13 @@ export function IdentificationSection({
         <div className="space-y-2">
           <Label>Foto</Label>
           <div className="flex items-center gap-4">
-            {pictureUrl ? (
+            {pictureUrl && !imgFailed ? (
               <div className="relative">
                 <img
                   src={pictureUrl}
                   alt="Foto riga"
                   className="h-36 w-48 rounded-md object-contain border bg-muted/5"
+                  onError={() => setImgFailed(true)}
                 />
                 {canUpdate && (
                   <button
@@ -420,6 +418,7 @@ export function ForecastGroupSection({
                   min={0}
                   {...field}
                   onChange={e => field.onChange(parseInt(e.target.value) || 0)}
+                  onFocus={e => e.target.select()}
                   disabled={!canUpdate}
                 />
               </FormControl>
@@ -441,6 +440,7 @@ export function ForecastGroupSection({
                   min={0}
                   {...field}
                   onChange={e => field.onChange(parseInt(e.target.value) || 0)}
+                  onFocus={e => e.target.select()}
                   disabled={!canUpdate}
                 />
               </FormControl>
@@ -526,37 +526,6 @@ export function PricingSection({
                 {parameterSets.map(ps => (
                   <SelectItem key={ps.id} value={ps.id}>
                     {ps.name} ({ps.purchaseCurrency}/{ps.sellingCurrency})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-
-      {/* Duty Category */}
-      <FormField
-        control={control}
-        name="dutyCategory"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Categoria dazio</FormLabel>
-            <Select
-              onValueChange={v => field.onChange(v === '_none' ? null : v)}
-              value={field.value ?? '_none'}
-              disabled={!canUpdate}
-            >
-              <FormControl>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleziona…" />
-                </SelectTrigger>
-              </FormControl>
-              <SelectContent>
-                <SelectItem value="_none">—</SelectItem>
-                {COLLECTION_DUTY_CATEGORY.map(d => (
-                  <SelectItem key={d} value={d}>
-                    {DUTY_LABELS[d]}
                   </SelectItem>
                 ))}
               </SelectContent>

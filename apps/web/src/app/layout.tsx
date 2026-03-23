@@ -2,6 +2,7 @@ import React from 'react';
 import { Toaster } from 'sonner';
 
 import Providers from '../components/Providers';
+import { ToastDismisser } from '../components/ToastDismisser';
 
 import type { Metadata } from 'next';
 import './globals.css';
@@ -25,8 +26,9 @@ export default function RootLayout({
     <html lang="it">
       <body className="bg-background text-foreground">
         <Providers>{children}</Providers>
+        <ToastDismisser />
         <Toaster
-          position="top-right"
+          position="bottom-right"
           richColors
           duration={2000}
           visibleToasts={3}

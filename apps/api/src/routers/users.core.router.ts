@@ -14,6 +14,7 @@ import { logAudit } from '../lib/auditLog';
 import { withAuditLog } from '../lib/auditMiddleware';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { requirePermission } from '../lib/permissions';
+import { getOnlineUserIds, updatePresence } from '../lib/presenceStore';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
 
@@ -121,8 +122,10 @@ export const usersCoreRouter = router({
         });
       }
 
+      const onlineIds = getOnlineUserIds();
+
       return {
-        users,
+        users: users.map(u => ({ ...u, isOnline: onlineIds.has(u.id) })),
         total,
         page,
         limit,
@@ -419,6 +422,15 @@ export const usersCoreRouter = router({
     .use(withAuditLog('USER_DELETE', 'User'))
     .input(UserIdSchema)
     .mutation(deleteUserHandler),
+
+  /**
+   * Heartbeat di presenza: aggiorna il timestamp online dell'utente corrente.
+   * Chiamato ogni 60s dal client autenticato.
+   */
+  heartbeat: protectedProcedure.mutation(({ ctx }) => {
+    updatePresence(ctx.session.user.id);
+    return { ok: true };
+  }),
 
   /**
    * Hard delete di un utente (elimina completamente dal database)
