@@ -337,6 +337,42 @@ model CollectionGroup {
 }
 
 /**
+ * Replica della tabella [COMPANY$Vendor] di Microsoft NAV
+ * Il campo timestamp NAV è usato solo nelle query di sync differenziale
+ * (WHERE timestamp > @lastTimestamp) — non è mappato nel modello.
+ */
+model NavVendor {
+  navNo           String    @id              // No_
+  name            String                     // Name
+  name2           String?                    // Name 2
+  searchName      String?                    // Search Name
+  firstName       String?                    // First Name
+  lastName        String?                    // Last Name
+
+  address         String?                    // Address
+  address2        String?                    // Address 2
+  postCode        String?                    // Post Code
+  city            String?                    // City
+  county          String?                    // County
+  countryCode     String?                    // Country_Region Code
+
+  phoneNo         String?                    // Phone No_
+  faxNo           String?                    // Fax No_
+  email           String?                    // E-Mail
+  homePage        String?                    // Home Page
+  contact         String?                    // Contact
+
+  vendorType      String?                    // Vendor Type
+
+  navLastModified DateTime?                  // Last Date Modified
+  syncedAt        DateTime                   // timestamp ultimo sync
+
+  @@index([name])
+  @@index([syncedAt])
+  @@map("nav_vendors")
+}
+
+/**
  * Singola riga del Collection Layout
  * Rappresenta una linea/stile all'interno di una collezione
  */

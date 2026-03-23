@@ -8,6 +8,7 @@ import {
   HardDrive,
   Mail,
   Shield,
+  Database,
   Wrench,
   ChevronDown,
   LogOut,
@@ -222,6 +223,14 @@ export default function AppSidebar() {
                           <Link href="/settings/ldap" className="flex items-center">
                             <Shield className="mr-2 h-4 w-4" />
                             <span>Auth LDAP</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      {menuAccess.settingsItems.nav && (
+                        <DropdownMenuItem asChild>
+                          <Link href="/settings/nav" className="flex items-center">
+                            <Database className="mr-2 h-4 w-4" />
+                            <span>Microsoft NAV</span>
                           </Link>
                         </DropdownMenuItem>
                       )}

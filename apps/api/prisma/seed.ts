@@ -281,6 +281,47 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       value: 'true',
       encrypt: false,
     },
+    // NAV (Microsoft Dynamics NAV / SQL Server)
+    {
+      key: 'integrations.nav.host',
+      value: '192.168.1.32',
+      encrypt: false,
+    },
+    {
+      key: 'integrations.nav.port',
+      value: '1433',
+      encrypt: false,
+    },
+    {
+      key: 'integrations.nav.database',
+      value: 'NAV_DATABASE',
+      encrypt: false,
+    },
+    {
+      key: 'integrations.nav.user',
+      value: 'nav_user',
+      encrypt: false,
+    },
+    {
+      key: 'integrations.nav.password',
+      value: 'changeme',
+      encrypt: true,
+    },
+    {
+      key: 'integrations.nav.company',
+      value: 'MYCOMPANY',
+      encrypt: false,
+    },
+    {
+      key: 'integrations.nav.syncIntervalMinutes',
+      value: '30',
+      encrypt: false,
+    },
+    {
+      key: 'integrations.nav.readOnly',
+      value: 'true',
+      encrypt: false,
+    },
   ];
 
   let configsCreated = 0;

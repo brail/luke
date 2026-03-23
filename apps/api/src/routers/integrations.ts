@@ -10,6 +10,7 @@ import { router, publicProcedure } from '../lib/trpc';
 import { importExportRouter } from './integrations.import.router';
 import { ldapRouter } from './integrations.ldap.router';
 import { mailRouter } from './integrations.mail.router';
+import { navRouter } from './integrations.nav.router';
 import { storageRouter } from './integrations.storage.router';
 
 export const integrationsRouter = router({
@@ -26,6 +27,7 @@ export const integrationsRouter = router({
 
   storage: storageRouter,
   mail: mailRouter,
+  nav: navRouter,
   importExport: importExportRouter,
   auth: ldapRouter,
 });

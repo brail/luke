@@ -18,6 +18,7 @@ export * from './schemas/userProfile';
 export * from './schemas/appConfig';
 export * from './schemas/ldap';
 export * from './schemas/mail';
+export * from './schemas/nav';
 export * from './schemas/auth';
 export * from './schemas/brand';
 export * from './schemas/season';

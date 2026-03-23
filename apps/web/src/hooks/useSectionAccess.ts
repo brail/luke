@@ -65,6 +65,7 @@ export function useSectionAccess() {
       'settings.storage': checkAccess('settings.storage'),
       'settings.mail': checkAccess('settings.mail'),
       'settings.ldap': checkAccess('settings.ldap'),
+      'settings.nav': checkAccess('settings.nav'),
       maintenance: checkAccess('maintenance'),
       'maintenance.config': checkAccess('maintenance.config'),
       'maintenance.import_export': checkAccess('maintenance.import_export'),

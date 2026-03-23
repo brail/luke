@@ -72,6 +72,16 @@ export const AppConfigRegistry = {
   'auth.ldap.resilience.breakerFailureThreshold': z.coerce.number().int().min(1),
   'auth.ldap.resilience.breakerCooldownMs':       z.coerce.number().int().min(500),
   'auth.ldap.resilience.halfOpenMaxAttempts':     z.coerce.number().int().min(1),
+
+  // ── Microsoft NAV (SQL Server) ───────────────────────────────────────────
+  'integrations.nav.host':                  z.string().min(1),
+  'integrations.nav.port':                  z.coerce.number().int().min(1).max(65535),
+  'integrations.nav.database':              z.string().min(1),
+  'integrations.nav.user':                  z.string().min(1),
+  'integrations.nav.password':              z.string(),
+  'integrations.nav.company':               z.string().min(1),
+  'integrations.nav.syncIntervalMinutes':   z.coerce.number().int().min(1),
+  'integrations.nav.readOnly':              z.coerce.boolean(),
 } as const satisfies Record<string, z.ZodTypeAny>;
 
 export type AppConfigKey = keyof typeof AppConfigRegistry;
