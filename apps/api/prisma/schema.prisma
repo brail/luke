@@ -337,6 +337,24 @@ model CollectionGroup {
 }
 
 /**
+ * Filtro di sincronizzazione per entità NAV.
+ * Un record per entità (vendor, customer, item, …).
+ * Controlla se il sync è attivo e quali No_ includere/escludere.
+ */
+model NavSyncFilter {
+  id        String   @id @default(cuid())
+  entity    String   // "vendor" | "customer" | "item" | ...
+  mode      String   // "all" | "whitelist" | "exclude"
+  navNos    String[] // rilevante solo per whitelist/exclude
+  active    Boolean  @default(true)
+  note      String?
+  updatedAt DateTime @updatedAt
+
+  @@unique([entity])
+  @@map("nav_sync_filters")
+}
+
+/**
  * Replica della tabella [COMPANY$Vendor] di Microsoft NAV
  * Il campo timestamp NAV è usato solo nelle query di sync differenziale
  * (WHERE timestamp > @lastTimestamp) — non è mappato nel modello.
