@@ -9,6 +9,8 @@ import {
   Mail,
   Shield,
   Database,
+  RefreshCw,
+  ShieldCheck,
   Wrench,
   ChevronDown,
   LogOut,
@@ -231,6 +233,31 @@ export default function AppSidebar() {
                           <Link href="/settings/nav" className="flex items-center">
                             <Database className="mr-2 h-4 w-4" />
                             <span>Microsoft NAV</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </SidebarMenuItem>
+              )}
+
+              {/* Dropdown Amministrazione */}
+              {menuAccess.admin && (
+                <SidebarMenuItem>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <SidebarMenuButton>
+                        <ShieldCheck size={18} />
+                        <span>Amministrazione</span>
+                        <ChevronDown size={16} className="ml-auto" />
+                      </SidebarMenuButton>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-56">
+                      {menuAccess.adminItems.nav_sync && (
+                        <DropdownMenuItem asChild>
+                          <Link href="/admin/nav-sync" className="flex items-center">
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            <span>Sync NAV</span>
                           </Link>
                         </DropdownMenuItem>
                       )}

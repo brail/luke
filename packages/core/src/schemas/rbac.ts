@@ -24,6 +24,9 @@ export const sectionEnum = z.enum([
   'product',
   'product.pricing',
   'product.collection_layout',
+  // Amministrazione (solo admin)
+  'admin',
+  'admin.nav_sync',
 ]);
 export type Section = z.infer<typeof sectionEnum>;
 
@@ -47,6 +50,8 @@ export const SECTION_TO_PERMISSION: Record<Section, string> = {
   product: 'pricing:read',
   'product.pricing': 'pricing:read',
   'product.collection_layout': 'collection_layout:read',
+  admin: 'maintenance:read',
+  'admin.nav_sync': 'maintenance:read',
 } as const;
 
 /**
@@ -84,6 +89,8 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       product: true,
       'product.pricing': true,
       'product.collection_layout': true,
+      admin: true,
+      'admin.nav_sync': true,
     },
     editor: {
       dashboard: true,
@@ -101,6 +108,8 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       product: true,
       'product.pricing': true,
       'product.collection_layout': true,
+      admin: false,
+      'admin.nav_sync': false,
     },
     viewer: {
       dashboard: true,
@@ -118,6 +127,8 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       product: true,
       'product.pricing': true,
       'product.collection_layout': true,
+      admin: false,
+      'admin.nav_sync': false,
     },
   };
 

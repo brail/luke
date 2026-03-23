@@ -72,6 +72,8 @@ export function useSectionAccess() {
       product: checkAccess('product'),
       'product.pricing': checkAccess('product.pricing'),
       'product.collection_layout': checkAccess('product.collection_layout'),
+      admin: checkAccess('admin'),
+      'admin.nav_sync': checkAccess('admin.nav_sync'),
     };
   }, [session?.user, userOverrides]);
 

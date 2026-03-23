@@ -74,6 +74,9 @@ importers:
       '@luke/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@luke/nav':
+        specifier: workspace:*
+        version: link:../../packages/nav
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.9.0

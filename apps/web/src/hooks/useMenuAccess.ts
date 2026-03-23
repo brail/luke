@@ -36,6 +36,12 @@ export function useMenuAccess() {
     };
     const showMaintenance = Object.values(maintenanceItems).some(Boolean);
 
+    // Admin: ogni sub-item richiede parent + sottosezione
+    const adminItems = {
+      nav_sync: s.admin && s['admin.nav_sync'],
+    };
+    const showAdmin = Object.values(adminItems).some(Boolean);
+
     return {
       // Singole voci
       dashboard: s.dashboard,
@@ -48,12 +54,16 @@ export function useMenuAccess() {
       maintenance: showMaintenance,
       maintenanceItems,
 
+      // Admin con sub-items
+      admin: showAdmin,
+      adminItems,
+
       // Prodotto
       product: s.product,
 
       // Macrosezioni
       showGeneralSection: s.dashboard,
-      showSystemSection: showSettings || showMaintenance,
+      showSystemSection: showSettings || showMaintenance || showAdmin,
     };
   }, [s]);
 }

@@ -1,11 +1,14 @@
 /**
  * NAV sub-router per integrazioni
- * Gestisce configurazione e test connessione Microsoft NAV (SQL Server)
+ * Gestisce configurazione, test connessione e sincronizzazione
+ * Microsoft Dynamics NAV (SQL Server)
  */
 
 import * as net from 'net';
 
 import { z } from 'zod';
+
+import { getNavDbConfig, getPool, runNavSync } from '@luke/nav';
 
 import { logAudit } from '../lib/auditLog';
 import { saveConfig, getConfig } from '../lib/configManager';
@@ -27,6 +30,133 @@ const navConfigSchema = z.object({
   syncIntervalMinutes: z.number().int().min(1),
   readOnly: z.boolean(),
 });
+
+// ── Sync sub-router ───────────────────────────────────────────────────────────
+
+const navSyncRouter = router({
+  /**
+   * Preview live: query diretta su NAV SQL Server (non sulla replica Postgres).
+   * Restituisce i campi essenziali per la tabella di selezione.
+   */
+  preview: protectedProcedure
+    .use(requirePermission('config:read'))
+    .input(z.object({ entity: z.enum(['vendor']) }))
+    .query(async ({ ctx }) => {
+      const config = await getNavDbConfig(ctx.prisma, getConfig);
+      const pool = await getPool(config);
+
+      const tableName = `[${config.company}$Vendor]`;
+
+      type NavVendorRow = {
+        'No_': string;
+        'Name': string;
+        'City': string | null;
+        'Country_Region Code': string | null;
+        'Blocked': number;
+      };
+
+      let result;
+      try {
+        result = await pool.request().query<NavVendorRow>(`
+          SELECT [No_], [Name], [City], [Country_Region Code], [Blocked]
+          FROM ${tableName}
+          ORDER BY [Name]
+        `);
+      } catch (e: any) {
+        const err = createStandardError(ErrorCode.CONNECTION_ERROR, `Errore query NAV: ${e.message}`);
+        throw toTRPCError(err);
+      }
+
+      return result.recordset.map(row => ({
+        navNo: row['No_'],
+        name: row['Name'] ?? '',
+        city: row['City'] ?? null,
+        countryCode: row['Country_Region Code'] ?? null,
+        blocked: row['Blocked'] ?? 0,
+      }));
+    }),
+
+  /** Restituisce il NavSyncFilter corrente per l'entità. */
+  getFilter: protectedProcedure
+    .use(requirePermission('config:read'))
+    .input(z.object({ entity: z.string().min(1) }))
+    .query(async ({ input, ctx }) => {
+      return ctx.prisma.navSyncFilter.findUnique({
+        where: { entity: input.entity },
+      });
+    }),
+
+  /** Upsert del NavSyncFilter. */
+  saveFilter: protectedProcedure
+    .use(requirePermission('config:update'))
+    .input(z.object({
+      entity: z.string().min(1),
+      mode: z.enum(['all', 'whitelist', 'exclude']),
+      navNos: z.array(z.string()),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const navNos = input.mode === 'all' ? [] : input.navNos;
+
+      const filter = await ctx.prisma.navSyncFilter.upsert({
+        where: { entity: input.entity },
+        create: { entity: input.entity, mode: input.mode, navNos, active: true },
+        update: { mode: input.mode, navNos },
+      });
+
+      await logAudit(ctx, {
+        action: 'CONFIG_NAV_FILTER_UPDATE',
+        targetType: 'NavSyncFilter',
+        targetId: input.entity,
+        result: 'SUCCESS',
+        metadata: { entity: input.entity, mode: input.mode, navNosCount: navNos.length },
+      });
+
+      ctx.logger.info(
+        { entity: input.entity, mode: input.mode, navNosCount: navNos.length },
+        'NavSyncFilter aggiornato'
+      );
+
+      return filter;
+    }),
+
+  /**
+   * Esegue il sync manualmente on-demand.
+   * Se entity è specificata, synca solo quella entità.
+   * Restituisce i risultati con durationMs.
+   */
+  run: protectedProcedure
+    .use(requirePermission('config:update'))
+    .input(z.object({ entity: z.string().optional() }))
+    .mutation(async ({ ctx }) => {
+      const report = await runNavSync(ctx.prisma, getConfig);
+
+      const durationMs = report.completedAt.getTime() - report.startedAt.getTime();
+
+      await logAudit(ctx, {
+        action: 'NAV_SYNC_RUN',
+        targetType: 'NavSync',
+        result: 'SUCCESS',
+        metadata: {
+          durationMs,
+          results: report.results.map(r => ({
+            entity: r.entity,
+            upserted: r.upserted,
+            skipped: r.skipped,
+          })),
+        },
+      });
+
+      return report.results.map(r => ({
+        entity: r.entity,
+        upserted: r.upserted,
+        skipped: r.skipped,
+        filterMode: r.filterMode,
+        durationMs,
+      }));
+    }),
+});
+
+// ── Main router ───────────────────────────────────────────────────────────────
 
 export const navRouter = router({
   saveConfig: protectedProcedure
@@ -130,4 +260,6 @@ export const navRouter = router({
         message: `Connessione TCP a ${host}:${portNum} riuscita.`,
       };
     }),
+
+  sync: navSyncRouter,
 });
