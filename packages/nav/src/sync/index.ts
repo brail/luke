@@ -8,6 +8,8 @@ import { syncVendors, type SyncResult } from './vendors.js';
 export interface NavSyncReport {
   startedAt: Date;
   completedAt: Date;
+  /** true quando sync è saltato perché syncEnabled=false in AppConfig. */
+  syncDisabled: boolean;
   results: SyncResult[];
 }
 
@@ -35,7 +37,7 @@ export async function runNavSync(
       { syncEnabled: false },
       'NAV sync: sincronizzazione disabilitata (syncEnabled=false) — abilitare in Impostazioni > Microsoft NAV',
     );
-    return { startedAt, completedAt: new Date(), results: [] };
+    return { startedAt, completedAt: new Date(), syncDisabled: true, results: [] };
   }
 
   const pool = await getPool(config);
@@ -51,5 +53,5 @@ export async function runNavSync(
     'NAV sync: tutti i task completati',
   );
 
-  return { startedAt, completedAt, results };
+  return { startedAt, completedAt, syncDisabled: false, results };
 }

@@ -38,12 +38,17 @@ interface PreviewRecord {
   blocked: number;
 }
 
-interface SyncResult {
+interface SyncResultItem {
   entity: string;
   upserted: number;
   skipped: boolean;
   filterMode: string;
   durationMs: number;
+}
+
+interface SyncRunResult {
+  syncDisabled: boolean;
+  results: SyncResultItem[];
 }
 
 const ENTITY_TABS = [
@@ -89,6 +94,11 @@ function NavSyncTab({
     { refetchOnWindowFocus: false, retry: 1 },
   );
 
+  // ── Status query (syncEnabled) ─────────────────────────────────────────────
+  const statusQuery = trpc.integrations.nav.sync.getStatus.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+  });
+
   // ── Filter query ───────────────────────────────────────────────────────────
   const filterQuery = trpc.integrations.nav.sync.getFilter.useQuery(
     { entity },
@@ -112,7 +122,7 @@ function NavSyncTab({
   const [textFilter, setTextFilter] = useState('');
   const [selectedNavNos, setSelectedNavNos] = useState<Set<string>>(new Set());
   const [mode, setMode] = useState<SyncMode>('all');
-  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
+  const [syncRunResult, setSyncRunResult] = useState<SyncRunResult | null>(null);
 
   // Inizializza selezione e mode dal filtro salvato
   useEffect(() => {
@@ -171,12 +181,18 @@ function NavSyncTab({
   };
 
   const handleRunSync = () => {
-    setSyncResult(null);
+    setSyncRunResult(null);
     runSyncMutation.mutate(undefined, {
-      onSuccess: results => {
-        const r = results.find(x => x.entity === entity) ?? results[0];
-        if (r) setSyncResult(r);
-        toast.success('Sync completato');
+      onSuccess: data => {
+        setSyncRunResult(data);
+        void statusQuery.refetch();
+        if (data.syncDisabled) {
+          toast.warning('Sync disabilitato', {
+            description: 'Abilita la sincronizzazione in Impostazioni › Microsoft NAV.',
+          });
+        } else {
+          toast.success('Sync completato');
+        }
       },
     });
   };
@@ -361,6 +377,14 @@ function NavSyncTab({
         description="Avvia manualmente la sincronizzazione per questa entità"
       >
         <div className="space-y-3">
+          {/* Banner avviso sync disabilitato */}
+          {statusQuery.data && !statusQuery.data.syncEnabled && (
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+              ⚠️ La sincronizzazione è disabilitata. Abilitala in{' '}
+              <strong>Impostazioni › Microsoft NAV</strong> prima di eseguire il sync.
+            </p>
+          )}
+
           <Button
             onClick={handleRunSync}
             disabled={runSyncMutation.isPending}
@@ -370,13 +394,23 @@ function NavSyncTab({
             {runSyncMutation.isPending ? 'Sincronizzazione in corso…' : 'Esegui sync ora'}
           </Button>
 
-          {syncResult && !runSyncMutation.isPending && (
-            <p className="text-sm text-green-600 dark:text-green-400">
-              ✓{' '}
-              {syncResult.skipped
-                ? `Sync saltato (entità disabilitata)`
-                : `${syncResult.upserted} record sincronizzati in ${(syncResult.durationMs / 1000).toFixed(1)}s`}
-            </p>
+          {syncRunResult && !runSyncMutation.isPending && (
+            syncRunResult.syncDisabled ? (
+              <p className="text-sm text-amber-600 dark:text-amber-400">
+                ⚠️ Sync saltato — sincronizzazione disabilitata in AppConfig.
+              </p>
+            ) : (() => {
+              const r = syncRunResult.results.find(x => x.entity === entity) ?? syncRunResult.results[0];
+              if (!r) return null;
+              return (
+                <p className="text-sm text-green-600 dark:text-green-400">
+                  ✓{' '}
+                  {r.skipped
+                    ? `Sync saltato (filtro entità disabilitato)`
+                    : `${r.upserted} record sincronizzati in ${(r.durationMs / 1000).toFixed(1)}s`}
+                </p>
+              );
+            })()
           )}
 
           {runSyncMutation.isError && (

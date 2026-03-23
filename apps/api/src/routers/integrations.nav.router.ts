@@ -77,6 +77,17 @@ const navSyncRouter = router({
       }));
     }),
 
+  /**
+   * Restituisce lo stato attuale della configurazione sync (syncEnabled).
+   * Usato dalla UI per mostrare un avviso se il sync è disabilitato.
+   */
+  getStatus: protectedProcedure
+    .use(requirePermission('config:read'))
+    .query(async ({ ctx }) => {
+      const raw = await getConfig(ctx.prisma, 'integrations.nav.syncEnabled', false);
+      return { syncEnabled: raw === 'true' };
+    }),
+
   /** Restituisce il NavSyncFilter corrente per l'entità. */
   getFilter: protectedProcedure
     .use(requirePermission('config:read'))
@@ -137,6 +148,7 @@ const navSyncRouter = router({
         targetType: 'NavSync',
         result: 'SUCCESS',
         metadata: {
+          syncDisabled: report.syncDisabled,
           durationMs,
           results: report.results.map(r => ({
             entity: r.entity,
@@ -146,13 +158,16 @@ const navSyncRouter = router({
         },
       });
 
-      return report.results.map(r => ({
-        entity: r.entity,
-        upserted: r.upserted,
-        skipped: r.skipped,
-        filterMode: r.filterMode,
-        durationMs,
-      }));
+      return {
+        syncDisabled: report.syncDisabled,
+        results: report.results.map(r => ({
+          entity: r.entity,
+          upserted: r.upserted,
+          skipped: r.skipped,
+          filterMode: r.filterMode,
+          durationMs,
+        })),
+      };
     }),
 });
 
