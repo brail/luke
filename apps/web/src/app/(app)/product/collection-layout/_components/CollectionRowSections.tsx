@@ -32,6 +32,8 @@ import {
 } from '../../../../../components/ui/select';
 import { Textarea } from '../../../../../components/ui/textarea';
 
+import { VendorCombobox } from './VendorCombobox';
+
 import type { MarginCalc, PricingParameterSet } from '../_hooks/usePricingCalc';
 import type { Control } from 'react-hook-form';
 
@@ -201,15 +203,19 @@ export function IdentificationSection({
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        {/* Supplier */}
+        {/* Fornitore */}
         <FormField
           control={control}
-          name="supplier"
+          name="navVendorId"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Fornitore *</FormLabel>
+              <FormLabel>Fornitore</FormLabel>
               <FormControl>
-                <Input placeholder="es. MINUS" {...field} disabled={!canUpdate} />
+                <VendorCombobox
+                  value={field.value ?? null}
+                  onChange={field.onChange}
+                  disabled={!canUpdate}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>

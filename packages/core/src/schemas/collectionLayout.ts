@@ -60,7 +60,7 @@ export const CollectionLayoutRowInputSchema = z.object({
   order: z.number().int().optional(),
   // Required
   gender: z.enum(COLLECTION_GENDER),
-  supplier: z.string().min(1, 'Fornitore obbligatorio'),
+  navVendorId: z.string().min(1).nullable(),
   line: z.string().min(1, 'Linea obbligatoria'),
   status: z.enum(COLLECTION_STATUS),
   skuForecast: z.number().int().min(0, 'SKU Forecast non può essere negativo'),

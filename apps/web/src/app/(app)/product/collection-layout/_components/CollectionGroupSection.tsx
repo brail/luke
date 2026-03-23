@@ -328,9 +328,10 @@ export function CollectionGroupSection({
     };
 
     let rows = group.rows.filter(row => {
-      if (searchQuery && !textMatch(row.line, searchQuery) && !textMatch(row.supplier, searchQuery)) return false;
+      const vendorName = row.navVendor?.searchName ?? row.navVendor?.name ?? null;
+      if (searchQuery && !textMatch(row.line, searchQuery) && !textMatch(vendorName, searchQuery)) return false;
       if (columnFilters.line && !textMatch(row.line, columnFilters.line)) return false;
-      if (columnFilters.supplier && !textMatch(row.supplier, columnFilters.supplier)) return false;
+      if (columnFilters.supplier && !textMatch(vendorName, columnFilters.supplier)) return false;
       if (columnFilters.productCategory && !textMatch(row.productCategory, columnFilters.productCategory)) return false;
       if (columnFilters.designer && !textMatch(row.designer, columnFilters.designer)) return false;
       if (columnFilters.gender && !enumMatch(row.gender, columnFilters.gender)) return false;
@@ -456,7 +457,7 @@ export function CollectionGroupSection({
 
       {/* Table */}
       {isExpanded && (
-        <div className="overflow-x-auto">
+        <div>
           {group.rows.length === 0 && !hasActiveFilters && !searchQuery ? (
             <div className="py-8 text-center text-sm text-muted-foreground">
               Nessuna riga in questo gruppo.{' '}
@@ -470,7 +471,7 @@ export function CollectionGroupSection({
               )}
             </div>
           ) : (
-            <Table>
+            <Table className="min-w-max">
               <TableHeader>
                 <TableRow className="bg-muted/10">
                   <TableHead className="w-8 text-center">#</TableHead>
@@ -549,7 +550,9 @@ export function CollectionGroupSection({
                         <TableCell className="text-sm text-muted-foreground">{row.gender}</TableCell>
                       )}
                       {show('supplier') && (
-                        <TableCell className="text-sm text-muted-foreground">{row.supplier}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {row.navVendor?.searchName ?? row.navVendor?.name ?? '—'}
+                        </TableCell>
                       )}
                       {show('productCategory') && (
                         <TableCell className="text-sm text-muted-foreground">{row.productCategory}</TableCell>

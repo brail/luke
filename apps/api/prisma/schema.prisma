@@ -385,6 +385,8 @@ model NavVendor {
   navLastModified DateTime?                  // Last Date Modified
   syncedAt        DateTime                   // timestamp ultimo sync
 
+  collectionRows  CollectionLayoutRow[]
+
   @@index([name])
   @@index([syncedAt])
   @@map("nav_vendors")
@@ -404,7 +406,8 @@ model CollectionLayoutRow {
 
   // Required fields
   gender                 String                // MAN | WOMAN
-  supplier               String
+  navVendorId            String?
+  navVendor              NavVendor?            @relation(fields: [navVendorId], references: [navNo], onDelete: SetNull)
   line                   String
   status                 String                // CARRY_OVER | NEW
   skuForecast            Int

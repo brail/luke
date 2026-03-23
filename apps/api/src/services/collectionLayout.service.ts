@@ -11,6 +11,7 @@ import type {
   CollectionLayout,
   CollectionGroup,
   CollectionLayoutRow,
+  NavVendor,
 } from '@prisma/client';
 import type {
   CollectionGroupInput,
@@ -21,16 +22,24 @@ import type {
 // Tipo di ritorno arricchito
 // ─────────────────────────────────────────────────────────────────
 
+export type RowWithVendor = CollectionLayoutRow & {
+  navVendor: Pick<NavVendor, 'navNo' | 'name' | 'searchName'> | null;
+};
+
 export type CollectionLayoutWithRelations = CollectionLayout & {
   groups: (CollectionGroup & {
-    rows: CollectionLayoutRow[];
+    rows: RowWithVendor[];
   })[];
-  rows: CollectionLayoutRow[];
+  rows: RowWithVendor[];
 };
 
 // ─────────────────────────────────────────────────────────────────
 // Include clause comune
 // ─────────────────────────────────────────────────────────────────
+
+const ROW_VENDOR_INCLUDE = {
+  navVendor: { select: { navNo: true, name: true, searchName: true } },
+} as const;
 
 const LAYOUT_INCLUDE = {
   groups: {
@@ -38,11 +47,13 @@ const LAYOUT_INCLUDE = {
     include: {
       rows: {
         orderBy: { order: 'asc' as const },
+        include: ROW_VENDOR_INCLUDE,
       },
     },
   },
   rows: {
     orderBy: { order: 'asc' as const },
+    include: ROW_VENDOR_INCLUDE,
   },
 } as const;
 
@@ -124,7 +135,7 @@ export async function copyFromSeason(
       });
 
       for (const row of group.rows) {
-        const { id, collectionLayoutId, groupId, createdAt, updatedAt, pictureUrl, ...rowData } = row;
+        const { id, collectionLayoutId, groupId, createdAt, updatedAt, pictureUrl, navVendor, ...rowData } = row;
         await tx.collectionLayoutRow.create({
           data: {
             ...rowData,
@@ -251,6 +262,7 @@ export async function createRow(
       ...rowData,
       collectionLayoutId: group.collectionLayoutId,
       order: order ?? existingCount,
+      navVendorId: rowData.navVendorId ?? null,
       strategy: rowData.strategy ?? null,
       styleStatus: rowData.styleStatus ?? null,
       progress: rowData.progress ?? null,
@@ -267,6 +279,7 @@ export async function createRow(
       supplierFirstQuotation: rowData.supplierFirstQuotation ?? null,
       toolingQuotation: rowData.toolingQuotation ?? null,
     },
+    include: ROW_VENDOR_INCLUDE,
   });
 }
 
@@ -309,6 +322,7 @@ export async function updateRow(
   return prisma.collectionLayoutRow.update({
     where: { id: rowId },
     data: input as any,
+    include: ROW_VENDOR_INCLUDE,
   });
 }
 

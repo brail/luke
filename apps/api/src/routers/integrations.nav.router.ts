@@ -171,6 +171,23 @@ const navSyncRouter = router({
     }),
 });
 
+// ── Vendors sub-router ────────────────────────────────────────────────────────
+
+const navVendorsRouter = router({
+  /**
+   * Lista vendor sincronizzati dal DB locale (non query live su NAV).
+   * Usato dalla tendina di selezione fornitore nel Collection Layout.
+   */
+  list: protectedProcedure
+    .use(requirePermission('collection_layout:update'))
+    .query(async ({ ctx }) => {
+      return ctx.prisma.navVendor.findMany({
+        select: { navNo: true, name: true, searchName: true },
+        orderBy: { searchName: 'asc' },
+      });
+    }),
+});
+
 // ── Main router ───────────────────────────────────────────────────────────────
 
 export const navRouter = router({
@@ -280,4 +297,5 @@ export const navRouter = router({
     }),
 
   sync: navSyncRouter,
+  vendors: navVendorsRouter,
 });
