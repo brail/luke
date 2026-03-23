@@ -322,6 +322,11 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       value: 'true',
       encrypt: false,
     },
+    {
+      key: 'integrations.nav.syncEnabled',
+      value: 'false',
+      encrypt: false,
+    },
   ];
 
   let configsCreated = 0;

@@ -47,6 +47,7 @@ export default function NavSettingsPage() {
       company: '',
       syncIntervalMinutes: 30,
       readOnly: true,
+      syncEnabled: false,
     },
   });
 
@@ -68,6 +69,7 @@ export default function NavSettingsPage() {
       const company = find('integrations.nav.company');
       const syncIntervalMinutes = find('integrations.nav.syncIntervalMinutes');
       const readOnly = find('integrations.nav.readOnly');
+      const syncEnabled = find('integrations.nav.syncEnabled');
 
       form.reset({
         host: host?.valuePreview || '',
@@ -80,6 +82,7 @@ export default function NavSettingsPage() {
           ? parseInt(syncIntervalMinutes.valuePreview)
           : 30,
         readOnly: readOnly?.valuePreview !== 'false',
+        syncEnabled: syncEnabled?.valuePreview === 'true',
       });
 
       setHasPassword(!!password);
@@ -285,7 +288,30 @@ export default function NavSettingsPage() {
                   <div className="space-y-0.5">
                     <FormLabel>Modalità sola lettura</FormLabel>
                     <FormDescription>
-                      Se attivo, le query verso NAV sono limitate a operazioni SELECT. Raccomandato finché l&apos;integrazione non è verificata.
+                      Se attivo, la connessione SQL Server usa <code className="rounded bg-muted px-1 py-0.5 text-xs">ApplicationIntent=ReadOnly</code> (ottimale con SQL Server AG). Non influisce sull&apos;abilitazione del sync.
+                    </FormDescription>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                      disabled={!canUpdate}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+
+            {/* Sync abilitato */}
+            <FormField
+              control={form.control}
+              name="syncEnabled"
+              render={({ field }) => (
+                <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                  <div className="space-y-0.5">
+                    <FormLabel>Sincronizzazione abilitata</FormLabel>
+                    <FormDescription>
+                      Abilita la replica periodica NAV → database locale. Disabilitare per mettere in pausa il sync senza modificare gli altri parametri.
                     </FormDescription>
                   </div>
                   <FormControl>

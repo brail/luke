@@ -16,7 +16,10 @@ export const navConfigSchema = z.object({
   password: z.string().optional(),
   company: z.string().min(1, 'Company richiesto'),
   syncIntervalMinutes: z.number().int().min(1),
+  /** Connessione SQL Server in sola lettura (ApplicationIntent=ReadOnly). */
   readOnly: z.boolean(),
+  /** Abilita/disabilita la sincronizzazione periodica verso il DB locale. */
+  syncEnabled: z.boolean(),
 });
 
 /**
@@ -31,6 +34,7 @@ export const navConfigResponseSchema = z.object({
   company: z.string(),
   syncIntervalMinutes: z.number(),
   readOnly: z.boolean(),
+  syncEnabled: z.boolean(),
 });
 
 // Tipi inferiti dagli schema

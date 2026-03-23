@@ -29,6 +29,7 @@ const navConfigSchema = z.object({
   company: z.string().min(1, 'Company richiesto'),
   syncIntervalMinutes: z.number().int().min(1),
   readOnly: z.boolean(),
+  syncEnabled: z.boolean(),
 });
 
 // ── Sync sub-router ───────────────────────────────────────────────────────────
@@ -126,7 +127,6 @@ const navSyncRouter = router({
    */
   run: protectedProcedure
     .use(requirePermission('config:update'))
-    .input(z.object({ entity: z.string().optional() }))
     .mutation(async ({ ctx }) => {
       const report = await runNavSync(ctx.prisma, getConfig);
 
@@ -170,6 +170,7 @@ export const navRouter = router({
       await saveConfig(ctx.prisma, 'integrations.nav.company', input.company, false);
       await saveConfig(ctx.prisma, 'integrations.nav.syncIntervalMinutes', input.syncIntervalMinutes.toString(), false);
       await saveConfig(ctx.prisma, 'integrations.nav.readOnly', input.readOnly.toString(), false);
+      await saveConfig(ctx.prisma, 'integrations.nav.syncEnabled', input.syncEnabled.toString(), false);
 
       if (input.password && input.password.length > 0) {
         await saveConfig(ctx.prisma, 'integrations.nav.password', input.password, true);
@@ -184,6 +185,7 @@ export const navRouter = router({
           company: input.company,
           syncIntervalMinutes: input.syncIntervalMinutes,
           readOnly: input.readOnly,
+          syncEnabled: input.syncEnabled,
           passwordUpdated: !!input.password,
         },
         'Configurazione NAV salvata'
@@ -201,6 +203,7 @@ export const navRouter = router({
           company: input.company,
           syncIntervalMinutes: input.syncIntervalMinutes,
           readOnly: input.readOnly,
+          syncEnabled: input.syncEnabled,
           passwordUpdated: !!input.password,
         },
       });

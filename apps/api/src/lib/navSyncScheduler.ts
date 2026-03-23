@@ -16,16 +16,33 @@ import { closePool, runNavSync } from '@luke/nav';
 
 import { getConfig } from './configManager';
 
-const DEFAULT_INTERVAL_MINUTES = 60;
+const DEFAULT_INTERVAL_MINUTES = 30;
 
 export function registerNavSyncScheduler(
   fastify: FastifyInstance,
   prisma: PrismaClient,
 ): void {
   let timer: ReturnType<typeof setInterval> | null = null;
+  let isRunning = false;
 
   const runSync = async () => {
+    // Evita sync concorrenti (scheduler + manuale on-demand simultanei)
+    if (isRunning) {
+      fastify.log.warn('NAV sync scheduler: sync già in corso, skip');
+      return;
+    }
+
+    // Pre-check: se NAV non è ancora configurato, evita l'errore rumoroso
+    // "Configurazione NAV incompleta" che si verificherebbe ad ogni boot
+    const host = await getConfig(prisma, 'integrations.nav.host', false);
+    if (!host) {
+      fastify.log.debug('NAV sync scheduler: host non configurato, sync saltato');
+      return;
+    }
+
+    isRunning = true;
     fastify.log.info('NAV sync scheduler: avvio sync');
+
     try {
       const report = await runNavSync(prisma, getConfig);
 
@@ -35,7 +52,7 @@ export function registerNavSyncScheduler(
       if (report.results.length === 0) {
         fastify.log.info(
           { durationMs },
-          'NAV sync scheduler: nessuna entità sincronizzata (readOnly attivo o lista vuota)',
+          'NAV sync scheduler: sync saltato (syncEnabled=false)',
         );
         return;
       }
@@ -64,6 +81,8 @@ export function registerNavSyncScheduler(
       );
     } catch (err) {
       fastify.log.error({ err }, 'NAV sync scheduler: sync fallito');
+    } finally {
+      isRunning = false;
     }
   };
 

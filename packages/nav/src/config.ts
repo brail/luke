@@ -7,8 +7,17 @@ export interface NavDbConfig {
   user: string;
   password: string;
   company: string;
-  syncIntervalMinutes: number;
+  /**
+   * Imposta ApplicationIntent=ReadOnly sulla connessione mssql.
+   * Utile con SQL Server Availability Group (legge dalla replica secondaria).
+   * Non ha effetto sulla logica di sync: se vuoi disabilitare il sync usa syncEnabled.
+   */
   readOnly: boolean;
+  /**
+   * Abilita la sincronizzazione NAV → DB locale.
+   * Se false, runNavSync ritorna immediatamente senza toccare né NAV né Postgres.
+   */
+  syncEnabled: boolean;
 }
 
 /**
@@ -29,7 +38,7 @@ export async function getNavDbConfig(
   prisma: PrismaClient,
   getConfig: GetConfigFn,
 ): Promise<NavDbConfig> {
-  const [host, port, database, user, password, company, syncIntervalMinutes, readOnly] =
+  const [host, port, database, user, password, company, readOnly, syncEnabled] =
     await Promise.all([
       getConfig(prisma, 'integrations.nav.host', false),
       getConfig(prisma, 'integrations.nav.port', false),
@@ -37,8 +46,8 @@ export async function getNavDbConfig(
       getConfig(prisma, 'integrations.nav.user', false),
       getConfig(prisma, 'integrations.nav.password', true),
       getConfig(prisma, 'integrations.nav.company', false),
-      getConfig(prisma, 'integrations.nav.syncIntervalMinutes', false),
       getConfig(prisma, 'integrations.nav.readOnly', false),
+      getConfig(prisma, 'integrations.nav.syncEnabled', false),
     ]);
 
   if (!host || !port || !database || !user || !password || !company) {
@@ -54,7 +63,7 @@ export async function getNavDbConfig(
     user,
     password,
     company,
-    syncIntervalMinutes: syncIntervalMinutes ? parseInt(syncIntervalMinutes, 10) : 30,
     readOnly: readOnly !== 'false',
+    syncEnabled: syncEnabled === 'true',
   };
 }

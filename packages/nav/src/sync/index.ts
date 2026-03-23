@@ -30,10 +30,10 @@ export async function runNavSync(
 
   const config = await getNavDbConfig(prisma, getConfig);
 
-  if (config.readOnly) {
-    logger.warn(
-      { readOnly: true },
-      'NAV sync: modalità sola lettura attiva — disabilitare per avviare il sync',
+  if (!config.syncEnabled) {
+    logger.info(
+      { syncEnabled: false },
+      'NAV sync: sincronizzazione disabilitata (syncEnabled=false) — abilitare in Impostazioni > Microsoft NAV',
     );
     return { startedAt, completedAt: new Date(), results: [] };
   }

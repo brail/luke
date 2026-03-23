@@ -172,16 +172,13 @@ function NavSyncTab({
 
   const handleRunSync = () => {
     setSyncResult(null);
-    runSyncMutation.mutate(
-      { entity },
-      {
-        onSuccess: results => {
-          const r = results.find(x => x.entity === entity) ?? results[0];
-          if (r) setSyncResult(r);
-          toast.success('Sync completato');
-        },
+    runSyncMutation.mutate(undefined, {
+      onSuccess: results => {
+        const r = results.find(x => x.entity === entity) ?? results[0];
+        if (r) setSyncResult(r);
+        toast.success('Sync completato');
       },
-    );
+    });
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
