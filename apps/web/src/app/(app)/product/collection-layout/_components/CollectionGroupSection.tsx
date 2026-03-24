@@ -328,7 +328,7 @@ export function CollectionGroupSection({
     };
 
     let rows = group.rows.filter(row => {
-      const vendorName = row.navVendor?.searchName ?? row.navVendor?.name ?? null;
+      const vendorName = row.vendor?.nickname ?? row.vendor?.name ?? null;
       if (searchQuery && !textMatch(row.line, searchQuery) && !textMatch(vendorName, searchQuery)) return false;
       if (columnFilters.line && !textMatch(row.line, columnFilters.line)) return false;
       if (columnFilters.supplier && !textMatch(vendorName, columnFilters.supplier)) return false;
@@ -552,7 +552,7 @@ export function CollectionGroupSection({
                       {show('supplier') && (
                         <TableCell className="w-36 max-w-[9rem] text-sm text-muted-foreground">
                           <span className="block truncate">
-                            {row.navVendor?.searchName ?? row.navVendor?.name ?? '—'}
+                            {row.vendor?.nickname ?? row.vendor?.name ?? '—'}
                           </span>
                         </TableCell>
                       )}

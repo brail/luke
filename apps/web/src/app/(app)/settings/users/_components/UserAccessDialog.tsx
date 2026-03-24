@@ -47,6 +47,7 @@ const SECTION_LABELS: Record<Section, string> = {
   'admin.brands': '↳ Brand',
   'admin.seasons': '↳ Stagioni',
   'admin.nav_sync': '↳ Sync NAV',
+  'admin.vendors': '↳ Fornitori',
 };
 
 const ALL_SECTIONS: Section[] = [
@@ -67,6 +68,7 @@ const ALL_SECTIONS: Section[] = [
   'admin.brands',
   'admin.seasons',
   'admin.nav_sync',
+  'admin.vendors',
 ];
 
 // null = use role default, true/false = explicit override

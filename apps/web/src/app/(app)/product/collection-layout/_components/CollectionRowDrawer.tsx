@@ -60,7 +60,7 @@ function buildDefaultValues(
   return {
     groupId: defaultGroupId ?? groups[0]?.id ?? '',
     gender: 'MAN',
-    navVendorId: null,
+    vendorId: null,
     line: '',
     status: 'NEW',
     skuForecast: 0,
@@ -118,7 +118,7 @@ export function CollectionRowDrawer({
       form.reset({
         groupId: row.groupId,
         gender: row.gender as CollectionLayoutRowInput['gender'],
-        navVendorId: row.navVendorId ?? null,
+        vendorId: row.vendorId ?? null,
         line: row.line,
         status: row.status as CollectionLayoutRowInput['status'],
         skuForecast: row.skuForecast,

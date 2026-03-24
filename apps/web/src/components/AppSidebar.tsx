@@ -21,6 +21,7 @@ import {
   Calculator,
   TrendingUp,
   LayoutGrid,
+  Truck,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -193,6 +194,14 @@ export default function AppSidebar() {
                           <Link href="/admin/seasons" className="flex items-center">
                             <CalendarDays className="mr-2 h-4 w-4" />
                             <span>Stagioni</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      {menuAccess.adminItems.vendors && (
+                        <DropdownMenuItem asChild>
+                          <Link href="/admin/vendors" className="flex items-center">
+                            <Truck className="mr-2 h-4 w-4" />
+                            <span>Fornitori</span>
                           </Link>
                         </DropdownMenuItem>
                       )}

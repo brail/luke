@@ -74,6 +74,7 @@ export function useSectionAccess() {
       'admin.brands': checkAccess('admin.brands'),
       'admin.seasons': checkAccess('admin.seasons'),
       'admin.nav_sync': checkAccess('admin.nav_sync'),
+      'admin.vendors': checkAccess('admin.vendors'),
     };
   }, [session?.user, userOverrides]);
 

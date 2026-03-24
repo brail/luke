@@ -21,6 +21,7 @@ import { seasonRouter } from './season';
 import { sectionAccessRouter } from './sectionAccess';
 import { storageRouter } from './storage';
 import { usersRouter } from './users';
+import { vendorsRouter } from './vendors';
 
 /**
  * Router principale dell'applicazione
@@ -43,6 +44,7 @@ export const appRouter = router({
   sectionAccess: sectionAccessRouter,
   storage: storageRouter,
   users: usersRouter,
+  vendors: vendorsRouter,
 });
 
 /**

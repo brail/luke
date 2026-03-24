@@ -24,6 +24,7 @@ export * from './schemas/brand';
 export * from './schemas/season';
 export * from './schemas/pricing';
 export * from './schemas/collectionLayout';
+export * from './schemas/vendor';
 
 // Re-export RBAC
 export * from './rbac';

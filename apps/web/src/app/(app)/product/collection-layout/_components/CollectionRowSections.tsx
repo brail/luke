@@ -206,7 +206,7 @@ export function IdentificationSection({
         {/* Fornitore */}
         <FormField
           control={control}
-          name="navVendorId"
+          name="vendorId"
           render={({ field }) => (
             <FormItem>
               <FormLabel>Fornitore</FormLabel>

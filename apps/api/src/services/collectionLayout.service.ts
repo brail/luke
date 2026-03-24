@@ -6,24 +6,26 @@
  */
 
 import { TRPCError } from '@trpc/server';
+
+import type {
+  CollectionGroupInput,
+  CollectionLayoutRowInput,
+} from '@luke/core';
+
 import type {
   PrismaClient,
   CollectionLayout,
   CollectionGroup,
   CollectionLayoutRow,
-  NavVendor,
+  Vendor,
 } from '@prisma/client';
-import type {
-  CollectionGroupInput,
-  CollectionLayoutRowInput,
-} from '@luke/core';
 
 // ─────────────────────────────────────────────────────────────────
 // Tipo di ritorno arricchito
 // ─────────────────────────────────────────────────────────────────
 
 export type RowWithVendor = CollectionLayoutRow & {
-  navVendor: Pick<NavVendor, 'navNo' | 'name' | 'searchName'> | null;
+  vendor: Pick<Vendor, 'id' | 'name' | 'nickname'> | null;
 };
 
 export type CollectionLayoutWithRelations = CollectionLayout & {
@@ -38,7 +40,7 @@ export type CollectionLayoutWithRelations = CollectionLayout & {
 // ─────────────────────────────────────────────────────────────────
 
 const ROW_VENDOR_INCLUDE = {
-  navVendor: { select: { navNo: true, name: true, searchName: true } },
+  vendor: { select: { id: true, name: true, nickname: true } },
 } as const;
 
 const LAYOUT_INCLUDE = {
@@ -135,7 +137,7 @@ export async function copyFromSeason(
       });
 
       for (const row of group.rows) {
-        const { id, collectionLayoutId, groupId, createdAt, updatedAt, pictureUrl, navVendor, ...rowData } = row;
+        const { id: _id, collectionLayoutId: _cid, groupId: _gid, createdAt: _ca, updatedAt: _ua, pictureUrl: _pic, vendor: _vendor, ...rowData } = row;
         await tx.collectionLayoutRow.create({
           data: {
             ...rowData,
@@ -262,7 +264,7 @@ export async function createRow(
       ...rowData,
       collectionLayoutId: group.collectionLayoutId,
       order: order ?? existingCount,
-      navVendorId: rowData.navVendorId ?? null,
+      vendorId: rowData.vendorId ?? null,
       strategy: rowData.strategy ?? null,
       styleStatus: rowData.styleStatus ?? null,
       progress: rowData.progress ?? null,
@@ -368,7 +370,7 @@ export async function duplicateRow(
     data: { order: { increment: 1 } },
   });
 
-  const { id, createdAt, updatedAt, pictureUrl, ...rowData } = row;
+  const { id: _id2, createdAt: _ca2, updatedAt: _ua2, pictureUrl: _pic2, ...rowData } = row;
 
   return prisma.collectionLayoutRow.create({
     data: {

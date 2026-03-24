@@ -39,6 +39,7 @@ export function useMenuAccess() {
       brands: s.admin && s['admin.brands'],
       seasons: s.admin && s['admin.seasons'],
       nav_sync: s.admin && s['admin.nav_sync'],
+      vendors: s.admin && s['admin.vendors'],
     };
     const showAdmin = Object.values(adminItems).some(Boolean);
 

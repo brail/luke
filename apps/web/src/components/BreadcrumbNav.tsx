@@ -32,6 +32,7 @@ const pathLabels: Record<string, string> = {
   '/admin/brands': 'Brand',
   '/admin/seasons': 'Stagioni',
   '/admin/nav-sync': 'Sync NAV',
+  '/admin/vendors': 'Fornitori',
 };
 
 // Mappa dei percorsi per i link di navigazione
@@ -52,6 +53,7 @@ const pathLinks: Record<string, string> = {
   '/admin/brands': '/admin/brands',
   '/admin/seasons': '/admin/seasons',
   '/admin/nav-sync': '/admin/nav-sync',
+  '/admin/vendors': '/admin/vendors',
 };
 
 // Tipo per gli elementi del breadcrumb

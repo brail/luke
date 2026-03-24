@@ -385,11 +385,37 @@ model NavVendor {
   navLastModified DateTime?                  // Last Date Modified
   syncedAt        DateTime                   // timestamp ultimo sync
 
-  collectionRows  CollectionLayoutRow[]
+  vendor          Vendor?                    // collegamento all'anagrafica interna
 
   @@index([name])
   @@index([syncedAt])
   @@map("nav_vendors")
+}
+
+/**
+ * Anagrafica interna fornitori
+ * Entità standalone — può esistere indipendentemente da NAV.
+ * Il campo navVendorId è opzionale: se valorizzato collega il fornitore
+ * alla corrispondente voce su Microsoft NAV.
+ */
+model Vendor {
+  id          String    @id @default(uuid())
+  name        String
+  nickname    String?
+  referente   String?
+  email       String?
+  phone       String?
+  chat        String?
+  notes       String?
+  navVendorId String?   @unique
+  navVendor   NavVendor? @relation(fields: [navVendorId], references: [navNo], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  collectionRows CollectionLayoutRow[]
+
+  @@index([name])
+  @@map("vendors")
 }
 
 /**
@@ -406,8 +432,8 @@ model CollectionLayoutRow {
 
   // Required fields
   gender                 String                // MAN | WOMAN
-  navVendorId            String?
-  navVendor              NavVendor?            @relation(fields: [navVendorId], references: [navNo], onDelete: SetNull)
+  vendorId               String?
+  vendor                 Vendor?               @relation(fields: [vendorId], references: [id], onDelete: SetNull)
   line                   String
   status                 String                // CARRY_OVER | NEW
   skuForecast            Int
