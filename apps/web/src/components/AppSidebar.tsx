@@ -182,7 +182,7 @@ export default function AppSidebar() {
                     <DropdownMenuContent align="start" className="w-56">
                       {menuAccess.adminItems.brands && (
                         <DropdownMenuItem asChild>
-                          <Link href="/settings/brands" className="flex items-center">
+                          <Link href="/admin/brands" className="flex items-center">
                             <Building2 className="mr-2 h-4 w-4" />
                             <span>Brand</span>
                           </Link>
@@ -190,7 +190,7 @@ export default function AppSidebar() {
                       )}
                       {menuAccess.adminItems.seasons && (
                         <DropdownMenuItem asChild>
-                          <Link href="/settings/seasons" className="flex items-center">
+                          <Link href="/admin/seasons" className="flex items-center">
                             <CalendarDays className="mr-2 h-4 w-4" />
                             <span>Stagioni</span>
                           </Link>

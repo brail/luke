@@ -19,8 +19,6 @@ const pathLabels: Record<string, string> = {
   '/dashboard': 'Dashboard',
   '/settings': 'Impostazioni',
   '/settings/users': 'Utenti',
-  '/settings/brands': 'Brand',
-  '/settings/seasons': 'Stagioni',
   '/settings/storage': 'Storage',
   '/settings/mail': 'Mail',
   '/settings/ldap': 'Auth LDAP',
@@ -30,6 +28,10 @@ const pathLabels: Record<string, string> = {
   '/product': 'Prodotto',
   '/product/pricing': 'Costi e Prezzi',
   '/product/collection-layout': 'Collection Layout',
+  '/admin': 'Amministrazione',
+  '/admin/brands': 'Brand',
+  '/admin/seasons': 'Stagioni',
+  '/admin/nav-sync': 'Sync NAV',
 };
 
 // Mappa dei percorsi per i link di navigazione
@@ -37,8 +39,6 @@ const pathLinks: Record<string, string> = {
   '/dashboard': '/dashboard',
   '/settings': '/settings',
   '/settings/users': '/settings/users',
-  '/settings/brands': '/settings/brands',
-  '/settings/seasons': '/settings/seasons',
   '/settings/storage': '/settings/storage',
   '/settings/mail': '/settings/mail',
   '/settings/ldap': '/settings/ldap',
@@ -48,6 +48,10 @@ const pathLinks: Record<string, string> = {
   '/product': '/product/pricing',
   '/product/pricing': '/product/pricing',
   '/product/collection-layout': '/product/collection-layout',
+  '/admin': '/admin/brands',
+  '/admin/brands': '/admin/brands',
+  '/admin/seasons': '/admin/seasons',
+  '/admin/nav-sync': '/admin/nav-sync',
 };
 
 // Tipo per gli elementi del breadcrumb

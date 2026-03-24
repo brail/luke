@@ -11,6 +11,6 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  await assertSectionAccess('admin.nav_sync');
+  await assertSectionAccess('admin');
   return <>{children}</>;
 }
