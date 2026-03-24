@@ -409,6 +409,7 @@ model Vendor {
   notes       String?
   navVendorId String?   @unique
   navVendor   NavVendor? @relation(fields: [navVendorId], references: [navNo], onDelete: SetNull)
+  isActive    Boolean   @default(true)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

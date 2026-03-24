@@ -9,6 +9,7 @@ import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { CreateActionButton } from '../../../../components/CreateActionButton';
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
+import { Checkbox } from '../../../../components/ui/checkbox';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
 import { usePermission } from '../../../../hooks/usePermission';
@@ -20,18 +21,14 @@ import { VendorTable, type VendorItem } from './_components/VendorTable';
 
 export default function VendorsPage() {
   const [searchTerm, setSearchTerm] = useState('');
+  const [includeInactive, setIncludeInactive] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingVendor, setEditingVendor] = useState<VendorItem | null>(null);
   const [deletingVendor, setDeletingVendor] = useState<VendorItem | null>(null);
   const { can } = usePermission();
 
-  const {
-    data,
-    isLoading,
-    error,
-    refetch,
-  } = trpc.vendors.list.useQuery(
-    { search: searchTerm || undefined },
+  const { data, isLoading, error, refetch } = trpc.vendors.list.useQuery(
+    { search: searchTerm || undefined, includeInactive },
     { staleTime: 30 * 1000 },
   );
 
@@ -41,30 +38,22 @@ export default function VendorsPage() {
     getTrpcErrorMessage(error, { CONFLICT: 'Codice NAV già collegato a un altro fornitore' });
 
   const createMutation = trpc.vendors.create.useMutation({
-    onSuccess: () => {
-      void refetch();
-      setIsDialogOpen(false);
-      toast.success('Fornitore creato con successo');
-    },
+    onSuccess: () => { void refetch(); setIsDialogOpen(false); toast.success('Fornitore creato con successo'); },
     onError: error => toast.error(getError(error)),
   });
 
   const updateMutation = trpc.vendors.update.useMutation({
-    onSuccess: () => {
-      void refetch();
-      setIsDialogOpen(false);
-      setEditingVendor(null);
-      toast.success('Fornitore aggiornato con successo');
-    },
+    onSuccess: () => { void refetch(); setIsDialogOpen(false); setEditingVendor(null); toast.success('Fornitore aggiornato con successo'); },
     onError: error => toast.error(getError(error)),
   });
 
   const removeMutation = trpc.vendors.remove.useMutation({
-    onSuccess: () => {
-      void refetch();
-      setDeletingVendor(null);
-      toast.success('Fornitore eliminato');
-    },
+    onSuccess: () => { void refetch(); setDeletingVendor(null); toast.success('Fornitore disattivato'); },
+    onError: error => toast.error(getError(error)),
+  });
+
+  const restoreMutation = trpc.vendors.restore.useMutation({
+    onSuccess: () => { void refetch(); toast.success('Fornitore riattivato'); },
     onError: error => toast.error(getError(error)),
   });
 
@@ -91,6 +80,16 @@ export default function VendorsPage() {
               onChange={e => setSearchTerm(e.target.value)}
             />
           </div>
+          <div className="flex items-center gap-2 pb-0.5">
+            <Checkbox
+              id="includeInactive"
+              checked={includeInactive}
+              onCheckedChange={v => setIncludeInactive(!!v)}
+            />
+            <Label htmlFor="includeInactive" className="cursor-pointer text-sm font-normal">
+              Mostra disattivati
+            </Label>
+          </div>
           <CreateActionButton
             label="Nuovo Fornitore"
             onClick={() => { setEditingVendor(null); setIsDialogOpen(true); }}
@@ -108,6 +107,7 @@ export default function VendorsPage() {
           error={error}
           onEdit={vendor => { setEditingVendor(vendor); setIsDialogOpen(true); }}
           onDelete={setDeletingVendor}
+          onRestore={vendor => restoreMutation.mutate({ id: vendor.id })}
           onRetry={() => void refetch()}
         />
       </SectionCard>
@@ -115,9 +115,9 @@ export default function VendorsPage() {
       <ConfirmDialog
         open={!!deletingVendor}
         onOpenChange={open => { if (!open) setDeletingVendor(null); }}
-        title="Elimina fornitore"
-        description={`Sei sicuro di voler eliminare il fornitore "${deletingVendor?.name}"? Questa operazione è irreversibile.`}
-        confirmText="Elimina"
+        title="Disattiva fornitore"
+        description={`Sei sicuro di voler disattivare "${deletingVendor?.name}"? Non apparirà più nelle liste di selezione. Potrai riattivarlo in seguito.`}
+        confirmText="Disattiva"
         cancelText="Annulla"
         variant="destructive"
         actionType="delete"

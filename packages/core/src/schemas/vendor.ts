@@ -28,6 +28,7 @@ export const VendorUpdateInputSchema = z.object({
 
 export const VendorListInputSchema = z.object({
   search: z.string().optional(),
+  includeInactive: z.boolean().optional(),
   cursor: z.string().uuid().optional(),
   limit: z.number().min(1).max(200).default(100),
 });
@@ -42,6 +43,7 @@ export const VendorSchema = z.object({
   chat: z.string().nullable(),
   notes: z.string().nullable(),
   navVendorId: z.string().nullable(),
+  isActive: z.boolean(),
   createdAt: z.date(),
   updatedAt: z.date(),
 });

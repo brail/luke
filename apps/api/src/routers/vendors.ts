@@ -1,6 +1,12 @@
 /**
  * Router tRPC per gestione Vendor (anagrafica interna fornitori)
- * Implementa CRUD completo.
+ * Implementa CRUD completo con soft delete.
+ *
+ * Pattern soft delete:
+ * - remove() imposta isActive=false anziché cancellare il record
+ * - list() filtra isActive=true per default (includeInactive=true per admin)
+ * - Il sync NAV non tocca mai isActive: un vendor disattivato non viene
+ *   riattivato automaticamente dalla sincronizzazione successiva
  */
 
 import { TRPCError } from '@trpc/server';
@@ -26,13 +32,15 @@ const VENDOR_SELECT = {
   chat: true,
   notes: true,
   navVendorId: true,
+  isActive: true,
   createdAt: true,
   updatedAt: true,
 } as const;
 
 export const vendorsRouter = router({
   /**
-   * Lista vendor con ricerca e cursor pagination
+   * Lista vendor con ricerca e cursor pagination.
+   * Per default mostra solo isActive=true; passare includeInactive=true per vedere tutti.
    */
   list: protectedProcedure
     .use(requirePermission('vendors:read'))
@@ -42,6 +50,7 @@ export const vendorsRouter = router({
       const limit = input?.limit ?? 100;
 
       const where: any = {};
+      if (!input?.includeInactive) where.isActive = true;
       if (input?.search) {
         where.OR = [
           { name: { contains: input.search, mode: 'insensitive' } },
@@ -104,13 +113,14 @@ export const vendorsRouter = router({
       }
 
       return ctx.prisma.vendor.create({
-        data: input,
+        data: { ...input, isActive: true },
         select: VENDOR_SELECT,
       });
     }),
 
   /**
-   * Aggiorna un vendor esistente
+   * Aggiorna un vendor esistente.
+   * Non espone isActive — usare remove/restore per quello.
    */
   update: protectedProcedure
     .use(requirePermission('vendors:update'))
@@ -148,7 +158,10 @@ export const vendorsRouter = router({
     }),
 
   /**
-   * Elimina un vendor (hard delete — non ci sono dipendenze critiche)
+   * Soft delete: imposta isActive=false.
+   * Il record rimane in DB; le collection rows mantengono il riferimento
+   * ma il vendor non appare più nel combobox né nella lista default.
+   * Il sync NAV non riattiva mai un vendor soft-deleted.
    */
   remove: protectedProcedure
     .use(requirePermission('vendors:delete'))
@@ -162,7 +175,33 @@ export const vendorsRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Fornitore non trovato' });
       }
 
-      await ctx.prisma.vendor.delete({ where: { id: input.id } });
+      await ctx.prisma.vendor.update({
+        where: { id: input.id },
+        data: { isActive: false, updatedAt: new Date() },
+      });
+
       return { success: true };
+    }),
+
+  /**
+   * Riattiva un vendor soft-deleted (admin only)
+   */
+  restore: protectedProcedure
+    .use(requirePermission('vendors:update'))
+    .input(VendorIdSchema)
+    .mutation(async ({ input, ctx }) => {
+      const vendor = await ctx.prisma.vendor.findUnique({
+        where: { id: input.id },
+      });
+
+      if (!vendor) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Fornitore non trovato' });
+      }
+
+      return ctx.prisma.vendor.update({
+        where: { id: input.id },
+        data: { isActive: true, updatedAt: new Date() },
+        select: VENDOR_SELECT,
+      });
     }),
 });

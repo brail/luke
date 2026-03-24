@@ -2,6 +2,7 @@
 
 import React from 'react';
 
+import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
 import { Skeleton } from '../../../../../components/ui/skeleton';
 import {
@@ -30,6 +31,7 @@ export interface VendorItem {
   chat: string | null;
   notes: string | null;
   navVendorId: string | null;
+  isActive: boolean;
   createdAt: Date | string;
   updatedAt: Date | string;
 }
@@ -40,6 +42,7 @@ interface VendorTableProps {
   error?: any;
   onEdit: (vendor: VendorItem) => void;
   onDelete: (vendor: VendorItem) => void;
+  onRestore: (vendor: VendorItem) => void;
   onRetry?: () => void;
 }
 
@@ -49,6 +52,7 @@ export function VendorTable({
   error,
   onEdit,
   onDelete,
+  onRestore,
   onRetry,
 }: VendorTableProps) {
   const { can } = usePermission();
@@ -59,9 +63,7 @@ export function VendorTable({
     return (
       <div className="text-center py-8">
         <p className="text-destructive mb-4">Errore caricamento fornitori: {error.message}</p>
-        {onRetry && (
-          <Button onClick={onRetry} variant="outline">Riprova</Button>
-        )}
+        {onRetry && <Button onClick={onRetry} variant="outline">Riprova</Button>}
       </div>
     );
   }
@@ -93,47 +95,51 @@ export function VendorTable({
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="outline" size="sm" disabled className="opacity-50 cursor-not-allowed">
-                Modifica
-              </Button>
+              <Button variant="outline" size="sm" disabled className="opacity-50 cursor-not-allowed">Modifica</Button>
             </TooltipTrigger>
             <TooltipContent>Non hai i permessi per modificare i fornitori</TooltipContent>
           </Tooltip>
         </TooltipProvider>
       );
     }
-    return (
-      <Button variant="outline" size="sm" onClick={() => onEdit(vendor)}>
-        Modifica
-      </Button>
-    );
+    return <Button variant="outline" size="sm" onClick={() => onEdit(vendor)}>Modifica</Button>;
   };
 
-  const DeleteButton = ({ vendor }: { vendor: VendorItem }) => {
-    if (!canDelete) {
+  const ActionButton = ({ vendor }: { vendor: VendorItem }) => {
+    if (vendor.isActive) {
+      if (!canDelete) {
+        return (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="sm" disabled className="opacity-50 cursor-not-allowed text-destructive">Disattiva</Button>
+              </TooltipTrigger>
+              <TooltipContent>Non hai i permessi per disattivare i fornitori</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        );
+      }
+      return (
+        <Button variant="outline" size="sm" onClick={() => onDelete(vendor)} className="text-destructive hover:text-destructive">
+          Disattiva
+        </Button>
+      );
+    }
+
+    // vendor inattivo → mostra Riattiva
+    if (!canUpdate) {
       return (
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="outline" size="sm" disabled className="opacity-50 cursor-not-allowed text-destructive">
-                Elimina
-              </Button>
+              <Button variant="outline" size="sm" disabled className="opacity-50 cursor-not-allowed">Riattiva</Button>
             </TooltipTrigger>
-            <TooltipContent>Non hai i permessi per eliminare i fornitori</TooltipContent>
+            <TooltipContent>Non hai i permessi per riattivare i fornitori</TooltipContent>
           </Tooltip>
         </TooltipProvider>
       );
     }
-    return (
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => onDelete(vendor)}
-        className="text-destructive hover:text-destructive"
-      >
-        Elimina
-      </Button>
-    );
+    return <Button variant="outline" size="sm" onClick={() => onRestore(vendor)}>Riattiva</Button>;
   };
 
   return (
@@ -147,22 +153,28 @@ export function VendorTable({
             <TableHead>Email</TableHead>
             <TableHead>Telefono</TableHead>
             <TableHead>NAV</TableHead>
+            <TableHead>Stato</TableHead>
             <TableHead className="text-right">Azioni</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {vendors.map(vendor => (
-            <TableRow key={vendor.id}>
+            <TableRow key={vendor.id} className={!vendor.isActive ? 'opacity-50' : undefined}>
               <TableCell className="font-medium">{vendor.name}</TableCell>
               <TableCell className="text-sm text-muted-foreground">{vendor.nickname ?? '—'}</TableCell>
               <TableCell className="text-sm text-muted-foreground">{vendor.referente ?? '—'}</TableCell>
               <TableCell className="text-sm text-muted-foreground">{vendor.email ?? '—'}</TableCell>
               <TableCell className="text-sm text-muted-foreground">{vendor.phone ?? '—'}</TableCell>
               <TableCell className="text-sm font-mono text-muted-foreground">{vendor.navVendorId ?? '—'}</TableCell>
+              <TableCell>
+                <Badge variant={vendor.isActive ? 'default' : 'secondary'}>
+                  {vendor.isActive ? 'Attivo' : 'Disattivato'}
+                </Badge>
+              </TableCell>
               <TableCell className="text-right">
                 <div className="flex items-center justify-end gap-2">
-                  <EditButton vendor={vendor} />
-                  <DeleteButton vendor={vendor} />
+                  {vendor.isActive && <EditButton vendor={vendor} />}
+                  <ActionButton vendor={vendor} />
                 </div>
               </TableCell>
             </TableRow>

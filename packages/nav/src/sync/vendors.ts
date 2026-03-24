@@ -134,9 +134,12 @@ export async function syncVendors(
     const batch = rows.slice(i, i + UPSERT_BATCH_SIZE);
 
     await Promise.all(
-      batch.map(row => {
+      batch.map(async row => {
+        const navNo = row['No_'];
+        const name = row['Name'] ?? '';
+
         const data = {
-          name: row['Name'] ?? '',
+          name,
           name2: row['Name 2'] ?? null,
           searchName: row['Search Name'] ?? null,
           firstName: row['First Name'] ?? null,
@@ -157,10 +160,21 @@ export async function syncVendors(
           syncedAt,
         };
 
-        return prisma.navVendor.upsert({
-          where: { navNo: row['No_'] },
-          create: { navNo: row['No_'], ...data },
+        // Upsert replica NAV
+        await prisma.navVendor.upsert({
+          where: { navNo },
+          create: { navNo, ...data },
           update: data,
+        });
+
+        // Upsert anagrafica interna Vendor:
+        // - create: nuovo record con isActive=true
+        // - update: solo il name (non toccare isActive né campi arricchiti)
+        // Questo garantisce che un vendor soft-deleted non venga riattivato dal sync.
+        await prisma.vendor.upsert({
+          where: { navVendorId: navNo },
+          create: { name, navVendorId: navNo, isActive: true },
+          update: { name },
         });
       }),
     );
