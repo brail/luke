@@ -174,13 +174,15 @@ model UserSectionAccess {
 }
 
 model Brand {
-  id        String   @id @default(uuid())
-  code      String   @unique
-  name      String
-  logoUrl   String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String    @id @default(uuid())
+  code        String    @unique
+  name        String
+  logoUrl     String?
+  navBrandId  String?   @unique
+  navBrand    NavBrand? @relation(fields: [navBrandId], references: [navCode], onDelete: SetNull)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   pricingParameterSets PricingParameterSet[]
   collectionLayouts    CollectionLayout[]
@@ -193,20 +195,21 @@ model Brand {
 }
 
 model Season {
-  id        String   @id @default(uuid())
-  code      String
-  year      Int
-  name      String
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String     @id @default(uuid())
+  code        String     @unique
+  year        Int?
+  name        String
+  navSeasonId String?    @unique
+  navSeason   NavSeason? @relation(fields: [navSeasonId], references: [navCode], onDelete: SetNull)
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
   pricingParameterSets PricingParameterSet[]
   collectionLayouts    CollectionLayout[]
   userSeasonAccess     UserSeasonAccess[]
 
-  @@unique([code, year])
-  @@index([code, year])
+  @@index([code])
   @@map("seasons")
 }
 
@@ -342,15 +345,20 @@ model CollectionGroup {
  * Controlla se il sync è attivo e quali No_ includere/escludere.
  */
 model NavSyncFilter {
-  id        String   @id @default(cuid())
-  entity    String   // "vendor" | "customer" | "item" | ...
-  mode      String   // "all" | "whitelist" | "exclude"
-  navNos    String[] // rilevante solo per whitelist/exclude
-  active    Boolean  @default(true)
-  note      String?
-  updatedAt DateTime @updatedAt
+  id              String   @id @default(cuid())
+  entity          String   // "vendor" | "brand" | "season"
+  mode            String   // "all" | "whitelist" | "exclude"
+  navNos          String[] // rilevante solo per whitelist/exclude
+  active          Boolean  @default(true)
+  note            String?
+  /// Se true, lo scheduler sincronizza automaticamente questa entità
+  autoSyncEnabled Boolean  @default(false)
+  /// Frequenza di sync automatico in minuti (usata solo se autoSyncEnabled=true)
+  intervalMinutes Int      @default(30)
+  updatedAt       DateTime @updatedAt
 
   @@unique([entity])
+  @@index([entity, active])
   @@map("nav_sync_filters")
 }
 
@@ -389,7 +397,38 @@ model NavVendor {
 
   @@index([name])
   @@index([syncedAt])
+  @@index([navLastModified])
   @@map("nav_vendors")
+}
+
+/**
+ * Replica della tabella [COMPANY$Brand] di Microsoft NAV
+ */
+model NavBrand {
+  navCode     String   @id              // Code (PK)
+  description String   @default("")     // Description
+  syncedAt    DateTime                  // timestamp ultimo sync
+
+  brand       Brand?                    // collegamento all'anagrafica interna
+
+  @@index([description])
+  @@map("nav_brands")
+}
+
+/**
+ * Replica della tabella [COMPANY$Season] di Microsoft NAV
+ */
+model NavSeason {
+  navCode      String    @id            // Code (PK)
+  description  String    @default("")   // Description
+  startingDate DateTime?                // Starting Date
+  endingDate   DateTime?                // Ending Date
+  syncedAt     DateTime                 // timestamp ultimo sync
+
+  season       Season?                  // collegamento all'anagrafica interna
+
+  @@index([description])
+  @@map("nav_seasons")
 }
 
 /**
@@ -401,6 +440,7 @@ model NavVendor {
 model Vendor {
   id          String    @id @default(uuid())
   name        String
+  countryCode String?
   nickname    String?
   referente   String?
   email       String?
