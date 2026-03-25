@@ -2,7 +2,9 @@ import type { PrismaClient } from '@prisma/client';
 import type { Logger } from 'pino';
 import type mssql from 'mssql';
 
+import { sanitizeCompany } from '../config.js';
 import type { NavDbConfig } from '../config.js';
+import { buildNavSyncFilter, buildWhereClause, processInBatches } from './utils.js';
 
 export interface SyncResult {
   entity: string;
@@ -23,12 +25,6 @@ const UPSERT_BATCH_SIZE = 100;
  *   oppure [Last Date Modified] IS NULL (vendor senza data aggiornamento).
  *   Il secondo predicato è necessario perché SQL Server esclude i NULL dai
  *   confronti > , e quei record non verrebbero mai rilevati dopo il primo sync.
- *
- * NavSyncFilter:
- * - active=false → skip completo
- * - mode "all"       → solo filtro differenziale
- * - mode "whitelist" → AND [No_] IN (navNos)
- * - mode "exclude"   → AND [No_] NOT IN (navNos)
  */
 export async function syncVendors(
   pool: mssql.ConnectionPool,
@@ -38,56 +34,44 @@ export async function syncVendors(
 ): Promise<SyncResult> {
   const entity = 'vendor';
 
-  // 1. Leggi NavSyncFilter per "vendor"
   const filter = await prisma.navSyncFilter.findUnique({ where: { entity } });
+  const filterResult = buildNavSyncFilter(filter, logger, entity, 'No_');
 
-  // 2. Se active = false → skip
-  if (filter && !filter.active) {
-    logger.info({ entity, filter: 'disabled' }, 'NAV sync: entità disabilitata, skip');
-    return { entity, upserted: 0, skipped: true, filterMode: 'disabled' };
+  if (filterResult.shouldSkip) {
+    return { entity, upserted: 0, skipped: true, filterMode: filterResult.filterMode };
   }
 
-  const filterMode = filter?.mode ?? 'all';
+  const { filterMode, filterPredicates, bindParams } = filterResult;
 
-  // 3. Calcola soglia per sync differenziale
-  const agg = await prisma.navVendor.aggregate({ _max: { navLastModified: true } });
-  const lastModified = agg._max.navLastModified;
+  // Watermark per sync differenziale — usata solo in mode=all/exclude.
+  // In modalità whitelist si fa sempre full sync dei vendor selezionati:
+  // la lista è piccola e un vendor precedentemente sincronizzato (watermark > 0)
+  // verrebbe altrimenti escluso anche se fa parte della nuova selezione.
+  const useWatermark = filter?.mode !== 'whitelist';
+  let lastModified: Date | null = null;
+  if (useWatermark) {
+    const agg = await prisma.navVendor.aggregate({ _max: { navLastModified: true } });
+    lastModified = agg._max.navLastModified;
+  }
 
-  // 4. Costruisci WHERE clause
-  const tableName = `[${config.company}$Vendor]`;
+  // Combina watermark + predicati filtro entità
   const whereParts: string[] = [];
-
   if (lastModified) {
-    // Includi record modificati dopo il watermark OPPURE senza data di modifica:
-    // SQL Server esclude i NULL dai confronti >, quindi senza l'OR IS NULL i vendor
-    // creati senza data di modifica sparirebbero dopo il primo full sync.
-    whereParts.push(
-      '([Last Date Modified] > @lastModified OR [Last Date Modified] IS NULL)',
-    );
+    // SQL Server esclude i NULL dai confronti >, quindi l'OR IS NULL è necessario
+    // per non perdere vendor senza data di modifica dopo il primo sync.
+    whereParts.push('([Last Date Modified] > @lastModified OR [Last Date Modified] IS NULL)');
   }
+  whereParts.push(...filterPredicates);
 
-  if (filterMode === 'whitelist' && filter!.navNos.length > 0) {
-    const placeholders = filter!.navNos.map((_, i) => `@wl${i}`).join(', ');
-    whereParts.push(`[No_] IN (${placeholders})`);
-  } else if (filterMode === 'exclude' && filter!.navNos.length > 0) {
-    const placeholders = filter!.navNos.map((_, i) => `@ex${i}`).join(', ');
-    whereParts.push(`[No_] NOT IN (${placeholders})`);
-  }
+  const whereClause = buildWhereClause(whereParts);
 
-  const whereClause = whereParts.length > 0 ? `WHERE ${whereParts.join(' AND ')}` : '';
-
-  // 5. Esegui query su SQL Server
+  const tableName = `[${sanitizeCompany(config.company)}$Vendor]`;
   const request = pool.request();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (request as any).timeout = 60_000;
 
-  if (lastModified) {
-    request.input('lastModified', lastModified);
-  }
-
-  if (filterMode === 'whitelist' && filter!.navNos.length > 0) {
-    filter!.navNos.forEach((no, i) => request.input(`wl${i}`, no));
-  } else if (filterMode === 'exclude' && filter!.navNos.length > 0) {
-    filter!.navNos.forEach((no, i) => request.input(`ex${i}`, no));
-  }
+  if (lastModified) request.input('lastModified', lastModified);
+  bindParams(request);
 
   const result = await request.query<{
     'No_': string;
@@ -127,59 +111,58 @@ export async function syncVendors(
     return { entity, upserted: 0, skipped: false, filterMode };
   }
 
-  // 6. Upsert su Postgres in batch per evitare di saturare il connection pool
   const syncedAt = new Date();
 
-  for (let i = 0; i < rows.length; i += UPSERT_BATCH_SIZE) {
-    const batch = rows.slice(i, i + UPSERT_BATCH_SIZE);
+  let errors = 0;
+  await processInBatches(rows, UPSERT_BATCH_SIZE, async row => {
+    const navNo = row['No_'];
+    const name = row['Name'] ?? '';
 
-    await Promise.all(
-      batch.map(async row => {
-        const navNo = row['No_'];
-        const name = row['Name'] ?? '';
+    try {
+      const data = {
+        name,
+        name2: row['Name 2'] ?? null,
+        searchName: row['Search Name'] ?? null,
+        firstName: row['First Name'] ?? null,
+        lastName: row['Last Name'] ?? null,
+        address: row['Address'] ?? null,
+        address2: row['Address 2'] ?? null,
+        postCode: row['Post Code'] ?? null,
+        city: row['City'] ?? null,
+        county: row['County'] ?? null,
+        countryCode: row['Country_Region Code'] ?? null,
+        phoneNo: row['Phone No_'] ?? null,
+        faxNo: row['Fax No_'] ?? null,
+        email: row['E-Mail'] ?? null,
+        homePage: row['Home Page'] ?? null,
+        contact: row['Contact'] ?? null,
+        vendorType: row['Vendor Type'] ?? null,
+        navLastModified: row['Last Date Modified'] ?? null,
+        syncedAt,
+      };
 
-        const data = {
-          name,
-          name2: row['Name 2'] ?? null,
-          searchName: row['Search Name'] ?? null,
-          firstName: row['First Name'] ?? null,
-          lastName: row['Last Name'] ?? null,
-          address: row['Address'] ?? null,
-          address2: row['Address 2'] ?? null,
-          postCode: row['Post Code'] ?? null,
-          city: row['City'] ?? null,
-          county: row['County'] ?? null,
-          countryCode: row['Country_Region Code'] ?? null,
-          phoneNo: row['Phone No_'] ?? null,
-          faxNo: row['Fax No_'] ?? null,
-          email: row['E-Mail'] ?? null,
-          homePage: row['Home Page'] ?? null,
-          contact: row['Contact'] ?? null,
-          vendorType: row['Vendor Type'] ?? null,
-          navLastModified: row['Last Date Modified'] ?? null,
-          syncedAt,
-        };
+      // Upsert replica NAV
+      await prisma.navVendor.upsert({
+        where: { navNo },
+        create: { navNo, ...data },
+        update: data,
+      });
 
-        // Upsert replica NAV
-        await prisma.navVendor.upsert({
-          where: { navNo },
-          create: { navNo, ...data },
-          update: data,
-        });
+      // Upsert anagrafica interna Vendor: crea se non esiste, aggiorna name e countryCode.
+      // Non toccare isActive né campi arricchiti — un vendor soft-deleted
+      // non viene riattivato dal sync.
+      const countryCode = row['Country_Region Code'] ?? null;
+      await prisma.vendor.upsert({
+        where: { navVendorId: navNo },
+        create: { name, countryCode, navVendorId: navNo, isActive: true },
+        update: { name, countryCode },
+      });
+    } catch (err) {
+      errors++;
+      logger.error({ entity, navNo, err }, 'NAV sync: errore upsert vendor');
+    }
+  });
 
-        // Upsert anagrafica interna Vendor:
-        // - create: nuovo record con isActive=true
-        // - update: solo il name (non toccare isActive né campi arricchiti)
-        // Questo garantisce che un vendor soft-deleted non venga riattivato dal sync.
-        await prisma.vendor.upsert({
-          where: { navVendorId: navNo },
-          create: { name, navVendorId: navNo, isActive: true },
-          update: { name },
-        });
-      }),
-    );
-  }
-
-  logger.info({ entity, filterMode, upserted: rows.length }, 'NAV sync: completato');
-  return { entity, upserted: rows.length, skipped: false, filterMode };
+  logger.info({ entity, filterMode, upserted: rows.length, errors }, 'NAV sync: completato');
+  return { entity, upserted: rows.length - errors, skipped: false, filterMode };
 }
