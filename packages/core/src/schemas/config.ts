@@ -80,9 +80,7 @@ export const AppConfigRegistry = {
   'integrations.nav.user':                  z.string().min(1),
   'integrations.nav.password':              z.string(),
   'integrations.nav.company':               z.string().min(1),
-  'integrations.nav.syncIntervalMinutes':   z.coerce.number().int().min(1),
   'integrations.nav.readOnly':              z.coerce.boolean(),
-  'integrations.nav.syncEnabled':           z.coerce.boolean(),
 } as const satisfies Record<string, z.ZodTypeAny>;
 
 export type AppConfigKey = keyof typeof AppConfigRegistry;

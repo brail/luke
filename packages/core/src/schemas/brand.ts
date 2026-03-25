@@ -10,11 +10,11 @@ import { z } from 'zod';
  * Utilizzato per validazione input in tRPC procedures
  */
 export const BrandInputSchema = z.object({
-  /** Codice univoco del brand (max 16 caratteri) */
+  /** Codice univoco del brand (max 20 caratteri) */
   code: z
     .string()
     .min(1, 'Codice obbligatorio')
-    .max(16, 'Max 16 caratteri')
+    .max(20, 'Max 20 caratteri')
     .regex(/^[A-Za-z0-9_-]+$/, 'Solo lettere, numeri, _ e -'),
 
   /** Nome del brand (max 128 caratteri) */
@@ -31,6 +31,9 @@ export const BrandInputSchema = z.object({
 
   /** ID temporaneo per logo durante creazione brand (opzionale) */
   tempLogoId: z.string().uuid('ID temporaneo non valido').optional(),
+
+  /** Codice NAV collegato (opzionale) */
+  navBrandId: z.string().max(20).optional().nullable(),
 
   /** Stato attivo del brand (default: true) */
   isActive: z.boolean().default(true),
@@ -61,6 +64,9 @@ export const BrandSchema = z.object({
 
   /** URL del logo (nullable) */
   logoUrl: z.string().nullable(),
+
+  /** Codice NAV collegato (nullable) */
+  navBrandId: z.string().nullable(),
 
   /** Stato attivo del brand */
   isActive: z.boolean(),
@@ -147,5 +153,5 @@ export function normalizeCode(code: string): string {
   return code
     .trim()
     .toUpperCase()
-    .replace(/[^A-Z0-9_-]/g, '');
+    .replace(/[^A-Z0-9_ -]/g, '');
 }

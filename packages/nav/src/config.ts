@@ -10,14 +10,8 @@ export interface NavDbConfig {
   /**
    * Imposta ApplicationIntent=ReadOnly sulla connessione mssql.
    * Utile con SQL Server Availability Group (legge dalla replica secondaria).
-   * Non ha effetto sulla logica di sync: se vuoi disabilitare il sync usa syncEnabled.
    */
   readOnly: boolean;
-  /**
-   * Abilita la sincronizzazione NAV → DB locale.
-   * Se false, runNavSync ritorna immediatamente senza toccare né NAV né Postgres.
-   */
-  syncEnabled: boolean;
 }
 
 /**
@@ -31,6 +25,21 @@ export type GetConfigFn = (
 ) => Promise<string | null>;
 
 /**
+ * Sanitizza il nome della company NAV per uso sicuro nel table name SQL Server.
+ * I table name non sono parametrizzabili in MSSQL → bracket-escaping manuale.
+ * Lancia se il nome contiene caratteri non ammessi.
+ */
+export function sanitizeCompany(company: string): string {
+  if (!/^[A-Za-z0-9 _\-.]+$/.test(company)) {
+    throw new Error(
+      `NAV company name non valido: "${company}". Solo lettere, numeri, spazi e i caratteri _ - . sono ammessi.`,
+    );
+  }
+  // Bracket-escaping: ] → ]] per evitare injection via SQL Server quoted identifiers
+  return company.replace(/\]/g, ']]');
+}
+
+/**
  * Legge la configurazione NAV da AppConfig tramite la funzione getConfig iniettata.
  * La password viene decifrata (decrypt: true) — le altre chiavi sono in chiaro.
  */
@@ -38,7 +47,7 @@ export async function getNavDbConfig(
   prisma: PrismaClient,
   getConfig: GetConfigFn,
 ): Promise<NavDbConfig> {
-  const [host, port, database, user, password, company, readOnly, syncEnabled] =
+  const [host, port, database, user, password, company, readOnly] =
     await Promise.all([
       getConfig(prisma, 'integrations.nav.host', false),
       getConfig(prisma, 'integrations.nav.port', false),
@@ -47,7 +56,6 @@ export async function getNavDbConfig(
       getConfig(prisma, 'integrations.nav.password', true),
       getConfig(prisma, 'integrations.nav.company', false),
       getConfig(prisma, 'integrations.nav.readOnly', false),
-      getConfig(prisma, 'integrations.nav.syncEnabled', false),
     ]);
 
   if (!host || !port || !database || !user || !password || !company) {
@@ -64,6 +72,5 @@ export async function getNavDbConfig(
     password,
     company,
     readOnly: readOnly !== 'false',
-    syncEnabled: syncEnabled === 'true',
   };
 }

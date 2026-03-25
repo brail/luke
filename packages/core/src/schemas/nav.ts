@@ -15,10 +15,9 @@ export const navConfigSchema = z.object({
   user: z.string().min(1, 'Utente richiesto'),
   password: z.string().optional(),
   company: z.string().min(1, 'Company richiesto'),
-  syncIntervalMinutes: z.number().int().min(1),
   /** Connessione SQL Server in sola lettura (ApplicationIntent=ReadOnly). */
   readOnly: z.boolean(),
-  /** Abilita/disabilita la sincronizzazione periodica verso il DB locale. */
+  /** Abilita/disabilita globalmente la sincronizzazione NAV (scheduler + sync manuale). */
   syncEnabled: z.boolean(),
 });
 
@@ -32,9 +31,7 @@ export const navConfigResponseSchema = z.object({
   user: z.string(),
   hasPassword: z.boolean(),
   company: z.string(),
-  syncIntervalMinutes: z.number(),
   readOnly: z.boolean(),
-  syncEnabled: z.boolean(),
 });
 
 // Tipi inferiti dagli schema

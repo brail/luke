@@ -14,6 +14,7 @@ export const sectionEnum = z.enum([
   'settings.mail',
   'settings.ldap',
   'settings.nav',
+  'settings.nav_sync',
   // Manutenzione e relative sotto-sezioni
   'maintenance',
   'maintenance.config',
@@ -26,7 +27,6 @@ export const sectionEnum = z.enum([
   'admin',
   'admin.brands',
   'admin.seasons',
-  'admin.nav_sync',
   'admin.vendors',
 ]);
 export type Section = z.infer<typeof sectionEnum>;
@@ -43,6 +43,7 @@ export const SECTION_TO_PERMISSION: Record<Section, string> = {
   'settings.mail': 'config:read',
   'settings.ldap': 'config:read',
   'settings.nav': 'config:read',
+  'settings.nav_sync': 'config:read',
   maintenance: 'maintenance:read',
   'maintenance.config': 'maintenance:read',
   'maintenance.import_export': 'maintenance:read',
@@ -52,7 +53,6 @@ export const SECTION_TO_PERMISSION: Record<Section, string> = {
   admin: 'maintenance:read',
   'admin.brands': 'brands:read',
   'admin.seasons': 'seasons:read',
-  'admin.nav_sync': 'maintenance:read',
   'admin.vendors': 'vendors:read',
 } as const;
 
@@ -83,6 +83,7 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       'settings.mail': true,
       'settings.ldap': true,
       'settings.nav': true,
+      'settings.nav_sync': true,
       maintenance: true,
       'maintenance.config': true,
       'maintenance.import_export': true,
@@ -92,7 +93,6 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       admin: true,
       'admin.brands': true,
       'admin.seasons': true,
-      'admin.nav_sync': true,
       'admin.vendors': true,
     },
     editor: {
@@ -103,6 +103,7 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       'settings.mail': false,
       'settings.ldap': false,
       'settings.nav': false,
+      'settings.nav_sync': false,
       maintenance: false,
       'maintenance.config': false,
       'maintenance.import_export': false,
@@ -112,7 +113,6 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       admin: false,
       'admin.brands': false,
       'admin.seasons': false,
-      'admin.nav_sync': false,
       'admin.vendors': false,
     },
     viewer: {
@@ -123,6 +123,7 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       'settings.mail': false,
       'settings.ldap': false,
       'settings.nav': false,
+      'settings.nav_sync': false,
       maintenance: false,
       'maintenance.config': false,
       'maintenance.import_export': false,
@@ -132,7 +133,6 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       admin: false,
       'admin.brands': false,
       'admin.seasons': false,
-      'admin.nav_sync': false,
       'admin.vendors': false,
     },
   };
