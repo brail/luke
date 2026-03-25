@@ -51,6 +51,7 @@ export function VendorDialog({
     resolver: zodResolver(VendorInputSchema),
     defaultValues: {
       name: '',
+      countryCode: null,
       nickname: null,
       referente: null,
       email: null,
@@ -66,6 +67,7 @@ export function VendorDialog({
       if (vendor) {
         form.reset({
           name: vendor.name,
+          countryCode: vendor.countryCode ?? null,
           nickname: vendor.nickname ?? null,
           referente: vendor.referente ?? null,
           email: vendor.email ?? null,
@@ -93,6 +95,7 @@ export function VendorDialog({
     await onSubmit(data);
   };
 
+  const isNavLinked = !!vendor?.navVendorId;
   const title = vendor
     ? canEdit ? 'Modifica Fornitore' : 'Visualizza Fornitore'
     : 'Nuovo Fornitore';
@@ -115,13 +118,43 @@ export function VendorDialog({
                 name="name"
                 render={({ field }) => (
                   <FormItem className="col-span-2">
-                    <FormLabel>Ragione Sociale *</FormLabel>
+                    <FormLabel className="flex items-center gap-2">
+                      Ragione Sociale *
+                      {isNavLinked && (
+                        <span className="text-xs font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">da NAV</span>
+                      )}
+                    </FormLabel>
                     <FormControl>
                       <Input
                         placeholder="es. Acme S.r.l."
-                        disabled={!canEdit || isLoading}
+                        disabled={!canEdit || isLoading || isNavLinked}
                         {...field}
                         value={field.value ?? ''}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="countryCode"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="flex items-center gap-2">
+                      Paese
+                      {isNavLinked && (
+                        <span className="text-xs font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">da NAV</span>
+                      )}
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="es. IT"
+                        disabled={!canEdit || isLoading || isNavLinked}
+                        {...field}
+                        value={field.value ?? ''}
+                        onChange={e => field.onChange(e.target.value || null)}
                       />
                     </FormControl>
                     <FormMessage />
@@ -230,25 +263,40 @@ export function VendorDialog({
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name="navVendorId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Codice NAV</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="es. V00001"
-                        disabled={!canEdit || isLoading}
-                        {...field}
-                        value={field.value ?? ''}
-                        onChange={e => field.onChange(e.target.value || null)}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {isNavLinked ? (
+                <div className="col-span-2 space-y-2">
+                  <label className="text-sm font-medium flex items-center gap-2">
+                    Codice NAV
+                    <span className="text-xs font-normal text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">collegato</span>
+                  </label>
+                  <div className="flex h-9 items-center rounded-md border bg-muted px-3 text-sm font-mono text-muted-foreground">
+                    {vendor?.navVendorId}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Collegamento bloccato. Usa "Scollega da NAV" per rimuoverlo.
+                  </p>
+                </div>
+              ) : (
+                <FormField
+                  control={form.control}
+                  name="navVendorId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Codice NAV</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="es. V00001"
+                          disabled={!canEdit || isLoading}
+                          {...field}
+                          value={field.value ?? ''}
+                          onChange={e => field.onChange(e.target.value || null)}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <FormField
                 control={form.control}
