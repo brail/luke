@@ -25,6 +25,7 @@ import { router, protectedProcedure } from '../lib/trpc';
 const VENDOR_SELECT = {
   id: true,
   name: true,
+  countryCode: true,
   nickname: true,
   referente: true,
   email: true,
@@ -50,7 +51,8 @@ export const vendorsRouter = router({
       const limit = input?.limit ?? 100;
 
       const where: any = {};
-      if (!input?.includeInactive) where.isActive = true;
+      if (typeof input?.isActive === 'boolean') where.isActive = input.isActive;
+      else where.isActive = true;
       if (input?.search) {
         where.OR = [
           { name: { contains: input.search, mode: 'insensitive' } },
@@ -135,12 +137,17 @@ export const vendorsRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Fornitore non trovato' });
       }
 
-      if (input.data.navVendorId !== undefined) {
-        const navId = input.data.navVendorId;
-        if (navId && navId !== vendor.navVendorId) {
-          const conflict = await ctx.prisma.vendor.findUnique({
-            where: { navVendorId: navId },
+      if (input.data.navVendorId !== undefined && input.data.navVendorId !== vendor.navVendorId) {
+        // Blocca qualsiasi cambio se già valorizzato — usare endpoint unlink
+        if (vendor.navVendorId !== null) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Il collegamento NAV non può essere modificato. Usa "Scollega da NAV" per rimuoverlo.',
           });
+        }
+        const navId = input.data.navVendorId;
+        if (navId) {
+          const conflict = await ctx.prisma.vendor.findUnique({ where: { navVendorId: navId } });
           if (conflict) {
             throw new TRPCError({
               code: 'CONFLICT',
@@ -180,6 +187,80 @@ export const vendorsRouter = router({
         data: { isActive: false, updatedAt: new Date() },
       });
 
+      return { success: true };
+    }),
+
+  /**
+   * Scollega vendor da NAV e lo soft-deletes atomicamente.
+   * Blocca se il vendor è referenziato in CollectionLayoutRow attive.
+   */
+  unlink: protectedProcedure
+    .use(requirePermission('vendors:delete'))
+    .use(withRateLimit('configMutations'))
+    .input(VendorIdSchema)
+    .mutation(async ({ input, ctx }) => {
+      const vendor = await ctx.prisma.vendor.findUnique({ where: { id: input.id } });
+
+      if (!vendor) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Fornitore non trovato' });
+      }
+
+      if (vendor.navVendorId === null) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Il fornitore non è collegato a NAV' });
+      }
+
+      const rowCount = await ctx.prisma.collectionLayoutRow.count({
+        where: { vendorId: input.id },
+      });
+
+      if (rowCount > 0) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: `Impossibile scollegare: il fornitore è usato in ${rowCount} righe di collection`,
+        });
+      }
+
+      await ctx.prisma.vendor.update({
+        where: { id: input.id },
+        data: { navVendorId: null, isActive: false, updatedAt: new Date() },
+      });
+
+      return { success: true };
+    }),
+
+  /**
+   * Hard delete vendor — solo per vendor senza collegamento NAV e senza dipendenze attive.
+   */
+  hardDelete: protectedProcedure
+    .use(requirePermission('vendors:delete'))
+    .use(withRateLimit('configMutations'))
+    .input(VendorIdSchema)
+    .mutation(async ({ input, ctx }) => {
+      const vendor = await ctx.prisma.vendor.findUnique({ where: { id: input.id } });
+
+      if (!vendor) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Fornitore non trovato' });
+      }
+
+      if (vendor.navVendorId !== null) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Impossibile eliminare definitivamente un fornitore collegato a NAV. Usa "Scollega da NAV" prima.',
+        });
+      }
+
+      const rowCount = await ctx.prisma.collectionLayoutRow.count({
+        where: { vendorId: input.id },
+      });
+
+      if (rowCount > 0) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: `Impossibile eliminare: il fornitore è usato in ${rowCount} righe di collection`,
+        });
+      }
+
+      await ctx.prisma.vendor.delete({ where: { id: input.id } });
       return { success: true };
     }),
 

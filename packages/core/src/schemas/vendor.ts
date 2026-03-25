@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 export const VendorInputSchema = z.object({
   name: z.string().min(1, 'Nome obbligatorio').max(255).trim(),
+  countryCode: z.string().max(10).trim().optional().nullable(),
   nickname: z.string().max(64).trim().optional().nullable(),
   referente: z.string().max(128).trim().optional().nullable(),
   email: z
@@ -28,7 +29,7 @@ export const VendorUpdateInputSchema = z.object({
 
 export const VendorListInputSchema = z.object({
   search: z.string().optional(),
-  includeInactive: z.boolean().optional(),
+  isActive: z.boolean().optional(),
   cursor: z.string().uuid().optional(),
   limit: z.number().min(1).max(200).default(100),
 });
@@ -36,6 +37,7 @@ export const VendorListInputSchema = z.object({
 export const VendorSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
+  countryCode: z.string().nullable(),
   nickname: z.string().nullable(),
   referente: z.string().nullable(),
   email: z.string().nullable(),

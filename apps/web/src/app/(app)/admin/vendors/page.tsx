@@ -25,10 +25,12 @@ export default function VendorsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingVendor, setEditingVendor] = useState<VendorItem | null>(null);
   const [deletingVendor, setDeletingVendor] = useState<VendorItem | null>(null);
+  const [unlinkingVendor, setUnlinkingVendor] = useState<VendorItem | null>(null);
+  const [hardDeletingVendor, setHardDeletingVendor] = useState<VendorItem | null>(null);
   const { can } = usePermission();
 
   const { data, isLoading, error, refetch } = trpc.vendors.list.useQuery(
-    { search: searchTerm || undefined, includeInactive },
+    { search: searchTerm || undefined, isActive: includeInactive ? undefined : true },
     { staleTime: 30 * 1000 },
   );
 
@@ -54,6 +56,24 @@ export default function VendorsPage() {
 
   const restoreMutation = trpc.vendors.restore.useMutation({
     onSuccess: () => { void refetch(); toast.success('Fornitore riattivato'); },
+    onError: error => toast.error(getError(error)),
+  });
+
+  const unlinkMutation = trpc.vendors.unlink.useMutation({
+    onSuccess: () => {
+      void refetch();
+      setUnlinkingVendor(null);
+      toast.success('Fornitore scollegato da NAV e disattivato');
+    },
+    onError: error => toast.error(getError(error)),
+  });
+
+  const hardDeleteMutation = trpc.vendors.hardDelete.useMutation({
+    onSuccess: () => {
+      void refetch();
+      setHardDeletingVendor(null);
+      toast.success('Fornitore eliminato definitivamente');
+    },
     onError: error => toast.error(getError(error)),
   });
 
@@ -108,6 +128,8 @@ export default function VendorsPage() {
           onEdit={vendor => { setEditingVendor(vendor); setIsDialogOpen(true); }}
           onDelete={setDeletingVendor}
           onRestore={vendor => restoreMutation.mutate({ id: vendor.id })}
+          onUnlink={setUnlinkingVendor}
+          onHardDelete={setHardDeletingVendor}
           onRetry={() => void refetch()}
         />
       </SectionCard>
@@ -123,6 +145,32 @@ export default function VendorsPage() {
         actionType="delete"
         onConfirm={() => { if (deletingVendor) removeMutation.mutate({ id: deletingVendor.id }); }}
         isLoading={removeMutation.isPending}
+      />
+
+      <ConfirmDialog
+        open={!!unlinkingVendor}
+        onOpenChange={open => { if (!open) setUnlinkingVendor(null); }}
+        title="Scollega da NAV"
+        description={`Sei sicuro di voler scollegare "${unlinkingVendor?.name}" da NAV? Il fornitore verrà disattivato e il codice NAV "${unlinkingVendor?.navVendorId}" tornerà disponibile per la sincronizzazione automatica.`}
+        confirmText="Scollega e disattiva"
+        cancelText="Annulla"
+        variant="destructive"
+        actionType="delete"
+        onConfirm={() => { if (unlinkingVendor) unlinkMutation.mutate({ id: unlinkingVendor.id }); }}
+        isLoading={unlinkMutation.isPending}
+      />
+
+      <ConfirmDialog
+        open={!!hardDeletingVendor}
+        onOpenChange={open => { if (!open) setHardDeletingVendor(null); }}
+        title="Elimina fornitore definitivamente"
+        description={`Sei sicuro di voler eliminare "${hardDeletingVendor?.name}"? Questa operazione è irreversibile.`}
+        confirmText="Elimina definitivamente"
+        cancelText="Annulla"
+        variant="destructive"
+        actionType="delete"
+        onConfirm={() => { if (hardDeletingVendor) hardDeleteMutation.mutate({ id: hardDeletingVendor.id }); }}
+        isLoading={hardDeleteMutation.isPending}
       />
 
       <VendorDialog
