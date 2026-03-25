@@ -17,6 +17,7 @@ Monorepo enterprise con pnpm + Turborepo per applicazioni web moderne con focus 
 - [Error UX & User Experience](#error-ux--user-experience)
 - [UI Settings Standard](#ui-settings-standard)
 - [Tecnologie](#tecnologie)
+- [Integrazione NAV](#integrazione-nav-microsoft-dynamics)
 - [Manutenzione Import](#manutenzione-import)
 - [Troubleshooting](#troubleshooting)
 - [Note](#note)
@@ -30,7 +31,8 @@ luke/
 │   ├── web/          # Next.js 15 + shadcn/ui frontend
 │   └── api/          # Fastify 5 + tRPC + Prisma backend
 ├── packages/
-│   └── core/         # Zod schemas, RBAC, utilities condivise
+│   ├── core/         # Zod schemas, RBAC, utilities condivise
+│   └── nav/          # Integrazione Microsoft Dynamics NAV (SQL Server)
 └── [config files]    # pnpm, turbo, typescript, eslint, prettier
 ```
 
@@ -679,12 +681,34 @@ pnpm install
 - **Nessun .env**: I segreti non devono mai essere committati in file .env (solo NEXT*PUBLIC*\* se necessario)
 - **Export sicuro**: I segreti cifrati nell'export mostrano sempre `[ENCRYPTED]`, mai il plaintext
 
+## Integrazione NAV (Microsoft Dynamics)
+
+Il pacchetto `@luke/nav` gestisce la sincronizzazione bidirezionale con Microsoft Dynamics NAV via connessione diretta SQL Server (mssql).
+
+### Entità sincronizzate
+
+| Entità | Tabella NAV | Replica locale | Entità interna | Sync |
+|--------|-------------|----------------|----------------|------|
+| Vendor | `[COMPANY$Vendor]` | `nav_vendors` | `vendors` | Differenziale (watermark) |
+| Brand | `[COMPANY$Brand]` | `nav_brands` | `brands` | Full sync |
+| Season | `[COMPANY$Season]` | `nav_seasons` | `seasons` | Full sync |
+
+### Pattern architetturale
+
+- **Entità duale**: tabella `nav_*` (replica fedele) + tabella locale (anagrafica arricchita)
+- **Soft delete**: `isActive=false`, mai hard delete — il sync NAV non tocca mai `isActive`
+- **Guard logic**: se un record locale esiste senza NAV link, il sync non lo sovrascrive
+- **Filtri configurabili**: whitelist/exclude/all per entità, con scheduling automatico
+
+Per dettagli completi, vedi [docs/nav-integration.md](docs/nav-integration.md).
+
 ## Riferimenti Correlati
 
 - [API_SETUP.md](API_SETUP.md) - Setup e utilizzo dell'API con esempi pratici
 - [APP_CONFIG.md](APP_CONFIG.md) - Gestione configurazioni centralizzate (AppConfig)
 - [OPERATIONS.md](OPERATIONS.md) - Documentazione operativa per SRE/DevOps
 - [SETUP_STATUS.md](SETUP_STATUS.md) - Registro tecnico interno e roadmap
+- [docs/nav-integration.md](docs/nav-integration.md) - Architettura integrazione NAV
 - [docs/adr/](docs/adr/) - Architecture Decision Records
 
 ---
