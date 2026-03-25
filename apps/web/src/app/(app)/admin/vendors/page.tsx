@@ -12,6 +12,7 @@ import { SectionCard } from '../../../../components/SectionCard';
 import { Checkbox } from '../../../../components/ui/checkbox';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
+import { useInvalidateContext } from '../../../../contexts/useInvalidateContext';
 import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
@@ -28,40 +29,44 @@ export default function VendorsPage() {
   const [unlinkingVendor, setUnlinkingVendor] = useState<VendorItem | null>(null);
   const [hardDeletingVendor, setHardDeletingVendor] = useState<VendorItem | null>(null);
   const { can } = usePermission();
+  const invalidateContext = useInvalidateContext();
 
-  const { data, isLoading, error, refetch } = trpc.vendors.list.useQuery(
+  const utils = trpc.useUtils();
+  const { data, isLoading, error } = trpc.vendors.list.useQuery(
     { search: searchTerm || undefined, isActive: includeInactive ? undefined : true },
     { staleTime: 30 * 1000 },
   );
 
   const vendors = (data?.items ?? []) as VendorItem[];
 
+  const invalidate = () => { void utils.vendors.list.invalidate(); invalidateContext(); };
+
   const getError = (error: unknown) =>
     getTrpcErrorMessage(error, { CONFLICT: 'Codice NAV già collegato a un altro fornitore' });
 
   const createMutation = trpc.vendors.create.useMutation({
-    onSuccess: () => { void refetch(); setIsDialogOpen(false); toast.success('Fornitore creato con successo'); },
+    onSuccess: () => { invalidate(); setIsDialogOpen(false); toast.success('Fornitore creato con successo'); },
     onError: error => toast.error(getError(error)),
   });
 
   const updateMutation = trpc.vendors.update.useMutation({
-    onSuccess: () => { void refetch(); setIsDialogOpen(false); setEditingVendor(null); toast.success('Fornitore aggiornato con successo'); },
+    onSuccess: () => { invalidate(); setIsDialogOpen(false); setEditingVendor(null); toast.success('Fornitore aggiornato con successo'); },
     onError: error => toast.error(getError(error)),
   });
 
   const removeMutation = trpc.vendors.remove.useMutation({
-    onSuccess: () => { void refetch(); setDeletingVendor(null); toast.success('Fornitore disattivato'); },
+    onSuccess: () => { invalidate(); setDeletingVendor(null); toast.success('Fornitore disattivato'); },
     onError: error => toast.error(getError(error)),
   });
 
   const restoreMutation = trpc.vendors.restore.useMutation({
-    onSuccess: () => { void refetch(); toast.success('Fornitore riattivato'); },
+    onSuccess: () => { invalidate(); toast.success('Fornitore riattivato'); },
     onError: error => toast.error(getError(error)),
   });
 
   const unlinkMutation = trpc.vendors.unlink.useMutation({
     onSuccess: () => {
-      void refetch();
+      invalidate();
       setUnlinkingVendor(null);
       toast.success('Fornitore scollegato da NAV e disattivato');
     },
@@ -70,7 +75,7 @@ export default function VendorsPage() {
 
   const hardDeleteMutation = trpc.vendors.hardDelete.useMutation({
     onSuccess: () => {
-      void refetch();
+      invalidate();
       setHardDeletingVendor(null);
       toast.success('Fornitore eliminato definitivamente');
     },
@@ -130,7 +135,7 @@ export default function VendorsPage() {
           onRestore={vendor => restoreMutation.mutate({ id: vendor.id })}
           onUnlink={setUnlinkingVendor}
           onHardDelete={setHardDeletingVendor}
-          onRetry={() => void refetch()}
+          onRetry={() => invalidate()}
         />
       </SectionCard>
 
