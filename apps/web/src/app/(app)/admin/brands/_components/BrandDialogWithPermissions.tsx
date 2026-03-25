@@ -32,6 +32,13 @@ import {
 } from '../../../../../components/ui/form';
 import { Input } from '../../../../../components/ui/input';
 import { Progress } from '../../../../../components/ui/progress';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../../../../components/ui/select';
 import { Switch } from '../../../../../components/ui/switch';
 import {
   Tooltip,
@@ -41,12 +48,14 @@ import {
 } from '../../../../../components/ui/tooltip';
 import { useInvalidateContext } from '../../../../../contexts/useInvalidateContext';
 import { useBrandPermissions } from '../../../../../hooks/useBrandPermissions';
+import { trpc } from '../../../../../lib/trpc';
 
 // Schema per form con isActive obbligatorio (per React Hook Form)
 // logoUrl accetta qualsiasi stringa (anche percorsi relativi in DEV) o null/undefined
 const BrandFormSchema = BrandInputSchema.extend({
   isActive: z.boolean(),
   logoUrl: z.union([z.string(), z.null(), z.undefined()]).optional(),
+  navBrandId: z.string().nullable().optional(),
 });
 
 type BrandFormData = z.infer<typeof BrandFormSchema>;
@@ -112,6 +121,12 @@ export function BrandDialogWithPermissions({
   const brandPerms = useBrandPermissions();
   const { data: session } = useSession();
 
+  // Lista brand NAV sincronizzati (per collegamento)
+  const { data: navBrands = [] } = trpc.integrations.nav.brands.list.useQuery(
+    { excludeLinkedTo: brand?.navBrandId ?? undefined },
+    { staleTime: 5 * 60 * 1000 }
+  );
+
   // Hook per invalidazione cache
   const invalidateContext = useInvalidateContext();
 
@@ -150,6 +165,7 @@ export function BrandDialogWithPermissions({
       code: brand?.code || '',
       name: brand?.name || '',
       logoUrl: brand?.logoUrl ?? null,
+      navBrandId: brand?.navBrandId ?? null,
       isActive: brand?.isActive ?? true,
     },
   });
@@ -161,6 +177,7 @@ export function BrandDialogWithPermissions({
         code: brand.code,
         name: brand.name,
         logoUrl: brand.logoUrl ?? null,
+        navBrandId: brand.navBrandId ?? null,
         isActive: brand.isActive,
       });
       setLogoUrl(brand.logoUrl);
@@ -173,6 +190,7 @@ export function BrandDialogWithPermissions({
         code: '',
         name: '',
         logoUrl: null,
+        navBrandId: null,
         isActive: true,
       });
       setLogoUrl(null);
@@ -398,6 +416,7 @@ export function BrandDialogWithPermissions({
         // XHR upload already updates DB directly; tempLogoId handles new-brand logo flow.
         ...(data.logoUrl === null ? { logoUrl: null } : {}),
         tempLogoId: tempLogoId || undefined,
+        navBrandId: data.navBrandId ?? null,
         isActive: data.isActive,
       };
 
@@ -409,6 +428,9 @@ export function BrandDialogWithPermissions({
   };
 
   const isFormDisabled = !brandPerms.canEdit();
+  // Campi che provengono da NAV sono read-only se il brand è già collegato
+  const isNavLinked = !!brand?.navBrandId;
+  const isNavFieldReadOnly = isNavLinked || isFormDisabled;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -516,15 +538,20 @@ export function BrandDialogWithPermissions({
               name="code"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Codice</FormLabel>
+                  <FormLabel className="flex items-center gap-2">
+                    Codice
+                    {isNavLinked && (
+                      <span className="text-xs font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">da NAV</span>
+                    )}
+                  </FormLabel>
                   <DisabledFieldWrapper
-                    disabled={isFormDisabled}
-                    tooltip={disabledFieldTooltip}
+                    disabled={isNavFieldReadOnly}
+                    tooltip={isNavLinked ? 'Sincronizzato da NAV — non modificabile' : disabledFieldTooltip}
                   >
                     <FormControl>
                       <Input
                         placeholder="es. nike-2024"
-                        disabled={isLoading || isFormDisabled}
+                        disabled={isLoading || isNavFieldReadOnly}
                         {...field}
                         onChange={e => {
                           field.onChange(e);
@@ -550,15 +577,20 @@ export function BrandDialogWithPermissions({
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Nome</FormLabel>
+                  <FormLabel className="flex items-center gap-2">
+                    Nome
+                    {isNavLinked && (
+                      <span className="text-xs font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">da NAV</span>
+                    )}
+                  </FormLabel>
                   <DisabledFieldWrapper
-                    disabled={isFormDisabled}
-                    tooltip={disabledFieldTooltip}
+                    disabled={isNavFieldReadOnly}
+                    tooltip={isNavLinked ? 'Sincronizzato da NAV — non modificabile' : disabledFieldTooltip}
                   >
                     <FormControl>
                       <Input
                         placeholder="es. Nike, Adidas"
-                        disabled={isLoading || isFormDisabled}
+                        disabled={isLoading || isNavFieldReadOnly}
                         {...field}
                       />
                     </FormControl>
@@ -567,6 +599,54 @@ export function BrandDialogWithPermissions({
                 </FormItem>
               )}
             />
+
+            {/* Codice NAV */}
+            {isNavLinked ? (
+              <div className="space-y-2">
+                <label className="text-sm font-medium flex items-center gap-2">
+                  Collegamento NAV
+                  <span className="text-xs font-normal text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">collegato</span>
+                </label>
+                <div className="flex h-9 items-center rounded-md border bg-muted px-3 text-sm font-mono text-muted-foreground">
+                  {brand?.navBrandId}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Collegamento bloccato. Usa "Scollega da NAV" per rimuoverlo.
+                </p>
+              </div>
+            ) : navBrands.length > 0 && (
+              <FormField
+                control={form.control}
+                name="navBrandId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Collega a NAV</FormLabel>
+                    <DisabledFieldWrapper disabled={isFormDisabled} tooltip={disabledFieldTooltip}>
+                      <Select
+                        value={field.value ?? '__none__'}
+                        onValueChange={v => field.onChange(v === '__none__' ? null : v)}
+                        disabled={isFormDisabled || isLoading}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Nessun collegamento NAV" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="__none__">Nessun collegamento NAV</SelectItem>
+                          {navBrands.map(b => (
+                            <SelectItem key={b.navCode} value={b.navCode}>
+                              {b.navCode} — {b.description}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </DisabledFieldWrapper>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
 
             {/* Stato Attivo */}
             <FormField

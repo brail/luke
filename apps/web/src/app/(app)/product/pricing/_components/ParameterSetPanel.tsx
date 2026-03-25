@@ -14,6 +14,7 @@ import type { RouterOutputs } from '@luke/api';
 import type { PricingParameterSetInput } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
+import { PermissionButton } from '../../../../../components/PermissionButton';
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
 import {
@@ -117,36 +118,17 @@ export function ParameterSetPanel({
     <div className="space-y-3">
       {/* Pulsante nuova variante */}
       <div className="flex justify-end">
-        {canUpdate ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsCreateDialogOpen(true)}
-            disabled={isLoading}
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            Nuova variante
-          </Button>
-        ) : (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled
-                  className="opacity-50 cursor-not-allowed"
-                >
-                  <Plus className="h-4 w-4 mr-1" />
-                  Nuova variante
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                Non hai i permessi per creare parametri
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        )}
+        <PermissionButton
+          hasPermission={canUpdate}
+          tooltip="Non hai i permessi per creare parametri"
+          variant="outline"
+          size="sm"
+          onClick={() => setIsCreateDialogOpen(true)}
+          disabled={isLoading}
+        >
+          <Plus className="h-4 w-4 mr-1" />
+          Nuova variante
+        </PermissionButton>
       </div>
 
       {/* Lista set */}
@@ -212,35 +194,17 @@ export function ParameterSetPanel({
                   )}
 
                   {/* Modifica */}
-                  {canUpdate ? (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => setEditingSet(set)}
-                      disabled={isLoading}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                  ) : (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 opacity-50 cursor-not-allowed"
-                            disabled
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          Non hai i permessi per modificare i parametri
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  )}
+                  <PermissionButton
+                    hasPermission={canUpdate}
+                    tooltip="Non hai i permessi per modificare i parametri"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => setEditingSet(set)}
+                    disabled={isLoading}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </PermissionButton>
 
                   {/* Elimina (solo se più di un set) */}
                   {sets.length > 1 &&

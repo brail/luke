@@ -2,6 +2,7 @@
 
 import React from 'react';
 
+import { PermissionButton } from '../../../../../components/PermissionButton';
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
 import { Skeleton } from '../../../../../components/ui/skeleton';
@@ -13,17 +14,12 @@ import {
   TableHeader,
   TableRow,
 } from '../../../../../components/ui/table';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '../../../../../components/ui/tooltip';
 import { usePermission } from '../../../../../hooks/usePermission';
 
 export interface VendorItem {
   id: string;
   name: string;
+  countryCode: string | null;
   nickname: string | null;
   referente: string | null;
   email: string | null;
@@ -43,6 +39,8 @@ interface VendorTableProps {
   onEdit: (vendor: VendorItem) => void;
   onDelete: (vendor: VendorItem) => void;
   onRestore: (vendor: VendorItem) => void;
+  onUnlink: (vendor: VendorItem) => void;
+  onHardDelete: (vendor: VendorItem) => void;
   onRetry?: () => void;
 }
 
@@ -53,11 +51,14 @@ export function VendorTable({
   onEdit,
   onDelete,
   onRestore,
+  onUnlink,
+  onHardDelete,
   onRetry,
 }: VendorTableProps) {
   const { can } = usePermission();
   const canUpdate = can('vendors:update');
   const canDelete = can('vendors:delete');
+  const canRead = can('vendors:read');
 
   if (error) {
     return (
@@ -72,7 +73,7 @@ export function VendorTable({
     return (
       <div className="space-y-3">
         {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-12 w-full" />
+          <Skeleton key={i} className="h-10 w-full" />
         ))}
       </div>
     );
@@ -89,57 +90,71 @@ export function VendorTable({
     );
   }
 
-  const EditButton = ({ vendor }: { vendor: VendorItem }) => {
-    if (!canUpdate) {
-      return (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="outline" size="sm" disabled className="opacity-50 cursor-not-allowed">Modifica</Button>
-            </TooltipTrigger>
-            <TooltipContent>Non hai i permessi per modificare i fornitori</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      );
-    }
-    return <Button variant="outline" size="sm" onClick={() => onEdit(vendor)}>Modifica</Button>;
-  };
-
   const ActionButton = ({ vendor }: { vendor: VendorItem }) => {
     if (vendor.isActive) {
-      if (!canDelete) {
+      if (vendor.navVendorId) {
         return (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="sm" disabled className="opacity-50 cursor-not-allowed text-destructive">Disattiva</Button>
-              </TooltipTrigger>
-              <TooltipContent>Non hai i permessi per disattivare i fornitori</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <PermissionButton
+            hasPermission={canDelete}
+            tooltip="Non hai i permessi per scollegare i fornitori"
+            variant="outline"
+            size="sm"
+            onClick={() => onUnlink(vendor)}
+            className="text-destructive hover:text-destructive"
+          >
+            Scollega da NAV
+          </PermissionButton>
         );
       }
       return (
-        <Button variant="outline" size="sm" onClick={() => onDelete(vendor)} className="text-destructive hover:text-destructive">
-          Disattiva
-        </Button>
+        <>
+          <PermissionButton
+            hasPermission={canDelete}
+            tooltip="Non hai i permessi per disattivare i fornitori"
+            variant="outline"
+            size="sm"
+            onClick={() => onDelete(vendor)}
+            className="text-destructive hover:text-destructive"
+          >
+            Disattiva
+          </PermissionButton>
+          {canDelete && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onHardDelete(vendor)}
+              className="text-destructive hover:text-destructive"
+            >
+              Elimina
+            </Button>
+          )}
+        </>
       );
     }
 
-    // vendor inattivo → mostra Riattiva
-    if (!canUpdate) {
-      return (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="outline" size="sm" disabled className="opacity-50 cursor-not-allowed">Riattiva</Button>
-            </TooltipTrigger>
-            <TooltipContent>Non hai i permessi per riattivare i fornitori</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      );
-    }
-    return <Button variant="outline" size="sm" onClick={() => onRestore(vendor)}>Riattiva</Button>;
+    return (
+      <>
+        <PermissionButton
+          hasPermission={canUpdate}
+          tooltip="Non hai i permessi per riattivare i fornitori"
+          variant="outline"
+          size="sm"
+          onClick={() => onRestore(vendor)}
+        >
+          Riattiva
+        </PermissionButton>
+        {!vendor.navVendorId && canDelete && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onHardDelete(vendor)}
+            className="text-destructive hover:text-destructive"
+          >
+            Elimina
+          </Button>
+        )}
+      </>
+    );
   };
 
   return (
@@ -148,6 +163,7 @@ export function VendorTable({
         <TableHeader>
           <TableRow>
             <TableHead>Nome</TableHead>
+            <TableHead>Paese</TableHead>
             <TableHead>Nickname</TableHead>
             <TableHead>Referente</TableHead>
             <TableHead>Email</TableHead>
@@ -161,6 +177,7 @@ export function VendorTable({
           {vendors.map(vendor => (
             <TableRow key={vendor.id} className={!vendor.isActive ? 'opacity-50' : undefined}>
               <TableCell className="font-medium">{vendor.name}</TableCell>
+              <TableCell className="text-sm text-muted-foreground">{vendor.countryCode ?? '—'}</TableCell>
               <TableCell className="text-sm text-muted-foreground">{vendor.nickname ?? '—'}</TableCell>
               <TableCell className="text-sm text-muted-foreground">{vendor.referente ?? '—'}</TableCell>
               <TableCell className="text-sm text-muted-foreground">{vendor.email ?? '—'}</TableCell>
@@ -172,10 +189,22 @@ export function VendorTable({
                 </Badge>
               </TableCell>
               <TableCell className="text-right">
-                <div className="flex items-center justify-end gap-2">
-                  {vendor.isActive && <EditButton vendor={vendor} />}
-                  <ActionButton vendor={vendor} />
-                </div>
+                {canRead && (
+                  <div className="flex items-center justify-end gap-2">
+                    {vendor.isActive && (
+                      <PermissionButton
+                        hasPermission={canUpdate}
+                        tooltip="Non hai i permessi per modificare i fornitori"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onEdit(vendor)}
+                      >
+                        Modifica
+                      </PermissionButton>
+                    )}
+                    <ActionButton vendor={vendor} />
+                  </div>
+                )}
               </TableCell>
             </TableRow>
           ))}

@@ -2,7 +2,9 @@
 
 import React from 'react';
 
+import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
+import { Skeleton } from '../../../../../components/ui/skeleton';
 import {
   Table,
   TableBody,
@@ -54,9 +56,10 @@ export function UsersTable({
   // Loading state
   if (isLoading) {
     return (
-      <div className="text-center py-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-        <p>Caricamento utenti...</p>
+      <div className="space-y-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-10 w-full" />
+        ))}
       </div>
     );
   }
@@ -279,9 +282,9 @@ export function UsersTable({
               <TableCell>{user.firstName || '-'}</TableCell>
               <TableCell>{user.lastName || '-'}</TableCell>
               <TableCell>
-                <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-1 text-xs font-medium">
+                <Badge variant="outline">
                   {user.identities?.[0]?.provider || 'LOCAL'}
-                </span>
+                </Badge>
               </TableCell>
               <TableCell className="text-center">
                 {user.emailVerifiedAt ? (
@@ -291,20 +294,12 @@ export function UsersTable({
                 )}
               </TableCell>
               <TableCell>
-                <span className="inline-flex items-center rounded-full bg-secondary px-2 py-1 text-xs font-medium">
-                  {user.role}
-                </span>
+                <Badge variant="secondary">{user.role}</Badge>
               </TableCell>
               <TableCell>
-                <span
-                  className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
-                    user.isActive
-                      ? 'bg-green-100 text-green-800'
-                      : 'bg-red-100 text-red-800'
-                  }`}
-                >
+                <Badge variant={user.isActive ? 'default' : 'secondary'}>
                   {user.isActive ? 'Attivo' : 'Disattivo'}
-                </span>
+                </Badge>
               </TableCell>
               <TableCell>
                 {user.createdAt

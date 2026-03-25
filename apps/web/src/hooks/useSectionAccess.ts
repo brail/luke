@@ -64,6 +64,7 @@ export function useSectionAccess() {
       'settings.mail': checkAccess('settings.mail'),
       'settings.ldap': checkAccess('settings.ldap'),
       'settings.nav': checkAccess('settings.nav'),
+      'settings.nav_sync': checkAccess('settings.nav_sync'),
       maintenance: checkAccess('maintenance'),
       'maintenance.config': checkAccess('maintenance.config'),
       'maintenance.import_export': checkAccess('maintenance.import_export'),
@@ -73,7 +74,6 @@ export function useSectionAccess() {
       admin: checkAccess('admin'),
       'admin.brands': checkAccess('admin.brands'),
       'admin.seasons': checkAccess('admin.seasons'),
-      'admin.nav_sync': checkAccess('admin.nav_sync'),
       'admin.vendors': checkAccess('admin.vendors'),
     };
   }, [session?.user, userOverrides]);

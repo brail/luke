@@ -3,6 +3,7 @@
 import React from 'react';
 
 import { BrandAvatar } from '../../../../../components/context/BrandAvatar';
+import { PermissionButton } from '../../../../../components/PermissionButton';
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
 import { Skeleton } from '../../../../../components/ui/skeleton';
@@ -14,19 +15,14 @@ import {
   TableHeader,
   TableRow,
 } from '../../../../../components/ui/table';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '../../../../../components/ui/tooltip';
 import { usePermission } from '../../../../../hooks/usePermission';
 
-interface Brand {
+export interface Brand {
   id: string;
   code: string;
   name: string;
   logoUrl: string | null;
+  navBrandId: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -38,23 +34,21 @@ interface BrandTableWithPermissionsProps {
   error?: any;
   onEdit: (brand: Brand) => void;
   onDelete: (brand: Brand) => void;
+  onRestore: (brand: Brand) => void;
+  onUnlink: (brand: Brand) => void;
+  onHardDelete: (brand: Brand) => void;
   onRetry?: () => void;
 }
 
-/**
- * Tabella per visualizzazione e gestione Brand con permission-aware actions
- *
- * Features:
- * - Nasconde pulsanti di azione se l'utente non ha permessi
- * - Mostra tooltip sui pulsanti disabilitati
- * - Adatta il comportamento in base al ruolo (viewer, editor, admin)
- */
 export function BrandTableWithPermissions({
   brands,
   isLoading,
   error,
   onEdit,
   onDelete,
+  onRestore,
+  onUnlink,
+  onHardDelete,
   onRetry,
 }: BrandTableWithPermissionsProps) {
   const { can } = usePermission();
@@ -79,15 +73,9 @@ export function BrandTableWithPermissions({
 
   if (isLoading) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-3">
         {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="flex items-center space-x-4">
-            <Skeleton className="h-10 w-10 rounded-full" />
-            <div className="space-y-2">
-              <Skeleton className="h-4 w-[200px]" />
-              <Skeleton className="h-4 w-[100px]" />
-            </div>
-          </div>
+          <Skeleton key={i} className="h-10 w-full" />
         ))}
       </div>
     );
@@ -106,57 +94,70 @@ export function BrandTableWithPermissions({
     );
   }
 
-  const EditButton = ({ brand }: { brand: Brand }) => {
-    if (!canUpdate) {
+  const ActionButton = ({ brand }: { brand: Brand }) => {
+    if (brand.isActive) {
+      if (brand.navBrandId) {
+        return (
+          <PermissionButton
+            hasPermission={canDelete}
+            tooltip="Non hai i permessi per scollegare i brand"
+            variant="outline"
+            size="sm"
+            onClick={() => onUnlink(brand)}
+            className="text-destructive hover:text-destructive"
+          >
+            Scollega da NAV
+          </PermissionButton>
+        );
+      }
       return (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="outline" size="sm" disabled className="opacity-50 cursor-not-allowed">
-                Modifica
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Non hai i permessi per modificare i brand</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <>
+          <PermissionButton
+            hasPermission={canDelete}
+            tooltip="Non hai i permessi per eliminare i brand"
+            variant="outline"
+            size="sm"
+            onClick={() => onDelete(brand)}
+            className="text-destructive hover:text-destructive"
+          >
+            Disattiva
+          </PermissionButton>
+          {canDelete && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onHardDelete(brand)}
+              className="text-destructive hover:text-destructive"
+            >
+              Elimina
+            </Button>
+          )}
+        </>
       );
     }
-    return (
-      <Button variant="outline" size="sm" onClick={() => onEdit(brand)}>
-        Modifica
-      </Button>
-    );
-  };
 
-  const DeleteButton = ({ brand }: { brand: Brand }) => {
-    if (!canDelete) {
-      return (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled
-                className="opacity-50 cursor-not-allowed text-destructive"
-              >
-                Elimina
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Non hai i permessi per eliminare i brand</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      );
-    }
     return (
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => onDelete(brand)}
-        className="text-destructive hover:text-destructive"
-      >
-        Elimina
-      </Button>
+      <>
+        <PermissionButton
+          hasPermission={canUpdate}
+          tooltip="Non hai i permessi per modificare i brand"
+          variant="outline"
+          size="sm"
+          onClick={() => onRestore(brand)}
+        >
+          Riattiva
+        </PermissionButton>
+        {!brand.navBrandId && canDelete && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onHardDelete(brand)}
+            className="text-destructive hover:text-destructive"
+          >
+            Elimina
+          </Button>
+        )}
+      </>
     );
   };
 
@@ -168,6 +169,7 @@ export function BrandTableWithPermissions({
             <TableHead>Logo</TableHead>
             <TableHead>Codice</TableHead>
             <TableHead>Nome</TableHead>
+            <TableHead>NAV</TableHead>
             <TableHead>Stato</TableHead>
             <TableHead>Aggiornato</TableHead>
             <TableHead className="text-right">Azioni</TableHead>
@@ -175,7 +177,7 @@ export function BrandTableWithPermissions({
         </TableHeader>
         <TableBody>
           {brands.map(brand => (
-            <TableRow key={brand.id}>
+            <TableRow key={brand.id} className={!brand.isActive ? 'opacity-50' : undefined}>
               <TableCell>
                 <BrandAvatar
                   brand={{
@@ -190,6 +192,9 @@ export function BrandTableWithPermissions({
               </TableCell>
               <TableCell className="font-mono text-sm">{brand.code}</TableCell>
               <TableCell className="font-medium">{brand.name}</TableCell>
+              <TableCell className="text-sm text-muted-foreground font-mono">
+                {brand.navBrandId ?? <span className="text-muted-foreground/50">—</span>}
+              </TableCell>
               <TableCell>
                 <Badge variant={brand.isActive ? 'default' : 'secondary'}>
                   {brand.isActive ? 'Attivo' : 'Disattivo'}
@@ -201,8 +206,18 @@ export function BrandTableWithPermissions({
               <TableCell className="text-right">
                 {canRead && (
                   <div className="flex items-center justify-end gap-2">
-                    <EditButton brand={brand} />
-                    <DeleteButton brand={brand} />
+                    {brand.isActive && (
+                      <PermissionButton
+                        hasPermission={canUpdate}
+                        tooltip="Non hai i permessi per modificare i brand"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onEdit(brand)}
+                      >
+                        Modifica
+                      </PermissionButton>
+                    )}
+                    <ActionButton brand={brand} />
                   </div>
                 )}
               </TableCell>

@@ -19,7 +19,7 @@ interface AppContextType {
   season: {
     id: string;
     code: string;
-    year: number;
+    year: number | null;
     name: string;
     isActive: boolean;
   } | null;
@@ -53,12 +53,14 @@ export function AppContextProvider({ children }: AppContextProviderProps) {
     enabled: !!session?.user, // Abilita solo se l'utente è autenticato
   });
 
-  // Gestione errori con useEffect
+  // Gestione errori e reset setup
   React.useEffect(() => {
     if (contextQuery.error?.data?.code === 'PRECONDITION_FAILED') {
       setNeedsSetup(true);
+    } else if (contextQuery.data) {
+      setNeedsSetup(false);
     }
-  }, [contextQuery.error]);
+  }, [contextQuery.error, contextQuery.data]);
 
   const contextValue: AppContextType = {
     brand: contextQuery.data?.brand || null,

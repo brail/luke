@@ -45,7 +45,6 @@ export default function NavSettingsPage() {
       user: '',
       password: '',
       company: '',
-      syncIntervalMinutes: 30,
       readOnly: true,
       syncEnabled: false,
     },
@@ -67,7 +66,6 @@ export default function NavSettingsPage() {
       const user = find('integrations.nav.user');
       const password = find('integrations.nav.password');
       const company = find('integrations.nav.company');
-      const syncIntervalMinutes = find('integrations.nav.syncIntervalMinutes');
       const readOnly = find('integrations.nav.readOnly');
       const syncEnabled = find('integrations.nav.syncEnabled');
 
@@ -78,9 +76,6 @@ export default function NavSettingsPage() {
         user: user?.valuePreview || '',
         password: '',
         company: company?.valuePreview || '',
-        syncIntervalMinutes: syncIntervalMinutes?.valuePreview
-          ? parseInt(syncIntervalMinutes.valuePreview)
-          : 30,
         readOnly: readOnly?.valuePreview !== 'false',
         syncEnabled: syncEnabled?.valuePreview === 'true',
       });
@@ -90,11 +85,18 @@ export default function NavSettingsPage() {
   }, [existingConfigs, form]);
 
   const saveConfigMutation = trpc.integrations.nav.saveConfig.useMutation({
-    onSuccess: () => {
-      toast.success('Configurazione NAV salvata con successo');
+    onSuccess: (data: any) => {
       setHasPassword(true);
       setTestStatus('idle');
       setTestMessage('');
+      if (data.connectionChanged) {
+        toast.warning('Configurazione salvata — connessione cambiata', {
+          description:
+            'I parametri di connessione sono cambiati. Verifica i filtri di sync in Admin › Sincronizzazione NAV.',
+        });
+      } else {
+        toast.success('Configurazione NAV salvata con successo');
+      }
     },
     onError: (error: any) => {
       toast.error('Errore durante il salvataggio', { description: error.message });
@@ -236,48 +238,23 @@ export default function NavSettingsPage() {
               )}
             />
 
-            <KeyValueGrid cols={2}>
-              {/* Company */}
-              <FormField
-                control={form.control}
-                name="company"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      Company NAV <span className="text-red-500">*</span>
-                    </FormLabel>
-                    <FormControl>
-                      <Input placeholder="es. MYCOMPANY" {...field} />
-                    </FormControl>
-                    <FormDescription>Prefisso tabelle NAV (es. MYCOMPANY$Item)</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Intervallo sync */}
-              <FormField
-                control={form.control}
-                name="syncIntervalMinutes"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      Intervallo Sync (minuti) <span className="text-red-500">*</span>
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        placeholder="30"
-                        {...field}
-                        onChange={e => field.onChange(parseInt(e.target.value) || 30)}
-                      />
-                    </FormControl>
-                    <FormDescription>Frequenza di sincronizzazione dati da NAV</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </KeyValueGrid>
+            {/* Company */}
+            <FormField
+              control={form.control}
+              name="company"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Company NAV <span className="text-red-500">*</span>
+                  </FormLabel>
+                  <FormControl>
+                    <Input placeholder="es. MYCOMPANY" {...field} />
+                  </FormControl>
+                  <FormDescription>Prefisso tabelle NAV (es. MYCOMPANY$Item)</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             {/* Sola lettura */}
             <FormField
@@ -288,7 +265,7 @@ export default function NavSettingsPage() {
                   <div className="space-y-0.5">
                     <FormLabel>Modalità sola lettura</FormLabel>
                     <FormDescription>
-                      Se attivo, la connessione SQL Server usa <code className="rounded bg-muted px-1 py-0.5 text-xs">ApplicationIntent=ReadOnly</code> (ottimale con SQL Server AG). Non influisce sull&apos;abilitazione del sync.
+                      Se attivo, la connessione SQL Server usa <code className="rounded bg-muted px-1 py-0.5 text-xs">ApplicationIntent=ReadOnly</code> (ottimale con SQL Server AG).
                     </FormDescription>
                   </div>
                   <FormControl>
@@ -311,7 +288,7 @@ export default function NavSettingsPage() {
                   <div className="space-y-0.5">
                     <FormLabel>Sincronizzazione abilitata</FormLabel>
                     <FormDescription>
-                      Abilita la replica periodica NAV → database locale. Disabilitare per mettere in pausa il sync senza modificare gli altri parametri.
+                      Abilita globalmente la replica NAV → database locale. Disabilita per mettere in pausa tutti i sync senza modificare gli altri parametri.
                     </FormDescription>
                   </div>
                   <FormControl>
@@ -348,7 +325,7 @@ export default function NavSettingsPage() {
       {/* Test connessione */}
       <SectionCard
         title="Test Connessione"
-        description="Verifica che il server SQL Server sia raggiungibile sulla porta configurata"
+        description="Verifica autenticazione SQL Server, accesso al database e nome Company"
       >
         <div className="space-y-4">
           <SettingsActions
@@ -359,9 +336,11 @@ export default function NavSettingsPage() {
             }
           />
           <p className="text-sm text-muted-foreground">
-            Il test verifica la raggiungibilità TCP di{' '}
+            Il test apre una connessione reale a SQL Server e verifica: credenziali, database{' '}
+            <code className="rounded bg-muted px-1 py-0.5">{form.watch('database') || '…'}</code>{' '}
+            e tabella{' '}
             <code className="rounded bg-muted px-1 py-0.5">
-              {form.watch('host') || '(host non configurato)'}:{form.watch('port') || 1433}
+              {form.watch('company') ? `[${form.watch('company')}$Vendor]` : '[COMPANY$Vendor]'}
             </code>
             . Salva la configurazione prima di testare.
           </p>

@@ -262,11 +262,7 @@ export function ConfigImportDialog({
           </Badge>
         );
       case 'invalid':
-        return (
-          <Badge variant="outline" className="bg-red-100 text-red-800">
-            Invalida
-          </Badge>
-        );
+        return <Badge variant="destructive">Invalida</Badge>;
     }
   };
 

@@ -37,6 +37,7 @@ const SECTION_LABELS: Record<Section, string> = {
   'settings.mail': '↳ Mail',
   'settings.ldap': '↳ Auth LDAP',
   'settings.nav': '↳ Microsoft NAV',
+  'settings.nav_sync': '↳ Sincronizzazione NAV',
   maintenance: 'Manutenzione',
   'maintenance.config': '↳ Configurazioni',
   'maintenance.import_export': '↳ Import/Export',
@@ -46,7 +47,6 @@ const SECTION_LABELS: Record<Section, string> = {
   admin: 'Amministrazione',
   'admin.brands': '↳ Brand',
   'admin.seasons': '↳ Stagioni',
-  'admin.nav_sync': '↳ Sync NAV',
   'admin.vendors': '↳ Fornitori',
 };
 
@@ -58,6 +58,7 @@ const ALL_SECTIONS: Section[] = [
   'settings.mail',
   'settings.ldap',
   'settings.nav',
+  'settings.nav_sync',
   'maintenance',
   'maintenance.config',
   'maintenance.import_export',
@@ -67,7 +68,6 @@ const ALL_SECTIONS: Section[] = [
   'admin',
   'admin.brands',
   'admin.seasons',
-  'admin.nav_sync',
   'admin.vendors',
 ];
 

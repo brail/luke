@@ -141,7 +141,10 @@ export default function AppSidebar() {
                 </SidebarMenuButton>
                 <SidebarMenuSub>
                   <SidebarMenuSubItem>
-                    <SidebarMenuSubButton asChild isActive={isActive('/product/pricing')}>
+                    <SidebarMenuSubButton
+                      asChild
+                      isActive={isActive('/product/pricing')}
+                    >
                       <Link href="/product/pricing">
                         <TrendingUp size={16} />
                         <span>Costi e Prezzi</span>
@@ -149,7 +152,10 @@ export default function AppSidebar() {
                     </SidebarMenuSubButton>
                   </SidebarMenuSubItem>
                   <SidebarMenuSubItem>
-                    <SidebarMenuSubButton asChild isActive={isActive('/product/collection-layout')}>
+                    <SidebarMenuSubButton
+                      asChild
+                      isActive={isActive('/product/collection-layout')}
+                    >
                       <Link href="/product/collection-layout">
                         <LayoutGrid size={16} />
                         <span>Collection Layout</span>
@@ -183,7 +189,10 @@ export default function AppSidebar() {
                     <DropdownMenuContent align="start" className="w-56">
                       {menuAccess.adminItems.brands && (
                         <DropdownMenuItem asChild>
-                          <Link href="/admin/brands" className="flex items-center">
+                          <Link
+                            href="/admin/brands"
+                            className="flex items-center"
+                          >
                             <Building2 className="mr-2 h-4 w-4" />
                             <span>Brand</span>
                           </Link>
@@ -191,7 +200,10 @@ export default function AppSidebar() {
                       )}
                       {menuAccess.adminItems.seasons && (
                         <DropdownMenuItem asChild>
-                          <Link href="/admin/seasons" className="flex items-center">
+                          <Link
+                            href="/admin/seasons"
+                            className="flex items-center"
+                          >
                             <CalendarDays className="mr-2 h-4 w-4" />
                             <span>Stagioni</span>
                           </Link>
@@ -199,17 +211,12 @@ export default function AppSidebar() {
                       )}
                       {menuAccess.adminItems.vendors && (
                         <DropdownMenuItem asChild>
-                          <Link href="/admin/vendors" className="flex items-center">
+                          <Link
+                            href="/admin/vendors"
+                            className="flex items-center"
+                          >
                             <Truck className="mr-2 h-4 w-4" />
                             <span>Fornitori</span>
-                          </Link>
-                        </DropdownMenuItem>
-                      )}
-                      {menuAccess.adminItems.nav_sync && (
-                        <DropdownMenuItem asChild>
-                          <Link href="/admin/nav-sync" className="flex items-center">
-                            <RefreshCw className="mr-2 h-4 w-4" />
-                            <span>Sync NAV</span>
                           </Link>
                         </DropdownMenuItem>
                       )}
@@ -232,7 +239,10 @@ export default function AppSidebar() {
                     <DropdownMenuContent align="start" className="w-56">
                       {menuAccess.settingsItems.users && (
                         <DropdownMenuItem asChild>
-                          <Link href="/settings/users" className="flex items-center">
+                          <Link
+                            href="/settings/users"
+                            className="flex items-center"
+                          >
                             <Users className="mr-2 h-4 w-4" />
                             <span>Utenti</span>
                           </Link>
@@ -240,7 +250,10 @@ export default function AppSidebar() {
                       )}
                       {menuAccess.settingsItems.storage && (
                         <DropdownMenuItem asChild>
-                          <Link href="/settings/storage" className="flex items-center">
+                          <Link
+                            href="/settings/storage"
+                            className="flex items-center"
+                          >
                             <HardDrive className="mr-2 h-4 w-4" />
                             <span>Storage</span>
                           </Link>
@@ -248,7 +261,10 @@ export default function AppSidebar() {
                       )}
                       {menuAccess.settingsItems.mail && (
                         <DropdownMenuItem asChild>
-                          <Link href="/settings/mail" className="flex items-center">
+                          <Link
+                            href="/settings/mail"
+                            className="flex items-center"
+                          >
                             <Mail className="mr-2 h-4 w-4" />
                             <span>Mail</span>
                           </Link>
@@ -256,7 +272,10 @@ export default function AppSidebar() {
                       )}
                       {menuAccess.settingsItems.ldap && (
                         <DropdownMenuItem asChild>
-                          <Link href="/settings/ldap" className="flex items-center">
+                          <Link
+                            href="/settings/ldap"
+                            className="flex items-center"
+                          >
                             <Shield className="mr-2 h-4 w-4" />
                             <span>Auth LDAP</span>
                           </Link>
@@ -264,9 +283,23 @@ export default function AppSidebar() {
                       )}
                       {menuAccess.settingsItems.nav && (
                         <DropdownMenuItem asChild>
-                          <Link href="/settings/nav" className="flex items-center">
+                          <Link
+                            href="/settings/nav"
+                            className="flex items-center"
+                          >
                             <Database className="mr-2 h-4 w-4" />
                             <span>Microsoft NAV</span>
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      {menuAccess.settingsItems.nav_sync && (
+                        <DropdownMenuItem asChild>
+                          <Link
+                            href="/settings/nav-sync"
+                            className="flex items-center"
+                          >
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            <span>Sincronizzazione NAV</span>
                           </Link>
                         </DropdownMenuItem>
                       )}
@@ -289,7 +322,10 @@ export default function AppSidebar() {
                     <DropdownMenuContent align="start" className="w-56">
                       {menuAccess.maintenanceItems.config && (
                         <DropdownMenuItem asChild>
-                          <Link href="/maintenance/config" className="flex items-center">
+                          <Link
+                            href="/maintenance/config"
+                            className="flex items-center"
+                          >
                             <ServerCog className="mr-2 h-4 w-4" />
                             <span>Configurazioni</span>
                           </Link>
@@ -297,7 +333,10 @@ export default function AppSidebar() {
                       )}
                       {menuAccess.maintenanceItems.import_export && (
                         <DropdownMenuItem asChild>
-                          <Link href="/maintenance/import-export" className="flex items-center">
+                          <Link
+                            href="/maintenance/import-export"
+                            className="flex items-center"
+                          >
                             <FolderTree className="mr-2 h-4 w-4" />
                             <span>Import/Export</span>
                           </Link>
@@ -315,7 +354,9 @@ export default function AppSidebar() {
       {/* Versione app — solo in development */}
       {process.env.NODE_ENV === 'development' && (
         <div className="px-3 pb-1 text-xs text-muted-foreground/60 select-none">
-          {[process.env.NEXT_PUBLIC_APP_VERSION, 'dev'].filter(Boolean).join(' · ')}
+          {[process.env.NEXT_PUBLIC_APP_VERSION, 'dev']
+            .filter(Boolean)
+            .join(' · ')}
         </div>
       )}
 

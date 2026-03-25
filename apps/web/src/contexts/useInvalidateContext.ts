@@ -24,6 +24,10 @@ export function useInvalidateContext() {
     // Invalida lista brand per aggiornare UI
     utils.brand.list.invalidate();
 
+    // Invalida le query del ContextSelector (tendine di selezione nella navbar)
+    utils.catalog.brands.invalidate();
+    utils.catalog.seasons.invalidate(); // invalida tutte le varianti cached (per ogni brandId)
+
     // TODO: Aggiungere qui future query context-aware
     // es: utils.products.list.invalidate({ brandId, seasonId })
     // es: utils.reports.generate.invalidate({ brandId, seasonId })

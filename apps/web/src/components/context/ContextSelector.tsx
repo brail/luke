@@ -98,21 +98,23 @@ export function ContextSelector() {
         onValueChange={handleSeasonChange}
         disabled={isPending}
       >
-        <SelectTrigger className="w-32">
+        <SelectTrigger className="w-64">
           <SelectValue placeholder="Season">
             {season && (
-              <span className="truncate">
-                {season.code} {season.year}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-sm">{season.code}</span>
+                <span className="truncate">{season.name}</span>
+              </div>
             )}
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
           {seasons.map(seasonItem => (
             <SelectItem key={seasonItem.id} value={seasonItem.id}>
-              <span>
-                {seasonItem.code} {seasonItem.year}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-sm">{seasonItem.code}</span>
+                <span>{seasonItem.name}</span>
+              </div>
             </SelectItem>
           ))}
         </SelectContent>

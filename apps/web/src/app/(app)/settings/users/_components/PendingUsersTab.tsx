@@ -4,7 +4,9 @@ import { Check, X } from 'lucide-react';
 import React, { useState } from 'react';
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
+import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
+import { Skeleton } from '../../../../../components/ui/skeleton';
 import {
   Table,
   TableBody,
@@ -77,9 +79,10 @@ export function PendingUsersTab() {
 
   if (isLoading) {
     return (
-      <div className="text-center py-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4" />
-        <p>Caricamento...</p>
+      <div className="space-y-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-10 w-full" />
+        ))}
       </div>
     );
   }
@@ -134,9 +137,9 @@ export function PendingUsersTab() {
                 <TableCell>{user.firstName || '-'}</TableCell>
                 <TableCell>{user.lastName || '-'}</TableCell>
                 <TableCell>
-                  <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-1 text-xs font-medium">
+                  <Badge variant="outline">
                     {user.identities?.[0]?.provider || 'LDAP'}
-                  </span>
+                  </Badge>
                 </TableCell>
                 <TableCell>
                   {user.createdAt

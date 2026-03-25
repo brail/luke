@@ -24,6 +24,7 @@ export function useMenuAccess() {
       mail: s.settings && s['settings.mail'],
       ldap: s.settings && s['settings.ldap'],
       nav: s.settings && s['settings.nav'],
+      nav_sync: s.settings && s['settings.nav_sync'],
     };
     const showSettings = Object.values(settingsItems).some(Boolean);
 
@@ -38,7 +39,6 @@ export function useMenuAccess() {
     const adminItems = {
       brands: s.admin && s['admin.brands'],
       seasons: s.admin && s['admin.seasons'],
-      nav_sync: s.admin && s['admin.nav_sync'],
       vendors: s.admin && s['admin.vendors'],
     };
     const showAdmin = Object.values(adminItems).some(Boolean);
