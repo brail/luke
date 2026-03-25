@@ -377,7 +377,7 @@ export async function seedContextData(prisma: PrismaClient): Promise<void> {
     update: { isActive: true },
     create: {
       code: 'ACME',
-      name: 'ACME',
+      name: 'Acme',
       isActive: true,
       logoUrl: null,
     },
@@ -386,33 +386,17 @@ export async function seedContextData(prisma: PrismaClient): Promise<void> {
   console.log(`✅ Brand '${brand.code}' ready (ID: ${brand.id})`);
 
   // Seed Season
-  const existingSeason = await prisma.season.findFirst({
-    where: {
-      code: 'SS',
-      year: 2026,
+  const season = await prisma.season.upsert({
+    where: { code: 'PE00' },
+    update: { isActive: true },
+    create: {
+      code: 'PE00',
+      name: 'Primavera/Estate 2000',
+      isActive: true,
     },
   });
 
-  let season;
-  if (existingSeason) {
-    season = await prisma.season.update({
-      where: { id: existingSeason.id },
-      data: { isActive: true },
-    });
-  } else {
-    season = await prisma.season.create({
-      data: {
-        code: 'SS',
-        year: 2026,
-        name: 'Spring/Summer 2026',
-        isActive: true,
-      },
-    });
-  }
-
-  console.log(
-    `✅ Season '${season.code}${season.year}' ready (ID: ${season.id})`
-  );
+  console.log(`✅ Season '${season.code}' ready (ID: ${season.id})`);
 }
 
 /**

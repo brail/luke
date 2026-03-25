@@ -317,7 +317,7 @@ export async function getPreviousSeasonSets(
   currentSeasonId: string,
   prisma: PrismaClient
 ): Promise<{
-  season: { id: string; code: string; year: number; name: string };
+  season: { id: string; code: string; year: number | null; name: string };
   sets: PricingParameterSet[];
 } | null> {
   // Trova la stagione corrente per confrontare year

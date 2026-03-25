@@ -24,7 +24,7 @@ export interface ContextResult {
   season: {
     id: string;
     code: string;
-    year: number;
+    year: number | null;
     name: string;
     isActive: boolean;
   };
