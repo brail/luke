@@ -433,6 +433,7 @@ export async function createParameterSet(
       brandId,
       seasonId,
       name: input.name,
+      countryCode: input.countryCode,
       purchaseCurrency: input.purchaseCurrency,
       sellingCurrency: input.sellingCurrency,
       qualityControlPercent: input.qualityControlPercent,

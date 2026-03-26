@@ -61,16 +61,7 @@ export function ParameterSetDialog({
     resolver: zodResolver(PricingParameterSetInputSchema),
     defaultValues: initialData ?? {
       name: '',
-      purchaseCurrency: 'USD',
-      sellingCurrency: 'EUR',
-      qualityControlPercent: 5,
-      transportInsuranceCost: 2.3,
-      duty: 0,
-      exchangeRate: 1.07,
-      italyAccessoryCosts: 0.3,
-      tools: 1.0,
-      retailMultiplier: 2.5,
-      optimalMargin: 50,
+      countryCode: '',
     },
   });
 
@@ -81,16 +72,7 @@ export function ParameterSetDialog({
       form.reset(
         initialData ?? {
           name: '',
-          purchaseCurrency: 'USD',
-          sellingCurrency: 'EUR',
-          qualityControlPercent: 5,
-          transportInsuranceCost: 2.3,
-          duty: 0,
-          exchangeRate: 1.07,
-          italyAccessoryCosts: 0.3,
-          tools: 1.0,
-          retailMultiplier: 2.5,
-          optimalMargin: 50,
+          countryCode: '',
         }
       );
     }
@@ -99,7 +81,7 @@ export function ParameterSetDialog({
   // Calcola companyMultiplier live
   const optimalMargin = form.watch('optimalMargin');
   const companyMultiplier =
-    optimalMargin > 0 && optimalMargin < 100
+    optimalMargin !== undefined && optimalMargin > 0 && optimalMargin < 100
       ? Math.round((1 / (1 - optimalMargin / 100)) * 100) / 100
       : 0;
 
@@ -141,16 +123,16 @@ export function ParameterSetDialog({
                 name="countryCode"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Paese di produzione</FormLabel>
+                    <FormLabel>Paese di produzione *</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="es. CN, IT, TR"
-                        maxLength={10}
+                        placeholder="es. IT, CN, TR"
+                        maxLength={2}
                         disabled={isLoading}
                         {...field}
                         value={field.value ?? ''}
                         onChange={e =>
-                          field.onChange(e.target.value.toUpperCase() || null)
+                          field.onChange(e.target.value.toUpperCase())
                         }
                       />
                     </FormControl>
@@ -256,9 +238,11 @@ export function ParameterSetDialog({
                           step="0.1"
                           min="0"
                           max="100"
+                          placeholder="es. 5"
                           disabled={isLoading}
                           {...field}
-                          onChange={e => field.onChange(Number(e.target.value))}
+                          value={field.value ?? ''}
+                          onChange={e => field.onChange(e.target.value === '' ? undefined : Number(e.target.value))}
                         />
                       </FormControl>
                       <FormMessage />
@@ -276,9 +260,11 @@ export function ParameterSetDialog({
                           type="number"
                           step="0.01"
                           min="0"
+                          placeholder="es. 2.50"
                           disabled={isLoading}
                           {...field}
-                          onChange={e => field.onChange(Number(e.target.value))}
+                          value={field.value ?? ''}
+                          onChange={e => field.onChange(e.target.value === '' ? undefined : Number(e.target.value))}
                         />
                       </FormControl>
                       <FormMessage />
@@ -297,9 +283,11 @@ export function ParameterSetDialog({
                           step="0.1"
                           min="0"
                           max="100"
+                          placeholder="es. 12"
                           disabled={isLoading}
                           {...field}
-                          onChange={e => field.onChange(Number(e.target.value))}
+                          value={field.value ?? ''}
+                          onChange={e => field.onChange(e.target.value === '' ? undefined : Number(e.target.value))}
                         />
                       </FormControl>
                       <FormMessage />
@@ -317,9 +305,11 @@ export function ParameterSetDialog({
                           type="number"
                           step="0.0001"
                           min="0.0001"
+                          placeholder="es. 1.07"
                           disabled={isLoading}
                           {...field}
-                          onChange={e => field.onChange(Number(e.target.value))}
+                          value={field.value ?? ''}
+                          onChange={e => field.onChange(e.target.value === '' ? undefined : Number(e.target.value))}
                         />
                       </FormControl>
                       <FormMessage />
@@ -337,9 +327,11 @@ export function ParameterSetDialog({
                           type="number"
                           step="0.01"
                           min="0"
+                          placeholder="es. 0.30"
                           disabled={isLoading}
                           {...field}
-                          onChange={e => field.onChange(Number(e.target.value))}
+                          value={field.value ?? ''}
+                          onChange={e => field.onChange(e.target.value === '' ? undefined : Number(e.target.value))}
                         />
                       </FormControl>
                       <FormMessage />
@@ -357,9 +349,11 @@ export function ParameterSetDialog({
                           type="number"
                           step="0.01"
                           min="0"
+                          placeholder="es. 1.00"
                           disabled={isLoading}
                           {...field}
-                          onChange={e => field.onChange(Number(e.target.value))}
+                          value={field.value ?? ''}
+                          onChange={e => field.onChange(e.target.value === '' ? undefined : Number(e.target.value))}
                         />
                       </FormControl>
                       <FormMessage />
@@ -385,9 +379,11 @@ export function ParameterSetDialog({
                           type="number"
                           step="0.01"
                           min="0.01"
+                          placeholder="es. 2.50"
                           disabled={isLoading}
                           {...field}
-                          onChange={e => field.onChange(Number(e.target.value))}
+                          value={field.value ?? ''}
+                          onChange={e => field.onChange(e.target.value === '' ? undefined : Number(e.target.value))}
                         />
                       </FormControl>
                       <FormMessage />
@@ -406,9 +402,11 @@ export function ParameterSetDialog({
                           step="0.1"
                           min="0"
                           max="99.9"
+                          placeholder="es. 50"
                           disabled={isLoading}
                           {...field}
-                          onChange={e => field.onChange(Number(e.target.value))}
+                          value={field.value ?? ''}
+                          onChange={e => field.onChange(e.target.value === '' ? undefined : Number(e.target.value))}
                         />
                       </FormControl>
                       <FormMessage />
