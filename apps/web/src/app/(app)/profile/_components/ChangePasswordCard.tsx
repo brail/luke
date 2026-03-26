@@ -14,6 +14,7 @@ import { SectionCard } from '../../../../components/SectionCard';
 import { Button } from '../../../../components/ui/button';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
+import { debugLog } from '../../../../lib/debug';
 import { trpc } from '../../../../lib/trpc';
 
 
@@ -78,7 +79,7 @@ export function ChangePasswordCard({
           return;
         }
         // Altrimenti è un errore di sessione scaduta
-        console.log('Sessione invalidata, forzando logout...');
+        debugLog('Sessione invalidata, forzando logout...');
         signOut({ callbackUrl: '/login' });
         return;
       }

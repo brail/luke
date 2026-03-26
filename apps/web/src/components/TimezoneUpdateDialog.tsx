@@ -4,6 +4,7 @@ import { Globe } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useState, useEffect } from 'react';
 
+import { debugWarn } from '../lib/debug';
 import { useRefresh } from '../lib/refresh';
 import { trpc } from '../lib/trpc';
 import { useStandardMutation } from '../lib/useStandardMutation';
@@ -72,7 +73,7 @@ export function TimezoneUpdateDialog() {
         }
       } catch (error) {
         // Ignora errori di rilevamento timezone
-        console.warn('Impossibile rilevare timezone browser:', error);
+        debugWarn('Impossibile rilevare timezone browser:', error);
       }
     }
   }, [userData?.timezone, session?.user, status, hasShownForSession]);

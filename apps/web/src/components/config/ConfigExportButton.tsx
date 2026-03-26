@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { generateExportFileName } from '../../lib/config-helpers';
+import { debugError } from '../../lib/debug';
 import { trpc } from '../../lib/trpc';
 import { Button } from '../ui/button';
 
@@ -59,7 +60,7 @@ export function ConfigExportButton({ className, disabled }: ConfigExportButtonPr
 
       toast.success(`Esportate ${result.count} configurazioni`);
     } catch (error) {
-      console.error("Errore durante l'export:", error);
+      debugError("Errore durante l'export:", error);
       toast.error("Errore durante l'esportazione");
     } finally {
       setIsExporting(false);

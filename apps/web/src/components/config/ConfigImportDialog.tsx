@@ -22,6 +22,7 @@ import {
   validateConfigKey,
   validateConfigValue,
 } from '../../lib/config-helpers';
+import { debugError, debugWarn } from '../../lib/debug';
 import { trpc } from '../../lib/trpc';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
@@ -128,7 +129,7 @@ export function ConfigImportDialog({
               if (r.found) existingKeys.add(r.key);
             });
           } catch (err) {
-            console.warn('Failed to check existing configs:', err);
+            debugWarn('Failed to check existing configs:', err);
           }
         }
 
@@ -156,7 +157,7 @@ export function ConfigImportDialog({
         setPreview(previewData);
         setStep('preview');
       } catch (error) {
-        console.error('Errore parsing file:', error);
+        debugError('Errore parsing file:', error);
         toast.error('Errore nel parsing del file JSON');
       }
     };
@@ -210,7 +211,7 @@ export function ConfigImportDialog({
         );
         // Mostra dettagli errori se disponibili
         if (result.errors && result.errors.length > 0) {
-          console.error('Errori di importazione:', result.errors);
+          debugError('Errori di importazione:', result.errors);
         }
       }
 
@@ -218,7 +219,7 @@ export function ConfigImportDialog({
       setPreview([]);
       setStep('upload');
     } catch (error) {
-      console.error("Errore durante l'import:", error);
+      debugError("Errore durante l'import:", error);
       toast.error("Errore durante l'importazione");
     } finally {
       if (progressInterval !== null) clearInterval(progressInterval);

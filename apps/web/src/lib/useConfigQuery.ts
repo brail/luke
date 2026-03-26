@@ -24,6 +24,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { toast } from 'sonner';
 
+import { debugError } from './debug';
 import { trpc } from './trpc';
 
 /**
@@ -93,7 +94,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
       invalidateQueries();
     },
     onError: (error: any) => {
-      console.error('Errore salvataggio configurazione:', error);
+      debugError('Errore salvataggio configurazione:', error);
       toast.error(
         `Errore: ${error.message || 'Impossibile salvare la configurazione'}`
       );
@@ -107,7 +108,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
       invalidateQueries();
     },
     onError: (error: any) => {
-      console.error('Errore aggiornamento configurazione:', error);
+      debugError('Errore aggiornamento configurazione:', error);
       toast.error(
         `Errore: ${error.message || 'Impossibile aggiornare la configurazione'}`
       );
@@ -121,7 +122,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
       invalidateQueries();
     },
     onError: (error: any) => {
-      console.error('Errore eliminazione configurazione:', error);
+      debugError('Errore eliminazione configurazione:', error);
 
       // Gestione specifica per chiavi critiche
       if (error.code === 'CONFLICT') {
@@ -152,7 +153,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
       invalidateQueries();
     },
     onError: (error: any) => {
-      console.error('Errore import configurazioni:', error);
+      debugError('Errore import configurazioni:', error);
       toast.error(
         `Errore: ${error.message || 'Impossibile importare le configurazioni'}`
       );
@@ -165,7 +166,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
       toast.success(`Esportate ${data.count} configurazioni`);
     },
     onError: (error: any) => {
-      console.error('Errore export configurazioni:', error);
+      debugError('Errore export configurazioni:', error);
       toast.error(
         `Errore: ${error.message || 'Impossibile esportare le configurazioni'}`
       );

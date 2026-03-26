@@ -48,6 +48,7 @@ import {
 } from '../../../../../components/ui/tooltip';
 import { useInvalidateContext } from '../../../../../contexts/useInvalidateContext';
 import { useBrandPermissions } from '../../../../../hooks/useBrandPermissions';
+import { debugError } from '../../../../../lib/debug';
 import { trpc } from '../../../../../lib/trpc';
 
 // Schema per form con isActive obbligatorio (per React Hook Form)
@@ -422,7 +423,7 @@ export function BrandDialogWithPermissions({
 
       await onSubmit(brandInput);
     } catch (error) {
-      console.error('Errore submit form:', error);
+      debugError('Errore submit form:', error);
       throw error;
     }
   };
