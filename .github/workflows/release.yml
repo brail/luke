@@ -10,7 +10,7 @@ env:
   REGISTRY: ghcr.io
   API_IMAGE: ghcr.io/brail/luke-api
   WEB_IMAGE: ghcr.io/brail/luke-web
-  PNPM_VERSION: '10.18.2'
+  PNPM_VERSION: '10.32.1'
 
 jobs:
   # ── Build & push API image ───────────────────────────────────────────────────
