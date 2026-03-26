@@ -60,6 +60,7 @@ export function EmptyParameterState({
     for (const s of previousSets) {
       onCreateSet({
         name: s.name,
+        countryCode: s.countryCode,
         purchaseCurrency: s.purchaseCurrency,
         sellingCurrency: s.sellingCurrency,
         qualityControlPercent: s.qualityControlPercent,
