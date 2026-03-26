@@ -11,7 +11,7 @@ export const maintenanceRouter = router({
    * Ottiene lo stato del sistema
    */
   getStatus: protectedProcedure
-    .use(requirePermission('maintenance:update'))
+    .use(requirePermission('maintenance:read'))
     .query(async () => {
       return {
         status: 'operational',

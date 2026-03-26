@@ -129,38 +129,40 @@ export const vendorsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(VendorUpdateInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const vendor = await ctx.prisma.vendor.findUnique({
-        where: { id: input.id },
-      });
+      return ctx.prisma.$transaction(async (tx) => {
+        const vendor = await tx.vendor.findUnique({
+          where: { id: input.id },
+        });
 
-      if (!vendor) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Fornitore non trovato' });
-      }
-
-      if (input.data.navVendorId !== undefined && input.data.navVendorId !== vendor.navVendorId) {
-        // Blocca qualsiasi cambio se già valorizzato — usare endpoint unlink
-        if (vendor.navVendorId !== null) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'Il collegamento NAV non può essere modificato. Usa "Scollega da NAV" per rimuoverlo.',
-          });
+        if (!vendor) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Fornitore non trovato' });
         }
-        const navId = input.data.navVendorId;
-        if (navId) {
-          const conflict = await ctx.prisma.vendor.findUnique({ where: { navVendorId: navId } });
-          if (conflict) {
+
+        if (input.data.navVendorId !== undefined && input.data.navVendorId !== vendor.navVendorId) {
+          // Blocca qualsiasi cambio se già valorizzato — usare endpoint unlink
+          if (vendor.navVendorId !== null) {
             throw new TRPCError({
-              code: 'CONFLICT',
-              message: 'Questo fornitore NAV è già collegato a un altro fornitore',
+              code: 'BAD_REQUEST',
+              message: 'Il collegamento NAV non può essere modificato. Usa "Scollega da NAV" per rimuoverlo.',
             });
           }
+          const navId = input.data.navVendorId;
+          if (navId) {
+            const conflict = await tx.vendor.findUnique({ where: { navVendorId: navId } });
+            if (conflict) {
+              throw new TRPCError({
+                code: 'CONFLICT',
+                message: 'Questo fornitore NAV è già collegato a un altro fornitore',
+              });
+            }
+          }
         }
-      }
 
-      return ctx.prisma.vendor.update({
-        where: { id: input.id },
-        data: { ...input.data, updatedAt: new Date() },
-        select: VENDOR_SELECT,
+        return tx.vendor.update({
+          where: { id: input.id },
+          data: { ...input.data, updatedAt: new Date() },
+          select: VENDOR_SELECT,
+        });
       });
     }),
 

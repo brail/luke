@@ -6,6 +6,7 @@
 
 import { z } from 'zod';
 
+import { navConfigSchema } from '@luke/core';
 import { getNavDbConfig, getPool, closePool, runNavSync, testNavConnection, sanitizeCompany } from '@luke/nav';
 import { pauseNavScheduler, resumeNavScheduler } from '../lib/navSyncScheduler';
 
@@ -18,17 +19,6 @@ import {
 } from '../lib/errorHandler';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
-
-const navConfigSchema = z.object({
-  host: z.string().min(1, 'Host richiesto'),
-  port: z.number().int().min(1).max(65535),
-  database: z.string().min(1, 'Database richiesto'),
-  user: z.string().min(1, 'Utente richiesto'),
-  password: z.string().optional(),
-  company: z.string().min(1, 'Company richiesto'),
-  readOnly: z.boolean(),
-  syncEnabled: z.boolean(),
-});
 
 // ── Sync sub-router ───────────────────────────────────────────────────────────
 
