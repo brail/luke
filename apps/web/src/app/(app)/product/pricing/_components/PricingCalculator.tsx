@@ -101,6 +101,8 @@ export function PricingCalculator({ parameterSet }: PricingCalculatorProps) {
     const input = {
       mode,
       parameterSetId: parameterSet.id,
+      brandId: parameterSet.brandId,
+      seasonId: parameterSet.seasonId,
       purchasePrice: purchasePrice ? Number(purchasePrice) : undefined,
       retailPrice: retailPrice ? Number(retailPrice) : undefined,
     };

@@ -117,24 +117,48 @@ export function ParameterSetDialog({
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(data => onSubmit(data, makeDefault))} className="space-y-6">
-            {/* Nome variante */}
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Nome variante *</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="es. Pelle, Non Pelle, Tunisia..."
-                      disabled={isLoading}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {/* Nome variante + Country Code */}
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Nome variante *</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="es. Pelle, Non Pelle, Tunisia..."
+                        disabled={isLoading}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="countryCode"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Paese di produzione</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="es. CN, IT, TR"
+                        maxLength={10}
+                        disabled={isLoading}
+                        {...field}
+                        value={field.value ?? ''}
+                        onChange={e =>
+                          field.onChange(e.target.value.toUpperCase() || null)
+                        }
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
             {/* Imposta come default (solo in edit) */}
             {mode === 'edit' && (

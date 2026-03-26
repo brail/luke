@@ -244,6 +244,7 @@ export async function createRow(
 ): Promise<CollectionLayoutRow> {
   const group = await prisma.collectionGroup.findUnique({
     where: { id: input.groupId },
+    include: { collectionLayout: { select: { brandId: true, seasonId: true } } },
   });
 
   if (!group) {
@@ -251,6 +252,23 @@ export async function createRow(
       code: 'NOT_FOUND',
       message: 'Gruppo non trovato',
     });
+  }
+
+  if (input.pricingParameterSetId) {
+    const paramSet = await prisma.pricingParameterSet.findUnique({
+      where: { id: input.pricingParameterSetId },
+      select: { brandId: true, seasonId: true },
+    });
+    if (
+      !paramSet ||
+      paramSet.brandId !== group.collectionLayout.brandId ||
+      paramSet.seasonId !== group.collectionLayout.seasonId
+    ) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Il set di parametri non appartiene al brand/stagione corrente',
+      });
+    }
   }
 
   const existingCount = await prisma.collectionLayoutRow.count({
@@ -299,6 +317,30 @@ export async function updateRow(
       code: 'NOT_FOUND',
       message: 'Riga non trovata',
     });
+  }
+
+  if (input.pricingParameterSetId) {
+    const layout = await prisma.collectionLayout.findUnique({
+      where: { id: row.collectionLayoutId },
+      select: { brandId: true, seasonId: true },
+    });
+    const paramSet = layout
+      ? await prisma.pricingParameterSet.findUnique({
+          where: { id: input.pricingParameterSetId },
+          select: { brandId: true, seasonId: true },
+        })
+      : null;
+    if (
+      !layout ||
+      !paramSet ||
+      paramSet.brandId !== layout.brandId ||
+      paramSet.seasonId !== layout.seasonId
+    ) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Il set di parametri non appartiene al brand/stagione corrente',
+      });
+    }
   }
 
   // Se si sposta il gruppo, verificare che il nuovo gruppo esista

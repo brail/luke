@@ -273,6 +273,7 @@ model PricingParameterSet {
   brandId                String
   seasonId               String
   name                   String   // es. "Pelle", "Non Pelle", "Tunisia"
+  countryCode            String?  // es. "CN", "IT", "TR" — ISO 3166-1 alpha-2
   purchaseCurrency       String   @default("USD")
   sellingCurrency        String   @default("EUR")
   qualityControlPercent  Float

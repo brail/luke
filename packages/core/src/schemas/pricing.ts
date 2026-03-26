@@ -14,6 +14,7 @@ export const PricingParameterSetInputSchema = z.object({
     .string()
     .min(1, 'Il nome è obbligatorio')
     .max(100, 'Il nome non può superare 100 caratteri'),
+  countryCode: z.string().max(10).trim().optional().nullable(),
   purchaseCurrency: z.string().min(1, 'La valuta di acquisto è obbligatoria'),
   sellingCurrency: z.string().min(1, 'La valuta di vendita è obbligatoria'),
   qualityControlPercent: z
@@ -72,6 +73,8 @@ export const PricingCalculateInputSchema = z
     purchasePrice: z.number().positive().optional(),
     retailPrice: z.number().positive().optional(),
     parameterSetId: z.string().uuid('ID set parametri non valido'),
+    brandId: z.string().uuid('Brand ID non valido'),
+    seasonId: z.string().uuid('Season ID non valido'),
   })
   .refine(
     data => {

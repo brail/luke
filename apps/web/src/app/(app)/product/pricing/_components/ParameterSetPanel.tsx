@@ -54,6 +54,7 @@ function calculateCompanyMultiplier(optimalMargin: number) {
 
 function buildRows(set: PricingParameterSet) {
   return [
+    ...(set.countryCode ? [{ label: 'Paese di produzione', value: set.countryCode }] : []),
     { label: 'Valuta acquisto', value: set.purchaseCurrency },
     { label: 'Valuta vendita', value: set.sellingCurrency },
     { label: 'Controllo qualità', value: `${set.qualityControlPercent}%` },

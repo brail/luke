@@ -174,6 +174,14 @@ export const pricingRouter = router({
         });
       }
 
+      if (paramSet.brandId !== input.brandId || paramSet.seasonId !== input.seasonId) {
+        const { TRPCError } = await import('@trpc/server');
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Il set di parametri non appartiene al brand/stagione corrente',
+        });
+      }
+
       const params = {
         qualityControlPercent: paramSet.qualityControlPercent,
         transportInsuranceCost: paramSet.transportInsuranceCost,
