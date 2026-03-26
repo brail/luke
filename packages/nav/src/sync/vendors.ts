@@ -141,21 +141,24 @@ export async function syncVendors(
         syncedAt,
       };
 
-      // Upsert replica NAV
-      await prisma.navVendor.upsert({
-        where: { navNo },
-        create: { navNo, ...data },
-        update: data,
-      });
-
-      // Upsert anagrafica interna Vendor: crea se non esiste, aggiorna name e countryCode.
-      // Non toccare isActive né campi arricchiti — un vendor soft-deleted
-      // non viene riattivato dal sync.
       const countryCode = row['Country_Region Code'] ?? null;
-      await prisma.vendor.upsert({
-        where: { navVendorId: navNo },
-        create: { name, countryCode, navVendorId: navNo, isActive: true },
-        update: { name, countryCode },
+
+      // Atomico: replica NAV + anagrafica locale in un'unica transaction.
+      await prisma.$transaction(async (tx) => {
+        await tx.navVendor.upsert({
+          where: { navNo },
+          create: { navNo, ...data },
+          update: data,
+        });
+
+        // Upsert anagrafica interna Vendor: crea se non esiste, aggiorna name e countryCode.
+        // Non toccare isActive né campi arricchiti — un vendor soft-deleted
+        // non viene riattivato dal sync.
+        await tx.vendor.upsert({
+          where: { navVendorId: navNo },
+          create: { name, countryCode, navVendorId: navNo, isActive: true },
+          update: { name, countryCode },
+        });
       });
     } catch (err) {
       errors++;

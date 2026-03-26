@@ -35,14 +35,26 @@ export async function runNavSync(
   const pool = await getPool(config);
   const results: SyncResult[] = [];
 
+  const syncEntity = async (
+    name: string,
+    fn: () => Promise<SyncResult>,
+  ): Promise<SyncResult> => {
+    try {
+      return await fn();
+    } catch (err) {
+      logger.error({ entity: name, err }, 'NAV sync: errore critico sync entità');
+      return { entity: name, upserted: 0, skipped: false, filterMode: 'error' };
+    }
+  };
+
   if (!entity || entity === 'vendor') {
-    results.push(await syncVendors(pool, prisma, config, logger));
+    results.push(await syncEntity('vendor', () => syncVendors(pool, prisma, config, logger)));
   }
   if (!entity || entity === 'brand') {
-    results.push(await syncBrands(pool, prisma, config, logger));
+    results.push(await syncEntity('brand', () => syncBrands(pool, prisma, config, logger)));
   }
   if (!entity || entity === 'season') {
-    results.push(await syncSeasons(pool, prisma, config, logger));
+    results.push(await syncEntity('season', () => syncSeasons(pool, prisma, config, logger)));
   }
 
   const completedAt = new Date();

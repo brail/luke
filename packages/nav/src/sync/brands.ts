@@ -60,30 +60,32 @@ export async function syncBrands(
     const description = row['Description'] ?? '';
 
     try {
-      // Upsert replica NAV
-      await prisma.navBrand.upsert({
-        where: { navCode },
-        create: { navCode, description, syncedAt },
-        update: { description, syncedAt },
-      });
+      // Atomico: replica NAV + anagrafica locale in un'unica transaction.
+      await prisma.$transaction(async (tx) => {
+        await tx.navBrand.upsert({
+          where: { navCode },
+          create: { navCode, description, syncedAt },
+          update: { description, syncedAt },
+        });
 
-      // Guard: se esiste già un brand locale con lo stesso code ma senza collegamento NAV,
-      // non auto-creare — l'utente deve collegarlo manualmente.
-      const localConflict = await prisma.brand.findFirst({
-        where: { code: navCode, navBrandId: null },
-        select: { id: true },
-      });
-      if (localConflict) {
-        logger.warn({ entity, navCode }, 'NAV sync: brand locale con stesso code senza NAV link — skip auto-create');
-        return;
-      }
+        // Guard: se esiste già un brand locale con lo stesso code ma senza collegamento NAV,
+        // non auto-creare — l'utente deve collegarlo manualmente.
+        const localConflict = await tx.brand.findFirst({
+          where: { code: navCode, navBrandId: null },
+          select: { id: true },
+        });
+        if (localConflict) {
+          logger.warn({ entity, navCode }, 'NAV sync: brand locale con stesso code senza NAV link — skip auto-create');
+          return;
+        }
 
-      // Upsert brand locale: crea se non esiste, aggiorna solo name.
-      // MAI toccare isActive né logoUrl né altri campi arricchiti.
-      await prisma.brand.upsert({
-        where: { navBrandId: navCode },
-        create: { code: navCode, name: description, navBrandId: navCode, isActive: true },
-        update: { name: description },
+        // Upsert brand locale: crea se non esiste, aggiorna solo name.
+        // MAI toccare isActive né logoUrl né altri campi arricchiti.
+        await tx.brand.upsert({
+          where: { navBrandId: navCode },
+          create: { code: navCode, name: description, navBrandId: navCode, isActive: true },
+          update: { name: description },
+        });
       });
     } catch (err) {
       errors++;

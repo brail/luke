@@ -64,30 +64,32 @@ export async function syncSeasons(
     const endingDate = row['Ending Date'] ?? null;
 
     try {
-      // Upsert replica NAV
-      await prisma.navSeason.upsert({
-        where: { navCode },
-        create: { navCode, description, startingDate, endingDate, syncedAt },
-        update: { description, startingDate, endingDate, syncedAt },
-      });
+      // Atomico: replica NAV + anagrafica locale in un'unica transaction.
+      await prisma.$transaction(async (tx) => {
+        await tx.navSeason.upsert({
+          where: { navCode },
+          create: { navCode, description, startingDate, endingDate, syncedAt },
+          update: { description, startingDate, endingDate, syncedAt },
+        });
 
-      // Guard: se esiste già una season locale con lo stesso code ma senza collegamento NAV,
-      // non auto-creare — l'utente deve collegarla manualmente.
-      const localConflict = await prisma.season.findFirst({
-        where: { code: navCode, navSeasonId: null },
-        select: { id: true },
-      });
-      if (localConflict) {
-        logger.warn({ entity, navCode }, 'NAV sync: season locale con stesso code senza NAV link — skip auto-create');
-        return;
-      }
+        // Guard: se esiste già una season locale con lo stesso code ma senza collegamento NAV,
+        // non auto-creare — l'utente deve collegarla manualmente.
+        const localConflict = await tx.season.findFirst({
+          where: { code: navCode, navSeasonId: null },
+          select: { id: true },
+        });
+        if (localConflict) {
+          logger.warn({ entity, navCode }, 'NAV sync: season locale con stesso code senza NAV link — skip auto-create');
+          return;
+        }
 
-      // Upsert season locale: crea se non esiste, aggiorna solo name.
-      // MAI toccare isActive né altri campi arricchiti.
-      await prisma.season.upsert({
-        where: { navSeasonId: navCode },
-        create: { code: navCode, name: description, navSeasonId: navCode, isActive: true },
-        update: { name: description },
+        // Upsert season locale: crea se non esiste, aggiorna solo name.
+        // MAI toccare isActive né altri campi arricchiti.
+        await tx.season.upsert({
+          where: { navSeasonId: navCode },
+          create: { code: navCode, name: description, navSeasonId: navCode, isActive: true },
+          update: { name: description },
+        });
       });
     } catch (err) {
       errors++;
