@@ -102,11 +102,11 @@ importers:
         specifier: ^1.25.0
         version: 1.37.0
       '@prisma/client':
-        specifier: ^6.0.0
+        specifier: ^6.17.1
         version: 6.17.1(prisma@6.17.1(typescript@5.9.3))(typescript@5.9.3)
       '@prisma/instrumentation':
-        specifier: ^5.18.0
-        version: 5.22.0
+        specifier: ^6.17.1
+        version: 6.19.2(@opentelemetry/api@1.9.0)
       '@trpc/server':
         specifier: ^11.8.0
         version: 11.13.4(typescript@5.9.3)
@@ -147,12 +147,12 @@ importers:
         specifier: ^6.0.0
         version: 6.17.1(typescript@5.9.3)
       zod:
-        specifier: ^3.0.0
+        specifier: ^3.25.76
         version: 3.25.76
     devDependencies:
       '@types/node':
-        specifier: ^20.0.0
-        version: 20.19.22
+        specifier: ^24.7.2
+        version: 24.8.1
       '@types/nodemailer':
         specifier: ^6.4.0
         version: 6.4.20
@@ -169,11 +169,11 @@ importers:
         specifier: ^4.0.0
         version: 4.20.6
       typescript:
-        specifier: ^5.0.0
+        specifier: ^5.9.3
         version: 5.9.3
       vitest:
         specifier: ^1.0.0
-        version: 1.6.1(@types/node@20.19.22)(@vitest/ui@1.6.1)
+        version: 1.6.1(@types/node@24.8.1)(@vitest/ui@1.6.1)
 
   apps/web:
     dependencies:
@@ -281,8 +281,8 @@ importers:
         specifier: ^1.56.1
         version: 1.56.1
       '@types/node':
-        specifier: ^20.0.0
-        version: 20.19.22
+        specifier: ^24.7.2
+        version: 24.8.1
       '@types/react':
         specifier: ^19.0.0
         version: 19.2.2
@@ -311,20 +311,20 @@ importers:
         specifier: ^3.0.0
         version: 3.4.18(tsx@4.20.6)
       typescript:
-        specifier: ^5.0.0
+        specifier: ^5.9.3
         version: 5.9.3
 
   packages/core:
     dependencies:
       zod:
-        specifier: ^3.0.0
+        specifier: ^3.25.76
         version: 3.25.76
     devDependencies:
       '@prisma/client':
         specifier: ^6.17.1
         version: 6.17.1(prisma@6.17.1(typescript@5.9.3))(typescript@5.9.3)
       typescript:
-        specifier: ^5.0.0
+        specifier: ^5.9.3
         version: 5.9.3
       vitest:
         specifier: ^2.0.0
@@ -342,7 +342,7 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@prisma/client':
-        specifier: ^6.0.0
+        specifier: ^6.17.1
         version: 6.17.1(prisma@6.17.1(typescript@5.9.3))(typescript@5.9.3)
       mssql:
         specifier: ^11.0.0
@@ -355,10 +355,10 @@ importers:
         specifier: ^9.0.0
         version: 9.1.9(@azure/core-client@1.10.1)
       '@types/node':
-        specifier: ^20.0.0
-        version: 20.19.22
+        specifier: ^24.7.2
+        version: 24.8.1
       typescript:
-        specifier: ^5.0.0
+        specifier: ^5.9.3
         version: 5.9.3
 
 packages:
@@ -1419,12 +1419,6 @@ packages:
     peerDependencies:
       '@opentelemetry/api': '>=1.0.0 <1.10.0'
 
-  '@opentelemetry/sdk-trace-base@1.30.1':
-    resolution: {integrity: sha512-jVPgBbH1gCy2Lb7X0AVQ8XAfgg0pJ4nvl8/IiQA6nxOsPvS+0zMJaFSs2ltXe0J6C8dqjcnpyqINDJmU30+uOg==}
-    engines: {node: '>=14'}
-    peerDependencies:
-      '@opentelemetry/api': '>=1.0.0 <1.10.0'
-
   '@opentelemetry/sdk-trace-node@1.25.1':
     resolution: {integrity: sha512-nMcjFIKxnFqoez4gUmihdBrbpsEnAX/Xj16sGvZm+guceYE0NE00vLhpDVK6f3q8Q4VFI5xG8JjlXKMB/SkTTQ==}
     engines: {node: '>=14'}
@@ -1498,8 +1492,10 @@ packages:
   '@prisma/get-platform@6.17.1':
     resolution: {integrity: sha512-AKEn6fsfz0r482S5KRDFlIGEaq9wLNcgalD1adL+fPcFFblIKs1sD81kY/utrHdqKuVC6E1XSRpegDK3ZLL4Qg==}
 
-  '@prisma/instrumentation@5.22.0':
-    resolution: {integrity: sha512-LxccF392NN37ISGxIurUljZSh1YWnphO34V5a0+T7FVQG2u9bhAXRTJpgmQ3483woVhkraQZFF7cbRrpbw/F4Q==}
+  '@prisma/instrumentation@6.19.2':
+    resolution: {integrity: sha512-5VXvzh/qOh7uBnVIx26IQJDBIXgpBhyh1+TPHDmw3pv/rue9x7NVAvip+bznUIYUREPPPTGWjabANUacRFttrA==}
+    peerDependencies:
+      '@opentelemetry/api': ^1.8
 
   '@protobufjs/aspromise@1.1.2':
     resolution: {integrity: sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ==}
@@ -2378,9 +2374,6 @@ packages:
 
   '@types/mssql@9.1.9':
     resolution: {integrity: sha512-P0nCgw6vzY23UxZMnbI4N7fnLGANt4LI4yvxze1paPj+LuN28cFv5EI+QidP8udnId/BKhkcRhm/BleNsjK65A==}
-
-  '@types/node@20.19.22':
-    resolution: {integrity: sha512-hRnu+5qggKDSyWHlnmThnUqg62l29Aj/6vcYgUaSFL9oc7DVjeWEQN3PRgdSc6F8d9QRMWkf36CLMch1Do/+RQ==}
 
   '@types/node@24.8.1':
     resolution: {integrity: sha512-alv65KGRadQVfVcG69MuB4IzdYVpRwMG/mq8KWOaoOdyY617P5ivaDiMCGOFDWD2sAn5Q0mR3mRtUOgm99hL9Q==}
@@ -5020,9 +5013,6 @@ packages:
     resolution: {integrity: sha512-nWJ91DjeOkej/TA8pXQ3myruKpKEYgqvpw9lz4OPHj/NWFNluYrjbz9j01CJ8yKQd2g4jFoOkINCTW2I5LEEyw==}
     engines: {node: '>= 0.4'}
 
-  undici-types@6.21.0:
-    resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
-
   undici-types@7.14.0:
     resolution: {integrity: sha512-QQiYxHuyZ9gQUIrmPo3IA+hUl4KYk8uSA7cHrcKd/l3p1OTpZcM0Tbp9x7FAtXdAYhlasd60ncPpgu6ihG6TOA==}
 
@@ -6471,13 +6461,6 @@ snapshots:
       '@opentelemetry/resources': 1.25.1(@opentelemetry/api@1.9.0)
       '@opentelemetry/semantic-conventions': 1.25.1
 
-  '@opentelemetry/sdk-trace-base@1.30.1(@opentelemetry/api@1.9.0)':
-    dependencies:
-      '@opentelemetry/api': 1.9.0
-      '@opentelemetry/core': 1.30.1(@opentelemetry/api@1.9.0)
-      '@opentelemetry/resources': 1.30.1(@opentelemetry/api@1.9.0)
-      '@opentelemetry/semantic-conventions': 1.28.0
-
   '@opentelemetry/sdk-trace-node@1.25.1(@opentelemetry/api@1.9.0)':
     dependencies:
       '@opentelemetry/api': 1.9.0
@@ -6548,11 +6531,10 @@ snapshots:
     dependencies:
       '@prisma/debug': 6.17.1
 
-  '@prisma/instrumentation@5.22.0':
+  '@prisma/instrumentation@6.19.2(@opentelemetry/api@1.9.0)':
     dependencies:
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/instrumentation': 0.53.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/sdk-trace-base': 1.30.1(@opentelemetry/api@1.9.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -7466,7 +7448,7 @@ snapshots:
   '@types/jsonwebtoken@9.0.10':
     dependencies:
       '@types/ms': 2.1.0
-      '@types/node': 20.19.22
+      '@types/node': 24.8.1
 
   '@types/methods@1.1.4': {}
 
@@ -7481,10 +7463,6 @@ snapshots:
       - '@azure/core-client'
       - supports-color
 
-  '@types/node@20.19.22':
-    dependencies:
-      undici-types: 6.21.0
-
   '@types/node@24.8.1':
     dependencies:
       undici-types: 7.14.0
@@ -7492,7 +7470,7 @@ snapshots:
   '@types/nodemailer@6.4.20':
     dependencies:
       '@aws-sdk/client-ses': 3.913.0
-      '@types/node': 20.19.22
+      '@types/node': 24.8.1
     transitivePeerDependencies:
       - aws-crt
 
@@ -7893,7 +7871,7 @@ snapshots:
       pathe: 1.1.2
       picocolors: 1.1.1
       sirv: 2.0.4
-      vitest: 1.6.1(@types/node@20.19.22)(@vitest/ui@1.6.1)
+      vitest: 1.6.1(@types/node@24.8.1)(@vitest/ui@1.6.1)
 
   '@vitest/utils@1.6.1':
     dependencies:
@@ -10760,8 +10738,6 @@ snapshots:
       has-symbols: 1.1.0
       which-boxed-primitive: 1.1.1
 
-  undici-types@6.21.0: {}
-
   undici-types@7.14.0: {}
 
   unrs-resolver@1.11.1:
@@ -10823,13 +10799,13 @@ snapshots:
 
   uuid@9.0.1: {}
 
-  vite-node@1.6.1(@types/node@20.19.22):
+  vite-node@1.6.1(@types/node@24.8.1):
     dependencies:
       cac: 6.7.14
       debug: 4.4.3
       pathe: 1.1.2
       picocolors: 1.1.1
-      vite: 5.4.20(@types/node@20.19.22)
+      vite: 5.4.20(@types/node@24.8.1)
     transitivePeerDependencies:
       - '@types/node'
       - less
@@ -10859,15 +10835,6 @@ snapshots:
       - supports-color
       - terser
 
-  vite@5.4.20(@types/node@20.19.22):
-    dependencies:
-      esbuild: 0.21.5
-      postcss: 8.5.6
-      rollup: 4.52.5
-    optionalDependencies:
-      '@types/node': 20.19.22
-      fsevents: 2.3.3
-
   vite@5.4.20(@types/node@24.8.1):
     dependencies:
       esbuild: 0.21.5
@@ -10877,7 +10844,7 @@ snapshots:
       '@types/node': 24.8.1
       fsevents: 2.3.3
 
-  vitest@1.6.1(@types/node@20.19.22)(@vitest/ui@1.6.1):
+  vitest@1.6.1(@types/node@24.8.1)(@vitest/ui@1.6.1):
     dependencies:
       '@vitest/expect': 1.6.1
       '@vitest/runner': 1.6.1
@@ -10896,11 +10863,11 @@ snapshots:
       strip-literal: 2.1.1
       tinybench: 2.9.0
       tinypool: 0.8.4
-      vite: 5.4.20(@types/node@20.19.22)
-      vite-node: 1.6.1(@types/node@20.19.22)
+      vite: 5.4.20(@types/node@24.8.1)
+      vite-node: 1.6.1(@types/node@24.8.1)
       why-is-node-running: 2.3.0
     optionalDependencies:
-      '@types/node': 20.19.22
+      '@types/node': 24.8.1
       '@vitest/ui': 1.6.1(vitest@1.6.1)
     transitivePeerDependencies:
       - less

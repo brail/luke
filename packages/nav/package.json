@@ -20,13 +20,13 @@
   },
   "dependencies": {
     "@luke/core": "workspace:*",
-    "@prisma/client": "^6.0.0",
+    "@prisma/client": "^6.17.1",
     "mssql": "^11.0.0",
     "pino": "^9.5.0"
   },
   "devDependencies": {
     "@types/mssql": "^9.0.0",
-    "@types/node": "^20.0.0",
-    "typescript": "^5.0.0"
+    "@types/node": "^24.7.2",
+    "typescript": "^5.9.3"
   }
 }
