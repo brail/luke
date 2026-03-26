@@ -6,14 +6,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 import { effectiveSectionAccess } from '@luke/core';
-import { permissions } from '@luke/core';
 
 describe('Section Access Overrides', () => {
   describe('effectiveSectionAccess', () => {
     it('should allow access when override is enabled=true', () => {
       const result = effectiveSectionAccess({
         role: 'viewer',
-        roleToPermissions: permissions,
+
         sectionAccessDefaults: {},
         userOverride: { enabled: true },
         section: 'settings',
@@ -25,7 +24,7 @@ describe('Section Access Overrides', () => {
     it('should deny access when override is enabled=false', () => {
       const result = effectiveSectionAccess({
         role: 'admin',
-        roleToPermissions: permissions,
+
         sectionAccessDefaults: {},
         userOverride: { enabled: false },
         section: 'settings',
@@ -38,7 +37,7 @@ describe('Section Access Overrides', () => {
       // Admin ha accesso a settings
       const adminResult = effectiveSectionAccess({
         role: 'admin',
-        roleToPermissions: permissions,
+
         sectionAccessDefaults: {},
         userOverride: undefined,
         section: 'settings',
@@ -48,7 +47,7 @@ describe('Section Access Overrides', () => {
       // Viewer non ha accesso a settings
       const viewerResult = effectiveSectionAccess({
         role: 'viewer',
-        roleToPermissions: permissions,
+
         sectionAccessDefaults: {},
         userOverride: undefined,
         section: 'settings',
@@ -58,7 +57,7 @@ describe('Section Access Overrides', () => {
       // Editor ha accesso read a settings
       const editorResult = effectiveSectionAccess({
         role: 'editor',
-        roleToPermissions: permissions,
+
         sectionAccessDefaults: {},
         userOverride: undefined,
         section: 'settings',
@@ -70,7 +69,7 @@ describe('Section Access Overrides', () => {
       // Override deny dovrebbe sempre negare
       const denyResult = effectiveSectionAccess({
         role: 'admin',
-        roleToPermissions: permissions,
+
         sectionAccessDefaults: {},
         userOverride: { enabled: false },
         section: 'settings',
@@ -80,7 +79,7 @@ describe('Section Access Overrides', () => {
       // Override allow dovrebbe sempre permettere
       const allowResult = effectiveSectionAccess({
         role: 'viewer',
-        roleToPermissions: permissions,
+
         sectionAccessDefaults: {},
         userOverride: { enabled: true },
         section: 'settings',
@@ -91,7 +90,7 @@ describe('Section Access Overrides', () => {
     it('should deny access when section is globally disabled', () => {
       const result = effectiveSectionAccess({
         role: 'admin',
-        roleToPermissions: permissions,
+
         sectionAccessDefaults: {},
         userOverride: undefined,
         section: 'settings',
@@ -103,7 +102,7 @@ describe('Section Access Overrides', () => {
     it('should allow access when section is not globally disabled', () => {
       const result = effectiveSectionAccess({
         role: 'admin',
-        roleToPermissions: permissions,
+
         sectionAccessDefaults: {},
         userOverride: undefined,
         section: 'settings',

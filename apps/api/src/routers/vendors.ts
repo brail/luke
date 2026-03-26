@@ -18,6 +18,7 @@ import {
   VendorUpdateInputSchema,
 } from '@luke/core';
 
+import { logAudit } from '../lib/auditLog';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
@@ -189,6 +190,7 @@ export const vendorsRouter = router({
         data: { isActive: false, updatedAt: new Date() },
       });
 
+      await logAudit(ctx, { action: 'VENDOR_SOFT_DELETE', targetType: 'Vendor', targetId: input.id, result: 'SUCCESS', metadata: { name: vendor.name } });
       return { success: true };
     }),
 
@@ -227,6 +229,7 @@ export const vendorsRouter = router({
         data: { navVendorId: null, isActive: false, updatedAt: new Date() },
       });
 
+      await logAudit(ctx, { action: 'VENDOR_NAV_UNLINK', targetType: 'Vendor', targetId: input.id, result: 'SUCCESS', metadata: { name: vendor.name, previousNavVendorId: vendor.navVendorId } });
       return { success: true };
     }),
 
@@ -263,6 +266,7 @@ export const vendorsRouter = router({
       }
 
       await ctx.prisma.vendor.delete({ where: { id: input.id } });
+      await logAudit(ctx, { action: 'VENDOR_HARD_DELETE', targetType: 'Vendor', targetId: input.id, result: 'SUCCESS', metadata: { name: vendor.name } });
       return { success: true };
     }),
 
@@ -281,10 +285,13 @@ export const vendorsRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Fornitore non trovato' });
       }
 
-      return ctx.prisma.vendor.update({
+      const result = await ctx.prisma.vendor.update({
         where: { id: input.id },
         data: { isActive: true, updatedAt: new Date() },
         select: VENDOR_SELECT,
       });
+
+      await logAudit(ctx, { action: 'VENDOR_RESTORE', targetType: 'Vendor', targetId: input.id, result: 'SUCCESS', metadata: { name: vendor.name } });
+      return result;
     }),
 });

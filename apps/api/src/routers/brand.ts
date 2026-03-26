@@ -13,6 +13,7 @@ import {
   normalizeCode,
 } from '@luke/core';
 
+import { logAudit } from '../lib/auditLog';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
 import { requirePermission } from '../lib/permissions';
@@ -206,11 +207,14 @@ export const brandRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand non trovato' });
       }
 
-      return ctx.prisma.brand.update({
+      const result = await ctx.prisma.brand.update({
         where: { id: input.id },
         data: { isActive: false, updatedAt: new Date() },
         select: BRAND_SELECT,
       });
+
+      await logAudit(ctx, { action: 'BRAND_SOFT_DELETE', targetType: 'Brand', targetId: input.id, result: 'SUCCESS', metadata: { name: existingBrand.name } });
+      return result;
     }),
 
   /**
@@ -244,11 +248,14 @@ export const brandRouter = router({
         });
       }
 
-      return ctx.prisma.brand.update({
+      const result = await ctx.prisma.brand.update({
         where: { id: input.id },
         data: { navBrandId: null, isActive: false, updatedAt: new Date() },
         select: BRAND_SELECT,
       });
+
+      await logAudit(ctx, { action: 'BRAND_NAV_UNLINK', targetType: 'Brand', targetId: input.id, result: 'SUCCESS', metadata: { name: brand.name, previousNavBrandId: brand.navBrandId } });
+      return result;
     }),
 
   /**
@@ -285,6 +292,7 @@ export const brandRouter = router({
       }
 
       await ctx.prisma.brand.delete({ where: { id: input.id } });
+      await logAudit(ctx, { action: 'BRAND_HARD_DELETE', targetType: 'Brand', targetId: input.id, result: 'SUCCESS', metadata: { name: brand.name } });
       return { success: true };
     }),
 
@@ -306,10 +314,13 @@ export const brandRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Brand già attivo' });
       }
 
-      return ctx.prisma.brand.update({
+      const result = await ctx.prisma.brand.update({
         where: { id: input.id },
         data: { isActive: true, updatedAt: new Date() },
         select: BRAND_SELECT,
       });
+
+      await logAudit(ctx, { action: 'BRAND_RESTORE', targetType: 'Brand', targetId: input.id, result: 'SUCCESS', metadata: { name: existingBrand.name } });
+      return result;
     }),
 });

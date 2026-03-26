@@ -1,5 +1,6 @@
-import { canPerform } from '../rbac';
-import type { Section } from '../schemas/rbac';
+import type { Role } from '../rbac';
+import { hasPermission, type Permission } from '../auth/permissions';
+import { SECTION_TO_PERMISSION, type Section } from '../schemas/rbac';
 
 type SectionDefault = 'auto' | 'enabled' | 'disabled';
 
@@ -9,8 +10,6 @@ type SectionDefault = 'auto' | 'enabled' | 'disabled';
 type EffectiveAccessParams = {
   /** Ruolo dell'utente */
   role: string;
-  /** Mapping ruoli -> permessi */
-  roleToPermissions: Record<string, string[]>;
   /** Default di accesso per ruolo e sezione */
   sectionAccessDefaults: Record<
     string,
@@ -29,14 +28,13 @@ type EffectiveAccessParams = {
  * 0. Kill switch globale (disabled sections)
  * 1. Override utente (disabled > enabled > manca)
  * 2. Default di ruolo (disabled > enabled > auto)
- * 3. RBAC di ruolo (hasPermission)
+ * 3. RBAC di ruolo (hasPermission via SECTION_TO_PERMISSION)
  *
  * @param params - Parametri per la valutazione
  * @returns true se accesso consentito, false altrimenti
  */
 export function effectiveSectionAccess({
   role,
-  roleToPermissions,
   sectionAccessDefaults,
   userOverride,
   section,
@@ -56,6 +54,8 @@ export function effectiveSectionAccess({
   if (defaultForSection === 'disabled') return false;
   if (defaultForSection === 'enabled') return true;
 
-  // 3) Fallback RBAC ruolo (read)
-  return canPerform(role as any, section, 'read');
+  // 3) Fallback RBAC ruolo — usa il nuovo sistema Resource:Action
+  const permission = SECTION_TO_PERMISSION[section];
+  if (!permission) return false;
+  return hasPermission({ role: role as Role }, permission as Permission);
 }

@@ -13,6 +13,7 @@ import {
   normalizeCode,
 } from '@luke/core';
 
+import { logAudit } from '../lib/auditLog';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
 import { requirePermission } from '../lib/permissions';
@@ -178,11 +179,14 @@ export const seasonRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Stagione non trovata' });
       }
 
-      return ctx.prisma.season.update({
+      const result = await ctx.prisma.season.update({
         where: { id: input.id },
         data: { isActive: false, updatedAt: new Date() },
         select: SEASON_SELECT,
       });
+
+      await logAudit(ctx, { action: 'SEASON_SOFT_DELETE', targetType: 'Season', targetId: input.id, result: 'SUCCESS', metadata: { name: season.name } });
+      return result;
     }),
 
   /**
@@ -216,11 +220,14 @@ export const seasonRouter = router({
         });
       }
 
-      return ctx.prisma.season.update({
+      const result = await ctx.prisma.season.update({
         where: { id: input.id },
         data: { navSeasonId: null, isActive: false, updatedAt: new Date() },
         select: SEASON_SELECT,
       });
+
+      await logAudit(ctx, { action: 'SEASON_NAV_UNLINK', targetType: 'Season', targetId: input.id, result: 'SUCCESS', metadata: { name: season.name, previousNavSeasonId: season.navSeasonId } });
+      return result;
     }),
 
   /**
@@ -257,6 +264,7 @@ export const seasonRouter = router({
       }
 
       await ctx.prisma.season.delete({ where: { id: input.id } });
+      await logAudit(ctx, { action: 'SEASON_HARD_DELETE', targetType: 'Season', targetId: input.id, result: 'SUCCESS', metadata: { name: season.name } });
       return { success: true };
     }),
 
@@ -277,10 +285,13 @@ export const seasonRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Stagione già attiva' });
       }
 
-      return ctx.prisma.season.update({
+      const result = await ctx.prisma.season.update({
         where: { id: input.id },
         data: { isActive: true, updatedAt: new Date() },
         select: SEASON_SELECT,
       });
+
+      await logAudit(ctx, { action: 'SEASON_RESTORE', targetType: 'Season', targetId: input.id, result: 'SUCCESS', metadata: { name: season.name } });
+      return result;
     }),
 });

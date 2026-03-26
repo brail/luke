@@ -1,17 +1,13 @@
 /**
  * Middleware tRPC per controllo accesso alle sezioni
  * Implementa la precedenza: kill switch > deny > allow > role
- * Integrato con nuovo sistema Resource:Action permissions
+ * Usa il sistema Resource:Action via effectiveSectionAccess
  */
 
 import { TRPCError } from '@trpc/server';
 import {
   effectiveSectionAccess,
-  permissions,
-  hasPermission,
-  SECTION_TO_PERMISSION,
   type Section,
-  type Role,
 } from '@luke/core';
 import { getRbacConfig, getSectionsDisabled } from '@luke/core/server';
 import { t } from './t';
@@ -19,9 +15,8 @@ import { getOverride } from '../services/sectionAccess.service';
 
 /**
  * Factory middleware per controllo accesso sezione
- * Integra nuovo sistema Resource:Action con UserSectionAccess legacy
  *
- * Precedenza: kill switch > user override > permission check > role default
+ * Precedenza: kill switch > user override > role default > RBAC permission
  *
  * @param section - Sezione da proteggere
  * @returns Middleware tRPC
@@ -64,20 +59,9 @@ export function withSectionAccess(section: Section) {
       return next();
     }
 
-    // 3. Nuovo sistema permissions: verifica permission specifica
-    const permission = SECTION_TO_PERMISSION[section];
-    if (
-      permission &&
-      hasPermission({ role: user.role as Role }, permission as any)
-    ) {
-      return next();
-    }
-
-    // 4. Fallback: sistema legacy effectiveSectionAccess
+    // 3. effectiveSectionAccess valuta: role defaults → RBAC permission fallback
     const allowed = effectiveSectionAccess({
       role: user.role,
-      roleToPermissions:
-        permissions[user.role as keyof typeof permissions] || {},
       sectionAccessDefaults: rbacConfig.sectionAccessDefaults,
       userOverride: undefined, // Già controllato sopra
       section,

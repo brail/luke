@@ -7,10 +7,7 @@ import { redirect } from 'next/navigation';
 
 import {
   effectiveSectionAccess,
-  hasPermission,
-  permissions,
   buildTrpcUrl,
-  SECTION_TO_PERMISSION,
 } from '@luke/core';
 import type { Section } from '@luke/core';
 
@@ -30,7 +27,7 @@ export async function assertSectionAccess(section: Section) {
   // Fetch user-specific section overrides from API
   const rbacConfig = {
     sectionAccessDefaults: {},
-    disabledSections: [] as any[],
+    disabledSections: [] as string[],
   };
   let override: { enabled?: boolean } | undefined;
 
@@ -54,27 +51,8 @@ export async function assertSectionAccess(section: Section) {
 
   const userRole = session.user.role as string;
 
-  // 1) User override esplicito
-  if (override?.enabled === false) {
-    redirect('/app/dashboard' as any);
-  }
-  if (override?.enabled === true) {
-    return;
-  }
-
-  // 2) Nuovo sistema permissions: Resource:Action
-  const permission = SECTION_TO_PERMISSION[section];
-  if (
-    permission &&
-    hasPermission({ role: userRole as any }, permission as any)
-  ) {
-    return;
-  }
-
-  // 3) Fallback sistema legacy effectiveSectionAccess
   const allowed = effectiveSectionAccess({
     role: userRole,
-    roleToPermissions: permissions[userRole as keyof typeof permissions] || {},
     sectionAccessDefaults: rbacConfig.sectionAccessDefaults,
     userOverride: override,
     section,

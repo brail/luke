@@ -69,6 +69,7 @@ export const storageRouter = router({
    * Accessibile a tutti gli utenti autenticati
    */
   list: protectedProcedure
+    .use(requirePermission('config:read'))
     .input(ListFilesSchema)
     .query(async ({ input, ctx }) => {
       // Valida bucket se specificato
