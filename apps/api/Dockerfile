@@ -40,6 +40,11 @@ COPY --from=builder /app/packages/core/package.json ./packages/core/package.json
 COPY --from=builder /app/packages/core/dist          ./packages/core/dist
 COPY --from=builder /app/packages/core/node_modules  ./packages/core/node_modules
 
+# @luke/nav — NAV sync runtime
+COPY --from=builder /app/packages/nav/package.json ./packages/nav/package.json
+COPY --from=builder /app/packages/nav/dist          ./packages/nav/dist
+COPY --from=builder /app/packages/nav/node_modules  ./packages/nav/node_modules
+
 # @luke/api — compiled output + prisma schema + runtime deps
 COPY --from=builder /app/apps/api/package.json    ./apps/api/package.json
 COPY --from=builder /app/apps/api/dist            ./apps/api/dist
