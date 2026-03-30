@@ -62,6 +62,12 @@ export function useMenuAccess() {
       // Prodotto
       product: s.product,
 
+      // Vendite con sub-items
+      sales: s.sales,
+      salesItems: {
+        statistics: s.sales && s['sales.statistics'],
+      },
+
       // Macrosezioni
       showGeneralSection: s.dashboard,
       showSystemSection: showSettings || showMaintenance || showAdmin,

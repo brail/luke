@@ -22,6 +22,8 @@ import {
   TrendingUp,
   LayoutGrid,
   Truck,
+  ShoppingCart,
+  BarChart2,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -125,6 +127,36 @@ export default function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )}
+            </SidebarMenu>
+          </SidebarGroup>
+        )}
+
+        {/* Sezione Vendite - Solo se ha accesso */}
+        {menuAccess.sales && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Vendite</SidebarGroupLabel>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton isActive={isActive('/sales')}>
+                  <ShoppingCart size={18} />
+                  <span>Vendite</span>
+                </SidebarMenuButton>
+                <SidebarMenuSub>
+                  {menuAccess.salesItems.statistics && (
+                    <SidebarMenuSubItem>
+                      <SidebarMenuSubButton
+                        asChild
+                        isActive={isActive('/sales/statistics')}
+                      >
+                        <Link href="/sales/statistics">
+                          <BarChart2 size={16} />
+                          <span>Statistiche</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  )}
+                </SidebarMenuSub>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroup>
         )}

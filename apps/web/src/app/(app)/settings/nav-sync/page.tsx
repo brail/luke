@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, RefreshCw } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 import { SectionCard } from '../../../../components/SectionCard';
@@ -67,6 +67,171 @@ const ENTITY_TABS: { id: EntityId; label: string }[] = [
   { id: 'brand', label: 'Brand' },
   { id: 'season', label: 'Stagioni' },
 ];
+
+// ── Portafoglio Vendite tab ────────────────────────────────────────────────────
+
+function PortafoglioSyncTab() {
+  const toast = useToast();
+
+  const { data: syncState, refetch: refetchSyncState } =
+    trpc.sales.statistics.portafoglio.getSyncState.useQuery(undefined, {
+      refetchInterval: (query) => (query.state.data?.isRunning ? 3_000 : 15_000),
+    });
+
+  const filterQuery = trpc.integrations.nav.sync.getFilter.useQuery(
+    { entity: 'portafoglio' },
+    { refetchOnWindowFocus: false },
+  );
+
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
+  const [intervalMinutes, setIntervalMinutes] = useState(5);
+
+  useEffect(() => {
+    if (filterQuery.isSuccess && filterQuery.data) {
+      setAutoSyncEnabled(filterQuery.data.autoSyncEnabled ?? false);
+      setIntervalMinutes(filterQuery.data.intervalMinutes ?? 5);
+    }
+  }, [filterQuery.isSuccess, filterQuery.data]);
+
+  const saveSyncScheduleMutation = trpc.integrations.nav.sync.saveSyncSchedule.useMutation({
+    onSuccess: () => {
+      toast.success('Pianificazione salvata');
+      void filterQuery.refetch();
+    },
+    onError: (err: any) => toast.error('Errore salvataggio pianificazione', { description: err.message }),
+  });
+
+  const syncMutation = trpc.sales.statistics.portafoglio.triggerSync.useMutation({
+    onSuccess: result => {
+      void refetchSyncState();
+      const secs = (result.totalDurationMs / 1000).toFixed(1);
+      const totalRows = result.stats.reduce((s, x) => s + x.rowsUpserted, 0);
+      toast.success(`Sync completato — ${totalRows.toLocaleString('it-IT')} righe in ${secs} s`);
+    },
+    onError: (err: any) => toast.error('Errore sync portafoglio', { description: err.message }),
+  });
+
+  const isSyncing = syncMutation.isPending || (syncState?.isRunning ?? false);
+
+  return (
+    <div className="space-y-6">
+      <SectionCard
+        title="Pianificazione sync automatico"
+        description="Configura la frequenza di sincronizzazione automatica NAV → PostgreSQL per il portafoglio ordini."
+      >
+        <div className="space-y-4">
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium">Automatica</p>
+              <p className="text-xs text-muted-foreground">
+                {autoSyncEnabled ? `Ogni ${intervalMinutes} min` : 'Solo manuale'}
+              </p>
+            </div>
+            <Switch
+              checked={autoSyncEnabled}
+              onCheckedChange={setAutoSyncEnabled}
+            />
+          </div>
+
+          {autoSyncEnabled && (
+            <div className="flex items-center gap-2">
+              <label className="text-sm whitespace-nowrap">Ogni</label>
+              <Input
+                type="number"
+                min={1}
+                max={1440}
+                value={intervalMinutes}
+                onChange={e => setIntervalMinutes(Math.max(1, parseInt(e.target.value) || 5))}
+                className="w-20"
+              />
+              <span className="text-sm text-muted-foreground">minuti</span>
+            </div>
+          )}
+
+          <Button
+            size="sm"
+            onClick={() => saveSyncScheduleMutation.mutate({ entity: 'portafoglio', autoSyncEnabled, intervalMinutes })}
+            disabled={saveSyncScheduleMutation.isPending}
+          >
+            {saveSyncScheduleMutation.isPending ? 'Salvataggio…' : 'Salva configurazione'}
+          </Button>
+        </div>
+      </SectionCard>
+
+      <SectionCard
+        title="Sincronizzazione portafoglio ordini"
+        description="Replica NAV → PostgreSQL delle tabelle del portafoglio."
+      >
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              onClick={() => syncMutation.mutate()}
+              disabled={isSyncing}
+              className="gap-2"
+            >
+              {isSyncing ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Sincronizzazione…
+                </>
+              ) : (
+                <>
+                  <RefreshCw size={16} />
+                  Aggiorna ora
+                </>
+              )}
+            </Button>
+
+            {syncState && !syncState.isRunning && (() => {
+              const headerState = syncState.tables.find(t => t.tableName === 'nav_pf_sales_header');
+              if (!headerState?.lastSyncedAt) return null;
+              const minutesAgo = Math.round((Date.now() - new Date(headerState.lastSyncedAt).getTime()) / 60_000);
+              const isStale = minutesAgo > 10;
+              return (
+                <span className={`text-sm ${isStale ? 'text-amber-500' : 'text-muted-foreground'}`}>
+                  Ultimo sync: {minutesAgo === 0 ? 'adesso' : `${minutesAgo} min fa`}
+                  {isStale && ' ⚠︎'}
+                </span>
+              );
+            })()}
+          </div>
+
+          {syncState && syncState.tables.length > 0 && (
+            <div className="rounded-md border">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground">Tabella</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground">Righe</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground">Durata</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground">Ultimo sync</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {syncState.tables.map(t => (
+                    <tr key={t.tableName} className="border-b last:border-0">
+                      <td className="px-3 py-1.5 font-mono text-xs">{t.tableName}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">{t.rowCount.toLocaleString('it-IT')}</td>
+                      <td className="px-3 py-1.5 text-right text-muted-foreground tabular-nums">
+                        {t.lastDurationMs != null ? `${(t.lastDurationMs / 1000).toFixed(1)} s` : '—'}
+                      </td>
+                      <td className="px-3 py-1.5 text-right text-muted-foreground">
+                        {t.lastSyncedAt
+                          ? new Date(t.lastSyncedAt).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' })
+                          : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </SectionCard>
+    </div>
+  );
+}
 
 // ── Mode note ─────────────────────────────────────────────────────────────────
 
@@ -613,6 +778,7 @@ export default function NavSyncPage() {
               {tab.label}
             </TabsTrigger>
           ))}
+          <TabsTrigger value="portafoglio">Portafoglio Vendite</TabsTrigger>
         </TabsList>
 
         {ENTITY_TABS.map(tab => (
@@ -620,6 +786,9 @@ export default function NavSyncPage() {
             <NavSyncTab entity={tab.id} entityLabel={tab.label} />
           </TabsContent>
         ))}
+        <TabsContent value="portafoglio" className="mt-4">
+          <PortafoglioSyncTab />
+        </TabsContent>
       </Tabs>
     </div>
   );

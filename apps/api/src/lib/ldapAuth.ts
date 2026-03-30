@@ -288,9 +288,9 @@ function determineUserRole(
     }
   }
 
-  // Default a viewer se nessun mapping trovato
+  // Default a viewer se nessun mapping trovato (applicato solo alla creazione di nuovi utenti)
   if (log) {
-    log.info('No role mapping found, defaulting to viewer');
+    log.info({ userGroups }, 'No role mapping found for LDAP groups, defaulting to viewer (existing users keep their DB role)');
   }
   return 'viewer';
 }

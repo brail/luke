@@ -61,9 +61,17 @@ export async function testNavConnection(config: NavDbConfig): Promise<{
   // Step 2: query base
   try {
     await testPool.request().query('SELECT 1 AS ping');
-    steps.push({ name: 'Query SQL', ok: true, message: 'Database risponde correttamente' });
+    steps.push({
+      name: 'Query SQL',
+      ok: true,
+      message: 'Database risponde correttamente',
+    });
   } catch (err: any) {
-    steps.push({ name: 'Query SQL', ok: false, message: `Errore query: ${err.message}` });
+    steps.push({
+      name: 'Query SQL',
+      ok: false,
+      message: `Errore query: ${err.message}`,
+    });
     await testPool.close().catch(() => {});
     return { success: false, steps };
   }
@@ -72,9 +80,7 @@ export async function testNavConnection(config: NavDbConfig): Promise<{
   // Non si presuppone una tabella specifica: NAV può avere tabelle custom
   // e il prefisso company è l'unico identificatore affidabile.
   try {
-    const res = await testPool
-      .request()
-      .input('prefix', `${config.company}$%`)
+    const res = await testPool.request().input('prefix', `${config.company}$%`)
       .query<{ TABLE_NAME: string }>(`
         SELECT TOP 1 TABLE_NAME
         FROM INFORMATION_SCHEMA.TABLES
@@ -138,7 +144,9 @@ function configChanged(a: NavDbConfig, b: NavDbConfig): boolean {
  *
  * readOnly=true imposta ApplicationIntent=ReadOnly (utile con SQL Server AG).
  */
-export async function getPool(config: NavDbConfig): Promise<mssql.ConnectionPool> {
+export async function getPool(
+  config: NavDbConfig
+): Promise<mssql.ConnectionPool> {
   // Se la config è cambiata (inclusa la password), chiudi il pool esistente
   if (pool && currentConfig && configChanged(config, currentConfig)) {
     connectingPromise = null;
@@ -164,6 +172,7 @@ export async function getPool(config: NavDbConfig): Promise<mssql.ConnectionPool
       trustServerCertificate: true,
       readOnlyIntent: config.readOnly,
     },
+    requestTimeout: 300_000, // 5 min — query portafoglio ordini può impiegare 3–4 minuti
     pool: {
       max: 5,
       min: 0,

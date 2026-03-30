@@ -75,6 +75,8 @@ export function useSectionAccess() {
       'admin.brands': checkAccess('admin.brands'),
       'admin.seasons': checkAccess('admin.seasons'),
       'admin.vendors': checkAccess('admin.vendors'),
+      sales: checkAccess('sales'),
+      'sales.statistics': checkAccess('sales.statistics'),
     };
   }, [session?.user, userOverrides]);
 

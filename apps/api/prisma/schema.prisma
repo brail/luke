@@ -513,3 +513,378 @@ model CollectionLayoutRow {
   @@index([pricingParameterSetId])
   @@map("collection_layout_rows")
 }
+
+// ─── Portafoglio Analytics Sync ───────────────────────────────────────────────
+//
+// Repliche analytics delle tabelle NAV usate dalla query portafoglio ordini.
+// Prefisso nav_pf_ (portafoglio) per distinguerle dalle nav_* entity-dual.
+// Aggiornate dal sync service (background ogni 5 min + trigger manuale).
+// NO soft-delete, NO entità locale: sono repliche pure in sola lettura dall'app.
+
+/**
+ * Stato di sincronizzazione per tabella.
+ * navRowversion = CONVERT(BIGINT, MAX(timestamp)) dell'ultimo sync su SQL Server.
+ * Per le tabelle full-refresh (date_prenotazione, ddt_picking): rowversion = 0.
+ */
+model NavPfSyncState {
+  tableName       String    @id
+  lastRowversion  BigInt    @default(0)
+  lastSyncedAt    DateTime?
+  rowCount        Int       @default(0)
+  lastDurationMs  Int?
+
+  @@map("nav_pf_sync_state")
+}
+
+/** Replica di [Company$Sales Header] */
+model NavPfSalesHeader {
+  no_                       String    @id
+  documentType              Int
+  orderDate                 DateTime?
+  sellToCustomerNo          String?
+  billToCustomerNo          String?
+  billToName                String?
+  salespersonCode           String?
+  areaManagerCode           String?
+  subject1                  String?
+  subject2                  String?
+  currencyCode              String?
+  shipToCode                String?
+  shipToName                String?
+  shipToName2               String?
+  shipToAddress             String?
+  shipToAddress2            String?
+  shipToCity                String?
+  shipToPostCode            String?
+  shipToCounty              String?
+  shipmentMethodCode        String?
+  transportReasonCode       String?
+  shippingAgentCode         String?
+  shippingAgentServiceCode  String?
+  paymentTermsCode          String?
+  paymentMethodCode         String?
+  invoiceDiscountCalculation String?
+  invoiceDiscountValue      Float?
+  consignment               Int?
+  rightOnReturnPct          Float?
+  note                      String?
+  campaignNo                String?
+  securitiesReceived        String?
+  anomalous                 Int?
+  notAnomalous              Int?
+  anomalousDate             DateTime?
+  checked                   Int?
+  checkedDate               DateTime?
+  budgetNo                  String?
+  courseDate                DateTime?
+  kimoFashionSoNo           String?
+  orderType                 Int?
+  fastShipping              Int?
+  commissionGroupCode       String?
+  geographicalZone          String?
+  sellingSeasonCode         String?
+  shortcutDimension2Code    String?
+  customerPostingGroup      String?
+  navRowversion             BigInt    @default(0)
+
+  @@index([sellingSeasonCode])
+  @@index([shortcutDimension2Code])
+  @@index([sellingSeasonCode, shortcutDimension2Code])
+  @@index([salespersonCode])
+  @@index([sellToCustomerNo])
+  @@map("nav_pf_sales_header")
+}
+
+/** Replica di [Company$Sales Line] */
+model NavPfSalesLine {
+  documentType              Int
+  documentNo                String
+  lineNo                    Int
+  type                      Int?
+  no_                       String?
+  customerOrderRef          String?
+  reference                 String?
+  genBusPostingGroup        String?
+  vatBusPostingGroup        String?
+  unitOfMeasure             String?
+  constantVariableCode      String?
+  assortmentCode            String?
+  deleteReason              String?
+  salesPurchaseStatusCode   String?
+  salesPurchaseStatusItem   String?
+  deleteDate                DateTime?
+  customerPriceGroup        String?
+  averageUnitPrice          Float?
+  noOfPairs                 Float?
+  quantity                  Float?
+  lineAmount                Float?
+  invDiscountAmount         Float?
+  quantityShipped           Float?
+  quantityInvoiced          Float?
+  returnQtyReceived         Float?
+  subject1Commission        Float?
+  subject2Commission        Float?
+  subject3Commission        Float?
+  subject4Commission        Float?
+  areaManagerCommission     Float?
+  salespersonCommission     Float?
+  returnReasonCode          String?
+  requestedDeliveryDate     DateTime?
+  lineDiscountPct           Float?
+  discount1Pct              Float?
+  discount2Pct              Float?
+  discount3Pct              Float?
+  locationCode              String?
+  modelCrossReference       String?
+  constantAssortmentVarGrp  String?
+  navRowversion             BigInt    @default(0)
+
+  @@id([documentType, documentNo, lineNo])
+  @@index([documentNo])
+  @@index([no_])
+  @@index([constantVariableCode])
+  @@map("nav_pf_sales_line")
+}
+
+/** Replica di [Company$Sales Header Extension] */
+model NavPfSalesHeaderExt {
+  documentType            Int
+  documentNo              String
+  warehouseSpecialityCode String?
+  subject3                String?
+  subject4                String?
+  oldOrderNo              String?
+  specialRequests         String?
+  navRowversion           BigInt    @default(0)
+
+  @@id([documentType, documentNo])
+  @@map("nav_pf_sales_header_ext")
+}
+
+/**
+ * Replica di [Company$Item] — solo Configurator Relation 2 (modelli) e 3 (SKU).
+ * Relation 2: usato in Sales Line.No_ e come chiave principale.
+ * Relation 3: usato per carry_over, landed_cost, must_buy (GROUP BY Model Item No_).
+ */
+model NavPfItem {
+  no_                       String    @id
+  description               String?
+  description2              String?
+  configuratorRelation      Int?
+  modelItemNo               String?
+  variableCode01            String?
+  smu                       Int?
+  carryOver                 Int?
+  futureCarryOver           Int?
+  soldOut                   Int?
+  soldOutDate               DateTime?
+  salesPurchaseStatusItem   String?
+  salesPurchaseStatusDate   DateTime?
+  potentialSoldOut          Int?
+  minimumOrderQuantity      Float?
+  mustBuy                   Int?
+  standardCost              Float?
+  collectionCode            String?
+  lineCode                  String?
+  seasonTypology            String?
+  productFamily             String?
+  productSex                String?
+  shipmentPriority          String?
+  innovationDegree          String?
+  heelHeight                String?
+  endCustomerPriceGap       String?
+  marketSegment             String?
+  productTypology           String?
+  mainMaterial              String?
+  soleMaterial              String?
+  vendorNo                  String?
+  manufacturer              String?
+  advertisingMaterial       String?
+  countryRegionOfOriginCode String?
+  constantAssortmentVarGrp  String?
+  navRowversion             BigInt    @default(0)
+
+  @@index([modelItemNo])
+  @@index([configuratorRelation])
+  @@index([modelItemNo, variableCode01])
+  @@map("nav_pf_item")
+}
+
+/** Replica di [Company$Customer] */
+model NavPfCustomer {
+  no_                    String    @id
+  name                   String?
+  name2                  String?
+  address                String?
+  city                   String?
+  postCode               String?
+  county                 String?
+  countryRegionCode      String?
+  phoneNo                String?
+  faxNo                  String?
+  eMail                  String?
+  businessEMail          String?
+  contact                String?
+  geographicalZone       String?
+  geographicalZone2      String?
+  keyAccount             Int?
+  warehouseSpecialityCode String?
+  languageCode           String?
+  fastShipment           Int?
+  blockedForAssignments  Int?
+  reasonBlockCode        String?
+  paymentMethodCode      String?
+  paymentTermsCode       String?
+  vatRegistrationNo      String?
+  fiscalCode             String?
+  currentRisk            String?
+  riskRating             String?
+  pmFailureAssignedScore String?
+  updatedDate            DateTime?
+  updatedType            String?
+  dueDate                DateTime?
+  internalValuation      String?
+  valuationDate          DateTime?
+  reservationPriority    String?
+  authorizedStoresNumber Int?
+  storeDistribution      Int?
+  storeImage             Int?
+  storeType              Int?
+  variousReferences      String?
+  homePage               String?
+  qualityControl         String?
+  oldFebosNo             String?
+  oldBridgeNo            String?
+  purchaseGroup          String?
+  distributionChannel    String?
+  creditManager          String?
+  eacLabels              String?
+  sovracolloCompleto     Int?
+  commissionGroupCode    String?
+  vatBusPostingGroup     String?
+  genBusPostingGroup     String?
+  customerPostingGroup   String?
+  navRowversion          BigInt    @default(0)
+
+  @@map("nav_pf_customer")
+}
+
+/** Replica di [Company$Ship-to Address] */
+model NavPfShipToAddress {
+  customerNo          String
+  code                String
+  geographicalZone2   String?
+  countryRegionCode   String?
+  navRowversion       BigInt    @default(0)
+
+  @@id([customerNo, code])
+  @@index([customerNo])
+  @@map("nav_pf_ship_to_address")
+}
+
+/** Replica di [Company$Variable Code] (descrizioni colori) */
+model NavPfVariableCode {
+  variableGroup String
+  variableCode  String
+  description   String?
+  navRowversion BigInt  @default(0)
+
+  @@id([variableGroup, variableCode])
+  @@map("nav_pf_variable_code")
+}
+
+/** Replica di [Company$Salesperson/Purchaser] */
+model NavPfSalesperson {
+  code          String  @id
+  name          String?
+  navRowversion BigInt  @default(0)
+
+  @@map("nav_pf_salesperson")
+}
+
+/** Replica di [Company$Geographical Zone] */
+model NavPfGeoZone {
+  code          String  @id
+  description   String?
+  navRowversion BigInt  @default(0)
+
+  @@map("nav_pf_geo_zone")
+}
+
+/** Replica di [Company$Shipment Method] */
+model NavPfShipmentMethod {
+  code          String  @id
+  description   String?
+  navRowversion BigInt  @default(0)
+
+  @@map("nav_pf_shipment_method")
+}
+
+/** Replica di [Company$Transport Reason Code] */
+model NavPfTransportReason {
+  code          String  @id
+  description   String?
+  navRowversion BigInt  @default(0)
+
+  @@map("nav_pf_transport_reason")
+}
+
+/** Replica di [Company$Budget Header] */
+model NavPfBudgetHeader {
+  no_           String  @id
+  budgetArea    String?
+  navRowversion BigInt  @default(0)
+
+  @@map("nav_pf_budget_header")
+}
+
+/** Replica di [Company$Vendor] — solo campi necessari per lookup nome */
+model NavPfVendor {
+  no_           String  @id
+  name          String?
+  navRowversion BigInt  @default(0)
+
+  @@map("nav_pf_vendor")
+}
+
+/**
+ * Pre-aggregazione di [Company$Reserv__Assign_ Link] (tipo 1).
+ * Memorizza MAX(Date Reservation) per (Sales Document No_, Sales Line No_).
+ * Full-refresh ad ogni ciclo di sync, scoped ai document nos presenti in nav_pf_sales_header.
+ */
+model NavPfDatePrenotazione {
+  salesDocumentNo String
+  salesLineNo     Int
+  dateReservation DateTime?
+  syncedAt        DateTime  @default(now())
+
+  @@id([salesDocumentNo, salesLineNo])
+  @@map("nav_pf_date_prenotazione")
+}
+
+/**
+ * Pre-aggregazione di [Company$DDT_Picking Line] JOIN [Company$DDT_Picking Header].
+ * Memorizza SUM per status per (Order No_, Order Line No_).
+ * Full-refresh ad ogni ciclo di sync, scoped ai document nos di nav_pf_sales_header.
+ */
+model NavPfDdtPicking {
+  orderNo               String
+  orderLineNo           Int
+  pairsTotale           Float?
+  qtyTotale             Float?
+  pairsRilasciate       Float?
+  qtyRilasciate         Float?
+  pairsAperte           Float?
+  qtyAperte             Float?
+  pairsDaInviareWmsps   Float?
+  qtyDaInviareWmsps     Float?
+  pairsInviatoWmsps     Float?
+  qtyInviatoWmsps       Float?
+  pairsEvasoWmsps       Float?
+  qtyEvasoWmsps         Float?
+  syncedAt              DateTime @default(now())
+
+  @@id([orderNo, orderLineNo])
+  @@index([orderNo])
+  @@map("nav_pf_ddt_picking")
+}

@@ -17,6 +17,8 @@ import {
 // Mappa dei percorsi per le etichette in italiano
 const pathLabels: Record<string, string> = {
   '/dashboard': 'Dashboard',
+  '/sales': 'Vendite',
+  '/sales/statistics': 'Statistiche',
   '/settings': 'Impostazioni',
   '/settings/users': 'Utenti',
   '/settings/storage': 'Storage',
@@ -38,6 +40,8 @@ const pathLabels: Record<string, string> = {
 // Mappa dei percorsi per i link di navigazione
 const pathLinks: Record<string, string> = {
   '/dashboard': '/dashboard',
+  '/sales': '/sales/statistics',
+  '/sales/statistics': '/sales/statistics',
   '/settings': '/settings',
   '/settings/users': '/settings/users',
   '/settings/storage': '/settings/storage',

@@ -11,3 +11,6 @@ export { syncVendors } from './sync/vendors.js';
 export { syncBrands } from './sync/brands.js';
 export { syncSeasons } from './sync/seasons.js';
 export type { SyncResult } from './sync/vendors.js';
+
+export { queryPortafoglioOrdini } from './statistics/portafoglio.js';
+export type { PortafoglioParams, PortafoglioRow } from './statistics/portafoglio.js';

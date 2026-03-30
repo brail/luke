@@ -25,6 +25,7 @@ import { createContext } from './lib/trpc';
 import { setGlobalErrorHandler } from './lib/error';
 import { getConfig, validateCriticalConfig } from './lib/configManager';
 import { registerNavSyncScheduler } from './lib/navSyncScheduler';
+import { registerPortafoglioSyncScheduler } from './lib/portafoglioSyncScheduler';
 import { idempotencyStore } from './lib/idempotency';
 import { rateLimitStore } from './lib/ratelimit';
 import {
@@ -60,8 +61,8 @@ const loggerConfig = {
  */
 const fastify = Fastify({
   logger: loggerConfig,
-  requestTimeout: 20_000,
-  connectionTimeout: 10_000,
+  requestTimeout: 360_000, // 6 min — allineato a proxyTimeout Next.js e pool NAV (300 s + margine)
+  connectionTimeout: 0,    // disabilitato — requestTimeout gestisce il limite totale
   maxParamLength: 5000, // tRPC batch requests contain multiple procedure names in the URL param
 });
 
@@ -597,6 +598,9 @@ const start = async () => {
 
     // Registra scheduler sync NAV (onReady + onClose)
     registerNavSyncScheduler(fastify, prisma);
+
+    // Registra scheduler sync portafoglio NAV → PG (onReady + onClose)
+    registerPortafoglioSyncScheduler(fastify, prisma);
 
     // Configura graceful shutdown
     setupGracefulShutdown();

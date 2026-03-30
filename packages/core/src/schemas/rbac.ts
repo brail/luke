@@ -28,6 +28,9 @@ export const sectionEnum = z.enum([
   'admin.brands',
   'admin.seasons',
   'admin.vendors',
+  // Vendite e relative sotto-sezioni
+  'sales',
+  'sales.statistics',
 ]);
 export type Section = z.infer<typeof sectionEnum>;
 
@@ -54,6 +57,8 @@ export const SECTION_TO_PERMISSION: Record<Section, string> = {
   'admin.brands': 'brands:read',
   'admin.seasons': 'seasons:read',
   'admin.vendors': 'vendors:read',
+  sales: 'sales:read',
+  'sales.statistics': 'sales:read',
 } as const;
 
 /**
@@ -94,6 +99,8 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       'admin.brands': true,
       'admin.seasons': true,
       'admin.vendors': true,
+      sales: true,
+      'sales.statistics': true,
     },
     editor: {
       dashboard: true,
@@ -114,6 +121,8 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       'admin.brands': false,
       'admin.seasons': false,
       'admin.vendors': false,
+      sales: true,
+      'sales.statistics': true,
     },
     viewer: {
       dashboard: true,
@@ -134,6 +143,8 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       'admin.brands': false,
       'admin.seasons': false,
       'admin.vendors': false,
+      sales: false,
+      'sales.statistics': false,
     },
   };
 
