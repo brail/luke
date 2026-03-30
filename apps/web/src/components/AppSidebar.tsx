@@ -39,13 +39,11 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from './ui/dropdown-menu';
+} from './ui/dropdown-menu'; // Solo per il menu utente al fondo
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroup,
-  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
@@ -102,284 +100,273 @@ export default function AppSidebar() {
             <Logo size="md" className="text-primary" />
             <div>
               <h2 className="text-lg font-semibold text-foreground">Luke</h2>
-              {/* 
-                <p className="text-sm text-muted-foreground">
-                  Console Amministrativa
-                </p>
-              */}
             </div>
           </div>
         </div>
 
-        {/* Sezione Generale - Solo se ha almeno una voce abilitata */}
-        {menuAccess.showGeneralSection && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Generale</SidebarGroupLabel>
-            <SidebarMenu>
-              {/* Dashboard - Solo se accesso consentito */}
-              {menuAccess.dashboard && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={isActive('/dashboard')}>
-                    <Link href="/dashboard">
-                      <Home size={18} />
-                      <span>Dashboard</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-            </SidebarMenu>
-          </SidebarGroup>
-        )}
+        {/* Menu compatto senza sezioni */}
+        <SidebarMenu>
+          {/* Dashboard */}
+          {menuAccess.dashboard && (
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild isActive={isActive('/dashboard')}>
+                <Link href="/dashboard">
+                  <Home size={18} />
+                  <span>Dashboard</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )}
 
-        {/* Sezione Vendite - Solo se ha accesso */}
-        {menuAccess.sales && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Vendite</SidebarGroupLabel>
-            <SidebarMenu>
+          {/* Vendite con submenu collapsabile */}
+          {menuAccess.sales && (
+            <SidebarMenuItem>
+              <SidebarMenuButton isActive={isActive('/sales')} className="cursor-pointer">
+                <ShoppingCart size={18} />
+                <span>Vendite</span>
+                <ChevronDown size={16} className="ml-auto transition-transform group-data-[state=open]/menu-button:rotate-180" />
+              </SidebarMenuButton>
+              <SidebarMenuSub>
+                {menuAccess.salesItems.statistics && (
+                  <SidebarMenuSubItem>
+                    <SidebarMenuSubButton
+                      asChild
+                      isActive={isActive('/sales/statistics')}
+                    >
+                      <Link href="/sales/statistics">
+                        <BarChart2 size={16} />
+                        <span>Statistiche</span>
+                      </Link>
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
+                )}
+              </SidebarMenuSub>
+            </SidebarMenuItem>
+          )}
+
+          {/* Prodotto con submenu collapsabile */}
+          {menuAccess.product && (
+            <SidebarMenuItem>
+              <SidebarMenuButton isActive={isActive('/product')} className="cursor-pointer">
+                <Calculator size={18} />
+                <span>Prodotto</span>
+                <ChevronDown size={16} className="ml-auto transition-transform group-data-[state=open]/menu-button:rotate-180" />
+              </SidebarMenuButton>
+              <SidebarMenuSub>
+                <SidebarMenuSubItem>
+                  <SidebarMenuSubButton
+                    asChild
+                    isActive={isActive('/product/pricing')}
+                  >
+                    <Link href="/product/pricing">
+                      <TrendingUp size={16} />
+                      <span>Costi e Prezzi</span>
+                    </Link>
+                  </SidebarMenuSubButton>
+                </SidebarMenuSubItem>
+                <SidebarMenuSubItem>
+                  <SidebarMenuSubButton
+                    asChild
+                    isActive={isActive('/product/collection-layout')}
+                  >
+                    <Link href="/product/collection-layout">
+                      <LayoutGrid size={16} />
+                      <span>Collection Layout</span>
+                    </Link>
+                  </SidebarMenuSubButton>
+                </SidebarMenuSubItem>
+              </SidebarMenuSub>
+            </SidebarMenuItem>
+          )}
+        </SidebarMenu>
+      </SidebarContent>
+
+      {/* Menu Sistema */}
+      {menuAccess.showSystemSection && (
+        <SidebarFooter>
+          <SidebarMenu>
+            {/* Amministrazione */}
+            {menuAccess.admin && (
               <SidebarMenuItem>
-                <SidebarMenuButton isActive={isActive('/sales')}>
-                  <ShoppingCart size={18} />
-                  <span>Vendite</span>
+                <SidebarMenuButton className="cursor-pointer">
+                  <ShieldCheck size={18} />
+                  <span>Amministrazione</span>
+                  <ChevronDown size={16} className="ml-auto transition-transform group-data-[state=open]/menu-button:rotate-180" />
                 </SidebarMenuButton>
                 <SidebarMenuSub>
-                  {menuAccess.salesItems.statistics && (
+                  {menuAccess.adminItems.brands && (
                     <SidebarMenuSubItem>
                       <SidebarMenuSubButton
                         asChild
-                        isActive={isActive('/sales/statistics')}
+                        isActive={isActive('/admin/brands')}
                       >
-                        <Link href="/sales/statistics">
-                          <BarChart2 size={16} />
-                          <span>Statistiche</span>
+                        <Link href="/admin/brands">
+                          <Building2 size={16} />
+                          <span>Brand</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  )}
+                  {menuAccess.adminItems.seasons && (
+                    <SidebarMenuSubItem>
+                      <SidebarMenuSubButton
+                        asChild
+                        isActive={isActive('/admin/seasons')}
+                      >
+                        <Link href="/admin/seasons">
+                          <CalendarDays size={16} />
+                          <span>Stagioni</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  )}
+                  {menuAccess.adminItems.vendors && (
+                    <SidebarMenuSubItem>
+                      <SidebarMenuSubButton
+                        asChild
+                        isActive={isActive('/admin/vendors')}
+                      >
+                        <Link href="/admin/vendors">
+                          <Truck size={16} />
+                          <span>Fornitori</span>
                         </Link>
                       </SidebarMenuSubButton>
                     </SidebarMenuSubItem>
                   )}
                 </SidebarMenuSub>
               </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroup>
-        )}
+            )}
 
-        {/* Sezione Prodotto - Solo se ha accesso */}
-        {menuAccess.product && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Prodotto</SidebarGroupLabel>
-            <SidebarMenu>
+            {/* Impostazioni */}
+            {menuAccess.settings && (
               <SidebarMenuItem>
-                <SidebarMenuButton isActive={isActive('/product')}>
-                  <Calculator size={18} />
-                  <span>Prodotto</span>
+                <SidebarMenuButton className="cursor-pointer">
+                  <Settings size={18} />
+                  <span>Impostazioni</span>
+                  <ChevronDown size={16} className="ml-auto transition-transform group-data-[state=open]/menu-button:rotate-180" />
                 </SidebarMenuButton>
                 <SidebarMenuSub>
-                  <SidebarMenuSubItem>
-                    <SidebarMenuSubButton
-                      asChild
-                      isActive={isActive('/product/pricing')}
-                    >
-                      <Link href="/product/pricing">
-                        <TrendingUp size={16} />
-                        <span>Costi e Prezzi</span>
-                      </Link>
-                    </SidebarMenuSubButton>
-                  </SidebarMenuSubItem>
-                  <SidebarMenuSubItem>
-                    <SidebarMenuSubButton
-                      asChild
-                      isActive={isActive('/product/collection-layout')}
-                    >
-                      <Link href="/product/collection-layout">
-                        <LayoutGrid size={16} />
-                        <span>Collection Layout</span>
-                      </Link>
-                    </SidebarMenuSubButton>
-                  </SidebarMenuSubItem>
+                  {menuAccess.settingsItems.users && (
+                    <SidebarMenuSubItem>
+                      <SidebarMenuSubButton
+                        asChild
+                        isActive={isActive('/settings/users')}
+                      >
+                        <Link href="/settings/users">
+                          <Users size={16} />
+                          <span>Utenti</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  )}
+                  {menuAccess.settingsItems.storage && (
+                    <SidebarMenuSubItem>
+                      <SidebarMenuSubButton
+                        asChild
+                        isActive={isActive('/settings/storage')}
+                      >
+                        <Link href="/settings/storage">
+                          <HardDrive size={16} />
+                          <span>Storage</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  )}
+                  {menuAccess.settingsItems.mail && (
+                    <SidebarMenuSubItem>
+                      <SidebarMenuSubButton
+                        asChild
+                        isActive={isActive('/settings/mail')}
+                      >
+                        <Link href="/settings/mail">
+                          <Mail size={16} />
+                          <span>Mail</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  )}
+                  {menuAccess.settingsItems.ldap && (
+                    <SidebarMenuSubItem>
+                      <SidebarMenuSubButton
+                        asChild
+                        isActive={isActive('/settings/ldap')}
+                      >
+                        <Link href="/settings/ldap">
+                          <Shield size={16} />
+                          <span>Auth LDAP</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  )}
+                  {menuAccess.settingsItems.nav && (
+                    <SidebarMenuSubItem>
+                      <SidebarMenuSubButton
+                        asChild
+                        isActive={isActive('/settings/nav')}
+                      >
+                        <Link href="/settings/nav">
+                          <Database size={16} />
+                          <span>Microsoft NAV</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  )}
+                  {menuAccess.settingsItems.nav_sync && (
+                    <SidebarMenuSubItem>
+                      <SidebarMenuSubButton
+                        asChild
+                        isActive={isActive('/settings/nav-sync')}
+                      >
+                        <Link href="/settings/nav-sync">
+                          <RefreshCw size={16} />
+                          <span>Sincronizzazione NAV</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  )}
                 </SidebarMenuSub>
               </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroup>
-        )}
-      </SidebarContent>
+            )}
 
-      {/* Sezione Sistema - Solo se ha almeno una voce abilitata */}
-      {menuAccess.showSystemSection && (
-        <SidebarFooter>
-          <SidebarGroup>
-            <SidebarGroupLabel>Sistema</SidebarGroupLabel>
-            <SidebarMenu>
-              {/* Dropdown Amministrazione */}
-              {menuAccess.admin && (
-                <SidebarMenuItem>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <SidebarMenuButton>
-                        <ShieldCheck size={18} />
-                        <span>Amministrazione</span>
-                        <ChevronDown size={16} className="ml-auto" />
-                      </SidebarMenuButton>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-56">
-                      {menuAccess.adminItems.brands && (
-                        <DropdownMenuItem asChild>
-                          <Link
-                            href="/admin/brands"
-                            className="flex items-center"
-                          >
-                            <Building2 className="mr-2 h-4 w-4" />
-                            <span>Brand</span>
-                          </Link>
-                        </DropdownMenuItem>
-                      )}
-                      {menuAccess.adminItems.seasons && (
-                        <DropdownMenuItem asChild>
-                          <Link
-                            href="/admin/seasons"
-                            className="flex items-center"
-                          >
-                            <CalendarDays className="mr-2 h-4 w-4" />
-                            <span>Stagioni</span>
-                          </Link>
-                        </DropdownMenuItem>
-                      )}
-                      {menuAccess.adminItems.vendors && (
-                        <DropdownMenuItem asChild>
-                          <Link
-                            href="/admin/vendors"
-                            className="flex items-center"
-                          >
-                            <Truck className="mr-2 h-4 w-4" />
-                            <span>Fornitori</span>
-                          </Link>
-                        </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </SidebarMenuItem>
-              )}
-
-              {/* Dropdown Impostazioni */}
-              {menuAccess.settings && (
-                <SidebarMenuItem>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <SidebarMenuButton>
-                        <Settings size={18} />
-                        <span>Impostazioni</span>
-                        <ChevronDown size={16} className="ml-auto" />
-                      </SidebarMenuButton>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-56">
-                      {menuAccess.settingsItems.users && (
-                        <DropdownMenuItem asChild>
-                          <Link
-                            href="/settings/users"
-                            className="flex items-center"
-                          >
-                            <Users className="mr-2 h-4 w-4" />
-                            <span>Utenti</span>
-                          </Link>
-                        </DropdownMenuItem>
-                      )}
-                      {menuAccess.settingsItems.storage && (
-                        <DropdownMenuItem asChild>
-                          <Link
-                            href="/settings/storage"
-                            className="flex items-center"
-                          >
-                            <HardDrive className="mr-2 h-4 w-4" />
-                            <span>Storage</span>
-                          </Link>
-                        </DropdownMenuItem>
-                      )}
-                      {menuAccess.settingsItems.mail && (
-                        <DropdownMenuItem asChild>
-                          <Link
-                            href="/settings/mail"
-                            className="flex items-center"
-                          >
-                            <Mail className="mr-2 h-4 w-4" />
-                            <span>Mail</span>
-                          </Link>
-                        </DropdownMenuItem>
-                      )}
-                      {menuAccess.settingsItems.ldap && (
-                        <DropdownMenuItem asChild>
-                          <Link
-                            href="/settings/ldap"
-                            className="flex items-center"
-                          >
-                            <Shield className="mr-2 h-4 w-4" />
-                            <span>Auth LDAP</span>
-                          </Link>
-                        </DropdownMenuItem>
-                      )}
-                      {menuAccess.settingsItems.nav && (
-                        <DropdownMenuItem asChild>
-                          <Link
-                            href="/settings/nav"
-                            className="flex items-center"
-                          >
-                            <Database className="mr-2 h-4 w-4" />
-                            <span>Microsoft NAV</span>
-                          </Link>
-                        </DropdownMenuItem>
-                      )}
-                      {menuAccess.settingsItems.nav_sync && (
-                        <DropdownMenuItem asChild>
-                          <Link
-                            href="/settings/nav-sync"
-                            className="flex items-center"
-                          >
-                            <RefreshCw className="mr-2 h-4 w-4" />
-                            <span>Sincronizzazione NAV</span>
-                          </Link>
-                        </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </SidebarMenuItem>
-              )}
-
-              {/* Dropdown Manutenzione */}
-              {menuAccess.maintenance && (
-                <SidebarMenuItem>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <SidebarMenuButton>
-                        <Wrench size={18} />
-                        <span>Manutenzione</span>
-                        <ChevronDown size={16} className="ml-auto" />
-                      </SidebarMenuButton>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-56">
-                      {menuAccess.maintenanceItems.config && (
-                        <DropdownMenuItem asChild>
-                          <Link
-                            href="/maintenance/config"
-                            className="flex items-center"
-                          >
-                            <ServerCog className="mr-2 h-4 w-4" />
-                            <span>Configurazioni</span>
-                          </Link>
-                        </DropdownMenuItem>
-                      )}
-                      {menuAccess.maintenanceItems.import_export && (
-                        <DropdownMenuItem asChild>
-                          <Link
-                            href="/maintenance/import-export"
-                            className="flex items-center"
-                          >
-                            <FolderTree className="mr-2 h-4 w-4" />
-                            <span>Import/Export</span>
-                          </Link>
-                        </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </SidebarMenuItem>
-              )}
-            </SidebarMenu>
-          </SidebarGroup>
+            {/* Manutenzione */}
+            {menuAccess.maintenance && (
+              <SidebarMenuItem>
+                <SidebarMenuButton className="cursor-pointer">
+                  <Wrench size={18} />
+                  <span>Manutenzione</span>
+                  <ChevronDown size={16} className="ml-auto transition-transform group-data-[state=open]/menu-button:rotate-180" />
+                </SidebarMenuButton>
+                <SidebarMenuSub>
+                  {menuAccess.maintenanceItems.config && (
+                    <SidebarMenuSubItem>
+                      <SidebarMenuSubButton
+                        asChild
+                        isActive={isActive('/maintenance/config')}
+                      >
+                        <Link href="/maintenance/config">
+                          <ServerCog size={16} />
+                          <span>Configurazioni</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  )}
+                  {menuAccess.maintenanceItems.import_export && (
+                    <SidebarMenuSubItem>
+                      <SidebarMenuSubButton
+                        asChild
+                        isActive={isActive('/maintenance/import-export')}
+                      >
+                        <Link href="/maintenance/import-export">
+                          <FolderTree size={16} />
+                          <span>Import/Export</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  )}
+                </SidebarMenuSub>
+              </SidebarMenuItem>
+            )}
+          </SidebarMenu>
         </SidebarFooter>
       )}
 
