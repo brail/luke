@@ -90,7 +90,7 @@ export async function resolveContext(
   });
 
   // Determina il brand corrente per filtrare le stagioni
-  const prefs_brandId = prefs?.lastBrandId;
+  const prefs_brandId = (prefs?.data as any)?.lastBrandId as string | undefined;
   const activeBrandId = brands.find(b => b.id === prefs_brandId)?.id ?? brands[0]?.id;
 
   const allowedSeasonIds = activeBrandId
@@ -136,9 +136,10 @@ export async function resolveContext(
   const appDefBrand = pick(brands, contextDefaults.context?.brandId);
   const appDefSeason = pick(seasons, contextDefaults.context?.seasonId);
 
-  const brand = pick(brands, prefs?.lastBrandId) ?? appDefBrand ?? brands[0];
+  const brand =
+    pick(brands, prefs_brandId) ?? appDefBrand ?? brands[0];
   const season =
-    pick(seasons, prefs?.lastSeasonId) ?? appDefSeason ?? seasons[0];
+    pick(seasons, (prefs?.data as any)?.lastSeasonId as string | undefined) ?? appDefSeason ?? seasons[0];
 
   return { brand, season };
 }
@@ -160,9 +161,10 @@ export async function setContext(
   prisma: PrismaClient
 ): Promise<ContextResult> {
   // Verifica che brand e season esistano e siano attivi
-  const [brand, season] = await Promise.all([
+  const [brand, season, currentPrefs] = await Promise.all([
     prisma.brand.findFirst({ where: { id: brandId, isActive: true } }),
     prisma.season.findFirst({ where: { id: seasonId, isActive: true } }),
+    prisma.userPreference.findUnique({ where: { userId }, select: { data: true } }),
   ]);
 
   if (!brand || !season) {
@@ -172,17 +174,22 @@ export async function setContext(
     });
   }
 
-  // Upsert UserPreference
+  // Merge dei dati: preserva menuStates, aggiorna brand/season
+  const mergedData = {
+    ...((currentPrefs?.data as any) ?? {}),
+    lastBrandId: brand.id,
+    lastSeasonId: season.id,
+  };
+
+  // Upsert UserPreference with consolidated data
   await prisma.userPreference.upsert({
     where: { userId },
     create: {
       userId,
-      lastBrandId: brand.id,
-      lastSeasonId: season.id,
+      data: mergedData,
     },
     update: {
-      lastBrandId: brand.id,
-      lastSeasonId: season.id,
+      data: mergedData,
     },
   });
 
@@ -212,5 +219,82 @@ export async function getContextDefaults(
   } catch (error) {
     logger.warn({ err: error }, 'Errore parsing app.context.defaults, usando default vuoto');
     return { context: {} };
+  }
+}
+
+/**
+ * Ottiene lo stato collapsible dei menu per l'utente
+ * Restituisce un oggetto con il mapping {menuName: isCollapsed}
+ *
+ * @param userId - ID dell'utente
+ * @param prisma - Client Prisma
+ * @returns Object con stati dei menu collapsibili
+ */
+export async function getMenuCollapsibleStates(
+  userId: string,
+  prisma: PrismaClient
+): Promise<Record<string, boolean>> {
+  const prefs = await prisma.userPreference.findUnique({
+    where: { userId },
+    select: { data: true },
+  });
+
+  if (!prefs?.data) {
+    return {};
+  }
+
+  try {
+    const menuStates = (prefs.data as any)?.menuStates ?? {};
+    return JSON.parse(JSON.stringify(menuStates)) as Record<string, boolean>;
+  } catch (error) {
+    logger.warn({ err: error }, 'Errore parsing menuCollapsibleStates');
+    return {};
+  }
+}
+
+/**
+ * Imposta lo stato collapsible dei menu per l'utente
+ * Fa upsert sulla preferenza esistente preservando altri dati
+ *
+ * @param userId - ID dell'utente
+ * @param menuStates - Object con mapping {menuName: isCollapsed}
+ * @param prisma - Client Prisma
+ * @returns Stati salvati
+ */
+export async function setMenuCollapsibleStates(
+  userId: string,
+  menuStates: Record<string, boolean>,
+  prisma: PrismaClient
+): Promise<Record<string, boolean>> {
+  // Leggi il valore attuale per preservare altri campi
+  const currentPrefs = await prisma.userPreference.findUnique({
+    where: { userId },
+    select: { data: true },
+  });
+
+  // Merge dei dati: preserva brand/season, aggiorna menuStates
+  const mergedData = {
+    ...((currentPrefs?.data as any) ?? {}),
+    menuStates: menuStates,
+  };
+
+  const updated = await prisma.userPreference.upsert({
+    where: { userId },
+    create: {
+      userId,
+      data: mergedData,
+    },
+    update: {
+      data: mergedData,
+    },
+    select: { data: true },
+  });
+
+  try {
+    const saved = (updated.data as any)?.menuStates ?? {};
+    return JSON.parse(JSON.stringify(saved)) as Record<string, boolean>;
+  } catch (error) {
+    logger.warn({ err: error }, 'Errore parsing menuCollapsibleStates after set');
+    return menuStates;
   }
 }

@@ -12,7 +12,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Wrench,
-  ChevronDown,
+  ChevronRight,
   LogOut,
   User,
   FolderTree,
@@ -30,9 +30,11 @@ import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 
 import { useMenuAccess } from '../hooks/useMenuAccess';
+import { useMenuPreferences } from '../hooks/useMenuPreferences';
 
 import Logo from './Logo';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -56,6 +58,7 @@ export default function AppSidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
   const menuAccess = useMenuAccess();
+  const { menuStates, toggleMenu } = useMenuPreferences();
 
   const isActive = (href: string) => pathname.startsWith(href);
 
@@ -121,61 +124,81 @@ export default function AppSidebar() {
           {/* Vendite con submenu collapsabile */}
           {menuAccess.sales && (
             <SidebarMenuItem>
-              <SidebarMenuButton isActive={isActive('/sales')} className="cursor-pointer">
-                <ShoppingCart size={18} />
-                <span>Vendite</span>
-                <ChevronDown size={16} className="ml-auto transition-transform group-data-[state=open]/menu-button:rotate-180" />
-              </SidebarMenuButton>
-              <SidebarMenuSub>
-                {menuAccess.salesItems.statistics && (
-                  <SidebarMenuSubItem>
-                    <SidebarMenuSubButton
-                      asChild
-                      isActive={isActive('/sales/statistics')}
-                    >
-                      <Link href="/sales/statistics">
-                        <BarChart2 size={16} />
-                        <span>Statistiche</span>
-                      </Link>
-                    </SidebarMenuSubButton>
-                  </SidebarMenuSubItem>
-                )}
-              </SidebarMenuSub>
+              <Collapsible
+                open={menuStates.vendite}
+                onOpenChange={(isOpen) => toggleMenu('vendite', isOpen)}
+                className="group w-full"
+              >
+                <CollapsibleTrigger asChild>
+                  <SidebarMenuButton isActive={isActive('/sales')} className="cursor-pointer">
+                    <ShoppingCart size={18} />
+                    <span>Vendite</span>
+                    <ChevronRight size={16} className="ml-auto transition-transform group-data-[state=open]:rotate-90" />
+                  </SidebarMenuButton>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <SidebarMenuSub>
+                    {menuAccess.salesItems.statistics && (
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          asChild
+                          isActive={isActive('/sales/statistics')}
+                        >
+                          <Link href="/sales/statistics">
+                            <BarChart2 size={16} />
+                            <span>Statistiche</span>
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    )}
+                  </SidebarMenuSub>
+                </CollapsibleContent>
+              </Collapsible>
             </SidebarMenuItem>
           )}
 
           {/* Prodotto con submenu collapsabile */}
           {menuAccess.product && (
             <SidebarMenuItem>
-              <SidebarMenuButton isActive={isActive('/product')} className="cursor-pointer">
-                <Calculator size={18} />
-                <span>Prodotto</span>
-                <ChevronDown size={16} className="ml-auto transition-transform group-data-[state=open]/menu-button:rotate-180" />
-              </SidebarMenuButton>
-              <SidebarMenuSub>
-                <SidebarMenuSubItem>
-                  <SidebarMenuSubButton
-                    asChild
-                    isActive={isActive('/product/pricing')}
-                  >
-                    <Link href="/product/pricing">
-                      <TrendingUp size={16} />
-                      <span>Costi e Prezzi</span>
-                    </Link>
-                  </SidebarMenuSubButton>
-                </SidebarMenuSubItem>
-                <SidebarMenuSubItem>
-                  <SidebarMenuSubButton
-                    asChild
-                    isActive={isActive('/product/collection-layout')}
-                  >
-                    <Link href="/product/collection-layout">
-                      <LayoutGrid size={16} />
-                      <span>Collection Layout</span>
-                    </Link>
-                  </SidebarMenuSubButton>
-                </SidebarMenuSubItem>
-              </SidebarMenuSub>
+              <Collapsible
+                open={menuStates.prodotto}
+                onOpenChange={(isOpen) => toggleMenu('prodotto', isOpen)}
+                className="group w-full"
+              >
+                <CollapsibleTrigger asChild>
+                  <SidebarMenuButton isActive={isActive('/product')} className="cursor-pointer">
+                    <Calculator size={18} />
+                    <span>Prodotto</span>
+                    <ChevronRight size={16} className="ml-auto transition-transform group-data-[state=open]:rotate-90" />
+                  </SidebarMenuButton>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <SidebarMenuSub>
+                    <SidebarMenuSubItem>
+                      <SidebarMenuSubButton
+                        asChild
+                        isActive={isActive('/product/pricing')}
+                      >
+                        <Link href="/product/pricing">
+                          <TrendingUp size={16} />
+                          <span>Costi e Prezzi</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                    <SidebarMenuSubItem>
+                      <SidebarMenuSubButton
+                        asChild
+                        isActive={isActive('/product/collection-layout')}
+                      >
+                        <Link href="/product/collection-layout">
+                          <LayoutGrid size={16} />
+                          <span>Collection Layout</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  </SidebarMenuSub>
+                </CollapsibleContent>
+              </Collapsible>
             </SidebarMenuItem>
           )}
         </SidebarMenu>
@@ -188,182 +211,212 @@ export default function AppSidebar() {
             {/* Amministrazione */}
             {menuAccess.admin && (
               <SidebarMenuItem>
-                <SidebarMenuButton className="cursor-pointer">
-                  <ShieldCheck size={18} />
-                  <span>Amministrazione</span>
-                  <ChevronDown size={16} className="ml-auto transition-transform group-data-[state=open]/menu-button:rotate-180" />
-                </SidebarMenuButton>
-                <SidebarMenuSub>
-                  {menuAccess.adminItems.brands && (
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={isActive('/admin/brands')}
-                      >
-                        <Link href="/admin/brands">
-                          <Building2 size={16} />
-                          <span>Brand</span>
-                        </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                  )}
-                  {menuAccess.adminItems.seasons && (
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={isActive('/admin/seasons')}
-                      >
-                        <Link href="/admin/seasons">
-                          <CalendarDays size={16} />
-                          <span>Stagioni</span>
-                        </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                  )}
-                  {menuAccess.adminItems.vendors && (
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={isActive('/admin/vendors')}
-                      >
-                        <Link href="/admin/vendors">
-                          <Truck size={16} />
-                          <span>Fornitori</span>
-                        </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                  )}
-                </SidebarMenuSub>
+                <Collapsible
+                  open={menuStates.amministrazione}
+                  onOpenChange={(isOpen) => toggleMenu('amministrazione', isOpen)}
+                  className="group w-full"
+                >
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton className="cursor-pointer">
+                      <ShieldCheck size={18} />
+                      <span>Amministrazione</span>
+                      <ChevronRight size={16} className="ml-auto transition-transform group-data-[state=open]:rotate-90" />
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenuSub>
+                      {menuAccess.adminItems.brands && (
+                        <SidebarMenuSubItem>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={isActive('/admin/brands')}
+                          >
+                            <Link href="/admin/brands">
+                              <Building2 size={16} />
+                              <span>Brand</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      )}
+                      {menuAccess.adminItems.seasons && (
+                        <SidebarMenuSubItem>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={isActive('/admin/seasons')}
+                          >
+                            <Link href="/admin/seasons">
+                              <CalendarDays size={16} />
+                              <span>Stagioni</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      )}
+                      {menuAccess.adminItems.vendors && (
+                        <SidebarMenuSubItem>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={isActive('/admin/vendors')}
+                          >
+                            <Link href="/admin/vendors">
+                              <Truck size={16} />
+                              <span>Fornitori</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      )}
+                    </SidebarMenuSub>
+                  </CollapsibleContent>
+                </Collapsible>
               </SidebarMenuItem>
             )}
 
             {/* Impostazioni */}
             {menuAccess.settings && (
               <SidebarMenuItem>
-                <SidebarMenuButton className="cursor-pointer">
-                  <Settings size={18} />
-                  <span>Impostazioni</span>
-                  <ChevronDown size={16} className="ml-auto transition-transform group-data-[state=open]/menu-button:rotate-180" />
-                </SidebarMenuButton>
-                <SidebarMenuSub>
-                  {menuAccess.settingsItems.users && (
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={isActive('/settings/users')}
-                      >
-                        <Link href="/settings/users">
-                          <Users size={16} />
-                          <span>Utenti</span>
-                        </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                  )}
-                  {menuAccess.settingsItems.storage && (
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={isActive('/settings/storage')}
-                      >
-                        <Link href="/settings/storage">
-                          <HardDrive size={16} />
-                          <span>Storage</span>
-                        </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                  )}
-                  {menuAccess.settingsItems.mail && (
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={isActive('/settings/mail')}
-                      >
-                        <Link href="/settings/mail">
-                          <Mail size={16} />
-                          <span>Mail</span>
-                        </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                  )}
-                  {menuAccess.settingsItems.ldap && (
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={isActive('/settings/ldap')}
-                      >
-                        <Link href="/settings/ldap">
-                          <Shield size={16} />
-                          <span>Auth LDAP</span>
-                        </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                  )}
-                  {menuAccess.settingsItems.nav && (
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={isActive('/settings/nav')}
-                      >
-                        <Link href="/settings/nav">
-                          <Database size={16} />
-                          <span>Microsoft NAV</span>
-                        </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                  )}
-                  {menuAccess.settingsItems.nav_sync && (
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={isActive('/settings/nav-sync')}
-                      >
-                        <Link href="/settings/nav-sync">
-                          <RefreshCw size={16} />
-                          <span>Sincronizzazione NAV</span>
-                        </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                  )}
-                </SidebarMenuSub>
+                <Collapsible
+                  open={menuStates.impostazioni}
+                  onOpenChange={(isOpen) => toggleMenu('impostazioni', isOpen)}
+                  className="group w-full"
+                >
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton className="cursor-pointer">
+                      <Settings size={18} />
+                      <span>Impostazioni</span>
+                      <ChevronRight size={16} className="ml-auto transition-transform group-data-[state=open]:rotate-90" />
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenuSub>
+                      {menuAccess.settingsItems.users && (
+                        <SidebarMenuSubItem>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={isActive('/settings/users')}
+                          >
+                            <Link href="/settings/users">
+                              <Users size={16} />
+                              <span>Utenti</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      )}
+                      {menuAccess.settingsItems.storage && (
+                        <SidebarMenuSubItem>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={isActive('/settings/storage')}
+                          >
+                            <Link href="/settings/storage">
+                              <HardDrive size={16} />
+                              <span>Storage</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      )}
+                      {menuAccess.settingsItems.mail && (
+                        <SidebarMenuSubItem>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={isActive('/settings/mail')}
+                          >
+                            <Link href="/settings/mail">
+                              <Mail size={16} />
+                              <span>Mail</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      )}
+                      {menuAccess.settingsItems.ldap && (
+                        <SidebarMenuSubItem>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={isActive('/settings/ldap')}
+                          >
+                            <Link href="/settings/ldap">
+                              <Shield size={16} />
+                              <span>Auth LDAP</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      )}
+                      {menuAccess.settingsItems.nav && (
+                        <SidebarMenuSubItem>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={isActive('/settings/nav')}
+                          >
+                            <Link href="/settings/nav">
+                              <Database size={16} />
+                              <span>Microsoft NAV</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      )}
+                      {menuAccess.settingsItems.nav_sync && (
+                        <SidebarMenuSubItem>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={isActive('/settings/nav-sync')}
+                          >
+                            <Link href="/settings/nav-sync">
+                              <RefreshCw size={16} />
+                              <span>Sincronizzazione NAV</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      )}
+                    </SidebarMenuSub>
+                  </CollapsibleContent>
+                </Collapsible>
               </SidebarMenuItem>
             )}
 
             {/* Manutenzione */}
             {menuAccess.maintenance && (
               <SidebarMenuItem>
-                <SidebarMenuButton className="cursor-pointer">
-                  <Wrench size={18} />
-                  <span>Manutenzione</span>
-                  <ChevronDown size={16} className="ml-auto transition-transform group-data-[state=open]/menu-button:rotate-180" />
-                </SidebarMenuButton>
-                <SidebarMenuSub>
-                  {menuAccess.maintenanceItems.config && (
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={isActive('/maintenance/config')}
-                      >
-                        <Link href="/maintenance/config">
-                          <ServerCog size={16} />
-                          <span>Configurazioni</span>
-                        </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                  )}
-                  {menuAccess.maintenanceItems.import_export && (
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={isActive('/maintenance/import-export')}
-                      >
-                        <Link href="/maintenance/import-export">
-                          <FolderTree size={16} />
-                          <span>Import/Export</span>
-                        </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                  )}
-                </SidebarMenuSub>
+                <Collapsible
+                  open={menuStates.manutenzione}
+                  onOpenChange={(isOpen) => toggleMenu('manutenzione', isOpen)}
+                  className="group w-full"
+                >
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton className="cursor-pointer">
+                      <Wrench size={18} />
+                      <span>Manutenzione</span>
+                      <ChevronRight size={16} className="ml-auto transition-transform group-data-[state=open]:rotate-90" />
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenuSub>
+                      {menuAccess.maintenanceItems.config && (
+                        <SidebarMenuSubItem>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={isActive('/maintenance/config')}
+                          >
+                            <Link href="/maintenance/config">
+                              <ServerCog size={16} />
+                              <span>Configurazioni</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      )}
+                      {menuAccess.maintenanceItems.import_export && (
+                        <SidebarMenuSubItem>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={isActive('/maintenance/import-export')}
+                          >
+                            <Link href="/maintenance/import-export">
+                              <FolderTree size={16} />
+                              <span>Import/Export</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      )}
+                    </SidebarMenuSub>
+                  </CollapsibleContent>
+                </Collapsible>
               </SidebarMenuItem>
             )}
           </SidebarMenu>

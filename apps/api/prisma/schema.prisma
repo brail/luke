@@ -250,15 +250,16 @@ model UserSeasonAccess {
   @@map("user_season_access")
 }
 
+/**
+ * Preferenze utente consolidate in un singolo Json
+ * Struttura: { lastBrandId?, lastSeasonId?, menuStates? }
+ */
 model UserPreference {
-  userId       String   @id
-  lastBrandId  String?
-  lastSeasonId String?
-  pinnedContexts Json?
-  updatedAt    DateTime @updatedAt
-  createdAt    DateTime @default(now())
+  userId    String   @id
+  data      Json?    @default("{}")
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
 
-  @@index([lastBrandId])
   @@map("user_preferences")
 }
 
