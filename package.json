@@ -15,6 +15,8 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "deps:latest": "pnpm update --latest",
     "prepare": "husky install",
+    "sync-version": "node scripts/sync-version.js",
+    "sync-version:check": "node scripts/sync-version.js --check",
     "db:seed": "pnpm --filter @luke/api db:seed",
     "codemod:eliminate-urls": "tsx tools/codemods/eliminate-hardcoded-urls.ts",
     "codemod:check-urls": "tsx tools/codemods/eliminate-hardcoded-urls.ts --dry-run"
