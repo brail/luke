@@ -20,6 +20,58 @@ export interface MarginCalc {
   optimalMargin: number;
 }
 
+// ─── Pure helpers (usable outside hook context) ───────────────────────────────
+
+export interface MarginComputeInput {
+  pricingParameterSetId?: string | null;
+  supplierFirstQuotation?: number | null;
+  retailTargetPrice?: number | null;
+  qtyForecast: number;
+}
+
+/** Compute theoretical margin for a single row. Returns null when data is incomplete. */
+export function computeRowMargin(
+  row: MarginComputeInput,
+  parameterSets: PricingParameterSet[]
+): { margin: number; isAboveTarget: boolean } | null {
+  if (!row.pricingParameterSetId || !row.supplierFirstQuotation || !row.retailTargetPrice) return null;
+  if (row.supplierFirstQuotation <= 0 || row.retailTargetPrice <= 0) return null;
+  const ps = parameterSets.find(p => p.id === row.pricingParameterSetId);
+  if (!ps) return null;
+
+  const qc = row.supplierFirstQuotation * (ps.qualityControlPercent / 100);
+  const withQC = row.supplierFirstQuotation + qc + ps.tools;
+  const withTransport = withQC + ps.transportInsuranceCost;
+  const withDuty = withTransport * (1 + ps.duty / 100);
+  const landed = withDuty / ps.exchangeRate + ps.italyAccessoryCosts;
+
+  const wholesale = row.retailTargetPrice / ps.retailMultiplier;
+  const margin = (wholesale - landed) / wholesale;
+
+  return {
+    margin: Math.round(margin * 10000) / 10000,
+    isAboveTarget: margin * 100 >= ps.optimalMargin,
+  };
+}
+
+/** Compute qty-weighted average margin across rows. Returns null if no row has margin data. */
+export function computeWeightedMargin(
+  rows: MarginComputeInput[],
+  parameterSets: PricingParameterSet[]
+): number | null {
+  let totalQty = 0;
+  let weightedSum = 0;
+  for (const row of rows) {
+    const m = computeRowMargin(row, parameterSets);
+    if (!m) continue;
+    weightedSum += m.margin * row.qtyForecast;
+    totalQty += row.qtyForecast;
+  }
+  return totalQty > 0 ? Math.round((weightedSum / totalQty) * 10000) / 10000 : null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Calcola marginalità e buying target in base ai parametri pricing selezionati.
  * Replica la logica di pricing.service.ts lato client per feedback immediato

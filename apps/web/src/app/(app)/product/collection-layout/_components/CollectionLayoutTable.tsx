@@ -20,8 +20,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '../../../../../components/ui/popover';
+import { computeWeightedMargin } from '../_hooks/usePricingCalc';
 
 import { CollectionGroupSection } from './CollectionGroupSection';
+
+import type { PricingParameterSet } from '../_hooks/usePricingCalc';
 
 type CollectionLayoutData = NonNullable<RouterOutputs['collectionLayout']['get']>;
 
@@ -39,6 +42,7 @@ type CollectionRowData = CollectionGroupData['rows'][number];
 interface CollectionLayoutTableProps {
   layout: CollectionLayoutData;
   canUpdate: boolean;
+  parameterSets: PricingParameterSet[];
   onAddGroup: () => void;
   onAddRow: (groupId: string) => void;
   onEditRow: (row: CollectionRowData) => void;
@@ -55,6 +59,7 @@ interface CollectionLayoutTableProps {
 export function CollectionLayoutTable({
   layout,
   canUpdate,
+  parameterSets,
   onAddGroup,
   onAddRow,
   onEditRow,
@@ -87,6 +92,8 @@ export function CollectionLayoutTable({
     (sum, g) => sum + g.rows.reduce((s, r) => s + r.qtyForecast, 0),
     0
   );
+  const allRows = layout.groups.flatMap(g => g.rows);
+  const totalWeightedMargin = computeWeightedMargin(allRows, parameterSets);
 
   const visibleCount = COLLECTION_TABLE_COLUMNS.length - hiddenColumns.length;
 
@@ -129,6 +136,12 @@ export function CollectionLayoutTable({
         )}
         <span className="text-muted-foreground">·</span>
         <span className="font-medium">{totalQty} paia</span>
+        {totalWeightedMargin !== null && (
+          <>
+            <span className="text-muted-foreground">·</span>
+            <span className="font-medium">mrg {(totalWeightedMargin * 100).toFixed(1)}%</span>
+          </>
+        )}
 
         {hasActiveSearch && (
           <div className="ml-auto flex items-center gap-2">
@@ -224,6 +237,7 @@ export function CollectionLayoutTable({
             group={group}
             canUpdate={canUpdate}
             hiddenColumns={effectiveHiddenColumns}
+            parameterSets={parameterSets}
             searchQuery={search}
             onAddRow={onAddRow}
             onEditRow={onEditRow}

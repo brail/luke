@@ -11,6 +11,7 @@ import type { FastifyInstance } from 'fastify';
 import { type PrismaClient } from '@prisma/client';
 
 import type { StorageBucket } from '@luke/core';
+import { hasPermission } from '@luke/core';
 
 import { authenticateRequest as auth } from '../lib/auth';
 import { putObject, getObject } from '../storage';
@@ -73,14 +74,18 @@ export async function storagePlugin(
         return;
       }
 
-      // Enforce bucket-level RBAC: not all roles can write to all buckets
-      const bucketRoles: Record<string, string[]> = {
-        uploads: ['admin', 'editor', 'viewer'],
-        exports: ['admin', 'editor'],
-        assets: ['admin'],
+      // Enforce bucket-level RBAC tramite sistema permessi unificato:
+      // - uploads: qualsiasi utente autenticato (nessun permesso aggiuntivo)
+      // - exports: config:read (editor e admin)
+      // - assets:  config:update (solo admin)
+      const bucketPermission: Record<string, Parameters<typeof hasPermission>[1] | null> = {
+        uploads: null,
+        exports: 'config:read',
+        assets: 'config:update',
       };
-      const allowedRoles = bucketRoles[bucket] ?? [];
-      if (!allowedRoles.includes(session.user.role)) {
+      const requiredPermission = bucketPermission[bucket];
+      if (requiredPermission !== null && requiredPermission !== undefined &&
+          !hasPermission(session.user as { role: 'admin' | 'editor' | 'viewer' }, requiredPermission)) {
         reply.code(403).send({
           error: 'Forbidden',
           message: 'Non autorizzato per questo bucket',

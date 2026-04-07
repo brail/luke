@@ -15,7 +15,7 @@ import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 import { withSectionAccess } from '../lib/sectionAccessMiddleware';
 import { getConfig, saveConfig } from '../lib/configManager';
-import { getObjectMetadata, listObjects, deleteObject } from '../storage';
+import { getObjectMetadata, listObjects, deleteObject, resetStorageProvider } from '../storage';
 import { signDownloadToken } from '../utils/downloadToken';
 
 /**
@@ -197,10 +197,9 @@ export const storageRouter = router({
    */
   createUpload: protectedProcedure
     .input(CreateUploadSchema)
-    .mutation(async ({ input }) => {
-      // Valida dimensione massima dal config
-      // Per ora hardcoded a 50MB, poi da AppConfig
-      const maxSizeMB = 50;
+    .mutation(async ({ input, ctx }) => {
+      const maxSizeMBStr = await getConfig(ctx.prisma, 'storage.local.maxFileSizeMB', false);
+      const maxSizeMB = parseInt(maxSizeMBStr || '50', 10);
       const maxSizeBytes = maxSizeMB * 1024 * 1024;
 
       if (input.size > maxSizeBytes) {
@@ -323,6 +322,9 @@ export const storageRouter = router({
           false
         ),
       ]);
+
+      // Reset provider singleton: la prossima richiesta lo reinizializza con la nuova config
+      resetStorageProvider();
 
       return {
         success: true,

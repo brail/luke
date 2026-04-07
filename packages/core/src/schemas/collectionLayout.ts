@@ -10,6 +10,7 @@ export const COLLECTION_TABLE_COLUMNS = [
   { key: 'status',          label: 'Status' },
   { key: 'progress',        label: 'Progress' },
   { key: 'qtyForecast',     label: 'Qty' },
+  { key: 'margin',          label: 'Margine' },
   { key: 'gender',          label: 'Gender' },
   { key: 'designer',        label: 'Designer' },
   { key: 'styleStatus',     label: 'Style Status' },
@@ -22,6 +23,7 @@ export const COLLECTION_COLUMNS_DEFAULT_HIDDEN = [
   'gender',
   'designer',
   'styleStatus',
+  'margin',
 ] as const;
 
 export const COLLECTION_GENDER = ['MAN', 'WOMAN'] as const;

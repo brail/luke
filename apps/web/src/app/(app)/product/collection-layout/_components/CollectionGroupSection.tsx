@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronDown, ChevronRight, Copy, ImageIcon, ListFilter, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronDown, ChevronRight, Copy, FileText, ImageIcon, ListFilter, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
@@ -41,6 +41,9 @@ import {
   TooltipTrigger,
 } from '../../../../../components/ui/tooltip';
 import { cn } from '../../../../../lib/utils';
+import { computeRowMargin, computeWeightedMargin } from '../_hooks/usePricingCalc';
+
+import type { PricingParameterSet } from '../_hooks/usePricingCalc';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -227,6 +230,14 @@ const PROGRESS_BADGE: Record<string, { label: string; className: string }> = {
 
 const STATUS_LABELS: Record<string, string> = { CARRY_OVER: 'C/O', NEW: 'New' };
 
+const NOTE_FIELDS: { key: keyof CollectionRowData; label: string }[] = [
+  { key: 'styleNotes',    label: 'Stile' },
+  { key: 'materialNotes', label: 'Materiale' },
+  { key: 'colorNotes',    label: 'Colore' },
+  { key: 'priceNotes',    label: 'Prezzo' },
+  { key: 'toolingNotes',  label: 'Tooling' },
+];
+
 const GENDER_OPTIONS: FilterOption[] = COLLECTION_GENDER.map(v => ({ value: v, label: v }));
 const STRATEGY_OPTIONS: FilterOption[] = COLLECTION_STRATEGY.map(v => ({ value: v, label: v }));
 const STATUS_OPTIONS: FilterOption[] = COLLECTION_STATUS.map(v => ({ value: v, label: STATUS_LABELS[v] ?? v }));
@@ -251,6 +262,7 @@ interface CollectionGroupSectionProps {
   group: CollectionGroupData;
   canUpdate: boolean;
   hiddenColumns: string[];
+  parameterSets: PricingParameterSet[];
   searchQuery?: string;
   onAddRow: (groupId: string) => void;
   onEditRow: (row: CollectionRowData) => void;
@@ -267,6 +279,7 @@ export function CollectionGroupSection({
   group,
   canUpdate,
   hiddenColumns,
+  parameterSets,
   searchQuery = '',
   onAddRow,
   onEditRow,
@@ -341,13 +354,25 @@ export function CollectionGroupSection({
       if (columnFilters.progress && !enumMatch(row.progress, columnFilters.progress)) return false;
       if (columnFilters.skuForecast && !numberMatch(row.skuForecast, columnFilters.skuForecast)) return false;
       if (columnFilters.qtyForecast && !numberMatch(row.qtyForecast, columnFilters.qtyForecast)) return false;
+      if (columnFilters.margin) {
+        const m = computeRowMargin(row, parameterSets);
+        const threshold = Number(columnFilters.margin);
+        if (!m || isNaN(threshold) || m.margin * 100 < threshold) return false;
+      }
       return true;
     });
 
     if (sortCol) {
       rows = [...rows].sort((a, b) => {
-        const va = (a as Record<string, unknown>)[sortCol] ?? '';
-        const vb = (b as Record<string, unknown>)[sortCol] ?? '';
+        let va: number | string;
+        let vb: number | string;
+        if (sortCol === 'margin') {
+          va = computeRowMargin(a, parameterSets)?.margin ?? -Infinity;
+          vb = computeRowMargin(b, parameterSets)?.margin ?? -Infinity;
+        } else {
+          va = (a as Record<string, unknown>)[sortCol] as number | string ?? '';
+          vb = (b as Record<string, unknown>)[sortCol] as number | string ?? '';
+        }
         const cmp = typeof va === 'number'
           ? (va as number) - (vb as number)
           : String(va).localeCompare(String(vb), 'it');
@@ -356,11 +381,12 @@ export function CollectionGroupSection({
     }
 
     return rows;
-  }, [group.rows, searchQuery, columnFilters, sortCol, sortDir]);
+  }, [group.rows, searchQuery, columnFilters, sortCol, sortDir, parameterSets]);
 
   const skuTotal = group.rows.reduce((sum, r) => sum + r.skuForecast, 0);
   const qtyTotal = group.rows.reduce((sum, r) => sum + r.qtyForecast, 0);
   const skuVariant = skuRatioVariant(skuTotal, group.skuBudget);
+  const groupWeightedMargin = computeWeightedMargin(group.rows, parameterSets);
 
   const show = (key: string) => !hiddenColumns.includes(key);
 
@@ -392,6 +418,11 @@ export function CollectionGroupSection({
             <span className="text-xs text-muted-foreground">· {skuTotal} SKU</span>
           )}
           <span className="text-xs text-muted-foreground">· {qtyTotal} paia</span>
+          {groupWeightedMargin !== null && (
+            <span className="text-xs text-muted-foreground">
+              · mrg {(groupWeightedMargin * 100).toFixed(1)}%
+            </span>
+          )}
         </button>
 
         <div className="flex items-center gap-1 shrink-0">
@@ -509,6 +540,9 @@ export function CollectionGroupSection({
                   {show('qtyForecast') && (
                     <FilterableHeader col="qtyForecast" label="Qty" type="number" {...sortProps} {...filterProps} filterValue={columnFilters.qtyForecast} className="text-right" />
                   )}
+                  {show('margin') && (
+                    <FilterableHeader col="margin" label="Mrg %" type="number" {...sortProps} {...filterProps} filterValue={columnFilters.margin} className="text-right w-20 whitespace-nowrap" />
+                  )}
                   <TableHead className="w-24" />
                 </TableRow>
               </TableHeader>
@@ -610,8 +644,45 @@ export function CollectionGroupSection({
                           {row.qtyForecast}
                         </TableCell>
                       )}
+                      {show('margin') && (
+                        <TableCell className="text-right tabular-nums text-sm w-20">
+                          {(() => {
+                            const m = computeRowMargin(row, parameterSets);
+                            if (!m) return <span className="text-muted-foreground/40">—</span>;
+                            return (
+                              <span className={m.isAboveTarget ? 'text-green-700 dark:text-green-400' : 'text-destructive'}>
+                                {(m.margin * 100).toFixed(1)}%
+                              </span>
+                            );
+                          })()}
+                        </TableCell>
+                      )}
                       <TableCell onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1">
+                          {(() => {
+                            const filledNotes = NOTE_FIELDS.filter(f => !!row[f.key]);
+                            if (filledNotes.length === 0) return null;
+                            return (
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
+                                    <FileText className="h-3.5 w-3.5" />
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent align="end" className="w-72 p-3">
+                                  <p className="text-xs font-medium text-muted-foreground mb-2">Note — {row.line}</p>
+                                  <div className="space-y-2">
+                                    {filledNotes.map(f => (
+                                      <div key={f.key}>
+                                        <p className="text-xs font-medium">{f.label}</p>
+                                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">{row[f.key] as string}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                            );
+                          })()}
                           {canUpdate ? (
                             <>
                               <TooltipProvider>

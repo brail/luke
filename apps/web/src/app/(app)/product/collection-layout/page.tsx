@@ -9,12 +9,14 @@ import type { CollectionLayoutRowInput } from '@luke/core';
 
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
+import { Card, CardContent } from '../../../../components/ui/card';
 import { useAppContext } from '../../../../contexts/AppContextProvider';
 import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 import { CollectionGroupDialog } from './_components/CollectionGroupDialog';
+import { CollectionLayoutSummary } from './_components/CollectionLayoutSummary';
 import { CollectionLayoutTable } from './_components/CollectionLayoutTable';
 import { CollectionRowDrawer } from './_components/CollectionRowDrawer';
 import { EmptyCollectionLayoutState } from './_components/EmptyCollectionLayoutState';
@@ -252,29 +254,35 @@ export default function CollectionLayoutPage() {
           />
         </SectionCard>
       ) : (
-        <SectionCard title="Collection Layout">
-          <CollectionLayoutTable
-            layout={layout}
-            canUpdate={canUpdate}
-            onAddGroup={() => setGroupDialog({ mode: 'create' })}
-            onAddRow={groupId =>
-              setRowDrawer({ mode: 'create', defaultGroupId: groupId })
-            }
-            onEditRow={row => openEditRow(row)}
-            onDuplicateRow={rowId => duplicateRowMutation.mutate({ rowId })}
-            onDeleteRow={rowId => deleteRowMutation.mutate({ rowId })}
-            onRenameGroup={group => setGroupDialog({ mode: 'edit', group })}
-            onDeleteGroup={groupId => deleteGroupMutation.mutate({ groupId })}
-            onUpdateSettings={settings =>
-              updateSettingsMutation.mutate({
-                collectionLayoutId: layout.id,
-                ...settings,
-              })
-            }
-            isDeletingRow={deleteRowMutation.isPending}
-            onToggleFullscreen={() => setIsFullscreen(true)}
-          />
-        </SectionCard>
+        <>
+          <CollectionLayoutSummary layout={layout} />
+          <Card>
+            <CardContent className="pt-6">
+              <CollectionLayoutTable
+                layout={layout}
+                canUpdate={canUpdate}
+                parameterSets={parameterSets}
+                onAddGroup={() => setGroupDialog({ mode: 'create' })}
+                onAddRow={groupId =>
+                  setRowDrawer({ mode: 'create', defaultGroupId: groupId })
+                }
+                onEditRow={row => openEditRow(row)}
+                onDuplicateRow={rowId => duplicateRowMutation.mutate({ rowId })}
+                onDeleteRow={rowId => deleteRowMutation.mutate({ rowId })}
+                onRenameGroup={group => setGroupDialog({ mode: 'edit', group })}
+                onDeleteGroup={groupId => deleteGroupMutation.mutate({ groupId })}
+                onUpdateSettings={settings =>
+                  updateSettingsMutation.mutate({
+                    collectionLayoutId: layout.id,
+                    ...settings,
+                  })
+                }
+                isDeletingRow={deleteRowMutation.isPending}
+                onToggleFullscreen={() => setIsFullscreen(true)}
+              />
+            </CardContent>
+          </Card>
+        </>
       )}
 
       {/* Fullscreen overlay — renderizzato nel body per uscire dallo stacking context del SidebarProvider */}
@@ -294,6 +302,7 @@ export default function CollectionLayoutPage() {
             <CollectionLayoutTable
               layout={layout}
               canUpdate={canUpdate}
+              parameterSets={parameterSets}
               onAddGroup={() => setGroupDialog({ mode: 'create' })}
               onAddRow={groupId =>
                 setRowDrawer({ mode: 'create', defaultGroupId: groupId })
