@@ -114,6 +114,7 @@ jobs:
           # PUBLIC_HOSTNAME → prod, RC_PUBLIC_HOSTNAME → rc (both set as GitHub repo variables)
           build-args: |
             NEXT_PUBLIC_API_URL=http://${{ steps.hostname.outputs.value }}
+            INTERNAL_API_URL=${{ contains(github.ref_name, '-rc') && 'http://api-rc:3001' || 'http://api:3001' }}
             APP_VERSION=${{ github.ref_name }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,scope=web,mode=max
