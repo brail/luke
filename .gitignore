@@ -117,3 +117,7 @@ Thumbs.db
 
 # Prisma
 apps/api/prisma/dev.db.backup*
+
+# Access DB and porting docs
+*.accdb
+docs/access-porting/
