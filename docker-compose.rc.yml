@@ -1,0 +1,76 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Luke — RC Stack (Portainer)
+#
+# Stack parallelo alla produzione per release candidate (vX.Y.Z-rc.N).
+# Usa immagini taggate "rc-latest" costruite da GitHub Actions.
+#
+# Porte host differenziate per coesistere con lo stack prod:
+#   web: 3010 (prod usa 3000)
+#
+# Required environment variables (set in Portainer Stack → Env):
+#   POSTGRES_PASSWORD_RC  — password DB separata dal prod
+#   NEXTAUTH_SECRET_RC    — secret separato dal prod
+#   RC_PUBLIC_HOSTNAME    — hostname RC, es. rc.luke.febos.local
+#   COOKIE_SECURE         — "true" se HTTPS, "false" se HTTP
+#
+# Nginx Proxy Manager: crea un nuovo proxy host
+#   Domain: rc.luke.febos.local  →  Forward: http://localhost:3010
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ── PostgreSQL (istanza isolata per l'RC) ────────────────────────────────────
+  postgres-rc:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: luke
+      POSTGRES_USER: luke
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD_RC}
+    volumes:
+      - postgres_rc_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U luke -d luke']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Fastify API (RC) ─────────────────────────────────────────────────────────
+  api-rc:
+    image: ghcr.io/brail/luke-api:rc-latest
+    restart: unless-stopped
+    depends_on:
+      postgres-rc:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://luke:${POSTGRES_PASSWORD_RC}@postgres-rc:5432/luke
+      LUKE_CORS_ALLOWED_ORIGINS: ''
+    volumes:
+      - api_rc_data:/root/.luke
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3001/healthz || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # ── Next.js web (RC) — esposta su porta 3010 ─────────────────────────────────
+  web-rc:
+    image: ghcr.io/brail/luke-web:rc-latest
+    restart: unless-stopped
+    depends_on:
+      api-rc:
+        condition: service_started
+    ports:
+      - '3010:3000'
+    environment:
+      NODE_ENV: production
+      INTERNAL_API_URL: http://api-rc:3001
+      NEXTAUTH_URL: http://${RC_PUBLIC_HOSTNAME}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET_RC}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+
+volumes:
+  postgres_rc_data:
+  api_rc_data:
