@@ -1,0 +1,6 @@
+SELECT [Item].[Trademark Code] AS Marchio, [Item].[Season Code] AS Stagione, [Salesperson_Purchaser].Name AS Agente, [Geographical Zone].Description AS ZonaGeografica, Sum(IIf([Sales Line.delete reason]='' Or IsNull([Sales Line.delete reason])=True,Val([no_ of pairs]),0)) AS PaiaConfermate
+FROM (((([Sales Line] INNER JOIN Item ON [Sales Line].No_ = [Item].No_) INNER JOIN Customer ON [Sales Line].[Sell-to Customer No_] = [Customer].No_) INNER JOIN [Geographical Zone] ON [Customer].[Geographical Zone] = [Geographical Zone].[Geographical Zone]) INNER JOIN [Sales Header] ON ([Sales Line].[Document No_] = [Sales Header].No_) AND ([Sales Line].[Document Type] = [Sales Header].[Document Type])) INNER JOIN Salesperson_Purchaser ON [Sales Header].[Salesperson Code] = [Salesperson_Purchaser].Code
+GROUP BY [Item].[Trademark Code], [Item].[Season Code], [Salesperson_Purchaser].Name, [Geographical Zone].Description, [Sales Line].[Document Type], [Sales Line].Type
+HAVING ((([Item].[Trademark Code])=[parametroMarchio]) AND (([Item].[Season Code])=[parametroStagione]) AND (([Sales Line].[Document Type])=1) AND (([Sales Line].Type)=20))
+ORDER BY Sum(IIf([Sales Line.delete reason]='' Or IsNull([Sales Line.delete reason])=True,Val([no_ of pairs]),0)) DESC;
+

@@ -1,0 +1,3 @@
+SELECT [giac-03].Article, [giac-03].Color, [giac-03].Assortment, [giac-03].AssortimentiInGiacenza, [giac-03].AssortimentiInBolla, [giac-03].AssortimentiLiberi, [giac-03].ColorDescription, [giac-03].PaiaiInGiacenza, [giac-03].PaiaInBolla, [giac-03].PaiaLibere, [Item].[Trademark Code], [Item].[Collection Code], [Item].[Season Code], [Item].[Line Code], [Item].[Season Typology], [Item].[Product Family], [Item].[Product Sex], [Item].[Shipment Priority], [Item].[Innovation Degree], [Item].[Heel Height], [Item].[End Customer Price Gap], [Item].[Market Segment], [Item].[Product Typology], [Item].[Main Material], [Item].[Sole Material]
+FROM [giac-03] INNER JOIN Item ON [giac-03].Article = [Item].No_;
+

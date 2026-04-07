@@ -1,0 +1,4 @@
+SELECT [Sales Header].No_, [Sales Header].[Bill-to Customer No_], [Sales Header].[Bill-to Name], [Sales Header].[payment method code], [Customer Bank Account].Code, [Customer Bank Account].Name, [Customer Bank Account].IBAN, [Customer Bank Account].ABI, [Customer Bank Account].CAB, [Sales Header].[Shortcut Dimension 2 Code] AS Trademark, [Sales Header].[Selling season code]
+FROM [Sales Header] LEFT JOIN [Customer Bank Account] ON ([Sales Header].[Bill-to Customer No_] = [Customer Bank Account].[Customer No_]) AND ([Sales Header].[Bank Account] = [Customer Bank Account].Code)
+WHERE ((([Sales Header].[payment method code])="RIBA") AND (([Customer Bank Account].Code) Is Null)) OR ((([Sales Header].[payment method code])="RIBA") AND (([Customer Bank Account].ABI)="")) OR ((([Sales Header].[payment method code])="RIBA") AND (([Customer Bank Account].CAB)=""));
+

@@ -1,0 +1,4 @@
+SELECT [UPC] & [Purchase Line_1.assortment code] AS chiave, [Purchase Line].[Document No_], [Purchase Line].No_, [Purchase Line].[Model Item No_], [Purchase Line].[Description 2], [Purchase Line].[Variable Code 01], [Purchase Line].[Variable Code 02], Str$(Val([purchase line.quantity])) AS qty_txt, Val([purchase line.quantity]) AS qty_val, [Purchase Line_1].[Assortment Code], UPCCodes.[Cross-Reference No_] AS UPC, Val([purchase line.amount]) AS Amt
+FROM ([Purchase Line] AS [Purchase Line_1] INNER JOIN [Purchase Line] ON ([Purchase Line].[Original Line No_] = [Purchase Line_1].[Line No_]) AND ([Purchase Line_1].[Document No_] = [Purchase Line].[Document No_])) INNER JOIN UPCCodes ON [Purchase Line].No_ = UPCCodes.[Item No_]
+WHERE ((([Purchase Line].[Document No_])=[forms]![principale]![FiltroODAEstrazioneTemplateNapa]) AND (([Purchase Line].Type)=2));
+

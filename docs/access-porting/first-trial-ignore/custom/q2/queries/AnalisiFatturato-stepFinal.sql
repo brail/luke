@@ -1,0 +1,6 @@
+SELECT [AnalisiFatturato-step0].Customer.No_ AS CodiceCliente, [AnalisiFatturato-step0].Name AS Rs1, [AnalisiFatturato-step0].[Name 2] AS Rs2, Sum(Val([Quantity])) AS Paia, [importonetto]+[scontoriga]+[scontofattura] AS ImportoLordo, Sum(Val([Line Discount Amount])) AS ScontoRiga, Sum(Val([Inv_ Discount Amount])) AS ScontoFattura, [ScontoRiga]+[ScontoFattura] AS ScontoTotale, Sum(Val([Amount])) AS ImportoNetto, IIf([Gen_ Bus_ Posting Group]="NAZIONALE","ITALIA","ESTERO") AS Paese, [AnalisiFatturato-step0].[Document Date], [AnalisiFatturato-step0].[Currency Code], [AnalisiFatturato-step0].[Trademark Code], [AnalisiFatturato-step0].[Season Code], [AnalisiFatturato-step0].[Currency Code]
+FROM [AnalisiFatturato-step0]
+WHERE ((([Sales Invoice Line].[Type])=2))
+GROUP BY [AnalisiFatturato-step0].Customer.No_, [AnalisiFatturato-step0].Name, [AnalisiFatturato-step0].[Name 2], IIf([Gen_ Bus_ Posting Group]="NAZIONALE","ITALIA","ESTERO"), [AnalisiFatturato-step0].[Document Date], [AnalisiFatturato-step0].[Currency Code], [AnalisiFatturato-step0].[Trademark Code], [AnalisiFatturato-step0].[Season Code], [AnalisiFatturato-step0].[Currency Code]
+HAVING ((([AnalisiFatturato-step0].[Trademark Code])="blauer") AND (([AnalisiFatturato-step0].[Season Code])="i1516"));
+

@@ -1,0 +1,6 @@
+SELECT TOP 40 Item.[Line Code] AS Linea, [Sales Line].No_ AS Articolo, [Sales Line].[Constant Variable Code] AS CodiceColore, [Variable Code].Description AS Colore, Item.[Trademark Code] AS Marchio, Item.[Season Code] AS Stagione, Sum(IIf([delete reason]='' Or IsNull([delete reason])=True,Val([no_ of pairs]),0)) AS PaiaConfermate, Item.Description AS Descrizione, Item.[Description 2] AS Descrizione2, Item.[Product Family] AS FamigliaProdotto, Item.[Product Sex] AS GenereProdotto, Item.[Collection Code] AS [Collection Code]
+FROM ([Sales Line] INNER JOIN Item ON [Sales Line].No_ = Item.No_) INNER JOIN [Variable Code] ON ([Sales Line].[Constant Variable Code] = [Variable Code].[Variable Code]) AND ([Sales Line].[Constant Assortment Var_Grp_] = [Variable Code].[Variable Group])
+GROUP BY Item.[Line Code], [Sales Line].No_, [Sales Line].[Constant Variable Code], [Variable Code].Description, Item.[Trademark Code], Item.[Season Code], Item.Description, Item.[Description 2], Item.[Product Family], Item.[Product Sex], Item.[Collection Code]
+HAVING (((Item.[Trademark Code])=[Maschere]![principale]![filtroMarchio]) AND ((Item.[Season Code])=[Maschere]![principale]![filtroStagione]))
+ORDER BY Sum(IIf([delete reason]='' Or IsNull([delete reason])=True,Val([no_ of pairs]),0)) DESC;
+

@@ -1,0 +1,3 @@
+SELECT [SituazioneRicevimenti-step0-Acq].*, IIf(IsNull([SituazioneRicevimenti-step1-Trs.ARTICLE])=False,[PairsTravelling],0) AS PairsTravelling_, IIf(IsNull([SituazioneRicevimenti-step1-Trs.ARTICLE])=False,[PairsReceived]-[PairsTravelling],[pAIRSrECEIVED]) AS PairsInHouse
+FROM [SituazioneRicevimenti-step0-Acq] LEFT JOIN [SituazioneRicevimenti-step1-Trs] ON ([SituazioneRicevimenti-step0-Acq].[Assortment Code] = [SituazioneRicevimenti-step1-Trs].[Assortment Code]) AND ([SituazioneRicevimenti-step0-Acq].Color = [SituazioneRicevimenti-step1-Trs].Color) AND ([SituazioneRicevimenti-step0-Acq].Article = [SituazioneRicevimenti-step1-Trs].Article);
+

@@ -1,0 +1,4 @@
+# Reports in NewEraStat.accdb
+
+Note: Report metadata requires Access object model.
+Will be documented from query analysis.

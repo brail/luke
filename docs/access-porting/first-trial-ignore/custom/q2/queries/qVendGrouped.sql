@@ -1,0 +1,4 @@
+SELECT qVend.No_ AS SalesArt, qVend.[Constant Variable Code] AS SalesColorCode, qVend.[Assortment Code] AS SalesAssortment, Sum(qVend.GrossSalesValue) AS GrossSalesValue, Sum(qVend.DiscountValue) AS DiscountValue, Sum(qVend.AreaManagerCommissionValue) AS AreaManagerCommissionValue, Sum(qVend.SalesPersonCommissionValue) AS SalesPersonCommissionValue, Sum(qVend.QuantitySold) AS QuantitySold, Sum(qVend.PairsSold) AS PairsSold, Sum(qVend.ValueSold) AS ValueSold, Sum(qVend.QuantityShipped) AS QuantityShipped, Sum(qVend.PairsShipped) AS PairsShipped, Sum(qVend.ValueShipped) AS ValueShipped, Sum(qVend.QuantityInvoiced) AS QuantityInvoiced, Sum(qVend.Pairsinvoiced) AS Pairsinvoiced, Sum(qVend.ValueInvoiced) AS ValueInvoiced
+FROM qVend
+GROUP BY qVend.No_, qVend.[Constant Variable Code], qVend.[Assortment Code];
+

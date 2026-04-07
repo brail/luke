@@ -1,0 +1,5 @@
+SELECT [fab02-NoteCreditoESconti-step01].[Customer].No_ AS CodiceCliente, [fab02-NoteCreditoESconti-step01].Name AS Rs1, [fab02-NoteCreditoESconti-step01].[Name 2] AS Rs2, [fab02-NoteCreditoESconti-step01].[Dimension Value Code] AS marchio, Sum(Val([Quantity])) AS Paia, [importonetto]+[scontoriga]+[scontofattura] AS ImportoLordo, Sum(Val([Line Discount Amount])) AS ScontoRiga, Sum(Val([Inv_ Discount Amount])) AS ScontoFattura, [ScontoRiga]+[ScontoFattura] AS ScontoTotale, Sum(Val([Amount])) AS ImportoNetto, IIf([Gen_ Bus_ Posting Group]="NAZIONALE","ITALIA","ESTERO") AS Paese, [fab02-NoteCreditoESconti-step01].[Document Date], [fab02-NoteCreditoESconti-step01].[Currency Code]
+FROM [fab02-NoteCreditoESconti-step01]
+WHERE ((([Sales Cr_Memo Line].[Type])=2))
+GROUP BY [fab02-NoteCreditoESconti-step01].[Customer].No_, [fab02-NoteCreditoESconti-step01].Name, [fab02-NoteCreditoESconti-step01].[Name 2], [fab02-NoteCreditoESconti-step01].[Dimension Value Code], IIf([Gen_ Bus_ Posting Group]="NAZIONALE","ITALIA","ESTERO"), [fab02-NoteCreditoESconti-step01].[Document Date], [fab02-NoteCreditoESconti-step01].[Currency Code];
+

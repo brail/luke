@@ -1,0 +1,3 @@
+SELECT [AnalisiCredito-RicercaAnomalie].*, IIf([metodopagamentoordine]="RDA",[Parametro Peso Rda],1) AS PesoOrdine, IIf(IsNull([analisicredito-ricercaanomalie_clienticonpagamentidiversi.sell-to customer no_])=False,"SI","") AS attenzione_PagamentiDiversiSuOrdiniDiversi, IIf([metodopagamentoordine]<>[metodopagamentoclienti] Or [condizionipagamentoordine]<>[condizionipagamentocliente],"SI","") AS attenzione_PagamentiDiversiOrdineECliente
+FROM [AnalisiCredito-RicercaAnomalie] LEFT JOIN [AnalisiCredito-RicercaAnomalie_ClientiConPagamentiDiversi] ON [AnalisiCredito-RicercaAnomalie].[Sell-to Customer No_] = [AnalisiCredito-RicercaAnomalie_ClientiConPagamentiDiversi].[Sell-to Customer No_];
+

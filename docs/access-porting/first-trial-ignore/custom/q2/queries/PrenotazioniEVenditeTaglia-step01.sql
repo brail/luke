@@ -1,0 +1,4 @@
+SELECT [Reserv__Assign_ Line].[Trademark Code], [Reserv__Assign_ Line].[Selling Season Code] AS [Season Code], [Reserv__Assign_ Line].[Sales Document No_] AS [Document No_], [Reserv__Assign_ Line].[Sales Line No_] AS [Line No_], Val([Reserved_Assigned Quantity]) AS QTY, "PRE" AS CAT
+FROM [Reserv__Assign_ Line] LEFT JOIN [Reserv__Assign_ Link] ON ([Reserv__Assign_ Line].[Line No_] = [Reserv__Assign_ Link].[Line No_]) AND ([Reserv__Assign_ Line].[Batch Name] = [Reserv__Assign_ Link].[Batch Name]) AND ([Reserv__Assign_ Line].[Template Name] = [Reserv__Assign_ Link].[Template Name]) AND ([Reserv__Assign_ Line].[Reserv__Assign_ Type] = [Reserv__Assign_ Link].[Reserv__Assign_ Type])
+WHERE ((([Reserv__Assign_ Line].[Trademark Code])=[Forms]![principale]![FiltroMarchioSourcing]) AND (([Reserv__Assign_ Line].[Selling Season Code])=[Forms]![principale]![FiltroStagioneSourcing]) AND ((Val([Reserved_Assigned Quantity]))<>0) AND (([Reserv__Assign_ Line].Type)=2));
+

@@ -26,6 +26,7 @@ import { setGlobalErrorHandler } from './lib/error';
 import { getConfig, validateCriticalConfig } from './lib/configManager';
 import { registerNavSyncScheduler } from './lib/navSyncScheduler';
 import { registerPortafoglioSyncScheduler } from './lib/portafoglioSyncScheduler';
+import { registerKimoSyncScheduler } from './lib/kimoSyncScheduler';
 import { idempotencyStore } from './lib/idempotency';
 import { rateLimitStore } from './lib/ratelimit';
 import {
@@ -38,6 +39,8 @@ import brandLogoRoutes from './routes/brandLogo.routes';
 import collectionRowPictureRoutes from './routes/collectionRowPicture.routes';
 import { appRouter } from './routers';
 import { getStorageProvider } from './storage';
+import { readdir, stat, unlink } from 'fs/promises';
+import { join } from 'path';
 
 /**
  * Configurazione del logger Pino con serializers per sicurezza
@@ -424,6 +427,36 @@ function setupTempFileCleanup() {
           `Cleanup completed: ${succeededIds.length}/${tempFiles.length} temp files removed`
         );
       }
+
+      // Pulizia file orfani nelle directory .tmp (upload falliti/interrotti)
+      // Rimuove file più vecchi di 2 ore che non sono stati promossi al path finale
+      try {
+        const basePath =
+          (await getConfig(prisma, 'storage.local.basePath', false)) ||
+          join(require('os').homedir(), '.luke', 'storage');
+        const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
+        const buckets = await readdir(basePath).catch(() => []);
+
+        for (const bucket of buckets) {
+          const tmpDir = join(basePath, bucket, '.tmp');
+          const entries = await readdir(tmpDir).catch(() => []);
+
+          for (const entry of entries) {
+            const filePath = join(tmpDir, entry);
+            try {
+              const stats = await stat(filePath);
+              if (stats.isFile() && stats.mtimeMs < twoHoursAgo) {
+                await unlink(filePath);
+                fastify.log.debug({ filePath }, 'Removed orphan .tmp file');
+              }
+            } catch {
+              // File già rimosso o non accessibile — ignora
+            }
+          }
+        }
+      } catch (err) {
+        fastify.log.warn({ err }, 'Orphan .tmp cleanup failed');
+      }
     } catch (err) {
       fastify.log.error({ err }, 'Temp file cleanup job failed');
     }
@@ -601,6 +634,9 @@ const start = async () => {
 
     // Registra scheduler sync portafoglio NAV → PG (onReady + onClose)
     registerPortafoglioSyncScheduler(fastify, prisma);
+
+    // Registra scheduler sync tabelle KIMO-FASHION NAV → PG (onReady + onClose)
+    registerKimoSyncScheduler(fastify, prisma);
 
     // Configura graceful shutdown
     setupGracefulShutdown();

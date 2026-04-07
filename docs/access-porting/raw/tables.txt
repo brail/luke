@@ -1,0 +1,278 @@
+================================================================
+TABELLE EXPORT
+Data export: 27/03/2026 09:12:14
+================================================================
+
+------------------------------------------------------------
+Nome tabella                            Tipo        Connessione
+------------------------------------------------------------
+_31_03_2022_11_05_44_ErroriEsportazione LOCALE      
+000_WMS_PBM_table_RIGHE CARICO DA CANCELLOCALE      
+000_WMS_PBM_table_RIGHE CARICO DA CANCELLOCALE      
+000_WMS_PBM_table_RIGHE CARICO DA CANCELLOCALE      
+000_WMS_PBM_table_RIGHE CARICO DA CANCELLOCALE      
+000-SelezioneArticoliPerSecondoValA_3112LOCALE      
+AGE_FatturazioneElettronica             LOCALE      
+AllocazioniBlac                         LINKED      Excel 12.0 Xml;HDR=YES;IMEX=2;ACCDB=YES;DATABASE=X:\Varie File Collegati Usi Generici\Allocazioni Blac\Allocazioni Blac.xlsx
+AmazonSetup                             LOCALE      
+AnagraficheLogimodaE20                  LINKED      Excel 8.0;HDR=YES;IMEX=2;DATABASE=X:\Logimoda\Anagrafiche Logimoda E20 per DBG\anagrafiche logimoda e20.xls
+ArticoliPreBuy                          LINKED      Excel 8.0;HDR=YES;IMEX=2;DATABASE=X:\Varie File Collegati Usi Generici\Aggiornamento Date Richiesta ODV\ArticoliPreBuy.xls
+Assortment Ledger Entry                 LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Assortment Ledger Entry Item            LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Assortment Quantity                     LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Assortment Variable Group               LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Bin Content                             LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+BLACLetture00048882                     LINKED      Excel 12.0 Xml;HDR=NO;IMEX=2;ACCDB=YES;DATABASE=\\donald\febos\listapersovraccollidaletture\BLAC OGGI\08407.xlsx
+BLACLetture00364011                     LINKED      Excel 8.0;HDR=NO;IMEX=2;ACCDB=YES;DATABASE=\\donald\febos\listapersovraccollidaletture\BLAC OGGI\spd 2326.xls
+BLACLetture00742043                     LINKED      Excel 12.0 Xml;HDR=NO;IMEX=2;ACCDB=YES;DATABASE=\\donald\febos\listapersovraccollidaletture\BLAC OGGI\08407.xlsx
+BLACLettureCartoni00048882              LOCALE      
+BLACLettureCartoni00461296              LOCALE      
+BLACLettureCartoni00742043              LOCALE      
+Budget                                  LINKED      Text;DSN=Budget - V28 - specifica di collegamento;FMT=Delimited;HDR=NO;IMEX=2;CharacterSet=850;DATABASE=D:\vari\adalberto\lavoro\febos\statisticheAccessSuNavision
+Budget Header                           LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Budget Line                             LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+CFG Variant                             LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+CFG Variant Detail                      LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+ClientiDaAggiornare                     LOCALE      
+CodiciBox                               LINKED      Excel 12.0 Xml;HDR=YES;IMEX=2;ACCDB=YES;DATABASE=C:\Users\Adalberto.Zordan\Desktop\Statistiche\V412-workingOnStefaniaInsolutI\CodiciBox.xlsx
+Collection                              LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Combinazioni                            LOCALE      
+Combinazioni_Result                     LOCALE      
+Comm_ Dati Error Log                    LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Comment Codes                           LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Comment Line                            LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Company Information                     LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+ConversioneTaglie                       LOCALE      
+Cross-Reference Model Item              LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Cust_ Invoices per Salesperson          LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Cust_ Ledger Entry                      LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Cust_ Ledger Entry EAM                  LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Customer                                LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Customer Bank Account                   LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Customer Price Group                    LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Customer Recipient Relation             LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+CustomerEvaluationPerImport             LINKED      Excel 8.0;HDR=YES;IMEX=2;DATABASE=C:\Users\Adalberto.Zordan\Desktop\Statistiche\V214-CON MODIFICA 360 PER AVERE CODICE NUOVO CLIENTE E NUOVE ESTRAZIONI-workingOn-StefaniaInsoluti\CUSTOMER EVALUATION PER IMPORT.xls
+dat_ddt da cancellare                   LOCALE      
+DatiCollezioniPerImport                 LINKED      Excel 5.0;HDR=YES;IMEX=2;DATABASE=X:\EAN_Pesi\dati collezione per import.xls
+DatiCommercialiClienti                  LINKED      MS Access;PWD=fban05alex;DATABASE=D:\gs\fbStat\fbDb.mdb
+DatiCommercialiClientiMarchiAbbigliamentLINKED      MS Access;PWD=fban05alex;DATABASE=D:\gs\fbStat\fbDb.mdb
+DatiCommercialiClientiMarchiAccessori   LINKED      MS Access;PWD=fban05alex;DATABASE=D:\gs\fbStat\fbDb.mdb
+DatiCommercialiClientiMarchiCalzature   LINKED      MS Access;PWD=fban05alex;DATABASE=D:\gs\fbStat\fbDb.mdb
+DatiCommercialiMarchi                   LINKED      MS Access;PWD=fban05alex;DATABASE=D:\gs\fbStat\fbDb.mdb
+DatiElCorteIngles                       LOCALE      
+datiLince                               LINKED      Excel 8.0;HDR=YES;DATABASE=d:\env01\company\febos\datilince\datilincebridge\banca_dati.xls
+DB Suole BePositive                     LINKED      Excel 8.0;HDR=YES;IMEX=2;DATABASE=X:\Varie File Collegati Usi Generici\dbSuoleBePositive\DB SUOLE BEPOSITIVE.xls
+DDT Added Line                          LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+DDT_Picking Header                      LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+DDT_Picking Line                        LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Detailed Cust_ Ledg_ Entry              LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Detailed Vendor Ledg_ Entry             LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Dimension Set Entry                     LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Disponibilita                           LINKED      Excel 8.0;HDR=YES;IMEX=2;DATABASE=X:\Disponibilita\Disponibilita.xls
+DisponibilitaCrossSeason                LINKED      Excel 8.0;HDR=YES;IMEX=2;DATABASE=X:\Disponibilita\DisponibilitaCrossSeason.xls
+DisponibilitaCrossSeasonItem            LINKED      Excel 8.0;HDR=YES;IMEX=2;DATABASE=X:\Disponibilita\DisponibilitaCrossSeason - Item.xls
+Document Packaging Header               LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Document Packaging Line                 LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Dtld_ Cust_ Ledg_ Entry EAM             LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+EAC Tabella Per Stampa Unione           LOCALE      
+Ean codes                               LINKED      Text;DSN=Ean codes - specifica di collegamento;FMT=Delimited;HDR=NO;IMEX=2;CharacterSet=850;DATABASE=X:\EAN_Pesi
+EANCodeLabelsTMP                        LOCALE      
+EANCodeLabelsTMP_old                    LOCALE      
+EDI                                     LOCALE      
+Errori di incollamento                  LOCALE      
+etichettecampioni                       LINKED      Excel 5.0;HDR=YES;IMEX=2;DATABASE=X:\EtichetteCampioni\etichettecampioni.xls
+Export_Sales_Report                     LINKED      Text;DSN=Export_Sales_Report - specifica di collegamento1;FMT=Delimited;HDR=NO;IMEX=2;CharacterSet=850;DATABASE=X:\Ecommerce_SalesReport
+External Linked Documents               LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+FattureElettronicheAttive               LOCALE      
+FattureInviateIndicom                   LINKED      Excel 8.0;HDR=YES;IMEX=2;DATABASE=X:\checkFattureEmesse\Fatture emesse.xls
+FE Document                             LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+FE Header                               LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+FE SDI Log                              LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Fornitori                               LINKED      MS Access;PWD=fban05alex;DATABASE=D:\gs\fbStat\fbDb.mdb
+FW24 CPH_Linesheet-size-ean             LINKED      Excel 8.0;HDR=YES;IMEX=2;DATABASE=X:\Varie File Collegati Usi Generici\IdCopenhagen\FW24 CPH_Linesheet-size-ean.xls
+G_L Account                             LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+G_L Entry                               LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Geographical Zone                       LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+GiacenzaLogimoda                        LINKED      Excel 8.0;HDR=YES;IMEX=2;DATABASE=X:\GiacenzaLogimoda_CheckNavision\LOGIMODA.xls
+GL Book Entry                           LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+IC_Trade_Taglia                         LINKED      Excel 8.0;HDR=YES;IMEX=2;DATABASE=X:\EAC Etichette stampa unione\etichette EAC.xls
+Indici                                  LOCALE      
+inventarioAndamento                     LOCALE      
+Issued Reminder Header                  LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Issued Reminder Line                    LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Item                                    LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Item Cross Reference                    LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Item Identifier                         LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Item Ledger Entry                       LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Item Unit of Measure                    LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Item-Model Value Per Config_            LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+KIMO-FASHION Item                       LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+KIMO-FASHION Sales Order Hdr            LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+KIMO-FASHION Sales Order Line           LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+KIMO-FASHION Table                      LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+KIMO-FASHION Table Value                LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+KIMO-FSH Item Availability              LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+KimoProva                               LINKED      Excel 12.0 Xml;HDR=YES;IMEX=2;DATABASE=C:\Users\Adalberto.Zordan\Desktop\Cartel1.xlsx
+LettureSovraccolliTXT                   LINKED      Excel 8.0;HDR=YES;IMEX=2;DATABASE=X:\ListaPerSovraccolliDaLetture\lettureSovraccolli.xls
+LettureTemplate                         LOCALE      
+LINELIST FW24 CPH                       LINKED      Excel 8.0;HDR=YES;IMEX=2;DATABASE=C:\Users\Adalberto.Zordan\Desktop\Statistiche\V368-workingOnStefaniaInsoluti\LINELIST FW24 CPH.xls
+ListaPerSovraccolluDaLetture            LINKED      Excel 5.0;HDR=YES;IMEX=2;DATABASE=X:\ListaPerSovraccolliDaLetture\letture.xls
+Location                                LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+LogimodaColli                           LINKED      Excel 12.0 Xml;HDR=YES;IMEX=2;ACCDB=YES;DATABASE=X:\ShippyPro\ZZZ_stuff per test vari wms poi da cancellare\CodiciColliLogimoda.xlsx
+Marchi                                  LINKED      MS Access;PWD=fban05alex;DATABASE=D:\gs\fbStat\fbDb.mdb
+MasterdataQuelloGiusto                  LINKED      Excel 12.0 Xml;HDR=YES;IMEX=2;ACCDB=YES;DATABASE=X:\Varie File Collegati Usi Generici\TranscodificheQuelloGiusto\Masterdata_QuelloGiusto.xlsx
+MasterDataYoox                          LINKED      Excel 12.0 Xml;HDR=YES;IMEX=2;ACCDB=YES;DATABASE=X:\BRIDGE\SOURCING\MASTERDATA_YOOX.xlsx
+Model Item Component                    LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Model Item Variable Group               LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Navision                                LOCALE      
+No Buy Reason Code                      LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+NSP_FattureClientiAgenti                LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+NSP_StoricoFattClientiAgenti            LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+nuova priorita                          LINKED      Excel 8.0;HDR=YES;IMEX=2;DATABASE=X:\Varie File Collegati Usi Generici\AggiornamentoPrioritaClienti\prioritaClienti.xls
+OrdiniClienteItem_ErroriEsportazione    LOCALE      
+OrdiniClienteItem_ErroriEsportazione1   LOCALE      
+OrdiniDaModificare                      LOCALE      
+OrdiniPalomar                           LINKED      Excel 8.0;HDR=YES;IMEX=2;DATABASE=C:\Users\Adalberto.Zordan\Desktop\Statistiche\V346-workingOnStefaniaInsoluti\Ordini I22 - PALOMAR - Modifiche su tutti gli ordini.xls
+Originale IC Trade                      LINKED      Excel 8.0;HDR=YES;IMEX=2;DATABASE=C:\Users\Adalberto.Zordan\Desktop\Statistiche\V283-CON MODIFICA 360 PER AVERE CODICE NUOVO CLIENTE E NUOVE ESTRAZIONI-workingOn-StefaniaInsoluti\originale IC Trade.xls
+PaiedOff Commission                     LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Part                                    LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Payline_Export_Structure_Clienti        LOCALE      
+Payline_Export_Structure_Partite        LOCALE      
+per aggiornamento NAV                   LINKED      Excel 12.0 Xml;HDR=YES;IMEX=2;ACCDB=YES;DATABASE=X:\Febos\Ufficio Commerciale\FW25\CONTROLLO ORDINI\RICHIESTE SPECIALI_FW25.xlsx
+PercorsoSalvataggio                     LINKED      MS Access;PWD=fban05alex;DATABASE=X:\ProgrammiStatistiche\fbDb.mdb
+PesiDiDefault                           LINKED      Excel 5.0;HDR=YES;IMEX=2;DATABASE=X:\EAN_Pesi\PesiDiDefault.xls
+Posted Whse_ Receipt Header             LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Posted Whse_ Receipt Line               LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Posted Whse_ Shipment Header            LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Posted Whse_ Shipment Line              LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Purch_ Cr_ Memo Hdr_                    LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Purch_ Cr_ Memo Line                    LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Purch_ Inv_ Header                      LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Purch_ Inv_ Line                        LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Purch_ Price Model Item                 LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Purch_ Rcpt_ Header                     LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Purch_ Rcpt_ Line                       LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Purchase Header                         LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Purchase Line                           LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Purchase Line Discount                  LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Purchase Price                          LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Registered Whse_ Activity Hdr_          LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Registered Whse_ Activity Line          LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+RelazioniMarchiCartelle                 LOCALE      
+Reserv__Assign_ Batch                   LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Reserv__Assign_ Line                    LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Reserv__Assign_ Link                    LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+ResiLetture00346413                     LINKED      Excel 8.0;HDR=NO;IMEX=2;ACCDB=YES;DATABASE=\\donald\febos\listapersovraccollidaletture\RESI OGGI\0198.xls
+ResiLetture00541135                     LINKED      Excel 8.0;HDR=NO;IMEX=2;ACCDB=YES;DATABASE=\\donald\febos\listapersovraccollidaletture\RESI OGGI\1301.xls
+ResiLetture00890546                     LINKED      Excel 12.0 Xml;HDR=NO;IMEX=2;ACCDB=YES;DATABASE=\\donald\febos\listapersovraccollidaletture\RESI OGGI\301.xlsx
+ResiLetture00929510                     LINKED      Excel 8.0;HDR=NO;IMEX=2;ACCDB=YES;DATABASE=\\donald\febos\listapersovraccollidaletture\RESI OGGI\1301.xls
+ResiLettureCartoni00346413              LOCALE      
+ResiLettureCartoni00541135              LOCALE      
+ResiLettureCartoni00890546              LOCALE      
+ResiLettureCartoni00929510              LOCALE      
+RESP COMM CRED                          LINKED      Excel 12.0 Xml;HDR=YES;IMEX=2;ACCDB=YES;DATABASE=X:\Febos\Ufficio Commerciale\FW25\CONTROLLO ORDINI\TO DO_CONTROLLO MASSIVO_Provv_Priorit�_Resp. Comm-Cred_09.06.25.xlsx
+Return Receipt Header                   LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Return Receipt Line                     LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Return Shipment Header                  LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Return Shipment Line                    LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Sales Comment Line                      LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Sales Cr_Memo Header                    LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Sales Cr_Memo Line                      LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Sales Header                            LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Sales Header Extension                  LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Sales Invoice Header                    LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Sales Invoice Line                      LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Sales Line                              LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Sales Line Discount                     LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Sales Price                             LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Sales Price Model Item                  LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Sales Shipment Header                   LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Sales Shipment Line                     LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+SalesLineTMP                            LOCALE      
+Salesperson_Purchaser                   LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Season                                  LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Shipment Method                         LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Shipping Agent                          LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Ship-to Address                         LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Sim_ Cust_ Ledger Entry                 LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Sim_Detailed Cust_ Ledg_ Entry          LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+SostituzioniGuantanamo                  LINKED      Excel 8.0;HDR=YES;IMEX=2;DATABASE=C:\Users\Adalberto.Zordan\Desktop\Statistiche\V290-CON MODIFICA 360 PER AVERE CODICE NUOVO CLIENTE E NUOVE ESTRAZIONI-workingOn-StefaniaInsoluti\SostituzioniGuantanamo.xls
+SostituzioniGuantanamo_ModelIte         LINKED      Excel 8.0;HDR=YES;IMEX=2;DATABASE=C:\Users\Adalberto.Zordan\Desktop\Statistiche\V290-CON MODIFICA 360 PER AVERE CODICE NUOVO CLIENTE E NUOVE ESTRAZIONI-workingOn-StefaniaInsoluti\SostituzioniGuantanamo.xls
+SovraccolliBarcode                      LINKED      Excel 8.0;HDR=YES;IMEX=2;DATABASE=X:\ListaPerSovraccolliDaLetture\sovraccollibarcode.xls
+Spedizioni DBG                          LINKED      Excel 8.0;HDR=YES;IMEX=2;DATABASE=C:\Users\Adalberto.Zordan\Desktop\Statistiche\V364-workingOnStefaniaInsoluti\Spedizioni Febos BRT (002).xls
+TabellaAppoggio                         LOCALE      
+TabellaAppoggioSovraccolliDaLetture     LOCALE      
+TabellaAppoggioTjx                      LOCALE      
+TabellaAppoggioTJXManuali               LOCALE      
+TabellaStagioni                         LOCALE      
+TabelleInQuery                          LOCALE      
+Tariff Number                           LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+THCarryOverEDI                          LOCALE      
+TMPTable                                LOCALE      
+To-do                                   LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Trademark                               LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+TranscodificaCarryOverTH                LOCALE      
+TRANSCODIFICAFGF                        LINKED      Excel 8.0;HDR=YES;IMEX=2;DATABASE=X:\Varie File Collegati Usi Generici\TranscodificheBlauer\Transcodifica.xls
+TranscodificaTabelle370NewEra           LOCALE      
+Transfer Header                         LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Transfer Line                           LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Transfer Receipt Header                 LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Transfer Receipt Line                   LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Transfer Shipment Header                LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Transfer Shipment Line                  LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Transport Reason Code                   LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Unique Identifier Documents             LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Unique Identifier Pst_ Docnts           LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+upctoimport                             LINKED      Text;DSN=Ean codes - specifica di collegamento;FMT=Delimited;HDR=NO;IMEX=2;CharacterSet=850;DATABASE=X:\EAN_Pesi
+Utenti                                  LINKED      MS Access;PWD=fban05alex;DATABASE=X:\ProgrammiStatistiche\fbDb.mdb
+Valid Model Item Assortments            LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Value Entry                             LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Values for Fields                       LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+ValutazioneMagazzino_RelazioneMagazzinoFLOCALE      
+ValutazioneMagazzinoTabella             LOCALE      
+Variable Code                           LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Variable Group                          LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Variable Type                           LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+VAT Entry                               LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+VenditeCoin                             LINKED      Text;DSN=VenditeCoin-Giusto;FMT=Delimited;HDR=NO;IMEX=2;CharacterSet=65001;DATABASE=X:\coinCheck\datiRicevuti\Febos
+VenditeEPrenotazioni-CalcoloTotaleCopertLOCALE      
+Vendor                                  LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Vendor Bank Account                     LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Vendor Ledger Entry                     LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+VendutoComprato_FattoriDiPropiezione    LOCALE      
+VendutoCompratoProiezioneTabella        LOCALE      
+Warehouse Activity Header               LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Activity Line                 LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Basic Cue                     LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Class                         LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Comment Line                  LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Employee                      LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Entry                         LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Journal Batch                 LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Journal Line                  LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Journal Template              LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Packing List                  LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Phase                         LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Phase Cycle                   LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Receipt Header                LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Receipt Line                  LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Register                      LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Request                       LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Setup                         LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Shipm_ Assigned Qty_          LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Shipment Details              LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Shipment Header               LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Shipment Line                 LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Source Filter                 LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Specialities                  LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse WMS Cue                       LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Warehouse Worker WMS Cue                LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Whse_ Internal Pick Header              LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Whse_ Internal Pick Line                LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Whse_ Internal Put-away Header          LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Whse_ Internal Put-away Line            LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Whse_ Pick Request                      LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+Whse_ Put-away Request                  LINKED      ODBC;DSN=NewEra;UID=FebosStatUser;PWD=;APP=Microsoft Office 2016;DATABASE=FEBOS_10 
+WMS_ExportPerGorbes_FuturoImportExcel   LOCALE      
+WMS_GorbesTable                         LINKED      Excel 12.0 Xml;HDR=YES;IMEX=2;ACCDB=YES;DATABASE=X:\ShippyPro\ZZZ_stuff per test vari wms poi da cancellare\GorbesStock.xlsx
+WMS_WarehouseJournalControllo_ErroriEspoLOCALE      

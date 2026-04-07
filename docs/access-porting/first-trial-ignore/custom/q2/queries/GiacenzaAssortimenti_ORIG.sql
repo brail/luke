@@ -1,0 +1,5 @@
+SELECT Item.[Trademark Code] AS Marchio_, Item.[Season Code] AS Stagione_, [Assortment Ledger Entry].[Model Item No_] AS Articolo, [Assortment Ledger Entry].[Constant Variable Code] AS Colore_, [Assortment Ledger Entry].[Assortment Code] AS assortimento, Sum(Val([Quantity])) AS qty, Sum([AssortmentQuantity]*Val([quantity])) AS pairs, [Assortment Ledger Entry].[Location Code] AS Location_
+FROM ([Assortment Ledger Entry] INNER JOIN Item ON [Assortment Ledger Entry].[Model Item No_] = Item.No_) INNER JOIN AssortimentiQuantita ON ([Assortment Ledger Entry].[Assortment Code] = AssortimentiQuantita.[Assortment Code]) AND ([Assortment Ledger Entry].[Assortment Variable Group] = AssortimentiQuantita.[Variable Group])
+GROUP BY Item.[Trademark Code], Item.[Season Code], [Assortment Ledger Entry].[Model Item No_], [Assortment Ledger Entry].[Constant Variable Code], [Assortment Ledger Entry].[Assortment Code], [Assortment Ledger Entry].[Location Code]
+HAVING (((Item.[Trademark Code])=[FiltroMarchio]) AND ((Item.[Season Code])=[FiltroStagione]) AND ((Sum(Val([Quantity])))<>0));
+

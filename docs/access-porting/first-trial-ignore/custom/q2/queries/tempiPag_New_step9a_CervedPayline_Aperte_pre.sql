@@ -1,0 +1,4 @@
+SELECT tempiPag_New_step8a_Generale.status, tempiPag_New_step8a_Generale.Geo2, tempiPag_New_step8a_Generale.CodiceCliente AS Cod_Cliente, tempiPag_New_step8a_Generale.DataFattura AS Data_doc, tempiPag_New_step8a_Generale.NumeroDocumentoFattura AS n_doc, tempiPag_New_step8a_Generale.DataFattura AS data_reg, tempiPag_New_step8a_Generale.ChiaveMovimentoFatturaNotaCredito AS n_reg, tempiPag_New_step8a_Generale.DataScadenzaPagamento AS data_scad, tempiPag_New_step8a_Generale.importoabbinato AS importo, IIf([tipodocumentofattura]=2,"D","A") AS dare_avere, IIf([tipodocumentofattura]=2,"EF1#","EF2#") AS causale
+FROM tempiPag_New_step8a_Generale INNER JOIN Customer ON tempiPag_New_step8a_Generale.CodiceCliente = Customer.No_
+WHERE (((tempiPag_New_step8a_Generale.status)<>"Payed") AND ((tempiPag_New_step8a_Generale.Geo2)="ITALIA") AND ((Customer.[skip credit info update])=False));
+

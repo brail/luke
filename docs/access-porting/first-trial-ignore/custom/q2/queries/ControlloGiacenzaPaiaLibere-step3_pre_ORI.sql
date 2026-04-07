@@ -1,0 +1,5 @@
+SELECT [ControlloGiacenzaPaiaLibere-step2].[Item No_], Item.[trademark code], Item.[season code], EANCodes.[Cross-Reference No_] AS EAN, Item.[model item no_] AS model, Item.[variable code 01] AS color, Item.[variable code 02] AS [size], [ControlloGiacenzaPaiaLibere-step2].[Location Code], Sum([ControlloGiacenzaPaiaLibere-step2].paia) AS paia_
+FROM ([ControlloGiacenzaPaiaLibere-step2] RIGHT JOIN Item ON [ControlloGiacenzaPaiaLibere-step2].[Item No_] = Item.No_) LEFT JOIN EANCodes ON [ControlloGiacenzaPaiaLibere-step2].[Item No_] = EANCodes.[Item No_]
+GROUP BY [ControlloGiacenzaPaiaLibere-step2].[Item No_], Item.[trademark code], Item.[season code], EANCodes.[Cross-Reference No_], Item.[model item no_], Item.[variable code 01], Item.[variable code 02], [ControlloGiacenzaPaiaLibere-step2].[Location Code]
+HAVING (((Item.[trademark code])=[forms]![principale]![FiltroMarchioPerControlloGiacenzaPaiaLibere]) AND ((Item.[season code])=[forms]![principale]![FiltroStagionePerControlloGiacenzaPaiaLibere]) AND ((Sum([ControlloGiacenzaPaiaLibere-step2].paia))<>0));
+

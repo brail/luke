@@ -1,0 +1,3 @@
+SELECT CalcoloDisponibilitaItem_pre_pre.*, DisponibilitaCrossSeasonItem.InvQTY_CrossSeason, IIf([SALESQTY]-[PURCHASEDQTY]-[INVQTY]-[invqty_crossseason]-[transqty]>0,[SALESQTY]-[PURCHASEDQTY]-[INVQTY]-[invqty_crossseason]-[transqty],0) AS ToBuyQTY_CrossSeason, IIf([SALESQTY]-[PURCHASEDQTY]-[INVQTY]-[invqty_crossseason]-[transqty]<0,[SALESQTY]-[PURCHASEDQTY]-[INVQTY]-[invqty_crossseason]-[transqty],0) AS ToSellQTY_CrossSeason
+FROM CalcoloDisponibilitaItem_pre_pre LEFT JOIN DisponibilitaCrossSeasonItem ON CalcoloDisponibilitaItem_pre_pre.[Nr_ Articolo] = DisponibilitaCrossSeasonItem.[Nr_ Articolo];
+

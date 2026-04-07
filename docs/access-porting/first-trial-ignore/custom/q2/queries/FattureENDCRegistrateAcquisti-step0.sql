@@ -1,0 +1,5 @@
+SELECT Sum(Val([purch_ inv_ line.Amount])) AS Amount_, [Purch_ Inv_ Header].[Buy-from Vendor No_], [Purch_ Inv_ Header].[pay-to name], [Purch_ Inv_ Header].[Shortcut Dimension 2 Code], [Purch_ Inv_ Header].no_ AS InvoiceNo, [Purch_ Inv_ Header].[currency code], [Purch_ Inv_ Header].[posting date] AS DataFattura, [Purch_ Inv_ Line].Type
+FROM ([Purch_ Inv_ Header] INNER JOIN [Purch_ Inv_ Line] ON [Purch_ Inv_ Header].No_ = [Purch_ Inv_ Line].[Document No_]) INNER JOIN Vendor ON [Purch_ Inv_ Header].[Buy-from Vendor No_] = Vendor.No_
+GROUP BY [Purch_ Inv_ Header].[Buy-from Vendor No_], [Purch_ Inv_ Header].[pay-to name], [Purch_ Inv_ Header].[Shortcut Dimension 2 Code], [Purch_ Inv_ Header].no_, [Purch_ Inv_ Header].[currency code], [Purch_ Inv_ Header].[posting date], [Purch_ Inv_ Line].Type
+HAVING ((([Purch_ Inv_ Header].[posting date]) Between [Forms]![Principale]![DataIniziale] And [Forms]![Principale]![DataFinale]) AND (([Purch_ Inv_ Line].Type)<>19 And ([Purch_ Inv_ Line].Type)<>20 And ([Purch_ Inv_ Line].Type)<>0));
+

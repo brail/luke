@@ -1,0 +1,21 @@
+{
+  "total_queries": 1111,
+  "visible_queries": 1106,
+  "hidden_queries": 0,
+  "system_queries": 5,
+  "nav_related": 969,
+  "temp_tables": 53,
+  "complexity_distribution": {
+    "Bassa": 1011,
+    "Media": 95,
+    "Alta": 5
+  },
+  "nav_tables_referenced": {},
+  "categories": {
+    "visible": 1106,
+    "hidden": 0,
+    "system": 5,
+    "nav_reference": 969,
+    "temp": 53
+  }
+}

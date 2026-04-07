@@ -1,0 +1,3 @@
+SELECT [qAnalisiNoteDiCreditoEResi-step1].*, [Item].[Trademark Code], [Item].[Season Code], [Item].[Collection Code], [Item].[Line Code], [Geographical Zone].Description AS GeographicalZoneDescription, [Item].[Season Typology], [Item].[Product Family], [Item].[Product Sex], [Item].[Shipment Priority], [Item].[Innovation Degree], [Item].[Heel Height], [Item].[End Customer Price Gap], [Item].[Market Segment], [Item].[Product Typology], [Item].[Main Material], [Item].[Sole Material]
+FROM ([qAnalisiNoteDiCreditoEResi-step1] LEFT JOIN [Geographical Zone] ON [qAnalisiNoteDiCreditoEResi-step1].[Geographical Zone] = [Geographical Zone].[Geographical Zone]) INNER JOIN Item ON [qAnalisiNoteDiCreditoEResi-step1].Article = [Item].No_;
+

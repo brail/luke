@@ -1,0 +1,3 @@
+SELECT [ReportVendutoComprato-NonProiettato-step1].*, Immagini.[Linked Document], [DatiCarryOverESMU-Completi].[Carry Over]
+FROM ([ReportVendutoComprato-NonProiettato-step1] LEFT JOIN Immagini ON ([ReportVendutoComprato-NonProiettato-step1].ColorCode = Immagini.[Constant Variable Code]) AND ([ReportVendutoComprato-NonProiettato-step1].No_ = Immagini.[Source No_])) LEFT JOIN [DatiCarryOverESMU-Completi] ON ([ReportVendutoComprato-NonProiettato-step1].ColorCode = [DatiCarryOverESMU-Completi].[Variable Code 01]) AND ([ReportVendutoComprato-NonProiettato-step1].No_ = [DatiCarryOverESMU-Completi].[Model Item No_]);
+

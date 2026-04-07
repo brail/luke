@@ -1,0 +1,5 @@
+SELECT Customer.No_, Customer.Name, Customer.[Name 2], Customer.Address, Customer.[Post Code], Customer.City, Customer.County, Customer.[Country_region Code], Customer.[VAT Registration No_], Customer.[Fiscal Code], Customer.[Payment Method Code], Customer.[Current Risk], Customer.[Updated Date] AS DataAggiornamento, Customer.[Due Date] AS DataValutazione, [Customer.Due Date]+365 AS DataScadenza, Customer.[Updated Type], Customer.[Skip Credit Info Update], Sum(Val([Dtld_ Cust_ Ledg_ Entry EAM.Amount])) AS SaldoDExtra
+FROM [Dtld_ Cust_ Ledg_ Entry EAM] INNER JOIN Customer ON [Dtld_ Cust_ Ledg_ Entry EAM].[Customer No_] = Customer.No_
+GROUP BY Customer.No_, Customer.Name, Customer.[Name 2], Customer.Address, Customer.[Post Code], Customer.City, Customer.County, Customer.[Country_region Code], Customer.[VAT Registration No_], Customer.[Fiscal Code], Customer.[Payment Method Code], Customer.[Current Risk], Customer.[Updated Date], Customer.[Due Date], [Customer.Due Date]+365, Customer.[Updated Type], Customer.[Skip Credit Info Update]
+HAVING (((Abs((Sum(Val([Dtld_ Cust_ Ledg_ Entry EAM.Amount])))))>0.01));
+

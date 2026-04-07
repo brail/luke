@@ -1,0 +1,3 @@
+SELECT [qSoloVend-perBudget].SalesPersonCode AS SalespersonCode, [qSoloVend-perBudget].Salesperson, [qSoloVend-perBudget].CustomerCode, Budget.CustomerName, Budget.Trademark, [qSoloVend-perBudget].SeasonCode, [qSoloVend-perBudget].PairsSold, Budget.PairsBudget, [qSoloVend-perBudget].salesvalue, Budget.ValueBudget, Budget.Doors
+FROM Budget INNER JOIN [qSoloVend-perBudget] ON (Budget.Trademark = [qSoloVend-perBudget].Trademark) AND (Budget.SeasonCode = [qSoloVend-perBudget].SeasonCode) AND (Budget.SalespersonCode = [qSoloVend-perBudget].SalesPersonCode) AND (Budget.CustomerCode = [qSoloVend-perBudget].CustomerCode);
+

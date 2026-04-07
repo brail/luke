@@ -1,0 +1,4 @@
+SELECT [VendutoCompratoProiezioneItem-Vendite-step0].[Budget No_], [VendutoCompratoProiezioneItem-Vendite-step0].No_, [VendutoCompratoProiezioneItem-Vendite-step0].[Constant Variable Code], Sum([VendutoCompratoProiezioneItem-Vendite-step0].PairsSold) AS PairsSold_, Sum([PairsSold])*Max([fattoreproiezionedibudget]) AS PairsForecastByBudget, Sum([PairsSold])*Max([fattoreproiezioneGlobale]) AS PairsForecastGlobal
+FROM [VendutoCompratoProiezioneItem-Vendite-step0] INNER JOIN VendutoComprato_FattoriDiPropiezione ON [VendutoCompratoProiezioneItem-Vendite-step0].[Budget No_] = VendutoComprato_FattoriDiPropiezione.BudgetNo_
+GROUP BY [VendutoCompratoProiezioneItem-Vendite-step0].[Budget No_], [VendutoCompratoProiezioneItem-Vendite-step0].No_, [VendutoCompratoProiezioneItem-Vendite-step0].[Constant Variable Code];
+

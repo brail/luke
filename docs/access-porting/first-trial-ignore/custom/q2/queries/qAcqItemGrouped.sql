@@ -1,0 +1,4 @@
+SELECT qAcqItem.[Model Item No_] AS PurchasesArt, qAcqItem.[Variable Code 01] AS PurchasesColorCode, qAcqItem.No_, qAcqItem.[Variable Code 02] AS taglia, qAcqItem.[Order Variable Code], qAcqItem.AssortmentCode, qAcqItem.[Currency Code] AS CurrencyCodePurchase, Sum(qAcqItem.QuantityPurchased) AS QuantityPurchased, Sum(qAcqItem.PairsPurchased) AS PairsPurchased, Sum(qAcqItem.ValuePurchased) AS ValuePurchased, Sum(qAcqItem.QuantityReceived) AS QuantityReceived, Sum(qAcqItem.PairsReceived) AS PairsReceived, Sum(qAcqItem.ValueReceived) AS ValueReceived, Sum(qAcqItem.QuantityInvoicedPurchases) AS QuantityInvoicedPurchases, Sum(qAcqItem.PairsInvoicedPurchases) AS PairsInvoicedPurchases, Sum(qAcqItem.ValueInvoicedPurchases) AS ValueInvoicedPurchases
+FROM qAcqItem
+GROUP BY qAcqItem.[Model Item No_], qAcqItem.[Variable Code 01], qAcqItem.No_, qAcqItem.[Variable Code 02], qAcqItem.[Order Variable Code], qAcqItem.AssortmentCode, qAcqItem.[Currency Code];
+

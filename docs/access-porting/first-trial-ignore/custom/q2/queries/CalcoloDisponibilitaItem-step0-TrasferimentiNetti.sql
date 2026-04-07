@@ -1,0 +1,6 @@
+SELECT "TRANS" AS Cat, Item.[TRADEMARK CODE] AS Trademark, Item.[SEASON CODE] AS [selling season code], Item.[LINE CODE], [Transfer Line].[MODEL ITEM No_] AS Article, Item.[Description 2], [Transfer Line].[variable code 01] AS Color, [Transfer Line].[variable code 02] AS [size], Sum(Val([QUANTITY])-Val([QUANTITY RECEIVED])) AS Qty, Sum(IIf(Val([quantity])>0,Val([no_ of pairs])*(Val([QUANTITY])-Val([QUANTITY RECEIVED]))/Val([QUANTITY]),0)) AS Pairs
+FROM (([Transfer Line] INNER JOIN [Transfer Header] ON [Transfer Line].[Document No_] = [Transfer Header].No_) INNER JOIN Item ON [Transfer Line].[Item No_] = Item.No_) INNER JOIN Location ON [Transfer Header].[Transfer-to Code] = Location.Code
+WHERE ((([Transfer Line].[ITEM Type])=0) AND ((Item.[advertising material])=0) AND ((Location.[Enable to Purchase Run])=1) AND (([Transfer Line].[Derived From Line No_])=0))
+GROUP BY "TRANS", Item.[TRADEMARK CODE], Item.[SEASON CODE], Item.[LINE CODE], [Transfer Line].[MODEL ITEM No_], Item.[Description 2], [Transfer Line].[variable code 01], [Transfer Line].[variable code 02]
+HAVING (((Item.[TRADEMARK CODE])=[forms]![principale]![FiltroMarchioSourcing]) AND ((Item.[SEASON CODE])=[forms]![principale]![FiltroStagioneSourcing]) AND ((Sum(Val([QUANTITY])-Val([QUANTITY RECEIVED])))>0));
+

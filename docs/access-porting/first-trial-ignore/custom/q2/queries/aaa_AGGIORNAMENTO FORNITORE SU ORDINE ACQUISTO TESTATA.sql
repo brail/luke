@@ -1,0 +1,3 @@
+UPDATE [Purchase Header] SET [Purchase Header].[Buy-from Vendor No_] = "F01238", [Purchase Header].[Pay-to Vendor No_] = "F01238"
+WHERE ((([Purchase Header].[Buy-from Vendor No_])="F00816") AND (([Purchase Header].[Pay-to Vendor No_])="F00816") AND (([Purchase Header].No_)="ODA-21-00003" Or ([Purchase Header].No_)="ODA-21-00007" Or ([Purchase Header].No_)="ODA-21-00008" Or ([Purchase Header].No_)="ODA-21-00009" Or ([Purchase Header].No_)="ODA-21-00019" Or ([Purchase Header].No_)="ODA-21-00020" Or ([Purchase Header].No_)="ODA-21-00027" Or ([Purchase Header].No_)="ODA-21-00038" Or ([Purchase Header].No_)="ODA-21-00039" Or ([Purchase Header].No_)="ODA-21-00040"));
+

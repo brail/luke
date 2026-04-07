@@ -1,0 +1,3 @@
+SELECT NoteOrdiniVenditaDaClienti.CodiceCliente, NoteOrdiniVenditaDaClienti.Commento, NoteOrdiniVenditaDaClienti.OrdinamentoCommento
+FROM NoteOrdiniVenditaDaClienti;
+

@@ -1,0 +1,3 @@
+SELECT DISTINCTROW *
+FROM VendutoCompratoProiezioneTabella;
+

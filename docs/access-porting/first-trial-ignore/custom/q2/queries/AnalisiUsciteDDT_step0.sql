@@ -1,0 +1,6 @@
+SELECT [DDT_Picking Header].[Shortcut Dimension 2 Code] AS TrademarkCode, [DDT_Picking Line].[selling season code] AS [Season Code], Format$([posted date],"yyyy") AS anno, Format$([posted date],"mm") AS Mese, Format$(calcolosettimana([posted date]),"00") AS Settimana, Format$([posted date],"dd") AS Giorno, Sum(Val([ddt_picking line.no_ of pairs])) AS paia
+FROM [Sales Header] INNER JOIN (([DDT_Picking Line] INNER JOIN [DDT_Picking Header] ON ([DDT_Picking Line].[Document No_] = [DDT_Picking Header].No_) AND ([DDT_Picking Line].[Document Type] = [DDT_Picking Header].[Document Type])) INNER JOIN [Sales Line] ON ([DDT_Picking Line].[Order Line No_] = [Sales Line].[Line No_]) AND ([DDT_Picking Line].[Order No_] = [Sales Line].[Document No_])) ON [Sales Header].No_ = [Sales Line].[Document No_]
+WHERE ((([DDT_Picking Header].status)=20))
+GROUP BY [DDT_Picking Header].[Shortcut Dimension 2 Code], [DDT_Picking Line].[selling season code], Format$([posted date],"yyyy"), Format$([posted date],"mm"), Format$(calcolosettimana([posted date]),"00"), Format$([posted date],"dd"), [DDT_Picking Header].[Document Type], [Sales Line].[Shortcut Dimension 1 Code], [Sales Header].[order type]
+HAVING ((([DDT_Picking Header].[Document Type])=0));
+

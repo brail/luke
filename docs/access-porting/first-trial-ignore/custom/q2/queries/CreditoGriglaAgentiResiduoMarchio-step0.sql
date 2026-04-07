@@ -1,0 +1,4 @@
+SELECT [Cust_ Ledger Entry].[Customer No_], [Cust_ Ledger Entry].[Due Date], [Cust_ Ledger Entry].[Entry No_], Sum(IIf(IsNull([Detailed Cust_ Ledg_ Entry].[Entry no_]),0,Val([Detailed Cust_ Ledg_ Entry].[Amount]))) AS STD, Sum(IIf(IsNull([Dtld_ Cust_ Ledg_ Entry EAM].[Entry no_]),0,Val([Dtld_ Cust_ Ledg_ Entry EAM].[Amount]))) AS Extra, [Cust_ Ledger Entry].[Global Dimension 2 Code] AS marchio
+FROM [Detailed Cust_ Ledg_ Entry] RIGHT JOIN ([Dtld_ Cust_ Ledg_ Entry EAM] RIGHT JOIN [Cust_ Ledger Entry] ON [Dtld_ Cust_ Ledg_ Entry EAM].[Letter No_] = [Cust_ Ledger Entry].[Letter No_]) ON [Detailed Cust_ Ledg_ Entry].[Cust_ Ledger Entry No_] = [Cust_ Ledger Entry].[Entry No_]
+GROUP BY [Cust_ Ledger Entry].[Customer No_], [Cust_ Ledger Entry].[Due Date], [Cust_ Ledger Entry].[Entry No_], [Cust_ Ledger Entry].[Global Dimension 2 Code];
+

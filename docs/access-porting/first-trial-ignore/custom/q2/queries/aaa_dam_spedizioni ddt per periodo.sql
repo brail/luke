@@ -1,0 +1,5 @@
+SELECT [DDT_Picking Line].Type, [DDT_Picking Line].[Document No_], Sum(Val([no_ of pairs])) AS paia, [DDT_Picking Line].[Document Type], [DDT_Picking Header].[posted date], [DDT_Picking Header].[Shortcut Dimension 2 Code] AS marchio, [DDT_Picking Line].[season code] AS stagione, [DDT_Picking Line].[Shortcut Dimension 1 Code] AS ccr
+FROM [DDT_Picking Line] INNER JOIN [DDT_Picking Header] ON ([DDT_Picking Line].[Document No_] = [DDT_Picking Header].No_) AND ([DDT_Picking Line].[Document Type] = [DDT_Picking Header].[Document Type])
+GROUP BY [DDT_Picking Line].Type, [DDT_Picking Line].[Document No_], [DDT_Picking Line].[Document Type], [DDT_Picking Header].[posted date], [DDT_Picking Header].[Shortcut Dimension 2 Code], [DDT_Picking Line].[season code], [DDT_Picking Line].[Shortcut Dimension 1 Code]
+HAVING ((([DDT_Picking Line].Type)=19 Or ([DDT_Picking Line].Type)=20) AND (([DDT_Picking Line].[Document Type])=0) AND (([DDT_Picking Header].[posted date]) Between #1/1/2021# And #12/21/2021#));
+

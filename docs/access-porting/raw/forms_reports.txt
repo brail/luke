@@ -1,0 +1,281 @@
+================================================================
+FORM E REPORT EXPORT
+Data export: 27/03/2026 09:11:54
+================================================================
+
+### FORM (11 totali)
+
+  FORM: ~TMPCLP64331
+    RecordSource : 
+    Filtro       : 
+    Controlli    : 5
+
+  FORM: CambiaPassword
+    RecordSource : 
+    Filtro       : 
+    Controlli    : 11
+
+  FORM: DatiCommercialiClienti
+    RecordSource : DatiCommercialiClienti
+    Filtro       : 
+    Controlli    : 56
+      [No_] ControlSource: No_
+      [Locazione] ControlSource: Locazione
+      [PuntiVenditaAutorizzati] ControlSource: PuntiVenditaAutorizzati
+      [NotePuntiVendita] ControlSource: NotePuntiVendita
+      [NumeroVetrine] ControlSource: NumeroVetrine
+      [SuperficieNegozioMQ] ControlSource: SuperficieNegozioMQ
+      [Distribuzione] ControlSource: Distribuzione
+      [NoteVarie] ControlSource: NoteVarie
+      [PercentualeDirittoAlReso] ControlSource: PercentualeDirittoAlReso
+      [CasellaCombinata48] ControlSource: No_
+
+  FORM: DatiCommercialiClientiMarchiAbbigliamento
+    RecordSource : DatiCommercialiClientiMarchiAbbigliamento
+    Filtro       : 
+    Controlli    : 1
+      [idMarchio] ControlSource: idMarchio
+
+  FORM: DatiCommercialiClientiMarchiAccessori
+    RecordSource : DatiCommercialiClientiMarchiAccessori
+    Filtro       : 
+    Controlli    : 1
+      [idMarchio] ControlSource: idMarchio
+
+  FORM: DatiCommercialiClientiMarchiCalzature
+    RecordSource : DatiCommercialiClientiMarchiCalzature
+    Filtro       : 
+    Controlli    : 1
+      [idMarchio] ControlSource: idMarchio
+
+  FORM: Fornitori
+    RecordSource : Fornitori
+    Filtro       : 
+    Controlli    : 28
+      [Fornitore] ControlSource: CodiceFornitore
+      [ValutaAcquisto] ControlSource: ValutaAcquisto
+      [CambioAcquisto] ControlSource: CambioAcquisto
+      [PercentualeCommissioniDiAcquisto] ControlSource: PercentualeCommissioniDiAcquisto
+      [PercentualeOneriControlloProduzione] ControlSource: PercentualeOneriControlloProduzione
+      [TrasportoAcquistoEstero] ControlSource: TrasportoAcquistoEstero
+      [SpeseDoganali] ControlSource: SpeseDoganali
+      [TrasportoAcquistoItalia] ControlSource: TrasportoAcquistoItalia
+      [Campionario] ControlSource: Campionario
+      [SviluppoCollezione] ControlSource: SviluppoCollezione
+      [PercentualePerditePerFallati] ControlSource: PercentualePerditePerFallati
+      [PercentualeVariIndustriali] ControlSource: PercentualeVariIndustriali
+      [Testo24] ControlSource: PercentualeDazio
+      [Testo26] ControlSource: DescrizioneFornitore
+
+  FORM: Login
+    RecordSource : 
+    Filtro       : 
+    Controlli    : 7
+
+  FORM: Marchi
+    RecordSource : Marchi
+    Filtro       : 
+    Controlli    : 30
+      [Marchio] ControlSource: Marchio
+      [PercentualeSconti] ControlSource: PercentualeSconti
+      [PercentualeScontiStock] ControlSource: PercentualeScontiStock
+      [PercentualeResi] ControlSource: PercentualeResi
+      [PercentualeProvvigioniEnasarco] ControlSource: PercentualeEnasarco
+      [PercentualeRoyalties] ControlSource: PercentualeRoyalties
+      [PercentualeInformazioniCommerciali] ControlSource: PercentualeInformazioniCommerciali
+      [TrasportoVendite] ControlSource: TrasportoVendite
+      [PercentualePerditeSulCredito] ControlSource: PercentualePerditeSulCredito
+      [PercentualeOneriFinanziari] ControlSource: PercentualeOneriFinanziari
+      [AltreSpeseFisse] ControlSource: AltreSpeseFisse
+      [MoltiplicatorePrezzoAlPubblicoMarchio] ControlSource: MoltiplicatorePrezzoAlPubblicoMarchio
+      [PercentualeMargineMarchio] ControlSource: PercentualeMargineMarchio
+      [Testo27] ControlSource: PercentualeProvvigioniAgente
+      [Testo29] ControlSource: PercentualeProvvigioniCapozona
+
+  FORM: Principale
+    RecordSource : PercorsoSalvataggio
+    Filtro       : 
+    Controlli    : 581
+      [PercorsoSalvataggio] ControlSource: percorsoSalvataggioFiles
+
+  FORM: Utenti
+    RecordSource : Utenti
+    Filtro       : 
+    Controlli    : 12
+      [Account] ControlSource: Account
+      [Password] ControlSource: Password
+      [Nome] ControlSource: Nome
+      [Cognome] ControlSource: Cognome
+      [Ruolo] ControlSource: Ruolo
+      [Livello] ControlSource: Livello
+
+### REPORT (43 totali)
+
+  REPORT: 20060718-QueryPerReportPickingPerArticolo
+    RecordSource : 20060718-QueryPerReportPickingPerArticolo
+    Filtro       : 
+
+  REPORT: Allocazioni_Blac
+    RecordSource : 000_allocazioni blac
+    Filtro       : 
+
+  REPORT: AndamentoVendite
+    RecordSource : 
+    Filtro       : 
+
+  REPORT: AnnullamentiAgenteCliente
+    RecordSource : AnnullamentiAgenteCliente
+    Filtro       : ([Marchio]='TH'  and [Stagione]='I0607'  and [CodiceAgente]='1012')
+
+  REPORT: EtichettaEacExport
+    [impossibile aprire in design view]
+
+  REPORT: EtichettaEacExport_KID
+    [impossibile aprire in design view]
+
+  REPORT: EtichettaImportatoDa
+    RecordSource : EANCodeLabelsTMP-PerReport
+    Filtro       : 
+
+  REPORT: Etichette EANCodeLabelsTMP
+    RecordSource : EANCodeLabelsTMP-PerReport
+    Filtro       : 
+
+  REPORT: Etichette EANCodeLabelsTMP_0
+    [impossibile aprire in design view]
+
+  REPORT: Etichette EANCodeLabelsTMP_con UPC
+    RecordSource : EANCodeLabelsTMP-PerReport
+    Filtro       : 
+
+  REPORT: Etichette EANCodeLabelsTMP_con UPC_OLD_20181108
+    RecordSource : EANCodeLabelsTMP-PerReport
+    Filtro       : 
+
+  REPORT: Etichette EANCodeLabelsTMP_FGF
+    RecordSource : EANCodeLabelsTMP-PerReport_FGF
+    Filtro       : 
+
+  REPORT: Etichette EANCodeLabelsTMP_old_20181107
+    RecordSource : EANCodeLabelsTMP-PerReport
+    Filtro       : 
+
+  REPORT: Etichette EANCodeLabelsTMP_old_20190912
+    RecordSource : EANCodeLabelsTMP-PerReport
+    Filtro       : 
+
+  REPORT: Etichette EANCodeLabelsTMP_Orizz
+    RecordSource : EANCodeLabelsTMP-PerReport
+    Filtro       : 
+
+  REPORT: Etichette EANCodeLabelsTMP_QuelloGiusto
+    RecordSource : EANCodeLabelsTMP-PerReport_QuelloGiusto
+    Filtro       : 
+
+  REPORT: Etichette EANCodeLabelsTMP-oldButtare
+    RecordSource : EANCodeLabelsTMP
+    Filtro       : 
+
+  REPORT: EtichetteCampionari
+    RecordSource : EANCodeLabelsTMP-PerReport
+    Filtro       : 
+
+  REPORT: EtichetteCampionari_OLD_20181107
+    RecordSource : EANCodeLabelsTMP-PerReport
+    Filtro       : 
+
+  REPORT: EtichetteScatolaBolla
+    RecordSource : EANCodeLabelsTMP-PerReport
+    Filtro       : 
+
+  REPORT: fab01-FatturatoESconti-step02
+    RecordSource : fab01-FatturatoESconti-step02
+    Filtro       : ([Document Date]>=#8/1/2009# and [Document Date]<=#8/31/2009#)
+
+  REPORT: fab02-NoteCreditoESconti-step02
+    RecordSource : fab02-NoteCreditoESconti-step02
+    Filtro       : ([Document Date]>=#1/1/2005# and [Document Date]<=#1/31/2005#)
+
+  REPORT: MiglioriArticoliVenduti
+    RecordSource : GraficoMiglioriArticoliVenduti
+    Filtro       : [Marchio]='THK'  and [Stagione]='E19'
+
+  REPORT: MiglioriArticoliVenduti-Fornitore
+    RecordSource : GraficoMiglioriArticoliVenduti-Fornitore
+    Filtro       : 
+
+  REPORT: MiglioriArticoliVenduti-LineaModello
+    RecordSource : GraficoMiglioriArticoliVenduti
+    Filtro       : ([Marchio]='AP'  and [Stagione]='I1718')
+
+  REPORT: MiglioriArticoliVenduti-LineaModello_MediaRisoluzione
+    RecordSource : GraficoMiglioriArticoliVenduti
+    Filtro       : ([Marchio]='AP'  and [Stagione]='I1718')
+
+  REPORT: MiglioriArticoliVenduti-LineaModello_OLD
+    RecordSource : GraficoMiglioriArticoliVenduti
+    Filtro       : ([Marchio]='AP'  and [Stagione]='I1718')
+
+  REPORT: MiglioriArticoliVenduti-LineaModello-Fornitore
+    RecordSource : GraficoMiglioriArticoliVenduti-Fornitore
+    Filtro       : 
+
+  REPORT: MiglioriArticoliVenduti-LineaModello-VendutoComprato
+    RecordSource : VendutoCompratoProiezioneTabella
+    Filtro       : 
+
+  REPORT: MiglioriArticoliVenduti-LineaModello-VendutocompratoNonProiet
+    [impossibile aprire in design view]
+
+  REPORT: MiglioriArticoliVenduti-Modello
+    RecordSource : GraficoMiglioriArticoliVenduti
+    Filtro       : ([Marchio]='BLAUER'  and [Stagione]='I1617')
+
+  REPORT: MiglioriArticoliVenduti-Modello-Fornitore
+    RecordSource : GraficoMiglioriArticoliVenduti-Fornitore
+    Filtro       : 
+
+  REPORT: ReportConfrontoStagioniAgente
+    RecordSource : confrontoStagioni-step1
+    Filtro       : ([SalespersonCode]='1006 ')
+
+  REPORT: ReportConfrontoVendutoComprato
+    RecordSource : def01-qAcqEVend-ZFinal-PerAnalisi-MoreData
+    Filtro       : 
+
+  REPORT: ReportOK
+    RecordSource : TabellaAppoggio
+    Filtro       : 
+
+  REPORT: ReportOkSovraccolli_Barcode
+    RecordSource : SovraccolliBarcodeLista
+    Filtro       : 
+
+  REPORT: ReportOkSovraccolliDaLetture
+    RecordSource : SELECT TabellaAppoggioSovraccolliDaLetture.* FROM TabellaAppoggioSovraccolliDaLetture ORDER BY Val([Cartone]), TabellaAppoggioSovraccolliDaLetture.Articolo, TabellaAppoggioSovraccolliDaLetture.Colore, TabellaAppoggioSovraccolliDaLetture.Taglia;
+    Filtro       : 
+
+  REPORT: ReportOkSovraccolliDaLetture_TJX
+    RecordSource : SELECT TabellaAppoggioSovraccolliDaLetture.* FROM TabellaAppoggioSovraccolliDaLetture ORDER BY Val([Cartone]), TabellaAppoggioSovraccolliDaLetture.Articolo, TabellaAppoggioSovraccolliDaLetture.Colore, TabellaAppoggioSovraccolliDaLetture.Taglia;
+    Filtro       : 
+
+  REPORT: reportTempiPagamento
+    RecordSource : tempiPagQueryDefinitiva
+    Filtro       : ([Datafattura]>=#1/1/2006# and [DataFattura]<=#6/30/2006# and [codiceagente]='1035 ')
+
+  REPORT: ReportTJX
+    RecordSource : TabellaAppoggioTjx
+    Filtro       : 
+
+  REPORT: ReportTJXManuali
+    RecordSource : TabellaAppoggioTJXManuali
+    Filtro       : 
+
+  REPORT: zz-help-qVend-DeterminazionePrezzoMedioNetto-step1
+    RecordSource : zz-help-qVend-DeterminazionePrezzoMedioNetto-step1
+    Filtro       : 
+
+  REPORT: zz-help-qVend-DeterminazionePrezzoMedioNetto-zz-Costo-step1
+    RecordSource : zz-help-qVend-DeterminazionePrezzoMedioNetto-zz-Costo-step1
+    Filtro       : 
+

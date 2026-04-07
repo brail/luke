@@ -1,0 +1,5 @@
+SELECT Item.[Model Item No_] AS CodArt, Left$([Item_1.Description 2] & " " & [Item_1.Description],36) AS DescrLunga, Left$([Item_1.Description 2] & " " & [Item_1.Description],25) AS DescrBreve, Left$([Item_1.Description 2] & " " & [Item_1.Description],13) AS DescrPos, EANCodes.[Cross-Reference No_] AS EanCode, "S" AS FlagEANPrincipale, SuggestedRetailPrices.SRP AS PrezzoVendita, 22 AS IVA, "" AS [Classificazione 1], "" AS [Classificazione 2], "" AS [Classificazione 3], "" AS DataDecorrenza
+FROM (((([Sales Line] INNER JOIN [Sales Header] ON [Sales Line].[Document No_] = [Sales Header].No_) LEFT JOIN SuggestedRetailPrices ON [Sales Line].No_ = SuggestedRetailPrices.[Item No_]) INNER JOIN Item ON [Sales Line].No_ = Item.No_) INNER JOIN Item AS Item_1 ON Item.[Model Item No_] = Item_1.No_) LEFT JOIN EANCodes ON Item.No_ = EANCodes.[Item No_]
+WHERE ((([Sales Header].No_)=[forms]![principale]![filtroodvean]) AND (([Sales Line].Type)=2) AND (([Sales Line].[Delete Reason])=""))
+ORDER BY Item.[Model Item No_], EANCodes.[Cross-Reference No_];
+

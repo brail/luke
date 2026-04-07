@@ -4,6 +4,10 @@
  * Espone:
  *  - sales.statistics.portafoglio.getFilters  — filtri disponibili (agenti dal contesto)
  *  - sales.statistics.portafoglio.download    — genera xlsx portafoglio ordini
+ *  - sales.statistics.kimo.getFilters         — filtri disponibili per Kimo+Bidone
+ *  - sales.statistics.kimo.getSyncState       — stato sync tabelle nav_kimo_*
+ *  - sales.statistics.kimo.triggerSync        — trigger manuale sync KIMO
+ *  - sales.statistics.kimo.download           — genera xlsx Vendite+Bidone KIMO
  */
 
 import { TRPCError } from '@trpc/server';
@@ -19,12 +23,18 @@ import { getConfig } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 import { buildPortafoglioXlsx } from '../services/sales.statistics';
+import { buildKimoXlsx } from '../services/kimo.statistics';
 
 import { queryPortafoglioFromPg } from '../services/portafoglio-pg-query';
+import { queryKimoFromPg } from '../services/kimo-pg-query';
 import {
   triggerPortafoglioSyncNow,
   isPortafoglioSyncRunning,
 } from '../lib/portafoglioSyncScheduler';
+import {
+  triggerKimoSyncNow,
+  isKimoSyncRunning,
+} from '../lib/kimoSyncScheduler';
 
 // ─── Input schema ─────────────────────────────────────────────────────────────
 
@@ -298,10 +308,194 @@ const portafoglioRouter = router({
     }),
 });
 
+// ─── Sub-router: kimo ─────────────────────────────────────────────────────────
+
+const kimoRouter = router({
+  /**
+   * Filtri disponibili per Vendite+Bidone Kimo.
+   * Legge gli agenti distinti da nav_kimo_sales_header per il brand corrente.
+   */
+  getFilters: protectedProcedure
+    .use(requirePermission('sales:read'))
+    .input(portafoglioBaseInput)
+    .query(async ({ input, ctx }) => {
+      const userId = ctx.session.user.id;
+      await assertContextAccess(userId, input.brandId, input.seasonId, ctx.prisma);
+
+      const [brand, season] = await Promise.all([
+        ctx.prisma.brand.findUnique({ where: { id: input.brandId }, select: { code: true, name: true } }),
+        ctx.prisma.season.findUnique({ where: { id: input.seasonId }, select: { code: true, name: true } }),
+      ]);
+
+      if (!brand || !season) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand o stagione non trovati' });
+      }
+
+      // Agenti dalle SO (step0)
+      const spSo = await ctx.prisma.$queryRaw<{ code: string; name: string }[]>`
+        SELECT DISTINCT sp."code", sp."name"
+        FROM nav_pf_sales_header sh
+        JOIN nav_pf_salesperson sp ON sh."salespersonCode" = sp."code"
+        WHERE sh."sellingSeasonCode" = ${season.code}
+          AND sh."shortcutDimension2Code" = ${brand.code}
+          AND sh."salespersonCode" IS NOT NULL
+      `;
+
+      // Agenti dai BASKET (step1)
+      const spBa = await ctx.prisma.$queryRaw<{ code: string; name: string }[]>`
+        SELECT DISTINCT sp."code", sp."name"
+        FROM nav_kimo_sales_header kh
+        JOIN nav_pf_salesperson sp ON kh."salespersonCodeNav" = sp."code"
+        WHERE kh."trademarkCode" = ${brand.code}
+          AND (kh."assignedSalesDocumentNo" IS NULL OR kh."assignedSalesDocumentNo" = '')
+          AND kh."salespersonCodeNav" IS NOT NULL
+      `;
+
+      // Unione deduplicata
+      const spMap = new Map<string, string>();
+      for (const r of [...spSo, ...spBa]) spMap.set(r.code, r.name);
+      const salespersons = [...spMap.entries()]
+        .map(([code, name]) => ({ code, name }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      return {
+        brand:  { code: brand.code, name: brand.name },
+        season: { code: season.code, name: season.name },
+        salespersons,
+      };
+    }),
+
+  /**
+   * Stato di sync delle tabelle nav_kimo_*.
+   */
+  getSyncState: protectedProcedure
+    .use(requirePermission('sales:read'))
+    .query(async ({ ctx }) => {
+      const rows = await ctx.prisma.navPfSyncState.findMany({
+        where: { tableName: { startsWith: 'nav_kimo_' } },
+        orderBy: { tableName: 'asc' },
+      });
+
+      return {
+        isRunning: isKimoSyncRunning(),
+        tables: rows.map(r => ({
+          tableName:     r.tableName,
+          lastSyncedAt:  r.lastSyncedAt,
+          rowCount:      r.rowCount,
+          lastDurationMs: r.lastDurationMs,
+        })),
+      };
+    }),
+
+  /**
+   * Avvia un sync KIMO NAV → PG immediatamente.
+   */
+  triggerSync: protectedProcedure
+    .use(requirePermission('sales:read'))
+    .mutation(async ({ ctx }) => {
+      if (isKimoSyncRunning()) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'Sync KIMO già in corso — attendere il completamento',
+        });
+      }
+
+      ctx.logger.info('sales.statistics.kimo.triggerSync: avvio manuale');
+      const result = await triggerKimoSyncNow();
+
+      if (!result) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'NAV non configurato o sync non disponibile',
+        });
+      }
+
+      return result;
+    }),
+
+  /**
+   * Genera il file xlsx Vendite+Bidone Kimo per il brand/season corrente.
+   * UNION di SO da nav_pf_* e BASKET da nav_kimo_*.
+   */
+  download: protectedProcedure
+    .use(requirePermission('sales:read'))
+    .input(portafoglioDownloadInput)
+    .mutation(async ({ input, ctx }) => {
+      const userId = ctx.session.user.id;
+      await assertContextAccess(userId, input.brandId, input.seasonId, ctx.prisma);
+
+      const [brand, season] = await Promise.all([
+        ctx.prisma.brand.findUnique({ where: { id: input.brandId }, select: { code: true, name: true } }),
+        ctx.prisma.season.findUnique({ where: { id: input.seasonId }, select: { code: true } }),
+      ]);
+
+      if (!brand || !season) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand o stagione non trovati' });
+      }
+
+      ctx.logger.info(
+        {
+          brandCode: brand.code,
+          seasonCode: season.code,
+          salespersonCode: input.salespersonCode,
+          customerCode: input.customerCode,
+        },
+        'sales.statistics.kimo.download start',
+      );
+
+      const queryStart = Date.now();
+      const rows = await queryKimoFromPg(ctx.prisma, {
+        seasonCode:     season.code,
+        trademarkCode:  brand.code,
+        salespersonCode: input.salespersonCode,
+        customerCode:   input.customerCode,
+      });
+      const queryDurationMs = Date.now() - queryStart;
+
+      ctx.logger.info({ rowCount: rows.length, queryDurationMs }, 'kimo download query done');
+
+      const sheetName = `${season.code}_${brand.code}_Kimo`;
+      const dbUser = await ctx.prisma.user.findUnique({
+        where: { id: ctx.session.user.id },
+        select: { firstName: true, lastName: true, email: true },
+      });
+      const authorName =
+        [dbUser?.firstName, dbUser?.lastName].filter(Boolean).join(' ') ||
+        dbUser?.email ||
+        ctx.session.user.email;
+
+      const buffer = await buildKimoXlsx(rows, sheetName, {
+        title:   'Vendite + Bidone Kimo',
+        subject: `${brand.name} - ${season.code}`,
+        author:  authorName,
+        manager: `Luke - v${process.env.npm_package_version ?? 'unknown'}`,
+      });
+
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const datePart = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+      const timePart = `${pad(now.getHours())}${pad(now.getMinutes())}`;
+      const filterSuffix = input.customerCode
+        ? `_${input.customerCode}`
+        : input.salespersonCode
+          ? `_${input.salespersonCode}`
+          : '';
+      const filename = `Luke-KimoBidone-${datePart}-${timePart}-(${season.code}_${brand.code}${filterSuffix}).xlsx`;
+
+      return {
+        data: buffer.toString('base64'),
+        filename,
+        rowCount: rows.length,
+        queryDurationMs,
+      };
+    }),
+});
+
 // ─── Router principale vendite ────────────────────────────────────────────────
 
 export const salesRouter = router({
   statistics: router({
     portafoglio: portafoglioRouter,
+    kimo: kimoRouter,
   }),
 });

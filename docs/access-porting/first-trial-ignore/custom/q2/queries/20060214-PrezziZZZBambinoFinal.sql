@@ -1,0 +1,5 @@
+SELECT [Item].No_ AS ArticleCode, [Model Item Variable Group].[Variable Code Limit], [20060214-PrezziZZBambinoUnion].Descr, [20060214-PrezziZZBambinoUnion].TrademarkCode, [20060214-PrezziZZBambinoUnion].LineCode, [20060214-PrezziZZBambinoUnion].ProductFamily, [20060214-PrezziZZBambinoUnion].ProductSex, [20060214-PrezziZZBambinoUnion].SizeGroup, [20060214-PrezziZZBambinoUnion].ColorGroup, [20060214-PrezziZZBambinoUnion].Color, [20060214-PrezziZZBambinoUnion].ColorDescr, [20060214-PrezziZZBambinoUnion].SizeRange, [20060214-PrezziZZBambinoUnion].PurchPrice, [20060214-PrezziZZBambinoUnion].SalesPrice, [Item].[Season Code]
+FROM (Item LEFT JOIN [Model Item Variable Group] ON [Item].No_ = [Model Item Variable Group].[Model Item No_]) LEFT JOIN [20060214-PrezziZZBambinoUnion] ON [Item].No_ = [20060214-PrezziZZBambinoUnion].Article
+WHERE ((([Model Item Variable Group].[Variable Type])="colore") AND (([Item].[Trademark Code])="thk"))
+ORDER BY [Item].No_, [20060214-PrezziZZBambinoUnion].Color, [20060214-PrezziZZBambinoUnion].SizeRange;
+

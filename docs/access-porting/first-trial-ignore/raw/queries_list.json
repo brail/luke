@@ -1,0 +1,66 @@
+[
+  {
+    "id": "QRY_001",
+    "name": "000-Analisi Per Sistemazione SPLIT IVA YOOX-aggiorna sped reg",
+    "mnemonic": "000_Analisi_Per_Sistemazione_S",
+    "type": "Unknown",
+    "complexity": "Unknown",
+    "status": "pending_analysis"
+  },
+  {
+    "id": "QRY_002",
+    "name": "000-Analisi Per Sistemazione SPLIT IVA YOOX-verifica",
+    "mnemonic": "000_Analisi_Per_Sistemazione_S",
+    "type": "Unknown",
+    "complexity": "Unknown",
+    "status": "pending_analysis"
+  },
+  {
+    "id": "QRY_003",
+    "name": "000-Stefania-ControlloFatturatoEContoEconomica-step1",
+    "mnemonic": "000_Stefania_ControlloFatturat",
+    "type": "Unknown",
+    "complexity": "Unknown",
+    "status": "pending_analysis"
+  },
+  {
+    "id": "QRY_004",
+    "name": "AA- AGGIORNA DATI PER SPLIT IVA 3 - sales shipment line",
+    "mnemonic": "AA__AGGIORNA_DATI_PER_SPLIT_IV",
+    "type": "Unknown",
+    "complexity": "Unknown",
+    "status": "pending_analysis"
+  },
+  {
+    "id": "QRY_005",
+    "name": "AnalisiDateConsegnaVendite-step0",
+    "mnemonic": "AnalisiDateConsegnaVendite_ste",
+    "type": "Unknown",
+    "complexity": "Unknown",
+    "status": "pending_analysis"
+  },
+  {
+    "id": "QRY_006",
+    "name": "FattureRegistrateEDDt",
+    "mnemonic": "FattureRegistrateEDDt",
+    "type": "Unknown",
+    "complexity": "Unknown",
+    "status": "pending_analysis"
+  },
+  {
+    "id": "QRY_007",
+    "name": "OrdiniQuantitaSpeditaDaSorgenteRigheSpedizioniRegistrate",
+    "mnemonic": "OrdiniQuantitaSpeditaDaSorgent",
+    "type": "Unknown",
+    "complexity": "Unknown",
+    "status": "pending_analysis"
+  },
+  {
+    "id": "QRY_008",
+    "name": "RigaFatturaPerresi-step1",
+    "mnemonic": "RigaFatturaPerresi_step1",
+    "type": "Unknown",
+    "complexity": "Unknown",
+    "status": "pending_analysis"
+  }
+]

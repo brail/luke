@@ -1,0 +1,4 @@
+SELECT [Sales Invoice Header].No_, [Sales Invoice Header].[Bill-to Customer No_], [Sales Invoice Header].[Bill-to Name], [Sales Invoice Header].[Posting Date], [Sales Invoice Header].[Shortcut Dimension 1 Code], [Sales Invoice Header].[Selling Season Code], [Sales Invoice Header].[Shortcut Dimension 2 Code], [Sales Invoice Header].[Subject 1], [Sales Invoice Header].[Subject 2], [Sales Invoice Header].[Salesperson Code], [Sales Invoice Header].[Area Manager Code], [Sales Invoice Line].[Subject 1 Commission _], [Sales Invoice Line].[Subject 2 Commission _]
+FROM [Sales Invoice Line] RIGHT JOIN [Sales Invoice Header] ON [Sales Invoice Line].[Document No_] = [Sales Invoice Header].No_
+WHERE ((([Sales Invoice Header].No_)="FVG-18-03577" Or ([Sales Invoice Header].No_)="FVG-18-03589" Or ([Sales Invoice Header].No_)="FVG-18-03602") AND (([Sales Invoice Line].type)=19 Or ([Sales Invoice Line].type)=20 Or ([Sales Invoice Line].type)=1));
+

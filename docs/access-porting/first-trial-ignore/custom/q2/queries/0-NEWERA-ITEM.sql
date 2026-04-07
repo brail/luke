@@ -1,0 +1,4 @@
+SELECT Item.*
+FROM Item
+WHERE (((Item.No_)="7FARIA01/LEA" Or (Item.No_)="7FWOSUONO01/LEA" Or (Item.No_)="YLE14/TEXTURED" Or (Item.No_)="DLY32/NET" Or (Item.No_)="JNE04/CROSTA-VIT" Or (Item.No_)="7FMURRAY01/LEA" Or (Item.No_)="7SWOBOWLING/LEA" Or (Item.No_)="8SMADISON01/MES" Or (Item.No_)="8SMASTER01/LEA"));
+

@@ -1,0 +1,4 @@
+SELECT [Customer].No_, [Customer].Name, [Customer].[Name 2], [Customer].[Credit Limit (LCY)], [Posted Document Dimension].[Table ID], [Posted Document Dimension].[Dimension Code], [Posted Document Dimension].[Dimension Value Code], [Sales Cr_Memo Line].*, [Sales Cr_Memo Header].[Document Date], [Sales Cr_Memo Header].No_, [Sales Cr_Memo Header].[Currency Code]
+FROM [Posted Document Dimension] INNER JOIN ([Sales Cr_Memo Line] INNER JOIN ([Sales Cr_Memo Header] INNER JOIN Customer ON [Sales Cr_Memo Header].[Sell-to Customer No_] = [Customer].No_) ON [Sales Cr_Memo Line].[Document No_] = [Sales Cr_Memo Header].No_) ON ([Posted Document Dimension].[Line No_] = [Sales Cr_Memo Line].[Line No_]) AND ([Posted Document Dimension].[Document No_] = [Sales Cr_Memo Line].[Document No_])
+WHERE ((([Posted Document Dimension].[Table ID])=115) AND (([Posted Document Dimension].[Dimension Code])="marchio"));
+

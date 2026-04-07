@@ -1,0 +1,3 @@
+SELECT qSoloAcq.*
+FROM qSoloAcq;
+

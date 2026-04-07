@@ -1,0 +1,5 @@
+SELECT [Unique Identifier Pst_ Docnts].[Activity Type], [Unique Identifier Pst_ Docnts].No_, [Registered Whse_ Activity Hdr_].[Whse_ Document No_], [Registered Whse_ Activity Hdr_].[Whse_ Activity No_], [Unique Identifier Pst_ Docnts].Code, [Item Identifier].[Item No_], [Item Identifier].[Constant Variable Code], [Item Identifier].[Assortment Code], [Item Identifier].[Last Location Code Used], [Item Identifier].[Last Bin Code Used], [Item Identifier].Status
+FROM [Item Identifier] INNER JOIN (([Registered Whse_ Activity Line] INNER JOIN [Unique Identifier Pst_ Docnts] ON ([Registered Whse_ Activity Line].[Line No_] = [Unique Identifier Pst_ Docnts].[Line No_]) AND ([Registered Whse_ Activity Line].No_ = [Unique Identifier Pst_ Docnts].No_)) INNER JOIN [Registered Whse_ Activity Hdr_] ON [Registered Whse_ Activity Line].No_ = [Registered Whse_ Activity Hdr_].No_) ON [Item Identifier].Code = [Unique Identifier Pst_ Docnts].Code
+WHERE ((([Unique Identifier Pst_ Docnts].[Activity Type])=1) AND (([Registered Whse_ Activity Hdr_].[Whse_ Activity No_])="WSTW-2500077"))
+ORDER BY [Unique Identifier Pst_ Docnts].No_ DESC;
+

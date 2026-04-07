@@ -1,0 +1,2578 @@
+[
+  {
+    "module": "Form_~TMPCLP64331",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Comando2_Click",
+    "start_line": 3,
+    "end_line": 26
+  },
+  {
+    "module": "Form_CambiaPassword",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Form_Activate",
+    "start_line": 4,
+    "end_line": 10
+  },
+  {
+    "module": "Form_CambiaPassword",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoCambia_Click",
+    "start_line": 12,
+    "end_line": 43
+  },
+  {
+    "module": "Form_CambiaPassword",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoRitorna_Click",
+    "start_line": 45,
+    "end_line": 47
+  },
+  {
+    "module": "Form_Login",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Form_Open",
+    "start_line": 4,
+    "end_line": 6
+  },
+  {
+    "module": "Form_Login",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoAvvia_Click",
+    "start_line": 8,
+    "end_line": 63
+  },
+  {
+    "module": "Form_Login",
+    "visibility": "Private",
+    "kind": "Function",
+    "name": "verificautente",
+    "start_line": 65,
+    "end_line": 81
+  },
+  {
+    "module": "Form_Login",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEsci_Click",
+    "start_line": 82,
+    "end_line": 84
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": null,
+    "kind": "Sub",
+    "name": "sistemaquerysolostagionaleepronto",
+    "start_line": 3,
+    "end_line": 15
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": null,
+    "kind": "Sub",
+    "name": "sistemaFiltroStagioneMarchioLogimoda",
+    "start_line": 16,
+    "end_line": 64
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": null,
+    "kind": "Sub",
+    "name": "sistemaFiltroStagioneMarchio",
+    "start_line": 65,
+    "end_line": 114
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "EstrazioneStatisticheGenericaPerStagione",
+    "start_line": 116,
+    "end_line": 182
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Comando6_Click",
+    "start_line": 192,
+    "end_line": 195
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Comando658_Click",
+    "start_line": 200,
+    "end_line": 202
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "EstraiEANCliente_Click",
+    "start_line": 204,
+    "end_line": 228
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "filtroAgentePerGrigliaAgenti_AfterUpdate",
+    "start_line": 232,
+    "end_line": 234
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "FiltroMarchioTipo_AfterUpdate",
+    "start_line": 237,
+    "end_line": 244
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "filtroODAEAN_AfterUpdate",
+    "start_line": 247,
+    "end_line": 250
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Item_Control_AfterUpdate",
+    "start_line": 252,
+    "end_line": 256
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "NumeroOdvTJXManuali_AfterUpdate",
+    "start_line": 258,
+    "end_line": 275
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "NumeroSPD_AfterUpdate",
+    "start_line": 277,
+    "end_line": 310
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastiEstrazioneProiezioneVendutoComprato_Click",
+    "start_line": 312,
+    "end_line": 368
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastiEstrazioneProiezioneVendutoCompratoItem_Click",
+    "start_line": 370,
+    "end_line": 427
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Tasto_estraiBidone_Click",
+    "start_line": 429,
+    "end_line": 442
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Tasto_WMS_Controllo_SPD_MultiplePerClienteInSpedWarehouse_Click",
+    "start_line": 444,
+    "end_line": 457
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoAggionraDisponibileKimo_Click",
+    "start_line": 459,
+    "end_line": 468
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoAggiornaLinks_Click",
+    "start_line": 470,
+    "end_line": 510
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoAmazon_Click",
+    "start_line": 512,
+    "end_line": 528
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoAnalisiBudget_Click",
+    "start_line": 530,
+    "end_line": 535
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoAnalisiDDTSpedizioniWarehouse_Click",
+    "start_line": 537,
+    "end_line": 561
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoAnalisiFatturato_Click",
+    "start_line": 563,
+    "end_line": 570
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoAnalisiNoteDiCredito_Click",
+    "start_line": 572,
+    "end_line": 579
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoAnalisiNoteDiCreditoEResi_Click",
+    "start_line": 581,
+    "end_line": 584
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoAnalisiPortafoglioEPrenotazioni_Click",
+    "start_line": 586,
+    "end_line": 651
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoAnalisiPosizionamento_Click",
+    "start_line": 653,
+    "end_line": 668
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoAnalisiSpedizioniWarehouse_Click",
+    "start_line": 670,
+    "end_line": 690
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoAnalisiUsciteDDT_Click",
+    "start_line": 693,
+    "end_line": 701
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoAnalisiVenduto_Click",
+    "start_line": 703,
+    "end_line": 708
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoAnalisiVendutoComprato_Click",
+    "start_line": 710,
+    "end_line": 719
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoAndamentoConsegneAcquisti_Click",
+    "start_line": 721,
+    "end_line": 725
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoAndamentoConsegneVendite_Click",
+    "start_line": 727,
+    "end_line": 731
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoAndamentoInventario_Click",
+    "start_line": 733,
+    "end_line": 775
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoAndamentoVendite_Click",
+    "start_line": 777,
+    "end_line": 789
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoAnnullamentiPerAgente_Click",
+    "start_line": 791,
+    "end_line": 800
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoAnomalieAvanzamento_Click",
+    "start_line": 802,
+    "end_line": 816
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoApriRisultati_Click",
+    "start_line": 818,
+    "end_line": 821
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoBilancioPerSorgente_Click",
+    "start_line": 823,
+    "end_line": 842
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoBoxBarcodePallet_Click",
+    "start_line": 844,
+    "end_line": 847
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoCambiaPassword_Click",
+    "start_line": 849,
+    "end_line": 851
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoCCBancariERiba_Click",
+    "start_line": 853,
+    "end_line": 866
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoCheckFattureEletttonicheAttive_Click",
+    "start_line": 868,
+    "end_line": 950
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoCheckProvincie_Click",
+    "start_line": 952,
+    "end_line": 968
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoCheckStatusIndicom_Click",
+    "start_line": 970,
+    "end_line": 989
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoCheckStatusSDIFattureElettronichePassive_Click",
+    "start_line": 991,
+    "end_line": 1005
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoCheckStatusSDILog_Click",
+    "start_line": 1007,
+    "end_line": 1025
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoClientiConVenduto_Click",
+    "start_line": 1027,
+    "end_line": 1034
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoClientiConVendutoCalcoloEsposizione_Click",
+    "start_line": 1036,
+    "end_line": 1043
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoCoinBolla_Click",
+    "start_line": 1045,
+    "end_line": 1054
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoCollegaEcontrolla_Click",
+    "start_line": 1056,
+    "end_line": 1177
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoCollegaEcontrollaResi_Click",
+    "start_line": 1179,
+    "end_line": 1305
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "tastoCollegaEDI_Click",
+    "start_line": 1307,
+    "end_line": 1318
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoCollegaTxT_Click",
+    "start_line": 1320,
+    "end_line": 1330
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoCollegaXLS_Click",
+    "start_line": 1332,
+    "end_line": 1343
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoColliGiacenza_Click",
+    "start_line": 1345,
+    "end_line": 1363
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoCommentiOrdini_Click",
+    "start_line": 1365,
+    "end_line": 1376
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoConfrontoStagioniPerAgente_Click",
+    "start_line": 1378,
+    "end_line": 1386
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoConfrontoVendutoComprato_Click",
+    "start_line": 1388,
+    "end_line": 1401
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoConteggioImpostaBollo_Click",
+    "start_line": 1403,
+    "end_line": 1421
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoControllaCategoriePesi_Click",
+    "start_line": 1423,
+    "end_line": 1431
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoControllaGiacenzeDaLetturePaiaLibere_Click",
+    "start_line": 1433,
+    "end_line": 1450
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoControllaGiacenzeDaLetturePaiaLibereLogimodaAssortimenti_Click",
+    "start_line": 1452,
+    "end_line": 1463
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoControlloPDISbilanciate_Click",
+    "start_line": 1465,
+    "end_line": 1476
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoControlloQuantitaPrelievoeSpedWarehouse_Click",
+    "start_line": 1478,
+    "end_line": 1491
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoControlloQuantitaPrelievoeSpedWarehouseDettaglio_Click",
+    "start_line": 1493,
+    "end_line": 1506
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoControlloRoyalties_Click",
+    "start_line": 1508,
+    "end_line": 1524
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoControlloSalesHeaderEExtension_Click",
+    "start_line": 1526,
+    "end_line": 1536
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoCreaRigheBudgetProiezioni_Click",
+    "start_line": 1538,
+    "end_line": 1541
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoCreaValA_Click",
+    "start_line": 1543,
+    "end_line": 1607
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoCreditoOrdiniConProblemi_Click",
+    "start_line": 1610,
+    "end_line": 1612
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoCrossReferenceCrea_Click",
+    "start_line": 1614,
+    "end_line": 1620
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoCrossReferenceVerificaFinale_Click",
+    "start_line": 1622,
+    "end_line": 1624
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoCrossReferenceVerificaPreventina_Click",
+    "start_line": 1626,
+    "end_line": 1628
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoDatiPerPackingLiist_Click",
+    "start_line": 1630,
+    "end_line": 1643
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoDatiPerPackingLiist_UPC_Click",
+    "start_line": 1645,
+    "end_line": 1657
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoDDTApertiECommentiOrdini_Click",
+    "start_line": 1659,
+    "end_line": 1669
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoDettaglioTrasporti_Click",
+    "start_line": 1671,
+    "end_line": 1691
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEanDoppi_Click",
+    "start_line": 1693,
+    "end_line": 1699
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "tastoEANEtichetteODT_Click",
+    "start_line": 1701,
+    "end_line": 1753
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "tastoEANFAtt_Click",
+    "start_line": 1755,
+    "end_line": 1772
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "tastoEANODA_Click",
+    "start_line": 1774,
+    "end_line": 1791
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "tastoEANODT_Click",
+    "start_line": 1793,
+    "end_line": 1810
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "tastoEanODV_Click",
+    "start_line": 1812,
+    "end_line": 1828
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "tastoEanStagione_Click",
+    "start_line": 1830,
+    "end_line": 1840
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEANTutti_Click",
+    "start_line": 1842,
+    "end_line": 1848
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEcommerceSinergia_Click",
+    "start_line": 1850,
+    "end_line": 1867
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEcommerceStatisticheVenduto_Click",
+    "start_line": 1869,
+    "end_line": 1883
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEsci_Click",
+    "start_line": 1885,
+    "end_line": 1887
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEsportaAnalisiApepazza_Click",
+    "start_line": 1889,
+    "end_line": 1905
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEsportaAnalisiComprato_Click",
+    "start_line": 1907,
+    "end_line": 1909
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEsportaAnalisiCompratoTaglia_Click",
+    "start_line": 1911,
+    "end_line": 1914
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEsportaAnalisiSku_Click",
+    "start_line": 1916,
+    "end_line": 1973
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEsportaAnalisiVenduto_Click",
+    "start_line": 1975,
+    "end_line": 2040
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEsportaAnalisiVendutoItem_Click",
+    "start_line": 2042,
+    "end_line": 2059
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEsportaConfrontoStagioni_Click",
+    "start_line": 2061,
+    "end_line": 2079
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEsportaConfrontoStagioniItem_Click",
+    "start_line": 2081,
+    "end_line": 2091
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEsportaControlloEAN_Click",
+    "start_line": 2093,
+    "end_line": 2106
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEsportaControlloUPC_Click",
+    "start_line": 2108,
+    "end_line": 2121
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEsportaEntrateUsciteMagazzino_Click",
+    "start_line": 2123,
+    "end_line": 2142
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEsportaForecast_Click",
+    "start_line": 2144,
+    "end_line": 2146
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEsportaSituazioneRicevimenti_Click",
+    "start_line": 2148,
+    "end_line": 2151
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEsportaVendutoComprato_Click",
+    "start_line": 2153,
+    "end_line": 2161
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEsportaVendutoCompratoItem_Click",
+    "start_line": 2163,
+    "end_line": 2170
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstraiCoin_Click",
+    "start_line": 2172,
+    "end_line": 2182
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstraiConaiGermania_Click",
+    "start_line": 2185,
+    "end_line": 2200
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoestraiconsegnePronte_Click",
+    "start_line": 2202,
+    "end_line": 2223
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstraiControlloTaglieAssortimenti_Click",
+    "start_line": 2225,
+    "end_line": 2246
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstraiCrossReferenceClienti_Click",
+    "start_line": 2248,
+    "end_line": 2274
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstraiDDTPerAgente_Click",
+    "start_line": 2276,
+    "end_line": 2295
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstraiDDTPerDataCreazione_Click",
+    "start_line": 2297,
+    "end_line": 2315
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstraiDDTPerDataRegistrazione_Click",
+    "start_line": 2317,
+    "end_line": 2336
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstraiDisponibileKimo_Click",
+    "start_line": 2338,
+    "end_line": 2366
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstraiDisponibileSfusoKimo_Click",
+    "start_line": 2368,
+    "end_line": 2397
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstraiDisponibileSfusoPerStock_Click",
+    "start_line": 2399,
+    "end_line": 2430
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstraiFoto_Click",
+    "start_line": 2432,
+    "end_line": 2473
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstraiGenerica_Click",
+    "start_line": 2475,
+    "end_line": 2490
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstraiLogimoda_Click",
+    "start_line": 2492,
+    "end_line": 2545
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstraiORdiniCliente_Click",
+    "start_line": 2547,
+    "end_line": 2567
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstraiPackingList_Click",
+    "start_line": 2569,
+    "end_line": 2578
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstraiPerControlliLince_Click",
+    "start_line": 2580,
+    "end_line": 2594
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstraiSpedizioniClienteStagione_Click",
+    "start_line": 2596,
+    "end_line": 2616
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstraiVociDoganali_Click",
+    "start_line": 2618,
+    "end_line": 2633
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstrazioneAnagraficheSfusoDBG_Click",
+    "start_line": 2635,
+    "end_line": 2659
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstrazioneControlloLogimoda_Click",
+    "start_line": 2661,
+    "end_line": 2674
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstrazioneControloQuadrature_Click",
+    "start_line": 2676,
+    "end_line": 2694
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstrazioneDatiIntrastat_Click",
+    "start_line": 2696,
+    "end_line": 2715
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstrazioneDatiIntrastatAcquisti_Click",
+    "start_line": 2717,
+    "end_line": 2736
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstrazioneDatiLince_Click",
+    "start_line": 2738,
+    "end_line": 2751
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstrazioneDisponibilePreRun_Click",
+    "start_line": 2753,
+    "end_line": 2785
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstrazioneElCorteIngles_Click",
+    "start_line": 2787,
+    "end_line": 2803
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstrazioneInboundSfusoDBG_Click",
+    "start_line": 2805,
+    "end_line": 2821
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "tastoEstrazionePayline_Click",
+    "start_line": 2823,
+    "end_line": 2913
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstrazionePerFiltroCampagna_Click",
+    "start_line": 2915,
+    "end_line": 2933
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstrazioneSimulazioneTaglie_Click",
+    "start_line": 2935,
+    "end_line": 2954
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstrazioneTempiPagamento_Click",
+    "start_line": 2956,
+    "end_line": 2976
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstrazioneTemplateCPH_Click",
+    "start_line": 2978,
+    "end_line": 2996
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstrazioneTemplateNapa_Click",
+    "start_line": 2998,
+    "end_line": 3024
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "tastoestrazionevenditeaprezzilistino_Click",
+    "start_line": 3026,
+    "end_line": 3038
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstrazioneVenditeBridgeOutletFebos_Click",
+    "start_line": 3040,
+    "end_line": 3046
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstrazioneVenditeBridgeOutletFebosDaBolla_Click",
+    "start_line": 3048,
+    "end_line": 3054
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstrazioneWildberries_Click",
+    "start_line": 3056,
+    "end_line": 3077
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEstrazioneZalando_Click",
+    "start_line": 3079,
+    "end_line": 3095
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "tastoEtichetteDaFileExcel_Click",
+    "start_line": 3097,
+    "end_line": 3141
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "tastoEtichetteDaFileExcelProduzione_Click",
+    "start_line": 3143,
+    "end_line": 3191
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "tastoEtichetteEANODA_Click",
+    "start_line": 3193,
+    "end_line": 3259
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "tastoEtichetteEANODAOrizz_Click",
+    "start_line": 3261,
+    "end_line": 3319
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "tastoEtichetteEANODV_Click",
+    "start_line": 3321,
+    "end_line": 3371
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEtichetteScatolaFGF_Click",
+    "start_line": 3373,
+    "end_line": 3444
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoEtichetteScatolaQuelloGiusto_Click",
+    "start_line": 3446,
+    "end_line": 3495
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoExportColiPerCPH_Click",
+    "start_line": 3552,
+    "end_line": 3570
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoExportColiPerQC_Click",
+    "start_line": 3572,
+    "end_line": 3590
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoFabbisognoMaterialiPerODA_Click",
+    "start_line": 3592,
+    "end_line": 3595
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoFattureEDdt_Click",
+    "start_line": 3598,
+    "end_line": 3600
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoFattureEndcRegistrate_Click",
+    "start_line": 3602,
+    "end_line": 3620
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoFattureEndcRegistrateAcquisti_Click",
+    "start_line": 3622,
+    "end_line": 3640
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoFatturePerClientePerido_Click",
+    "start_line": 3642,
+    "end_line": 3659
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoFattureRegistrateEDdt_Click",
+    "start_line": 3661,
+    "end_line": 3680
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoFattureRegistrateEDdt_nonfatturati_Click",
+    "start_line": 3682,
+    "end_line": 3700
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoFattureTemporaneeEDdt_Click",
+    "start_line": 3702,
+    "end_line": 3715
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoGenera_Click",
+    "start_line": 3717,
+    "end_line": 3756
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoGeneraDaLetture_Click",
+    "start_line": 3758,
+    "end_line": 3909
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoGeneraDaLetture_UPC_Click",
+    "start_line": 3911,
+    "end_line": 4065
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoGeneraEtichetteMaterialPubblicitario_Click",
+    "start_line": 4067,
+    "end_line": 4081
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoGeneraFileEtichetteEAC_Click",
+    "start_line": 4083,
+    "end_line": 4144
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoGeneraFileEtichetteEAC_KID_Click",
+    "start_line": 4146,
+    "end_line": 4206
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoGeneraLinksImmagini_Click",
+    "start_line": 4208,
+    "end_line": 4306
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoGeneraLinksImmaginiPrimarie_Click",
+    "start_line": 4308,
+    "end_line": 4377
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoGeneraSovraccolliBarcode_Click",
+    "start_line": 4379,
+    "end_line": 4386
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoGeneraSovraccolliTjx_Click",
+    "start_line": 4388,
+    "end_line": 4448
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoGeneraSovraccolliTjxEAN_Click",
+    "start_line": 4450,
+    "end_line": 4603
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoGeneraSovraccolliTjxManuali_Click",
+    "start_line": 4605,
+    "end_line": 4623
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoGestioneMarchi_Click",
+    "start_line": 4625,
+    "end_line": 4632
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoGestioneSchedeClienti_Click",
+    "start_line": 4634,
+    "end_line": 4641
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoGestioneUtenti_Click",
+    "start_line": 4643,
+    "end_line": 4650
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoGestisciRigheBudgetProiezioni_Click",
+    "start_line": 4652,
+    "end_line": 4655
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoGiacenzaAssortimentiLiberi_Click",
+    "start_line": 4657,
+    "end_line": 4663
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoGiacenzaCollocazioni_Click",
+    "start_line": 4665,
+    "end_line": 4678
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoGiacenzaLiberaTagliaVeloce_Click",
+    "start_line": 4680,
+    "end_line": 4700
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoGiacenzaNegativaAssortimenti_Click",
+    "start_line": 4702,
+    "end_line": 4721
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoGIacenzaPerControlloLogimoda_Click",
+    "start_line": 4723,
+    "end_line": 4736
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "tastoGrigliaAgenti_Click",
+    "start_line": 4738,
+    "end_line": 4752
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoImportaEAN_Click",
+    "start_line": 4754,
+    "end_line": 4759
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoImportaMasterData_Click",
+    "start_line": 4761,
+    "end_line": 4767
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoImportaPesi_Click",
+    "start_line": 4769,
+    "end_line": 4786
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoImportaUPC_Click",
+    "start_line": 4788,
+    "end_line": 4794
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoInventario_Click",
+    "start_line": 4796,
+    "end_line": 4828
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoListaAppuntamenti_Click",
+    "start_line": 4830,
+    "end_line": 4840
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "tastoListaClientiBloccati_Click",
+    "start_line": 4842,
+    "end_line": 4856
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoListaClientiGDPR_Click",
+    "start_line": 4858,
+    "end_line": 4868
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoListinoKidAcquisto_Click",
+    "start_line": 4870,
+    "end_line": 4881
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoListinoKidVendita_Click",
+    "start_line": 4883,
+    "end_line": 4893
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "tastoMasterDataArticoli_Click",
+    "start_line": 4895,
+    "end_line": 4913
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "tastoMasterDataArticoliNoListini_Click",
+    "start_line": 4915,
+    "end_line": 4933
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "tastoMasterDataArticoliPrezziAcquisto_Click",
+    "start_line": 4935,
+    "end_line": 4952
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "tastoMasterDataArticoliPrezziFOBEXW_Click",
+    "start_line": 4954,
+    "end_line": 4990
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoMerceRicevutaAllaData_Click",
+    "start_line": 4992,
+    "end_line": 5005
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoNDCRegistrateEResi_Click",
+    "start_line": 5007,
+    "end_line": 5025
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoNDCRegistrateEResi_nonfatturati_Click",
+    "start_line": 5027,
+    "end_line": 5045
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoNegozioEstraiListaDaBolla_Click",
+    "start_line": 5047,
+    "end_line": 5062
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoNegozioEstraiListaDaResoTrasferimento_Click",
+    "start_line": 5064,
+    "end_line": 5079
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoNegozioEstraiListaDaTrasferimento_Click",
+    "start_line": 5081,
+    "end_line": 5096
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoPaiaSpedite_Click",
+    "start_line": 5098,
+    "end_line": 5109
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoParametriFornitori_Click",
+    "start_line": 5111,
+    "end_line": 5113
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoParametriMarchi_Click",
+    "start_line": 5115,
+    "end_line": 5118
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoPrenotazioniEVenditePerTaglia_Click",
+    "start_line": 5120,
+    "end_line": 5140
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoProspettoProvvigioniStagioneMarchio_Click",
+    "start_line": 5142,
+    "end_line": 5160
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoProvvigioniPerStagione_Click",
+    "start_line": 5162,
+    "end_line": 5180
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoProvvigioniPerStagioneDettaglioLiquidazioni_Click",
+    "start_line": 5182,
+    "end_line": 5201
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoRDAAvanzamento_Click",
+    "start_line": 5203,
+    "end_line": 5217
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoRDATitoliDaRicevere_Click",
+    "start_line": 5219,
+    "end_line": 5232
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoRefreshLista_Click",
+    "start_line": 5234,
+    "end_line": 5262
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoRefreshListaResi_Click",
+    "start_line": 5264,
+    "end_line": 5291
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoReportVendutoCompratononProiettato_Click",
+    "start_line": 5293,
+    "end_line": 5306
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoRicercaAnomalie_Click",
+    "start_line": 5308,
+    "end_line": 5322
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoRicercaCCBancariMancanti_Click",
+    "start_line": 5324,
+    "end_line": 5338
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoRicercaCodiceBox_Click",
+    "start_line": 5340,
+    "end_line": 5342
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoRicercaEANUPC_Click",
+    "start_line": 5344,
+    "end_line": 5346
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoRicercaFatturePerResi_Click",
+    "start_line": 5348,
+    "end_line": 5364
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoRicercaQueryPerTabella_Click",
+    "start_line": 5366,
+    "end_line": 5400
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoRieplilogoRDAeBloccati_Click",
+    "start_line": 5402,
+    "end_line": 5416
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoSaldoClienti_Click",
+    "start_line": 5418,
+    "end_line": 5436
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoSaldoFornitori_Click",
+    "start_line": 5438,
+    "end_line": 5455
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoScrittureWarehouseEntryErrate_Click",
+    "start_line": 5457,
+    "end_line": 5472
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoSellToBillTo_Click",
+    "start_line": 5474,
+    "end_line": 5476
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoSemplificaSQLQueries_Click",
+    "start_line": 5478,
+    "end_line": 5487
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoSistemaBolleBRT_Click",
+    "start_line": 5489,
+    "end_line": 5492
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoSistemaBolleTNTaBRT_Click",
+    "start_line": 5494,
+    "end_line": 5499
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoSistemaLimkedDocuments_Click",
+    "start_line": 5501,
+    "end_line": 5507
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoSistemazionePreventivaWarehouseJournal_Click",
+    "start_line": 5509,
+    "end_line": 5518
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoSoggettiProvvigioniControllo_Click",
+    "start_line": 5520,
+    "end_line": 5537
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoSollecitiConSimulate_Click",
+    "start_line": 5539,
+    "end_line": 5549
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoSpedizioni_Click",
+    "start_line": 5551,
+    "end_line": 5570
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoSpedizioniAgente_Click",
+    "start_line": 5572,
+    "end_line": 5590
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoStampaAllocazioniBlac_Click",
+    "start_line": 5592,
+    "end_line": 5595
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoStampaMassivaSovraccolliDaAnagrafica_Click",
+    "start_line": 5597,
+    "end_line": 5650
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoStimaRedditivitaPostCampagnaVendite_Click",
+    "start_line": 5652,
+    "end_line": 5664
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoSvalutaValA_Click",
+    "start_line": 5666,
+    "end_line": 5722
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoTempiPagamento_Click",
+    "start_line": 5724,
+    "end_line": 5739
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoTop40_Click",
+    "start_line": 5741,
+    "end_line": 5755
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoTop40Fornitore_Click",
+    "start_line": 5757,
+    "end_line": 5771
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoTop40Articolo_Click",
+    "start_line": 5773,
+    "end_line": 5787
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoTop40ArticoloFornitore_Click",
+    "start_line": 5789,
+    "end_line": 5803
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoTop40LineaArticolo_Click",
+    "start_line": 5806,
+    "end_line": 5820
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoTop40LineaArticoloFornitore_Click",
+    "start_line": 5822,
+    "end_line": 5836
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoTop40LineaArticoloFotoGrandi_Click",
+    "start_line": 5838,
+    "end_line": 5852
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoTranscodificaEDICarryOver_Click",
+    "start_line": 5854,
+    "end_line": 5941
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoVariazionePrezzo_Click",
+    "start_line": 5943,
+    "end_line": 5946
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoVenditeSpaccio_Click",
+    "start_line": 5948,
+    "end_line": 5972
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoVenditeTagliaVeloce_Click",
+    "start_line": 5974,
+    "end_line": 5992
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoVerificaSpedizioniCosmos_Click",
+    "start_line": 5994,
+    "end_line": 6007
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoWarhouseJournalControllo_Click",
+    "start_line": 6009,
+    "end_line": 6028
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TastoWMSControlloQuadraturaGiacenza_Click",
+    "start_line": 6030,
+    "end_line": 6049
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TestForecastBudget_Click",
+    "start_line": 6051,
+    "end_line": 6070
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TestForecastBudgetApeE17_Click",
+    "start_line": 6072,
+    "end_line": 6089
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TestForecastBudgetApeE17Globale_Click",
+    "start_line": 6091,
+    "end_line": 6109
+  },
+  {
+    "module": "Form_Principale",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "TestMostraFiltri_Click",
+    "start_line": 6111,
+    "end_line": 6113
+  },
+  {
+    "module": "Report_MiglioriArticoliVenduti",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Corpo_Format",
+    "start_line": 4,
+    "end_line": 45
+  },
+  {
+    "module": "Report_Etichette EANCodeLabelsTMP_con UPC",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Corpo_Format",
+    "start_line": 3,
+    "end_line": 34
+  },
+  {
+    "module": "Report_Etichette EANCodeLabelsTMP_con UPC",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Report_Open",
+    "start_line": 36,
+    "end_line": 45
+  },
+  {
+    "module": "Report_MiglioriArticoliVenduti-Modello",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Corpo_Format",
+    "start_line": 5,
+    "end_line": 48
+  },
+  {
+    "module": "Report_MiglioriArticoliVenduti-LineaModello_OLD",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Corpo_Format",
+    "start_line": 4,
+    "end_line": 36
+  },
+  {
+    "module": "Report_MiglioriArticoliVenduti-Fornitore",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Corpo_Format",
+    "start_line": 4,
+    "end_line": 45
+  },
+  {
+    "module": "Report_MiglioriArticoliVenduti-LineaModello-Fornitore",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Corpo_Format",
+    "start_line": 4,
+    "end_line": 49
+  },
+  {
+    "module": "Report_MiglioriArticoliVenduti-Modello-Fornitore",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Corpo_Format",
+    "start_line": 4,
+    "end_line": 46
+  },
+  {
+    "module": "Report_Etichette EANCodeLabelsTMP_old_20181107",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Corpo_Format",
+    "start_line": 3,
+    "end_line": 37
+  },
+  {
+    "module": "Report_Etichette EANCodeLabelsTMP_old_20181107",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Report_Open",
+    "start_line": 39,
+    "end_line": 48
+  },
+  {
+    "module": "Report_ReportOK",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Corpo_Format",
+    "start_line": 3,
+    "end_line": 15
+  },
+  {
+    "module": "Report_ReportOkSovraccolliDaLetture",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "IntestazioneGruppo0_Format",
+    "start_line": 3,
+    "end_line": 15
+  },
+  {
+    "module": "Report_EtichetteCampionari",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Report_Open",
+    "start_line": 3,
+    "end_line": 45
+  },
+  {
+    "module": "Report_MiglioriArticoliVenduti-LineaModello-VendutoComprato",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Corpo_Format",
+    "start_line": 4,
+    "end_line": 17
+  },
+  {
+    "module": "Report_EtichetteCampionari_OLD_20181107",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Report_Open",
+    "start_line": 3,
+    "end_line": 30
+  },
+  {
+    "module": "Report_Etichette EANCodeLabelsTMP_old_20190912",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Corpo_Format",
+    "start_line": 3,
+    "end_line": 37
+  },
+  {
+    "module": "Report_Etichette EANCodeLabelsTMP_old_20190912",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Report_Open",
+    "start_line": 39,
+    "end_line": 48
+  },
+  {
+    "module": "Report_Etichette EANCodeLabelsTMP_con UPC_OLD_20181108",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Corpo_Format",
+    "start_line": 3,
+    "end_line": 36
+  },
+  {
+    "module": "Report_Etichette EANCodeLabelsTMP_con UPC_OLD_20181108",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Report_Open",
+    "start_line": 38,
+    "end_line": 47
+  },
+  {
+    "module": "Report_Etichette EANCodeLabelsTMP_0",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Corpo_Format",
+    "start_line": 3,
+    "end_line": 37
+  },
+  {
+    "module": "Report_Etichette EANCodeLabelsTMP_0",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Report_Open",
+    "start_line": 39,
+    "end_line": 48
+  },
+  {
+    "module": "Report_Etichette EANCodeLabelsTMP",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Corpo_Format",
+    "start_line": 3,
+    "end_line": 33
+  },
+  {
+    "module": "Report_Etichette EANCodeLabelsTMP",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Report_Open",
+    "start_line": 35,
+    "end_line": 44
+  },
+  {
+    "module": "Report_MiglioriArticoliVenduti-LineaModello-VendutocompratoNonProiet",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Corpo_Format",
+    "start_line": 4,
+    "end_line": 17
+  },
+  {
+    "module": "Report_MiglioriArticoliVenduti-LineaModello",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Corpo_Format",
+    "start_line": 4,
+    "end_line": 50
+  },
+  {
+    "module": "Modulo1",
+    "visibility": null,
+    "kind": "Function",
+    "name": "calcoloSettimana",
+    "start_line": 17,
+    "end_line": 23
+  },
+  {
+    "module": "Modulo1",
+    "visibility": null,
+    "kind": "Sub",
+    "name": "salvaFileTxt",
+    "start_line": 24,
+    "end_line": 66
+  },
+  {
+    "module": "Modulo1",
+    "visibility": null,
+    "kind": "Sub",
+    "name": "CreaDatiPerFatturaElCorteInglesDaDDT",
+    "start_line": 67,
+    "end_line": 176
+  },
+  {
+    "module": "Modulo1",
+    "visibility": null,
+    "kind": "Function",
+    "name": "SubstSlashDash",
+    "start_line": 177,
+    "end_line": 189
+  },
+  {
+    "module": "Modulo1",
+    "visibility": null,
+    "kind": "Function",
+    "name": "SubstSlashUndercore",
+    "start_line": 190,
+    "end_line": 202
+  },
+  {
+    "module": "Modulo1",
+    "visibility": null,
+    "kind": "Function",
+    "name": "UPC_A",
+    "start_line": 204,
+    "end_line": 322
+  },
+  {
+    "module": "Modulo1",
+    "visibility": null,
+    "kind": "Sub",
+    "name": "semplificaSQLQueries",
+    "start_line": 323,
+    "end_line": 336
+  },
+  {
+    "module": "Modulo1",
+    "visibility": null,
+    "kind": "Function",
+    "name": "restituisciDataComeStringaDaAmericana",
+    "start_line": 338,
+    "end_line": 342
+  },
+  {
+    "module": "Modulo1",
+    "visibility": null,
+    "kind": "Function",
+    "name": "restituisciDataComeStringa",
+    "start_line": 344,
+    "end_line": 350
+  },
+  {
+    "module": "Modulo1",
+    "visibility": null,
+    "kind": "Sub",
+    "name": "fineProgramma",
+    "start_line": 352,
+    "end_line": 354
+  },
+  {
+    "module": "Modulo1",
+    "visibility": null,
+    "kind": "Function",
+    "name": "append",
+    "start_line": 356,
+    "end_line": 377
+  },
+  {
+    "module": "Modulo1",
+    "visibility": null,
+    "kind": "Function",
+    "name": "append_associated",
+    "start_line": 379,
+    "end_line": 405
+  },
+  {
+    "module": "Modulo1",
+    "visibility": null,
+    "kind": "Sub",
+    "name": "collegaTabelle",
+    "start_line": 406,
+    "end_line": 572
+  },
+  {
+    "module": "Modulo1",
+    "visibility": "Public",
+    "kind": "Function",
+    "name": "collegaTabellaLince",
+    "start_line": 574,
+    "end_line": 650
+  },
+  {
+    "module": "Modulo1",
+    "visibility": "Public",
+    "kind": "Function",
+    "name": "ean13",
+    "start_line": 654,
+    "end_line": 735
+  },
+  {
+    "module": "Modulo1",
+    "visibility": null,
+    "kind": "Function",
+    "name": "SostituisciBarraConMeno",
+    "start_line": 737,
+    "end_line": 746
+  },
+  {
+    "module": "Modulo1",
+    "visibility": null,
+    "kind": "Function",
+    "name": "aggiungizerisucolore",
+    "start_line": 748,
+    "end_line": 755
+  },
+  {
+    "module": "Modulo1",
+    "visibility": null,
+    "kind": "Sub",
+    "name": "infotabelle",
+    "start_line": 757,
+    "end_line": 793
+  },
+  {
+    "module": "ModuloBypass",
+    "visibility": null,
+    "kind": "Sub",
+    "name": "ImpostaProprietaAvvio",
+    "start_line": 6,
+    "end_line": 21
+  },
+  {
+    "module": "ModuloBypass",
+    "visibility": null,
+    "kind": "Sub",
+    "name": "consentiBypass",
+    "start_line": 23,
+    "end_line": 25
+  },
+  {
+    "module": "ModuloBypass",
+    "visibility": null,
+    "kind": "Function",
+    "name": "ModificaProprieta",
+    "start_line": 27,
+    "end_line": 51
+  },
+  {
+    "module": "Report_ReportOkSovraccolli_Barcode",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Corpo_Format",
+    "start_line": 3,
+    "end_line": 21
+  },
+  {
+    "module": "Report_ReportOkSovraccolli_Barcode",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "IntestazioneGruppo0_Format",
+    "start_line": 23,
+    "end_line": 35
+  },
+  {
+    "module": "Modulo2",
+    "visibility": null,
+    "kind": "Sub",
+    "name": "crea_txt_da_excel_dbgroup",
+    "start_line": 4,
+    "end_line": 33
+  },
+  {
+    "module": "Modulo2",
+    "visibility": null,
+    "kind": "Sub",
+    "name": "calcola_set",
+    "start_line": 35,
+    "end_line": 84
+  },
+  {
+    "module": "Report_MiglioriArticoliVenduti-LineaModello_MediaRisoluzione",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Corpo_Format",
+    "start_line": 4,
+    "end_line": 50
+  },
+  {
+    "module": "Report_Etichette EANCodeLabelsTMP_Orizz",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Corpo_Format",
+    "start_line": 3,
+    "end_line": 33
+  },
+  {
+    "module": "Report_Etichette EANCodeLabelsTMP_Orizz",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Report_Open",
+    "start_line": 35,
+    "end_line": 44
+  },
+  {
+    "module": "Report_Etichette EANCodeLabelsTMP_FGF",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Corpo_Format",
+    "start_line": 3,
+    "end_line": 38
+  },
+  {
+    "module": "Report_Etichette EANCodeLabelsTMP_FGF",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Report_Open",
+    "start_line": 40,
+    "end_line": 49
+  },
+  {
+    "module": "Report_Etichette EANCodeLabelsTMP_QuelloGiusto",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Corpo_Format",
+    "start_line": 3,
+    "end_line": 16
+  },
+  {
+    "module": "Report_Etichette EANCodeLabelsTMP_QuelloGiusto",
+    "visibility": "Private",
+    "kind": "Sub",
+    "name": "Report_Open",
+    "start_line": 18,
+    "end_line": 27
+  }
+]

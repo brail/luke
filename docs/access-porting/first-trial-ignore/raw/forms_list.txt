@@ -1,0 +1,4 @@
+# Forms in NewEraStat.accdb
+
+Note: Form metadata requires Access object model.
+Will be documented from VBA module analysis.

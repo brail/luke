@@ -1,0 +1,4 @@
+SELECT [Sales Invoice Header].No_, [Sales Invoice Line].[Customer Order Ref_], [NavisionEan-step0].[Cross-Reference No_] AS EAN, [NavisionEan-step0-UPC].[Cross-Reference No_] AS UPC, Item_1.[Description 2], Item_1.No_, Round([ValueSold]/[qty],2) AS UnitPrice, Val([Quantity]) AS qty, Val([Line Amount])-Val([Inv_ Discount Amount]) AS ValueSold, Item.[Tariff No_]
+FROM (((([Sales Invoice Line] LEFT JOIN Item ON [Sales Invoice Line].No_ = Item.No_) RIGHT JOIN [Sales Invoice Header] ON [Sales Invoice Line].[Document No_] = [Sales Invoice Header].No_) LEFT JOIN Item AS Item_1 ON Item.[Model Item No_] = Item_1.No_) LEFT JOIN [NavisionEan-step0] ON Item.No_ = [NavisionEan-step0].[Item No_]) LEFT JOIN [NavisionEan-step0-UPC] ON Item.No_ = [NavisionEan-step0-UPC].[Item No_]
+WHERE ((([Sales Invoice Header].No_)=[forms]![principale]![filtroeanfatt]) AND (([Sales Invoice Line].Type)=2) AND ((Item.[Advertising Material])=0));
+

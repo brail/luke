@@ -1,0 +1,32 @@
+------------------------------------------------------------
+QUERY #13: SalesEKimoBidone_Fast
+Tipo: Unknown(128)
+Data creazione: 27/03/2026 14:36:41
+Ultimo aggiornamento: 27/03/2026 14:36:41
+------------------------------------------------------------
+Select * from SalesEKimoBidone_Fast_step0_sales
+UNION ALL select * from SalesEKimoBidone_Fast_step1_Bidone;
+
+
+------------------------------------------------------------
+QUERY #14: SalesEKimoBidone_Fast_step0_sales
+Tipo: Select
+Data creazione: 27/03/2026 14:36:36
+Ultimo aggiornamento: 27/03/2026 14:36:36
+------------------------------------------------------------
+SELECT "SO" AS DocType, Item.[Trademark Code], [Sales Header].[Salesperson Code] AS [Salesperson Code Nav], Salesperson_Purchaser.Name AS SalesPersonName, 0 AS [Enrty No_], "" AS No_, [Sales Line].No_ AS [Model Item No_], [Sales Line].[Constant Variable Code] AS [Color Code], [Sales Line].[Assortment Code] AS [Size Code], Item.Description, Item.[Description 2], [Sales Line].[Line Code], Val([no_ of pairs]) AS pairs, Val([Line Amount])-Val([Inv_ Discount Amount]) AS [Value Sold], Item.[Vendor No_] AS [Vendor Name], Vendor.Name, "" AS [Manufacturer Code], "" AS [Manufacturer Name], [Sales Line].[Collection Code], [Sales Header].[Selling Season Code] AS [Season Code], "" AS [Assigned Sales Document No_], [Sales Line].[Sell-to Customer No_], Customer.Name AS Name, [Sales Line].Type, #1/1/1973# AS [Create SO Date Time], #1/1/1973# AS [Release SO Date Time], "" AS [KIMO_FASHION SO Reference], "" AS [KIMO Document Type]
+FROM ((([Sales Line] RIGHT JOIN (([Sales Header] LEFT JOIN Salesperson_Purchaser ON [Sales Header].[Salesperson Code] = Salesperson_Purchaser.Code) LEFT JOIN [Sales Header Extension] ON [Sales Header].No_ = [Sales Header Extension].[Document No_]) ON [Sales Line].[Document No_] = [Sales Header].No_) LEFT JOIN Item ON [Sales Line].No_ = Item.No_) LEFT JOIN Vendor ON Item.[Vendor No_] = Vendor.No_) LEFT JOIN Customer ON [Sales Header].[Sell-to Customer No_] = Customer.No_
+WHERE ((([Sales Header].[Selling Season Code])=[Season Code Filter]) AND (([Sales Line].Type)=19 Or ([Sales Line].Type)=20) AND (([Sales Line].[Delete Reason])=""));
+
+
+------------------------------------------------------------
+QUERY #15: SalesEKimoBidone_Fast_step1_Bidone
+Tipo: Select
+Data creazione: 27/03/2026 14:36:38
+Ultimo aggiornamento: 27/03/2026 14:36:38
+------------------------------------------------------------
+SELECT "BASKET" AS DocType, [KIMO-FASHION Sales Order Hdr].[trademark code], [KIMO-FASHION Sales Order Hdr].[Salesperson Code NAV], Salesperson_Purchaser.Name AS SalesPersonName, [KIMO-FASHION Sales Order Hdr].[Entry No_], [KIMO-FASHION Sales Order Line].No_, [KIMO-FASHION Sales Order Line].[Model Item No_], [KIMO-FASHION Sales Order Line].[Color Code], [KIMO-FASHION Sales Order Line].[Size Code], Item.Description, Item.[Description 2], Item.[Line Code], Sum(Val([quantity])) AS pairs, Sum(Val([Line Amount])) AS ValueSold, Item.[Vendor No_], Vendor.Name AS [Vendor Name], Item.[Manufacturer Code], Vendor_1.Name AS [Manufaturer Name], Item.[Collection Code], Item.[season Code], [KIMO-FASHION Sales Order Hdr].[Assigned Sales Document No_], Customer.No_, Customer.Name, [KIMO-FASHION Sales Order Line].Type, [KIMO-FASHION Sales Order Hdr].[Create SO Date Time], [KIMO-FASHION Sales Order Hdr].[Release SO Date Time], [KIMO-FASHION Sales Order Line].[KIMO_FASHION SO Reference], [KIMO-FASHION Sales Order Hdr].[KIMO Document Type]
+FROM (((((([KIMO-FASHION Sales Order Line] RIGHT JOIN [KIMO-FASHION Sales Order Hdr] ON [KIMO-FASHION Sales Order Line].[Header Entry No_] = [KIMO-FASHION Sales Order Hdr].[Entry No_]) LEFT JOIN Customer ON [KIMO-FASHION Sales Order Hdr].[Sell-to Customer No_] = Customer.No_) LEFT JOIN Item ON [KIMO-FASHION Sales Order Line].[Model Item No_] = Item.No_) LEFT JOIN Vendor AS Vendor_1 ON Item.[Manufacturer Code] = Vendor_1.No_) LEFT JOIN Vendor ON Item.[Vendor No_] = Vendor.No_) LEFT JOIN Salesperson_Purchaser ON [KIMO-FASHION Sales Order Hdr].[Salesperson Code NAV] = Salesperson_Purchaser.Code) LEFT JOIN AssortimentiQuantita ON [KIMO-FASHION Sales Order Line].[Size Code] = AssortimentiQuantita.[Assortment Code]
+GROUP BY "BASKET", [KIMO-FASHION Sales Order Hdr].[trademark code], [KIMO-FASHION Sales Order Hdr].[Salesperson Code NAV], Salesperson_Purchaser.Name, [KIMO-FASHION Sales Order Hdr].[Entry No_], [KIMO-FASHION Sales Order Line].No_, [KIMO-FASHION Sales Order Line].[Model Item No_], [KIMO-FASHION Sales Order Line].[Color Code], [KIMO-FASHION Sales Order Line].[Size Code], Item.Description, Item.[Description 2], Item.[Line Code], Item.[Vendor No_], Vendor.Name, Item.[Manufacturer Code], Vendor_1.Name, Item.[Collection Code], Item.[season Code], [KIMO-FASHION Sales Order Hdr].[Assigned Sales Document No_], Customer.No_, Customer.Name, [KIMO-FASHION Sales Order Line].Type, [KIMO-FASHION Sales Order Hdr].[Create SO Date Time], [KIMO-FASHION Sales Order Hdr].[Release SO Date Time], [KIMO-FASHION Sales Order Line].[KIMO_FASHION SO Reference], [KIMO-FASHION Sales Order Hdr].[KIMO Document Type]
+HAVING ((([KIMO-FASHION Sales Order Hdr].[Assigned Sales Document No_])="") AND (([KIMO-FASHION Sales Order Line].Type)=2 Or ([KIMO-FASHION Sales Order Line].Type)=20))
+ORDER BY [KIMO-FASHION Sales Order Hdr].[trademark code], [KIMO-FASHION Sales Order Hdr].[Salesperson Code NAV];

@@ -1,0 +1,4 @@
+SELECT tempiPag_New_step5_CalcoloDelloImportoEStatusPerEntryNo.[Entry No_] AS ChiaveMovimentoFatturaNotaCredito, tempiPag_New_step5_CalcoloDelloImportoEStatusPerEntryNo.importoresiduo AS importoabbinato, "Residuo" AS collegamento
+FROM tempiPag_New_step5_CalcoloDelloImportoEStatusPerEntryNo
+WHERE (((tempiPag_New_step5_CalcoloDelloImportoEStatusPerEntryNo.importoresiduo)<>0));
+

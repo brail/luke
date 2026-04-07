@@ -703,11 +703,15 @@ model NavPfItem {
   advertisingMaterial       String?
   countryRegionOfOriginCode String?
   constantAssortmentVarGrp  String?
+  seasonCode                String?
+  trademarkCode             String?
   navRowversion             BigInt    @default(0)
 
   @@index([modelItemNo])
   @@index([configuratorRelation])
   @@index([modelItemNo, variableCode01])
+  @@index([seasonCode])
+  @@index([trademarkCode])
   @@map("nav_pf_item")
 }
 
@@ -888,4 +892,54 @@ model NavPfDdtPicking {
   @@id([orderNo, orderLineNo])
   @@index([orderNo])
   @@map("nav_pf_ddt_picking")
+}
+
+// ─── Repliche tabelle KIMO-FASHION ────────────────────────────────────────────
+// Prefisso nav_kimo_ per distinguerle dalle nav_pf_* (portafoglio).
+// Alimentate da nav-kimo-sync.ts (background scheduler separato).
+// Sync state condiviso con nav_pf_sync_state (stesso schema, prefisso nav_kimo_).
+
+/** Replica di [Company$KIMO-FASHION Sales Order Hdr] — sync incrementale rowversion */
+model NavKimoSalesHeader {
+  entryNo                  BigInt    @id
+  trademarkCode            String?
+  sellingSeasonCode        String?
+  salespersonCodeNav       String?
+  assignedSalesDocumentNo  String?
+  sellToCustomerNo         String?
+  createSoDateTime         DateTime?
+  releaseSoDateTime        DateTime?
+  kimoDocumentType         String?
+  navRowversion            BigInt    @default(0)
+
+  @@index([trademarkCode])
+  @@index([sellingSeasonCode])
+  @@index([trademarkCode, sellingSeasonCode])
+  @@index([salespersonCodeNav])
+  @@index([assignedSalesDocumentNo])
+  @@index([sellToCustomerNo])
+  @@map("nav_kimo_sales_header")
+}
+
+/**
+ * Replica di [Company$KIMO-FASHION Sales Order Line] — sync incrementale rowversion.
+ * PK = Entry No_ (BigInt univoco per riga, come da schema NAV).
+ * NON usa Line No_ (campo inesistente in questa tabella NAV).
+ */
+model NavKimoSalesLine {
+  entryNo                  BigInt    @id
+  headerEntryNo            BigInt
+  no_                      String?
+  modelItemNo              String?
+  colorCode                String?
+  sizeCode                 String?
+  quantity                 Float?
+  lineAmount               Float?
+  kimoFashionSoReference   String?
+  type                     Int?
+  navRowversion            BigInt    @default(0)
+
+  @@index([headerEntryNo])
+  @@index([modelItemNo])
+  @@map("nav_kimo_sales_line")
 }

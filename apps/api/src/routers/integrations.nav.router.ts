@@ -143,7 +143,7 @@ const navSyncRouter = router({
   saveSyncSchedule: protectedProcedure
     .use(requirePermission('config:update'))
     .input(z.object({
-      entity: z.enum(['vendor', 'brand', 'season', 'portafoglio']),
+      entity: z.enum(['vendor', 'brand', 'season', 'portafoglio', 'kimo']),
       autoSyncEnabled: z.boolean(),
       intervalMinutes: z.number().int().min(1).max(1440),
     }))

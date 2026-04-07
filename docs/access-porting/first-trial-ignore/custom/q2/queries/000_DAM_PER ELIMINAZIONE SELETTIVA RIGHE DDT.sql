@@ -1,0 +1,4 @@
+SELECT [DDT_Picking Header].No_, [DDT_Picking Header].[Sell-to Customer No_], [DDT_Picking Header].STATUS, [DDT_Picking Line].TYPE, Val([NO_ OF PAIRS]) AS pairs, Val([QUANTITY]) AS qty, [DDT_Picking Line].No_
+FROM [DDT_Picking Line] INNER JOIN [DDT_Picking Header] ON ([DDT_Picking Line].[Document No_] = [DDT_Picking Header].No_) AND ([DDT_Picking Line].[Document Type] = [DDT_Picking Header].[Document Type])
+WHERE ((([DDT_Picking Header].[Sell-to Customer No_])="C00302") AND (([DDT_Picking Header].STATUS)=0) AND (([DDT_Picking Line].No_) Like "F3FLOW03/SOF*" Or ([DDT_Picking Line].No_) Like "F3MARFA03/SOF*" Or ([DDT_Picking Line].No_) Like "F3WAVE03/SOF*")) OR ((([DDT_Picking Header].[Sell-to Customer No_])="C00302") AND (([DDT_Picking Header].STATUS)=0) AND (([DDT_Picking Line].No_) Like "F3BLANCA02/DOW*" Or ([DDT_Picking Line].No_) Like "F3DIXON02/NUS*"));
+

@@ -414,6 +414,8 @@ async function syncItems(
         i.[Advertising Material]             AS "advertisingMaterial",
         i.[Country_Region of Origin Code]    AS "countryRegionOfOriginCode",
         i.[Constant Assortment Var_Grp_]     AS "constantAssortmentVarGrp",
+        i.[Season Code]                      AS "seasonCode",
+        i.[Trademark Code]                   AS "trademarkCode",
         CONVERT(BIGINT, i.[timestamp])       AS "navRowversion"
       FROM [${co}$Item] i
       WHERE (

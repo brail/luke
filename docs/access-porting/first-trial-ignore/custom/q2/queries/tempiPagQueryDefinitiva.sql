@@ -1,0 +1,3 @@
+SELECT tempiPagBaseDocumentiDaVerificareQueryGenerale.*, IIf([giorniPagamento]<=[forms]![principale]![NumeroGiorniSoglia],[importoabbinatocalcolato],0) AS importoEntroSoglia, IIf([giorniritardoPagamento]<=[forms]![principale]![NumeroGiorniSogliaRitardo],[importoabbinatocalcolato],0) AS importoEntroSogliaRitardo, [cliente]+" ("+[codicecliente]+")" AS clienteecodice, [agente]+" ("+[codiceagente]+")" AS agenteecodice, tempiPagDatiMarchiSuRigheFattureNDC.DimMarchio
+FROM tempiPagBaseDocumentiDaVerificareQueryGenerale LEFT JOIN tempiPagDatiMarchiSuRigheFattureNDC ON tempiPagBaseDocumentiDaVerificareQueryGenerale.NumeroDocumentoFattura = tempiPagDatiMarchiSuRigheFattureNDC.[Document No_];
+

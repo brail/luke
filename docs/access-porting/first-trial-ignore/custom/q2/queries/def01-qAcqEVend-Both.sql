@@ -1,0 +1,3 @@
+SELECT qAcqGrouped.*, qVendGrouped.GrossSalesValue, qVendGrouped.DiscountValue, qVendGrouped.AreaManagerCommissionValue, qVendGrouped.SalesPersonCommissionValue, qVendGrouped.QuantitySold, qVendGrouped.PairsSold, qVendGrouped.ValueSold, qVendGrouped.QuantityShipped, qVendGrouped.PairsShipped, qVendGrouped.ValueShipped, qVendGrouped.QuantityInvoiced, qVendGrouped.Pairsinvoiced, qVendGrouped.ValueInvoiced
+FROM qAcqGrouped INNER JOIN qVendGrouped ON (qAcqGrouped.PurchasesAssortment = qVendGrouped.SalesAssortment) AND (qAcqGrouped.PurchasesColorCode = qVendGrouped.SalesColorCode) AND (qAcqGrouped.PurchasesArt = qVendGrouped.SalesArt);
+
