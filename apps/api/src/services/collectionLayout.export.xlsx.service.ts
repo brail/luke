@@ -107,13 +107,13 @@ export async function buildCollectionLayoutXlsx(
   sheet.autoFilter = { from: 'A1', to: `${lastColLetter}1` };
 
   // Collect all pictureUrls up front, fetch concurrently
-  const allRows = layout.groups.flatMap(g => g.rows);
-  const pictureUrls = allRows.map(r => r.pictureUrl);
+  const allRows = layout.groups.flatMap((g: GroupWithRows) => g.rows);
+  const pictureUrls = allRows.map((r: RowWithVendor) => r.pictureUrl);
   const imageBuffers = await Promise.all(
-    pictureUrls.map(url => (url ? fetchImageAsBuffer(url) : Promise.resolve(null))),
+    pictureUrls.map((url: string | null) => (url ? fetchImageAsBuffer(url) : Promise.resolve(null))),
   );
   const urlToBuffer = new Map<string, Buffer | null>();
-  allRows.forEach((row, i) => {
+  allRows.forEach((row: RowWithVendor, i: number) => {
     if (row.pictureUrl) urlToBuffer.set(row.pictureUrl, imageBuffers[i]!);
   });
 
@@ -161,7 +161,8 @@ export async function buildCollectionLayoutXlsx(
       if (imageBuf) {
         dataRow.height = ROW_HEIGHT_WITH_IMAGE;
         const ext = detectExtension(row.pictureUrl!);
-        const imageId = wb.addImage({ buffer: imageBuf, extension: ext });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const imageId = wb.addImage({ buffer: imageBuf as any, extension: ext });
         sheet.addImage(imageId, {
           tl: { col: FOTO_COL_INDEX, row: dataRowIndex } as ExcelJS.Anchor,
           ext: { width: IMAGE_WIDTH, height: IMAGE_HEIGHT },
@@ -178,10 +179,9 @@ export async function buildCollectionLayoutXlsx(
   return Buffer.from(arrayBuffer);
 }
 
-function detectExtension(url: string): 'jpeg' | 'png' | 'gif' | 'bmp' {
+function detectExtension(url: string): 'jpeg' | 'png' | 'gif' {
   const lower = url.toLowerCase();
-  if (lower.includes('.png'))  return 'png';
-  if (lower.includes('.gif'))  return 'gif';
-  if (lower.includes('.bmp'))  return 'bmp';
+  if (lower.includes('.png')) return 'png';
+  if (lower.includes('.gif')) return 'gif';
   return 'jpeg';
 }
