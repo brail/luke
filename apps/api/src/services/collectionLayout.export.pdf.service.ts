@@ -44,29 +44,26 @@ const PDF_COLUMNS = [
 const HEADER_FILL = '#E8E0D5';
 const IMAGE_WIDTH  = 50;
 const IMAGE_HEIGHT = 65;
+const CELL_MARGIN = [3, 4, 3, 4] as [number, number, number, number];
 
 // ─── Builder ──────────────────────────────────────────────────────────────────
 
 export async function buildCollectionLayoutPdf(
   layout: CollectionLayoutForPdf,
 ): Promise<Buffer> {
-  // Fetch brand logo and row images concurrently
   const allRows = layout.groups.flatMap(g => g.rows);
-  const imageUrls: (string | null)[] = [
-    layout.brand.logoUrl ?? null,
-    ...allRows.map(r => r.pictureUrl ?? null),
-  ];
 
-  const fetchedImages = await Promise.all(
-    imageUrls.map(url => (url ? fetchImageAsBase64(url) : Promise.resolve(null))),
+  // Fetch brand logo and row images — deduplicate row URLs to avoid redundant requests
+  const uniqueRowUrls = [...new Set(allRows.map(r => r.pictureUrl).filter((u): u is string => !!u))];
+  const urlToBase64 = new Map<string, string | null>();
+  const [brandLogoBase64] = await Promise.all([
+    layout.brand.logoUrl ? fetchImageAsBase64(layout.brand.logoUrl) : Promise.resolve(null),
+    ...uniqueRowUrls.map(url => fetchImageAsBase64(url).then(b64 => urlToBase64.set(url, b64))),
+  ]);
+
+  const rowImageMap = new Map<string, string | null>(
+    allRows.map(row => [row.id, row.pictureUrl ? (urlToBase64.get(row.pictureUrl) ?? null) : null]),
   );
-
-  const brandLogoBase64 = fetchedImages[0];
-  const rowImages = fetchedImages.slice(1);
-
-  // Build row index map
-  const rowImageMap = new Map<string, string | null>();
-  allRows.forEach((row, i) => rowImageMap.set(row.id, rowImages[i]!));
 
   // Build table body
   const tableBody: Content[][] = [
@@ -76,7 +73,7 @@ export async function buildCollectionLayoutPdf(
       bold: true,
       fillColor: HEADER_FILL,
       fontSize: 8,
-      margin: [3, 4, 3, 4] as [number, number, number, number],
+      margin: CELL_MARGIN,
     })),
   ];
 
@@ -106,15 +103,15 @@ export async function buildCollectionLayoutPdf(
 
       tableBody.push([
         { ...photoCell, margin: [2, 2, 2, 2] as [number, number, number, number] },
-        { text: row.line,            fontSize: 8, margin: [3, 4, 3, 4] as [number, number, number, number] },
-        { text: row.gender ?? '',    fontSize: 8, margin: [3, 4, 3, 4] as [number, number, number, number] },
-        { text: vendorLabel,         fontSize: 8, margin: [3, 4, 3, 4] as [number, number, number, number] },
-        { text: row.productCategory, fontSize: 8, margin: [3, 4, 3, 4] as [number, number, number, number] },
-        { text: row.strategy ?? '',  fontSize: 8, margin: [3, 4, 3, 4] as [number, number, number, number] },
-        { text: row.status,          fontSize: 8, margin: [3, 4, 3, 4] as [number, number, number, number] },
-        { text: row.progress ?? '',  fontSize: 8, margin: [3, 4, 3, 4] as [number, number, number, number] },
-        { text: String(row.skuForecast), fontSize: 8, alignment: 'right' as const, margin: [3, 4, 3, 4] as [number, number, number, number] },
-        { text: String(row.qtyForecast), fontSize: 8, alignment: 'right' as const, margin: [3, 4, 3, 4] as [number, number, number, number] },
+        { text: row.line,            fontSize: 8, margin: CELL_MARGIN },
+        { text: row.gender ?? '',    fontSize: 8, margin: CELL_MARGIN },
+        { text: vendorLabel,         fontSize: 8, margin: CELL_MARGIN },
+        { text: row.productCategory, fontSize: 8, margin: CELL_MARGIN },
+        { text: row.strategy ?? '',  fontSize: 8, margin: CELL_MARGIN },
+        { text: row.status,          fontSize: 8, margin: CELL_MARGIN },
+        { text: row.progress ?? '',  fontSize: 8, margin: CELL_MARGIN },
+        { text: String(row.skuForecast), fontSize: 8, alignment: 'right' as const, margin: CELL_MARGIN },
+        { text: String(row.qtyForecast), fontSize: 8, alignment: 'right' as const, margin: CELL_MARGIN },
       ]);
     }
   }
@@ -124,7 +121,7 @@ export async function buildCollectionLayoutPdf(
     pageOrientation: 'landscape',
     pageMargins: [20, 60, 20, 30],
     defaultStyle: { font: 'Roboto', fontSize: 9 },
-    header: (currentPage, totalPages) =>
+    header: (currentPage: number, totalPages: number) =>
       buildBrandPageHeader(
         { name: layout.brand.name, logoBase64: brandLogoBase64 },
         { name: layout.season.name, code: layout.season.code, year: layout.season.year },

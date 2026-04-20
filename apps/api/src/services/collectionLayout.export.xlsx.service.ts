@@ -10,7 +10,7 @@ import type {
   Season,
 } from '@prisma/client';
 
-import { XLSX_HEADER_STYLES } from '../lib/export/xlsx-streaming';
+import { applyStreamingHeaderStyle } from '../lib/export/xlsx-streaming';
 import { fetchImageAsBuffer } from '../lib/export/image';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -78,6 +78,12 @@ const ROW_HEIGHT_DEFAULT = 18;
 const IMAGE_WIDTH = 45;  // px
 const IMAGE_HEIGHT = 57; // px
 
+// ExcelJS getCell() is 1-based; derive from column definitions to stay in sync
+const colIdx = (key: string) => COLUMNS.findIndex(c => c.key === key) + 1;
+const RETAIL_TARGET_COL = colIdx('retailTargetPrice');
+const SUPPLIER_QUOT_COL = colIdx('supplierFirstQuotation');
+const MARGIN_COL        = colIdx('margin');
+
 // ─── Builder ──────────────────────────────────────────────────────────────────
 
 export async function buildCollectionLayoutXlsx(
@@ -96,26 +102,19 @@ export async function buildCollectionLayoutXlsx(
 
   // Header row
   const headerRow = sheet.addRow(COLUMNS.map(c => c.header));
-  const style = XLSX_HEADER_STYLES.planning;
-  headerRow.font      = { bold: true, color: style.fontColor, size: 10, name: 'Calibri' };
-  headerRow.fill      = { type: 'pattern', pattern: 'solid', fgColor: style.fill } as ExcelJS.Fill;
-  headerRow.alignment = { vertical: 'middle', wrapText: false };
-  headerRow.height    = 20;
+  applyStreamingHeaderStyle(headerRow, 'planning');
 
   // Auto-filter on all header columns
   const lastColLetter = String.fromCharCode(65 + COLUMNS.length - 1);
   sheet.autoFilter = { from: 'A1', to: `${lastColLetter}1` };
 
-  // Collect all pictureUrls up front, fetch concurrently
+  // Fetch images — deduplicate by URL to avoid redundant HTTP requests
   const allRows = layout.groups.flatMap((g: GroupWithRows) => g.rows);
-  const pictureUrls = allRows.map((r: RowWithVendor) => r.pictureUrl);
-  const imageBuffers = await Promise.all(
-    pictureUrls.map((url: string | null) => (url ? fetchImageAsBuffer(url) : Promise.resolve(null))),
-  );
+  const uniqueUrls = [...new Set(allRows.map(r => r.pictureUrl).filter((u): u is string => !!u))];
   const urlToBuffer = new Map<string, Buffer | null>();
-  allRows.forEach((row: RowWithVendor, i: number) => {
-    if (row.pictureUrl) urlToBuffer.set(row.pictureUrl, imageBuffers[i]!);
-  });
+  await Promise.all(
+    uniqueUrls.map(url => fetchImageAsBuffer(url).then(buf => urlToBuffer.set(url, buf))),
+  );
 
   // Data rows
   let dataRowIndex = 1; // 0-based; row 0 is the header
@@ -149,12 +148,9 @@ export async function buildCollectionLayoutXlsx(
       ]);
 
       // Number formats
-      const retailCell = dataRow.getCell(15); // N — Retail Target
-      const quotCell   = dataRow.getCell(16); // O — 1ª Quotazione
-      const marginCell = dataRow.getCell(17); // P — Margine%
-      if (row.retailTargetPrice)         retailCell.numFmt = '#,##0.00';
-      if (row.supplierFirstQuotation)    quotCell.numFmt   = '#,##0.00';
-      if (margin !== null)               marginCell.numFmt = '0.00"%"';
+      if (row.retailTargetPrice)      dataRow.getCell(RETAIL_TARGET_COL).numFmt = '#,##0.00';
+      if (row.supplierFirstQuotation) dataRow.getCell(SUPPLIER_QUOT_COL).numFmt = '#,##0.00';
+      if (margin !== null)            dataRow.getCell(MARGIN_COL).numFmt        = '0.00"%"';
 
       const imageBuf = row.pictureUrl ? urlToBuffer.get(row.pictureUrl) ?? null : null;
 

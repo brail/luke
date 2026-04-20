@@ -29,22 +29,22 @@ export const LUKE_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0
   <circle cx="250.00" cy="578.34" r="14.49"/>
 </svg>`;
 
-function getVfs(): Record<string, string> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const vfsModule = require('pdfmake/build/vfs_fonts') as { pdfMake: { vfs: Record<string, string> } };
-  return vfsModule.pdfMake.vfs;
-}
+let cachedFonts: TFontDictionary | null = null;
 
 export function getPdfFonts(): TFontDictionary {
-  const vfs = getVfs();
-  return {
-    Roboto: {
-      normal:      Buffer.from(vfs['Roboto-Regular.ttf']!,       'base64'),
-      bold:        Buffer.from(vfs['Roboto-Medium.ttf']!,        'base64'),
-      italics:     Buffer.from(vfs['Roboto-Italic.ttf']!,        'base64'),
-      bolditalics: Buffer.from(vfs['Roboto-MediumItalic.ttf']!,  'base64'),
-    },
-  };
+  if (!cachedFonts) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const vfs = (require('pdfmake/build/vfs_fonts') as { pdfMake: { vfs: Record<string, string> } }).pdfMake.vfs;
+    cachedFonts = {
+      Roboto: {
+        normal:      Buffer.from(vfs['Roboto-Regular.ttf']!,       'base64'),
+        bold:        Buffer.from(vfs['Roboto-Medium.ttf']!,        'base64'),
+        italics:     Buffer.from(vfs['Roboto-Italic.ttf']!,        'base64'),
+        bolditalics: Buffer.from(vfs['Roboto-MediumItalic.ttf']!,  'base64'),
+      },
+    };
+  }
+  return cachedFonts;
 }
 
 export function buildBrandPageHeader(
