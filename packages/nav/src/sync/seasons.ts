@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient, Prisma } from '@prisma/client';
 import type { Logger } from 'pino';
 import type mssql from 'mssql';
 
@@ -65,7 +65,7 @@ export async function syncSeasons(
 
     try {
       // Atomico: replica NAV + anagrafica locale in un'unica transaction.
-      await prisma.$transaction(async (tx) => {
+      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         await tx.navSeason.upsert({
           where: { navCode },
           create: { navCode, description, startingDate, endingDate, syncedAt },

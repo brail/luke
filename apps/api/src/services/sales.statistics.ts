@@ -6,11 +6,15 @@
  * classico). Il builder streaming scrive ogni riga su stream e la libera subito.
  */
 
-import { PassThrough } from 'stream';
-
 import ExcelJS from 'exceljs';
 
 import type { PortafoglioRow } from '@luke/nav';
+
+import {
+  type XlsxMeta,
+  applyStreamingHeaderStyle,
+  createStreamingBuffer,
+} from '../lib/export/xlsx-streaming';
 
 // ─── Column formatting hints ─────────────────────────────────────────────────
 
@@ -53,73 +57,12 @@ const DATE_COLUMNS = new Set([
  * WorkbookWriter in streaming. Ogni riga viene scritta su stream e rilasciata
  * immediatamente: memoria O(1) rispetto alle righe (non O(n)).
  */
-interface XlsxMeta {
-  title?: string;
-  subject?: string;
-  author?: string;
-  manager?: string;
-}
-
 export async function buildPortafoglioXlsx(
   rows: PortafoglioRow[],
   sheetName = 'Portafoglio',
   meta: XlsxMeta = {},
 ): Promise<Buffer> {
-  const pass = new PassThrough();
-
-  // Raccoglie i chunk in uscita dallo stream xlsx
-  const bufferPromise = new Promise<Buffer>((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    pass.on('data', (chunk: Buffer | string) =>
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)),
-    );
-    pass.on('end', () => resolve(Buffer.concat(chunks)));
-    pass.on('error', reject);
-  });
-
-  const wb = new ExcelJS.stream.xlsx.WorkbookWriter({
-    stream: pass,
-    useStyles: true,
-    useSharedStrings: false, // shared strings aumentano memoria senza benefici qui
-  });
-
-  // core.xml — letto correttamente da WorkbookWriter tramite `this`
-  wb.creator        = meta.author ?? 'Luke';
-  wb.lastModifiedBy = meta.author ?? 'Luke';
-  wb.title          = meta.title  ?? '';
-  wb.subject        = meta.subject ?? '';
-  wb.created        = new Date();
-  wb.modified       = new Date();
-
-  // app.xml — ExcelJS streaming bug: addApp() passa { worksheets } senza company/manager.
-  // Sovrascriviamo addApp per includere i campi mancanti.
-  const company = meta.manager ?? '';
-  (wb as unknown as { addApp(): Promise<void> }).addApp = () =>
-    new Promise<void>(resolve => {
-      const sheetNames = (wb as unknown as { _worksheets: ({ name: string } | undefined)[] })
-        ._worksheets.filter(Boolean).map(ws => ws!.name);
-      const pairs = sheetNames.length;
-      const titlesXml = sheetNames.map(n => `<vt:lpstr>${n}</vt:lpstr>`).join('');
-      const xml =
-        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-        `<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" ` +
-        `xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">` +
-        `<Application>Microsoft Excel</Application>` +
-        `<DocSecurity>0</DocSecurity><ScaleCrop>false</ScaleCrop>` +
-        `<HeadingPairs><vt:vector size="2" baseType="variant">` +
-        `<vt:variant><vt:lpstr>Worksheets</vt:lpstr></vt:variant>` +
-        `<vt:variant><vt:i4>${pairs}</vt:i4></vt:variant>` +
-        `</vt:vector></HeadingPairs>` +
-        `<TitlesOfParts><vt:vector size="${pairs}" baseType="lpstr">${titlesXml}</vt:vector></TitlesOfParts>` +
-        `<Company></Company>` +
-        `<Manager>${company}</Manager>` +
-        `<LinksUpToDate>false</LinksUpToDate><SharedDoc>false</SharedDoc>` +
-        `<HyperlinksChanged>false</HyperlinksChanged><AppVersion>16.0300</AppVersion>` +
-        `</Properties>`;
-      (wb as unknown as { zip: { append(xml: string, opts: { name: string }): void } })
-        .zip.append(xml, { name: 'docProps/app.xml' });
-      resolve();
-    });
+  const { wb, bufferPromise } = createStreamingBuffer(meta);
 
   const sheet = wb.addWorksheet(sheetName, {
     views: [{ state: 'frozen', ySplit: 1 }],
@@ -137,14 +80,7 @@ export async function buildPortafoglioXlsx(
 
   // Riga intestazione
   const headerRow = sheet.addRow(columns);
-  headerRow.height = 20;
-  headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10, name: 'Calibri' };
-  headerRow.fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: 'FF1F4E79' },
-  } as ExcelJS.Fill;
-  headerRow.alignment = { vertical: 'middle', wrapText: false };
+  applyStreamingHeaderStyle(headerRow, 'report');
   await (headerRow as ExcelJS.Row & { commit(): Promise<void> }).commit();
 
   // Righe dati — commit immediato = memoria liberata dopo ogni riga

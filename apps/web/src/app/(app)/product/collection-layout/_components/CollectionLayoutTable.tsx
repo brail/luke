@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, Maximize2, Minimize2, Plus, RotateCcw, Search, Settings2 } from 'lucide-react';
+import { AlertTriangle, Download, FileSpreadsheet, FileText, Loader2, Maximize2, Minimize2, Plus, RotateCcw, Search, Settings2 } from 'lucide-react';
 import { useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
@@ -13,6 +13,12 @@ import {
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
 import { Checkbox } from '../../../../../components/ui/checkbox';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../../../../../components/ui/dropdown-menu';
 import { Input } from '../../../../../components/ui/input';
 import { Label } from '../../../../../components/ui/label';
 import {
@@ -54,6 +60,10 @@ interface CollectionLayoutTableProps {
   isDeletingRow?: boolean;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  onExportXlsx?: () => void;
+  isExportingXlsx?: boolean;
+  onExportPdf?: () => void;
+  isExportingPdf?: boolean;
 }
 
 export function CollectionLayoutTable({
@@ -71,6 +81,10 @@ export function CollectionLayoutTable({
   isDeletingRow = false,
   isFullscreen = false,
   onToggleFullscreen,
+  onExportXlsx,
+  isExportingXlsx = false,
+  onExportPdf,
+  isExportingPdf = false,
 }: CollectionLayoutTableProps) {
   const [search, setSearch] = useState('');
   const [columnsPopoverOpen, setColumnsPopoverOpen] = useState(false);
@@ -219,6 +233,32 @@ export function CollectionLayoutTable({
               ? <><Minimize2 className="h-4 w-4 mr-1" />Riduci</>
               : <><Maximize2 className="h-4 w-4 mr-1" />Espandi</>}
           </Button>
+        )}
+
+        {(onExportXlsx || onExportPdf) && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" disabled={isExportingXlsx || isExportingPdf}>
+                {(isExportingXlsx || isExportingPdf)
+                  ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Esportando…</>
+                  : <><Download className="h-4 w-4 mr-1" />Esporta</>}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {onExportXlsx && (
+                <DropdownMenuItem onClick={onExportXlsx} disabled={isExportingXlsx}>
+                  <FileSpreadsheet className="h-4 w-4 mr-2" />
+                  Excel (.xlsx)
+                </DropdownMenuItem>
+              )}
+              {onExportPdf && (
+                <DropdownMenuItem onClick={onExportPdf} disabled={isExportingPdf}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  PDF (A3)
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
 
         {canUpdate && (

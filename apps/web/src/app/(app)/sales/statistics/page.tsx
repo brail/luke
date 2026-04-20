@@ -20,6 +20,7 @@ import {
 } from '../../../../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../components/ui/tabs';
 import { useAppContext } from '../../../../contexts/AppContextProvider';
+import { triggerDownload } from '../../../../lib/download';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -43,26 +44,6 @@ function formatDuration(ms: number): string {
   if (hours < 24) return `${hours} or${hours === 1 ? 'a' : 'e'}`;
   const days = Math.floor(hours / 24);
   return `${days} giorn${days === 1 ? 'o' : 'i'}`;
-}
-
-function triggerDownload(base64: string, filename: string) {
-  // eslint-disable-next-line no-undef
-  const binaryStr = atob(base64);
-  const bytes = new Uint8Array(binaryStr.length);
-  for (let i = 0; i < binaryStr.length; i++) {
-    bytes[i] = binaryStr.charCodeAt(i);
-  }
-  const blob = new Blob([bytes], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 // ─── Progress bar hook ────────────────────────────────────────────────────────
@@ -320,7 +301,7 @@ export default function StatisticsPage() {
 
   const pfDownloadMutation = trpc.sales.statistics.portafoglio.download.useMutation({
     onSuccess: result => {
-      triggerDownload(result.data, result.filename);
+      triggerDownload(result.data, result.filename, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       pfProgress.stop(true);
       const secs = (result.queryDurationMs / 1000).toFixed(1);
       toast.success(`Download completato — ${result.rowCount.toLocaleString('it-IT')} righe in ${secs} s`);
@@ -380,7 +361,7 @@ export default function StatisticsPage() {
 
   const kimoDownloadMutation = trpc.sales.statistics.kimo.download.useMutation({
     onSuccess: result => {
-      triggerDownload(result.data, result.filename);
+      triggerDownload(result.data, result.filename, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       kimoProgress.stop(true);
       const secs = (result.queryDurationMs / 1000).toFixed(1);
       toast.success(`Download completato — ${result.rowCount.toLocaleString('it-IT')} righe in ${secs} s`);
