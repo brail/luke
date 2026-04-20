@@ -29,6 +29,7 @@ export const RESOURCES = {
   COLLECTION_LAYOUT: 'collection_layout',
   VENDORS: 'vendors',
   SALES: 'sales',
+  MERCHANDISING_PLAN: 'merchandising_plan',
 } as const;
 
 export type Resource = (typeof RESOURCES)[keyof typeof RESOURCES];
@@ -89,6 +90,7 @@ export const VALID_RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
   [RESOURCES.COLLECTION_LAYOUT]: ['read', 'update'] as const,
   [RESOURCES.VENDORS]: ['create', 'read', 'update', 'delete'] as const,
   [RESOURCES.SALES]: ['read'] as const,
+  [RESOURCES.MERCHANDISING_PLAN]: ['create', 'read', 'update', 'delete'] as const,
 } as const;
 
 /**
@@ -123,6 +125,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'vendors:*',
     // Sales: lettura statistiche
     'sales:read',
+    // Merchandising Plan: lettura e modifica
+    'merchandising_plan:read',
+    'merchandising_plan:update',
   ],
   viewer: [
     // Brands: solo lettura
@@ -145,6 +150,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'vendors:read',
     // Sales: lettura statistiche
     'sales:read',
+    // Merchandising Plan: solo lettura
+    'merchandising_plan:read',
   ],
 };
 

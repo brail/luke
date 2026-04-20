@@ -4,6 +4,7 @@
  */
 
 import { TRPCError } from '@trpc/server';
+import type { Prisma } from '@prisma/client';
 
 import {
   SeasonInputSchema,
@@ -40,7 +41,7 @@ export const seasonRouter = router({
       const cursor = input?.cursor;
       const limit = input?.limit ?? 50;
 
-      const where: any = {};
+      const where: Prisma.SeasonWhereInput = {};
       if (input?.isActive !== undefined) where.isActive = input.isActive;
       if (input?.search) {
         where.OR = [
@@ -74,34 +75,39 @@ export const seasonRouter = router({
     .mutation(async ({ input, ctx }) => {
       const normalizedCode = normalizeCode(input.code);
 
-      const existing = await ctx.prisma.season.findUnique({
-        where: { code: normalizedCode },
-      });
-
-      if (existing) {
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: 'Stagione con questo codice già esistente',
+      const created = await ctx.prisma.$transaction(async tx => {
+        const existing = await tx.season.findUnique({
+          where: { code: normalizedCode },
         });
-      }
 
-      // Valida unicità navSeasonId se fornito
-      if (input.navSeasonId) {
-        const conflict = await ctx.prisma.season.findUnique({
-          where: { navSeasonId: input.navSeasonId },
-        });
-        if (conflict) {
+        if (existing) {
           throw new TRPCError({
             code: 'CONFLICT',
-            message: 'Codice NAV già collegato a un\'altra stagione',
+            message: 'Stagione con questo codice già esistente',
           });
         }
-      }
 
-      return ctx.prisma.season.create({
-        data: { ...input, code: normalizedCode },
-        select: SEASON_SELECT,
-      });
+        // Valida unicità navSeasonId se fornito
+        if (input.navSeasonId) {
+          const conflict = await tx.season.findUnique({
+            where: { navSeasonId: input.navSeasonId },
+          });
+          if (conflict) {
+            throw new TRPCError({
+              code: 'CONFLICT',
+              message: 'Codice NAV già collegato a un\'altra stagione',
+            });
+          }
+        }
+
+        return tx.season.create({
+          data: { ...input, code: normalizedCode },
+          select: SEASON_SELECT,
+        });
+      }, { timeout: 15000 });
+
+      await logAudit(ctx, { action: 'SEASON_CREATE', targetType: 'Season', targetId: created.id, result: 'SUCCESS', metadata: { name: created.name, code: created.code } });
+      return created;
     }),
 
   /**
@@ -118,7 +124,7 @@ export const seasonRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Stagione non trovata' });
       }
 
-      const updateData: any = { ...input.data };
+      const updateData: any = { ...input.data }; // Allows conditional code normalization before update
       if (input.data.code) {
         updateData.code = normalizeCode(input.data.code);
       }
@@ -159,11 +165,13 @@ export const seasonRouter = router({
         }
       }
 
-      return ctx.prisma.season.update({
+      const result = await ctx.prisma.season.update({
         where: { id: input.id },
         data: { ...updateData, updatedAt: new Date() },
         select: SEASON_SELECT,
       });
+      await logAudit(ctx, { action: 'SEASON_UPDATE', targetType: 'Season', targetId: input.id, result: 'SUCCESS', metadata: { name: result.name } });
+      return result;
     }),
 
   /**

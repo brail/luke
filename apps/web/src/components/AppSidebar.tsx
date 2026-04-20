@@ -25,6 +25,7 @@ import {
   Truck,
   ShoppingCart,
   BarChart2,
+  ClipboardList,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -198,6 +199,19 @@ export default function AppSidebar() {
                         </Link>
                       </SidebarMenuSubButton>
                     </SidebarMenuSubItem>
+                    {menuAccess.productItems?.merchandisingPlan && (
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          asChild
+                          isActive={isActive('/product/merchandising-plan')}
+                        >
+                          <Link href="/product/merchandising-plan">
+                            <ClipboardList size={16} />
+                            <span>Merchandising Plan</span>
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    )}
                   </SidebarMenuSub>
                 </CollapsibleContent>
               </Collapsible>

@@ -4,6 +4,7 @@
  */
 
 import { TRPCError } from '@trpc/server';
+import type { Prisma } from '@prisma/client';
 
 import {
   BrandInputSchema,
@@ -30,8 +31,8 @@ const BRAND_SELECT = {
   updatedAt: true,
 } as const;
 
-function buildWhereClause(filters: { isActive?: boolean; search?: string }): any {
-  const where: any = {};
+function buildWhereClause(filters: { isActive?: boolean; search?: string }): Prisma.BrandWhereInput {
+  const where: Prisma.BrandWhereInput = {};
 
   if (typeof filters.isActive === 'boolean') {
     where.isActive = filters.isActive;
@@ -84,19 +85,6 @@ export const brandRouter = router({
       const normalizedCode = normalizeCode(input.code);
       const { tempLogoId, ...brandData } = input;
 
-      // Valida unicità navBrandId se fornito
-      if (brandData.navBrandId) {
-        const conflict = await ctx.prisma.brand.findUnique({
-          where: { navBrandId: brandData.navBrandId },
-        });
-        if (conflict) {
-          throw new TRPCError({
-            code: 'CONFLICT',
-            message: 'Codice NAV già collegato a un altro brand',
-          });
-        }
-      }
-
       const created = await ctx.prisma.$transaction(async tx => {
         const existingBrand = await tx.brand.findUnique({
           where: { code: normalizedCode },
@@ -107,6 +95,19 @@ export const brandRouter = router({
             code: 'CONFLICT',
             message: 'Codice brand già esistente',
           });
+        }
+
+        // Valida unicità navBrandId se fornito — dentro la transaction per evitare TOCTOU
+        if (brandData.navBrandId) {
+          const conflict = await tx.brand.findUnique({
+            where: { navBrandId: brandData.navBrandId },
+          });
+          if (conflict) {
+            throw new TRPCError({
+              code: 'CONFLICT',
+              message: 'Codice NAV già collegato a un altro brand',
+            });
+          }
         }
 
         return tx.brand.create({
@@ -129,6 +130,7 @@ export const brandRouter = router({
         }
       }
 
+      await logAudit(ctx, { action: 'BRAND_CREATE', targetType: 'Brand', targetId: created.id, result: 'SUCCESS', metadata: { name: created.name, code: created.code } });
       return { ...created, logoUrl: finalLogoUrl };
     }),
 
@@ -140,7 +142,7 @@ export const brandRouter = router({
     .use(withRateLimit('brandMutations'))
     .input(BrandUpdateInputSchema)
     .mutation(async ({ input, ctx }) => {
-      return ctx.prisma.$transaction(async tx => {
+      const result = await ctx.prisma.$transaction(async tx => {
         const existingBrand = await tx.brand.findUnique({
           where: { id: input.id },
         });
@@ -191,6 +193,8 @@ export const brandRouter = router({
           select: BRAND_SELECT,
         });
       }, { timeout: 15000 });
+      await logAudit(ctx, { action: 'BRAND_UPDATE', targetType: 'Brand', targetId: input.id, result: 'SUCCESS', metadata: { name: result.name } });
+      return result;
     }),
 
   /**

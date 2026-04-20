@@ -14,6 +14,7 @@ import {
   PricingCalculateInputSchema,
 } from '@luke/core';
 
+import { logAudit } from '../lib/auditLog';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
 import { requirePermission } from '../lib/permissions';
@@ -61,12 +62,14 @@ const parameterSetsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      return createParameterSet(
+      const result = await createParameterSet(
         input.brandId,
         input.seasonId,
         input.data,
         ctx.prisma
       );
+      await logAudit(ctx, { action: 'PRICING_PARAMETER_SET_CREATE', targetType: 'PricingParameterSet', targetId: result.id, result: 'SUCCESS', metadata: { brandId: input.brandId, seasonId: input.seasonId, name: result.name } });
+      return result;
     }),
 
   /**
@@ -83,13 +86,15 @@ const parameterSetsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      return updateParameterSet(
+      const result = await updateParameterSet(
         input.data.id,
         input.brandId,
         input.seasonId,
         input.data,
         ctx.prisma
       );
+      await logAudit(ctx, { action: 'PRICING_PARAMETER_SET_UPDATE', targetType: 'PricingParameterSet', targetId: input.data.id, result: 'SUCCESS', metadata: { brandId: input.brandId, seasonId: input.seasonId } });
+      return result;
     }),
 
   /**
@@ -112,6 +117,7 @@ const parameterSetsRouter = router({
         input.seasonId,
         ctx.prisma
       );
+      await logAudit(ctx, { action: 'PRICING_PARAMETER_SET_DELETE', targetType: 'PricingParameterSet', targetId: input.id, result: 'SUCCESS', metadata: { brandId: input.brandId, seasonId: input.seasonId } });
       return { success: true };
     }),
 
@@ -128,7 +134,9 @@ const parameterSetsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      return setAsDefault(input.id, input.brandId, input.seasonId, ctx.prisma);
+      const result = await setAsDefault(input.id, input.brandId, input.seasonId, ctx.prisma);
+      await logAudit(ctx, { action: 'PRICING_PARAMETER_SET_SET_DEFAULT', targetType: 'PricingParameterSet', targetId: input.id, result: 'SUCCESS', metadata: { brandId: input.brandId, seasonId: input.seasonId } });
+      return result;
     }),
 
   /**

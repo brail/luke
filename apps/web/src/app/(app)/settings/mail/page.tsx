@@ -56,7 +56,7 @@ export default function MailPage() {
       user: '',
       pass: '',
       from: '',
-      baseUrl: 'http://localhost:3000',
+      baseUrl: process.env.NEXT_PUBLIC_FRONTEND_URL || '',
     },
   });
 

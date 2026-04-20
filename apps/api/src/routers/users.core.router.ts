@@ -4,11 +4,13 @@
  */
 
 import { TRPCError } from '@trpc/server';
+import type { Prisma } from '@prisma/client';
 import argon2 from 'argon2';
 import { z } from 'zod';
 
-import { CreateUserInputSchema, UpdateUserInputSchema } from '@luke/core';
-import type { LockedFields } from '@luke/core';
+import { CreateUserInputSchema, UpdateUserInputSchema, hasPermission } from '@luke/core';
+import type { LockedFields, Role } from '@luke/core';
+import { invalidateRbacCache } from '@luke/core/server';
 
 import { logAudit } from '../lib/auditLog';
 import { withAuditLog } from '../lib/auditMiddleware';
@@ -62,7 +64,7 @@ export const usersCoreRouter = router({
       } = input || {};
       const skip = (page - 1) * limit;
 
-      const where: any = { pendingApproval: false };
+      const where: Prisma.UserWhereInput = { pendingApproval: false };
 
       if (search && search.trim()) {
         where.OR = [
@@ -144,7 +146,7 @@ export const usersCoreRouter = router({
       // RBAC: solo self-profile o admin
       if (
         input.id !== ctx.session.user.id &&
-        ctx.session.user.role !== 'admin'
+        !hasPermission({ role: ctx.session.user.role as Role }, '*:*')
       ) {
         throw new TRPCError({
           code: 'FORBIDDEN',
@@ -395,6 +397,10 @@ export const usersCoreRouter = router({
           updatedAt: new Date(),
         },
       });
+
+      if (updateData.role && updateData.role !== existingUser.role) {
+        invalidateRbacCache();
+      }
 
       // Audit logging gestito automaticamente dal middleware withAuditLog
 

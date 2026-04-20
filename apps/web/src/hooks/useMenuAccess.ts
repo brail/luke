@@ -43,6 +43,11 @@ export function useMenuAccess() {
     };
     const showAdmin = Object.values(adminItems).some(Boolean);
 
+    // Prodotto: sub-items
+    const productItems = {
+      merchandisingPlan: s.product && s['product.merchandising_plan'],
+    };
+
     return {
       // Singole voci
       dashboard: s.dashboard,
@@ -61,6 +66,7 @@ export function useMenuAccess() {
 
       // Prodotto
       product: s.product,
+      productItems,
 
       // Vendite con sub-items
       sales: s.sales,

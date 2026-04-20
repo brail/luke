@@ -15,6 +15,7 @@ import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 import { withSectionAccess } from '../lib/sectionAccessMiddleware';
 import { getConfig, saveConfig } from '../lib/configManager';
+import { getStorageUrlConfig } from '../lib/storageUrl';
 import { getObjectMetadata, listObjects, deleteObject, resetStorageProvider } from '../storage';
 import { signDownloadToken } from '../utils/downloadToken';
 
@@ -45,7 +46,7 @@ const GetDownloadLinkSchema = z.object({
  * Schema per create upload
  */
 const CreateUploadSchema = z.object({
-  bucket: z.enum(['uploads', 'exports', 'assets']),
+  bucket: z.enum(['uploads', 'exports', 'assets', 'brand-logos', 'temp-brand-logos', 'collection-row-pictures', 'temp-collection-row-pictures']),
   originalName: z.string().min(1).max(255),
   contentType: z.string().optional(),
   size: z.number().int().positive(),
@@ -57,7 +58,7 @@ const CreateUploadSchema = z.object({
 const SaveStorageConfigSchema = z.object({
   basePath: z.string().min(1),
   maxFileSizeMB: z.number().int().positive().min(1).max(1000),
-  buckets: z.array(z.enum(['uploads', 'exports', 'assets'])),
+  buckets: z.array(z.enum(['uploads', 'exports', 'assets', 'brand-logos', 'temp-brand-logos', 'collection-row-pictures', 'temp-collection-row-pictures'])),
 });
 
 /**
@@ -81,7 +82,7 @@ export const storageRouter = router({
       }
 
       const result = await listObjects(ctx.prisma, {
-        bucket: input.bucket as any,
+        bucket: input.bucket as any, // Safe: validated by isValidBucket() guard above
         limit: input.limit,
         cursor: input.cursor,
       });
@@ -179,10 +180,9 @@ export const storageRouter = router({
         key: metadata.key,
       });
 
-      // Costruisci URL (assumendo server API su stesso host)
-      const baseUrl =
-        process.env.API_BASE_URL ||
-        `http://localhost:${process.env.PORT || 3001}`;
+      // Costruisci URL usando la stessa base configurata per lo storage proxy
+      const { publicBaseUrl } = await getStorageUrlConfig(ctx.prisma);
+      const baseUrl = publicBaseUrl || `http://localhost:${process.env.PORT || 3001}`;
       const downloadUrl = `${baseUrl}/storage/download?token=${token}`;
 
       return {
@@ -216,10 +216,9 @@ export const storageRouter = router({
       // Salva metadato "pending" in cache/memoria (o ritorna solo uploadId)
       // Per semplicità, il multipart handler validerà l'uploadId e creerà il record
 
-      // Costruisci URL upload
-      const baseUrl =
-        process.env.API_BASE_URL ||
-        `http://localhost:${process.env.PORT || 3001}`;
+      // Costruisci URL upload usando la stessa base configurata per lo storage proxy
+      const { publicBaseUrl } = await getStorageUrlConfig(ctx.prisma);
+      const baseUrl = publicBaseUrl || `http://localhost:${process.env.PORT || 3001}`;
       const uploadUrl = `${baseUrl}/storage/upload/${uploadId}`;
 
       return {

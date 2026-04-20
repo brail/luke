@@ -12,7 +12,9 @@ import { ldapConfigSchema } from '@luke/core';
 import { logAudit } from '../lib/auditLog';
 import { saveConfig, getLdapConfig } from '../lib/configManager';
 import { SecureLogger } from '../lib/errorHandler';
+import { escapeLdapFilter } from '../lib/ldapAuth';
 import { requirePermission } from '../lib/permissions';
+import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
 
 export const ldapRouter = router({
@@ -220,6 +222,7 @@ export const ldapRouter = router({
 
   testLdapConnection: protectedProcedure
     .use(requirePermission('config:read'))
+    .use(withRateLimit('configMutations'))
     .mutation(async ({ ctx }) => {
       let client: Client | null = null;
 
@@ -331,10 +334,10 @@ export const ldapRouter = router({
           });
         }
 
-        // Testa ricerca utente
+        // Testa ricerca utente (input.username escapato contro LDAP injection — RFC 4515)
         const searchFilter = config.searchFilter.replace(
           /\$\{username\}/g,
-          input.username
+          escapeLdapFilter(input.username)
         );
         ctx.logger.info(
           {
@@ -383,11 +386,6 @@ export const ldapRouter = router({
           success: true,
           message: `Ricerca completata. Trovati ${results.length} risultati.`,
           results,
-          searchConfig: {
-            base: config.searchBase,
-            filter: searchFilter,
-            username: input.username,
-          },
         };
       } catch (error: any) {
         if (error instanceof TRPCError) {

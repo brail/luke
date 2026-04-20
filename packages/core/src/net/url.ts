@@ -127,6 +127,25 @@ export function buildTempCollectionRowPictureUploadUrl(
 }
 
 /**
+ * Builds URL for specsheet image upload
+ */
+export function buildSpecsheetImageUploadUrl(
+  specsheetId: string,
+  options: UrlOptions = {}
+): string {
+  return buildApiUrl(`/upload/specsheet-image/${specsheetId}`, options);
+}
+
+/**
+ * Builds URL for temporary specsheet image upload
+ */
+export function buildTempSpecsheetImageUploadUrl(
+  options: UrlOptions = {}
+): string {
+  return buildApiUrl('/upload/specsheet-image/temp', options);
+}
+
+/**
  * Builds URL for tRPC endpoint
  *
  * @param procedure - tRPC procedure path (e.g., 'auth.login')

@@ -1,8 +1,11 @@
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 
+
 import { buildTrpcUrl } from '@luke/core';
 import { getNextAuthSecret } from '@luke/core/server';
+
+import { debugError, debugLog } from './lib/debug';
 
 import type { NextAuthConfig } from 'next-auth';
 
@@ -38,7 +41,7 @@ async function callTRPCAuth(username: string, password: string) {
     const data = await response.json();
     return data.result?.data;
   } catch (error) {
-    console.error('Errore chiamata API auth:', error);
+    debugError('Errore chiamata API auth:', error);
     return null;
   }
 }
@@ -87,7 +90,7 @@ export const config = {
             accessToken: authResult.token,
           };
         } catch (error) {
-          console.error('Errore autenticazione:', error);
+          debugError('Errore autenticazione:', error);
           return null;
         }
       },
@@ -141,7 +144,7 @@ export const config = {
       } else if (token.sub && trigger !== 'update') {
         // Se tokenVersion manca, forza re-login (opzione 1b)
         if (token.tokenVersion === undefined || token.tokenVersion === null) {
-          console.log('JWT senza tokenVersion, forzo logout');
+          debugLog('JWT senza tokenVersion, forzo logout');
           return null;
         }
 
@@ -155,22 +158,21 @@ export const config = {
             },
           });
 
-          // Se la chiamata API fallisce (401), il tokenVersion è invalido
-          if (!response.ok) {
-            console.log(
-              'TokenVersion invalido durante refresh JWT, forzo logout'
-            );
+          // Controlla il codice semantico tRPC nel body — più robusto dello status HTTP
+          const body = await response.json().catch(() => null);
+          if (body?.error?.data?.code === 'UNAUTHORIZED') {
+            debugLog('TokenVersion invalido durante refresh JWT, forzo logout');
             return null; // Forza re-login
           }
+          if (!response.ok) {
+            debugError('Errore transitorio verifica tokenVersion (ignorato):', response.status);
+          }
         } catch (error) {
-          console.error(
-            'Errore verifica tokenVersion durante refresh JWT:',
-            error
-          );
+          debugError('Errore verifica tokenVersion durante refresh JWT:', error);
           // In caso di errore di rete, mantieni il token ma logga l'errore
         }
 
-        console.log('JWT refresh per utente:', token.sub);
+        debugLog('JWT refresh per utente:', token.sub);
       }
       return token;
     },

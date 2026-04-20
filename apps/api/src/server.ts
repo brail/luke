@@ -37,6 +37,7 @@ import { runReadinessChecks } from './observability/readiness';
 import { storagePlugin } from './plugins/storage-upload';
 import brandLogoRoutes from './routes/brandLogo.routes';
 import collectionRowPictureRoutes from './routes/collectionRowPicture.routes';
+import specsheetImageRoutes from './routes/specsheetImage.routes';
 import { appRouter } from './routers';
 import { getStorageProvider } from './storage';
 import { readdir, stat, unlink } from 'fs/promises';
@@ -113,6 +114,7 @@ async function registerSecurityPlugins() {
     cache: 10000,
     skipOnError: true,
     errorResponseBuilder: (request: any, context: any) => ({
+      statusCode: 429,
       error: 'Rate limit exceeded',
       message: `Too many requests from ${request.ip}`,
       retryAfter: Math.round(context.ttl / 1000),
@@ -258,6 +260,13 @@ async function registerBrandLogoRoutes() {
  */
 async function registerCollectionRowPictureRoutes() {
   await fastify.register(collectionRowPictureRoutes, { prisma });
+}
+
+/**
+ * Registra specsheet image routes
+ */
+async function registerSpecsheetImageRoutes() {
+  await fastify.register(specsheetImageRoutes, { prisma });
 }
 
 /**
@@ -623,6 +632,7 @@ const start = async () => {
     await registerStoragePlugin(); // Storage upload/download routes
     await registerBrandLogoRoutes(); // Brand logo upload routes
     await registerCollectionRowPictureRoutes(); // Collection row picture upload routes
+    await registerSpecsheetImageRoutes(); // Specsheet image upload routes
     await registerStaticFiles(); // Static file server per uploads
     await registerHealthRoute();
 

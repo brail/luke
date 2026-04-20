@@ -54,6 +54,7 @@ model User {
   sectionAccess UserSectionAccess[]
   brandAccess UserBrandAccess[]
   seasonAccess UserSeasonAccess[]
+  assignedMerchandisingRows MerchandisingPlanRow[]
 
   @@map("users")
 }
@@ -186,6 +187,7 @@ model Brand {
 
   pricingParameterSets PricingParameterSet[]
   collectionLayouts    CollectionLayout[]
+  merchandisingPlans   MerchandisingPlan[]
   userBrandAccess      UserBrandAccess[]
   userSeasonAccess     UserSeasonAccess[]
 
@@ -207,6 +209,7 @@ model Season {
 
   pricingParameterSets PricingParameterSet[]
   collectionLayouts    CollectionLayout[]
+  merchandisingPlans   MerchandisingPlan[]
   userSeasonAccess     UserSeasonAccess[]
 
   @@map("seasons")
@@ -293,6 +296,7 @@ model PricingParameterSet {
   brand  Brand  @relation(fields: [brandId], references: [id], onDelete: Restrict)
   season Season @relation(fields: [seasonId], references: [id], onDelete: Restrict)
   collectionLayoutRows CollectionLayoutRow[]
+  merchandisingPlanRows MerchandisingPlanRow[]
 
   @@unique([brandId, seasonId, name])
   @@index([brandId, seasonId])
@@ -513,6 +517,179 @@ model CollectionLayoutRow {
   @@index([vendorId])
   @@index([pricingParameterSetId])
   @@map("collection_layout_rows")
+}
+
+// ─── Merchandising Plan ───────────────────────────────────────────────────────
+
+enum MerchandisingPlanStatus {
+  DRAFT
+  CONFIRMED
+}
+
+enum MerchandisingGender {
+  MAN
+  WOMAN
+  UNISEX
+  KID
+}
+
+enum MerchandisingLifeType {
+  NEW_LINE
+  NEW_STYLE
+  NEW_COLOR
+  CARRY_OVER
+}
+
+enum MerchandisingLaunchType {
+  SAMPLED
+  OPEN_TO_BUY
+}
+
+enum SpecsheetComponentSection {
+  UPPER
+  LINING
+  ACCESSORIES
+  SOLE
+  OTHER
+}
+
+/**
+ * Piano merchandising per brand+stagione — unico per coppia
+ */
+model MerchandisingPlan {
+  id        String                  @id @default(uuid())
+  brandId   String
+  seasonId  String
+  status    MerchandisingPlanStatus @default(DRAFT)
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+
+  brand   Brand                 @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  season  Season                @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  rows    MerchandisingPlanRow[]
+
+  @@unique([brandId, seasonId])
+  @@index([brandId, seasonId])
+  @@map("merchandising_plans")
+}
+
+/**
+ * Riga SKU del piano merchandising (granularità colore)
+ */
+model MerchandisingPlanRow {
+  id     String @id @default(uuid())
+  planId String
+  order  Int    @default(0)
+
+  articleCode         String
+  styleDescription    String
+  styleCode           String?
+  colorCode           String
+  colorDescription    String
+  gender              MerchandisingGender
+  productCategory     String
+  lineCode            String?
+  lifeType            MerchandisingLifeType?
+  carryoverFromSeason String?
+
+  launchType         MerchandisingLaunchType?
+  smsPairsOrder      Int?
+  targetPairs        Int?
+  cancellationStatus String?
+  designer           String?
+
+  pricingParameterSetId String?
+
+  targetFobPrice   Decimal? @db.Decimal(10, 4)
+  firstOfferPrice  Decimal? @db.Decimal(10, 4)
+  finalOfferPrice  Decimal? @db.Decimal(10, 4)
+  retailTargetIt   Decimal? @db.Decimal(10, 4)
+  wholesaleIt      Decimal? @db.Decimal(10, 4)
+  retailTargetEu   Decimal? @db.Decimal(10, 4)
+  wholesaleEu      Decimal? @db.Decimal(10, 4)
+
+  pricingNotes String?
+  generalNotes String?
+
+  assignedUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  plan                MerchandisingPlan       @relation(fields: [planId], references: [id], onDelete: Cascade)
+  specsheet           MerchandisingSpecsheet?
+  assignedUser        User?                   @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
+  pricingParameterSet PricingParameterSet?    @relation(fields: [pricingParameterSetId], references: [id], onDelete: SetNull)
+
+  @@index([planId])
+  @@index([assignedUserId])
+  @@index([pricingParameterSetId])
+  @@map("merchandising_plan_rows")
+}
+
+/**
+ * Specsheet (BOM semplificata) collegata 1:1 a una riga piano
+ */
+model MerchandisingSpecsheet {
+  id    String @id @default(uuid())
+  rowId String @unique
+
+  madeIn       String?
+  supplierName String?
+  notes        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  row        MerchandisingPlanRow     @relation(fields: [rowId], references: [id], onDelete: Cascade)
+  components MerchandisingComponent[]
+  images     MerchandisingImage[]
+
+  @@map("merchandising_specsheets")
+}
+
+/**
+ * Componente BOM di una specsheet
+ */
+model MerchandisingComponent {
+  id          String                    @id @default(uuid())
+  specsheetId String
+  order       Int                       @default(0)
+  section     SpecsheetComponentSection
+
+  partNumber   String?
+  component    String
+  material     String?
+  color        String?
+  pantoneNotes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  specsheet MerchandisingSpecsheet @relation(fields: [specsheetId], references: [id], onDelete: Cascade)
+
+  @@index([specsheetId, section, order])
+  @@map("merchandising_components")
+}
+
+/**
+ * Immagini di una specsheet (galleria)
+ */
+model MerchandisingImage {
+  id          String  @id @default(uuid())
+  specsheetId String
+  url         String
+  isDefault   Boolean @default(false)
+  order       Int     @default(0)
+  caption     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  specsheet MerchandisingSpecsheet @relation(fields: [specsheetId], references: [id], onDelete: Cascade)
+
+  @@index([specsheetId, order])
+  @@map("merchandising_images")
 }
 
 // ─── Portafoglio Analytics Sync ───────────────────────────────────────────────

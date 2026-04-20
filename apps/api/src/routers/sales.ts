@@ -13,7 +13,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { getNavDbConfig, getPool, queryPortafoglioOrdini } from '@luke/nav';
+import { getNavDbConfig, getPool, queryPortafoglioOrdini, sanitizeCompany } from '@luke/nav';
 import {
   getUserAllowedBrandIds,
   getUserAllowedSeasonIds,
@@ -120,7 +120,6 @@ const portafoglioRouter = router({
       try {
         const navConfig = await getNavDbConfig(ctx.prisma, getConfig);
         const pool = await getPool(navConfig);
-        const { sanitizeCompany } = await import('@luke/nav');
         const co = sanitizeCompany(navConfig.company);
 
         const request = pool.request();

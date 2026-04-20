@@ -115,10 +115,12 @@ export const vendorsRouter = router({
         }
       }
 
-      return ctx.prisma.vendor.create({
+      const created = await ctx.prisma.vendor.create({
         data: { ...input, isActive: true },
         select: VENDOR_SELECT,
       });
+      await logAudit(ctx, { action: 'VENDOR_CREATE', targetType: 'Vendor', targetId: created.id, result: 'SUCCESS', metadata: { name: created.name } });
+      return created;
     }),
 
   /**
@@ -130,7 +132,7 @@ export const vendorsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(VendorUpdateInputSchema)
     .mutation(async ({ input, ctx }) => {
-      return ctx.prisma.$transaction(async (tx) => {
+      const result = await ctx.prisma.$transaction(async (tx) => {
         const vendor = await tx.vendor.findUnique({
           where: { id: input.id },
         });
@@ -165,6 +167,8 @@ export const vendorsRouter = router({
           select: VENDOR_SELECT,
         });
       });
+      await logAudit(ctx, { action: 'VENDOR_UPDATE', targetType: 'Vendor', targetId: input.id, result: 'SUCCESS', metadata: { name: result.name } });
+      return result;
     }),
 
   /**

@@ -17,6 +17,7 @@ import {
   CollectionLayoutSettingsSchema,
 } from '@luke/core';
 
+import { logAudit } from '../lib/auditLog';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
 import { requirePermission } from '../lib/permissions';
@@ -46,7 +47,9 @@ const groupsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      return createGroup(input.collectionLayoutId, input.data, ctx.prisma);
+      const result = await createGroup(input.collectionLayoutId, input.data, ctx.prisma);
+      await logAudit(ctx, { action: 'COLLECTION_GROUP_CREATE', targetType: 'CollectionGroup', targetId: result.id, result: 'SUCCESS', metadata: { collectionLayoutId: input.collectionLayoutId } });
+      return result;
     }),
 
   update: protectedProcedure
@@ -59,7 +62,9 @@ const groupsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      return updateGroup(input.groupId, input.data, ctx.prisma);
+      const result = await updateGroup(input.groupId, input.data, ctx.prisma);
+      await logAudit(ctx, { action: 'COLLECTION_GROUP_UPDATE', targetType: 'CollectionGroup', targetId: input.groupId, result: 'SUCCESS', metadata: {} });
+      return result;
     }),
 
   delete: protectedProcedure
@@ -68,6 +73,7 @@ const groupsRouter = router({
     .input(z.object({ groupId: z.string() }))
     .mutation(async ({ input, ctx }) => {
       await deleteGroup(input.groupId, ctx.prisma);
+      await logAudit(ctx, { action: 'COLLECTION_GROUP_DELETE', targetType: 'CollectionGroup', targetId: input.groupId, result: 'SUCCESS', metadata: {} });
       return { success: true };
     }),
 });
@@ -78,7 +84,9 @@ const rowsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(CollectionLayoutRowInputSchema)
     .mutation(async ({ input, ctx }) => {
-      return createRow(input, ctx.prisma);
+      const result = await createRow(input, ctx.prisma);
+      await logAudit(ctx, { action: 'COLLECTION_ROW_CREATE', targetType: 'CollectionLayoutRow', targetId: result.id, result: 'SUCCESS', metadata: { groupId: result.groupId } });
+      return result;
     }),
 
   update: protectedProcedure
@@ -91,7 +99,9 @@ const rowsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      return updateRow(input.rowId, input.data, ctx.prisma);
+      const result = await updateRow(input.rowId, input.data, ctx.prisma);
+      await logAudit(ctx, { action: 'COLLECTION_ROW_UPDATE', targetType: 'CollectionLayoutRow', targetId: input.rowId, result: 'SUCCESS', metadata: {} });
+      return result;
     }),
 
   delete: protectedProcedure
@@ -100,6 +110,7 @@ const rowsRouter = router({
     .input(z.object({ rowId: z.string() }))
     .mutation(async ({ input, ctx }) => {
       await deleteRow(input.rowId, ctx.prisma);
+      await logAudit(ctx, { action: 'COLLECTION_ROW_DELETE', targetType: 'CollectionLayoutRow', targetId: input.rowId, result: 'SUCCESS', metadata: {} });
       return { success: true };
     }),
 
@@ -108,7 +119,9 @@ const rowsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ rowId: z.string() }))
     .mutation(async ({ input, ctx }) => {
-      return duplicateRow(input.rowId, ctx.prisma);
+      const result = await duplicateRow(input.rowId, ctx.prisma);
+      await logAudit(ctx, { action: 'COLLECTION_ROW_DUPLICATE', targetType: 'CollectionLayoutRow', targetId: result.id, result: 'SUCCESS', metadata: { sourceRowId: input.rowId } });
+      return result;
     }),
 
   reorder: protectedProcedure
@@ -122,6 +135,7 @@ const rowsRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       await reorderRows(input.groupId, input.orderedIds, ctx.prisma);
+      await logAudit(ctx, { action: 'COLLECTION_ROW_REORDER', targetType: 'CollectionGroup', targetId: input.groupId, result: 'SUCCESS', metadata: { count: input.orderedIds.length } });
       return { success: true };
     }),
 });
@@ -149,7 +163,9 @@ export const collectionLayoutRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      return getOrCreateLayout(input.brandId, input.seasonId, ctx.prisma);
+      const result = await getOrCreateLayout(input.brandId, input.seasonId, ctx.prisma);
+      await logAudit(ctx, { action: 'COLLECTION_LAYOUT_GET_OR_CREATE', targetType: 'CollectionLayout', targetId: result.id, result: 'SUCCESS', metadata: { brandId: input.brandId, seasonId: input.seasonId } });
+      return result;
     }),
 
   copyFromSeason: protectedProcedure
@@ -164,13 +180,15 @@ export const collectionLayoutRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      return copyFromSeason(
+      const result = await copyFromSeason(
         input.fromBrandId,
         input.fromSeasonId,
         input.toBrandId,
         input.toSeasonId,
         ctx.prisma
       );
+      await logAudit(ctx, { action: 'COLLECTION_LAYOUT_COPY_FROM_SEASON', targetType: 'CollectionLayout', targetId: result.id, result: 'SUCCESS', metadata: { fromBrandId: input.fromBrandId, fromSeasonId: input.fromSeasonId, toBrandId: input.toBrandId, toSeasonId: input.toSeasonId } });
+      return result;
     }),
 
   updateSettings: protectedProcedure
@@ -185,6 +203,7 @@ export const collectionLayoutRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { collectionLayoutId, ...settings } = input;
       await updateLayoutSettings(collectionLayoutId, settings, ctx.prisma);
+      await logAudit(ctx, { action: 'COLLECTION_LAYOUT_UPDATE_SETTINGS', targetType: 'CollectionLayout', targetId: collectionLayoutId, result: 'SUCCESS', metadata: {} });
       return { success: true };
     }),
 

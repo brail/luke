@@ -100,6 +100,7 @@ export const authRouter = router({
    * Valida token e aggiorna password
    */
   confirmPasswordReset: publicProcedure
+    .use(withRateLimit('passwordReset'))
     .input(ConfirmPasswordResetSchema)
     .mutation(async ({ input, ctx }) => {
       // confirmPasswordReset accetta { token, newPassword } e il ctx
@@ -122,6 +123,7 @@ export const authRouter = router({
    * Valida token e marca email come verificata
    */
   confirmEmailVerification: publicProcedure
+    .use(withRateLimit('passwordReset'))
     .input(ConfirmEmailVerificationSchema)
     .mutation(async ({ input, ctx }) => {
       return await confirmEmailVerification(ctx, input);
