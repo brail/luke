@@ -33,8 +33,9 @@ let cachedFonts: TFontDictionary | null = null;
 
 export function getPdfFonts(): TFontDictionary {
   if (!cachedFonts) {
+    // pdfmake/build/vfs_fonts exports the VFS object directly (not pdfMake.vfs)
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const vfs = (require('pdfmake/build/vfs_fonts') as { pdfMake: { vfs: Record<string, string> } }).pdfMake.vfs;
+    const vfs = require('pdfmake/build/vfs_fonts') as Record<string, string>;
     cachedFonts = {
       Roboto: {
         normal:      Buffer.from(vfs['Roboto-Regular.ttf']!,       'base64'),
