@@ -34,7 +34,7 @@ let cachedFonts: TFontDictionary | null = null;
 export function getPdfFonts(): TFontDictionary {
   if (!cachedFonts) {
     // pdfmake/build/vfs_fonts exports the VFS object directly (not pdfMake.vfs)
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    // eslint-disable-next-line no-undef
     const vfs = require('pdfmake/build/vfs_fonts') as Record<string, string>;
     cachedFonts = {
       Roboto: {
@@ -49,7 +49,7 @@ export function getPdfFonts(): TFontDictionary {
 }
 
 export function buildBrandPageHeader(
-  brand: { name: string; logoBase64?: string | null },
+  brand: { name: string; logoDataUri?: string | null },
   season: { name: string; code?: string; year?: number | null },
   currentPage: number,
   totalPages: number,
@@ -58,8 +58,8 @@ export function buildBrandPageHeader(
     .filter(Boolean)
     .join(' ');
 
-  const brandLogoCol: Content = brand.logoBase64
-    ? { image: `data:image/jpeg;base64,${brand.logoBase64}`, width: 36, height: 36, margin: [0, 5, 0, 0] }
+  const brandLogoCol: Content = brand.logoDataUri
+    ? { image: brand.logoDataUri, width: 36, height: 36, margin: [0, 5, 0, 0] }
     : { text: '' };
 
   return {
@@ -87,7 +87,7 @@ export function buildBrandPageHeader(
 }
 
 export async function createPdfBuffer(def: TDocumentDefinitions): Promise<Buffer> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  // eslint-disable-next-line no-undef
   const PdfPrinter = require('pdfmake') as new (fonts: TFontDictionary) => {
     createPdfKitDocument(
       def: TDocumentDefinitions,
