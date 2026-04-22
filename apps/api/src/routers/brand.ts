@@ -213,11 +213,7 @@ export const brandRouter = router({
         }
 
         const { fileObjectId, ...brandUpdateData } = input.data;
-        let updated = await tx.brand.update({
-          where: { id: input.id },
-          data: { ...brandUpdateData, updatedAt: new Date() },
-          select: BRAND_SELECT,
-        });
+        let confirmedLogoKey: string | undefined;
 
         if (fileObjectId) {
           const pendingFile = await tx.fileObject.findUnique({
@@ -230,22 +226,23 @@ export const brandRouter = router({
             pendingFile.bucket === 'brand-logos'
           ) {
             await tx.fileObject.update({ where: { id: fileObjectId }, data: { confirmedAt: new Date() } });
-            updated = await tx.brand.update({
-              where: { id: input.id },
-              data: { logoKey: pendingFile.key },
-              select: BRAND_SELECT,
-            });
+            confirmedLogoKey = pendingFile.key;
             oldLogoKey = existingBrand.logoKey;
           }
         }
 
-        return updated;
+        return tx.brand.update({
+          where: { id: input.id },
+          data: { ...brandUpdateData, updatedAt: new Date(), ...(confirmedLogoKey ? { logoKey: confirmedLogoKey } : {}) },
+          select: BRAND_SELECT,
+        });
       }, { timeout: 15000 });
 
       if (oldLogoKey) {
+        const keyToDelete = oldLogoKey;
         setImmediate(async () => {
           try {
-            await deleteObjectByKey(ctx, { bucket: 'brand-logos', key: oldLogoKey! });
+            await deleteObjectByKey(ctx, { bucket: 'brand-logos', key: keyToDelete });
           } catch (err) {
             ctx.logger?.warn({ err }, 'Failed to cleanup old logo after brand update');
           }

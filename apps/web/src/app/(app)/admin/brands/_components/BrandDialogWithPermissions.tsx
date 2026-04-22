@@ -209,15 +209,13 @@ export function BrandDialogWithPermissions({
   // Auto-focus su campo code quando dialog si apre
   React.useEffect(() => {
     if (open && brandPerms.canEdit()) {
-      // Delay per permettere al dialog di renderizzare
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         const codeInput = document.querySelector(
           'input[placeholder="es. nike-2024"]'
         ) as HTMLInputElement;
-        if (codeInput) {
-          codeInput.focus();
-        }
+        if (codeInput) codeInput.focus();
       }, 100);
+      return () => clearTimeout(timer);
     } else if (!open) {
       // Reset form quando dialog si chiude
       form.reset();

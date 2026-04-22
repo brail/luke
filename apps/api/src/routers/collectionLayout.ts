@@ -229,7 +229,21 @@ const exportRouter = router({
       });
       if (!layout) throw new TRPCError({ code: 'NOT_FOUND', message: 'Layout non trovato' });
 
-      const buffer = await buildCollectionLayoutPdf(layout, ctx.prisma, ctx.logger);
+      const [pricingSets, exportUser] = await Promise.all([
+        ctx.prisma.pricingParameterSet.findMany({
+          where: { brandId: layout.brandId, seasonId: layout.seasonId },
+        }),
+        ctx.prisma.user.findUnique({
+          where: { id: ctx.session.user.id },
+          select: { firstName: true, lastName: true, username: true },
+        }),
+      ]);
+
+      const fullName = exportUser
+        ? [exportUser.firstName, exportUser.lastName].filter(Boolean).join(' ') || exportUser.username
+        : ctx.session.user.username;
+
+      const buffer = await buildCollectionLayoutPdf(layout, pricingSets, ctx.prisma, fullName, new Date(), ctx.logger);
       await logAudit(ctx, {
         action: 'COLLECTION_LAYOUT_EXPORT_PDF',
         targetType: 'CollectionLayout',

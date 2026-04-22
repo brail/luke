@@ -50,35 +50,38 @@ export function getPdfFonts(): TFontDictionary {
 
 export function buildBrandPageHeader(
   brand: { name: string; logoDataUri?: string | null },
-  season: { name: string; code?: string; year?: number | null },
   currentPage: number,
   totalPages: number,
+  opts?: { showPageNumber?: boolean; subtitle?: string; extractedInfo?: string },
 ): Content {
-  const seasonLabel = [season.code, season.year, season.name]
-    .filter(Boolean)
-    .join(' ');
+  const { showPageNumber = true, subtitle, extractedInfo } = opts ?? {};
 
   const brandLogoCol: Content = brand.logoDataUri
     ? { image: brand.logoDataUri, fit: [36, 36], alignment: 'right' as const, margin: [0, 4, 0, 0] }
     : { text: '' };
+
+  const centerStack: Content[] = [
+    { text: brand.name, bold: true, fontSize: 11 },
+  ];
+  if (subtitle)       centerStack.push({ text: subtitle,       fontSize: 8, color: '#444444' } as Content);
+  if (extractedInfo)  centerStack.push({ text: extractedInfo,  fontSize: 7, color: '#888888' } as Content);
+
+  const rightStack: Content[] = [brandLogoCol];
+  if (showPageNumber) {
+    rightStack.push({ text: `${currentPage} / ${totalPages}`, fontSize: 8, color: '#999999', alignment: 'right' as const });
+  }
 
   return {
     margin: [20, 8, 20, 0] as [number, number, number, number],
     columns: [
       { svg: LUKE_LOGO_SVG, width: 36, height: 36, margin: [0, 5, 0, 0] as [number, number, number, number] },
       {
-        stack: [
-          { text: brand.name, bold: true, fontSize: 11 },
-          { text: seasonLabel, fontSize: 9, color: '#666666' },
-        ],
+        stack: centerStack,
         alignment: 'center' as const,
-        margin: [0, 8, 0, 0] as [number, number, number, number],
+        margin: [0, 6, 0, 0] as [number, number, number, number],
       },
       {
-        stack: [
-          brandLogoCol,
-          { text: `${currentPage} / ${totalPages}`, fontSize: 8, color: '#999999', alignment: 'right' as const },
-        ],
+        stack: rightStack,
         alignment: 'right' as const,
         width: 80,
       },
