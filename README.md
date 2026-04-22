@@ -702,6 +702,49 @@ Il pacchetto `@luke/nav` gestisce la sincronizzazione bidirezionale con Microsof
 
 Per dettagli completi, vedi [docs/nav-integration.md](docs/nav-integration.md).
 
+## Storage
+
+Il sistema storage è astratto tramite l'interfaccia `IStorageProvider` con due provider supportati: filesystem locale e MinIO (S3-compatible). Il provider attivo è selezionato da `storage.type` in AppConfig — nessuna env var, nessuna ricompilazione.
+
+### Chiavi nel database, non URL
+
+I modelli salvano la **chiave** del file (`logoKey`, `pictureKey`, `key`), non l'URL completo. L'URL pubblico viene calcolato a runtime tramite `makeUrlResolver(prisma)`. Cambiare provider o configurazione non richiede migrazioni dati.
+
+### Two-Phase Upload
+
+Il file viene caricato come **pending** (`FileObject.confirmedAt = null`) prima che l'entità esista. La conferma avviene nella stessa transaction Prisma che crea l'entità. File pending abbandonati vengono rimossi dal job di cleanup periodico.
+
+```
+1. POST /upload/{bucket}  →  FileObject (confirmedAt = null) + publicUrl + fileObjectId
+2. trpc.brand.create({ ..., fileObjectId })
+   └─ tx: Brand.create + FileObject.confirmedAt = now + Brand.logoKey = file.key
+```
+
+### Provider URL
+
+Con **MinIO**: le immagini sono servite tramite la route Next.js autenticata `/api/uploads/[...path]`. I bucket rimangono privati.
+
+Con **local** (`enableProxy=true`, default): stesso proxy per consistenza. Con `enableProxy=false`: URL pubblico diretto via `publicBaseUrl`.
+
+### Configurazione (AppConfig)
+
+| Chiave | Descrizione |
+|--------|-------------|
+| `storage.type` | `local` \| `minio` |
+| `storage.local.basePath` | Directory base locale (default `/data/uploads`) |
+| `storage.local.enableProxy` | Forza proxy URL (default `true`) |
+| `storage.local.publicBaseUrl` | Base URL pubblico se proxy disabilitato |
+| `storage.minio.endpoint` | Endpoint MinIO (es. `minio:9000`) |
+| `storage.minio.accessKey` / `secretKey` | Credenziali MinIO (cifrate in DB) |
+| `storage.minio.bucket` | Bucket MinIO (default `luke`) |
+| `storage.minio.presignedPutTtl` / `presignedGetTtl` | TTL URL presigned in secondi |
+
+### Bucket validi
+
+`uploads`, `exports`, `assets`, `brand-logos`, `collection-row-pictures`, `merchandising-specsheet-images`
+
+Per l'architettura completa: [docs/adr/007-storage-layer-refactor.md](docs/adr/007-storage-layer-refactor.md)
+
 ## Riferimenti Correlati
 
 - [API_SETUP.md](API_SETUP.md) - Setup e utilizzo dell'API con esempi pratici
