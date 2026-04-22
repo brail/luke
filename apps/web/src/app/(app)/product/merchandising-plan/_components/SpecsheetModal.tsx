@@ -1,7 +1,7 @@
 'use client';
 
 import { Plus, Trash2, Star } from 'lucide-react';
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
@@ -25,6 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../../components/ui/dialog';
+import { FileDropZone } from '../../../../../components/ui/file-drop-zone';
 import { Input } from '../../../../../components/ui/input';
 import { Label } from '../../../../../components/ui/label';
 import { trpc } from '../../../../../lib/trpc';
@@ -78,7 +79,6 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
   // Sections collapsed state
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
 
   // Sincronizza lo stato locale quando i dati arrivano
@@ -184,19 +184,15 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
     );
   };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !specsheet) return;
-
+  const handleImageUpload = async (file: File) => {
+    if (!specsheet) return;
     setUploadingImage(true);
     try {
       const formData = new globalThis.FormData();
       formData.append('file', file);
-
       const url = buildSpecsheetImageUploadUrl(specsheet.id);
       const res = await fetch(url, { method: 'POST', body: formData, credentials: 'include' });
       if (!res.ok) throw new Error('Upload fallito');
-
       utils.merchandisingPlan.getSpecsheet.invalidate({ rowId: row.id });
       onSaved();
       toast.success('Immagine caricata');
@@ -204,7 +200,6 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
       toast.error(err.message ?? 'Errore upload immagine');
     } finally {
       setUploadingImage(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -329,25 +324,17 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
               )}
 
               {canUpdate && specsheet && (
-                <>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    className="hidden"
-                    onChange={handleImageUpload}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    disabled={uploadingImage}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
+                <FileDropZone
+                  onFile={handleImageUpload}
+                  accept={['image/png', 'image/jpeg', 'image/webp']}
+                  maxSizeMB={10}
+                  disabled={uploadingImage}
+                  className="w-full"
+                >
+                  <div className="flex items-center justify-center rounded-md border border-dashed py-2 text-sm text-muted-foreground hover:border-primary/50 hover:bg-muted/30 transition-colors">
                     {uploadingImage ? 'Caricamento…' : '+ Aggiungi immagine'}
-                  </Button>
-                </>
+                  </div>
+                </FileDropZone>
               )}
 
               {!specsheet && canUpdate && (

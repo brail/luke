@@ -1,6 +1,6 @@
 'use client';
 
-import { Image, Upload, X } from 'lucide-react';
+import { Image, X } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
@@ -13,7 +13,7 @@ import {
 } from '@luke/core';
 
 import { Badge } from '../../../../../components/ui/badge';
-import { Button } from '../../../../../components/ui/button';
+import { FileDropZone } from '../../../../../components/ui/file-drop-zone';
 import {
   FormControl,
   FormField,
@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from '../../../../../components/ui/select';
 import { Textarea } from '../../../../../components/ui/textarea';
+import { cn } from '../../../../../lib/utils';
 
 import { VendorCombobox } from './VendorCombobox';
 
@@ -87,9 +88,8 @@ interface IdentificationSectionProps {
   canUpdate: boolean;
   mode: 'create' | 'edit';
   pictureUrl: string | null | undefined;
-  fileInputRef: React.RefObject<HTMLInputElement | null>;
   onRemovePicture: () => void;
-  onUploadPicture: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onUploadPicture: (file: File) => void;
 }
 
 export function IdentificationSection({
@@ -97,7 +97,6 @@ export function IdentificationSection({
   canUpdate,
   mode,
   pictureUrl,
-  fileInputRef,
   onRemovePicture,
   onUploadPicture,
 }: IdentificationSectionProps) {
@@ -342,51 +341,48 @@ export function IdentificationSection({
       {mode === 'edit' && (
         <div className="space-y-2">
           <Label>Foto</Label>
-          <div className="flex items-center gap-4">
-            {pictureUrl && !imgFailed ? (
-              <div className="relative">
-                <img
-                  src={pictureUrl}
-                  alt="Foto riga"
-                  className="h-36 w-48 rounded-md object-contain border bg-muted/5"
-                  onError={() => setImgFailed(true)}
-                />
-                {canUpdate && (
-                  <button
-                    type="button"
-                    onClick={onRemovePicture}
-                    className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-0.5"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="h-36 w-48 rounded-md border border-dashed flex items-center justify-center bg-muted/30">
-                <Image className="h-10 w-10 text-muted-foreground" />
-              </div>
-            )}
-            {canUpdate && (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  {pictureUrl ? 'Cambia foto' : 'Carica foto'}
-                </Button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  className="hidden"
-                  onChange={onUploadPicture}
-                />
-              </>
-            )}
-          </div>
+          <FileDropZone
+            onFile={onUploadPicture}
+            accept={['image/png', 'image/jpeg', 'image/webp']}
+            maxSizeMB={5}
+            disabled={!canUpdate}
+            className={cn('rounded-md', canUpdate && 'cursor-pointer')}
+          >
+            <div className="flex items-center gap-4">
+              {pictureUrl && !imgFailed ? (
+                <div className="relative shrink-0">
+                  <img
+                    src={pictureUrl}
+                    alt="Foto riga"
+                    className="h-36 w-48 rounded-md object-contain border bg-muted/5"
+                    onError={() => setImgFailed(true)}
+                  />
+                  {canUpdate && (
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); onRemovePicture(); }}
+                      className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-0.5"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className={cn(
+                  'h-36 w-48 rounded-md border-2 border-dashed flex items-center justify-center bg-muted/20',
+                  canUpdate ? 'border-muted-foreground/25 hover:border-primary/40 hover:bg-muted/30' : 'border-muted'
+                )}>
+                  <Image className="h-10 w-10 text-muted-foreground/50" />
+                </div>
+              )}
+              {canUpdate && (
+                <p className="text-xs text-muted-foreground">
+                  {pictureUrl ? 'Trascina per sostituire o clicca' : 'Trascina qui o clicca per caricare'}
+                  <span className="block mt-0.5">PNG, JPEG, WebP · Max 5MB</span>
+                </p>
+              )}
+            </div>
+          </FileDropZone>
         </div>
       )}
     </div>

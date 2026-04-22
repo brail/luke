@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
@@ -103,7 +103,6 @@ export function CollectionRowDrawer({
   isLoading = false,
   canUpdate = true,
 }: CollectionRowDrawerProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [previewPictureUrl, setPreviewPictureUrl] = useState<string | null>(null);
   const { upload: uploadPicture } = useStorageUpload({
     fallbackProxyUrl: row?.id ? buildCollectionRowPictureUploadUrl(row.id) : undefined,
@@ -153,10 +152,8 @@ export function CollectionRowDrawer({
   const { selectedParamSet, marginCalc } = usePricingCalc(form, parameterSets);
   const title = mode === 'create' ? 'Nuova riga' : (row?.line ?? 'Modifica riga');
 
-  const handlePictureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !row?.id) return;
-
+  const handlePictureUpload = async (file: File) => {
+    if (!row?.id) return;
     try {
       const { publicUrl, key } = await uploadPicture(file, 'collection-row-pictures');
       if (key) form.setValue('pictureKey', key);
@@ -165,8 +162,6 @@ export function CollectionRowDrawer({
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Errore durante upload');
     }
-
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   return (
@@ -184,7 +179,6 @@ export function CollectionRowDrawer({
                 canUpdate={canUpdate}
                 mode={mode}
                 pictureUrl={previewPictureUrl}
-                fileInputRef={fileInputRef}
                 onRemovePicture={() => { form.setValue('pictureKey', null); setPreviewPictureUrl(null); }}
                 onUploadPicture={handlePictureUpload}
               />
