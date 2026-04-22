@@ -59,7 +59,7 @@ export function buildBrandPageHeader(
     .join(' ');
 
   const brandLogoCol: Content = brand.logoDataUri
-    ? { image: brand.logoDataUri, width: 36, height: 36, margin: [0, 5, 0, 0] }
+    ? { image: brand.logoDataUri, fit: [36, 36], alignment: 'right' as const, margin: [0, 4, 0, 0] }
     : { text: '' };
 
   return {
@@ -80,7 +80,7 @@ export function buildBrandPageHeader(
           { text: `${currentPage} / ${totalPages}`, fontSize: 8, color: '#999999', alignment: 'right' as const },
         ],
         alignment: 'right' as const,
-        width: 60,
+        width: 80,
       },
     ],
   };

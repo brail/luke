@@ -364,6 +364,7 @@ export async function readFileBuffer(
   prisma: PrismaClient,
   bucket: StorageBucket,
   key: string,
+  logger?: { warn: (obj: object, msg: string) => void },
 ): Promise<Buffer | null> {
   try {
     const provider = await getStorageProvider(prisma);
@@ -374,7 +375,8 @@ export async function readFileBuffer(
       stream.on('end', () => resolve(Buffer.concat(chunks)));
       stream.on('error', reject);
     });
-  } catch {
+  } catch (err) {
+    logger?.warn({ err, bucket, key }, 'readFileBuffer: failed to read file');
     return null;
   }
 }

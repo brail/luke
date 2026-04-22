@@ -32,9 +32,9 @@ export type CollectionLayoutForPdf = CollectionLayout & {
 // Fixed widths (pt) designed for A3 landscape — 1150pt usable. Text wraps automatically.
 const PDF_COLUMNS = [
   { header: 'Foto',      width: 55  },
-  { header: 'Linea',     width: 255 },
+  { header: 'Linea',     width: 120 },
   { header: 'Gender',    width: 46  },
-  { header: 'Fornitore', width: 148 },
+  { header: 'Fornitore', width: 255 },
   { header: 'Categoria', width: 118 },
   { header: 'Strategy',  width: 76  },
   { header: 'Status',    width: 80  },
@@ -46,13 +46,32 @@ const PDF_COLUMNS = [
 const HEADER_FILL = '#E8E0D5';
 const IMAGE_WIDTH  = 50;
 const IMAGE_HEIGHT = 65;
-const CELL_MARGIN = [3, 4, 3, 4] as [number, number, number, number];
+
+// Fixed row heights (pt). Data row = 70pt fits IMAGE_HEIGHT (65) + margins (5).
+// Text cell margin centers fontSize-8 text (line height ~10pt): (70-10)/2 = 30pt top+bottom.
+const PDF_HEADER_ROW_HEIGHT = 22;
+const PDF_DATA_ROW_HEIGHT   = 70;
+const CELL_MARGIN        = [3, 30, 3, 30] as [number, number, number, number];
+const HEADER_CELL_MARGIN = [3, 6,  3, 6 ] as [number, number, number, number];
+// Image: fit [50,65] max → 3pt top + 65 + 2pt bottom = 70pt = PDF_DATA_ROW_HEIGHT
+const PHOTO_MARGIN = [2, 3, 2, 2] as [number, number, number, number];
+
+/** Returns a data URI string, or null for unsupported types (e.g. WebP). */
+function toDataUri(buf: Buffer, key: string): string | null {
+  const lower = key.toLowerCase();
+  if (lower.endsWith('.png')) return `data:image/png;base64,${buf.toString('base64')}`;
+  if (lower.endsWith('.webp')) return null;
+  return `data:image/jpeg;base64,${buf.toString('base64')}`;
+}
 
 // ─── Builder ──────────────────────────────────────────────────────────────────
+
+type Logger = { warn: (obj: object, msg: string) => void };
 
 export async function buildCollectionLayoutPdf(
   layout: CollectionLayoutForPdf,
   prisma: PrismaClient,
+  logger?: Logger,
 ): Promise<Buffer> {
   const allRows = layout.groups.flatMap(g => g.rows);
 
@@ -61,13 +80,13 @@ export async function buildCollectionLayoutPdf(
   const keyToDataUriMap = new Map<string, string | null>();
   const [brandLogoDataUri] = await Promise.all([
     layout.brand.logoKey
-      ? readFileBuffer(prisma, 'brand-logos', layout.brand.logoKey).then(buf =>
-          buf ? `data:image/jpeg;base64,${buf.toString('base64')}` : null,
+      ? readFileBuffer(prisma, 'brand-logos', layout.brand.logoKey, logger).then(buf =>
+          buf ? toDataUri(buf, layout.brand.logoKey!) : null,
         )
       : Promise.resolve(null),
     ...uniqueRowKeys.map(key =>
-      readFileBuffer(prisma, 'collection-row-pictures', key)
-        .then(buf => keyToDataUriMap.set(key, buf ? `data:image/jpeg;base64,${buf.toString('base64')}` : null)),
+      readFileBuffer(prisma, 'collection-row-pictures', key, logger)
+        .then(buf => keyToDataUriMap.set(key, buf ? toDataUri(buf, key) : null)),
     ),
   ]);
 
@@ -80,7 +99,7 @@ export async function buildCollectionLayoutPdf(
     bold: true,
     fillColor: HEADER_FILL,
     fontSize: 8,
-    margin: CELL_MARGIN,
+    margin: HEADER_CELL_MARGIN,
   }));
 
   const tableLayout = {
@@ -111,11 +130,11 @@ export async function buildCollectionLayoutPdf(
         const vendorLabel = row.vendor?.nickname ?? row.vendor?.name ?? '';
 
         const photoCell: Content = imageDataUri
-          ? { image: imageDataUri, width: IMAGE_WIDTH, height: IMAGE_HEIGHT }
+          ? { image: imageDataUri, fit: [IMAGE_WIDTH, IMAGE_HEIGHT], alignment: 'center' }
           : { text: '' };
 
         tableBody.push([
-          { ...photoCell, margin: [2, 2, 2, 2] as [number, number, number, number] },
+          { ...photoCell, margin: PHOTO_MARGIN },
           { text: row.line,            fontSize: 8, margin: CELL_MARGIN },
           { text: row.gender ?? '',    fontSize: 8, margin: CELL_MARGIN },
           { text: vendorLabel,         fontSize: 8, margin: CELL_MARGIN },
@@ -140,6 +159,7 @@ export async function buildCollectionLayoutPdf(
           table: {
             headerRows: 1,
             widths: PDF_COLUMNS.map(c => c.width),
+            heights: (i: number) => i === 0 ? PDF_HEADER_ROW_HEIGHT : PDF_DATA_ROW_HEIGHT,
             body: tableBody,
           },
           layout: tableLayout,

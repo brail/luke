@@ -205,7 +205,7 @@ const exportRouter = router({
         where: { brandId: layout.brandId, seasonId: layout.seasonId },
       });
 
-      const buffer = await buildCollectionLayoutXlsx(layout, pricingSets, ctx.prisma);
+      const buffer = await buildCollectionLayoutXlsx(layout, pricingSets, ctx.prisma, ctx.logger);
       await logAudit(ctx, {
         action: 'COLLECTION_LAYOUT_EXPORT_XLSX',
         targetType: 'CollectionLayout',
@@ -229,7 +229,7 @@ const exportRouter = router({
       });
       if (!layout) throw new TRPCError({ code: 'NOT_FOUND', message: 'Layout non trovato' });
 
-      const buffer = await buildCollectionLayoutPdf(layout, ctx.prisma);
+      const buffer = await buildCollectionLayoutPdf(layout, ctx.prisma, ctx.logger);
       await logAudit(ctx, {
         action: 'COLLECTION_LAYOUT_EXPORT_PDF',
         targetType: 'CollectionLayout',

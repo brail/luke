@@ -289,6 +289,7 @@ export const storageRouter = router({
           contentType: input.contentType,
           checksumSha256: input.checksumSha256 ?? '',
           createdBy: ctx.session.user.id,
+          confirmedAt: new Date(),
         },
       });
 
