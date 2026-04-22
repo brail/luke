@@ -17,6 +17,7 @@ import {
 import { logAudit } from '../lib/auditLog';
 import { withRateLimit } from '../lib/ratelimit';
 import { makeUrlResolver } from '../lib/storageUrl';
+import { deleteObjectByKey } from '../storage';
 import { router, protectedProcedure } from '../lib/trpc';
 import { requirePermission } from '../lib/permissions';
 
@@ -165,6 +166,8 @@ export const brandRouter = router({
     .use(withRateLimit('brandMutations'))
     .input(BrandUpdateInputSchema)
     .mutation(async ({ input, ctx }) => {
+      let oldLogoKey: string | null = null;
+
       const result = await ctx.prisma.$transaction(async tx => {
         const existingBrand = await tx.brand.findUnique({
           where: { id: input.id },
@@ -209,13 +212,46 @@ export const brandRouter = router({
           }
         }
 
-        const { fileObjectId: _fileObjectId, ...brandUpdateData } = input.data;
-        return tx.brand.update({
+        const { fileObjectId, ...brandUpdateData } = input.data;
+        let updated = await tx.brand.update({
           where: { id: input.id },
           data: { ...brandUpdateData, updatedAt: new Date() },
           select: BRAND_SELECT,
         });
+
+        if (fileObjectId) {
+          const pendingFile = await tx.fileObject.findUnique({
+            where: { id: fileObjectId },
+            select: { key: true, confirmedAt: true, createdBy: true, bucket: true },
+          });
+          if (
+            pendingFile?.confirmedAt === null &&
+            pendingFile.createdBy === ctx.session!.user.id &&
+            pendingFile.bucket === 'brand-logos'
+          ) {
+            await tx.fileObject.update({ where: { id: fileObjectId }, data: { confirmedAt: new Date() } });
+            updated = await tx.brand.update({
+              where: { id: input.id },
+              data: { logoKey: pendingFile.key },
+              select: BRAND_SELECT,
+            });
+            oldLogoKey = existingBrand.logoKey;
+          }
+        }
+
+        return updated;
       }, { timeout: 15000 });
+
+      if (oldLogoKey) {
+        setImmediate(async () => {
+          try {
+            await deleteObjectByKey(ctx, { bucket: 'brand-logos', key: oldLogoKey! });
+          } catch (err) {
+            ctx.logger?.warn({ err }, 'Failed to cleanup old logo after brand update');
+          }
+        });
+      }
+
       await logAudit(ctx, { action: 'BRAND_UPDATE', targetType: 'Brand', targetId: input.id, result: 'SUCCESS', metadata: { name: result.name } });
       const resolveUpdate = result.logoKey ? await makeUrlResolver(ctx.prisma) : null;
       return { ...result, logoUrl: result.logoKey && resolveUpdate ? resolveUpdate('brand-logos', result.logoKey) : null };
