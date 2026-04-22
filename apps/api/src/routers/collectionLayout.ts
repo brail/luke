@@ -19,8 +19,11 @@ import {
 
 import { TRPCError } from '@trpc/server';
 
+import type { PrismaClient } from '@prisma/client';
+
 import { logAudit } from '../lib/auditLog';
 import { withRateLimit } from '../lib/ratelimit';
+import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
 import { requirePermission } from '../lib/permissions';
 import {
@@ -144,8 +147,31 @@ const rowsRouter = router({
     }),
 });
 
+/** Resolve pictureKey → pictureUrl and logoKey → logoUrl in a layout response. */
+async function resolveLayoutUrls<T extends {
+  brand: { logoKey: string | null; [k: string]: unknown };
+  groups: Array<{ rows: Array<{ pictureKey: string | null; [k: string]: unknown }>; [k: string]: unknown }>;
+  [k: string]: unknown;
+}>(layout: T, prisma: PrismaClient): Promise<T & { brand: { logoUrl: string | null } }> {
+  const resolve = await makeUrlResolver(prisma);
+  return {
+    ...layout,
+    brand: {
+      ...layout.brand,
+      logoUrl: layout.brand.logoKey ? resolve('brand-logos', layout.brand.logoKey) : null,
+    },
+    groups: layout.groups.map(g => ({
+      ...g,
+      rows: g.rows.map(r => ({
+        ...r,
+        pictureUrl: r.pictureKey ? resolve('collection-row-pictures', r.pictureKey) : null,
+      })),
+    })),
+  } as any;
+}
+
 const EXPORT_INCLUDE = {
-  brand:  { select: { name: true, code: true, logoUrl: true } },
+  brand:  { select: { name: true, code: true, logoKey: true } },
   season: { select: { name: true, code: true, year: true } },
   groups: {
     orderBy: { order: 'asc' as const },
@@ -157,6 +183,12 @@ const EXPORT_INCLUDE = {
     },
   },
 } as const;
+
+function exportTimestamp(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+}
 
 const exportRouter = router({
   xlsx: protectedProcedure
@@ -173,7 +205,7 @@ const exportRouter = router({
         where: { brandId: layout.brandId, seasonId: layout.seasonId },
       });
 
-      const buffer = await buildCollectionLayoutXlsx(layout, pricingSets);
+      const buffer = await buildCollectionLayoutXlsx(layout, pricingSets, ctx.prisma);
       await logAudit(ctx, {
         action: 'COLLECTION_LAYOUT_EXPORT_XLSX',
         targetType: 'CollectionLayout',
@@ -183,7 +215,7 @@ const exportRouter = router({
       });
       return {
         data: buffer.toString('base64'),
-        filename: `${layout.brand.code}-${layout.season.code}-CollectionLayout.xlsx`,
+        filename: `${layout.brand.code}-${layout.season.code}-CollectionLayout-${exportTimestamp()}.xlsx`,
       };
     }),
 
@@ -197,7 +229,7 @@ const exportRouter = router({
       });
       if (!layout) throw new TRPCError({ code: 'NOT_FOUND', message: 'Layout non trovato' });
 
-      const buffer = await buildCollectionLayoutPdf(layout);
+      const buffer = await buildCollectionLayoutPdf(layout, ctx.prisma);
       await logAudit(ctx, {
         action: 'COLLECTION_LAYOUT_EXPORT_PDF',
         targetType: 'CollectionLayout',
@@ -207,7 +239,7 @@ const exportRouter = router({
       });
       return {
         data: buffer.toString('base64'),
-        filename: `${layout.brand.code}-${layout.season.code}-CollectionLayout.pdf`,
+        filename: `${layout.brand.code}-${layout.season.code}-CollectionLayout-${exportTimestamp()}.pdf`,
       };
     }),
 });
@@ -222,7 +254,8 @@ export const collectionLayoutRouter = router({
       })
     )
     .query(async ({ input, ctx }) => {
-      return getLayout(input.brandId, input.seasonId, ctx.prisma);
+      const layout = await getLayout(input.brandId, input.seasonId, ctx.prisma);
+      return layout ? resolveLayoutUrls(layout, ctx.prisma) : null;
     }),
 
   getOrCreate: protectedProcedure
@@ -237,7 +270,7 @@ export const collectionLayoutRouter = router({
     .mutation(async ({ input, ctx }) => {
       const result = await getOrCreateLayout(input.brandId, input.seasonId, ctx.prisma);
       await logAudit(ctx, { action: 'COLLECTION_LAYOUT_GET_OR_CREATE', targetType: 'CollectionLayout', targetId: result.id, result: 'SUCCESS', metadata: { brandId: input.brandId, seasonId: input.seasonId } });
-      return result;
+      return resolveLayoutUrls(result, ctx.prisma);
     }),
 
   copyFromSeason: protectedProcedure
@@ -260,7 +293,7 @@ export const collectionLayoutRouter = router({
         ctx.prisma
       );
       await logAudit(ctx, { action: 'COLLECTION_LAYOUT_COPY_FROM_SEASON', targetType: 'CollectionLayout', targetId: result.id, result: 'SUCCESS', metadata: { fromBrandId: input.fromBrandId, fromSeasonId: input.fromSeasonId, toBrandId: input.toBrandId, toSeasonId: input.toSeasonId } });
-      return result;
+      return resolveLayoutUrls(result, ctx.prisma);
     }),
 
   updateSettings: protectedProcedure

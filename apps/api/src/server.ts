@@ -8,7 +8,6 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
-import fastifyStatic from '@fastify/static';
 import { PrismaClient } from '@prisma/client';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import Fastify from 'fastify';
@@ -109,10 +108,12 @@ async function registerSecurityPlugins() {
 
   // Rate limiting globale (permissivo)
   await fastify.register(rateLimit, {
-    max: isDevelopment() ? 1000 : 100, // 1000 req/min in dev, 100 in prod
+    max: isDevelopment() ? 2000 : 100,
     timeWindow: '1 minute',
     cache: 10000,
     skipOnError: true,
+    // In dev, bypass rate limiting for localhost to avoid dev friction
+    allowList: isDevelopment() ? ['127.0.0.1', '::1', '::ffff:127.0.0.1'] : [],
     errorResponseBuilder: (request: any, context: any) => ({
       statusCode: 429,
       error: 'Rate limit exceeded',
@@ -270,54 +271,6 @@ async function registerSpecsheetImageRoutes() {
 }
 
 /**
- * Registra static file server per uploads
- */
-async function registerStaticFiles() {
-  const { resolve } = await import('path');
-  const { realpath, mkdir } = await import('fs/promises');
-  const { homedir } = await import('os');
-
-  const defaultBasePath = resolve(homedir(), '.luke', 'storage');
-  const basePath =
-    (await getConfig(prisma, 'storage.local.basePath', false)) ||
-    defaultBasePath;
-
-  // Ensure directory exists, then resolve symlinks for consistent path matching
-  // with LocalFsProvider which also uses fs.realpath internally
-  const resolvedPath = resolve(basePath);
-  await mkdir(resolvedPath, { recursive: true });
-  const absoluteRoot = await realpath(resolvedPath);
-
-  await fastify.register(fastifyStatic, {
-    root: absoluteRoot,
-    prefix: '/uploads/',
-    decorateReply: false,
-    setHeaders: (res, path) => {
-      // CORS per le immagini statiche è gestito dal plugin @fastify/cors globale
-      // che supporta dynamic origin matching su tutti i path incluso /uploads/
-
-      // Imposta content-type corretto per le immagini
-      if (path.endsWith('.png')) {
-        res.setHeader('Content-Type', 'image/png');
-      } else if (path.endsWith('.jpg') || path.endsWith('.jpeg')) {
-        res.setHeader('Content-Type', 'image/jpeg');
-      } else if (path.endsWith('.webp')) {
-        res.setHeader('Content-Type', 'image/webp');
-      }
-
-      // Imposta CSP permissivo per le immagini
-      res.setHeader(
-        'Content-Security-Policy',
-        "img-src 'self' data:; default-src 'none'"
-      );
-
-      // Cache headers per assets statici
-      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    },
-  });
-}
-
-/**
  * Registra route di health check e readiness
  */
 async function registerHealthRoute() {
@@ -397,7 +350,8 @@ function setupTempFileCleanup() {
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
       const tempFiles = await prisma.fileObject.findMany({
         where: {
-          bucket: { in: ['temp-brand-logos', 'temp-collection-row-pictures'] },
+          confirmedAt: null,
+          bucket: { in: ['brand-logos', 'collection-row-pictures', 'merchandising-specsheet-images'] },
           createdAt: { lt: oneHourAgo },
         },
       });
@@ -412,7 +366,7 @@ function setupTempFileCleanup() {
         for (const file of tempFiles) {
           try {
             await provider.delete({
-              bucket: file.bucket as 'temp-brand-logos' | 'temp-collection-row-pictures',
+              bucket: file.bucket as 'brand-logos' | 'collection-row-pictures' | 'merchandising-specsheet-images',
               key: file.key,
             });
             succeededIds.push(file.id);
@@ -633,7 +587,6 @@ const start = async () => {
     await registerBrandLogoRoutes(); // Brand logo upload routes
     await registerCollectionRowPictureRoutes(); // Collection row picture upload routes
     await registerSpecsheetImageRoutes(); // Specsheet image upload routes
-    await registerStaticFiles(); // Static file server per uploads
     await registerHealthRoute();
 
     // Configura cleanup file temporanei

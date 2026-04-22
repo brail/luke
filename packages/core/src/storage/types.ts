@@ -13,19 +13,17 @@
  * - uploads: File caricati dagli utenti
  * - exports: File esportati dal sistema
  * - assets: Asset statici e risorse
- * - brand-logos: Logo dei brand
- * - temp-brand-logos: File temporanei per logo durante creazione brand
+ * - brand-logos: Logo dei brand (pending + confirmed)
+ * - collection-row-pictures: Foto righe collection layout
+ * - merchandising-specsheet-images: Immagini specsheet
  */
 export type StorageBucket =
   | 'uploads'
   | 'exports'
   | 'assets'
   | 'brand-logos'
-  | 'temp-brand-logos'
   | 'collection-row-pictures'
-  | 'temp-collection-row-pictures'
-  | 'merchandising-specsheet-images'
-  | 'temp-merchandising-specsheet-images';
+  | 'merchandising-specsheet-images';
 
 /**
  * Metadati di un file memorizzato
@@ -148,36 +146,67 @@ export interface StorageListResult {
 }
 
 /**
+ * Capabilities advertised by a storage provider.
+ * Use before calling optional methods to avoid runtime errors.
+ */
+export interface IStorageCapabilities {
+  /** Provider can generate presigned PUT URLs for direct client upload */
+  supportsPresignedUpload: boolean;
+  /** Provider can generate presigned GET URLs for direct client download */
+  supportsPresignedDownload: boolean;
+}
+
+/** Parameters for generating a presigned PUT URL */
+export interface PresignedPutParams {
+  bucket: StorageBucket;
+  key: string;
+  contentType: string;
+  size: number;
+  /** TTL in seconds */
+  expiresIn?: number;
+}
+
+/** Result of a presigned PUT URL generation */
+export interface PresignedPutResult {
+  /** The presigned URL the client should PUT to */
+  url: string;
+  /** The key that will be used to store the file */
+  key: string;
+  /** When the URL expires */
+  expiresAt: Date;
+}
+
+/** Parameters for generating a presigned GET URL */
+export interface PresignedGetParams {
+  bucket: StorageBucket;
+  key: string;
+  /** TTL in seconds */
+  expiresIn?: number;
+}
+
+/** Result of a presigned GET URL generation */
+export interface PresignedGetResult {
+  url: string;
+  expiresAt: Date;
+}
+
+/**
  * Interfaccia provider di storage
  *
- * Contratto unificato per implementazioni concrete (LocalFs, SAMBA, GDrive, etc.)
+ * Contratto unificato per implementazioni concrete (LocalFs, MinIO, etc.)
  * Garantisce estensibilità senza modifiche al service layer o router tRPC
  */
 export interface IStorageProvider {
-  /**
-   * Salva un file nello storage
-   * @param params - Parametri di upload
-   * @returns Chiave assegnata, checksum e size
-   */
+  /** Capabilities advertised by this provider */
+  readonly capabilities: IStorageCapabilities;
+
   put(params: StoragePutParams): Promise<StoragePutResult>;
-
-  /**
-   * Recupera un file dallo storage
-   * @param params - Parametri di recupero
-   * @returns Stream del file e metadati
-   */
   get(params: StorageGetParams): Promise<StorageGetResult>;
-
-  /**
-   * Cancella un file dallo storage
-   * @param params - Parametri di cancellazione
-   */
   delete(params: StorageDeleteParams): Promise<void>;
-
-  /**
-   * Lista file in un bucket
-   * @param params - Parametri di listing
-   * @returns Lista paginata di file
-   */
   list(params: StorageListParams): Promise<StorageListResult>;
+
+  /** Only present when capabilities.supportsPresignedUpload === true */
+  getPresignedPutUrl?(params: PresignedPutParams): Promise<PresignedPutResult>;
+  /** Only present when capabilities.supportsPresignedDownload === true */
+  getPresignedGetUrl?(params: PresignedGetParams): Promise<PresignedGetResult>;
 }

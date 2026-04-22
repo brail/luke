@@ -73,7 +73,7 @@ export const CollectionLayoutRowInputSchema = z.object({
   styleStatus: z.enum(COLLECTION_STATUS).optional().nullable(),
   progress: z.enum(COLLECTION_PROGRESS).optional().nullable(),
   designer: z.string().optional().nullable(),
-  pictureUrl: z.string().optional().nullable(),
+  pictureKey: z.string().optional().nullable(),
   // Optional — notes
   styleNotes: z.string().optional().nullable(),
   materialNotes: z.string().optional().nullable(),

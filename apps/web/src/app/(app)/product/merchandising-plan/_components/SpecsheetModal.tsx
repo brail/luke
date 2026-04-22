@@ -289,7 +289,7 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
                   {specsheet.images.map(img => (
                     <div key={img.id} className="relative group rounded-md overflow-hidden border">
                       <img
-                        src={img.url}
+                        src={img.url ?? ''}
                         alt={img.caption ?? ''}
                         className="w-full object-cover max-h-40"
                       />

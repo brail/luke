@@ -5,6 +5,7 @@
 
 import { z } from 'zod';
 
+import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
 import {
   getUserAllowedBrandIds,
@@ -23,7 +24,7 @@ export const catalogRouter = router({
     const userId = ctx.session.user.id;
     const allowedBrandIds = await getUserAllowedBrandIds(userId, ctx.prisma);
 
-    return ctx.prisma.brand.findMany({
+    const brands = await ctx.prisma.brand.findMany({
       where: {
         isActive: true,
         ...(allowedBrandIds ? { id: { in: allowedBrandIds } } : {}),
@@ -33,12 +34,17 @@ export const catalogRouter = router({
         id: true,
         code: true,
         name: true,
-        logoUrl: true,
+        logoKey: true,
         isActive: true,
         createdAt: true,
         updatedAt: true,
       },
     });
+    const resolve = brands.some(b => b.logoKey) ? await makeUrlResolver(ctx.prisma) : null;
+    return brands.map(b => ({
+      ...b,
+      logoUrl: b.logoKey && resolve ? resolve('brand-logos', b.logoKey) : null,
+    }));
   }),
 
   /**

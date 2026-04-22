@@ -1,8 +1,9 @@
 /**
  * Plugin Fastify per upload e download file storage
  *
- * - POST /storage/upload/:uploadId - Upload multipart
- * - GET /storage/download?token=... - Download con token firmato
+ * - GET  /uploads/:bucket/*         - Stream asset autenticato dal provider attivo
+ * - POST /storage/upload/:uploadId  - Upload multipart
+ * - GET  /storage/download?token=.. - Download con token firmato
  *
  * Note: @fastify/multipart è registrato globalmente in server.ts
  */
@@ -14,7 +15,7 @@ import type { StorageBucket } from '@luke/core';
 import { hasPermission } from '@luke/core';
 
 import { authenticateRequest as auth } from '../lib/auth';
-import { putObject, getObject } from '../storage';
+import { putObject, getObject, getStorageProvider } from '../storage';
 import { verifyDownloadToken } from '../utils/downloadToken';
 
 import type { Context } from '../lib/trpc';
@@ -27,6 +28,54 @@ export async function storagePlugin(
   options: { prisma: PrismaClient }
 ) {
   const { prisma } = options;
+
+  /**
+   * GET /uploads/:bucket/*
+   * Proxy autenticato per asset storage — funziona sia con provider locale che MinIO.
+   * L'autenticazione avviene nel Next.js route handler; questa route è internal-only.
+   * Sostituisce il vecchio fastify-static: funziona per qualsiasi provider (local/MinIO).
+   */
+  fastify.get<{
+    Params: { bucket: string; '*': string };
+  }>('/uploads/:bucket/*', async (request, reply) => {
+    const { bucket, '*': key } = request.params;
+
+    if (!bucket || !key) {
+      reply.code(400).send({ error: 'Bad Request' });
+      return;
+    }
+
+    // Blocca path traversal: nessun segmento deve essere '..' o contenere caratteri pericolosi
+    const segments = key.split('/');
+    if (segments.some(s => s === '..' || s === '.' || s === '')) {
+      reply.code(400).send({ error: 'Bad Request' });
+      return;
+    }
+
+    try {
+      const provider = await getStorageProvider(prisma);
+      const { stream, contentType } = await provider.get({
+        bucket: bucket as StorageBucket,
+        key,
+      });
+
+      // Buffer the stream to avoid ERR_STREAM_WRITE_AFTER_END when AWS SDK
+      // SdkStream errors mid-pipe after headers are already sent.
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream as AsyncIterable<Buffer>) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as unknown as ArrayBuffer));
+      }
+      const buffer = Buffer.concat(chunks);
+
+      reply.header('Content-Type', contentType || 'application/octet-stream');
+      reply.header('Content-Length', buffer.length);
+      reply.header('Cache-Control', 'public, max-age=31536000, immutable');
+      reply.send(buffer);
+    } catch (err) {
+      fastify.log.warn({ err, bucket, key }, 'Storage GET failed');
+      reply.code(404).send({ error: 'Not Found' });
+    }
+  });
 
   // Note: @fastify/multipart è già registrato globalmente in server.ts
   // Non registrare di nuovo qui per evitare conflitti

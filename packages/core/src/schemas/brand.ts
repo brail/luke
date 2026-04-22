@@ -24,13 +24,13 @@ export const BrandInputSchema = z.object({
     .max(128, 'Max 128 caratteri')
     .trim(),
 
-  /** URL del logo (opzionale, nullable) */
-  logoUrl: z
-    .union([z.string().url('URL non valido'), z.null(), z.undefined()])
+  /** Storage key del logo (opzionale, nullable) */
+  logoKey: z
+    .union([z.string(), z.null(), z.undefined()])
     .optional(),
 
-  /** ID temporaneo per logo durante creazione brand (opzionale) */
-  tempLogoId: z.string().uuid('ID temporaneo non valido').optional(),
+  /** ID FileObject pending per logo durante creazione brand (opzionale) */
+  fileObjectId: z.string().uuid('ID file non valido').optional(),
 
   /** Codice NAV collegato (opzionale) */
   navBrandId: z.string().max(20).optional().nullable(),

@@ -10,8 +10,10 @@ import type {
   Season,
 } from '@prisma/client';
 
+import type { PrismaClient } from '@prisma/client';
+
 import { applyStreamingHeaderStyle } from '../lib/export/xlsx-streaming';
-import { fetchImageAsBuffer } from '../lib/export/image';
+import { readFileBuffer } from '../storage';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -22,7 +24,7 @@ type RowWithVendor = CollectionLayoutRow & {
 type GroupWithRows = CollectionGroup & { rows: RowWithVendor[] };
 
 export type CollectionLayoutForExport = CollectionLayout & {
-  brand:  Pick<Brand,  'name' | 'code' | 'logoUrl'>;
+  brand:  Pick<Brand,  'name' | 'code' | 'logoKey'>;
   season: Pick<Season, 'name' | 'code' | 'year'>;
   groups: GroupWithRows[];
 };
@@ -89,6 +91,7 @@ const MARGIN_COL        = colIdx('margin');
 export async function buildCollectionLayoutXlsx(
   layout: CollectionLayoutForExport,
   pricingSets: PricingParameterSet[],
+  prisma: PrismaClient,
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Luke';
@@ -108,12 +111,12 @@ export async function buildCollectionLayoutXlsx(
   const lastColLetter = String.fromCharCode(65 + COLUMNS.length - 1);
   sheet.autoFilter = { from: 'A1', to: `${lastColLetter}1` };
 
-  // Fetch images — deduplicate by URL to avoid redundant HTTP requests
+  // Fetch images directly from storage by key (no URL resolution needed)
   const allRows = layout.groups.flatMap((g: GroupWithRows) => g.rows);
-  const uniqueUrls = [...new Set(allRows.map(r => r.pictureUrl).filter((u): u is string => !!u))];
-  const urlToBuffer = new Map<string, Buffer | null>();
+  const uniqueKeys = [...new Set(allRows.map(r => r.pictureKey).filter((k): k is string => !!k))];
+  const keyToBuffer = new Map<string, Buffer | null>();
   await Promise.all(
-    uniqueUrls.map(url => fetchImageAsBuffer(url).then(buf => urlToBuffer.set(url, buf))),
+    uniqueKeys.map(key => readFileBuffer(prisma, 'collection-row-pictures', key).then(buf => keyToBuffer.set(key, buf))),
   );
 
   // Data rows
@@ -152,11 +155,11 @@ export async function buildCollectionLayoutXlsx(
       if (row.supplierFirstQuotation) dataRow.getCell(SUPPLIER_QUOT_COL).numFmt = '#,##0.00';
       if (margin !== null)            dataRow.getCell(MARGIN_COL).numFmt        = '0.00"%"';
 
-      const imageBuf = row.pictureUrl ? urlToBuffer.get(row.pictureUrl) ?? null : null;
+      const imageBuf = row.pictureKey ? keyToBuffer.get(row.pictureKey) ?? null : null;
 
       if (imageBuf) {
         dataRow.height = ROW_HEIGHT_WITH_IMAGE;
-        const ext = detectExtension(row.pictureUrl!);
+        const ext = detectExtension(row.pictureKey!);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const imageId = wb.addImage({ buffer: imageBuf as any, extension: ext });
         sheet.addImage(imageId, {

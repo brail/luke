@@ -14,6 +14,7 @@ import type {
 
 import type {
   PrismaClient,
+  Brand,
   CollectionLayout,
   CollectionGroup,
   CollectionLayoutRow,
@@ -26,9 +27,11 @@ import type {
 
 export type RowWithVendor = CollectionLayoutRow & {
   vendor: Pick<Vendor, 'id' | 'name' | 'nickname'> | null;
+  pictureUrl?: string | null;
 };
 
 export type CollectionLayoutWithRelations = CollectionLayout & {
+  brand: Pick<Brand, 'name' | 'code' | 'logoKey'>;
   groups: (CollectionGroup & {
     rows: RowWithVendor[];
   })[];
@@ -44,6 +47,7 @@ const ROW_VENDOR_INCLUDE = {
 } as const;
 
 const LAYOUT_INCLUDE = {
+  brand: { select: { name: true, code: true, logoKey: true } },
   groups: {
     orderBy: { order: 'asc' as const },
     include: {
@@ -137,13 +141,13 @@ export async function copyFromSeason(
       });
 
       for (const row of group.rows) {
-        const { id: _id, collectionLayoutId: _cid, groupId: _gid, createdAt: _ca, updatedAt: _ua, pictureUrl: _pic, vendor: _vendor, ...rowData } = row;
+        const { id: _id, collectionLayoutId: _cid, groupId: _gid, createdAt: _ca, updatedAt: _ua, pictureKey: _pic, vendor: _vendor, ...rowData } = row;
         await tx.collectionLayoutRow.create({
           data: {
             ...rowData,
             collectionLayoutId: newLayout.id,
             groupId: newGroup.id,
-            pictureUrl: null, // image non copiata intenzionalmente
+            pictureKey: null, // image non copiata intenzionalmente
           },
         });
       }
@@ -287,7 +291,7 @@ export async function createRow(
       styleStatus: rowData.styleStatus ?? null,
       progress: rowData.progress ?? null,
       designer: rowData.designer ?? null,
-      pictureUrl: rowData.pictureUrl ?? null,
+      pictureKey: rowData.pictureKey ?? null,
       styleNotes: rowData.styleNotes ?? null,
       materialNotes: rowData.materialNotes ?? null,
       colorNotes: rowData.colorNotes ?? null,
@@ -412,13 +416,13 @@ export async function duplicateRow(
     data: { order: { increment: 1 } },
   });
 
-  const { id: _id2, createdAt: _ca2, updatedAt: _ua2, pictureUrl: _pic2, ...rowData } = row;
+  const { id: _id2, createdAt: _ca2, updatedAt: _ua2, pictureKey: _pic2, ...rowData } = row;
 
   return prisma.collectionLayoutRow.create({
     data: {
       ...rowData,
       order: row.order + 1,
-      pictureUrl: null, // immagine non duplicata per evitare riferimenti condivisi
+      pictureKey: null, // immagine non duplicata per evitare riferimenti condivisi
     },
   });
 }

@@ -1,17 +1,16 @@
 services:
-
   # ── PostgreSQL ───────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB:       luke
-      POSTGRES_USER:     luke
+      POSTGRES_DB: luke
+      POSTGRES_USER: luke
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U luke -d luke"]
+      test: ['CMD-SHELL', 'pg_isready -U luke -d luke']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -26,19 +25,19 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      NODE_ENV:        production
-      PORT:            3001
-      DATABASE_URL:    postgresql://luke:${POSTGRES_PASSWORD}@postgres:5432/luke
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://luke:${POSTGRES_PASSWORD}@postgres:5432/luke
       # CORS: only the web container calls the API (server-to-server, no browser CORS needed).
       # Set to empty to deny all cross-origin browser requests directly to the API.
-      LUKE_CORS_ALLOWED_ORIGINS: ""
+      LUKE_CORS_ALLOWED_ORIGINS: ''
     volumes:
       # Persistent volume for master key (~/.luke/secret.key) and local file storage
       # (~/.luke/storage/). Both live under the same home dir path.
       # ⚠️  Never delete this volume — all JWT tokens and sessions derive from the master key.
       - api_data:/root/.luke
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/healthz || exit 1"]
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3001/healthz || exit 1']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -57,17 +56,67 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "3000:3000"
+      - '3000:3000'
     environment:
-      NODE_ENV:         production
+      NODE_ENV: production
       # Internal Docker URL used by Next.js server-side code (SSR, middleware, rewrites)
       INTERNAL_API_URL: http://api:3001
       # NextAuth
-      NEXTAUTH_URL:     http://${PUBLIC_HOSTNAME:-luke.febos.local}
-      NEXTAUTH_SECRET:  ${NEXTAUTH_SECRET}
+      NEXTAUTH_URL: http://${PUBLIC_HOSTNAME:-luke.febos.local}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
       # Set to "false" when serving over HTTP (no SSL termination at the proxy)
-      COOKIE_SECURE:    ${COOKIE_SECURE:-false}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+
+  # ── MinIO object storage ─────────────────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER:              ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD:          ${MINIO_ROOT_PASSWORD:-miniopwd}
+      MINIO_API_CORS_ALLOW_ORIGIN:  ${MINIO_CORS_ALLOW_ORIGIN:-*}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'curl -f http://localhost:9000/minio/health/live || exit 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── MinIO bucket initialisation (runs once) ───────────────────────────────────
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD} &&
+        mc mb --ignore-existing local/uploads &&
+        mc mb --ignore-existing local/exports &&
+        mc mb --ignore-existing local/assets &&
+        mc mb --ignore-existing local/brand-logos &&
+        mc mb --ignore-existing local/temp-brand-logos &&
+        mc mb --ignore-existing local/collection-row-pictures &&
+        mc mb --ignore-existing local/temp-collection-row-pictures &&
+        mc mb --ignore-existing local/merchandising-specsheet-images &&
+        mc mb --ignore-existing local/temp-merchandising-specsheet-images &&
+        mc anonymous set download local/brand-logos &&
+        mc anonymous set download local/collection-row-pictures &&
+        mc anonymous set download local/merchandising-specsheet-images &&
+        mc ilm rule add --expire-days 1 local/temp-brand-logos &&
+        mc ilm rule add --expire-days 1 local/temp-collection-row-pictures &&
+        mc ilm rule add --expire-days 1 local/temp-merchandising-specsheet-images
+      "
+    restart: on-failure
 
 volumes:
   postgres_data:
   api_data:
+  minio_data:

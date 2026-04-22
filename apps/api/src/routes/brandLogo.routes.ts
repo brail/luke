@@ -131,16 +131,12 @@ export default fp(
       };
 
       try {
-        // Leggi tutte le parti multipart (campi + file) indipendentemente dall'ordine
-        let tempId: string | null = null;
         let fileBuffer: Buffer | null = null;
         let filename = 'upload';
         let mimetype = 'application/octet-stream';
 
         for await (const part of req.parts()) {
-          if (part.type === 'field' && part.fieldname === 'tempId') {
-            tempId = String(part.value);
-          } else if (part.type === 'file') {
+          if (part.type === 'file') {
             const chunks: Buffer[] = [];
             for await (const chunk of part.file) {
               chunks.push(chunk as Buffer);
@@ -151,12 +147,6 @@ export default fp(
           }
         }
 
-        if (!tempId) {
-          return reply.code(400).send({
-            error: 'Bad Request',
-            message: 'tempId richiesto',
-          });
-        }
         if (!fileBuffer) {
           return reply.code(400).send({
             error: 'Bad Request',
@@ -164,9 +154,8 @@ export default fp(
           });
         }
 
-        // Upload temporaneo tramite service
+        // Upload pending tramite service
         const result = await uploadTempBrandLogo(ctx, {
-          tempId,
           file: {
             filename,
             mimetype,

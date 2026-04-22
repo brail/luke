@@ -55,7 +55,7 @@ const SAFE_KEYS = new Set([
   'filename',
   'contentType',
   'code',
-  'logoUrl',
+  'logoKey',
 ]);
 
 /**

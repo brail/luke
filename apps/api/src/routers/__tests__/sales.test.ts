@@ -43,7 +43,7 @@ const mockBrand: Brand = {
   createdAt: new Date(),
   updatedAt: new Date(),
   navBrandId: null,
-  logoUrl: null,
+  logoKey: null,
 };
 
 const mockSeason: Season = {

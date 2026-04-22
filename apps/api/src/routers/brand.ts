@@ -16,15 +16,15 @@ import {
 
 import { logAudit } from '../lib/auditLog';
 import { withRateLimit } from '../lib/ratelimit';
+import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
 import { requirePermission } from '../lib/permissions';
-import { moveTempLogoToBrand } from '../services/brandLogo.service';
 
 const BRAND_SELECT = {
   id: true,
   code: true,
   name: true,
-  logoUrl: true,
+  logoKey: true,
   navBrandId: true,
   isActive: true,
   createdAt: true,
@@ -71,7 +71,12 @@ export const brandRouter = router({
       const results = hasMore ? items.slice(0, limit) : items;
       const nextCursor = hasMore ? results[results.length - 1].id : null;
 
-      return { items: results, nextCursor, hasMore: !!nextCursor };
+      const resolve = results.some(b => b.logoKey) ? await makeUrlResolver(ctx.prisma) : null;
+      const withUrls = results.map(b => ({
+        ...b,
+        logoUrl: b.logoKey && resolve ? resolve('brand-logos', b.logoKey) : null,
+      }));
+      return { items: withUrls, nextCursor, hasMore: !!nextCursor };
     }),
 
   /**
@@ -83,7 +88,7 @@ export const brandRouter = router({
     .input(BrandInputSchema)
     .mutation(async ({ input, ctx }) => {
       const normalizedCode = normalizeCode(input.code);
-      const { tempLogoId, ...brandData } = input;
+      const { fileObjectId, ...brandData } = input;
 
       const created = await ctx.prisma.$transaction(async tx => {
         const existingBrand = await tx.brand.findUnique({
@@ -110,24 +115,42 @@ export const brandRouter = router({
           }
         }
 
-        return tx.brand.create({
+        const brand = await tx.brand.create({
           data: { ...brandData, code: normalizedCode },
           select: BRAND_SELECT,
         });
+
+        // Confirms pending logo and links it to the brand atomically.
+        // findUnique (not findFirst) since id is the PK — findFirst is unnecessary overhead.
+        if (fileObjectId) {
+          const pendingFile = await tx.fileObject.findUnique({
+            where: { id: fileObjectId },
+            select: { key: true, confirmedAt: true, createdBy: true, bucket: true },
+          });
+          if (
+            pendingFile?.confirmedAt === null &&
+            pendingFile.createdBy === ctx.session!.user.id &&
+            pendingFile.bucket === 'brand-logos'
+          ) {
+            await tx.fileObject.update({
+              where: { id: fileObjectId },
+              data: { confirmedAt: new Date() },
+            });
+            return tx.brand.update({
+              where: { id: brand.id },
+              data: { logoKey: pendingFile.key },
+              select: BRAND_SELECT,
+            });
+          }
+        }
+
+        return brand;
       }, { timeout: 15000 });
 
-      // Sposta logo temporaneo dopo il commit
-      let finalLogoUrl = created.logoUrl;
-      if (tempLogoId) {
-        try {
-          const moveResult = await moveTempLogoToBrand(ctx, {
-            tempLogoId,
-            brandId: created.id,
-          });
-          finalLogoUrl = moveResult.url;
-        } catch (moveError) {
-          ctx.logger?.warn({ moveError }, 'Failed to move temp logo to brand');
-        }
+      let finalLogoUrl: string | null = null;
+      if (created.logoKey) {
+        const resolve = await makeUrlResolver(ctx.prisma);
+        finalLogoUrl = resolve('brand-logos', created.logoKey);
       }
 
       await logAudit(ctx, { action: 'BRAND_CREATE', targetType: 'Brand', targetId: created.id, result: 'SUCCESS', metadata: { name: created.name, code: created.code } });
@@ -186,7 +209,7 @@ export const brandRouter = router({
           }
         }
 
-        const { tempLogoId: _tempLogoId, ...brandUpdateData } = input.data;
+        const { fileObjectId: _fileObjectId, ...brandUpdateData } = input.data;
         return tx.brand.update({
           where: { id: input.id },
           data: { ...brandUpdateData, updatedAt: new Date() },
@@ -194,7 +217,8 @@ export const brandRouter = router({
         });
       }, { timeout: 15000 });
       await logAudit(ctx, { action: 'BRAND_UPDATE', targetType: 'Brand', targetId: input.id, result: 'SUCCESS', metadata: { name: result.name } });
-      return result;
+      const resolveUpdate = result.logoKey ? await makeUrlResolver(ctx.prisma) : null;
+      return { ...result, logoUrl: result.logoKey && resolveUpdate ? resolveUpdate('brand-logos', result.logoKey) : null };
     }),
 
   /**
@@ -218,7 +242,8 @@ export const brandRouter = router({
       });
 
       await logAudit(ctx, { action: 'BRAND_SOFT_DELETE', targetType: 'Brand', targetId: input.id, result: 'SUCCESS', metadata: { name: existingBrand.name } });
-      return result;
+      const resolveRemove = result.logoKey ? await makeUrlResolver(ctx.prisma) : null;
+      return { ...result, logoUrl: result.logoKey && resolveRemove ? resolveRemove('brand-logos', result.logoKey) : null };
     }),
 
   /**
@@ -259,7 +284,8 @@ export const brandRouter = router({
       });
 
       await logAudit(ctx, { action: 'BRAND_NAV_UNLINK', targetType: 'Brand', targetId: input.id, result: 'SUCCESS', metadata: { name: brand.name, previousNavBrandId: brand.navBrandId } });
-      return result;
+      const resolveUnlink = result.logoKey ? await makeUrlResolver(ctx.prisma) : null;
+      return { ...result, logoUrl: result.logoKey && resolveUnlink ? resolveUnlink('brand-logos', result.logoKey) : null };
     }),
 
   /**
@@ -325,6 +351,7 @@ export const brandRouter = router({
       });
 
       await logAudit(ctx, { action: 'BRAND_RESTORE', targetType: 'Brand', targetId: input.id, result: 'SUCCESS', metadata: { name: existingBrand.name } });
-      return result;
+      const resolveRestore = result.logoKey ? await makeUrlResolver(ctx.prisma) : null;
+      return { ...result, logoUrl: result.logoKey && resolveRestore ? resolveRestore('brand-logos', result.logoKey) : null };
     }),
 });

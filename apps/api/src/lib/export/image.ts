@@ -1,3 +1,9 @@
+import type { PrismaClient } from '@prisma/client';
+
+import { extractBucketFromUrl, extractKeyFromUrl } from '@luke/core';
+
+import { readFileBuffer } from '../../storage';
+
 export async function fetchImageAsBuffer(url: string, timeoutMs = 5000): Promise<Buffer | null> {
   try {
     const res = await fetch(url, { signal: globalThis.AbortSignal.timeout(timeoutMs) });
@@ -26,4 +32,42 @@ export async function fetchImageAsDataUri(url: string, timeoutMs = 5000): Promis
   } catch {
     return null;
   }
+}
+
+/**
+ * Reads an image from local storage (for proxy URLs like /api/uploads/...)
+ * or falls back to HTTP fetch for absolute URLs (prod with publicBaseUrl).
+ */
+export async function fetchImageBufferFromUrl(
+  url: string,
+  prisma: PrismaClient,
+): Promise<Buffer | null> {
+  const bucket = extractBucketFromUrl(url);
+  const key = extractKeyFromUrl(url);
+  if (bucket && key) {
+    return readFileBuffer(prisma, bucket, key);
+  }
+  return fetchImageAsBuffer(url);
+}
+
+/**
+ * Same as fetchImageBufferFromUrl but returns a data URI suitable for pdfmake.
+ * MIME type is read from the fileObject record in DB when available.
+ */
+export async function fetchImageDataUriFromUrl(
+  url: string,
+  prisma: PrismaClient,
+): Promise<string | null> {
+  const bucket = extractBucketFromUrl(url);
+  const key = extractKeyFromUrl(url);
+  if (bucket && key) {
+    const [buf, meta] = await Promise.all([
+      readFileBuffer(prisma, bucket, key),
+      prisma.fileObject.findFirst({ where: { bucket, key }, select: { contentType: true } }),
+    ]);
+    if (!buf) return null;
+    const mime = meta?.contentType ?? 'image/jpeg';
+    return `data:${mime};base64,${buf.toString('base64')}`;
+  }
+  return fetchImageAsDataUri(url);
 }

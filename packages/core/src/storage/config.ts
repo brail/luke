@@ -31,7 +31,7 @@ export const localStorageConfigSchema = z.object({
 
   /**
    * Bucket abilitati
-   * Default: ['uploads', 'exports', 'assets', 'brand-logos', 'temp-brand-logos', 'collection-row-pictures', 'temp-collection-row-pictures']
+   * Default: ['uploads', 'exports', 'assets', 'brand-logos', 'collection-row-pictures', 'merchandising-specsheet-images']
    */
   buckets: z
     .array(
@@ -40,11 +40,8 @@ export const localStorageConfigSchema = z.object({
         'exports',
         'assets',
         'brand-logos',
-        'temp-brand-logos',
         'collection-row-pictures',
-        'temp-collection-row-pictures',
         'merchandising-specsheet-images',
-        'temp-merchandising-specsheet-images',
       ])
     )
     .default([
@@ -52,11 +49,8 @@ export const localStorageConfigSchema = z.object({
       'exports',
       'assets',
       'brand-logos',
-      'temp-brand-logos',
       'collection-row-pictures',
-      'temp-collection-row-pictures',
       'merchandising-specsheet-images',
-      'temp-merchandising-specsheet-images',
     ]),
 
   /**
@@ -80,9 +74,29 @@ export const localStorageConfigSchema = z.object({
 export type LocalStorageConfig = z.infer<typeof localStorageConfigSchema>;
 
 /**
+ * Schema per configurazione MinIO (S3-compatible)
+ */
+export const minioStorageConfigSchema = z.object({
+  endpoint: z.string().min(1),
+  port: z.number().int().min(1).max(65535).default(9000),
+  useSSL: z.boolean().default(false),
+  accessKey: z.string().min(1),
+  secretKey: z.string().min(1),
+  region: z.string().default('us-east-1'),
+  /** Public base URL for public-read buckets (e.g. https://minio.example.com) */
+  publicBaseUrl: z.string().url().optional(),
+  /** TTL in seconds for presigned PUT URLs */
+  presignedPutTtl: z.number().int().min(60).max(86400).default(3600),
+  /** TTL in seconds for presigned GET URLs */
+  presignedGetTtl: z.number().int().min(60).max(86400).default(3600),
+});
+
+export type MinioStorageConfig = z.infer<typeof minioStorageConfigSchema>;
+
+/**
  * Schema per tipo di storage (estensibile per futuri provider)
  */
-export const storageTypeSchema = z.enum(['local', 'samba', 'gdrive']);
+export const storageTypeSchema = z.enum(['local', 'minio']);
 
 /**
  * Tipo per identificare il provider di storage
@@ -98,10 +112,7 @@ export function isValidBucket(bucket: string): bucket is StorageBucket {
     'exports',
     'assets',
     'brand-logos',
-    'temp-brand-logos',
     'collection-row-pictures',
-    'temp-collection-row-pictures',
     'merchandising-specsheet-images',
-    'temp-merchandising-specsheet-images',
   ].includes(bucket);
 }

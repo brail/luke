@@ -17,10 +17,7 @@ import type { PrismaClient } from '@prisma/client';
 import { isDevelopment } from '@luke/core';
 
 import { authenticateRequest } from '../lib/auth';
-import {
-  uploadSpecsheetImage,
-  uploadTempSpecsheetImage,
-} from '../services/specsheetImage.service';
+import { uploadSpecsheetImage } from '../services/specsheetImage.service';
 
 export default async function specsheetImageRoutes(
   app: FastifyInstance,
@@ -101,70 +98,4 @@ export default async function specsheetImageRoutes(
     }
   );
 
-  app.post('/upload/specsheet-image/temp', async (req, reply) => {
-    const session = await authenticateRequest(req, reply);
-    if (!session) {
-      return reply.code(401).send({ error: 'Unauthorized', message: 'Autenticazione richiesta' });
-    }
-
-    const ctx = {
-      session,
-      prisma: options.prisma,
-      traceId: (req as any).traceId || 'unknown',
-      req,
-      res: reply,
-      logger: req.log,
-    };
-
-    try {
-      let tempId: string | null = null;
-      let fileBuffer: Buffer | null = null;
-      let filename = 'upload';
-      let mimetype = 'application/octet-stream';
-
-      for await (const part of req.parts()) {
-        if (part.type === 'field' && part.fieldname === 'tempId') {
-          tempId = String(part.value);
-        } else if (part.type === 'file') {
-          const chunks: Buffer[] = [];
-          for await (const chunk of part.file) {
-            chunks.push(chunk as Buffer);
-          }
-          fileBuffer = Buffer.concat(chunks);
-          filename = part.filename;
-          mimetype = part.mimetype;
-        }
-      }
-
-      if (!tempId) {
-        return reply.code(400).send({ error: 'Bad Request', message: 'tempId richiesto' });
-      }
-      if (!fileBuffer) {
-        return reply.code(400).send({ error: 'Bad Request', message: 'Nessun file ricevuto' });
-      }
-
-      const result = await uploadTempSpecsheetImage(ctx, {
-        tempId,
-        file: {
-          filename,
-          mimetype,
-          stream: require('stream').Readable.from(fileBuffer),
-          size: fileBuffer.length,
-        },
-      });
-
-      return reply.code(200).send(result);
-    } catch (error: any) {
-      req.log.error({ error: error.message }, 'Temp specsheet image upload error');
-
-      if (error.code === 'BAD_REQUEST' || error.code === 'NOT_FOUND') {
-        return reply.code(error.code === 'NOT_FOUND' ? 404 : 400).send({
-          error: error.code,
-          message: error.message,
-        });
-      }
-
-      return reply.code(500).send({ error: 'Internal Server Error', message: 'Errore durante upload immagine temporanea' });
-    }
-  });
 }

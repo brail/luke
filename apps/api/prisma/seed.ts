@@ -8,6 +8,8 @@
  */
 
 import { randomBytes } from 'crypto';
+import { join } from 'path';
+import { homedir } from 'os';
 
 import { PrismaClient } from '@prisma/client';
 
@@ -258,7 +260,7 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     },
     {
       key: 'storage.local.basePath',
-      value: '/tmp/luke-storage', // Development default
+      value: join(homedir(), '.luke', 'storage'),
       encrypt: false,
     },
     {
@@ -268,7 +270,7 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     },
     {
       key: 'storage.local.buckets',
-      value: '["uploads","exports","assets","brand-logos","temp-brand-logos"]',
+      value: '["uploads","exports","assets","brand-logos","collection-row-pictures","merchandising-specsheet-images"]',
       encrypt: false,
     },
     {
@@ -279,6 +281,47 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     {
       key: 'storage.local.enableProxy',
       value: 'true',
+      encrypt: false,
+    },
+    // Storage — MinIO defaults (used when storage.type = 'minio')
+    {
+      key: 'storage.minio.endpoint',
+      value: 'minio',
+      encrypt: false,
+    },
+    {
+      key: 'storage.minio.port',
+      value: '9000',
+      encrypt: false,
+    },
+    {
+      key: 'storage.minio.useSSL',
+      value: 'false',
+      encrypt: false,
+    },
+    {
+      key: 'storage.minio.accessKey',
+      value: 'minioadmin',
+      encrypt: true,
+    },
+    {
+      key: 'storage.minio.secretKey',
+      value: 'minioadmin',
+      encrypt: true,
+    },
+    {
+      key: 'storage.minio.region',
+      value: 'us-east-1',
+      encrypt: false,
+    },
+    {
+      key: 'storage.minio.presignedPutTtl',
+      value: '3600',
+      encrypt: false,
+    },
+    {
+      key: 'storage.minio.presignedGetTtl',
+      value: '3600',
       encrypt: false,
     },
     // NAV (Microsoft Dynamics NAV / SQL Server)

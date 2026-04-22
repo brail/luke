@@ -8,6 +8,8 @@ import pino from 'pino';
 import type { PrismaClient } from '@prisma/client';
 import { AppContextDefaultsSchema, type AppContextDefaults } from '@luke/core';
 
+import { makeUrlResolver } from '../lib/storageUrl';
+
 const logger = pino({ level: 'info' });
 
 /**
@@ -141,7 +143,14 @@ export async function resolveContext(
   const season =
     pick(seasons, (prefs?.data as any)?.lastSeasonId as string | undefined) ?? appDefSeason ?? seasons[0];
 
-  return { brand, season };
+  const resolveContext_ = brand.logoKey ? await makeUrlResolver(prisma) : null;
+  return {
+    brand: {
+      ...brand,
+      logoUrl: brand.logoKey && resolveContext_ ? resolveContext_('brand-logos', brand.logoKey) : null,
+    },
+    season,
+  };
 }
 
 /**
@@ -193,7 +202,14 @@ export async function setContext(
     },
   });
 
-  return { brand, season };
+  const resolveSet_ = brand.logoKey ? await makeUrlResolver(prisma) : null;
+  return {
+    brand: {
+      ...brand,
+      logoUrl: brand.logoKey && resolveSet_ ? resolveSet_('brand-logos', brand.logoKey) : null,
+    },
+    season,
+  };
 }
 
 /**

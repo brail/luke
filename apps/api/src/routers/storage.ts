@@ -4,19 +4,21 @@
  * Procedure per gestione file storage con RBAC e AuditLog
  */
 
+import { randomUUID } from 'crypto';
+
 import { TRPCError } from '@trpc/server';
 import { homedir } from 'os';
 import { join } from 'path';
 import { z } from 'zod';
 
-import { isValidBucket, localStorageConfigSchema } from '@luke/core';
+import { isValidBucket, localStorageConfigSchema, type StorageBucket } from '@luke/core';
 
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 import { withSectionAccess } from '../lib/sectionAccessMiddleware';
 import { getConfig, saveConfig } from '../lib/configManager';
-import { getStorageUrlConfig } from '../lib/storageUrl';
-import { getObjectMetadata, listObjects, deleteObject, resetStorageProvider } from '../storage';
+import { getStorageUrlConfig, resolvePublicUrl } from '../lib/storageUrl';
+import { getObjectMetadata, listObjects, deleteObject, resetStorageProvider, getStorageProvider, loadMinioProvider } from '../storage';
 import { signDownloadToken } from '../utils/downloadToken';
 
 /**
@@ -42,24 +44,57 @@ const GetDownloadLinkSchema = z.object({
   id: z.string().uuid(),
 });
 
+const IMAGE_BUCKETS = ['uploads', 'exports', 'assets', 'brand-logos', 'collection-row-pictures', 'merchandising-specsheet-images'] as const;
+
 /**
  * Schema per create upload
  */
 const CreateUploadSchema = z.object({
-  bucket: z.enum(['uploads', 'exports', 'assets', 'brand-logos', 'temp-brand-logos', 'collection-row-pictures', 'temp-collection-row-pictures']),
+  bucket: z.enum(IMAGE_BUCKETS),
   originalName: z.string().min(1).max(255),
   contentType: z.string().optional(),
   size: z.number().int().positive(),
 });
 
-/**
- * Schema per configurazione storage
- */
-const SaveStorageConfigSchema = z.object({
-  basePath: z.string().min(1),
-  maxFileSizeMB: z.number().int().positive().min(1).max(1000),
-  buckets: z.array(z.enum(['uploads', 'exports', 'assets', 'brand-logos', 'temp-brand-logos', 'collection-row-pictures', 'temp-collection-row-pictures'])),
+const RequestUploadSchema = z.object({
+  bucket: z.enum(IMAGE_BUCKETS),
+  contentType: z.string().min(1),
+  size: z.number().int().positive(),
+  originalName: z.string().min(1).max(255),
+  /** Pre-allocated key (for presigned path, so client knows the URL before upload) */
+  key: z.string().optional(),
 });
+
+const ConfirmUploadSchema = z.object({
+  bucket: z.enum(IMAGE_BUCKETS),
+  key: z.string().min(1),
+  contentType: z.string().min(1),
+  size: z.number().int().positive(),
+  originalName: z.string().min(1).max(255),
+  checksumSha256: z.string().optional(),
+});
+
+const SaveStorageConfigSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('local'),
+    basePath: z.string().min(1),
+    maxFileSizeMB: z.number().int().positive().min(1).max(1000),
+    buckets: z.array(z.enum(IMAGE_BUCKETS)),
+    enableProxy: z.boolean().optional(),
+  }),
+  z.object({
+    type: z.literal('minio'),
+    endpoint: z.string().min(1),
+    port: z.number().int().min(1).max(65535),
+    useSSL: z.boolean(),
+    accessKey: z.string().min(1),
+    secretKey: z.string().min(1),
+    region: z.string().min(1),
+    publicBaseUrl: z.string().url().optional().or(z.literal('')),
+    presignedPutTtl: z.number().int().min(60).max(86400),
+    presignedGetTtl: z.number().int().min(60).max(86400),
+  }),
+]);
 
 /**
  * Router Storage
@@ -192,7 +227,80 @@ export const storageRouter = router({
     }),
 
   /**
-   * Prepara upload (genera uploadId e URL)
+   * Request an upload slot.
+   * - MinIO: returns presigned PUT URL + key for direct client upload
+   * - Local: returns proxy info (use entity-specific Fastify endpoint as fallback)
+   */
+  requestUpload: protectedProcedure
+    .input(RequestUploadSchema)
+    .mutation(async ({ input, ctx }) => {
+      const provider = await getStorageProvider(ctx.prisma);
+
+      if (provider.capabilities.supportsPresignedUpload && provider.getPresignedPutUrl) {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const ext = input.contentType === 'image/png' ? '.png'
+                  : input.contentType === 'image/webp' ? '.webp'
+                  : '.jpg';
+        const key = input.key ?? `${year}/${month}/${day}/${randomUUID()}${ext}`;
+
+        const { url, expiresAt } = await provider.getPresignedPutUrl({
+          bucket: input.bucket as StorageBucket,
+          key,
+          contentType: input.contentType,
+          size: input.size,
+        });
+
+        return {
+          method: 'presigned' as const,
+          presignedUrl: url,
+          key,
+          expiresAt: expiresAt.toISOString(),
+        };
+      }
+
+      // Local storage: caller should use entity-specific upload endpoint
+      return {
+        method: 'proxy' as const,
+        presignedUrl: null,
+        key: null,
+        expiresAt: null,
+      };
+    }),
+
+  /**
+   * Confirm a completed presigned upload — creates the FileObject DB record.
+   * Only needed for the presigned (MinIO) path; local proxy endpoints handle this internally.
+   */
+  confirmUpload: protectedProcedure
+    .input(ConfirmUploadSchema)
+    .mutation(async ({ input, ctx }) => {
+      const publicUrl = await resolvePublicUrl(ctx.prisma, input.bucket as StorageBucket, input.key);
+
+      const fileObject = await ctx.prisma.fileObject.create({
+        data: {
+          id: randomUUID(),
+          bucket: input.bucket,
+          key: input.key,
+          originalName: input.originalName,
+          size: input.size,
+          contentType: input.contentType,
+          checksumSha256: input.checksumSha256 ?? '',
+          createdBy: ctx.session.user.id,
+        },
+      });
+
+      return {
+        fileId: fileObject.id,
+        publicUrl,
+        key: input.key,
+      };
+    }),
+
+  /**
+   * Prepara upload (genera uploadId e URL) — legacy endpoint
    * Accessibile a tutti gli utenti autenticati
    */
   createUpload: protectedProcedure
@@ -209,14 +317,7 @@ export const storageRouter = router({
         });
       }
 
-      // Genera uploadId (sarà usato nella route multipart)
-      const { randomUUID } = await import('crypto');
       const uploadId = randomUUID();
-
-      // Salva metadato "pending" in cache/memoria (o ritorna solo uploadId)
-      // Per semplicità, il multipart handler validerà l'uploadId e creerà il record
-
-      // Costruisci URL upload usando la stessa base configurata per lo storage proxy
       const { publicBaseUrl } = await getStorageUrlConfig(ctx.prisma);
       const baseUrl = publicBaseUrl || `http://localhost:${process.env.PORT || 3001}`;
       const uploadUrl = `${baseUrl}/storage/upload/${uploadId}`;
@@ -255,79 +356,143 @@ export const storageRouter = router({
       };
     }),
 
-  /**
-   * Ottieni configurazione storage locale
-   * Solo admin
-   */
+  testMinioConnection: protectedProcedure
+    .use(requirePermission('config:read'))
+    .mutation(async ({ ctx }) => {
+      const storageType = await getConfig(ctx.prisma, 'storage.type', false);
+      if (storageType !== 'minio') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Provider attuale non è MinIO. Salva prima la configurazione MinIO.',
+        });
+      }
+
+      let provider;
+      try {
+        provider = await loadMinioProvider(ctx.prisma);
+      } catch (err: unknown) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Errore caricamento config MinIO: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+
+      // Verifica connettività listando un bucket
+      try {
+        await provider.list({ bucket: 'uploads', limit: 1 });
+      } catch (err: unknown) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Connessione a MinIO fallita: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+
+      // Genera URL presigned di prova per mostrare il base URL che riceverà il browser
+      const presignResult = await provider.getPresignedPutUrl!({
+        bucket: 'uploads',
+        key: '_test/probe.jpg',
+        contentType: 'image/jpeg',
+        size: 1,
+      });
+      const presignedUrlBase = new URL(presignResult.url).origin;
+
+      return {
+        success: true,
+        message: 'Connessione MinIO riuscita',
+        presignedUrlBase,
+      };
+    }),
+
   getConfig: protectedProcedure
     .use(requirePermission('config:read'))
     .use(withSectionAccess('settings'))
     .query(async ({ ctx }) => {
-      const [storageType, basePath, maxFileSizeMB, bucketsStr] =
-        await Promise.all([
-          getConfig(ctx.prisma, 'storage.type', false),
-          getConfig(ctx.prisma, 'storage.local.basePath', false),
-          getConfig(ctx.prisma, 'storage.local.maxFileSizeMB', false),
-          getConfig(ctx.prisma, 'storage.local.buckets', false),
-        ]);
+      const [
+        storageType,
+        basePath, maxFileSizeMBStr, bucketsStr, enableProxyStr,
+        minioEndpoint, minioPortStr, minioUseSslStr, minioAccessKey, minioSecretKey,
+        minioRegion, minioPublicBaseUrl, minioPutTtlStr, minioGetTtlStr,
+      ] = await Promise.all([
+        getConfig(ctx.prisma, 'storage.type', false),
+        getConfig(ctx.prisma, 'storage.local.basePath', false),
+        getConfig(ctx.prisma, 'storage.local.maxFileSizeMB', false),
+        getConfig(ctx.prisma, 'storage.local.buckets', false),
+        getConfig(ctx.prisma, 'storage.local.enableProxy', false),
+        getConfig(ctx.prisma, 'storage.minio.endpoint', false),
+        getConfig(ctx.prisma, 'storage.minio.port', false),
+        getConfig(ctx.prisma, 'storage.minio.useSSL', false),
+        getConfig(ctx.prisma, 'storage.minio.accessKey', true),
+        getConfig(ctx.prisma, 'storage.minio.secretKey', true),
+        getConfig(ctx.prisma, 'storage.minio.region', false),
+        getConfig(ctx.prisma, 'storage.minio.publicBaseUrl', false),
+        getConfig(ctx.prisma, 'storage.minio.presignedPutTtl', false),
+        getConfig(ctx.prisma, 'storage.minio.presignedGetTtl', false),
+      ]);
 
-      // Parse buckets
       let buckets: string[];
       try {
-        buckets = bucketsStr ? JSON.parse(bucketsStr) : ['uploads'];
+        buckets = bucketsStr ? JSON.parse(bucketsStr) : IMAGE_BUCKETS.slice();
       } catch {
         buckets = ['uploads'];
       }
 
       return {
-        type: storageType || 'local',
-        basePath: basePath || join(homedir(), '.luke', 'storage'),
-        maxFileSizeMB: parseInt(maxFileSizeMB || '50', 10),
-        buckets,
+        type: (storageType || 'local') as 'local' | 'minio',
+        local: {
+          basePath: basePath || join(homedir(), '.luke', 'storage'),
+          maxFileSizeMB: parseInt(maxFileSizeMBStr || '50', 10),
+          buckets,
+          enableProxy: enableProxyStr !== 'false',
+        },
+        minio: {
+          endpoint: minioEndpoint || 'minio',
+          port: parseInt(minioPortStr || '9000', 10),
+          useSSL: minioUseSslStr === 'true',
+          accessKey: minioAccessKey || '',
+          secretKey: minioSecretKey || '',
+          region: minioRegion || 'us-east-1',
+          publicBaseUrl: minioPublicBaseUrl || '',
+          presignedPutTtl: parseInt(minioPutTtlStr || '3600', 10),
+          presignedGetTtl: parseInt(minioGetTtlStr || '3600', 10),
+        },
       };
     }),
 
-  /**
-   * Salva configurazione storage locale
-   * Solo admin
-   */
   saveConfig: protectedProcedure
     .use(requirePermission('config:update'))
     .use(withSectionAccess('settings'))
     .input(SaveStorageConfigSchema)
     .mutation(async ({ input, ctx }) => {
-      // Valida con schema Zod
-      const validatedConfig = localStorageConfigSchema.parse(input);
+      if (input.type === 'local') {
+        const validated = localStorageConfigSchema.parse({
+          basePath: input.basePath,
+          maxFileSizeMB: input.maxFileSizeMB,
+          buckets: input.buckets,
+          enableProxy: input.enableProxy ?? true,
+        });
+        await Promise.all([
+          saveConfig(ctx.prisma, 'storage.type', 'local', false),
+          saveConfig(ctx.prisma, 'storage.local.basePath', validated.basePath, false),
+          saveConfig(ctx.prisma, 'storage.local.maxFileSizeMB', validated.maxFileSizeMB.toString(), false),
+          saveConfig(ctx.prisma, 'storage.local.buckets', JSON.stringify(validated.buckets), false),
+          saveConfig(ctx.prisma, 'storage.local.enableProxy', String(validated.enableProxy), false),
+        ]);
+      } else {
+        await Promise.all([
+          saveConfig(ctx.prisma, 'storage.type', 'minio', false),
+          saveConfig(ctx.prisma, 'storage.minio.endpoint', input.endpoint, false),
+          saveConfig(ctx.prisma, 'storage.minio.port', input.port.toString(), false),
+          saveConfig(ctx.prisma, 'storage.minio.useSSL', String(input.useSSL), false),
+          saveConfig(ctx.prisma, 'storage.minio.accessKey', input.accessKey, true),
+          saveConfig(ctx.prisma, 'storage.minio.secretKey', input.secretKey, true),
+          saveConfig(ctx.prisma, 'storage.minio.region', input.region, false),
+          saveConfig(ctx.prisma, 'storage.minio.publicBaseUrl', input.publicBaseUrl || '', false),
+          saveConfig(ctx.prisma, 'storage.minio.presignedPutTtl', input.presignedPutTtl.toString(), false),
+          saveConfig(ctx.prisma, 'storage.minio.presignedGetTtl', input.presignedGetTtl.toString(), false),
+        ]);
+      }
 
-      // Salva in AppConfig
-      await Promise.all([
-        saveConfig(ctx.prisma, 'storage.type', 'local', false),
-        saveConfig(
-          ctx.prisma,
-          'storage.local.basePath',
-          validatedConfig.basePath,
-          false
-        ),
-        saveConfig(
-          ctx.prisma,
-          'storage.local.maxFileSizeMB',
-          validatedConfig.maxFileSizeMB.toString(),
-          false
-        ),
-        saveConfig(
-          ctx.prisma,
-          'storage.local.buckets',
-          JSON.stringify(validatedConfig.buckets),
-          false
-        ),
-      ]);
-
-      // Reset provider singleton: la prossima richiesta lo reinizializza con la nuova config
       resetStorageProvider();
-
-      return {
-        success: true,
-        message: 'Configurazione storage salvata con successo',
-      };
+      return { success: true };
     }),
 });

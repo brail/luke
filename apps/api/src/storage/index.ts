@@ -13,6 +13,7 @@ import type { PrismaClient } from '@prisma/client';
 
 import {
   localStorageConfigSchema,
+  minioStorageConfigSchema,
   sanitizeFileName,
   type IStorageProvider,
   type StorageBucket,
@@ -25,6 +26,7 @@ import { getConfig } from '../lib/configManager';
 import type { Context } from '../lib/trpc';
 
 import { LocalFsProvider } from './providers/local';
+import { MinioProvider } from './providers/minio';
 
 /**
  * Istanza singleton del provider storage
@@ -33,23 +35,13 @@ let providerInstance: IStorageProvider | null = null;
 // Promise-based init lock: concurrent callers await the same initialisation
 let providerInitPromise: Promise<IStorageProvider> | null = null;
 
-/**
- * Carica configurazione storage da AppConfig
- */
-async function loadStorageConfig(prisma: PrismaClient) {
-  const storageType =
-    (await getConfig(prisma, 'storage.type', false)) || 'local';
-
-  if (storageType !== 'local') {
-    throw new Error(
-      `Tipo storage non supportato: ${storageType}. Solo 'local' è implementato.`
-    );
-  }
-
-  // Carica config locale
-  const basePath =
+async function loadLocalProvider(prisma: PrismaClient): Promise<LocalFsProvider> {
+  const rawBasePath =
     (await getConfig(prisma, 'storage.local.basePath', false)) ||
     join(homedir(), '.luke', 'storage');
+  const basePath = rawBasePath.startsWith('~/')
+    ? join(homedir(), rawBasePath.slice(2))
+    : rawBasePath;
 
   const maxFileSizeMBStr =
     (await getConfig(prisma, 'storage.local.maxFileSizeMB', false)) || '50';
@@ -57,22 +49,13 @@ async function loadStorageConfig(prisma: PrismaClient) {
 
   const bucketsStr =
     (await getConfig(prisma, 'storage.local.buckets', false)) ||
-    '["uploads","exports","assets","brand-logos","temp-brand-logos","collection-row-pictures","temp-collection-row-pictures"]';
+    '["uploads","exports","assets","brand-logos","collection-row-pictures","merchandising-specsheet-images"]';
   const buckets = JSON.parse(bucketsStr);
 
-  const publicBaseUrl = await getConfig(
-    prisma,
-    'storage.local.publicBaseUrl',
-    false
-  );
-  const enableProxyStr = await getConfig(
-    prisma,
-    'storage.local.enableProxy',
-    false
-  );
-  const enableProxy = enableProxyStr ? enableProxyStr === 'true' : true; // default true
+  const publicBaseUrl = await getConfig(prisma, 'storage.local.publicBaseUrl', false);
+  const enableProxyStr = await getConfig(prisma, 'storage.local.enableProxy', false);
+  const enableProxy = enableProxyStr ? enableProxyStr === 'true' : true;
 
-  // Valida con schema Zod
   const config = localStorageConfigSchema.parse({
     basePath,
     maxFileSizeMB,
@@ -81,7 +64,38 @@ async function loadStorageConfig(prisma: PrismaClient) {
     enableProxy,
   });
 
-  return config;
+  const provider = new LocalFsProvider(config);
+  await provider.init();
+  return provider;
+}
+
+export async function loadMinioProvider(prisma: PrismaClient): Promise<MinioProvider> {
+  const [endpoint, portStr, useSslStr, accessKey, secretKey, region, publicBaseUrl, putTtlStr, getTtlStr] =
+    await Promise.all([
+      getConfig(prisma, 'storage.minio.endpoint', false),
+      getConfig(prisma, 'storage.minio.port', false),
+      getConfig(prisma, 'storage.minio.useSSL', false),
+      getConfig(prisma, 'storage.minio.accessKey', true),
+      getConfig(prisma, 'storage.minio.secretKey', true),
+      getConfig(prisma, 'storage.minio.region', false),
+      getConfig(prisma, 'storage.minio.publicBaseUrl', false),
+      getConfig(prisma, 'storage.minio.presignedPutTtl', false),
+      getConfig(prisma, 'storage.minio.presignedGetTtl', false),
+    ]);
+
+  const config = minioStorageConfigSchema.parse({
+    endpoint: endpoint || 'localhost',
+    port: parseInt(portStr || '9000', 10),
+    useSSL: useSslStr === 'true',
+    accessKey: accessKey || 'minioadmin',
+    secretKey: secretKey || 'minioadmin',
+    region: region || 'us-east-1',
+    publicBaseUrl: publicBaseUrl || undefined,
+    presignedPutTtl: parseInt(putTtlStr || '3600', 10),
+    presignedGetTtl: parseInt(getTtlStr || '3600', 10),
+  });
+
+  return new MinioProvider(config);
 }
 
 /**
@@ -94,13 +108,17 @@ export async function getStorageProvider(
     return providerInstance;
   }
 
-  // Reuse in-flight initialisation to prevent TOCTOU: two concurrent callers
-  // that both see providerInstance === null will now share one init promise
   if (!providerInitPromise) {
     providerInitPromise = (async () => {
-      const config = await loadStorageConfig(prisma);
-      const provider = new LocalFsProvider(config);
-      await provider.init();
+      const storageType = (await getConfig(prisma, 'storage.type', false)) || 'local';
+
+      let provider: IStorageProvider;
+      if (storageType === 'minio') {
+        provider = await loadMinioProvider(prisma);
+      } else {
+        provider = await loadLocalProvider(prisma);
+      }
+
       providerInstance = provider;
       return provider;
     })();
@@ -128,6 +146,8 @@ export async function putObject(
     contentType?: string;
     size: number;
     stream: NodeJS.ReadableStream;
+    /** If true, confirmedAt = null (file is pending confirmation before linking to an entity) */
+    pending?: boolean;
   }
 ): Promise<StoredObjectMeta> {
   const provider = await getStorageProvider(ctx.prisma);
@@ -155,6 +175,7 @@ export async function putObject(
       contentType: params.contentType || 'application/octet-stream',
       checksumSha256,
       createdBy: ctx.session?.user.id || 'system',
+      confirmedAt: params.pending ? null : new Date(),
     },
   });
 
@@ -332,6 +353,29 @@ export async function deleteObjectByKey(
         originalName: fileObject.originalName,
       },
     });
+  }
+}
+
+/**
+ * Legge un file dallo storage come Buffer, identificato da bucket+key.
+ * Usato internamente per export (PDF/XLSX) senza richiedere una session.
+ */
+export async function readFileBuffer(
+  prisma: PrismaClient,
+  bucket: StorageBucket,
+  key: string,
+): Promise<Buffer | null> {
+  try {
+    const provider = await getStorageProvider(prisma);
+    const { stream } = await provider.get({ bucket, key });
+    const chunks: Buffer[] = [];
+    return await new Promise<Buffer>((resolve, reject) => {
+      stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+      stream.on('end', () => resolve(Buffer.concat(chunks)));
+      stream.on('error', reject);
+    });
+  } catch {
+    return null;
   }
 }
 

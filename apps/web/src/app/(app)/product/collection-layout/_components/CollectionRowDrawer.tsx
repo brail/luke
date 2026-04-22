@@ -1,8 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useSession } from 'next-auth/react';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
@@ -21,6 +20,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '../../../../../components/ui/sheet';
+import { useStorageUpload } from '../../../../../hooks/useStorageUpload';
 import { usePricingCalc } from '../_hooks/usePricingCalc';
 
 import {
@@ -70,7 +70,7 @@ function buildDefaultValues(
     styleStatus: null,
     progress: null,
     designer: null,
-    pictureUrl: null,
+    pictureKey: null,
     styleNotes: null,
     materialNotes: null,
     colorNotes: null,
@@ -103,8 +103,11 @@ export function CollectionRowDrawer({
   isLoading = false,
   canUpdate = true,
 }: CollectionRowDrawerProps) {
-  const { data: session } = useSession();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [previewPictureUrl, setPreviewPictureUrl] = useState<string | null>(null);
+  const { upload: uploadPicture } = useStorageUpload({
+    fallbackProxyUrl: row?.id ? buildCollectionRowPictureUploadUrl(row.id) : undefined,
+  });
 
   const form = useForm<CollectionLayoutRowInput>({
     resolver: zodResolver(CollectionLayoutRowInputSchema),
@@ -128,7 +131,7 @@ export function CollectionRowDrawer({
         styleStatus: (row.styleStatus as CollectionLayoutRowInput['styleStatus']) ?? null,
         progress: (row.progress as CollectionLayoutRowInput['progress']) ?? null,
         designer: row.designer ?? null,
-        pictureUrl: row.pictureUrl ?? null,
+        pictureKey: row.pictureKey ?? null,
         styleNotes: row.styleNotes ?? null,
         materialNotes: row.materialNotes ?? null,
         colorNotes: row.colorNotes ?? null,
@@ -140,32 +143,24 @@ export function CollectionRowDrawer({
         supplierFirstQuotation: row.supplierFirstQuotation ?? null,
         toolingQuotation: row.toolingQuotation ?? null,
       });
+      setPreviewPictureUrl(row.pictureUrl ?? null);
     } else {
       form.reset(buildDefaultValues(defaultGroupId, groups));
+      setPreviewPictureUrl(null);
     }
   }, [open, mode, row?.id, defaultGroupId]);
 
   const { selectedParamSet, marginCalc } = usePricingCalc(form, parameterSets);
-  const pictureUrl = form.watch('pictureUrl');
   const title = mode === 'create' ? 'Nuova riga' : (row?.line ?? 'Modifica riga');
 
   const handlePictureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !row?.id) return;
 
-    const formData = new globalThis.FormData();
-    formData.append('file', file);
-
     try {
-      const url = buildCollectionRowPictureUploadUrl(row.id);
-      const headers: Record<string, string> = {};
-      if (session?.accessToken) {
-        headers['Authorization'] = `Bearer ${session.accessToken}`;
-      }
-      const res = await fetch(url, { method: 'POST', headers, body: formData });
-      if (!res.ok) throw new Error(`Upload fallito (${res.status})`);
-      const data = await res.json();
-      form.setValue('pictureUrl', data.publicUrl);
+      const { publicUrl, key } = await uploadPicture(file, 'collection-row-pictures');
+      if (key) form.setValue('pictureKey', key);
+      setPreviewPictureUrl(publicUrl);
       onPictureUploaded?.();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Errore durante upload');
@@ -188,9 +183,9 @@ export function CollectionRowDrawer({
                 control={form.control}
                 canUpdate={canUpdate}
                 mode={mode}
-                pictureUrl={pictureUrl}
+                pictureUrl={previewPictureUrl}
                 fileInputRef={fileInputRef}
-                onRemovePicture={() => form.setValue('pictureUrl', null)}
+                onRemovePicture={() => { form.setValue('pictureKey', null); setPreviewPictureUrl(null); }}
                 onUploadPicture={handlePictureUpload}
               />
 

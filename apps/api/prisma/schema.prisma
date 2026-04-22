@@ -138,7 +138,7 @@ model UserToken {
 }
 
 model FileObject {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   bucket         String
   key            String
   originalName   String
@@ -146,16 +146,18 @@ model FileObject {
   contentType    String
   checksumSha256 String
   createdBy      String
-  cleanupStatus  String   @default("PENDING")  // PENDING | SUCCESS | FAILED
-  cleanupAttempts Int    @default(0)
+  cleanupStatus  String    @default("PENDING")  // PENDING | SUCCESS | FAILED
+  cleanupAttempts Int      @default(0)
   lastCleanupAt  DateTime?
-  createdAt      DateTime @default(now())
+  confirmedAt    DateTime?                       // null = pending confirmation; set on entity link
+  createdAt      DateTime  @default(now())
 
   @@unique([bucket, key])
   @@index([bucket, key])
   @@index([createdAt])
   @@index([createdBy])
   @@index([cleanupStatus])
+  @@index([confirmedAt])
   @@map("file_objects")
 }
 
@@ -178,7 +180,7 @@ model Brand {
   id          String    @id @default(uuid())
   code        String    @unique
   name        String
-  logoUrl     String?
+  logoKey     String?
   navBrandId  String?   @unique
   navBrand    NavBrand? @relation(fields: [navBrandId], references: [navCode], onDelete: SetNull)
   isActive    Boolean   @default(true)
@@ -492,7 +494,7 @@ model CollectionLayoutRow {
   styleStatus            String?               // CARRY_OVER | NEW (STYLE STATUS)
   progress               String?               // 01–06 stages
   designer               String?
-  pictureUrl             String?
+  pictureKey             String?
 
   // Optional — notes
   styleNotes             String?
@@ -678,7 +680,7 @@ model MerchandisingComponent {
 model MerchandisingImage {
   id          String  @id @default(uuid())
   specsheetId String
-  url         String
+  key         String?
   isDefault   Boolean @default(false)
   order       Int     @default(0)
   caption     String?

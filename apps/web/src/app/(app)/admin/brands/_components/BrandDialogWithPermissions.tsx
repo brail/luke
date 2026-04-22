@@ -111,7 +111,7 @@ export function BrandDialogWithPermissions({
   isLoading,
 }: BrandDialogWithPermissionsProps) {
   const [logoUrl, setLogoUrl] = useState<string | null>(brand?.logoUrl || null);
-  const [tempLogoId, setTempLogoId] = useState<string | null>(null);
+  const [pendingFileObjectId, setPendingFileObjectId] = useState<string | null>(null);
   const [tempLogoUrl, setTempLogoUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -182,7 +182,7 @@ export function BrandDialogWithPermissions({
         isActive: brand.isActive,
       });
       setLogoUrl(brand.logoUrl);
-      setTempLogoId(null);
+      setPendingFileObjectId(null);
       setTempLogoUrl(null);
       setCodePreview('');
       setUploadProgress(0);
@@ -195,7 +195,7 @@ export function BrandDialogWithPermissions({
         isActive: true,
       });
       setLogoUrl(null);
-      setTempLogoId(null);
+      setPendingFileObjectId(null);
       setTempLogoUrl(null);
       setCodePreview('');
       setUploadProgress(0);
@@ -225,7 +225,7 @@ export function BrandDialogWithPermissions({
       // Reset form quando dialog si chiude
       form.reset();
       setLogoUrl(null);
-      setTempLogoId(null);
+      setPendingFileObjectId(null);
       setTempLogoUrl(null);
       setCodePreview('');
       setUploadProgress(0);
@@ -319,12 +319,8 @@ export function BrandDialogWithPermissions({
         }
         xhr.send(formData);
       } else {
-        // Upload temporaneo per brand nuovo con progress tracking
-        // IMPORTANTE: tempId deve essere appeso PRIMA del file nel FormData,
-        // perché @fastify/multipart legge data.fields solo per i campi che precedono il file nello stream.
-        const tempId = crypto.randomUUID();
+        // Upload pending per brand nuovo con progress tracking
         const tempFormData = new globalThis.FormData();
-        tempFormData.append('tempId', tempId);
         tempFormData.append('file', file);
 
         const xhr = new globalThis.XMLHttpRequest();
@@ -343,7 +339,7 @@ export function BrandDialogWithPermissions({
             try {
               const result = JSON.parse(xhr.responseText);
               // Usa publicUrl dalla nuova response API
-              setTempLogoId(result.tempLogoId);
+              setPendingFileObjectId(result.fileObjectId);
               setTempLogoUrl(result.publicUrl);
               toast.success(
                 'Logo caricato (verrà associato al brand dopo il salvataggio)'
@@ -393,7 +389,7 @@ export function BrandDialogWithPermissions({
       return;
     }
     setLogoUrl(null);
-    setTempLogoId(null);
+    setPendingFileObjectId(null);
     setTempLogoUrl(null);
     form.setValue('logoUrl', null);
     if (fileInputRef.current) {
@@ -413,10 +409,10 @@ export function BrandDialogWithPermissions({
       const brandInput: BrandInput = {
         code: data.code,
         name: data.name,
-        // Send logoUrl only when explicitly clearing (null).
-        // XHR upload already updates DB directly; tempLogoId handles new-brand logo flow.
-        ...(data.logoUrl === null ? { logoUrl: null } : {}),
-        tempLogoId: tempLogoId || undefined,
+        // Send logoKey: null only when explicitly clearing.
+        // XHR upload already updates DB directly; fileObjectId handles new-brand logo flow.
+        ...(data.logoUrl === null ? { logoKey: null } : {}),
+        fileObjectId: pendingFileObjectId || undefined,
         navBrandId: data.navBrandId ?? null,
         isActive: data.isActive,
       };

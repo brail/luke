@@ -23,6 +23,7 @@ import {
 
 import { logAudit } from '../lib/auditLog';
 import { withRateLimit } from '../lib/ratelimit';
+import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
 import { requirePermission } from '../lib/permissions';
 
@@ -81,7 +82,7 @@ export const merchandisingPlanRouter = router({
     .use(requirePermission('merchandising_plan:read'))
     .input(z.object({ planId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
-      return ctx.prisma.merchandisingPlanRow.findMany({
+      const rows = await ctx.prisma.merchandisingPlanRow.findMany({
         where: { planId: input.planId },
         orderBy: { order: 'asc' },
         include: {
@@ -99,12 +100,24 @@ export const merchandisingPlanRouter = router({
               images: {
                 where: { isDefault: true },
                 take: 1,
-                select: { id: true, url: true },
+                select: { id: true, key: true },
               },
             },
           },
         },
       });
+      const anyKey = rows.some(r => r.specsheet?.images?.[0]?.key);
+      const resolve = anyKey ? await makeUrlResolver(ctx.prisma) : null;
+      return rows.map(row => ({
+        ...row,
+        specsheet: row.specsheet ? {
+          ...row.specsheet,
+          images: row.specsheet.images.map(img => ({
+            ...img,
+            url: img.key && resolve ? resolve('merchandising-specsheet-images', img.key) : null,
+          })),
+        } : null,
+      }));
     }),
 
   /**
@@ -234,13 +247,22 @@ export const merchandisingPlanRouter = router({
     .use(requirePermission('merchandising_plan:read'))
     .input(z.object({ rowId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
-      return ctx.prisma.merchandisingSpecsheet.findUnique({
+      const specsheet = await ctx.prisma.merchandisingSpecsheet.findUnique({
         where: { rowId: input.rowId },
         include: {
           components: { orderBy: [{ section: 'asc' }, { order: 'asc' }] },
           images: { orderBy: { order: 'asc' } },
         },
       });
+      if (!specsheet) return null;
+      const resolve = specsheet.images.some(img => img.key) ? await makeUrlResolver(ctx.prisma) : null;
+      return {
+        ...specsheet,
+        images: specsheet.images.map(img => ({
+          ...img,
+          url: img.key && resolve ? resolve('merchandising-specsheet-images', img.key) : null,
+        })),
+      };
     }),
 
   /**
@@ -318,7 +340,7 @@ export const merchandisingPlanRouter = router({
     .input(
       z.object({
         specsheetId: z.string().uuid(),
-        url: z.string().url(),
+        key: z.string(),
         caption: z.string().optional().nullable(),
       })
     )
@@ -330,7 +352,7 @@ export const merchandisingPlanRouter = router({
         return tx.merchandisingImage.create({
           data: {
             specsheetId: input.specsheetId,
-            url: input.url,
+            key: input.key,
             isDefault: existingCount === 0,
             order: existingCount,
             caption: input.caption ?? null,
