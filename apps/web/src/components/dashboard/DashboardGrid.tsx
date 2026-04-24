@@ -1,22 +1,23 @@
 'use client';
 
-import { useMemo, useState } from 'react';
 import { SlidersHorizontal } from 'lucide-react';
 import { useSession } from 'next-auth/react';
+import { useMemo, useState } from 'react';
 
 import type { WidgetId } from '@luke/core';
 
+import { trpc } from '../../lib/trpc';
 import { Button } from '../ui/button';
 import { Skeleton } from '../ui/skeleton';
-import { trpc } from '../../lib/trpc';
-import { KpiStatsWidget } from './widgets/KpiStatsWidget';
-import { SeasonProgressWidget } from './widgets/SeasonProgressWidget';
-import { ClocksWidget } from './widgets/ClocksWidget';
-import { ForexWidget } from './widgets/ForexWidget';
-import { WeeklySalesWidget } from './widgets/WeeklySalesWidget';
-import { TasksWidget } from './widgets/TasksWidget';
+
 import { DashboardCustomizeSheet } from './DashboardCustomizeSheet';
 import { WIDGET_REGISTRY } from './widgetRegistry';
+import { ClocksWidget } from './widgets/ClocksWidget';
+import { ForexWidget } from './widgets/ForexWidget';
+import { KpiStatsWidget } from './widgets/KpiStatsWidget';
+import { SeasonProgressWidget } from './widgets/SeasonProgressWidget';
+import { TasksWidget } from './widgets/TasksWidget';
+import { WeeklySalesWidget } from './widgets/WeeklySalesWidget';
 
 function getISOWeek(date: Date): number {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));

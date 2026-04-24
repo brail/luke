@@ -1,9 +1,9 @@
 'use client';
 
-import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
-import { Skeleton } from '../../ui/skeleton';
 import { trpc } from '../../../lib/trpc';
 import { cn } from '../../../lib/utils';
+import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
+import { Skeleton } from '../../ui/skeleton';
 
 export function WeeklySalesWidget() {
   const { data, isLoading } = trpc.dashboard.getWeeklySales.useQuery();

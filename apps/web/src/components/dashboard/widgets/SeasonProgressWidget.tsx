@@ -1,8 +1,8 @@
 'use client';
 
+import { trpc } from '../../../lib/trpc';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Skeleton } from '../../ui/skeleton';
-import { trpc } from '../../../lib/trpc';
 
 export function SeasonProgressWidget() {
   const { data, isLoading } = trpc.dashboard.getSeasonProgress.useQuery();
@@ -44,10 +44,10 @@ export function SeasonProgressWidget() {
     : 0;
 
   const bars = [
-    { label: 'Budget raggiunto',  pct: budgetPct,                         value: `${budgetPct}%`,                              color: 'bg-blue-500'  },
-    { label: 'Referenze coperte', pct: data.rowCount > 0 ? 100 : 0,       value: String(data.rowCount),                        color: 'bg-blue-400'  },
-    { label: 'Gruppi attivi',     pct: data.groupCount > 0 ? 100 : 0,     value: String(data.groupCount),                      color: 'bg-green-500' },
-    { label: 'SKU forecast',      pct: budgetPct,                         value: data.skuForecast.toLocaleString('it-IT'),      color: 'bg-amber-500' },
+    { label: 'Budget raggiunto',  pct: budgetPct,                     value: `${budgetPct}%`,                         color: 'bg-blue-500'  },
+    { label: 'Referenze coperte', pct: data.rowCount > 0 ? 100 : 0,   value: String(data.rowCount),                   color: 'bg-blue-400'  },
+    { label: 'Gruppi attivi',     pct: data.groupCount > 0 ? 100 : 0, value: String(data.groupCount),                 color: 'bg-green-500' },
+    { label: 'SKU forecast',      pct: budgetPct,                     value: data.skuForecast.toLocaleString('it-IT'), color: 'bg-amber-500' },
   ];
 
   return (

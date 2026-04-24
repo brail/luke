@@ -8,7 +8,7 @@
 
 import { TRPCError } from '@trpc/server';
 import type { PrismaClient, PricingParameterSet } from '@prisma/client';
-import { roundRetailPrice, type PricingParameterSetInput } from '@luke/core';
+import { calculateCompanyMultiplier, roundRetailPrice, type PricingParameterSetInput } from '@luke/core';
 
 // ─────────────────────────────────────────────────────────────────
 // Tipi interni
@@ -79,15 +79,6 @@ export interface MarginResult {
 // ─────────────────────────────────────────────────────────────────
 // Formule di calcolo pure
 // ─────────────────────────────────────────────────────────────────
-
-/**
- * Calcola il moltiplicatore aziendale a partire dal margine ottimale.
- * Formula: 1 / (1 - margine%)
- * Es. margine 25% → 1 / (1 - 0.25) = 1.333
- */
-export function calculateCompanyMultiplier(optimalMargin: number): number {
-  return Math.round((1 / (1 - optimalMargin / 100)) * 100) / 100;
-}
 
 /**
  * Calcolo forward: dato il prezzo di acquisto, calcola il prezzo retail.

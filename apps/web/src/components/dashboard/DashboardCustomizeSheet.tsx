@@ -1,24 +1,20 @@
 'use client';
 
+import { Plus, Settings2, X } from 'lucide-react';
 import { useState } from 'react';
-import { Settings2, X, Plus } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { DEFAULT_CLOCKS_TIMEZONES, DEFAULT_FOREX_PAIRS, type WidgetConfigItem } from '@luke/core';
 
+import { trpc } from '../../lib/trpc';
+import { getTrpcErrorMessage } from '../../lib/trpcErrorMessages';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from '../ui/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '../ui/sheet';
 import { Switch } from '../ui/switch';
-import { trpc } from '../../lib/trpc';
-import { getTrpcErrorMessage } from '../../lib/trpcErrorMessages';
-import { toast } from 'sonner';
+
 import { WIDGET_REGISTRY } from './widgetRegistry';
 
 interface DashboardCustomizeSheetProps {

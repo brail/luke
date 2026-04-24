@@ -1,13 +1,13 @@
-import type { ComponentType } from 'react';
-
 import type { WidgetId } from '@luke/core';
 
-import { KpiStatsWidget } from './widgets/KpiStatsWidget';
-import { SeasonProgressWidget } from './widgets/SeasonProgressWidget';
 import { ClocksWidget } from './widgets/ClocksWidget';
 import { ForexWidget } from './widgets/ForexWidget';
-import { WeeklySalesWidget } from './widgets/WeeklySalesWidget';
+import { KpiStatsWidget } from './widgets/KpiStatsWidget';
+import { SeasonProgressWidget } from './widgets/SeasonProgressWidget';
 import { TasksWidget } from './widgets/TasksWidget';
+import { WeeklySalesWidget } from './widgets/WeeklySalesWidget';
+
+import type { ComponentType } from 'react';
 
 export interface WidgetInstanceProps {
   settings?: Record<string, unknown>;

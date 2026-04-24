@@ -22,6 +22,7 @@ import { TRPCError } from '@trpc/server';
 import type { PrismaClient } from '@prisma/client';
 
 import { logAudit } from '../lib/auditLog';
+import { exportTimestamp } from '../lib/export/xlsx-streaming';
 import { withRateLimit } from '../lib/ratelimit';
 import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
@@ -183,12 +184,6 @@ const EXPORT_INCLUDE = {
     },
   },
 } as const;
-
-function exportTimestamp(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
-}
 
 const exportRouter = router({
   xlsx: protectedProcedure

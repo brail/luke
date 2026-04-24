@@ -9,26 +9,91 @@
 import { z } from 'zod';
 
 import {
+  PricingCalculateInputSchema,
   PricingParameterSetInputSchema,
   PricingParameterSetUpdateSchema,
-  PricingCalculateInputSchema,
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
+import { exportTimestamp } from '../lib/export/xlsx-streaming';
 import { withRateLimit } from '../lib/ratelimit';
-import { router, protectedProcedure } from '../lib/trpc';
 import { requirePermission } from '../lib/permissions';
+import { router, protectedProcedure } from '../lib/trpc';
+import { buildPricingGridPdf, buildPricingGridXlsx } from '../services/pricing.export.service';
 import {
-  getParameterSets,
-  getPreviousSeasonSets,
-  createParameterSet,
-  updateParameterSet,
-  removeParameterSet,
-  setAsDefault,
   calculateForward,
   calculateInverse,
   calculateMarginOnly,
+  createParameterSet,
+  getParameterSets,
+  getPreviousSeasonSets,
+  removeParameterSet,
+  setAsDefault,
+  updateParameterSet,
 } from '../services/pricing.service';
+
+const exportRouter = router({
+  xlsx: protectedProcedure
+    .use(requirePermission('pricing:read'))
+    .input(z.object({ brandId: z.string().uuid(), seasonId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const [sets, brand, season] = await Promise.all([
+        ctx.prisma.pricingParameterSet.findMany({
+          where: { brandId: input.brandId, seasonId: input.seasonId },
+          orderBy: { orderIndex: 'asc' },
+        }),
+        ctx.prisma.brand.findUniqueOrThrow({ where: { id: input.brandId }, select: { name: true, code: true } }),
+        ctx.prisma.season.findUniqueOrThrow({ where: { id: input.seasonId }, select: { code: true, year: true } }),
+      ]);
+      if (sets.length === 0) {
+        const { TRPCError } = await import('@trpc/server');
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Nessun parametro trovato per questo contesto' });
+      }
+      const buffer = await buildPricingGridXlsx(sets, brand, season);
+      await logAudit(ctx, {
+        action: 'PRICING_GRID_EXPORT_XLSX',
+        targetType: 'Brand',
+        targetId: input.brandId,
+        result: 'SUCCESS',
+        metadata: { brandId: input.brandId, seasonId: input.seasonId },
+      });
+      return { data: buffer.toString('base64'), filename: `${brand.code}-${season.code}-Griglia-${exportTimestamp()}.xlsx` };
+    }),
+
+  pdf: protectedProcedure
+    .use(requirePermission('pricing:read'))
+    .input(z.object({ brandId: z.string().uuid(), seasonId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const [sets, brand, season, exportUser] = await Promise.all([
+        ctx.prisma.pricingParameterSet.findMany({
+          where: { brandId: input.brandId, seasonId: input.seasonId },
+          orderBy: { orderIndex: 'asc' },
+        }),
+        ctx.prisma.brand.findUniqueOrThrow({ where: { id: input.brandId }, select: { name: true, code: true, logoKey: true } }),
+        ctx.prisma.season.findUniqueOrThrow({ where: { id: input.seasonId }, select: { code: true, year: true } }),
+        ctx.prisma.user.findUnique({
+          where: { id: ctx.session.user.id },
+          select: { firstName: true, lastName: true, username: true },
+        }),
+      ]);
+      if (sets.length === 0) {
+        const { TRPCError } = await import('@trpc/server');
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Nessun parametro trovato per questo contesto' });
+      }
+      const fullName = exportUser
+        ? [exportUser.firstName, exportUser.lastName].filter(Boolean).join(' ') || exportUser.username
+        : ctx.session.user.username;
+      const buffer = await buildPricingGridPdf(sets, brand, season, ctx.prisma, fullName, new Date());
+      await logAudit(ctx, {
+        action: 'PRICING_GRID_EXPORT_PDF',
+        targetType: 'Brand',
+        targetId: input.brandId,
+        result: 'SUCCESS',
+        metadata: { brandId: input.brandId, seasonId: input.seasonId },
+      });
+      return { data: buffer.toString('base64'), filename: `${brand.code}-${season.code}-Griglia-${exportTimestamp()}.pdf` };
+    }),
+});
 
 const parameterSetsRouter = router({
   /**
@@ -158,6 +223,7 @@ const parameterSetsRouter = router({
 
 export const pricingRouter = router({
   parameterSets: parameterSetsRouter,
+  export: exportRouter,
 
   /**
    * Esegue il calcolo del prezzo in una delle tre modalità:
@@ -230,3 +296,4 @@ export const pricingRouter = router({
       });
     }),
 });
+

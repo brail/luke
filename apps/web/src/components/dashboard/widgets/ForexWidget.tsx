@@ -2,10 +2,10 @@
 
 import { DEFAULT_FOREX_PAIRS, type ForexSettings } from '@luke/core';
 
-import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
-import { Skeleton } from '../../ui/skeleton';
 import { trpc } from '../../../lib/trpc';
 import { cn } from '../../../lib/utils';
+import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
+import { Skeleton } from '../../ui/skeleton';
 
 const FIFTEEN_MIN = 15 * 60 * 1000;
 

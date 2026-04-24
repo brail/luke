@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 
 import { DEFAULT_CLOCKS_TIMEZONES, type ClocksSettings } from '@luke/core';
 
-import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { cn } from '../../../lib/utils';
+import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 
 const TZ_LABELS: Record<string, string> = {
   'Europe/Rome': 'Milano',

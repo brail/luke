@@ -1,11 +1,12 @@
 'use client';
 
-import { Boxes, Tag, Users2, Rows3 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { Boxes, Rows3, Tag, Users2 } from 'lucide-react';
 
+import { trpc } from '../../../lib/trpc';
 import { Card, CardContent } from '../../ui/card';
 import { Skeleton } from '../../ui/skeleton';
-import { trpc } from '../../../lib/trpc';
+
+import type { LucideIcon } from 'lucide-react';
 
 const STAT_DEFS: {
   label: string;
@@ -13,10 +14,10 @@ const STAT_DEFS: {
   unit: string;
   icon: LucideIcon;
 }[] = [
-  { label: 'Brand attivi',     key: 'brands',         unit: 'brand',   icon: Tag    },
+  { label: 'Brand attivi',     key: 'brands',         unit: 'brand',    icon: Tag    },
   { label: 'Stagioni attive',  key: 'seasons',        unit: 'stagioni', icon: Boxes  },
-  { label: 'Utenti attivi',    key: 'users',          unit: 'utenti',  icon: Users2 },
-  { label: 'Righe collezione', key: 'collectionRows', unit: 'righe',   icon: Rows3  },
+  { label: 'Utenti attivi',    key: 'users',          unit: 'utenti',   icon: Users2 },
+  { label: 'Righe collezione', key: 'collectionRows', unit: 'righe',    icon: Rows3  },
 ];
 
 export function KpiStatsWidget() {

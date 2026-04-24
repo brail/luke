@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
-import { roundRetailPrice, type CollectionLayoutRowInput } from '@luke/core';
+import { calcMaxSupplierCost, roundRetailPrice, type CollectionLayoutRowInput } from '@luke/core';
 
 import type { UseFormReturn } from 'react-hook-form';
 
@@ -116,14 +116,6 @@ export function usePricingCalc(
     [watchedPricingSetId, parameterSets]
   );
 
-  const companyMultiplier = useMemo(
-    () =>
-      selectedParamSet
-        ? Math.round((1 / (1 - selectedParamSet.optimalMargin / 100)) * 100) / 100
-        : null,
-    [selectedParamSet]
-  );
-
   /** Calcola landed cost da quotazione fornitore FOB. */
   const landedCostCalc = useCallback(
     (quotation: number, ps: PricingParameterSet | null): number | null => {
@@ -137,31 +129,9 @@ export function usePricingCalc(
     []
   );
 
-  /** Calcola buying target invertendo la formula dal retail price. */
-  const buyingTargetCalc = useCallback(
-    (
-      retail: number,
-      ps: PricingParameterSet | null,
-      cm: number | null
-    ): number | null => {
-      if (!ps || !cm) return null;
-      const wholesale = retail / ps.retailMultiplier;
-      const landed = wholesale / cm;
-      const withoutAcc = landed - ps.italyAccessoryCosts;
-      const withoutDuty = withoutAcc / (1 + ps.duty / 100);
-      const withoutTransport =
-        withoutDuty * ps.exchangeRate - ps.transportInsuranceCost;
-      const raw =
-        withoutTransport / (1 + ps.qualityControlPercent / 100) - ps.tools;
-      return Math.floor(raw * 10) / 10;
-    },
-    []
-  );
-
   const marginCalc = useMemo((): MarginCalc | null => {
     if (
       !selectedParamSet ||
-      !companyMultiplier ||
       !watchedSupplierQuotation ||
       !watchedRetailPrice ||
       watchedSupplierQuotation <= 0 ||
@@ -176,7 +146,7 @@ export function usePricingCalc(
     const marginStatus = computeMarginStatus(margin * 100, selectedParamSet.optimalMargin);
     const wholesaleTarget = landed / (1 - selectedParamSet.optimalMargin / 100);
     const targetRetailPrice = roundRetailPrice(wholesaleTarget * selectedParamSet.retailMultiplier);
-    const targetSupplierCost = buyingTargetCalc(watchedRetailPrice, selectedParamSet, companyMultiplier) ?? 0;
+    const targetSupplierCost = calcMaxSupplierCost(watchedRetailPrice, selectedParamSet);
     return {
       landedCost: Math.round(landed * 100) / 100,
       wholesalePrice: Math.round(wholesale * 100) / 100,
@@ -189,25 +159,14 @@ export function usePricingCalc(
       currentRetailPrice: watchedRetailPrice,
       currentSupplierCost: watchedSupplierQuotation,
     };
-  }, [
-    selectedParamSet,
-    companyMultiplier,
-    watchedSupplierQuotation,
-    watchedRetailPrice,
-    landedCostCalc,
-    buyingTargetCalc,
-  ]);
+  }, [selectedParamSet, watchedSupplierQuotation, watchedRetailPrice, landedCostCalc]);
 
   // Auto-fill buying target al cambio del retail price o del parameter set.
   // Dipendenze ridotte intenzionalmente (selectedParamSet?.id) per evitare loop.
   useEffect(() => {
     if (!watchedRetailPrice || watchedRetailPrice <= 0 || !selectedParamSet) return;
-    const target = buyingTargetCalc(
-      watchedRetailPrice,
-      selectedParamSet,
-      companyMultiplier
-    );
-    if (target !== null && target > 0) {
+    const target = calcMaxSupplierCost(watchedRetailPrice, selectedParamSet);
+    if (target > 0) {
       form.setValue('buyingTargetPrice', target, { shouldDirty: false });
     }
   }, [watchedRetailPrice, selectedParamSet?.id]);
