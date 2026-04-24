@@ -26,6 +26,7 @@ export * from './schemas/pricing';
 export * from './schemas/collectionLayout';
 export * from './schemas/merchandisingPlan';
 export * from './schemas/vendor';
+export * from './schemas/dashboard';
 
 // Re-export RBAC
 export * from './rbac';

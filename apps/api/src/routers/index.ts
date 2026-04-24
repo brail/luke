@@ -24,6 +24,7 @@ import { storageRouter } from './storage';
 import { usersRouter } from './users';
 import { vendorsRouter } from './vendors';
 import { salesRouter } from './sales';
+import { dashboardRouter } from './dashboard';
 
 /**
  * Router principale dell'applicazione
@@ -49,6 +50,7 @@ export const appRouter = router({
   users: usersRouter,
   vendors: vendorsRouter,
   sales: salesRouter,
+  dashboard: dashboardRouter,
 });
 
 /**

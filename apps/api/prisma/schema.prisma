@@ -55,6 +55,8 @@ model User {
   brandAccess UserBrandAccess[]
   seasonAccess UserSeasonAccess[]
   assignedMerchandisingRows MerchandisingPlanRow[]
+  dashboardConfig DashboardConfig?
+  dashboardTasks  DashboardTask[]
 
   @@map("users")
 }
@@ -253,6 +255,29 @@ model UserSeasonAccess {
   @@unique([userId, brandId, seasonId])
   @@index([userId, brandId])
   @@map("user_season_access")
+}
+
+model DashboardConfig {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  widgets   Json
+  updatedAt DateTime @updatedAt
+
+  @@map("dashboard_configs")
+}
+
+model DashboardTask {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  done      Boolean   @default(false)
+  dueDate   DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@map("dashboard_tasks")
 }
 
 /**

@@ -54,9 +54,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="flex-1 flex flex-col overflow-y-auto">
             {/* Header comune */}
             <header className="sticky top-0 z-10 shrink-0 border-b bg-card">
-              <div className="flex items-center justify-between px-4 py-2">
+              <div className="flex items-center px-4 py-2">
                 <CollapsedSidebarTrigger />
-                <ContextSelector />
+                <div className="ml-auto">
+                  <ContextSelector />
+                </div>
               </div>
             </header>
 

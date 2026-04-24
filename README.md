@@ -745,6 +745,46 @@ Con **local** (`enableProxy=true`, default): stesso proxy per consistenza. Con `
 
 Per l'architettura completa: [docs/adr/007-storage-layer-refactor.md](docs/adr/007-storage-layer-refactor.md)
 
+## Dashboard Widget System
+
+La dashboard è un sistema di widget card configurabili per utente. Ogni utente può abilitare/disabilitare i widget e, per quelli configurabili, personalizzare i settings tramite il pannello "Personalizza".
+
+### Widget disponibili (v1)
+
+| ID | Label | Fonte dati | Configurabile |
+|----|-------|-----------|---------------|
+| `kpi-stats` | Statistiche | Prisma (brand, season, utenti attivi, righe collezione) | No |
+| `season-progress` | Avanzamento stagione | Prisma (`CollectionLayout` KPI) | No |
+| `clocks` | Orologi mondo | `Intl.DateTimeFormat` (nessuna API) | Sì (fusi orari IANA) |
+| `forex` | Cambi valuta | `api.frankfurter.app` (BCE, gratuito, no API key) | Sì (coppie valuta) |
+| `weekly-sales` | Ordini settimanali | NAV replica (`nav_pf_sales_header`) | No |
+| `tasks` | Attività personali | Prisma (`DashboardTask`) | No |
+
+### Aggiungere un nuovo widget
+
+1. **Core schema** — aggiungere l'ID in `WIDGET_IDS` (`packages/core/src/schemas/dashboard.ts`)
+2. **Componente** — creare `apps/web/src/components/dashboard/widgets/MyWidget.tsx`
+3. **Registry** — aggiungere `WidgetDefinition` in `apps/web/src/components/dashboard/widgetRegistry.ts`)
+4. **Router** (se serve dati) — aggiungere procedure in `apps/api/src/routers/dashboard.ts`
+
+### Schema configurazione JSON
+
+```json
+{
+  "widgets": [
+    { "id": "forex", "enabled": true, "position": 4, "settings": { "pairs": ["EUR/CNY", "EUR/USD"] } },
+    { "id": "clocks", "enabled": true, "position": 5, "settings": { "timezones": ["Europe/Rome", "Asia/Shanghai"] } },
+    { "id": "kpi-stats", "enabled": false, "position": 0 }
+  ]
+}
+```
+
+### Variabili d'ambiente
+
+Nessuna variabile aggiuntiva richiesta. Il widget Forex usa `api.frankfurter.app` (dati BCE, gratuito).
+
+---
+
 ## Riferimenti Correlati
 
 - [API_SETUP.md](API_SETUP.md) - Setup e utilizzo dell'API con esempi pratici
