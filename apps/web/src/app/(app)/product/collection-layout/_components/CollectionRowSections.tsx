@@ -663,8 +663,10 @@ export function PricingSection({
       {marginCalc && (
         <div
           className={`rounded-lg border p-4 space-y-2 ${
-            marginCalc.isAboveTarget
+            marginCalc.marginStatus === 'green'
               ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/20'
+              : marginCalc.marginStatus === 'yellow'
+              ? 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/20'
               : 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/20'
           }`}
         >
@@ -692,21 +694,31 @@ export function PricingSection({
             <div className="flex items-center gap-2">
               <span
                 className={`font-bold tabular-nums ${
-                  marginCalc.isAboveTarget
+                  marginCalc.marginStatus === 'green'
                     ? 'text-green-700 dark:text-green-400'
+                    : marginCalc.marginStatus === 'yellow'
+                    ? 'text-amber-700 dark:text-amber-400'
                     : 'text-red-700 dark:text-red-400'
                 }`}
               >
                 {(marginCalc.companyMargin * 100).toFixed(1)}%
               </span>
               <Badge
-                variant={marginCalc.isAboveTarget ? 'default' : 'destructive'}
-                className="text-xs"
+                variant={marginCalc.marginStatus === 'red' ? 'destructive' : 'default'}
+                className={`text-xs ${marginCalc.marginStatus === 'yellow' ? 'bg-amber-500 hover:bg-amber-500/90' : ''}`}
               >
                 target {marginCalc.optimalMargin}%
               </Badge>
             </div>
           </div>
+          {marginCalc.marginStatus !== 'green' && (
+            <div className="flex items-center justify-between text-sm border-t pt-2 mt-1">
+              <span className="text-muted-foreground">Retail suggerito</span>
+              <span className="font-medium tabular-nums">
+                {marginCalc.targetRetailPrice.toFixed(2)} {selectedParamSet?.sellingCurrency}
+              </span>
+            </div>
+          )}
         </div>
       )}
     </div>

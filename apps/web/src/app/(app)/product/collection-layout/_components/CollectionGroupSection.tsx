@@ -650,7 +650,11 @@ export function CollectionGroupSection({
                             const m = computeRowMargin(row, parameterSets);
                             if (!m) return <span className="text-muted-foreground/40">—</span>;
                             return (
-                              <span className={m.isAboveTarget ? 'text-green-700 dark:text-green-400' : 'text-destructive'}>
+                              <span className={
+                                m.marginStatus === 'green' ? 'text-green-700 dark:text-green-400'
+                                : m.marginStatus === 'yellow' ? 'text-amber-600 dark:text-amber-400'
+                                : 'text-destructive'
+                              }>
                                 {(m.margin * 100).toFixed(1)}%
                               </span>
                             );

@@ -49,12 +49,15 @@ import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
+  SidebarHeader,
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarMenuSub,
   SidebarMenuSubItem,
   SidebarMenuSubButton,
+  SidebarRail,
+  SidebarTrigger,
 } from './ui/sidebar';
 
 export default function AppSidebar() {
@@ -99,16 +102,16 @@ export default function AppSidebar() {
 
   return (
     <Sidebar>
-      <SidebarContent>
-        {/* Header */}
-        <div className="mb-6 p-4">
+      <SidebarHeader>
+        <div className="flex items-center justify-between px-2 py-1">
           <div className="flex items-center gap-3">
-            <Logo size="md" className="text-primary" />
-            <div>
-              <h2 className="text-lg font-semibold text-foreground">Luke</h2>
-            </div>
+            <Logo size="sm" className="text-primary" />
+            <h2 className="text-lg font-semibold text-foreground">Luke</h2>
           </div>
+          <SidebarTrigger />
         </div>
+      </SidebarHeader>
+      <SidebarContent>
 
         {/* Menu compatto senza sezioni */}
         <SidebarMenu>
@@ -423,6 +426,7 @@ export default function AppSidebar() {
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarFooter>
+      <SidebarRail />
     </Sidebar>
   );
 }

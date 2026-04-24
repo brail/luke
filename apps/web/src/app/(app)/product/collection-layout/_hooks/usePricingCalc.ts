@@ -17,7 +17,9 @@ export interface MarginCalc {
   wholesalePrice: number;
   companyMargin: number;
   isAboveTarget: boolean;
+  marginStatus: 'green' | 'yellow' | 'red';
   optimalMargin: number;
+  targetRetailPrice: number;
 }
 
 // ─── Pure helpers (usable outside hook context) ───────────────────────────────
@@ -30,10 +32,19 @@ export interface MarginComputeInput {
 }
 
 /** Compute theoretical margin for a single row. Returns null when data is incomplete. */
+function computeMarginStatus(
+  marginPct: number,
+  optimalMargin: number
+): 'green' | 'yellow' | 'red' {
+  if (marginPct >= optimalMargin) return 'green';
+  if (marginPct >= optimalMargin - 3) return 'yellow';
+  return 'red';
+}
+
 export function computeRowMargin(
   row: MarginComputeInput,
   parameterSets: PricingParameterSet[]
-): { margin: number; isAboveTarget: boolean } | null {
+): { margin: number; isAboveTarget: boolean; marginStatus: 'green' | 'yellow' | 'red' } | null {
   if (!row.pricingParameterSetId || !row.supplierFirstQuotation || !row.retailTargetPrice) return null;
   if (row.supplierFirstQuotation <= 0 || row.retailTargetPrice <= 0) return null;
   const ps = parameterSets.find(p => p.id === row.pricingParameterSetId);
@@ -47,10 +58,12 @@ export function computeRowMargin(
 
   const wholesale = row.retailTargetPrice / ps.retailMultiplier;
   const margin = (wholesale - landed) / wholesale;
+  const marginStatus = computeMarginStatus(margin * 100, ps.optimalMargin);
 
   return {
     margin: Math.round(margin * 10000) / 10000,
-    isAboveTarget: margin * 100 >= ps.optimalMargin,
+    isAboveTarget: marginStatus === 'green',
+    marginStatus,
   };
 }
 
@@ -157,12 +170,17 @@ export function usePricingCalc(
     if (landed === null) return null;
     const wholesale = watchedRetailPrice / selectedParamSet.retailMultiplier;
     const margin = (wholesale - landed) / wholesale;
+    const marginStatus = computeMarginStatus(margin * 100, selectedParamSet.optimalMargin);
+    const wholesaleTarget = landed / (1 - selectedParamSet.optimalMargin / 100);
+    const targetRetailPrice = Math.ceil(wholesaleTarget * selectedParamSet.retailMultiplier * 10) / 10;
     return {
       landedCost: Math.round(landed * 100) / 100,
       wholesalePrice: Math.round(wholesale * 100) / 100,
       companyMargin: Math.round(margin * 10000) / 10000,
-      isAboveTarget: margin * 100 >= selectedParamSet.optimalMargin,
+      isAboveTarget: marginStatus === 'green',
+      marginStatus,
       optimalMargin: selectedParamSet.optimalMargin,
+      targetRetailPrice,
     };
   }, [
     selectedParamSet,

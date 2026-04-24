@@ -71,8 +71,10 @@ const GROUP_HEADER_FILL = '#C8BFB3';
 const SUBTOTAL_FILL     = '#F2EDE8';
 const TOTAL_FILL        = '#C8BFB3';
 const MARGIN_COLOR_GOOD = '#15803D';
+const MARGIN_COLOR_WARN = '#D97706';
 const MARGIN_COLOR_BAD  = '#B91C1C';
 const MARGIN_FILL_GOOD  = '#DCFCE7';
+const MARGIN_FILL_WARN  = '#FEF3C7';
 const MARGIN_FILL_BAD   = '#FEE2E2';
 
 // ─── Cell margin helpers ──────────────────────────────────────────────────────
@@ -98,7 +100,7 @@ const IMAGE_HEIGHT = 20;
 function computeMarginResult(
   row: Pick<CollectionLayoutRow, 'pricingParameterSetId' | 'supplierFirstQuotation' | 'retailTargetPrice'>,
   pricingSetMap: Map<string, PricingParameterSet>,
-): { pct: number; isAboveTarget: boolean } | null {
+): { pct: number; isAboveTarget: boolean; isWarning: boolean } | null {
   if (!row.pricingParameterSetId || !row.supplierFirstQuotation || !row.retailTargetPrice) return null;
   if (row.supplierFirstQuotation <= 0 || row.retailTargetPrice <= 0) return null;
   const ps = pricingSetMap.get(row.pricingParameterSetId);
@@ -110,9 +112,11 @@ function computeMarginResult(
   const landed     = withDuty / ps.exchangeRate + ps.italyAccessoryCosts;
   const wholesale  = row.retailTargetPrice / ps.retailMultiplier;
   const margin     = (wholesale - landed) / wholesale;
+  const marginPct = margin * 100;
   return {
     pct: Math.round(margin * 10000) / 100,
-    isAboveTarget: margin * 100 >= ps.optimalMargin,
+    isAboveTarget: marginPct >= ps.optimalMargin,
+    isWarning: marginPct < ps.optimalMargin && marginPct >= ps.optimalMargin - 3,
   };
 }
 
@@ -293,8 +297,8 @@ export async function buildCollectionLayoutPdf(
               text: `${marginResult.pct.toFixed(2)}%`,
               fontSize: 7,
               bold: true,
-              color: marginResult.isAboveTarget ? MARGIN_COLOR_GOOD : MARGIN_COLOR_BAD,
-              fillColor: marginResult.isAboveTarget ? MARGIN_FILL_GOOD : MARGIN_FILL_BAD,
+              color: marginResult.isAboveTarget ? MARGIN_COLOR_GOOD : marginResult.isWarning ? MARGIN_COLOR_WARN : MARGIN_COLOR_BAD,
+              fillColor: marginResult.isAboveTarget ? MARGIN_FILL_GOOD : marginResult.isWarning ? MARGIN_FILL_WARN : MARGIN_FILL_BAD,
               alignment: 'center' as const,
               margin: CELL_MARGIN,
             }

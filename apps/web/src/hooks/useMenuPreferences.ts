@@ -76,30 +76,33 @@ export function useMenuPreferences() {
     }
   }, [saveToDb]);
 
-  // Toggle dello stato di un menu
   const toggleMenu = useCallback(
     (menuKey: string, isOpen: boolean) => {
-      const newStates = {
-        ...latestStatesRef.current,
-        [menuKey]: isOpen,
-      };
+      const prev = latestStatesRef.current;
+      const newStates = { ...prev };
+      // Accordion: close all others when opening one
+      if (isOpen) {
+        Object.keys(newStates).forEach(k => { newStates[k] = false; });
+      }
+      newStates[menuKey] = isOpen;
 
       setMenuStates(newStates);
       latestStatesRef.current = newStates;
 
-      // Salva su localStorage se disponibile (fallback veloce)
       const hasLocalStorage = typeof window !== 'undefined' && window.localStorage;
       if (hasLocalStorage) {
-        window.localStorage.setItem(`luke-menu-${menuKey}`, JSON.stringify(isOpen));
+        // Only write keys whose values changed
+        Object.entries(newStates).forEach(([k, v]) => {
+          if (prev[k] !== v) window.localStorage.setItem(`luke-menu-${k}`, JSON.stringify(v));
+        });
       }
 
-      // Debounce sync a DB: 2-3 secondi per ridurre query
-      // Se localStorage non disponibile, sync subito
       if (debounceTimer.current) {
         clearTimeout(debounceTimer.current);
       }
 
-      const syncDelay = hasLocalStorage ? 2000 : 0; // Subito se no localStorage
+      // Debounce DB sync by 2s if localStorage available; sync immediately otherwise
+      const syncDelay = hasLocalStorage ? 2000 : 0;
       debounceTimer.current = setTimeout(() => {
         saveToDb(latestStatesRef.current);
       }, syncDelay);
