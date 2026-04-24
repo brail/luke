@@ -8,7 +8,7 @@
 
 import { TRPCError } from '@trpc/server';
 import type { PrismaClient, PricingParameterSet } from '@prisma/client';
-import type { PricingParameterSetInput } from '@luke/core';
+import { roundRetailPrice, type PricingParameterSetInput } from '@luke/core';
 
 // ─────────────────────────────────────────────────────────────────
 // Tipi interni
@@ -87,34 +87,6 @@ export interface MarginResult {
  */
 export function calculateCompanyMultiplier(optimalMargin: number): number {
   return Math.round((1 / (1 - optimalMargin / 100)) * 100) / 100;
-}
-
-/**
- * Arrotondamento commerciale: porta il prezzo al valore xx.9 più vicino.
- *
- * Logica:
- *  - price < 10 → 9.9
- *  - unità+decimale 0.0–2.4 → decina precedente + 9.9
- *  - unità+decimale 2.5–7.4 → decina corrente + 4.9
- *  - unità+decimale 7.5–9.9 → decina corrente + 9.9
- *
- * Esempi: 21.43 → 19.9 | 45.60 → 44.9 | 67.80 → 69.9
- */
-export function roundRetailPrice(price: number): number {
-  if (price < 10) return 9.9;
-
-  const integerPart = Math.floor(price);
-  const decimalPart = price - integerPart;
-  const tens = Math.floor(integerPart / 10) * 10;
-  const finalPart = (integerPart % 10) + decimalPart;
-
-  if (finalPart >= 0.0 && finalPart <= 2.4) {
-    return Math.max(9.9, tens - 10 + 9.9);
-  } else if (finalPart >= 2.5 && finalPart <= 7.4) {
-    return tens + 4.9;
-  } else {
-    return tens + 9.9;
-  }
 }
 
 /**

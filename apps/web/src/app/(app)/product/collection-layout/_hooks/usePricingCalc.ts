@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
-import type { CollectionLayoutRowInput } from '@luke/core';
+import { roundRetailPrice, type CollectionLayoutRowInput } from '@luke/core';
 
 import type { UseFormReturn } from 'react-hook-form';
 
@@ -20,6 +20,9 @@ export interface MarginCalc {
   marginStatus: 'green' | 'yellow' | 'red';
   optimalMargin: number;
   targetRetailPrice: number;
+  targetSupplierCost: number;
+  currentRetailPrice: number;
+  currentSupplierCost: number;
 }
 
 // ─── Pure helpers (usable outside hook context) ───────────────────────────────
@@ -172,7 +175,8 @@ export function usePricingCalc(
     const margin = (wholesale - landed) / wholesale;
     const marginStatus = computeMarginStatus(margin * 100, selectedParamSet.optimalMargin);
     const wholesaleTarget = landed / (1 - selectedParamSet.optimalMargin / 100);
-    const targetRetailPrice = Math.ceil(wholesaleTarget * selectedParamSet.retailMultiplier * 10) / 10;
+    const targetRetailPrice = roundRetailPrice(wholesaleTarget * selectedParamSet.retailMultiplier);
+    const targetSupplierCost = buyingTargetCalc(watchedRetailPrice, selectedParamSet, companyMultiplier) ?? 0;
     return {
       landedCost: Math.round(landed * 100) / 100,
       wholesalePrice: Math.round(wholesale * 100) / 100,
@@ -181,6 +185,9 @@ export function usePricingCalc(
       marginStatus,
       optimalMargin: selectedParamSet.optimalMargin,
       targetRetailPrice,
+      targetSupplierCost,
+      currentRetailPrice: watchedRetailPrice,
+      currentSupplierCost: watchedSupplierQuotation,
     };
   }, [
     selectedParamSet,
@@ -188,6 +195,7 @@ export function usePricingCalc(
     watchedSupplierQuotation,
     watchedRetailPrice,
     landedCostCalc,
+    buyingTargetCalc,
   ]);
 
   // Auto-fill buying target al cambio del retail price o del parameter set.

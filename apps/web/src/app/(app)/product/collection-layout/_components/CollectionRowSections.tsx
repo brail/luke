@@ -712,11 +712,29 @@ export function PricingSection({
             </div>
           </div>
           {marginCalc.marginStatus !== 'green' && (
-            <div className="flex items-center justify-between text-sm border-t pt-2 mt-1">
-              <span className="text-muted-foreground">Retail suggerito</span>
-              <span className="font-medium tabular-nums">
-                {marginCalc.targetRetailPrice.toFixed(2)} {selectedParamSet?.sellingCurrency}
-              </span>
+            <div className="border-t pt-2 mt-1 space-y-1.5">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Retail suggerito</span>
+                <span className="font-medium tabular-nums">
+                  {marginCalc.targetRetailPrice.toFixed(2)} {selectedParamSet?.sellingCurrency}
+                  {' '}
+                  <span className="text-xs text-amber-600 dark:text-amber-400">
+                    (+{(marginCalc.targetRetailPrice - marginCalc.currentRetailPrice).toFixed(2)})
+                  </span>
+                </span>
+              </div>
+              {marginCalc.targetSupplierCost > 0 && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Costo max fornitore</span>
+                  <span className="font-medium tabular-nums">
+                    {marginCalc.targetSupplierCost.toFixed(2)} {selectedParamSet?.purchaseCurrency}
+                    {' '}
+                    <span className="text-xs text-amber-600 dark:text-amber-400">
+                      (-{(marginCalc.currentSupplierCost - marginCalc.targetSupplierCost).toFixed(2)})
+                    </span>
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </div>
