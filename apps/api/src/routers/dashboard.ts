@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { type Prisma, type PrismaClient } from '@prisma/client';
+import { type Prisma } from '@prisma/client';
 
 import {
   DEFAULT_CLOCKS_TIMEZONES,
@@ -14,14 +14,6 @@ import {
 import { logAudit } from '../lib/auditLog';
 import { protectedProcedure, router } from '../lib/trpc';
 
-async function getUserPrefContext(userId: string, prisma: PrismaClient) {
-  const prefs = await prisma.userPreference.findUnique({ where: { userId } });
-  const data = (prefs?.data ?? {}) as Record<string, unknown>;
-  return {
-    lastBrandId: data.lastBrandId as string | undefined,
-    lastSeasonId: data.lastSeasonId as string | undefined,
-  };
-}
 
 const DEFAULT_WIDGETS: WidgetConfigItem[] = [
   { id: 'kpi-stats',       enabled: true, position: 0 },
@@ -180,14 +172,12 @@ export const dashboardRouter = router({
       return { rates, previousRates, timestamp };
     }),
 
-  getWeeklySales: protectedProcedure.query(async ({ ctx }) => {
-    const userId = ctx.session.user.id;
-    const { lastBrandId, lastSeasonId } = await getUserPrefContext(userId, ctx.prisma);
-    if (!lastBrandId || !lastSeasonId) return [] as { date: string; count: number }[];
-
+  getWeeklySales: protectedProcedure
+    .input(z.object({ brandId: z.string(), seasonId: z.string() }))
+    .query(async ({ ctx, input }) => {
     const [brand, season] = await Promise.all([
-      ctx.prisma.brand.findUnique({ where: { id: lastBrandId }, select: { code: true } }),
-      ctx.prisma.season.findUnique({ where: { id: lastSeasonId }, select: { code: true } }),
+      ctx.prisma.brand.findUnique({ where: { id: input.brandId }, select: { code: true } }),
+      ctx.prisma.season.findUnique({ where: { id: input.seasonId }, select: { code: true } }),
     ]);
     if (!brand || !season) return [] as { date: string; count: number }[];
 
@@ -221,13 +211,11 @@ export const dashboardRouter = router({
     return result;
   }),
 
-  getSeasonProgress: protectedProcedure.query(async ({ ctx }) => {
-    const userId = ctx.session.user.id;
-    const { lastBrandId, lastSeasonId } = await getUserPrefContext(userId, ctx.prisma);
-    if (!lastBrandId || !lastSeasonId) return null;
-
+  getSeasonProgress: protectedProcedure
+    .input(z.object({ brandId: z.string(), seasonId: z.string() }))
+    .query(async ({ ctx, input }) => {
     const layout = await ctx.prisma.collectionLayout.findFirst({
-      where: { brandId: lastBrandId, seasonId: lastSeasonId },
+      where: { brandId: input.brandId, seasonId: input.seasonId },
       include: {
         rows: { select: { skuForecast: true } },
         groups: { select: { id: true } },

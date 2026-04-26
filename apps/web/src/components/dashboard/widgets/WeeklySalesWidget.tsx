@@ -1,12 +1,18 @@
 'use client';
 
+import { useAppContext } from '../../../contexts/AppContextProvider';
 import { trpc } from '../../../lib/trpc';
 import { cn } from '../../../lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Skeleton } from '../../ui/skeleton';
 
 export function WeeklySalesWidget() {
-  const { data, isLoading } = trpc.dashboard.getWeeklySales.useQuery();
+  const { brand, season } = useAppContext();
+  const enabled = !!brand?.id && !!season?.id;
+  const { data, isLoading } = trpc.dashboard.getWeeklySales.useQuery(
+    { brandId: brand?.id ?? '', seasonId: season?.id ?? '' },
+    { enabled },
+  );
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const maxCount = data && data.length > 0 ? Math.max(...data.map(d => d.count), 1) : 1;

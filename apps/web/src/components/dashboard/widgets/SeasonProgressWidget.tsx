@@ -1,11 +1,17 @@
 'use client';
 
+import { useAppContext } from '../../../contexts/AppContextProvider';
 import { trpc } from '../../../lib/trpc';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Skeleton } from '../../ui/skeleton';
 
 export function SeasonProgressWidget() {
-  const { data, isLoading } = trpc.dashboard.getSeasonProgress.useQuery();
+  const { brand, season } = useAppContext();
+  const enabled = !!brand?.id && !!season?.id;
+  const { data, isLoading } = trpc.dashboard.getSeasonProgress.useQuery(
+    { brandId: brand?.id ?? '', seasonId: season?.id ?? '' },
+    { enabled },
+  );
 
   if (isLoading) {
     return (
