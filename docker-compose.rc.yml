@@ -95,6 +95,9 @@ services:
     depends_on:
       minio-rc:
         condition: service_healthy
+    environment:
+      MINIO_ROOT_USER_RC: ${MINIO_ROOT_USER_RC}
+      MINIO_ROOT_PASSWORD_RC: ${MINIO_ROOT_PASSWORD_RC}
     entrypoint: >
       /bin/sh -c "
         mc alias set local http://minio-rc:9000 $${MINIO_ROOT_USER_RC} $${MINIO_ROOT_PASSWORD_RC} &&
