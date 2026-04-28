@@ -21,66 +21,19 @@ import { Label } from '../../../../../components/ui/label';
 import { Switch } from '../../../../../components/ui/switch';
 import { trpc } from '../../../../../lib/trpc';
 
-import type { UserListItem } from './types';
+import {
+  ALL_SECTIONS,
+  SECTION_LABELS,
+  type SeasonAccessMap,
+  type SectionOverrideMap,
+  type UserListItem,
+} from './types';
 
 interface UserAccessDialogProps {
   user: UserListItem;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
-
-const SECTION_LABELS: Record<Section, string> = {
-  dashboard: 'Dashboard',
-  settings: 'Impostazioni',
-  'settings.users': '↳ Utenti',
-  'settings.storage': '↳ Storage',
-  'settings.mail': '↳ Mail',
-  'settings.ldap': '↳ Auth LDAP',
-  'settings.nav': '↳ Microsoft NAV',
-  'settings.nav_sync': '↳ Sincronizzazione NAV',
-  maintenance: 'Manutenzione',
-  'maintenance.config': '↳ Configurazioni',
-  'maintenance.import_export': '↳ Import/Export',
-  product: 'Prodotto',
-  'product.pricing': '↳ Pricing',
-  'product.collection_layout': '↳ Collection Layout',
-  'product.merchandising_plan': '↳ Merchandising Plan',
-  admin: 'Amministrazione',
-  'admin.brands': '↳ Brand',
-  'admin.seasons': '↳ Stagioni',
-  'admin.vendors': '↳ Fornitori',
-  sales: 'Vendite',
-  'sales.statistics': '↳ Statistiche',
-};
-
-const ALL_SECTIONS: Section[] = [
-  'dashboard',
-  'settings',
-  'settings.users',
-  'settings.storage',
-  'settings.mail',
-  'settings.ldap',
-  'settings.nav',
-  'settings.nav_sync',
-  'maintenance',
-  'maintenance.config',
-  'maintenance.import_export',
-  'product',
-  'product.pricing',
-  'product.collection_layout',
-  'product.merchandising_plan',
-  'admin',
-  'admin.brands',
-  'admin.seasons',
-  'admin.vendors',
-  'sales',
-  'sales.statistics',
-];
-
-// null = use role default, true/false = explicit override
-type SectionOverrideMap = Partial<Record<Section, boolean>>;
-// null = all seasons allowed for that brand, string[] = whitelist
-type SeasonAccessMap = Record<string, string[] | null>;
 
 /**
  * Dialog per gestione accesso sezioni + brand/season per un utente.
@@ -131,7 +84,7 @@ export function UserAccessDialog({
     // Section overrides
     const sectionMap: SectionOverrideMap = {};
     serverSectionOverrides?.forEach(o => {
-      if (o.enabled !== null) sectionMap[o.section as Section] = o.enabled;
+      if (o.enabled !== null) sectionMap[o.section] = o.enabled;
     });
     setPendingSection(sectionMap);
     setIsDirty(false);
@@ -248,10 +201,18 @@ export function UserAccessDialog({
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      // 1. Section overrides: apply for all sections
-      // Sections with pending override → set it; missing → remove override (null)
+      // 1. Section overrides: only update sections that changed vs server state
+      const serverSectionMap: Record<string, boolean | null> = {};
+      serverSectionOverrides?.forEach(o => {
+        if (o.enabled !== null) serverSectionMap[o.section] = o.enabled;
+      });
+      const changedSections = ALL_SECTIONS.filter(section => {
+        const desired = section in pendingSection ? pendingSection[section]! : null;
+        const current = serverSectionMap[section] ?? null;
+        return desired !== current;
+      });
       await Promise.all(
-        ALL_SECTIONS.map(section =>
+        changedSections.map(section =>
           setSectionMutation.mutateAsync({
             userId: user.id,
             section,

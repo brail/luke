@@ -21,9 +21,10 @@ import { useRefresh } from '../../../../lib/refresh';
 import { trpc } from '../../../../lib/trpc';
 import { useStandardMutation } from '../../../../lib/useStandardMutation';
 
+import { ApproveUserDialog } from './_components/ApproveUserDialog';
 import { PendingUsersTab } from './_components/PendingUsersTab';
 import { SendVerificationDialog } from './_components/SendVerificationDialog';
-import { SortColumn, SortOrder } from './_components/types';
+import { SortColumn, SortOrder, type UserForApproval } from './_components/types';
 import { UserAccessDialog } from './_components/UserAccessDialog';
 import { UsersTable } from './_components/UsersTable';
 import { UsersToolbar } from './_components/UsersToolbar';
@@ -63,6 +64,9 @@ export default function UsersPage() {
   // Stato per dialog invio email verifica post-creazione
   const [createdUserId, setCreatedUserId] = useState<string | null>(null);
   const [showVerifyDialog, setShowVerifyDialog] = useState(false);
+
+  const [pendingAccessUser, setPendingAccessUser] =
+    useState<UserForApproval | null>(null);
 
   // Stato per dialog gestione accesso
   const [accessDialogUser, setAccessDialogUser] = useState<any>(null);
@@ -106,9 +110,13 @@ export default function UsersPage() {
       onErrorMessage: 'Errore nella creazione',
       onSuccess: (data: any) => {
         setDialogOpen(false);
-        // Mostra dialog per invio email verifica
-        setCreatedUserId(data.id);
-        setShowVerifyDialog(true);
+        setPendingAccessUser({
+          id: data.id,
+          username: data.username,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          role: data.role,
+        });
       },
     }
   );
@@ -420,6 +428,22 @@ export default function UsersPage() {
             user={accessDialogUser}
             open={!!accessDialogUser}
             onOpenChange={open => { if (!open) setAccessDialogUser(null); }}
+          />
+        )}
+
+        {pendingAccessUser && (
+          <ApproveUserDialog
+            user={pendingAccessUser}
+            open
+            onOpenChange={open => {
+              if (!open) setPendingAccessUser(null);
+            }}
+            onApproved={() => {
+              setCreatedUserId(pendingAccessUser.id);
+              setPendingAccessUser(null);
+              setShowVerifyDialog(true);
+              refresh.users();
+            }}
           />
         )}
 

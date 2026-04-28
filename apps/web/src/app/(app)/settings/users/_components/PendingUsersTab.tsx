@@ -20,9 +20,11 @@ import { useRefresh } from '../../../../../lib/refresh';
 import { trpc } from '../../../../../lib/trpc';
 import { useStandardMutation } from '../../../../../lib/useStandardMutation';
 
+import { ApproveUserDialog } from './ApproveUserDialog';
+
 /**
  * Tab per gestione utenti LDAP in attesa di approvazione admin.
- * Mostra la lista e permette di approvare o rifiutare ogni richiesta.
+ * L'approvazione richiede obbligatoriamente la configurazione dell'accesso.
  */
 export function PendingUsersTab() {
   const { can } = usePermission();
@@ -31,50 +33,34 @@ export function PendingUsersTab() {
   const canUpdate = can('users:update');
   const canDelete = can('users:delete');
 
-  const [confirmAction, setConfirmAction] = useState<{
-    type: 'approve' | 'reject';
-    user: { id: string; username: string; email: string };
-    handler: () => void;
+  const [approveTarget, setApproveTarget] = useState<{
+    id: string;
+    username: string;
+    firstName: string;
+    lastName: string;
+    role: 'admin' | 'editor' | 'viewer';
   } | null>(null);
-  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const [rejectTarget, setRejectTarget] = useState<{
+    id: string;
+    username: string;
+    email: string;
+  } | null>(null);
 
   const { data, isLoading, error } = trpc.users.listPending.useQuery();
 
-  const approveMutation = trpc.users.approvePending.useMutation();
   const rejectMutation = trpc.users.rejectPending.useMutation();
-
-  const { mutate: approve, isPending: isApproving } = useStandardMutation({
-    mutateFn: approveMutation.mutateAsync,
-    invalidate: refresh.users,
-    onSuccessMessage: 'Utente approvato con successo',
-    onErrorMessage: "Errore nell'approvazione",
-    onSuccess: () => setConfirmOpen(false),
-  });
 
   const { mutate: reject, isPending: isRejecting } = useStandardMutation({
     mutateFn: rejectMutation.mutateAsync,
     invalidate: refresh.users,
     onSuccessMessage: 'Utente rifiutato ed eliminato',
     onErrorMessage: 'Errore nel rifiuto',
-    onSuccess: () => setConfirmOpen(false),
+    onSuccess: () => setRejectTarget(null),
   });
 
-  const handleApprove = (user: { id: string; username: string; email: string }) => {
-    setConfirmAction({
-      type: 'approve',
-      user,
-      handler: () => approve({ id: user.id }),
-    });
-    setConfirmOpen(true);
-  };
-
   const handleReject = (user: { id: string; username: string; email: string }) => {
-    setConfirmAction({
-      type: 'reject',
-      user,
-      handler: () => reject({ id: user.id }),
-    });
-    setConfirmOpen(true);
+    setRejectTarget(user);
   };
 
   if (isLoading) {
@@ -152,10 +138,12 @@ export function PendingUsersTab() {
                       <Button
                         size="sm"
                         onClick={() =>
-                          handleApprove({
+                          setApproveTarget({
                             id: user.id,
                             username: user.username,
-                            email: user.email,
+                            firstName: user.firstName || '',
+                            lastName: user.lastName || '',
+                            role: user.role as 'admin' | 'editor' | 'viewer',
                           })
                         }
                       >
@@ -187,29 +175,32 @@ export function PendingUsersTab() {
         </Table>
       </div>
 
-      {confirmAction && (
-        <ConfirmDialog
-          open={confirmOpen}
+      {approveTarget && (
+        <ApproveUserDialog
+          user={approveTarget}
+          open
           onOpenChange={open => {
-            if (!open) setConfirmAction(null);
-            setConfirmOpen(open);
+            if (!open) setApproveTarget(null);
           }}
-          title={
-            confirmAction.type === 'approve'
-              ? 'Approva utente'
-              : 'Rifiuta utente'
-          }
-          description={
-            confirmAction.type === 'approve'
-              ? `Vuoi approvare l'accesso per "${confirmAction.user.username}"? L'utente potrà accedere al sistema.`
-              : `Vuoi rifiutare la richiesta di "${confirmAction.user.username}"? L'account verrà eliminato definitivamente.`
-          }
-          confirmText={confirmAction.type === 'approve' ? 'Approva' : 'Rifiuta'}
+          onApproved={() => {
+            setApproveTarget(null);
+            refresh.users();
+          }}
+        />
+      )}
+
+      {rejectTarget && (
+        <ConfirmDialog
+          open
+          onOpenChange={open => { if (!open) setRejectTarget(null); }}
+          title="Rifiuta utente"
+          description={`Vuoi rifiutare la richiesta di "${rejectTarget.username}"? L'account verrà eliminato definitivamente.`}
+          confirmText="Rifiuta"
           cancelText="Annulla"
-          variant={confirmAction.type === 'reject' ? 'destructive' : 'default'}
-          actionType={confirmAction.type === 'reject' ? 'delete' : undefined}
-          onConfirm={() => confirmAction.handler()}
-          isLoading={isApproving || isRejecting}
+          variant="destructive"
+          actionType="delete"
+          onConfirm={() => reject({ id: rejectTarget.id })}
+          isLoading={isRejecting}
         />
       )}
     </>

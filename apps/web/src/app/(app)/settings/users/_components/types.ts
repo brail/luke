@@ -85,3 +85,65 @@ export interface TableProps {
   isLoading?: boolean;
   error?: any;
 }
+
+// Tipi per gestione accesso sezioni/brand/stagioni
+// null = usa default ruolo, true/false = override esplicito
+export type SectionOverrideMap = Partial<Record<string, boolean>>;
+// null = tutte le stagioni consentite per quel brand, string[] = whitelist
+export type SeasonAccessMap = Record<string, string[] | null>;
+
+export type UserForApproval = {
+  id: string;
+  username: string;
+  firstName: string;
+  lastName: string;
+  role: 'admin' | 'editor' | 'viewer';
+};
+
+export const SECTION_LABELS: Record<string, string> = {
+  dashboard: 'Dashboard',
+  settings: 'Impostazioni',
+  'settings.users': '↳ Utenti',
+  'settings.storage': '↳ Storage',
+  'settings.mail': '↳ Mail',
+  'settings.ldap': '↳ Auth LDAP',
+  'settings.nav': '↳ Microsoft NAV',
+  'settings.nav_sync': '↳ Sincronizzazione NAV',
+  maintenance: 'Manutenzione',
+  'maintenance.config': '↳ Configurazioni',
+  'maintenance.import_export': '↳ Import/Export',
+  product: 'Prodotto',
+  'product.pricing': '↳ Pricing',
+  'product.collection_layout': '↳ Collection Layout',
+  'product.merchandising_plan': '↳ Merchandising Plan',
+  admin: 'Amministrazione',
+  'admin.brands': '↳ Brand',
+  'admin.seasons': '↳ Stagioni',
+  'admin.vendors': '↳ Fornitori',
+  sales: 'Vendite',
+  'sales.statistics': '↳ Statistiche',
+};
+
+export const ALL_SECTIONS = [
+  'dashboard',
+  'settings',
+  'settings.users',
+  'settings.storage',
+  'settings.mail',
+  'settings.ldap',
+  'settings.nav',
+  'settings.nav_sync',
+  'maintenance',
+  'maintenance.config',
+  'maintenance.import_export',
+  'product',
+  'product.pricing',
+  'product.collection_layout',
+  'product.merchandising_plan',
+  'admin',
+  'admin.brands',
+  'admin.seasons',
+  'admin.vendors',
+  'sales',
+  'sales.statistics',
+] as const;

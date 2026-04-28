@@ -233,6 +233,7 @@ export const usersCoreRouter = router({
             lastName: input.lastName || '',
             role: input.role,
             isActive: true,
+            pendingApproval: true,
           },
         });
 
