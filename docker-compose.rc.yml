@@ -12,6 +12,8 @@
 #   NEXTAUTH_SECRET_RC    — secret separato dal prod
 #   RC_PUBLIC_HOSTNAME    — hostname RC, es. rc.luke.febos.local
 #   COOKIE_SECURE         — "true" se HTTPS, "false" se HTTP
+#   MINIO_ROOT_USER_RC    — MinIO admin username (RC)
+#   MINIO_ROOT_PASSWORD_RC — MinIO admin password (RC, 32+ chars)
 #
 # Nginx Proxy Manager: crea un nuovo proxy host
 #   Domain: rc.luke.febos.local  →  Forward: http://localhost:3010
@@ -71,6 +73,50 @@ services:
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET_RC}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
 
+  # ── MinIO object storage (RC) ────────────────────────────────────────────────
+  minio-rc:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER:     ${MINIO_ROOT_USER_RC}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD_RC}
+    volumes:
+      - minio_rc_data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -f http://localhost:9000/minio/health/live || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  minio-rc-init:
+    image: minio/mc:latest
+    depends_on:
+      minio-rc:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio-rc:9000 $${MINIO_ROOT_USER_RC} $${MINIO_ROOT_PASSWORD_RC} &&
+        mc mb --ignore-existing local/uploads &&
+        mc mb --ignore-existing local/exports &&
+        mc mb --ignore-existing local/assets &&
+        mc mb --ignore-existing local/brand-logos &&
+        mc mb --ignore-existing local/temp-brand-logos &&
+        mc mb --ignore-existing local/collection-row-pictures &&
+        mc mb --ignore-existing local/temp-collection-row-pictures &&
+        mc mb --ignore-existing local/merchandising-specsheet-images &&
+        mc mb --ignore-existing local/temp-merchandising-specsheet-images &&
+        mc anonymous set download local/brand-logos &&
+        mc anonymous set download local/collection-row-pictures &&
+        mc anonymous set download local/merchandising-specsheet-images &&
+        mc ilm rule add --expire-days 1 local/temp-brand-logos &&
+        mc ilm rule add --expire-days 1 local/temp-collection-row-pictures &&
+        mc ilm rule add --expire-days 1 local/temp-merchandising-specsheet-images
+      "
+    restart: on-failure
+
 volumes:
   postgres_rc_data:
   api_rc_data:
+  minio_rc_data:
