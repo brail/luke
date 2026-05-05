@@ -234,7 +234,6 @@ const NOTE_FIELDS: { key: keyof CollectionRowData; label: string }[] = [
   { key: 'styleNotes',    label: 'Stile' },
   { key: 'materialNotes', label: 'Materiale' },
   { key: 'colorNotes',    label: 'Colore' },
-  { key: 'priceNotes',    label: 'Prezzo' },
   { key: 'toolingNotes',  label: 'Tooling' },
 ];
 

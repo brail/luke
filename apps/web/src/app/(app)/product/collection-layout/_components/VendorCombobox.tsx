@@ -60,7 +60,7 @@ export function VendorCombobox({ value, onChange, disabled }: VendorComboboxProp
       <PopoverContent className="w-[320px] p-0" align="start">
         <Command>
           <CommandInput placeholder="Cerca fornitore…" />
-          <CommandList>
+          <CommandList className="max-h-60 overflow-y-auto">
             <CommandEmpty>
               {isLoading ? 'Caricamento…' : 'Nessun fornitore trovato.'}
             </CommandEmpty>

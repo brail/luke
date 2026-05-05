@@ -1,7 +1,6 @@
 import ExcelJS from 'exceljs';
 
 import type {
-  PricingParameterSet,
   CollectionLayout,
   CollectionGroup,
   CollectionLayoutRow,
@@ -14,11 +13,13 @@ import type { PrismaClient } from '@prisma/client';
 
 import { applyStreamingHeaderStyle } from '../lib/export/xlsx-streaming';
 import { readFileBuffer } from '../storage';
+import type { QuotationWithParamSet } from './collectionLayout.service';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type RowWithVendor = CollectionLayoutRow & {
   vendor: Pick<Vendor, 'id' | 'name' | 'nickname'> | null;
+  quotations: QuotationWithParamSet[];
 };
 
 type GroupWithRows = CollectionGroup & { rows: RowWithVendor[] };
@@ -29,23 +30,31 @@ export type CollectionLayoutForExport = CollectionLayout & {
   groups: GroupWithRows[];
 };
 
-// ─── Margin computation (mirrors usePricingCalc.ts — pure math) ───────────────
+// ─── Margin computation per quotation ─────────────────────────────────────────
 
-function computeMarginPct(
-  row: Pick<CollectionLayoutRow, 'pricingParameterSetId' | 'supplierFirstQuotation' | 'retailTargetPrice'>,
-  pricingSets: PricingParameterSet[],
-): number | null {
-  if (!row.pricingParameterSetId || !row.supplierFirstQuotation || !row.retailTargetPrice) return null;
-  if (row.supplierFirstQuotation <= 0 || row.retailTargetPrice <= 0) return null;
-  const ps = pricingSets.find(p => p.id === row.pricingParameterSetId);
-  if (!ps) return null;
-  const qc          = row.supplierFirstQuotation * (ps.qualityControlPercent / 100);
-  const withQC      = row.supplierFirstQuotation + qc + ps.tools;
-  const withTransp  = withQC + ps.transportInsuranceCost;
-  const withDuty    = withTransp * (1 + ps.duty / 100);
-  const landed      = withDuty / ps.exchangeRate + ps.italyAccessoryCosts;
-  const wholesale   = row.retailTargetPrice / ps.retailMultiplier;
-  return Math.round(((wholesale - landed) / wholesale) * 10000) / 100; // %
+type QuotationMarginResult = {
+  pct: number;
+  status: 'green' | 'yellow' | 'red';
+  fillColor: string;
+};
+
+function computeQuotationMargin(q: QuotationWithParamSet): QuotationMarginResult | null {
+  if (!q.pricingParameterSet || !q.supplierQuotation || !q.retailPrice) return null;
+  if (q.supplierQuotation <= 0 || q.retailPrice <= 0) return null;
+  const ps = q.pricingParameterSet;
+  const qc         = q.supplierQuotation * (ps.qualityControlPercent / 100);
+  const withQC     = q.supplierQuotation + qc + ps.tools;
+  const withTransp = withQC + ps.transportInsuranceCost;
+  const withDuty   = withTransp * (1 + ps.duty / 100);
+  const landed     = withDuty / ps.exchangeRate + ps.italyAccessoryCosts;
+  const wholesale  = q.retailPrice / ps.retailMultiplier;
+  const pct        = Math.round(((wholesale - landed) / wholesale) * 10000) / 100;
+  const status: 'green' | 'yellow' | 'red' =
+    pct >= ps.optimalMargin ? 'green'
+    : pct >= ps.optimalMargin - 3 ? 'yellow'
+    : 'red';
+  const fillColor = status === 'green' ? 'C8E6C9' : status === 'yellow' ? 'FFF9C4' : 'FFCDD2';
+  return { pct, status, fillColor };
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -60,7 +69,9 @@ const ROW_HEIGHT_WITH_IMAGE = Math.round(FOTO_ROW_HEIGHT_PX * 0.75); // 45pt = 6
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 
-const COLUMNS: { header: string; key: string; width: number }[] = [
+type ColDef = { header: string; key: string; width: number };
+
+const BASE_COLUMNS: ColDef[] = [
   { header: 'GRUPPO',          key: 'gruppo',          width: 20 },
   { header: 'FOTO',            key: 'foto',            width: FOTO_COL_CHARS },
   { header: 'LINEA',           key: 'line',            width: 22 },
@@ -74,22 +85,28 @@ const COLUMNS: { header: string; key: string; width: number }[] = [
   { header: 'SKU',             key: 'skuForecast',     width: 10 },
   { header: 'QTY',             key: 'qtyForecast',     width: 10 },
   { header: 'DESIGNER',        key: 'designer',        width: 16 },
-  { header: 'RETAIL TARGET',   key: 'retailTargetPrice', width: 14 },
-  { header: '1ª QUOTAZIONE',   key: 'supplierFirstQuotation', width: 14 },
-  { header: 'MARGINE%',        key: 'margin',          width: 12 },
   { header: 'NOTE STYLE',      key: 'styleNotes',      width: 30 },
   { header: 'NOTE MATERIALE',  key: 'materialNotes',   width: 30 },
   { header: 'NOTE COLORE',     key: 'colorNotes',      width: 30 },
-  { header: 'NOTE PREZZO',     key: 'priceNotes',      width: 30 },
   { header: 'NOTE TOOLING',    key: 'toolingNotes',    width: 30 },
 ];
 
-// ExcelJS getCell() is 1-based; derive from column definitions to stay in sync
-const colIdx = (key: string) => COLUMNS.findIndex(c => c.key === key) + 1;
-const RETAIL_TARGET_COL = colIdx('retailTargetPrice');
-const SUPPLIER_QUOT_COL = colIdx('supplierFirstQuotation');
-const MARGIN_COL        = colIdx('margin');
-const NOTE_COLS = ['styleNotes', 'materialNotes', 'colorNotes', 'priceNotes', 'toolingNotes'].map(colIdx);
+const NOTE_KEYS = ['styleNotes', 'materialNotes', 'colorNotes', 'toolingNotes'];
+// 1-based col indices within BASE_COLUMNS (before quotation cols are appended)
+const BASE_NOTE_COLS = NOTE_KEYS.map(k => BASE_COLUMNS.findIndex(c => c.key === k) + 1);
+
+function buildQuotationColumns(maxQ: number): ColDef[] {
+  const cols: ColDef[] = [];
+  for (let i = 1; i <= maxQ; i++) {
+    cols.push(
+      { header: `${i} RETAIL TARGET`, key: `q${i}_retail`,    width: 14 },
+      { header: `${i} QUOTAZIONE`,    key: `q${i}_quotation`, width: 14 },
+      { header: `${i} MARGINE`,       key: `q${i}_margin`,    width: 12 },
+      { header: `${i} NOTE`,          key: `q${i}_notes`,     width: 24 },
+    );
+  }
+  return cols;
+}
 
 // ─── Image helpers ────────────────────────────────────────────────────────────
 
@@ -131,10 +148,17 @@ type Logger = { warn: (obj: object, msg: string) => void };
 
 export async function buildCollectionLayoutXlsx(
   layout: CollectionLayoutForExport,
-  pricingSets: PricingParameterSet[],
   prisma: PrismaClient,
   logger?: Logger,
 ): Promise<Buffer> {
+  const allRows = layout.groups.flatMap((g: GroupWithRows) => g.rows);
+
+  // Determine max quotations across all rows for dynamic columns
+  const maxQ = allRows.reduce((m, r) => Math.max(m, r.quotations?.length ?? 0), 0);
+  const quotCols = buildQuotationColumns(maxQ);
+  const COLUMNS = [...BASE_COLUMNS, ...quotCols];
+  const NOTE_COLS = BASE_NOTE_COLS; // indices valid since quotation cols are appended after
+
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Luke';
   wb.created = new Date();
@@ -148,15 +172,14 @@ export async function buildCollectionLayoutXlsx(
   // Header row
   const headerRow = sheet.addRow(COLUMNS.map(c => c.header));
   applyStreamingHeaderStyle(headerRow, 'planning');
-  headerRow.height = ROW_HEIGHT_WITH_IMAGE; // must come AFTER applyStreamingHeaderStyle (which sets height=20)
+  headerRow.height = ROW_HEIGHT_WITH_IMAGE;
   headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: false };
 
-  // Auto-filter on all header columns
-  const lastColLetter = String.fromCharCode(65 + COLUMNS.length - 1);
+  // Auto-filter
+  const lastColLetter = columnIndexToLetter(COLUMNS.length);
   sheet.autoFilter = { from: 'A1', to: `${lastColLetter}1` };
 
-  // Fetch images directly from storage by key (no URL resolution needed)
-  const allRows = layout.groups.flatMap((g: GroupWithRows) => g.rows);
+  // Fetch images
   const uniqueKeys = [...new Set(allRows.map(r => r.pictureKey).filter((k): k is string => !!k))];
   const keyToBuffer = new Map<string, Buffer | null>();
   await Promise.all(
@@ -164,15 +187,15 @@ export async function buildCollectionLayoutXlsx(
   );
 
   // Data rows
-  let dataRowIndex = 1; // 0-based; row 0 is the header
+  let dataRowIndex = 1;
   for (const group of layout.groups) {
     for (const row of group.rows) {
-      const margin = computeMarginPct(row, pricingSets);
       const vendorLabel = row.vendor?.nickname ?? row.vendor?.name ?? null;
 
-      const dataRow = sheet.addRow([
+      // Base data values
+      const baseValues: unknown[] = [
         group.name,
-        '', // foto — filled by image
+        '',
         row.line,
         row.gender,
         vendorLabel,
@@ -184,22 +207,28 @@ export async function buildCollectionLayoutXlsx(
         row.skuForecast,
         row.qtyForecast,
         row.designer,
-        row.retailTargetPrice,
-        row.supplierFirstQuotation,
-        margin,
         row.styleNotes,
         row.materialNotes,
         row.colorNotes,
-        row.priceNotes,
         row.toolingNotes,
-      ]);
+      ];
 
-      // Number formats
-      if (row.retailTargetPrice)      dataRow.getCell(RETAIL_TARGET_COL).numFmt = '#,##0.00';
-      if (row.supplierFirstQuotation) dataRow.getCell(SUPPLIER_QUOT_COL).numFmt = '#,##0.00';
-      if (margin !== null)            dataRow.getCell(MARGIN_COL).numFmt        = '0.00"%"';
+      // Quotation block values (4 cells per quotation slot) + cached margin results
+      const quotValues: unknown[] = [];
+      const quotMargins: (QuotationMarginResult | null)[] = [];
+      for (let i = 0; i < maxQ; i++) {
+        const q = row.quotations?.[i];
+        const marginResult = q ? computeQuotationMargin(q) : null;
+        quotMargins.push(marginResult);
+        quotValues.push(
+          q?.retailPrice ?? null,
+          q?.supplierQuotation ?? null,
+          marginResult?.pct ?? null,
+          q?.notes ?? null,
+        );
+      }
 
-      const imageBuf = row.pictureKey ? keyToBuffer.get(row.pictureKey) ?? null : null;
+      const dataRow = sheet.addRow([...baseValues, ...quotValues]);
 
       dataRow.height = ROW_HEIGHT_WITH_IMAGE;
       dataRow.alignment = { vertical: 'middle' };
@@ -207,6 +236,25 @@ export async function buildCollectionLayoutXlsx(
         dataRow.getCell(c).alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
       }
 
+      // Format and color quotation cells
+      for (let i = 0; i < maxQ; i++) {
+        const q = row.quotations?.[i];
+        const baseOffset = BASE_COLUMNS.length + i * 4 + 1; // 1-based
+        const retailCol    = baseOffset;
+        const quotationCol = baseOffset + 1;
+        const marginCol    = baseOffset + 2;
+        if (q?.retailPrice)       dataRow.getCell(retailCol).numFmt    = '#,##0.00';
+        if (q?.supplierQuotation) dataRow.getCell(quotationCol).numFmt = '#,##0.00';
+        const marginResult = quotMargins[i];
+        if (marginResult !== null) {
+          dataRow.getCell(marginCol).numFmt = '0.00"%"';
+          dataRow.getCell(marginCol).fill = {
+            type: 'pattern', pattern: 'solid', fgColor: { argb: marginResult!.fillColor },
+          };
+        }
+      }
+
+      const imageBuf = row.pictureKey ? keyToBuffer.get(row.pictureKey) ?? null : null;
       if (imageBuf) {
         const ext = detectExtension(row.pictureKey!);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -215,7 +263,6 @@ export async function buildCollectionLayoutXlsx(
         const fit = dims
           ? fitInBox(dims.width, dims.height, FOTO_COL_WIDTH_PX, FOTO_ROW_HEIGHT_PX, 4)
           : fitInBox(FOTO_COL_WIDTH_PX, FOTO_ROW_HEIGHT_PX, FOTO_COL_WIDTH_PX, FOTO_ROW_HEIGHT_PX, 12);
-        // Fractional tl positions center the image within the cell (more reliable than nativeColOff/nativeRowOff)
         sheet.addImage(imageId, {
           tl: { col: FOTO_COL_INDEX + fit.colFrac, row: dataRowIndex + fit.rowFrac } as ExcelJS.Anchor,
           ext: { width: fit.w, height: fit.h },
@@ -226,13 +273,23 @@ export async function buildCollectionLayoutXlsx(
     }
   }
 
-  // Enforce uniform row height — re-apply via getRow() to override any auto-sizing
   for (let r = 2; r <= dataRowIndex; r++) {
     sheet.getRow(r).height = ROW_HEIGHT_WITH_IMAGE;
   }
 
   const arrayBuffer = await wb.xlsx.writeBuffer();
   return Buffer.from(arrayBuffer);
+}
+
+function columnIndexToLetter(colIndex: number): string {
+  let result = '';
+  let n = colIndex;
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    result = String.fromCharCode(65 + rem) + result;
+    n = Math.floor((n - 1) / 26);
+  }
+  return result;
 }
 
 function detectExtension(url: string): 'jpeg' | 'png' | 'gif' {

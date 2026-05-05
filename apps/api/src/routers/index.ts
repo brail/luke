@@ -9,6 +9,7 @@ import { authRouter } from './auth';
 import { brandRouter } from './brand';
 import { catalogRouter } from './catalog';
 import { collectionLayoutRouter } from './collectionLayout';
+import { collectionCatalogRouter } from './collectionCatalog';
 import { merchandisingPlanRouter } from './merchandisingPlan';
 import { configRouter } from './config';
 import { contextRouter } from './context';
@@ -35,6 +36,7 @@ export const appRouter = router({
   brand: brandRouter,
   catalog: catalogRouter,
   collectionLayout: collectionLayoutRouter,
+  collectionCatalog: collectionCatalogRouter,
   merchandisingPlan: merchandisingPlanRouter,
   config: configRouter,
   context: contextRouter,

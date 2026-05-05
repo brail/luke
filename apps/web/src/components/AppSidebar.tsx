@@ -26,6 +26,7 @@ import {
   ShoppingCart,
   BarChart2,
   ClipboardList,
+  ListTree,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -260,6 +261,14 @@ export default function AppSidebar() {
                         <Link href="/admin/vendors" className="flex items-center gap-2">
                           <Truck size={16} />
                           <span>Fornitori</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                    {menuAccess.adminItems.collectionCatalog && (
+                      <DropdownMenuItem asChild>
+                        <Link href="/admin/collection-catalog" className="flex items-center gap-2">
+                          <ListTree size={16} />
+                          <span>Collection Catalog</span>
                         </Link>
                       </DropdownMenuItem>
                     )}

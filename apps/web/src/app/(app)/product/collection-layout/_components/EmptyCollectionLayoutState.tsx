@@ -14,13 +14,24 @@ import {
 } from '../../../../../components/ui/dialog';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { trpc } from '../../../../../lib/trpc';
+import { cn } from '../../../../../lib/utils';
 
 interface EmptyCollectionLayoutStateProps {
   brandId: string;
   seasonId: string;
-  onCreateEmpty: () => void;
+  onCreateEmpty: (availableGenders: string[]) => void;
   onCopyFromSeason: (fromSeasonId: string) => void;
   isLoading?: boolean;
+}
+
+const GENDER_OPTIONS = [
+  { label: 'Solo Uomo', value: ['MAN'] },
+  { label: 'Solo Donna', value: ['WOMAN'] },
+  { label: 'Uomo + Donna', value: ['MAN', 'WOMAN'] },
+] as const;
+
+function genderKey(v: readonly string[]) {
+  return [...v].sort().join(',');
 }
 
 export function EmptyCollectionLayoutState({
@@ -33,6 +44,7 @@ export function EmptyCollectionLayoutState({
   const { can } = usePermission();
   const canUpdate = can('collection_layout:update');
 
+  const [selectedGenders, setSelectedGenders] = useState<string[]>(['MAN', 'WOMAN']);
   const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false);
   const [selectedFromSeasonId, setSelectedFromSeasonId] = useState<string | null>(null);
 
@@ -46,6 +58,8 @@ export function EmptyCollectionLayoutState({
     onCopyFromSeason(selectedFromSeasonId);
     setIsCopyDialogOpen(false);
   };
+
+  const selectedKey = genderKey(selectedGenders);
 
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center space-y-6">
@@ -63,6 +77,30 @@ export function EmptyCollectionLayoutState({
         </p>
       </div>
 
+      {/* Gender selector */}
+      <div className="space-y-2">
+        <p className="text-sm font-medium text-muted-foreground">Gender disponibili nel layout</p>
+        <div className="flex gap-2 justify-center">
+          {GENDER_OPTIONS.map(opt => (
+            <button
+              key={genderKey(opt.value)}
+              type="button"
+              onClick={() => setSelectedGenders([...opt.value])}
+              disabled={!canUpdate}
+              className={cn(
+                'px-4 py-2 rounded-md border text-sm font-medium transition-colors',
+                selectedKey === genderKey(opt.value)
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border hover:border-primary/50 hover:bg-muted/50',
+                'disabled:opacity-50 disabled:cursor-not-allowed'
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="flex gap-3 flex-wrap justify-center">
         {seasons.length > 0 && (
           <Button
@@ -74,7 +112,7 @@ export function EmptyCollectionLayoutState({
             Copia da stagione precedente
           </Button>
         )}
-        <Button onClick={onCreateEmpty} disabled={!canUpdate || isLoading}>
+        <Button onClick={() => onCreateEmpty(selectedGenders)} disabled={!canUpdate || isLoading}>
           <Plus className="h-4 w-4 mr-2" />
           Crea layout vuoto
         </Button>

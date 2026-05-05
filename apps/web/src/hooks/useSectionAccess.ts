@@ -74,6 +74,7 @@ export function useSectionAccess() {
       'product.merchandising_plan': checkAccess('product.merchandising_plan'),
       admin: checkAccess('admin'),
       'admin.brands': checkAccess('admin.brands'),
+      'admin.collection_catalog': checkAccess('admin.collection_catalog'),
       'admin.seasons': checkAccess('admin.seasons'),
       'admin.vendors': checkAccess('admin.vendors'),
       sales: checkAccess('sales'),

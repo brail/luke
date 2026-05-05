@@ -322,7 +322,7 @@ model PricingParameterSet {
 
   brand  Brand  @relation(fields: [brandId], references: [id], onDelete: Restrict)
   season Season @relation(fields: [seasonId], references: [id], onDelete: Restrict)
-  collectionLayoutRows CollectionLayoutRow[]
+  quotations            CollectionRowQuotation[]
   merchandisingPlanRows MerchandisingPlanRow[]
 
   @@unique([brandId, seasonId, name])
@@ -335,17 +335,18 @@ model PricingParameterSet {
  * Rappresenta l'elenco delle linee che compongono una collezione stagionale
  */
 model CollectionLayout {
-  id            String   @id @default(uuid())
-  brandId       String
-  seasonId      String
-  skuBudget     Int?
-  hiddenColumns Json?    // String[] — colonne nascoste, null = tutte visibili
-  brand         Brand    @relation(fields: [brandId], references: [id], onDelete: Restrict)
-  season        Season   @relation(fields: [seasonId], references: [id], onDelete: Restrict)
-  groups        CollectionGroup[]
-  rows          CollectionLayoutRow[]
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id               String   @id @default(uuid())
+  brandId          String
+  seasonId         String
+  skuBudget        Int?
+  hiddenColumns    Json?    // String[] — colonne nascoste, null = tutte visibili
+  availableGenders String[] @default(["MAN","WOMAN"])
+  brand            Brand    @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  season           Season   @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  groups           CollectionGroup[]
+  rows             CollectionLayoutRow[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   @@unique([brandId, seasonId])
   @@index([brandId, seasonId])
@@ -505,19 +506,20 @@ model CollectionLayoutRow {
   order                  Int                   @default(0)
 
   // Required fields
-  gender                 String                // MAN | WOMAN
+  gender                 String                // validated against layout.availableGenders
   vendorId               String?
   vendor                 Vendor?               @relation(fields: [vendorId], references: [id], onDelete: SetNull)
   line                   String
-  status                 String                // CARRY_OVER | NEW
+  article                String?               // testo libero corto, dopo line
+  status                 String                // catalog-managed (lineStatus)
   skuForecast            Int
   qtyForecast            Int
   productCategory        String
 
   // Optional — identification/progress
-  strategy               String?               // CORE | INNOVATION
-  styleStatus            String?               // CARRY_OVER | NEW (STYLE STATUS)
-  progress               String?               // 01–06 stages
+  strategy               String?               // catalog-managed
+  styleStatus            String?               // catalog-managed
+  progress               String?               // catalog-managed
   designer               String?
   pictureKey             String?
 
@@ -525,16 +527,11 @@ model CollectionLayoutRow {
   styleNotes             String?
   materialNotes          String?
   colorNotes             String?
-  priceNotes             String?
   toolingNotes           String?
 
   // Optional — pricing
-  pricingParameterSetId  String?
-  pricingParameterSet    PricingParameterSet?  @relation(fields: [pricingParameterSetId], references: [id], onDelete: SetNull)
-  retailTargetPrice      Float?
-  buyingTargetPrice      Float?
-  supplierFirstQuotation Float?
   toolingQuotation       Float?
+  quotations             CollectionRowQuotation[]
 
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
@@ -542,8 +539,48 @@ model CollectionLayoutRow {
   @@index([collectionLayoutId])
   @@index([groupId])
   @@index([vendorId])
-  @@index([pricingParameterSetId])
   @@map("collection_layout_rows")
+}
+
+/**
+ * Quotazione di pricing per una riga collection
+ * Una riga può avere N quotazioni con parametri diversi (es. CN/USD vs IT/EUR)
+ */
+model CollectionRowQuotation {
+  id                    String               @id @default(uuid())
+  rowId                 String
+  row                   CollectionLayoutRow  @relation(fields: [rowId], references: [id], onDelete: Cascade)
+  order                 Int                  @default(0)
+  pricingParameterSetId String?
+  pricingParameterSet   PricingParameterSet? @relation(fields: [pricingParameterSetId], references: [id], onDelete: SetNull)
+  retailPrice           Float?
+  supplierQuotation     Float?               // FOB in purchaseCurrency del param set
+  notes                 String?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  @@index([rowId])
+  @@index([pricingParameterSetId])
+  @@map("collection_row_quotations")
+}
+
+/**
+ * Catalog items configurabili per collection layout
+ * Tipi: strategy, lineStatus, styleStatus, progress
+ */
+model CollectionCatalogItem {
+  id        String   @id @default(uuid())
+  type      String   // "strategy" | "lineStatus" | "styleStatus" | "progress"
+  value     String
+  label     String
+  order     Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([type, value])
+  @@index([type, isActive])
+  @@map("collection_catalog_items")
 }
 
 // ─── Merchandising Plan ───────────────────────────────────────────────────────

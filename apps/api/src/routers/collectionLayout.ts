@@ -15,6 +15,8 @@ import {
   CollectionGroupInputSchema,
   CollectionLayoutRowInputSchema,
   CollectionLayoutSettingsSchema,
+  CollectionRowQuotationInputSchema,
+  CollectionRowQuotationUpdateSchema,
 } from '@luke/core';
 
 import { TRPCError } from '@trpc/server';
@@ -41,8 +43,60 @@ import {
   reorderRows,
   updateLayoutSettings,
 } from '../services/collectionLayout.service';
+import {
+  createQuotation,
+  updateQuotation,
+  deleteQuotation,
+  reorderQuotations,
+} from '../services/collectionRow.quotation.service';
 import { buildCollectionLayoutXlsx } from '../services/collectionLayout.export.xlsx.service';
 import { buildCollectionLayoutPdf } from '../services/collectionLayout.export.pdf.service';
+import {
+  buildCollectionRowPdf,
+  buildCollectionRowXlsx,
+} from '../services/collectionLayout.export.row.service';
+
+const quotationsRouter = router({
+  create: protectedProcedure
+    .use(requirePermission('collection_layout:update'))
+    .use(withRateLimit('configMutations'))
+    .input(CollectionRowQuotationInputSchema)
+    .mutation(async ({ input, ctx }) => {
+      const result = await createQuotation(input, ctx.prisma);
+      await logAudit(ctx, { action: 'COLLECTION_QUOTATION_CREATE', targetType: 'CollectionRowQuotation', targetId: result.id, result: 'SUCCESS', metadata: { rowId: input.rowId } });
+      return result;
+    }),
+
+  update: protectedProcedure
+    .use(requirePermission('collection_layout:update'))
+    .use(withRateLimit('configMutations'))
+    .input(z.object({ quotationId: z.string().uuid(), data: CollectionRowQuotationUpdateSchema }))
+    .mutation(async ({ input, ctx }) => {
+      const result = await updateQuotation(input.quotationId, input.data, ctx.prisma);
+      await logAudit(ctx, { action: 'COLLECTION_QUOTATION_UPDATE', targetType: 'CollectionRowQuotation', targetId: input.quotationId, result: 'SUCCESS', metadata: {} });
+      return result;
+    }),
+
+  delete: protectedProcedure
+    .use(requirePermission('collection_layout:update'))
+    .use(withRateLimit('configMutations'))
+    .input(z.object({ quotationId: z.string().uuid() }))
+    .mutation(async ({ input, ctx }) => {
+      await deleteQuotation(input.quotationId, ctx.prisma);
+      await logAudit(ctx, { action: 'COLLECTION_QUOTATION_DELETE', targetType: 'CollectionRowQuotation', targetId: input.quotationId, result: 'SUCCESS', metadata: {} });
+      return { success: true };
+    }),
+
+  reorder: protectedProcedure
+    .use(requirePermission('collection_layout:update'))
+    .use(withRateLimit('configMutations'))
+    .input(z.object({ rowId: z.string().uuid(), orderedIds: z.array(z.string().uuid()) }))
+    .mutation(async ({ input, ctx }) => {
+      await reorderQuotations(input.rowId, input.orderedIds, ctx.prisma);
+      await logAudit(ctx, { action: 'COLLECTION_QUOTATION_REORDER', targetType: 'CollectionLayoutRow', targetId: input.rowId, result: 'SUCCESS', metadata: { count: input.orderedIds.length } });
+      return { success: true };
+    }),
+});
 
 const groupsRouter = router({
   create: protectedProcedure
@@ -179,13 +233,102 @@ const EXPORT_INCLUDE = {
     include: {
       rows: {
         orderBy: { order: 'asc' as const },
-        include: { vendor: { select: { id: true, name: true, nickname: true } } },
+        include: {
+          vendor: { select: { id: true, name: true, nickname: true } },
+          quotations: {
+            orderBy: { order: 'asc' as const },
+            include: { pricingParameterSet: true },
+          },
+        },
       },
     },
   },
 } as const;
 
+const ROW_EXPORT_INCLUDE = {
+  vendor: { select: { id: true, name: true, nickname: true } },
+  quotations: {
+    orderBy: { order: 'asc' as const },
+    include: { pricingParameterSet: true },
+  },
+  collectionLayout: {
+    select: {
+      brandId: true, seasonId: true,
+      brand:  { select: { name: true, code: true, logoKey: true } },
+      season: { select: { name: true, code: true, year: true } },
+    },
+  },
+} as const;
+
 const exportRouter = router({
+  rowXlsx: protectedProcedure
+    .use(requirePermission('collection_layout:read'))
+    .input(z.object({ rowId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const row = await ctx.prisma.collectionLayoutRow.findUnique({
+        where: { id: input.rowId },
+        include: ROW_EXPORT_INCLUDE,
+      });
+      if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Riga non trovata' });
+
+      const { collectionLayout, ...rowData } = row as any;
+      const buffer = await buildCollectionRowXlsx(
+        { brand: collectionLayout.brand, season: collectionLayout.season, row: rowData },
+        ctx.prisma,
+        ctx.logger,
+      );
+      await logAudit(ctx, {
+        action: 'COLLECTION_ROW_EXPORT_XLSX',
+        targetType: 'CollectionLayoutRow',
+        targetId: input.rowId,
+        result: 'SUCCESS',
+        metadata: {},
+      });
+      return {
+        data: buffer.toString('base64'),
+        filename: `${collectionLayout.brand.code}-${rowData.line}-${exportTimestamp()}.xlsx`,
+      };
+    }),
+
+  rowPdf: protectedProcedure
+    .use(requirePermission('collection_layout:read'))
+    .input(z.object({ rowId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const row = await ctx.prisma.collectionLayoutRow.findUnique({
+        where: { id: input.rowId },
+        include: ROW_EXPORT_INCLUDE,
+      });
+      if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Riga non trovata' });
+
+      const exportUser = await ctx.prisma.user.findUnique({
+        where: { id: ctx.session.user.id },
+        select: { firstName: true, lastName: true, username: true },
+      });
+      const fullName = exportUser
+        ? [exportUser.firstName, exportUser.lastName].filter(Boolean).join(' ') || exportUser.username
+        : ctx.session.user.username;
+
+      const { collectionLayout, ...rowData } = row as any;
+      const buffer = await buildCollectionRowPdf(
+        { brand: collectionLayout.brand, season: collectionLayout.season, row: rowData },
+        ctx.prisma,
+        fullName,
+        new Date(),
+        ctx.logger,
+      );
+      await logAudit(ctx, {
+        action: 'COLLECTION_ROW_EXPORT_PDF',
+        targetType: 'CollectionLayoutRow',
+        targetId: input.rowId,
+        result: 'SUCCESS',
+        metadata: {},
+      });
+      return {
+        data: buffer.toString('base64'),
+        filename: `${collectionLayout.brand.code}-${rowData.line}-${exportTimestamp()}.pdf`,
+      };
+    }),
+
   xlsx: protectedProcedure
     .use(requirePermission('collection_layout:read'))
     .input(z.object({ collectionLayoutId: z.string().uuid() }))
@@ -196,11 +339,7 @@ const exportRouter = router({
       });
       if (!layout) throw new TRPCError({ code: 'NOT_FOUND', message: 'Layout non trovato' });
 
-      const pricingSets = await ctx.prisma.pricingParameterSet.findMany({
-        where: { brandId: layout.brandId, seasonId: layout.seasonId },
-      });
-
-      const buffer = await buildCollectionLayoutXlsx(layout, pricingSets, ctx.prisma, ctx.logger);
+      const buffer = await buildCollectionLayoutXlsx(layout, ctx.prisma, ctx.logger);
       await logAudit(ctx, {
         action: 'COLLECTION_LAYOUT_EXPORT_XLSX',
         targetType: 'CollectionLayout',
@@ -224,21 +363,16 @@ const exportRouter = router({
       });
       if (!layout) throw new TRPCError({ code: 'NOT_FOUND', message: 'Layout non trovato' });
 
-      const [pricingSets, exportUser] = await Promise.all([
-        ctx.prisma.pricingParameterSet.findMany({
-          where: { brandId: layout.brandId, seasonId: layout.seasonId },
-        }),
-        ctx.prisma.user.findUnique({
-          where: { id: ctx.session.user.id },
-          select: { firstName: true, lastName: true, username: true },
-        }),
-      ]);
+      const exportUser = await ctx.prisma.user.findUnique({
+        where: { id: ctx.session.user.id },
+        select: { firstName: true, lastName: true, username: true },
+      });
 
       const fullName = exportUser
         ? [exportUser.firstName, exportUser.lastName].filter(Boolean).join(' ') || exportUser.username
         : ctx.session.user.username;
 
-      const buffer = await buildCollectionLayoutPdf(layout, pricingSets, ctx.prisma, fullName, new Date(), ctx.logger);
+      const buffer = await buildCollectionLayoutPdf(layout, ctx.prisma, fullName, new Date(), ctx.logger);
       await logAudit(ctx, {
         action: 'COLLECTION_LAYOUT_EXPORT_PDF',
         targetType: 'CollectionLayout',
@@ -274,10 +408,11 @@ export const collectionLayoutRouter = router({
       z.object({
         brandId: z.string().uuid(),
         seasonId: z.string().uuid(),
+        availableGenders: z.array(z.string()).min(1).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const result = await getOrCreateLayout(input.brandId, input.seasonId, ctx.prisma);
+      const result = await getOrCreateLayout(input.brandId, input.seasonId, ctx.prisma, input.availableGenders);
       await logAudit(ctx, { action: 'COLLECTION_LAYOUT_GET_OR_CREATE', targetType: 'CollectionLayout', targetId: result.id, result: 'SUCCESS', metadata: { brandId: input.brandId, seasonId: input.seasonId } });
       return resolveLayoutUrls(result, ctx.prisma);
     }),
@@ -324,4 +459,5 @@ export const collectionLayoutRouter = router({
   export: exportRouter,
   groups: groupsRouter,
   rows: rowsRouter,
+  quotations: quotationsRouter,
 });

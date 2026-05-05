@@ -3,7 +3,6 @@ import type {
   CollectionGroup,
   CollectionLayout,
   CollectionLayoutRow,
-  PricingParameterSet,
   Season,
   Vendor,
 } from '@prisma/client';
@@ -14,12 +13,13 @@ import { formatDateTime } from '@luke/core';
 
 import { buildBrandPageHeader, createPdfBuffer } from '../lib/export/pdf';
 import { readFileBuffer } from '../storage';
-
+import type { QuotationWithParamSet } from './collectionLayout.service';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type RowWithVendor = CollectionLayoutRow & {
   vendor: Pick<Vendor, 'id' | 'name' | 'nickname'> | null;
+  quotations: QuotationWithParamSet[];
 };
 
 type GroupWithRows = CollectionGroup & { rows: RowWithVendor[] };
@@ -98,25 +98,30 @@ const IMAGE_HEIGHT = 20;
 // ─── Margin computation (mirrors usePricingCalc.ts) ──────────────────────────
 
 function computeMarginResult(
-  row: Pick<CollectionLayoutRow, 'pricingParameterSetId' | 'supplierFirstQuotation' | 'retailTargetPrice'>,
-  pricingSetMap: Map<string, PricingParameterSet>,
+  quotations: QuotationWithParamSet[],
 ): { pct: number; isAboveTarget: boolean; isWarning: boolean } | null {
-  if (!row.pricingParameterSetId || !row.supplierFirstQuotation || !row.retailTargetPrice) return null;
-  if (row.supplierFirstQuotation <= 0 || row.retailTargetPrice <= 0) return null;
-  const ps = pricingSetMap.get(row.pricingParameterSetId);
-  if (!ps) return null;
-  const qc         = row.supplierFirstQuotation * (ps.qualityControlPercent / 100);
-  const withQC     = row.supplierFirstQuotation + qc + ps.tools;
-  const withTransp = withQC + ps.transportInsuranceCost;
-  const withDuty   = withTransp * (1 + ps.duty / 100);
-  const landed     = withDuty / ps.exchangeRate + ps.italyAccessoryCosts;
-  const wholesale  = row.retailTargetPrice / ps.retailMultiplier;
-  const margin     = (wholesale - landed) / wholesale;
-  const marginPct = margin * 100;
+  const margins: number[] = [];
+  let refOptimal = 52;
+  for (const q of quotations) {
+    const ps = q.pricingParameterSet;
+    if (!ps || !q.supplierQuotation || !q.retailPrice) continue;
+    if (q.supplierQuotation <= 0 || q.retailPrice <= 0) continue;
+    const qc         = q.supplierQuotation * (ps.qualityControlPercent / 100);
+    const withQC     = q.supplierQuotation + qc + ps.tools;
+    const withTransp = withQC + ps.transportInsuranceCost;
+    const withDuty   = withTransp * (1 + ps.duty / 100);
+    const landed     = withDuty / ps.exchangeRate + ps.italyAccessoryCosts;
+    const wholesale  = q.retailPrice / ps.retailMultiplier;
+    margins.push((wholesale - landed) / wholesale);
+    refOptimal = ps.optimalMargin;
+  }
+  if (margins.length === 0) return null;
+  const avg = margins.reduce((s, m) => s + m, 0) / margins.length;
+  const avgPct = avg * 100;
   return {
-    pct: Math.round(margin * 10000) / 100,
-    isAboveTarget: marginPct >= ps.optimalMargin,
-    isWarning: marginPct < ps.optimalMargin && marginPct >= ps.optimalMargin - 3,
+    pct: Math.round(avg * 10000) / 100,
+    isAboveTarget: avgPct >= refOptimal,
+    isWarning: avgPct < refOptimal && avgPct >= refOptimal - 3,
   };
 }
 
@@ -234,7 +239,6 @@ type Logger = { warn: (obj: object, msg: string) => void };
 
 export async function buildCollectionLayoutPdf(
   layout: CollectionLayoutForPdf,
-  pricingSets: PricingParameterSet[],
   prisma: PrismaClient,
   extractedBy: string,
   extractedAt: Date,
@@ -260,7 +264,6 @@ export async function buildCollectionLayoutPdf(
     allRows.map(row => [row.id, row.pictureKey ? (keyToDataUriMap.get(row.pictureKey) ?? null) : null]),
   );
 
-  const pricingSetMap = new Map(pricingSets.map(ps => [ps.id, ps]));
   const nonEmptyGroups = layout.groups.filter(g => g.rows.length > 0);
 
   let content: Content;
@@ -286,7 +289,7 @@ export async function buildCollectionLayoutPdf(
       for (const row of group.rows) {
         const imageDataUri = rowImageMap.get(row.id) ?? null;
         const vendorLabel  = row.vendor?.nickname ?? row.vendor?.name ?? '';
-        const marginResult = computeMarginResult(row, pricingSetMap);
+        const marginResult = computeMarginResult(row.quotations ?? []);
 
         const photoCell: Content = imageDataUri
           ? { image: imageDataUri, fit: [IMAGE_WIDTH, IMAGE_HEIGHT], alignment: 'center' }

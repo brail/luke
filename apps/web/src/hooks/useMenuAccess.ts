@@ -40,6 +40,7 @@ export function useMenuAccess() {
       brands: s.admin && s['admin.brands'],
       seasons: s.admin && s['admin.seasons'],
       vendors: s.admin && s['admin.vendors'],
+      collectionCatalog: s.admin && s['admin.collection_catalog'],
     };
     const showAdmin = Object.values(adminItems).some(Boolean);
 

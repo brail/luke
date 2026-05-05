@@ -270,10 +270,11 @@ export default function CollectionLayoutPage() {
           <EmptyCollectionLayoutState
             brandId={brand.id}
             seasonId={season.id}
-            onCreateEmpty={() =>
+            onCreateEmpty={(availableGenders) =>
               getOrCreateMutation.mutate({
                 brandId: brand.id,
                 seasonId: season.id,
+                availableGenders,
               })
             }
             onCopyFromSeason={fromSeasonId =>
@@ -412,8 +413,10 @@ export default function CollectionLayoutPage() {
           defaultGroupId={rowDrawer?.defaultGroupId}
           groups={layout.groups}
           parameterSets={parameterSets}
+          availableGenders={layout.availableGenders ?? ['MAN', 'WOMAN']}
           onSubmit={handleRowSubmit}
           onPictureUploaded={() => invalidateLayout()}
+          onQuotationChange={() => invalidateLayout()}
           isLoading={isMutating}
           canUpdate={canUpdate}
         />
