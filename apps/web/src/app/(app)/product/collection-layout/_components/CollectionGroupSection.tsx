@@ -57,7 +57,7 @@ function RowPhoto({ src, alt }: { src: string; alt: string }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);
   if (failed) return (
-    <div className="h-16 w-20 rounded border border-dashed flex items-center justify-center bg-muted/30">
+    <div className="h-[88px] w-[110px] rounded border border-dashed flex items-center justify-center bg-muted/30">
       <ImageIcon className="h-4 w-4 text-muted-foreground" />
     </div>
   );
@@ -65,7 +65,7 @@ function RowPhoto({ src, alt }: { src: string; alt: string }) {
     <img
       src={src}
       alt={alt}
-      className="h-16 w-20 rounded object-contain border bg-muted/5"
+      className="h-[88px] w-[110px] rounded object-contain border bg-muted/5"
       onError={() => setFailed(true)}
     />
   );
@@ -569,11 +569,11 @@ export function CollectionGroupSection({
                         {idx + 1}
                       </TableCell>
                       {show('foto') && (
-                        <TableCell>
+                        <TableCell className="py-1 px-2">
                           {row.pictureUrl ? (
                             <RowPhoto src={row.pictureUrl} alt={row.line} />
                           ) : (
-                            <div className="h-16 w-20 rounded border border-dashed flex items-center justify-center bg-muted/30">
+                            <div className="h-[88px] w-[110px] rounded border border-dashed flex items-center justify-center bg-muted/30">
                               <ImageIcon className="h-4 w-4 text-muted-foreground" />
                             </div>
                           )}

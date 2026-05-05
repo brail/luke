@@ -22,7 +22,6 @@ import {
   FormMessage,
 } from '../../../../../components/ui/form';
 import { Input } from '../../../../../components/ui/input';
-import { Label } from '../../../../../components/ui/label';
 import {
   Select,
   SelectContent,
@@ -87,21 +86,13 @@ interface IdentificationSectionProps {
   control: Control<CollectionLayoutRowInput>;
   canUpdate: boolean;
   mode: 'create' | 'edit';
-  pictureUrl: string | null | undefined;
-  onRemovePicture: () => void;
-  onUploadPicture: (file: File) => void;
 }
 
 export function IdentificationSection({
   control,
   canUpdate,
-  mode,
-  pictureUrl,
-  onRemovePicture,
-  onUploadPicture,
+  mode: _mode,
 }: IdentificationSectionProps) {
-  const [imgFailed, setImgFailed] = useState(false);
-  useEffect(() => { setImgFailed(false); }, [pictureUrl]);
 
   return (
     <div className="space-y-4">
@@ -337,54 +328,73 @@ export function IdentificationSection({
         )}
       />
 
-      {/* Picture — solo in modalità edit */}
-      {mode === 'edit' && (
-        <div className="space-y-2">
-          <Label>Foto</Label>
-          <FileDropZone
-            onFile={onUploadPicture}
-            accept={['image/png', 'image/jpeg', 'image/webp']}
-            maxSizeMB={5}
-            disabled={!canUpdate}
-            className={cn('rounded-md', canUpdate && 'cursor-pointer')}
-          >
-            <div className="flex items-center gap-4">
-              {pictureUrl && !imgFailed ? (
-                <div className="relative shrink-0">
-                  <img
-                    src={pictureUrl}
-                    alt="Foto riga"
-                    className="h-36 w-48 rounded-md object-contain border bg-muted/5"
-                    onError={() => setImgFailed(true)}
-                  />
-                  {canUpdate && (
-                    <button
-                      type="button"
-                      onClick={e => { e.stopPropagation(); onRemovePicture(); }}
-                      className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-0.5"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className={cn(
-                  'h-36 w-48 rounded-md border-2 border-dashed flex items-center justify-center bg-muted/20',
-                  canUpdate ? 'border-muted-foreground/25 hover:border-primary/40 hover:bg-muted/30' : 'border-muted'
-                )}>
-                  <Image className="h-10 w-10 text-muted-foreground/50" />
-                </div>
-              )}
+    </div>
+  );
+}
+
+// ─── Section: Foto (colonna destra) ──────────────────────────────────────────
+
+interface PictureSidePanelProps {
+  canUpdate: boolean;
+  pictureUrl: string | null | undefined;
+  onRemovePicture: () => void;
+  onUploadPicture: (file: File) => void;
+}
+
+export function PictureSidePanel({
+  canUpdate,
+  pictureUrl,
+  onRemovePicture,
+  onUploadPicture,
+}: PictureSidePanelProps) {
+  const [imgFailed, setImgFailed] = useState(false);
+  useEffect(() => { setImgFailed(false); }, [pictureUrl]);
+
+  return (
+    <div className="space-y-2">
+      <SectionHeader title="Foto" />
+      <FileDropZone
+        onFile={onUploadPicture}
+        accept={['image/png', 'image/jpeg', 'image/webp']}
+        maxSizeMB={5}
+        disabled={!canUpdate}
+        className={cn('rounded-md', canUpdate && 'cursor-pointer')}
+      >
+        <div className="flex flex-col items-center gap-3 py-2">
+          {pictureUrl && !imgFailed ? (
+            <div className="relative">
+              <img
+                src={pictureUrl}
+                alt="Foto riga"
+                className="h-40 w-full max-w-xs rounded-md object-contain border bg-muted/5"
+                onError={() => setImgFailed(true)}
+              />
               {canUpdate && (
-                <p className="text-xs text-muted-foreground">
-                  {pictureUrl ? 'Trascina per sostituire o clicca' : 'Trascina qui o clicca per caricare'}
-                  <span className="block mt-0.5">PNG, JPEG, WebP · Max 5MB</span>
-                </p>
+                <button
+                  type="button"
+                  onClick={e => { e.stopPropagation(); onRemovePicture(); }}
+                  className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-0.5"
+                >
+                  <X className="h-3 w-3" />
+                </button>
               )}
             </div>
-          </FileDropZone>
+          ) : (
+            <div className={cn(
+              'h-40 w-full rounded-md border-2 border-dashed flex items-center justify-center bg-muted/20',
+              canUpdate ? 'border-muted-foreground/25 hover:border-primary/40 hover:bg-muted/30' : 'border-muted'
+            )}>
+              <Image className="h-10 w-10 text-muted-foreground/50" />
+            </div>
+          )}
+          {canUpdate && (
+            <p className="text-xs text-muted-foreground text-center">
+              {pictureUrl ? 'Trascina per sostituire o clicca' : 'Trascina qui o clicca per caricare'}
+              <span className="block mt-0.5">PNG, JPEG, WebP · Max 5MB</span>
+            </p>
+          )}
         </div>
-      )}
+      </FileDropZone>
     </div>
   );
 }

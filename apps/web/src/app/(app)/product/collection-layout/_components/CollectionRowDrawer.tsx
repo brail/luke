@@ -11,15 +11,21 @@ import {
   buildCollectionRowPictureUploadUrl,
 } from '@luke/core';
 
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '../../../../../components/ui/accordion';
 import { Button } from '../../../../../components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '../../../../../components/ui/dialog';
 import { Form } from '../../../../../components/ui/form';
 import { Separator } from '../../../../../components/ui/separator';
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from '../../../../../components/ui/sheet';
 import { useStorageUpload } from '../../../../../hooks/useStorageUpload';
 import { usePricingCalc } from '../_hooks/usePricingCalc';
 
@@ -27,6 +33,7 @@ import {
   ForecastGroupSection,
   IdentificationSection,
   NotesSection,
+  PictureSidePanel,
   PricingSection,
   type CollectionGroup,
   type CollectionRow,
@@ -86,10 +93,6 @@ function buildDefaultValues(
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-/**
- * Drawer laterale per creazione e modifica di una riga del collection layout.
- * Gestisce le sezioni: identificazione, forecast, prezzi/margini, note.
- */
 export function CollectionRowDrawer({
   open,
   onOpenChange,
@@ -113,7 +116,6 @@ export function CollectionRowDrawer({
     defaultValues: buildDefaultValues(defaultGroupId, groups),
   });
 
-  // Sincronizza i valori del form al cambio di riga o modalità
   useEffect(() => {
     if (!open) return;
     if (mode === 'edit' && row) {
@@ -165,49 +167,72 @@ export function CollectionRowDrawer({
   };
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-2xl flex flex-col" side="right">
-        <SheetHeader className="pb-4 border-b shrink-0">
-          <SheetTitle className="text-lg">{title}</SheetTitle>
-        </SheetHeader>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-5xl w-full p-0 gap-0 flex flex-col max-h-[90vh]">
+        <DialogHeader className="px-6 py-4 border-b shrink-0">
+          <DialogTitle className="text-lg">{title}</DialogTitle>
+        </DialogHeader>
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
-            <div className="flex-1 overflow-y-auto space-y-6 py-6 px-1">
-              <IdentificationSection
-                control={form.control}
-                canUpdate={canUpdate}
-                mode={mode}
-                pictureUrl={previewPictureUrl}
-                onRemovePicture={() => { form.setValue('pictureKey', null); setPreviewPictureUrl(null); }}
-                onUploadPicture={handlePictureUpload}
-              />
+            {/* Two-column body */}
+            <div className="flex flex-1 min-h-0 overflow-hidden">
+              {/* Left column — Identificazione + Forecast */}
+              <div className="flex-[3] overflow-y-auto px-6 py-6 space-y-6 border-r">
+                <IdentificationSection
+                  control={form.control}
+                  canUpdate={canUpdate}
+                  mode={mode}
+                />
 
-              <Separator />
+                <Separator />
 
-              <ForecastGroupSection
-                control={form.control}
-                canUpdate={canUpdate}
-                groups={groups}
-              />
+                <ForecastGroupSection
+                  control={form.control}
+                  canUpdate={canUpdate}
+                  groups={groups}
+                />
+              </div>
 
-              <Separator />
+              {/* Right column — Foto + Pricing + Note */}
+              <div className="flex-[2] overflow-y-auto px-6 py-6 space-y-6">
+                {mode === 'edit' && (
+                  <>
+                    <PictureSidePanel
+                      canUpdate={canUpdate}
+                      pictureUrl={previewPictureUrl}
+                      onRemovePicture={() => { form.setValue('pictureKey', null); setPreviewPictureUrl(null); }}
+                      onUploadPicture={handlePictureUpload}
+                    />
+                    <Separator />
+                  </>
+                )}
 
-              <PricingSection
-                control={form.control}
-                canUpdate={canUpdate}
-                parameterSets={parameterSets}
-                selectedParamSet={selectedParamSet}
-                marginCalc={marginCalc}
-              />
+                <PricingSection
+                  control={form.control}
+                  canUpdate={canUpdate}
+                  parameterSets={parameterSets}
+                  selectedParamSet={selectedParamSet}
+                  marginCalc={marginCalc}
+                />
 
-              <Separator />
+                <Separator />
 
-              <NotesSection control={form.control} canUpdate={canUpdate} />
+                <Accordion type="single" collapsible defaultValue={undefined}>
+                  <AccordionItem value="notes" className="border-none">
+                    <AccordionTrigger className="text-sm font-semibold text-muted-foreground uppercase tracking-wider py-0 hover:no-underline">
+                      Note
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-4">
+                      <NotesSection control={form.control} canUpdate={canUpdate} />
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              </div>
             </div>
 
-            {/* Footer fisso al fondo */}
-            <div className="flex justify-end gap-3 px-1 py-4 border-t shrink-0">
+            {/* Sticky footer */}
+            <div className="flex justify-end gap-3 px-6 py-4 border-t shrink-0">
               <Button
                 type="button"
                 variant="outline"
@@ -227,7 +252,7 @@ export function CollectionRowDrawer({
             </div>
           </form>
         </Form>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }
