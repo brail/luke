@@ -58,6 +58,7 @@ export type QuotationState = {
   retailPrice: number | null;
   supplierQuotation: number | null;
   notes: string | null;
+  sku: number | null;
 };
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
@@ -73,6 +74,11 @@ export function SectionHeader({ title }: { title: string }) {
 function parsePositiveFloat(value: string): number | null {
   const parsed = parseFloat(value);
   return value !== '' && !isNaN(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parsePositiveInt(value: string): number | null {
+  const parsed = parseInt(value, 10);
+  return !isNaN(parsed) && parsed >= 1 ? parsed : null;
 }
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -552,7 +558,7 @@ interface PricingFooterSectionProps {
   quotations: QuotationState[];
   parameterSets: PricingParameterSet[];
   onAddQuotation: () => void;
-  onUpdateField: (id: string, field: keyof Pick<QuotationState, 'pricingParameterSetId' | 'retailPrice' | 'supplierQuotation' | 'notes'>, value: string | number | null) => void;
+  onUpdateField: (id: string, field: keyof Pick<QuotationState, 'pricingParameterSetId' | 'retailPrice' | 'supplierQuotation' | 'notes' | 'sku'>, value: string | number | null) => void;
   onBlurQuotation: (id: string, overrides?: Partial<QuotationState>) => void;
   onDeleteQuotation: (id: string) => void;
   isAddingQuotation?: boolean;
@@ -638,6 +644,7 @@ export function PricingFooterSection({
                   <col style={{ width: 68 }} />
                   <col style={{ width: 56 }} />
                   <col />{/* Note fills remaining width */}
+                  <col style={{ width: 60 }} />
                   <col style={{ width: 36 }} />
                 </colgroup>
                 <thead>
@@ -651,6 +658,7 @@ export function PricingFooterSection({
                     <th className="text-center px-3 py-2 font-medium">M%</th>
                     <th className="text-center px-3 py-2 font-medium">TM</th>
                     <th className="text-left px-3 py-2 font-medium">Note</th>
+                    <th className="text-center px-3 py-2 font-medium">SKU</th>
                     <th className="px-2 py-2" />
                   </tr>
                 </thead>
@@ -775,6 +783,20 @@ export function PricingFooterSection({
                             placeholder="Note…"
                             value={q.notes ?? ''}
                             onChange={e => onUpdateField(q.id, 'notes', e.target.value || null)}
+                            onBlur={() => q.pricingParameterSetId && onBlurQuotation(q.id)}
+                            disabled={!canUpdate || !q.pricingParameterSetId}
+                          />
+                        </td>
+
+                        {/* SKU (peso per media margine) */}
+                        <td className="px-2 py-1.5">
+                          <NumberInput
+                            className="h-7 text-xs w-14 text-center"
+                            placeholder="—"
+                            min={1}
+                            step={1}
+                            value={q.sku ?? ''}
+                            onChange={e => onUpdateField(q.id, 'sku', parsePositiveInt(e.target.value))}
                             onBlur={() => q.pricingParameterSetId && onBlurQuotation(q.id)}
                             disabled={!canUpdate || !q.pricingParameterSetId}
                           />

@@ -63,6 +63,7 @@ export async function createQuotation(
       retailPrice: input.retailPrice ?? null,
       supplierQuotation: input.supplierQuotation ?? null,
       notes: input.notes ?? null,
+      sku: input.sku ?? null,
     },
     include: QUOTATION_INCLUDE,
   }) as Promise<QuotationWithParamSet>;
@@ -104,6 +105,7 @@ export async function updateQuotation(
       ...('retailPrice' in input && { retailPrice: input.retailPrice ?? null }),
       ...('supplierQuotation' in input && { supplierQuotation: input.supplierQuotation ?? null }),
       ...('notes' in input && { notes: input.notes ?? null }),
+      ...('sku' in input && { sku: input.sku ?? null }),
     },
     include: QUOTATION_INCLUDE,
   }) as Promise<QuotationWithParamSet>;

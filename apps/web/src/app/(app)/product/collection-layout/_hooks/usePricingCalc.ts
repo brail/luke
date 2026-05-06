@@ -12,6 +12,7 @@ export interface MarginComputeInput {
     pricingParameterSetId?: string | null;
     supplierQuotation?: number | null;
     retailPrice?: number | null;
+    sku?: number | null;
   }>;
   qtyForecast: number;
 }
@@ -25,12 +26,12 @@ function computeMarginStatus(
   return 'red';
 }
 
-/** Compute arithmetic average margin across all computable quotations of a row. */
+/** SKU-weighted average margin if any quotation has sku set; otherwise arithmetic average. */
 export function computeRowMargin(
   row: MarginComputeInput,
   parameterSets: PricingParameterSet[]
 ): { margin: number; isAboveTarget: boolean; marginStatus: 'green' | 'yellow' | 'red' } | null {
-  const margins: number[] = [];
+  const computed: Array<{ margin: number; sku: number | null }> = [];
   let refOptimalMargin = 52;
 
   for (const q of row.quotations ?? []) {
@@ -45,12 +46,21 @@ export function computeRowMargin(
     const withDuty = withTransport * (1 + ps.duty / 100);
     const landed = withDuty / ps.exchangeRate + ps.italyAccessoryCosts;
     const wholesale = q.retailPrice / ps.retailMultiplier;
-    margins.push((wholesale - landed) / wholesale);
+    computed.push({ margin: (wholesale - landed) / wholesale, sku: q.sku ?? null });
     refOptimalMargin = ps.optimalMargin;
   }
 
-  if (margins.length === 0) return null;
-  const avg = margins.reduce((sum, m) => sum + m, 0) / margins.length;
+  if (computed.length === 0) return null;
+
+  const withSku = computed.filter(m => m.sku !== null && m.sku > 0);
+  let avg: number;
+  if (withSku.length > 0) {
+    const totalSku = withSku.reduce((s, m) => s + m.sku!, 0);
+    avg = withSku.reduce((s, m) => s + m.margin * m.sku!, 0) / totalSku;
+  } else {
+    avg = computed.reduce((s, m) => s + m.margin, 0) / computed.length;
+  }
+
   const marginStatus = computeMarginStatus(avg * 100, refOptimalMargin);
 
   return {

@@ -556,6 +556,7 @@ model CollectionRowQuotation {
   retailPrice           Float?
   supplierQuotation     Float?               // FOB in purchaseCurrency del param set
   notes                 String?
+  sku                   Int?
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
 

@@ -100,6 +100,7 @@ function rowToQuotationState(q: CollectionRow['quotations'][number]): QuotationS
     retailPrice: q.retailPrice ?? null,
     supplierQuotation: q.supplierQuotation ?? null,
     notes: q.notes ?? null,
+    sku: q.sku ?? null,
   };
 }
 
@@ -260,7 +261,7 @@ export function CollectionRowDrawer({
 
   const handleUpdateQuotationField = (
     id: string,
-    field: keyof Pick<QuotationState, 'pricingParameterSetId' | 'retailPrice' | 'supplierQuotation' | 'notes'>,
+    field: keyof Pick<QuotationState, 'pricingParameterSetId' | 'retailPrice' | 'supplierQuotation' | 'notes' | 'sku'>,
     value: string | number | null
   ) => {
     setQuotations(prev => prev.map(q => q.id === id ? { ...q, [field]: value } : q));
@@ -277,6 +278,7 @@ export function CollectionRowDrawer({
         retailPrice: merged.retailPrice ?? undefined,
         supplierQuotation: merged.supplierQuotation ?? undefined,
         notes: merged.notes,
+        sku: merged.sku,
       },
     });
   };

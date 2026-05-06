@@ -111,6 +111,7 @@ export const CollectionRowQuotationInputSchema = z.object({
   retailPrice: z.number().positive().optional().nullable(),
   supplierQuotation: z.number().positive().optional().nullable(),
   notes: z.string().optional().nullable(),
+  sku: z.number().int().min(1).optional().nullable(),
 });
 export type CollectionRowQuotationInput = z.infer<
   typeof CollectionRowQuotationInputSchema
