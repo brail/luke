@@ -2,6 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Download, FileText } from 'lucide-react';
+import { useSession } from 'next-auth/react';
 import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -10,6 +11,7 @@ import {
   CollectionLayoutRowInputSchema,
   type CollectionLayoutRowInput,
   buildCollectionRowPictureUploadUrl,
+  buildTempCollectionRowPictureUploadUrl,
 } from '@luke/core';
 
 import { Button } from '../../../../../components/ui/button';
@@ -20,19 +22,18 @@ import {
   DialogTitle,
 } from '../../../../../components/ui/dialog';
 import { Form } from '../../../../../components/ui/form';
-import { useStorageUpload } from '../../../../../hooks/useStorageUpload';
 import { triggerDownload } from '../../../../../lib/download';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
 import {
   ForecastSection,
-  GroupSelectField,
   IdentificationSection,
   NotesSection,
   PictureSidePanel,
   PricingFooterSection,
   SectionHeader,
+  VendorSection,
   type CollectionGroup,
   type CollectionRow,
   type PricingParameterSet,
@@ -81,6 +82,7 @@ function buildDefaultValues(
     progress: null,
     designer: null,
     pictureKey: null,
+    pendingPictureFileObjectId: null,
     styleNotes: null,
     materialNotes: null,
     colorNotes: null,
@@ -119,11 +121,9 @@ export function CollectionRowDrawer({
   canUpdate = true,
 }: CollectionRowDrawerProps) {
   const [previewPictureUrl, setPreviewPictureUrl] = useState<string | null>(null);
+  const [isUploadingPicture, setIsUploadingPicture] = useState(false);
   const [quotations, setQuotations] = useState<QuotationState[]>([]);
-
-  const { upload: uploadPicture } = useStorageUpload({
-    fallbackProxyUrl: row?.id ? buildCollectionRowPictureUploadUrl(row.id) : undefined,
-  });
+  const { data: session } = useSession();
 
   const form = useForm<CollectionLayoutRowInput>({
     resolver: zodResolver(CollectionLayoutRowInputSchema),
@@ -131,7 +131,10 @@ export function CollectionRowDrawer({
   });
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setPreviewPictureUrl(null);
+      return;
+    }
     if (mode === 'edit' && row) {
       form.reset({
         groupId: row.groupId,
@@ -148,6 +151,7 @@ export function CollectionRowDrawer({
         progress: row.progress ?? null,
         designer: row.designer ?? null,
         pictureKey: row.pictureKey ?? null,
+        pendingPictureFileObjectId: null,
         styleNotes: row.styleNotes ?? null,
         materialNotes: row.materialNotes ?? null,
         colorNotes: row.colorNotes ?? null,
@@ -165,17 +169,50 @@ export function CollectionRowDrawer({
 
   const title = mode === 'create' ? 'Nuova riga' : (row?.line ?? 'Modifica riga');
 
-  // ─── Picture upload ──────────────────────────────────────────────
+  // ─── Picture upload — eager to temp/row endpoint, pending confirm on save ──
   const handlePictureUpload = async (file: File) => {
-    if (!row?.id) return;
+    const blobUrl = URL.createObjectURL(file);
+    setPreviewPictureUrl(blobUrl);
+    setIsUploadingPicture(true);
+
     try {
-      const { publicUrl, key } = await uploadPicture(file, 'collection-row-pictures');
-      if (key) form.setValue('pictureKey', key);
-      setPreviewPictureUrl(publicUrl);
+      const uploadUrl = row?.id
+        ? buildCollectionRowPictureUploadUrl(row.id)
+        : buildTempCollectionRowPictureUploadUrl();
+
+      const formData = new globalThis.FormData();
+      formData.append('file', file);
+
+      const headers: Record<string, string> = {};
+      if (session?.accessToken) {
+        headers['Authorization'] = `Bearer ${session.accessToken}`;
+      }
+
+      const res = await fetch(uploadUrl, { method: 'POST', headers, body: formData });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || `Upload fallito (${res.status})`);
+      }
+
+      const result = await res.json();
+      URL.revokeObjectURL(blobUrl);
+      setPreviewPictureUrl(result.publicUrl);
+      form.setValue('pendingPictureFileObjectId', result.fileObjectId);
       onPictureUploaded?.();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Errore durante upload');
+      URL.revokeObjectURL(blobUrl);
+      setPreviewPictureUrl(null);
+      form.setValue('pendingPictureFileObjectId', null);
+      toast.error(err instanceof Error ? err.message : 'Errore durante upload foto');
+    } finally {
+      setIsUploadingPicture(false);
     }
+  };
+
+  const handlePictureRemove = () => {
+    form.setValue('pictureKey', null);
+    form.setValue('pendingPictureFileObjectId', null);
+    setPreviewPictureUrl(null);
   };
 
   // ─── Quotation mutations ─────────────────────────────────────────
@@ -229,16 +266,17 @@ export function CollectionRowDrawer({
     setQuotations(prev => prev.map(q => q.id === id ? { ...q, [field]: value } : q));
   };
 
-  const handleBlurQuotation = (id: string) => {
+  const handleBlurQuotation = (id: string, overrides?: Partial<QuotationState>) => {
     const q = quotations.find(q => q.id === id);
     if (!q) return;
+    const merged = overrides ? { ...q, ...overrides } : q;
     updateQuotationMutation.mutate({
-      quotationId: q.id,
+      quotationId: merged.id,
       data: {
-        pricingParameterSetId: q.pricingParameterSetId,
-        retailPrice: q.retailPrice ?? undefined,
-        supplierQuotation: q.supplierQuotation ?? undefined,
-        notes: q.notes,
+        pricingParameterSetId: merged.pricingParameterSetId,
+        retailPrice: merged.retailPrice ?? undefined,
+        supplierQuotation: merged.supplierQuotation ?? undefined,
+        notes: merged.notes,
       },
     });
   };
@@ -261,29 +299,27 @@ export function CollectionRowDrawer({
             <div className="flex-1 min-h-0 overflow-y-auto">
               {/* Top 3-column section */}
               <div className="grid grid-cols-7 divide-x">
-                {/* Left col: Identification (3/7) */}
+                {/* Left col: Identification (includes group at top) (3/7) */}
                 <div className="col-span-3 px-6 py-6">
                   <IdentificationSection
                     control={form.control}
                     canUpdate={canUpdate}
                     availableGenders={availableGenders}
+                    groups={groups}
                   />
                 </div>
 
-                {/* Center col: Photo + Group + Forecast (2/7) */}
+                {/* Center col: Photo + Vendor + Forecast (2/7) */}
                 <div className="col-span-2 px-6 py-6 space-y-5">
-                  {mode === 'edit' && (
-                    <PictureSidePanel
-                      canUpdate={canUpdate}
-                      pictureUrl={previewPictureUrl}
-                      onRemovePicture={() => { form.setValue('pictureKey', null); setPreviewPictureUrl(null); }}
-                      onUploadPicture={handlePictureUpload}
-                    />
-                  )}
-                  <GroupSelectField
+                  <PictureSidePanel
+                    canUpdate={canUpdate}
+                    pictureUrl={previewPictureUrl}
+                    onRemovePicture={handlePictureRemove}
+                    onUploadPicture={handlePictureUpload}
+                  />
+                  <VendorSection
                     control={form.control}
                     canUpdate={canUpdate}
-                    groups={groups}
                   />
                   <div>
                     <SectionHeader title="Forecast" />
@@ -354,12 +390,14 @@ export function CollectionRowDrawer({
                   Annulla
                 </Button>
                 {canUpdate && (
-                  <Button type="submit" disabled={isLoading}>
-                    {isLoading
-                      ? 'Salvataggio…'
-                      : mode === 'create'
-                        ? 'Crea riga'
-                        : 'Salva modifiche'}
+                  <Button type="submit" disabled={isLoading || isUploadingPicture}>
+                    {isUploadingPicture
+                      ? 'Upload foto…'
+                      : isLoading
+                        ? 'Salvataggio…'
+                        : mode === 'create'
+                          ? 'Crea riga'
+                          : 'Salva modifiche'}
                   </Button>
                 )}
               </div>

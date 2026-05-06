@@ -4,7 +4,7 @@ import { Readable } from 'stream';
 import { streamToBuffer, validateMagicBytes, validateImageFile } from '../lib/imageUpload';
 import { resolvePublicUrl } from '../lib/storageUrl';
 import { logAudit } from '../lib/auditLog';
-import { putObject, deleteObjectByKey } from '../storage';
+import { putObject } from '../storage';
 import type { Context } from '../lib/trpc';
 
 const IMAGE_CONFIG = {
@@ -13,54 +13,55 @@ const IMAGE_CONFIG = {
   allowedExtensions: ['.png', '.jpg', '.jpeg', '.webp'] as const,
 };
 
+type FileParams = {
+  filename: string;
+  mimetype: string;
+  stream: NodeJS.ReadableStream;
+  size: number;
+};
+
+// Upload file to storage without any DB update — key must be saved via form submit.
+async function storeCollectionRowPicture(
+  ctx: Context,
+  file: FileParams,
+  pending = false
+): Promise<{ publicUrl: string; bucket: string; key: string; fileObjectId: string }> {
+  const sanitizedFilename = validateImageFile(file, IMAGE_CONFIG);
+  const buffer = await streamToBuffer(file.stream);
+
+  if (!validateMagicBytes(buffer, file.mimetype)) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'File corrotto o tipo non valido' });
+  }
+
+  const fileObject = await putObject(ctx, {
+    bucket: 'collection-row-pictures',
+    originalName: sanitizedFilename,
+    contentType: file.mimetype,
+    size: file.size,
+    stream: Readable.from(buffer),
+    ...(pending && { pending: true }),
+  });
+
+  const publicUrl = await resolvePublicUrl(ctx.prisma, 'collection-row-pictures', fileObject.key);
+  return { publicUrl, bucket: 'collection-row-pictures', key: fileObject.key, fileObjectId: fileObject.id };
+}
+
+// Upload for an existing row — validates row exists, then stores file (pending).
+// Does NOT update the DB: the pictureKey is confirmed when the form saves via tRPC.
 export async function uploadCollectionRowPicture(
   ctx: Context,
   params: {
     rowId: string;
-    file: {
-      filename: string;
-      mimetype: string;
-      stream: NodeJS.ReadableStream;
-      size: number;
-    };
+    file: FileParams;
   }
-): Promise<{ publicUrl: string; bucket: string; key: string }> {
-  const sanitizedFilename = validateImageFile(params.file, IMAGE_CONFIG);
-
-  const buffer = await streamToBuffer(params.file.stream);
-
-  if (!validateMagicBytes(buffer, params.file.mimetype)) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: 'File corrotto o tipo non valido' });
-  }
-
+): Promise<{ publicUrl: string; bucket: string; key: string; fileObjectId: string }> {
   const row = await ctx.prisma.collectionLayoutRow.findUnique({ where: { id: params.rowId } });
 
   if (!row) {
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Riga non trovata' });
   }
 
-  const fileObject = await putObject(ctx, {
-    bucket: 'collection-row-pictures',
-    originalName: sanitizedFilename,
-    contentType: params.file.mimetype,
-    size: params.file.size,
-    stream: Readable.from(buffer),
-  });
-
-  await ctx.prisma.collectionLayoutRow.update({
-    where: { id: params.rowId },
-    data: { pictureKey: fileObject.key },
-  });
-
-  if (row.pictureKey) {
-    setImmediate(async () => {
-      try {
-        await deleteObjectByKey(ctx, { bucket: 'collection-row-pictures', key: row.pictureKey! });
-      } catch (err) {
-        ctx.logger?.warn({ err }, 'Failed to cleanup old row picture');
-      }
-    });
-  }
+  const result = await storeCollectionRowPicture(ctx, params.file, true);
 
   try {
     await logAudit(ctx, {
@@ -69,16 +70,24 @@ export async function uploadCollectionRowPicture(
       targetId: params.rowId,
       result: 'SUCCESS',
       metadata: {
-        filename: sanitizedFilename,
+        filename: params.file.filename,
         size: params.file.size,
         contentType: params.file.mimetype,
-        oldPictureKey: row.pictureKey,
       },
     });
   } catch (auditError) {
     ctx.logger?.warn({ auditError }, 'Audit log failed for row picture upload');
   }
 
-  const publicUrl = await resolvePublicUrl(ctx.prisma, 'collection-row-pictures', fileObject.key);
-  return { publicUrl, bucket: 'collection-row-pictures', key: fileObject.key };
+  return result;
+}
+
+// Upload without a row — used in create mode before the row exists.
+// Returns fileObjectId so the frontend can pass it on form submit to confirm.
+export async function uploadTempCollectionRowPicture(
+  ctx: Context,
+  params: { file: FileParams }
+): Promise<{ publicUrl: string; fileObjectId: string }> {
+  const result = await storeCollectionRowPicture(ctx, params.file, true);
+  return { publicUrl: result.publicUrl, fileObjectId: result.fileObjectId };
 }

@@ -29,6 +29,7 @@ import { withRateLimit } from '../lib/ratelimit';
 import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
 import { requirePermission } from '../lib/permissions';
+import { deleteObjectByKey } from '../storage';
 import {
   getLayout,
   getOrCreateLayout,
@@ -146,7 +147,33 @@ const rowsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(CollectionLayoutRowInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const result = await createRow(input, ctx.prisma);
+      const { pendingPictureFileObjectId, ...rowInput } = input;
+
+      const result = await ctx.prisma.$transaction(async tx => {
+        let confirmedPictureKey: string | undefined;
+        if (pendingPictureFileObjectId) {
+          const pendingFile = await tx.fileObject.findUnique({
+            where: { id: pendingPictureFileObjectId },
+            select: { key: true, confirmedAt: true, createdBy: true, bucket: true },
+          });
+          if (
+            pendingFile?.confirmedAt === null &&
+            pendingFile.createdBy === ctx.session!.user.id &&
+            pendingFile.bucket === 'collection-row-pictures'
+          ) {
+            await tx.fileObject.update({
+              where: { id: pendingPictureFileObjectId },
+              data: { confirmedAt: new Date() },
+            });
+            confirmedPictureKey = pendingFile.key;
+          }
+        }
+        return createRow(
+          { ...rowInput, ...(confirmedPictureKey ? { pictureKey: confirmedPictureKey } : {}) },
+          tx as any
+        );
+      }, { timeout: 15000 });
+
       await logAudit(ctx, { action: 'COLLECTION_ROW_CREATE', targetType: 'CollectionLayoutRow', targetId: result.id, result: 'SUCCESS', metadata: { groupId: result.groupId } });
       return result;
     }),
@@ -161,7 +188,56 @@ const rowsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const result = await updateRow(input.rowId, input.data, ctx.prisma);
+      const { pendingPictureFileObjectId, ...rowData } = input.data;
+      let oldPictureKey: string | null = null;
+
+      const result = await ctx.prisma.$transaction(async tx => {
+        let confirmedPictureKey: string | undefined;
+
+        if (pendingPictureFileObjectId) {
+          const [pendingFile, existingRow] = await Promise.all([
+            tx.fileObject.findUnique({
+              where: { id: pendingPictureFileObjectId },
+              select: { key: true, confirmedAt: true, createdBy: true, bucket: true },
+            }),
+            tx.collectionLayoutRow.findUnique({
+              where: { id: input.rowId },
+              select: { pictureKey: true },
+            }),
+          ]);
+
+          if (
+            pendingFile?.confirmedAt === null &&
+            pendingFile.createdBy === ctx.session!.user.id &&
+            pendingFile.bucket === 'collection-row-pictures'
+          ) {
+            await tx.fileObject.update({
+              where: { id: pendingPictureFileObjectId },
+              data: { confirmedAt: new Date() },
+            });
+            confirmedPictureKey = pendingFile.key;
+            oldPictureKey = existingRow?.pictureKey ?? null;
+          }
+        }
+
+        return updateRow(
+          input.rowId,
+          { ...rowData, ...(confirmedPictureKey ? { pictureKey: confirmedPictureKey } : {}) },
+          tx as any
+        );
+      }, { timeout: 15000 });
+
+      if (oldPictureKey) {
+        const keyToDelete = oldPictureKey;
+        setImmediate(async () => {
+          try {
+            await deleteObjectByKey(ctx, { bucket: 'collection-row-pictures', key: keyToDelete });
+          } catch (err) {
+            ctx.logger?.warn({ err }, 'Failed to cleanup old picture after row update');
+          }
+        });
+      }
+
       await logAudit(ctx, { action: 'COLLECTION_ROW_UPDATE', targetType: 'CollectionLayoutRow', targetId: input.rowId, result: 'SUCCESS', metadata: {} });
       return result;
     }),

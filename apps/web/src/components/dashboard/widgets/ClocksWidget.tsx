@@ -73,7 +73,7 @@ export function ClocksWidget({ settings }: { settings?: Record<string, unknown> 
         <CardTitle className="text-base font-semibold">Orari</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-start justify-around gap-2">
+        <div className="flex flex-wrap items-start justify-around gap-2">
           {primary && now && (
             <div className="text-center">
               <div className="text-4xl font-mono font-bold tabular-nums leading-none">

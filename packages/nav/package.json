@@ -1,6 +1,6 @@
 {
   "name": "@luke/nav",
-  "version": "1.7.0-rc.6",
+  "version": "1.7.0-rc.7",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

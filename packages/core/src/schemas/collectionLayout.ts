@@ -4,6 +4,7 @@ import { z } from 'zod';
 // Max 7 visible at a time.
 export const COLLECTION_TABLE_COLUMNS = [
   { key: 'foto',            label: 'Foto' },
+  { key: 'article',         label: 'Articolo' },
   { key: 'supplier',        label: 'Fornitore' },
   { key: 'productCategory', label: 'Categoria' },
   { key: 'strategy',        label: 'Strategy' },
@@ -20,6 +21,7 @@ export const COLLECTION_COLUMNS_MAX_VISIBLE = 7;
 
 // Columns hidden by default (when no user preference is saved)
 export const COLLECTION_COLUMNS_DEFAULT_HIDDEN = [
+  'article',
   'gender',
   'designer',
   'styleStatus',
@@ -89,6 +91,7 @@ export const CollectionLayoutRowInputSchema = z.object({
   progress: z.string().optional().nullable(),
   designer: z.string().optional().nullable(),
   pictureKey: z.string().optional().nullable(),
+  pendingPictureFileObjectId: z.string().uuid().optional().nullable(),
   // Optional — notes
   styleNotes: z.string().optional().nullable(),
   materialNotes: z.string().optional().nullable(),

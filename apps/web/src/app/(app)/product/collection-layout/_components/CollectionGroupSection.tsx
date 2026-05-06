@@ -87,11 +87,14 @@ interface FilterableHeaderProps {
   options?: FilterOption[];
   allowNone?: boolean;
   className?: string;
+  operator?: 'gte' | 'lte';
+  onOperatorChange?: (col: string, op: 'gte' | 'lte') => void;
 }
 
 function FilterableHeader({
   col, label, type, sortCol, sortDir, onSort,
   filterValue, onFilter, options = [], allowNone, className,
+  operator = 'gte', onOperatorChange,
 }: FilterableHeaderProps) {
   const [open, setOpen] = useState(false);
   const sortActive = sortCol === col;
@@ -167,15 +170,26 @@ function FilterableHeader({
               <Input
                 autoFocus
                 placeholder="Filtra…"
-                value={filterValue ?? ''}
+                value={filterValue === '_none' ? '' : (filterValue ?? '')}
                 onChange={e => onFilter(col, e.target.value || null)}
                 className="h-8 text-sm"
               />
-              {filterValue && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  'mt-1 h-7 w-full justify-start px-2 text-xs',
+                  filterValue === '_none' ? 'text-primary font-medium' : 'text-muted-foreground'
+                )}
+                onClick={() => onFilter(col, filterValue === '_none' ? null : '_none')}
+              >
+                — Nessuno —
+              </Button>
+              {filterValue && filterValue !== '_none' && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="mt-1 h-7 w-full justify-start px-2 text-xs text-muted-foreground"
+                  className="h-7 w-full justify-start px-2 text-xs text-muted-foreground"
                   onClick={() => onFilter(col, null)}
                 >
                   Rimuovi filtro
@@ -185,9 +199,19 @@ function FilterableHeader({
           )}
 
           {type === 'number' && (
-            <PopoverContent align="start" className="w-36 p-2">
+            <PopoverContent align="start" className="w-40 p-2">
               <div className="flex items-center gap-1.5">
-                <span className="text-xs text-muted-foreground shrink-0">≥</span>
+                {onOperatorChange ? (
+                  <button
+                    type="button"
+                    className="text-xs font-mono text-muted-foreground hover:text-foreground w-5 shrink-0 text-center"
+                    onClick={() => onOperatorChange(col, operator === 'gte' ? 'lte' : 'gte')}
+                  >
+                    {operator === 'gte' ? '≥' : '≤'}
+                  </button>
+                ) : (
+                  <span className="text-xs text-muted-foreground shrink-0">≥</span>
+                )}
                 <Input
                   autoFocus
                   type="number"
@@ -296,6 +320,7 @@ export function CollectionGroupSection({
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const [columnFilterOperators, setColumnFilterOperators] = useState<Record<string, 'gte' | 'lte'>>({});
 
   const hasActiveFilters = !!sortCol || Object.keys(columnFilters).length > 0;
 
@@ -303,6 +328,11 @@ export function CollectionGroupSection({
     setSortCol(null);
     setSortDir('asc');
     setColumnFilters({});
+    setColumnFilterOperators({});
+  };
+
+  const handleOperatorChange = (col: string, op: 'gte' | 'lte') => {
+    setColumnFilterOperators(prev => ({ ...prev, [col]: op }));
   };
 
   const handleSort = (col: string) => {
@@ -330,19 +360,22 @@ export function CollectionGroupSection({
   };
 
   const filteredRows = useMemo(() => {
-    const textMatch = (v: string | null | undefined, f: string) =>
-      (v ?? '').toLowerCase().includes(f.toLowerCase());
+    const textMatch = (v: string | null | undefined, f: string) => {
+      if (f === '_none') return !v || v.trim() === '';
+      return (v ?? '').toLowerCase().includes(f.toLowerCase());
+    };
     const enumMatch = (v: string | null | undefined, f: string) =>
       f === '_none' ? !v : v === f;
-    const numberMatch = (v: number, f: string) => {
+    const numberMatch = (v: number, f: string, op: 'gte' | 'lte' = 'gte') => {
       const t = Number(f);
-      return isNaN(t) || v >= t;
+      return isNaN(t) || (op === 'gte' ? v >= t : v <= t);
     };
 
     let rows = group.rows.filter(row => {
       const vendorName = row.vendor?.nickname ?? row.vendor?.name ?? null;
       if (searchQuery && !textMatch(row.line, searchQuery) && !textMatch(vendorName, searchQuery)) return false;
       if (columnFilters.line && !textMatch(row.line, columnFilters.line)) return false;
+      if (columnFilters.article && !textMatch(row.article, columnFilters.article)) return false;
       if (columnFilters.supplier && !textMatch(vendorName, columnFilters.supplier)) return false;
       if (columnFilters.productCategory && !textMatch(row.productCategory, columnFilters.productCategory)) return false;
       if (columnFilters.designer && !textMatch(row.designer, columnFilters.designer)) return false;
@@ -356,7 +389,9 @@ export function CollectionGroupSection({
       if (columnFilters.margin) {
         const m = computeRowMargin(row, parameterSets);
         const threshold = Number(columnFilters.margin);
-        if (!m || isNaN(threshold) || m.margin * 100 < threshold) return false;
+        const op = columnFilterOperators.margin ?? 'gte';
+        if (!m || isNaN(threshold)) return false;
+        if (op === 'gte' ? m.margin * 100 < threshold : m.margin * 100 > threshold) return false;
       }
       return true;
     });
@@ -380,7 +415,7 @@ export function CollectionGroupSection({
     }
 
     return rows;
-  }, [group.rows, searchQuery, columnFilters, sortCol, sortDir, parameterSets]);
+  }, [group.rows, searchQuery, columnFilters, columnFilterOperators, sortCol, sortDir, parameterSets]);
 
   const skuTotal = group.rows.reduce((sum, r) => sum + r.skuForecast, 0);
   const qtyTotal = group.rows.reduce((sum, r) => sum + r.qtyForecast, 0);
@@ -391,6 +426,7 @@ export function CollectionGroupSection({
 
   const sortProps = { sortCol, sortDir, onSort: handleSort };
   const filterProps = { onFilter: handleFilter };
+  const operatorProps = { onOperatorChange: handleOperatorChange };
 
   return (
     <div className="border rounded-lg overflow-hidden">
@@ -509,6 +545,10 @@ export function CollectionGroupSection({
 
                   <FilterableHeader col="line" label="Linea" type="text" {...sortProps} {...filterProps} filterValue={columnFilters.line} />
 
+                  {show('article') && (
+                    <FilterableHeader col="article" label="Articolo" type="text" {...sortProps} {...filterProps} filterValue={columnFilters.article} allowNone />
+                  )}
+
                   {show('gender') && (
                     <FilterableHeader col="gender" label="Gender" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.gender} options={GENDER_OPTIONS} />
                   )}
@@ -540,7 +580,7 @@ export function CollectionGroupSection({
                     <FilterableHeader col="qtyForecast" label="Qty" type="number" {...sortProps} {...filterProps} filterValue={columnFilters.qtyForecast} className="text-right" />
                   )}
                   {show('margin') && (
-                    <FilterableHeader col="margin" label="Mrg %" type="number" {...sortProps} {...filterProps} filterValue={columnFilters.margin} className="text-right w-20 whitespace-nowrap" />
+                    <FilterableHeader col="margin" label="Mrg %" type="number" {...sortProps} {...filterProps} filterValue={columnFilters.margin} operator={columnFilterOperators.margin ?? 'gte'} {...operatorProps} className="text-right w-20 whitespace-nowrap" />
                   )}
                   <TableHead className="w-24" />
                 </TableRow>
@@ -579,6 +619,9 @@ export function CollectionGroupSection({
                         </TableCell>
                       )}
                       <TableCell className="font-medium text-sm">{row.line}</TableCell>
+                      {show('article') && (
+                        <TableCell className="text-sm text-muted-foreground">{row.article ?? '—'}</TableCell>
+                      )}
                       {show('gender') && (
                         <TableCell className="text-sm text-muted-foreground">{row.gender}</TableCell>
                       )}

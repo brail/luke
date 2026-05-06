@@ -132,12 +132,14 @@ interface IdentificationSectionProps {
   control: Control<CollectionLayoutRowInput>;
   canUpdate: boolean;
   availableGenders: string[];
+  groups: CollectionGroup[];
 }
 
 export function IdentificationSection({
   control,
   canUpdate,
   availableGenders,
+  groups,
 }: IdentificationSectionProps) {
   const { data: strategyOptions = [] } = trpc.collectionCatalog.list.useQuery(
     { type: 'strategy' },
@@ -159,6 +161,9 @@ export function IdentificationSection({
   return (
     <div className="space-y-4">
       <SectionHeader title="Identificazione" />
+
+      {/* gruppo */}
+      <GroupSelectField control={control} canUpdate={canUpdate} groups={groups} />
 
       {/* gender | categoria */}
       <div className="grid grid-cols-2 gap-4">
@@ -354,21 +359,32 @@ export function IdentificationSection({
         )}
       />
 
-      {/* fornitore — full width */}
-      <FormField
-        control={control}
-        name="vendorId"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Fornitore</FormLabel>
-            <FormControl>
-              <VendorCombobox value={field.value ?? null} onChange={field.onChange} disabled={!canUpdate} />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
     </div>
+  );
+}
+
+// ─── Section: Fornitore ───────────────────────────────────────────────────────
+
+interface VendorSectionProps {
+  control: Control<CollectionLayoutRowInput>;
+  canUpdate: boolean;
+}
+
+export function VendorSection({ control, canUpdate }: VendorSectionProps) {
+  return (
+    <FormField
+      control={control}
+      name="vendorId"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>Fornitore</FormLabel>
+          <FormControl>
+            <VendorCombobox value={field.value ?? null} onChange={field.onChange} disabled={!canUpdate} />
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
   );
 }
 
@@ -492,9 +508,9 @@ export function ForecastSection({ control, canUpdate }: ForecastSectionProps) {
             <FormLabel>SKU Forecast *</FormLabel>
             <FormControl>
               <NumberInput
-                min={1}
                 {...field}
-                onChange={e => field.onChange(parseInt(e.target.value) || 1)}
+                value={isNaN(field.value as number) ? '' : field.value}
+                onChange={e => field.onChange(parseInt(e.target.value, 10))}
                 onFocus={e => e.target.select()}
                 disabled={!canUpdate}
               />
@@ -512,9 +528,9 @@ export function ForecastSection({ control, canUpdate }: ForecastSectionProps) {
             <FormLabel>Qty Forecast *</FormLabel>
             <FormControl>
               <NumberInput
-                min={1}
                 {...field}
-                onChange={e => field.onChange(parseInt(e.target.value) || 1)}
+                value={isNaN(field.value as number) ? '' : field.value}
+                onChange={e => field.onChange(parseInt(e.target.value, 10))}
                 onFocus={e => e.target.select()}
                 disabled={!canUpdate}
               />
@@ -537,7 +553,7 @@ interface PricingFooterSectionProps {
   parameterSets: PricingParameterSet[];
   onAddQuotation: () => void;
   onUpdateField: (id: string, field: keyof Pick<QuotationState, 'pricingParameterSetId' | 'retailPrice' | 'supplierQuotation' | 'notes'>, value: string | number | null) => void;
-  onBlurQuotation: (id: string) => void;
+  onBlurQuotation: (id: string, overrides?: Partial<QuotationState>) => void;
   onDeleteQuotation: (id: string) => void;
   isAddingQuotation?: boolean;
 }
@@ -614,8 +630,8 @@ export function PricingFooterSection({
               <table className="text-sm table-fixed w-full" style={{ minWidth: 932 }}>
                 <colgroup>
                   <col style={{ width: 252 }} />
-                  <col style={{ width: 96 }} />
-                  <col style={{ width: 96 }} />
+                  <col style={{ width: 106 }} />
+                  <col style={{ width: 106 }} />
                   <col style={{ width: 80 }} />
                   <col style={{ width: 80 }} />
                   <col style={{ width: 80 }} />
@@ -653,7 +669,7 @@ export function PricingFooterSection({
                             onValueChange={v => {
                               const val = v === '_none' ? null : v;
                               onUpdateField(q.id, 'pricingParameterSetId', val);
-                              if (val) onBlurQuotation(q.id);
+                              if (val !== null) onBlurQuotation(q.id, { pricingParameterSetId: val });
                             }}
                             disabled={!canUpdate}
                           >
@@ -680,7 +696,7 @@ export function PricingFooterSection({
                               </span>
                             )}
                             <NumberInput
-                              className={cn('h-7 text-xs w-20', sellSym && 'pl-5')}
+                              className={cn('h-7 text-xs w-[88px]', sellSym && 'pl-5')}
                               placeholder="0.00"
                               step={0.01}
                               min={0}
@@ -701,7 +717,7 @@ export function PricingFooterSection({
                               </span>
                             )}
                             <NumberInput
-                              className={cn('h-7 text-xs w-20', buySym && 'pl-5')}
+                              className={cn('h-7 text-xs w-[88px]', buySym && 'pl-5')}
                               placeholder="0.00"
                               step={0.01}
                               min={0}
