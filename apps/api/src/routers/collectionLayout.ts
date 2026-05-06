@@ -407,7 +407,10 @@ const exportRouter = router({
 
   xlsx: protectedProcedure
     .use(requirePermission('collection_layout:read'))
-    .input(z.object({ collectionLayoutId: z.string().uuid() }))
+    .input(z.object({
+      collectionLayoutId: z.string().uuid(),
+      rowIds: z.array(z.string().uuid()).optional(),
+    }))
     .mutation(async ({ ctx, input }) => {
       const layout = await ctx.prisma.collectionLayout.findUnique({
         where: { id: input.collectionLayoutId },
@@ -415,7 +418,18 @@ const exportRouter = router({
       });
       if (!layout) throw new TRPCError({ code: 'NOT_FOUND', message: 'Layout non trovato' });
 
-      const buffer = await buildCollectionLayoutXlsx(layout, ctx.prisma, ctx.logger);
+      let exportLayout = layout;
+      if (input.rowIds && input.rowIds.length > 0) {
+        const rowIdSet = new Set(input.rowIds);
+        exportLayout = {
+          ...layout,
+          groups: layout.groups
+            .map(g => ({ ...g, rows: g.rows.filter(r => rowIdSet.has(r.id)) }))
+            .filter(g => g.rows.length > 0),
+        };
+      }
+
+      const buffer = await buildCollectionLayoutXlsx(exportLayout, ctx.prisma, ctx.logger);
       await logAudit(ctx, {
         action: 'COLLECTION_LAYOUT_EXPORT_XLSX',
         targetType: 'CollectionLayout',
@@ -431,13 +445,27 @@ const exportRouter = router({
 
   pdf: protectedProcedure
     .use(requirePermission('collection_layout:read'))
-    .input(z.object({ collectionLayoutId: z.string().uuid() }))
+    .input(z.object({
+      collectionLayoutId: z.string().uuid(),
+      rowIds: z.array(z.string().uuid()).optional(),
+    }))
     .mutation(async ({ ctx, input }) => {
       const layout = await ctx.prisma.collectionLayout.findUnique({
         where: { id: input.collectionLayoutId },
         include: EXPORT_INCLUDE,
       });
       if (!layout) throw new TRPCError({ code: 'NOT_FOUND', message: 'Layout non trovato' });
+
+      let exportLayout = layout;
+      if (input.rowIds && input.rowIds.length > 0) {
+        const rowIdSet = new Set(input.rowIds);
+        exportLayout = {
+          ...layout,
+          groups: layout.groups
+            .map(g => ({ ...g, rows: g.rows.filter(r => rowIdSet.has(r.id)) }))
+            .filter(g => g.rows.length > 0),
+        };
+      }
 
       const exportUser = await ctx.prisma.user.findUnique({
         where: { id: ctx.session.user.id },
@@ -448,7 +476,7 @@ const exportRouter = router({
         ? [exportUser.firstName, exportUser.lastName].filter(Boolean).join(' ') || exportUser.username
         : ctx.session.user.username;
 
-      const buffer = await buildCollectionLayoutPdf(layout, ctx.prisma, fullName, new Date(), ctx.logger);
+      const buffer = await buildCollectionLayoutPdf(exportLayout, ctx.prisma, fullName, new Date(), ctx.logger);
       await logAudit(ctx, {
         action: 'COLLECTION_LAYOUT_EXPORT_PDF',
         targetType: 'CollectionLayout',

@@ -1,7 +1,7 @@
 'use client';
 
 import { AlertTriangle, Download, FileSpreadsheet, FileText, Loader2, Maximize2, Minimize2, Plus, RotateCcw, Search, Settings2 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
 import {
@@ -15,8 +15,10 @@ import { Button } from '../../../../../components/ui/button';
 import { Checkbox } from '../../../../../components/ui/checkbox';
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../../../../../components/ui/dropdown-menu';
 import { Input } from '../../../../../components/ui/input';
@@ -60,9 +62,9 @@ interface CollectionLayoutTableProps {
   isDeletingRow?: boolean;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
-  onExportXlsx?: () => void;
+  onExportXlsx?: (filteredRowIds?: string[]) => void;
   isExportingXlsx?: boolean;
-  onExportPdf?: () => void;
+  onExportPdf?: (filteredRowIds?: string[]) => void;
   isExportingPdf?: boolean;
 }
 
@@ -88,6 +90,14 @@ export function CollectionLayoutTable({
 }: CollectionLayoutTableProps) {
   const [search, setSearch] = useState('');
   const [columnsPopoverOpen, setColumnsPopoverOpen] = useState(false);
+  const [exportFilteredOnly, setExportFilteredOnly] = useState(false);
+  const filteredRowIdsByGroup = useRef<Map<string, string[]>>(new Map());
+
+  const handleFilteredRowIdsChange = useCallback((groupId: string, ids: string[]) => {
+    filteredRowIdsByGroup.current.set(groupId, ids);
+  }, []);
+
+  const getAllFilteredRowIds = () => [...filteredRowIdsByGroup.current.values()].flat();
 
   // Columns saved in DB — used for the popover and normal mode rendering
   const hiddenColumns = getHiddenColumns(layout);
@@ -245,14 +255,27 @@ export function CollectionLayoutTable({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuCheckboxItem
+                checked={exportFilteredOnly}
+                onCheckedChange={setExportFilteredOnly}
+              >
+                Solo selezione filtrata
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
               {onExportXlsx && (
-                <DropdownMenuItem onClick={onExportXlsx} disabled={isExportingXlsx}>
+                <DropdownMenuItem
+                  onClick={() => onExportXlsx(exportFilteredOnly ? getAllFilteredRowIds() : undefined)}
+                  disabled={isExportingXlsx}
+                >
                   <FileSpreadsheet className="h-4 w-4 mr-2" />
                   Excel (.xlsx)
                 </DropdownMenuItem>
               )}
               {onExportPdf && (
-                <DropdownMenuItem onClick={onExportPdf} disabled={isExportingPdf}>
+                <DropdownMenuItem
+                  onClick={() => onExportPdf(exportFilteredOnly ? getAllFilteredRowIds() : undefined)}
+                  disabled={isExportingPdf}
+                >
                   <FileText className="h-4 w-4 mr-2" />
                   PDF (A3)
                 </DropdownMenuItem>
@@ -286,6 +309,7 @@ export function CollectionLayoutTable({
             onRenameGroup={onRenameGroup}
             onDeleteGroup={onDeleteGroup}
             isDeletingRow={isDeletingRow}
+            onFilteredRowIdsChange={ids => handleFilteredRowIdsChange(group.id, ids)}
           />
         ))}
 

@@ -294,6 +294,7 @@ interface CollectionGroupSectionProps {
   onRenameGroup: (group: CollectionGroupData) => void;
   onDeleteGroup: (groupId: string, groupName: string) => void;
   isDeletingRow?: boolean;
+  onFilteredRowIdsChange?: (ids: string[]) => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -311,6 +312,7 @@ export function CollectionGroupSection({
   onRenameGroup,
   onDeleteGroup,
   isDeletingRow = false,
+  onFilteredRowIdsChange,
 }: CollectionGroupSectionProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [deleteRow, setDeleteRow] = useState<CollectionRowData | null>(null);
@@ -416,6 +418,10 @@ export function CollectionGroupSection({
 
     return rows;
   }, [group.rows, searchQuery, columnFilters, columnFilterOperators, sortCol, sortDir, parameterSets]);
+
+  useEffect(() => {
+    onFilteredRowIdsChange?.(filteredRows.map(r => r.id));
+  }, [filteredRows, onFilteredRowIdsChange]);
 
   const skuTotal = group.rows.reduce((sum, r) => sum + r.skuForecast, 0);
   const qtyTotal = group.rows.reduce((sum, r) => sum + r.qtyForecast, 0);

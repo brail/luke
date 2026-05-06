@@ -318,12 +318,12 @@ export default function CollectionLayoutPage() {
                 }
                 isDeletingRow={deleteRowMutation.isPending}
                 onToggleFullscreen={() => setIsFullscreen(true)}
-                onExportXlsx={() =>
-                  exportXlsxMutation.mutate({ collectionLayoutId: layout.id })
+                onExportXlsx={rowIds =>
+                  exportXlsxMutation.mutate({ collectionLayoutId: layout.id, rowIds })
                 }
                 isExportingXlsx={exportXlsxMutation.isPending}
-                onExportPdf={() =>
-                  exportPdfMutation.mutate({ collectionLayoutId: layout.id })
+                onExportPdf={rowIds =>
+                  exportPdfMutation.mutate({ collectionLayoutId: layout.id, rowIds })
                 }
                 isExportingPdf={exportPdfMutation.isPending}
               />
@@ -372,12 +372,12 @@ export default function CollectionLayoutPage() {
                 isDeletingRow={deleteRowMutation.isPending}
                 isFullscreen
                 onToggleFullscreen={() => setIsFullscreen(false)}
-                onExportXlsx={() =>
-                  exportXlsxMutation.mutate({ collectionLayoutId: layout.id })
+                onExportXlsx={rowIds =>
+                  exportXlsxMutation.mutate({ collectionLayoutId: layout.id, rowIds })
                 }
                 isExportingXlsx={exportXlsxMutation.isPending}
-                onExportPdf={() =>
-                  exportPdfMutation.mutate({ collectionLayoutId: layout.id })
+                onExportPdf={rowIds =>
+                  exportPdfMutation.mutate({ collectionLayoutId: layout.id, rowIds })
                 }
                 isExportingPdf={exportPdfMutation.isPending}
               />
