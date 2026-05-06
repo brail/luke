@@ -37,6 +37,7 @@ const VENDOR_SELECT = {
   isActive: true,
   createdAt: true,
   updatedAt: true,
+  enabledParameterSets: { select: { id: true } },
 } as const;
 
 export const vendorsRouter = router({
@@ -115,8 +116,15 @@ export const vendorsRouter = router({
         }
       }
 
+      const { enabledParameterSetIds, ...vendorData } = input;
       const created = await ctx.prisma.vendor.create({
-        data: { ...input, isActive: true },
+        data: {
+          ...vendorData,
+          isActive: true,
+          ...(enabledParameterSetIds?.length
+            ? { enabledParameterSets: { connect: enabledParameterSetIds.map(id => ({ id })) } }
+            : {}),
+        },
         select: VENDOR_SELECT,
       });
       await logAudit(ctx, { action: 'VENDOR_CREATE', targetType: 'Vendor', targetId: created.id, result: 'SUCCESS', metadata: { name: created.name } });
@@ -161,9 +169,16 @@ export const vendorsRouter = router({
           }
         }
 
+        const { enabledParameterSetIds, ...updateData } = input.data;
         return tx.vendor.update({
           where: { id: input.id },
-          data: { ...input.data, updatedAt: new Date() },
+          data: {
+            ...updateData,
+            updatedAt: new Date(),
+            ...(enabledParameterSetIds !== undefined
+              ? { enabledParameterSets: { set: enabledParameterSetIds.map(id => ({ id })) } }
+              : {}),
+          },
           select: VENDOR_SELECT,
         });
       });

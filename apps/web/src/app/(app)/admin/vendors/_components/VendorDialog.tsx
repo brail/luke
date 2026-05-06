@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form';
 import { VendorInputSchema, type VendorInput } from '@luke/core';
 
 import { Button } from '../../../../../components/ui/button';
+import { Checkbox } from '../../../../../components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -25,7 +26,9 @@ import {
 } from '../../../../../components/ui/form';
 import { Input } from '../../../../../components/ui/input';
 import { Textarea } from '../../../../../components/ui/textarea';
+import { useAppContext } from '../../../../../contexts/AppContextProvider';
 import { usePermission } from '../../../../../hooks/usePermission';
+import { trpc } from '../../../../../lib/trpc';
 
 import type { VendorItem } from './VendorTable';
 
@@ -47,6 +50,14 @@ export function VendorDialog({
   const { can } = usePermission();
   const canEdit = vendor ? can('vendors:update') : can('vendors:create');
 
+  const { brand, season } = useAppContext();
+  const hasBrandSeason = !!brand?.id && !!season?.id;
+
+  const { data: parameterSets = [] } = trpc.pricing.parameterSets.list.useQuery(
+    { brandId: brand?.id ?? '', seasonId: season?.id ?? '' },
+    { enabled: hasBrandSeason }
+  );
+
   const form = useForm<VendorInput>({
     resolver: zodResolver(VendorInputSchema),
     defaultValues: {
@@ -59,6 +70,7 @@ export function VendorDialog({
       chat: null,
       notes: null,
       navVendorId: null,
+      enabledParameterSetIds: [],
     },
   });
 
@@ -75,6 +87,7 @@ export function VendorDialog({
           chat: vendor.chat ?? null,
           notes: vendor.notes ?? null,
           navVendorId: vendor.navVendorId ?? null,
+          enabledParameterSetIds: vendor.enabledParameterSets.map(p => p.id),
         });
       } else {
         form.reset({
@@ -86,6 +99,7 @@ export function VendorDialog({
           chat: null,
           notes: null,
           navVendorId: null,
+          enabledParameterSetIds: [],
         });
       }
     }
@@ -102,7 +116,7 @@ export function VendorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[540px]">
+      <DialogContent className="sm:max-w-[540px] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {!canEdit && (
@@ -111,7 +125,8 @@ export function VendorDialog({
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col min-h-0 flex-1">
+            <div className="overflow-y-auto flex-1 px-1">
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -319,9 +334,63 @@ export function VendorDialog({
                   </FormItem>
                 )}
               />
-            </div>
 
-            <DialogFooter>
+              {/* Param set abilitati — visibile solo se brand+season selezionati */}
+              <FormField
+                control={form.control}
+                name="enabledParameterSetIds"
+                render={({ field }) => (
+                  <FormItem className="col-span-2">
+                    <FormLabel>Param set abilitati</FormLabel>
+                    {!hasBrandSeason ? (
+                      <p className="text-xs text-muted-foreground">
+                        Seleziona un brand e una stagione nel header per configurare i param set.
+                      </p>
+                    ) : parameterSets.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Nessun param set disponibile per la stagione corrente.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {parameterSets.map(ps => {
+                          const checked = (field.value ?? []).includes(ps.id);
+                          return (
+                            <div key={ps.id} className="flex items-center gap-2">
+                              <Checkbox
+                                id={`ps-${ps.id}`}
+                                checked={checked}
+                                disabled={!canEdit || isLoading}
+                                onCheckedChange={v => {
+                                  const current = field.value ?? [];
+                                  field.onChange(
+                                    v ? [...current, ps.id] : current.filter(id => id !== ps.id)
+                                  );
+                                }}
+                              />
+                              <label
+                                htmlFor={`ps-${ps.id}`}
+                                className="text-sm cursor-pointer select-none"
+                              >
+                                {ps.name}
+                                <span className="ml-1 text-xs text-muted-foreground">
+                                  ({ps.purchaseCurrency}/{ps.sellingCurrency})
+                                </span>
+                              </label>
+                            </div>
+                          );
+                        })}
+                        <p className="text-xs text-muted-foreground pt-1">
+                          La selezione si applica alla stagione corrente.
+                        </p>
+                      </div>
+                    )}
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+            </div>
+            <DialogFooter className="pt-4 border-t shrink-0">
               <Button
                 type="button"
                 variant="outline"

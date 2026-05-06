@@ -16,6 +16,7 @@ export const VendorInputSchema = z.object({
   chat: z.string().max(128).trim().optional().nullable(),
   notes: z.string().max(2000).trim().optional().nullable(),
   navVendorId: z.string().optional().nullable(),
+  enabledParameterSetIds: z.array(z.string().uuid()).optional(),
 });
 
 export const VendorIdSchema = z.object({

@@ -32,7 +32,7 @@ export type QuotationWithParamSet = CollectionRowQuotation & {
 };
 
 export type RowWithVendor = CollectionLayoutRow & {
-  vendor: Pick<Vendor, 'id' | 'name' | 'nickname'> | null;
+  vendor: (Pick<Vendor, 'id' | 'name' | 'nickname'> & { enabledParameterSets: Pick<PricingParameterSet, 'id'>[] }) | null;
   quotations: QuotationWithParamSet[];
   pictureUrl?: string | null;
 };
@@ -50,7 +50,7 @@ export type CollectionLayoutWithRelations = CollectionLayout & {
 // ─────────────────────────────────────────────────────────────────
 
 const ROW_VENDOR_INCLUDE = {
-  vendor: { select: { id: true, name: true, nickname: true } },
+  vendor: { select: { id: true, name: true, nickname: true, enabledParameterSets: { select: { id: true } } } },
   quotations: {
     orderBy: { order: 'asc' as const },
     include: { pricingParameterSet: true },

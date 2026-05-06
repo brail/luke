@@ -324,6 +324,7 @@ model PricingParameterSet {
   season Season @relation(fields: [seasonId], references: [id], onDelete: Restrict)
   quotations            CollectionRowQuotation[]
   merchandisingPlanRows MerchandisingPlanRow[]
+  enabledForVendors     Vendor[]                 @relation("VendorEnabledParameterSets")
 
   @@unique([brandId, seasonId, name])
   @@index([brandId, seasonId])
@@ -486,7 +487,8 @@ model Vendor {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  collectionRows CollectionLayoutRow[]
+  collectionRows       CollectionLayoutRow[]
+  enabledParameterSets PricingParameterSet[] @relation("VendorEnabledParameterSets")
 
   @@index([name])
   @@index([isActive])

@@ -30,6 +30,7 @@ export interface VendorItem {
   isActive: boolean;
   createdAt: Date | string;
   updatedAt: Date | string;
+  enabledParameterSets: { id: string }[];
 }
 
 interface VendorTableProps {

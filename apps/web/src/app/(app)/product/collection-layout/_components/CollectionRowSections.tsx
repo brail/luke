@@ -557,6 +557,7 @@ interface PricingFooterSectionProps {
   mode: 'create' | 'edit';
   quotations: QuotationState[];
   parameterSets: PricingParameterSet[];
+  enabledParameterSetIds: string[];
   onAddQuotation: () => void;
   onUpdateField: (id: string, field: keyof Pick<QuotationState, 'pricingParameterSetId' | 'retailPrice' | 'supplierQuotation' | 'notes' | 'sku'>, value: string | number | null) => void;
   onBlurQuotation: (id: string, overrides?: Partial<QuotationState>) => void;
@@ -570,6 +571,7 @@ export function PricingFooterSection({
   mode,
   quotations,
   parameterSets,
+  enabledParameterSetIds,
   onAddQuotation,
   onUpdateField,
   onBlurQuotation,
@@ -668,6 +670,13 @@ export function PricingFooterSection({
                     const calc = calcQuotationFields(q, ps);
                     const sellSym = ps ? (CURRENCY_SYMBOLS[ps.sellingCurrency] ?? ps.sellingCurrency) : '';
                     const buySym = ps ? (CURRENCY_SYMBOLS[ps.purchaseCurrency] ?? ps.purchaseCurrency) : '';
+                    const hasFilter = enabledParameterSetIds.length > 0;
+                    const visibleParamSets = hasFilter
+                      ? parameterSets.filter(p => enabledParameterSetIds.includes(p.id))
+                      : parameterSets;
+                    const orphanPs = hasFilter && q.pricingParameterSetId && !enabledParameterSetIds.includes(q.pricingParameterSetId)
+                      ? parameterSets.find(p => p.id === q.pricingParameterSetId)
+                      : null;
                     return (
                       <tr key={q.id} className="border-b last:border-0 hover:bg-muted/20">
                         {/* Param Set — required */}
@@ -686,11 +695,17 @@ export function PricingFooterSection({
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="_none">— Nessuno —</SelectItem>
-                              {parameterSets.map(p => (
+                              {visibleParamSets.map(p => (
                                 <SelectItem key={p.id} value={p.id}>
                                   {p.name} ({p.purchaseCurrency}/{p.sellingCurrency})
                                 </SelectItem>
                               ))}
+                              {orphanPs && (
+                                <SelectItem key={orphanPs.id} value={orphanPs.id} className="text-amber-600">
+                                  ⚠ {orphanPs.name} ({orphanPs.purchaseCurrency}/{orphanPs.sellingCurrency})
+                                  <span className="ml-1 text-xs opacity-70">non abilitato</span>
+                                </SelectItem>
+                              )}
                             </SelectContent>
                           </Select>
                         </td>

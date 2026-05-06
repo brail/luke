@@ -3,7 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Download, FileText } from 'lucide-react';
 import { useSession } from 'next-auth/react';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
@@ -126,10 +126,18 @@ export function CollectionRowDrawer({
   const [quotations, setQuotations] = useState<QuotationState[]>([]);
   const { data: session } = useSession();
 
+  const { data: vendorsList } = trpc.vendors.list.useQuery(undefined, { staleTime: 5 * 60 * 1000 });
+
   const form = useForm<CollectionLayoutRowInput>({
     resolver: zodResolver(CollectionLayoutRowInputSchema),
     defaultValues: buildDefaultValues(defaultGroupId, groups, availableGenders),
   });
+
+  const currentVendorId = form.watch('vendorId');
+  const enabledParameterSetIds = useMemo(
+    () => vendorsList?.items.find(v => v.id === currentVendorId)?.enabledParameterSets.map(p => p.id) ?? [],
+    [currentVendorId, vendorsList]
+  );
 
   useEffect(() => {
     if (!open) {
@@ -348,6 +356,7 @@ export function CollectionRowDrawer({
                   mode={mode}
                   quotations={quotations}
                   parameterSets={parameterSets}
+                  enabledParameterSetIds={enabledParameterSetIds}
                   onAddQuotation={handleAddQuotation}
                   onUpdateField={handleUpdateQuotationField}
                   onBlurQuotation={handleBlurQuotation}
