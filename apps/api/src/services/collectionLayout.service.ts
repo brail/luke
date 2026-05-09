@@ -95,19 +95,14 @@ export async function getOrCreateLayout(
   prisma: PrismaClient,
   availableGenders?: string[]
 ): Promise<CollectionLayoutWithRelations> {
-  const existing = await prisma.collectionLayout.findUnique({
+  return prisma.collectionLayout.upsert({
     where: { brandId_seasonId: { brandId, seasonId } },
-    include: LAYOUT_INCLUDE,
-  });
-
-  if (existing) return existing as CollectionLayoutWithRelations;
-
-  return prisma.collectionLayout.create({
-    data: {
+    create: {
       brandId,
       seasonId,
       ...(availableGenders && { availableGenders }),
     },
+    update: {},
     include: LAYOUT_INCLUDE,
   }) as Promise<CollectionLayoutWithRelations>;
 }

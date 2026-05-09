@@ -10,6 +10,7 @@ import { homedir } from 'os';
 import { join } from 'path';
 
 import pino from 'pino';
+import { z } from 'zod';
 import {
   type AppConfigKey,
   type AppConfigValue,
@@ -17,12 +18,14 @@ import {
   CRITICAL_CONFIG_KEYS,
   LdapResilienceSchema,
   type LdapResilienceConfig,
+  Roles,
 } from '@luke/core';
 
 import type { PrismaClient } from '@prisma/client';
 
-// Logger interno per config manager
 const logger = pino({ level: 'info' });
+
+const RoleMappingSchema = z.record(z.string(), z.enum(Roles));
 
 /**
  * Interfaccia per configurazione LDAP
@@ -623,14 +626,14 @@ export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
     (configMap.get('auth.strategy')?.value as LdapConfig['strategy']) ||
     'local-first';
 
-  // Parsa roleMapping da JSON
   let roleMapping: Record<string, string>;
   try {
-    roleMapping = JSON.parse(roleMappingStr);
+    const parsed = JSON.parse(roleMappingStr);
+    roleMapping = RoleMappingSchema.parse(parsed);
   } catch (error) {
     logger.warn(
       { error: error instanceof Error ? error.message : 'Unknown error' },
-      'Errore parsing roleMapping, usando mapping vuoto'
+      'Errore parsing/validazione roleMapping, usando mapping vuoto'
     );
     roleMapping = {};
   }

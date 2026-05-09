@@ -32,7 +32,7 @@ export const VendorListInputSchema = z.object({
   search: z.string().optional(),
   isActive: z.boolean().optional(),
   cursor: z.string().uuid().optional(),
-  limit: z.number().min(1).max(200).default(100),
+  limit: z.number().min(1).max(100).default(100),
 });
 
 export const VendorSchema = z.object({

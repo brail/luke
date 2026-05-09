@@ -228,14 +228,11 @@ const rowsRouter = router({
       }, { timeout: 15000 });
 
       if (oldPictureKey) {
-        const keyToDelete = oldPictureKey;
-        setImmediate(async () => {
-          try {
-            await deleteObjectByKey(ctx, { bucket: 'collection-row-pictures', key: keyToDelete });
-          } catch (err) {
-            ctx.logger?.warn({ err }, 'Failed to cleanup old picture after row update');
-          }
-        });
+        try {
+          await deleteObjectByKey(ctx, { bucket: 'collection-row-pictures', key: oldPictureKey });
+        } catch (err) {
+          ctx.logger?.warn({ err }, 'Failed to cleanup old picture after row update');
+        }
       }
 
       await logAudit(ctx, { action: 'COLLECTION_ROW_UPDATE', targetType: 'CollectionLayoutRow', targetId: input.rowId, result: 'SUCCESS', metadata: {} });

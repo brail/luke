@@ -21,7 +21,7 @@ import {
 import { authenticateRequest } from '../lib/auth';
 import type { FastifyInstance } from 'fastify';
 import type { PrismaClient } from '@prisma/client';
-import { isDevelopment } from '@luke/core';
+import { isDevelopment, hasPermission, type Role } from '@luke/core';
 
 export default fp(
   async (app: FastifyInstance, options: { prisma: PrismaClient }) => {
@@ -39,7 +39,6 @@ export default fp(
     app.post<{
       Params: { brandId: string };
     }>('/upload/brand-logo/:brandId', async (req, reply) => {
-      // Autenticazione
       const session = await authenticateRequest(req, reply);
       if (!session) {
         return reply.code(401).send({
@@ -48,7 +47,13 @@ export default fp(
         });
       }
 
-      // Context per service layer
+      if (!hasPermission(session.user as { role: Role }, 'brands:update')) {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'Permesso negato: richiesta brands:update',
+        });
+      }
+
       const ctx = {
         session,
         prisma: options.prisma,
@@ -111,7 +116,6 @@ export default fp(
     app.post<{
       Body: { tempId: string };
     }>('/upload/brand-logo/temp', async (req, reply) => {
-      // Autenticazione
       const session = await authenticateRequest(req, reply);
       if (!session) {
         return reply.code(401).send({
@@ -120,7 +124,13 @@ export default fp(
         });
       }
 
-      // Context per service layer
+      if (!hasPermission(session.user as { role: Role }, 'brands:create')) {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'Permesso negato: richiesta brands:create',
+        });
+      }
+
       const ctx = {
         session,
         prisma: options.prisma,

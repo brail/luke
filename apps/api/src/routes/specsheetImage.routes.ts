@@ -14,7 +14,7 @@ import rateLimit from '@fastify/rate-limit';
 import type { FastifyInstance } from 'fastify';
 import type { PrismaClient } from '@prisma/client';
 
-import { isDevelopment } from '@luke/core';
+import { isDevelopment, hasPermission, type Role } from '@luke/core';
 
 import { authenticateRequest } from '../lib/auth';
 import { uploadSpecsheetImage } from '../services/specsheetImage.service';
@@ -35,6 +35,10 @@ export default async function specsheetImageRoutes(
       const session = await authenticateRequest(req, reply);
       if (!session) {
         return reply.code(401).send({ error: 'Unauthorized', message: 'Autenticazione richiesta' });
+      }
+
+      if (!hasPermission(session.user as { role: Role }, 'merchandising_plan:update')) {
+        return reply.code(403).send({ error: 'Forbidden', message: 'Permesso negato: richiesta merchandising_plan:update' });
       }
 
       const ctx = {

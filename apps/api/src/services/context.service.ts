@@ -91,9 +91,16 @@ export async function resolveContext(
     orderBy: [{ updatedAt: 'desc' }, { name: 'asc' }],
   });
 
+  if (brands.length === 0) {
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: 'No active Brand available. Please configure.',
+    });
+  }
+
   // Determina il brand corrente per filtrare le stagioni
-  const prefs_brandId = (prefs?.data as any)?.lastBrandId as string | undefined;
-  const activeBrandId = brands.find(b => b.id === prefs_brandId)?.id ?? brands[0]?.id;
+  const prefsBrandId = (prefs?.data as any)?.lastBrandId as string | undefined;
+  const activeBrandId = brands.find(b => b.id === prefsBrandId)?.id ?? brands[0].id;
 
   const allowedSeasonIds = activeBrandId
     ? await getUserAllowedSeasonIds(userId, activeBrandId, prisma)
@@ -107,11 +114,10 @@ export async function resolveContext(
     orderBy: [{ updatedAt: 'desc' }, { year: 'desc' }],
   });
 
-  // Verifica che ci siano brand e season attivi
-  if (!brands.length || !seasons.length) {
+  if (!seasons.length) {
     throw new TRPCError({
       code: 'PRECONDITION_FAILED',
-      message: 'No active Brand or Season available. Please configure.',
+      message: 'No active Season available. Please configure.',
     });
   }
 
@@ -139,7 +145,7 @@ export async function resolveContext(
   const appDefSeason = pick(seasons, contextDefaults.context?.seasonId);
 
   const brand =
-    pick(brands, prefs_brandId) ?? appDefBrand ?? brands[0];
+    pick(brands, prefsBrandId) ?? appDefBrand ?? brands[0];
   const season =
     pick(seasons, (prefs?.data as any)?.lastSeasonId as string | undefined) ?? appDefSeason ?? seasons[0];
 

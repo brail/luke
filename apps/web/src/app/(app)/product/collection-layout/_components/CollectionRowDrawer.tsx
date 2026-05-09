@@ -136,7 +136,7 @@ export function CollectionRowDrawer({
   const currentVendorId = form.watch('vendorId');
   const enabledParameterSetIds = useMemo(
     () => vendorsList?.items.find(v => v.id === currentVendorId)?.enabledParameterSets.map(p => p.id) ?? [],
-    [currentVendorId, vendorsList]
+    [currentVendorId, vendorsList?.items]
   );
 
   useEffect(() => {

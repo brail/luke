@@ -11,6 +11,7 @@ import rateLimit from '@fastify/rate-limit';
 import { PrismaClient } from '@prisma/client';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import Fastify from 'fastify';
+import pino from 'pino';
 
 import {
   validateMasterKey,
@@ -432,7 +433,11 @@ function setupTempFileCleanup() {
 
   // Avvia cleanup immediato e poi ogni 30 minuti
   setImmediate(cleanupTempFiles);
-  setInterval(cleanupTempFiles, cleanupInterval);
+  const cleanupTimer = setInterval(cleanupTempFiles, cleanupInterval);
+
+  fastify.addHook('onClose', async () => {
+    clearInterval(cleanupTimer);
+  });
 
   fastify.log.info('Temp file cleanup job started (every 30 minutes)');
 }
@@ -550,16 +555,12 @@ function assertEnvPolicy(): void {
 
   const msg = `[env-policy] Variabili applicative trovate in process.env — devono stare in AppConfig: ${violations.join(', ')}`;
 
+  const bootLogger = pino({ level: 'warn' });
   if (isProduction()) {
-    // In produzione è un errore bloccante: un .env con segreti è inaccettabile
-    // eslint-disable-next-line no-console
-    console.error(msg);
+    bootLogger.error(msg);
     process.exit(1);
   } else {
-    // In sviluppo è un warning: potrebbe essere intenzionale durante il debug
-    // Il log Fastify non è ancora disponibile a questo punto, usiamo console
-    // eslint-disable-next-line no-console
-    console.warn(msg);
+    bootLogger.warn(msg);
   }
 }
 

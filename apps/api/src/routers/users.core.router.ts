@@ -301,10 +301,13 @@ export const usersCoreRouter = router({
         });
       }
 
-      // Verifica campi bloccati per provider esterni
-      const lockedFields = getLockedFields(
-        existingUser.identities[0]?.provider || 'LOCAL'
-      );
+      if (existingUser.identities.length === 0) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'User has no identity record — data integrity error',
+        });
+      }
+      const lockedFields = getLockedFields(existingUser.identities[0].provider);
       const attemptedLockedFields = Object.keys(updateData).filter(field =>
         lockedFields.includes(field as LockedFields)
       );

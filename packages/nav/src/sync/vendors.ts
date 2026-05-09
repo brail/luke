@@ -67,6 +67,7 @@ export async function syncVendors(
 
   const tableName = `[${sanitizeCompany(config.company)}$Vendor]`;
   const request = pool.request();
+  // mssql type definitions don't expose `timeout` but it's a valid runtime property
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (request as any).timeout = 60_000;
 

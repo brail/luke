@@ -84,7 +84,7 @@ export default function MailPage() {
         user: smtpUser?.valuePreview || '',
         pass: '',
         from: smtpFrom?.valuePreview || '',
-        baseUrl: appBaseUrl?.valuePreview || 'http://localhost:3000',
+        baseUrl: appBaseUrl?.valuePreview || '',
       });
 
       // Indica se la password è già configurata

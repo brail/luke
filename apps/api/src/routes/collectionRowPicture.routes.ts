@@ -12,7 +12,7 @@ import { uploadCollectionRowPicture, uploadTempCollectionRowPicture } from '../s
 import { authenticateRequest } from '../lib/auth';
 import type { FastifyInstance } from 'fastify';
 import type { PrismaClient } from '@prisma/client';
-import { isDevelopment } from '@luke/core';
+import { isDevelopment, hasPermission, type Role } from '@luke/core';
 
 export default async function collectionRowPictureRoutes(
   app: FastifyInstance,
@@ -32,6 +32,10 @@ export default async function collectionRowPictureRoutes(
     const session = await authenticateRequest(req, reply);
     if (!session) {
       return reply.code(401).send({ error: 'Unauthorized', message: 'Autenticazione richiesta' });
+    }
+
+    if (!hasPermission(session.user as { role: Role }, 'collection_layout:update')) {
+      return reply.code(403).send({ error: 'Forbidden', message: 'Permesso negato: richiesta collection_layout:update' });
     }
 
     const ctx = {
@@ -82,6 +86,10 @@ export default async function collectionRowPictureRoutes(
     const session = await authenticateRequest(req, reply);
     if (!session) {
       return reply.code(401).send({ error: 'Unauthorized', message: 'Autenticazione richiesta' });
+    }
+
+    if (!hasPermission(session.user as { role: Role }, 'collection_layout:update')) {
+      return reply.code(403).send({ error: 'Forbidden', message: 'Permesso negato: richiesta collection_layout:update' });
     }
 
     const ctx = {
