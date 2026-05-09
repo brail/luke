@@ -25,6 +25,7 @@ import { storageRouter } from './storage';
 import { usersRouter } from './users';
 import { vendorsRouter } from './vendors';
 import { salesRouter } from './sales';
+import { seasonCalendarRouter } from './seasonCalendar';
 import { dashboardRouter } from './dashboard';
 
 /**
@@ -52,6 +53,7 @@ export const appRouter = router({
   users: usersRouter,
   vendors: vendorsRouter,
   sales: salesRouter,
+  seasonCalendar: seasonCalendarRouter,
   dashboard: dashboardRouter,
 });
 

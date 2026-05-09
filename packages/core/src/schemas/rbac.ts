@@ -30,9 +30,16 @@ export const sectionEnum = z.enum([
   'admin.seasons',
   'admin.vendors',
   'admin.collection_catalog',
+  'admin.calendars',
   // Vendite e relative sotto-sezioni
   'sales',
   'sales.statistics',
+  // Pianificazione stagionale (calendario milestones)
+  'planning',
+  'planning.sales',
+  'planning.product',
+  'planning.sourcing',
+  'planning.merchandising',
 ]);
 export type Section = z.infer<typeof sectionEnum>;
 
@@ -61,8 +68,14 @@ export const SECTION_TO_PERMISSION: Record<Section, string> = {
   'admin.seasons': 'seasons:read',
   'admin.vendors': 'vendors:read',
   'admin.collection_catalog': 'collection_layout:read',
+  'admin.calendars': 'milestone_template:read',
   sales: 'sales:read',
   'sales.statistics': 'sales:read',
+  planning: 'season_calendar:read',
+  'planning.sales': 'season_calendar:read',
+  'planning.product': 'season_calendar:read',
+  'planning.sourcing': 'season_calendar:read',
+  'planning.merchandising': 'season_calendar:read',
 } as const;
 
 /**
@@ -105,8 +118,14 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       'admin.seasons': true,
       'admin.vendors': true,
       'admin.collection_catalog': true,
+      'admin.calendars': true,
       sales: true,
       'sales.statistics': true,
+      planning: true,
+      'planning.sales': true,
+      'planning.product': true,
+      'planning.sourcing': true,
+      'planning.merchandising': true,
     },
     editor: {
       dashboard: true,
@@ -129,8 +148,14 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       'admin.seasons': false,
       'admin.vendors': false,
       'admin.collection_catalog': false,
+      'admin.calendars': false,
       sales: true,
       'sales.statistics': true,
+      planning: true,
+      'planning.sales': true,
+      'planning.product': true,
+      'planning.sourcing': true,
+      'planning.merchandising': true,
     },
     viewer: {
       dashboard: true,
@@ -153,8 +178,14 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       'admin.seasons': false,
       'admin.vendors': false,
       'admin.collection_catalog': false,
+      'admin.calendars': false,
       sales: false,
       'sales.statistics': false,
+      planning: true,
+      'planning.sales': true,
+      'planning.product': true,
+      'planning.sourcing': true,
+      'planning.merchandising': true,
     },
   };
 

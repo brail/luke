@@ -27,6 +27,7 @@ import {
   BarChart2,
   ClipboardList,
   ListTree,
+  LayoutTemplate,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -123,6 +124,19 @@ export default function AppSidebar() {
                 <Link href="/dashboard">
                   <Home size={18} />
                   <span>Dashboard</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )}
+
+          {/* Calendario (trasversale — OR su planning.*) */}
+          {menuAccess.calendar && (
+            <SidebarMenuItem>
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              <SidebarMenuButton asChild isActive={isActive('/calendar')}>
+                <Link href={'/calendar' as any}>
+                  <CalendarDays size={18} />
+                  <span>Calendario</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -269,6 +283,14 @@ export default function AppSidebar() {
                         <Link href="/admin/collection-catalog" className="flex items-center gap-2">
                           <ListTree size={16} />
                           <span>Collection Catalog</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                    {menuAccess.adminItems.calendars && (
+                      <DropdownMenuItem asChild>
+                        <Link href={"/admin/calendars" as any} className="flex items-center gap-2">
+                          <LayoutTemplate size={16} />
+                          <span>Template Calendario</span>
                         </Link>
                       </DropdownMenuItem>
                     )}

@@ -57,6 +57,7 @@ model User {
   assignedMerchandisingRows MerchandisingPlanRow[]
   dashboardConfig DashboardConfig?
   dashboardTasks  DashboardTask[]
+  milestoneNotes  MilestonePersonalNote[]
 
   @@map("users")
 }
@@ -192,6 +193,7 @@ model Brand {
   pricingParameterSets PricingParameterSet[]
   collectionLayouts    CollectionLayout[]
   merchandisingPlans   MerchandisingPlan[]
+  seasonCalendars      SeasonCalendar[]
   userBrandAccess      UserBrandAccess[]
   userSeasonAccess     UserSeasonAccess[]
 
@@ -214,6 +216,7 @@ model Season {
   pricingParameterSets PricingParameterSet[]
   collectionLayouts    CollectionLayout[]
   merchandisingPlans   MerchandisingPlan[]
+  seasonCalendars      SeasonCalendar[]
   userSeasonAccess     UserSeasonAccess[]
 
   @@map("seasons")
@@ -1186,4 +1189,196 @@ model NavKimoSalesLine {
   @@index([headerEntryNo])
   @@index([modelItemNo])
   @@map("nav_kimo_sales_line")
+}
+
+// ─── Season Calendar ──────────────────────────────────────────────────────────
+
+enum SeasonCalendarStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum CalendarMilestoneType {
+  KICKOFF
+  REVIEW
+  GATE
+  DEADLINE
+  MILESTONE
+  CUSTOM
+}
+
+enum CalendarMilestoneStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+/**
+ * Calendario stagionale per brand+stagione — unico per coppia.
+ * anchorDate è la data di riferimento per i template (offset applica da qui).
+ */
+model SeasonCalendar {
+  id         String               @id @default(uuid())
+  brandId    String
+  seasonId   String
+  status     SeasonCalendarStatus @default(DRAFT)
+  anchorDate DateTime?            @db.Date
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+
+  brand      Brand                   @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  season     Season                  @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  milestones CalendarMilestone[]
+  bindings   GoogleCalendarBinding[]
+
+  @@unique([brandId, seasonId])
+  @@index([seasonId])
+  @@map("season_calendars")
+}
+
+/**
+ * Singola milestone/evento del calendario stagionale.
+ * Visibilità per sezione gestita via MilestoneVisibility (M2M).
+ */
+model CalendarMilestone {
+  id                String                  @id @default(uuid())
+  calendarId        String
+  ownerSectionKey   String
+  type              CalendarMilestoneType
+  status            CalendarMilestoneStatus @default(PLANNED)
+  title             String
+  description       String?
+  startAt           DateTime
+  endAt             DateTime?
+  allDay            Boolean                 @default(false)
+  publishExternally Boolean                 @default(true)
+  templateItemId    String?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  calendar      SeasonCalendar          @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  templateItem  MilestoneTemplateItem?  @relation(fields: [templateItemId], references: [id], onDelete: SetNull)
+  visibilities  MilestoneVisibility[]
+  notes         MilestonePersonalNote[]
+  eventMappings GoogleEventMapping[]
+
+  @@index([calendarId, startAt])
+  @@index([ownerSectionKey])
+  @@map("calendar_milestones")
+}
+
+/**
+ * Sezioni a cui una milestone è visibile.
+ * ownerSectionKey è sempre incluso come readOnly=false.
+ */
+model MilestoneVisibility {
+  milestoneId String
+  sectionKey  String
+  readOnly    Boolean @default(true)
+
+  milestone CalendarMilestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+
+  @@id([milestoneId, sectionKey])
+  @@index([sectionKey])
+  @@map("milestone_visibilities")
+}
+
+/**
+ * Nota personale per-utente per-milestone.
+ * Non sincronizzata su Google Calendar.
+ */
+model MilestonePersonalNote {
+  id          String   @id @default(uuid())
+  milestoneId String
+  userId      String
+  body        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  milestone CalendarMilestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([milestoneId, userId])
+  @@index([userId])
+  @@map("milestone_personal_notes")
+}
+
+/**
+ * Template di milestone predefinito (catalogo riutilizzabile).
+ */
+model MilestoneTemplate {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items MilestoneTemplateItem[]
+
+  @@map("milestone_templates")
+}
+
+/**
+ * Singolo item di un template — offset in giorni da anchorDate.
+ */
+model MilestoneTemplateItem {
+  id                 String                @id @default(uuid())
+  templateId         String
+  ownerSectionKey    String
+  type               CalendarMilestoneType
+  title              String
+  description        String?
+  offsetDays         Int
+  durationDays       Int                   @default(0)
+  publishExternally  Boolean               @default(true)
+  visibleSectionKeys String[]
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  template   MilestoneTemplate   @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  milestones CalendarMilestone[]
+
+  @@index([templateId])
+  @@map("milestone_template_items")
+}
+
+/**
+ * Binding tra un SeasonCalendar+sezione e il corrispettivo Google Calendar ID.
+ * Creato lazy al primo sync della sezione.
+ */
+model GoogleCalendarBinding {
+  id               String   @id @default(uuid())
+  seasonCalendarId String
+  sectionKey       String
+  googleCalendarId String
+  isProvisioned    Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  seasonCalendar SeasonCalendar @relation(fields: [seasonCalendarId], references: [id], onDelete: Cascade)
+
+  @@unique([seasonCalendarId, sectionKey])
+  @@index([googleCalendarId])
+  @@map("google_calendar_bindings")
+}
+
+/**
+ * Mapping milestone → evento Google per ciascuna sezione visibile.
+ * contentHash deterministico: se cambia → rescheduled event.
+ */
+model GoogleEventMapping {
+  milestoneId      String
+  sectionKey       String
+  googleEventId    String
+  googleCalendarId String
+  contentHash      String
+  lastSyncedAt     DateTime
+
+  milestone CalendarMilestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+
+  @@id([milestoneId, sectionKey])
+  @@index([googleCalendarId])
+  @@map("google_event_mappings")
 }

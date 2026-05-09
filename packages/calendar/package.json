@@ -1,5 +1,5 @@
 {
-  "name": "@luke/nav",
+  "name": "@luke/calendar",
   "version": "1.7.0-rc.9",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -20,12 +20,10 @@
   },
   "dependencies": {
     "@luke/core": "workspace:*",
-    "@prisma/client": "^6.17.1",
-    "mssql": "^11.0.0",
-    "pino": "^9.5.0"
+    "googleapis": "^144.0.0",
+    "ical-generator": "^8.0.0"
   },
   "devDependencies": {
-    "@types/mssql": "^9.0.0",
     "@types/node": "^24.7.2",
     "typescript": "^5.9.3"
   }

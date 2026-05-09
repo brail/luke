@@ -36,6 +36,7 @@ import { runReadinessChecks } from './observability/readiness';
 import { storagePlugin } from './plugins/storage-upload';
 import brandLogoRoutes from './routes/brandLogo.routes';
 import collectionRowPictureRoutes from './routes/collectionRowPicture.routes';
+import seasonCalendarExportRoutes from './routes/seasonCalendarExport.routes';
 import specsheetImageRoutes from './routes/specsheetImage.routes';
 import { appRouter } from './routers';
 import { getStorageProvider } from './storage';
@@ -268,6 +269,10 @@ async function registerCollectionRowPictureRoutes() {
  */
 async function registerSpecsheetImageRoutes() {
   await fastify.register(specsheetImageRoutes, { prisma });
+}
+
+async function registerSeasonCalendarExportRoutes() {
+  await fastify.register(seasonCalendarExportRoutes, { prisma });
 }
 
 /**
@@ -527,8 +532,17 @@ const FORBIDDEN_ENV_PATTERNS: RegExp[] = [
   /.*_TOKEN$/i,
 ];
 
+// Bootstrap infra exceptions: Google service account credentials live in env
+// (not AppConfig) because they are infrastructure-level, not application-level.
+const ALLOWED_ENV_EXCEPTIONS = new Set([
+  'GOOGLE_SA_CLIENT_EMAIL',
+  'GOOGLE_SA_PRIVATE_KEY',
+  'GOOGLE_WORKSPACE_DOMAIN',
+]);
+
 function assertEnvPolicy(): void {
   const violations = Object.keys(process.env).filter(key =>
+    !ALLOWED_ENV_EXCEPTIONS.has(key) &&
     FORBIDDEN_ENV_PATTERNS.some(p => p.test(key))
   );
 
@@ -587,6 +601,7 @@ const start = async () => {
     await registerBrandLogoRoutes(); // Brand logo upload routes
     await registerCollectionRowPictureRoutes(); // Collection row picture upload routes
     await registerSpecsheetImageRoutes(); // Specsheet image upload routes
+    await registerSeasonCalendarExportRoutes(); // iCal + CSV export
     await registerHealthRoute();
 
     // Configura cleanup file temporanei
