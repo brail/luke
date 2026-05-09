@@ -1,7 +1,5 @@
-/**
- * Tipi condivisi per i componenti della pagina Users
- * Derivati dal response tRPC users.list
- */
+import { sectionEnum } from '@luke/core';
+import type { Role, Section } from '@luke/core';
 
 // Tipo per riga utente nella tabella (derivato da trpc.users.list response)
 export interface UserListItem {
@@ -10,7 +8,7 @@ export interface UserListItem {
   username: string;
   firstName: string | null;
   lastName: string | null;
-  role: 'admin' | 'editor' | 'viewer';
+  role: Role;
   isActive: boolean;
   emailVerifiedAt: string | null;
   createdAt: string;
@@ -97,10 +95,10 @@ export type UserForApproval = {
   username: string;
   firstName: string;
   lastName: string;
-  role: 'admin' | 'editor' | 'viewer';
+  role: Role;
 };
 
-export const SECTION_LABELS: Record<string, string> = {
+export const SECTION_LABELS: Record<Section, string> = {
   dashboard: 'Dashboard',
   settings: 'Impostazioni',
   'settings.users': '↳ Utenti',
@@ -120,30 +118,16 @@ export const SECTION_LABELS: Record<string, string> = {
   'admin.brands': '↳ Brand',
   'admin.seasons': '↳ Stagioni',
   'admin.vendors': '↳ Fornitori',
+  'admin.collection_catalog': '↳ Catalogo collezioni',
+  'admin.calendars': '↳ Template calendario',
   sales: 'Vendite',
   'sales.statistics': '↳ Statistiche',
+  planning: 'Pianificazione',
+  'planning.sales': '↳ Vendite',
+  'planning.product': '↳ Prodotto',
+  'planning.sourcing': '↳ Sourcing',
+  'planning.merchandising': '↳ Merchandising',
 };
 
-export const ALL_SECTIONS = [
-  'dashboard',
-  'settings',
-  'settings.users',
-  'settings.storage',
-  'settings.mail',
-  'settings.ldap',
-  'settings.nav',
-  'settings.nav_sync',
-  'maintenance',
-  'maintenance.config',
-  'maintenance.import_export',
-  'product',
-  'product.pricing',
-  'product.collection_layout',
-  'product.merchandising_plan',
-  'admin',
-  'admin.brands',
-  'admin.seasons',
-  'admin.vendors',
-  'sales',
-  'sales.statistics',
-] as const;
+// Deriva direttamente da sectionEnum — mai duplicare manualmente
+export const ALL_SECTIONS: readonly Section[] = sectionEnum.options;

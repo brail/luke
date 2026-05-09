@@ -21,6 +21,7 @@ interface Milestone {
 interface Props {
   milestones: Milestone[];
   onMilestoneClick: (id: string) => void;
+  activeBrandId?: string;
 }
 
 const ROW_H = 36;
@@ -45,7 +46,7 @@ function diffDays(a: Date, b: Date): number {
   return Math.round((b.getTime() - a.getTime()) / 86_400_000);
 }
 
-export function MilestoneGantt({ milestones, onMilestoneClick }: Props) {
+export function MilestoneGantt({ milestones, onMilestoneClick, activeBrandId }: Props) {
   const sorted = useMemo(
     () => [...milestones].sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime()),
     [milestones]
@@ -148,8 +149,10 @@ export function MilestoneGantt({ milestones, onMilestoneClick }: Props) {
         </div>
 
         {/* Milestone rows */}
-        {bars.map((m, i) => (
-          <div key={m.id} className="flex group hover:bg-muted/20 transition-colors" style={{ height: ROW_H }}>
+        {bars.map((m, i) => {
+          const isOtherBrand = !!activeBrandId && !!m.brandId && m.brandId !== activeBrandId;
+          return (
+          <div key={m.id} className={cn("flex group hover:bg-muted/20 transition-colors", isOtherBrand && "opacity-40")} style={{ height: ROW_H }}>
             {/* Sticky label */}
             <button
               type="button"
@@ -207,7 +210,8 @@ export function MilestoneGantt({ milestones, onMilestoneClick }: Props) {
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

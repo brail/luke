@@ -24,6 +24,7 @@ interface Props {
   viewDate: Date;
   onViewDateChange: (d: Date) => void;
   onMilestoneClick: (id: string) => void;
+  activeBrandId?: string;
 }
 
 const DAY_IT = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
@@ -56,7 +57,7 @@ const STATUS_OPACITY: Record<string, string> = {
   CANCELLED: 'opacity-25 line-through',
 };
 
-export function MilestoneWeekView({ milestones, viewDate, onViewDateChange, onMilestoneClick }: Props) {
+export function MilestoneWeekView({ milestones, viewDate, onViewDateChange, onMilestoneClick, activeBrandId }: Props) {
   const weekStart = useMemo(() => mondayOf(viewDate), [viewDate]);
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
   const today = useMemo(() => new Date(), []);
@@ -121,22 +122,24 @@ export function MilestoneWeekView({ milestones, viewDate, onViewDateChange, onMi
                   const end = m.endAt ? new Date(m.endAt) : null;
                   const isStart = sameDay(start, day);
                   const span = end ? daysBetween(start, end) : 0;
+                  const isOtherBrand = !!activeBrandId && !!m.brandId && m.brandId !== activeBrandId;
                   return (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => onMilestoneClick(m.id)}
-                      className={cn(
-                        'w-full text-left rounded px-1.5 py-0.5 text-xs text-white truncate',
-                        'hover:brightness-110 transition-all',
-                        STATUS_OPACITY[m.status] ?? 'opacity-100',
-                        !isStart && 'opacity-40'
-                      )}
-                      style={{ background: m.brandId ? brandColor(m.brandId) : 'hsl(var(--primary))' }}
-                      title={`${m.title}${span > 0 ? ` (${span + 1}gg)` : ''}`}
-                    >
-                      {isStart ? m.title : '↳'}
-                    </button>
+                    <div key={m.id} className={cn(isOtherBrand && 'opacity-40')}>
+                      <button
+                        type="button"
+                        onClick={() => onMilestoneClick(m.id)}
+                        className={cn(
+                          'w-full text-left rounded px-1.5 py-0.5 text-xs text-white truncate',
+                          'hover:brightness-110 transition-all',
+                          STATUS_OPACITY[m.status] ?? 'opacity-100',
+                          !isStart && 'opacity-40'
+                        )}
+                        style={{ background: m.brandId ? brandColor(m.brandId) : 'hsl(var(--primary))' }}
+                        title={`${m.title}${span > 0 ? ` (${span + 1}gg)` : ''}`}
+                      >
+                        {isStart ? m.title : '↳'}
+                      </button>
+                    </div>
                   );
                 })}
               </div>

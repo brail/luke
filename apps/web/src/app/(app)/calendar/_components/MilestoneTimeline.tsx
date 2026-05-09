@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 
 import { Badge } from '../../../../components/ui/badge';
+import { cn } from '../../../../lib/utils';
 import { SECTION_LABELS, STATUS_VARIANT } from '../constants';
 import { brandColor } from '../utils';
 
@@ -21,9 +22,10 @@ interface Milestone {
 interface Props {
   milestones: Milestone[];
   onMilestoneClick: (id: string) => void;
+  activeBrandId?: string;
 }
 
-export function MilestoneTimeline({ milestones, onMilestoneClick }: Props) {
+export function MilestoneTimeline({ milestones, onMilestoneClick, activeBrandId }: Props) {
   const sorted = useMemo(
     () => [...milestones].sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime()),
     [milestones]
@@ -37,12 +39,14 @@ export function MilestoneTimeline({ milestones, onMilestoneClick }: Props) {
         <span>Sezione</span>
         <span>Stato</span>
       </div>
-      {sorted.map(m => (
+      {sorted.map(m => {
+        const isOtherBrand = !!activeBrandId && !!m.brandId && m.brandId !== activeBrandId;
+        return (
         <button
           key={m.id}
           type="button"
           onClick={() => onMilestoneClick(m.id)}
-          className="grid grid-cols-[120px_1fr_120px_120px] gap-x-4 w-full px-3 py-2 text-left text-sm rounded hover:bg-muted/50 transition-colors"
+          className={cn("grid grid-cols-[120px_1fr_120px_120px] gap-x-4 w-full px-3 py-2 text-left text-sm rounded hover:bg-muted/50 transition-colors", isOtherBrand && "opacity-40")}
         >
           <span className="text-muted-foreground tabular-nums">
             {new Date(m.startAt).toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })}
@@ -65,7 +69,8 @@ export function MilestoneTimeline({ milestones, onMilestoneClick }: Props) {
             </Badge>
           </span>
         </button>
-      ))}
+        );
+      })}
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { SECTION_ACCESS_DEFAULTS } from '@luke/core';
-import type { Section } from '@luke/core';
+import type { Role, Section } from '@luke/core';
 
 import { Button } from '../../../../../components/ui/button';
 import { Checkbox } from '../../../../../components/ui/checkbox';
@@ -18,6 +18,13 @@ import {
   DialogTitle,
 } from '../../../../../components/ui/dialog';
 import { Label } from '../../../../../components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../../../../components/ui/select';
 import { Switch } from '../../../../../components/ui/switch';
 import { trpc } from '../../../../../lib/trpc';
 
@@ -58,13 +65,14 @@ export function ApproveUserDialog({
     { enabled: open }
   );
 
+  const [pendingRole, setPendingRole] = useState<Role>(user.role);
   const [pendingSection, setPendingSection] = useState<SectionOverrideMap>({});
   const [pendingBrandIds, setPendingBrandIds] = useState<string[] | null>(null);
   const [pendingSeasonAccess, setPendingSeasonAccess] =
     useState<SeasonAccessMap>({});
 
   const getRoleDefault = (section: Section): boolean =>
-    SECTION_ACCESS_DEFAULTS[user.role]?.[section] ?? false;
+    SECTION_ACCESS_DEFAULTS[pendingRole]?.[section] ?? false;
 
   const getSectionValue = (section: Section): boolean => {
     if (section in pendingSection) return pendingSection[section]!;
@@ -137,6 +145,7 @@ export function ApproveUserDialog({
     });
   };
 
+  const updateUserMutation = trpc.users.update.useMutation();
   const setSectionMutation = trpc.sectionAccess.set.useMutation();
   const setBrandAccessMutation =
     trpc.context.access.setBrandAccess.useMutation();
@@ -149,6 +158,10 @@ export function ApproveUserDialog({
   const handleSaveAndApprove = async () => {
     setIsSaving(true);
     try {
+      if (pendingRole !== user.role) {
+        await updateUserMutation.mutateAsync({ id: user.id, role: pendingRole });
+      }
+
       // New user: no existing overrides — only send explicit changes, skip no-ops
       await Promise.all(
         Object.keys(pendingSection).map(section =>
@@ -209,13 +222,33 @@ export function ApproveUserDialog({
             Configura accesso e approva — {user.username}
           </DialogTitle>
           <DialogDescription>
-            Configura le sezioni e i brand/stagioni accessibili prima di
-            approvare l&apos;account. I valori mostrati riflettono i default del
-            ruolo <strong>{user.role}</strong>.
+            Configura ruolo, sezioni e brand/stagioni accessibili prima di
+            approvare l&apos;account. I default sezioni si aggiornano al cambio
+            ruolo.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 pt-2">
+          <div>
+            <h3 className="text-sm font-semibold mb-3">Ruolo</h3>
+            <Select
+              value={pendingRole}
+              onValueChange={v => {
+                setPendingRole(v as Role);
+                setPendingSection({});
+              }}
+            >
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="viewer">Viewer</SelectItem>
+                <SelectItem value="editor">Editor</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <div>
             <h3 className="text-sm font-semibold mb-3">Visibilità sezioni</h3>
             <div className="space-y-2">

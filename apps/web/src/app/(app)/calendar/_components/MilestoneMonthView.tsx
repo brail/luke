@@ -24,6 +24,7 @@ interface Props {
   viewDate: Date;
   onViewDateChange: (d: Date) => void;
   onMilestoneClick: (id: string) => void;
+  activeBrandId?: string;
 }
 
 const DAY_LABELS = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
@@ -60,7 +61,7 @@ const STATUS_OPACITY: Record<string, string> = {
   CANCELLED: 'opacity-25 line-through',
 };
 
-export function MilestoneMonthView({ milestones, viewDate, onViewDateChange, onMilestoneClick }: Props) {
+export function MilestoneMonthView({ milestones, viewDate, onViewDateChange, onMilestoneClick, activeBrandId }: Props) {
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
 
@@ -139,22 +140,26 @@ export function MilestoneMonthView({ milestones, viewDate, onViewDateChange, onM
 
               {/* Milestone chips */}
               <div className="space-y-0.5 flex-1">
-                {items.slice(0, MAX_CHIPS).map(m => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => onMilestoneClick(m.id)}
-                    className={cn(
-                      'w-full text-left rounded px-1 py-0.5 text-[11px] text-white truncate leading-tight',
-                      'hover:brightness-110 transition-all',
-                      STATUS_OPACITY[m.status] ?? 'opacity-100'
-                    )}
-                    style={{ background: m.brandId ? brandColor(m.brandId) : 'hsl(var(--primary))' }}
-                    title={m.title}
-                  >
-                    {m.title}
-                  </button>
-                ))}
+                {items.slice(0, MAX_CHIPS).map(m => {
+                  const isOtherBrand = !!activeBrandId && !!m.brandId && m.brandId !== activeBrandId;
+                  return (
+                    <div key={m.id} className={cn(isOtherBrand && 'opacity-40')}>
+                      <button
+                        type="button"
+                        onClick={() => onMilestoneClick(m.id)}
+                        className={cn(
+                          'w-full text-left rounded px-1 py-0.5 text-[11px] text-white truncate leading-tight',
+                          'hover:brightness-110 transition-all',
+                          STATUS_OPACITY[m.status] ?? 'opacity-100'
+                        )}
+                        style={{ background: m.brandId ? brandColor(m.brandId) : 'hsl(var(--primary))' }}
+                        title={m.title}
+                      >
+                        {m.title}
+                      </button>
+                    </div>
+                  );
+                })}
                 {overflow > 0 && (
                   <div className="text-[10px] text-muted-foreground px-1">
                     +{overflow} altri

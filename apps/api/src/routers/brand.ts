@@ -16,10 +16,11 @@ import {
 
 import { logAudit } from '../lib/auditLog';
 import { withRateLimit } from '../lib/ratelimit';
+import { requirePermission } from '../lib/permissions';
+import { getUserAllowedBrandIds } from '../services/context.service.js';
 import { makeUrlResolver } from '../lib/storageUrl';
 import { deleteObjectByKey } from '../storage';
 import { router, protectedProcedure } from '../lib/trpc';
-import { requirePermission } from '../lib/permissions';
 
 const BRAND_SELECT = {
   id: true,
@@ -60,8 +61,14 @@ export const brandRouter = router({
       const cursor = input?.cursor;
       const limit = input?.limit ?? 50;
 
+      const where = buildWhereClause(input || {});
+      const allowedBrandIds = await getUserAllowedBrandIds(ctx.session.user.id, ctx.prisma);
+      if (allowedBrandIds !== null) {
+        where.id = { in: allowedBrandIds };
+      }
+
       const items = await ctx.prisma.brand.findMany({
-        where: buildWhereClause(input || {}),
+        where,
         take: limit + 1,
         cursor: cursor ? { id: cursor } : undefined,
         orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],

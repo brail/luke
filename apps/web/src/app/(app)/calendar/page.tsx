@@ -15,6 +15,7 @@ import { usePermission } from '../../../hooks/usePermission';
 import { useSectionAccess } from '../../../hooks/useSectionAccess';
 import { trpc } from '../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../lib/trpcErrorMessages';
+import { cn } from '../../../lib/utils';
 
 import { ApplyTemplateDialog } from './_components/ApplyTemplateDialog';
 import { CloneBrandSeasonDialog } from './_components/CloneBrandSeasonDialog';
@@ -26,6 +27,7 @@ import { MilestoneMonthView } from './_components/MilestoneMonthView';
 import { MilestoneTimeline } from './_components/MilestoneTimeline';
 import { MilestoneWeekView } from './_components/MilestoneWeekView';
 import { SECTION_LABELS } from './constants';
+import { brandColor } from './utils';
 
 export default function CalendarPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
@@ -233,15 +235,28 @@ export default function CalendarPage() {
           {multiBrandAvailable && (
             <SectionCard title="Brand">
               <div className="space-y-2">
-                {allBrands.map(b => (
-                  <label key={b.id} className="flex items-center gap-2 cursor-pointer">
-                    <Checkbox
-                      checked={selectedBrandIds.includes(b.id)}
-                      onCheckedChange={() => toggleBrand(b.id)}
-                    />
-                    <span className="text-sm truncate">{b.name}</span>
-                  </label>
-                ))}
+                {allBrands.map(b => {
+                  const isActive = b.id === contextBrandId;
+                  return (
+                    <label
+                      key={b.id}
+                      className={cn(
+                        'flex items-center gap-2 cursor-pointer rounded px-1.5 py-0.5 -mx-1.5 transition-colors',
+                        isActive && 'bg-muted font-medium'
+                      )}
+                    >
+                      <Checkbox
+                        checked={selectedBrandIds.includes(b.id)}
+                        onCheckedChange={() => toggleBrand(b.id)}
+                      />
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ background: brandColor(b.id) }}
+                      />
+                      <span className="text-sm truncate">{b.name}</span>
+                    </label>
+                  );
+                })}
               </div>
             </SectionCard>
           )}
@@ -290,6 +305,7 @@ export default function CalendarPage() {
                   viewDate={viewDate}
                   onViewDateChange={setViewDate}
                   onMilestoneClick={id => setActiveMilestoneId(id)}
+                  activeBrandId={contextBrandId ?? undefined}
                 />
               ) : view === 'month' ? (
                 <MilestoneMonthView
@@ -297,6 +313,7 @@ export default function CalendarPage() {
                   viewDate={viewDate}
                   onViewDateChange={setViewDate}
                   onMilestoneClick={id => setActiveMilestoneId(id)}
+                  activeBrandId={contextBrandId ?? undefined}
                 />
               ) : filteredMilestones.length === 0 ? (
                 <div className="py-12 text-center text-muted-foreground">
@@ -318,11 +335,13 @@ export default function CalendarPage() {
                 <MilestoneGantt
                   milestones={filteredMilestones}
                   onMilestoneClick={id => setActiveMilestoneId(id)}
+                  activeBrandId={contextBrandId ?? undefined}
                 />
               ) : (
                 <MilestoneTimeline
                   milestones={filteredMilestones}
                   onMilestoneClick={id => setActiveMilestoneId(id)}
+                  activeBrandId={contextBrandId ?? undefined}
                 />
               )}
             </CardContent>
