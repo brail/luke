@@ -18,6 +18,7 @@ RUN pnpm --filter @luke/api exec prisma generate
 # Build shared packages first, then the API
 RUN pnpm --filter @luke/core build
 RUN pnpm --filter @luke/nav build
+RUN pnpm --filter @luke/calendar build
 RUN pnpm --filter @luke/api build
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
@@ -44,6 +45,11 @@ COPY --from=builder /app/packages/core/node_modules  ./packages/core/node_module
 COPY --from=builder /app/packages/nav/package.json ./packages/nav/package.json
 COPY --from=builder /app/packages/nav/dist          ./packages/nav/dist
 COPY --from=builder /app/packages/nav/node_modules  ./packages/nav/node_modules
+
+# @luke/calendar — calendar export runtime
+COPY --from=builder /app/packages/calendar/package.json ./packages/calendar/package.json
+COPY --from=builder /app/packages/calendar/dist          ./packages/calendar/dist
+COPY --from=builder /app/packages/calendar/node_modules  ./packages/calendar/node_modules
 
 # @luke/api — compiled output + prisma schema + runtime deps
 COPY --from=builder /app/apps/api/package.json    ./apps/api/package.json
