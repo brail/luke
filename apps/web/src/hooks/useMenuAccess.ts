@@ -25,6 +25,7 @@ export function useMenuAccess() {
       ldap: s.settings && s['settings.ldap'],
       nav: s.settings && s['settings.nav'],
       nav_sync: s.settings && s['settings.nav_sync'],
+      google: s.settings && s['settings.google'],
     };
     const showSettings = Object.values(settingsItems).some(Boolean);
 

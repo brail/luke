@@ -277,12 +277,13 @@ export default function CollectionLayoutPage() {
                 availableGenders,
               })
             }
-            onCopyFromSeason={fromSeasonId =>
+            onCopyFromSeason={(fromSeasonId, rows) =>
               copyFromSeasonMutation.mutate({
                 fromBrandId: brand.id,
                 fromSeasonId,
                 toBrandId: brand.id,
                 toSeasonId: season.id,
+                rows,
               })
             }
             isLoading={

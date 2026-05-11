@@ -1,4 +1,11 @@
-export { createGoogleCalendarClient, type CalendarConfig, type GoogleCalendarClient } from './google/client.js';
+export {
+  createGoogleCalendarClient,
+  testGoogleConnection,
+  generateOAuthUrl,
+  exchangeOAuthCode,
+  type CalendarConfig,
+  type GoogleCalendarClient,
+} from './google/client.js';
 export { buildCalendarSummary, createCalendar, deleteCalendar } from './google/calendars.js';
 export { addCalendarReader, removeCalendarReader, syncCalendarReaders } from './google/acl.js';
 export { createEvent, updateEvent, deleteEvent, type EventInput } from './google/events.js';

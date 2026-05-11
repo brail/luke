@@ -7,6 +7,7 @@ import { z } from 'zod';
 
 import { router, publicProcedure } from '../lib/trpc';
 
+import { googleRouter } from './integrations.google.router';
 import { importExportRouter } from './integrations.import.router';
 import { ldapRouter } from './integrations.ldap.router';
 import { mailRouter } from './integrations.mail.router';
@@ -25,6 +26,7 @@ export const integrationsRouter = router({
       };
     }),
 
+  google: googleRouter,
   storage: storageRouter,
   mail: mailRouter,
   nav: navRouter,

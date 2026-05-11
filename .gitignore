@@ -8,6 +8,9 @@ docs/merchandising-reference/
 .claude/
 CLAUDE.md
 
+# Planning/roadmap docs (local only)
+.planning/
+
 # Dependencies
 node_modules/
 .pnpm-store/

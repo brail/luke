@@ -28,6 +28,7 @@ import {
   ClipboardList,
   ListTree,
   LayoutTemplate,
+  Chrome,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -132,8 +133,8 @@ export default function AppSidebar() {
           {/* Calendario (trasversale — OR su planning.*) */}
           {menuAccess.calendar && (
             <SidebarMenuItem>
-              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
               <SidebarMenuButton asChild isActive={isActive('/calendar')}>
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                 <Link href={'/calendar' as any}>
                   <CalendarDays size={18} />
                   <span>Calendario</span>
@@ -356,6 +357,14 @@ export default function AppSidebar() {
                         <Link href="/settings/nav-sync" className="flex items-center gap-2">
                           <RefreshCw size={16} />
                           <span>Sincronizzazione NAV</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                    {menuAccess.settingsItems.google && (
+                      <DropdownMenuItem asChild>
+                        <Link href="/settings/google" className="flex items-center gap-2">
+                          <Chrome size={16} />
+                          <span>Google Workspace</span>
                         </Link>
                       </DropdownMenuItem>
                     )}

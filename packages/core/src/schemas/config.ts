@@ -92,6 +92,20 @@ export const AppConfigRegistry = {
   'integrations.nav.password':              z.string(),
   'integrations.nav.company':               z.string().min(1),
   'integrations.nav.readOnly':              z.coerce.boolean(),
+
+  // ── Google Workspace ──────────────────────────────────────────────────────
+  'integrations.google.authMode':              z.enum(['service_account', 'oauth_user']),
+  'integrations.google.domain':                z.string().min(1),
+  'integrations.google.calendarSync.enabled':  z.coerce.boolean(),
+  // Service account mode
+  'integrations.google.serviceEmail':          z.string().email(),
+  'integrations.google.serviceKey':            z.string().min(1),
+  'integrations.google.impersonateEmail':      z.string().email(),
+  // OAuth user mode
+  'integrations.google.oauth.clientId':        z.string().min(1),
+  'integrations.google.oauth.clientSecret':    z.string().min(1),
+  'integrations.google.oauth.refreshToken':    z.string().min(1),
+  'integrations.google.oauth.userEmail':       z.string().email(),
 } as const satisfies Record<string, z.ZodTypeAny>;
 
 export type AppConfigKey = keyof typeof AppConfigRegistry;

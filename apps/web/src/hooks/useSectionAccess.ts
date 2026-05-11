@@ -65,6 +65,7 @@ export function useSectionAccess() {
       'settings.ldap': checkAccess('settings.ldap'),
       'settings.nav': checkAccess('settings.nav'),
       'settings.nav_sync': checkAccess('settings.nav_sync'),
+      'settings.google': checkAccess('settings.google'),
       maintenance: checkAccess('maintenance'),
       'maintenance.config': checkAccess('maintenance.config'),
       'maintenance.import_export': checkAccess('maintenance.import_export'),

@@ -527,6 +527,7 @@ export const collectionLayoutRouter = router({
         fromSeasonId: z.string().uuid(),
         toBrandId: z.string().uuid(),
         toSeasonId: z.string().uuid(),
+        rows: z.array(z.object({ id: z.string().uuid(), copyQuotations: z.boolean() })).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -535,9 +536,10 @@ export const collectionLayoutRouter = router({
         input.fromSeasonId,
         input.toBrandId,
         input.toSeasonId,
-        ctx.prisma
+        ctx.prisma,
+        input.rows ? { rows: input.rows } : undefined
       );
-      await logAudit(ctx, { action: 'COLLECTION_LAYOUT_COPY_FROM_SEASON', targetType: 'CollectionLayout', targetId: result.id, result: 'SUCCESS', metadata: { fromBrandId: input.fromBrandId, fromSeasonId: input.fromSeasonId, toBrandId: input.toBrandId, toSeasonId: input.toSeasonId } });
+      await logAudit(ctx, { action: 'COLLECTION_LAYOUT_COPY_FROM_SEASON', targetType: 'CollectionLayout', targetId: result.id, result: 'SUCCESS', metadata: { fromBrandId: input.fromBrandId, fromSeasonId: input.fromSeasonId, toBrandId: input.toBrandId, toSeasonId: input.toSeasonId, rowCount: input.rows?.length } });
       return resolveLayoutUrls(result, ctx.prisma);
     }),
 

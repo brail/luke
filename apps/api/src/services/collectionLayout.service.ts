@@ -107,12 +107,15 @@ export async function getOrCreateLayout(
   }) as Promise<CollectionLayoutWithRelations>;
 }
 
+type RowCopySelection = { id: string; copyQuotations: boolean };
+
 export async function copyFromSeason(
   fromBrandId: string,
   fromSeasonId: string,
   toBrandId: string,
   toSeasonId: string,
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  options?: { rows: RowCopySelection[] }
 ): Promise<CollectionLayoutWithRelations> {
   const source = await prisma.collectionLayout.findUnique({
     where: { brandId_seasonId: { brandId: fromBrandId, seasonId: fromSeasonId } },
@@ -137,6 +140,10 @@ export async function copyFromSeason(
     });
   }
 
+  const rowMap = options
+    ? new Map(options.rows.map(r => [r.id, r.copyQuotations]))
+    : null;
+
   return prisma.$transaction(async tx => {
     const newLayout = await tx.collectionLayout.create({
       data: {
@@ -147,6 +154,12 @@ export async function copyFromSeason(
     });
 
     for (const group of (source as CollectionLayoutWithRelations).groups) {
+      const rows = rowMap
+        ? group.rows.filter(r => rowMap.has(r.id))
+        : group.rows;
+
+      if (rows.length === 0) continue;
+
       const newGroup = await tx.collectionGroup.create({
         data: {
           collectionLayoutId: newLayout.id,
@@ -155,7 +168,7 @@ export async function copyFromSeason(
         },
       });
 
-      for (const row of group.rows) {
+      for (const row of rows) {
         const {
           id: _id,
           collectionLayoutId: _cid,
@@ -173,16 +186,19 @@ export async function copyFromSeason(
             ...rowData,
             collectionLayoutId: newLayout.id,
             groupId: newGroup.id,
-            pictureKey: null, // image non copiata intenzionalmente
+            pictureKey: null,
+            progress: null,
           },
         });
 
-        // Copia quotazioni senza pictureKey
-        for (const q of row.quotations) {
-          const { id: _qid, rowId: _qrowId, createdAt: _qca, updatedAt: _qua, pricingParameterSet: _ps, ...qData } = q;
-          await tx.collectionRowQuotation.create({
-            data: { ...qData, rowId: newRow.id },
-          });
+        const shouldCopyQuotations = rowMap?.get(row.id) ?? true;
+        if (shouldCopyQuotations) {
+          for (const q of row.quotations) {
+            const { id: _qid, rowId: _qrowId, createdAt: _qca, updatedAt: _qua, pricingParameterSet: _ps, ...qData } = q;
+            await tx.collectionRowQuotation.create({
+              data: { ...qData, rowId: newRow.id },
+            });
+          }
         }
       }
     }

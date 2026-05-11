@@ -1,6 +1,6 @@
 'use client';
 
-import { Download } from 'lucide-react';
+import { Calendar, Download, FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -81,19 +81,23 @@ export function ExportButton({ seasonId, brandIds, view, viewDate, disabled }: P
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" disabled={disabled || loading || !brandIds.length}>
-          <Download size={14} className="mr-1" />
-          {loading ? 'Esportazione…' : 'Esporta'}
+          {loading
+            ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Esportando…</>
+            : <><Download className="h-4 w-4 mr-1" />Esporta</>}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => handleExport('ical')}>
-          iCal (.ics) — Google Calendar, Outlook
+        <DropdownMenuItem onClick={() => handleExport('ical')} disabled={loading}>
+          <Calendar className="h-4 w-4 mr-2" />
+          iCal (.ics)
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => handleExport('pdf')}>
-          PDF (.pdf) — stampa / archivio
+        <DropdownMenuItem onClick={() => handleExport('pdf')} disabled={loading}>
+          <FileText className="h-4 w-4 mr-2" />
+          PDF (.pdf)
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => handleExport('xlsx')}>
-          Excel (.xlsx) — analisi dati
+        <DropdownMenuItem onClick={() => handleExport('xlsx')} disabled={loading}>
+          <FileSpreadsheet className="h-4 w-4 mr-2" />
+          Excel (.xlsx)
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

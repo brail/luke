@@ -537,13 +537,7 @@ const FORBIDDEN_ENV_PATTERNS: RegExp[] = [
   /.*_TOKEN$/i,
 ];
 
-// Bootstrap infra exceptions: Google service account credentials live in env
-// (not AppConfig) because they are infrastructure-level, not application-level.
-const ALLOWED_ENV_EXCEPTIONS = new Set([
-  'GOOGLE_SA_CLIENT_EMAIL',
-  'GOOGLE_SA_PRIVATE_KEY',
-  'GOOGLE_WORKSPACE_DOMAIN',
-]);
+const ALLOWED_ENV_EXCEPTIONS = new Set<string>([]);
 
 function assertEnvPolicy(): void {
   const violations = Object.keys(process.env).filter(key =>

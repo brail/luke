@@ -16,6 +16,11 @@ import { logAudit } from '../lib/auditLog.js';
 import { withRateLimit } from '../lib/ratelimit.js';
 import { router, protectedProcedure } from '../lib/trpc.js';
 import { requirePermission } from '../lib/permissions.js';
+import {
+  syncOneMilestone,
+  cleanupMilestoneEvents,
+  reconcileCalendar,
+} from '../services/googleCalendarSync.service.js';
 
 import {
   assertBrandAccess,
@@ -128,7 +133,7 @@ export const seasonCalendarRouter = router({
 
       const result = await createMilestone(input, ctx.prisma);
       await logAudit(ctx, { action: 'CALENDAR_MILESTONE_CREATE', targetType: 'CalendarMilestone', targetId: result.id, result: 'SUCCESS', metadata: { calendarId: input.calendarId, ownerSectionKey: input.ownerSectionKey } });
-      // TODO: trigger async Google sync
+      syncOneMilestone(result.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on create'));
       return result;
     }),
 
@@ -149,7 +154,7 @@ export const seasonCalendarRouter = router({
 
       const result = await updateMilestone(input.id, input.data, ctx.prisma);
       await logAudit(ctx, { action: 'CALENDAR_MILESTONE_UPDATE', targetType: 'CalendarMilestone', targetId: input.id, result: 'SUCCESS', metadata: {} });
-      // TODO: trigger async Google sync
+      syncOneMilestone(input.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on update'));
       return result;
     }),
 
@@ -165,7 +170,7 @@ export const seasonCalendarRouter = router({
       if (!milestone) throw new TRPCError({ code: 'NOT_FOUND', message: 'Milestone non trovata' });
       await assertBrandAccess(ctx.session.user.id, milestone.calendar.brandId, ctx.prisma);
 
-      // TODO: delete Google events before deleting milestone
+      await cleanupMilestoneEvents(input.id, ctx.prisma, ctx.logger);
       await deleteMilestone(input.id, ctx.prisma);
       await logAudit(ctx, { action: 'CALENDAR_MILESTONE_DELETE', targetType: 'CalendarMilestone', targetId: input.id, result: 'SUCCESS', metadata: {} });
       return { success: true };
@@ -191,7 +196,7 @@ export const seasonCalendarRouter = router({
         data: { status: input.status },
       });
       await logAudit(ctx, { action: 'CALENDAR_MILESTONE_STATUS_UPDATE', targetType: 'CalendarMilestone', targetId: input.id, result: 'SUCCESS', metadata: { status: input.status } });
-      // TODO: trigger async Google sync
+      syncOneMilestone(input.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on status change'));
       return result;
     }),
 
@@ -374,8 +379,8 @@ export const seasonCalendarRouter = router({
       });
       if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
       await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
-      // TODO: enqueue full reconciliation job
-      await logAudit(ctx, { action: 'SEASON_CALENDAR_SYNC_TRIGGERED', targetType: 'SeasonCalendar', targetId: input.calendarId, result: 'SUCCESS', metadata: {} });
-      return { triggered: true };
+      const syncResult = await reconcileCalendar(input.calendarId, ctx.prisma, ctx.logger);
+      await logAudit(ctx, { action: 'SEASON_CALENDAR_SYNC_TRIGGERED', targetType: 'SeasonCalendar', targetId: input.calendarId, result: 'SUCCESS', metadata: syncResult });
+      return { triggered: true, ...syncResult };
     }),
 });
