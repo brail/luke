@@ -45,6 +45,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Copy pnpm from builder so corepack doesn't need internet access at runtime
+COPY --from=builder $PNPM_HOME $PNPM_HOME
+
 # Workspace manifests
 COPY --from=builder /app/package.json /app/pnpm-workspace.yaml ./
 
