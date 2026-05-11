@@ -37,6 +37,7 @@ import { useSession, signOut } from 'next-auth/react';
 import { useMenuAccess } from '../hooks/useMenuAccess';
 import { useMenuPreferences } from '../hooks/useMenuPreferences';
 
+import { FeedbackDialog } from './FeedbackDialog';
 import Logo from './Logo';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
@@ -420,6 +421,9 @@ export default function AppSidebar() {
 
       {/* Footer con dropdown utente - sempre visibile */}
       <SidebarFooter>
+        <div className="px-1 pb-1">
+          <FeedbackDialog />
+        </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <div className="flex items-center gap-3 p-2 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors">

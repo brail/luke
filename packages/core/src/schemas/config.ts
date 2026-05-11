@@ -106,6 +106,10 @@ export const AppConfigRegistry = {
   'integrations.google.oauth.clientSecret':    z.string().min(1),
   'integrations.google.oauth.refreshToken':    z.string().min(1),
   'integrations.google.oauth.userEmail':       z.string().email(),
+
+  // ── Feedback ──────────────────────────────────────────────────────────────
+  'integrations.github.feedbackToken': z.string().min(1),   // GitHub PAT (encrypted)
+  'integrations.github.feedbackRepo':  z.string().min(1),   // format: "owner/repo"
 } as const satisfies Record<string, z.ZodTypeAny>;
 
 export type AppConfigKey = keyof typeof AppConfigRegistry;
