@@ -34,6 +34,7 @@ RUN pnpm --filter @luke/api exec prisma generate
 # Build shared packages first
 RUN pnpm --filter @luke/core build
 RUN pnpm --filter @luke/nav build
+RUN pnpm --filter @luke/calendar build
 
 # Build Next.js app
 RUN pnpm --filter @luke/web build
