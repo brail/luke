@@ -1,0 +1,3 @@
+SELECT Customer.No_, Customer.Name, Customer.[Country_Region Code], [Geographical Zone].Description, [Customer Recipient Relation].[Recipient Code], [Customer Recipient Relation].[FE Starting Date Service], [Customer Recipient Relation].[FE Ending Date Service], [Customer Recipient Relation].[Invoicing PEC], [Customer Recipient Relation].[Export Transport Information], [Customer Recipient Relation].[Export Tracking Information]
+FROM ([Customer Recipient Relation] RIGHT JOIN Customer ON [Customer Recipient Relation].[Customer No_] = Customer.No_) LEFT JOIN [Geographical Zone] ON Customer.[Geographical Zone 2] = [Geographical Zone].Code;
+

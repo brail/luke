@@ -1,0 +1,5 @@
+SELECT [Sales Header].No_ AS NumeroOrdine, [Sales Header].[Bill-to Name] AS Cliente, [Sales Header].[VAT Registration No_] AS PIVA, Sum(Val([quantity])) AS Paia, "Calzature sportive" AS Prodotto, Sum(Val([Amount Including VAT])) AS importoIvaInclusa, Sum(Val([Line Amount])-Val([inv_ discount amount])) AS ValoreIvaEsclusa, Item.[Season Code], [Sales Header].[Payment Method Code], Item.[Trademark Code], [Sales Header].[Bill-to Country Code]
+FROM ([Sales Line] INNER JOIN [Sales Header] ON ([Sales Line].[Document No_] = [Sales Header].No_) AND ([Sales Line].[Document Type] = [Sales Header].[Document Type])) INNER JOIN Item ON [Sales Line].[Model Item No_] = Item.No_
+GROUP BY [Sales Header].No_, [Sales Header].[Bill-to Name], [Sales Header].[VAT Registration No_], "Calzature sportive", Item.[Season Code], [Sales Header].[Payment Method Code], [Sales Line].Type, Item.[Trademark Code], [Sales Header].[Bill-to Country Code], [Sales Line].[Delete Reason]
+HAVING (((Item.[Season Code])="E14") AND (([Sales Line].Type)=2) AND (([Sales Line].[Delete Reason])=""));
+

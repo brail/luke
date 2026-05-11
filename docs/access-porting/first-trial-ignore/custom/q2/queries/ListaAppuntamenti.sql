@@ -1,0 +1,5 @@
+SELECT [Budget Header].[Trademark Code], [Budget Header].[Selling Season Code], [Budget Header].[Budget Type], [Budget Header].[Budget Area], Max([To-do].Date) AS MaxDiDate, [Budget Line].[Budget No_], [Budget Header].Description, [Budget Line].[Source No_], Customer.Name, [Budget Line].City, [Budget Line].Note, Val([Curr_ Bdg_ Quantity]) AS qty, Val([Curr_ Bdg_ Amount]) AS amt, [Budget Line].[Line Status]
+FROM ([To-do] RIGHT JOIN ([Budget Line] INNER JOIN [Budget Header] ON [Budget Line].[Budget No_] = [Budget Header].No_) ON ([To-do].[Source No_] = [Budget Line].[Source No_]) AND ([To-do].[Source Type] = [Budget Line].[Source Type]) AND ([To-do].[Budget No_] = [Budget Line].[Budget No_])) INNER JOIN Customer ON [Budget Line].[Source No_] = Customer.No_
+GROUP BY [Budget Header].[Trademark Code], [Budget Header].[Selling Season Code], [Budget Header].[Budget Type], [Budget Header].[Budget Area], [Budget Line].[Budget No_], [Budget Header].Description, [Budget Line].[Source No_], Customer.Name, [Budget Line].City, [Budget Line].Note, Val([Curr_ Bdg_ Quantity]), Val([Curr_ Bdg_ Amount]), [Budget Line].[Line Status]
+HAVING ((([Budget Line].[Line Status])=3));
+

@@ -37,6 +37,7 @@ const VENDOR_SELECT = {
   isActive: true,
   createdAt: true,
   updatedAt: true,
+  enabledParameterSets: { select: { id: true } },
 } as const;
 
 export const vendorsRouter = router({
@@ -115,10 +116,19 @@ export const vendorsRouter = router({
         }
       }
 
-      return ctx.prisma.vendor.create({
-        data: { ...input, isActive: true },
+      const { enabledParameterSetIds, ...vendorData } = input;
+      const created = await ctx.prisma.vendor.create({
+        data: {
+          ...vendorData,
+          isActive: true,
+          ...(enabledParameterSetIds?.length
+            ? { enabledParameterSets: { connect: enabledParameterSetIds.map(id => ({ id })) } }
+            : {}),
+        },
         select: VENDOR_SELECT,
       });
+      await logAudit(ctx, { action: 'VENDOR_CREATE', targetType: 'Vendor', targetId: created.id, result: 'SUCCESS', metadata: { name: created.name } });
+      return created;
     }),
 
   /**
@@ -130,7 +140,7 @@ export const vendorsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(VendorUpdateInputSchema)
     .mutation(async ({ input, ctx }) => {
-      return ctx.prisma.$transaction(async (tx) => {
+      const result = await ctx.prisma.$transaction(async (tx) => {
         const vendor = await tx.vendor.findUnique({
           where: { id: input.id },
         });
@@ -159,12 +169,21 @@ export const vendorsRouter = router({
           }
         }
 
+        const { enabledParameterSetIds, ...updateData } = input.data;
         return tx.vendor.update({
           where: { id: input.id },
-          data: { ...input.data, updatedAt: new Date() },
+          data: {
+            ...updateData,
+            updatedAt: new Date(),
+            ...(enabledParameterSetIds !== undefined
+              ? { enabledParameterSets: { set: enabledParameterSetIds.map(id => ({ id })) } }
+              : {}),
+          },
           select: VENDOR_SELECT,
         });
       });
+      await logAudit(ctx, { action: 'VENDOR_UPDATE', targetType: 'Vendor', targetId: input.id, result: 'SUCCESS', metadata: { name: result.name } });
+      return result;
     }),
 
   /**

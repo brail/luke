@@ -1,0 +1,4 @@
+SELECT NoteOrdiniVenditaGlobaleOrdinateECalcolate.CodiceCliente, Last(NoteOrdiniVenditaGlobaleOrdinateECalcolate.commenti) AS listacommenti
+FROM NoteOrdiniVenditaGlobaleOrdinateECalcolate
+GROUP BY NoteOrdiniVenditaGlobaleOrdinateECalcolate.CodiceCliente;
+

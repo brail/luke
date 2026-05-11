@@ -1,0 +1,4 @@
+# Saved Queries in NewEraStat.accdb
+
+Note: Direct query extraction from .accdb requires Access COM API or specialized parsing.
+Queries will be documented based on form recordsources and VBA code analysis.

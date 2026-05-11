@@ -3,9 +3,10 @@
  * Verifica tokenVersion ogni 30 secondi per rilevare revoca sessioni da admin
  */
 
+import { TRPCClientError } from '@trpc/client';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import { debugError, debugLog } from '../lib/debug';
 import { trpc } from '../lib/trpc';
@@ -22,83 +23,60 @@ export function useSessionVerification() {
     refetchOnWindowFocus: false,
   });
 
+  const verifyImmediately = useCallback(async () => {
+    try {
+      debugLog('Verifica tokenVersion immediata...');
+      const result = await verifySession();
+
+      if (!result.data) {
+        debugLog('Sessione invalida rilevata, redirect a login');
+        router.push('/login');
+        return;
+      }
+    } catch (error: unknown) {
+      const isAuthError =
+        error instanceof TRPCClientError && error.data?.code === 'UNAUTHORIZED';
+      if (isAuthError) {
+        debugLog('Sessione invalida rilevata, redirect a login');
+        router.push('/login');
+      } else {
+        debugError('Errore verifica sessione (transiente, ignorato):', error);
+      }
+    }
+  }, [verifySession, router]);
+
+  const handleVisibilityChange = useCallback(() => {
+    if (!document.hidden) {
+      debugLog('Tab riattivata, verifica sessione...');
+      verifyImmediately();
+    }
+  }, [verifyImmediately]);
+
+  const handleFocus = useCallback(() => {
+    debugLog('Window focus, verifica sessione...');
+    verifyImmediately();
+  }, [verifyImmediately]);
+
   useEffect(() => {
-    // Solo se autenticato e abbiamo accessToken
     if (status === 'authenticated' && session?.accessToken) {
       debugLog('Avvio verifica sessione immediata e periodica');
 
-      // Verifica immediata al mount
-      const verifyImmediately = async () => {
-        try {
-          debugLog('Verifica tokenVersion immediata...');
-          const result = await verifySession();
-
-          if (!result.data) {
-            debugLog('Sessione invalida rilevata, redirect a login');
-            router.push('/login');
-            return;
-          }
-        } catch (error) {
-          debugError('Errore verifica sessione:', error);
-          debugLog('Sessione invalida rilevata, redirect a login');
-          router.push('/login');
-          return;
-        }
-      };
-
-      // Verifica immediata
       verifyImmediately();
-
-      // Verifica ogni 10 secondi (più aggressivo)
       intervalRef.current = setInterval(verifyImmediately, 10000);
-
-      // Verifica quando l'utente torna alla tab (focus/visibility change)
-      const handleVisibilityChange = () => {
-        if (!document.hidden) {
-          debugLog('Tab riattivata, verifica sessione...');
-          verifyImmediately();
-        }
-      };
-
-      const handleFocus = () => {
-        debugLog('Window focus, verifica sessione...');
-        verifyImmediately();
-      };
 
       document.addEventListener('visibilitychange', handleVisibilityChange);
       window.addEventListener('focus', handleFocus);
-
-      // Cleanup: clear interval AND remove event listeners
-      return () => {
-        if (intervalRef.current) {
-          clearInterval(intervalRef.current);
-          intervalRef.current = null;
-        }
-        document.removeEventListener(
-          'visibilitychange',
-          handleVisibilityChange
-        );
-        window.removeEventListener('focus', handleFocus);
-      };
     }
 
-    // Cleanup interval quando il componente si smonta o la sessione cambia
+    // Single cleanup always runs — removeEventListener is a no-op if listener was never added
     return () => {
       if (intervalRef.current) {
         debugLog('Stop verifica periodica sessione');
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
     };
-  }, [status, session?.accessToken, verifySession, router]);
-
-  // Cleanup quando la sessione cambia
-  useEffect(() => {
-    if (status === 'unauthenticated') {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    }
-  }, [status]);
+  }, [status, session?.accessToken, verifyImmediately, handleVisibilityChange, handleFocus]);
 }

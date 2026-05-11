@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient, Prisma } from '@prisma/client';
 import type { Logger } from 'pino';
 import type mssql from 'mssql';
 
@@ -67,6 +67,7 @@ export async function syncVendors(
 
   const tableName = `[${sanitizeCompany(config.company)}$Vendor]`;
   const request = pool.request();
+  // mssql type definitions don't expose `timeout` but it's a valid runtime property
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (request as any).timeout = 60_000;
 
@@ -144,7 +145,7 @@ export async function syncVendors(
       const countryCode = row['Country_Region Code'] ?? null;
 
       // Atomico: replica NAV + anagrafica locale in un'unica transaction.
-      await prisma.$transaction(async (tx) => {
+      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         await tx.navVendor.upsert({
           where: { navNo },
           create: { navNo, ...data },

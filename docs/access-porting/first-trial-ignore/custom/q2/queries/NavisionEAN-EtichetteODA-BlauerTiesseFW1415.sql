@@ -1,0 +1,6 @@
+SELECT [NavisionEan-step0].[Item No_], [NavisionEan-step0].[Cross-Reference Type], [NavisionEan-step0].[Cross-Reference No_] AS EANCode, Item.No_ AS Item, Item.[Model Item No_] AS Article, Item.[Variable Code 01] AS Color, Item.[Variable Code 02] AS [Size], Item.[Season Code], Item.[Trademark Code], Item.[Configurator Relation], [Purchase Line].[Document No_], Sum(Val([quantity])) AS qty, Item.[Description 2], [Variable Code].Description AS ColorDescription
+FROM ((Item LEFT JOIN [NavisionEan-step0] ON Item.No_ = [NavisionEan-step0].[Item No_]) LEFT JOIN [Variable Code] ON (Item.[Variable Group 01] = [Variable Code].[Variable Group]) AND (Item.[Variable Code 01] = [Variable Code].[Variable Code])) INNER JOIN [Purchase Line] ON Item.No_ = [Purchase Line].No_
+WHERE ((([Purchase Line].[Delete Reason])=""))
+GROUP BY [NavisionEan-step0].[Item No_], [NavisionEan-step0].[Cross-Reference Type], [NavisionEan-step0].[Cross-Reference No_], Item.No_, Item.[Model Item No_], Item.[Variable Code 01], Item.[Variable Code 02], Item.[Season Code], Item.[Trademark Code], Item.[Configurator Relation], [Purchase Line].[Document No_], Item.[Description 2], [Variable Code].Description
+HAVING (((Item.[Model Item No_])<>"U01572/003505" And (Item.[Model Item No_])<>"D01571/003505") AND ((Item.[Configurator Relation])=3));
+

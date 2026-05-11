@@ -4,6 +4,7 @@
  */
 
 import { TRPCError } from '@trpc/server';
+import type { Prisma } from '@prisma/client';
 
 import {
   BrandInputSchema,
@@ -15,23 +16,25 @@ import {
 
 import { logAudit } from '../lib/auditLog';
 import { withRateLimit } from '../lib/ratelimit';
-import { router, protectedProcedure } from '../lib/trpc';
 import { requirePermission } from '../lib/permissions';
-import { moveTempLogoToBrand } from '../services/brandLogo.service';
+import { getUserAllowedBrandIds } from '../services/context.service.js';
+import { makeUrlResolver } from '../lib/storageUrl';
+import { deleteObjectByKey } from '../storage';
+import { router, protectedProcedure } from '../lib/trpc';
 
 const BRAND_SELECT = {
   id: true,
   code: true,
   name: true,
-  logoUrl: true,
+  logoKey: true,
   navBrandId: true,
   isActive: true,
   createdAt: true,
   updatedAt: true,
 } as const;
 
-function buildWhereClause(filters: { isActive?: boolean; search?: string }): any {
-  const where: any = {};
+function buildWhereClause(filters: { isActive?: boolean; search?: string }): Prisma.BrandWhereInput {
+  const where: Prisma.BrandWhereInput = {};
 
   if (typeof filters.isActive === 'boolean') {
     where.isActive = filters.isActive;
@@ -58,8 +61,14 @@ export const brandRouter = router({
       const cursor = input?.cursor;
       const limit = input?.limit ?? 50;
 
+      const where = buildWhereClause(input || {});
+      const allowedBrandIds = await getUserAllowedBrandIds(ctx.session.user.id, ctx.prisma);
+      if (allowedBrandIds !== null) {
+        where.id = { in: allowedBrandIds };
+      }
+
       const items = await ctx.prisma.brand.findMany({
-        where: buildWhereClause(input || {}),
+        where,
         take: limit + 1,
         cursor: cursor ? { id: cursor } : undefined,
         orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
@@ -70,7 +79,12 @@ export const brandRouter = router({
       const results = hasMore ? items.slice(0, limit) : items;
       const nextCursor = hasMore ? results[results.length - 1].id : null;
 
-      return { items: results, nextCursor, hasMore: !!nextCursor };
+      const resolve = results.some(b => b.logoKey) ? await makeUrlResolver(ctx.prisma) : null;
+      const withUrls = results.map(b => ({
+        ...b,
+        logoUrl: b.logoKey && resolve ? resolve('brand-logos', b.logoKey) : null,
+      }));
+      return { items: withUrls, nextCursor, hasMore: !!nextCursor };
     }),
 
   /**
@@ -82,20 +96,7 @@ export const brandRouter = router({
     .input(BrandInputSchema)
     .mutation(async ({ input, ctx }) => {
       const normalizedCode = normalizeCode(input.code);
-      const { tempLogoId, ...brandData } = input;
-
-      // Valida unicità navBrandId se fornito
-      if (brandData.navBrandId) {
-        const conflict = await ctx.prisma.brand.findUnique({
-          where: { navBrandId: brandData.navBrandId },
-        });
-        if (conflict) {
-          throw new TRPCError({
-            code: 'CONFLICT',
-            message: 'Codice NAV già collegato a un altro brand',
-          });
-        }
-      }
+      const { fileObjectId, ...brandData } = input;
 
       const created = await ctx.prisma.$transaction(async tx => {
         const existingBrand = await tx.brand.findUnique({
@@ -109,26 +110,58 @@ export const brandRouter = router({
           });
         }
 
-        return tx.brand.create({
+        // Valida unicità navBrandId se fornito — dentro la transaction per evitare TOCTOU
+        if (brandData.navBrandId) {
+          const conflict = await tx.brand.findUnique({
+            where: { navBrandId: brandData.navBrandId },
+          });
+          if (conflict) {
+            throw new TRPCError({
+              code: 'CONFLICT',
+              message: 'Codice NAV già collegato a un altro brand',
+            });
+          }
+        }
+
+        const brand = await tx.brand.create({
           data: { ...brandData, code: normalizedCode },
           select: BRAND_SELECT,
         });
+
+        // Confirms pending logo and links it to the brand atomically.
+        // findUnique (not findFirst) since id is the PK — findFirst is unnecessary overhead.
+        if (fileObjectId) {
+          const pendingFile = await tx.fileObject.findUnique({
+            where: { id: fileObjectId },
+            select: { key: true, confirmedAt: true, createdBy: true, bucket: true },
+          });
+          if (
+            pendingFile?.confirmedAt === null &&
+            pendingFile.createdBy === ctx.session!.user.id &&
+            pendingFile.bucket === 'brand-logos'
+          ) {
+            await tx.fileObject.update({
+              where: { id: fileObjectId },
+              data: { confirmedAt: new Date() },
+            });
+            return tx.brand.update({
+              where: { id: brand.id },
+              data: { logoKey: pendingFile.key },
+              select: BRAND_SELECT,
+            });
+          }
+        }
+
+        return brand;
       }, { timeout: 15000 });
 
-      // Sposta logo temporaneo dopo il commit
-      let finalLogoUrl = created.logoUrl;
-      if (tempLogoId) {
-        try {
-          const moveResult = await moveTempLogoToBrand(ctx, {
-            tempLogoId,
-            brandId: created.id,
-          });
-          finalLogoUrl = moveResult.url;
-        } catch (moveError) {
-          ctx.logger?.warn({ moveError }, 'Failed to move temp logo to brand');
-        }
+      let finalLogoUrl: string | null = null;
+      if (created.logoKey) {
+        const resolve = await makeUrlResolver(ctx.prisma);
+        finalLogoUrl = resolve('brand-logos', created.logoKey);
       }
 
+      await logAudit(ctx, { action: 'BRAND_CREATE', targetType: 'Brand', targetId: created.id, result: 'SUCCESS', metadata: { name: created.name, code: created.code } });
       return { ...created, logoUrl: finalLogoUrl };
     }),
 
@@ -140,7 +173,9 @@ export const brandRouter = router({
     .use(withRateLimit('brandMutations'))
     .input(BrandUpdateInputSchema)
     .mutation(async ({ input, ctx }) => {
-      return ctx.prisma.$transaction(async tx => {
+      let oldLogoKey: string | null = null;
+
+      const result = await ctx.prisma.$transaction(async tx => {
         const existingBrand = await tx.brand.findUnique({
           where: { id: input.id },
         });
@@ -184,13 +219,46 @@ export const brandRouter = router({
           }
         }
 
-        const { tempLogoId: _tempLogoId, ...brandUpdateData } = input.data;
+        const { fileObjectId, ...brandUpdateData } = input.data;
+        let confirmedLogoKey: string | undefined;
+
+        if (fileObjectId) {
+          const pendingFile = await tx.fileObject.findUnique({
+            where: { id: fileObjectId },
+            select: { key: true, confirmedAt: true, createdBy: true, bucket: true },
+          });
+          if (
+            pendingFile?.confirmedAt === null &&
+            pendingFile.createdBy === ctx.session!.user.id &&
+            pendingFile.bucket === 'brand-logos'
+          ) {
+            await tx.fileObject.update({ where: { id: fileObjectId }, data: { confirmedAt: new Date() } });
+            confirmedLogoKey = pendingFile.key;
+            oldLogoKey = existingBrand.logoKey;
+          }
+        }
+
         return tx.brand.update({
           where: { id: input.id },
-          data: { ...brandUpdateData, updatedAt: new Date() },
+          data: { ...brandUpdateData, updatedAt: new Date(), ...(confirmedLogoKey ? { logoKey: confirmedLogoKey } : {}) },
           select: BRAND_SELECT,
         });
       }, { timeout: 15000 });
+
+      if (oldLogoKey) {
+        const keyToDelete = oldLogoKey;
+        setImmediate(async () => {
+          try {
+            await deleteObjectByKey(ctx, { bucket: 'brand-logos', key: keyToDelete });
+          } catch (err) {
+            ctx.logger?.warn({ err }, 'Failed to cleanup old logo after brand update');
+          }
+        });
+      }
+
+      await logAudit(ctx, { action: 'BRAND_UPDATE', targetType: 'Brand', targetId: input.id, result: 'SUCCESS', metadata: { name: result.name } });
+      const resolveUpdate = result.logoKey ? await makeUrlResolver(ctx.prisma) : null;
+      return { ...result, logoUrl: result.logoKey && resolveUpdate ? resolveUpdate('brand-logos', result.logoKey) : null };
     }),
 
   /**
@@ -214,7 +282,8 @@ export const brandRouter = router({
       });
 
       await logAudit(ctx, { action: 'BRAND_SOFT_DELETE', targetType: 'Brand', targetId: input.id, result: 'SUCCESS', metadata: { name: existingBrand.name } });
-      return result;
+      const resolveRemove = result.logoKey ? await makeUrlResolver(ctx.prisma) : null;
+      return { ...result, logoUrl: result.logoKey && resolveRemove ? resolveRemove('brand-logos', result.logoKey) : null };
     }),
 
   /**
@@ -255,7 +324,8 @@ export const brandRouter = router({
       });
 
       await logAudit(ctx, { action: 'BRAND_NAV_UNLINK', targetType: 'Brand', targetId: input.id, result: 'SUCCESS', metadata: { name: brand.name, previousNavBrandId: brand.navBrandId } });
-      return result;
+      const resolveUnlink = result.logoKey ? await makeUrlResolver(ctx.prisma) : null;
+      return { ...result, logoUrl: result.logoKey && resolveUnlink ? resolveUnlink('brand-logos', result.logoKey) : null };
     }),
 
   /**
@@ -321,6 +391,7 @@ export const brandRouter = router({
       });
 
       await logAudit(ctx, { action: 'BRAND_RESTORE', targetType: 'Brand', targetId: input.id, result: 'SUCCESS', metadata: { name: existingBrand.name } });
-      return result;
+      const resolveRestore = result.logoKey ? await makeUrlResolver(ctx.prisma) : null;
+      return { ...result, logoUrl: result.logoKey && resolveRestore ? resolveRestore('brand-logos', result.logoKey) : null };
     }),
 });

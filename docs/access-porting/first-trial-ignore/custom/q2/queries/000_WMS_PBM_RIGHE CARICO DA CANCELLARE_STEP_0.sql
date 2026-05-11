@@ -1,0 +1,4 @@
+SELECT [Purch_ Rcpt_ Line].[Document No_], [Purch_ Rcpt_ Line].[Line No_], [Purch_ Rcpt_ Line_1].[Line No_], [Purch_ Rcpt_ Line].Type AS tYPE_P, Val([Purch_ Rcpt_ Line.Quantity]) AS QTY_P, [Purch_ Rcpt_ Line_1].Type AS TYPE_F, Val([Purch_ Rcpt_ Line_1.Quantity]) AS QTY_f, [Purch_ Rcpt_ Line_1].[Order No_], [Purch_ Rcpt_ Line_1].[Order Line No_], [Purch_ Rcpt_ Line_1].[Item Rcpt_ Entry No_], [Purch_ Rcpt_ Line].No_, [Purch_ Rcpt_ Line].[assortment code], [Purch_ Rcpt_ Line].[constant variable code] INTO [000_WMS_PBM_table_RIGHE CARICO DA CANCELLARE]
+FROM [Purch_ Rcpt_ Line] AS [Purch_ Rcpt_ Line_1] INNER JOIN [Purch_ Rcpt_ Line] ON ([Purch_ Rcpt_ Line_1].[Original Line No_] = [Purch_ Rcpt_ Line].[Line No_]) AND ([Purch_ Rcpt_ Line_1].[Document No_] = [Purch_ Rcpt_ Line].[Document No_])
+WHERE ((([Purch_ Rcpt_ Line].[Document No_])>="ROA-25-00250") AND ((Val([Purch_ Rcpt_ Line.Quantity]))=0));
+

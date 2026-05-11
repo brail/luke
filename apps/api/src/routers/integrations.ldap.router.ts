@@ -10,9 +10,11 @@ import { z } from 'zod';
 import { ldapConfigSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { saveConfig, getLdapConfig } from '../lib/configManager';
+import { getLdapConfig, encryptValue } from '../lib/configManager';
 import { SecureLogger } from '../lib/errorHandler';
+import { escapeLdapFilter } from '../lib/ldapAuth';
 import { requirePermission } from '../lib/permissions';
+import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
 
 export const ldapRouter = router({
@@ -78,26 +80,26 @@ export const ldapRouter = router({
           { key: 'auth.strategy', value: input.strategy, encrypt: false },
         ];
 
-        for (const mapping of configMappings) {
-          if (mapping.value !== undefined) {
-            await saveConfig(
-              ctx.prisma,
-              mapping.key,
-              mapping.value,
-              mapping.encrypt
-            );
+        await ctx.prisma.$transaction(async (tx) => {
+          for (const mapping of configMappings) {
+            if (mapping.value !== undefined) {
+              const finalValue = mapping.encrypt ? encryptValue(mapping.value) : mapping.value;
+              await tx.appConfig.upsert({
+                where: { key: mapping.key },
+                update: { value: finalValue, isEncrypted: mapping.encrypt, updatedAt: new Date() },
+                create: { key: mapping.key, value: finalValue, isEncrypted: mapping.encrypt },
+              });
+            }
           }
-        }
-
-        // Gestisci bindPassword separatamente solo se presente
-        if (input.bindPassword != null && input.bindPassword !== '') {
-          await saveConfig(
-            ctx.prisma,
-            'auth.ldap.bindPassword',
-            input.bindPassword,
-            true
-          );
-        }
+          if (input.bindPassword != null && input.bindPassword !== '') {
+            const encryptedPassword = encryptValue(input.bindPassword);
+            await tx.appConfig.upsert({
+              where: { key: 'auth.ldap.bindPassword' },
+              update: { value: encryptedPassword, isEncrypted: true, updatedAt: new Date() },
+              create: { key: 'auth.ldap.bindPassword', value: encryptedPassword, isEncrypted: true },
+            });
+          }
+        });
 
         logger.info('LDAP configuration saved', {
           enabled: input.enabled,
@@ -219,7 +221,8 @@ export const ldapRouter = router({
     }),
 
   testLdapConnection: protectedProcedure
-    .use(requirePermission('config:read'))
+    .use(requirePermission('config:update'))
+    .use(withRateLimit('ldapTest'))
     .mutation(async ({ ctx }) => {
       let client: Client | null = null;
 
@@ -260,7 +263,7 @@ export const ldapRouter = router({
           );
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
-            message: `Connessione LDAP fallita: ${err.message}`,
+            message: 'Connessione LDAP fallita. Controllare i log per i dettagli.',
           });
         }
 
@@ -331,10 +334,10 @@ export const ldapRouter = router({
           });
         }
 
-        // Testa ricerca utente
+        // Testa ricerca utente (input.username escapato contro LDAP injection — RFC 4515)
         const searchFilter = config.searchFilter.replace(
           /\$\{username\}/g,
-          input.username
+          escapeLdapFilter(input.username)
         );
         ctx.logger.info(
           {
@@ -383,11 +386,6 @@ export const ldapRouter = router({
           success: true,
           message: `Ricerca completata. Trovati ${results.length} risultati.`,
           results,
-          searchConfig: {
-            base: config.searchBase,
-            filter: searchFilter,
-            username: input.username,
-          },
         };
       } catch (error: any) {
         if (error instanceof TRPCError) {

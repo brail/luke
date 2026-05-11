@@ -30,7 +30,7 @@ describe('API Hardening - error handler e process guards', () => {
 
   it('gestisce unhandledRejection con chiusura ordinata', async () => {
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(
-      // @ts-expect-error test stub
+      // @ts-expect-error process.exit return type is `never`; mock returns undefined for test isolation
       () => undefined
     );
 

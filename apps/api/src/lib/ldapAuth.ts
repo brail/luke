@@ -32,7 +32,7 @@ const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
  * Escapa i caratteri speciali LDAP in un valore da inserire in un filtro di ricerca.
  * Segue RFC 4515 (Section 3).
  */
-function escapeLdapFilter(value: string): string {
+export function escapeLdapFilter(value: string): string {
   return value
     .replace(/\\/g, '\\5c')
     .replace(/\*/g, '\\2a')
@@ -288,9 +288,9 @@ function determineUserRole(
     }
   }
 
-  // Default a viewer se nessun mapping trovato
+  // Default a viewer se nessun mapping trovato (applicato solo alla creazione di nuovi utenti)
   if (log) {
-    log.info('No role mapping found, defaulting to viewer');
+    log.info({ userGroups }, 'No role mapping found for LDAP groups, defaulting to viewer (existing users keep their DB role)');
   }
   return 'viewer';
 }

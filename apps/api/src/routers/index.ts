@@ -9,6 +9,8 @@ import { authRouter } from './auth';
 import { brandRouter } from './brand';
 import { catalogRouter } from './catalog';
 import { collectionLayoutRouter } from './collectionLayout';
+import { collectionCatalogRouter } from './collectionCatalog';
+import { merchandisingPlanRouter } from './merchandisingPlan';
 import { configRouter } from './config';
 import { contextRouter } from './context';
 import { healthRouter } from './health';
@@ -22,6 +24,9 @@ import { sectionAccessRouter } from './sectionAccess';
 import { storageRouter } from './storage';
 import { usersRouter } from './users';
 import { vendorsRouter } from './vendors';
+import { salesRouter } from './sales';
+import { seasonCalendarRouter } from './seasonCalendar';
+import { dashboardRouter } from './dashboard';
 
 /**
  * Router principale dell'applicazione
@@ -32,6 +37,8 @@ export const appRouter = router({
   brand: brandRouter,
   catalog: catalogRouter,
   collectionLayout: collectionLayoutRouter,
+  collectionCatalog: collectionCatalogRouter,
+  merchandisingPlan: merchandisingPlanRouter,
   config: configRouter,
   context: contextRouter,
   health: healthRouter,
@@ -45,6 +52,9 @@ export const appRouter = router({
   storage: storageRouter,
   users: usersRouter,
   vendors: vendorsRouter,
+  sales: salesRouter,
+  seasonCalendar: seasonCalendarRouter,
+  dashboard: dashboardRouter,
 });
 
 /**

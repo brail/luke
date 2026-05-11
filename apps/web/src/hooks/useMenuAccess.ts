@@ -25,6 +25,7 @@ export function useMenuAccess() {
       ldap: s.settings && s['settings.ldap'],
       nav: s.settings && s['settings.nav'],
       nav_sync: s.settings && s['settings.nav_sync'],
+      google: s.settings && s['settings.google'],
     };
     const showSettings = Object.values(settingsItems).some(Boolean);
 
@@ -40,8 +41,22 @@ export function useMenuAccess() {
       brands: s.admin && s['admin.brands'],
       seasons: s.admin && s['admin.seasons'],
       vendors: s.admin && s['admin.vendors'],
+      collectionCatalog: s.admin && s['admin.collection_catalog'],
+      calendars: s.admin && s['admin.calendars'],
     };
     const showAdmin = Object.values(adminItems).some(Boolean);
+
+    // Prodotto: sub-items
+    const productItems = {
+      merchandisingPlan: s.product && s['product.merchandising_plan'],
+    };
+
+    // Calendario: visibile se l'utente ha accesso ad almeno una sezione planning.*
+    const showCalendar =
+      s['planning.sales'] ||
+      s['planning.product'] ||
+      s['planning.sourcing'] ||
+      s['planning.merchandising'];
 
     return {
       // Singole voci
@@ -61,6 +76,16 @@ export function useMenuAccess() {
 
       // Prodotto
       product: s.product,
+      productItems,
+
+      // Vendite con sub-items
+      sales: s.sales,
+      salesItems: {
+        statistics: s.sales && s['sales.statistics'],
+      },
+
+      // Calendario (trasversale — accesso OR su sezioni planning.*)
+      calendar: showCalendar,
 
       // Macrosezioni
       showGeneralSection: s.dashboard,

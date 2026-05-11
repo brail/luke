@@ -28,6 +28,10 @@ export const RESOURCES = {
   PRICING: 'pricing',
   COLLECTION_LAYOUT: 'collection_layout',
   VENDORS: 'vendors',
+  SALES: 'sales',
+  MERCHANDISING_PLAN: 'merchandising_plan',
+  SEASON_CALENDAR: 'season_calendar',
+  MILESTONE_TEMPLATE: 'milestone_template',
 } as const;
 
 export type Resource = (typeof RESOURCES)[keyof typeof RESOURCES];
@@ -42,6 +46,8 @@ export const ACTIONS = {
   UPDATE: 'update',
   DELETE: 'delete',
   UPLOAD: 'upload',
+  SYNC: 'sync',
+  EXPORT: 'export',
 } as const;
 
 export type Action = (typeof ACTIONS)[keyof typeof ACTIONS] | '*';
@@ -87,6 +93,10 @@ export const VALID_RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
   [RESOURCES.PRICING]: ['read', 'update'] as const,
   [RESOURCES.COLLECTION_LAYOUT]: ['read', 'update'] as const,
   [RESOURCES.VENDORS]: ['create', 'read', 'update', 'delete'] as const,
+  [RESOURCES.SALES]: ['read'] as const,
+  [RESOURCES.MERCHANDISING_PLAN]: ['create', 'read', 'update', 'delete'] as const,
+  [RESOURCES.SEASON_CALENDAR]: ['create', 'read', 'update', 'delete', 'sync', 'export'] as const,
+  [RESOURCES.MILESTONE_TEMPLATE]: ['create', 'read', 'update', 'delete'] as const,
 } as const;
 
 /**
@@ -119,6 +129,17 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'collection_layout:update',
     // Vendors: accesso completo
     'vendors:*',
+    // Sales: lettura statistiche
+    'sales:read',
+    // Merchandising Plan: lettura e modifica
+    'merchandising_plan:read',
+    'merchandising_plan:update',
+    // Season Calendar: lettura, modifica, export
+    'season_calendar:read',
+    'season_calendar:update',
+    'season_calendar:export',
+    // Milestone Template: solo lettura
+    'milestone_template:read',
   ],
   viewer: [
     // Brands: solo lettura
@@ -139,6 +160,15 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'collection_layout:read',
     // Vendors: solo lettura
     'vendors:read',
+    // Sales: lettura statistiche
+    'sales:read',
+    // Merchandising Plan: solo lettura
+    'merchandising_plan:read',
+    // Season Calendar: lettura ed export
+    'season_calendar:read',
+    'season_calendar:export',
+    // Milestone Template: solo lettura
+    'milestone_template:read',
   ],
 };
 

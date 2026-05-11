@@ -37,10 +37,13 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.API_IMAGE }}
+          # RC tags (v*-rc*): push version + rc-latest, never latest
+          # Stable tags (v*): push version + major.minor + latest
           tags: |
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-rc') }}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-rc') }}
+            type=raw,value=rc-latest,enable=${{ contains(github.ref_name, '-rc') }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -77,6 +80,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set public hostname for web build
+        id: hostname
+        run: |
+          if [[ "${{ github.ref_name }}" == *"-rc"* ]]; then
+            echo "value=${{ vars.RC_PUBLIC_HOSTNAME }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${{ vars.PUBLIC_HOSTNAME }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -84,8 +96,9 @@ jobs:
           images: ${{ env.WEB_IMAGE }}
           tags: |
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-rc') }}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-rc') }}
+            type=raw,value=rc-latest,enable=${{ contains(github.ref_name, '-rc') }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -98,10 +111,10 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # PUBLIC_HOSTNAME must be set as a repository variable in GitHub:
-          # Settings → Variables → Actions → New repository variable
+          # PUBLIC_HOSTNAME → prod, RC_PUBLIC_HOSTNAME → rc (both set as GitHub repo variables)
           build-args: |
-            NEXT_PUBLIC_API_URL=http://${{ vars.PUBLIC_HOSTNAME }}
+            NEXT_PUBLIC_API_URL=http://${{ steps.hostname.outputs.value }}
+            INTERNAL_API_URL=${{ contains(github.ref_name, '-rc') && 'http://api-rc:3001' || 'http://api:3001' }}
             APP_VERSION=${{ github.ref_name }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,scope=web,mode=max

@@ -467,7 +467,7 @@ describe('Permissions Enforcement - Config Router', () => {
 
       const result = await caller.config.get({
         key: 'test.setting',
-        decrypt: false,
+        decrypt: false, // test.setting is not encrypted; use decrypt:true for sensitive keys
       });
 
       expect(result.key).toBe('test.setting');
@@ -481,7 +481,7 @@ describe('Permissions Enforcement - Config Router', () => {
 
       const result = await caller.config.get({
         key: 'test.setting',
-        decrypt: false,
+        decrypt: false, // test.setting is not encrypted; use decrypt:true for sensitive keys
       });
 
       expect(result.key).toBe('test.setting');

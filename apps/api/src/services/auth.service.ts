@@ -547,19 +547,19 @@ export async function confirmPasswordReset(
     parallelism: 1,
   });
 
-  await ctx.prisma.$transaction([
-    ctx.prisma.localCredential.update({
+  await ctx.prisma.$transaction(async tx => {
+    await tx.localCredential.update({
       where: { identityId: userToken.user.identities[0].id },
       data: { passwordHash, updatedAt: new Date() },
-    }),
-    ctx.prisma.user.update({
+    });
+    await tx.user.update({
       where: { id: userToken.userId },
       data: { tokenVersion: { increment: 1 } },
-    }),
-    ctx.prisma.userToken.delete({
+    });
+    await tx.userToken.delete({
       where: { id: userToken.id },
-    }),
-  ]);
+    });
+  });
 
   const { invalidateTokenVersionCache } = await import('../lib/trpc.js');
   invalidateTokenVersionCache(userToken.userId);
@@ -724,17 +724,17 @@ export async function confirmEmailVerification(
   }
 
   // Aggiorna emailVerifiedAt ed elimina token in transazione
-  await ctx.prisma.$transaction([
-    ctx.prisma.user.update({
+  await ctx.prisma.$transaction(async tx => {
+    await tx.user.update({
       where: { id: userToken.userId },
       data: {
         emailVerifiedAt: new Date(),
       },
-    }),
-    ctx.prisma.userToken.delete({
+    });
+    await tx.userToken.delete({
       where: { id: userToken.id },
-    }),
-  ]);
+    });
+  });
 
   // Log audit SUCCESS
   await logAudit(ctx, {

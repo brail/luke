@@ -5,13 +5,18 @@ import { useSession } from 'next-auth/react';
 import React, { useEffect } from 'react';
 
 import AppSidebar from '../../components/AppSidebar';
-import BreadcrumbNav from '../../components/BreadcrumbNav';
 import { ContextGate } from '../../components/context/ContextGate';
 import { ContextSelector } from '../../components/context/ContextSelector';
 import { HeartbeatTicker } from '../../components/HeartbeatTicker';
 import LoadingLogo from '../../components/LoadingLogo';
-import { SidebarProvider, SidebarTrigger } from '../../components/ui/sidebar';
+import { SidebarProvider, SidebarTrigger, useSidebar } from '../../components/ui/sidebar';
 import { AppContextProvider } from '../../contexts/AppContextProvider';
+
+function CollapsedSidebarTrigger() {
+  const { state } = useSidebar();
+  if (state !== 'collapsed') return null;
+  return <SidebarTrigger />;
+}
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
@@ -49,12 +54,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="flex-1 flex flex-col overflow-y-auto">
             {/* Header comune */}
             <header className="sticky top-0 z-10 shrink-0 border-b bg-card">
-              <div className="flex items-center gap-4 justify-between px-4 py-2">
-                <div className="flex items-center gap-4">
-                  <SidebarTrigger />
-                  <BreadcrumbNav />
+              <div className="flex items-center px-4 py-2">
+                <CollapsedSidebarTrigger />
+                <div className="ml-auto">
+                  <ContextSelector />
                 </div>
-                <ContextSelector />
               </div>
             </header>
 

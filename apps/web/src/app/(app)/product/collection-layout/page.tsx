@@ -9,17 +9,22 @@ import type { CollectionLayoutRowInput } from '@luke/core';
 
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
+import { Card, CardContent } from '../../../../components/ui/card';
 import { useAppContext } from '../../../../contexts/AppContextProvider';
 import { usePermission } from '../../../../hooks/usePermission';
+import { triggerDownload } from '../../../../lib/download';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 import { CollectionGroupDialog } from './_components/CollectionGroupDialog';
+import { CollectionLayoutSummary } from './_components/CollectionLayoutSummary';
 import { CollectionLayoutTable } from './_components/CollectionLayoutTable';
 import { CollectionRowDrawer } from './_components/CollectionRowDrawer';
 import { EmptyCollectionLayoutState } from './_components/EmptyCollectionLayoutState';
 
-type CollectionLayoutData = NonNullable<RouterOutputs['collectionLayout']['get']>;
+type CollectionLayoutData = NonNullable<
+  RouterOutputs['collectionLayout']['get']
+>;
 type CollectionGroupData = CollectionLayoutData['groups'][number];
 type CollectionRowData = CollectionGroupData['rows'][number];
 
@@ -57,7 +62,9 @@ export default function CollectionLayoutPage() {
   // Chiudi fullscreen con Escape
   useEffect(() => {
     if (!isFullscreen) return;
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setIsFullscreen(false); };
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsFullscreen(false);
+    };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [isFullscreen]);
@@ -82,19 +89,20 @@ export default function CollectionLayoutPage() {
     onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
   });
 
-  const copyFromSeasonMutation = trpc.collectionLayout.copyFromSeason.useMutation({
-    onSuccess: () => {
-      toast.success('Layout copiato dalla stagione selezionata');
-      invalidateLayout();
-    },
-    onError: (err: unknown) =>
-      toast.error(
-        getTrpcErrorMessage(err, {
-          CONFLICT: 'Un layout esiste già per questa stagione',
-          NOT_FOUND: 'Nessun layout trovato nella stagione di partenza',
-        })
-      ),
-  });
+  const copyFromSeasonMutation =
+    trpc.collectionLayout.copyFromSeason.useMutation({
+      onSuccess: () => {
+        toast.success('Layout copiato dalla stagione selezionata');
+        invalidateLayout();
+      },
+      onError: (err: unknown) =>
+        toast.error(
+          getTrpcErrorMessage(err, {
+            CONFLICT: 'Un layout esiste già per questa stagione',
+            NOT_FOUND: 'Nessun layout trovato nella stagione di partenza',
+          })
+        ),
+    });
 
   const createGroupMutation = trpc.collectionLayout.groups.create.useMutation({
     onSuccess: () => {
@@ -148,17 +156,46 @@ export default function CollectionLayoutPage() {
     onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
   });
 
-  const duplicateRowMutation = trpc.collectionLayout.rows.duplicate.useMutation({
-    onSuccess: () => {
-      toast.success('Riga duplicata');
-      invalidateLayout();
-    },
-    onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
+  const duplicateRowMutation = trpc.collectionLayout.rows.duplicate.useMutation(
+    {
+      onSuccess: () => {
+        toast.success('Riga duplicata');
+        invalidateLayout();
+      },
+      onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
+    }
+  );
+
+  const updateSettingsMutation =
+    trpc.collectionLayout.updateSettings.useMutation({
+      onSuccess: () => invalidateLayout(),
+      onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
+    });
+
+  const exportXlsxMutation = trpc.collectionLayout.export.xlsx.useMutation({
+    onSuccess: result =>
+      triggerDownload(
+        result.data,
+        result.filename,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      ),
+    onError: (err: unknown) =>
+      toast.error(
+        getTrpcErrorMessage(err, {
+          default: "Errore durante l'esportazione XLSX",
+        })
+      ),
   });
 
-  const updateSettingsMutation = trpc.collectionLayout.updateSettings.useMutation({
-    onSuccess: () => invalidateLayout(),
-    onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
+  const exportPdfMutation = trpc.collectionLayout.export.pdf.useMutation({
+    onSuccess: result =>
+      triggerDownload(result.data, result.filename, 'application/pdf'),
+    onError: (err: unknown) =>
+      toast.error(
+        getTrpcErrorMessage(err, {
+          default: "Errore durante l'esportazione PDF",
+        })
+      ),
   });
 
   const isMutating =
@@ -196,7 +233,8 @@ export default function CollectionLayoutPage() {
 
   // Usa sempre i dati freschi dalla query live per evitare snapshot stale nel drawer
   const openEditRow = (row: CollectionRowData) => {
-    const fresh = layout?.groups.flatMap(g => g.rows).find(r => r.id === row.id) ?? row;
+    const fresh =
+      layout?.groups.flatMap(g => g.rows).find(r => r.id === row.id) ?? row;
     setRowDrawer({ mode: 'edit', row: fresh });
   };
 
@@ -215,7 +253,7 @@ export default function CollectionLayoutPage() {
         title="Collection Layout"
         description={
           brand && season
-            ? `Collezione ${brand.name} — ${season.code} ${season.year}`
+            ? `Collezione ${brand.name} — ${season.code} ${season.name}`
             : 'Pianificazione collezione stagionale'
         }
       />
@@ -232,18 +270,20 @@ export default function CollectionLayoutPage() {
           <EmptyCollectionLayoutState
             brandId={brand.id}
             seasonId={season.id}
-            onCreateEmpty={() =>
+            onCreateEmpty={(availableGenders) =>
               getOrCreateMutation.mutate({
                 brandId: brand.id,
                 seasonId: season.id,
+                availableGenders,
               })
             }
-            onCopyFromSeason={fromSeasonId =>
+            onCopyFromSeason={(fromSeasonId, rows) =>
               copyFromSeasonMutation.mutate({
                 fromBrandId: brand.id,
                 fromSeasonId,
                 toBrandId: brand.id,
                 toSeasonId: season.id,
+                rows,
               })
             }
             isLoading={
@@ -252,71 +292,100 @@ export default function CollectionLayoutPage() {
           />
         </SectionCard>
       ) : (
-        <SectionCard title="Collection Layout">
-          <CollectionLayoutTable
-            layout={layout}
-            canUpdate={canUpdate}
-            onAddGroup={() => setGroupDialog({ mode: 'create' })}
-            onAddRow={groupId =>
-              setRowDrawer({ mode: 'create', defaultGroupId: groupId })
-            }
-            onEditRow={row => openEditRow(row)}
-            onDuplicateRow={rowId => duplicateRowMutation.mutate({ rowId })}
-            onDeleteRow={rowId => deleteRowMutation.mutate({ rowId })}
-            onRenameGroup={group => setGroupDialog({ mode: 'edit', group })}
-            onDeleteGroup={groupId => deleteGroupMutation.mutate({ groupId })}
-            onUpdateSettings={settings =>
-              updateSettingsMutation.mutate({
-                collectionLayoutId: layout.id,
-                ...settings,
-              })
-            }
-            isDeletingRow={deleteRowMutation.isPending}
-            onToggleFullscreen={() => setIsFullscreen(true)}
-          />
-        </SectionCard>
+        <>
+          <CollectionLayoutSummary layout={layout} />
+          <Card>
+            <CardContent className="pt-6">
+              <CollectionLayoutTable
+                layout={layout}
+                canUpdate={canUpdate}
+                parameterSets={parameterSets}
+                onAddGroup={() => setGroupDialog({ mode: 'create' })}
+                onAddRow={groupId =>
+                  setRowDrawer({ mode: 'create', defaultGroupId: groupId })
+                }
+                onEditRow={row => openEditRow(row)}
+                onDuplicateRow={rowId => duplicateRowMutation.mutate({ rowId })}
+                onDeleteRow={rowId => deleteRowMutation.mutate({ rowId })}
+                onRenameGroup={group => setGroupDialog({ mode: 'edit', group })}
+                onDeleteGroup={groupId =>
+                  deleteGroupMutation.mutate({ groupId })
+                }
+                onUpdateSettings={settings =>
+                  updateSettingsMutation.mutate({
+                    collectionLayoutId: layout.id,
+                    ...settings,
+                  })
+                }
+                isDeletingRow={deleteRowMutation.isPending}
+                onToggleFullscreen={() => setIsFullscreen(true)}
+                onExportXlsx={rowIds =>
+                  exportXlsxMutation.mutate({ collectionLayoutId: layout.id, rowIds })
+                }
+                isExportingXlsx={exportXlsxMutation.isPending}
+                onExportPdf={rowIds =>
+                  exportPdfMutation.mutate({ collectionLayoutId: layout.id, rowIds })
+                }
+                isExportingPdf={exportPdfMutation.isPending}
+              />
+            </CardContent>
+          </Card>
+        </>
       )}
 
       {/* Fullscreen overlay — renderizzato nel body per uscire dallo stacking context del SidebarProvider */}
-      {isFullscreen && layout && createPortal(
-        <div className="fixed inset-0 z-50 bg-background flex flex-col">
-          <div className="shrink-0 border-b px-6 py-3 flex items-center justify-between bg-card">
-            <div className="flex items-center gap-3">
-              <span className="font-semibold text-sm">Collection Layout</span>
-              {brand && season && (
-                <span className="text-sm text-muted-foreground">
-                  {brand.name} — {season.code} {season.year}
-                </span>
-              )}
+      {isFullscreen &&
+        layout &&
+        createPortal(
+          <div className="fixed inset-0 z-50 bg-background flex flex-col">
+            <div className="shrink-0 border-b px-6 py-3 flex items-center justify-between bg-card">
+              <div className="flex items-center gap-3">
+                <span className="font-semibold text-sm">Collection Layout</span>
+                {brand && season && (
+                  <span className="text-sm text-muted-foreground">
+                    {brand.name} — {season.code} {season.year}
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
-          <div className="flex-1 overflow-y-auto p-6">
-            <CollectionLayoutTable
-              layout={layout}
-              canUpdate={canUpdate}
-              onAddGroup={() => setGroupDialog({ mode: 'create' })}
-              onAddRow={groupId =>
-                setRowDrawer({ mode: 'create', defaultGroupId: groupId })
-              }
-              onEditRow={row => openEditRow(row)}
-              onDuplicateRow={rowId => duplicateRowMutation.mutate({ rowId })}
-              onDeleteRow={rowId => deleteRowMutation.mutate({ rowId })}
-              onRenameGroup={group => setGroupDialog({ mode: 'edit', group })}
-              onDeleteGroup={groupId => deleteGroupMutation.mutate({ groupId })}
-              onUpdateSettings={settings =>
-                updateSettingsMutation.mutate({
-                  collectionLayoutId: layout.id,
-                  ...settings,
-                })
-              }
-              isDeletingRow={deleteRowMutation.isPending}
-              isFullscreen
-              onToggleFullscreen={() => setIsFullscreen(false)}
-            />
-          </div>
-        </div>,
-        document.body
-      )}
+            <div className="flex-1 overflow-y-auto p-6">
+              <CollectionLayoutTable
+                layout={layout}
+                canUpdate={canUpdate}
+                parameterSets={parameterSets}
+                onAddGroup={() => setGroupDialog({ mode: 'create' })}
+                onAddRow={groupId =>
+                  setRowDrawer({ mode: 'create', defaultGroupId: groupId })
+                }
+                onEditRow={row => openEditRow(row)}
+                onDuplicateRow={rowId => duplicateRowMutation.mutate({ rowId })}
+                onDeleteRow={rowId => deleteRowMutation.mutate({ rowId })}
+                onRenameGroup={group => setGroupDialog({ mode: 'edit', group })}
+                onDeleteGroup={groupId =>
+                  deleteGroupMutation.mutate({ groupId })
+                }
+                onUpdateSettings={settings =>
+                  updateSettingsMutation.mutate({
+                    collectionLayoutId: layout.id,
+                    ...settings,
+                  })
+                }
+                isDeletingRow={deleteRowMutation.isPending}
+                isFullscreen
+                onToggleFullscreen={() => setIsFullscreen(false)}
+                onExportXlsx={rowIds =>
+                  exportXlsxMutation.mutate({ collectionLayoutId: layout.id, rowIds })
+                }
+                isExportingXlsx={exportXlsxMutation.isPending}
+                onExportPdf={rowIds =>
+                  exportPdfMutation.mutate({ collectionLayoutId: layout.id, rowIds })
+                }
+                isExportingPdf={exportPdfMutation.isPending}
+              />
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* Group create/edit dialog */}
       <CollectionGroupDialog
@@ -345,8 +414,10 @@ export default function CollectionLayoutPage() {
           defaultGroupId={rowDrawer?.defaultGroupId}
           groups={layout.groups}
           parameterSets={parameterSets}
+          availableGenders={layout.availableGenders ?? ['MAN', 'WOMAN']}
           onSubmit={handleRowSubmit}
           onPictureUploaded={() => invalidateLayout()}
+          onQuotationChange={() => invalidateLayout()}
           isLoading={isMutating}
           canUpdate={canUpdate}
         />

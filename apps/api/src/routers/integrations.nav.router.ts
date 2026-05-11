@@ -143,7 +143,7 @@ const navSyncRouter = router({
   saveSyncSchedule: protectedProcedure
     .use(requirePermission('config:update'))
     .input(z.object({
-      entity: z.enum(['vendor', 'brand', 'season']),
+      entity: z.enum(['vendor', 'brand', 'season', 'portafoglio', 'kimo']),
       autoSyncEnabled: z.boolean(),
       intervalMinutes: z.number().int().min(1).max(1440),
     }))
@@ -297,7 +297,9 @@ const navBrandsRouter = router({
         },
         select: { navBrandId: true },
       });
-      const usedCodes = linkedCodes.map(b => b.navBrandId!);
+      const usedCodes = linkedCodes
+        .filter((b): b is typeof b & { navBrandId: string } => b.navBrandId != null)
+        .map(b => b.navBrandId);
 
       return ctx.prisma.navBrand.findMany({
         where: usedCodes.length > 0 ? { navCode: { notIn: usedCodes } } : undefined,
@@ -326,7 +328,9 @@ const navSeasonsRouter = router({
         },
         select: { navSeasonId: true },
       });
-      const usedCodes = linkedCodes.map(s => s.navSeasonId!);
+      const usedCodes = linkedCodes
+        .filter((s): s is typeof s & { navSeasonId: string } => s.navSeasonId != null)
+        .map(s => s.navSeasonId);
 
       return ctx.prisma.navSeason.findMany({
         where: usedCodes.length > 0 ? { navCode: { notIn: usedCodes } } : undefined,
@@ -369,7 +373,7 @@ export const navRouter = router({
         try {
           await closePool();
         } finally {
-          resumeNavScheduler();
+          await resumeNavScheduler();
         }
       }
 

@@ -1,0 +1,6 @@
+SELECT "INV" AS Cat, Item.[Trademark Code] AS Trademark, Item.[Season Code] AS [Selling season code], Item.[LINE CODE], [Assortment Ledger Entry].[Model Item No_] AS Article, Item.[Description 2], [Assortment Ledger Entry].[Constant Variable Code] AS Color, [Assortment Ledger Entry].[Assortment Code] AS Assortiment, Sum(Val([Quantity])) AS qty, Sum([AssortmentQuantity]*Val([quantity])) AS pairs
+FROM (([Assortment Ledger Entry] INNER JOIN Item ON [Assortment Ledger Entry].[Model Item No_] = Item.No_) INNER JOIN AssortimentiQuantita ON ([Assortment Ledger Entry].[Assortment Code] = AssortimentiQuantita.[Assortment Code]) AND ([Assortment Ledger Entry].[Assortment Variable Group] = AssortimentiQuantita.[Variable Group])) INNER JOIN Location ON [Assortment Ledger Entry].[Location Code] = Location.Code
+WHERE (((Item.[ADVERTISING MATERIAL])=0) AND ((Location.[Enable to Purchase Run])=1))
+GROUP BY "INV", Item.[Trademark Code], Item.[Season Code], Item.[LINE CODE], [Assortment Ledger Entry].[Model Item No_], Item.[Description 2], [Assortment Ledger Entry].[Constant Variable Code], [Assortment Ledger Entry].[Assortment Code]
+HAVING (((Item.[Trademark Code])=[forms]![principale]![FiltroMarchioSourcing]) AND ((Item.[Season Code])=[forms]![principale]![FiltroStagioneSourcing]) AND ((Sum(Val([Quantity])))<>0));
+

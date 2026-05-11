@@ -21,6 +21,7 @@ export interface Brand {
   id: string;
   code: string;
   name: string;
+  logoKey: string | null;
   logoUrl: string | null;
   navBrandId: string | null;
   isActive: boolean;

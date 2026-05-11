@@ -1,8 +1,15 @@
 # External apps (not part of the monorepo)
 EXTERNAL_APPS/
 
+# Merchandising domain reference files (Excel, binary)
+docs/merchandising-reference/
+
 # Claude Code local settings
 .claude/
+CLAUDE.md
+
+# Planning/roadmap docs (local only)
+.planning/
 
 # Dependencies
 node_modules/
@@ -117,3 +124,10 @@ Thumbs.db
 
 # Prisma
 apps/api/prisma/dev.db.backup*
+
+# Access DB and porting docs
+*.accdb
+docs/access-porting/
+
+
+

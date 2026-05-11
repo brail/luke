@@ -1,0 +1,3 @@
+SELECT VendutoComprato_FattoriDiPropiezione.TrademarkCode, VendutoComprato_FattoriDiPropiezione.SeasonCode, [VendutoCalcoloProiezionePerTaglia-step0].[Budget No_], [VendutoCalcoloProiezionePerTaglia-step0].ProductGender, [VendutoCalcoloProiezionePerTaglia-step0].size, [VendutoCalcoloProiezionePerTaglia-step0].PairsSold AS PairsSold, (([pairssold]*[fattorePROIEZIONEDIbudget])) AS ForecastedPairsByMarket
+FROM VendutoComprato_FattoriDiPropiezione INNER JOIN [VendutoCalcoloProiezionePerTaglia-step0] ON VendutoComprato_FattoriDiPropiezione.BudgetNo_ = [VendutoCalcoloProiezionePerTaglia-step0].[Budget No_];
+

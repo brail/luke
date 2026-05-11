@@ -1,0 +1,3 @@
+SELECT [Lista Clienti GDPR Privacy-step0].CustomerCheckCode, [Lista Clienti GDPR Privacy-step0].CustomerName, [Lista Clienti GDPR Privacy-step0].[Business E-Mail_], [Lista Clienti GDPR Privacy-step0].Geo1Desc, [Lista Clienti GDPR Privacy-step0].Geo2Desc, [Lista Clienti GDPR Privacy-step0].[Data Ordine], IIf([Marchio]="AP",1,0) AS AP, IIf([Marchio]="AP GIRL ",1,0) AS [AP GIRL], IIf([Marchio]="BLAC",1,0) AS BLAC, IIf([Marchio]="BLK",1,0) AS BLK, IIf([Marchio]="BLAUER",1,0) AS BLAUER, IIf([Marchio]="BEPOSITIVE",1,0) AS BEPOSITIVE, IIf([Marchio]="NAPA",1,0) AS NAPA, IIf([Marchio]="GANT",1,0) AS GANT
+FROM [Lista Clienti GDPR Privacy-step0];
+

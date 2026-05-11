@@ -9,6 +9,8 @@ import { TRPCError } from '@trpc/server';
 
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
+import { hasPermission, type Role } from '@luke/core';
+
 import { authenticateRequest } from './auth';
 import { getTokenVersionCacheTTL } from './configManager';
 import { t } from './t';
@@ -229,7 +231,7 @@ export const adminMiddleware = t.middleware(async ({ ctx, next }) => {
     });
   }
 
-  if (ctx.session.user.role !== 'admin') {
+  if (!hasPermission(ctx.session.user as { role: Role }, 'maintenance:update')) {
     throw new TRPCError({
       code: 'FORBIDDEN',
       message: 'Accesso negato: richiesto ruolo admin',

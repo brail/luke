@@ -1,0 +1,8 @@
+# VBA Modules in NewEraStat.accdb
+
+Note: Direct VBA extraction from .accdb requires Access COM API.
+VBA modules will need to be extracted manually via Access UI or tools like:
+- Microsoft.Office.Access.ObjectModel (Windows/COM)
+- Python: pip install pyodbc + ODBC driver
+- Manual export from Access: File → Export to Python
+

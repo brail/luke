@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronDown, ChevronRight, Copy, ImageIcon, ListFilter, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronDown, ChevronRight, Copy, FileText, ImageIcon, ListFilter, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
@@ -41,6 +41,9 @@ import {
   TooltipTrigger,
 } from '../../../../../components/ui/tooltip';
 import { cn } from '../../../../../lib/utils';
+import { computeRowMargin, computeWeightedMargin } from '../_hooks/usePricingCalc';
+
+import type { PricingParameterSet } from '../_hooks/usePricingCalc';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,7 +57,7 @@ function RowPhoto({ src, alt }: { src: string; alt: string }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);
   if (failed) return (
-    <div className="h-16 w-20 rounded border border-dashed flex items-center justify-center bg-muted/30">
+    <div className="h-[88px] w-[110px] rounded border border-dashed flex items-center justify-center bg-muted/30">
       <ImageIcon className="h-4 w-4 text-muted-foreground" />
     </div>
   );
@@ -62,7 +65,7 @@ function RowPhoto({ src, alt }: { src: string; alt: string }) {
     <img
       src={src}
       alt={alt}
-      className="h-16 w-20 rounded object-contain border bg-muted/5"
+      className="h-[88px] w-[110px] rounded object-contain border bg-muted/5"
       onError={() => setFailed(true)}
     />
   );
@@ -84,11 +87,14 @@ interface FilterableHeaderProps {
   options?: FilterOption[];
   allowNone?: boolean;
   className?: string;
+  operator?: 'gte' | 'lte';
+  onOperatorChange?: (col: string, op: 'gte' | 'lte') => void;
 }
 
 function FilterableHeader({
   col, label, type, sortCol, sortDir, onSort,
   filterValue, onFilter, options = [], allowNone, className,
+  operator = 'gte', onOperatorChange,
 }: FilterableHeaderProps) {
   const [open, setOpen] = useState(false);
   const sortActive = sortCol === col;
@@ -164,15 +170,26 @@ function FilterableHeader({
               <Input
                 autoFocus
                 placeholder="Filtra…"
-                value={filterValue ?? ''}
+                value={filterValue === '_none' ? '' : (filterValue ?? '')}
                 onChange={e => onFilter(col, e.target.value || null)}
                 className="h-8 text-sm"
               />
-              {filterValue && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  'mt-1 h-7 w-full justify-start px-2 text-xs',
+                  filterValue === '_none' ? 'text-primary font-medium' : 'text-muted-foreground'
+                )}
+                onClick={() => onFilter(col, filterValue === '_none' ? null : '_none')}
+              >
+                — Nessuno —
+              </Button>
+              {filterValue && filterValue !== '_none' && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="mt-1 h-7 w-full justify-start px-2 text-xs text-muted-foreground"
+                  className="h-7 w-full justify-start px-2 text-xs text-muted-foreground"
                   onClick={() => onFilter(col, null)}
                 >
                   Rimuovi filtro
@@ -182,9 +199,19 @@ function FilterableHeader({
           )}
 
           {type === 'number' && (
-            <PopoverContent align="start" className="w-36 p-2">
+            <PopoverContent align="start" className="w-40 p-2">
               <div className="flex items-center gap-1.5">
-                <span className="text-xs text-muted-foreground shrink-0">≥</span>
+                {onOperatorChange ? (
+                  <button
+                    type="button"
+                    className="text-xs font-mono text-muted-foreground hover:text-foreground w-5 shrink-0 text-center"
+                    onClick={() => onOperatorChange(col, operator === 'gte' ? 'lte' : 'gte')}
+                  >
+                    {operator === 'gte' ? '≥' : '≤'}
+                  </button>
+                ) : (
+                  <span className="text-xs text-muted-foreground shrink-0">≥</span>
+                )}
                 <Input
                   autoFocus
                   type="number"
@@ -227,6 +254,13 @@ const PROGRESS_BADGE: Record<string, { label: string; className: string }> = {
 
 const STATUS_LABELS: Record<string, string> = { CARRY_OVER: 'C/O', NEW: 'New' };
 
+const NOTE_FIELDS: { key: keyof CollectionRowData; label: string }[] = [
+  { key: 'styleNotes',    label: 'Stile' },
+  { key: 'materialNotes', label: 'Materiale' },
+  { key: 'colorNotes',    label: 'Colore' },
+  { key: 'toolingNotes',  label: 'Tooling' },
+];
+
 const GENDER_OPTIONS: FilterOption[] = COLLECTION_GENDER.map(v => ({ value: v, label: v }));
 const STRATEGY_OPTIONS: FilterOption[] = COLLECTION_STRATEGY.map(v => ({ value: v, label: v }));
 const STATUS_OPTIONS: FilterOption[] = COLLECTION_STATUS.map(v => ({ value: v, label: STATUS_LABELS[v] ?? v }));
@@ -251,6 +285,7 @@ interface CollectionGroupSectionProps {
   group: CollectionGroupData;
   canUpdate: boolean;
   hiddenColumns: string[];
+  parameterSets: PricingParameterSet[];
   searchQuery?: string;
   onAddRow: (groupId: string) => void;
   onEditRow: (row: CollectionRowData) => void;
@@ -259,6 +294,7 @@ interface CollectionGroupSectionProps {
   onRenameGroup: (group: CollectionGroupData) => void;
   onDeleteGroup: (groupId: string, groupName: string) => void;
   isDeletingRow?: boolean;
+  onFilteredRowIdsChange?: (ids: string[]) => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -267,6 +303,7 @@ export function CollectionGroupSection({
   group,
   canUpdate,
   hiddenColumns,
+  parameterSets,
   searchQuery = '',
   onAddRow,
   onEditRow,
@@ -275,6 +312,7 @@ export function CollectionGroupSection({
   onRenameGroup,
   onDeleteGroup,
   isDeletingRow = false,
+  onFilteredRowIdsChange,
 }: CollectionGroupSectionProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [deleteRow, setDeleteRow] = useState<CollectionRowData | null>(null);
@@ -284,6 +322,7 @@ export function CollectionGroupSection({
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const [columnFilterOperators, setColumnFilterOperators] = useState<Record<string, 'gte' | 'lte'>>({});
 
   const hasActiveFilters = !!sortCol || Object.keys(columnFilters).length > 0;
 
@@ -291,6 +330,11 @@ export function CollectionGroupSection({
     setSortCol(null);
     setSortDir('asc');
     setColumnFilters({});
+    setColumnFilterOperators({});
+  };
+
+  const handleOperatorChange = (col: string, op: 'gte' | 'lte') => {
+    setColumnFilterOperators(prev => ({ ...prev, [col]: op }));
   };
 
   const handleSort = (col: string) => {
@@ -318,19 +362,22 @@ export function CollectionGroupSection({
   };
 
   const filteredRows = useMemo(() => {
-    const textMatch = (v: string | null | undefined, f: string) =>
-      (v ?? '').toLowerCase().includes(f.toLowerCase());
+    const textMatch = (v: string | null | undefined, f: string) => {
+      if (f === '_none') return !v || v.trim() === '';
+      return (v ?? '').toLowerCase().includes(f.toLowerCase());
+    };
     const enumMatch = (v: string | null | undefined, f: string) =>
       f === '_none' ? !v : v === f;
-    const numberMatch = (v: number, f: string) => {
+    const numberMatch = (v: number, f: string, op: 'gte' | 'lte' = 'gte') => {
       const t = Number(f);
-      return isNaN(t) || v >= t;
+      return isNaN(t) || (op === 'gte' ? v >= t : v <= t);
     };
 
     let rows = group.rows.filter(row => {
       const vendorName = row.vendor?.nickname ?? row.vendor?.name ?? null;
       if (searchQuery && !textMatch(row.line, searchQuery) && !textMatch(vendorName, searchQuery)) return false;
       if (columnFilters.line && !textMatch(row.line, columnFilters.line)) return false;
+      if (columnFilters.article && !textMatch(row.article, columnFilters.article)) return false;
       if (columnFilters.supplier && !textMatch(vendorName, columnFilters.supplier)) return false;
       if (columnFilters.productCategory && !textMatch(row.productCategory, columnFilters.productCategory)) return false;
       if (columnFilters.designer && !textMatch(row.designer, columnFilters.designer)) return false;
@@ -341,13 +388,27 @@ export function CollectionGroupSection({
       if (columnFilters.progress && !enumMatch(row.progress, columnFilters.progress)) return false;
       if (columnFilters.skuForecast && !numberMatch(row.skuForecast, columnFilters.skuForecast)) return false;
       if (columnFilters.qtyForecast && !numberMatch(row.qtyForecast, columnFilters.qtyForecast)) return false;
+      if (columnFilters.margin) {
+        const m = computeRowMargin(row, parameterSets);
+        const threshold = Number(columnFilters.margin);
+        const op = columnFilterOperators.margin ?? 'gte';
+        if (!m || isNaN(threshold)) return false;
+        if (op === 'gte' ? m.margin * 100 < threshold : m.margin * 100 > threshold) return false;
+      }
       return true;
     });
 
     if (sortCol) {
       rows = [...rows].sort((a, b) => {
-        const va = (a as Record<string, unknown>)[sortCol] ?? '';
-        const vb = (b as Record<string, unknown>)[sortCol] ?? '';
+        let va: number | string;
+        let vb: number | string;
+        if (sortCol === 'margin') {
+          va = computeRowMargin(a, parameterSets)?.margin ?? -Infinity;
+          vb = computeRowMargin(b, parameterSets)?.margin ?? -Infinity;
+        } else {
+          va = (a as Record<string, unknown>)[sortCol] as number | string ?? '';
+          vb = (b as Record<string, unknown>)[sortCol] as number | string ?? '';
+        }
         const cmp = typeof va === 'number'
           ? (va as number) - (vb as number)
           : String(va).localeCompare(String(vb), 'it');
@@ -356,16 +417,22 @@ export function CollectionGroupSection({
     }
 
     return rows;
-  }, [group.rows, searchQuery, columnFilters, sortCol, sortDir]);
+  }, [group.rows, searchQuery, columnFilters, columnFilterOperators, sortCol, sortDir, parameterSets]);
+
+  useEffect(() => {
+    onFilteredRowIdsChange?.(filteredRows.map(r => r.id));
+  }, [filteredRows, onFilteredRowIdsChange]);
 
   const skuTotal = group.rows.reduce((sum, r) => sum + r.skuForecast, 0);
   const qtyTotal = group.rows.reduce((sum, r) => sum + r.qtyForecast, 0);
   const skuVariant = skuRatioVariant(skuTotal, group.skuBudget);
+  const groupWeightedMargin = computeWeightedMargin(group.rows, parameterSets);
 
   const show = (key: string) => !hiddenColumns.includes(key);
 
   const sortProps = { sortCol, sortDir, onSort: handleSort };
   const filterProps = { onFilter: handleFilter };
+  const operatorProps = { onOperatorChange: handleOperatorChange };
 
   return (
     <div className="border rounded-lg overflow-hidden">
@@ -392,6 +459,11 @@ export function CollectionGroupSection({
             <span className="text-xs text-muted-foreground">· {skuTotal} SKU</span>
           )}
           <span className="text-xs text-muted-foreground">· {qtyTotal} paia</span>
+          {groupWeightedMargin !== null && (
+            <span className="text-xs text-muted-foreground">
+              · mrg {(groupWeightedMargin * 100).toFixed(1)}%
+            </span>
+          )}
         </button>
 
         <div className="flex items-center gap-1 shrink-0">
@@ -479,6 +551,10 @@ export function CollectionGroupSection({
 
                   <FilterableHeader col="line" label="Linea" type="text" {...sortProps} {...filterProps} filterValue={columnFilters.line} />
 
+                  {show('article') && (
+                    <FilterableHeader col="article" label="Articolo" type="text" {...sortProps} {...filterProps} filterValue={columnFilters.article} allowNone />
+                  )}
+
                   {show('gender') && (
                     <FilterableHeader col="gender" label="Gender" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.gender} options={GENDER_OPTIONS} />
                   )}
@@ -509,6 +585,9 @@ export function CollectionGroupSection({
                   {show('qtyForecast') && (
                     <FilterableHeader col="qtyForecast" label="Qty" type="number" {...sortProps} {...filterProps} filterValue={columnFilters.qtyForecast} className="text-right" />
                   )}
+                  {show('margin') && (
+                    <FilterableHeader col="margin" label="Mrg %" type="number" {...sortProps} {...filterProps} filterValue={columnFilters.margin} operator={columnFilterOperators.margin ?? 'gte'} {...operatorProps} className="text-right w-20 whitespace-nowrap" />
+                  )}
                   <TableHead className="w-24" />
                 </TableRow>
               </TableHeader>
@@ -535,17 +614,20 @@ export function CollectionGroupSection({
                         {idx + 1}
                       </TableCell>
                       {show('foto') && (
-                        <TableCell>
+                        <TableCell className="py-1 px-2">
                           {row.pictureUrl ? (
                             <RowPhoto src={row.pictureUrl} alt={row.line} />
                           ) : (
-                            <div className="h-16 w-20 rounded border border-dashed flex items-center justify-center bg-muted/30">
+                            <div className="h-[88px] w-[110px] rounded border border-dashed flex items-center justify-center bg-muted/30">
                               <ImageIcon className="h-4 w-4 text-muted-foreground" />
                             </div>
                           )}
                         </TableCell>
                       )}
                       <TableCell className="font-medium text-sm">{row.line}</TableCell>
+                      {show('article') && (
+                        <TableCell className="text-sm text-muted-foreground">{row.article ?? '—'}</TableCell>
+                      )}
                       {show('gender') && (
                         <TableCell className="text-sm text-muted-foreground">{row.gender}</TableCell>
                       )}
@@ -610,8 +692,49 @@ export function CollectionGroupSection({
                           {row.qtyForecast}
                         </TableCell>
                       )}
+                      {show('margin') && (
+                        <TableCell className="text-right tabular-nums text-sm w-20">
+                          {(() => {
+                            const m = computeRowMargin(row, parameterSets);
+                            if (!m) return <span className="text-muted-foreground/40">—</span>;
+                            return (
+                              <span className={
+                                m.marginStatus === 'green' ? 'text-green-700 dark:text-green-400'
+                                : m.marginStatus === 'yellow' ? 'text-amber-600 dark:text-amber-400'
+                                : 'text-destructive'
+                              }>
+                                {(m.margin * 100).toFixed(1)}%
+                              </span>
+                            );
+                          })()}
+                        </TableCell>
+                      )}
                       <TableCell onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1">
+                          {(() => {
+                            const filledNotes = NOTE_FIELDS.filter(f => !!row[f.key]);
+                            if (filledNotes.length === 0) return null;
+                            return (
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
+                                    <FileText className="h-3.5 w-3.5" />
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent align="end" className="w-72 p-3">
+                                  <p className="text-xs font-medium text-muted-foreground mb-2">Note — {row.line}</p>
+                                  <div className="space-y-2">
+                                    {filledNotes.map(f => (
+                                      <div key={f.key}>
+                                        <p className="text-xs font-medium">{f.label}</p>
+                                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">{row[f.key] as string}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                            );
+                          })()}
                           {canUpdate ? (
                             <>
                               <TooltipProvider>

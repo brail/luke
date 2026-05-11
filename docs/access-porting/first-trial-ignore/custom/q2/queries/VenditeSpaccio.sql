@@ -1,0 +1,4 @@
+SELECT [Item Ledger Entry].[Posting Date], [Item Ledger Entry].[Document No_], [Item Ledger Entry].[Entry Type], [Item Ledger Entry].[Item No_], [VenditeSpaccio-CostiAcquisto].Costo, Item.[Trademark Code] AS marchio, Item.[Season Code] AS stagione, Item.[Model Item No_], [Item Ledger Entry].[Variable Code 01] AS colore, [Item Ledger Entry].[Variable Code 02] AS taglia, Item_1.Description, Item_1.[Description 2], Val([Quantity]) AS quantita
+FROM ([Item Ledger Entry] INNER JOIN (Item LEFT JOIN [VenditeSpaccio-CostiAcquisto] ON Item.No_ = [VenditeSpaccio-CostiAcquisto].[Item No_]) ON [Item Ledger Entry].[Item No_] = Item.No_) INNER JOIN Item AS Item_1 ON Item.[Model Item No_] = Item_1.No_
+WHERE ((([Item Ledger Entry].[Posting Date]) Between [forms]![principale]![datainiziale] And [forms]![principale]![datafinale]) AND (([Item Ledger Entry].[Document No_]) Like "vend%") AND (([Item Ledger Entry].[Entry Type])=1));
+

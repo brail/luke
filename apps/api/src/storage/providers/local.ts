@@ -21,6 +21,7 @@ import { join, dirname, resolve, basename, relative, isAbsolute } from 'path';
 import { pipeline } from 'stream/promises';
 
 import type {
+  IStorageCapabilities,
   IStorageProvider,
   StoragePutParams,
   StoragePutResult,
@@ -38,6 +39,11 @@ import { isPathSafe } from '@luke/core';
  * Local Filesystem Provider
  */
 export class LocalFsProvider implements IStorageProvider {
+  readonly capabilities: IStorageCapabilities = {
+    supportsPresignedUpload: false,
+    supportsPresignedDownload: false,
+  };
+
   private basePath: string;
   private maxFileSizeBytes: number;
   private buckets: string[];

@@ -1,7 +1,7 @@
 'use client';
 
-import { AlertTriangle, Maximize2, Minimize2, Plus, RotateCcw, Search, Settings2 } from 'lucide-react';
-import { useState } from 'react';
+import { AlertTriangle, Download, FileSpreadsheet, FileText, Loader2, Maximize2, Minimize2, Plus, RotateCcw, Search, Settings2 } from 'lucide-react';
+import { useCallback, useRef, useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
 import {
@@ -13,6 +13,14 @@ import {
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
 import { Checkbox } from '../../../../../components/ui/checkbox';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../../../../../components/ui/dropdown-menu';
 import { Input } from '../../../../../components/ui/input';
 import { Label } from '../../../../../components/ui/label';
 import {
@@ -20,8 +28,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '../../../../../components/ui/popover';
+import { computeWeightedMargin } from '../_hooks/usePricingCalc';
 
 import { CollectionGroupSection } from './CollectionGroupSection';
+
+import type { PricingParameterSet } from '../_hooks/usePricingCalc';
 
 type CollectionLayoutData = NonNullable<RouterOutputs['collectionLayout']['get']>;
 
@@ -39,6 +50,7 @@ type CollectionRowData = CollectionGroupData['rows'][number];
 interface CollectionLayoutTableProps {
   layout: CollectionLayoutData;
   canUpdate: boolean;
+  parameterSets: PricingParameterSet[];
   onAddGroup: () => void;
   onAddRow: (groupId: string) => void;
   onEditRow: (row: CollectionRowData) => void;
@@ -50,11 +62,16 @@ interface CollectionLayoutTableProps {
   isDeletingRow?: boolean;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  onExportXlsx?: (filteredRowIds?: string[]) => void;
+  isExportingXlsx?: boolean;
+  onExportPdf?: (filteredRowIds?: string[]) => void;
+  isExportingPdf?: boolean;
 }
 
 export function CollectionLayoutTable({
   layout,
   canUpdate,
+  parameterSets,
   onAddGroup,
   onAddRow,
   onEditRow,
@@ -66,9 +83,21 @@ export function CollectionLayoutTable({
   isDeletingRow = false,
   isFullscreen = false,
   onToggleFullscreen,
+  onExportXlsx,
+  isExportingXlsx = false,
+  onExportPdf,
+  isExportingPdf = false,
 }: CollectionLayoutTableProps) {
   const [search, setSearch] = useState('');
   const [columnsPopoverOpen, setColumnsPopoverOpen] = useState(false);
+  const [exportFilteredOnly, setExportFilteredOnly] = useState(false);
+  const filteredRowIdsByGroup = useRef<Map<string, string[]>>(new Map());
+
+  const handleFilteredRowIdsChange = useCallback((groupId: string, ids: string[]) => {
+    filteredRowIdsByGroup.current.set(groupId, ids);
+  }, []);
+
+  const getAllFilteredRowIds = () => [...filteredRowIdsByGroup.current.values()].flat();
 
   // Columns saved in DB — used for the popover and normal mode rendering
   const hiddenColumns = getHiddenColumns(layout);
@@ -87,6 +116,8 @@ export function CollectionLayoutTable({
     (sum, g) => sum + g.rows.reduce((s, r) => s + r.qtyForecast, 0),
     0
   );
+  const allRows = layout.groups.flatMap(g => g.rows);
+  const totalWeightedMargin = computeWeightedMargin(allRows, parameterSets);
 
   const visibleCount = COLLECTION_TABLE_COLUMNS.length - hiddenColumns.length;
 
@@ -129,6 +160,12 @@ export function CollectionLayoutTable({
         )}
         <span className="text-muted-foreground">·</span>
         <span className="font-medium">{totalQty} paia</span>
+        {totalWeightedMargin !== null && (
+          <>
+            <span className="text-muted-foreground">·</span>
+            <span className="font-medium">mrg {(totalWeightedMargin * 100).toFixed(1)}%</span>
+          </>
+        )}
 
         {hasActiveSearch && (
           <div className="ml-auto flex items-center gap-2">
@@ -208,6 +245,45 @@ export function CollectionLayoutTable({
           </Button>
         )}
 
+        {(onExportXlsx || onExportPdf) && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" disabled={isExportingXlsx || isExportingPdf}>
+                {(isExportingXlsx || isExportingPdf)
+                  ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Esportando…</>
+                  : <><Download className="h-4 w-4 mr-1" />Esporta</>}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuCheckboxItem
+                checked={exportFilteredOnly}
+                onCheckedChange={setExportFilteredOnly}
+              >
+                Solo selezione filtrata
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              {onExportXlsx && (
+                <DropdownMenuItem
+                  onClick={() => onExportXlsx(exportFilteredOnly ? getAllFilteredRowIds() : undefined)}
+                  disabled={isExportingXlsx}
+                >
+                  <FileSpreadsheet className="h-4 w-4 mr-2" />
+                  Excel (.xlsx)
+                </DropdownMenuItem>
+              )}
+              {onExportPdf && (
+                <DropdownMenuItem
+                  onClick={() => onExportPdf(exportFilteredOnly ? getAllFilteredRowIds() : undefined)}
+                  disabled={isExportingPdf}
+                >
+                  <FileText className="h-4 w-4 mr-2" />
+                  PDF (A3)
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
         {canUpdate && (
           <Button size="sm" onClick={onAddGroup} className="ml-auto">
             <Plus className="h-4 w-4 mr-1" />
@@ -224,6 +300,7 @@ export function CollectionLayoutTable({
             group={group}
             canUpdate={canUpdate}
             hiddenColumns={effectiveHiddenColumns}
+            parameterSets={parameterSets}
             searchQuery={search}
             onAddRow={onAddRow}
             onEditRow={onEditRow}
@@ -232,6 +309,7 @@ export function CollectionLayoutTable({
             onRenameGroup={onRenameGroup}
             onDeleteGroup={onDeleteGroup}
             isDeletingRow={isDeletingRow}
+            onFilteredRowIdsChange={ids => handleFilteredRowIdsChange(group.id, ids)}
           />
         ))}
 

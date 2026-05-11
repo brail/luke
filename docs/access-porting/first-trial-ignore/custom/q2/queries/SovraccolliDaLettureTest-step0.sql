@@ -1,0 +1,4 @@
+SELECT TabellaAppoggioSovraccolliDaLetture.Cartone, Sum(TabellaAppoggioSovraccolliDaLetture.Pezzi) AS SommaDiPezzi
+FROM TabellaAppoggioSovraccolliDaLetture
+GROUP BY TabellaAppoggioSovraccolliDaLetture.Cartone;
+

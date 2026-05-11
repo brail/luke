@@ -1,0 +1,4 @@
+SELECT [DDT_Picking Line].[Order No_], [DDT_Picking Line].[Order Line No_], [DDT_Picking Line].Type, [DDT_Picking Header].No_, [DDT_Picking Header].[Document Type], [DDT_Picking Header].Status, Val([No_ of Pairs]) AS PaiaInBollaTotale, Val([Quantity]) AS QuantitaInBollaTotale, IIf([status]=1,Val([No_ of Pairs]),0) AS PaiaInBollaRilasciate, IIf([status]=1,Val([Quantity]),0) AS QuantitaInBollaRilasciate, IIf([status]=0,Val([No_ of Pairs]),0) AS PaiaInBollaAperte, IIf([status]=0,Val([Quantity]),0) AS QuantitaInBollaAperte, [DDT_Picking Line].[Document No_]
+FROM [DDT_Picking Line] INNER JOIN [DDT_Picking Header] ON ([DDT_Picking Line].[Document Type] = [DDT_Picking Header].[Document Type]) AND ([DDT_Picking Line].[Document No_] = [DDT_Picking Header].No_)
+WHERE ((([DDT_Picking Line].Type)=19 Or ([DDT_Picking Line].Type)=20) AND (([DDT_Picking Header].[Document Type])=0) AND (([DDT_Picking Header].Status)=0 Or ([DDT_Picking Header].Status)=1));
+

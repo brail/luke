@@ -46,6 +46,11 @@ const DEFAULTS: Record<string, RateLimitPolicy> = {
     timeWindow: '15m',
     keyBy: 'ip',
   },
+  ldapTest: {
+    max: isDevelopment() ? 100 : 3,
+    timeWindow: '15m',
+    keyBy: 'userId',
+  },
 };
 
 /**

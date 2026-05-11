@@ -54,6 +54,10 @@ model User {
   sectionAccess UserSectionAccess[]
   brandAccess UserBrandAccess[]
   seasonAccess UserSeasonAccess[]
+  assignedMerchandisingRows MerchandisingPlanRow[]
+  dashboardConfig DashboardConfig?
+  dashboardTasks  DashboardTask[]
+  milestoneNotes  MilestonePersonalNote[]
 
   @@map("users")
 }
@@ -137,7 +141,7 @@ model UserToken {
 }
 
 model FileObject {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   bucket         String
   key            String
   originalName   String
@@ -145,16 +149,18 @@ model FileObject {
   contentType    String
   checksumSha256 String
   createdBy      String
-  cleanupStatus  String   @default("PENDING")  // PENDING | SUCCESS | FAILED
-  cleanupAttempts Int    @default(0)
+  cleanupStatus  String    @default("PENDING")  // PENDING | SUCCESS | FAILED
+  cleanupAttempts Int      @default(0)
   lastCleanupAt  DateTime?
-  createdAt      DateTime @default(now())
+  confirmedAt    DateTime?                       // null = pending confirmation; set on entity link
+  createdAt      DateTime  @default(now())
 
   @@unique([bucket, key])
   @@index([bucket, key])
   @@index([createdAt])
   @@index([createdBy])
   @@index([cleanupStatus])
+  @@index([confirmedAt])
   @@map("file_objects")
 }
 
@@ -177,7 +183,7 @@ model Brand {
   id          String    @id @default(uuid())
   code        String    @unique
   name        String
-  logoUrl     String?
+  logoKey     String?
   navBrandId  String?   @unique
   navBrand    NavBrand? @relation(fields: [navBrandId], references: [navCode], onDelete: SetNull)
   isActive    Boolean   @default(true)
@@ -186,6 +192,8 @@ model Brand {
 
   pricingParameterSets PricingParameterSet[]
   collectionLayouts    CollectionLayout[]
+  merchandisingPlans   MerchandisingPlan[]
+  seasonCalendars      SeasonCalendar[]
   userBrandAccess      UserBrandAccess[]
   userSeasonAccess     UserSeasonAccess[]
 
@@ -207,6 +215,8 @@ model Season {
 
   pricingParameterSets PricingParameterSet[]
   collectionLayouts    CollectionLayout[]
+  merchandisingPlans   MerchandisingPlan[]
+  seasonCalendars      SeasonCalendar[]
   userSeasonAccess     UserSeasonAccess[]
 
   @@map("seasons")
@@ -250,15 +260,39 @@ model UserSeasonAccess {
   @@map("user_season_access")
 }
 
-model UserPreference {
-  userId       String   @id
-  lastBrandId  String?
-  lastSeasonId String?
-  pinnedContexts Json?
-  updatedAt    DateTime @updatedAt
-  createdAt    DateTime @default(now())
+model DashboardConfig {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  widgets   Json
+  updatedAt DateTime @updatedAt
 
-  @@index([lastBrandId])
+  @@map("dashboard_configs")
+}
+
+model DashboardTask {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  done      Boolean   @default(false)
+  dueDate   DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@map("dashboard_tasks")
+}
+
+/**
+ * Preferenze utente consolidate in un singolo Json
+ * Struttura: { lastBrandId?, lastSeasonId?, menuStates? }
+ */
+model UserPreference {
+  userId    String   @id
+  data      Json?    @default("{}")
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
   @@map("user_preferences")
 }
 
@@ -291,7 +325,9 @@ model PricingParameterSet {
 
   brand  Brand  @relation(fields: [brandId], references: [id], onDelete: Restrict)
   season Season @relation(fields: [seasonId], references: [id], onDelete: Restrict)
-  collectionLayoutRows CollectionLayoutRow[]
+  quotations            CollectionRowQuotation[]
+  merchandisingPlanRows MerchandisingPlanRow[]
+  enabledForVendors     Vendor[]                 @relation("VendorEnabledParameterSets")
 
   @@unique([brandId, seasonId, name])
   @@index([brandId, seasonId])
@@ -303,17 +339,18 @@ model PricingParameterSet {
  * Rappresenta l'elenco delle linee che compongono una collezione stagionale
  */
 model CollectionLayout {
-  id            String   @id @default(uuid())
-  brandId       String
-  seasonId      String
-  skuBudget     Int?
-  hiddenColumns Json?    // String[] — colonne nascoste, null = tutte visibili
-  brand         Brand    @relation(fields: [brandId], references: [id], onDelete: Restrict)
-  season        Season   @relation(fields: [seasonId], references: [id], onDelete: Restrict)
-  groups        CollectionGroup[]
-  rows          CollectionLayoutRow[]
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id               String   @id @default(uuid())
+  brandId          String
+  seasonId         String
+  skuBudget        Int?
+  hiddenColumns    Json?    // String[] — colonne nascoste, null = tutte visibili
+  availableGenders String[] @default(["MAN","WOMAN"])
+  brand            Brand    @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  season           Season   @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  groups           CollectionGroup[]
+  rows             CollectionLayoutRow[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   @@unique([brandId, seasonId])
   @@index([brandId, seasonId])
@@ -453,7 +490,8 @@ model Vendor {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  collectionRows CollectionLayoutRow[]
+  collectionRows       CollectionLayoutRow[]
+  enabledParameterSets PricingParameterSet[] @relation("VendorEnabledParameterSets")
 
   @@index([name])
   @@index([isActive])
@@ -473,36 +511,32 @@ model CollectionLayoutRow {
   order                  Int                   @default(0)
 
   // Required fields
-  gender                 String                // MAN | WOMAN
+  gender                 String                // validated against layout.availableGenders
   vendorId               String?
   vendor                 Vendor?               @relation(fields: [vendorId], references: [id], onDelete: SetNull)
   line                   String
-  status                 String                // CARRY_OVER | NEW
+  article                String?               // testo libero corto, dopo line
+  status                 String                // catalog-managed (lineStatus)
   skuForecast            Int
   qtyForecast            Int
   productCategory        String
 
   // Optional — identification/progress
-  strategy               String?               // CORE | INNOVATION
-  styleStatus            String?               // CARRY_OVER | NEW (STYLE STATUS)
-  progress               String?               // 01–06 stages
+  strategy               String?               // catalog-managed
+  styleStatus            String?               // catalog-managed
+  progress               String?               // catalog-managed
   designer               String?
-  pictureUrl             String?
+  pictureKey             String?
 
   // Optional — notes
   styleNotes             String?
   materialNotes          String?
   colorNotes             String?
-  priceNotes             String?
   toolingNotes           String?
 
   // Optional — pricing
-  pricingParameterSetId  String?
-  pricingParameterSet    PricingParameterSet?  @relation(fields: [pricingParameterSetId], references: [id], onDelete: SetNull)
-  retailTargetPrice      Float?
-  buyingTargetPrice      Float?
-  supplierFirstQuotation Float?
   toolingQuotation       Float?
+  quotations             CollectionRowQuotation[]
 
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
@@ -510,6 +544,841 @@ model CollectionLayoutRow {
   @@index([collectionLayoutId])
   @@index([groupId])
   @@index([vendorId])
-  @@index([pricingParameterSetId])
   @@map("collection_layout_rows")
+}
+
+/**
+ * Quotazione di pricing per una riga collection
+ * Una riga può avere N quotazioni con parametri diversi (es. CN/USD vs IT/EUR)
+ */
+model CollectionRowQuotation {
+  id                    String               @id @default(uuid())
+  rowId                 String
+  row                   CollectionLayoutRow  @relation(fields: [rowId], references: [id], onDelete: Cascade)
+  order                 Int                  @default(0)
+  pricingParameterSetId String?
+  pricingParameterSet   PricingParameterSet? @relation(fields: [pricingParameterSetId], references: [id], onDelete: SetNull)
+  retailPrice           Float?
+  supplierQuotation     Float?               // FOB in purchaseCurrency del param set
+  notes                 String?
+  sku                   Int?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  @@index([rowId])
+  @@index([pricingParameterSetId])
+  @@map("collection_row_quotations")
+}
+
+/**
+ * Catalog items configurabili per collection layout
+ * Tipi: strategy, lineStatus, styleStatus, progress
+ */
+model CollectionCatalogItem {
+  id        String   @id @default(uuid())
+  type      String   // "strategy" | "lineStatus" | "styleStatus" | "progress"
+  value     String
+  label     String
+  order     Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([type, value])
+  @@index([type, isActive])
+  @@map("collection_catalog_items")
+}
+
+// ─── Merchandising Plan ───────────────────────────────────────────────────────
+
+enum MerchandisingPlanStatus {
+  DRAFT
+  CONFIRMED
+}
+
+enum MerchandisingGender {
+  MAN
+  WOMAN
+  UNISEX
+  KID
+}
+
+enum MerchandisingLifeType {
+  NEW_LINE
+  NEW_STYLE
+  NEW_COLOR
+  CARRY_OVER
+}
+
+enum MerchandisingLaunchType {
+  SAMPLED
+  OPEN_TO_BUY
+}
+
+enum SpecsheetComponentSection {
+  UPPER
+  LINING
+  ACCESSORIES
+  SOLE
+  OTHER
+}
+
+/**
+ * Piano merchandising per brand+stagione — unico per coppia
+ */
+model MerchandisingPlan {
+  id        String                  @id @default(uuid())
+  brandId   String
+  seasonId  String
+  status    MerchandisingPlanStatus @default(DRAFT)
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+
+  brand   Brand                 @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  season  Season                @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  rows    MerchandisingPlanRow[]
+
+  @@unique([brandId, seasonId])
+  @@index([brandId, seasonId])
+  @@map("merchandising_plans")
+}
+
+/**
+ * Riga SKU del piano merchandising (granularità colore)
+ */
+model MerchandisingPlanRow {
+  id     String @id @default(uuid())
+  planId String
+  order  Int    @default(0)
+
+  articleCode         String
+  styleDescription    String
+  styleCode           String?
+  colorCode           String
+  colorDescription    String
+  gender              MerchandisingGender
+  productCategory     String
+  lineCode            String?
+  lifeType            MerchandisingLifeType?
+  carryoverFromSeason String?
+
+  launchType         MerchandisingLaunchType?
+  smsPairsOrder      Int?
+  targetPairs        Int?
+  cancellationStatus String?
+  designer           String?
+
+  pricingParameterSetId String?
+
+  targetFobPrice   Decimal? @db.Decimal(10, 4)
+  firstOfferPrice  Decimal? @db.Decimal(10, 4)
+  finalOfferPrice  Decimal? @db.Decimal(10, 4)
+  retailTargetIt   Decimal? @db.Decimal(10, 4)
+  wholesaleIt      Decimal? @db.Decimal(10, 4)
+  retailTargetEu   Decimal? @db.Decimal(10, 4)
+  wholesaleEu      Decimal? @db.Decimal(10, 4)
+
+  pricingNotes String?
+  generalNotes String?
+
+  assignedUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  plan                MerchandisingPlan       @relation(fields: [planId], references: [id], onDelete: Cascade)
+  specsheet           MerchandisingSpecsheet?
+  assignedUser        User?                   @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
+  pricingParameterSet PricingParameterSet?    @relation(fields: [pricingParameterSetId], references: [id], onDelete: SetNull)
+
+  @@index([planId])
+  @@index([assignedUserId])
+  @@index([pricingParameterSetId])
+  @@map("merchandising_plan_rows")
+}
+
+/**
+ * Specsheet (BOM semplificata) collegata 1:1 a una riga piano
+ */
+model MerchandisingSpecsheet {
+  id    String @id @default(uuid())
+  rowId String @unique
+
+  madeIn       String?
+  supplierName String?
+  notes        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  row        MerchandisingPlanRow     @relation(fields: [rowId], references: [id], onDelete: Cascade)
+  components MerchandisingComponent[]
+  images     MerchandisingImage[]
+
+  @@map("merchandising_specsheets")
+}
+
+/**
+ * Componente BOM di una specsheet
+ */
+model MerchandisingComponent {
+  id          String                    @id @default(uuid())
+  specsheetId String
+  order       Int                       @default(0)
+  section     SpecsheetComponentSection
+
+  partNumber   String?
+  component    String
+  material     String?
+  color        String?
+  pantoneNotes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  specsheet MerchandisingSpecsheet @relation(fields: [specsheetId], references: [id], onDelete: Cascade)
+
+  @@index([specsheetId, section, order])
+  @@map("merchandising_components")
+}
+
+/**
+ * Immagini di una specsheet (galleria)
+ */
+model MerchandisingImage {
+  id          String  @id @default(uuid())
+  specsheetId String
+  key         String?
+  isDefault   Boolean @default(false)
+  order       Int     @default(0)
+  caption     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  specsheet MerchandisingSpecsheet @relation(fields: [specsheetId], references: [id], onDelete: Cascade)
+
+  @@index([specsheetId, order])
+  @@map("merchandising_images")
+}
+
+// ─── Portafoglio Analytics Sync ───────────────────────────────────────────────
+//
+// Repliche analytics delle tabelle NAV usate dalla query portafoglio ordini.
+// Prefisso nav_pf_ (portafoglio) per distinguerle dalle nav_* entity-dual.
+// Aggiornate dal sync service (background ogni 5 min + trigger manuale).
+// NO soft-delete, NO entità locale: sono repliche pure in sola lettura dall'app.
+
+/**
+ * Stato di sincronizzazione per tabella.
+ * navRowversion = CONVERT(BIGINT, MAX(timestamp)) dell'ultimo sync su SQL Server.
+ * Per le tabelle full-refresh (date_prenotazione, ddt_picking): rowversion = 0.
+ */
+model NavPfSyncState {
+  tableName       String    @id
+  lastRowversion  BigInt    @default(0)
+  lastSyncedAt    DateTime?
+  rowCount        Int       @default(0)
+  lastDurationMs  Int?
+
+  @@map("nav_pf_sync_state")
+}
+
+/** Replica di [Company$Sales Header] */
+model NavPfSalesHeader {
+  no_                       String    @id
+  documentType              Int
+  orderDate                 DateTime?
+  sellToCustomerNo          String?
+  billToCustomerNo          String?
+  billToName                String?
+  salespersonCode           String?
+  areaManagerCode           String?
+  subject1                  String?
+  subject2                  String?
+  currencyCode              String?
+  shipToCode                String?
+  shipToName                String?
+  shipToName2               String?
+  shipToAddress             String?
+  shipToAddress2            String?
+  shipToCity                String?
+  shipToPostCode            String?
+  shipToCounty              String?
+  shipmentMethodCode        String?
+  transportReasonCode       String?
+  shippingAgentCode         String?
+  shippingAgentServiceCode  String?
+  paymentTermsCode          String?
+  paymentMethodCode         String?
+  invoiceDiscountCalculation String?
+  invoiceDiscountValue      Float?
+  consignment               Int?
+  rightOnReturnPct          Float?
+  note                      String?
+  campaignNo                String?
+  securitiesReceived        String?
+  anomalous                 Int?
+  notAnomalous              Int?
+  anomalousDate             DateTime?
+  checked                   Int?
+  checkedDate               DateTime?
+  budgetNo                  String?
+  courseDate                DateTime?
+  kimoFashionSoNo           String?
+  orderType                 Int?
+  fastShipping              Int?
+  commissionGroupCode       String?
+  geographicalZone          String?
+  sellingSeasonCode         String?
+  shortcutDimension2Code    String?
+  customerPostingGroup      String?
+  navRowversion             BigInt    @default(0)
+
+  @@index([sellingSeasonCode])
+  @@index([shortcutDimension2Code])
+  @@index([sellingSeasonCode, shortcutDimension2Code])
+  @@index([salespersonCode])
+  @@index([sellToCustomerNo])
+  @@map("nav_pf_sales_header")
+}
+
+/** Replica di [Company$Sales Line] */
+model NavPfSalesLine {
+  documentType              Int
+  documentNo                String
+  lineNo                    Int
+  type                      Int?
+  no_                       String?
+  customerOrderRef          String?
+  reference                 String?
+  genBusPostingGroup        String?
+  vatBusPostingGroup        String?
+  unitOfMeasure             String?
+  constantVariableCode      String?
+  assortmentCode            String?
+  deleteReason              String?
+  salesPurchaseStatusCode   String?
+  salesPurchaseStatusItem   String?
+  deleteDate                DateTime?
+  customerPriceGroup        String?
+  averageUnitPrice          Float?
+  noOfPairs                 Float?
+  quantity                  Float?
+  lineAmount                Float?
+  invDiscountAmount         Float?
+  quantityShipped           Float?
+  quantityInvoiced          Float?
+  returnQtyReceived         Float?
+  subject1Commission        Float?
+  subject2Commission        Float?
+  subject3Commission        Float?
+  subject4Commission        Float?
+  areaManagerCommission     Float?
+  salespersonCommission     Float?
+  returnReasonCode          String?
+  requestedDeliveryDate     DateTime?
+  lineDiscountPct           Float?
+  discount1Pct              Float?
+  discount2Pct              Float?
+  discount3Pct              Float?
+  locationCode              String?
+  modelCrossReference       String?
+  constantAssortmentVarGrp  String?
+  navRowversion             BigInt    @default(0)
+
+  @@id([documentType, documentNo, lineNo])
+  @@index([documentNo])
+  @@index([no_])
+  @@index([constantVariableCode])
+  @@map("nav_pf_sales_line")
+}
+
+/** Replica di [Company$Sales Header Extension] */
+model NavPfSalesHeaderExt {
+  documentType            Int
+  documentNo              String
+  warehouseSpecialityCode String?
+  subject3                String?
+  subject4                String?
+  oldOrderNo              String?
+  specialRequests         String?
+  navRowversion           BigInt    @default(0)
+
+  @@id([documentType, documentNo])
+  @@map("nav_pf_sales_header_ext")
+}
+
+/**
+ * Replica di [Company$Item] — solo Configurator Relation 2 (modelli) e 3 (SKU).
+ * Relation 2: usato in Sales Line.No_ e come chiave principale.
+ * Relation 3: usato per carry_over, landed_cost, must_buy (GROUP BY Model Item No_).
+ */
+model NavPfItem {
+  no_                       String    @id
+  description               String?
+  description2              String?
+  configuratorRelation      Int?
+  modelItemNo               String?
+  variableCode01            String?
+  smu                       Int?
+  carryOver                 Int?
+  futureCarryOver           Int?
+  soldOut                   Int?
+  soldOutDate               DateTime?
+  salesPurchaseStatusItem   String?
+  salesPurchaseStatusDate   DateTime?
+  potentialSoldOut          Int?
+  minimumOrderQuantity      Float?
+  mustBuy                   Int?
+  standardCost              Float?
+  collectionCode            String?
+  lineCode                  String?
+  seasonTypology            String?
+  productFamily             String?
+  productSex                String?
+  shipmentPriority          String?
+  innovationDegree          String?
+  heelHeight                String?
+  endCustomerPriceGap       String?
+  marketSegment             String?
+  productTypology           String?
+  mainMaterial              String?
+  soleMaterial              String?
+  vendorNo                  String?
+  manufacturer              String?
+  advertisingMaterial       String?
+  countryRegionOfOriginCode String?
+  constantAssortmentVarGrp  String?
+  seasonCode                String?
+  trademarkCode             String?
+  navRowversion             BigInt    @default(0)
+
+  @@index([modelItemNo])
+  @@index([configuratorRelation])
+  @@index([modelItemNo, variableCode01])
+  @@index([seasonCode])
+  @@index([trademarkCode])
+  @@map("nav_pf_item")
+}
+
+/** Replica di [Company$Customer] */
+model NavPfCustomer {
+  no_                    String    @id
+  name                   String?
+  name2                  String?
+  address                String?
+  city                   String?
+  postCode               String?
+  county                 String?
+  countryRegionCode      String?
+  phoneNo                String?
+  faxNo                  String?
+  eMail                  String?
+  businessEMail          String?
+  contact                String?
+  geographicalZone       String?
+  geographicalZone2      String?
+  keyAccount             Int?
+  warehouseSpecialityCode String?
+  languageCode           String?
+  fastShipment           Int?
+  blockedForAssignments  Int?
+  reasonBlockCode        String?
+  paymentMethodCode      String?
+  paymentTermsCode       String?
+  vatRegistrationNo      String?
+  fiscalCode             String?
+  currentRisk            String?
+  riskRating             String?
+  pmFailureAssignedScore String?
+  updatedDate            DateTime?
+  updatedType            String?
+  dueDate                DateTime?
+  internalValuation      String?
+  valuationDate          DateTime?
+  reservationPriority    String?
+  authorizedStoresNumber Int?
+  storeDistribution      Int?
+  storeImage             Int?
+  storeType              Int?
+  variousReferences      String?
+  homePage               String?
+  qualityControl         String?
+  oldFebosNo             String?
+  oldBridgeNo            String?
+  purchaseGroup          String?
+  distributionChannel    String?
+  creditManager          String?
+  eacLabels              String?
+  sovracolloCompleto     Int?
+  commissionGroupCode    String?
+  vatBusPostingGroup     String?
+  genBusPostingGroup     String?
+  customerPostingGroup   String?
+  navRowversion          BigInt    @default(0)
+
+  @@map("nav_pf_customer")
+}
+
+/** Replica di [Company$Ship-to Address] */
+model NavPfShipToAddress {
+  customerNo          String
+  code                String
+  geographicalZone2   String?
+  countryRegionCode   String?
+  navRowversion       BigInt    @default(0)
+
+  @@id([customerNo, code])
+  @@index([customerNo])
+  @@map("nav_pf_ship_to_address")
+}
+
+/** Replica di [Company$Variable Code] (descrizioni colori) */
+model NavPfVariableCode {
+  variableGroup String
+  variableCode  String
+  description   String?
+  navRowversion BigInt  @default(0)
+
+  @@id([variableGroup, variableCode])
+  @@map("nav_pf_variable_code")
+}
+
+/** Replica di [Company$Salesperson/Purchaser] */
+model NavPfSalesperson {
+  code          String  @id
+  name          String?
+  navRowversion BigInt  @default(0)
+
+  @@map("nav_pf_salesperson")
+}
+
+/** Replica di [Company$Geographical Zone] */
+model NavPfGeoZone {
+  code          String  @id
+  description   String?
+  navRowversion BigInt  @default(0)
+
+  @@map("nav_pf_geo_zone")
+}
+
+/** Replica di [Company$Shipment Method] */
+model NavPfShipmentMethod {
+  code          String  @id
+  description   String?
+  navRowversion BigInt  @default(0)
+
+  @@map("nav_pf_shipment_method")
+}
+
+/** Replica di [Company$Transport Reason Code] */
+model NavPfTransportReason {
+  code          String  @id
+  description   String?
+  navRowversion BigInt  @default(0)
+
+  @@map("nav_pf_transport_reason")
+}
+
+/** Replica di [Company$Budget Header] */
+model NavPfBudgetHeader {
+  no_           String  @id
+  budgetArea    String?
+  navRowversion BigInt  @default(0)
+
+  @@map("nav_pf_budget_header")
+}
+
+/** Replica di [Company$Vendor] — solo campi necessari per lookup nome */
+model NavPfVendor {
+  no_           String  @id
+  name          String?
+  navRowversion BigInt  @default(0)
+
+  @@map("nav_pf_vendor")
+}
+
+/**
+ * Pre-aggregazione di [Company$Reserv__Assign_ Link] (tipo 1).
+ * Memorizza MAX(Date Reservation) per (Sales Document No_, Sales Line No_).
+ * Full-refresh ad ogni ciclo di sync, scoped ai document nos presenti in nav_pf_sales_header.
+ */
+model NavPfDatePrenotazione {
+  salesDocumentNo String
+  salesLineNo     Int
+  dateReservation DateTime?
+  syncedAt        DateTime  @default(now())
+
+  @@id([salesDocumentNo, salesLineNo])
+  @@map("nav_pf_date_prenotazione")
+}
+
+/**
+ * Pre-aggregazione di [Company$DDT_Picking Line] JOIN [Company$DDT_Picking Header].
+ * Memorizza SUM per status per (Order No_, Order Line No_).
+ * Full-refresh ad ogni ciclo di sync, scoped ai document nos di nav_pf_sales_header.
+ */
+model NavPfDdtPicking {
+  orderNo               String
+  orderLineNo           Int
+  pairsTotale           Float?
+  qtyTotale             Float?
+  pairsRilasciate       Float?
+  qtyRilasciate         Float?
+  pairsAperte           Float?
+  qtyAperte             Float?
+  pairsDaInviareWmsps   Float?
+  qtyDaInviareWmsps     Float?
+  pairsInviatoWmsps     Float?
+  qtyInviatoWmsps       Float?
+  pairsEvasoWmsps       Float?
+  qtyEvasoWmsps         Float?
+  syncedAt              DateTime @default(now())
+
+  @@id([orderNo, orderLineNo])
+  @@index([orderNo])
+  @@map("nav_pf_ddt_picking")
+}
+
+// ─── Repliche tabelle KIMO-FASHION ────────────────────────────────────────────
+// Prefisso nav_kimo_ per distinguerle dalle nav_pf_* (portafoglio).
+// Alimentate da nav-kimo-sync.ts (background scheduler separato).
+// Sync state condiviso con nav_pf_sync_state (stesso schema, prefisso nav_kimo_).
+
+/** Replica di [Company$KIMO-FASHION Sales Order Hdr] — sync incrementale rowversion */
+model NavKimoSalesHeader {
+  entryNo                  BigInt    @id
+  trademarkCode            String?
+  sellingSeasonCode        String?
+  salespersonCodeNav       String?
+  assignedSalesDocumentNo  String?
+  sellToCustomerNo         String?
+  createSoDateTime         DateTime?
+  releaseSoDateTime        DateTime?
+  kimoDocumentType         String?
+  navRowversion            BigInt    @default(0)
+
+  @@index([trademarkCode])
+  @@index([sellingSeasonCode])
+  @@index([trademarkCode, sellingSeasonCode])
+  @@index([salespersonCodeNav])
+  @@index([assignedSalesDocumentNo])
+  @@index([sellToCustomerNo])
+  @@map("nav_kimo_sales_header")
+}
+
+/**
+ * Replica di [Company$KIMO-FASHION Sales Order Line] — sync incrementale rowversion.
+ * PK = Entry No_ (BigInt univoco per riga, come da schema NAV).
+ * NON usa Line No_ (campo inesistente in questa tabella NAV).
+ */
+model NavKimoSalesLine {
+  entryNo                  BigInt    @id
+  headerEntryNo            BigInt
+  no_                      String?
+  modelItemNo              String?
+  colorCode                String?
+  sizeCode                 String?
+  quantity                 Float?
+  lineAmount               Float?
+  kimoFashionSoReference   String?
+  type                     Int?
+  navRowversion            BigInt    @default(0)
+
+  @@index([headerEntryNo])
+  @@index([modelItemNo])
+  @@map("nav_kimo_sales_line")
+}
+
+// ─── Season Calendar ──────────────────────────────────────────────────────────
+
+enum SeasonCalendarStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum CalendarMilestoneType {
+  KICKOFF
+  REVIEW
+  GATE
+  DEADLINE
+  MILESTONE
+  CUSTOM
+}
+
+enum CalendarMilestoneStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+/**
+ * Calendario stagionale per brand+stagione — unico per coppia.
+ * anchorDate è la data di riferimento per i template (offset applica da qui).
+ */
+model SeasonCalendar {
+  id         String               @id @default(uuid())
+  brandId    String
+  seasonId   String
+  status     SeasonCalendarStatus @default(DRAFT)
+  anchorDate DateTime?            @db.Date
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+
+  brand      Brand                   @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  season     Season                  @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  milestones CalendarMilestone[]
+  bindings   GoogleCalendarBinding[]
+
+  @@unique([brandId, seasonId])
+  @@index([seasonId])
+  @@map("season_calendars")
+}
+
+/**
+ * Singola milestone/evento del calendario stagionale.
+ * Visibilità per sezione gestita via MilestoneVisibility (M2M).
+ */
+model CalendarMilestone {
+  id                String                  @id @default(uuid())
+  calendarId        String
+  ownerSectionKey   String
+  type              CalendarMilestoneType
+  status            CalendarMilestoneStatus @default(PLANNED)
+  title             String
+  description       String?
+  startAt           DateTime
+  endAt             DateTime?
+  allDay            Boolean                 @default(false)
+  publishExternally Boolean                 @default(true)
+  templateItemId    String?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  calendar      SeasonCalendar          @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  templateItem  MilestoneTemplateItem?  @relation(fields: [templateItemId], references: [id], onDelete: SetNull)
+  visibilities  MilestoneVisibility[]
+  notes         MilestonePersonalNote[]
+  eventMappings GoogleEventMapping[]
+
+  @@index([calendarId, startAt])
+  @@index([ownerSectionKey])
+  @@map("calendar_milestones")
+}
+
+/**
+ * Sezioni a cui una milestone è visibile.
+ * ownerSectionKey è sempre incluso come readOnly=false.
+ */
+model MilestoneVisibility {
+  milestoneId String
+  sectionKey  String
+  readOnly    Boolean @default(true)
+
+  milestone CalendarMilestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+
+  @@id([milestoneId, sectionKey])
+  @@index([sectionKey])
+  @@map("milestone_visibilities")
+}
+
+/**
+ * Nota personale per-utente per-milestone.
+ * Non sincronizzata su Google Calendar.
+ */
+model MilestonePersonalNote {
+  id          String   @id @default(uuid())
+  milestoneId String
+  userId      String
+  body        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  milestone CalendarMilestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([milestoneId, userId])
+  @@index([userId])
+  @@map("milestone_personal_notes")
+}
+
+/**
+ * Template di milestone predefinito (catalogo riutilizzabile).
+ */
+model MilestoneTemplate {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items MilestoneTemplateItem[]
+
+  @@map("milestone_templates")
+}
+
+/**
+ * Singolo item di un template — offset in giorni da anchorDate.
+ */
+model MilestoneTemplateItem {
+  id                 String                @id @default(uuid())
+  templateId         String
+  ownerSectionKey    String
+  type               CalendarMilestoneType
+  title              String
+  description        String?
+  offsetDays         Int
+  durationDays       Int                   @default(0)
+  publishExternally  Boolean               @default(true)
+  visibleSectionKeys String[]
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  template   MilestoneTemplate   @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  milestones CalendarMilestone[]
+
+  @@index([templateId])
+  @@map("milestone_template_items")
+}
+
+/**
+ * Binding tra un SeasonCalendar+sezione e il corrispettivo Google Calendar ID.
+ * Creato lazy al primo sync della sezione.
+ */
+model GoogleCalendarBinding {
+  id               String   @id @default(uuid())
+  seasonCalendarId String
+  sectionKey       String
+  googleCalendarId String
+  isProvisioned    Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  seasonCalendar SeasonCalendar @relation(fields: [seasonCalendarId], references: [id], onDelete: Cascade)
+
+  @@unique([seasonCalendarId, sectionKey])
+  @@index([googleCalendarId])
+  @@map("google_calendar_bindings")
+}
+
+/**
+ * Mapping milestone → evento Google per ciascuna sezione visibile.
+ * contentHash deterministico: se cambia → rescheduled event.
+ */
+model GoogleEventMapping {
+  milestoneId      String
+  sectionKey       String
+  googleEventId    String
+  googleCalendarId String
+  contentHash      String
+  lastSyncedAt     DateTime
+
+  milestone CalendarMilestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+
+  @@id([milestoneId, sectionKey])
+  @@index([googleCalendarId])
+  @@map("google_event_mappings")
 }

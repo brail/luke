@@ -8,6 +8,8 @@
  */
 
 import { randomBytes } from 'crypto';
+import { join } from 'path';
+import { homedir } from 'os';
 
 import { PrismaClient } from '@prisma/client';
 
@@ -258,7 +260,7 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     },
     {
       key: 'storage.local.basePath',
-      value: '/tmp/luke-storage', // Development default
+      value: join(homedir(), '.luke', 'storage'),
       encrypt: false,
     },
     {
@@ -268,7 +270,7 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     },
     {
       key: 'storage.local.buckets',
-      value: '["uploads","exports","assets","brand-logos","temp-brand-logos"]',
+      value: '["uploads","exports","assets","brand-logos","collection-row-pictures","merchandising-specsheet-images"]',
       encrypt: false,
     },
     {
@@ -279,6 +281,47 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     {
       key: 'storage.local.enableProxy',
       value: 'true',
+      encrypt: false,
+    },
+    // Storage — MinIO defaults (used when storage.type = 'minio')
+    {
+      key: 'storage.minio.endpoint',
+      value: 'minio',
+      encrypt: false,
+    },
+    {
+      key: 'storage.minio.port',
+      value: '9000',
+      encrypt: false,
+    },
+    {
+      key: 'storage.minio.useSSL',
+      value: 'false',
+      encrypt: false,
+    },
+    {
+      key: 'storage.minio.accessKey',
+      value: 'minioadmin',
+      encrypt: true,
+    },
+    {
+      key: 'storage.minio.secretKey',
+      value: 'minioadmin',
+      encrypt: true,
+    },
+    {
+      key: 'storage.minio.region',
+      value: 'us-east-1',
+      encrypt: false,
+    },
+    {
+      key: 'storage.minio.presignedPutTtl',
+      value: '3600',
+      encrypt: false,
+    },
+    {
+      key: 'storage.minio.presignedGetTtl',
+      value: '3600',
       encrypt: false,
     },
     // NAV (Microsoft Dynamics NAV / SQL Server)
@@ -402,6 +445,87 @@ export async function seedContextData(prisma: PrismaClient): Promise<void> {
 /**
  * Funzione principale di seed
  */
+async function seedMilestoneTemplates(prisma: PrismaClient): Promise<void> {
+  console.log('📅 Seeding milestone templates...');
+
+  const template = await prisma.milestoneTemplate.upsert({
+    where: { name: 'Standard footwear season' },
+    create: { name: 'Standard footwear season', description: 'Template base per una stagione calzature' },
+    update: { description: 'Template base per una stagione calzature' },
+  });
+
+  const items: Array<{
+    ownerSectionKey: string;
+    type: 'KICKOFF' | 'REVIEW' | 'GATE' | 'DEADLINE' | 'MILESTONE' | 'CUSTOM';
+    title: string;
+    offsetDays: number;
+    durationDays: number;
+    visibleSectionKeys: string[];
+  }> = [
+    {
+      ownerSectionKey: 'planning.product',
+      type: 'KICKOFF',
+      title: 'Kickoff',
+      offsetDays: 0,
+      durationDays: 0,
+      visibleSectionKeys: ['planning.sales', 'planning.product', 'planning.sourcing', 'planning.merchandising'],
+    },
+    {
+      ownerSectionKey: 'planning.sourcing',
+      type: 'MILESTONE',
+      title: 'Briefing materials',
+      offsetDays: 14,
+      durationDays: 0,
+      visibleSectionKeys: ['planning.product', 'planning.sourcing'],
+    },
+    {
+      ownerSectionKey: 'planning.product',
+      type: 'GATE',
+      title: 'First samples',
+      offsetDays: 60,
+      durationDays: 0,
+      visibleSectionKeys: ['planning.product', 'planning.sourcing'],
+    },
+    {
+      ownerSectionKey: 'planning.merchandising',
+      type: 'REVIEW',
+      title: 'Linesheet review',
+      offsetDays: 90,
+      durationDays: 0,
+      visibleSectionKeys: ['planning.sales', 'planning.product', 'planning.merchandising'],
+    },
+    {
+      ownerSectionKey: 'planning.sales',
+      type: 'MILESTONE',
+      title: 'Sales pre-opening',
+      offsetDays: 120,
+      durationDays: 0,
+      visibleSectionKeys: ['planning.sales', 'planning.merchandising'],
+    },
+    {
+      ownerSectionKey: 'planning.sourcing',
+      type: 'DEADLINE',
+      title: 'PO cutoff',
+      offsetDays: 180,
+      durationDays: 0,
+      visibleSectionKeys: ['planning.product', 'planning.sourcing'],
+    },
+  ];
+
+  for (const item of items) {
+    const existing = await prisma.milestoneTemplateItem.findFirst({
+      where: { templateId: template.id, title: item.title },
+    });
+    if (!existing) {
+      await prisma.milestoneTemplateItem.create({
+        data: { templateId: template.id, ...item },
+      });
+    }
+  }
+
+  console.log(`   Template "${template.name}" seeded (${items.length} items)`);
+}
+
 async function main() {
   console.log('🌱 Avvio seed database...');
 
@@ -417,6 +541,9 @@ async function main() {
 
     // Seeding context data
     await seedContextData(prisma);
+
+    // Seeding milestone templates
+    await seedMilestoneTemplates(prisma);
 
     // Log finale
     console.log('\n🎉 Seed completato con successo!');

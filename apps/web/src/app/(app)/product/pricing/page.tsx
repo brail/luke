@@ -12,6 +12,7 @@ import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 import { EmptyParameterState } from './_components/EmptyParameterState';
 import { ParameterSetPanel } from './_components/ParameterSetPanel';
 import { PricingCalculator } from './_components/PricingCalculator';
+import { PricingGrid } from './_components/PricingGrid';
 
 export default function PricingPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
@@ -162,6 +163,13 @@ export default function PricingPage() {
               description="Calcola il prezzo retail, il prezzo acquisto massimo o il margine aziendale"
             >
               <PricingCalculator parameterSet={selectedSet} />
+            </SectionCard>
+
+            <SectionCard
+              title="Griglia prezzi"
+              description="Costo massimo FOB per prezzo retail target"
+            >
+              <PricingGrid sets={parameterSets} />
             </SectionCard>
 
             <SectionCard

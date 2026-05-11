@@ -1,0 +1,3 @@
+UPDATE ([Sales Line] INNER JOIN [Sales Header] ON ([Sales Line].[Document No_] = [Sales Header].No_) AND ([Sales Line].[Document Type] = [Sales Header].[Document Type])) INNER JOIN OrdiniPalomar ON ([Sales Header].[Shortcut Dimension 2 Code] = OrdiniPalomar.[Trademark Code]) AND ([Sales Header].[Geographical Zone] = OrdiniPalomar.GeographicalZoneFromOrder) SET [Sales Header].[Commission Group Code] = [Codice categoria provvigione], [Sales Header].[Area Manager Code] = [CapozonaCodice], [Sales Line].[Area Manager Commission _] = [ProvvigioneCapozona]
+WHERE ((([Sales Header].[Sell-to Customer No_])="C00302") AND (([Sales Header].[SELLING SEASON CODE])="I22"));
+

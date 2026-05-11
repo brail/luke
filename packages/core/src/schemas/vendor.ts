@@ -16,6 +16,7 @@ export const VendorInputSchema = z.object({
   chat: z.string().max(128).trim().optional().nullable(),
   notes: z.string().max(2000).trim().optional().nullable(),
   navVendorId: z.string().optional().nullable(),
+  enabledParameterSetIds: z.array(z.string().uuid()).optional(),
 });
 
 export const VendorIdSchema = z.object({
@@ -31,7 +32,7 @@ export const VendorListInputSchema = z.object({
   search: z.string().optional(),
   isActive: z.boolean().optional(),
   cursor: z.string().uuid().optional(),
-  limit: z.number().min(1).max(200).default(100),
+  limit: z.number().min(1).max(100).default(100),
 });
 
 export const VendorSchema = z.object({

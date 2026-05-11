@@ -1,0 +1,5 @@
+SELECT [Sales Shipment Header].[Operation Type], FattureTemporaneeEDdtSteo1.No_, FattureTemporaneeEDdtSteo1.[DDT No_], [Sales Shipment Header].[Bill-to Customer No_], [Sales Shipment Header].[Bill-to Name], [DDT_Picking Header].[Posted No_], [DDT_Picking Header].[Posted Date]
+FROM ((FattureTemporaneeEDdtSteo1 INNER JOIN [Sales Line] ON FattureTemporaneeEDdtSteo1.No_ = [Sales Line].[Document No_]) INNER JOIN [Sales Shipment Header] ON [Sales Line].[Shipment No_] = [Sales Shipment Header].No_) INNER JOIN [DDT_Picking Header] ON [Sales Shipment Header].[DDT No_] = [DDT_Picking Header].No_
+GROUP BY [Sales Shipment Header].[Operation Type], FattureTemporaneeEDdtSteo1.No_, FattureTemporaneeEDdtSteo1.[DDT No_], [Sales Shipment Header].[Bill-to Customer No_], [Sales Shipment Header].[Bill-to Name], [DDT_Picking Header].[Posted No_], [DDT_Picking Header].[Posted Date], FattureTemporaneeEDdtSteo1.[MinDiPosted No_]
+ORDER BY [Sales Shipment Header].[Operation Type], FattureTemporaneeEDdtSteo1.[DDT No_], FattureTemporaneeEDdtSteo1.[MinDiPosted No_];
+

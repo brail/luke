@@ -436,13 +436,14 @@ export const monitoringRouter = router({
 ```dockerfile
 # Dockerfile.api
 FROM node:18-alpine
+RUN corepack enable
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
+COPY package*.json pnpm-lock.yaml ./
+RUN pnpm install --prod --frozen-lockfile
 COPY . .
-RUN npm run build
+RUN pnpm build
 EXPOSE 3001
-CMD ["npm", "start"]
+CMD ["pnpm", "start"]
 ```
 
 ### Kubernetes

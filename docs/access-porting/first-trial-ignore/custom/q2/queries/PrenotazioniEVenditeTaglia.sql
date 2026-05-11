@@ -1,0 +1,3 @@
+SELECT [PrenotazioniEVenditeTaglia-step03-union].*, [Sales Line].[ORIGINAL LINE NO_], [Sales Line].[model item no_], [Sales Line].[variable code 01], [Sales Line].[variable code 02], [Sales Header].No_, [Sales Header].[Sell-to Customer No_], [Sales Header].[Bill-to Name], Item.[advertising material]
+FROM (([PrenotazioniEVenditeTaglia-step03-union] INNER JOIN [Sales Line] ON ([PrenotazioniEVenditeTaglia-step03-union].[Line No_] = [Sales Line].[Line No_]) AND ([PrenotazioniEVenditeTaglia-step03-union].[Document No_] = [Sales Line].[Document No_])) INNER JOIN [Sales Header] ON [Sales Line].[Document No_] = [Sales Header].No_) INNER JOIN Item ON [Sales Line].No_ = Item.No_;
+

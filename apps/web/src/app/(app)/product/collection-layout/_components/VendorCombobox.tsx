@@ -57,10 +57,10 @@ export function VendorCombobox({ value, onChange, disabled }: VendorComboboxProp
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[320px] p-0" align="start">
+      <PopoverContent className="w-[320px] p-0" align="start" onWheel={e => e.stopPropagation()}>
         <Command>
           <CommandInput placeholder="Cerca fornitore…" />
-          <CommandList>
+          <CommandList className="max-h-60">
             <CommandEmpty>
               {isLoading ? 'Caricamento…' : 'Nessun fornitore trovato.'}
             </CommandEmpty>

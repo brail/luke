@@ -1,0 +1,4 @@
+SELECT Sum([VendutoCompratoProiezioneItem-step3-ProiezioniPerBudget].PairsForecastByBudget) AS SommaDiPairsForecastByBudget, Sum([VendutoCompratoProiezioneItem-step3-ProiezioniPerBudget].PairsForecastGlobal) AS SommaDiPairsForecastGlobal, Sum([PairsForecastGlobal])/Sum([PairsForecastByBudget]) AS FattoreCorrettivoGlobale, VendutoComprato_FattoriDiPropiezione.SeasonCode, VendutoComprato_FattoriDiPropiezione.TrademarkCode, VendutoComprato_FattoriDiPropiezione.BudgetType
+FROM [VendutoCompratoProiezioneItem-step3-ProiezioniPerBudget] INNER JOIN VendutoComprato_FattoriDiPropiezione ON [VendutoCompratoProiezioneItem-step3-ProiezioniPerBudget].[Budget No_] = VendutoComprato_FattoriDiPropiezione.BudgetNo_
+GROUP BY VendutoComprato_FattoriDiPropiezione.SeasonCode, VendutoComprato_FattoriDiPropiezione.TrademarkCode, VendutoComprato_FattoriDiPropiezione.BudgetType;
+

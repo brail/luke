@@ -44,12 +44,23 @@ export const AppConfigRegistry = {
   'security.cors.developmentOrigins':      z.string(),
 
   // ── Storage ──────────────────────────────────────────────────────────────
-  'storage.type':                z.enum(['local']),
+  'storage.type':                z.enum(['local', 'minio']),
   'storage.local.basePath':      z.string().min(1),
   'storage.local.maxFileSizeMB': z.coerce.number().int().min(1),
   'storage.local.buckets':       z.string().transform(s => JSON.parse(s) as string[]),
   'storage.local.publicBaseUrl': z.string().url(),
   'storage.local.enableProxy':   z.coerce.boolean(),
+
+  // ── Storage — MinIO ───────────────────────────────────────────────────────
+  'storage.minio.endpoint':        z.string().min(1),
+  'storage.minio.port':            z.coerce.number().int().min(1).max(65535),
+  'storage.minio.useSSL':          z.coerce.boolean(),
+  'storage.minio.accessKey':       z.string().min(1),
+  'storage.minio.secretKey':       z.string().min(1),
+  'storage.minio.region':          z.string(),
+  'storage.minio.publicBaseUrl':   z.string().url(),
+  'storage.minio.presignedPutTtl': z.coerce.number().int().min(60),
+  'storage.minio.presignedGetTtl': z.coerce.number().int().min(60),
 
   // ── Rate limiting (JSON object) ───────────────────────────────────────────
   'rateLimit': z.string().transform(s => RateLimitConfigSchema.parse(JSON.parse(s))),
@@ -81,6 +92,20 @@ export const AppConfigRegistry = {
   'integrations.nav.password':              z.string(),
   'integrations.nav.company':               z.string().min(1),
   'integrations.nav.readOnly':              z.coerce.boolean(),
+
+  // ── Google Workspace ──────────────────────────────────────────────────────
+  'integrations.google.authMode':              z.enum(['service_account', 'oauth_user']),
+  'integrations.google.domain':                z.string().min(1),
+  'integrations.google.calendarSync.enabled':  z.coerce.boolean(),
+  // Service account mode
+  'integrations.google.serviceEmail':          z.string().email(),
+  'integrations.google.serviceKey':            z.string().min(1),
+  'integrations.google.impersonateEmail':      z.string().email(),
+  // OAuth user mode
+  'integrations.google.oauth.clientId':        z.string().min(1),
+  'integrations.google.oauth.clientSecret':    z.string().min(1),
+  'integrations.google.oauth.refreshToken':    z.string().min(1),
+  'integrations.google.oauth.userEmail':       z.string().email(),
 } as const satisfies Record<string, z.ZodTypeAny>;
 
 export type AppConfigKey = keyof typeof AppConfigRegistry;

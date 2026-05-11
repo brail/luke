@@ -4,11 +4,13 @@
  */
 
 import { TRPCError } from '@trpc/server';
+import type { Prisma } from '@prisma/client';
 import argon2 from 'argon2';
 import { z } from 'zod';
 
-import { CreateUserInputSchema, UpdateUserInputSchema } from '@luke/core';
-import type { LockedFields } from '@luke/core';
+import { CreateUserInputSchema, UpdateUserInputSchema, hasPermission } from '@luke/core';
+import type { LockedFields, Role } from '@luke/core';
+import { invalidateRbacCache } from '@luke/core/server';
 
 import { logAudit } from '../lib/auditLog';
 import { withAuditLog } from '../lib/auditMiddleware';
@@ -62,7 +64,7 @@ export const usersCoreRouter = router({
       } = input || {};
       const skip = (page - 1) * limit;
 
-      const where: any = { pendingApproval: false };
+      const where: Prisma.UserWhereInput = { pendingApproval: false };
 
       if (search && search.trim()) {
         where.OR = [
@@ -144,7 +146,7 @@ export const usersCoreRouter = router({
       // RBAC: solo self-profile o admin
       if (
         input.id !== ctx.session.user.id &&
-        ctx.session.user.role !== 'admin'
+        !hasPermission({ role: ctx.session.user.role as Role }, '*:*')
       ) {
         throw new TRPCError({
           code: 'FORBIDDEN',
@@ -231,6 +233,7 @@ export const usersCoreRouter = router({
             lastName: input.lastName || '',
             role: input.role,
             isActive: true,
+            pendingApproval: true,
           },
         });
 
@@ -298,10 +301,13 @@ export const usersCoreRouter = router({
         });
       }
 
-      // Verifica campi bloccati per provider esterni
-      const lockedFields = getLockedFields(
-        existingUser.identities[0]?.provider || 'LOCAL'
-      );
+      if (existingUser.identities.length === 0) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'User has no identity record — data integrity error',
+        });
+      }
+      const lockedFields = getLockedFields(existingUser.identities[0].provider);
       const attemptedLockedFields = Object.keys(updateData).filter(field =>
         lockedFields.includes(field as LockedFields)
       );
@@ -395,6 +401,10 @@ export const usersCoreRouter = router({
           updatedAt: new Date(),
         },
       });
+
+      if (updateData.role && updateData.role !== existingUser.role) {
+        invalidateRbacCache();
+      }
 
       // Audit logging gestito automaticamente dal middleware withAuditLog
 

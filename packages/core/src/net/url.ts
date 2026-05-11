@@ -127,6 +127,25 @@ export function buildTempCollectionRowPictureUploadUrl(
 }
 
 /**
+ * Builds URL for specsheet image upload
+ */
+export function buildSpecsheetImageUploadUrl(
+  specsheetId: string,
+  options: UrlOptions = {}
+): string {
+  return buildApiUrl(`/upload/specsheet-image/${specsheetId}`, options);
+}
+
+/**
+ * Builds URL for temporary specsheet image upload
+ */
+export function buildTempSpecsheetImageUploadUrl(
+  options: UrlOptions = {}
+): string {
+  return buildApiUrl('/upload/specsheet-image/temp', options);
+}
+
+/**
  * Builds URL for tRPC endpoint
  *
  * @param procedure - tRPC procedure path (e.g., 'auth.login')
@@ -180,6 +199,53 @@ export function isApiUrl(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Builds iCal subscription URL for season calendar (multi-brand capable).
+ * brandIds encoded as CSV query param. Includes a signed token for public subscribe.
+ */
+export function buildSeasonCalendarIcalUrl(
+  seasonId: string,
+  brandIds: string[],
+  token: string,
+  sectionKey?: string,
+  options: UrlOptions = {}
+): string {
+  const params = new URLSearchParams({
+    brandIds: brandIds.join(','),
+    token,
+  });
+  if (sectionKey) params.set('sectionKey', sectionKey);
+  return buildApiUrl(`/season-calendar/${seasonId}/ical?${params.toString()}`, options);
+}
+
+/**
+ * Builds PDF export URL for season calendar (multi-brand capable).
+ */
+export function buildSeasonCalendarPdfUrl(
+  seasonId: string,
+  brandIds: string[],
+  sectionKey?: string,
+  options: UrlOptions = {}
+): string {
+  const params = new URLSearchParams({ brandIds: brandIds.join(',') });
+  if (sectionKey) params.set('sectionKey', sectionKey);
+  return buildApiUrl(`/season-calendar/${seasonId}/pdf?${params.toString()}`, options);
+}
+
+/**
+ * Builds XLSX export URL for season calendar (multi-brand capable).
+ */
+export function buildSeasonCalendarXlsxUrl(
+  seasonId: string,
+  brandIds: string[],
+  sectionKey?: string,
+  options: UrlOptions = {}
+): string {
+  const params = new URLSearchParams({ brandIds: brandIds.join(',') });
+  if (sectionKey) params.set('sectionKey', sectionKey);
+  return buildApiUrl(`/season-calendar/${seasonId}/xlsx?${params.toString()}`, options);
 }
 
 /**

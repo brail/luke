@@ -1,0 +1,7 @@
+SELECT [qSoloVend-PerGriglieAgenti].[Salesperson Code], [qSoloVend-PerGriglieAgenti].Salesperson, [qSoloVend-PerGriglieAgenti].[Sell-to Customer No_], [qSoloVend-PerGriglieAgenti].[Sell-to Name], [qSoloVend-PerGriglieAgenti].[trademark code], Sum([qSoloVend-PerGriglieAgenti].PairsSold) AS PairsSold, Sum([qSoloVend-PerGriglieAgenti].ValueSoldVAT) AS ValueSoldVAT, [qSoloVend-PerGriglieAgenti].[Sales Line].[requested delivery date] AS [Req Delivery Date], "" AS [NOTE]
+FROM [qSoloVend-PerGriglieAgenti]
+WHERE ((([qSoloVend-PerGriglieAgenti].OrderType)="Progr" Or ([qSoloVend-PerGriglieAgenti].OrderType)="Pronto") AND (([qSoloVend-PerGriglieAgenti].[Securities Received])=False))
+GROUP BY [qSoloVend-PerGriglieAgenti].[Salesperson Code], [qSoloVend-PerGriglieAgenti].Salesperson, [qSoloVend-PerGriglieAgenti].[Sell-to Customer No_], [qSoloVend-PerGriglieAgenti].[Sell-to Name], [qSoloVend-PerGriglieAgenti].[trademark code], [qSoloVend-PerGriglieAgenti].[Sales Line].[requested delivery date], "", [qSoloVend-PerGriglieAgenti].[season code], [qSoloVend-PerGriglieAgenti].[Payment Method Code]
+HAVING ((([qSoloVend-PerGriglieAgenti].[Salesperson Code])=[forms]![principale]![filtroAgentePerGrigliaAgenti]) AND (([qSoloVend-PerGriglieAgenti].[season code])=[forms]![principale]![creditofiltrostagione2]) AND (([qSoloVend-PerGriglieAgenti].[Payment Method Code])="RDA"))
+ORDER BY [qSoloVend-PerGriglieAgenti].[Sell-to Name], [qSoloVend-PerGriglieAgenti].[trademark code];
+

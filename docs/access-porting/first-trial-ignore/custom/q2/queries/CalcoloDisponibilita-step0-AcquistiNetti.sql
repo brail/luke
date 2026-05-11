@@ -1,0 +1,6 @@
+SELECT "PURCH" AS Cat, [Purchase Header].[Shortcut Dimension 2 Code] AS Trademark, [Purchase Header].[selling season code], Item.[LINE CODE], [Purchase Line].No_ AS Article, Item.[Description 2], [Purchase Line].[Constant variable code] AS Color, [Purchase Line].[assortment code] AS Assortment, Sum(Val([outstanding quantity])) AS Qty, Sum(IIf(Val([quantity])>0,Val([no_ of pairs])*Val([outstanding quantity])/Val([QUANTITY]),0)) AS Pairs
+FROM (Item INNER JOIN [Purchase Line] ON Item.No_ = [Purchase Line].No_) INNER JOIN [Purchase Header] ON [Purchase Line].[Document No_] = [Purchase Header].No_
+WHERE ((([Purchase Line].[delete reason])="") AND (([Purchase Line].Type)=20) AND ((Item.[advertising material])=0))
+GROUP BY "PURCH", [Purchase Header].[Shortcut Dimension 2 Code], [Purchase Header].[selling season code], Item.[LINE CODE], [Purchase Line].No_, Item.[Description 2], [Purchase Line].[Constant variable code], [Purchase Line].[assortment code]
+HAVING ((([Purchase Header].[Shortcut Dimension 2 Code])=[forms]![principale]![FiltroMarchioSourcing]) AND (([Purchase Header].[selling season code])=[forms]![principale]![FiltroStagioneSourcing]) AND ((Sum(Val([outstanding quantity])))>0));
+

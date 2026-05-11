@@ -1,0 +1,3 @@
+SELECT [CalcoloDisponibilita-step2].*, IIf([SALESQTY]-[PURCHASEDQTY]-[INVQTY]-[transqty]>0,[SALESQTY]-[PURCHASEDQTY]-[INVQTY]-[transqty],0) AS ToBuyQTY, IIf([SALESpairs]-[PURCHASEdpairs]-[INVpairs]-[transpairs]>0,[SALESpairs]-[PURCHASEDpairs]-[INVpairs]-[transpairs],0) AS ToBuyPairs, IIf([SALESQTY]-[PURCHASEDQTY]-[INVQTY]-[transqty]<0,[SALESQTY]-[PURCHASEDQTY]-[INVQTY]-[transqty],0) AS ToSellQTY, IIf([SALESpairs]-[PURCHASEdpairs]-[INVpairs]-[traNSPAIRS]<0,[SALESpairs]-[PURCHASEDpairs]-[INVpairs]-[transPAIRS],0) AS ToSelLPairs, [article] & "_" & [color] & "_" & [assortment] AS [Nr_ Articolo]
+FROM [CalcoloDisponibilita-step2];
+

@@ -1,0 +1,5 @@
+SELECT Customer.No_, Customer.Name, Customer.[Name 2], Customer.Address, Customer.[Post Code], Customer.City, Customer.County, Customer.[Country Code], Customer.[VAT Registration No_], Customer.[Fiscal Code], Customer.[Current Risk], Customer.[Updated Date] AS DataAggiornamento, Customer.[Due Date] AS DataValutazione, [Customer.Due Date]+365 AS DataScadenza, Customer.[Updated Type], Customer.[Skip Credit Info Update], Sum(Val([Detailed Cust_ Ledg_ Entry.Amount])) AS SaldoD
+FROM [Detailed Cust_ Ledg_ Entry] INNER JOIN Customer ON [Detailed Cust_ Ledg_ Entry].[Customer No_] = Customer.No_
+GROUP BY Customer.No_, Customer.Name, Customer.[Name 2], Customer.Address, Customer.[Post Code], Customer.City, Customer.County, Customer.[Country Code], Customer.[VAT Registration No_], Customer.[Fiscal Code], Customer.[Current Risk], Customer.[Updated Date], Customer.[Due Date], [Customer.Due Date]+365, Customer.[Updated Type], Customer.[Skip Credit Info Update]
+HAVING (((Abs((Sum(Val([Detailed Cust_ Ledg_ Entry.Amount])))))>0.01));
+

@@ -1,0 +1,6 @@
+SELECT [Purchase Line].No_, [Purchase Line].[constant variable code], [Purchase Line].[assortment code], Sum(Val([quantity])) AS buy_qty
+FROM [Purchase Line] INNER JOIN [Purchase Header] ON ([Purchase Line].[Document No_] = [Purchase Header].No_) AND ([Purchase Line].[Document Type] = [Purchase Header].[Document Type])
+WHERE ((([Purchase Line].[Document No_])="ODA-25-00040" Or ([Purchase Line].[Document No_])="ODA-25-00041" Or ([Purchase Line].[Document No_])="ODA-25-00042" Or ([Purchase Line].[Document No_])="ODA-25-00043") AND (([Purchase Line].Type)=20) AND (([Purchase Line].[DELETE REASON])=""))
+GROUP BY [Purchase Line].No_, [Purchase Line].[constant variable code], [Purchase Line].[assortment code]
+HAVING ((([Purchase Line].[assortment code])="BM01" Or ([Purchase Line].[assortment code])="BM04" Or ([Purchase Line].[assortment code])="BM05" Or ([Purchase Line].[assortment code])="BM06" Or ([Purchase Line].[assortment code])="BM07" Or ([Purchase Line].[assortment code])="BM08" Or ([Purchase Line].[assortment code])="BW02" Or ([Purchase Line].[assortment code])="BW03" Or ([Purchase Line].[assortment code])="BW04" Or ([Purchase Line].[assortment code])="BW05" Or ([Purchase Line].[assortment code])="BW06" Or ([Purchase Line].[assortment code])="BW08"));
+

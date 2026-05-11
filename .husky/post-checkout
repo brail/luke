@@ -1,0 +1,11 @@
+#!/bin/sh
+# Auto-sincronizza le versioni nei package.json dopo checkout di un branch/tag
+
+. "$(dirname "$0")/_/husky.sh"
+
+echo "🔄 Sincronizzando versioni dai tag git..."
+pnpm sync-version --check > /dev/null 2>&1
+
+if [ $? -ne 0 ]; then
+  echo "⚠️  Versioni out of sync. Esegui: pnpm sync-version"
+fi

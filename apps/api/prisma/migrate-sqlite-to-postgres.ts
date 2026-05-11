@@ -345,7 +345,6 @@ async function main() {
         styleNotes:            (r.styleNotes as string) ?? null,
         materialNotes:         (r.materialNotes as string) ?? null,
         colorNotes:            (r.colorNotes as string) ?? null,
-        priceNotes:            (r.priceNotes as string) ?? null,
         toolingNotes:          (r.toolingNotes as string) ?? null,
         pricingParameterSetId: (r.pricingParameterSetId as string) ?? null,
         retailTargetPrice:     (r.retailTargetPrice as number) ?? null,

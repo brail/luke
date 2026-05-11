@@ -21,10 +21,18 @@ export interface AuditParams {
   metadata?: Record<string, any>;
 }
 
-/**
- * Chiavi sicure per metadata (whitelist approach)
- * Approccio secure-by-default: solo questi campi sono considerati safe
- */
+// Actions where audit failure must surface — losing these silently is a compliance/security risk
+const CRITICAL_AUDIT_ACTIONS = new Set([
+  'AUTH_LOGIN_FAILED',
+  'PASSWORD_RESET_REQUESTED',
+  'PASSWORD_CHANGED',
+  'EMAIL_CHANGED',
+  'CONFIG_UPSERT',
+  'CONFIG_DELETE',
+  'USER_HARD_DELETE',
+  'SECTION_ACCESS_UPDATED',
+]);
+
 const SAFE_KEYS = new Set([
   'username',
   'email',
@@ -55,7 +63,21 @@ const SAFE_KEYS = new Set([
   'filename',
   'contentType',
   'code',
-  'logoUrl',
+  'logoKey',
+  'brandId',
+  'seasonId',
+  'vendorId',
+  'collectionId',
+  'rowId',
+  'parameterId',
+  'pricingSetId',
+  'configKey',
+  'hasBindPassword',
+  'name',
+  'configKeys',
+  'ldapEnabled',
+  'previousNavVendorId',
+  'errorCode',
 ]);
 
 /**
@@ -135,13 +157,15 @@ export async function logAudit(
       message: `Audit: ${params.action}`,
     });
   } catch (error) {
-    // Log errore ma non bloccare l'operazione principale
     ctx.req.log.error({
       traceId: ctx.traceId,
       error: error instanceof Error ? error.message : 'Unknown',
       action: params.action,
       message: 'Failed to log audit event',
     });
+    if (CRITICAL_AUDIT_ACTIONS.has(params.action)) {
+      throw error;
+    }
   }
 }
 

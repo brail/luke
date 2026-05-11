@@ -5,10 +5,12 @@
 # Do NOT run docker compose build here — images are built by GitHub Actions CI.
 #
 # Required environment variables (set in Portainer Stack → Env):
-#   POSTGRES_PASSWORD   — strong random password for the PostgreSQL user
-#   NEXTAUTH_SECRET     — random string (openssl rand -base64 32)
-#   PUBLIC_HOSTNAME     — public hostname, e.g. luke.example.com
-#   COOKIE_SECURE       — "true" if behind HTTPS, "false" if plain HTTP
+#   POSTGRES_PASSWORD      — strong random password for the PostgreSQL user
+#   NEXTAUTH_SECRET        — random string (openssl rand -base64 32)
+#   PUBLIC_HOSTNAME        — public hostname, e.g. luke.example.com
+#   COOKIE_SECURE          — "true" if behind HTTPS, "false" if plain HTTP
+#   MINIO_ROOT_USER        — MinIO admin username
+#   MINIO_ROOT_PASSWORD    — MinIO admin password (strong, 32+ chars)
 #
 # To deploy a specific version instead of latest, change image tags to e.g.:
 #   image: ghcr.io/brail/luke-api:1.2.3
@@ -74,6 +76,50 @@ services:
       # Set to "true" when serving over HTTPS, "false" for plain HTTP
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
 
+  # ── MinIO object storage ─────────────────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER:     ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -f http://localhost:9000/minio/health/live || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} &&
+        mc mb --ignore-existing local/uploads &&
+        mc mb --ignore-existing local/exports &&
+        mc mb --ignore-existing local/assets &&
+        mc mb --ignore-existing local/brand-logos &&
+        mc mb --ignore-existing local/temp-brand-logos &&
+        mc mb --ignore-existing local/collection-row-pictures &&
+        mc mb --ignore-existing local/temp-collection-row-pictures &&
+        mc mb --ignore-existing local/merchandising-specsheet-images &&
+        mc mb --ignore-existing local/temp-merchandising-specsheet-images &&
+        mc anonymous set download local/brand-logos &&
+        mc anonymous set download local/collection-row-pictures &&
+        mc anonymous set download local/merchandising-specsheet-images &&
+        mc ilm rule add --expire-days 1 local/temp-brand-logos &&
+        mc ilm rule add --expire-days 1 local/temp-collection-row-pictures &&
+        mc ilm rule add --expire-days 1 local/temp-merchandising-specsheet-images
+      "
+    restart: on-failure
+
 volumes:
   postgres_data:
   api_data:
+  minio_data:

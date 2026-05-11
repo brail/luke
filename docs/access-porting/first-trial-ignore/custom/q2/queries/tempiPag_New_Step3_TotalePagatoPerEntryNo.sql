@@ -1,0 +1,4 @@
+SELECT tempiPag_New_step2_UnionCollegamenti.ChiaveMovimentoFatturaNotaCredito, Sum(tempiPag_New_step2_UnionCollegamenti.ImportoAbbinato) AS totalePagatoPerEntryNo
+FROM tempiPag_New_step2_UnionCollegamenti
+GROUP BY tempiPag_New_step2_UnionCollegamenti.ChiaveMovimentoFatturaNotaCredito;
+

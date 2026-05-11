@@ -1,0 +1,4 @@
+SELECT [Purchase Line].[Document Type], [Purchase Line].Type, [Purchase Line].[Document No_], [Purchase Line].No_ AS Article, [Purchase Line].Quantity, [Purchase Line].[Unit of Measure], [Purchase Line].[Constant Variable Code], [Purchase Line].[Assortment Code], Val([No_ of Pairs]) AS Pairs, [Purchase Line].[Delete Reason], [Purchase Line].[Av_ Net Unit Cost], Val([Av_ Net Unit Cost])*[Pairs] AS PurchaseCost, [Purchase Line].[Requested Receipt Date], [Purchase Line].[Promised Receipt Date], [Purchase Line].[Planned Receipt Date], IIf([currency code]="USD",[PurchaseCost]/[forms]![principale]![cambioeurodollaro],[PurchaseCost]) AS PurchaseCostInEuro
+FROM [Purchase Line]
+WHERE ((([Purchase Line].[Document Type])=1) AND (([Purchase Line].Type)=20) AND (([Purchase Line].[Delete Reason])=""));
+

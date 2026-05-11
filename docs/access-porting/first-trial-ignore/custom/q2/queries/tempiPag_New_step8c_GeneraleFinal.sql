@@ -1,0 +1,3 @@
+SELECT tempiPag_New_step8b_GeneralePriimiCalcoli.*, IIf([giorniPagamento]<=[forms]![principale]![NumeroGiorniSoglia],[importoabbinato],0) AS importoEntroSoglia, IIf([giorniritardoPagamento]<=[forms]![principale]![NumeroGiorniSogliaRitardo],[importoabbinato],0) AS importoEntroSogliaRitardo, [cliente]+" ("+[codicecliente]+")" AS clienteecodice, [agente]+" ("+[codiceagente]+")" AS agenteecodice, Dimensioni_NE.CCR, Dimensioni_NE.MARCHIO, Dimensioni_NE.STAGIONE, Dimensioni_NE.LINEA
+FROM tempiPag_New_step8b_GeneralePriimiCalcoli LEFT JOIN Dimensioni_NE ON tempiPag_New_step8b_GeneralePriimiCalcoli.[Dimension Set ID] = Dimensioni_NE.[Dimension Set ID];
+

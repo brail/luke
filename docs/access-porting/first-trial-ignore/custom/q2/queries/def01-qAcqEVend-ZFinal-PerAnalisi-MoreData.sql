@@ -1,0 +1,3 @@
+SELECT [def01-qAcqEVend-ZFinal-PerAnalisi].*, IIf([SalesForecastAssortmentPairs]-[PairsPurchased]>0,[SalesForecastAssortmentPairs]-[PairsPurchased],0) AS deltaComprareForcastAssortmentPairs, IIf([SalesForecastAssortmentPairs]-[PairsPurchased]<0,[SalesForecastAssortmentPairs]-[PairsPurchased],0) AS deltaPiazzareforecastAssortmentPairs, [SalesForecastAssortmentPairs]-[deltaComprareForcastAssortmentPairs] AS SellableForecastAssortmentPairs, IIf([SalesForecastAssortmentPairs]<>0,[SalesForecastAssortmentPairsValue]*[SellableForecastAssortmentPairs]/[SalesForecastAssortmentPairs],0) AS SellableForecastAssortmentPairsValue
+FROM [def01-qAcqEVend-ZFinal-PerAnalisi];
+

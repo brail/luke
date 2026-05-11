@@ -1,0 +1,4 @@
+SELECT [G_L Entry].[Source Code], [G_L Entry].[Source Type], [G_L Entry].[Source No_], [G_L Entry].[Document No_], [G_L Entry].Description, Val([G_L Entry.amount]) AS importo, [G_L Entry].[G_L Account No_], [G_L Account].Name AS Conto, Vendor.Name AS Fornitore, Customer.Name AS Cliente, [G_L Entry].[Posting Date], Dimensioni_NE.CCR, Dimensioni_NE.MARCHIO, Dimensioni_NE.STAGIONE, Dimensioni_NE.LINEA
+FROM ((([G_L Entry] LEFT JOIN Dimensioni_NE ON [G_L Entry].[Dimension Set ID] = Dimensioni_NE.[Dimension Set ID]) LEFT JOIN [G_L Account] ON [G_L Entry].[G_L Account No_] = [G_L Account].No_) LEFT JOIN Vendor ON [G_L Entry].[Source No_] = Vendor.No_) LEFT JOIN Customer ON [G_L Entry].[Source No_] = Customer.No_
+WHERE ((([G_L Entry].[G_L Account No_]) Like "R*") AND (([G_L Entry].[Posting Date]) Between [forms]![principale]![datainiziale] And [forms]![principale]![datafinale]));
+

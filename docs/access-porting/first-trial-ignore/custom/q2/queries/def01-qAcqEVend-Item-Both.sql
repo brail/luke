@@ -1,0 +1,3 @@
+SELECT "BOTH" AS Cat, qAcqItemGrouped.*, qVendItemGrouped.GrossSalesValue, qVendItemGrouped.DiscountValue, qVendItemGrouped.AreaManagerCommissionValue, qVendItemGrouped.SalesPersonCommissionValue, qVendItemGrouped.QuantitySold, qVendItemGrouped.PairsSold, qVendItemGrouped.ValueSold, qVendItemGrouped.QuantityShipped, qVendItemGrouped.PairsShipped, qVendItemGrouped.ValueShipped, qVendItemGrouped.QuantityInvoiced, qVendItemGrouped.PairsInvoiced, qVendItemGrouped.ValueInvoiced
+FROM qAcqItemGrouped INNER JOIN qVendItemGrouped ON (qAcqItemGrouped.AssortmentCode = qVendItemGrouped.AssortmentCode) AND (qAcqItemGrouped.No_ = qVendItemGrouped.No_);
+

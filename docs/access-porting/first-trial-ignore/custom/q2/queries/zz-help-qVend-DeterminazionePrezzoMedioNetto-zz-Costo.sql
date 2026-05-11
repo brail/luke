@@ -1,0 +1,4 @@
+SELECT [zz-help-qVend-DeterminazionePrezzoMedioNetto-step1].No_, [zz-help-qVend-DeterminazionePrezzoMedioNetto-step1].[Trademark Code], [zz-help-qVend-DeterminazionePrezzoMedioNetto-step1].[Collection Code], [zz-help-qVend-DeterminazionePrezzoMedioNetto-step1].[Line Code], [zz-help-qVend-DeterminazionePrezzoMedioNetto-step1].[Season Code], Sum([zz-help-qVend-DeterminazionePrezzoMedioNetto-step1].SommaDiNetAmount) AS NetAmount, Sum([zz-help-qVend-DeterminazionePrezzoMedioNetto-step1].SommaDiPairsQuantity) AS PairsSold
+FROM [zz-help-qVend-DeterminazionePrezzoMedioNetto-step1]
+GROUP BY [zz-help-qVend-DeterminazionePrezzoMedioNetto-step1].No_, [zz-help-qVend-DeterminazionePrezzoMedioNetto-step1].[Trademark Code], [zz-help-qVend-DeterminazionePrezzoMedioNetto-step1].[Collection Code], [zz-help-qVend-DeterminazionePrezzoMedioNetto-step1].[Line Code], [zz-help-qVend-DeterminazionePrezzoMedioNetto-step1].[Season Code];
+

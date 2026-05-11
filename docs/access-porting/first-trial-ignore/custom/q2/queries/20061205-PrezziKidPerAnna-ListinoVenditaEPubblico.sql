@@ -1,0 +1,3 @@
+SELECT [20061205-PrezziKidPerAnna-ListinoVendita].*, [20061205-PrezziKidPerAnna-ListinoAlPubblico].SalesPrice AS RRP
+FROM [20061205-PrezziKidPerAnna-ListinoVendita] LEFT JOIN [20061205-PrezziKidPerAnna-ListinoAlPubblico] ON ([20061205-PrezziKidPerAnna-ListinoVendita].SizeRange = [20061205-PrezziKidPerAnna-ListinoAlPubblico].SizeRange) AND ([20061205-PrezziKidPerAnna-ListinoVendita].[Variable Code 01] = [20061205-PrezziKidPerAnna-ListinoAlPubblico].[Variable Code 01]) AND ([20061205-PrezziKidPerAnna-ListinoVendita].[Model Item No_] = [20061205-PrezziKidPerAnna-ListinoAlPubblico].[Model Item No_]);
+

@@ -1,17 +1,15 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { UploadCloud } from 'lucide-react';
 import { useSession } from 'next-auth/react';
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
 import { BrandInputSchema, type BrandInput, normalizeCode } from '@luke/core';
-import {
-  buildBrandLogoUploadUrl,
-  buildTempBrandLogoUploadUrl,
-} from '@luke/core';
+import { buildTempBrandLogoUploadUrl } from '@luke/core';
 
 import { Button } from '../../../../../components/ui/button';
 import {
@@ -22,6 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../../components/ui/dialog';
+import { FileDropZone } from '../../../../../components/ui/file-drop-zone';
 import {
   Form,
   FormControl,
@@ -46,10 +45,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '../../../../../components/ui/tooltip';
-import { useInvalidateContext } from '../../../../../contexts/useInvalidateContext';
 import { useBrandPermissions } from '../../../../../hooks/useBrandPermissions';
 import { debugError } from '../../../../../lib/debug';
 import { trpc } from '../../../../../lib/trpc';
+import { cn } from '../../../../../lib/utils';
 
 // Schema per form con isActive obbligatorio (per React Hook Form)
 // logoUrl accetta qualsiasi stringa (anche percorsi relativi in DEV) o null/undefined
@@ -57,6 +56,8 @@ const BrandFormSchema = BrandInputSchema.extend({
   isActive: z.boolean(),
   logoUrl: z.union([z.string(), z.null(), z.undefined()]).optional(),
   navBrandId: z.string().nullable().optional(),
+  // No regex: NAV codes can contain spaces; server validates strictly on create only
+  code: z.string().min(1, 'Codice obbligatorio').max(20, 'Max 20 caratteri'),
 });
 
 type BrandFormData = z.infer<typeof BrandFormSchema>;
@@ -111,12 +112,11 @@ export function BrandDialogWithPermissions({
   isLoading,
 }: BrandDialogWithPermissionsProps) {
   const [logoUrl, setLogoUrl] = useState<string | null>(brand?.logoUrl || null);
-  const [tempLogoId, setTempLogoId] = useState<string | null>(null);
+  const [pendingFileObjectId, setPendingFileObjectId] = useState<string | null>(null);
   const [tempLogoUrl, setTempLogoUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [codePreview, setCodePreview] = useState<string>('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Hook per permissions
   const brandPerms = useBrandPermissions();
@@ -127,9 +127,6 @@ export function BrandDialogWithPermissions({
     { excludeLinkedTo: brand?.navBrandId ?? undefined },
     { staleTime: 5 * 60 * 1000 }
   );
-
-  // Hook per invalidazione cache
-  const invalidateContext = useInvalidateContext();
 
   // Determina il label del dialog in base ai permessi
   const dialogTitle = useMemo(() => {
@@ -182,7 +179,7 @@ export function BrandDialogWithPermissions({
         isActive: brand.isActive,
       });
       setLogoUrl(brand.logoUrl);
-      setTempLogoId(null);
+      setPendingFileObjectId(null);
       setTempLogoUrl(null);
       setCodePreview('');
       setUploadProgress(0);
@@ -195,7 +192,7 @@ export function BrandDialogWithPermissions({
         isActive: true,
       });
       setLogoUrl(null);
-      setTempLogoId(null);
+      setPendingFileObjectId(null);
       setTempLogoUrl(null);
       setCodePreview('');
       setUploadProgress(0);
@@ -212,193 +209,88 @@ export function BrandDialogWithPermissions({
   // Auto-focus su campo code quando dialog si apre
   React.useEffect(() => {
     if (open && brandPerms.canEdit()) {
-      // Delay per permettere al dialog di renderizzare
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         const codeInput = document.querySelector(
           'input[placeholder="es. nike-2024"]'
         ) as HTMLInputElement;
-        if (codeInput) {
-          codeInput.focus();
-        }
+        if (codeInput) codeInput.focus();
       }, 100);
+      return () => clearTimeout(timer);
     } else if (!open) {
       // Reset form quando dialog si chiude
       form.reset();
       setLogoUrl(null);
-      setTempLogoId(null);
+      setPendingFileObjectId(null);
       setTempLogoUrl(null);
       setCodePreview('');
       setUploadProgress(0);
     }
   }, [open]); // intentionally limited to open: avoid infinite loop from unstable refs
 
-  // Handler per upload logo (normale o temporaneo) con progress tracking
-  const handleLogoUpload = async (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
+  const handleLogoUpload = (file: File) => {
     if (!brandPerms.canUpdate) {
       toast.error('Non hai i permessi per modificare il logo');
-      return;
-    }
-
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    // Validazione file
-    const allowedTypes = ['image/png', 'image/jpeg', 'image/webp'];
-    if (!allowedTypes.includes(file.type)) {
-      toast.error('Formato file non supportato. Usa PNG, JPEG o WebP.');
-      return;
-    }
-
-    if (file.size > 2 * 1024 * 1024) {
-      // 2MB
-      toast.error('File troppo grande. Massimo 2MB.');
       return;
     }
 
     setIsUploading(true);
     setUploadProgress(0);
 
-    try {
-      const formData = new globalThis.FormData();
-      formData.append('file', file);
+    const formData = new globalThis.FormData();
+    formData.append('file', file);
 
-      if (brand?.id) {
-        // Upload normale per brand esistente con progress tracking
-        const xhr = new globalThis.XMLHttpRequest();
+    const xhr = new globalThis.XMLHttpRequest();
 
-        // Track progress
-        xhr.upload.addEventListener('progress', e => {
-          if (e.lengthComputable) {
-            const percentComplete = Math.round((e.loaded / e.total) * 100);
-            setUploadProgress(percentComplete);
-          }
-        });
-
-        // Handle response
-        xhr.addEventListener('load', () => {
-          if (xhr.status === 200) {
-            try {
-              const result = JSON.parse(xhr.responseText);
-              // Usa publicUrl dalla nuova response API
-              const logoUrlWithTimestamp = `${result.publicUrl}?t=${Date.now()}`;
-              setLogoUrl(logoUrlWithTimestamp);
-              form.setValue('logoUrl', logoUrlWithTimestamp);
-              toast.success('Logo caricato con successo');
-
-              // Invalida cache per aggiornare lista
-              invalidateContext();
-            } catch (_parseError) {
-              toast.error('Errore durante il parsing della risposta');
-            }
-          } else {
-            try {
-              const errorData = JSON.parse(xhr.responseText);
-              toast.error(errorData.message || 'Upload fallito');
-            } catch {
-              toast.error('Upload fallito');
-            }
-          }
-          setIsUploading(false);
-          setUploadProgress(0);
-        });
-
-        xhr.addEventListener('error', () => {
-          toast.error('Errore di rete durante upload');
-          setIsUploading(false);
-          setUploadProgress(0);
-        });
-
-        xhr.open('POST', buildBrandLogoUploadUrl(brand.id));
-        if (session?.accessToken) {
-          xhr.setRequestHeader(
-            'Authorization',
-            `Bearer ${session.accessToken}`
-          );
-        }
-        xhr.send(formData);
-      } else {
-        // Upload temporaneo per brand nuovo con progress tracking
-        // IMPORTANTE: tempId deve essere appeso PRIMA del file nel FormData,
-        // perché @fastify/multipart legge data.fields solo per i campi che precedono il file nello stream.
-        const tempId = crypto.randomUUID();
-        const tempFormData = new globalThis.FormData();
-        tempFormData.append('tempId', tempId);
-        tempFormData.append('file', file);
-
-        const xhr = new globalThis.XMLHttpRequest();
-
-        // Track progress
-        xhr.upload.addEventListener('progress', e => {
-          if (e.lengthComputable) {
-            const percentComplete = Math.round((e.loaded / e.total) * 100);
-            setUploadProgress(percentComplete);
-          }
-        });
-
-        // Handle response
-        xhr.addEventListener('load', () => {
-          if (xhr.status === 200) {
-            try {
-              const result = JSON.parse(xhr.responseText);
-              // Usa publicUrl dalla nuova response API
-              setTempLogoId(result.tempLogoId);
-              setTempLogoUrl(result.publicUrl);
-              toast.success(
-                'Logo caricato (verrà associato al brand dopo il salvataggio)'
-              );
-            } catch (_parseError) {
-              toast.error('Errore durante il parsing della risposta');
-            }
-          } else {
-            try {
-              const errorData = JSON.parse(xhr.responseText);
-              toast.error(errorData.message || 'Upload temporaneo fallito');
-            } catch {
-              toast.error('Upload temporaneo fallito');
-            }
-          }
-          setIsUploading(false);
-          setUploadProgress(0);
-        });
-
-        xhr.addEventListener('error', () => {
-          toast.error('Errore di rete durante upload temporaneo');
-          setIsUploading(false);
-          setUploadProgress(0);
-        });
-
-        xhr.open('POST', buildTempBrandLogoUploadUrl());
-        if (session?.accessToken) {
-          xhr.setRequestHeader(
-            'Authorization',
-            `Bearer ${session.accessToken}`
-          );
-        }
-        xhr.send(tempFormData);
+    xhr.upload.addEventListener('progress', e => {
+      if (e.lengthComputable) {
+        setUploadProgress(Math.round((e.loaded / e.total) * 100));
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Errore upload';
-      toast.error(`Upload fallito: ${message}`);
+    });
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status === 200) {
+        try {
+          const result = JSON.parse(xhr.responseText);
+          setPendingFileObjectId(result.fileObjectId);
+          setTempLogoUrl(result.publicUrl);
+          toast.success('Logo pronto — verrà salvato con il form');
+        } catch {
+          toast.error('Errore durante il parsing della risposta');
+        }
+      } else {
+        try {
+          const errorData = JSON.parse(xhr.responseText);
+          toast.error(errorData.message || 'Upload fallito');
+        } catch {
+          toast.error('Upload fallito');
+        }
+      }
       setIsUploading(false);
       setUploadProgress(0);
+    });
+
+    xhr.addEventListener('error', () => {
+      toast.error('Errore di rete durante upload');
+      setIsUploading(false);
+      setUploadProgress(0);
+    });
+
+    xhr.open('POST', buildTempBrandLogoUploadUrl());
+    if (session?.accessToken) {
+      xhr.setRequestHeader('Authorization', `Bearer ${session.accessToken}`);
     }
+    xhr.send(formData);
   };
 
-  // Handler per rimozione logo
   const handleLogoRemove = () => {
     if (!brandPerms.canUpdate) {
       toast.error('Non hai i permessi per modificare il logo');
       return;
     }
     setLogoUrl(null);
-    setTempLogoId(null);
+    setPendingFileObjectId(null);
     setTempLogoUrl(null);
     form.setValue('logoUrl', null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
   };
 
   // Handler per submit form
@@ -413,10 +305,10 @@ export function BrandDialogWithPermissions({
       const brandInput: BrandInput = {
         code: data.code,
         name: data.name,
-        // Send logoUrl only when explicitly clearing (null).
-        // XHR upload already updates DB directly; tempLogoId handles new-brand logo flow.
-        ...(data.logoUrl === null ? { logoUrl: null } : {}),
-        tempLogoId: tempLogoId || undefined,
+        // Send logoKey: null only when explicitly clearing.
+        // XHR upload already updates DB directly; fileObjectId handles new-brand logo flow.
+        ...(data.logoUrl === null ? { logoKey: null } : {}),
+        fileObjectId: pendingFileObjectId || undefined,
         navBrandId: data.navBrandId ?? null,
         isActive: data.isActive,
       };
@@ -464,73 +356,74 @@ export function BrandDialogWithPermissions({
             />
 
             {/* Logo Upload */}
-            <div className="space-y-4">
+            <div className="space-y-2">
               <FormLabel>Logo</FormLabel>
-              <div className="flex items-center gap-4">
-                {(logoUrl || tempLogoUrl) && (
-                  <div className="relative">
-                    <img
-                      src={logoUrl || tempLogoUrl || ''}
-                      alt="Logo brand"
-                      className="h-16 w-16 rounded-lg object-cover border"
-                    />
-                    {brandPerms.canUpdate && (
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="sm"
-                        className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0"
-                        onClick={handleLogoRemove}
-                      >
-                        ×
-                      </Button>
-                    )}
-                  </div>
-                )}
-                <div className="space-y-2">
-                  <DisabledFieldWrapper
-                    disabled={!brandPerms.canUpdate}
-                    tooltip={disabledFieldTooltip}
-                  >
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() =>
-                        setTimeout(() => fileInputRef.current?.click(), 0)
-                      }
-                      disabled={
-                        isUploading || isLoading || !brandPerms.canUpdate
-                      }
-                    >
-                      {isUploading ? 'Caricamento...' : 'Carica Logo'}
-                    </Button>
-                  </DisabledFieldWrapper>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    onChange={handleLogoUpload}
-                    className="hidden"
-                    disabled={isUploading || isLoading || !brandPerms.canUpdate}
-                  />
-                  {isUploading && (
-                    <div className="space-y-1">
-                      <Progress value={uploadProgress} className="h-2" />
-                      <p className="text-xs text-muted-foreground text-center">
-                        {uploadProgress}% completato
-                      </p>
-                    </div>
+              <DisabledFieldWrapper
+                disabled={!brandPerms.canUpdate}
+                tooltip={disabledFieldTooltip}
+              >
+                <FileDropZone
+                  onFile={handleLogoUpload}
+                  accept={['image/png', 'image/jpeg', 'image/webp']}
+                  maxSizeMB={2}
+                  disabled={isUploading || isLoading || !brandPerms.canUpdate}
+                  className={cn(
+                    'rounded-lg border-2 border-dashed p-4',
+                    brandPerms.canUpdate && !isUploading
+                      ? 'cursor-pointer border-muted hover:border-primary/40 hover:bg-muted/30'
+                      : 'border-muted opacity-50 cursor-not-allowed'
                   )}
-                  <p className="text-xs text-muted-foreground">
-                    PNG, JPEG, WebP. Max 2MB.
-                    {tempLogoUrl && !brand?.id && (
-                      <span className="block text-blue-600">
-                        Logo temporaneo caricato
-                      </span>
+                >
+                  <div className="flex items-center gap-4">
+                    {tempLogoUrl || logoUrl ? (
+                      <div className="relative shrink-0">
+                        <img
+                          src={tempLogoUrl || logoUrl || ''}
+                          alt="Logo brand"
+                          className="h-16 w-16 rounded-lg object-cover border"
+                        />
+                        {brandPerms.canUpdate && (
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0"
+                            onClick={e => { e.stopPropagation(); handleLogoRemove(); }}
+                          >
+                            ×
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="h-16 w-16 rounded-lg border border-dashed flex items-center justify-center bg-muted/20 shrink-0">
+                        <UploadCloud className="h-6 w-6 text-muted-foreground/50" />
+                      </div>
                     )}
-                  </p>
-                </div>
-              </div>
+                    <div className="space-y-1">
+                      {isUploading ? (
+                        <>
+                          <p className="text-sm text-muted-foreground">
+                            Caricamento... {uploadProgress}%
+                          </p>
+                          <Progress value={uploadProgress} className="h-1.5 w-32" />
+                        </>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          {brandPerms.canUpdate
+                            ? 'Trascina qui o clicca per caricare'
+                            : 'Sola lettura'}
+                        </p>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        PNG, JPEG, WebP · Max 2MB
+                      </p>
+                      {tempLogoUrl && (
+                        <p className="text-xs text-blue-600">Logo pronto — salva per confermare</p>
+                      )}
+                    </div>
+                  </div>
+                </FileDropZone>
+              </DisabledFieldWrapper>
             </div>
 
             {/* Codice */}

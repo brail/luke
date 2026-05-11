@@ -1,0 +1,3 @@
+SELECT [qAcq-PerAnalisiConsegne-step01].*, [Item].[Trademark Code], [Item].[Season Code], [Item].[Line Code], [Vendor].Name AS Vendor, Year([Requested Receipt Date]) & "/" & Format(Month([Requested Receipt Date]),"00") AS PeriodRequestedReceiptDate, Year([Promised Receipt Date]) & "/" & Format(Month([Promised Receipt Date]),"00") AS PeriodPromisedReceiptDate, Year([Planned Receipt Date]) & "/" & Format(Month([Planned Receipt Date]),"00") AS PeriodPlannedReceiptDate
+FROM [qAcq-PerAnalisiConsegne-step01] INNER JOIN (Item INNER JOIN Vendor ON [Item].[Vendor No_] = [Vendor].No_) ON [qAcq-PerAnalisiConsegne-step01].Article = [Item].No_;
+

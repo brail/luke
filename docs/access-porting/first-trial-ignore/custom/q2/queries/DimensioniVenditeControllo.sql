@@ -1,0 +1,3 @@
+SELECT DimensioniVendite.[Table ID], DimensioniVendite.dimLinea, DimensioniVendite.dimMarchio, DimensioniVendite.dimCCR, DimensioniVendite.dimStagione, DimensioniVendite.[Document Type], DimensioniVendite.[Document No_], DimensioniVendite.[Line No_], Item.[Line Code], Item.[Trademark Code], Item.[Cost Centre Code], Item.[Season Code], [Sales Line].No_
+FROM DimensioniVendite INNER JOIN ([Sales Line] INNER JOIN Item ON [Sales Line].No_ = Item.No_) ON (DimensioniVendite.[Line No_] = [Sales Line].[Line No_]) AND (DimensioniVendite.[Document No_] = [Sales Line].[Document No_]) AND (DimensioniVendite.[Document Type] = [Sales Line].[Document Type]);
+

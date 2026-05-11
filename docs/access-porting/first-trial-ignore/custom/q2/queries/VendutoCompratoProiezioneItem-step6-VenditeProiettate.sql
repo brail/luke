@@ -1,0 +1,4 @@
+SELECT [VendutoCompratoProiezioneItem-step5-VendutoProiettatoPerMercato].No_, [VendutoCompratoProiezioneItem-step5-VendutoProiettatoPerMercato].[Constant Variable Code], Sum([VendutoCompratoProiezioneItem-step5-VendutoProiettatoPerMercato].PairsSold_) AS PairsSold, Round(Sum([ForecastedPairsByMarket])) AS ForecastedPairsByMarket_, Round(Sum([ForecastedPairsByMarketCorrected])) AS ForecastedPairsByMarketCorrected_, Round(Sum([pairssold_])*First([fattoreproiezioneglobale])) AS ForecastedPairsFlat
+FROM [VendutoCompratoProiezioneItem-step5-VendutoProiettatoPerMercato] INNER JOIN VendutoComprato_FattoriDiPropiezione ON [VendutoCompratoProiezioneItem-step5-VendutoProiettatoPerMercato].[Budget No_] = VendutoComprato_FattoriDiPropiezione.BudgetNo_
+GROUP BY [VendutoCompratoProiezioneItem-step5-VendutoProiettatoPerMercato].No_, [VendutoCompratoProiezioneItem-step5-VendutoProiettatoPerMercato].[Constant Variable Code];
+

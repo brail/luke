@@ -1,0 +1,5 @@
+SELECT [Cust_ Ledger Entry].[Customer No_], Round(Sum(IIf([entry type]=1 Or [entry type]=3 Or [entry type]=4 Or [entry type]=5 Or [entry type]=6 Or [entry type]=7 Or [entry type]=8 Or [entry type]=9 Or [entry type]=12 Or [entry type]=13 Or [entry type]=14 Or [entry type]=15 Or [entry type]=16 Or [entry type]=17,Val([Amount]),0))*10000)/10000 AS Importo, Round(Sum(Val([Amount]))*10000)/10000 AS ImportoResiduo
+FROM (([Cust_ Ledger Entry] INNER JOIN [Detailed Cust_ Ledg_ Entry] ON [Cust_ Ledger Entry].[Entry No_] = [Detailed Cust_ Ledg_ Entry].[Cust_ Ledger Entry No_]) LEFT JOIN [Sales Invoice Header] ON [Cust_ Ledger Entry].[Document No_] = [Sales Invoice Header].No_) LEFT JOIN [Sales Cr_Memo Header] ON [Cust_ Ledger Entry].[Document No_] = [Sales Cr_Memo Header].No_
+WHERE ((([Cust_ Ledger Entry].[Document Type])=2) AND (([Sales Invoice Header].[SELLING SEASON CODE])="E20") AND (([Sales Invoice Header].[Shortcut Dimension 2 Code])="BLAUER")) OR ((([Cust_ Ledger Entry].[Document Type])=3) AND (([Sales Cr_Memo Header].[SELLING SEASON CODE])="E20") AND (([Sales Cr_Memo Header].[Shortcut Dimension 2 Code])="BLAUER"))
+GROUP BY [Cust_ Ledger Entry].[Customer No_];
+

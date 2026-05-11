@@ -1,138 +1,87 @@
 'use client';
 
-import { useCallback, useEffect, useMemo } from 'react';
-
 import type { RouterOutputs } from '@luke/api';
-import type { CollectionLayoutRowInput } from '@luke/core';
-
-import type { UseFormReturn } from 'react-hook-form';
 
 /** Set di parametri pricing come restituito dal router. */
 export type PricingParameterSet =
   RouterOutputs['pricing']['parameterSets']['list'][number];
 
-/** Risultato del calcolo marginalità lato client. */
-export interface MarginCalc {
-  landedCost: number;
-  wholesalePrice: number;
-  companyMargin: number;
-  isAboveTarget: boolean;
-  optimalMargin: number;
+/** Input per computeRowMargin — compatibile con CollectionRow dopo la migrazione quotazioni. */
+export interface MarginComputeInput {
+  quotations?: Array<{
+    pricingParameterSetId?: string | null;
+    supplierQuotation?: number | null;
+    retailPrice?: number | null;
+    sku?: number | null;
+  }>;
+  qtyForecast: number;
 }
 
-/**
- * Calcola marginalità e buying target in base ai parametri pricing selezionati.
- * Replica la logica di pricing.service.ts lato client per feedback immediato
- * senza round-trip al server.
- *
- * @param form - Instance react-hook-form del form riga
- * @param parameterSets - Lista set parametri pricing disponibili
- * @returns selectedParamSet e marginCalc aggiornati reattivamente
- */
-export function usePricingCalc(
-  form: UseFormReturn<CollectionLayoutRowInput>,
+function computeMarginStatus(
+  marginPct: number,
+  optimalMargin: number
+): 'green' | 'yellow' | 'red' {
+  if (marginPct >= optimalMargin) return 'green';
+  if (marginPct >= optimalMargin - 3) return 'yellow';
+  return 'red';
+}
+
+/** SKU-weighted average margin if any quotation has sku set; otherwise arithmetic average. */
+export function computeRowMargin(
+  row: MarginComputeInput,
   parameterSets: PricingParameterSet[]
-): {
-  selectedParamSet: PricingParameterSet | null;
-  marginCalc: MarginCalc | null;
-} {
-  const watchedPricingSetId = form.watch('pricingParameterSetId');
-  const watchedSupplierQuotation = form.watch('supplierFirstQuotation');
-  const watchedRetailPrice = form.watch('retailTargetPrice');
+): { margin: number; isAboveTarget: boolean; marginStatus: 'green' | 'yellow' | 'red' } | null {
+  const computed: Array<{ margin: number; sku: number | null }> = [];
+  let refOptimalMargin = 52;
 
-  const selectedParamSet = useMemo(
-    () =>
-      watchedPricingSetId
-        ? (parameterSets.find(ps => ps.id === watchedPricingSetId) ?? null)
-        : null,
-    [watchedPricingSetId, parameterSets]
-  );
+  for (const q of row.quotations ?? []) {
+    if (!q?.pricingParameterSetId || !q?.supplierQuotation || !q?.retailPrice) continue;
+    if (q.supplierQuotation <= 0 || q.retailPrice <= 0) continue;
+    const ps = parameterSets.find(p => p.id === q.pricingParameterSetId);
+    if (!ps) continue;
 
-  const companyMultiplier = useMemo(
-    () =>
-      selectedParamSet
-        ? Math.round((1 / (1 - selectedParamSet.optimalMargin / 100)) * 100) / 100
-        : null,
-    [selectedParamSet]
-  );
+    const qc = q.supplierQuotation * (ps.qualityControlPercent / 100);
+    const withQC = q.supplierQuotation + qc + ps.tools;
+    const withTransport = withQC + ps.transportInsuranceCost;
+    const withDuty = withTransport * (1 + ps.duty / 100);
+    const landed = withDuty / ps.exchangeRate + ps.italyAccessoryCosts;
+    const wholesale = q.retailPrice / ps.retailMultiplier;
+    computed.push({ margin: (wholesale - landed) / wholesale, sku: q.sku ?? null });
+    refOptimalMargin = ps.optimalMargin;
+  }
 
-  /** Calcola landed cost da quotazione fornitore FOB. */
-  const landedCostCalc = useCallback(
-    (quotation: number, ps: PricingParameterSet | null): number | null => {
-      if (!ps) return null;
-      const qc = quotation * (ps.qualityControlPercent / 100);
-      const withQC = quotation + qc + ps.tools;
-      const withTransport = withQC + ps.transportInsuranceCost;
-      const withDuty = withTransport * (1 + ps.duty / 100);
-      return withDuty / ps.exchangeRate + ps.italyAccessoryCosts;
-    },
-    []
-  );
+  if (computed.length === 0) return null;
 
-  /** Calcola buying target invertendo la formula dal retail price. */
-  const buyingTargetCalc = useCallback(
-    (
-      retail: number,
-      ps: PricingParameterSet | null,
-      cm: number | null
-    ): number | null => {
-      if (!ps || !cm) return null;
-      const wholesale = retail / ps.retailMultiplier;
-      const landed = wholesale / cm;
-      const withoutAcc = landed - ps.italyAccessoryCosts;
-      const withoutDuty = withoutAcc / (1 + ps.duty / 100);
-      const withoutTransport =
-        withoutDuty * ps.exchangeRate - ps.transportInsuranceCost;
-      const raw =
-        withoutTransport / (1 + ps.qualityControlPercent / 100) - ps.tools;
-      return Math.floor(raw * 10) / 10;
-    },
-    []
-  );
+  const withSku = computed.filter(m => m.sku !== null && m.sku > 0);
+  let avg: number;
+  if (withSku.length > 0) {
+    const totalSku = withSku.reduce((s, m) => s + m.sku!, 0);
+    avg = withSku.reduce((s, m) => s + m.margin * m.sku!, 0) / totalSku;
+  } else {
+    avg = computed.reduce((s, m) => s + m.margin, 0) / computed.length;
+  }
 
-  const marginCalc = useMemo((): MarginCalc | null => {
-    if (
-      !selectedParamSet ||
-      !companyMultiplier ||
-      !watchedSupplierQuotation ||
-      !watchedRetailPrice ||
-      watchedSupplierQuotation <= 0 ||
-      watchedRetailPrice <= 0
-    ) {
-      return null;
-    }
-    const landed = landedCostCalc(watchedSupplierQuotation, selectedParamSet);
-    if (landed === null) return null;
-    const wholesale = watchedRetailPrice / selectedParamSet.retailMultiplier;
-    const margin = (wholesale - landed) / wholesale;
-    return {
-      landedCost: Math.round(landed * 100) / 100,
-      wholesalePrice: Math.round(wholesale * 100) / 100,
-      companyMargin: Math.round(margin * 10000) / 10000,
-      isAboveTarget: margin * 100 >= selectedParamSet.optimalMargin,
-      optimalMargin: selectedParamSet.optimalMargin,
-    };
-  }, [
-    selectedParamSet,
-    companyMultiplier,
-    watchedSupplierQuotation,
-    watchedRetailPrice,
-    landedCostCalc,
-  ]);
+  const marginStatus = computeMarginStatus(avg * 100, refOptimalMargin);
 
-  // Auto-fill buying target al cambio del retail price o del parameter set.
-  // Dipendenze ridotte intenzionalmente (selectedParamSet?.id) per evitare loop.
-  useEffect(() => {
-    if (!watchedRetailPrice || watchedRetailPrice <= 0 || !selectedParamSet) return;
-    const target = buyingTargetCalc(
-      watchedRetailPrice,
-      selectedParamSet,
-      companyMultiplier
-    );
-    if (target !== null && target > 0) {
-      form.setValue('buyingTargetPrice', target, { shouldDirty: false });
-    }
-  }, [watchedRetailPrice, selectedParamSet?.id]);
+  return {
+    margin: Math.round(avg * 10000) / 10000,
+    isAboveTarget: marginStatus === 'green',
+    marginStatus,
+  };
+}
 
-  return { selectedParamSet, marginCalc };
+/** Compute qty-weighted average margin across rows using first quotation per row. */
+export function computeWeightedMargin(
+  rows: MarginComputeInput[],
+  parameterSets: PricingParameterSet[]
+): number | null {
+  let totalQty = 0;
+  let weightedSum = 0;
+  for (const row of rows) {
+    const m = computeRowMargin(row, parameterSets);
+    if (!m) continue;
+    weightedSum += m.margin * row.qtyForecast;
+    totalQty += row.qtyForecast;
+  }
+  return totalQty > 0 ? Math.round((weightedSum / totalQty) * 10000) / 10000 : null;
 }

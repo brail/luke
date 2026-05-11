@@ -24,13 +24,13 @@ export const BrandInputSchema = z.object({
     .max(128, 'Max 128 caratteri')
     .trim(),
 
-  /** URL del logo (opzionale, nullable) */
-  logoUrl: z
-    .union([z.string().url('URL non valido'), z.null(), z.undefined()])
+  /** Storage key del logo (opzionale, nullable) */
+  logoKey: z
+    .union([z.string(), z.null(), z.undefined()])
     .optional(),
 
-  /** ID temporaneo per logo durante creazione brand (opzionale) */
-  tempLogoId: z.string().uuid('ID temporaneo non valido').optional(),
+  /** ID FileObject pending per logo durante creazione brand (opzionale) */
+  fileObjectId: z.string().uuid('ID file non valido').optional(),
 
   /** Codice NAV collegato (opzionale) */
   navBrandId: z.string().max(20).optional().nullable(),
@@ -104,8 +104,14 @@ export const BrandUpdateInputSchema = z.object({
   /** UUID del brand da aggiornare */
   id: z.string().uuid('ID brand non valido'),
 
-  /** Dati parziali per l'aggiornamento */
-  data: BrandInputSchema.partial(),
+  /** Dati parziali per l'aggiornamento — code/name senza regex: i codici NAV possono contenere spazi */
+  data: BrandInputSchema
+    .omit({ code: true, name: true })
+    .extend({
+      code: z.string().min(1, 'Codice obbligatorio').max(20, 'Max 20 caratteri'),
+      name: z.string().min(1, 'Nome obbligatorio').max(128, 'Max 128 caratteri'),
+    })
+    .partial(),
 });
 
 /**

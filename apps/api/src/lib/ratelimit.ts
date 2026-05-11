@@ -63,6 +63,11 @@ export const RATE_LIMIT_CONFIG = {
     windowMs: 900_000, // 15 minuti
     keyBy: 'ip' as const,
   },
+  ldapTest: {
+    max: 3, // 3 tentativi
+    windowMs: 900_000, // 15 minuti
+    keyBy: 'userId' as const,
+  },
 } as const;
 
 /**
@@ -301,13 +306,7 @@ export function withRateLimit(routeName: keyof typeof RATE_LIMIT_CONFIG) {
     try {
       // Risolvi policy dinamicamente
       const config = await resolveRateLimitPolicy(
-        routeName as
-          | 'login'
-          | 'passwordChange'
-          | 'configMutations'
-          | 'userMutations'
-          | 'brandMutations'
-          | 'sectionAccessSet',
+        routeName as keyof typeof RATE_LIMIT_CONFIG,
         ctx.prisma
       );
 

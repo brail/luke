@@ -8,10 +8,10 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
-import fastifyStatic from '@fastify/static';
 import { PrismaClient } from '@prisma/client';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import Fastify from 'fastify';
+import pino from 'pino';
 
 import {
   validateMasterKey,
@@ -25,6 +25,8 @@ import { createContext } from './lib/trpc';
 import { setGlobalErrorHandler } from './lib/error';
 import { getConfig, validateCriticalConfig } from './lib/configManager';
 import { registerNavSyncScheduler } from './lib/navSyncScheduler';
+import { registerPortafoglioSyncScheduler } from './lib/portafoglioSyncScheduler';
+import { registerKimoSyncScheduler } from './lib/kimoSyncScheduler';
 import { idempotencyStore } from './lib/idempotency';
 import { rateLimitStore } from './lib/ratelimit';
 import {
@@ -35,8 +37,12 @@ import { runReadinessChecks } from './observability/readiness';
 import { storagePlugin } from './plugins/storage-upload';
 import brandLogoRoutes from './routes/brandLogo.routes';
 import collectionRowPictureRoutes from './routes/collectionRowPicture.routes';
+import seasonCalendarExportRoutes from './routes/seasonCalendarExport.routes';
+import specsheetImageRoutes from './routes/specsheetImage.routes';
 import { appRouter } from './routers';
 import { getStorageProvider } from './storage';
+import { readdir, stat, unlink } from 'fs/promises';
+import { join } from 'path';
 
 /**
  * Configurazione del logger Pino con serializers per sicurezza
@@ -60,8 +66,8 @@ const loggerConfig = {
  */
 const fastify = Fastify({
   logger: loggerConfig,
-  requestTimeout: 20_000,
-  connectionTimeout: 10_000,
+  requestTimeout: 360_000, // 6 min — allineato a proxyTimeout Next.js e pool NAV (300 s + margine)
+  connectionTimeout: 0,    // disabilitato — requestTimeout gestisce il limite totale
   maxParamLength: 5000, // tRPC batch requests contain multiple procedure names in the URL param
 });
 
@@ -104,11 +110,14 @@ async function registerSecurityPlugins() {
 
   // Rate limiting globale (permissivo)
   await fastify.register(rateLimit, {
-    max: isDevelopment() ? 1000 : 100, // 1000 req/min in dev, 100 in prod
+    max: isDevelopment() ? 2000 : 100,
     timeWindow: '1 minute',
     cache: 10000,
     skipOnError: true,
+    // In dev, bypass rate limiting for localhost to avoid dev friction
+    allowList: isDevelopment() ? ['127.0.0.1', '::1', '::ffff:127.0.0.1'] : [],
     errorResponseBuilder: (request: any, context: any) => ({
+      statusCode: 429,
       error: 'Rate limit exceeded',
       message: `Too many requests from ${request.ip}`,
       retryAfter: Math.round(context.ttl / 1000),
@@ -257,51 +266,14 @@ async function registerCollectionRowPictureRoutes() {
 }
 
 /**
- * Registra static file server per uploads
+ * Registra specsheet image routes
  */
-async function registerStaticFiles() {
-  const { resolve } = await import('path');
-  const { realpath, mkdir } = await import('fs/promises');
-  const { homedir } = await import('os');
+async function registerSpecsheetImageRoutes() {
+  await fastify.register(specsheetImageRoutes, { prisma });
+}
 
-  const defaultBasePath = resolve(homedir(), '.luke', 'storage');
-  const basePath =
-    (await getConfig(prisma, 'storage.local.basePath', false)) ||
-    defaultBasePath;
-
-  // Ensure directory exists, then resolve symlinks for consistent path matching
-  // with LocalFsProvider which also uses fs.realpath internally
-  const resolvedPath = resolve(basePath);
-  await mkdir(resolvedPath, { recursive: true });
-  const absoluteRoot = await realpath(resolvedPath);
-
-  await fastify.register(fastifyStatic, {
-    root: absoluteRoot,
-    prefix: '/uploads/',
-    decorateReply: false,
-    setHeaders: (res, path) => {
-      // CORS per le immagini statiche è gestito dal plugin @fastify/cors globale
-      // che supporta dynamic origin matching su tutti i path incluso /uploads/
-
-      // Imposta content-type corretto per le immagini
-      if (path.endsWith('.png')) {
-        res.setHeader('Content-Type', 'image/png');
-      } else if (path.endsWith('.jpg') || path.endsWith('.jpeg')) {
-        res.setHeader('Content-Type', 'image/jpeg');
-      } else if (path.endsWith('.webp')) {
-        res.setHeader('Content-Type', 'image/webp');
-      }
-
-      // Imposta CSP permissivo per le immagini
-      res.setHeader(
-        'Content-Security-Policy',
-        "img-src 'self' data:; default-src 'none'"
-      );
-
-      // Cache headers per assets statici
-      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    },
-  });
+async function registerSeasonCalendarExportRoutes() {
+  await fastify.register(seasonCalendarExportRoutes, { prisma });
 }
 
 /**
@@ -384,7 +356,8 @@ function setupTempFileCleanup() {
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
       const tempFiles = await prisma.fileObject.findMany({
         where: {
-          bucket: { in: ['temp-brand-logos', 'temp-collection-row-pictures'] },
+          confirmedAt: null,
+          bucket: { in: ['brand-logos', 'collection-row-pictures', 'merchandising-specsheet-images'] },
           createdAt: { lt: oneHourAgo },
         },
       });
@@ -399,7 +372,7 @@ function setupTempFileCleanup() {
         for (const file of tempFiles) {
           try {
             await provider.delete({
-              bucket: file.bucket as 'temp-brand-logos' | 'temp-collection-row-pictures',
+              bucket: file.bucket as 'brand-logos' | 'collection-row-pictures' | 'merchandising-specsheet-images',
               key: file.key,
             });
             succeededIds.push(file.id);
@@ -423,6 +396,36 @@ function setupTempFileCleanup() {
           `Cleanup completed: ${succeededIds.length}/${tempFiles.length} temp files removed`
         );
       }
+
+      // Pulizia file orfani nelle directory .tmp (upload falliti/interrotti)
+      // Rimuove file più vecchi di 2 ore che non sono stati promossi al path finale
+      try {
+        const basePath =
+          (await getConfig(prisma, 'storage.local.basePath', false)) ||
+          join(require('os').homedir(), '.luke', 'storage');
+        const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
+        const buckets = await readdir(basePath).catch(() => []);
+
+        for (const bucket of buckets) {
+          const tmpDir = join(basePath, bucket, '.tmp');
+          const entries = await readdir(tmpDir).catch(() => []);
+
+          for (const entry of entries) {
+            const filePath = join(tmpDir, entry);
+            try {
+              const stats = await stat(filePath);
+              if (stats.isFile() && stats.mtimeMs < twoHoursAgo) {
+                await unlink(filePath);
+                fastify.log.debug({ filePath }, 'Removed orphan .tmp file');
+              }
+            } catch {
+              // File già rimosso o non accessibile — ignora
+            }
+          }
+        }
+      } catch (err) {
+        fastify.log.warn({ err }, 'Orphan .tmp cleanup failed');
+      }
     } catch (err) {
       fastify.log.error({ err }, 'Temp file cleanup job failed');
     }
@@ -430,7 +433,11 @@ function setupTempFileCleanup() {
 
   // Avvia cleanup immediato e poi ogni 30 minuti
   setImmediate(cleanupTempFiles);
-  setInterval(cleanupTempFiles, cleanupInterval);
+  const cleanupTimer = setInterval(cleanupTempFiles, cleanupInterval);
+
+  fastify.addHook('onClose', async () => {
+    clearInterval(cleanupTimer);
+  });
 
   fastify.log.info('Temp file cleanup job started (every 30 minutes)');
 }
@@ -530,8 +537,11 @@ const FORBIDDEN_ENV_PATTERNS: RegExp[] = [
   /.*_TOKEN$/i,
 ];
 
+const ALLOWED_ENV_EXCEPTIONS = new Set<string>([]);
+
 function assertEnvPolicy(): void {
   const violations = Object.keys(process.env).filter(key =>
+    !ALLOWED_ENV_EXCEPTIONS.has(key) &&
     FORBIDDEN_ENV_PATTERNS.some(p => p.test(key))
   );
 
@@ -539,16 +549,12 @@ function assertEnvPolicy(): void {
 
   const msg = `[env-policy] Variabili applicative trovate in process.env — devono stare in AppConfig: ${violations.join(', ')}`;
 
+  const bootLogger = pino({ level: 'warn' });
   if (isProduction()) {
-    // In produzione è un errore bloccante: un .env con segreti è inaccettabile
-    // eslint-disable-next-line no-console
-    console.error(msg);
+    bootLogger.error(msg);
     process.exit(1);
   } else {
-    // In sviluppo è un warning: potrebbe essere intenzionale durante il debug
-    // Il log Fastify non è ancora disponibile a questo punto, usiamo console
-    // eslint-disable-next-line no-console
-    console.warn(msg);
+    bootLogger.warn(msg);
   }
 }
 
@@ -589,7 +595,8 @@ const start = async () => {
     await registerStoragePlugin(); // Storage upload/download routes
     await registerBrandLogoRoutes(); // Brand logo upload routes
     await registerCollectionRowPictureRoutes(); // Collection row picture upload routes
-    await registerStaticFiles(); // Static file server per uploads
+    await registerSpecsheetImageRoutes(); // Specsheet image upload routes
+    await registerSeasonCalendarExportRoutes(); // iCal + CSV export
     await registerHealthRoute();
 
     // Configura cleanup file temporanei
@@ -597,6 +604,12 @@ const start = async () => {
 
     // Registra scheduler sync NAV (onReady + onClose)
     registerNavSyncScheduler(fastify, prisma);
+
+    // Registra scheduler sync portafoglio NAV → PG (onReady + onClose)
+    registerPortafoglioSyncScheduler(fastify, prisma);
+
+    // Registra scheduler sync tabelle KIMO-FASHION NAV → PG (onReady + onClose)
+    registerKimoSyncScheduler(fastify, prisma);
 
     // Configura graceful shutdown
     setupGracefulShutdown();

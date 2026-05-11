@@ -702,6 +702,89 @@ Il pacchetto `@luke/nav` gestisce la sincronizzazione bidirezionale con Microsof
 
 Per dettagli completi, vedi [docs/nav-integration.md](docs/nav-integration.md).
 
+## Storage
+
+Il sistema storage è astratto tramite l'interfaccia `IStorageProvider` con due provider supportati: filesystem locale e MinIO (S3-compatible). Il provider attivo è selezionato da `storage.type` in AppConfig — nessuna env var, nessuna ricompilazione.
+
+### Chiavi nel database, non URL
+
+I modelli salvano la **chiave** del file (`logoKey`, `pictureKey`, `key`), non l'URL completo. L'URL pubblico viene calcolato a runtime tramite `makeUrlResolver(prisma)`. Cambiare provider o configurazione non richiede migrazioni dati.
+
+### Two-Phase Upload
+
+Il file viene caricato come **pending** (`FileObject.confirmedAt = null`) prima che l'entità esista. La conferma avviene nella stessa transaction Prisma che crea l'entità. File pending abbandonati vengono rimossi dal job di cleanup periodico.
+
+```
+1. POST /upload/{bucket}  →  FileObject (confirmedAt = null) + publicUrl + fileObjectId
+2. trpc.brand.create({ ..., fileObjectId })
+   └─ tx: Brand.create + FileObject.confirmedAt = now + Brand.logoKey = file.key
+```
+
+### Provider URL
+
+Con **MinIO**: le immagini sono servite tramite la route Next.js autenticata `/api/uploads/[...path]`. I bucket rimangono privati.
+
+Con **local** (`enableProxy=true`, default): stesso proxy per consistenza. Con `enableProxy=false`: URL pubblico diretto via `publicBaseUrl`.
+
+### Configurazione (AppConfig)
+
+| Chiave | Descrizione |
+|--------|-------------|
+| `storage.type` | `local` \| `minio` |
+| `storage.local.basePath` | Directory base locale (default `/data/uploads`) |
+| `storage.local.enableProxy` | Forza proxy URL (default `true`) |
+| `storage.local.publicBaseUrl` | Base URL pubblico se proxy disabilitato |
+| `storage.minio.endpoint` | Endpoint MinIO (es. `minio:9000`) |
+| `storage.minio.accessKey` / `secretKey` | Credenziali MinIO (cifrate in DB) |
+| `storage.minio.bucket` | Bucket MinIO (default `luke`) |
+| `storage.minio.presignedPutTtl` / `presignedGetTtl` | TTL URL presigned in secondi |
+
+### Bucket validi
+
+`uploads`, `exports`, `assets`, `brand-logos`, `collection-row-pictures`, `merchandising-specsheet-images`
+
+Per l'architettura completa: [docs/adr/007-storage-layer-refactor.md](docs/adr/007-storage-layer-refactor.md)
+
+## Dashboard Widget System
+
+La dashboard è un sistema di widget card configurabili per utente. Ogni utente può abilitare/disabilitare i widget e, per quelli configurabili, personalizzare i settings tramite il pannello "Personalizza".
+
+### Widget disponibili (v1)
+
+| ID | Label | Fonte dati | Configurabile |
+|----|-------|-----------|---------------|
+| `kpi-stats` | Statistiche | Prisma (brand, season, utenti attivi, righe collezione) | No |
+| `season-progress` | Avanzamento stagione | Prisma (`CollectionLayout` KPI) | No |
+| `clocks` | Orologi mondo | `Intl.DateTimeFormat` (nessuna API) | Sì (fusi orari IANA) |
+| `forex` | Cambi valuta | `api.frankfurter.app` (BCE, gratuito, no API key) | Sì (coppie valuta) |
+| `weekly-sales` | Ordini settimanali | NAV replica (`nav_pf_sales_header`) | No |
+| `tasks` | Attività personali | Prisma (`DashboardTask`) | No |
+
+### Aggiungere un nuovo widget
+
+1. **Core schema** — aggiungere l'ID in `WIDGET_IDS` (`packages/core/src/schemas/dashboard.ts`)
+2. **Componente** — creare `apps/web/src/components/dashboard/widgets/MyWidget.tsx`
+3. **Registry** — aggiungere `WidgetDefinition` in `apps/web/src/components/dashboard/widgetRegistry.ts`)
+4. **Router** (se serve dati) — aggiungere procedure in `apps/api/src/routers/dashboard.ts`
+
+### Schema configurazione JSON
+
+```json
+{
+  "widgets": [
+    { "id": "forex", "enabled": true, "position": 4, "settings": { "pairs": ["EUR/CNY", "EUR/USD"] } },
+    { "id": "clocks", "enabled": true, "position": 5, "settings": { "timezones": ["Europe/Rome", "Asia/Shanghai"] } },
+    { "id": "kpi-stats", "enabled": false, "position": 0 }
+  ]
+}
+```
+
+### Variabili d'ambiente
+
+Nessuna variabile aggiuntiva richiesta. Il widget Forex usa `api.frankfurter.app` (dati BCE, gratuito).
+
+---
+
 ## Riferimenti Correlati
 
 - [API_SETUP.md](API_SETUP.md) - Setup e utilizzo dell'API con esempi pratici
