@@ -6,9 +6,6 @@ on:
   pull_request:
     branches: [main, develop]
 
-env:
-  PNPM_VERSION: '10.32.1'
-
 jobs:
   lint-and-typecheck:
     name: Lint & TypeCheck
@@ -16,9 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v2
-        with:
-          version: ${{ env.PNPM_VERSION }}
+      - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v4
         with:
