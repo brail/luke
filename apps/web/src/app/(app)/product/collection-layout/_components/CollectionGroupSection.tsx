@@ -1,7 +1,17 @@
 'use client';
 
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronDown, ChevronRight, Copy, FileText, ImageIcon, ListFilter, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronDown, ChevronRight, Copy, FileText, GripVertical, ImageIcon, ListFilter, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { type CSSProperties, type HTMLAttributes, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
 import {
@@ -40,10 +50,12 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '../../../../../components/ui/tooltip';
+import { trpc } from '../../../../../lib/trpc';
 import { cn } from '../../../../../lib/utils';
 import { computeRowMargin, computeWeightedMargin } from '../_hooks/usePricingCalc';
 
 import type { PricingParameterSet } from '../_hooks/usePricingCalc';
+import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -241,6 +253,63 @@ function FilterableHeader({
   );
 }
 
+// ─── Drag handle ─────────────────────────────────────────────────────────────
+
+interface DragHandleProps {
+  listeners: Record<string, unknown> | undefined;
+}
+
+function DragHandle({ listeners }: DragHandleProps) {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            {...(listeners as HTMLAttributes<HTMLSpanElement>)}
+            className="cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground inline-flex"
+            onClick={e => e.stopPropagation()}
+          >
+            <GripVertical className="h-4 w-4" />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>Trascina per riordinare</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+// ─── Sortable row wrapper ─────────────────────────────────────────────────────
+
+interface SortableRowProps {
+  id: string;
+  disabled: boolean;
+  children: (listeners: Record<string, unknown> | undefined) => ReactNode;
+  onClick: () => void;
+}
+
+function SortableRow({ id, disabled, children, onClick }: SortableRowProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+    disabled,
+  });
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  };
+  return (
+    <TableRow
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      className="cursor-pointer hover:bg-muted/30"
+      onClick={onClick}
+    >
+      {children(disabled ? undefined : listeners as Record<string, unknown>)}
+    </TableRow>
+  );
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const PROGRESS_BADGE: Record<string, { label: string; className: string }> = {
@@ -324,6 +393,44 @@ export function CollectionGroupSection({
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
   const [columnFilterOperators, setColumnFilterOperators] = useState<Record<string, 'gte' | 'lte'>>({});
 
+  // Drag-and-drop state
+  const [localRowOrder, setLocalRowOrder] = useState<string[]>(() => group.rows.map(r => r.id));
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+
+  // Reset order when rows are added/removed (not just reordered)
+  useEffect(() => {
+    setLocalRowOrder(prev => {
+      const nextIds = group.rows.map(r => r.id);
+      const prevSet = new Set(prev);
+      if (prev.length === nextIds.length && nextIds.every(id => prevSet.has(id))) return prev;
+      return nextIds;
+    });
+  }, [group.rows]);
+
+  const reorderMutation = trpc.collectionLayout.rows.reorder.useMutation();
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  const handleDragStart = useCallback((e: DragStartEvent) => {
+    setDraggingId(String(e.active.id));
+  }, []);
+
+  const handleDragEnd = useCallback((e: DragEndEvent) => {
+    setDraggingId(null);
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    setLocalRowOrder(prev => {
+      const oldIdx = prev.indexOf(String(active.id));
+      const newIdx = prev.indexOf(String(over.id));
+      const newOrder = arrayMove(prev, oldIdx, newIdx);
+      reorderMutation.mutate(
+        { groupId: group.id, orderedIds: newOrder },
+        { onError: () => setLocalRowOrder(prev) },
+      );
+      return newOrder;
+    });
+  }, [group.id, reorderMutation]);
+
   const hasActiveFilters = !!sortCol || Object.keys(columnFilters).length > 0;
 
   const resetFilters = () => {
@@ -361,6 +468,8 @@ export function CollectionGroupSection({
     });
   };
 
+  const isDndMode = !hasActiveFilters && !searchQuery;
+
   const filteredRows = useMemo(() => {
     const textMatch = (v: string | null | undefined, f: string) => {
       if (f === '_none') return !v || v.trim() === '';
@@ -373,7 +482,15 @@ export function CollectionGroupSection({
       return isNaN(t) || (op === 'gte' ? v >= t : v <= t);
     };
 
-    let rows = group.rows.filter(row => {
+    let baseRows: CollectionRowData[];
+    if (isDndMode) {
+      const orderMap = new Map(localRowOrder.map((id, i) => [id, i]));
+      baseRows = [...group.rows].sort((a, b) => (orderMap.get(a.id) ?? 0) - (orderMap.get(b.id) ?? 0));
+    } else {
+      baseRows = group.rows;
+    }
+
+    let rows = baseRows.filter(row => {
       const vendorName = row.vendor?.nickname ?? row.vendor?.name ?? null;
       if (searchQuery && !textMatch(row.line, searchQuery) && !textMatch(vendorName, searchQuery)) return false;
       if (columnFilters.line && !textMatch(row.line, columnFilters.line)) return false;
@@ -417,7 +534,7 @@ export function CollectionGroupSection({
     }
 
     return rows;
-  }, [group.rows, searchQuery, columnFilters, columnFilterOperators, sortCol, sortDir, parameterSets]);
+  }, [group.rows, localRowOrder, searchQuery, columnFilters, columnFilterOperators, sortCol, sortDir, parameterSets]);
 
   useEffect(() => {
     onFilteredRowIdsChange?.(filteredRows.map(r => r.id));
@@ -543,10 +660,16 @@ export function CollectionGroupSection({
               )}
             </div>
           ) : (
-            <Table className="min-w-max">
-              <TableHeader>
-                <TableRow className="bg-muted/10">
-                  <TableHead className="w-8 text-center">#</TableHead>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+            >
+              <Table className="min-w-max">
+                <TableHeader>
+                  <TableRow className="bg-muted/10">
+                    <TableHead className="w-8 text-center">#</TableHead>
                   {show('foto') && <TableHead className="w-24">Foto</TableHead>}
 
                   <FilterableHeader col="line" label="Linea" type="text" {...sortProps} {...filterProps} filterValue={columnFilters.line} />
@@ -591,28 +714,48 @@ export function CollectionGroupSection({
                   <TableHead className="w-24" />
                 </TableRow>
               </TableHeader>
-              <TableBody>
-                {filteredRows.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={20} className="py-8 text-center text-sm text-muted-foreground">
-                      {hasActiveFilters
-                        ? 'Nessuna riga corrisponde ai filtri applicati.'
-                        : 'Nessuna riga corrisponde alla ricerca.'}
-                    </TableCell>
-                  </TableRow>
-                )}
-                {filteredRows.map((row, idx) => {
-                  const progressBadge = row.progress ? PROGRESS_BADGE[row.progress] : null;
+                <SortableContext
+                  items={localRowOrder}
+                  strategy={verticalListSortingStrategy}
+                  disabled={!isDndMode || !canUpdate}
+                >
+                  <TableBody>
+                    {filteredRows.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={20} className="py-8 text-center text-sm text-muted-foreground">
+                          {hasActiveFilters
+                            ? 'Nessuna riga corrisponde ai filtri applicati.'
+                            : 'Nessuna riga corrisponde alla ricerca.'}
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {filteredRows.map((row, idx) => {
+                      const progressBadge = row.progress ? PROGRESS_BADGE[row.progress] : null;
 
-                  return (
-                    <TableRow
-                      key={row.id}
-                      className="cursor-pointer hover:bg-muted/30"
-                      onClick={() => onEditRow(row)}
-                    >
-                      <TableCell className="text-center text-xs text-muted-foreground">
-                        {idx + 1}
-                      </TableCell>
+                      return (
+                        <SortableRow
+                          key={row.id}
+                          id={row.id}
+                          disabled={!isDndMode || !canUpdate}
+                          onClick={() => onEditRow(row)}
+                        >
+                          {(listeners) => (<>
+                            <TableCell className="text-center text-xs text-muted-foreground w-8">
+                              {isDndMode && canUpdate ? (
+                                <DragHandle listeners={listeners} />
+                              ) : hasActiveFilters ? (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span>{idx + 1}</span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Disattiva ordinamento per usare drag-and-drop</TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              ) : (
+                                <span>{idx + 1}</span>
+                              )}
+                            </TableCell>
                       {show('foto') && (
                         <TableCell className="py-1 px-2">
                           {row.pictureUrl ? (
@@ -777,11 +920,29 @@ export function CollectionGroupSection({
                           )}
                         </div>
                       </TableCell>
-                    </TableRow>
+                          </>)}
+                        </SortableRow>
+                      );
+                    })}
+                  </TableBody>
+                </SortableContext>
+              </Table>
+              <DragOverlay>
+                {draggingId && (() => {
+                  const dragRow = group.rows.find(r => r.id === draggingId);
+                  if (!dragRow) return null;
+                  return (
+                    <table className="w-full">
+                      <tbody>
+                        <tr className="bg-background border shadow-lg">
+                          <td className="px-4 py-2 text-sm font-medium">{dragRow.line}</td>
+                        </tr>
+                      </tbody>
+                    </table>
                   );
-                })}
-              </TableBody>
-            </Table>
+                })()}
+              </DragOverlay>
+            </DndContext>
           )}
         </div>
       )}
