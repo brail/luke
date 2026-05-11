@@ -207,6 +207,9 @@ importers:
       '@luke/api':
         specifier: workspace:*
         version: link:../api
+      '@luke/calendar':
+        specifier: workspace:*
+        version: link:../../packages/calendar
       '@luke/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -378,12 +381,6 @@ importers:
       vitest:
         specifier: ^2.0.0
         version: 2.1.9(@types/node@24.8.1)
-
-  packages/eslint-plugin-luke:
-    dependencies:
-      eslint:
-        specifier: '>=8.0.0'
-        version: 9.38.0(jiti@2.6.1)
 
   packages/nav:
     dependencies:
