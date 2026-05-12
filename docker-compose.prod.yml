@@ -36,6 +36,7 @@ services:
   # ── Fastify API ──────────────────────────────────────────────────────────────
   api:
     image: ghcr.io/brail/luke-api:latest
+    pull_policy: always
     restart: unless-stopped
     depends_on:
       postgres:
@@ -60,6 +61,7 @@ services:
   # ── Next.js web ───────────────────────────────────────────────────────────────
   web:
     image: ghcr.io/brail/luke-web:latest
+    pull_policy: always
     restart: unless-stopped
     depends_on:
       api:
