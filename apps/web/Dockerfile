@@ -45,9 +45,6 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Copy pnpm from builder so corepack doesn't need internet access at runtime
-COPY --from=builder $PNPM_HOME $PNPM_HOME
-
 # Workspace manifests
 COPY --from=builder /app/package.json /app/pnpm-workspace.yaml ./
 
@@ -79,4 +76,4 @@ COPY --from=builder /app/apps/web/next.config.js ./apps/web/next.config.js
 WORKDIR /app/apps/web
 EXPOSE 3000
 
-CMD ["pnpm", "start"]
+CMD ["./node_modules/.bin/next", "start"]
