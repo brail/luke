@@ -46,7 +46,7 @@ export async function getUserAllowedBrandIds(
     include: { team: { include: { brandScopes: true } } },
   });
 
-  if (memberships.length === 0) return null;
+  if (memberships.length === 0) return [];
 
   const brandIds = new Set<string>();
   for (const m of memberships) {

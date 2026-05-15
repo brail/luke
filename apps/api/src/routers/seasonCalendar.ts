@@ -6,10 +6,13 @@ import {
   CalendarMilestoneBaseSchema,
   CloneSeasonCalendarInputSchema,
   MilestonePersonalNoteInputSchema,
+  MilestoneUserVisibilityInputSchema,
   SEASON_CALENDAR_STATUS,
   CALENDAR_MILESTONE_STATUS,
   CALENDAR_MILESTONE_TYPE,
 } from '@luke/core';
+
+import { assertFunctionMemberOrAdmin } from './company.js';
 
 import { logAudit } from '../lib/auditLog.js';
 import { withRateLimit } from '../lib/ratelimit.js';
@@ -381,5 +384,74 @@ export const seasonCalendarRouter = router({
       const syncResult = await reconcileCalendar(input.calendarId, ctx.prisma, ctx.logger);
       await logAudit(ctx, { action: 'SEASON_CALENDAR_SYNC_TRIGGERED', targetType: 'SeasonCalendar', targetId: input.calendarId, result: 'SUCCESS', metadata: syncResult });
       return { triggered: true, ...syncResult };
+    }),
+
+  grantUserVisibility: protectedProcedure
+    .use(requirePermission('season_calendar:update'))
+    .use(withRateLimit('companyStructureMutations'))
+    .input(MilestoneUserVisibilityInputSchema)
+    .mutation(async ({ input, ctx }) => {
+      const milestone = await ctx.prisma.calendarMilestone.findUnique({
+        where: { id: input.milestoneId },
+        select: { ownerFunctionId: true },
+      });
+      if (!milestone) throw new TRPCError({ code: 'NOT_FOUND', message: 'Milestone not found' });
+
+      await assertFunctionMemberOrAdmin(ctx, milestone.ownerFunctionId);
+
+      await ctx.prisma.milestoneUserVisibility.createMany({
+        data: input.userIds.map(userId => ({
+          milestoneId: input.milestoneId,
+          userId,
+          grantedBy: ctx.session.user.id,
+        })),
+        skipDuplicates: true,
+      });
+
+      await Promise.all(
+        input.userIds.map(userId =>
+          logAudit(ctx, {
+            action: 'MILESTONE_USER_VISIBILITY_GRANTED',
+            targetType: 'MilestoneUserVisibility',
+            targetId: `${input.milestoneId}:${userId}`,
+            result: 'SUCCESS',
+            metadata: { milestoneId: input.milestoneId, userId },
+          })
+        )
+      );
+
+      return { ok: true };
+    }),
+
+  revokeUserVisibility: protectedProcedure
+    .use(requirePermission('season_calendar:update'))
+    .use(withRateLimit('companyStructureMutations'))
+    .input(z.object({ milestoneId: z.string().uuid(), userIds: z.array(z.string().uuid()).min(1) }))
+    .mutation(async ({ input, ctx }) => {
+      const milestone = await ctx.prisma.calendarMilestone.findUnique({
+        where: { id: input.milestoneId },
+        select: { ownerFunctionId: true },
+      });
+      if (!milestone) throw new TRPCError({ code: 'NOT_FOUND', message: 'Milestone not found' });
+
+      await assertFunctionMemberOrAdmin(ctx, milestone.ownerFunctionId);
+
+      await ctx.prisma.milestoneUserVisibility.deleteMany({
+        where: { milestoneId: input.milestoneId, userId: { in: input.userIds } },
+      });
+
+      await Promise.all(
+        input.userIds.map(userId =>
+          logAudit(ctx, {
+            action: 'MILESTONE_USER_VISIBILITY_REVOKED',
+            targetType: 'MilestoneUserVisibility',
+            targetId: `${input.milestoneId}:${userId}`,
+            result: 'SUCCESS',
+            metadata: { milestoneId: input.milestoneId, userId },
+          })
+        )
+      );
+
+      return { ok: true };
     }),
 });

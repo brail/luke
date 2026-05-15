@@ -6,6 +6,7 @@
 import { router } from '../lib/trpc';
 
 import { authRouter } from './auth';
+import { companyRouter } from './company';
 import { brandRouter } from './brand';
 import { catalogRouter } from './catalog';
 import { collectionLayoutRouter } from './collectionLayout';
@@ -36,6 +37,7 @@ import { feedbackRouter } from './feedback';
 export const appRouter = router({
   auth: authRouter,
   brand: brandRouter,
+  company: companyRouter,
   catalog: catalogRouter,
   collectionLayout: collectionLayoutRouter,
   collectionCatalog: collectionCatalogRouter,

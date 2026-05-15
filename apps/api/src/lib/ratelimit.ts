@@ -68,6 +68,11 @@ export const RATE_LIMIT_CONFIG = {
     windowMs: 900_000, // 15 minuti
     keyBy: 'userId' as const,
   },
+  companyStructureMutations: {
+    max: 30,
+    windowMs: 60_000,
+    keyBy: 'userId' as const,
+  },
 } as const;
 
 /**
