@@ -19,7 +19,7 @@
     "db:seed": "pnpm --filter @luke/api db:seed",
     "codemod:eliminate-urls": "tsx tools/codemods/eliminate-hardcoded-urls.ts",
     "codemod:check-urls": "tsx tools/codemods/eliminate-hardcoded-urls.ts --dry-run",
-    "changelog": "git-cliff -u -o CHANGELOG.md",
+    "changelog": "git-cliff -o CHANGELOG.md",
     "changelog:bump": "git-cliff --bump -o CHANGELOG.md",
     "changelog:tag": "git-cliff -o CHANGELOG.md",
     "prepare": "husky"
