@@ -6,7 +6,7 @@ docs/merchandising-reference/
 
 # Claude Code local settings
 .claude/
-CLAUDE.md
+#CLAUDE.md
 
 # Planning/roadmap docs (local only)
 .planning/
