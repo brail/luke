@@ -23,23 +23,11 @@ export type CalendarMilestoneStatus = (typeof CALENDAR_MILESTONE_STATUS)[number]
 export const SEASON_CALENDAR_STATUS = ['DRAFT', 'ACTIVE', 'ARCHIVED'] as const;
 export type SeasonCalendarStatus = (typeof SEASON_CALENDAR_STATUS)[number];
 
-// ─── Planning section keys (used as milestone visibility + owner keys) ────────
-
-export const PLANNING_SECTION_KEYS = [
-  'planning.sales',
-  'planning.product',
-  'planning.sourcing',
-  'planning.merchandising',
-] as const;
-export type PlanningSectionKey = (typeof PLANNING_SECTION_KEYS)[number];
-
-const planningSectionKeyEnum = z.enum(PLANNING_SECTION_KEYS);
-
 // ─── Milestone input ──────────────────────────────────────────────────────────
 
 export const CalendarMilestoneBaseSchema = z.object({
   calendarId: z.string().uuid(),
-  ownerSectionKey: planningSectionKeyEnum,
+  ownerFunctionId: z.string().uuid(),
   type: z.enum(CALENDAR_MILESTONE_TYPE),
   title: z.string().min(1).max(200),
   startAt: z.string().datetime(),
@@ -49,14 +37,14 @@ export const CalendarMilestoneBaseSchema = z.object({
   publishExternally: z.boolean().default(true),
   templateItemId: z.string().uuid().optional(),
   status: z.enum(CALENDAR_MILESTONE_STATUS).default('PLANNED'),
-  visibleSectionKeys: z.array(planningSectionKeyEnum).min(1),
+  visibilityFunctionIds: z.array(z.string().uuid()).min(1),
 });
 
 export const CalendarMilestoneInputSchema = CalendarMilestoneBaseSchema.refine(
-  data => data.visibleSectionKeys.includes(data.ownerSectionKey),
+  data => data.visibilityFunctionIds.includes(data.ownerFunctionId),
   {
-    message: 'visibleSectionKeys must include ownerSectionKey',
-    path: ['visibleSectionKeys'],
+    message: 'visibilityFunctionIds must include ownerFunctionId',
+    path: ['visibilityFunctionIds'],
   }
 );
 
@@ -74,18 +62,18 @@ export type MilestonePersonalNoteInput = z.infer<typeof MilestonePersonalNoteInp
 
 export const MilestoneTemplateItemInputSchema = z
   .object({
-    ownerSectionKey: planningSectionKeyEnum,
+    ownerFunctionId: z.string().uuid(),
     type: z.enum(CALENDAR_MILESTONE_TYPE),
     title: z.string().min(1).max(200),
     description: z.string().max(2000).optional(),
     offsetDays: z.number().int(),
     durationDays: z.number().int().min(0).default(0),
     publishExternally: z.boolean().default(true),
-    visibleSectionKeys: z.array(planningSectionKeyEnum).min(1),
+    visibilityFunctionIds: z.array(z.string().uuid()).min(1),
   })
   .refine(
-    data => data.visibleSectionKeys.includes(data.ownerSectionKey),
-    { message: 'visibleSectionKeys must include ownerSectionKey', path: ['visibleSectionKeys'] }
+    data => data.visibilityFunctionIds.includes(data.ownerFunctionId),
+    { message: 'visibilityFunctionIds must include ownerFunctionId', path: ['visibilityFunctionIds'] }
   );
 
 export type MilestoneTemplateItemInput = z.infer<typeof MilestoneTemplateItemInputSchema>;

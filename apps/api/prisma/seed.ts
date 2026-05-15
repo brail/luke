@@ -15,6 +15,7 @@ import { PrismaClient } from '@prisma/client';
 
 import { encryptValue } from '../src/lib/configManager';
 import { hashPassword } from '../src/lib/password';
+import { seedCompanyStructure } from './seeds/companyStructure';
 
 /**
  * Inizializza Prisma Client
@@ -422,7 +423,6 @@ export async function seedContextData(prisma: PrismaClient): Promise<void> {
       code: 'ACME',
       name: 'Acme',
       isActive: true,
-      logoUrl: null,
     },
   });
 
@@ -442,10 +442,10 @@ export async function seedContextData(prisma: PrismaClient): Promise<void> {
   console.log(`✅ Season '${season.code}' ready (ID: ${season.id})`);
 }
 
-/**
- * Funzione principale di seed
- */
-async function seedMilestoneTemplates(prisma: PrismaClient): Promise<void> {
+async function seedMilestoneTemplates(
+  prisma: PrismaClient,
+  functionIds: Record<string, string>,
+): Promise<void> {
   console.log('📅 Seeding milestone templates...');
 
   const template = await prisma.milestoneTemplate.upsert({
@@ -455,70 +455,95 @@ async function seedMilestoneTemplates(prisma: PrismaClient): Promise<void> {
   });
 
   const items: Array<{
-    ownerSectionKey: string;
+    ownerFunctionSlug: string;
     type: 'KICKOFF' | 'REVIEW' | 'GATE' | 'DEADLINE' | 'MILESTONE' | 'CUSTOM';
     title: string;
     offsetDays: number;
     durationDays: number;
-    visibleSectionKeys: string[];
+    visibleFunctionSlugs: string[];
   }> = [
     {
-      ownerSectionKey: 'planning.product',
+      ownerFunctionSlug: 'product',
       type: 'KICKOFF',
       title: 'Kickoff',
       offsetDays: 0,
       durationDays: 0,
-      visibleSectionKeys: ['planning.sales', 'planning.product', 'planning.sourcing', 'planning.merchandising'],
+      visibleFunctionSlugs: ['sales', 'product', 'sourcing'],
     },
     {
-      ownerSectionKey: 'planning.sourcing',
+      ownerFunctionSlug: 'sourcing',
       type: 'MILESTONE',
       title: 'Briefing materials',
       offsetDays: 14,
       durationDays: 0,
-      visibleSectionKeys: ['planning.product', 'planning.sourcing'],
+      visibleFunctionSlugs: ['product', 'sourcing'],
     },
     {
-      ownerSectionKey: 'planning.product',
+      ownerFunctionSlug: 'product',
       type: 'GATE',
       title: 'First samples',
       offsetDays: 60,
       durationDays: 0,
-      visibleSectionKeys: ['planning.product', 'planning.sourcing'],
+      visibleFunctionSlugs: ['product', 'sourcing'],
     },
     {
-      ownerSectionKey: 'planning.merchandising',
+      ownerFunctionSlug: 'product',
       type: 'REVIEW',
       title: 'Linesheet review',
       offsetDays: 90,
       durationDays: 0,
-      visibleSectionKeys: ['planning.sales', 'planning.product', 'planning.merchandising'],
+      visibleFunctionSlugs: ['sales', 'product'],
     },
     {
-      ownerSectionKey: 'planning.sales',
+      ownerFunctionSlug: 'sales',
       type: 'MILESTONE',
       title: 'Sales pre-opening',
       offsetDays: 120,
       durationDays: 0,
-      visibleSectionKeys: ['planning.sales', 'planning.merchandising'],
+      visibleFunctionSlugs: ['sales', 'product'],
     },
     {
-      ownerSectionKey: 'planning.sourcing',
+      ownerFunctionSlug: 'sourcing',
       type: 'DEADLINE',
       title: 'PO cutoff',
       offsetDays: 180,
       durationDays: 0,
-      visibleSectionKeys: ['planning.product', 'planning.sourcing'],
+      visibleFunctionSlugs: ['product', 'sourcing'],
     },
   ];
 
   for (const item of items) {
-    const existing = await prisma.milestoneTemplateItem.findFirst({
+    const ownerFunctionId = functionIds[item.ownerFunctionSlug];
+    if (!ownerFunctionId) {
+      console.warn(`   ⚠️  Function slug '${item.ownerFunctionSlug}' not found, skipping item '${item.title}'`);
+      continue;
+    }
+
+    let templateItem = await prisma.milestoneTemplateItem.findFirst({
       where: { templateId: template.id, title: item.title },
     });
-    if (!existing) {
-      await prisma.milestoneTemplateItem.create({
-        data: { templateId: template.id, ...item },
+
+    if (!templateItem) {
+      templateItem = await prisma.milestoneTemplateItem.create({
+        data: {
+          templateId:      template.id,
+          ownerFunctionId,
+          type:            item.type,
+          title:           item.title,
+          offsetDays:      item.offsetDays,
+          durationDays:    item.durationDays,
+        },
+      });
+    }
+
+    // Upsert visibility records for each visible function
+    for (const slug of item.visibleFunctionSlugs) {
+      const fId = functionIds[slug];
+      if (!fId) continue;
+      await prisma.milestoneTemplateItemVisibility.upsert({
+        where:  { templateItemId_functionId: { templateItemId: templateItem.id, functionId: fId } },
+        update: {},
+        create: { templateItemId: templateItem.id, functionId: fId },
       });
     }
   }
@@ -542,8 +567,11 @@ async function main() {
     // Seeding context data
     await seedContextData(prisma);
 
+    // Seeding company structure (functions, teams, profile)
+    const functionIds = await seedCompanyStructure(prisma);
+
     // Seeding milestone templates
-    await seedMilestoneTemplates(prisma);
+    await seedMilestoneTemplates(prisma, functionIds);
 
     // Log finale
     console.log('\n🎉 Seed completato con successo!');

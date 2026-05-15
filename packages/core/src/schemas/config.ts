@@ -20,9 +20,10 @@ export const AppConfigRegistry = {
   'app.baseUrl':         z.string().url(),
 
   // ── Auth ─────────────────────────────────────────────────────────────────
-  'auth.strategy':                 z.enum(['local-first', 'ldap-first', 'local-only', 'ldap-only']),
-  'auth.requireEmailVerification': z.coerce.boolean(),
-  'auth.nextAuthSecret':           z.string().min(32),
+  'auth.strategy':                       z.enum(['local-first', 'ldap-first', 'local-only', 'ldap-only']),
+  'auth.requireEmailVerification':       z.coerce.boolean(),
+  'auth.nextAuthSecret':                 z.string().min(32),
+  'auth.provisioning.defaultTeamId':     z.string(),
 
   // ── SMTP ─────────────────────────────────────────────────────────────────
   'smtp.host':   z.string().min(1),

@@ -16,7 +16,6 @@ import {
   type MilestoneForSync,
   type SyncContext,
 } from '@luke/calendar';
-import type { PlanningSectionKey } from '@luke/core';
 
 import { getConfig } from '../lib/configManager.js';
 
@@ -69,7 +68,7 @@ type MilestoneRow = {
   allDay: boolean;
   status: string;
   publishExternally: boolean;
-  visibilities: { sectionKey: string }[];
+  visibilities: { companyFunctionId: string }[];
 };
 
 function mapMilestone(m: MilestoneRow): MilestoneForSync {
@@ -82,7 +81,7 @@ function mapMilestone(m: MilestoneRow): MilestoneForSync {
     allDay: m.allDay,
     status: m.status,
     publishExternally: m.publishExternally,
-    visibleSectionKeys: m.visibilities.map(v => v.sectionKey as PlanningSectionKey),
+    visibilityFunctionIds: m.visibilities.map(v => v.companyFunctionId),
   };
 }
 
@@ -92,9 +91,12 @@ export async function getMilestoneForSync(
 ): Promise<MilestoneForSync> {
   const m = await prisma.calendarMilestone.findUniqueOrThrow({
     where: { id: milestoneId },
-    include: { visibilities: { select: { sectionKey: true } } },
+    include: { visibilities: { select: { functionId: true } } },
   });
-  return mapMilestone(m);
+  return mapMilestone({
+    ...m,
+    visibilities: m.visibilities.map(v => ({ companyFunctionId: v.functionId })),
+  });
 }
 
 // ─── SyncContext builder ──────────────────────────────────────────────────────
@@ -111,6 +113,12 @@ export async function buildSyncContext(
     },
   });
 
+  // Preload function names for human-readable calendar summaries
+  const functionNames = await prisma.companyFunction.findMany({
+    select: { id: true, name: true },
+  });
+  const functionNameMap = new Map(functionNames.map(f => [f.id, f.name]));
+
   const users = await prisma.user.findMany({
     where: { isActive: true },
     select: { email: true },
@@ -126,19 +134,23 @@ export async function buildSyncContext(
     seasonCode,
     allowedUserEmails,
 
-    getOrCreateBinding: async (sectionKey) => {
+    getOrCreateBinding: async (companyFunctionId) => {
       const existing = await prisma.googleCalendarBinding.findUnique({
-        where: { seasonCalendarId_sectionKey: { seasonCalendarId: calendarId, sectionKey } },
+        where: { seasonCalendarId_companyFunctionId: { seasonCalendarId: calendarId, companyFunctionId } },
       });
-      if (existing?.isProvisioned) return existing;
+      if (existing?.isProvisioned) return {
+        ...existing,
+        companyFunctionId: existing.companyFunctionId,
+      };
 
-      const summary = buildCalendarSummary(brandCode, seasonCode, sectionKey);
+      const functionLabel = functionNameMap.get(companyFunctionId) ?? companyFunctionId;
+      const summary = buildCalendarSummary(brandCode, seasonCode, functionLabel);
       const { id: googleCalendarId } = await createCalendar(summary);
       await syncCalendarReaders(googleCalendarId, allowedUserEmails);
 
       return prisma.googleCalendarBinding.upsert({
-        where: { seasonCalendarId_sectionKey: { seasonCalendarId: calendarId, sectionKey } },
-        create: { seasonCalendarId: calendarId, sectionKey, googleCalendarId, isProvisioned: true },
+        where: { seasonCalendarId_companyFunctionId: { seasonCalendarId: calendarId, companyFunctionId } },
+        create: { seasonCalendarId: calendarId, companyFunctionId, googleCalendarId, isProvisioned: true },
         update: { googleCalendarId, isProvisioned: true },
       });
     },
@@ -148,15 +160,15 @@ export async function buildSyncContext(
 
     upsertMapping: async (mapping) => {
       await prisma.googleEventMapping.upsert({
-        where: { milestoneId_sectionKey: { milestoneId: mapping.milestoneId, sectionKey: mapping.sectionKey } },
+        where: { milestoneId_companyFunctionId: { milestoneId: mapping.milestoneId, companyFunctionId: mapping.companyFunctionId } },
         create: { ...mapping, lastSyncedAt: new Date() },
         update: { ...mapping, lastSyncedAt: new Date() },
       });
     },
 
-    deleteMapping: async (milestoneId, sectionKey) => {
+    deleteMapping: async (milestoneId, companyFunctionId) => {
       await prisma.googleEventMapping.deleteMany({
-        where: { milestoneId, sectionKey },
+        where: { milestoneId, companyFunctionId },
       });
     },
   };
@@ -174,11 +186,14 @@ export async function syncOneMilestone(
 
   const m = await prisma.calendarMilestone.findUniqueOrThrow({
     where: { id: milestoneId },
-    include: { visibilities: { select: { sectionKey: true } } },
+    include: { visibilities: { select: { functionId: true } } },
   });
 
   const ctx = await buildSyncContext(m.calendarId, prisma);
-  await syncMilestone(mapMilestone(m), ctx);
+  await syncMilestone(
+    mapMilestone({ ...m, visibilities: m.visibilities.map(v => ({ companyFunctionId: v.functionId })) }),
+    ctx
+  );
   logger.info({ milestoneId }, 'Google Calendar sync completed');
 }
 
@@ -210,7 +225,7 @@ export async function reconcileCalendar(
 
   const milestones = await prisma.calendarMilestone.findMany({
     where: { calendarId },
-    include: { visibilities: { select: { sectionKey: true } } },
+    include: { visibilities: { select: { functionId: true } } },
   });
 
   if (milestones.length === 0) return { synced: 0, errors: 0 };
@@ -222,7 +237,10 @@ export async function reconcileCalendar(
 
   for (const m of milestones) {
     try {
-      await syncMilestone(mapMilestone(m), ctx);
+      await syncMilestone(
+        mapMilestone({ ...m, visibilities: m.visibilities.map(v => ({ companyFunctionId: v.functionId })) }),
+        ctx
+      );
       synced++;
     } catch (err) {
       errors++;

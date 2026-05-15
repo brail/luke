@@ -6,7 +6,6 @@ import {
   CalendarMilestoneBaseSchema,
   CloneSeasonCalendarInputSchema,
   MilestonePersonalNoteInputSchema,
-  PLANNING_SECTION_KEYS,
   SEASON_CALENDAR_STATUS,
   CALENDAR_MILESTONE_STATUS,
   CALENDAR_MILESTONE_TYPE,
@@ -105,7 +104,7 @@ export const seasonCalendarRouter = router({
     .input(z.object({
       seasonId: z.string().uuid(),
       brandIds: z.array(z.string().uuid()).min(1),
-      sectionKey: z.enum(PLANNING_SECTION_KEYS).optional(),
+      functionId: z.string().uuid().optional(),
     }))
     .query(async ({ input, ctx }) => {
       const allowedBrandIds = await filterAllowedBrandIds(
@@ -114,7 +113,7 @@ export const seasonCalendarRouter = router({
         ctx.prisma
       );
       if (allowedBrandIds.length === 0) return [];
-      return listMilestonesDb(input.seasonId, allowedBrandIds, ctx.session.user.id, ctx.prisma, input.sectionKey);
+      return listMilestonesDb(input.seasonId, allowedBrandIds, ctx.session.user.id, ctx.prisma, input.functionId);
     }),
 
   // ─── Milestone mutations ────────────────────────────────────────────────────
@@ -132,7 +131,7 @@ export const seasonCalendarRouter = router({
       await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
 
       const result = await createMilestone(input, ctx.prisma);
-      await logAudit(ctx, { action: 'CALENDAR_MILESTONE_CREATE', targetType: 'CalendarMilestone', targetId: result.id, result: 'SUCCESS', metadata: { calendarId: input.calendarId, ownerSectionKey: input.ownerSectionKey } });
+      await logAudit(ctx, { action: 'CALENDAR_MILESTONE_CREATE', targetType: 'CalendarMilestone', targetId: result.id, result: 'SUCCESS', metadata: { calendarId: input.calendarId, ownerFunctionId: input.ownerFunctionId } });
       syncOneMilestone(result.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on create'));
       return result;
     }),
@@ -295,8 +294,8 @@ export const seasonCalendarRouter = router({
       templateId: z.string().uuid(),
       title: z.string().min(1).max(200),
       type: z.enum(CALENDAR_MILESTONE_TYPE),
-      ownerSectionKey: z.enum(PLANNING_SECTION_KEYS),
-      visibleSectionKeys: z.array(z.enum(PLANNING_SECTION_KEYS)).min(1),
+      ownerFunctionId: z.string().uuid(),
+      visibilityFunctionIds: z.array(z.string().uuid()).min(1),
       offsetDays: z.number().int(),
       durationDays: z.number().int().min(0).default(0),
       publishExternally: z.boolean().default(true),
@@ -315,8 +314,8 @@ export const seasonCalendarRouter = router({
       id: z.string().uuid(),
       title: z.string().min(1).max(200).optional(),
       type: z.enum(CALENDAR_MILESTONE_TYPE).optional(),
-      ownerSectionKey: z.enum(PLANNING_SECTION_KEYS).optional(),
-      visibleSectionKeys: z.array(z.enum(PLANNING_SECTION_KEYS)).min(1).optional(),
+      ownerFunctionId: z.string().uuid().optional(),
+      visibilityFunctionIds: z.array(z.string().uuid()).min(1).optional(),
       offsetDays: z.number().int().optional(),
       durationDays: z.number().int().min(0).optional(),
       publishExternally: z.boolean().optional(),

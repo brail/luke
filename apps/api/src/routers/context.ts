@@ -120,29 +120,9 @@ export const contextRouter = router({
           brandIds: z.array(z.string().uuid()),
         })
       )
-      .mutation(async ({ ctx, input }) => {
-        const { userId, brandIds } = input;
-
-        await ctx.prisma.$transaction([
-          ctx.prisma.userBrandAccess.deleteMany({ where: { userId } }),
-          ...(brandIds.length > 0
-            ? [
-                ctx.prisma.userBrandAccess.createMany({
-                  data: brandIds.map(brandId => ({ userId, brandId })),
-                }),
-              ]
-            : []),
-          // Rimuovi accessi stagioni per brand non più consentiti
-          ctx.prisma.userSeasonAccess.deleteMany({
-            where: {
-              userId,
-              ...(brandIds.length > 0
-                ? { brandId: { notIn: brandIds } }
-                : {}),
-            },
-          }),
-        ]);
-
+      // Brand access is now managed through team brand scopes — this endpoint is a no-op.
+      // Use team management endpoints to control brand visibility per team.
+      .mutation(async () => {
         return { ok: true };
       }),
 

@@ -33,18 +33,28 @@ export interface ContextResult {
 }
 
 /**
- * Restituisce i brand ID consentiti per un utente.
- * Se l'utente non ha restrizioni, restituisce null (= tutti i brand).
+ * Restituisce i brand ID consentiti per un utente tramite team membership.
+ * Se l'utente non ha team o i suoi team non hanno brand scope → null (tutti i brand).
+ * Se tutti i team dell'utente hanno brand scope → unione degli ID consentiti.
  */
 export async function getUserAllowedBrandIds(
   userId: string,
   prisma: PrismaClient
 ): Promise<string[] | null> {
-  const rows = await prisma.userBrandAccess.findMany({
+  const memberships = await prisma.companyTeamMembership.findMany({
     where: { userId },
-    select: { brandId: true },
+    include: { team: { include: { brandScopes: true } } },
   });
-  return rows.length > 0 ? rows.map(r => r.brandId) : null;
+
+  if (memberships.length === 0) return null;
+
+  const brandIds = new Set<string>();
+  for (const m of memberships) {
+    if (m.team.brandScopes.length === 0) return null; // unrestricted team
+    for (const bs of m.team.brandScopes) brandIds.add(bs.brandId);
+  }
+
+  return brandIds.size > 0 ? [...brandIds] : null;
 }
 
 /**
