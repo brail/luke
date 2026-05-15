@@ -127,6 +127,20 @@ export function buildTempCollectionRowPictureUploadUrl(
 }
 
 /**
+ * Builds URL for company logo upload (singleton profile — no ID)
+ */
+export function buildCompanyLogoUploadUrl(options: UrlOptions = {}): string {
+  return buildApiUrl('/upload/company-logo', options);
+}
+
+/**
+ * Builds presigned download/view URL for company logo
+ */
+export function buildCompanyLogoUrl(logoKey: string, options: UrlOptions = {}): string {
+  return buildApiUrl(`/api/storage/company-assets/${encodeURIComponent(logoKey)}`, options);
+}
+
+/**
  * Builds URL for specsheet image upload
  */
 export function buildSpecsheetImageUploadUrl(

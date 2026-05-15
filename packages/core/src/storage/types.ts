@@ -23,7 +23,8 @@ export type StorageBucket =
   | 'assets'
   | 'brand-logos'
   | 'collection-row-pictures'
-  | 'merchandising-specsheet-images';
+  | 'merchandising-specsheet-images'
+  | 'company-assets';
 
 /**
  * Metadati di un file memorizzato

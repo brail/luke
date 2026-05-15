@@ -42,6 +42,7 @@ export const localStorageConfigSchema = z.object({
         'brand-logos',
         'collection-row-pictures',
         'merchandising-specsheet-images',
+        'company-assets',
       ])
     )
     .default([
@@ -51,6 +52,7 @@ export const localStorageConfigSchema = z.object({
       'brand-logos',
       'collection-row-pictures',
       'merchandising-specsheet-images',
+      'company-assets',
     ]),
 
   /**
@@ -114,5 +116,6 @@ export function isValidBucket(bucket: string): bucket is StorageBucket {
     'brand-logos',
     'collection-row-pictures',
     'merchandising-specsheet-images',
+    'company-assets',
   ].includes(bucket);
 }

@@ -124,10 +124,7 @@ export const SECTION_LABELS: Record<Section, string> = {
   sales: 'Vendite',
   'sales.statistics': '↳ Statistiche',
   planning: 'Pianificazione',
-  'planning.sales': '↳ Vendite',
-  'planning.product': '↳ Prodotto',
-  'planning.sourcing': '↳ Sourcing',
-  'planning.merchandising': '↳ Merchandising',
+  'settings.company': '↳ Azienda',
 };
 
 // Deriva direttamente da sectionEnum — mai duplicare manualmente

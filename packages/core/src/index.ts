@@ -26,6 +26,8 @@ export * from './schemas/pricing';
 export * from './schemas/collectionLayout';
 export * from './schemas/merchandisingPlan';
 export * from './schemas/seasonCalendar';
+export * from './schemas/company';
+export * from './schemas/companyProfile';
 export * from './schemas/vendor';
 export * from './schemas/dashboard';
 
@@ -70,6 +72,8 @@ export {
   getApiBaseUrl,
   buildApiUrl,
   buildBrandLogoUploadUrl,
+  buildCompanyLogoUploadUrl,
+  buildCompanyLogoUrl,
   buildTempBrandLogoUploadUrl,
   buildCollectionRowPictureUploadUrl,
   buildTempCollectionRowPictureUploadUrl,

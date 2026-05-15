@@ -32,6 +32,9 @@ export const RESOURCES = {
   MERCHANDISING_PLAN: 'merchandising_plan',
   SEASON_CALENDAR: 'season_calendar',
   MILESTONE_TEMPLATE: 'milestone_template',
+  COMPANY_PROFILE: 'company_profile',
+  COMPANY_FUNCTION: 'company_function',
+  COMPANY_TEAM: 'company_team',
 } as const;
 
 export type Resource = (typeof RESOURCES)[keyof typeof RESOURCES];
@@ -97,6 +100,9 @@ export const VALID_RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
   [RESOURCES.MERCHANDISING_PLAN]: ['create', 'read', 'update', 'delete'] as const,
   [RESOURCES.SEASON_CALENDAR]: ['create', 'read', 'update', 'delete', 'sync', 'export'] as const,
   [RESOURCES.MILESTONE_TEMPLATE]: ['create', 'read', 'update', 'delete'] as const,
+  [RESOURCES.COMPANY_PROFILE]: ['read', 'update'] as const,
+  [RESOURCES.COMPANY_FUNCTION]: ['create', 'read', 'update', 'delete'] as const,
+  [RESOURCES.COMPANY_TEAM]: ['create', 'read', 'update', 'delete'] as const,
 } as const;
 
 /**
@@ -140,6 +146,10 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'season_calendar:export',
     // Milestone Template: solo lettura
     'milestone_template:read',
+    // Company structure: solo lettura (per dropdown e badge)
+    'company_profile:read',
+    'company_function:read',
+    'company_team:read',
   ],
   viewer: [
     // Brands: solo lettura
@@ -169,6 +179,10 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'season_calendar:export',
     // Milestone Template: solo lettura
     'milestone_template:read',
+    // Company structure: solo lettura
+    'company_profile:read',
+    'company_function:read',
+    'company_team:read',
   ],
 };
 

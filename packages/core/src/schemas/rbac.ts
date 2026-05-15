@@ -37,10 +37,8 @@ export const sectionEnum = z.enum([
   'sales.statistics',
   // Pianificazione stagionale (calendario milestones)
   'planning',
-  'planning.sales',
-  'planning.product',
-  'planning.sourcing',
-  'planning.merchandising',
+  // Azienda
+  'settings.company',
 ]);
 export type Section = z.infer<typeof sectionEnum>;
 
@@ -74,10 +72,7 @@ export const SECTION_TO_PERMISSION: Record<Section, string> = {
   sales: 'sales:read',
   'sales.statistics': 'sales:read',
   planning: 'season_calendar:read',
-  'planning.sales': 'season_calendar:read',
-  'planning.product': 'season_calendar:read',
-  'planning.sourcing': 'season_calendar:read',
-  'planning.merchandising': 'season_calendar:read',
+  'settings.company': 'company_profile:read',
 } as const;
 
 /**
@@ -125,10 +120,7 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       sales: true,
       'sales.statistics': true,
       planning: true,
-      'planning.sales': true,
-      'planning.product': true,
-      'planning.sourcing': true,
-      'planning.merchandising': true,
+      'settings.company': true,
     },
     editor: {
       dashboard: true,
@@ -156,10 +148,7 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       sales: true,
       'sales.statistics': true,
       planning: true,
-      'planning.sales': true,
-      'planning.product': true,
-      'planning.sourcing': true,
-      'planning.merchandising': true,
+      'settings.company': false,
     },
     viewer: {
       dashboard: true,
@@ -187,10 +176,7 @@ export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
       sales: false,
       'sales.statistics': false,
       planning: true,
-      'planning.sales': true,
-      'planning.product': true,
-      'planning.sourcing': true,
-      'planning.merchandising': true,
+      'settings.company': false,
     },
   };
 
