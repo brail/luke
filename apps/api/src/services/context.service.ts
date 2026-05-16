@@ -42,7 +42,7 @@ export async function getUserAllowedBrandIds(
   prisma: PrismaClient
 ): Promise<string[] | null> {
   const memberships = await prisma.companyTeamMembership.findMany({
-    where: { userId },
+    where: { userId, team: { isActive: true } },
     include: { team: { include: { brandScopes: true } } },
   });
 

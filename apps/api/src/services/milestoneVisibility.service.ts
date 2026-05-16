@@ -15,7 +15,7 @@ export async function getVisibleMilestoneIdsForUser(
 
   // Collect all functionIds from user's team memberships
   const memberships = await prisma.companyTeamMembership.findMany({
-    where: { userId },
+    where: { userId, team: { isActive: true } },
     select: { team: { select: { functionId: true } } },
   });
   const functionIds = [...new Set(memberships.map(m => m.team.functionId))];

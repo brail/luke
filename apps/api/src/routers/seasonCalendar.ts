@@ -10,6 +10,8 @@ import {
   SEASON_CALENDAR_STATUS,
   CALENDAR_MILESTONE_STATUS,
   CALENDAR_MILESTONE_TYPE,
+  hasPermission,
+  type Role,
 } from '@luke/core';
 
 import { assertFunctionMemberOrAdmin } from './company.js';
@@ -110,11 +112,9 @@ export const seasonCalendarRouter = router({
       functionId: z.string().uuid().optional(),
     }))
     .query(async ({ input, ctx }) => {
-      const allowedBrandIds = await filterAllowedBrandIds(
-        ctx.session.user.id,
-        input.brandIds,
-        ctx.prisma
-      );
+      const allowedBrandIds = hasPermission({ role: ctx.session.user.role as Role }, '*:*')
+        ? input.brandIds
+        : await filterAllowedBrandIds(ctx.session.user.id, input.brandIds, ctx.prisma);
       if (allowedBrandIds.length === 0) return [];
       return listMilestonesDb(input.seasonId, allowedBrandIds, ctx.session.user.id, ctx.prisma, input.functionId);
     }),
