@@ -43,12 +43,5 @@ export async function seedCompanyStructure(
     create: { key: 'auth.provisioning.defaultTeamId', value: '', isEncrypted: false },
   });
 
-  console.log('   Company functions, teams, and profile seeded');
-
-  // TODO: assign real users to main teams once userId values are known
-  // await prisma.companyTeamMembership.create({
-  //   data: { teamId: '<mainTeamId>', userId: '<userId>' },
-  // });
-
   return functionIds;
 }

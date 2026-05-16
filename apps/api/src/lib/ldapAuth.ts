@@ -8,6 +8,7 @@ import type { Entry } from 'ldapts';
 import pino from 'pino';
 
 import {
+  getConfig,
   getLdapConfig,
   getLdapResilienceConfig,
   type LdapConfig,
@@ -410,22 +411,16 @@ async function createOrUpdateUser(
       return newUser;
     });
 
-    // Auto-assign to default team if configured
-    const defaultTeamConfig = await prisma.appConfig.findUnique({
-      where: { key: 'auth.provisioning.defaultTeamId' },
-    });
-    const defaultTeamId = defaultTeamConfig?.value?.trim() || null;
+    // Auto-assign to default team if configured (graceful: failure leaves user without team)
+    const defaultTeamId = (await getConfig(prisma, 'auth.provisioning.defaultTeamId', false))?.trim() || null;
     if (defaultTeamId) {
-      const team = await prisma.companyTeam.findFirst({
-        where: { id: defaultTeamId, isActive: true },
-      });
-      if (team) {
+      try {
         await prisma.companyTeamMembership.create({
-          data: { teamId: team.id, userId: user.id },
+          data: { teamId: defaultTeamId, userId: user.id },
         });
         logger.info({ defaultTeamId, userId: user.id }, 'Auto-assigned LDAP user to default team');
-      } else {
-        logger.warn({ defaultTeamId }, 'auth.provisioning.defaultTeamId team not found or inactive');
+      } catch (err) {
+        logger.warn({ defaultTeamId, userId: user.id, err }, 'Auto-team assignment failed, user created without team');
       }
     }
   }

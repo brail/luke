@@ -113,12 +113,6 @@ export async function buildSyncContext(
     },
   });
 
-  // Preload function names for human-readable calendar summaries
-  const functionNames = await prisma.companyFunction.findMany({
-    select: { id: true, name: true },
-  });
-  const functionNameMap = new Map(functionNames.map(f => [f.id, f.name]));
-
   const users = await prisma.user.findMany({
     where: { isActive: true },
     select: { email: true },
@@ -138,13 +132,13 @@ export async function buildSyncContext(
       const existing = await prisma.googleCalendarBinding.findUnique({
         where: { seasonCalendarId_companyFunctionId: { seasonCalendarId: calendarId, companyFunctionId } },
       });
-      if (existing?.isProvisioned) return {
-        ...existing,
-        companyFunctionId: existing.companyFunctionId,
-      };
+      if (existing?.isProvisioned) return existing;
 
-      const functionLabel = functionNameMap.get(companyFunctionId) ?? companyFunctionId;
-      const summary = buildCalendarSummary(brandCode, seasonCode, functionLabel);
+      const fn = await prisma.companyFunction.findUnique({
+        where: { id: companyFunctionId },
+        select: { name: true },
+      });
+      const summary = buildCalendarSummary(brandCode, seasonCode, fn?.name ?? companyFunctionId);
       const { id: googleCalendarId } = await createCalendar(summary);
       await syncCalendarReaders(googleCalendarId, allowedUserEmails);
 

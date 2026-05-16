@@ -10,6 +10,8 @@ import {
   CompanyTeamUpdateInputSchema,
   CompanyTeamMembershipInputSchema,
   CompanyTeamMembershipRemoveInputSchema,
+  hasPermission,
+  type Role,
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog.js';
@@ -39,13 +41,11 @@ const companyProfileRouter = router({
     .use(withRateLimit('companyStructureMutations'))
     .input(CompanyProfileInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const profile = await ctx.prisma.$transaction(async tx => {
-        return tx.companyProfile.upsert({
-          where: { id: SINGLETON_ID },
-          create: { id: SINGLETON_ID, ...input },
-          update: input,
-        });
-      }, { timeout: 15000 });
+      const profile = await ctx.prisma.companyProfile.upsert({
+        where: { id: SINGLETON_ID },
+        create: { id: SINGLETON_ID, ...input },
+        update: input,
+      });
 
       await logAudit(ctx, {
         action: 'COMPANY_PROFILE_UPDATED',
@@ -120,7 +120,7 @@ const companyFunctionRouter = router({
     .input(CompanyFunctionInputSchema)
     .mutation(async ({ ctx, input }) => {
       const fn = await ctx.prisma.$transaction(async tx => {
-        return createFunctionWithMainTeam(input, tx as any);
+        return createFunctionWithMainTeam(input, tx as PrismaTx);
       }, { timeout: 15000 });
 
       await logAudit(ctx, {
@@ -189,23 +189,24 @@ const companyFunctionRouter = router({
       });
       if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'Function not found' });
 
-      const activeMilestones = await ctx.prisma.calendarMilestone.count({
-        where: {
-          ownerFunctionId: input.id,
-          status: { not: 'CANCELLED' },
-        },
-      });
-      if (activeMilestones > 0) {
-        throw new TRPCError({
-          code: 'PRECONDITION_FAILED',
-          message: `Cannot deactivate: ${activeMilestones} active milestone(s) owned by this function`,
+      const fn = await ctx.prisma.$transaction(async tx => {
+        const activeMilestones = await tx.calendarMilestone.count({
+          where: {
+            ownerFunctionId: input.id,
+            status: { not: 'CANCELLED' },
+          },
         });
-      }
-
-      const fn = await ctx.prisma.companyFunction.update({
-        where: { id: input.id },
-        data: { isActive: false },
-      });
+        if (activeMilestones > 0) {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: `Cannot deactivate: ${activeMilestones} active milestone(s) owned by this function`,
+          });
+        }
+        return tx.companyFunction.update({
+          where: { id: input.id },
+          data: { isActive: false },
+        });
+      }, { timeout: 15000 });
 
       await logAudit(ctx, {
         action: 'COMPANY_FUNCTION_DEACTIVATED',
@@ -295,13 +296,6 @@ const companyTeamRouter = router({
 
       const existing = await ctx.prisma.companyTeam.findUnique({ where: { id } });
       if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'Team not found' });
-
-      if ('isMain' in data && data.isMain !== undefined && data.isMain !== existing.isMain) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'isMain flag cannot be changed after creation',
-        });
-      }
 
       const team = await ctx.prisma.$transaction(async tx => {
         const updated = await tx.companyTeam.update({ where: { id }, data });
@@ -408,7 +402,7 @@ async function assertFunctionMemberOrAdmin(
   ctx: { session: { user: { id: string; role: string } }; prisma: import('@prisma/client').PrismaClient },
   functionId: string
 ) {
-  if (ctx.session.user.role === 'admin') return;
+  if (hasPermission({ role: ctx.session.user.role as Role }, 'company_function:update')) return;
   const membership = await ctx.prisma.companyTeamMembership.findFirst({
     where: { userId: ctx.session.user.id, team: { functionId, isActive: true } },
   });

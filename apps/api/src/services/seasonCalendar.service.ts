@@ -317,17 +317,15 @@ export async function createTemplateItem(
   prisma: PrismaClient
 ) {
   const { visibilityFunctionIds, ...itemData } = data;
-  return prisma.$transaction(async tx => {
-    const item = await tx.milestoneTemplateItem.create({
-      data: { templateId, ...itemData },
-    });
-    await tx.milestoneTemplateItemVisibility.createMany({
-      data: visibilityFunctionIds.map(functionId => ({ templateItemId: item.id, functionId })),
-    });
-    return tx.milestoneTemplateItem.findUniqueOrThrow({
-      where: { id: item.id },
-      include: { visibilities: true },
-    });
+  return prisma.milestoneTemplateItem.create({
+    data: {
+      templateId,
+      ...itemData,
+      visibilities: {
+        createMany: { data: visibilityFunctionIds.map(functionId => ({ functionId })) },
+      },
+    },
+    include: { visibilities: true },
   });
 }
 

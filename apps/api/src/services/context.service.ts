@@ -50,11 +50,12 @@ export async function getUserAllowedBrandIds(
 
   const brandIds = new Set<string>();
   for (const m of memberships) {
-    if (m.team.brandScopes.length === 0) return null; // unrestricted team
+    // Any team without brand scopes grants unrestricted access (most-permissive union policy)
+    if (m.team.brandScopes.length === 0) return null;
     for (const bs of m.team.brandScopes) brandIds.add(bs.brandId);
   }
 
-  return brandIds.size > 0 ? [...brandIds] : null;
+  return [...brandIds];
 }
 
 /**
