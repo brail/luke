@@ -14,9 +14,9 @@ interface Milestone {
   endAt?: Date | string | null;
   status: string;
   type: string;
-  ownerSectionKey: string;
+  ownerFunctionId: string;
   brandId?: string | null;
-  visibilities: { sectionKey: string }[];
+  visibilities: { functionId: string }[];
 }
 
 interface Props {

@@ -20,6 +20,7 @@ export function useMenuAccess() {
     // Settings: ogni sub-item richiede parent + sottosezione
     const settingsItems = {
       users: s.settings && s['settings.users'],
+      company: s.settings && s['settings.company'],
       storage: s.settings && s['settings.storage'],
       mail: s.settings && s['settings.mail'],
       ldap: s.settings && s['settings.ldap'],
@@ -51,12 +52,7 @@ export function useMenuAccess() {
       merchandisingPlan: s.product && s['product.merchandising_plan'],
     };
 
-    // Calendario: visibile se l'utente ha accesso ad almeno una sezione planning.*
-    const showCalendar =
-      s['planning.sales'] ||
-      s['planning.product'] ||
-      s['planning.sourcing'] ||
-      s['planning.merchandising'];
+    const showCalendar = s['planning'];
 
     return {
       // Singole voci

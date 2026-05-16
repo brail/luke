@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 
 import { Badge } from '../../../../components/ui/badge';
 import { cn } from '../../../../lib/utils';
-import { SECTION_LABELS, STATUS_VARIANT } from '../constants';
+import { STATUS_VARIANT } from '../constants';
 import { brandColor } from '../utils';
 
 interface Milestone {
@@ -14,18 +14,19 @@ interface Milestone {
   endAt?: Date | string | null;
   status: string;
   type: string;
-  ownerSectionKey: string;
+  ownerFunctionId: string;
   brandId?: string | null;
-  visibilities: { sectionKey: string }[];
+  visibilities: { functionId: string }[];
 }
 
 interface Props {
   milestones: Milestone[];
   onMilestoneClick: (id: string) => void;
   activeBrandId?: string;
+  functionsById: Record<string, string>;
 }
 
-export function MilestoneTimeline({ milestones, onMilestoneClick, activeBrandId }: Props) {
+export function MilestoneTimeline({ milestones, onMilestoneClick, activeBrandId, functionsById }: Props) {
   const sorted = useMemo(
     () => [...milestones].sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime()),
     [milestones]
@@ -36,7 +37,7 @@ export function MilestoneTimeline({ milestones, onMilestoneClick, activeBrandId 
       <div className="grid grid-cols-[120px_1fr_120px_120px] gap-x-4 px-3 py-2 text-xs font-medium text-muted-foreground border-b">
         <span>Data</span>
         <span>Milestone</span>
-        <span>Sezione</span>
+        <span>Funzione</span>
         <span>Stato</span>
       </div>
       {sorted.map(m => {
@@ -61,7 +62,7 @@ export function MilestoneTimeline({ milestones, onMilestoneClick, activeBrandId 
             <span className="truncate font-medium">{m.title}</span>
           </span>
           <span className="text-xs text-muted-foreground truncate">
-            {SECTION_LABELS[m.ownerSectionKey] ?? m.ownerSectionKey}
+            {functionsById[m.ownerFunctionId] ?? m.ownerFunctionId}
           </span>
           <span>
             <Badge variant={STATUS_VARIANT[m.status] ?? 'outline'} className="text-xs">

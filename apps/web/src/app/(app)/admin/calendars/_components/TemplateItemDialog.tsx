@@ -5,7 +5,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
-import { PLANNING_SECTION_KEYS, CALENDAR_MILESTONE_TYPE, type PlanningSectionKey } from '@luke/core';
+import { CALENDAR_MILESTONE_TYPE } from '@luke/core';
 
 import { Button } from '../../../../../components/ui/button';
 import { Checkbox } from '../../../../../components/ui/checkbox';
@@ -28,7 +28,7 @@ import {
 import { Textarea } from '../../../../../components/ui/textarea';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
-import { SECTION_LABELS, TYPE_LABELS } from '../../../calendar/constants';
+import { TYPE_LABELS } from '../../../calendar/constants';
 
 type TemplateItem = RouterOutputs['seasonCalendar']['listTemplates'][number]['items'][number];
 
@@ -38,35 +38,38 @@ interface Props {
   onSaved: () => void;
   templateId: string;
   item?: TemplateItem | null;
+  availableFunctions: { id: string; name: string }[];
 }
 
 interface FormValues {
   title: string;
   type: (typeof CALENDAR_MILESTONE_TYPE)[number];
-  ownerSectionKey: PlanningSectionKey;
-  visibleSectionKeys: PlanningSectionKey[];
+  ownerFunctionId: string;
+  visibilityFunctionIds: string[];
   offsetDays: number;
   durationDays: number;
   publishExternally: boolean;
   description: string;
 }
 
-export function TemplateItemDialog({ open, onClose, onSaved, templateId, item }: Props) {
+export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, availableFunctions }: Props) {
   const isEdit = !!item;
+  const defaultOwner = availableFunctions[0]?.id ?? '';
   const { register, handleSubmit, reset, watch, setValue, control, formState: { errors } } = useForm<FormValues>();
 
-  const ownerSectionKey = watch('ownerSectionKey');
-  const visibleSectionKeys = watch('visibleSectionKeys') ?? [];
+  const ownerFunctionId = watch('ownerFunctionId');
+  const visibilityFunctionIds = watch('visibilityFunctionIds') ?? [];
 
   useEffect(() => {
     if (open) {
+      const owner = item?.ownerFunctionId ?? defaultOwner;
       reset({
         title: item?.title ?? '',
         type: item?.type ?? 'MILESTONE',
-        ownerSectionKey: (item?.ownerSectionKey as PlanningSectionKey) ?? 'planning.sales',
-        visibleSectionKeys: item
-          ? (item.visibleSectionKeys as PlanningSectionKey[])
-          : ['planning.sales'],
+        ownerFunctionId: owner,
+        visibilityFunctionIds: item
+          ? (item.visibilities?.map(v => v.functionId) ?? [owner])
+          : [owner],
         offsetDays: item?.offsetDays ?? 0,
         durationDays: item?.durationDays ?? 0,
         publishExternally: item?.publishExternally ?? true,
@@ -75,11 +78,12 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item }:
     }
   }, [open, item?.id]);
 
+  // Keep owner always in visibility list
   useEffect(() => {
-    if (ownerSectionKey && !visibleSectionKeys.includes(ownerSectionKey)) {
-      setValue('visibleSectionKeys', [...visibleSectionKeys, ownerSectionKey]);
+    if (ownerFunctionId && !visibilityFunctionIds.includes(ownerFunctionId)) {
+      setValue('visibilityFunctionIds', [...visibilityFunctionIds, ownerFunctionId]);
     }
-  }, [ownerSectionKey]); // intentional: only sync when owner changes, not on visibleSectionKeys change
+  }, [ownerFunctionId]); // intentional: only sync when owner changes
 
   const createMutation = trpc.seasonCalendar.createTemplateItem.useMutation({
     onSuccess: () => { toast.success('Item aggiunto'); onSaved(); },
@@ -97,8 +101,8 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item }:
     const payload = {
       title: values.title.trim(),
       type: values.type,
-      ownerSectionKey: values.ownerSectionKey,
-      visibleSectionKeys: values.visibleSectionKeys,
+      ownerFunctionId: values.ownerFunctionId,
+      visibilityFunctionIds: values.visibilityFunctionIds,
       offsetDays: Number(values.offsetDays),
       durationDays: Number(values.durationDays),
       publishExternally: values.publishExternally,
@@ -111,12 +115,12 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item }:
     }
   };
 
-  const toggleVisible = (sk: PlanningSectionKey) => {
-    if (sk === ownerSectionKey) return; // owner locked
-    const current = visibleSectionKeys;
+  const toggleVisible = (fnId: string) => {
+    if (fnId === ownerFunctionId) return;
+    const current = visibilityFunctionIds;
     setValue(
-      'visibleSectionKeys',
-      current.includes(sk) ? current.filter(s => s !== sk) : [...current, sk]
+      'visibilityFunctionIds',
+      current.includes(fnId) ? current.filter(s => s !== fnId) : [...current, fnId]
     );
   };
 
@@ -157,16 +161,16 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item }:
             </div>
 
             <div className="space-y-1">
-              <Label>Sezione owner *</Label>
+              <Label>Funzione owner *</Label>
               <Controller
-                name="ownerSectionKey"
+                name="ownerFunctionId"
                 control={control}
                 render={({ field }) => (
                   <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="Seleziona…" /></SelectTrigger>
                     <SelectContent>
-                      {PLANNING_SECTION_KEYS.map(sk => (
-                        <SelectItem key={sk} value={sk}>{SECTION_LABELS[sk]}</SelectItem>
+                      {availableFunctions.map(fn => (
+                        <SelectItem key={fn.id} value={fn.id}>{fn.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -199,14 +203,14 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item }:
           <div className="space-y-2">
             <Label>Visibile a</Label>
             <div className="flex flex-wrap gap-3">
-              {PLANNING_SECTION_KEYS.map(sk => (
-                <label key={sk} className="flex items-center gap-1.5 cursor-pointer">
+              {availableFunctions.map(fn => (
+                <label key={fn.id} className="flex items-center gap-1.5 cursor-pointer">
                   <Checkbox
-                    checked={visibleSectionKeys.includes(sk)}
-                    onCheckedChange={() => toggleVisible(sk)}
-                    disabled={sk === ownerSectionKey}
+                    checked={visibilityFunctionIds.includes(fn.id)}
+                    onCheckedChange={() => toggleVisible(fn.id)}
+                    disabled={fn.id === ownerFunctionId}
                   />
-                  <span className="text-sm">{SECTION_LABELS[sk]}</span>
+                  <span className="text-sm">{fn.name}</span>
                 </label>
               ))}
             </div>

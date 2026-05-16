@@ -13,7 +13,7 @@ import { Card, CardContent } from '../../../../components/ui/card';
 import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
-import { SECTION_LABELS, TYPE_LABELS } from '../../calendar/constants';
+import { TYPE_LABELS } from '../../calendar/constants';
 
 import { TemplateDialog } from './_components/TemplateDialog';
 import { TemplateItemDialog } from './_components/TemplateItemDialog';
@@ -34,6 +34,9 @@ export default function CalendarTemplatesPage() {
   const [deletingItem, setDeletingItem] = useState<TemplateItem | null>(null);
 
   const { data: templates = [], isLoading, refetch } = trpc.seasonCalendar.listTemplates.useQuery();
+  const { data: functionsData = [] } = trpc.company.function.list.useQuery();
+  const availableFunctions = functionsData.map(f => ({ id: f.id, name: f.name }));
+  const functionsById = Object.fromEntries(availableFunctions.map(f => [f.id, f.name]));
 
   const deleteTemplateMutation = trpc.seasonCalendar.deleteTemplate.useMutation({
     onSuccess: () => { toast.success('Template eliminato'); setDeletingTemplate(null); void refetch(); },
@@ -132,7 +135,7 @@ export default function CalendarTemplatesPage() {
                         <tr className="text-xs text-muted-foreground border-b bg-muted/30">
                           <th className="text-left px-4 py-2 font-medium">Titolo</th>
                           <th className="text-left px-4 py-2 font-medium">Tipo</th>
-                          <th className="text-left px-4 py-2 font-medium">Sezione</th>
+                          <th className="text-left px-4 py-2 font-medium">Funzione</th>
                           <th className="text-right px-4 py-2 font-medium">Offset</th>
                           <th className="text-right px-4 py-2 font-medium">Durata</th>
                           <th className="px-4 py-2" />
@@ -149,7 +152,7 @@ export default function CalendarTemplatesPage() {
                               {TYPE_LABELS[item.type] ?? item.type}
                             </td>
                             <td className="px-4 py-2 text-muted-foreground">
-                              {SECTION_LABELS[item.ownerSectionKey] ?? item.ownerSectionKey}
+                              {functionsById[item.ownerFunctionId] ?? item.ownerFunctionId}
                             </td>
                             <td className="px-4 py-2 text-right tabular-nums">
                               {item.offsetDays > 0 ? `+${item.offsetDays}` : item.offsetDays}g
@@ -226,6 +229,7 @@ export default function CalendarTemplatesPage() {
         item={itemDialog.item}
         onClose={() => setItemDialog({ open: false, templateId: '' })}
         onSaved={() => { setItemDialog({ open: false, templateId: '' }); void refetch(); }}
+        availableFunctions={availableFunctions}
       />
 
       <ConfirmDialog

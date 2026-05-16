@@ -82,10 +82,7 @@ export function useSectionAccess() {
       sales: checkAccess('sales'),
       'sales.statistics': checkAccess('sales.statistics'),
       planning: checkAccess('planning'),
-      'planning.sales': checkAccess('planning.sales'),
-      'planning.product': checkAccess('planning.product'),
-      'planning.sourcing': checkAccess('planning.sourcing'),
-      'planning.merchandising': checkAccess('planning.merchandising'),
+      'settings.company': checkAccess('settings.company'),
     };
   }, [session?.user, userOverrides]);
 

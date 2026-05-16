@@ -3,8 +3,6 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { type PlanningSectionKey } from '@luke/core';
-
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
@@ -17,7 +15,7 @@ import {
 import { Textarea } from '../../../../components/ui/textarea';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
-import { SECTION_LABELS, TYPE_LABELS, STATUS_VARIANT } from '../constants';
+import { TYPE_LABELS, STATUS_VARIANT } from '../constants';
 import { brandColor } from '../utils';
 
 import { MilestoneDialog } from './MilestoneDialog';
@@ -31,10 +29,10 @@ interface Milestone {
   allDay: boolean;
   status: string;
   type: string;
-  ownerSectionKey: string;
+  ownerFunctionId: string;
   publishExternally: boolean;
   brandId?: string | null;
-  visibilities: { sectionKey: string }[];
+  visibilities: { functionId: string }[];
   notes?: { body: string }[];
 }
 
@@ -45,10 +43,11 @@ interface Props {
   onUpdated?: () => void;
   canUpdate: boolean;
   calendarId: string;
-  accessibleSections: PlanningSectionKey[];
+  availableFunctions: { id: string; name: string }[];
+  functionsById: Record<string, string>;
 }
 
-export function MilestoneDetailDrawer({ milestone, open, onClose, onUpdated, canUpdate, calendarId, accessibleSections }: Props) {
+export function MilestoneDetailDrawer({ milestone, open, onClose, onUpdated, canUpdate, calendarId, availableFunctions, functionsById }: Props) {
   const [noteBody, setNoteBody] = useState(milestone.notes?.[0]?.body ?? '');
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -98,7 +97,7 @@ export function MilestoneDetailDrawer({ milestone, open, onClose, onUpdated, can
             <div className="flex flex-wrap gap-1.5">
               <Badge variant="outline">{TYPE_LABELS[milestone.type] ?? milestone.type}</Badge>
               <Badge variant={STATUS_VARIANT[milestone.status] ?? 'outline'}>{milestone.status}</Badge>
-              <Badge variant="secondary">{SECTION_LABELS[milestone.ownerSectionKey] ?? milestone.ownerSectionKey}</Badge>
+              <Badge variant="secondary">{functionsById[milestone.ownerFunctionId] ?? milestone.ownerFunctionId}</Badge>
             </div>
           </SheetHeader>
 
@@ -122,13 +121,13 @@ export function MilestoneDetailDrawer({ milestone, open, onClose, onUpdated, can
               </div>
             )}
 
-            {/* Visible sections */}
+            {/* Visible functions */}
             <div>
-              <p className="text-sm font-medium text-muted-foreground mb-1">Sezioni coinvolte</p>
+              <p className="text-sm font-medium text-muted-foreground mb-1">Funzioni coinvolte</p>
               <div className="flex flex-wrap gap-1">
                 {milestone.visibilities.map(v => (
-                  <Badge key={v.sectionKey} variant="outline" className="text-xs">
-                    {SECTION_LABELS[v.sectionKey] ?? v.sectionKey}
+                  <Badge key={v.functionId} variant="outline" className="text-xs">
+                    {functionsById[v.functionId] ?? v.functionId}
                   </Badge>
                 ))}
               </div>
@@ -167,7 +166,7 @@ export function MilestoneDetailDrawer({ milestone, open, onClose, onUpdated, can
           onClose={() => setEditOpen(false)}
           onSaved={() => { setEditOpen(false); onUpdated?.(); }}
           calendarId={calendarId}
-          accessibleSections={accessibleSections}
+          availableFunctions={availableFunctions}
           milestone={milestone}
         />
       )}

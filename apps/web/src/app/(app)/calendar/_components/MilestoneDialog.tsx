@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
-import { PLANNING_SECTION_KEYS, CALENDAR_MILESTONE_TYPE, CALENDAR_MILESTONE_STATUS, type PlanningSectionKey } from '@luke/core';
+import { CALENDAR_MILESTONE_TYPE, CALENDAR_MILESTONE_STATUS } from '@luke/core';
 
 import { Button } from '../../../../components/ui/button';
 import { Checkbox } from '../../../../components/ui/checkbox';
@@ -26,7 +26,7 @@ import {
 import { Textarea } from '../../../../components/ui/textarea';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
-import { SECTION_LABELS, TYPE_LABELS, STATUS_LABELS } from '../constants';
+import { TYPE_LABELS, STATUS_LABELS } from '../constants';
 
 
 interface ExistingMilestone {
@@ -38,9 +38,9 @@ interface ExistingMilestone {
   allDay: boolean;
   status: string;
   type: string;
-  ownerSectionKey: string;
+  ownerFunctionId: string;
   publishExternally: boolean;
-  visibilities: { sectionKey: string }[];
+  visibilities: { functionId: string }[];
 }
 
 interface Props {
@@ -48,7 +48,7 @@ interface Props {
   onClose: () => void;
   onSaved: () => void;
   calendarId: string;
-  accessibleSections: PlanningSectionKey[];
+  availableFunctions: { id: string; name: string }[];
   milestone?: ExistingMilestone;
 }
 
@@ -58,38 +58,38 @@ function toDateInput(val: Date | string | null | undefined): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function MilestoneDialog({ open, onClose, onSaved, calendarId, accessibleSections, milestone }: Props) {
+export function MilestoneDialog({ open, onClose, onSaved, calendarId, availableFunctions, milestone }: Props) {
   const isEdit = !!milestone;
 
-  const defaultOwner = (milestone?.ownerSectionKey ?? accessibleSections[0] ?? 'planning.sales') as PlanningSectionKey;
+  const defaultOwner = milestone?.ownerFunctionId ?? availableFunctions[0]?.id ?? '';
 
   const [title, setTitle] = useState(milestone?.title ?? '');
   const [description, setDescription] = useState(milestone?.description ?? '');
   const [type, setType] = useState<(typeof CALENDAR_MILESTONE_TYPE)[number]>((milestone?.type as (typeof CALENDAR_MILESTONE_TYPE)[number]) ?? 'MILESTONE');
   const [status, setStatus] = useState<(typeof CALENDAR_MILESTONE_STATUS)[number]>((milestone?.status as (typeof CALENDAR_MILESTONE_STATUS)[number]) ?? 'PLANNED');
-  const [ownerSectionKey, setOwnerSectionKey] = useState<PlanningSectionKey>(defaultOwner);
-  const [visibleSectionKeys, setVisibleSectionKeys] = useState<PlanningSectionKey[]>(
+  const [ownerFunctionId, setOwnerFunctionId] = useState<string>(defaultOwner);
+  const [visibilityFunctionIds, setVisibilityFunctionIds] = useState<string[]>(
     milestone
-      ? (milestone.visibilities.map(v => v.sectionKey) as PlanningSectionKey[])
-      : [defaultOwner]
+      ? milestone.visibilities.map(v => v.functionId)
+      : (defaultOwner ? [defaultOwner] : [])
   );
   const [startAt, setStartAt] = useState(toDateInput(milestone?.startAt));
   const [endAt, setEndAt] = useState(toDateInput(milestone?.endAt));
   const [allDay, setAllDay] = useState(milestone?.allDay ?? true);
   const [publishExternally, setPublishExternally] = useState(milestone?.publishExternally ?? false);
 
-  // Reset form when milestone changes (drawer opening different row)
+  // Reset form when milestone changes
   useEffect(() => {
     setTitle(milestone?.title ?? '');
     setDescription(milestone?.description ?? '');
     setType((milestone?.type as (typeof CALENDAR_MILESTONE_TYPE)[number]) ?? 'MILESTONE');
     setStatus((milestone?.status as (typeof CALENDAR_MILESTONE_STATUS)[number]) ?? 'PLANNED');
-    const owner = (milestone?.ownerSectionKey ?? accessibleSections[0] ?? 'planning.sales') as PlanningSectionKey;
-    setOwnerSectionKey(owner);
-    setVisibleSectionKeys(
+    const owner = milestone?.ownerFunctionId ?? availableFunctions[0]?.id ?? '';
+    setOwnerFunctionId(owner);
+    setVisibilityFunctionIds(
       milestone
-        ? (milestone.visibilities.map(v => v.sectionKey) as PlanningSectionKey[])
-        : [owner]
+        ? milestone.visibilities.map(v => v.functionId)
+        : (owner ? [owner] : [])
     );
     setStartAt(toDateInput(milestone?.startAt));
     setEndAt(toDateInput(milestone?.endAt));
@@ -97,16 +97,15 @@ export function MilestoneDialog({ open, onClose, onSaved, calendarId, accessible
     setPublishExternally(milestone?.publishExternally ?? false);
   }, [milestone?.id, open]);
 
-  // Ensure owner is always in visible keys
-  const handleOwnerChange = (val: PlanningSectionKey) => {
-    setOwnerSectionKey(val);
-    setVisibleSectionKeys(prev => prev.includes(val) ? prev : [...prev, val]);
+  const handleOwnerChange = (val: string) => {
+    setOwnerFunctionId(val);
+    setVisibilityFunctionIds(prev => prev.includes(val) ? prev : [...prev, val]);
   };
 
-  const toggleVisible = (sk: PlanningSectionKey) => {
-    if (sk === ownerSectionKey) return; // owner always included
-    setVisibleSectionKeys(prev =>
-      prev.includes(sk) ? prev.filter(k => k !== sk) : [...prev, sk]
+  const toggleVisible = (fnId: string) => {
+    if (fnId === ownerFunctionId) return; // owner always included
+    setVisibilityFunctionIds(prev =>
+      prev.includes(fnId) ? prev.filter(k => k !== fnId) : [...prev, fnId]
     );
   };
 
@@ -127,8 +126,8 @@ export function MilestoneDialog({ open, onClose, onSaved, calendarId, accessible
       toast.error('Titolo e data di inizio sono obbligatori');
       return;
     }
-    if (visibleSectionKeys.length === 0) {
-      toast.error('Seleziona almeno una sezione visibile');
+    if (visibilityFunctionIds.length === 0) {
+      toast.error('Seleziona almeno una funzione visibile');
       return;
     }
 
@@ -143,8 +142,8 @@ export function MilestoneDialog({ open, onClose, onSaved, calendarId, accessible
           description: description.trim() || undefined,
           type,
           status,
-          ownerSectionKey,
-          visibleSectionKeys,
+          ownerFunctionId,
+          visibilityFunctionIds,
           startAt: startIso,
           endAt: endIso,
           allDay,
@@ -158,8 +157,8 @@ export function MilestoneDialog({ open, onClose, onSaved, calendarId, accessible
         description: description.trim() || undefined,
         type: type as typeof CALENDAR_MILESTONE_TYPE[number],
         status: status as typeof CALENDAR_MILESTONE_STATUS[number],
-        ownerSectionKey,
-        visibleSectionKeys,
+        ownerFunctionId,
+        visibilityFunctionIds,
         startAt: startIso,
         endAt: endIso,
         allDay,
@@ -217,33 +216,33 @@ export function MilestoneDialog({ open, onClose, onSaved, calendarId, accessible
             </div>
           </div>
 
-          {/* Owner section */}
+          {/* Owner function */}
           <div className="space-y-1.5">
-            <Label>Sezione proprietaria *</Label>
-            <Select value={ownerSectionKey} onValueChange={v => handleOwnerChange(v as PlanningSectionKey)}>
+            <Label>Funzione proprietaria *</Label>
+            <Select value={ownerFunctionId} onValueChange={handleOwnerChange}>
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue placeholder="Seleziona funzione…" />
               </SelectTrigger>
               <SelectContent>
-                {accessibleSections.map(sk => (
-                  <SelectItem key={sk} value={sk}>{SECTION_LABELS[sk] ?? sk}</SelectItem>
+                {availableFunctions.map(fn => (
+                  <SelectItem key={fn.id} value={fn.id}>{fn.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          {/* Visible sections */}
+          {/* Visible functions */}
           <div className="space-y-1.5">
-            <Label>Sezioni visibili</Label>
+            <Label>Funzioni visibili</Label>
             <div className="flex flex-wrap gap-3">
-              {PLANNING_SECTION_KEYS.map(sk => (
-                <label key={sk} className="flex items-center gap-1.5 cursor-pointer">
+              {availableFunctions.map(fn => (
+                <label key={fn.id} className="flex items-center gap-1.5 cursor-pointer">
                   <Checkbox
-                    checked={visibleSectionKeys.includes(sk)}
-                    disabled={sk === ownerSectionKey}
-                    onCheckedChange={() => toggleVisible(sk)}
+                    checked={visibilityFunctionIds.includes(fn.id)}
+                    disabled={fn.id === ownerFunctionId}
+                    onCheckedChange={() => toggleVisible(fn.id)}
                   />
-                  <span className="text-sm">{SECTION_LABELS[sk] ?? sk}</span>
+                  <span className="text-sm">{fn.name}</span>
                 </label>
               ))}
             </div>

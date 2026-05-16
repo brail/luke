@@ -313,6 +313,14 @@ export default function AppSidebar() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent side="top" align="start" className="w-56">
                   <DropdownMenuGroup>
+                    {menuAccess.settingsItems.company && (
+                      <DropdownMenuItem asChild>
+                        <Link href={"/settings/company" as any} className="flex items-center gap-2">
+                          <Building2 size={16} />
+                          <span>Azienda</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
                     {menuAccess.settingsItems.users && (
                       <DropdownMenuItem asChild>
                         <Link href="/settings/users" className="flex items-center gap-2">

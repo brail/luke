@@ -1,10 +1,3 @@
-export const SECTION_LABELS: Record<string, string> = {
-  'planning.sales': 'Vendite',
-  'planning.product': 'Prodotto',
-  'planning.sourcing': 'Sourcing',
-  'planning.merchandising': 'Merchandising',
-};
-
 export const TYPE_LABELS: Record<string, string> = {
   KICKOFF: 'Kickoff',
   REVIEW: 'Review',

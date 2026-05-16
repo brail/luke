@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 
 import { cn } from '../../../../lib/utils';
-import { SECTION_LABELS, STATUS_OPACITY } from '../constants';
+import { STATUS_OPACITY } from '../constants';
 import { brandColor } from '../utils';
 
 interface Milestone {
@@ -13,15 +13,16 @@ interface Milestone {
   endAt?: Date | string | null;
   status: string;
   type: string;
-  ownerSectionKey: string;
+  ownerFunctionId: string;
   brandId?: string | null;
-  visibilities: { sectionKey: string }[];
+  visibilities: { functionId: string }[];
 }
 
 interface Props {
   milestones: Milestone[];
   onMilestoneClick: (id: string) => void;
   activeBrandId?: string;
+  functionsById: Record<string, string>;
 }
 
 const ROW_H = 36;
@@ -46,7 +47,7 @@ function diffDays(a: Date, b: Date): number {
   return Math.round((b.getTime() - a.getTime()) / 86_400_000);
 }
 
-export function MilestoneGantt({ milestones, onMilestoneClick, activeBrandId }: Props) {
+export function MilestoneGantt({ milestones, onMilestoneClick, activeBrandId, functionsById }: Props) {
   const sorted = useMemo(
     () => [...milestones].sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime()),
     [milestones]
@@ -191,7 +192,7 @@ export function MilestoneGantt({ milestones, onMilestoneClick, activeBrandId }: 
                 <button
                   type="button"
                   onClick={() => onMilestoneClick(m.id)}
-                  title={`${m.title} — ${SECTION_LABELS[m.ownerSectionKey] ?? m.ownerSectionKey}`}
+                  title={`${m.title} — ${functionsById[m.ownerFunctionId] ?? m.ownerFunctionId}`}
                   className={cn(
                     'absolute top-1/2 -translate-y-1/2 rounded',
                     'text-white text-xs font-medium px-1.5 overflow-hidden whitespace-nowrap',

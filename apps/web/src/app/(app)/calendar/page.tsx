@@ -5,15 +5,12 @@ import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 
-import { PLANNING_SECTION_KEYS, type PlanningSectionKey } from '@luke/core';
-
 import { SectionCard } from '../../../components/SectionCard';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent } from '../../../components/ui/card';
 import { Checkbox } from '../../../components/ui/checkbox';
 import { useAppContext } from '../../../contexts/AppContextProvider';
 import { usePermission } from '../../../hooks/usePermission';
-import { useSectionAccess } from '../../../hooks/useSectionAccess';
 import { trpc } from '../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../lib/trpcErrorMessages';
 import { cn } from '../../../lib/utils';
@@ -27,21 +24,14 @@ import { MilestoneGantt } from './_components/MilestoneGantt';
 import { MilestoneMonthView } from './_components/MilestoneMonthView';
 import { MilestoneTimeline } from './_components/MilestoneTimeline';
 import { MilestoneWeekView } from './_components/MilestoneWeekView';
-import { SECTION_LABELS } from './constants';
 import { brandColor } from './utils';
 
 export default function CalendarPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
   const { can } = usePermission();
-  const sectionAccess = useSectionAccess();
-
-  const accessibleSections = useMemo(
-    () => PLANNING_SECTION_KEYS.filter(k => sectionAccess[k]),
-    [sectionAccess]
-  );
 
   const [selectedBrandIds, setSelectedBrandIds] = useState<string[]>([]);
-  const [selectedSections, setSelectedSections] = useState<PlanningSectionKey[]>([]);
+  const [selectedFunctionIds, setSelectedFunctionIds] = useState<string[]>([]);
   const [activeMilestoneId, setActiveMilestoneId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
@@ -66,18 +56,31 @@ export default function CalendarPage() {
     if (contextBrandId && !selectedBrandIds.includes(contextBrandId)) {
       setSelectedBrandIds(prev => [...prev, contextBrandId]);
     }
-  }, [contextBrandId]); // intentional: only seed brand on context change, not on selectedBrandIds change
-
-  useEffect(() => {
-    if (accessibleSections.length > 0 && selectedSections.length === 0) {
-      setSelectedSections([...accessibleSections]);
-    }
-  }, [accessibleSections]); // intentional: only initialize when empty, not on every sections change
+  }, [contextBrandId]); // intentional: only seed brand on context change
 
   const { data: brandsData } = trpc.brand.list.useQuery(
     { isActive: true, limit: 100 },
     { enabled }
   );
+
+  const { data: functionsData } = trpc.company.function.list.useQuery(undefined, { enabled });
+
+  const availableFunctions = useMemo(
+    () => (functionsData ?? []).map(f => ({ id: f.id, name: f.name })),
+    [functionsData]
+  );
+
+  const functionsById = useMemo(
+    () => Object.fromEntries(availableFunctions.map(f => [f.id, f.name])),
+    [availableFunctions]
+  );
+
+  // Default-select all functions once loaded
+  useEffect(() => {
+    if (availableFunctions.length > 0 && selectedFunctionIds.length === 0) {
+      setSelectedFunctionIds(availableFunctions.map(f => f.id));
+    }
+  }, [availableFunctions]); // intentional: only initialize when empty
 
   const { data: calendar, isLoading: calendarLoading } = trpc.seasonCalendar.getOrCreate.useQuery(
     { brandId: contextBrandId ?? '', seasonId: season?.id ?? '' },
@@ -110,11 +113,11 @@ export default function CalendarPage() {
 
   const filteredMilestones = useMemo(() => {
     if (!milestones) return [];
-    if (selectedSections.length === 0) return milestones;
+    if (selectedFunctionIds.length === 0) return milestones;
     return milestones.filter(m =>
-      m.visibilities.some(v => selectedSections.includes(v.sectionKey as PlanningSectionKey))
+      m.visibilities.some(v => selectedFunctionIds.includes(v.functionId))
     );
-  }, [milestones, selectedSections]);
+  }, [milestones, selectedFunctionIds]);
 
   const activeMilestone = useMemo(
     () => filteredMilestones.find(m => m.id === activeMilestoneId) ?? null,
@@ -260,23 +263,25 @@ export default function CalendarPage() {
             </div>
           </SectionCard>
         )}
-        <SectionCard title="Sezioni">
-          <div className="space-y-2">
-            {accessibleSections.map(sk => (
-              <label key={sk} className="flex items-center gap-2 cursor-pointer">
-                <Checkbox
-                  checked={selectedSections.includes(sk)}
-                  onCheckedChange={checked => {
-                    setSelectedSections(prev =>
-                      checked ? [...prev, sk] : prev.filter(s => s !== sk)
-                    );
-                  }}
-                />
-                <span className="text-sm">{SECTION_LABELS[sk]}</span>
-              </label>
-            ))}
-          </div>
-        </SectionCard>
+        {availableFunctions.length > 0 && (
+          <SectionCard title="Funzioni">
+            <div className="space-y-2">
+              {availableFunctions.map(fn => (
+                <label key={fn.id} className="flex items-center gap-2 cursor-pointer">
+                  <Checkbox
+                    checked={selectedFunctionIds.includes(fn.id)}
+                    onCheckedChange={checked => {
+                      setSelectedFunctionIds(prev =>
+                        checked ? [...prev, fn.id] : prev.filter(id => id !== fn.id)
+                      );
+                    }}
+                  />
+                  <span className="text-sm">{fn.name}</span>
+                </label>
+              ))}
+            </div>
+          </SectionCard>
+        )}
         {syncStatus && (
           <SectionCard title="Sync Google">
             <div className="space-y-1 text-xs text-muted-foreground">
@@ -331,12 +336,14 @@ export default function CalendarPage() {
                 milestones={filteredMilestones}
                 onMilestoneClick={id => setActiveMilestoneId(id)}
                 activeBrandId={contextBrandId ?? undefined}
+                functionsById={functionsById}
               />
             ) : (
               <MilestoneTimeline
                 milestones={filteredMilestones}
                 onMilestoneClick={id => setActiveMilestoneId(id)}
                 activeBrandId={contextBrandId ?? undefined}
+                functionsById={functionsById}
               />
             )}
           </CardContent>
@@ -405,7 +412,8 @@ export default function CalendarPage() {
           onUpdated={() => void refetch()}
           canUpdate={canUpdate}
           calendarId={calendar?.id ?? ''}
-          accessibleSections={accessibleSections}
+          availableFunctions={availableFunctions}
+          functionsById={functionsById}
         />
       )}
 
@@ -415,7 +423,7 @@ export default function CalendarPage() {
           onClose={() => setCreateOpen(false)}
           onSaved={() => { setCreateOpen(false); void refetch(); }}
           calendarId={calendar.id}
-          accessibleSections={accessibleSections}
+          availableFunctions={availableFunctions}
         />
       )}
 
