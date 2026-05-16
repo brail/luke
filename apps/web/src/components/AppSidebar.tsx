@@ -135,8 +135,7 @@ export default function AppSidebar() {
           {menuAccess.calendar && (
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={isActive('/calendar')}>
-                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                <Link href={'/calendar' as any}>
+                <Link href='/calendar'>
                   <CalendarDays size={18} />
                   <span>Calendario</span>
                 </Link>

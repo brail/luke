@@ -1,7 +1,7 @@
 'use client';
 
 import { Plus, Users } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { type ChangeEvent, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import { PageHeader } from '../../../../components/PageHeader';
@@ -58,12 +58,11 @@ function ProfileTab() {
       setWebsite((profile.website as string) ?? '');
       setInitialized(true);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.legalName, initialized]);
 
   const updateMutation = trpc.company.profile.update.useMutation();
 
-  const field = (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
+  const field = (setter: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
     setter(e.target.value);
     setDirty(true);
   };
