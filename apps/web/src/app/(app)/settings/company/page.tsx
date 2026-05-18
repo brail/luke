@@ -1,7 +1,6 @@
 'use client';
 
 import { ImageIcon, Plus, Trash2, UploadCloud, Users } from 'lucide-react';
-import { useSession } from 'next-auth/react';
 import { type ChangeEvent, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -37,6 +36,7 @@ import {
 } from '../../../../components/ui/tabs';
 import { Textarea } from '../../../../components/ui/textarea';
 import { usePermission } from '../../../../hooks/usePermission';
+import { useStorageUpload } from '../../../../hooks/useStorageUpload';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -45,7 +45,6 @@ import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 function ProfileTab() {
   const { can } = usePermission();
   const canUpdate = can('company_profile:update');
-  const { data: session } = useSession();
 
   const { data: profile, refetch } = trpc.company.profile.get.useQuery();
   const utils = trpc.useUtils();
@@ -62,15 +61,16 @@ function ProfileTab() {
   const [locale, setLocale] = useState<'it-IT' | 'en-US'>('it-IT');
   const [dateFormat, setDateFormat] = useState<'DD/MM/YYYY' | 'YYYY-MM-DD'>('DD/MM/YYYY');
   const [logoKey, setLogoKey] = useState<string | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [dirty, setDirty] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
   const colorInputRef = useRef<HTMLInputElement>(null);
-  const xhrRef = useRef<XMLHttpRequest | null>(null);
 
   const logoPreviewUrl = logoKey ? buildCompanyLogoUrl(logoKey) : null;
+
+  const { upload, isUploading, progress: uploadProgress } = useStorageUpload({
+    fallbackProxyUrl: buildCompanyLogoUploadUrl(),
+  });
 
   useEffect(() => {
     if (profile && !initialized) {
@@ -92,8 +92,6 @@ function ProfileTab() {
     }
   }, [profile?.legalName, initialized]);
 
-  useEffect(() => () => { xhrRef.current?.abort(); }, []);
-
   const updateMutation = trpc.company.profile.update.useMutation();
 
   const field = (setter: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
@@ -101,69 +99,20 @@ function ProfileTab() {
     setDirty(true);
   };
 
-  const handleLogoUpload = (file: File) => {
-    setIsUploading(true);
-    setUploadProgress(0);
-
-    const formData = new globalThis.FormData();
-    formData.append('file', file);
-
-    const xhr = new globalThis.XMLHttpRequest();
-    xhrRef.current = xhr;
-
-    xhr.upload.addEventListener('progress', e => {
-      if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
-    });
-
-    xhr.addEventListener('load', () => {
-      if (xhr.status === 200) {
-        try {
-          const result = JSON.parse(xhr.responseText);
-          setLogoKey(result.key);
-          toast.success('Logo caricato');
-        } catch {
-          toast.error('Errore durante il parsing della risposta');
-        }
-      } else {
-        try {
-          const errorData = JSON.parse(xhr.responseText);
-          toast.error(errorData.message || 'Upload fallito');
-        } catch {
-          toast.error('Upload fallito');
-        }
-      }
-      xhrRef.current = null;
-      setIsUploading(false);
-      setUploadProgress(0);
-    });
-
-    xhr.addEventListener('error', () => {
-      toast.error('Errore di rete durante upload');
-      xhrRef.current = null;
-      setIsUploading(false);
-      setUploadProgress(0);
-    });
-
-    xhr.open('POST', buildCompanyLogoUploadUrl());
-    if (session?.accessToken) {
-      xhr.setRequestHeader('Authorization', `Bearer ${session.accessToken}`);
-    }
-    xhr.send(formData);
-  };
-
-  const handleLogoRemove = async () => {
+  const handleLogoUpload = async (file: File) => {
     try {
-      await updateMutation.mutateAsync({
-        legalName: legalName.trim(),
-        displayName: displayName.trim(),
-        logoKey: undefined,
-      });
-      setLogoKey(null);
-      toast.success('Logo rimosso');
-      await utils.company.profile.get.invalidate();
+      const result = await upload(file, 'company-assets');
+      setLogoKey(result.key ?? null);
+      setDirty(true);
+      toast.success('Logo caricato — clicca Salva per confermare');
     } catch (err) {
       toast.error(getTrpcErrorMessage(err));
     }
+  };
+
+  const handleLogoRemove = () => {
+    setLogoKey(null);
+    setDirty(true);
   };
 
   const handleSave = async () => {
@@ -180,6 +129,7 @@ function ProfileTab() {
         phone: phone.trim() || undefined,
         email: email.trim() || undefined,
         website: website.trim() || undefined,
+        logoKey: logoKey,
         exportSettings: {
           footerText: footerText.trim() || undefined,
           accentColorHex,

@@ -27,6 +27,6 @@ export const CompanyProfileInputSchema = z.object({
   website: z.string().url().optional(),
   address: CompanyAddressSchema.optional(),
   exportSettings: CompanyExportSettingsSchema.optional(),
-  logoKey: z.string().optional(),
+  logoKey: z.string().nullable().optional(),
 });
 export type CompanyProfileInput = z.infer<typeof CompanyProfileInputSchema>;

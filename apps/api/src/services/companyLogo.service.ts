@@ -4,7 +4,7 @@ import { Readable } from 'stream';
 import { validateImageFile, streamToBuffer, validateMagicBytes } from '../lib/imageUpload.js';
 import { resolvePublicUrl } from '../lib/storageUrl.js';
 import { logAudit } from '../lib/auditLog.js';
-import { putObject, deleteObjectByKey } from '../storage/index.js';
+import { putObject } from '../storage/index.js';
 import type { Context } from '../lib/trpc.js';
 
 const IMAGE_CONFIG = {
@@ -32,11 +32,6 @@ export async function uploadCompanyLogo(
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'File corrotto o tipo non valido' });
   }
 
-  const existing = await ctx.prisma.companyProfile.findUnique({
-    where: { id: 'singleton' },
-    select: { logoKey: true },
-  });
-
   const fileObject = await putObject(ctx, {
     bucket: 'company-assets',
     originalName: sanitizedFilename,
@@ -45,34 +40,13 @@ export async function uploadCompanyLogo(
     stream: Readable.from(buffer),
   });
 
-  await ctx.prisma.companyProfile.upsert({
-    where: { id: 'singleton' },
-    create: { id: 'singleton', legalName: '', displayName: '', logoKey: fileObject.key },
-    update: { logoKey: fileObject.key },
-  });
-
-  if (existing?.logoKey) {
-    setImmediate(async () => {
-      try {
-        await deleteObjectByKey(ctx, { bucket: 'company-assets', key: existing.logoKey! });
-      } catch (err) {
-        ctx.logger?.warn({ err }, 'Failed to cleanup old company logo');
-      }
-    });
-  }
-
   try {
     await logAudit(ctx, {
       action: 'COMPANY_LOGO_UPLOADED',
       targetType: 'CompanyProfile',
       targetId: 'singleton',
       result: 'SUCCESS',
-      metadata: {
-        filename: sanitizedFilename,
-        size: params.file.size,
-        contentType: params.file.mimetype,
-        oldLogoKey: existing?.logoKey,
-      },
+      metadata: { filename: sanitizedFilename, size: params.file.size, contentType: params.file.mimetype },
     });
   } catch (auditError) {
     ctx.logger?.warn({ auditError }, 'Audit log failed for company logo upload');
