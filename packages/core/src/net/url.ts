@@ -9,6 +9,7 @@
  */
 
 import { getApiBaseUrl as getCoreApiBaseUrl, isServer } from '../runtime/env';
+import { getProxyUrl } from '../storage/contracts';
 
 /**
  * Options for URL construction
@@ -134,10 +135,10 @@ export function buildCompanyLogoUploadUrl(options: UrlOptions = {}): string {
 }
 
 /**
- * Builds presigned download/view URL for company logo
+ * Builds proxy URL for company logo (served via Next.js /api/uploads route)
  */
-export function buildCompanyLogoUrl(logoKey: string, options: UrlOptions = {}): string {
-  return buildApiUrl(`/api/storage/company-assets/${encodeURIComponent(logoKey)}`, options);
+export function buildCompanyLogoUrl(logoKey: string): string {
+  return getProxyUrl('company-assets', logoKey);
 }
 
 /**

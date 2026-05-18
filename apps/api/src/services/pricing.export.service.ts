@@ -3,7 +3,7 @@ import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 
 import { calcMaxSupplierCost, calculateCompanyMultiplier, generateRetailPriceRange } from '@luke/core';
 
-import { buildBrandPageHeader, createPdfBuffer } from '../lib/export/pdf';
+import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
 import { applyStreamingHeaderStyle, createStreamingBuffer } from '../lib/export/xlsx-streaming';
 import { readFileBuffer } from '../storage';
 
@@ -149,12 +149,14 @@ export async function buildPricingGridPdf(
   const retailPrices = generateRetailPriceRange();
   const refSet = sets[0];
 
-  // Load brand logo
-  const logoDataUri = brand.logoKey
-    ? await readFileBuffer(prisma, 'brand-logos', brand.logoKey).then(buf =>
-        buf ? toDataUri(buf, brand.logoKey!) : null,
-      ).catch(() => null)
-    : null;
+  const [logoDataUri, company] = await Promise.all([
+    brand.logoKey
+      ? readFileBuffer(prisma, 'brand-logos', brand.logoKey).then(buf =>
+          buf ? toDataUri(buf, brand.logoKey!) : null,
+        ).catch(() => null)
+      : Promise.resolve(null),
+    fetchCompanyExportContext(prisma),
+  ]);
 
   const subtitle = `${season.code} ${season.year ?? ''} — Griglia Prezzi`;
   const extractedInfo = `Estratto da ${extractedBy} il ${extractedAt.toLocaleDateString('it-IT')}`;
@@ -209,7 +211,7 @@ export async function buildPricingGridPdf(
   const docDef: TDocumentDefinitions = {
     pageSize: 'A4',
     pageOrientation: sets.length > 4 ? 'landscape' : 'portrait',
-    pageMargins: [20, 60, 20, 30] as [number, number, number, number],
+    pageMargins: [20, 60, 20, 56] as [number, number, number, number],
 
     header: (currentPage, pageCount) =>
       buildBrandPageHeader(
@@ -218,6 +220,14 @@ export async function buildPricingGridPdf(
         pageCount,
         { subtitle, extractedInfo },
       ),
+
+    footer: (currentPage: number, pageCount: number) =>
+      buildPdfFooter(currentPage, pageCount, {
+        logoDataUri: company.companyLogoDataUri,
+
+        address: company.address,
+        footerText: company.exportSettings.footerText,
+      }),
 
     styles: {
       gridHeader: { ...headerStyle },

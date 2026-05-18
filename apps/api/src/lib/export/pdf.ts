@@ -1,4 +1,14 @@
+import type { PrismaClient } from '@prisma/client';
 import type { Content, TDocumentDefinitions, TFontDictionary } from 'pdfmake/interfaces';
+
+import {
+  CompanyAddressSchema,
+  CompanyExportSettingsSchema,
+  type CompanyAddress,
+  type CompanyExportSettings,
+} from '@luke/core';
+
+import { readFileBuffer } from '../../storage/index.js';
 
 export { Content, TDocumentDefinitions, TFontDictionary };
 
@@ -87,6 +97,104 @@ export function buildBrandPageHeader(
       },
     ],
   };
+}
+
+function formatAddress(address: CompanyAddress | null | undefined): string {
+  if (!address) return '';
+  const parts: string[] = [];
+  if (address.street) parts.push(address.street);
+  const cityParts: string[] = [];
+  if (address.zip) cityParts.push(address.zip);
+  if (address.city) cityParts.push(address.city);
+  if (address.province) cityParts.push(`(${address.province})`);
+  if (cityParts.length) parts.push(cityParts.join(' '));
+  if (address.countryCode && address.countryCode !== 'IT') parts.push(address.countryCode);
+  return parts.join(', ');
+}
+
+export function buildPdfFooter(
+  currentPage: number,
+  totalPages: number,
+  company?: {
+    logoDataUri?: string | null;
+    address?: CompanyAddress | null;
+    footerText?: string | null;
+  },
+): Content {
+  const addressLine = formatAddress(company?.address);
+  const infoLines: string[] = [];
+  if (addressLine)         infoLines.push(addressLine);
+  if (company?.footerText) infoLines.push(company.footerText);
+
+  // pdfmake column objects support a `width` key that the Content type doesn't declare — cast needed
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const columns: any[] = [];
+
+  if (company?.logoDataUri) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    columns.push({ image: company.logoDataUri, fit: [48, 48], width: 'auto', margin: [0, 2, 8, 0] } as any);
+  }
+
+  columns.push({
+    stack: infoLines.map(line => ({ text: line, fontSize: 6.5, color: '#555555' })),
+    margin: [0, 2, 0, 0],
+  });
+
+  columns.push({
+    text: `${currentPage} / ${totalPages}`,
+    fontSize: 7,
+    color: '#999999',
+    alignment: 'right',
+    width: 40,
+    margin: [0, 2, 0, 0],
+  });
+
+  return {
+    margin: [20, 6, 20, 0] as [number, number, number, number],
+    columns,
+  } as Content;
+}
+
+export type CompanyExportContext = {
+  companyLogoDataUri: string | null;
+  exportSettings: CompanyExportSettings;
+  address: CompanyAddress | null;
+};
+
+export async function fetchCompanyExportContext(
+  prisma: PrismaClient,
+  logger?: { warn: (obj: object, msg: string) => void },
+): Promise<CompanyExportContext> {
+  const EMPTY: CompanyExportContext = {
+    companyLogoDataUri: null,
+    exportSettings: {},
+    address: null,
+  };
+  try {
+    const profile = await prisma.companyProfile.findUnique({ where: { id: 'singleton' } });
+    if (!profile) return EMPTY;
+
+    const exportSettings = CompanyExportSettingsSchema.parse(profile.exportSettings ?? {});
+    const address = profile.address
+      ? CompanyAddressSchema.parse(profile.address)
+      : null;
+
+    let companyLogoDataUri: string | null = null;
+    if (profile.logoKey) {
+      const buf = await readFileBuffer(prisma, 'company-assets', profile.logoKey, logger);
+      if (buf) {
+        const key = profile.logoKey.toLowerCase();
+        if (key.endsWith('.png'))        companyLogoDataUri = `data:image/png;base64,${buf.toString('base64')}`;
+        else if (!key.endsWith('.webp')) companyLogoDataUri = `data:image/jpeg;base64,${buf.toString('base64')}`;
+      }
+    }
+
+    return { companyLogoDataUri, exportSettings, address };
+  } catch {
+    logger?.warn({}, 'fetchCompanyExportContext failed, using defaults');
+    return EMPTY;
+  }
 }
 
 export async function createPdfBuffer(def: TDocumentDefinitions): Promise<Buffer> {

@@ -11,7 +11,7 @@ import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 
 import { formatDateTime } from '@luke/core';
 
-import { buildBrandPageHeader, createPdfBuffer } from '../lib/export/pdf';
+import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
 import { readFileBuffer } from '../storage';
 import type { QuotationWithParamSet } from './collectionLayout.service';
 
@@ -248,12 +248,13 @@ export async function buildCollectionLayoutPdf(
 
   const uniqueRowKeys = [...new Set(allRows.map(r => r.pictureKey).filter((k): k is string => !!k))];
   const keyToDataUriMap = new Map<string, string | null>();
-  const [brandLogoDataUri] = await Promise.all([
+  const [brandLogoDataUri, company] = await Promise.all([
     layout.brand.logoKey
       ? readFileBuffer(prisma, 'brand-logos', layout.brand.logoKey, logger).then(buf =>
           buf ? toDataUri(buf, layout.brand.logoKey!) : null,
         )
       : Promise.resolve(null),
+    fetchCompanyExportContext(prisma, logger),
     ...uniqueRowKeys.map(key =>
       readFileBuffer(prisma, 'collection-row-pictures', key, logger)
         .then(buf => keyToDataUriMap.set(key, buf ? toDataUri(buf, key) : null)),
@@ -372,7 +373,7 @@ export async function buildCollectionLayoutPdf(
   const docDefinition: TDocumentDefinitions = {
     pageSize: 'A3',
     pageOrientation: 'landscape',
-    pageMargins: [20, 68, 20, 30],
+    pageMargins: [20, 68, 20, 56],
     defaultStyle: { font: 'Roboto', fontSize: 8 },
     header: (currentPage: number, totalPages: number) =>
       buildBrandPageHeader(
@@ -381,13 +382,13 @@ export async function buildCollectionLayoutPdf(
         totalPages,
         { showPageNumber: false, subtitle, extractedInfo },
       ),
-    footer: (_currentPage: number, _totalPages: number): Content => ({
-      text: `${_currentPage} / ${_totalPages}`,
-      alignment: 'right',
-      margin: [0, 8, 20, 0],
-      fontSize: 8,
-      color: '#999999',
-    }),
+    footer: (currentPage: number, totalPages: number) =>
+      buildPdfFooter(currentPage, totalPages, {
+        logoDataUri: company.companyLogoDataUri,
+
+        address: company.address,
+        footerText: company.exportSettings.footerText,
+      }),
     content,
   };
 

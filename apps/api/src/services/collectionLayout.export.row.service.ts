@@ -17,7 +17,7 @@ import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 
 import { calcMaxSupplierCost, formatDateTime } from '@luke/core';
 
-import { buildBrandPageHeader, createPdfBuffer } from '../lib/export/pdf';
+import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
 import { applyStreamingHeaderStyle } from '../lib/export/xlsx-streaming';
 import { readFileBuffer } from '../storage';
 import type { QuotationWithParamSet } from './collectionLayout.service';
@@ -123,7 +123,7 @@ export async function buildCollectionRowPdf(
 ): Promise<Buffer> {
   const { brand, season, row } = ctx;
 
-  const [brandLogoDataUri, rowImageDataUri] = await Promise.all([
+  const [brandLogoDataUri, rowImageDataUri, company] = await Promise.all([
     brand.logoKey
       ? readFileBuffer(prisma, 'brand-logos', brand.logoKey, logger).then(buf =>
           buf ? dataUri(buf, brand.logoKey!) : null,
@@ -134,6 +134,7 @@ export async function buildCollectionRowPdf(
           buf ? dataUri(buf, row.pictureKey!) : null,
         )
       : Promise.resolve(null),
+    fetchCompanyExportContext(prisma, logger),
   ]);
 
   const vendorLabel = row.vendor?.nickname ?? row.vendor?.name ?? '—';
@@ -240,17 +241,17 @@ export async function buildCollectionRowPdf(
   const docDef: TDocumentDefinitions = {
     pageSize: 'A4',
     pageOrientation: 'landscape',
-    pageMargins: [30, 50, 30, 30],
+    pageMargins: [30, 50, 30, 56],
     header: pageHeader as Content,
     content: [topSection, quotTable],
     defaultStyle: { font: 'Roboto' },
-    footer: (_currentPage: number, _pageCount: number): Content => ({
-      text: `Estratto da Luke — ${formatDateTime(extractedAt)}`,
-      fontSize: 6,
-      color: '#999999',
-      alignment: 'right',
-      margin: [0, 0, 30, 0],
-    }),
+    footer: (currentPage: number, pageCount: number) =>
+      buildPdfFooter(currentPage, pageCount, {
+        logoDataUri: company.companyLogoDataUri,
+
+        address: company.address,
+        footerText: company.exportSettings.footerText,
+      }),
   };
 
   return createPdfBuffer(docDef);

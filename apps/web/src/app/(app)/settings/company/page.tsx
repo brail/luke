@@ -1,7 +1,7 @@
 'use client';
 
-import { ImageIcon, Plus, Trash2, UploadCloud, Users } from 'lucide-react';
-import { type ChangeEvent, useEffect, useRef, useState } from 'react';
+import { ImageIcon, Plus, Trash2, UploadCloud, Users, X } from 'lucide-react';
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { buildCompanyLogoUploadUrl, buildCompanyLogoUrl } from '@luke/core';
@@ -17,6 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../components/ui/dialog';
+import { Checkbox } from '../../../../components/ui/checkbox';
 import { FileDropZone } from '../../../../components/ui/file-drop-zone';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
@@ -28,6 +29,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../../../components/ui/select';
+import { Separator } from '../../../../components/ui/separator';
+import {
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '../../../../components/ui/sheet';
 import {
   Tabs,
   TabsContent,
@@ -37,6 +46,7 @@ import {
 import { Textarea } from '../../../../components/ui/textarea';
 import { usePermission } from '../../../../hooks/usePermission';
 import { useStorageUpload } from '../../../../hooks/useStorageUpload';
+import { useRefresh } from '../../../../lib/refresh';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -46,7 +56,7 @@ function ProfileTab() {
   const { can } = usePermission();
   const canUpdate = can('company_profile:update');
 
-  const { data: profile, refetch } = trpc.company.profile.get.useQuery();
+  const { data: profile } = trpc.company.profile.get.useQuery();
   const utils = trpc.useUtils();
 
   const [legalName, setLegalName] = useState('');
@@ -62,7 +72,6 @@ function ProfileTab() {
   const [dateFormat, setDateFormat] = useState<'DD/MM/YYYY' | 'YYYY-MM-DD'>('DD/MM/YYYY');
   const [logoKey, setLogoKey] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
-  const [initialized, setInitialized] = useState(false);
 
   const colorInputRef = useRef<HTMLInputElement>(null);
 
@@ -72,25 +81,27 @@ function ProfileTab() {
     fallbackProxyUrl: buildCompanyLogoUploadUrl(),
   });
 
-  useEffect(() => {
-    if (profile && !initialized) {
-      setLegalName(profile.legalName ?? '');
-      setDisplayName(profile.displayName ?? '');
-      setVatNumber((profile.vatNumber as string) ?? '');
-      setTaxCode((profile.taxCode as string) ?? '');
-      setPhone((profile.phone as string) ?? '');
-      setEmail((profile.email as string) ?? '');
-      setWebsite((profile.website as string) ?? '');
-      const es: Record<string, string> = (profile as any).exportSettings ?? {}; // eslint-disable-line @typescript-eslint/no-explicit-any
-      setFooterText(es['footerText'] ?? '');
-      setAccentColorHex(es['accentColorHex'] ?? '#000000');
-      setLocale((es['locale'] as 'it-IT' | 'en-US') ?? 'it-IT');
-      setDateFormat((es['dateFormat'] as 'DD/MM/YYYY' | 'YYYY-MM-DD') ?? 'DD/MM/YYYY');
-      const key = profile.logoKey as string | null | undefined;
-      setLogoKey(key ?? null);
-      setInitialized(true);
-    }
-  }, [profile?.legalName, initialized]);
+  const syncFromProfile = (p: typeof profile) => {
+    if (!p) return;
+    setLegalName(p.legalName ?? '');
+    setDisplayName(p.displayName ?? '');
+    setVatNumber((p.vatNumber as string) ?? '');
+    setTaxCode((p.taxCode as string) ?? '');
+    setPhone((p.phone as string) ?? '');
+    setEmail((p.email as string) ?? '');
+    setWebsite((p.website as string) ?? '');
+    const es: Record<string, string> = (p as any).exportSettings ?? {}; // eslint-disable-line @typescript-eslint/no-explicit-any
+    setFooterText(es['footerText'] ?? '');
+    setAccentColorHex(es['accentColorHex'] ?? '#000000');
+    setLocale((es['locale'] as 'it-IT' | 'en-US') ?? 'it-IT');
+    setDateFormat((es['dateFormat'] as 'DD/MM/YYYY' | 'YYYY-MM-DD') ?? 'DD/MM/YYYY');
+    setLogoKey((p.logoKey as string | null | undefined) ?? null);
+    setDirty(false);
+  };
+
+  useEffect(() => { syncFromProfile(profile); }, [profile?.updatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleReset = () => syncFromProfile(profile);
 
   const updateMutation = trpc.company.profile.update.useMutation();
 
@@ -140,7 +151,6 @@ function ProfileTab() {
       toast.success('Profilo aggiornato');
       setDirty(false);
       await utils.company.profile.get.invalidate();
-      void refetch();
     } catch (err) {
       toast.error(getTrpcErrorMessage(err));
     }
@@ -227,13 +237,6 @@ function ProfileTab() {
             <Input id="website" value={website} onChange={field(setWebsite)} disabled={!canUpdate} placeholder="https://…" />
           </div>
         </div>
-        {canUpdate && (
-          <div className="mt-4 flex justify-end">
-            <Button onClick={handleSave} disabled={!dirty || updateMutation.isPending}>
-              {updateMutation.isPending ? 'Salvataggio…' : 'Salva'}
-            </Button>
-          </div>
-        )}
       </SectionCard>
 
       <SectionCard title="Impostazioni export">
@@ -309,14 +312,21 @@ function ProfileTab() {
             </div>
           </div>
         </div>
-        {canUpdate && (
-          <div className="mt-4 flex justify-end">
-            <Button onClick={handleSave} disabled={!dirty || updateMutation.isPending}>
-              {updateMutation.isPending ? 'Salvataggio…' : 'Salva'}
-            </Button>
-          </div>
-        )}
       </SectionCard>
+
+      {canUpdate && dirty && (
+        <div className="sticky bottom-0 flex justify-end gap-2 border-t bg-background py-3">
+          <Button variant="outline" onClick={handleReset} disabled={updateMutation.isPending}>
+            Annulla
+          </Button>
+          <Button
+            onClick={() => void handleSave()}
+            disabled={updateMutation.isPending || !legalName.trim() || !displayName.trim()}
+          >
+            {updateMutation.isPending ? 'Salvataggio…' : 'Salva modifiche'}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -400,38 +410,28 @@ interface TeamDialogProps {
   onClose: () => void;
   onSaved: () => void;
   functionId: string;
-  team?: { id: string; name: string; description?: string | null };
 }
 
-function TeamDialog({ open, onClose, onSaved, functionId, team }: TeamDialogProps) {
-  const isEdit = !!team;
-  const [name, setName] = useState(team?.name ?? '');
-  const [description, setDescription] = useState(team?.description ?? '');
+function TeamDialog({ open, onClose, onSaved, functionId }: TeamDialogProps) {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
 
   const createMutation = trpc.company.team.create.useMutation({
     onSuccess: () => { toast.success('Team creato'); onSaved(); onClose(); },
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
-  const updateMutation = trpc.company.team.update.useMutation({
-    onSuccess: () => { toast.success('Team aggiornato'); onSaved(); onClose(); },
-    onError: err => toast.error(getTrpcErrorMessage(err)),
-  });
-  const isPending = createMutation.isPending || updateMutation.isPending;
+  const isPending = createMutation.isPending;
 
   const handleSubmit = () => {
     if (!name.trim()) return;
-    if (isEdit) {
-      updateMutation.mutate({ id: team.id, name: name.trim(), description: description.trim() || undefined });
-    } else {
-      createMutation.mutate({ functionId, name: name.trim(), description: description.trim() || undefined });
-    }
+    createMutation.mutate({ functionId, name: name.trim(), description: description.trim() || undefined });
   };
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{isEdit ? 'Modifica team' : 'Nuovo team'}</DialogTitle>
+          <DialogTitle>Nuovo team</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
@@ -446,7 +446,7 @@ function TeamDialog({ open, onClose, onSaved, functionId, team }: TeamDialogProp
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={isPending}>Annulla</Button>
           <Button onClick={handleSubmit} disabled={isPending || !name.trim()}>
-            {isPending ? 'Salvataggio…' : 'Salva'}
+            {isPending ? 'Creazione…' : 'Crea'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -454,8 +454,232 @@ function TeamDialog({ open, onClose, onSaved, functionId, team }: TeamDialogProp
   );
 }
 
+// ─── Team Sheet (edit existing team: info + brand scopes + members) ───────────
+
+interface TeamSheetProps {
+  open: boolean;
+  teamId: string | null;
+  canUpdate: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+function TeamSheet({ open, teamId, canUpdate, onClose, onSaved }: TeamSheetProps) {
+  const refresh = useRefresh();
+  const { data: team, isLoading: teamLoading } = trpc.company.team.getById.useQuery(
+    { id: teamId! },
+    { enabled: !!teamId && open },
+  );
+  const { data: brands = [] } = trpc.company.team.listAllBrands.useQuery(undefined, { enabled: open });
+  const { data: usersData } = trpc.users.list.useQuery(
+    { limit: 100 },
+    { enabled: open },
+  );
+
+  const allUsers = usersData?.users ?? [];
+
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [selectedBrandIds, setSelectedBrandIds] = useState<Set<string>>(new Set());
+  const [localMemberIds, setLocalMemberIds] = useState<string[]>([]);
+  const [addMemberValue, setAddMemberValue] = useState('');
+
+  useEffect(() => {
+    if (!team) return;
+    setName(team.name);
+    setDescription(team.description ?? '');
+    setSelectedBrandIds(new Set(team.brandScopes.map(s => s.brandId)));
+    setLocalMemberIds(team.memberships.map(m => m.userId));
+  }, [team]);
+
+  const userMap = useMemo(() => {
+    const map = new Map<string, { id: string; email: string; username: string; firstName?: string | null; lastName?: string | null }>();
+    allUsers.forEach(u => map.set(u.id, u));
+    team?.memberships.forEach(m => {
+      if (!map.has(m.userId)) map.set(m.userId, { id: m.userId, email: m.user.email, username: m.user.username, firstName: null, lastName: null });
+    });
+    return map;
+  }, [allUsers, team]);
+
+  const updateMutation = trpc.company.team.update.useMutation({
+    onError: err => toast.error(getTrpcErrorMessage(err)),
+  });
+  const addMembersMutation = trpc.company.team.addMembers.useMutation({
+    onError: err => toast.error(getTrpcErrorMessage(err)),
+  });
+  const removeMembersMutation = trpc.company.team.removeMembers.useMutation({
+    onError: err => toast.error(getTrpcErrorMessage(err)),
+  });
+  const isPending = updateMutation.isPending || addMembersMutation.isPending || removeMembersMutation.isPending;
+
+  const handleSave = async () => {
+    if (!teamId || !name.trim()) return;
+    const originalIds = new Set(team?.memberships.map(m => m.userId) ?? []);
+    const currentIds = new Set(localMemberIds);
+    const toAdd = [...currentIds].filter(id => !originalIds.has(id));
+    const toRemove = [...originalIds].filter(id => !currentIds.has(id));
+    try {
+      await updateMutation.mutateAsync({
+        id: teamId,
+        name: name.trim(),
+        description: description.trim() || undefined,
+        brandIds: [...selectedBrandIds],
+      });
+      if (toAdd.length > 0) await addMembersMutation.mutateAsync({ teamId, userIds: toAdd });
+      if (toRemove.length > 0) await removeMembersMutation.mutateAsync({ teamId, userIds: toRemove });
+      toast.success('Team aggiornato');
+      await refresh.company();
+      onSaved();
+      onClose();
+    } catch {
+      // errors already toasted
+    }
+  };
+
+  const toggleBrand = (brandId: string) =>
+    setSelectedBrandIds(prev => {
+      const next = new Set(prev);
+      next.has(brandId) ? next.delete(brandId) : next.add(brandId);
+      return next;
+    });
+
+  const handleAddMember = (userId: string) => {
+    setLocalMemberIds(prev => prev.includes(userId) ? prev : [...prev, userId]);
+    setAddMemberValue('');
+  };
+
+  const handleRemoveMember = (userId: string) =>
+    setLocalMemberIds(prev => prev.filter(id => id !== userId));
+
+  const availableUsers = allUsers.filter(u => u.isActive && !localMemberIds.includes(u.id));
+
+  const displayName = (u: { firstName?: string | null; lastName?: string | null; username: string }) => {
+    const full = [u.firstName, u.lastName].filter(Boolean).join(' ');
+    return full || u.username;
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={v => { if (!v) onClose(); }}>
+      <SheetContent side="right" className="flex w-full flex-col sm:max-w-lg">
+        <SheetHeader>
+          <SheetTitle>
+            {team ? `${team.name}${team.isMain ? ' (main)' : ''}` : 'Gestione team'}
+          </SheetTitle>
+        </SheetHeader>
+
+        {teamLoading ? (
+          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">Caricamento…</div>
+        ) : (
+          <div className="flex-1 space-y-6 overflow-y-auto py-4">
+
+            {/* Informazioni */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold">Informazioni</h3>
+              <div className="space-y-1.5">
+                <Label htmlFor="ts-name">Nome *</Label>
+                <Input id="ts-name" value={name} onChange={e => setName(e.target.value)} disabled={!canUpdate} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="ts-desc">Descrizione</Label>
+                <Textarea id="ts-desc" value={description} onChange={e => setDescription(e.target.value)} rows={2} disabled={!canUpdate} />
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Brand scopes */}
+            <div className="space-y-3">
+              <div>
+                <h3 className="text-sm font-semibold">Accesso ai brand</h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">Nessuna selezione = accesso a tutti i brand</p>
+              </div>
+              {brands.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Nessun brand disponibile</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {brands.map(brand => (
+                    <label key={brand.id} className="flex cursor-pointer items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={selectedBrandIds.has(brand.id)}
+                        onCheckedChange={() => toggleBrand(brand.id)}
+                        disabled={!canUpdate}
+                      />
+                      <span className="font-mono text-xs text-muted-foreground">{brand.code}</span>
+                      <span className="truncate">{brand.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* Membri */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold">Membri ({localMemberIds.length})</h3>
+
+              {localMemberIds.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Nessun membro</p>
+              ) : (
+                <div className="divide-y rounded-md border">
+                  {localMemberIds.map(userId => {
+                    const u = userMap.get(userId);
+                    return (
+                      <div key={userId} className="flex items-center gap-2 px-3 py-2">
+                        <span className="flex-1 text-sm">{u ? displayName(u) : userId}</span>
+                        <span className="text-xs text-muted-foreground">{u?.email}</span>
+                        {canUpdate && (
+                          <button
+                            type="button"
+                            className="text-muted-foreground transition-colors hover:text-destructive"
+                            onClick={() => handleRemoveMember(userId)}
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {canUpdate && availableUsers.length > 0 && (
+                <div className="space-y-1.5">
+                  <Label>Aggiungi membro</Label>
+                  <Select value={addMemberValue} onValueChange={handleAddMember}>
+                    <SelectTrigger className="text-sm">
+                      <SelectValue placeholder="Seleziona utente…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableUsers.map(u => (
+                        <SelectItem key={u.id} value={u.id}>
+                          {displayName(u)} — {u.email}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {canUpdate && (
+          <SheetFooter className="border-t pt-4">
+            <Button variant="outline" onClick={onClose} disabled={isPending}>Annulla</Button>
+            <Button onClick={() => void handleSave()} disabled={isPending || !name.trim() || teamLoading}>
+              {isPending ? 'Salvataggio…' : 'Salva'}
+            </Button>
+          </SheetFooter>
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 function StructureTab() {
   const { can } = usePermission();
+  const refresh = useRefresh();
   const canCreateFn = can('company_function:create');
   const canUpdateFn = can('company_function:update');
   const canDeleteFn = can('company_function:delete');
@@ -463,29 +687,21 @@ function StructureTab() {
   const canUpdateTeam = can('company_team:update');
   const canDeleteTeam = can('company_team:delete');
 
-  const { data: functions = [], refetch } = trpc.company.function.list.useQuery({ includeInactive: false });
+  const { data: functions = [] } = trpc.company.function.list.useQuery({ includeInactive: false });
 
-  const [expandedFnIds, setExpandedFnIds] = useState<Set<string>>(new Set());
   const [fnDialog, setFnDialog] = useState<{ open: boolean; fn?: typeof functions[number] }>({ open: false });
-  const [teamDialog, setTeamDialog] = useState<{ open: boolean; functionId: string; team?: { id: string; name: string; description?: string | null } }>({ open: false, functionId: '' });
+  const [teamCreateDialog, setTeamCreateDialog] = useState<{ open: boolean; functionId: string }>({ open: false, functionId: '' });
+  const [teamSheetId, setTeamSheetId] = useState<string | null>(null);
 
   const deactivateMutation = trpc.company.function.deactivate.useMutation({
-    onSuccess: () => { toast.success('Funzione disattivata'); void refetch(); },
+    onSuccess: async () => { toast.success('Funzione disattivata'); await refresh.company(); },
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
   const deleteTeamMutation = trpc.company.team.delete.useMutation({
-    onSuccess: () => { toast.success('Team eliminato'); void refetch(); },
+    onSuccess: async () => { toast.success('Team eliminato'); await refresh.company(); },
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
-
-  const toggleFn = (id: string) => {
-    setExpandedFnIds(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
 
   return (
     <div className="space-y-4">
@@ -506,84 +722,70 @@ function StructureTab() {
         </p>
       )}
 
-      {functions.map(fn => {
-        const expanded = expandedFnIds.has(fn.id);
-        return (
-          <SectionCard key={fn.id} title="">
-            <div className="space-y-3">
-              {/* Function header */}
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  className="flex-1 text-left"
-                  onClick={() => toggleFn(fn.id)}
-                >
-                  <span className="font-semibold">{fn.name}</span>
-                  <span className="ml-2 text-xs text-muted-foreground font-mono">{fn.slug}</span>
-                  {fn.description && (
-                    <span className="ml-2 text-sm text-muted-foreground">— {fn.description}</span>
-                  )}
-                </button>
-                <div className="flex gap-1 shrink-0">
-                  {canUpdateFn && (
-                    <Button variant="ghost" size="sm" onClick={() => setFnDialog({ open: true, fn })}>
-                      Modifica
-                    </Button>
-                  )}
-                  {canDeleteFn && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => deactivateMutation.mutate({ id: fn.id })}
-                      disabled={deactivateMutation.isPending}
-                    >
-                      Disattiva
-                    </Button>
-                  )}
-                </div>
+      {functions.map(fn => (
+        <SectionCard key={fn.id} title="">
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="flex-1">
+                <span className="font-semibold">{fn.name}</span>
+                <span className="ml-2 text-xs text-muted-foreground font-mono">{fn.slug}</span>
+                {fn.description && (
+                  <span className="ml-2 text-sm text-muted-foreground">— {fn.description}</span>
+                )}
               </div>
-
-              {/* Teams (lazy) */}
-              {expanded && (
-                <FunctionTeams
-                  functionId={fn.id}
-                  canCreateTeam={canCreateTeam}
-                  canUpdateTeam={canUpdateTeam}
-                  canDeleteTeam={canDeleteTeam}
-                  onAddTeam={() => setTeamDialog({ open: true, functionId: fn.id })}
-                  onEditTeam={team => setTeamDialog({ open: true, functionId: fn.id, team })}
-                  onDeleteTeam={teamId => deleteTeamMutation.mutate({ id: teamId })}
-                />
-              )}
-
-              {!expanded && (
-                <button
-                  type="button"
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                  onClick={() => toggleFn(fn.id)}
-                >
-                  Espandi per vedere i team →
-                </button>
-              )}
+              <div className="flex gap-1 shrink-0">
+                {canUpdateFn && (
+                  <Button variant="ghost" size="sm" onClick={() => setFnDialog({ open: true, fn })}>
+                    Modifica
+                  </Button>
+                )}
+                {canDeleteFn && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => deactivateMutation.mutate({ id: fn.id })}
+                    disabled={deactivateMutation.isPending}
+                  >
+                    Disattiva
+                  </Button>
+                )}
+              </div>
             </div>
-          </SectionCard>
-        );
-      })}
+
+            <FunctionTeams
+              functionId={fn.id}
+              canCreateTeam={canCreateTeam}
+              canUpdateTeam={canUpdateTeam}
+              canDeleteTeam={canDeleteTeam}
+              onAddTeam={() => setTeamCreateDialog({ open: true, functionId: fn.id })}
+              onEditTeam={teamId => setTeamSheetId(teamId)}
+              onDeleteTeam={teamId => deleteTeamMutation.mutate({ id: teamId })}
+            />
+          </div>
+        </SectionCard>
+      ))}
 
       <FunctionDialog
         open={fnDialog.open}
         fn={fnDialog.fn}
         onClose={() => setFnDialog({ open: false })}
-        onSaved={() => { setFnDialog({ open: false }); void refetch(); }}
+        onSaved={async () => { setFnDialog({ open: false }); await refresh.company(); }}
       />
 
       <TeamDialog
-        open={teamDialog.open}
-        functionId={teamDialog.functionId}
-        team={teamDialog.team}
-        onClose={() => setTeamDialog({ open: false, functionId: '' })}
-        onSaved={() => { setTeamDialog({ open: false, functionId: '' }); void refetch(); }}
+        open={teamCreateDialog.open}
+        functionId={teamCreateDialog.functionId}
+        onClose={() => setTeamCreateDialog({ open: false, functionId: '' })}
+        onSaved={async () => { setTeamCreateDialog({ open: false, functionId: '' }); await refresh.company(); }}
+      />
+
+      <TeamSheet
+        open={!!teamSheetId}
+        teamId={teamSheetId}
+        canUpdate={canUpdateTeam}
+        onClose={() => setTeamSheetId(null)}
+        onSaved={() => setTeamSheetId(null)}
       />
     </div>
   );
@@ -595,7 +797,7 @@ interface FunctionTeamsProps {
   canUpdateTeam: boolean;
   canDeleteTeam: boolean;
   onAddTeam: () => void;
-  onEditTeam: (team: { id: string; name: string; description?: string | null }) => void;
+  onEditTeam: (teamId: string) => void;
   onDeleteTeam: (id: string) => void;
 }
 
@@ -610,19 +812,29 @@ function FunctionTeams({ functionId, canCreateTeam, canUpdateTeam, canDeleteTeam
       {teams.map(team => (
         <div key={team.id} className="flex items-center gap-2 px-3 py-2">
           <Users size={14} className="text-muted-foreground shrink-0" />
-          <span className="text-sm flex-1">{team.name}</span>
+          <span className="text-sm font-medium">{team.name}</span>
           {team.isMain && <Badge variant="secondary" className="text-xs">main</Badge>}
           <span className="text-xs text-muted-foreground">{(team as any)._count?.memberships ?? 0} membri</span>
-          {canUpdateTeam && !team.isMain && (
-            <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => onEditTeam(team)}>
-              Modifica
-            </Button>
-          )}
+          <div className="flex flex-1 flex-wrap gap-1">
+            {(team as any).brandScopes?.length === 0 ? (
+              <span className="text-xs text-muted-foreground">tutti i brand</span>
+            ) : (
+              (team as any).brandScopes?.slice(0, 3).map((s: { brandId: string; brand: { code: string } }) => (
+                <Badge key={s.brandId} variant="outline" className="font-mono text-xs">{s.brand.code}</Badge>
+              ))
+            )}
+            {(team as any).brandScopes?.length > 3 && (
+              <span className="text-xs text-muted-foreground">+{(team as any).brandScopes.length - 3}</span>
+            )}
+          </div>
+          <Button variant="ghost" size="sm" className="h-6 text-xs shrink-0" onClick={() => onEditTeam(team.id)}>
+            {canUpdateTeam ? 'Gestisci' : 'Visualizza'}
+          </Button>
           {canDeleteTeam && !team.isMain && (
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 text-xs text-destructive hover:text-destructive"
+              className="h-6 text-xs text-destructive hover:text-destructive shrink-0"
               onClick={() => onDeleteTeam(team.id)}
             >
               Elimina

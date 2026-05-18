@@ -234,6 +234,7 @@ const companyTeamRouter = router({
         orderBy: [{ isMain: 'desc' }, { name: 'asc' }],
         include: {
           _count: { select: { memberships: true } },
+          brandScopes: { include: { brand: { select: { id: true, code: true } } } },
         },
       });
     }),
@@ -393,6 +394,16 @@ const companyTeamRouter = router({
       );
 
       return { ok: true };
+    }),
+
+  listAllBrands: protectedProcedure
+    .use(requirePermission('company_team:update'))
+    .query(async ({ ctx }) => {
+      return ctx.prisma.brand.findMany({
+        where: { isActive: true },
+        select: { id: true, code: true, name: true },
+        orderBy: { code: 'asc' },
+      });
     }),
 });
 
