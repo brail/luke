@@ -1,4 +1,3 @@
-import type { PrismaClient } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -10,6 +9,7 @@ import {
   CompanyTeamUpdateInputSchema,
   CompanyTeamMembershipInputSchema,
   CompanyTeamMembershipRemoveInputSchema,
+  CompanyTeamMembershipUpdateRoleInputSchema,
   hasPermission,
   type Role,
 } from '@luke/core';
@@ -60,27 +60,6 @@ const companyProfileRouter = router({
 
 // ─── Function ───────────────────────────────────────────────────────────────
 
-type PrismaTx = Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends'>;
-
-async function createFunctionWithMainTeam(
-  input: { slug: string; name: string; description?: string; order?: number; isActive?: boolean },
-  tx: PrismaTx
-) {
-  const fn = await tx.companyFunction.create({
-    data: {
-      slug: input.slug,
-      name: input.name,
-      description: input.description,
-      order: input.order ?? 0,
-      isActive: input.isActive ?? true,
-    },
-  });
-  await tx.companyTeam.create({
-    data: { functionId: fn.id, name: fn.name, isMain: true },
-  });
-  return fn;
-}
-
 const companyFunctionRouter = router({
   list: protectedProcedure
     .use(requirePermission('company_function:read'))
@@ -106,7 +85,7 @@ const companyFunctionRouter = router({
             include: {
               _count: { select: { memberships: true } },
             },
-            orderBy: [{ isMain: 'desc' }, { name: 'asc' }],
+            orderBy: [{ name: 'asc' }],
           },
         },
       });
@@ -119,9 +98,15 @@ const companyFunctionRouter = router({
     .use(withRateLimit('companyStructureMutations'))
     .input(CompanyFunctionInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const fn = await ctx.prisma.$transaction(async tx => {
-        return createFunctionWithMainTeam(input, tx as PrismaTx);
-      }, { timeout: 15000 });
+      const fn = await ctx.prisma.companyFunction.create({
+        data: {
+          slug: input.slug,
+          name: input.name,
+          description: input.description,
+          order: input.order ?? 0,
+          isActive: input.isActive ?? true,
+        },
+      });
 
       await logAudit(ctx, {
         action: 'COMPANY_FUNCTION_CREATED',
@@ -231,7 +216,7 @@ const companyTeamRouter = router({
           functionId: input.functionId,
           ...(input.includeInactive ? {} : { isActive: true }),
         },
-        orderBy: [{ isMain: 'desc' }, { name: 'asc' }],
+        orderBy: [{ name: 'asc' }],
         include: {
           _count: { select: { memberships: true } },
           brandScopes: { include: { brand: { select: { id: true, code: true } } } },
@@ -267,7 +252,7 @@ const companyTeamRouter = router({
 
       const team = await ctx.prisma.$transaction(async tx => {
         const created = await tx.companyTeam.create({
-          data: { ...teamData, isMain: false },
+          data: { ...teamData },
         });
         if (brandIds && brandIds.length > 0) {
           await tx.companyTeamBrandScope.createMany({
@@ -326,16 +311,10 @@ const companyTeamRouter = router({
     .use(withRateLimit('companyStructureMutations'))
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const existing = await ctx.prisma.companyTeam.findUnique({ where: { id: input.id } });
-      if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'Team not found' });
-      if (existing.isMain) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Cannot delete the main team of a function',
-        });
-      }
-
-      await ctx.prisma.companyTeam.delete({ where: { id: input.id } });
+      await ctx.prisma.companyTeam.delete({ where: { id: input.id } }).catch((e: unknown) => {
+        if ((e as { code?: string })?.code === 'P2025') throw new TRPCError({ code: 'NOT_FOUND', message: 'Team not found' });
+        throw e;
+      });
 
       await logAudit(ctx, {
         action: 'COMPANY_TEAM_DELETED',
@@ -353,7 +332,7 @@ const companyTeamRouter = router({
     .input(CompanyTeamMembershipInputSchema)
     .mutation(async ({ ctx, input }) => {
       await ctx.prisma.companyTeamMembership.createMany({
-        data: input.userIds.map(userId => ({ teamId: input.teamId, userId })),
+        data: input.userIds.map(userId => ({ teamId: input.teamId, userId, role: input.role })),
         skipDuplicates: true,
       });
 
@@ -392,6 +371,32 @@ const companyTeamRouter = router({
           })
         )
       );
+
+      return { ok: true };
+    }),
+
+  updateMemberRole: protectedProcedure
+    .use(requirePermission('company_team:update'))
+    .use(withRateLimit('companyStructureMutations'))
+    .input(CompanyTeamMembershipUpdateRoleInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      await ctx.prisma.companyTeamMembership
+        .update({
+          where: { teamId_userId: { teamId: input.teamId, userId: input.userId } },
+          data: { role: input.role },
+        })
+        .catch((e: unknown) => {
+          if ((e as { code?: string })?.code === 'P2025') throw new TRPCError({ code: 'NOT_FOUND', message: 'Membership not found' });
+          throw e;
+        });
+
+      await logAudit(ctx, {
+        action: 'COMPANY_TEAM_MEMBER_ROLE_UPDATED',
+        targetType: 'CompanyTeamMembership',
+        targetId: `${input.teamId}:${input.userId}`,
+        result: 'SUCCESS',
+        metadata: { teamId: input.teamId, userId: input.userId, role: input.role },
+      });
 
       return { ok: true };
     }),

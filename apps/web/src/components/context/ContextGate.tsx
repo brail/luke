@@ -60,10 +60,7 @@ export function ContextGate() {
     trpc.catalog.brands.useQuery(undefined, { enabled: needsSetup });
 
   const { data: seasons = [], isLoading: seasonsLoading } =
-    trpc.catalog.seasons.useQuery(
-      { brandId: selectedBrandId || undefined },
-      { enabled: needsSetup && !!selectedBrandId }
-    );
+    trpc.catalog.seasons.useQuery(undefined, { enabled: needsSetup });
 
   const createBrandMutation = trpc.brand.create.useMutation({
     onSuccess: brand => {

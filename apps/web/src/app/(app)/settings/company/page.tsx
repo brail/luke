@@ -563,7 +563,7 @@ function TeamSheet({ open, teamId, canUpdate, onClose, onSaved }: TeamSheetProps
       <SheetContent side="right" className="flex w-full flex-col sm:max-w-lg">
         <SheetHeader>
           <SheetTitle>
-            {team ? `${team.name}${team.isMain ? ' (main)' : ''}` : 'Gestione team'}
+            {team ? team.name : 'Gestione team'}
           </SheetTitle>
         </SheetHeader>
 
@@ -851,11 +851,10 @@ function FunctionTeams({ functionId, canCreateTeam, canUpdateTeam, canDeleteTeam
         <div key={team.id} className="flex items-center gap-2 px-3 py-2">
           <Users size={14} className="text-muted-foreground shrink-0" />
           <span className="text-sm font-medium">{team.name}</span>
-          {team.isMain && <Badge variant="secondary" className="text-xs">main</Badge>}
           <span className="text-xs text-muted-foreground">{(team as any)._count?.memberships ?? 0} membri</span>
           <div className="flex flex-1 flex-wrap gap-1">
             {(team as any).brandScopes?.length === 0 ? (
-              <span className="text-xs text-muted-foreground">tutti i brand</span>
+              <span className="text-xs text-muted-foreground italic">nessun brand assegnato</span>
             ) : (
               (team as any).brandScopes?.slice(0, 3).map((s: { brandId: string; brand: { code: string } }) => (
                 <Badge key={s.brandId} variant="outline" className="font-mono text-xs">{s.brand.code}</Badge>
@@ -868,7 +867,7 @@ function FunctionTeams({ functionId, canCreateTeam, canUpdateTeam, canDeleteTeam
           <Button variant="ghost" size="sm" className="h-6 text-xs shrink-0" onClick={() => onEditTeam(team.id)}>
             {canUpdateTeam ? 'Gestisci' : 'Visualizza'}
           </Button>
-          {canDeleteTeam && !team.isMain && (
+          {canDeleteTeam && (
             <Button
               variant="ghost"
               size="sm"

@@ -3,6 +3,9 @@ import { z } from 'zod';
 export const COMPANY_FUNCTION_SEED_SLUGS = ['product', 'sales', 'sourcing'] as const;
 export type CompanyFunctionSeedSlug = (typeof COMPANY_FUNCTION_SEED_SLUGS)[number];
 
+export const CompanyTeamMemberRoleEnum = z.enum(['LEADER', 'MEMBER']);
+export type CompanyTeamMemberRole = z.infer<typeof CompanyTeamMemberRoleEnum>;
+
 export const CompanyFunctionInputSchema = z.object({
   slug: z.string().regex(/^[a-z][a-z0-9_]*$/).max(32),
   name: z.string().min(1).max(80),
@@ -34,6 +37,7 @@ export type CompanyTeamUpdateInput = z.infer<typeof CompanyTeamUpdateInputSchema
 export const CompanyTeamMembershipInputSchema = z.object({
   teamId: z.string().uuid(),
   userIds: z.array(z.string().uuid()).min(1),
+  role: CompanyTeamMemberRoleEnum.optional().default('MEMBER'),
 });
 export type CompanyTeamMembershipInput = z.infer<typeof CompanyTeamMembershipInputSchema>;
 
@@ -42,6 +46,13 @@ export const CompanyTeamMembershipRemoveInputSchema = z.object({
   userIds: z.array(z.string().uuid()).min(1),
 });
 export type CompanyTeamMembershipRemoveInput = z.infer<typeof CompanyTeamMembershipRemoveInputSchema>;
+
+export const CompanyTeamMembershipUpdateRoleInputSchema = z.object({
+  teamId: z.string().uuid(),
+  userId: z.string().uuid(),
+  role: CompanyTeamMemberRoleEnum,
+});
+export type CompanyTeamMembershipUpdateRoleInput = z.infer<typeof CompanyTeamMembershipUpdateRoleInputSchema>;
 
 export const MilestoneUserVisibilityInputSchema = z.object({
   milestoneId: z.string().uuid(),
@@ -67,7 +78,6 @@ export const CompanyTeamSchema = z.object({
   functionId: z.string().uuid(),
   name: z.string(),
   description: z.string().nullable(),
-  isMain: z.boolean(),
   isActive: z.boolean(),
   createdAt: z.date(),
   updatedAt: z.date(),

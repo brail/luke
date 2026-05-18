@@ -14,10 +14,8 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { getNavDbConfig, getPool, queryPortafoglioOrdini, sanitizeCompany } from '@luke/nav';
-import {
-  getUserAllowedBrandIds,
-  getUserAllowedSeasonIds,
-} from '../services/context.service';
+import type { Role } from '@luke/core';
+import { getUserAllowedBrandIds } from '../services/context.service';
 
 import { getConfig } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
@@ -48,31 +46,6 @@ const portafoglioDownloadInput = portafoglioBaseInput.extend({
   customerCode: z.string().min(1).optional(),
 });
 
-// ─── Helper: valida che l'utente abbia accesso al brand/season ───────────────
-
-async function assertContextAccess(
-  userId: string,
-  brandId: string,
-  seasonId: string,
-  prisma: Parameters<typeof getUserAllowedBrandIds>[1],
-) {
-  const allowedBrands = await getUserAllowedBrandIds(userId, prisma);
-  if (allowedBrands !== null && !allowedBrands.includes(brandId)) {
-    throw new TRPCError({
-      code: 'FORBIDDEN',
-      message: 'Accesso al brand non consentito',
-    });
-  }
-
-  const allowedSeasons = await getUserAllowedSeasonIds(userId, brandId, prisma);
-  if (allowedSeasons !== null && !allowedSeasons.includes(seasonId)) {
-    throw new TRPCError({
-      code: 'FORBIDDEN',
-      message: 'Accesso alla stagione non consentita',
-    });
-  }
-}
-
 // ─── Sub-router: portafoglio ──────────────────────────────────────────────────
 
 const portafoglioRouter = router({
@@ -86,13 +59,14 @@ const portafoglioRouter = router({
     .input(portafoglioBaseInput)
     .query(async ({ input, ctx }) => {
       const userId = ctx.session.user.id;
-      await assertContextAccess(userId, input.brandId, input.seasonId, ctx.prisma);
-
-      const [brand, season] = await Promise.all([
+      const [allowedBrands, brand, season] = await Promise.all([
+        getUserAllowedBrandIds(userId, ctx.prisma, ctx.session.user.role as Role),
         ctx.prisma.brand.findUnique({ where: { id: input.brandId }, select: { code: true, name: true } }),
         ctx.prisma.season.findUnique({ where: { id: input.seasonId }, select: { code: true, name: true } }),
       ]);
-
+      if (allowedBrands !== null && !allowedBrands.includes(input.brandId)) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Accesso al brand non consentito' });
+      }
       if (!brand || !season) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand o stagione non trovati' });
       }
@@ -210,14 +184,14 @@ const portafoglioRouter = router({
     .input(portafoglioDownloadInput)
     .mutation(async ({ input, ctx }) => {
       const userId = ctx.session.user.id;
-      await assertContextAccess(userId, input.brandId, input.seasonId, ctx.prisma);
-
-      // Leggi i codici NAV dal DB Postgres
-      const [brand, season] = await Promise.all([
+      const [allowedBrands, brand, season] = await Promise.all([
+        getUserAllowedBrandIds(userId, ctx.prisma, ctx.session.user.role as Role),
         ctx.prisma.brand.findUnique({ where: { id: input.brandId }, select: { code: true, name: true } }),
         ctx.prisma.season.findUnique({ where: { id: input.seasonId }, select: { code: true } }),
       ]);
-
+      if (allowedBrands !== null && !allowedBrands.includes(input.brandId)) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Accesso al brand non consentito' });
+      }
       if (!brand || !season) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand o stagione non trovati' });
       }
@@ -319,13 +293,14 @@ const kimoRouter = router({
     .input(portafoglioBaseInput)
     .query(async ({ input, ctx }) => {
       const userId = ctx.session.user.id;
-      await assertContextAccess(userId, input.brandId, input.seasonId, ctx.prisma);
-
-      const [brand, season] = await Promise.all([
+      const [allowedBrands, brand, season] = await Promise.all([
+        getUserAllowedBrandIds(userId, ctx.prisma, ctx.session.user.role as Role),
         ctx.prisma.brand.findUnique({ where: { id: input.brandId }, select: { code: true, name: true } }),
         ctx.prisma.season.findUnique({ where: { id: input.seasonId }, select: { code: true, name: true } }),
       ]);
-
+      if (allowedBrands !== null && !allowedBrands.includes(input.brandId)) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Accesso al brand non consentito' });
+      }
       if (!brand || !season) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand o stagione non trovati' });
       }
@@ -421,13 +396,14 @@ const kimoRouter = router({
     .input(portafoglioDownloadInput)
     .mutation(async ({ input, ctx }) => {
       const userId = ctx.session.user.id;
-      await assertContextAccess(userId, input.brandId, input.seasonId, ctx.prisma);
-
-      const [brand, season] = await Promise.all([
+      const [allowedBrands, brand, season] = await Promise.all([
+        getUserAllowedBrandIds(userId, ctx.prisma, ctx.session.user.role as Role),
         ctx.prisma.brand.findUnique({ where: { id: input.brandId }, select: { code: true, name: true } }),
         ctx.prisma.season.findUnique({ where: { id: input.seasonId }, select: { code: true } }),
       ]);
-
+      if (allowedBrands !== null && !allowedBrands.includes(input.brandId)) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Accesso al brand non consentito' });
+      }
       if (!brand || !season) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand o stagione non trovati' });
       }

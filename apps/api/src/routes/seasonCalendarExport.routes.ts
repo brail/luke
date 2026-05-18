@@ -7,6 +7,7 @@ import ExcelJS from 'exceljs';
 import type { TDocumentDefinitions, TableCell, Content } from 'pdfmake/interfaces';
 
 import { generateIcal } from '@luke/calendar';
+import type { Role } from '@luke/core';
 import { authenticateRequest } from '../lib/auth';
 import { filterAllowedBrandIds, listMilestonesDb } from '../services/seasonCalendar.service';
 
@@ -569,7 +570,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
     }
 
     const requestedBrandIds = brandIdsCsv.split(',').map(s => s.trim()).filter(Boolean);
-    const allowedBrandIds = await filterAllowedBrandIds(session.user.id, requestedBrandIds, prisma);
+    const allowedBrandIds = await filterAllowedBrandIds(session.user.id, requestedBrandIds, prisma, session.user.role as Role);
     if (allowedBrandIds.length === 0) {
       reply.code(403).send({ error: 'No accessible brands' });
       return null;

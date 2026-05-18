@@ -52,7 +52,6 @@ model User {
   auditLogs  AuditLog[]
   tokens     UserToken[]
   sectionAccess UserSectionAccess[]
-  seasonAccess UserSeasonAccess[]
   assignedMerchandisingRows MerchandisingPlanRow[]
   dashboardConfig DashboardConfig?
   dashboardTasks  DashboardTask[]
@@ -196,7 +195,6 @@ model Brand {
   collectionLayouts    CollectionLayout[]
   merchandisingPlans   MerchandisingPlan[]
   seasonCalendars      SeasonCalendar[]
-  userSeasonAccess     UserSeasonAccess[]
   teamBrandScopes      CompanyTeamBrandScope[]
 
   @@index([name])
@@ -219,29 +217,8 @@ model Season {
   collectionLayouts    CollectionLayout[]
   merchandisingPlans   MerchandisingPlan[]
   seasonCalendars      SeasonCalendar[]
-  userSeasonAccess     UserSeasonAccess[]
 
   @@map("seasons")
-}
-
-/**
- * Whitelist stagioni per utente+brand.
- * Se NON esistono righe per (userId, brandId) → accesso a tutte le stagioni di quel brand.
- * Se esistono righe → accesso solo alle stagioni elencate.
- */
-model UserSeasonAccess {
-  id       String @id @default(uuid())
-  userId   String
-  brandId  String
-  seasonId String
-
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  brand  Brand  @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  season Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, brandId, seasonId])
-  @@index([userId, brandId])
-  @@map("user_season_access")
 }
 
 model DashboardConfig {
@@ -1217,11 +1194,15 @@ model CompanyFunction {
   @@map("company_functions")
 }
 
+enum CompanyTeamMemberRole {
+  LEADER
+  MEMBER
+}
+
 model CompanyTeam {
   id          String   @id @default(uuid())
   functionId  String
   name        String
-  isMain      Boolean  @default(false)
   description String?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
@@ -1239,7 +1220,8 @@ model CompanyTeam {
 model CompanyTeamMembership {
   teamId    String
   userId    String
-  createdAt DateTime @default(now())
+  role      CompanyTeamMemberRole @default(MEMBER)
+  createdAt DateTime              @default(now())
 
   team CompanyTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
   user User        @relation(fields: [userId], references: [id], onDelete: Cascade)

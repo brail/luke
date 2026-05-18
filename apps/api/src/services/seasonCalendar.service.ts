@@ -3,6 +3,7 @@ import type { PrismaClient, CalendarMilestoneType } from '@prisma/client';
 import type {
   CalendarMilestoneInput,
   CloneSeasonCalendarInput,
+  Role,
 } from '@luke/core';
 
 import { getUserAllowedBrandIds } from './context.service.js';
@@ -14,9 +15,10 @@ const MS_PER_DAY = 86_400_000;
 export async function assertBrandAccess(
   userId: string,
   brandId: string,
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  userRole?: Role
 ): Promise<void> {
-  const allowed = await getUserAllowedBrandIds(userId, prisma);
+  const allowed = await getUserAllowedBrandIds(userId, prisma, userRole);
   if (allowed !== null && !allowed.includes(brandId)) {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'Accesso al brand negato' });
   }
@@ -25,9 +27,10 @@ export async function assertBrandAccess(
 export async function filterAllowedBrandIds(
   userId: string,
   requestedBrandIds: string[],
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  userRole?: Role
 ): Promise<string[]> {
-  const allowed = await getUserAllowedBrandIds(userId, prisma);
+  const allowed = await getUserAllowedBrandIds(userId, prisma, userRole);
   if (allowed === null) return requestedBrandIds;
   return requestedBrandIds.filter(id => allowed.includes(id));
 }
