@@ -677,29 +677,19 @@ function TeamSheet({ open, teamId, canUpdate, onClose, onSaved }: TeamSheetProps
   );
 }
 
-function StructureTab() {
+function FunzioniTab() {
   const { can } = usePermission();
   const refresh = useRefresh();
   const canCreateFn = can('company_function:create');
   const canUpdateFn = can('company_function:update');
   const canDeleteFn = can('company_function:delete');
-  const canCreateTeam = can('company_team:create');
-  const canUpdateTeam = can('company_team:update');
-  const canDeleteTeam = can('company_team:delete');
 
   const { data: functions = [] } = trpc.company.function.list.useQuery({ includeInactive: false });
 
   const [fnDialog, setFnDialog] = useState<{ open: boolean; fn?: typeof functions[number] }>({ open: false });
-  const [teamCreateDialog, setTeamCreateDialog] = useState<{ open: boolean; functionId: string }>({ open: false, functionId: '' });
-  const [teamSheetId, setTeamSheetId] = useState<string | null>(null);
 
-  const deactivateMutation = trpc.company.function.deactivate.useMutation({
+  const deactivateMutation = trpc.company.function.delete.useMutation({
     onSuccess: async () => { toast.success('Funzione disattivata'); await refresh.company(); },
-    onError: err => toast.error(getTrpcErrorMessage(err)),
-  });
-
-  const deleteTeamMutation = trpc.company.team.delete.useMutation({
-    onSuccess: async () => { toast.success('Team eliminato'); await refresh.company(); },
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
@@ -724,44 +714,32 @@ function StructureTab() {
 
       {functions.map(fn => (
         <SectionCard key={fn.id} title="">
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="flex-1">
-                <span className="font-semibold">{fn.name}</span>
-                <span className="ml-2 text-xs text-muted-foreground font-mono">{fn.slug}</span>
-                {fn.description && (
-                  <span className="ml-2 text-sm text-muted-foreground">— {fn.description}</span>
-                )}
-              </div>
-              <div className="flex gap-1 shrink-0">
-                {canUpdateFn && (
-                  <Button variant="ghost" size="sm" onClick={() => setFnDialog({ open: true, fn })}>
-                    Modifica
-                  </Button>
-                )}
-                {canDeleteFn && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => deactivateMutation.mutate({ id: fn.id })}
-                    disabled={deactivateMutation.isPending}
-                  >
-                    Disattiva
-                  </Button>
-                )}
-              </div>
+          <div className="flex items-center gap-3">
+            <div className="flex-1">
+              <span className="font-semibold">{fn.name}</span>
+              <span className="ml-2 text-xs text-muted-foreground font-mono">{fn.slug}</span>
+              {fn.description && (
+                <span className="ml-2 text-sm text-muted-foreground">— {fn.description}</span>
+              )}
             </div>
-
-            <FunctionTeams
-              functionId={fn.id}
-              canCreateTeam={canCreateTeam}
-              canUpdateTeam={canUpdateTeam}
-              canDeleteTeam={canDeleteTeam}
-              onAddTeam={() => setTeamCreateDialog({ open: true, functionId: fn.id })}
-              onEditTeam={teamId => setTeamSheetId(teamId)}
-              onDeleteTeam={teamId => deleteTeamMutation.mutate({ id: teamId })}
-            />
+            <div className="flex gap-1 shrink-0">
+              {canUpdateFn && (
+                <Button variant="ghost" size="sm" onClick={() => setFnDialog({ open: true, fn })}>
+                  Modifica
+                </Button>
+              )}
+              {canDeleteFn && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => deactivateMutation.mutate({ id: fn.id })}
+                  disabled={deactivateMutation.isPending}
+                >
+                  Disattiva
+                </Button>
+              )}
+            </div>
           </div>
         </SectionCard>
       ))}
@@ -772,6 +750,66 @@ function StructureTab() {
         onClose={() => setFnDialog({ open: false })}
         onSaved={async () => { setFnDialog({ open: false }); await refresh.company(); }}
       />
+    </div>
+  );
+}
+
+function TeamTab() {
+  const { can } = usePermission();
+  const refresh = useRefresh();
+  const canCreateTeam = can('company_team:create');
+  const canUpdateTeam = can('company_team:update');
+  const canDeleteTeam = can('company_team:delete');
+
+  const { data: functions = [] } = trpc.company.function.list.useQuery({ includeInactive: false });
+
+  const [selectedFunctionId, setSelectedFunctionId] = useState<string>('');
+  const [teamCreateDialog, setTeamCreateDialog] = useState<{ open: boolean; functionId: string }>({ open: false, functionId: '' });
+  const [teamSheetId, setTeamSheetId] = useState<string | null>(null);
+
+  const effectiveFunctionId = selectedFunctionId || functions[0]?.id || '';
+
+  const deleteTeamMutation = trpc.company.team.delete.useMutation({
+    onSuccess: async () => { toast.success('Team eliminato'); await refresh.company(); },
+    onError: err => toast.error(getTrpcErrorMessage(err)),
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <Select value={effectiveFunctionId} onValueChange={setSelectedFunctionId}>
+          <SelectTrigger className="w-56">
+            <SelectValue placeholder="Seleziona funzione..." />
+          </SelectTrigger>
+          <SelectContent>
+            {functions.map(fn => (
+              <SelectItem key={fn.id} value={fn.id}>{fn.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {canCreateTeam && effectiveFunctionId && (
+          <Button size="sm" onClick={() => setTeamCreateDialog({ open: true, functionId: effectiveFunctionId })}>
+            <Plus size={14} className="mr-1" />
+            Nuovo team
+          </Button>
+        )}
+      </div>
+
+      {effectiveFunctionId ? (
+        <FunctionTeams
+          functionId={effectiveFunctionId}
+          canCreateTeam={canCreateTeam}
+          canUpdateTeam={canUpdateTeam}
+          canDeleteTeam={canDeleteTeam}
+          onAddTeam={() => setTeamCreateDialog({ open: true, functionId: effectiveFunctionId })}
+          onEditTeam={teamId => setTeamSheetId(teamId)}
+          onDeleteTeam={teamId => deleteTeamMutation.mutate({ id: teamId })}
+        />
+      ) : (
+        <p className="text-sm text-muted-foreground text-center py-8">
+          Seleziona una funzione per visualizzare i team.
+        </p>
+      )}
 
       <TeamDialog
         open={teamCreateDialog.open}
@@ -866,13 +904,17 @@ export default function CompanySettingsPage() {
       <Tabs defaultValue="profile" className="mt-6">
         <TabsList>
           <TabsTrigger value="profile">Profilo</TabsTrigger>
-          <TabsTrigger value="structure">Struttura organizzativa</TabsTrigger>
+          <TabsTrigger value="functions">Funzioni</TabsTrigger>
+          <TabsTrigger value="teams">Team</TabsTrigger>
         </TabsList>
         <TabsContent value="profile" className="mt-6">
           <ProfileTab />
         </TabsContent>
-        <TabsContent value="structure" className="mt-6">
-          <StructureTab />
+        <TabsContent value="functions" className="mt-6">
+          <FunzioniTab />
+        </TabsContent>
+        <TabsContent value="teams" className="mt-6">
+          <TeamTab />
         </TabsContent>
       </Tabs>
     </>

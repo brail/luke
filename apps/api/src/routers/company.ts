@@ -179,7 +179,7 @@ const companyFunctionRouter = router({
       return { ok: true };
     }),
 
-  deactivate: protectedProcedure
+  delete: protectedProcedure
     .use(requirePermission('company_function:delete'))
     .use(withRateLimit('companyStructureMutations'))
     .input(z.object({ id: z.string().uuid() }))

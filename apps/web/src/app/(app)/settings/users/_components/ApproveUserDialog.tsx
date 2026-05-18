@@ -8,7 +8,6 @@ import { SECTION_ACCESS_DEFAULTS } from '@luke/core';
 import type { Role, Section } from '@luke/core';
 
 import { Button } from '../../../../../components/ui/button';
-import { Checkbox } from '../../../../../components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -31,7 +30,6 @@ import { trpc } from '../../../../../lib/trpc';
 import {
   ALL_SECTIONS,
   SECTION_LABELS,
-  type SeasonAccessMap,
   type SectionOverrideMap,
   type UserForApproval,
 } from './types';
@@ -47,8 +45,9 @@ interface ApproveUserDialogProps {
 }
 
 /**
- * Obbliga l'admin a configurare accesso (sezioni/brand/stagioni) prima di approvare.
+ * Obbliga l'admin a configurare accesso (sezioni) prima di approvare.
  * Usato sia per LDAP pending che per utente locale appena creato (pendingApproval: true).
+ * L'accesso ai brand è gestito tramite la membership ai team in Impostazioni → Azienda.
  */
 export function ApproveUserDialog({
   user,
@@ -56,20 +55,8 @@ export function ApproveUserDialog({
   onOpenChange,
   onApproved,
 }: ApproveUserDialogProps) {
-  const { data: allBrands } = trpc.brand.list.useQuery(
-    { limit: 100 },
-    { enabled: open }
-  );
-  const { data: allSeasons } = trpc.season.list.useQuery(
-    { limit: 100 },
-    { enabled: open }
-  );
-
   const [pendingRole, setPendingRole] = useState<Role>(user.role);
   const [pendingSection, setPendingSection] = useState<SectionOverrideMap>({});
-  const [pendingBrandIds, setPendingBrandIds] = useState<string[] | null>(null);
-  const [pendingSeasonAccess, setPendingSeasonAccess] =
-    useState<SeasonAccessMap>({});
 
   const getRoleDefault = (section: Section): boolean =>
     SECTION_ACCESS_DEFAULTS[pendingRole]?.[section] ?? false;
@@ -99,58 +86,8 @@ export function ApproveUserDialog({
     });
   };
 
-  const allBrandsAllowed = pendingBrandIds === null;
-
-  const handleAllBrandsToggle = (checked: boolean) => {
-    setPendingBrandIds(checked ? null : []);
-  };
-
-  const handleBrandToggle = (brandId: string, checked: boolean) => {
-    setPendingBrandIds(prev => {
-      const current = prev ?? [];
-      return checked
-        ? [...current, brandId]
-        : current.filter(id => id !== brandId);
-    });
-  };
-
-  const getSeasonAccess = (brandId: string): string[] | null =>
-    brandId in pendingSeasonAccess ? pendingSeasonAccess[brandId] : null;
-
-  const handleAllSeasonsToggle = (brandId: string, checked: boolean) => {
-    setPendingSeasonAccess(prev => {
-      const next = { ...prev };
-      if (checked) {
-        delete next[brandId];
-      } else {
-        next[brandId] = allSeasons?.items.map(s => s.id) ?? [];
-      }
-      return next;
-    });
-  };
-
-  const handleSeasonToggle = (
-    brandId: string,
-    seasonId: string,
-    checked: boolean
-  ) => {
-    setPendingSeasonAccess(prev => {
-      const current = prev[brandId] ?? [];
-      return {
-        ...prev,
-        [brandId]: checked
-          ? [...current, seasonId]
-          : current.filter(id => id !== seasonId),
-      };
-    });
-  };
-
   const updateUserMutation = trpc.users.update.useMutation();
   const setSectionMutation = trpc.sectionAccess.set.useMutation();
-  const setBrandAccessMutation =
-    trpc.context.access.setBrandAccess.useMutation();
-  const setSeasonAccessMutation =
-    trpc.context.access.setSeasonAccess.useMutation();
   const approveMutation = trpc.users.approvePending.useMutation();
 
   const [isSaving, setIsSaving] = useState(false);
@@ -173,25 +110,6 @@ export function ApproveUserDialog({
         )
       );
 
-      await setBrandAccessMutation.mutateAsync({
-        userId: user.id,
-        brandIds: pendingBrandIds ?? [],
-      });
-
-      const activeBrands = allBrandsAllowed
-        ? (allBrands?.items.map(b => b.id) ?? [])
-        : (pendingBrandIds ?? []);
-
-      await Promise.all(
-        activeBrands.map(brandId =>
-          setSeasonAccessMutation.mutateAsync({
-            userId: user.id,
-            brandId,
-            seasonIds: pendingSeasonAccess[brandId] ?? [],
-          })
-        )
-      );
-
       await approveMutation.mutateAsync({ id: user.id });
 
       toast.success('Utente approvato con accesso configurato');
@@ -203,10 +121,6 @@ export function ApproveUserDialog({
       setIsSaving(false);
     }
   };
-
-  const activeBrandIds = allBrandsAllowed
-    ? (allBrands?.items.map(b => b.id) ?? [])
-    : (pendingBrandIds ?? []);
 
   return (
     <Dialog
@@ -222,9 +136,9 @@ export function ApproveUserDialog({
             Configura accesso e approva — {user.username}
           </DialogTitle>
           <DialogDescription>
-            Configura ruolo, sezioni e brand/stagioni accessibili prima di
-            approvare l&apos;account. I default sezioni si aggiornano al cambio
-            ruolo.
+            Configura ruolo e visibilità sezioni prima di approvare l&apos;account.
+            L&apos;accesso ai brand è gestito tramite i team in{' '}
+            <strong>Impostazioni → Azienda</strong>.
           </DialogDescription>
         </DialogHeader>
 
@@ -300,111 +214,10 @@ export function ApproveUserDialog({
             </div>
           </div>
 
-          <div>
-            <h3 className="text-sm font-semibold mb-3">Brand accessibili</h3>
-            <div className="flex items-center gap-2 mb-3">
-              <Checkbox
-                id="all-brands"
-                checked={allBrandsAllowed}
-                onCheckedChange={checked =>
-                  handleAllBrandsToggle(checked === true)
-                }
-              />
-              <Label htmlFor="all-brands" className="text-sm font-normal">
-                Tutti i brand (nessuna restrizione)
-              </Label>
-            </div>
-            {!allBrandsAllowed && (
-              <div className="grid grid-cols-2 gap-1 ml-6">
-                {(allBrands?.items ?? []).map(brand => (
-                  <div key={brand.id} className="flex items-center gap-2">
-                    <Checkbox
-                      id={`brand-${brand.id}`}
-                      checked={pendingBrandIds?.includes(brand.id) ?? false}
-                      onCheckedChange={checked =>
-                        handleBrandToggle(brand.id, checked === true)
-                      }
-                    />
-                    <Label
-                      htmlFor={`brand-${brand.id}`}
-                      className="text-sm font-normal"
-                    >
-                      {brand.name}
-                    </Label>
-                  </div>
-                ))}
-              </div>
-            )}
+          <div className="rounded-md border border-muted p-3 text-sm text-muted-foreground">
+            L&apos;accesso ai brand è gestito tramite la membership ai team aziendali.
+            Configura i team dalla pagina <strong>Impostazioni → Azienda</strong> dopo l&apos;approvazione.
           </div>
-
-          {activeBrandIds.length > 0 && (
-            <div>
-              <h3 className="text-sm font-semibold mb-3">
-                Stagioni accessibili per brand
-              </h3>
-              <div className="space-y-4">
-                {activeBrandIds.map(brandId => {
-                  const brand = allBrands?.items.find(b => b.id === brandId);
-                  if (!brand) return null;
-                  const seasonAccess = getSeasonAccess(brandId);
-                  const allSeasonsAllowed = seasonAccess === null;
-
-                  return (
-                    <div key={brandId}>
-                      <p className="text-xs font-medium text-muted-foreground mb-1">
-                        {brand.name}
-                      </p>
-                      <div className="flex items-center gap-2 mb-1">
-                        <Checkbox
-                          id={`all-seasons-${brandId}`}
-                          checked={allSeasonsAllowed}
-                          onCheckedChange={checked =>
-                            handleAllSeasonsToggle(brandId, checked === true)
-                          }
-                        />
-                        <Label
-                          htmlFor={`all-seasons-${brandId}`}
-                          className="text-xs font-normal"
-                        >
-                          Tutte le stagioni
-                        </Label>
-                      </div>
-                      {!allSeasonsAllowed && (
-                        <div className="grid grid-cols-2 gap-1 ml-6">
-                          {(allSeasons?.items ?? []).map(season => (
-                            <div
-                              key={season.id}
-                              className="flex items-center gap-2"
-                            >
-                              <Checkbox
-                                id={`season-${brandId}-${season.id}`}
-                                checked={
-                                  seasonAccess?.includes(season.id) ?? false
-                                }
-                                onCheckedChange={checked =>
-                                  handleSeasonToggle(
-                                    brandId,
-                                    season.id,
-                                    checked === true
-                                  )
-                                }
-                              />
-                              <Label
-                                htmlFor={`season-${brandId}-${season.id}`}
-                                className="text-xs font-normal"
-                              >
-                                {season.name}
-                              </Label>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </div>
 
         <DialogFooter className="mt-6">
