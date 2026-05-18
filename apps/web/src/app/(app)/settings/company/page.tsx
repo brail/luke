@@ -1,8 +1,11 @@
 'use client';
 
-import { Plus, Users } from 'lucide-react';
-import { type ChangeEvent, useEffect, useState } from 'react';
+import { ImageIcon, Plus, Trash2, UploadCloud, Users } from 'lucide-react';
+import { useSession } from 'next-auth/react';
+import { type ChangeEvent, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
+
+import { buildCompanyLogoUploadUrl, buildCompanyLogoUrl } from '@luke/core';
 
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
@@ -15,8 +18,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../components/ui/dialog';
+import { FileDropZone } from '../../../../components/ui/file-drop-zone';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
+import { Progress } from '../../../../components/ui/progress';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../../../components/ui/select';
 import {
   Tabs,
   TabsContent,
@@ -33,6 +45,7 @@ import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 function ProfileTab() {
   const { can } = usePermission();
   const canUpdate = can('company_profile:update');
+  const { data: session } = useSession();
 
   const { data: profile, refetch } = trpc.company.profile.get.useQuery();
   const utils = trpc.useUtils();
@@ -44,8 +57,20 @@ function ProfileTab() {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [website, setWebsite] = useState('');
+  const [footerText, setFooterText] = useState('');
+  const [accentColorHex, setAccentColorHex] = useState('#000000');
+  const [locale, setLocale] = useState<'it-IT' | 'en-US'>('it-IT');
+  const [dateFormat, setDateFormat] = useState<'DD/MM/YYYY' | 'YYYY-MM-DD'>('DD/MM/YYYY');
+  const [logoKey, setLogoKey] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [dirty, setDirty] = useState(false);
   const [initialized, setInitialized] = useState(false);
+
+  const colorInputRef = useRef<HTMLInputElement>(null);
+  const xhrRef = useRef<XMLHttpRequest | null>(null);
+
+  const logoPreviewUrl = logoKey ? buildCompanyLogoUrl(logoKey) : null;
 
   useEffect(() => {
     if (profile && !initialized) {
@@ -56,15 +81,89 @@ function ProfileTab() {
       setPhone((profile.phone as string) ?? '');
       setEmail((profile.email as string) ?? '');
       setWebsite((profile.website as string) ?? '');
+      const es: Record<string, string> = (profile as any).exportSettings ?? {}; // eslint-disable-line @typescript-eslint/no-explicit-any
+      setFooterText(es['footerText'] ?? '');
+      setAccentColorHex(es['accentColorHex'] ?? '#000000');
+      setLocale((es['locale'] as 'it-IT' | 'en-US') ?? 'it-IT');
+      setDateFormat((es['dateFormat'] as 'DD/MM/YYYY' | 'YYYY-MM-DD') ?? 'DD/MM/YYYY');
+      const key = profile.logoKey as string | null | undefined;
+      setLogoKey(key ?? null);
       setInitialized(true);
     }
   }, [profile?.legalName, initialized]);
+
+  useEffect(() => () => { xhrRef.current?.abort(); }, []);
 
   const updateMutation = trpc.company.profile.update.useMutation();
 
   const field = (setter: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
     setter(e.target.value);
     setDirty(true);
+  };
+
+  const handleLogoUpload = (file: File) => {
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    const formData = new globalThis.FormData();
+    formData.append('file', file);
+
+    const xhr = new globalThis.XMLHttpRequest();
+    xhrRef.current = xhr;
+
+    xhr.upload.addEventListener('progress', e => {
+      if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
+    });
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status === 200) {
+        try {
+          const result = JSON.parse(xhr.responseText);
+          setLogoKey(result.key);
+          toast.success('Logo caricato');
+        } catch {
+          toast.error('Errore durante il parsing della risposta');
+        }
+      } else {
+        try {
+          const errorData = JSON.parse(xhr.responseText);
+          toast.error(errorData.message || 'Upload fallito');
+        } catch {
+          toast.error('Upload fallito');
+        }
+      }
+      xhrRef.current = null;
+      setIsUploading(false);
+      setUploadProgress(0);
+    });
+
+    xhr.addEventListener('error', () => {
+      toast.error('Errore di rete durante upload');
+      xhrRef.current = null;
+      setIsUploading(false);
+      setUploadProgress(0);
+    });
+
+    xhr.open('POST', buildCompanyLogoUploadUrl());
+    if (session?.accessToken) {
+      xhr.setRequestHeader('Authorization', `Bearer ${session.accessToken}`);
+    }
+    xhr.send(formData);
+  };
+
+  const handleLogoRemove = async () => {
+    try {
+      await updateMutation.mutateAsync({
+        legalName: legalName.trim(),
+        displayName: displayName.trim(),
+        logoKey: undefined,
+      });
+      setLogoKey(null);
+      toast.success('Logo rimosso');
+      await utils.company.profile.get.invalidate();
+    } catch (err) {
+      toast.error(getTrpcErrorMessage(err));
+    }
   };
 
   const handleSave = async () => {
@@ -81,6 +180,12 @@ function ProfileTab() {
         phone: phone.trim() || undefined,
         email: email.trim() || undefined,
         website: website.trim() || undefined,
+        exportSettings: {
+          footerText: footerText.trim() || undefined,
+          accentColorHex,
+          locale,
+          dateFormat,
+        },
       });
       toast.success('Profilo aggiornato');
       setDirty(false);
@@ -93,6 +198,48 @@ function ProfileTab() {
 
   return (
     <div className="max-w-2xl space-y-6">
+      <SectionCard title="Logo aziendale">
+        <div className="space-y-3">
+          {logoPreviewUrl ? (
+            <div className="flex items-center gap-4">
+              <img src={logoPreviewUrl} alt="Logo aziendale" className="h-16 w-auto rounded border object-contain p-1" />
+              {canUpdate && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={handleLogoRemove}
+                  disabled={updateMutation.isPending}
+                >
+                  <Trash2 size={14} className="mr-1" />
+                  Rimuovi
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <ImageIcon size={16} />
+              <span>Nessun logo caricato</span>
+            </div>
+          )}
+          {canUpdate && (
+            <FileDropZone
+              onFile={handleLogoUpload}
+              accept={['image/png', 'image/jpeg', 'image/webp']}
+              maxSizeMB={2}
+              disabled={isUploading}
+              className="cursor-pointer rounded-md border border-dashed p-4 text-center hover:bg-muted/40"
+            >
+              <div className="flex flex-col items-center gap-1 text-sm text-muted-foreground">
+                <UploadCloud size={20} />
+                <span>{isUploading ? `Caricamento… ${uploadProgress}%` : 'Trascina o clicca per caricare (PNG, JPG, WEBP, max 2MB)'}</span>
+              </div>
+            </FileDropZone>
+          )}
+          {isUploading && <Progress value={uploadProgress} className="h-1" />}
+        </div>
+      </SectionCard>
+
       <SectionCard title="Dati aziendali">
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
@@ -128,6 +275,88 @@ function ProfileTab() {
           <div className="space-y-1.5">
             <Label htmlFor="website">Sito web</Label>
             <Input id="website" value={website} onChange={field(setWebsite)} disabled={!canUpdate} placeholder="https://…" />
+          </div>
+        </div>
+        {canUpdate && (
+          <div className="mt-4 flex justify-end">
+            <Button onClick={handleSave} disabled={!dirty || updateMutation.isPending}>
+              {updateMutation.isPending ? 'Salvataggio…' : 'Salva'}
+            </Button>
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Impostazioni export">
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="footerText">Testo piè di pagina</Label>
+            <Input
+              id="footerText"
+              value={footerText}
+              onChange={field(setFooterText)}
+              disabled={!canUpdate}
+              placeholder="es. FEBOS S.r.l. — P.IVA 12345678901"
+              maxLength={200}
+            />
+            <p className="text-xs text-muted-foreground">{footerText.length}/200 caratteri</p>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="accentColor">Colore accento</Label>
+              <div className="flex items-center gap-2">
+                <div
+                  className="h-9 w-9 cursor-pointer rounded-md border"
+                  style={{ backgroundColor: accentColorHex }}
+                  onClick={() => canUpdate && colorInputRef.current?.click()}
+                />
+                <Input
+                  value={accentColorHex}
+                  onChange={e => { setAccentColorHex(e.target.value); setDirty(true); }}
+                  disabled={!canUpdate}
+                  className="font-mono uppercase"
+                  maxLength={7}
+                />
+                <input
+                  ref={colorInputRef}
+                  type="color"
+                  className="sr-only"
+                  value={accentColorHex}
+                  onChange={e => { setAccentColorHex(e.target.value); setDirty(true); }}
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Lingua</Label>
+              <Select
+                value={locale}
+                onValueChange={v => { setLocale(v as 'it-IT' | 'en-US'); setDirty(true); }}
+                disabled={!canUpdate}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="it-IT">Italiano</SelectItem>
+                  <SelectItem value="en-US">English</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Formato data</Label>
+              <Select
+                value={dateFormat}
+                onValueChange={v => { setDateFormat(v as 'DD/MM/YYYY' | 'YYYY-MM-DD'); setDirty(true); }}
+                disabled={!canUpdate}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="DD/MM/YYYY">DD/MM/YYYY</SelectItem>
+                  <SelectItem value="YYYY-MM-DD">YYYY-MM-DD</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
         {canUpdate && (

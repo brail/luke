@@ -37,6 +37,7 @@ import { runReadinessChecks } from './observability/readiness';
 import { storagePlugin } from './plugins/storage-upload';
 import brandLogoRoutes from './routes/brandLogo.routes';
 import collectionRowPictureRoutes from './routes/collectionRowPicture.routes';
+import companyLogoRoutes from './routes/companyLogo.routes';
 import seasonCalendarExportRoutes from './routes/seasonCalendarExport.routes';
 import specsheetImageRoutes from './routes/specsheetImage.routes';
 import { appRouter } from './routers';
@@ -258,6 +259,10 @@ async function registerBrandLogoRoutes() {
   await fastify.register(brandLogoRoutes, { prisma });
 }
 
+async function registerCompanyLogoRoutes() {
+  await fastify.register(companyLogoRoutes, { prisma });
+}
+
 /**
  * Registra collection row picture routes
  */
@@ -357,7 +362,7 @@ function setupTempFileCleanup() {
       const tempFiles = await prisma.fileObject.findMany({
         where: {
           confirmedAt: null,
-          bucket: { in: ['brand-logos', 'collection-row-pictures', 'merchandising-specsheet-images'] },
+          bucket: { in: ['brand-logos', 'company-assets', 'collection-row-pictures', 'merchandising-specsheet-images'] },
           createdAt: { lt: oneHourAgo },
         },
       });
@@ -372,7 +377,7 @@ function setupTempFileCleanup() {
         for (const file of tempFiles) {
           try {
             await provider.delete({
-              bucket: file.bucket as 'brand-logos' | 'collection-row-pictures' | 'merchandising-specsheet-images',
+              bucket: file.bucket as 'brand-logos' | 'company-assets' | 'collection-row-pictures' | 'merchandising-specsheet-images',
               key: file.key,
             });
             succeededIds.push(file.id);
@@ -594,6 +599,7 @@ const start = async () => {
     await registerMultipart(); // Multipart globale (richiesto da tutti i route di upload)
     await registerStoragePlugin(); // Storage upload/download routes
     await registerBrandLogoRoutes(); // Brand logo upload routes
+    await registerCompanyLogoRoutes(); // Company logo upload routes
     await registerCollectionRowPictureRoutes(); // Collection row picture upload routes
     await registerSpecsheetImageRoutes(); // Specsheet image upload routes
     await registerSeasonCalendarExportRoutes(); // iCal + CSV export
