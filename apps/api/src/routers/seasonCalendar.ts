@@ -17,6 +17,7 @@ import {
 import { assertFunctionMemberOrAdmin } from './company.js';
 
 import { logAudit } from '../lib/auditLog.js';
+import { createNotification, getVisibleUserIdsForMilestone } from '../lib/notifications.js';
 import { withRateLimit } from '../lib/ratelimit.js';
 import { router, protectedProcedure } from '../lib/trpc.js';
 import { requirePermission } from '../lib/permissions.js';
@@ -199,6 +200,25 @@ export const seasonCalendarRouter = router({
       });
       await logAudit(ctx, { action: 'CALENDAR_MILESTONE_STATUS_UPDATE', targetType: 'CalendarMilestone', targetId: input.id, result: 'SUCCESS', metadata: { status: input.status } });
       syncOneMilestone(input.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on status change'));
+
+      const STATUS_LABELS: Record<string, string> = {
+        PLANNED: 'In pianificazione', IN_PROGRESS: 'In corso',
+        COMPLETED: 'Completata', CANCELLED: 'Annullata',
+      };
+      const statusLabel = STATUS_LABELS[input.status] ?? input.status;
+      void getVisibleUserIdsForMilestone(input.id, ctx.prisma)
+        .then(userIds => Promise.all(userIds.map(userId =>
+          createNotification(ctx.prisma, {
+            userId,
+            category: 'CALENDAR',
+            title: 'Milestone aggiornata',
+            message: `"${milestone.title}" → ${statusLabel}`,
+            link: '/calendar',
+            data: { milestoneId: input.id, status: input.status },
+          })
+        )))
+        .catch(err => ctx.logger.error(err, 'notification fanout failed on milestone status change'));
+
       return result;
     }),
 
@@ -393,7 +413,7 @@ export const seasonCalendarRouter = router({
     .mutation(async ({ input, ctx }) => {
       const milestone = await ctx.prisma.calendarMilestone.findUnique({
         where: { id: input.milestoneId },
-        select: { ownerFunctionId: true },
+        select: { ownerFunctionId: true, title: true },
       });
       if (!milestone) throw new TRPCError({ code: 'NOT_FOUND', message: 'Milestone not found' });
 
@@ -420,6 +440,19 @@ export const seasonCalendarRouter = router({
         )
       );
 
+      await Promise.all(
+        input.userIds.map(userId =>
+          createNotification(ctx.prisma, {
+            userId,
+            category: 'USER_ACTION',
+            title: 'Accesso milestone concesso',
+            message: `Hai accesso alla milestone "${milestone.title}"`,
+            link: '/calendar',
+            data: { milestoneId: input.milestoneId },
+          })
+        )
+      );
+
       return { ok: true };
     }),
 
@@ -430,7 +463,7 @@ export const seasonCalendarRouter = router({
     .mutation(async ({ input, ctx }) => {
       const milestone = await ctx.prisma.calendarMilestone.findUnique({
         where: { id: input.milestoneId },
-        select: { ownerFunctionId: true },
+        select: { ownerFunctionId: true, title: true },
       });
       if (!milestone) throw new TRPCError({ code: 'NOT_FOUND', message: 'Milestone not found' });
 
@@ -448,6 +481,18 @@ export const seasonCalendarRouter = router({
             targetId: `${input.milestoneId}:${userId}`,
             result: 'SUCCESS',
             metadata: { milestoneId: input.milestoneId, userId },
+          })
+        )
+      );
+
+      await Promise.all(
+        input.userIds.map(userId =>
+          createNotification(ctx.prisma, {
+            userId,
+            category: 'USER_ACTION',
+            title: 'Accesso milestone revocato',
+            message: `Hai perso accesso alla milestone "${milestone.title}"`,
+            data: { milestoneId: input.milestoneId },
           })
         )
       );

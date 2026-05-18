@@ -1,4 +1,5 @@
 import { TRPCError } from '@trpc/server';
+import type { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 
 import {
@@ -15,6 +16,7 @@ import {
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog.js';
+import { createNotification } from '../lib/notifications.js';
 import { withRateLimit } from '../lib/ratelimit.js';
 import { requirePermission } from '../lib/permissions.js';
 import { router, protectedProcedure } from '../lib/trpc.js';
@@ -206,6 +208,11 @@ const companyFunctionRouter = router({
 
 // ─── Team ────────────────────────────────────────────────────────────────────
 
+async function fetchTeamName(teamId: string, prisma: PrismaClient): Promise<string> {
+  const team = await prisma.companyTeam.findUnique({ where: { id: teamId }, select: { name: true } });
+  return team?.name ?? teamId;
+}
+
 const companyTeamRouter = router({
   listByFunction: protectedProcedure
     .use(requirePermission('company_team:read'))
@@ -331,22 +338,30 @@ const companyTeamRouter = router({
     .use(withRateLimit('companyStructureMutations'))
     .input(CompanyTeamMembershipInputSchema)
     .mutation(async ({ ctx, input }) => {
+      const teamName = await fetchTeamName(input.teamId, ctx.prisma);
+
       await ctx.prisma.companyTeamMembership.createMany({
         data: input.userIds.map(userId => ({ teamId: input.teamId, userId, role: input.role })),
         skipDuplicates: true,
       });
 
-      await Promise.all(
-        input.userIds.map(userId =>
-          logAudit(ctx, {
-            action: 'COMPANY_TEAM_MEMBER_ADDED',
-            targetType: 'CompanyTeamMembership',
-            targetId: `${input.teamId}:${userId}`,
-            result: 'SUCCESS',
-            metadata: { teamId: input.teamId, userId },
-          })
-        )
-      );
+      await Promise.all(input.userIds.flatMap(userId => [
+        logAudit(ctx, {
+          action: 'COMPANY_TEAM_MEMBER_ADDED',
+          targetType: 'CompanyTeamMembership',
+          targetId: `${input.teamId}:${userId}`,
+          result: 'SUCCESS',
+          metadata: { teamId: input.teamId, userId },
+        }),
+        createNotification(ctx.prisma, {
+          userId,
+          category: 'USER_ACTION',
+          title: 'Aggiunto al team',
+          message: `Sei stato aggiunto al team "${teamName}"`,
+          link: '/settings/company',
+          data: { teamId: input.teamId },
+        }),
+      ]));
 
       return { ok: true };
     }),
@@ -356,21 +371,28 @@ const companyTeamRouter = router({
     .use(withRateLimit('companyStructureMutations'))
     .input(CompanyTeamMembershipRemoveInputSchema)
     .mutation(async ({ ctx, input }) => {
+      const teamName = await fetchTeamName(input.teamId, ctx.prisma);
+
       await ctx.prisma.companyTeamMembership.deleteMany({
         where: { teamId: input.teamId, userId: { in: input.userIds } },
       });
 
-      await Promise.all(
-        input.userIds.map(userId =>
-          logAudit(ctx, {
-            action: 'COMPANY_TEAM_MEMBER_REMOVED',
-            targetType: 'CompanyTeamMembership',
-            targetId: `${input.teamId}:${userId}`,
-            result: 'SUCCESS',
-            metadata: { teamId: input.teamId, userId },
-          })
-        )
-      );
+      await Promise.all(input.userIds.flatMap(userId => [
+        logAudit(ctx, {
+          action: 'COMPANY_TEAM_MEMBER_REMOVED',
+          targetType: 'CompanyTeamMembership',
+          targetId: `${input.teamId}:${userId}`,
+          result: 'SUCCESS',
+          metadata: { teamId: input.teamId, userId },
+        }),
+        createNotification(ctx.prisma, {
+          userId,
+          category: 'USER_ACTION',
+          title: 'Rimosso dal team',
+          message: `Sei stato rimosso dal team "${teamName}"`,
+          data: { teamId: input.teamId },
+        }),
+      ]));
 
       return { ok: true };
     }),
@@ -380,6 +402,8 @@ const companyTeamRouter = router({
     .use(withRateLimit('companyStructureMutations'))
     .input(CompanyTeamMembershipUpdateRoleInputSchema)
     .mutation(async ({ ctx, input }) => {
+      const teamName = await fetchTeamName(input.teamId, ctx.prisma);
+
       await ctx.prisma.companyTeamMembership
         .update({
           where: { teamId_userId: { teamId: input.teamId, userId: input.userId } },
@@ -396,6 +420,15 @@ const companyTeamRouter = router({
         targetId: `${input.teamId}:${input.userId}`,
         result: 'SUCCESS',
         metadata: { teamId: input.teamId, userId: input.userId, role: input.role },
+      });
+
+      await createNotification(ctx.prisma, {
+        userId: input.userId,
+        category: 'USER_ACTION',
+        title: 'Ruolo team aggiornato',
+        message: `Il tuo ruolo nel team "${teamName}" è ora "${input.role}"`,
+        link: '/settings/company',
+        data: { teamId: input.teamId, role: input.role },
       });
 
       return { ok: true };

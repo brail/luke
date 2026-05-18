@@ -44,6 +44,8 @@ const nextConfig = {
       { source: '/upload/:path*',  destination: `${apiUrl}/upload/:path*` },
       // SSE session invalidation
       { source: '/session-events', destination: `${apiUrl}/session-events` },
+      // SSE notifications push
+      { source: '/api/sse',        destination: `${apiUrl}/api/sse` },
       // Health check passthrough
       { source: '/health',         destination: `${apiUrl}/health` },
     ];

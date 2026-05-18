@@ -27,6 +27,7 @@ import { getConfig, validateCriticalConfig } from './lib/configManager';
 import { registerNavSyncScheduler } from './lib/navSyncScheduler';
 import { registerPortafoglioSyncScheduler } from './lib/portafoglioSyncScheduler';
 import { registerKimoSyncScheduler } from './lib/kimoSyncScheduler';
+import { registerMilestoneDeadlineScheduler } from './lib/milestoneDeadlineScheduler';
 import { idempotencyStore } from './lib/idempotency';
 import { rateLimitStore } from './lib/ratelimit';
 import {
@@ -39,6 +40,7 @@ import brandLogoRoutes from './routes/brandLogo.routes';
 import collectionRowPictureRoutes from './routes/collectionRowPicture.routes';
 import companyLogoRoutes from './routes/companyLogo.routes';
 import seasonCalendarExportRoutes from './routes/seasonCalendarExport.routes';
+import { registerSseRoute } from './routes/sse';
 import specsheetImageRoutes from './routes/specsheetImage.routes';
 import { appRouter } from './routers';
 import { getStorageProvider } from './storage';
@@ -603,6 +605,7 @@ const start = async () => {
     await registerCollectionRowPictureRoutes(); // Collection row picture upload routes
     await registerSpecsheetImageRoutes(); // Specsheet image upload routes
     await registerSeasonCalendarExportRoutes(); // iCal + CSV export
+    await registerSseRoute(fastify); // SSE real-time push
     await registerHealthRoute();
 
     // Configura cleanup file temporanei
@@ -616,6 +619,9 @@ const start = async () => {
 
     // Registra scheduler sync tabelle KIMO-FASHION NAV → PG (onReady + onClose)
     registerKimoSyncScheduler(fastify, prisma);
+
+    // Registra scheduler notifiche deadline milestone (tick ogni ora)
+    registerMilestoneDeadlineScheduler(fastify, prisma);
 
     // Configura graceful shutdown
     setupGracefulShutdown();

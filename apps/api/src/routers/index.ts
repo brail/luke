@@ -29,6 +29,7 @@ import { salesRouter } from './sales';
 import { seasonCalendarRouter } from './seasonCalendar';
 import { dashboardRouter } from './dashboard';
 import { feedbackRouter } from './feedback';
+import { notificationsRouter } from './notifications';
 
 /**
  * Router principale dell'applicazione
@@ -59,6 +60,7 @@ export const appRouter = router({
   seasonCalendar: seasonCalendarRouter,
   dashboard: dashboardRouter,
   feedback: feedbackRouter,
+  notifications: notificationsRouter,
 });
 
 /**

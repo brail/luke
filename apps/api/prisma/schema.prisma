@@ -28,6 +28,13 @@ enum TokenType {
   VERIFY
 }
 
+enum NotificationCategory {
+  SYSTEM
+  CALENDAR
+  USER_ACTION
+  WORKFLOW
+}
+
 // Models
 model User {
   id                String    @id @default(uuid())
@@ -59,6 +66,8 @@ model User {
   teamMemberships                   CompanyTeamMembership[]
   milestoneUserVisibilitiesReceived MilestoneUserVisibility[] @relation("MilestoneUserVisibilityRecipient")
   milestoneUserVisibilitiesGranted  MilestoneUserVisibility[] @relation("MilestoneUserVisibilityGrantor")
+  notifications           Notification[]
+  notificationPreferences NotificationPreference[]
 
   @@map("users")
 }
@@ -1468,4 +1477,35 @@ model GoogleEventMapping {
   @@id([milestoneId, companyFunctionId])
   @@index([googleCalendarId])
   @@map("google_event_mappings")
+}
+
+model Notification {
+  id        String               @id @default(uuid())
+  userId    String
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category  NotificationCategory
+  title     String
+  message   String
+  link      String?
+  data      Json?
+  isRead    Boolean              @default(false)
+  readAt    DateTime?
+  createdAt DateTime             @default(now())
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+model NotificationPreference {
+  id        String               @id @default(uuid())
+  userId    String
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category  NotificationCategory
+  enabled   Boolean              @default(true)
+  updatedAt DateTime             @updatedAt
+
+  @@unique([userId, category])
+  @@index([userId])
+  @@map("notification_preferences")
 }

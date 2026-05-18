@@ -9,6 +9,7 @@ import { ContextGate } from '../../components/context/ContextGate';
 import { ContextSelector } from '../../components/context/ContextSelector';
 import { HeartbeatTicker } from '../../components/HeartbeatTicker';
 import LoadingLogo from '../../components/LoadingLogo';
+import { NotificationDropdown } from '../../components/NotificationDropdown';
 import { SidebarProvider, SidebarTrigger, useSidebar } from '../../components/ui/sidebar';
 import { AppContextProvider } from '../../contexts/AppContextProvider';
 
@@ -56,7 +57,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <header className="sticky top-0 z-10 shrink-0 border-b bg-card">
               <div className="flex items-center px-4 py-2">
                 <CollapsedSidebarTrigger />
-                <div className="ml-auto">
+                <div className="ml-auto flex items-center gap-2">
+                  <NotificationDropdown />
                   <ContextSelector />
                 </div>
               </div>

@@ -22,6 +22,7 @@ import {
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
+import { createNotification } from '../lib/notifications';
 import { withRateLimit } from '../lib/ratelimit';
 import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
@@ -456,6 +457,11 @@ export const merchandisingPlanRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      const existingRow = await ctx.prisma.merchandisingPlanRow.findUnique({
+        where: { id: input.rowId },
+        select: { assignedUserId: true, articleCode: true },
+      });
+
       const result = await ctx.prisma.merchandisingPlanRow.update({
         where: { id: input.rowId },
         data: { assignedUserId: input.userId },
@@ -467,6 +473,27 @@ export const merchandisingPlanRouter = router({
         result: 'SUCCESS',
         metadata: { userId: input.userId },
       });
+
+      if (input.userId && input.userId !== existingRow?.assignedUserId) {
+        await createNotification(ctx.prisma, {
+          userId: input.userId,
+          category: 'WORKFLOW',
+          title: 'Riga assegnata',
+          message: `Sei stato assegnato alla riga ${existingRow?.articleCode ?? input.rowId}`,
+          link: '/product/merchandising-plan',
+          data: { rowId: input.rowId },
+        });
+      }
+      if (!input.userId && existingRow?.assignedUserId) {
+        await createNotification(ctx.prisma, {
+          userId: existingRow.assignedUserId,
+          category: 'WORKFLOW',
+          title: 'Riga rimossa',
+          message: `Sei stato rimosso dalla riga ${existingRow.articleCode ?? input.rowId}`,
+          data: { rowId: input.rowId },
+        });
+      }
+
       return result;
     }),
 });

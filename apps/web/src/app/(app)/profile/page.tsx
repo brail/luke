@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  Bell,
   Shield,
   Copy,
   Download,
@@ -19,6 +20,7 @@ import { Button } from '../../../components/ui/button';
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
 } from '../../../components/ui/card';
@@ -33,7 +35,14 @@ import { useFormatDate } from '../../../hooks/use-format-date';
 import { trpc } from '../../../lib/trpc';
 
 import { ChangePasswordCard } from './_components/ChangePasswordCard';
+import { NotificationPreferences } from './_components/NotificationPreferences';
 import { UserProfileForm } from './_components/UserProfileForm';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '../../../components/ui/tabs';
 
 /**
  * Pagina Profilo Utente Semplificata
@@ -321,18 +330,49 @@ export default function ProfilePage() {
 
         {/* Colonna Destra - Contenuto Principale */}
         <div className="lg:col-span-3 space-y-6">
-          {/* Informazioni Profilo */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <User className="h-5 w-5" />
-                Informazioni Profilo
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <UserProfileForm user={user} />
-            </CardContent>
-          </Card>
+          <Tabs defaultValue="profile">
+            <TabsList>
+              <TabsTrigger value="profile" className="flex items-center gap-1.5">
+                <User className="h-4 w-4" />
+                Profilo
+              </TabsTrigger>
+              <TabsTrigger value="notifications" className="flex items-center gap-1.5">
+                <Bell className="h-4 w-4" />
+                Notifiche
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="profile">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <User className="h-5 w-5" />
+                    Informazioni Profilo
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <UserProfileForm user={user} />
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="notifications">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Bell className="h-5 w-5" />
+                    Preferenze Notifiche
+                  </CardTitle>
+                  <CardDescription>
+                    Scegli quali categorie di notifiche vuoi ricevere. Tutte abilitate per default.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <NotificationPreferences />
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
 
