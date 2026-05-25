@@ -7,21 +7,10 @@ import { ReactNode, useCallback, useMemo, useState } from 'react';
 
 import { Button } from '../../../../components/ui/button';
 import { cn } from '../../../../lib/utils';
-import { STATUS_OPACITY } from '../constants';
-import { addDays, addMonths, brandColor, daysBetween, getIsoWeek, mondayOf, sameDay, startOfDay } from '../utils';
+import { DAY_LABELS_IT, MONTH_NAMES_IT, STATUS_OPACITY } from '../constants';
+import { addDays, addMonths, brandColor, canEditMilestone, daysBetween, getIsoWeek, mondayOf, sameDay, startOfDay } from '../utils';
 import { DraggableMilestoneChip } from './DraggableMilestoneChip';
-
-interface Milestone {
-  id: string;
-  title: string;
-  startAt: Date | string;
-  endAt?: Date | string | null;
-  status: string;
-  type: string;
-  ownerFunctionId: string;
-  brandId?: string | null;
-  visibilities: { functionId: string }[];
-}
+import { type CalendarMilestoneItem as Milestone } from './types';
 
 interface Props {
   milestones: Milestone[];
@@ -29,32 +18,32 @@ interface Props {
   onViewDateChange: (d: Date) => void;
   onMilestoneClick: (id: string) => void;
   onMilestoneUpdate: (id: string, data: { startAt: string; endAt?: string | null }) => void;
+  onDayClick?: (isoDate: string) => void;
   activeBrandId?: string;
   canUpdate?: boolean;
 }
 
-const DAY_LABELS = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
-const MONTH_IT = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
-  'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
-
 const MAX_CHIPS = 3;
 
-function MonthDayCell({ dayIso, isToday, isDragging, isCurrentMonth, children }: {
+function MonthDayCell({ dayIso, isToday, isDragging, isCurrentMonth, onDayClick, children }: {
   dayIso: string;
   isToday: boolean;
   isDragging: boolean;
   isCurrentMonth: boolean;
+  onDayClick?: () => void;
   children: ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: dayIso });
   return (
     <div
       ref={setNodeRef}
+      onClick={onDayClick}
       className={cn(
         'flex-1 min-w-0 min-h-[90px] p-1 flex flex-col border-r last:border-r-0',
         !isCurrentMonth && 'bg-muted/30',
         isToday && 'bg-blue-50/50 dark:bg-blue-950/20',
-        isDragging && isOver && 'bg-blue-50/80 dark:bg-blue-950/30 ring-1 ring-inset ring-blue-300/50'
+        isDragging && isOver && 'bg-blue-50/80 dark:bg-blue-950/30 ring-1 ring-inset ring-blue-300/50',
+        onDayClick && 'cursor-pointer'
       )}
     >
       {children}
@@ -62,7 +51,7 @@ function MonthDayCell({ dayIso, isToday, isDragging, isCurrentMonth, children }:
   );
 }
 
-export function MilestoneMonthView({ milestones, viewDate, onViewDateChange, onMilestoneClick, onMilestoneUpdate, activeBrandId, canUpdate }: Props) {
+export function MilestoneMonthView({ milestones, viewDate, onViewDateChange, onMilestoneClick, onMilestoneUpdate, onDayClick, activeBrandId, canUpdate }: Props) {
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -122,7 +111,7 @@ export function MilestoneMonthView({ milestones, viewDate, onViewDateChange, onM
             <ChevronLeft size={14} />
           </Button>
           <span className="text-sm font-medium flex-1 text-center">
-            {MONTH_IT[month]} {year}
+            {MONTH_NAMES_IT[month]} {year}
           </span>
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onViewDateChange(addMonths(viewDate, 1))}>
             <ChevronRight size={14} />
@@ -134,7 +123,7 @@ export function MilestoneMonthView({ milestones, viewDate, onViewDateChange, onM
 
         <div className="flex border-b">
           <div className="w-7 shrink-0 border-r border-border/40" />
-          {DAY_LABELS.map(d => (
+          {DAY_LABELS_IT.map(d => (
             <div key={d} className="flex-1 min-w-0 px-2 py-1 text-center text-xs font-medium text-muted-foreground">
               {d}
             </div>
@@ -163,6 +152,7 @@ export function MilestoneMonthView({ milestones, viewDate, onViewDateChange, onM
                       isToday={isToday}
                       isDragging={!!draggingId}
                       isCurrentMonth={isCurrentMonth}
+                      onDayClick={onDayClick ? () => onDayClick(day.toISOString()) : undefined}
                     >
                       <div className="mb-0.5">
                         <span className={cn(
@@ -183,7 +173,7 @@ export function MilestoneMonthView({ milestones, viewDate, onViewDateChange, onM
                           const span = end ? daysBetween(start, end) : 0;
                           return (
                             <div key={m.id} className={cn(isOtherBrand && 'opacity-40')}>
-                              {canUpdate && isStart ? (
+                              {canEditMilestone(m, canUpdate, activeBrandId) && isStart ? (
                                 <DraggableMilestoneChip
                                   id={m.id}
                                   title={m.title}
@@ -191,12 +181,12 @@ export function MilestoneMonthView({ milestones, viewDate, onViewDateChange, onM
                                   brandId={m.brandId}
                                   span={span}
                                   isDragging={draggingId === m.id}
-                                  onClick={() => onMilestoneClick(m.id)}
+                                  onClick={(e) => { e.stopPropagation(); onMilestoneClick(m.id); }}
                                 />
                               ) : (
                                 <button
                                   type="button"
-                                  onClick={() => onMilestoneClick(m.id)}
+                                  onClick={(e) => { e.stopPropagation(); onMilestoneClick(m.id); }}
                                   className={cn(
                                     'w-full text-left rounded px-1 py-0.5 text-[11px] text-white truncate leading-tight',
                                     'hover:brightness-110 transition-all',

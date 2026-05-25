@@ -1,27 +1,17 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { cn } from '../../../../lib/utils';
-import { STATUS_OPACITY } from '../constants';
-import { addDays, brandColor, daysBetween, startOfDay } from '../utils';
-
-interface Milestone {
-  id: string;
-  title: string;
-  startAt: Date | string;
-  endAt?: Date | string | null;
-  status: string;
-  type: string;
-  ownerFunctionId: string;
-  brandId?: string | null;
-  visibilities: { functionId: string }[];
-}
+import { MONTH_NAMES_SHORT_IT, STATUS_OPACITY } from '../constants';
+import { addDays, brandColor, canEditMilestone, daysBetween, startOfDay } from '../utils';
+import { type CalendarMilestoneItem as Milestone } from './types';
 
 interface Props {
   milestones: Milestone[];
   onMilestoneClick: (id: string) => void;
   onMilestoneUpdate: (id: string, data: { startAt: string; endAt?: string | null }) => void;
+  onDayClick?: (isoDate: string) => void;
   activeBrandId?: string;
   functionsById: Record<string, string>;
   canUpdate?: boolean;
@@ -35,7 +25,6 @@ const MONTH_ROW_H = 22;
 const DAY_ROW_H = 26;
 const HEADER_H = MONTH_ROW_H + DAY_ROW_H;
 
-const MONTH_IT = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
 const FMT = (d: Date) => d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
 
 
@@ -64,7 +53,7 @@ type DragState = {
   deltaX: number;
 };
 
-export function MilestoneGantt({ milestones, onMilestoneClick, onMilestoneUpdate, activeBrandId, functionsById, canUpdate }: Props) {
+export function MilestoneGantt({ milestones, onMilestoneClick, onMilestoneUpdate, onDayClick, activeBrandId, functionsById, canUpdate }: Props) {
   const sorted = useMemo(
     () => [...milestones].sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime()),
     [milestones]
@@ -100,7 +89,7 @@ export function MilestoneGantt({ milestones, onMilestoneClick, onMilestoneUpdate
         count++;
       }
       if (count === 0) break;
-      months.push({ label: `${MONTH_IT[month]} ${year}`, startDay: day, width: count * dayW });
+      months.push({ label: `${MONTH_NAMES_SHORT_IT[month]} ${year}`, startDay: day, width: count * dayW });
       day += count;
     }
 
@@ -154,6 +143,8 @@ export function MilestoneGantt({ milestones, onMilestoneClick, onMilestoneUpdate
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const wasDraggingRef = useRef(false);
+  const milestonesRef = useRef(milestones);
+  useEffect(() => { milestonesRef.current = milestones; }, [milestones]);
 
   const startDrag = useCallback((e: React.PointerEvent, id: string, mode: 'drag' | 'resize') => {
     if (!canUpdate) return;
@@ -182,7 +173,7 @@ export function MilestoneGantt({ milestones, onMilestoneClick, onMilestoneUpdate
       }
       wasDraggingRef.current = true;
 
-      const m = milestones.find(x => x.id === id);
+      const m = milestonesRef.current.find(x => x.id === id);
       if (m) {
         const origStart = startOfDay(new Date(m.startAt));
         const origEnd = m.endAt ? startOfDay(new Date(m.endAt)) : origStart;
@@ -205,7 +196,7 @@ export function MilestoneGantt({ milestones, onMilestoneClick, onMilestoneUpdate
 
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-  }, [canUpdate, dayW, milestones, onMilestoneUpdate]);
+  }, [canUpdate, dayW, onMilestoneUpdate]);
 
   return (
     <div className="overflow-x-auto overflow-y-visible">
@@ -330,7 +321,7 @@ export function MilestoneGantt({ milestones, onMilestoneClick, onMilestoneUpdate
               {/* Sticky label */}
               <button
                 type="button"
-                onClick={() => onMilestoneClick(m.id)}
+                onClick={(e) => { e.stopPropagation(); onMilestoneClick(m.id); }}
                 className={cn(
                   'shrink-0 sticky left-0 z-10 bg-background group-hover:bg-muted/20',
                   'border-r text-left px-3 flex items-center gap-2 min-w-0 transition-colors',
@@ -348,6 +339,15 @@ export function MilestoneGantt({ milestones, onMilestoneClick, onMilestoneUpdate
               <div
                 className={cn('relative flex-1', i < bars.length - 1 && 'border-b border-border/40')}
                 style={{ height: ROW_H, overflow: 'visible' }}
+                onClick={(e) => {
+                  if (wasDraggingRef.current) return;
+                  if (!onDayClick) return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const dayIndex = Math.floor((e.clientX - rect.left) / dayW);
+                  if (dayIndex >= 0 && dayIndex < totalDays) {
+                    onDayClick(addDays(rangeStart, dayIndex).toISOString());
+                  }
+                }}
               >
                 <div style={{ width: totalW, height: ROW_H, position: 'relative', overflow: 'visible' }}>
                   {/* Ghost bar — original position while dragging */}
@@ -382,8 +382,9 @@ export function MilestoneGantt({ milestones, onMilestoneClick, onMilestoneUpdate
                       userSelect: 'none',
                       overflow: 'visible',
                     }}
-                    onPointerDown={canUpdate ? e => startDrag(e, m.id, 'drag') : undefined}
-                    onClick={() => {
+                    onPointerDown={canEditMilestone(m, canUpdate, activeBrandId) ? e => startDrag(e, m.id, 'drag') : undefined}
+                    onClick={(e) => {
+                      e.stopPropagation();
                       if (wasDraggingRef.current) { wasDraggingRef.current = false; return; }
                       onMilestoneClick(m.id);
                     }}
@@ -410,7 +411,7 @@ export function MilestoneGantt({ milestones, onMilestoneClick, onMilestoneUpdate
                     )}
 
                     {/* Resize handle */}
-                    {canUpdate && !isDragging && (
+                    {canEditMilestone(m, canUpdate, activeBrandId) && !isDragging && (
                       <div
                         className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/25 rounded-r"
                         onPointerDown={e => startDrag(e, m.id, 'resize')}

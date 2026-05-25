@@ -39,6 +39,14 @@ const PALETTE = [
   '#8b5cf6', '#ec4899', '#14b8a6', '#f97316',
 ];
 
+export function canEditMilestone(
+  m: { brandId?: string | null },
+  canUpdate: boolean | undefined,
+  activeBrandId: string | undefined,
+): boolean {
+  return !!canUpdate && (!m.brandId || m.brandId === activeBrandId);
+}
+
 export function brandColor(brandId: string): string {
   let hash = 0;
   for (let i = 0; i < brandId.length; i++) {

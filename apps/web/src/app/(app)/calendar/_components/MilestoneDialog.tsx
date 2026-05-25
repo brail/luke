@@ -50,6 +50,7 @@ interface Props {
   calendarId: string;
   availableFunctions: { id: string; name: string }[];
   milestone?: ExistingMilestone;
+  defaultDate?: string;
 }
 
 function toDateInput(val: Date | string | null | undefined): string {
@@ -58,7 +59,7 @@ function toDateInput(val: Date | string | null | undefined): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function MilestoneDialog({ open, onClose, onSaved, calendarId, availableFunctions, milestone }: Props) {
+export function MilestoneDialog({ open, onClose, onSaved, calendarId, availableFunctions, milestone, defaultDate }: Props) {
   const isEdit = !!milestone;
 
   const defaultOwner = milestone?.ownerFunctionId ?? availableFunctions[0]?.id ?? '';
@@ -73,7 +74,7 @@ export function MilestoneDialog({ open, onClose, onSaved, calendarId, availableF
       ? milestone.visibilities.map(v => v.functionId)
       : (defaultOwner ? [defaultOwner] : [])
   );
-  const [startAt, setStartAt] = useState(toDateInput(milestone?.startAt));
+  const [startAt, setStartAt] = useState(toDateInput(milestone?.startAt ?? defaultDate));
   const [endAt, setEndAt] = useState(toDateInput(milestone?.endAt));
   const [allDay, setAllDay] = useState(milestone?.allDay ?? true);
   const [publishExternally, setPublishExternally] = useState(milestone?.publishExternally ?? false);
@@ -91,11 +92,11 @@ export function MilestoneDialog({ open, onClose, onSaved, calendarId, availableF
         ? milestone.visibilities.map(v => v.functionId)
         : (owner ? [owner] : [])
     );
-    setStartAt(toDateInput(milestone?.startAt));
+    setStartAt(toDateInput(milestone?.startAt ?? defaultDate));
     setEndAt(toDateInput(milestone?.endAt));
     setAllDay(milestone?.allDay ?? true);
     setPublishExternally(milestone?.publishExternally ?? false);
-  }, [milestone?.id, open]);
+  }, [milestone?.id, open, defaultDate]);
 
   const handleOwnerChange = (val: string) => {
     setOwnerFunctionId(val);

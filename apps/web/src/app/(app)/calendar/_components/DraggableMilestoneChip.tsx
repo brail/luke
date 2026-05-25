@@ -1,6 +1,7 @@
 'use client';
 
 import { useDraggable } from '@dnd-kit/core';
+import { type MouseEvent } from 'react';
 
 import { cn } from '../../../../lib/utils';
 import { STATUS_OPACITY } from '../constants';
@@ -13,7 +14,7 @@ interface Props {
   brandId?: string | null;
   span: number;
   isDragging: boolean;
-  onClick: () => void;
+  onClick: (e: MouseEvent<HTMLButtonElement>) => void;
 }
 
 export function DraggableMilestoneChip({ id, title, status, brandId, span, isDragging, onClick }: Props) {

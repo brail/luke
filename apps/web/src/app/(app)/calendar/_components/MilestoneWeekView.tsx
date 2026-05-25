@@ -1,27 +1,16 @@
 'use client';
 
 import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { useDroppable } from '@dnd-kit/core';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { ReactNode, useCallback, useMemo, useState } from 'react';
 
 import { Button } from '../../../../components/ui/button';
 import { cn } from '../../../../lib/utils';
-import { STATUS_OPACITY } from '../constants';
-import { addDays, brandColor, daysBetween, getIsoWeek, mondayOf, sameDay, startOfDay } from '../utils';
+import { DAY_LABELS_IT, STATUS_OPACITY } from '../constants';
+import { addDays, brandColor, canEditMilestone, daysBetween, getIsoWeek, mondayOf, sameDay, startOfDay } from '../utils';
 import { DraggableMilestoneChip } from './DraggableMilestoneChip';
-import { DroppableDayCell } from './DroppableDayCell';
-
-interface Milestone {
-  id: string;
-  title: string;
-  startAt: Date | string;
-  endAt?: Date | string | null;
-  status: string;
-  type: string;
-  ownerFunctionId: string;
-  brandId?: string | null;
-  visibilities: { functionId: string }[];
-}
+import { type CalendarMilestoneItem as Milestone } from './types';
 
 interface Props {
   milestones: Milestone[];
@@ -29,13 +18,38 @@ interface Props {
   onViewDateChange: (d: Date) => void;
   onMilestoneClick: (id: string) => void;
   onMilestoneUpdate: (id: string, data: { startAt: string; endAt?: string | null }) => void;
+  onDayClick?: (isoDate: string) => void;
   activeBrandId?: string;
   canUpdate?: boolean;
 }
 
-const DAY_IT = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
+function WeekDayRow({ dayIso, isToday, isWeekend, isDragging, onDayClick, children }: {
+  dayIso: string;
+  isToday: boolean;
+  isWeekend: boolean;
+  isDragging: boolean;
+  onDayClick?: () => void;
+  children: ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: dayIso });
+  return (
+    <div
+      ref={setNodeRef}
+      onClick={onDayClick}
+      className={cn(
+        'flex-1 p-1.5 flex flex-wrap gap-1 content-start min-h-[52px]',
+        isWeekend && 'bg-muted/20',
+        isToday && 'bg-blue-50/50 dark:bg-blue-950/20',
+        isDragging && isOver && 'bg-blue-50/80 dark:bg-blue-950/30 ring-1 ring-inset ring-blue-300/50',
+        onDayClick && 'cursor-pointer'
+      )}
+    >
+      {children}
+    </div>
+  );
+}
 
-export function MilestoneWeekView({ milestones, viewDate, onViewDateChange, onMilestoneClick, onMilestoneUpdate, activeBrandId, canUpdate }: Props) {
+export function MilestoneWeekView({ milestones, viewDate, onViewDateChange, onMilestoneClick, onMilestoneUpdate, onDayClick, activeBrandId, canUpdate }: Props) {
   const weekStart = useMemo(() => mondayOf(viewDate), [viewDate]);
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
   const today = useMemo(() => new Date(), []);
@@ -108,23 +122,33 @@ export function MilestoneWeekView({ milestones, viewDate, onViewDateChange, onMi
           </Button>
         </div>
 
-        <div className="grid grid-cols-7 divide-x flex-1">
+        <div className="flex-1">
           {days.map((day, i) => {
             const isToday = sameDay(day, today);
+            const isWeekend = i >= 5;
             const items = byDay[i] ?? [];
             return (
-              <DroppableDayCell key={i} dayIso={day.toISOString()} isToday={isToday} isDragging={!!draggingId}>
-                <div className={cn('px-2 py-1.5 text-center border-b', isToday && 'font-semibold')}>
-                  <div className="text-xs text-muted-foreground">{DAY_IT[i]}</div>
-                  <div className={cn(
-                    'text-sm mx-auto w-7 h-7 flex items-center justify-center rounded-full',
-                    isToday && 'bg-blue-500 text-white'
+              <div key={i} className={cn('flex border-b last:border-b-0', isToday && 'bg-blue-50/20 dark:bg-blue-950/10')}>
+                <div className={cn(
+                  'w-20 shrink-0 px-2 py-1.5 flex flex-col items-end justify-start border-r',
+                  isWeekend && 'bg-muted/20',
+                )}>
+                  <span className="text-xs text-muted-foreground">{DAY_LABELS_IT[i]}</span>
+                  <span className={cn(
+                    'text-sm font-medium w-7 h-7 flex items-center justify-center rounded-full',
+                    isToday && 'bg-blue-500 text-white',
+                    !isToday && 'text-foreground',
                   )}>
                     {day.getDate()}
-                  </div>
+                  </span>
                 </div>
-
-                <div className="p-1 space-y-0.5 flex-1">
+                <WeekDayRow
+                  dayIso={day.toISOString()}
+                  isToday={isToday}
+                  isWeekend={isWeekend}
+                  isDragging={!!draggingId}
+                  onDayClick={canUpdate ? () => onDayClick?.(day.toISOString()) : undefined}
+                >
                   {items.map(m => {
                     const start = new Date(m.startAt);
                     const end = m.endAt ? new Date(m.endAt) : null;
@@ -132,8 +156,8 @@ export function MilestoneWeekView({ milestones, viewDate, onViewDateChange, onMi
                     const span = end ? daysBetween(start, end) : 0;
                     const isOtherBrand = !!activeBrandId && !!m.brandId && m.brandId !== activeBrandId;
                     return (
-                      <div key={m.id} className={cn(isOtherBrand && 'opacity-40')}>
-                        {canUpdate && isStart ? (
+                      <div key={m.id} className={cn('shrink-0', isOtherBrand && 'opacity-40')}>
+                        {canEditMilestone(m, canUpdate, activeBrandId) && isStart ? (
                           <DraggableMilestoneChip
                             id={m.id}
                             title={m.title}
@@ -141,14 +165,14 @@ export function MilestoneWeekView({ milestones, viewDate, onViewDateChange, onMi
                             brandId={m.brandId}
                             span={span}
                             isDragging={draggingId === m.id}
-                            onClick={() => onMilestoneClick(m.id)}
+                            onClick={(e) => { e.stopPropagation(); onMilestoneClick(m.id); }}
                           />
                         ) : (
                           <button
                             type="button"
-                            onClick={() => onMilestoneClick(m.id)}
+                            onClick={(e) => { e.stopPropagation(); onMilestoneClick(m.id); }}
                             className={cn(
-                              'w-full text-left rounded px-1.5 py-0.5 text-xs text-white truncate',
+                              'text-left rounded px-1.5 py-0.5 text-xs text-white truncate max-w-[200px]',
                               'hover:brightness-110 transition-all',
                               STATUS_OPACITY[m.status] ?? 'opacity-100',
                               !isStart && 'opacity-40'
@@ -162,8 +186,8 @@ export function MilestoneWeekView({ milestones, viewDate, onViewDateChange, onMi
                       </div>
                     );
                   })}
-                </div>
-              </DroppableDayCell>
+                </WeekDayRow>
+              </div>
             );
           })}
         </div>

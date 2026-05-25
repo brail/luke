@@ -1,7 +1,7 @@
 'use client';
 
 import { Calendar, RefreshCw, Copy, Plus, List, GanttChart, CalendarRange, CalendarDays, Maximize2, Minimize2 } from 'lucide-react';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 
@@ -33,7 +33,7 @@ export default function CalendarPage() {
   const [selectedBrandIds, setSelectedBrandIds] = useState<string[]>([]);
   const [selectedFunctionIds, setSelectedFunctionIds] = useState<string[]>([]);
   const [activeMilestoneId, setActiveMilestoneId] = useState<string | null>(null);
-  const [createOpen, setCreateOpen] = useState(false);
+  const [createDate, setCreateDate] = useState<string | null>(null);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
   const [view, setView] = useState<'list' | 'gantt' | 'week' | 'month'>('month');
@@ -116,8 +116,19 @@ export default function CalendarPage() {
   const handleMilestoneUpdate = (id: string, data: { startAt: string; endAt?: string | null }) =>
     updateMilestoneMutation.mutate({ id, data: { ...data, endAt: data.endAt ?? undefined } });
 
+  const deleteMilestonesMutation = trpc.seasonCalendar.deleteMilestones.useMutation({
+    onSuccess: () => void refetch(),
+    onError: err => toast.error(getTrpcErrorMessage(err)),
+  });
+
   const canSync = can('season_calendar:sync');
   const canUpdate = can('season_calendar:update');
+
+  const handleDayClick = useCallback((isoDate: string) => {
+    setCreateDate(isoDate);
+  }, []);
+
+  const onDayClickProp = canUpdate ? handleDayClick : undefined;
 
   const filteredMilestones = useMemo(() => {
     if (!milestones) return [];
@@ -158,7 +169,7 @@ export default function CalendarPage() {
     <div className="flex gap-2 items-center">
       {canUpdate && (
         <>
-          <Button size="sm" onClick={() => setCreateOpen(true)} disabled={!calendar}>
+          <Button size="sm" onClick={() => setCreateDate('')} disabled={!calendar}>
             <Plus size={14} className="mr-1" />
             Nuova milestone
           </Button>
@@ -314,6 +325,7 @@ export default function CalendarPage() {
                 onViewDateChange={setViewDate}
                 onMilestoneClick={id => setActiveMilestoneId(id)}
                 onMilestoneUpdate={handleMilestoneUpdate}
+                onDayClick={onDayClickProp}
                 activeBrandId={contextBrandId ?? undefined}
                 canUpdate={canUpdate}
               />
@@ -324,6 +336,7 @@ export default function CalendarPage() {
                 onViewDateChange={setViewDate}
                 onMilestoneClick={id => setActiveMilestoneId(id)}
                 onMilestoneUpdate={handleMilestoneUpdate}
+                onDayClick={onDayClickProp}
                 activeBrandId={contextBrandId ?? undefined}
                 canUpdate={canUpdate}
               />
@@ -336,7 +349,7 @@ export default function CalendarPage() {
                     variant="outline"
                     size="sm"
                     className="mt-3"
-                    onClick={() => setCreateOpen(true)}
+                    onClick={() => setCreateDate('')}
                   >
                     <Plus size={14} className="mr-1" />
                     Crea la prima milestone
@@ -348,6 +361,7 @@ export default function CalendarPage() {
                 milestones={filteredMilestones}
                 onMilestoneClick={id => setActiveMilestoneId(id)}
                 onMilestoneUpdate={handleMilestoneUpdate}
+                onDayClick={onDayClickProp}
                 activeBrandId={contextBrandId ?? undefined}
                 functionsById={functionsById}
                 canUpdate={canUpdate}
@@ -356,8 +370,11 @@ export default function CalendarPage() {
               <MilestoneTimeline
                 milestones={filteredMilestones}
                 onMilestoneClick={id => setActiveMilestoneId(id)}
+                onDayClick={onDayClickProp}
+                onBulkDelete={ids => deleteMilestonesMutation.mutate({ ids })}
                 activeBrandId={contextBrandId ?? undefined}
                 functionsById={functionsById}
+                canUpdate={canUpdate}
               />
             )}
           </CardContent>
@@ -424,20 +441,21 @@ export default function CalendarPage() {
           open={!!activeMilestoneId}
           onClose={() => setActiveMilestoneId(null)}
           onUpdated={() => void refetch()}
-          canUpdate={canUpdate}
+          canUpdate={canUpdate && (!activeMilestone.brandId || activeMilestone.brandId === contextBrandId)}
           calendarId={calendar?.id ?? ''}
           availableFunctions={availableFunctions}
           functionsById={functionsById}
         />
       )}
 
-      {calendar && createOpen && (
+      {calendar && createDate !== null && (
         <MilestoneDialog
-          open={createOpen}
-          onClose={() => setCreateOpen(false)}
-          onSaved={() => { setCreateOpen(false); void refetch(); }}
+          open
+          onClose={() => setCreateDate(null)}
+          onSaved={() => { setCreateDate(null); void refetch(); }}
           calendarId={calendar.id}
           availableFunctions={availableFunctions}
+          defaultDate={createDate || undefined}
         />
       )}
 

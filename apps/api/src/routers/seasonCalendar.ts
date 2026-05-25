@@ -179,6 +179,25 @@ export const seasonCalendarRouter = router({
       return { success: true };
     }),
 
+  deleteMilestones: protectedProcedure
+    .use(requirePermission('season_calendar:update'))
+    .use(withRateLimit('configMutations'))
+    .input(z.object({ ids: z.array(z.string().uuid()).min(1).max(100) }))
+    .mutation(async ({ input, ctx }) => {
+      const milestones = await ctx.prisma.calendarMilestone.findMany({
+        where: { id: { in: input.ids } },
+        include: { calendar: { select: { brandId: true } } },
+      });
+      const uniqueBrandIds = [...new Set(milestones.map(m => m.calendar.brandId))];
+      await Promise.all(uniqueBrandIds.map(brandId =>
+        assertBrandAccess(ctx.session.user.id, brandId, ctx.prisma)
+      ));
+      await Promise.all(milestones.map(m => cleanupMilestoneEvents(m.id, ctx.prisma, ctx.logger)));
+      await ctx.prisma.calendarMilestone.deleteMany({ where: { id: { in: input.ids } } });
+      await logAudit(ctx, { action: 'CALENDAR_MILESTONE_DELETE', targetType: 'CalendarMilestone', targetId: input.ids.join(','), result: 'SUCCESS', metadata: { count: input.ids.length } });
+      return { success: true, count: input.ids.length };
+    }),
+
   setMilestoneStatus: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
