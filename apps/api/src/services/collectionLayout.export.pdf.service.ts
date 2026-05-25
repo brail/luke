@@ -13,6 +13,7 @@ import { formatDateTime } from '@luke/core';
 
 import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
 import { readFileBuffer } from '../storage';
+import { buildProgressLabelMap } from './collectionLayout.service';
 import type { QuotationWithParamSet } from './collectionLayout.service';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -248,7 +249,8 @@ export async function buildCollectionLayoutPdf(
 
   const uniqueRowKeys = [...new Set(allRows.map(r => r.pictureKey).filter((k): k is string => !!k))];
   const keyToDataUriMap = new Map<string, string | null>();
-  const [brandLogoDataUri, company] = await Promise.all([
+  const [progressLabelMap, brandLogoDataUri, company] = await Promise.all([
+    buildProgressLabelMap(prisma),
     layout.brand.logoKey
       ? readFileBuffer(prisma, 'brand-logos', layout.brand.logoKey, logger).then(buf =>
           buf ? toDataUri(buf, layout.brand.logoKey!) : null,
@@ -321,7 +323,7 @@ export async function buildCollectionLayoutPdf(
           { text: row.productCategory ?? '',  fontSize: 7, margin: CELL_MARGIN },
           { text: row.strategy ?? '',         fontSize: 7, margin: CELL_MARGIN, alignment: 'center' as const },
           { text: row.status ?? '',           fontSize: 7, margin: CELL_MARGIN, alignment: 'center' as const },
-          { text: row.progress ?? '',         fontSize: 7, margin: CELL_MARGIN },
+          { text: row.progress ? (progressLabelMap.get(row.progress) ?? row.progress) : '', fontSize: 7, margin: CELL_MARGIN },
           { text: String(row.skuForecast ?? ''), fontSize: 7, alignment: 'right' as const, margin: CELL_MARGIN },
           { text: String(row.qtyForecast ?? ''), fontSize: 7, alignment: 'right' as const, margin: CELL_MARGIN },
           marginCell,

@@ -18,6 +18,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.9.0] — Collection Layout Versioning
+
+### Added
+
+- **feat(collection)**: Versioning ISO-compliant del Collection Layout — registro qualità formale conforme a PI 8.3-01 rev5 "Progettazione"
+  - Revisioni immutabili etichettate (rev0, rev1…) con snapshot completo di righe, foto, quotazioni
+  - Sei tipi di revisione preconfigurati con categorie ISO 9001:2015 (PIANIFICAZIONE, RIESAME, NORMALE, VERIFICA, VALIDAZIONE)
+  - Storico revisioni con drill-down per revisione
+  - Time-travel: query `getLayoutAsOfRevision` con backward lookup via `DISTINCT ON`
+
+- **feat(core)**: Nuovi permessi `collection_layout:revise` e `collection_layout:view_revisions`; schemi `CreateRevisionInputSchema`, `GetRevisionsListInputSchema`, `GetRevisionDetailInputSchema`, `GetLayoutAsOfRevisionInputSchema`
+
+- **feat(api)**: Quattro nuovi modelli Prisma (`CollectionLayoutRevision`, `CollectionGroupRevision`, `CollectionLayoutRowRevision`, `CollectionRowQuotationRevision`); service `collectionLayoutRevision.service.ts`; router tRPC `collectionLayoutRevision`
+
+- **feat(core,api)**: Bucket immutabile `collection-row-pictures-revisions` per le foto delle revisioni con dedup CAS via sha256; `copyToImmutableBucket()` nel layer storage
+
+- **feat(web)**: Drawer "Crea revisione" con selezione righe e warning ISO; pagine storico e drill-down revisioni; bottoni "Storico revisioni" e "Crea revisione" nel CL
+
+- **refactor(collection)**: Progress catalog refactoring — i valori `progress` passano da stringhe leggibili (`01 - FASE DI DESIGN`) a chiavi semantiche (`DESIGN`) con `code` separato per la visualizzazione; aggiornati export PDF/XLSX e badge CL
+
+- **feat(web)**: `PageHeader` ora accetta prop `actions` per bottoni nella testata della pagina
+
+---
+
 ## Pre-1.9.0 history
 
 Versions prior to 1.9.0 are not tracked commit-by-commit. The cycle delivered:

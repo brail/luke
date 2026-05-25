@@ -2,13 +2,17 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
 import type { CollectionLayoutRowInput } from '@luke/core';
 
+import { History, Plus } from 'lucide-react';
+
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
+import { Button } from '../../../../components/ui/button';
 import { Card, CardContent } from '../../../../components/ui/card';
 import { useAppContext } from '../../../../contexts/AppContextProvider';
 import { usePermission } from '../../../../hooks/usePermission';
@@ -20,6 +24,7 @@ import { CollectionGroupDialog } from './_components/CollectionGroupDialog';
 import { CollectionLayoutSummary } from './_components/CollectionLayoutSummary';
 import { CollectionLayoutTable } from './_components/CollectionLayoutTable';
 import { CollectionRowDrawer } from './_components/CollectionRowDrawer';
+import { CreateRevisionDrawer } from './_components/CreateRevisionDrawer';
 import { EmptyCollectionLayoutState } from './_components/EmptyCollectionLayoutState';
 
 type CollectionLayoutData = NonNullable<
@@ -31,7 +36,10 @@ type CollectionRowData = CollectionGroupData['rows'][number];
 export default function CollectionLayoutPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
   const { can } = usePermission();
+  const router = useRouter();
   const canUpdate = can('collection_layout:update');
+  const canRevise = can('collection_layout:revise');
+  const canViewRevisions = can('collection_layout:view_revisions');
 
   const enabled = !!brand?.id && !!season?.id;
 
@@ -58,6 +66,7 @@ export default function CollectionLayoutPage() {
 
   // ─── UI state ───────────────────────────────────────────────────
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showCreateRevision, setShowCreateRevision] = useState(false);
 
   // Chiudi fullscreen con Escape
   useEffect(() => {
@@ -256,6 +265,29 @@ export default function CollectionLayoutPage() {
             ? `Collezione ${brand.name} — ${season.code} ${season.name}`
             : 'Pianificazione collezione stagionale'
         }
+        actions={layout && (
+          <div className="flex items-center gap-2">
+            {canViewRevisions && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push(`/product/collection-layout/revisions?layoutId=${layout.id}` as string as never)}
+              >
+                <History className="h-4 w-4 mr-1.5" />
+                Storico revisioni
+              </Button>
+            )}
+            {canRevise && (
+              <Button
+                size="sm"
+                onClick={() => setShowCreateRevision(true)}
+              >
+                <Plus className="h-4 w-4 mr-1.5" />
+                Crea revisione
+              </Button>
+            )}
+          </div>
+        )}
       />
 
       {!brand || !season ? (
@@ -420,6 +452,16 @@ export default function CollectionLayoutPage() {
           onQuotationChange={() => invalidateLayout()}
           isLoading={isMutating}
           canUpdate={canUpdate}
+        />
+      )}
+
+      {/* Create revision drawer */}
+      {layout && (
+        <CreateRevisionDrawer
+          open={showCreateRevision}
+          onOpenChange={setShowCreateRevision}
+          layout={layout}
+          onSuccess={() => invalidateLayout()}
         />
       )}
     </div>

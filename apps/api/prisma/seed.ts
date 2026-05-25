@@ -15,6 +15,7 @@ import { PrismaClient } from '@prisma/client';
 
 import { encryptValue } from '../src/lib/configManager';
 import { hashPassword } from '../src/lib/password';
+import { seedCollectionCatalog } from './seeds/collectionCatalog';
 import { seedCompanyStructure } from './seeds/companyStructure';
 
 /**
@@ -271,7 +272,7 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     },
     {
       key: 'storage.local.buckets',
-      value: '["uploads","exports","assets","brand-logos","collection-row-pictures","merchandising-specsheet-images"]',
+      value: '["uploads","exports","assets","brand-logos","collection-row-pictures","collection-row-pictures-revisions","merchandising-specsheet-images"]',
       encrypt: false,
     },
     {
@@ -569,6 +570,9 @@ async function main() {
 
     // Seeding company structure (functions, teams, profile)
     const functionIds = await seedCompanyStructure(prisma);
+
+    // Seeding collection catalog (revisionType items)
+    await seedCollectionCatalog(prisma);
 
     // Seeding milestone templates
     await seedMilestoneTemplates(prisma, functionIds);

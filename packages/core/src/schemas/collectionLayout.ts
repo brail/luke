@@ -36,12 +36,12 @@ export const DEFAULT_CATALOG_STRATEGY = ['CORE', 'INNOVATION'] as const;
 export const DEFAULT_CATALOG_LINE_STATUS = ['CARRY_OVER', 'NEW'] as const;
 export const DEFAULT_CATALOG_STYLE_STATUS = ['CARRY_OVER', 'NEW'] as const;
 export const DEFAULT_CATALOG_PROGRESS = [
-  '01 - FASE DI DESIGN',
-  '02 - COSTRUZIONE OK',
-  '03 - MODELLERIA OK',
-  '04 - RENDERING FATTI',
-  '05 - SPEC SHEETS PRONTE',
-  '06 - SMS LANCIATI',
+  'DESIGN',
+  'CONSTRUCTION_OK',
+  'MODELLERIA_OK',
+  'RENDERING',
+  'SPECSHEETS_READY',
+  'SMS_LAUNCHED',
 ] as const;
 
 // Kept for backward compat (export + xlsx/pdf services still reference these)
@@ -57,8 +57,22 @@ export const COLLECTION_CATALOG_TYPES = [
   'lineStatus',
   'styleStatus',
   'progress',
+  'revisionType',
 ] as const;
 export type CollectionCatalogType = (typeof COLLECTION_CATALOG_TYPES)[number];
+
+// ISO 9001:2015 categories — from Tabella correlazione §4.2 PI 8.3-01 rev5
+export const ISO9001_CATEGORIES = [
+  'PIANIFICAZIONE',
+  'RIESAME',
+  'NORMALE',
+  'VERIFICA',
+  'VALIDAZIONE',
+] as const;
+export type Iso9001Category = (typeof ISO9001_CATEGORIES)[number];
+
+export const REVISION_CAUSES = ['MANUAL', 'MILESTONE'] as const;
+export type RevisionCause = (typeof REVISION_CAUSES)[number];
 
 export const CollectionGroupInputSchema = z.object({
   name: z.string().min(1, 'Nome obbligatorio').max(100),
@@ -123,12 +137,58 @@ export type CollectionRowQuotationUpdate = z.infer<
   typeof CollectionRowQuotationUpdateSchema
 >;
 
-export const CollectionCatalogItemInputSchema = z.object({
+export const CollectionCatalogItemInputBaseSchema = z.object({
   type: z.enum(COLLECTION_CATALOG_TYPES),
   value: z.string().min(1).max(100),
-  label: z.string().min(1).max(100),
+  label: z.string().min(1).max(200),
   order: z.number().int().min(0).optional(),
+  code: z.string().max(10).optional().nullable(),
+  iso9001Categories: z.array(z.enum(ISO9001_CATEGORIES)).optional().nullable(),
+  expectedMinProgress: z.string().optional().nullable(),
 });
+
+export const CollectionCatalogItemInputSchema =
+  CollectionCatalogItemInputBaseSchema.refine(
+    data => data.type !== 'revisionType' || (data.iso9001Categories && data.iso9001Categories.length > 0),
+    { message: 'iso9001Categories obbligatorio per type=revisionType', path: ['iso9001Categories'] }
+  ).refine(
+    data => !data.code || data.type === 'progress',
+    { message: 'code è atteso solo per type=progress', path: ['code'] }
+  );
 export type CollectionCatalogItemInput = z.infer<
   typeof CollectionCatalogItemInputSchema
 >;
+
+// ─── Revision schemas ─────────────────────────────────────────────────────────
+
+export const CreateRevisionInputSchema = z.object({
+  collectionLayoutId: z.string().uuid(),
+  revisionTypeValue: z.string().min(1),
+  cause: z.enum(REVISION_CAUSES).default('MANUAL'),
+  milestoneId: z.string().uuid().optional().nullable(),
+  notes: z.string().max(1000).optional().nullable(),
+  includedRowIds: z.array(z.string().uuid()).min(0),
+}).refine(
+  data => data.cause !== 'MILESTONE' || !!data.milestoneId,
+  { message: 'milestoneId richiesto se cause=MILESTONE', path: ['milestoneId'] }
+).refine(
+  data => data.cause !== 'MANUAL' || !data.milestoneId,
+  { message: 'milestoneId non ammesso se cause=MANUAL', path: ['milestoneId'] }
+);
+export type CreateRevisionInput = z.infer<typeof CreateRevisionInputSchema>;
+
+export const GetRevisionsListInputSchema = z.object({
+  collectionLayoutId: z.string().uuid(),
+});
+export type GetRevisionsListInput = z.infer<typeof GetRevisionsListInputSchema>;
+
+export const GetRevisionDetailInputSchema = z.object({
+  revisionId: z.string().uuid(),
+});
+export type GetRevisionDetailInput = z.infer<typeof GetRevisionDetailInputSchema>;
+
+export const GetLayoutAsOfRevisionInputSchema = z.object({
+  collectionLayoutId: z.string().uuid(),
+  revisionId: z.string().uuid(),
+});
+export type GetLayoutAsOfRevisionInput = z.infer<typeof GetLayoutAsOfRevisionInputSchema>;

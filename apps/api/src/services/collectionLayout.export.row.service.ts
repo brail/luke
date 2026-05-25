@@ -20,6 +20,7 @@ import { calcMaxSupplierCost, formatDateTime } from '@luke/core';
 import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
 import { applyStreamingHeaderStyle } from '../lib/export/xlsx-streaming';
 import { readFileBuffer } from '../storage';
+import { buildProgressLabelMap } from './collectionLayout.service';
 import type { QuotationWithParamSet } from './collectionLayout.service';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -123,7 +124,7 @@ export async function buildCollectionRowPdf(
 ): Promise<Buffer> {
   const { brand, season, row } = ctx;
 
-  const [brandLogoDataUri, rowImageDataUri, company] = await Promise.all([
+  const [brandLogoDataUri, rowImageDataUri, company, progressLabelMap] = await Promise.all([
     brand.logoKey
       ? readFileBuffer(prisma, 'brand-logos', brand.logoKey, logger).then(buf =>
           buf ? dataUri(buf, brand.logoKey!) : null,
@@ -135,6 +136,7 @@ export async function buildCollectionRowPdf(
         )
       : Promise.resolve(null),
     fetchCompanyExportContext(prisma, logger),
+    buildProgressLabelMap(prisma),
   ]);
 
   const vendorLabel = row.vendor?.nickname ?? row.vendor?.name ?? '—';
@@ -158,7 +160,7 @@ export async function buildCollectionRowPdf(
     ['Strategy',    row.strategy ?? '—'],
     ['Status',      row.status],
     ['Style Status',row.styleStatus ?? '—'],
-    ['Progress',    row.progress ?? '—'],
+    ['Progress',    row.progress ? (progressLabelMap.get(row.progress) ?? row.progress) : '—'],
     ['Designer',    row.designer ?? '—'],
     ['SKU Forecast',String(row.skuForecast)],
     ['QTY Forecast',String(row.qtyForecast)],
@@ -271,10 +273,10 @@ export async function buildCollectionRowXlsx(
   wb.creator = 'Luke';
   wb.created = new Date();
 
-  // Load product image if available
-  const rowImageBuf = row.pictureKey
-    ? await readFileBuffer(prisma, 'collection-row-pictures', row.pictureKey, logger)
-    : null;
+  const [rowImageBuf, progressLabelMap] = await Promise.all([
+    row.pictureKey ? readFileBuffer(prisma, 'collection-row-pictures', row.pictureKey, logger) : null,
+    buildProgressLabelMap(prisma),
+  ]);
 
   // Sheet 1: identification
   const infoSheet = wb.addWorksheet('Riga');
@@ -297,7 +299,7 @@ export async function buildCollectionRowXlsx(
     ['Strategy', row.strategy ?? null],
     ['Status', row.status],
     ['Style Status', row.styleStatus ?? null],
-    ['Progress', row.progress ?? null],
+    ['Progress', row.progress ? (progressLabelMap.get(row.progress) ?? row.progress) : null],
     ['Designer', row.designer ?? null],
     ['SKU Forecast', row.skuForecast],
     ['QTY Forecast', row.qtyForecast],

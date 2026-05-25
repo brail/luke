@@ -313,12 +313,12 @@ function SortableRow({ id, disabled, children, onClick }: SortableRowProps) {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const PROGRESS_BADGE: Record<string, { label: string; className: string }> = {
-  '01 - FASE DI DESIGN': { label: 'DESIGN', className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
-  '02 - COSTRUZIONE OK': { label: 'COSTR. OK', className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
-  '03 - MODELLERIA OK': { label: 'MODELL. OK', className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' },
-  '04 - RENDERING FATTI': { label: 'RENDERING', className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' },
-  '05 - SPEC SHEETS PRONTE': { label: 'SPEC SHEETS', className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' },
-  '06 - SMS LANCIATI': { label: 'SMS LANCIATI', className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' },
+  DESIGN:           { label: '01 — Design',        className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
+  CONSTRUCTION_OK:  { label: '02 — Costr. OK',     className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
+  MODELLERIA_OK:    { label: '03 — Modell. OK',    className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' },
+  RENDERING:        { label: '04 — Rendering',     className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' },
+  SPECSHEETS_READY: { label: '05 — Spec Sheets',   className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' },
+  SMS_LAUNCHED:     { label: '06 — SMS Lanciati',  className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' },
 };
 
 const STATUS_LABELS: Record<string, string> = { CARRY_OVER: 'C/O', NEW: 'New' };

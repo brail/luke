@@ -1028,7 +1028,7 @@ describe('Integration Tests', () => {
 
     // Validate the exported matrix
     expect(matrix.resources.length).toBe(Object.keys(RESOURCES).length);
-    expect(matrix.actions.length).toBe(5);
+    expect(matrix.actions.length).toBe(Object.keys(ACTIONS).length);
 
     // Expanded permissions should match expandRole
     expect(matrix.expandedRolePermissions.editor).toEqual(expandRole('editor'));
@@ -1037,5 +1037,35 @@ describe('Integration Tests', () => {
     matrix.allPermissions.forEach(perm => {
       expect(isPermission(perm)).toBe(true);
     });
+  });
+});
+
+describe('Collection Layout Revision Permissions', () => {
+  it('should recognise revise and view_revisions as valid actions', () => {
+    expect(isAction('revise')).toBe(true);
+    expect(isAction('view_revisions')).toBe(true);
+  });
+
+  it('should recognise collection_layout revision permissions as valid', () => {
+    expect(isPermission('collection_layout:revise')).toBe(true);
+    expect(isPermission('collection_layout:view_revisions')).toBe(true);
+  });
+
+  it('editor has collection_layout:revise and collection_layout:view_revisions', () => {
+    const editor = { role: 'editor' as Role };
+    expect(hasPermission(editor, 'collection_layout:revise')).toBe(true);
+    expect(hasPermission(editor, 'collection_layout:view_revisions')).toBe(true);
+  });
+
+  it('viewer has collection_layout:view_revisions but NOT collection_layout:revise', () => {
+    const viewer = { role: 'viewer' as Role };
+    expect(hasPermission(viewer, 'collection_layout:view_revisions')).toBe(true);
+    expect(hasPermission(viewer, 'collection_layout:revise')).toBe(false);
+  });
+
+  it('admin has both collection_layout revision permissions via wildcard', () => {
+    const admin = { role: 'admin' as Role };
+    expect(hasPermission(admin, 'collection_layout:revise')).toBe(true);
+    expect(hasPermission(admin, 'collection_layout:view_revisions')).toBe(true);
   });
 });

@@ -66,8 +66,9 @@ model User {
   teamMemberships                   CompanyTeamMembership[]
   milestoneUserVisibilitiesReceived MilestoneUserVisibility[] @relation("MilestoneUserVisibilityRecipient")
   milestoneUserVisibilitiesGranted  MilestoneUserVisibility[] @relation("MilestoneUserVisibilityGrantor")
-  notifications           Notification[]
-  notificationPreferences NotificationPreference[]
+  notifications                     Notification[]
+  notificationPreferences           NotificationPreference[]
+  collectionLayoutRevisions         CollectionLayoutRevision[]
 
   @@map("users")
 }
@@ -319,6 +320,7 @@ model CollectionLayout {
   season           Season   @relation(fields: [seasonId], references: [id], onDelete: Restrict)
   groups           CollectionGroup[]
   rows             CollectionLayoutRow[]
+  revisions        CollectionLayoutRevision[]
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -508,6 +510,8 @@ model CollectionLayoutRow {
   toolingQuotation       Float?
   quotations             CollectionRowQuotation[]
 
+  lastRevisedAt          DateTime?             // updated when row is included in a revision
+
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
 
@@ -542,21 +546,134 @@ model CollectionRowQuotation {
 
 /**
  * Catalog items configurabili per collection layout
- * Tipi: strategy, lineStatus, styleStatus, progress
+ * Tipi: strategy, lineStatus, styleStatus, progress, revisionType
  */
 model CollectionCatalogItem {
-  id        String   @id @default(uuid())
-  type      String   // "strategy" | "lineStatus" | "styleStatus" | "progress"
-  value     String
-  label     String
-  order     Int      @default(0)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                   String   @id @default(uuid())
+  type                 String   // "strategy" | "lineStatus" | "styleStatus" | "progress" | "revisionType"
+  value                String
+  label                String
+  code                 String?  // codice user-visibile (es. "01") — popolato solo per type=progress
+  iso9001Categories    String[] @default([]) // categorie ISO 9001 — popolato solo per type=revisionType
+  expectedMinProgress  String?  // valore progress atteso — popolato solo per type=revisionType
+  order                Int      @default(0)
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   @@unique([type, value])
   @@index([type, isActive])
   @@map("collection_catalog_items")
+}
+
+// ─── Collection Layout Versioning ────────────────────────────────────────────
+
+/**
+ * Revisione formale del Collection Layout (registro qualità ISO 9001:2015)
+ * Immutabile dopo la creazione — non modificare i campi snapshot.
+ */
+model CollectionLayoutRevision {
+  id                 String           @id @default(uuid())
+  collectionLayoutId String
+  collectionLayout   CollectionLayout @relation(fields: [collectionLayoutId], references: [id], onDelete: Restrict)
+  revisionNumber     Int
+  revisionTypeValue  String
+  cause              String           // MANUAL | MILESTONE
+  milestoneId        String?
+  notes              String?
+  createdByUserId    String
+  createdBy          User             @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdAt          DateTime         @default(now())
+
+  groups             CollectionGroupRevision[]
+  rowRevisions       CollectionLayoutRowRevision[]
+
+  @@unique([collectionLayoutId, revisionNumber])
+  @@index([collectionLayoutId, createdAt])
+  @@index([milestoneId])
+  @@map("collection_layout_revisions")
+}
+
+/**
+ * Snapshot di un CollectionGroup al momento di una revisione.
+ * sourceGroupId è una soft FK (no @relation) — il gruppo vivo può essere cancellato.
+ */
+model CollectionGroupRevision {
+  id            String                     @id @default(uuid())
+  revisionId    String
+  revision      CollectionLayoutRevision   @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  sourceGroupId String
+  name          String
+  order         Int
+  skuBudget     Int?
+
+  rows          CollectionLayoutRowRevision[]
+
+  @@index([revisionId])
+  @@index([sourceGroupId])
+  @@map("collection_group_revisions")
+}
+
+/**
+ * Snapshot di una CollectionLayoutRow al momento di una revisione.
+ * sourceRowId è una soft FK (no @relation) — la riga viva può essere cancellata.
+ * wasDeleted=true indica che la riga era già stata eliminata quando è stata inclusa.
+ */
+model CollectionLayoutRowRevision {
+  id                    String                       @id @default(uuid())
+  revisionId            String
+  revision              CollectionLayoutRevision     @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  sourceGroupRevisionId String
+  sourceGroupRevision   CollectionGroupRevision      @relation(fields: [sourceGroupRevisionId], references: [id], onDelete: Cascade)
+  sourceRowId           String
+  wasDeleted            Boolean                      @default(false)
+
+  // Snapshot fields — denormalizzati dalla riga viva al momento della revisione
+  gender                String
+  vendorId              String?
+  vendorName            String?
+  line                  String
+  article               String?
+  status                String
+  skuForecast           Int
+  qtyForecast           Int
+  productCategory       String
+  strategy              String?
+  styleStatus           String?
+  progress              String?
+  designer              String?
+  pictureKey            String?  // key nel bucket immutabile collection-row-pictures-revisions
+  styleNotes            String?
+  materialNotes         String?
+  colorNotes            String?
+  toolingNotes          String?
+  toolingQuotation      Float?
+  order                 Int
+
+  quotationRevisions    CollectionRowQuotationRevision[]
+
+  @@unique([revisionId, sourceRowId])
+  @@index([sourceRowId, revisionId])
+  @@map("collection_layout_row_revisions")
+}
+
+/**
+ * Snapshot di una CollectionRowQuotation al momento di una revisione.
+ */
+model CollectionRowQuotationRevision {
+  id                      String                      @id @default(uuid())
+  rowRevisionId           String
+  rowRevision             CollectionLayoutRowRevision @relation(fields: [rowRevisionId], references: [id], onDelete: Cascade)
+  order                   Int
+  pricingParameterSetId   String?
+  pricingParameterSetName String?  // denormalizzato
+  retailPrice             Float?
+  supplierQuotation       Float?
+  notes                   String?
+  sku                     Int?
+
+  @@index([rowRevisionId])
+  @@map("collection_row_quotation_revisions")
 }
 
 // ─── Merchandising Plan ───────────────────────────────────────────────────────

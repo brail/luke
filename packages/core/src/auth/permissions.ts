@@ -51,6 +51,8 @@ export const ACTIONS = {
   UPLOAD: 'upload',
   SYNC: 'sync',
   EXPORT: 'export',
+  REVISE: 'revise',
+  VIEW_REVISIONS: 'view_revisions',
 } as const;
 
 export type Action = (typeof ACTIONS)[keyof typeof ACTIONS] | '*';
@@ -94,7 +96,7 @@ export const VALID_RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
   [RESOURCES.MAINTENANCE]: ['read', 'update'] as const,
   [RESOURCES.DASHBOARD]: ['read'] as const,
   [RESOURCES.PRICING]: ['read', 'update'] as const,
-  [RESOURCES.COLLECTION_LAYOUT]: ['read', 'update'] as const,
+  [RESOURCES.COLLECTION_LAYOUT]: ['read', 'update', 'revise', 'view_revisions'] as const,
   [RESOURCES.VENDORS]: ['create', 'read', 'update', 'delete'] as const,
   [RESOURCES.SALES]: ['read'] as const,
   [RESOURCES.MERCHANDISING_PLAN]: ['create', 'read', 'update', 'delete'] as const,
@@ -130,9 +132,11 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'dashboard:read',
     // Pricing: solo lettura (modifica varianti riservata ad admin)
     'pricing:read',
-    // Collection Layout: lettura e modifica
+    // Collection Layout: lettura, modifica, revisioni
     'collection_layout:read',
     'collection_layout:update',
+    'collection_layout:revise',
+    'collection_layout:view_revisions',
     // Vendors: accesso completo
     'vendors:*',
     // Sales: lettura statistiche
@@ -166,8 +170,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'dashboard:read',
     // Pricing: solo lettura
     'pricing:read',
-    // Collection Layout: solo lettura
+    // Collection Layout: lettura + storico revisioni
     'collection_layout:read',
+    'collection_layout:view_revisions',
     // Vendors: solo lettura
     'vendors:read',
     // Sales: lettura statistiche

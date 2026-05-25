@@ -333,7 +333,7 @@ export function IdentificationSection({
                 <FormControl><SelectTrigger><SelectValue placeholder="—" /></SelectTrigger></FormControl>
                 <SelectContent>
                   <SelectItem value="_none">—</SelectItem>
-                  {progressOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                  {progressOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.code ? `${o.code} — ${o.label}` : o.label}</SelectItem>)}
                 </SelectContent>
               </Select>
               <FormMessage />

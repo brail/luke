@@ -11,6 +11,7 @@ import { brandRouter } from './brand';
 import { catalogRouter } from './catalog';
 import { collectionLayoutRouter } from './collectionLayout';
 import { collectionCatalogRouter } from './collectionCatalog';
+import { collectionLayoutRevisionRouter } from './collectionLayoutRevision';
 import { merchandisingPlanRouter } from './merchandisingPlan';
 import { configRouter } from './config';
 import { contextRouter } from './context';
@@ -42,6 +43,7 @@ export const appRouter = router({
   catalog: catalogRouter,
   collectionLayout: collectionLayoutRouter,
   collectionCatalog: collectionCatalogRouter,
+  collectionLayoutRevision: collectionLayoutRevisionRouter,
   merchandisingPlan: merchandisingPlanRouter,
   config: configRouter,
   context: contextRouter,

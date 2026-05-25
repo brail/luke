@@ -10,7 +10,6 @@ import { trpc } from '../lib/trpc';
 import { useNotifications } from '../hooks/use-notifications';
 import { Button } from './ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
-import { ScrollArea } from './ui/scroll-area';
 import { Separator } from './ui/separator';
 
 const NOTIFICATION_CATEGORY: Record<string, { style: string; label: string }> = {
@@ -95,7 +94,7 @@ export function NotificationDropdown() {
         </div>
 
         {/* Lista */}
-        <ScrollArea className="max-h-[360px]">
+        <div className="max-h-[360px] overflow-y-auto">
           {notifications.length === 0 ? (
             <div className="py-10 text-center text-sm text-muted-foreground">
               Nessuna notifica
@@ -148,7 +147,7 @@ export function NotificationDropdown() {
               ))}
             </div>
           )}
-        </ScrollArea>
+        </div>
 
         {/* Footer */}
         <div className="border-t px-4 py-2">

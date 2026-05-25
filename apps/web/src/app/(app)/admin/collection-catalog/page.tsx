@@ -4,13 +4,18 @@ import { GripVertical, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { COLLECTION_CATALOG_TYPES } from '@luke/core';
-import type { CollectionCatalogType } from '@luke/core';
+import {
+  COLLECTION_CATALOG_TYPES,
+  ISO9001_CATEGORIES,
+  type CollectionCatalogType,
+  type Iso9001Category,
+} from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { PageHeader } from '../../../../components/PageHeader';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
+import { Checkbox } from '../../../../components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -20,6 +25,13 @@ import {
 } from '../../../../components/ui/dialog';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../../../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../components/ui/tabs';
 import {
   Tooltip,
@@ -33,10 +45,11 @@ import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 import { cn } from '../../../../lib/utils';
 
 const TYPE_LABELS: Record<CollectionCatalogType, string> = {
-  strategy: 'Strategy',
-  lineStatus: 'Line Status',
-  styleStatus: 'Style Status',
-  progress: 'Progress',
+  strategy:     'Strategy',
+  lineStatus:   'Line Status',
+  styleStatus:  'Style Status',
+  progress:     'Progress',
+  revisionType: 'Tipo revisione',
 };
 
 type CatalogItem = {
@@ -44,8 +57,11 @@ type CatalogItem = {
   type: string;
   value: string;
   label: string;
+  code: string | null;
   order: number;
   isActive: boolean;
+  iso9001Categories: Iso9001Category[];
+  expectedMinProgress: string | null;
 };
 
 type ItemDialogState = { mode: 'create'; type: CollectionCatalogType } | { mode: 'edit'; item: CatalogItem };
@@ -66,6 +82,11 @@ export default function CollectionCatalogPage() {
   const { data: items = [], isLoading } = trpc.collectionCatalog.listAll.useQuery(
     { type: activeTab },
     { staleTime: 30 * 1000 },
+  );
+
+  const { data: progressItems = [] } = trpc.collectionCatalog.list.useQuery(
+    { type: 'progress' },
+    { staleTime: 5 * 60 * 1000 },
   );
 
   const createMutation = trpc.collectionCatalog.create.useMutation({
@@ -156,6 +177,9 @@ export default function CollectionCatalogPage() {
                         <th className="w-8 px-3 py-2" />
                         <th className="px-3 py-2 text-left font-medium">Valore (chiave)</th>
                         <th className="px-3 py-2 text-left font-medium">Label</th>
+                        {type === 'revisionType' && (
+                          <th className="px-3 py-2 text-left font-medium">Categorie ISO</th>
+                        )}
                         <th className="px-3 py-2 text-left font-medium">Stato</th>
                         <th className="w-24 px-3 py-2" />
                       </tr>
@@ -167,7 +191,21 @@ export default function CollectionCatalogPage() {
                             <GripVertical className="h-4 w-4" />
                           </td>
                           <td className="px-3 py-2 font-mono text-xs">{item.value}</td>
-                          <td className="px-3 py-2">{item.label}</td>
+                          <td className="px-3 py-2">
+                            {item.code
+                              ? <span>{item.code} — {item.label}</span>
+                              : item.label
+                            }
+                          </td>
+                          {type === 'revisionType' && (
+                            <td className="px-3 py-2">
+                              <div className="flex flex-wrap gap-1">
+                                {(item.iso9001Categories ?? []).map(cat => (
+                                  <Badge key={cat} variant="secondary" className="text-xs">{cat}</Badge>
+                                ))}
+                              </div>
+                            </td>
+                          )}
                           <td className="px-3 py-2">
                             <Badge variant={item.isActive ? 'default' : 'secondary'}>
                               {item.isActive ? 'Attivo' : 'Inattivo'}
@@ -252,6 +290,7 @@ export default function CollectionCatalogPage() {
       {itemDialog && (
         <CatalogItemDialog
           state={itemDialog}
+          progressItems={progressItems as CatalogItem[]}
           onClose={() => setItemDialog(null)}
           onSubmit={(data) => {
             if (itemDialog.mode === 'create') {
@@ -283,22 +322,63 @@ export default function CollectionCatalogPage() {
 
 // ─── Item Dialog ──────────────────────────────────────────────────────────────
 
+type DialogSubmitData = {
+  value: string;
+  label: string;
+  code?: string | null;
+  iso9001Categories?: Iso9001Category[] | null;
+  expectedMinProgress?: string | null;
+};
+
 function CatalogItemDialog({
   state,
+  progressItems,
   onClose,
   onSubmit,
   isLoading,
 }: {
   state: ItemDialogState;
+  progressItems: CatalogItem[];
   onClose: () => void;
-  onSubmit: (data: { value: string; label: string }) => void;
+  onSubmit: (data: DialogSubmitData) => void;
   isLoading: boolean;
 }) {
   const initial = state.mode === 'edit' ? state.item : null;
+  const activeType = state.mode === 'create' ? state.type : state.item.type;
+
   const [value, setValue] = useState(initial?.value ?? '');
   const [label, setLabel] = useState(initial?.label ?? '');
+  const [code, setCode] = useState(initial?.code ?? '');
+  const [selectedCategories, setSelectedCategories] = useState<Iso9001Category[]>(
+    (initial?.iso9001Categories ?? []) as Iso9001Category[]
+  );
+  const [expectedMinProgress, setExpectedMinProgress] = useState<string>(
+    initial?.expectedMinProgress ?? ''
+  );
 
-  const canSubmit = value.trim().length > 0 && label.trim().length > 0;
+  const isProgress     = activeType === 'progress';
+  const isRevisionType = activeType === 'revisionType';
+
+  const canSubmit =
+    value.trim().length > 0 &&
+    label.trim().length > 0 &&
+    (!isRevisionType || selectedCategories.length > 0);
+
+  const toggleCategory = (cat: Iso9001Category) => {
+    setSelectedCategories(prev =>
+      prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
+    );
+  };
+
+  const handleSubmit = () => {
+    onSubmit({
+      value: value.trim(),
+      label: label.trim(),
+      code: isProgress ? (code.trim() || null) : null,
+      iso9001Categories: isRevisionType ? selectedCategories : null,
+      expectedMinProgress: isRevisionType ? (expectedMinProgress || null) : null,
+    });
+  };
 
   return (
     <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
@@ -306,6 +386,7 @@ function CatalogItemDialog({
         <DialogHeader>
           <DialogTitle>
             {state.mode === 'create' ? 'Aggiungi opzione' : 'Modifica opzione'}
+            {' '}<span className="text-muted-foreground font-normal text-sm">({TYPE_LABELS[activeType as CollectionCatalogType] ?? activeType})</span>
           </DialogTitle>
         </DialogHeader>
 
@@ -334,12 +415,70 @@ function CatalogItemDialog({
               placeholder="es. Core"
             />
           </div>
+
+          {isProgress && (
+            <div className="space-y-1.5">
+              <Label htmlFor="cat-code">Codice (es. 01)</Label>
+              <Input
+                id="cat-code"
+                value={code}
+                onChange={e => setCode(e.target.value)}
+                placeholder="es. 01"
+                maxLength={10}
+              />
+              <p className="text-xs text-muted-foreground">Mostrato come "{code || '01'} — {label || 'Label'}"</p>
+            </div>
+          )}
+
+          {isRevisionType && (
+            <>
+              <div className="space-y-2">
+                <Label>Categorie ISO 9001:2015 <span className="text-destructive">*</span></Label>
+                <div className="space-y-1.5">
+                  {ISO9001_CATEGORIES.map(cat => (
+                    <div key={cat} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`cat-iso-${cat}`}
+                        checked={selectedCategories.includes(cat)}
+                        onCheckedChange={() => toggleCategory(cat)}
+                      />
+                      <label htmlFor={`cat-iso-${cat}`} className="text-sm cursor-pointer">{cat}</label>
+                    </div>
+                  ))}
+                </div>
+                {selectedCategories.length === 0 && (
+                  <p className="text-xs text-destructive">Selezionare almeno una categoria</p>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="cat-progress">Progress minimo atteso (opzionale)</Label>
+                <Select
+                  value={expectedMinProgress || '_none'}
+                  onValueChange={v => setExpectedMinProgress(v === '_none' ? '' : v)}
+                >
+                  <SelectTrigger id="cat-progress">
+                    <SelectValue placeholder="Nessuno" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">Nessuno</SelectItem>
+                    {progressItems.filter(p => p.isActive).map(p => (
+                      <SelectItem key={p.value} value={p.value}>
+                        {p.code ? `${p.code} — ${p.label}` : p.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Se impostato, avvisa il PM se una riga inclusa non ha raggiunto questo progress.</p>
+              </div>
+            </>
+          )}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={isLoading}>Annulla</Button>
           <Button
-            onClick={() => onSubmit({ value: value.trim(), label: label.trim() })}
+            onClick={handleSubmit}
             disabled={!canSubmit || isLoading}
           >
             {isLoading ? 'Salvataggio…' : state.mode === 'create' ? 'Aggiungi' : 'Salva'}

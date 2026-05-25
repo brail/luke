@@ -66,6 +66,7 @@ interface CollectionLayoutTableProps {
   isExportingXlsx?: boolean;
   onExportPdf?: (filteredRowIds?: string[]) => void;
   isExportingPdf?: boolean;
+  readOnly?: boolean;
 }
 
 export function CollectionLayoutTable({
@@ -87,6 +88,7 @@ export function CollectionLayoutTable({
   isExportingXlsx = false,
   onExportPdf,
   isExportingPdf = false,
+  readOnly = false,
 }: CollectionLayoutTableProps) {
   const [search, setSearch] = useState('');
   const [columnsPopoverOpen, setColumnsPopoverOpen] = useState(false);
@@ -284,7 +286,7 @@ export function CollectionLayoutTable({
           </DropdownMenu>
         )}
 
-        {canUpdate && (
+        {canUpdate && !readOnly && (
           <Button size="sm" onClick={onAddGroup} className="ml-auto">
             <Plus className="h-4 w-4 mr-1" />
             Nuovo gruppo
@@ -298,7 +300,7 @@ export function CollectionLayoutTable({
           <CollectionGroupSection
             key={group.id}
             group={group}
-            canUpdate={canUpdate}
+            canUpdate={canUpdate && !readOnly}
             hiddenColumns={effectiveHiddenColumns}
             parameterSets={parameterSets}
             searchQuery={search}

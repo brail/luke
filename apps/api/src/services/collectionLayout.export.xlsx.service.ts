@@ -13,6 +13,7 @@ import type { PrismaClient } from '@prisma/client';
 
 import { applyStreamingHeaderStyle } from '../lib/export/xlsx-streaming';
 import { readFileBuffer } from '../storage';
+import { buildProgressLabelMap } from './collectionLayout.service';
 import type { QuotationWithParamSet } from './collectionLayout.service';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -153,6 +154,8 @@ export async function buildCollectionLayoutXlsx(
 ): Promise<Buffer> {
   const allRows = layout.groups.flatMap((g: GroupWithRows) => g.rows);
 
+  const progressLabelMap = await buildProgressLabelMap(prisma);
+
   // Determine max quotations across all rows for dynamic columns
   const maxQ = allRows.reduce((m, r) => Math.max(m, r.quotations?.length ?? 0), 0);
   const quotCols = buildQuotationColumns(maxQ);
@@ -203,7 +206,7 @@ export async function buildCollectionLayoutXlsx(
         row.strategy,
         row.status,
         row.styleStatus,
-        row.progress,
+        row.progress ? (progressLabelMap.get(row.progress) ?? row.progress) : null,
         row.skuForecast,
         row.qtyForecast,
         row.designer,

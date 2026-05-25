@@ -534,3 +534,14 @@ export async function reorderRows(
     )
   );
 }
+
+export async function buildProgressLabelMap(
+  prisma: PrismaClient,
+): Promise<Map<string, string>> {
+  const items = await prisma.collectionCatalogItem.findMany({
+    where: { type: 'progress' },
+    select: { value: true, code: true, label: true },
+  });
+  return new Map(items.map(p => [p.value, p.code ? `${p.code} — ${p.label}` : p.label]));
+}
+

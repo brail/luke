@@ -17,6 +17,7 @@ const VALID_BUCKETS: readonly StorageBucket[] = [
   'assets',
   'brand-logos',
   'collection-row-pictures',
+  'collection-row-pictures-revisions',
   'merchandising-specsheet-images',
   'company-assets',
 ];
