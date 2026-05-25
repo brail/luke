@@ -10,7 +10,7 @@ import { Checkbox } from '../../../../components/ui/checkbox';
 import { cn } from '../../../../lib/utils';
 import { MONTH_NAMES_IT, STATUS_VARIANT } from '../constants';
 import { brandColor, getIsoWeek } from '../utils';
-import { type CalendarMilestoneItem as Milestone } from './types';
+import { type CalendarEventItem as Milestone } from './types';
 
 interface Props {
   milestones: Milestone[];

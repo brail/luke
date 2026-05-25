@@ -89,7 +89,7 @@ export async function getMilestoneForSync(
   milestoneId: string,
   prisma: PrismaClient
 ): Promise<MilestoneForSync> {
-  const m = await prisma.calendarMilestone.findUniqueOrThrow({
+  const m = await prisma.calendarEvent.findUniqueOrThrow({
     where: { id: milestoneId },
     include: { visibilities: { select: { functionId: true } } },
   });
@@ -149,20 +149,20 @@ export async function buildSyncContext(
       });
     },
 
-    getMappings: (milestoneId) =>
-      prisma.googleEventMapping.findMany({ where: { milestoneId } }),
+    getMappings: (eventId) =>
+      prisma.googleEventMapping.findMany({ where: { eventId } }),
 
     upsertMapping: async (mapping) => {
       await prisma.googleEventMapping.upsert({
-        where: { milestoneId_companyFunctionId: { milestoneId: mapping.milestoneId, companyFunctionId: mapping.companyFunctionId } },
-        create: { ...mapping, lastSyncedAt: new Date() },
-        update: { ...mapping, lastSyncedAt: new Date() },
+        where: { eventId_companyFunctionId: { eventId: mapping.eventId, companyFunctionId: mapping.companyFunctionId } },
+        create: { eventId: mapping.eventId, companyFunctionId: mapping.companyFunctionId, googleEventId: mapping.googleEventId, googleCalendarId: mapping.googleCalendarId, contentHash: mapping.contentHash, lastSyncedAt: new Date() },
+        update: { googleEventId: mapping.googleEventId, googleCalendarId: mapping.googleCalendarId, contentHash: mapping.contentHash, lastSyncedAt: new Date() },
       });
     },
 
     deleteMapping: async (milestoneId, companyFunctionId) => {
       await prisma.googleEventMapping.deleteMany({
-        where: { milestoneId, companyFunctionId },
+        where: { eventId: milestoneId, companyFunctionId },
       });
     },
   };
@@ -178,7 +178,7 @@ export async function syncOneMilestone(
   const creds = await getConfiguredGoogleClient(prisma);
   if (!creds) return;
 
-  const m = await prisma.calendarMilestone.findUniqueOrThrow({
+  const m = await prisma.calendarEvent.findUniqueOrThrow({
     where: { id: milestoneId },
     include: { visibilities: { select: { functionId: true } } },
   });
@@ -199,13 +199,13 @@ export async function cleanupMilestoneEvents(
   const creds = await getConfiguredGoogleClient(prisma);
   if (!creds) return;
 
-  const mappings = await prisma.googleEventMapping.findMany({ where: { milestoneId } });
+  const mappings = await prisma.googleEventMapping.findMany({ where: { eventId: milestoneId } });
 
   await Promise.allSettled(
     mappings.map(m => deleteEvent(m.googleCalendarId, m.googleEventId))
   );
 
-  await prisma.googleEventMapping.deleteMany({ where: { milestoneId } });
+  await prisma.googleEventMapping.deleteMany({ where: { eventId: milestoneId } });
   logger.info({ milestoneId, count: mappings.length }, 'Google Calendar events cleaned up');
 }
 
@@ -217,7 +217,7 @@ export async function reconcileCalendar(
   const creds = await getConfiguredGoogleClient(prisma);
   if (!creds) return { synced: 0, errors: 0 };
 
-  const milestones = await prisma.calendarMilestone.findMany({
+  const milestones = await prisma.calendarEvent.findMany({
     where: { calendarId },
     include: { visibilities: { select: { functionId: true } } },
   });

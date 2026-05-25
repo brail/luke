@@ -46,11 +46,11 @@ async function checkDeadlines(prisma: PrismaClient): Promise<void> {
   const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
 
   const [upcoming, overdue] = await Promise.all([
-    prisma.calendarMilestone.findMany({
+    prisma.calendarEvent.findMany({
       where: { startAt: { gte: now, lte: in48h }, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
       select: { id: true, title: true, startAt: true },
     }),
-    prisma.calendarMilestone.findMany({
+    prisma.calendarEvent.findMany({
       where: { startAt: { gte: threeDaysAgo, lt: now }, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
       select: { id: true, title: true, startAt: true },
     }),

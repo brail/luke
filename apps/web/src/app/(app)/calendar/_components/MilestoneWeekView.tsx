@@ -10,7 +10,7 @@ import { cn } from '../../../../lib/utils';
 import { DAY_LABELS_IT, STATUS_OPACITY } from '../constants';
 import { addDays, brandColor, canEditMilestone, daysBetween, getIsoWeek, mondayOf, sameDay, startOfDay } from '../utils';
 import { DraggableMilestoneChip } from './DraggableMilestoneChip';
-import { type CalendarMilestoneItem as Milestone } from './types';
+import { type CalendarEventItem as Milestone } from './types';
 
 interface Props {
   milestones: Milestone[];

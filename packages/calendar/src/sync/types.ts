@@ -11,7 +11,7 @@ export interface MilestoneForSync {
 }
 
 export interface GoogleEventMappingRecord {
-  milestoneId: string;
+  eventId: string;
   companyFunctionId: string;
   googleEventId: string;
   googleCalendarId: string;

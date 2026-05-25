@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
-import type { PrismaClient, CalendarMilestoneType } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 import type {
-  CalendarMilestoneInput,
+  CalendarEventInput,
   CloneSeasonCalendarInput,
   Role,
 } from '@luke/core';
@@ -49,7 +49,7 @@ export async function getOrCreateCalendar(
     include: {
       brand: { select: { code: true, name: true } },
       season: { select: { code: true, name: true, year: true } },
-      _count: { select: { milestones: true } },
+      _count: { select: { events: true } },
     },
   });
 }
@@ -86,7 +86,7 @@ export async function listMilestonesDb(
   const calendarIds = calendars.map(c => c.id);
   const calendarBrandMap = new Map(calendars.map(c => [c.id, c.brandId]));
 
-  const milestones = await prisma.calendarMilestone.findMany({
+  const events = await prisma.calendarEvent.findMany({
     where: {
       calendarId: { in: calendarIds },
       ...(functionId
@@ -100,20 +100,20 @@ export async function listMilestonesDb(
     orderBy: { startAt: 'asc' },
   });
 
-  return milestones.map(m => ({
-    ...m,
-    brandId: calendarBrandMap.get(m.calendarId) ?? null,
+  return events.map(e => ({
+    ...e,
+    brandId: calendarBrandMap.get(e.calendarId) ?? null,
   }));
 }
 
 // ─── Milestone create/update/delete ──────────────────────────────────────────
 
 export async function createMilestone(
-  input: CalendarMilestoneInput,
+  input: CalendarEventInput,
   prisma: PrismaClient
 ) {
   return prisma.$transaction(async tx => {
-    const milestone = await tx.calendarMilestone.create({
+    const event = await tx.calendarEvent.create({
       data: {
         calendarId: input.calendarId,
         ownerFunctionId: input.ownerFunctionId,
@@ -129,26 +129,26 @@ export async function createMilestone(
       },
     });
 
-    await tx.milestoneVisibility.createMany({
+    await tx.calendarEventVisibility.createMany({
       data: input.visibilityFunctionIds.map(fId => ({
-        milestoneId: milestone.id,
+        eventId: event.id,
         functionId: fId,
         readOnly: fId !== input.ownerFunctionId,
       })),
     });
 
-    return milestone;
+    return event;
   });
 }
 
 export async function updateMilestone(
-  milestoneId: string,
-  input: Partial<CalendarMilestoneInput>,
+  eventId: string,
+  input: Partial<CalendarEventInput>,
   prisma: PrismaClient
 ) {
   return prisma.$transaction(async tx => {
-    const updated = await tx.calendarMilestone.update({
-      where: { id: milestoneId },
+    const updated = await tx.calendarEvent.update({
+      where: { id: eventId },
       data: {
         ...(input.title !== undefined ? { title: input.title } : {}),
         ...(input.description !== undefined ? { description: input.description } : {}),
@@ -163,11 +163,11 @@ export async function updateMilestone(
     });
 
     if (input.visibilityFunctionIds) {
-      await tx.milestoneVisibility.deleteMany({ where: { milestoneId } });
+      await tx.calendarEventVisibility.deleteMany({ where: { eventId } });
       const owner = input.ownerFunctionId ?? updated.ownerFunctionId;
-      await tx.milestoneVisibility.createMany({
+      await tx.calendarEventVisibility.createMany({
         data: input.visibilityFunctionIds.map(fId => ({
-          milestoneId,
+          eventId,
           functionId: fId,
           readOnly: fId !== owner,
         })),
@@ -178,31 +178,31 @@ export async function updateMilestone(
   });
 }
 
-export async function deleteMilestone(milestoneId: string, prisma: PrismaClient): Promise<void> {
-  await prisma.calendarMilestone.delete({ where: { id: milestoneId } });
+export async function deleteMilestone(eventId: string, prisma: PrismaClient): Promise<void> {
+  await prisma.calendarEvent.delete({ where: { id: eventId } });
 }
 
 // ─── Note ────────────────────────────────────────────────────────────────────
 
 export async function upsertNote(
-  milestoneId: string,
+  eventId: string,
   userId: string,
   body: string,
   prisma: PrismaClient
 ) {
-  return prisma.milestonePersonalNote.upsert({
-    where: { milestoneId_userId: { milestoneId, userId } },
-    create: { milestoneId, userId, body },
+  return prisma.calendarEventPersonalNote.upsert({
+    where: { eventId_userId: { eventId, userId } },
+    create: { eventId, userId, body },
     update: { body },
   });
 }
 
 export async function deleteNote(
-  milestoneId: string,
+  eventId: string,
   userId: string,
   prisma: PrismaClient
 ): Promise<void> {
-  await prisma.milestonePersonalNote.deleteMany({ where: { milestoneId, userId } });
+  await prisma.calendarEventPersonalNote.deleteMany({ where: { eventId, userId } });
 }
 
 // ─── Template ─────────────────────────────────────────────────────────────────
@@ -227,11 +227,11 @@ export async function applyTemplate(
   prisma: PrismaClient
 ) {
   return prisma.$transaction(async tx => {
-    const existing = await tx.calendarMilestone.count({ where: { calendarId } });
+    const existing = await tx.calendarEvent.count({ where: { calendarId } });
     if (existing > 0 && !force) {
       throw new TRPCError({
         code: 'CONFLICT',
-        message: 'Il calendario contiene già milestones. Usa force=true per sovrascrivere.',
+        message: 'Il calendario contiene già eventi. Usa force=true per sovrascrivere.',
       });
     }
 
@@ -254,7 +254,7 @@ export async function applyTemplate(
       return { item, startAt, endAt };
     });
 
-    const created = await tx.calendarMilestone.createManyAndReturn({
+    const created = await tx.calendarEvent.createManyAndReturn({
       data: itemsWithDates.map(({ item, startAt, endAt }) => ({
         calendarId,
         ownerFunctionId: item.ownerFunctionId,
@@ -269,17 +269,17 @@ export async function applyTemplate(
     });
 
     const itemById = new Map(template.items.map(item => [item.id, item]));
-    const visibilityData = created.flatMap(milestone => {
-      const item = itemById.get(milestone.templateItemId!);
+    const visibilityData = created.flatMap(event => {
+      const item = itemById.get(event.templateItemId!);
       if (!item) return [];
       return item.visibilities.map(v => ({
-        milestoneId: milestone.id,
+        eventId: event.id,
         functionId: v.functionId,
         readOnly: v.functionId !== item.ownerFunctionId,
       }));
     });
 
-    await tx.milestoneVisibility.createMany({ data: visibilityData });
+    await tx.calendarEventVisibility.createMany({ data: visibilityData });
     return created;
   });
 }
@@ -309,7 +309,7 @@ export async function createTemplateItem(
   templateId: string,
   data: {
     title: string;
-    type: CalendarMilestoneType;
+    type: string;
     ownerFunctionId: string;
     visibilityFunctionIds: string[];
     offsetDays: number;
@@ -336,7 +336,7 @@ export async function updateTemplateItem(
   id: string,
   data: {
     title?: string;
-    type?: CalendarMilestoneType;
+    type?: string;
     ownerFunctionId?: string;
     visibilityFunctionIds?: string[];
     offsetDays?: number;
@@ -377,7 +377,7 @@ export async function cloneFromBrandSeason(
   const sourceCalendar = await prisma.seasonCalendar.findUnique({
     where: { brandId_seasonId: { brandId: sourceBrandId, seasonId: sourceSeasonId } },
     include: {
-      milestones: {
+      events: {
         where: { status: { in: includeStatuses as ('PLANNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED')[] } },
         include: { visibilities: true },
       },
@@ -413,30 +413,30 @@ export async function cloneFromBrandSeason(
       update: {},
     });
 
-    const created = await tx.calendarMilestone.createManyAndReturn({
-      data: sourceCalendar.milestones.map(m => ({
+    const created = await tx.calendarEvent.createManyAndReturn({
+      data: sourceCalendar.events.map(e => ({
         calendarId: targetCalendar.id,
-        ownerFunctionId: m.ownerFunctionId,
-        type: m.type,
-        title: m.title,
-        description: m.description,
-        startAt: new Date(m.startAt.getTime() + shift * MS_PER_DAY),
-        endAt: m.endAt ? new Date(m.endAt.getTime() + shift * MS_PER_DAY) : undefined,
-        allDay: m.allDay,
-        publishExternally: m.publishExternally,
+        ownerFunctionId: e.ownerFunctionId,
+        type: e.type,
+        title: e.title,
+        description: e.description,
+        startAt: new Date(e.startAt.getTime() + shift * MS_PER_DAY),
+        endAt: e.endAt ? new Date(e.endAt.getTime() + shift * MS_PER_DAY) : undefined,
+        allDay: e.allDay,
+        publishExternally: e.publishExternally,
         status: 'PLANNED' as const,
       })),
     });
 
-    const visibilityData = created.flatMap((newMilestone, i) => {
-      return sourceCalendar.milestones[i].visibilities.map(v => ({
-        milestoneId: newMilestone.id,
+    const visibilityData = created.flatMap((newEvent, i) => {
+      return sourceCalendar.events[i].visibilities.map(v => ({
+        eventId: newEvent.id,
         functionId: v.functionId,
         readOnly: v.readOnly,
       }));
     });
 
-    await tx.milestoneVisibility.createMany({ data: visibilityData });
+    await tx.calendarEventVisibility.createMany({ data: visibilityData });
     return { calendarId: targetCalendar.id, milestonesCreated: created.length };
   });
 }
@@ -445,7 +445,7 @@ export async function cloneFromBrandSeason(
 
 export async function getSyncStatus(calendarId: string, prisma: PrismaClient) {
   const mappings = await prisma.googleEventMapping.findMany({
-    where: { milestone: { calendarId } },
+    where: { event: { calendarId } },
     orderBy: { lastSyncedAt: 'desc' as const },
   });
 

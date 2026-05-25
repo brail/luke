@@ -10,6 +10,7 @@ import { companyRouter } from './company';
 import { brandRouter } from './brand';
 import { catalogRouter } from './catalog';
 import { collectionLayoutRouter } from './collectionLayout';
+import { calendarCatalogRouter } from './calendarCatalog';
 import { collectionCatalogRouter } from './collectionCatalog';
 import { collectionLayoutRevisionRouter } from './collectionLayoutRevision';
 import { merchandisingPlanRouter } from './merchandisingPlan';
@@ -42,6 +43,7 @@ export const appRouter = router({
   company: companyRouter,
   catalog: catalogRouter,
   collectionLayout: collectionLayoutRouter,
+  calendarCatalog: calendarCatalogRouter,
   collectionCatalog: collectionCatalogRouter,
   collectionLayoutRevision: collectionLayoutRevisionRouter,
   merchandisingPlan: merchandisingPlanRouter,

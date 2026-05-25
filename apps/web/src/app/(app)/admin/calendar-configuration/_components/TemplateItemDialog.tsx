@@ -5,7 +5,6 @@ import { useForm, Controller } from 'react-hook-form';
 import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
-import { CALENDAR_MILESTONE_TYPE } from '@luke/core';
 
 import { Button } from '../../../../../components/ui/button';
 import { Checkbox } from '../../../../../components/ui/checkbox';
@@ -28,7 +27,6 @@ import {
 import { Textarea } from '../../../../../components/ui/textarea';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
-import { TYPE_LABELS } from '../../../calendar/constants';
 
 type TemplateItem = RouterOutputs['seasonCalendar']['listTemplates'][number]['items'][number];
 
@@ -43,7 +41,7 @@ interface Props {
 
 interface FormValues {
   title: string;
-  type: (typeof CALENDAR_MILESTONE_TYPE)[number];
+  type: string;
   ownerFunctionId: string;
   visibilityFunctionIds: string[];
   offsetDays: number;
@@ -56,6 +54,11 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
   const isEdit = !!item;
   const defaultOwner = availableFunctions[0]?.id ?? '';
   const { register, handleSubmit, reset, watch, setValue, control, formState: { errors } } = useForm<FormValues>();
+
+  const { data: catalogItems = [] } = trpc.calendarCatalog.list.useQuery(
+    { type: 'eventType' },
+    { staleTime: 5 * 60 * 1000 }
+  );
 
   const ownerFunctionId = watch('ownerFunctionId');
   const visibilityFunctionIds = watch('visibilityFunctionIds') ?? [];
@@ -151,8 +154,8 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
                   <Select value={field.value} onValueChange={field.onChange}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {CALENDAR_MILESTONE_TYPE.map(t => (
-                        <SelectItem key={t} value={t}>{TYPE_LABELS[t] ?? t}</SelectItem>
+                      {catalogItems.map(item => (
+                        <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

@@ -62,7 +62,7 @@ export async function syncMilestone(
     if (existing) {
       await withRetry(() => updateEvent(existing.googleCalendarId, existing.googleEventId, eventInput));
       await ctx.upsertMapping({
-        milestoneId: milestone.id,
+        eventId: milestone.id,
         companyFunctionId,
         googleEventId: existing.googleEventId,
         googleCalendarId: existing.googleCalendarId,
@@ -71,7 +71,7 @@ export async function syncMilestone(
     } else {
       const googleEventId = await withRetry(() => createEvent(binding.googleCalendarId, eventInput));
       await ctx.upsertMapping({
-        milestoneId: milestone.id,
+        eventId: milestone.id,
         companyFunctionId,
         googleEventId,
         googleCalendarId: binding.googleCalendarId,

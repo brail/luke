@@ -177,7 +177,7 @@ const companyFunctionRouter = router({
       if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'Function not found' });
 
       const fn = await ctx.prisma.$transaction(async tx => {
-        const activeMilestones = await tx.calendarMilestone.count({
+        const activeMilestones = await tx.calendarEvent.count({
           where: {
             ownerFunctionId: input.id,
             status: { not: 'CANCELLED' },
@@ -186,7 +186,7 @@ const companyFunctionRouter = router({
         if (activeMilestones > 0) {
           throw new TRPCError({
             code: 'PRECONDITION_FAILED',
-            message: `Cannot deactivate: ${activeMilestones} active milestone(s) owned by this function`,
+            message: `Cannot deactivate: ${activeMilestones} active calendar event(s) owned by this function`,
           });
         }
         return tx.companyFunction.update({

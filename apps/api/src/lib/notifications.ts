@@ -41,8 +41,8 @@ export async function getVisibleUserIdsForMilestone(
   prisma: PrismaClient
 ): Promise<string[]> {
   const [fnVisibilities, userVisibilities] = await Promise.all([
-    prisma.milestoneVisibility.findMany({ where: { milestoneId }, select: { functionId: true } }),
-    prisma.milestoneUserVisibility.findMany({ where: { milestoneId }, select: { userId: true } }),
+    prisma.calendarEventVisibility.findMany({ where: { eventId: milestoneId }, select: { functionId: true } }),
+    prisma.calendarEventUserVisibility.findMany({ where: { eventId: milestoneId }, select: { userId: true } }),
   ]);
 
   const functionIds = fnVisibilities.map(v => v.functionId);

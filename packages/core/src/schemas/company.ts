@@ -54,11 +54,11 @@ export const CompanyTeamMembershipUpdateRoleInputSchema = z.object({
 });
 export type CompanyTeamMembershipUpdateRoleInput = z.infer<typeof CompanyTeamMembershipUpdateRoleInputSchema>;
 
-export const MilestoneUserVisibilityInputSchema = z.object({
-  milestoneId: z.string().uuid(),
+export const CalendarEventUserVisibilityInputSchema = z.object({
+  eventId: z.string().uuid(),
   userIds: z.array(z.string().uuid()).min(1),
 });
-export type MilestoneUserVisibilityInput = z.infer<typeof MilestoneUserVisibilityInputSchema>;
+export type CalendarEventUserVisibilityInput = z.infer<typeof CalendarEventUserVisibilityInputSchema>;
 
 // Output schemas for web consumption
 export const CompanyFunctionSchema = z.object({

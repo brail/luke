@@ -1,4 +1,4 @@
-export interface CalendarMilestoneItem {
+export interface CalendarEventItem {
   id: string;
   title: string;
   startAt: Date | string;

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
-import { CALENDAR_MILESTONE_TYPE, CALENDAR_MILESTONE_STATUS } from '@luke/core';
+import { CALENDAR_EVENT_STATUS } from '@luke/core';
 
 import { Button } from '../../../../components/ui/button';
 import { Checkbox } from '../../../../components/ui/checkbox';
@@ -26,7 +26,7 @@ import {
 import { Textarea } from '../../../../components/ui/textarea';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
-import { TYPE_LABELS, STATUS_LABELS } from '../constants';
+import { STATUS_LABELS } from '../constants';
 
 
 interface ExistingMilestone {
@@ -64,10 +64,15 @@ export function MilestoneDialog({ open, onClose, onSaved, calendarId, availableF
 
   const defaultOwner = milestone?.ownerFunctionId ?? availableFunctions[0]?.id ?? '';
 
+  const { data: catalogItems = [] } = trpc.calendarCatalog.list.useQuery(
+    { type: 'eventType' },
+    { staleTime: 5 * 60 * 1000 }
+  );
+
   const [title, setTitle] = useState(milestone?.title ?? '');
   const [description, setDescription] = useState(milestone?.description ?? '');
-  const [type, setType] = useState<(typeof CALENDAR_MILESTONE_TYPE)[number]>((milestone?.type as (typeof CALENDAR_MILESTONE_TYPE)[number]) ?? 'MILESTONE');
-  const [status, setStatus] = useState<(typeof CALENDAR_MILESTONE_STATUS)[number]>((milestone?.status as (typeof CALENDAR_MILESTONE_STATUS)[number]) ?? 'PLANNED');
+  const [type, setType] = useState<string>(milestone?.type ?? 'MILESTONE');
+  const [status, setStatus] = useState<(typeof CALENDAR_EVENT_STATUS)[number]>((milestone?.status as (typeof CALENDAR_EVENT_STATUS)[number]) ?? 'PLANNED');
   const [ownerFunctionId, setOwnerFunctionId] = useState<string>(defaultOwner);
   const [visibilityFunctionIds, setVisibilityFunctionIds] = useState<string[]>(
     milestone
@@ -83,8 +88,8 @@ export function MilestoneDialog({ open, onClose, onSaved, calendarId, availableF
   useEffect(() => {
     setTitle(milestone?.title ?? '');
     setDescription(milestone?.description ?? '');
-    setType((milestone?.type as (typeof CALENDAR_MILESTONE_TYPE)[number]) ?? 'MILESTONE');
-    setStatus((milestone?.status as (typeof CALENDAR_MILESTONE_STATUS)[number]) ?? 'PLANNED');
+    setType(milestone?.type ?? 'MILESTONE');
+    setStatus((milestone?.status as (typeof CALENDAR_EVENT_STATUS)[number]) ?? 'PLANNED');
     const owner = milestone?.ownerFunctionId ?? availableFunctions[0]?.id ?? '';
     setOwnerFunctionId(owner);
     setVisibilityFunctionIds(
@@ -156,8 +161,8 @@ export function MilestoneDialog({ open, onClose, onSaved, calendarId, availableF
         calendarId,
         title: title.trim(),
         description: description.trim() || undefined,
-        type: type as typeof CALENDAR_MILESTONE_TYPE[number],
-        status: status as typeof CALENDAR_MILESTONE_STATUS[number],
+        type,
+        status,
         ownerFunctionId,
         visibilityFunctionIds,
         startAt: startIso,
@@ -191,25 +196,25 @@ export function MilestoneDialog({ open, onClose, onSaved, calendarId, availableF
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Tipo</Label>
-              <Select value={type} onValueChange={v => setType(v as (typeof CALENDAR_MILESTONE_TYPE)[number])}>
+              <Select value={type} onValueChange={setType}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {CALENDAR_MILESTONE_TYPE.map(t => (
-                    <SelectItem key={t} value={t}>{TYPE_LABELS[t]}</SelectItem>
+                  {catalogItems.map(item => (
+                    <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
               <Label>Stato</Label>
-              <Select value={status} onValueChange={v => setStatus(v as (typeof CALENDAR_MILESTONE_STATUS)[number])}>
+              <Select value={status} onValueChange={v => setStatus(v as (typeof CALENDAR_EVENT_STATUS)[number])}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {CALENDAR_MILESTONE_STATUS.map(s => (
+                  {CALENDAR_EVENT_STATUS.map(s => (
                     <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
                   ))}
                 </SelectContent>

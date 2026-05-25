@@ -1,34 +1,54 @@
 import { z } from 'zod';
 
-// ─── Const arrays (follow collectionLayout.ts pattern) ───────────────────────
+// ─── Const arrays ─────────────────────────────────────────────────────────────
 
-export const CALENDAR_MILESTONE_TYPE = [
-  'KICKOFF',
-  'REVIEW',
-  'GATE',
-  'DEADLINE',
-  'MILESTONE',
-  'CUSTOM',
-] as const;
-export type CalendarMilestoneType = (typeof CALENDAR_MILESTONE_TYPE)[number];
-
-export const CALENDAR_MILESTONE_STATUS = [
+export const CALENDAR_EVENT_STATUS = [
   'PLANNED',
   'IN_PROGRESS',
   'COMPLETED',
   'CANCELLED',
 ] as const;
-export type CalendarMilestoneStatus = (typeof CALENDAR_MILESTONE_STATUS)[number];
+export type CalendarEventStatus = (typeof CALENDAR_EVENT_STATUS)[number];
 
 export const SEASON_CALENDAR_STATUS = ['DRAFT', 'ACTIVE', 'ARCHIVED'] as const;
 export type SeasonCalendarStatus = (typeof SEASON_CALENDAR_STATUS)[number];
 
-// ─── Milestone input ──────────────────────────────────────────────────────────
+// ─── CalendarCatalogItem ──────────────────────────────────────────────────────
 
-export const CalendarMilestoneBaseSchema = z.object({
+export const CalendarCatalogItemSchema = z.object({
+  id: z.string().uuid(),
+  type: z.string(),
+  value: z.string(),
+  label: z.string(),
+  color: z.string().nullable(),
+  order: z.number().int(),
+  isActive: z.boolean(),
+});
+export type CalendarCatalogItem = z.infer<typeof CalendarCatalogItemSchema>;
+
+export const CalendarCatalogItemCreateSchema = z.object({
+  type: z.string().min(1),
+  value: z.string().min(1).max(50),
+  label: z.string().min(1).max(100),
+  color: z.string().max(50).optional(),
+  order: z.number().int().default(0),
+});
+export type CalendarCatalogItemCreate = z.infer<typeof CalendarCatalogItemCreateSchema>;
+
+export const CalendarCatalogItemUpdateSchema = z.object({
+  id: z.string().uuid(),
+  label: z.string().min(1).max(100),
+  color: z.string().max(50).optional().nullable(),
+  order: z.number().int().optional(),
+});
+export type CalendarCatalogItemUpdate = z.infer<typeof CalendarCatalogItemUpdateSchema>;
+
+// ─── CalendarEvent input ──────────────────────────────────────────────────────
+
+export const CalendarEventBaseSchema = z.object({
   calendarId: z.string().uuid(),
   ownerFunctionId: z.string().uuid(),
-  type: z.enum(CALENDAR_MILESTONE_TYPE),
+  type: z.string().min(1),
   title: z.string().min(1).max(200),
   startAt: z.string().datetime(),
   description: z.string().max(2000).optional(),
@@ -36,11 +56,11 @@ export const CalendarMilestoneBaseSchema = z.object({
   allDay: z.boolean().default(false),
   publishExternally: z.boolean().default(true),
   templateItemId: z.string().uuid().optional(),
-  status: z.enum(CALENDAR_MILESTONE_STATUS).default('PLANNED'),
+  status: z.enum(CALENDAR_EVENT_STATUS).default('PLANNED'),
   visibilityFunctionIds: z.array(z.string().uuid()).min(1),
 });
 
-export const CalendarMilestoneInputSchema = CalendarMilestoneBaseSchema.refine(
+export const CalendarEventInputSchema = CalendarEventBaseSchema.refine(
   data => data.visibilityFunctionIds.includes(data.ownerFunctionId),
   {
     message: 'visibilityFunctionIds must include ownerFunctionId',
@@ -48,22 +68,22 @@ export const CalendarMilestoneInputSchema = CalendarMilestoneBaseSchema.refine(
   }
 );
 
-export type CalendarMilestoneInput = z.infer<typeof CalendarMilestoneInputSchema>;
+export type CalendarEventInput = z.infer<typeof CalendarEventInputSchema>;
 
 // ─── Personal note input ──────────────────────────────────────────────────────
 
-export const MilestonePersonalNoteInputSchema = z.object({
-  milestoneId: z.string().uuid(),
+export const CalendarEventPersonalNoteInputSchema = z.object({
+  eventId: z.string().uuid(),
   body: z.string().max(4000),
 });
-export type MilestonePersonalNoteInput = z.infer<typeof MilestonePersonalNoteInputSchema>;
+export type CalendarEventPersonalNoteInput = z.infer<typeof CalendarEventPersonalNoteInputSchema>;
 
 // ─── Template inputs ──────────────────────────────────────────────────────────
 
 export const MilestoneTemplateItemInputSchema = z
   .object({
     ownerFunctionId: z.string().uuid(),
-    type: z.enum(CALENDAR_MILESTONE_TYPE),
+    type: z.string().min(1),
     title: z.string().min(1).max(200),
     description: z.string().max(2000).optional(),
     offsetDays: z.number().int(),
@@ -93,7 +113,7 @@ export const CloneSeasonCalendarInputSchema = z.object({
   targetSeasonId: z.string().uuid(),
   dateShiftDays: z.number().int().optional(),
   includeStatuses: z
-    .array(z.enum(CALENDAR_MILESTONE_STATUS))
+    .array(z.enum(CALENDAR_EVENT_STATUS))
     .default(['PLANNED', 'IN_PROGRESS']),
 });
 export type CloneSeasonCalendarInput = z.infer<typeof CloneSeasonCalendarInputSchema>;

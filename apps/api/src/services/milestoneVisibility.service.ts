@@ -1,17 +1,17 @@
 import type { PrismaClient } from '@prisma/client';
 
 /**
- * Returns Set of milestone IDs visible to userId from candidateMilestoneIds.
+ * Returns Set of event IDs visible to userId from candidateEventIds.
  * Visibility sources:
- *   1. MilestoneVisibility — function-level (user's team functions)
- *   2. MilestoneUserVisibility — explicit user override
+ *   1. CalendarEventVisibility — function-level (user's team functions)
+ *   2. CalendarEventUserVisibility — explicit user override
  */
 export async function getVisibleMilestoneIdsForUser(
   userId: string,
-  candidateMilestoneIds: string[],
+  candidateEventIds: string[],
   prisma: PrismaClient
 ): Promise<Set<string>> {
-  if (candidateMilestoneIds.length === 0) return new Set();
+  if (candidateEventIds.length === 0) return new Set();
 
   // Collect all functionIds from user's team memberships
   const memberships = await prisma.companyTeamMembership.findMany({
@@ -22,25 +22,25 @@ export async function getVisibleMilestoneIdsForUser(
 
   const [fnVisibilities, userVisibilities] = await Promise.all([
     functionIds.length > 0
-      ? prisma.milestoneVisibility.findMany({
+      ? prisma.calendarEventVisibility.findMany({
           where: {
-            milestoneId: { in: candidateMilestoneIds },
+            eventId: { in: candidateEventIds },
             functionId: { in: functionIds },
           },
-          select: { milestoneId: true },
+          select: { eventId: true },
         })
       : Promise.resolve([]),
-    prisma.milestoneUserVisibility.findMany({
+    prisma.calendarEventUserVisibility.findMany({
       where: {
-        milestoneId: { in: candidateMilestoneIds },
+        eventId: { in: candidateEventIds },
         userId,
       },
-      select: { milestoneId: true },
+      select: { eventId: true },
     }),
   ]);
 
   const visible = new Set<string>();
-  for (const r of fnVisibilities) visible.add(r.milestoneId);
-  for (const r of userVisibilities) visible.add(r.milestoneId);
+  for (const r of fnVisibilities) visible.add(r.eventId);
+  for (const r of userVisibilities) visible.add(r.eventId);
   return visible;
 }

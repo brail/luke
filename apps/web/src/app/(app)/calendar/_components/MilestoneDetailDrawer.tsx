@@ -81,7 +81,7 @@ export function MilestoneDetailDrawer({ milestone, open, onClose, onUpdated, can
   const saveNote = () => {
     if (noteStatus !== 'dirty') return;
     setNoteStatus('saving');
-    upsertNoteMutation.mutate({ milestoneId: milestone.id, body: noteBody.trim() });
+    upsertNoteMutation.mutate({ eventId: milestone.id, body: noteBody.trim() });
   };
 
   const deleteMutation = trpc.seasonCalendar.deleteMilestone.useMutation({

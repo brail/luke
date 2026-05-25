@@ -2,14 +2,13 @@ import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 
 import {
-  CalendarMilestoneInputSchema,
-  CalendarMilestoneBaseSchema,
+  CalendarEventInputSchema,
+  CalendarEventBaseSchema,
   CloneSeasonCalendarInputSchema,
-  MilestonePersonalNoteInputSchema,
-  MilestoneUserVisibilityInputSchema,
+  CalendarEventPersonalNoteInputSchema,
+  CalendarEventUserVisibilityInputSchema,
   SEASON_CALENDAR_STATUS,
-  CALENDAR_MILESTONE_STATUS,
-  CALENDAR_MILESTONE_TYPE,
+  CALENDAR_EVENT_STATUS,
   hasPermission,
   type Role,
 } from '@luke/core';
@@ -103,7 +102,7 @@ export const seasonCalendarRouter = router({
       return result;
     }),
 
-  // ─── Milestone queries ──────────────────────────────────────────────────────
+  // ─── Calendar event queries ─────────────────────────────────────────────────
 
   listMilestones: protectedProcedure
     .use(requirePermission('season_calendar:read'))
@@ -120,12 +119,12 @@ export const seasonCalendarRouter = router({
       return listMilestonesDb(input.seasonId, allowedBrandIds, ctx.session.user.id, ctx.prisma, input.functionId);
     }),
 
-  // ─── Milestone mutations ────────────────────────────────────────────────────
+  // ─── Calendar event mutations ───────────────────────────────────────────────
 
   createMilestone: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
-    .input(CalendarMilestoneInputSchema)
+    .input(CalendarEventInputSchema)
     .mutation(async ({ input, ctx }) => {
       const calendar = await ctx.prisma.seasonCalendar.findUnique({
         where: { id: input.calendarId },
@@ -135,7 +134,7 @@ export const seasonCalendarRouter = router({
       await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
 
       const result = await createMilestone(input, ctx.prisma);
-      await logAudit(ctx, { action: 'CALENDAR_MILESTONE_CREATE', targetType: 'CalendarMilestone', targetId: result.id, result: 'SUCCESS', metadata: { calendarId: input.calendarId, ownerFunctionId: input.ownerFunctionId } });
+      await logAudit(ctx, { action: 'CALENDAR_EVENT_CREATE', targetType: 'CalendarEvent', targetId: result.id, result: 'SUCCESS', metadata: { calendarId: input.calendarId, ownerFunctionId: input.ownerFunctionId } });
       syncOneMilestone(result.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on create'));
       return result;
     }),
@@ -145,18 +144,18 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({
       id: z.string().uuid(),
-      data: CalendarMilestoneBaseSchema.partial().omit({ calendarId: true }),
+      data: CalendarEventBaseSchema.partial().omit({ calendarId: true }),
     }))
     .mutation(async ({ input, ctx }) => {
-      const milestone = await ctx.prisma.calendarMilestone.findUnique({
+      const event = await ctx.prisma.calendarEvent.findUnique({
         where: { id: input.id },
         include: { calendar: { select: { brandId: true } } },
       });
-      if (!milestone) throw new TRPCError({ code: 'NOT_FOUND', message: 'Milestone non trovata' });
-      await assertBrandAccess(ctx.session.user.id, milestone.calendar.brandId, ctx.prisma);
+      if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+      await assertBrandAccess(ctx.session.user.id, event.calendar.brandId, ctx.prisma);
 
       const result = await updateMilestone(input.id, input.data, ctx.prisma);
-      await logAudit(ctx, { action: 'CALENDAR_MILESTONE_UPDATE', targetType: 'CalendarMilestone', targetId: input.id, result: 'SUCCESS', metadata: {} });
+      await logAudit(ctx, { action: 'CALENDAR_EVENT_UPDATE', targetType: 'CalendarEvent', targetId: input.id, result: 'SUCCESS', metadata: {} });
       syncOneMilestone(input.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on update'));
       return result;
     }),
@@ -166,12 +165,12 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      const milestone = await ctx.prisma.calendarMilestone.findUnique({
+      const event = await ctx.prisma.calendarEvent.findUnique({
         where: { id: input.id },
         include: { calendar: { select: { brandId: true } } },
       });
-      if (!milestone) throw new TRPCError({ code: 'NOT_FOUND', message: 'Milestone non trovata' });
-      await assertBrandAccess(ctx.session.user.id, milestone.calendar.brandId, ctx.prisma);
+      if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+      await assertBrandAccess(ctx.session.user.id, event.calendar.brandId, ctx.prisma);
 
       await cleanupMilestoneEvents(input.id, ctx.prisma, ctx.logger);
       await deleteMilestone(input.id, ctx.prisma);
@@ -184,17 +183,17 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ ids: z.array(z.string().uuid()).min(1).max(100) }))
     .mutation(async ({ input, ctx }) => {
-      const milestones = await ctx.prisma.calendarMilestone.findMany({
+      const events = await ctx.prisma.calendarEvent.findMany({
         where: { id: { in: input.ids } },
         include: { calendar: { select: { brandId: true } } },
       });
-      const uniqueBrandIds = [...new Set(milestones.map(m => m.calendar.brandId))];
+      const uniqueBrandIds = [...new Set(events.map(e => e.calendar.brandId))];
       await Promise.all(uniqueBrandIds.map(brandId =>
         assertBrandAccess(ctx.session.user.id, brandId, ctx.prisma)
       ));
-      await Promise.all(milestones.map(m => cleanupMilestoneEvents(m.id, ctx.prisma, ctx.logger)));
-      await ctx.prisma.calendarMilestone.deleteMany({ where: { id: { in: input.ids } } });
-      await logAudit(ctx, { action: 'CALENDAR_MILESTONE_DELETE', targetType: 'CalendarMilestone', targetId: input.ids.join(','), result: 'SUCCESS', metadata: { count: input.ids.length } });
+      await Promise.all(events.map(e => cleanupMilestoneEvents(e.id, ctx.prisma, ctx.logger)));
+      await ctx.prisma.calendarEvent.deleteMany({ where: { id: { in: input.ids } } });
+      await logAudit(ctx, { action: 'CALENDAR_EVENT_DELETE', targetType: 'CalendarEvent', targetId: input.ids.join(','), result: 'SUCCESS', metadata: { count: input.ids.length } });
       return { success: true, count: input.ids.length };
     }),
 
@@ -203,21 +202,21 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({
       id: z.string().uuid(),
-      status: z.enum(CALENDAR_MILESTONE_STATUS),
+      status: z.enum(CALENDAR_EVENT_STATUS),
     }))
     .mutation(async ({ input, ctx }) => {
-      const milestone = await ctx.prisma.calendarMilestone.findUnique({
+      const event = await ctx.prisma.calendarEvent.findUnique({
         where: { id: input.id },
         include: { calendar: { select: { brandId: true } } },
       });
-      if (!milestone) throw new TRPCError({ code: 'NOT_FOUND', message: 'Milestone non trovata' });
-      await assertBrandAccess(ctx.session.user.id, milestone.calendar.brandId, ctx.prisma);
+      if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+      await assertBrandAccess(ctx.session.user.id, event.calendar.brandId, ctx.prisma);
 
-      const result = await ctx.prisma.calendarMilestone.update({
+      const result = await ctx.prisma.calendarEvent.update({
         where: { id: input.id },
         data: { status: input.status },
       });
-      await logAudit(ctx, { action: 'CALENDAR_MILESTONE_STATUS_UPDATE', targetType: 'CalendarMilestone', targetId: input.id, result: 'SUCCESS', metadata: { status: input.status } });
+      await logAudit(ctx, { action: 'CALENDAR_EVENT_STATUS_UPDATE', targetType: 'CalendarEvent', targetId: input.id, result: 'SUCCESS', metadata: { status: input.status } });
       syncOneMilestone(input.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on status change'));
 
       const STATUS_LABELS: Record<string, string> = {
@@ -230,13 +229,13 @@ export const seasonCalendarRouter = router({
           createNotification(ctx.prisma, {
             userId,
             category: 'CALENDAR',
-            title: 'Milestone aggiornata',
-            message: `"${milestone.title}" → ${statusLabel}`,
+            title: 'Evento aggiornato',
+            message: `"${event.title}" → ${statusLabel}`,
             link: '/calendar',
-            data: { milestoneId: input.id, status: input.status },
+            data: { eventId: input.id, status: input.status },
           })
         )))
-        .catch(err => ctx.logger.error(err, 'notification fanout failed on milestone status change'));
+        .catch(err => ctx.logger.error(err, 'notification fanout failed on event status change'));
 
       return result;
     }),
@@ -246,21 +245,21 @@ export const seasonCalendarRouter = router({
   upsertNote: protectedProcedure
     .use(requirePermission('season_calendar:read'))
     .use(withRateLimit('configMutations'))
-    .input(MilestonePersonalNoteInputSchema)
+    .input(CalendarEventPersonalNoteInputSchema)
     .mutation(async ({ input, ctx }) => {
       if (input.body.trim() === '') {
-        await deleteNote(input.milestoneId, ctx.session.user.id, ctx.prisma);
+        await deleteNote(input.eventId, ctx.session.user.id, ctx.prisma);
         return null;
       }
-      return upsertNote(input.milestoneId, ctx.session.user.id, input.body, ctx.prisma);
+      return upsertNote(input.eventId, ctx.session.user.id, input.body, ctx.prisma);
     }),
 
   deleteNote: protectedProcedure
     .use(requirePermission('season_calendar:read'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ milestoneId: z.string().uuid() }))
+    .input(z.object({ eventId: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      await deleteNote(input.milestoneId, ctx.session.user.id, ctx.prisma);
+      await deleteNote(input.eventId, ctx.session.user.id, ctx.prisma);
       return { success: true };
     }),
 
@@ -339,7 +338,7 @@ export const seasonCalendarRouter = router({
     .input(z.object({
       templateId: z.string().uuid(),
       title: z.string().min(1).max(200),
-      type: z.enum(CALENDAR_MILESTONE_TYPE),
+      type: z.string().min(1),
       ownerFunctionId: z.string().uuid(),
       visibilityFunctionIds: z.array(z.string().uuid()).min(1),
       offsetDays: z.number().int(),
@@ -359,7 +358,7 @@ export const seasonCalendarRouter = router({
     .input(z.object({
       id: z.string().uuid(),
       title: z.string().min(1).max(200).optional(),
-      type: z.enum(CALENDAR_MILESTONE_TYPE).optional(),
+      type: z.string().min(1).optional(),
       ownerFunctionId: z.string().uuid().optional(),
       visibilityFunctionIds: z.array(z.string().uuid()).min(1).optional(),
       offsetDays: z.number().int().optional(),
@@ -432,19 +431,19 @@ export const seasonCalendarRouter = router({
   grantUserVisibility: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('companyStructureMutations'))
-    .input(MilestoneUserVisibilityInputSchema)
+    .input(CalendarEventUserVisibilityInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const milestone = await ctx.prisma.calendarMilestone.findUnique({
-        where: { id: input.milestoneId },
+      const event = await ctx.prisma.calendarEvent.findUnique({
+        where: { id: input.eventId },
         select: { ownerFunctionId: true, title: true },
       });
-      if (!milestone) throw new TRPCError({ code: 'NOT_FOUND', message: 'Milestone not found' });
+      if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
 
-      await assertFunctionMemberOrAdmin(ctx, milestone.ownerFunctionId);
+      await assertFunctionMemberOrAdmin(ctx, event.ownerFunctionId);
 
-      await ctx.prisma.milestoneUserVisibility.createMany({
+      await ctx.prisma.calendarEventUserVisibility.createMany({
         data: input.userIds.map(userId => ({
-          milestoneId: input.milestoneId,
+          eventId: input.eventId,
           userId,
           grantedBy: ctx.session.user.id,
         })),
@@ -454,11 +453,11 @@ export const seasonCalendarRouter = router({
       await Promise.all(
         input.userIds.map(userId =>
           logAudit(ctx, {
-            action: 'MILESTONE_USER_VISIBILITY_GRANTED',
-            targetType: 'MilestoneUserVisibility',
-            targetId: `${input.milestoneId}:${userId}`,
+            action: 'CALENDAR_EVENT_USER_VISIBILITY_GRANTED',
+            targetType: 'CalendarEventUserVisibility',
+            targetId: `${input.eventId}:${userId}`,
             result: 'SUCCESS',
-            metadata: { milestoneId: input.milestoneId, userId },
+            metadata: { eventId: input.eventId, userId },
           })
         )
       );
@@ -468,10 +467,10 @@ export const seasonCalendarRouter = router({
           createNotification(ctx.prisma, {
             userId,
             category: 'USER_ACTION',
-            title: 'Accesso milestone concesso',
-            message: `Hai accesso alla milestone "${milestone.title}"`,
+            title: 'Accesso evento concesso',
+            message: `Hai accesso all'evento "${event.title}"`,
             link: '/calendar',
-            data: { milestoneId: input.milestoneId },
+            data: { eventId: input.eventId },
           })
         )
       );
@@ -482,28 +481,28 @@ export const seasonCalendarRouter = router({
   revokeUserVisibility: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('companyStructureMutations'))
-    .input(z.object({ milestoneId: z.string().uuid(), userIds: z.array(z.string().uuid()).min(1) }))
+    .input(z.object({ eventId: z.string().uuid(), userIds: z.array(z.string().uuid()).min(1) }))
     .mutation(async ({ input, ctx }) => {
-      const milestone = await ctx.prisma.calendarMilestone.findUnique({
-        where: { id: input.milestoneId },
+      const event = await ctx.prisma.calendarEvent.findUnique({
+        where: { id: input.eventId },
         select: { ownerFunctionId: true, title: true },
       });
-      if (!milestone) throw new TRPCError({ code: 'NOT_FOUND', message: 'Milestone not found' });
+      if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
 
-      await assertFunctionMemberOrAdmin(ctx, milestone.ownerFunctionId);
+      await assertFunctionMemberOrAdmin(ctx, event.ownerFunctionId);
 
-      await ctx.prisma.milestoneUserVisibility.deleteMany({
-        where: { milestoneId: input.milestoneId, userId: { in: input.userIds } },
+      await ctx.prisma.calendarEventUserVisibility.deleteMany({
+        where: { eventId: input.eventId, userId: { in: input.userIds } },
       });
 
       await Promise.all(
         input.userIds.map(userId =>
           logAudit(ctx, {
-            action: 'MILESTONE_USER_VISIBILITY_REVOKED',
-            targetType: 'MilestoneUserVisibility',
-            targetId: `${input.milestoneId}:${userId}`,
+            action: 'CALENDAR_EVENT_USER_VISIBILITY_REVOKED',
+            targetType: 'CalendarEventUserVisibility',
+            targetId: `${input.eventId}:${userId}`,
             result: 'SUCCESS',
-            metadata: { milestoneId: input.milestoneId, userId },
+            metadata: { eventId: input.eventId, userId },
           })
         )
       );
@@ -513,9 +512,9 @@ export const seasonCalendarRouter = router({
           createNotification(ctx.prisma, {
             userId,
             category: 'USER_ACTION',
-            title: 'Accesso milestone revocato',
-            message: `Hai perso accesso alla milestone "${milestone.title}"`,
-            data: { milestoneId: input.milestoneId },
+            title: 'Accesso evento revocato',
+            message: `Hai perso accesso all'evento "${event.title}"`,
+            data: { eventId: input.eventId },
           })
         )
       );

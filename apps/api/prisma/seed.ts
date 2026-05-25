@@ -15,6 +15,7 @@ import { PrismaClient } from '@prisma/client';
 
 import { encryptValue } from '../src/lib/configManager';
 import { hashPassword } from '../src/lib/password';
+import { seedCalendarCatalog } from './seeds/calendarCatalog';
 import { seedCollectionCatalog } from './seeds/collectionCatalog';
 import { seedCompanyStructure } from './seeds/companyStructure';
 
@@ -573,6 +574,9 @@ async function main() {
 
     // Seeding collection catalog (revisionType items)
     await seedCollectionCatalog(prisma);
+
+    // Seeding calendar catalog (event types)
+    await seedCalendarCatalog(prisma);
 
     // Seeding milestone templates
     await seedMilestoneTemplates(prisma, functionIds);

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '../../../../lib/utils';
 import { MONTH_NAMES_SHORT_IT, STATUS_OPACITY } from '../constants';
 import { addDays, brandColor, canEditMilestone, daysBetween, startOfDay } from '../utils';
-import { type CalendarMilestoneItem as Milestone } from './types';
+import { type CalendarEventItem as Milestone } from './types';
 
 interface Props {
   milestones: Milestone[];
