@@ -42,8 +42,8 @@ export function useMenuAccess() {
       brands: s.admin && s['admin.brands'],
       seasons: s.admin && s['admin.seasons'],
       vendors: s.admin && s['admin.vendors'],
-      collectionCatalog: s.admin && s['admin.collection_catalog'],
-      calendars: s.admin && s['admin.calendars'],
+      collectionLayoutConfiguration: s.admin && s['admin.collection_layout_configuration'],
+      calendarConfiguration: s.admin && s['admin.calendar_configuration'],
     };
     const showAdmin = Object.values(adminItems).some(Boolean);
 

@@ -279,19 +279,19 @@ export default function AppSidebar() {
                         </Link>
                       </DropdownMenuItem>
                     )}
-                    {menuAccess.adminItems.collectionCatalog && (
+                    {menuAccess.adminItems.collectionLayoutConfiguration && (
                       <DropdownMenuItem asChild>
-                        <Link href="/admin/collection-catalog" className="flex items-center gap-2">
+                        <Link href="/admin/collection-layout-configuration" className="flex items-center gap-2">
                           <ListTree size={16} />
-                          <span>Collection Catalog</span>
+                          <span>Collection Layout</span>
                         </Link>
                       </DropdownMenuItem>
                     )}
-                    {menuAccess.adminItems.calendars && (
+                    {menuAccess.adminItems.calendarConfiguration && (
                       <DropdownMenuItem asChild>
-                        <Link href={"/admin/calendars" as any} className="flex items-center gap-2">
+                        <Link href="/admin/calendar-configuration" className="flex items-center gap-2">
                           <LayoutTemplate size={16} />
-                          <span>Template Calendario</span>
+                          <span>Calendario</span>
                         </Link>
                       </DropdownMenuItem>
                     )}
