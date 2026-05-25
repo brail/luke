@@ -229,6 +229,10 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(MilestonePersonalNoteInputSchema)
     .mutation(async ({ input, ctx }) => {
+      if (input.body.trim() === '') {
+        await deleteNote(input.milestoneId, ctx.session.user.id, ctx.prisma);
+        return null;
+      }
       return upsertNote(input.milestoneId, ctx.session.user.id, input.body, ctx.prisma);
     }),
 

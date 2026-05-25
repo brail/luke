@@ -36,7 +36,7 @@ export default function CalendarPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
-  const [view, setView] = useState<'list' | 'gantt' | 'week' | 'month'>('list');
+  const [view, setView] = useState<'list' | 'gantt' | 'week' | 'month'>('month');
   const [viewDate, setViewDate] = useState<Date>(() => new Date());
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -108,6 +108,14 @@ export default function CalendarPage() {
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
+  const updateMilestoneMutation = trpc.seasonCalendar.updateMilestone.useMutation({
+    onSuccess: () => void refetch(),
+    onError: err => toast.error(getTrpcErrorMessage(err)),
+  });
+
+  const handleMilestoneUpdate = (id: string, data: { startAt: string; endAt?: string | null }) =>
+    updateMilestoneMutation.mutate({ id, data: { ...data, endAt: data.endAt ?? undefined } });
+
   const canSync = can('season_calendar:sync');
   const canUpdate = can('season_calendar:update');
 
@@ -175,24 +183,6 @@ export default function CalendarPage() {
       )}
       <div className="flex border rounded-md overflow-hidden">
         <Button
-          variant={view === 'list' ? 'default' : 'ghost'}
-          size="sm"
-          className="rounded-none border-0"
-          onClick={() => setView('list')}
-          title="Lista"
-        >
-          <List size={14} />
-        </Button>
-        <Button
-          variant={view === 'week' ? 'default' : 'ghost'}
-          size="sm"
-          className="rounded-none border-0"
-          onClick={() => setView('week')}
-          title="Settimana"
-        >
-          <CalendarRange size={14} />
-        </Button>
-        <Button
           variant={view === 'month' ? 'default' : 'ghost'}
           size="sm"
           className="rounded-none border-0"
@@ -209,6 +199,24 @@ export default function CalendarPage() {
           title="Gantt"
         >
           <GanttChart size={14} />
+        </Button>
+        <Button
+          variant={view === 'week' ? 'default' : 'ghost'}
+          size="sm"
+          className="rounded-none border-0"
+          onClick={() => setView('week')}
+          title="Settimana"
+        >
+          <CalendarRange size={14} />
+        </Button>
+        <Button
+          variant={view === 'list' ? 'default' : 'ghost'}
+          size="sm"
+          className="rounded-none border-0"
+          onClick={() => setView('list')}
+          title="Lista"
+        >
+          <List size={14} />
         </Button>
       </div>
       <ExportButton
@@ -305,7 +313,9 @@ export default function CalendarPage() {
                 viewDate={viewDate}
                 onViewDateChange={setViewDate}
                 onMilestoneClick={id => setActiveMilestoneId(id)}
+                onMilestoneUpdate={handleMilestoneUpdate}
                 activeBrandId={contextBrandId ?? undefined}
+                canUpdate={canUpdate}
               />
             ) : view === 'month' ? (
               <MilestoneMonthView
@@ -313,7 +323,9 @@ export default function CalendarPage() {
                 viewDate={viewDate}
                 onViewDateChange={setViewDate}
                 onMilestoneClick={id => setActiveMilestoneId(id)}
+                onMilestoneUpdate={handleMilestoneUpdate}
                 activeBrandId={contextBrandId ?? undefined}
+                canUpdate={canUpdate}
               />
             ) : filteredMilestones.length === 0 ? (
               <div className="py-12 text-center text-muted-foreground">
@@ -335,8 +347,10 @@ export default function CalendarPage() {
               <MilestoneGantt
                 milestones={filteredMilestones}
                 onMilestoneClick={id => setActiveMilestoneId(id)}
+                onMilestoneUpdate={handleMilestoneUpdate}
                 activeBrandId={contextBrandId ?? undefined}
                 functionsById={functionsById}
+                canUpdate={canUpdate}
               />
             ) : (
               <MilestoneTimeline

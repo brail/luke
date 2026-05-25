@@ -22,8 +22,8 @@ export const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructi
 };
 
 export const STATUS_OPACITY: Record<string, string> = {
-  PLANNED: 'opacity-60',
+  PLANNED: 'opacity-70',
   IN_PROGRESS: 'opacity-100',
   COMPLETED: 'opacity-40',
-  CANCELLED: 'opacity-25',
+  CANCELLED: 'opacity-25 line-through',
 };

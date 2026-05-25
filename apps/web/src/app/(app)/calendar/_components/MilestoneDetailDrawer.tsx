@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
@@ -49,13 +49,40 @@ interface Props {
 
 export function MilestoneDetailDrawer({ milestone, open, onClose, onUpdated, canUpdate, calendarId, availableFunctions, functionsById }: Props) {
   const [noteBody, setNoteBody] = useState(milestone.notes?.[0]?.body ?? '');
+  const [noteStatus, setNoteStatus] = useState<'idle' | 'dirty' | 'saving' | 'saved'>('idle');
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
+  // Intentionally depends only on milestone.id — avoids resetting while user is typing
+  // when notes refetch arrives with the same milestone open.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    setNoteBody(milestone.notes?.[0]?.body ?? '');
+    setNoteStatus('idle');
+  }, [milestone.id]);
+
+  useEffect(() => {
+    return () => { if (savedTimerRef.current) clearTimeout(savedTimerRef.current); };
+  }, []);
+
   const upsertNoteMutation = trpc.seasonCalendar.upsertNote.useMutation({
-    onSuccess: () => toast.success('Appunto salvato'),
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onSuccess: () => {
+      setNoteStatus('saved');
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+      savedTimerRef.current = setTimeout(() => setNoteStatus('idle'), 2500);
+    },
+    onError: err => {
+      setNoteStatus('dirty');
+      toast.error(getTrpcErrorMessage(err));
+    },
   });
+
+  const saveNote = () => {
+    if (noteStatus !== 'dirty') return;
+    setNoteStatus('saving');
+    upsertNoteMutation.mutate({ milestoneId: milestone.id, body: noteBody.trim() });
+  };
 
   const deleteMutation = trpc.seasonCalendar.deleteMilestone.useMutation({
     onSuccess: () => {
@@ -67,9 +94,12 @@ export function MilestoneDetailDrawer({ milestone, open, onClose, onUpdated, can
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
-  const handleNoteBlur = () => {
-    if (noteBody.trim() !== (milestone.notes?.[0]?.body ?? '')) {
-      upsertNoteMutation.mutate({ milestoneId: milestone.id, body: noteBody.trim() });
+  const handleNoteChange = (val: string) => {
+    setNoteBody(val);
+    if (val.trim() !== (milestone.notes?.[0]?.body ?? '').trim()) {
+      setNoteStatus('dirty');
+    } else {
+      setNoteStatus('idle');
     }
   };
 
@@ -135,15 +165,37 @@ export function MilestoneDetailDrawer({ milestone, open, onClose, onUpdated, can
 
             {/* Personal notes */}
             <div>
-              <p className="text-sm font-medium text-muted-foreground mb-1">I miei appunti</p>
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-sm font-medium text-muted-foreground">I miei appunti</p>
+                <span className="text-[11px] tabular-nums">
+                  {noteStatus === 'dirty' && (
+                    <span className="text-amber-500">● non salvato</span>
+                  )}
+                  {noteStatus === 'saving' && (
+                    <span className="text-muted-foreground animate-pulse">salvataggio…</span>
+                  )}
+                  {noteStatus === 'saved' && (
+                    <span className="text-green-600 dark:text-green-400">✓ salvato</span>
+                  )}
+                </span>
+              </div>
               <Textarea
                 value={noteBody}
-                onChange={e => setNoteBody(e.target.value)}
-                onBlur={handleNoteBlur}
+                onChange={e => handleNoteChange(e.target.value)}
+                onBlur={saveNote}
+                onKeyDown={e => {
+                  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                    e.preventDefault();
+                    saveNote();
+                  }
+                }}
                 placeholder="Aggiungi una nota personale…"
                 className="text-sm resize-none"
                 rows={4}
               />
+              <p className="text-[11px] text-muted-foreground/50 mt-1">
+                Salvato automaticamente · ⌘↵ per salvare subito
+              </p>
             </div>
           </div>
 

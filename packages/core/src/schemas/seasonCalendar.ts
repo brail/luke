@@ -54,7 +54,7 @@ export type CalendarMilestoneInput = z.infer<typeof CalendarMilestoneInputSchema
 
 export const MilestonePersonalNoteInputSchema = z.object({
   milestoneId: z.string().uuid(),
-  body: z.string().min(1).max(4000),
+  body: z.string().max(4000),
 });
 export type MilestonePersonalNoteInput = z.infer<typeof MilestonePersonalNoteInputSchema>;
 
