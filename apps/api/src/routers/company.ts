@@ -100,6 +100,22 @@ const companyFunctionRouter = router({
     .use(withRateLimit('companyStructureMutations'))
     .input(CompanyFunctionInputSchema)
     .mutation(async ({ ctx, input }) => {
+      const existing = await ctx.prisma.companyFunction.findFirst({
+        where: { slug: input.slug },
+      });
+      if (existing) {
+        if (!existing.isActive) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: `Una funzione disattivata con slug "${input.slug}" esiste già. Ripristinala invece di crearne una nuova.`,
+          });
+        }
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: `Una funzione con slug "${input.slug}" esiste già.`,
+        });
+      }
+
       const fn = await ctx.prisma.companyFunction.create({
         data: {
           slug: input.slug,
@@ -200,6 +216,46 @@ const companyFunctionRouter = router({
         targetType: 'CompanyFunction',
         targetId: fn.id,
         result: 'SUCCESS',
+      });
+
+      return fn;
+    }),
+
+  restore: protectedProcedure
+    .use(requirePermission('company_function:update'))
+    .use(withRateLimit('companyStructureMutations'))
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const existing = await ctx.prisma.companyFunction.findUnique({
+        where: { id: input.id },
+      });
+      if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'Function not found' });
+      if (existing.isActive) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Function is already active' });
+
+      const fn = await ctx.prisma.$transaction(async tx => {
+        // Guard against slug collision with another active function — checked inside
+        // transaction to close the dirty-read window between check and update
+        const conflict = await tx.companyFunction.findFirst({
+          where: { slug: existing.slug, isActive: true },
+        });
+        if (conflict) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: `Una funzione attiva con slug "${existing.slug}" esiste già (id: ${conflict.id}). Rinomina o disattiva quella prima di ripristinare questa.`,
+          });
+        }
+        return tx.companyFunction.update({
+          where: { id: input.id },
+          data: { isActive: true },
+        });
+      }, { timeout: 15000 });
+
+      await logAudit(ctx, {
+        action: 'COMPANY_FUNCTION_RESTORED',
+        targetType: 'CompanyFunction',
+        targetId: fn.id,
+        result: 'SUCCESS',
+        metadata: { slug: fn.slug, name: fn.name },
       });
 
       return fn;

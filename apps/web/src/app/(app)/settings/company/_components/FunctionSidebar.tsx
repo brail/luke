@@ -15,7 +15,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, Layers, Pencil, Trash2 } from 'lucide-react';
+import { GripVertical, Layers, Pencil, RotateCcw, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -47,11 +47,45 @@ interface SortableFunctionCardProps {
   onSelect: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onRestore: () => void;
+  isRestoring?: boolean;
 }
 
-function SortableFunctionCard({ fn, isSelected, canUpdate, canDelete, onSelect, onEdit, onDelete }: SortableFunctionCardProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: fn.id });
+function SortableFunctionCard({ fn, isSelected, canUpdate, canDelete, onSelect, onEdit, onDelete, onRestore, isRestoring }: SortableFunctionCardProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: fn.id,
+    disabled: !fn.isActive,
+  });
   const style = { transform: CSS.Transform.toString(transform), transition };
+
+  if (!fn.isActive) {
+    return (
+      <div
+        className="group flex cursor-pointer items-start gap-2 rounded-md border border-dashed p-3 text-sm opacity-50 transition-colors hover:opacity-75"
+        onClick={onSelect}
+      >
+        <Layers size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
+        <div className="flex-1 min-w-0">
+          <span className="truncate font-medium text-muted-foreground line-through">{fn.name}</span>
+          <div className="mt-1 flex items-center gap-1.5">
+            <Badge variant="outline" className="font-mono text-xs">{fn.slug}</Badge>
+            <Badge variant="secondary" className="text-xs">Disattivata</Badge>
+          </div>
+        </div>
+        {canUpdate && (
+          <button
+            type="button"
+            className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-emerald-600 disabled:cursor-not-allowed"
+            onClick={e => { e.stopPropagation(); onRestore(); }}
+            disabled={isRestoring}
+            title="Ripristina funzione"
+          >
+            <RotateCcw size={12} className={isRestoring ? 'animate-spin' : ''} />
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -64,7 +98,6 @@ function SortableFunctionCard({ fn, isSelected, canUpdate, canDelete, onSelect, 
       )}
       onClick={onSelect}
     >
-      {/* Drag handle */}
       {canUpdate && (
         <button
           type="button"
@@ -86,7 +119,6 @@ function SortableFunctionCard({ fn, isSelected, canUpdate, canDelete, onSelect, 
         <Badge variant="outline" className="mt-1 font-mono text-xs">{fn.slug}</Badge>
       </div>
 
-      {/* Actions */}
       <div className="flex shrink-0 flex-col gap-0.5 opacity-0 transition-opacity group-hover:opacity-100" onClick={e => e.stopPropagation()}>
         {canUpdate && (
           <button type="button" className="rounded p-0.5 text-muted-foreground hover:text-foreground" onClick={onEdit}>
@@ -133,6 +165,11 @@ export function FunctionSidebar({ functions, selectedId, canCreate, canUpdate, c
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
+  const restoreMutation = trpc.company.function.restore.useMutation({
+    onSuccess: async () => { toast.success('Funzione ripristinata'); await onRefresh(); },
+    onError: err => toast.error(getTrpcErrorMessage(err)),
+  });
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -157,6 +194,8 @@ export function FunctionSidebar({ functions, selectedId, canCreate, canUpdate, c
               onSelect={() => onSelect(fn.id)}
               onEdit={() => setFnDialog({ open: true, fn })}
               onDelete={() => setDeleteTarget(fn)}
+              onRestore={() => restoreMutation.mutate({ id: fn.id })}
+              isRestoring={restoreMutation.isPending && restoreMutation.variables?.id === fn.id}
             />
           ))}
         </SortableContext>

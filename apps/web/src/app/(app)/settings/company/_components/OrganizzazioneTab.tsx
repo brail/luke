@@ -3,6 +3,7 @@
 import { Building2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+import { Switch } from '../../../../../components/ui/switch';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { useRefresh } from '../../../../../lib/refresh';
 import { trpc } from '../../../../../lib/trpc';
@@ -21,7 +22,8 @@ export function OrganizzazioneTab() {
   const canUpdateTeam = can('company_team:update');
   const canDeleteTeam = can('company_team:delete');
 
-  const { data: functions = [] } = trpc.company.function.list.useQuery({ includeInactive: false });
+  const [showInactive, setShowInactive] = useState(false);
+  const { data: functions = [] } = trpc.company.function.list.useQuery({ includeInactive: showInactive });
 
   const [selectedFunctionId, setSelectedFunctionId] = useState<string | null>(null);
 
@@ -36,7 +38,13 @@ export function OrganizzazioneTab() {
   return (
     <div className="flex gap-6">
       <div className="w-64 shrink-0">
-        <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Funzioni</p>
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Funzioni</p>
+          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+            <Switch checked={showInactive} onCheckedChange={setShowInactive} className="scale-75" />
+            Disattivate
+          </label>
+        </div>
         <FunctionSidebar
           functions={functions}
           selectedId={selectedFunctionId}

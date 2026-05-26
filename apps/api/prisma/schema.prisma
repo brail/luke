@@ -1300,7 +1300,7 @@ model CompanyProfile {
 
 model CompanyFunction {
   id          String   @id @default(uuid())
-  slug        String   @unique
+  slug        String
   name        String
   description String?
   order       Int      @default(0)
@@ -1316,6 +1316,7 @@ model CompanyFunction {
   googleCalendarBindings   GoogleCalendarBinding[]
   googleEventMappings      GoogleEventMapping[]
 
+  @@index([slug])
   @@index([isActive, order])
   @@map("company_functions")
 }
@@ -1599,7 +1600,6 @@ model CalendarCatalogItem {
   type      String
   value     String
   label     String
-  color     String?
   order     Int      @default(0)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
