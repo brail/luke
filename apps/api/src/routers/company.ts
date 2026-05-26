@@ -269,6 +269,14 @@ async function fetchTeamName(teamId: string, prisma: PrismaClient): Promise<stri
   return team?.name ?? teamId;
 }
 
+async function fetchTeam(teamId: string, prisma: PrismaClient) {
+  const team = await prisma.companyTeam.findUnique({
+    where: { id: teamId },
+    select: { name: true, brandScopes: { select: { brand: { select: { name: true } } } } },
+  });
+  return { name: team?.name ?? teamId, brandNames: team?.brandScopes.map(s => s.brand.name) ?? [] };
+}
+
 const companyTeamRouter = router({
   listByFunction: protectedProcedure
     .use(requirePermission('company_team:read'))
@@ -394,12 +402,16 @@ const companyTeamRouter = router({
     .use(withRateLimit('companyStructureMutations'))
     .input(CompanyTeamMembershipInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const teamName = await fetchTeamName(input.teamId, ctx.prisma);
+      const team = await fetchTeam(input.teamId, ctx.prisma);
 
       await ctx.prisma.companyTeamMembership.createMany({
         data: input.userIds.map(userId => ({ teamId: input.teamId, userId, role: input.role })),
         skipDuplicates: true,
       });
+
+      const calendarMsg = team.brandNames.length > 0
+        ? `Hai accesso ai calendari di: ${team.brandNames.join(', ')}`
+        : 'Hai accesso ai calendari del team';
 
       await Promise.all(input.userIds.flatMap(userId => [
         logAudit(ctx, {
@@ -413,8 +425,16 @@ const companyTeamRouter = router({
           userId,
           category: 'USER_ACTION',
           title: 'Aggiunto al team',
-          message: `Sei stato aggiunto al team "${teamName}"`,
+          message: `Sei stato aggiunto al team "${team.name}"`,
           link: '/settings/company',
+          data: { teamId: input.teamId },
+        }),
+        createNotification(ctx.prisma, {
+          userId,
+          category: 'CALENDAR',
+          title: 'Accesso al calendario',
+          message: calendarMsg,
+          link: '/calendar',
           data: { teamId: input.teamId },
         }),
       ]));
