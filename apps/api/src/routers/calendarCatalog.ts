@@ -58,7 +58,6 @@ export const calendarCatalogRouter = router({
           type: input.type,
           value: input.value,
           label: input.label,
-          color: input.color ?? null,
           order: input.order ?? (maxOrder._max.order ?? -1) + 1,
         },
       });
@@ -90,7 +89,6 @@ export const calendarCatalogRouter = router({
         where: { id: input.id },
         data: {
           label: input.label,
-          color: input.color ?? null,
           ...(input.order !== undefined && { order: input.order }),
         },
       });

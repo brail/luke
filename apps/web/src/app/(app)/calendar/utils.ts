@@ -35,9 +35,34 @@ export function getIsoWeek(d: Date): number {
 }
 
 const PALETTE = [
-  '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
-  '#8b5cf6', '#ec4899', '#14b8a6', '#f97316',
+  '#2563eb', // blue
+  '#dc2626', // red
+  '#16a34a', // green
+  '#d97706', // amber
+  '#7c3aed', // violet
+  '#db2777', // pink
+  '#0891b2', // cyan
+  '#ea580c', // orange
+  '#9333ea', // purple
+  '#0d9488', // teal
+  '#65a30d', // lime
+  '#be123c', // rose
 ];
+
+export function groupEventsByDay<T extends { startAt: Date | string; endAt?: Date | string | null }>(
+  events: T[],
+  days: Date[],
+): T[][] {
+  return days.map(day => {
+    const dayStart = day.getTime();
+    const dayEnd = dayStart + 86_400_000 - 1;
+    return events.filter(m => {
+      const start = new Date(m.startAt).getTime();
+      const end = m.endAt ? new Date(m.endAt).getTime() : start;
+      return start <= dayEnd && end >= dayStart;
+    });
+  });
+}
 
 export function canEditMilestone(
   m: { brandId?: string | null },
@@ -53,4 +78,13 @@ export function brandColor(brandId: string): string {
     hash = (hash * 31 + brandId.charCodeAt(i)) & 0xffffffff;
   }
   return PALETTE[Math.abs(hash) % PALETTE.length]!;
+}
+
+export function assignBrandColors(brands: { id: string }[]): Record<string, string> {
+  return Object.fromEntries(brands.map((b, i) => [b.id, PALETTE[i % PALETTE.length]!]));
+}
+
+export function resolveBrandColor(brandId: string | null | undefined, map: Record<string, string>): string {
+  if (!brandId) return 'hsl(var(--primary))';
+  return map[brandId] ?? brandColor(brandId);
 }

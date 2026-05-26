@@ -1,14 +1,13 @@
 'use client';
 
-import { Calendar, RefreshCw, Copy, Plus, List, GanttChart, CalendarRange, CalendarDays, Maximize2, Minimize2 } from 'lucide-react';
+import { Calendar, CalendarClock, RefreshCw, Copy, Plus, List, GanttChart, CalendarRange, CalendarDays, Maximize2, Minimize2, ChevronDown, Check } from 'lucide-react';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 
-import { SectionCard } from '../../../components/SectionCard';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent } from '../../../components/ui/card';
-import { Checkbox } from '../../../components/ui/checkbox';
+import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
 import { useAppContext } from '../../../contexts/AppContextProvider';
 import { usePermission } from '../../../hooks/usePermission';
 import { trpc } from '../../../lib/trpc';
@@ -16,15 +15,16 @@ import { getTrpcErrorMessage } from '../../../lib/trpcErrorMessages';
 import { cn } from '../../../lib/utils';
 
 import { ApplyTemplateDialog } from './_components/ApplyTemplateDialog';
+import { CalendarEventDayView } from './_components/CalendarEventDayView';
+import { CalendarEventDialog } from './_components/CalendarEventDialog';
+import { CalendarEventGantt } from './_components/CalendarEventGantt';
+import { CalendarEventMonthView } from './_components/CalendarEventMonthView';
+import { CalendarEventNoteDialog } from './_components/CalendarEventNoteDialog';
+import { CalendarEventTimeline } from './_components/CalendarEventTimeline';
+import { CalendarEventWeekView } from './_components/CalendarEventWeekView';
 import { CloneBrandSeasonDialog } from './_components/CloneBrandSeasonDialog';
 import { ExportButton } from './_components/ExportButton';
-import { MilestoneDetailDrawer } from './_components/MilestoneDetailDrawer';
-import { MilestoneDialog } from './_components/MilestoneDialog';
-import { MilestoneGantt } from './_components/MilestoneGantt';
-import { MilestoneMonthView } from './_components/MilestoneMonthView';
-import { MilestoneTimeline } from './_components/MilestoneTimeline';
-import { MilestoneWeekView } from './_components/MilestoneWeekView';
-import { brandColor } from './utils';
+import { assignBrandColors, resolveBrandColor } from './utils';
 
 export default function CalendarPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
@@ -32,19 +32,19 @@ export default function CalendarPage() {
 
   const [selectedBrandIds, setSelectedBrandIds] = useState<string[]>([]);
   const [selectedFunctionIds, setSelectedFunctionIds] = useState<string[]>([]);
-  const [activeMilestoneId, setActiveMilestoneId] = useState<string | null>(null);
+  const [activeEventId, setActiveEventId] = useState<string | null>(null);
+  const [noteEventId, setNoteEventId] = useState<string | null>(null);
   const [createDate, setCreateDate] = useState<string | null>(null);
+  const [createDefaultAllDay, setCreateDefaultAllDay] = useState(true);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
-  const [view, setView] = useState<'list' | 'gantt' | 'week' | 'month'>('month');
+  const [view, setView] = useState<'list' | 'gantt' | 'week' | 'day' | 'month'>('month');
   const [viewDate, setViewDate] = useState<Date>(() => new Date());
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     if (!isFullscreen) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsFullscreen(false);
-    };
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setIsFullscreen(false); };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [isFullscreen]);
@@ -58,24 +58,18 @@ export default function CalendarPage() {
     }
   }, [contextBrandId]); // intentional: only seed brand on context change
 
-  const { data: brandsData } = trpc.brand.list.useQuery(
-    { isActive: true, limit: 100 },
-    { enabled }
-  );
-
+  const { data: brandsData } = trpc.brand.list.useQuery({ isActive: true, limit: 100 }, { enabled });
   const { data: functionsData } = trpc.company.function.list.useQuery(undefined, { enabled });
 
   const availableFunctions = useMemo(
     () => (functionsData ?? []).map(f => ({ id: f.id, name: f.name })),
     [functionsData]
   );
-
   const functionsById = useMemo(
     () => Object.fromEntries(availableFunctions.map(f => [f.id, f.name])),
     [availableFunctions]
   );
 
-  // Default-select all functions once loaded
   useEffect(() => {
     if (availableFunctions.length > 0 && selectedFunctionIds.length === 0) {
       setSelectedFunctionIds(availableFunctions.map(f => f.id));
@@ -88,10 +82,7 @@ export default function CalendarPage() {
   );
 
   const { data: milestones, isLoading: milestonesLoading, refetch } = trpc.seasonCalendar.listMilestones.useQuery(
-    {
-      seasonId: season?.id ?? '',
-      brandIds: selectedBrandIds.length > 0 ? selectedBrandIds : [contextBrandId ?? ''],
-    },
+    { seasonId: season?.id ?? '', brandIds: selectedBrandIds.length > 0 ? selectedBrandIds : [contextBrandId ?? ''] },
     { enabled: enabled && selectedBrandIds.length > 0 }
   );
 
@@ -101,22 +92,19 @@ export default function CalendarPage() {
   );
 
   const triggerSyncMutation = trpc.seasonCalendar.triggerSync.useMutation({
-    onSuccess: () => {
-      toast.success('Sincronizzazione avviata');
-      void refetch();
-    },
+    onSuccess: () => { toast.success('Sincronizzazione avviata'); void refetch(); },
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
-  const updateMilestoneMutation = trpc.seasonCalendar.updateMilestone.useMutation({
+  const updateEventMutation = trpc.seasonCalendar.updateMilestone.useMutation({
     onSuccess: () => void refetch(),
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
-  const handleMilestoneUpdate = (id: string, data: { startAt: string; endAt?: string | null }) =>
-    updateMilestoneMutation.mutate({ id, data: { ...data, endAt: data.endAt ?? undefined } });
+  const handleEventUpdate = (id: string, data: { startAt: string; endAt?: string | null }) =>
+    updateEventMutation.mutate({ id, data: { ...data, endAt: data.endAt ?? undefined } });
 
-  const deleteMilestonesMutation = trpc.seasonCalendar.deleteMilestones.useMutation({
+  const deleteEventsMutation = trpc.seasonCalendar.deleteMilestones.useMutation({
     onSuccess: () => void refetch(),
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
@@ -124,32 +112,35 @@ export default function CalendarPage() {
   const canSync = can('season_calendar:sync');
   const canUpdate = can('season_calendar:update');
 
-  const handleDayClick = useCallback((isoDate: string) => {
-    setCreateDate(isoDate);
-  }, []);
-
+  const handleDayClick = useCallback((isoDate: string) => { setCreateDefaultAllDay(true); setCreateDate(isoDate); }, []);
+  const handleDayClickTimed = useCallback((isoDate: string) => { setCreateDefaultAllDay(false); setCreateDate(isoDate); }, []);
   const onDayClickProp = canUpdate ? handleDayClick : undefined;
+  const onDayClickTimedProp = canUpdate ? handleDayClickTimed : undefined;
 
   const filteredMilestones = useMemo(() => {
     if (!milestones) return [];
     if (selectedFunctionIds.length === 0) return milestones;
-    return milestones.filter(m =>
-      m.visibilities.some(v => selectedFunctionIds.includes(v.functionId))
-    );
+    return milestones.filter(m => m.visibilities.some(v => selectedFunctionIds.includes(v.functionId)));
   }, [milestones, selectedFunctionIds]);
 
-  const activeMilestone = useMemo(
-    () => filteredMilestones.find(m => m.id === activeMilestoneId) ?? null,
-    [filteredMilestones, activeMilestoneId]
+  const activeEvent = useMemo(
+    () => filteredMilestones.find(m => m.id === activeEventId) ?? null,
+    [filteredMilestones, activeEventId]
   );
+
+  const noteEvent = useMemo(
+    () => filteredMilestones.find(m => m.id === noteEventId) ?? null,
+    [filteredMilestones, noteEventId]
+  );
+
+  const canEditActiveEvent = canUpdate && (!activeEvent?.brandId || activeEvent.brandId === contextBrandId);
 
   const allBrands = brandsData?.items ?? [];
   const multiBrandAvailable = allBrands.length > 1;
+  const brandColorMap = useMemo(() => assignBrandColors(allBrands), [allBrands]);
 
   const toggleBrand = (brandId: string) => {
-    setSelectedBrandIds(prev =>
-      prev.includes(brandId) ? prev.filter(id => id !== brandId) : [...prev, brandId]
-    );
+    setSelectedBrandIds(prev => prev.includes(brandId) ? prev.filter(id => id !== brandId) : [...prev, brandId]);
   };
 
   if (!enabled && !contextLoading) {
@@ -169,217 +160,202 @@ export default function CalendarPage() {
     <div className="flex gap-2 items-center">
       {canUpdate && (
         <>
-          <Button size="sm" onClick={() => setCreateDate('')} disabled={!calendar}>
-            <Plus size={14} className="mr-1" />
-            Nuova milestone
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setCloneOpen(true)}
-            disabled={!calendar}
-          >
-            <Copy size={14} className="mr-1" />
-            Clona da…
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setTemplateOpen(true)}
-            disabled={!calendar}
-          >
-            Applica template
-          </Button>
+          <Button size="sm" onClick={() => setCreateDate('')} disabled={!calendar}><Plus size={14} className="mr-1" />Nuovo evento</Button>
+          <Button variant="outline" size="sm" onClick={() => setCloneOpen(true)} disabled={!calendar}><Copy size={14} className="mr-1" />Clona da…</Button>
+          <Button variant="outline" size="sm" onClick={() => setTemplateOpen(true)} disabled={!calendar}>Applica template</Button>
         </>
       )}
       <div className="flex border rounded-md overflow-hidden">
-        <Button
-          variant={view === 'month' ? 'default' : 'ghost'}
-          size="sm"
-          className="rounded-none border-0"
-          onClick={() => setView('month')}
-          title="Mese"
-        >
-          <CalendarDays size={14} />
-        </Button>
-        <Button
-          variant={view === 'gantt' ? 'default' : 'ghost'}
-          size="sm"
-          className="rounded-none border-0"
-          onClick={() => setView('gantt')}
-          title="Gantt"
-        >
-          <GanttChart size={14} />
-        </Button>
-        <Button
-          variant={view === 'week' ? 'default' : 'ghost'}
-          size="sm"
-          className="rounded-none border-0"
-          onClick={() => setView('week')}
-          title="Settimana"
-        >
-          <CalendarRange size={14} />
-        </Button>
-        <Button
-          variant={view === 'list' ? 'default' : 'ghost'}
-          size="sm"
-          className="rounded-none border-0"
-          onClick={() => setView('list')}
-          title="Lista"
-        >
-          <List size={14} />
-        </Button>
+        <Button variant={view === 'month' ? 'default' : 'ghost'} size="sm" className="rounded-none border-0" onClick={() => setView('month')} title="Mese"><CalendarDays size={14} /></Button>
+        <Button variant={view === 'gantt' ? 'default' : 'ghost'} size="sm" className="rounded-none border-0" onClick={() => setView('gantt')} title="Gantt"><GanttChart size={14} /></Button>
+        <Button variant={view === 'week' ? 'default' : 'ghost'} size="sm" className="rounded-none border-0" onClick={() => setView('week')} title="Settimana"><CalendarRange size={14} /></Button>
+        <Button variant={view === 'day' ? 'default' : 'ghost'} size="sm" className="rounded-none border-0" onClick={() => setView('day')} title="Giorno"><CalendarClock size={14} /></Button>
+        <Button variant={view === 'list' ? 'default' : 'ghost'} size="sm" className="rounded-none border-0" onClick={() => setView('list')} title="Lista"><List size={14} /></Button>
       </div>
-      <ExportButton
-        seasonId={season?.id ?? ''}
-        brandIds={selectedBrandIds}
-        view={view}
-        viewDate={viewDate}
-        disabled={!season?.id}
-      />
+      <ExportButton seasonId={season?.id ?? ''} brandIds={selectedBrandIds} view={view} viewDate={viewDate} disabled={!season?.id} />
       {canSync && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => calendar && triggerSyncMutation.mutate({ calendarId: calendar.id })}
-          disabled={!calendar || triggerSyncMutation.isPending}
-        >
-          <RefreshCw size={14} className={`mr-1 ${triggerSyncMutation.isPending ? 'animate-spin' : ''}`} />
-          Sincronizza
+        <Button variant="outline" size="sm" onClick={() => calendar && triggerSyncMutation.mutate({ calendarId: calendar.id })} disabled={!calendar || triggerSyncMutation.isPending}>
+          <RefreshCw size={14} className={`mr-1 ${triggerSyncMutation.isPending ? 'animate-spin' : ''}`} />Sincronizza
         </Button>
       )}
     </div>
   );
 
+  const allFnsSelected = selectedFunctionIds.length === availableFunctions.length;
+  const someFnsSelected = selectedFunctionIds.length > 0 && !allFnsSelected;
+
+  const filterStrip = (
+    <div className="flex items-center gap-3 mb-3 flex-wrap">
+      {multiBrandAvailable && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {allBrands.map(b => {
+            const selected = selectedBrandIds.includes(b.id);
+            const isActive = b.id === contextBrandId;
+            return (
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => toggleBrand(b.id)}
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-all',
+                  selected
+                    ? 'border-transparent text-white font-medium'
+                    : 'border-border bg-background text-muted-foreground hover:text-foreground',
+                  isActive && selected && 'ring-1 ring-offset-1 ring-primary/40',
+                )}
+                style={selected ? { background: resolveBrandColor(b.id, brandColorMap) } : undefined}
+              >
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: selected ? 'rgba(255,255,255,0.6)' : resolveBrandColor(b.id, brandColorMap) }} />
+                {b.name}
+              </button>
+            );
+          })}
+          <div className="w-px h-4 bg-border" />
+        </div>
+      )}
+
+      {availableFunctions.length > 0 && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs">
+              <span className={cn(someFnsSelected && 'text-primary font-medium')}>
+                Visualizza
+                {someFnsSelected
+                  ? ` · ${selectedFunctionIds.length}/${availableFunctions.length}`
+                  : allFnsSelected
+                    ? ` · tutte`
+                    : ''}
+              </span>
+              <ChevronDown size={12} className="text-muted-foreground" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-52 p-2">
+            {!allFnsSelected && (
+              <>
+                <button
+                  type="button"
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-muted-foreground hover:bg-muted transition-colors mb-1"
+                  onClick={() => setSelectedFunctionIds(availableFunctions.map(f => f.id))}
+                >
+                  Seleziona tutte
+                </button>
+                <div className="border-t mb-1" />
+              </>
+            )}
+            {availableFunctions.map(fn => {
+              const checked = selectedFunctionIds.includes(fn.id);
+              return (
+                <button
+                  key={fn.id}
+                  type="button"
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm hover:bg-muted transition-colors"
+                  onClick={() => setSelectedFunctionIds(prev =>
+                    checked ? prev.filter(id => id !== fn.id) : [...prev, fn.id]
+                  )}
+                >
+                  <Check size={12} className={cn('shrink-0 text-primary', !checked && 'opacity-0')} />
+                  {fn.name}
+                </button>
+              );
+            })}
+          </PopoverContent>
+        </Popover>
+      )}
+
+      {syncStatus && (
+        <span className="text-xs text-muted-foreground ml-auto">
+          {syncStatus.totalSynced} sincronizzati
+          {syncStatus.lastSyncedAt && (
+            <> · {new Date(syncStatus.lastSyncedAt).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</>
+          )}
+        </span>
+      )}
+    </div>
+  );
+
   const calendarBody = (
-    <div className="flex gap-4">
-      <div className="w-56 shrink-0 space-y-4">
-        {multiBrandAvailable && (
-          <SectionCard title="Brand">
-            <div className="space-y-2">
-              {allBrands.map(b => {
-                const isActive = b.id === contextBrandId;
-                return (
-                  <label
-                    key={b.id}
-                    className={cn(
-                      'flex items-center gap-2 cursor-pointer rounded px-1.5 py-0.5 -mx-1.5 transition-colors',
-                      isActive && 'bg-muted font-medium'
-                    )}
-                  >
-                    <Checkbox
-                      checked={selectedBrandIds.includes(b.id)}
-                      onCheckedChange={() => toggleBrand(b.id)}
-                    />
-                    <span
-                      className="w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ background: brandColor(b.id) }}
-                    />
-                    <span className="text-sm truncate">{b.name}</span>
-                  </label>
-                );
-              })}
-            </div>
-          </SectionCard>
-        )}
-        {availableFunctions.length > 0 && (
-          <SectionCard title="Funzioni">
-            <div className="space-y-2">
-              {availableFunctions.map(fn => (
-                <label key={fn.id} className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox
-                    checked={selectedFunctionIds.includes(fn.id)}
-                    onCheckedChange={checked => {
-                      setSelectedFunctionIds(prev =>
-                        checked ? [...prev, fn.id] : prev.filter(id => id !== fn.id)
-                      );
-                    }}
-                  />
-                  <span className="text-sm">{fn.name}</span>
-                </label>
-              ))}
-            </div>
-          </SectionCard>
-        )}
-        {syncStatus && (
-          <SectionCard title="Sync Google">
-            <div className="space-y-1 text-xs text-muted-foreground">
-              <p>{syncStatus.totalSynced} eventi sincronizzati</p>
-              {syncStatus.lastSyncedAt && (
-                <p>Ultimo sync: {new Date(syncStatus.lastSyncedAt).toLocaleString('it-IT')}</p>
+    <div>
+      {filterStrip}
+      <Card>
+        <CardContent className="p-0">
+          {calendarLoading || milestonesLoading ? (
+            <div className="py-12 text-center text-muted-foreground">Caricamento…</div>
+          ) : view === 'week' ? (
+            <CalendarEventWeekView
+              milestones={filteredMilestones}
+              viewDate={viewDate}
+              onViewDateChange={setViewDate}
+              onEventClick={id => setActiveEventId(id)}
+              onNoteClick={id => setNoteEventId(id)}
+              onEventUpdate={handleEventUpdate}
+              onDayClick={onDayClickProp}
+              activeBrandId={contextBrandId ?? undefined}
+              canUpdate={canUpdate}
+              brandColorMap={brandColorMap}
+            />
+          ) : view === 'month' ? (
+            <CalendarEventMonthView
+              milestones={filteredMilestones}
+              viewDate={viewDate}
+              onViewDateChange={setViewDate}
+              onEventClick={id => setActiveEventId(id)}
+              onNoteClick={id => setNoteEventId(id)}
+              onEventUpdate={handleEventUpdate}
+              onDayClick={onDayClickProp}
+              activeBrandId={contextBrandId ?? undefined}
+              canUpdate={canUpdate}
+              brandColorMap={brandColorMap}
+            />
+          ) : view === 'day' ? (
+            <CalendarEventDayView
+              milestones={filteredMilestones}
+              viewDate={viewDate}
+              onViewDateChange={setViewDate}
+              onEventClick={id => setActiveEventId(id)}
+              onNoteClick={id => setNoteEventId(id)}
+              onEventUpdate={handleEventUpdate}
+              onDayClick={onDayClickTimedProp}
+              activeBrandId={contextBrandId ?? undefined}
+              canUpdate={canUpdate}
+              brandColorMap={brandColorMap}
+            />
+          ) : filteredMilestones.length === 0 ? (
+            <div className="py-12 text-center text-muted-foreground">
+              <Calendar size={32} className="mx-auto mb-2 opacity-40" />
+              <p>Nessun evento per i filtri selezionati</p>
+              {canUpdate && calendar && (
+                <Button variant="outline" size="sm" className="mt-3" onClick={() => setCreateDate('')}>
+                  <Plus size={14} className="mr-1" />Crea il primo evento
+                </Button>
               )}
             </div>
-          </SectionCard>
-        )}
-      </div>
-
-      <div className="flex-1 min-w-0">
-        <Card>
-          <CardContent className="p-0">
-            {calendarLoading || milestonesLoading ? (
-              <div className="py-12 text-center text-muted-foreground">Caricamento…</div>
-            ) : view === 'week' ? (
-              <MilestoneWeekView
-                milestones={filteredMilestones}
-                viewDate={viewDate}
-                onViewDateChange={setViewDate}
-                onMilestoneClick={id => setActiveMilestoneId(id)}
-                onMilestoneUpdate={handleMilestoneUpdate}
-                onDayClick={onDayClickProp}
-                activeBrandId={contextBrandId ?? undefined}
-                canUpdate={canUpdate}
-              />
-            ) : view === 'month' ? (
-              <MilestoneMonthView
-                milestones={filteredMilestones}
-                viewDate={viewDate}
-                onViewDateChange={setViewDate}
-                onMilestoneClick={id => setActiveMilestoneId(id)}
-                onMilestoneUpdate={handleMilestoneUpdate}
-                onDayClick={onDayClickProp}
-                activeBrandId={contextBrandId ?? undefined}
-                canUpdate={canUpdate}
-              />
-            ) : filteredMilestones.length === 0 ? (
-              <div className="py-12 text-center text-muted-foreground">
-                <Calendar size={32} className="mx-auto mb-2 opacity-40" />
-                <p>Nessuna milestone per i filtri selezionati</p>
-                {canUpdate && calendar && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-3"
-                    onClick={() => setCreateDate('')}
-                  >
-                    <Plus size={14} className="mr-1" />
-                    Crea la prima milestone
-                  </Button>
-                )}
-              </div>
-            ) : view === 'gantt' ? (
-              <MilestoneGantt
-                milestones={filteredMilestones}
-                onMilestoneClick={id => setActiveMilestoneId(id)}
-                onMilestoneUpdate={handleMilestoneUpdate}
-                onDayClick={onDayClickProp}
-                activeBrandId={contextBrandId ?? undefined}
-                functionsById={functionsById}
-                canUpdate={canUpdate}
-              />
-            ) : (
-              <MilestoneTimeline
-                milestones={filteredMilestones}
-                onMilestoneClick={id => setActiveMilestoneId(id)}
-                onDayClick={onDayClickProp}
-                onBulkDelete={ids => deleteMilestonesMutation.mutate({ ids })}
-                activeBrandId={contextBrandId ?? undefined}
-                functionsById={functionsById}
-                canUpdate={canUpdate}
-              />
-            )}
-          </CardContent>
-        </Card>
-      </div>
+          ) : view === 'gantt' ? (
+            <CalendarEventGantt
+              milestones={filteredMilestones}
+              onEventClick={id => setActiveEventId(id)}
+              onNoteClick={id => setNoteEventId(id)}
+              onEventUpdate={handleEventUpdate}
+              onDayClick={onDayClickProp}
+              activeBrandId={contextBrandId ?? undefined}
+              functionsById={functionsById}
+              canUpdate={canUpdate}
+              brandColorMap={brandColorMap}
+            />
+          ) : (
+            <CalendarEventTimeline
+              milestones={filteredMilestones}
+              onEventClick={id => setActiveEventId(id)}
+              onNoteClick={id => setNoteEventId(id)}
+              onDayClick={onDayClickProp}
+              onBulkDelete={ids => deleteEventsMutation.mutate({ ids })}
+              activeBrandId={contextBrandId ?? undefined}
+              functionsById={functionsById}
+              canUpdate={canUpdate}
+              brandColorMap={brandColorMap}
+            />
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 
@@ -388,74 +364,70 @@ export default function CalendarPage() {
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Calendario Stagionale</h1>
-          {season && (
-            <p className="text-muted-foreground mt-1">
-              {season.name}{season.year ? ` · ${season.year}` : ''}
-            </p>
-          )}
+          {season && <p className="text-muted-foreground mt-1">{season.name}{season.year ? ` · ${season.year}` : ''}</p>}
         </div>
         <div className="flex gap-2 items-center">
           {actionBar}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsFullscreen(true)}
-            title="Espandi"
-          >
-            <Maximize2 size={14} />
-          </Button>
+          <Button variant="outline" size="sm" onClick={() => setIsFullscreen(true)} title="Espandi"><Maximize2 size={14} /></Button>
         </div>
       </div>
 
       {!isFullscreen && calendarBody}
 
-      {isFullscreen &&
-        createPortal(
-          <div className="fixed inset-0 z-50 bg-background flex flex-col">
-            <div className="shrink-0 border-b px-6 py-3 flex items-center justify-between bg-card">
-              <div className="flex items-center gap-3">
-                <span className="font-semibold text-sm">Calendario Stagionale</span>
-                {season && (
-                  <span className="text-sm text-muted-foreground">
-                    {season.name}{season.year ? ` · ${season.year}` : ''}
-                  </span>
-                )}
-              </div>
-              <div className="flex gap-2 items-center">
-                {actionBar}
-                <Button variant="ghost" size="sm" onClick={() => setIsFullscreen(false)} title="Riduci">
-                  <Minimize2 size={14} />
-                </Button>
-              </div>
+      {isFullscreen && createPortal(
+        <div className="fixed inset-0 z-50 bg-background flex flex-col">
+          <div className="shrink-0 border-b px-6 py-3 flex items-center justify-between bg-card">
+            <div className="flex items-center gap-3">
+              <span className="font-semibold text-sm">Calendario Stagionale</span>
+              {season && <span className="text-sm text-muted-foreground">{season.name}{season.year ? ` · ${season.year}` : ''}</span>}
             </div>
-            <div className="flex-1 overflow-y-auto p-6">
-              {calendarBody}
+            <div className="flex gap-2 items-center">
+              {actionBar}
+              <Button variant="ghost" size="sm" onClick={() => setIsFullscreen(false)} title="Riduci"><Minimize2 size={14} /></Button>
             </div>
-          </div>,
-          document.body
-        )}
+          </div>
+          <div className="flex-1 overflow-y-auto p-6">{calendarBody}</div>
+        </div>,
+        document.body
+      )}
 
-      {activeMilestone && (
-        <MilestoneDetailDrawer
-          milestone={activeMilestone}
-          open={!!activeMilestoneId}
-          onClose={() => setActiveMilestoneId(null)}
-          onUpdated={() => void refetch()}
-          canUpdate={canUpdate && (!activeMilestone.brandId || activeMilestone.brandId === contextBrandId)}
+      {/* Event detail / edit dialog */}
+      {activeEvent && (
+        <CalendarEventDialog
+          open={!!activeEventId}
+          onClose={() => setActiveEventId(null)}
+          onSaved={() => void refetch()}
+          onDeleted={() => { setActiveEventId(null); void refetch(); }}
           calendarId={calendar?.id ?? ''}
           availableFunctions={availableFunctions}
           functionsById={functionsById}
+          event={activeEvent}
+          readOnly={!canEditActiveEvent}
         />
       )}
 
+      {/* Create dialog */}
       {calendar && createDate !== null && (
-        <MilestoneDialog
+        <CalendarEventDialog
           open
-          onClose={() => setCreateDate(null)}
-          onSaved={() => { setCreateDate(null); void refetch(); }}
+          onClose={() => { setCreateDate(null); setCreateDefaultAllDay(true); }}
+          onSaved={() => { setCreateDate(null); setCreateDefaultAllDay(true); void refetch(); }}
           calendarId={calendar.id}
           availableFunctions={availableFunctions}
+          functionsById={functionsById}
           defaultDate={createDate || undefined}
+          defaultAllDay={createDefaultAllDay}
+        />
+      )}
+
+      {/* Personal note dialog */}
+      {noteEvent && (
+        <CalendarEventNoteDialog
+          open={!!noteEventId}
+          onClose={() => setNoteEventId(null)}
+          eventId={noteEvent.id}
+          eventTitle={noteEvent.title}
+          initialNote={noteEvent.notes?.[0]?.body ?? ''}
         />
       )}
 

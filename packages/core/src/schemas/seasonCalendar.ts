@@ -20,7 +20,6 @@ export const CalendarCatalogItemSchema = z.object({
   type: z.string(),
   value: z.string(),
   label: z.string(),
-  color: z.string().nullable(),
   order: z.number().int(),
   isActive: z.boolean(),
 });
@@ -30,7 +29,6 @@ export const CalendarCatalogItemCreateSchema = z.object({
   type: z.string().min(1),
   value: z.string().min(1).max(50),
   label: z.string().min(1).max(100),
-  color: z.string().max(50).optional(),
   order: z.number().int().default(0),
 });
 export type CalendarCatalogItemCreate = z.infer<typeof CalendarCatalogItemCreateSchema>;
@@ -38,7 +36,6 @@ export type CalendarCatalogItemCreate = z.infer<typeof CalendarCatalogItemCreate
 export const CalendarCatalogItemUpdateSchema = z.object({
   id: z.string().uuid(),
   label: z.string().min(1).max(100),
-  color: z.string().max(50).optional().nullable(),
   order: z.number().int().optional(),
 });
 export type CalendarCatalogItemUpdate = z.infer<typeof CalendarCatalogItemUpdateSchema>;

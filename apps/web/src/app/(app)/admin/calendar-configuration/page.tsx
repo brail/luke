@@ -326,7 +326,6 @@ export default function CalendarConfigurationPage() {
                   <tr className="border-b bg-muted/50">
                     <th className="px-4 py-2 text-left font-medium">Valore</th>
                     <th className="px-4 py-2 text-left font-medium">Label</th>
-                    <th className="px-4 py-2 text-left font-medium">Colore</th>
                     <th className="px-4 py-2 text-left font-medium">Stato</th>
                     <th className="w-24 px-4 py-2" />
                   </tr>
@@ -336,19 +335,6 @@ export default function CalendarConfigurationPage() {
                     <tr key={item.id} className={cn('border-b last:border-0', !item.isActive && 'opacity-50')}>
                       <td className="px-4 py-2 font-mono text-xs">{item.value}</td>
                       <td className="px-4 py-2">{item.label}</td>
-                      <td className="px-4 py-2">
-                        {item.color ? (
-                          <span className="flex items-center gap-1.5">
-                            <span
-                              className="inline-block h-3 w-3 rounded-full"
-                              style={{ background: item.color }}
-                            />
-                            <span className="text-xs text-muted-foreground">{item.color}</span>
-                          </span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </td>
                       <td className="px-4 py-2">
                         <Badge variant={item.isActive ? 'default' : 'secondary'}>
                           {item.isActive ? 'Attivo' : 'Inattivo'}
@@ -477,9 +463,9 @@ export default function CalendarConfigurationPage() {
           onClose={() => setCatalogDialog(null)}
           onSubmit={data => {
             if (catalogDialog.mode === 'create') {
-              createCatalogMutation.mutate({ type: 'eventType', value: data.value, label: data.label, color: data.color ?? undefined });
+              createCatalogMutation.mutate({ type: 'eventType', value: data.value, label: data.label });
             } else {
-              updateCatalogMutation.mutate({ id: catalogDialog.item.id, label: data.label, color: data.color });
+              updateCatalogMutation.mutate({ id: catalogDialog.item.id, label: data.label });
             }
           }}
           isLoading={createCatalogMutation.isPending || updateCatalogMutation.isPending}
@@ -504,7 +490,7 @@ export default function CalendarConfigurationPage() {
 
 // ─── Catalog event type dialog ────────────────────────────────────────────────
 
-type CatalogSubmitData = { value: string; label: string; color?: string | null };
+type CatalogSubmitData = { value: string; label: string };
 
 function CatalogEventTypeDialog({
   state,
@@ -521,7 +507,6 @@ function CatalogEventTypeDialog({
 
   const [value, setValue] = useState(initial?.value ?? '');
   const [label, setLabel] = useState(initial?.label ?? '');
-  const [color, setColor] = useState(initial?.color ?? '');
 
   const canSubmit = value.trim().length > 0 && label.trim().length > 0;
 
@@ -559,23 +544,12 @@ function CatalogEventTypeDialog({
               placeholder="es. Kickoff"
             />
           </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="ev-color">Colore (opzionale)</Label>
-            <Input
-              id="ev-color"
-              value={color}
-              onChange={e => setColor(e.target.value)}
-              placeholder="es. #3b82f6"
-            />
-            <p className="text-xs text-muted-foreground">Valore hex o CSS color per il badge del tipo.</p>
-          </div>
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={isLoading}>Annulla</Button>
           <Button
-            onClick={() => onSubmit({ value: value.trim(), label: label.trim(), color: color.trim() || null })}
+            onClick={() => onSubmit({ value: value.trim(), label: label.trim() })}
             disabled={!canSubmit || isLoading}
           >
             {isLoading ? 'Salvataggio…' : state.mode === 'create' ? 'Aggiungi' : 'Salva'}
