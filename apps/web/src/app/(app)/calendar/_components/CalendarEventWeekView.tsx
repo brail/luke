@@ -11,6 +11,7 @@ import { DAY_LABELS_IT, STATUS_OPACITY } from '../constants';
 import { addDays, canEditMilestone, daysBetween, getIsoWeek, groupEventsByDay, mondayOf, resolveBrandColor, sameDay, startOfDay } from '../utils';
 import { DraggableEventChip } from './DraggableEventChip';
 import { type CalendarEventItem as CalendarEvent } from './types';
+import { type HolidayEntry, type HolidayMap } from './useHolidays';
 
 interface Props {
   milestones: CalendarEvent[];
@@ -20,19 +21,24 @@ interface Props {
   onEventUpdate: (id: string, data: { startAt: string; endAt?: string | null }) => void;
   onNoteClick?: (id: string) => void;
   onDayClick?: (isoDate: string) => void;
+  onDayNumberClick?: (isoDate: string) => void;
   activeBrandId?: string;
   canUpdate?: boolean;
   brandColorMap: Record<string, string>;
+  holidayDates?: HolidayMap;
 }
 
-function WeekDayRow({ dayIso, isToday, isWeekend, isDragging, onDayClick, children }: {
-  dayIso: string; isToday: boolean; isWeekend: boolean; isDragging: boolean; onDayClick?: () => void; children: ReactNode;
+function WeekDayRow({ dayIso, isToday, isWeekend, isDragging, holidays, onDayClick, children }: {
+  dayIso: string; isToday: boolean; isWeekend: boolean; isDragging: boolean; holidays?: HolidayEntry[]; onDayClick?: () => void; children: ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: dayIso });
+  const isHoliday = !!holidays?.length;
   return (
     <div ref={setNodeRef} onClick={onDayClick} className={cn(
       'flex-1 p-1.5 flex flex-wrap gap-1 content-start min-h-[52px]',
-      isWeekend && 'bg-muted/20', isToday && 'bg-blue-50/50 dark:bg-blue-950/20',
+      isWeekend && 'bg-muted/20',
+      isHoliday && 'bg-rose-50 dark:bg-rose-950/20',
+      isToday && 'bg-blue-50/50 dark:bg-blue-950/20',
       isDragging && isOver && 'bg-blue-50/80 dark:bg-blue-950/30 ring-1 ring-inset ring-blue-300/50',
       onDayClick && 'cursor-pointer',
     )}>
@@ -41,7 +47,7 @@ function WeekDayRow({ dayIso, isToday, isWeekend, isDragging, onDayClick, childr
   );
 }
 
-export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, onEventClick, onEventUpdate, onNoteClick, onDayClick, activeBrandId, canUpdate, brandColorMap }: Props) {
+export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, onEventClick, onEventUpdate, onNoteClick, onDayClick, onDayNumberClick, activeBrandId, canUpdate, brandColorMap, holidayDates }: Props) {
   const weekStart = useMemo(() => mondayOf(viewDate), [viewDate]);
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
   const today = useMemo(() => new Date(), []);
@@ -92,12 +98,22 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
               <div key={i} className={cn('flex border-b last:border-b-0', isToday && 'bg-blue-50/20 dark:bg-blue-950/10')}>
                 <div className={cn('w-20 shrink-0 px-2 py-1.5 flex flex-col items-end justify-start border-r', isWeekend && 'bg-muted/20')}>
                   <span className="text-xs text-muted-foreground">{DAY_LABELS_IT[i]}</span>
-                  <span className={cn('text-sm font-medium w-7 h-7 flex items-center justify-center rounded-full',
-                    isToday && 'bg-blue-500 text-white', !isToday && 'text-foreground')}>
-                    {day.getDate()}
-                  </span>
+                  <div className="flex items-center gap-0.5">
+                    {holidayDates?.get(day.toISOString().slice(0, 10))?.map((h, hi) => (
+                      <span key={hi} className="text-[8px] font-mono font-semibold text-rose-500 leading-none" title={h.nameEn ?? h.name}>{h.countryCode}</span>
+                    ))}
+                    <span
+                      className={cn('text-sm font-medium w-7 h-7 flex items-center justify-center rounded-full shrink-0',
+                        isToday && 'bg-blue-500 text-white', !isToday && 'text-foreground',
+                        onDayNumberClick && 'cursor-pointer hover:ring-1 hover:ring-muted-foreground/40')}
+                      onClick={onDayNumberClick ? () => onDayNumberClick(day.toISOString()) : undefined}
+                    >
+                      {day.getDate()}
+                    </span>
+                  </div>
                 </div>
                 <WeekDayRow dayIso={day.toISOString()} isToday={isToday} isWeekend={isWeekend} isDragging={!!draggingId}
+                  holidays={holidayDates?.get(day.toISOString().slice(0, 10))}
                   onDayClick={canUpdate ? () => onDayClick?.(day.toISOString()) : undefined}>
                   {items.map(m => {
                     const start = new Date(m.startAt);
@@ -120,6 +136,8 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
                             span={span}
                             isDragging={draggingId === m.id}
                             hasNote={hasNote}
+                            severity={m.severity ?? undefined}
+                            isProposed={m._proposed}
                             onClick={(e) => { e.stopPropagation(); onEventClick(m.id); }}
                             onNoteClick={onNoteClick ? (e) => { e.stopPropagation(); onNoteClick(m.id); } : undefined}
                           />

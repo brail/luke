@@ -29,6 +29,12 @@ export const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructi
   CANCELLED: 'destructive',
 };
 
+export const SEVERITY_LABELS: Record<string, string> = {
+  CRITICAL: 'Critico',
+  NORMAL: 'Normale',
+  INFO: 'Info',
+};
+
 export const STATUS_OPACITY: Record<string, string> = {
   PLANNED: 'opacity-70',
   IN_PROGRESS: 'opacity-100',

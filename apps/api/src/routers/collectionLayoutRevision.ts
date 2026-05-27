@@ -28,7 +28,7 @@ export const collectionLayoutRevisionRouter = router({
       if (input.cause === 'MILESTONE') {
         throw new TRPCError({
           code: 'BAD_REQUEST',
-          message: 'La creazione di revisioni cause=MILESTONE è riservata al sistema milestone (non ancora disponibile)',
+          message: 'Le revisioni MILESTONE sono create automaticamente dal sistema al completamento di un evento calendario',
         });
       }
 

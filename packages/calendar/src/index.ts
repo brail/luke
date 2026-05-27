@@ -13,3 +13,18 @@ export { syncMilestone, provisionBinding } from './sync/engine.js';
 export { computeContentHash } from './sync/hash.js';
 export type { MilestoneForSync, SyncContext, GoogleCalendarBindingRecord, GoogleEventMappingRecord } from './sync/types.js';
 export { generateIcal, type ICalMilestone } from './ical/generator.js';
+export {
+  buildGraph,
+  topologicalSort,
+  detectViolations,
+  suggestResolution,
+} from './solver/index.js';
+export type {
+  SolverEvent,
+  SolverDependency,
+  SolverHoliday,
+  GraphInput,
+  Violation,
+  ProposedShift,
+  SimulationResult,
+} from './solver/index.js';

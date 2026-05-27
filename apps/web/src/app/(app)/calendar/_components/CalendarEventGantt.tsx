@@ -5,8 +5,9 @@ import { StickyNote } from 'lucide-react';
 
 import { cn } from '../../../../lib/utils';
 import { MONTH_NAMES_SHORT_IT, STATUS_OPACITY } from '../constants';
-import { addDays, canEditMilestone, daysBetween, resolveBrandColor, startOfDay } from '../utils';
+import { addDays, canEditMilestone, daysBetween, resolveBrandColor, startOfDay, toUtcIsoDate } from '../utils';
 import { type CalendarEventItem as CalendarEvent } from './types';
+import { type HolidayMap } from './useHolidays';
 
 interface Props {
   milestones: CalendarEvent[];
@@ -18,6 +19,7 @@ interface Props {
   functionsById: Record<string, string>;
   canUpdate?: boolean;
   brandColorMap: Record<string, string>;
+  holidayDates?: HolidayMap;
 }
 
 const ROW_H = 36;
@@ -45,7 +47,7 @@ function dragLabel(origStart: Date, origEnd: Date | null, dayDelta: number, mode
 
 type DragState = { id: string; mode: 'drag' | 'resize'; startX: number; deltaX: number };
 
-export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, onNoteClick, onDayClick, activeBrandId, functionsById, canUpdate, brandColorMap }: Props) {
+export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, onNoteClick, onDayClick, activeBrandId, functionsById, canUpdate, brandColorMap, holidayDates }: Props) {
   const sorted = useMemo(
     () => [...milestones].sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime()),
     [milestones]
@@ -97,6 +99,16 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
   const weekendOffsets = useMemo(() =>
     dayMeta.filter(d => d.isWeekend).map(d => daysBetween(rangeStart, d.date) * dayW),
     [dayMeta, rangeStart, dayW]);
+
+  const holidayOffsets = useMemo(() => {
+    if (!holidayDates) return [];
+    return dayMeta.flatMap(d => {
+      const iso = toUtcIsoDate(d.date);
+      const entries = holidayDates.get(iso);
+      if (!entries?.length) return [];
+      return [{ x: daysBetween(rangeStart, d.date) * dayW, entries }];
+    });
+  }, [dayMeta, rangeStart, dayW, holidayDates]);
 
   const totalW = totalDays * dayW;
   const todayOffset = daysBetween(rangeStart, startOfDay(new Date()));
@@ -195,6 +207,9 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
         <div className="relative">
           <div className="absolute pointer-events-none" style={{ left: LABEL_W, top: 0, width: totalW, height: bars.length * ROW_H }}>
             {weekendOffsets.map((x, wi) => <div key={wi} className="absolute inset-y-0 bg-muted/40" style={{ left: x, width: dayW }} />)}
+            {holidayOffsets.map(({ x }, hi) => (
+              <div key={hi} className="absolute inset-y-0 bg-rose-200/40 dark:bg-rose-950/20" style={{ left: x, width: dayW }} />
+            ))}
             {monthBoundaries.map((x, mi) => <div key={mi} className="absolute inset-y-0 w-[2px] bg-border/60" style={{ left: x }} />)}
             {showToday && <div className="absolute inset-y-0 bg-blue-400/10 dark:bg-blue-500/10" style={{ left: todayOffset * dayW, width: dayW }} />}
           </div>

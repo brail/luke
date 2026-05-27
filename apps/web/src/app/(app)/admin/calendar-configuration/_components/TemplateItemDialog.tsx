@@ -1,10 +1,13 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useForm, Controller } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
+import { EVENT_SEVERITY, RELEVANT_COUNTRY_CODES, type EventSeverity } from '@luke/core';
+
+import { SEVERITY_LABELS } from '../../../calendar/constants';
 
 import { Button } from '../../../../../components/ui/button';
 import { Checkbox } from '../../../../../components/ui/checkbox';
@@ -48,6 +51,8 @@ interface FormValues {
   durationDays: number;
   publishExternally: boolean;
   description: string;
+  severity: EventSeverity;
+  relevantCountries: string[];
 }
 
 export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, availableFunctions }: Props) {
@@ -77,6 +82,8 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
         durationDays: item?.durationDays ?? 0,
         publishExternally: item?.publishExternally ?? true,
         description: item?.description ?? '',
+        severity: item?.severity ?? 'NORMAL',
+        relevantCountries: item?.relevantCountries ?? [],
       });
     }
   }, [open, item?.id]);
@@ -110,6 +117,8 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
       durationDays: Number(values.durationDays),
       publishExternally: values.publishExternally,
       description: values.description.trim() || undefined,
+      severity: values.severity,
+      relevantCountries: values.relevantCountries,
     };
     if (isEdit) {
       updateMutation.mutate({ id: item.id, ...payload });
@@ -216,6 +225,54 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
                   <span className="text-sm">{fn.name}</span>
                 </label>
               ))}
+            </div>
+          </div>
+
+          {/* Severity + Countries */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Criticità</Label>
+              <Controller
+                name="severity"
+                control={control}
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {EVENT_SEVERITY.map(s => (
+                        <SelectItem key={s} value={s}>
+                          {SEVERITY_LABELS[s] ?? s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Paesi rilevanti</Label>
+              <Controller
+                name="relevantCountries"
+                control={control}
+                render={({ field }) => (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {RELEVANT_COUNTRY_CODES.map(code => (
+                      <label key={code} className="flex cursor-pointer items-center gap-1">
+                        <Checkbox
+                          checked={field.value.includes(code)}
+                          onCheckedChange={() => {
+                            const next = field.value.includes(code)
+                              ? field.value.filter((c: string) => c !== code)
+                              : [...field.value, code];
+                            field.onChange(next);
+                          }}
+                        />
+                        <span className="text-xs font-mono">{code}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              />
             </div>
           </div>
 

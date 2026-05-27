@@ -32,6 +32,7 @@ import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 import { cn } from '../../../../lib/utils';
 
+import { HolidayImportTab } from './_components/HolidayImportTab';
 import { TemplateDialog } from './_components/TemplateDialog';
 import { TemplateItemDialog } from './_components/TemplateItemDialog';
 
@@ -131,6 +132,7 @@ export default function CalendarConfigurationPage() {
         <TabsList className="mb-6">
           <TabsTrigger value="templates">Template</TabsTrigger>
           <TabsTrigger value="event-types">Tipi evento</TabsTrigger>
+          <TabsTrigger value="holidays">Festività</TabsTrigger>
         </TabsList>
 
         {/* ── Templates tab ── */}
@@ -410,6 +412,11 @@ export default function CalendarConfigurationPage() {
               </table>
             )}
           </div>
+        </TabsContent>
+
+        {/* ── Holidays tab ── */}
+        <TabsContent value="holidays">
+          <HolidayImportTab />
         </TabsContent>
       </Tabs>
 

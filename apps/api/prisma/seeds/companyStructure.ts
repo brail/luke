@@ -13,11 +13,13 @@ export async function seedCompanyStructure(
 
   for (const f of SEED_FUNCTIONS) {
     await prisma.$transaction(async tx => {
-      const fn = await tx.companyFunction.upsert({
-        where:  { slug: f.slug },
-        update: { name: f.name, order: f.order },
-        create: { slug: f.slug, name: f.name, order: f.order },
-      });
+      // slug has a DB-level unique index but not a Prisma @@unique, so use findFirst+create/update
+      let fn = await tx.companyFunction.findFirst({ where: { slug: f.slug } });
+      if (fn) {
+        fn = await tx.companyFunction.update({ where: { id: fn.id }, data: { name: f.name, order: f.order } });
+      } else {
+        fn = await tx.companyFunction.create({ data: { slug: f.slug, name: f.name, order: f.order } });
+      }
       functionIds[f.slug] = fn.id;
 
       // main team — idempotent (unique on functionId+name)
@@ -33,7 +35,7 @@ export async function seedCompanyStructure(
   await prisma.companyProfile.upsert({
     where:  { id: 'singleton' },
     update: {},
-    create: { id: 'singleton', legalName: 'FEBOS S.r.l.', displayName: 'FEBOS' },
+    create: { id: 'singleton', legalName: 'FEBOS S.r.l.', displayName: 'FEBOS', countryCode: 'IT' },
   });
 
   // AppConfig default team key (empty = not yet configured)

@@ -12,6 +12,7 @@ import { DAY_LABELS_IT, MONTH_NAMES_IT, STATUS_OPACITY } from '../constants';
 import { addDays, addMonths, canEditMilestone, daysBetween, getIsoWeek, groupEventsByDay, mondayOf, resolveBrandColor, sameDay, startOfDay } from '../utils';
 import { DraggableEventChip } from './DraggableEventChip';
 import { type CalendarEventItem as CalendarEvent } from './types';
+import { type HolidayMap } from './useHolidays';
 
 interface Props {
   milestones: CalendarEvent[];
@@ -21,21 +22,27 @@ interface Props {
   onEventUpdate: (id: string, data: { startAt: string; endAt?: string | null }) => void;
   onNoteClick?: (id: string) => void;
   onDayClick?: (isoDate: string) => void;
+  onDayNumberClick?: (isoDate: string) => void;
+  onWeekNumberClick?: (isoDate: string) => void;
   activeBrandId?: string;
   canUpdate?: boolean;
   brandColorMap: Record<string, string>;
+  holidayDates?: HolidayMap;
 }
 
 const MAX_CHIPS = 3;
 
-function MonthDayCell({ dayIso, isToday, isDragging, isCurrentMonth, onDayClick, children }: {
-  dayIso: string; isToday: boolean; isDragging: boolean; isCurrentMonth: boolean; onDayClick?: () => void; children: ReactNode;
+function MonthDayCell({ dayIso, isToday, isDragging, isCurrentMonth, holidays, onDayClick, children }: {
+  dayIso: string; isToday: boolean; isDragging: boolean; isCurrentMonth: boolean; holidays?: import('./useHolidays').HolidayEntry[]; onDayClick?: () => void; children: ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: dayIso });
+  const isHoliday = !!holidays?.length;
   return (
     <div ref={setNodeRef} onClick={onDayClick} className={cn(
       'flex-1 min-w-0 min-h-[90px] p-1 flex flex-col border-r last:border-r-0',
-      !isCurrentMonth && 'bg-muted/30', isToday && 'bg-blue-50/50 dark:bg-blue-950/20',
+      !isCurrentMonth && 'bg-muted/30',
+      isHoliday && 'bg-rose-50 dark:bg-rose-950/20',
+      isToday && 'bg-blue-50/50 dark:bg-blue-950/20',
       isDragging && isOver && 'bg-blue-50/80 dark:bg-blue-950/30 ring-1 ring-inset ring-blue-300/50',
       onDayClick && 'cursor-pointer',
     )}>
@@ -44,7 +51,7 @@ function MonthDayCell({ dayIso, isToday, isDragging, isCurrentMonth, onDayClick,
   );
 }
 
-export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange, onEventClick, onEventUpdate, onNoteClick, onDayClick, activeBrandId, canUpdate, brandColorMap }: Props) {
+export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange, onEventClick, onEventUpdate, onNoteClick, onDayClick, onDayNumberClick, onWeekNumberClick, activeBrandId, canUpdate, brandColorMap, holidayDates }: Props) {
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -94,7 +101,10 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
             return (
               <div key={rowIdx} className="flex border-b last:border-b-0">
                 <div className="w-7 shrink-0 flex items-center justify-center border-r border-border/40 bg-muted/10">
-                  <span className="text-[11px] font-medium text-muted-foreground/40 select-none">
+                  <span
+                    className={cn('text-[11px] font-medium text-muted-foreground/40 select-none', onWeekNumberClick && 'cursor-pointer hover:text-muted-foreground')}
+                    onClick={onWeekNumberClick ? () => onWeekNumberClick(weekDays[0]!.toISOString()) : undefined}
+                  >
                     {weekNum}
                   </span>
                 </div>
@@ -105,14 +115,21 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
                   const items = byDay[cellIdx] ?? [];
                   const overflow = items.length - MAX_CHIPS;
                   return (
-                    <MonthDayCell key={dayIdx} dayIso={day.toISOString()} isToday={isToday} isDragging={!!draggingId} isCurrentMonth={isCurrentMonth} onDayClick={onDayClick ? () => onDayClick(day.toISOString()) : undefined}>
-                      <div className="mb-0.5">
-                        <span className={cn('text-xs inline-flex items-center justify-center w-5 h-5 rounded-full',
-                          isToday && 'bg-blue-500 text-white font-semibold',
-                          !isToday && !isCurrentMonth && 'text-muted-foreground/50',
-                          !isToday && isCurrentMonth && 'text-muted-foreground')}>
+                    <MonthDayCell key={dayIdx} dayIso={day.toISOString()} isToday={isToday} isDragging={!!draggingId} isCurrentMonth={isCurrentMonth} holidays={holidayDates?.get(day.toISOString().slice(0, 10))} onDayClick={onDayClick ? () => onDayClick(day.toISOString()) : undefined}>
+                      <div className="mb-0.5 flex items-center gap-0.5 flex-wrap">
+                        <span
+                          className={cn('text-xs inline-flex items-center justify-center w-5 h-5 rounded-full shrink-0',
+                            isToday && 'bg-blue-500 text-white font-semibold',
+                            !isToday && !isCurrentMonth && 'text-muted-foreground/50',
+                            !isToday && isCurrentMonth && 'text-muted-foreground',
+                            onDayNumberClick && 'cursor-pointer hover:ring-1 hover:ring-muted-foreground/40')}
+                          onClick={onDayNumberClick ? (e) => { e.stopPropagation(); onDayNumberClick(day.toISOString()); } : undefined}
+                        >
                           {day.getDate()}
                         </span>
+                        {holidayDates?.get(day.toISOString().slice(0, 10))?.map((h, hi) => (
+                          <span key={hi} className="text-[8px] font-mono font-semibold text-rose-500 leading-none" title={h.nameEn ?? h.name}>{h.countryCode}</span>
+                        ))}
                       </div>
                       <div className="space-y-0.5 flex-1">
                         {items.slice(0, MAX_CHIPS).map(m => {
@@ -134,6 +151,8 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
                                   span={span}
                                   isDragging={draggingId === m.id}
                                   hasNote={hasNote}
+                                  severity={m.severity ?? undefined}
+                                  isProposed={m._proposed}
                                   onClick={(e) => { e.stopPropagation(); onEventClick(m.id); }}
                                   onNoteClick={onNoteClick ? (e) => { e.stopPropagation(); onNoteClick(m.id); } : undefined}
                                 />

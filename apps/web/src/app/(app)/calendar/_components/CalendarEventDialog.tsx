@@ -1,9 +1,10 @@
 'use client';
 
+import { AlertTriangle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
-import { CALENDAR_EVENT_STATUS } from '@luke/core';
+import { CALENDAR_EVENT_STATUS, EVENT_SEVERITY, RELEVANT_COUNTRY_CODES, type EventSeverity, type RelevantCountryCode } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { Badge } from '../../../../components/ui/badge';
@@ -25,10 +26,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../../../components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../components/ui/tabs';
 import { Textarea } from '../../../../components/ui/textarea';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
-import { STATUS_LABELS, STATUS_VARIANT, TYPE_LABELS } from '../constants';
+import { SEVERITY_LABELS, STATUS_LABELS, STATUS_VARIANT, TYPE_LABELS } from '../constants';
+import { DependencyManager } from './DependencyManager';
+import { type CalendarEventItem } from './types';
 
 interface ExistingEvent {
   id: string;
@@ -42,6 +46,8 @@ interface ExistingEvent {
   ownerFunctionId: string;
   publishExternally: boolean;
   visibilities: { functionId: string }[];
+  severity?: EventSeverity | null;
+  relevantCountries?: string[];
 }
 
 interface Props {
@@ -56,6 +62,7 @@ interface Props {
   defaultAllDay?: boolean;
   readOnly?: boolean;
   onDeleted?: () => void;
+  allEvents?: CalendarEventItem[];
 }
 
 function toDateInput(val: Date | string | null | undefined): string {
@@ -81,7 +88,7 @@ function addOneHour(time: string): string {
 
 export function CalendarEventDialog({
   open, onClose, onSaved, calendarId, availableFunctions, functionsById = {},
-  event, defaultDate, defaultAllDay = true, readOnly = false, onDeleted,
+  event, defaultDate, defaultAllDay = true, readOnly = false, onDeleted, allEvents = [],
 }: Props) {
   const isEdit = !!event;
 
@@ -111,6 +118,8 @@ export function CalendarEventDialog({
   });
   const [allDay, setAllDay] = useState(event?.allDay ?? defaultAllDay);
   const [publishExternally, setPublishExternally] = useState(event?.publishExternally ?? true);
+  const [severity, setSeverity] = useState<EventSeverity>(event?.severity ?? 'NORMAL');
+  const [relevantCountries, setRelevantCountries] = useState<RelevantCountryCode[]>((event?.relevantCountries as RelevantCountryCode[]) ?? []);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
@@ -129,6 +138,8 @@ export function CalendarEventDialog({
     setEndTime(event?.endAt ? toTimeInput(event.endAt) : addOneHour(st));
     setAllDay(event?.allDay ?? defaultAllDay);
     setPublishExternally(event?.publishExternally ?? true);
+    setSeverity(event?.severity ?? 'NORMAL');
+    setRelevantCountries((event?.relevantCountries as RelevantCountryCode[]) ?? []);
   }, [event?.id, open, defaultDate]);
 
   const handleOwnerChange = (val: string) => {
@@ -188,6 +199,8 @@ export function CalendarEventDialog({
       endAt: endIso,
       allDay,
       publishExternally,
+      severity,
+      relevantCountries,
     };
 
     if (isEdit) {
@@ -216,6 +229,11 @@ export function CalendarEventDialog({
               <Badge variant="outline">{typeLabel}</Badge>
               <Badge variant={STATUS_VARIANT[event.status] ?? 'outline'}>{STATUS_LABELS[event.status] ?? event.status}</Badge>
               <Badge variant="secondary">{functionsById[event.ownerFunctionId] ?? event.ownerFunctionId}</Badge>
+              {event.severity === 'CRITICAL' && (
+                <Badge variant="destructive" className="gap-1">
+                  <AlertTriangle size={10} /> Critico
+                </Badge>
+              )}
             </div>
             <div>
               <p className="text-sm font-medium text-muted-foreground mb-1">Data</p>
@@ -252,153 +270,157 @@ export function CalendarEventDialog({
     );
   }
 
+  const formFields = (
+    <div className="space-y-4 py-2">
+      <div className="space-y-1.5">
+        <Label htmlFor="ev-title">Titolo *</Label>
+        <Input id="ev-title" value={title} onChange={e => setTitle(e.target.value)} placeholder="Nome dell'evento" />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label>Tipo</Label>
+          <Select value={type} onValueChange={setType}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {catalogItems.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Stato</Label>
+          <Select value={status} onValueChange={v => setStatus(v as (typeof CALENDAR_EVENT_STATUS)[number])}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {CALENDAR_EVENT_STATUS.map(s => <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label>Criticità</Label>
+          <Select value={severity} onValueChange={v => setSeverity(v as EventSeverity)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {EVENT_SEVERITY.map(s => (
+                <SelectItem key={s} value={s}>
+                  {s === 'CRITICAL' && <AlertTriangle className="mr-1.5 inline h-3 w-3 text-yellow-500" />}
+                  {SEVERITY_LABELS[s] ?? s}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Paesi rilevanti</Label>
+          <div className="flex flex-wrap gap-2 pt-1">
+            {RELEVANT_COUNTRY_CODES.map(code => (
+              <label key={code} className="flex cursor-pointer items-center gap-1">
+                <Checkbox
+                  checked={relevantCountries.includes(code)}
+                  onCheckedChange={() =>
+                    setRelevantCountries(prev =>
+                      prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code as RelevantCountryCode]
+                    )
+                  }
+                />
+                <span className="text-xs font-mono">{code}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Owner *</Label>
+        <Select value={ownerFunctionId} onValueChange={handleOwnerChange}>
+          <SelectTrigger><SelectValue placeholder="Seleziona funzione…" /></SelectTrigger>
+          <SelectContent>
+            {availableFunctions.map(fn => <SelectItem key={fn.id} value={fn.id}>{fn.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Visibile a</Label>
+        <div className="flex flex-wrap gap-3">
+          {availableFunctions.map(fn => (
+            <label key={fn.id} className="flex items-center gap-1.5 cursor-pointer">
+              <Checkbox checked={visibilityFunctionIds.includes(fn.id)} disabled={fn.id === ownerFunctionId} onCheckedChange={() => toggleVisible(fn.id)} />
+              <span className="text-sm">{fn.name}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <Checkbox id="ev-allday" checked={allDay} onCheckedChange={v => setAllDay(!!v)} />
+        <Label htmlFor="ev-allday" className="cursor-pointer font-normal">Tutto il giorno</Label>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="ev-start-date">Inizio *</Label>
+          <Input id="ev-start-date" type="date" value={startDate}
+            onChange={e => { setStartDate(e.target.value); if (!endDate) setEndDate(e.target.value); }}
+            className="[&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground" />
+          {!allDay && (
+            <Input type="time" value={startTime}
+              onChange={e => { setStartTime(e.target.value); setEndTime(addOneHour(e.target.value)); }}
+              className="[&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground" />
+          )}
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="ev-end-date">Fine</Label>
+          <Input id="ev-end-date" type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+            className="[&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground" />
+          {!allDay && (
+            <Input type="time" value={endTime} onChange={e => setEndTime(e.target.value)}
+              className="[&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground" />
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <Checkbox id="ev-publish" checked={publishExternally} onCheckedChange={v => setPublishExternally(!!v)} />
+        <Label htmlFor="ev-publish" className="cursor-pointer font-normal">Pubblica su Google Calendar</Label>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="ev-desc">Descrizione</Label>
+        <Textarea id="ev-desc" value={description} onChange={e => setDescription(e.target.value)}
+          placeholder="Note opzionali…" className="resize-none text-sm" rows={3} />
+      </div>
+    </div>
+  );
+
   return (
     <>
       <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-        <DialogContent className="sm:max-w-[520px]">
+        <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{isEdit ? 'Modifica evento' : 'Nuovo evento'}</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
-            {/* Title */}
-            <div className="space-y-1.5">
-              <Label htmlFor="ev-title">Titolo *</Label>
-              <Input
-                id="ev-title"
-                value={title}
-                onChange={e => setTitle(e.target.value)}
-                placeholder="Nome dell'evento"
-              />
-            </div>
-
-            {/* Type + Status */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Tipo</Label>
-                <Select value={type} onValueChange={setType}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {catalogItems.map(item => (
-                      <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Stato</Label>
-                <Select value={status} onValueChange={v => setStatus(v as (typeof CALENDAR_EVENT_STATUS)[number])}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {CALENDAR_EVENT_STATUS.map(s => (
-                      <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Owner */}
-            <div className="space-y-1.5">
-              <Label>Owner *</Label>
-              <Select value={ownerFunctionId} onValueChange={handleOwnerChange}>
-                <SelectTrigger><SelectValue placeholder="Seleziona funzione…" /></SelectTrigger>
-                <SelectContent>
-                  {availableFunctions.map(fn => (
-                    <SelectItem key={fn.id} value={fn.id}>{fn.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Visibility */}
-            <div className="space-y-1.5">
-              <Label>Visibile a</Label>
-              <div className="flex flex-wrap gap-3">
-                {availableFunctions.map(fn => (
-                  <label key={fn.id} className="flex items-center gap-1.5 cursor-pointer">
-                    <Checkbox
-                      checked={visibilityFunctionIds.includes(fn.id)}
-                      disabled={fn.id === ownerFunctionId}
-                      onCheckedChange={() => toggleVisible(fn.id)}
-                    />
-                    <span className="text-sm">{fn.name}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* All-day toggle */}
-            <div className="flex items-center gap-2">
-              <Checkbox id="ev-allday" checked={allDay} onCheckedChange={v => setAllDay(!!v)} />
-              <Label htmlFor="ev-allday" className="cursor-pointer font-normal">Tutto il giorno</Label>
-            </div>
-
-            {/* Dates */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="ev-start-date">Inizio *</Label>
-                <Input
-                  id="ev-start-date"
-                  type="date"
-                  value={startDate}
-                  onChange={e => {
-                    setStartDate(e.target.value);
-                    if (!endDate) setEndDate(e.target.value);
-                  }}
-                  className="[&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground [&:has(~[value=''])]:text-muted-foreground"
+          {isEdit ? (
+            <Tabs defaultValue="dettagli">
+              <TabsList className="w-full">
+                <TabsTrigger value="dettagli" className="flex-1">Dettagli</TabsTrigger>
+                <TabsTrigger value="dipendenze" className="flex-1">Dipendenze</TabsTrigger>
+              </TabsList>
+              <TabsContent value="dettagli">{formFields}</TabsContent>
+              <TabsContent value="dipendenze">
+                <DependencyManager
+                  eventId={event.id}
+                  calendarId={calendarId}
+                  allEvents={allEvents}
+                  readOnly={false}
                 />
-                {!allDay && (
-                  <Input
-                    type="time"
-                    value={startTime}
-                    onChange={e => {
-                      setStartTime(e.target.value);
-                      setEndTime(addOneHour(e.target.value));
-                    }}
-                    className="[&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground"
-                  />
-                )}
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="ev-end-date">Fine</Label>
-                <Input
-                  id="ev-end-date"
-                  type="date"
-                  value={endDate}
-                  onChange={e => setEndDate(e.target.value)}
-                  className="[&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground"
-                />
-                {!allDay && (
-                  <Input
-                    type="time"
-                    value={endTime}
-                    onChange={e => setEndTime(e.target.value)}
-                    className="[&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground"
-                  />
-                )}
-              </div>
-            </div>
-
-            {/* Google Calendar */}
-            <div className="flex items-center gap-2">
-              <Checkbox id="ev-publish" checked={publishExternally} onCheckedChange={v => setPublishExternally(!!v)} />
-              <Label htmlFor="ev-publish" className="cursor-pointer font-normal">Pubblica su Google Calendar</Label>
-            </div>
-
-            {/* Description */}
-            <div className="space-y-1.5">
-              <Label htmlFor="ev-desc">Descrizione</Label>
-              <Textarea
-                id="ev-desc"
-                value={description}
-                onChange={e => setDescription(e.target.value)}
-                placeholder="Note opzionali…"
-                className="resize-none text-sm"
-                rows={3}
-              />
-            </div>
-          </div>
+              </TabsContent>
+            </Tabs>
+          ) : formFields}
 
           <DialogFooter className="gap-2">
             {isEdit && onDeleted && (

@@ -69,6 +69,9 @@ model User {
   notifications                     Notification[]
   notificationPreferences           NotificationPreference[]
   collectionLayoutRevisions         CollectionLayoutRevision[]
+  appliedEffects                    CalendarEventEffectExecution[] @relation("EffectApplier")
+  rolledBackEffects                 CalendarEventEffectExecution[] @relation("EffectRollbacker")
+  confirmedVendorClosures           VendorClosurePeriod[] @relation("ClosureConfirmer")
 
   @@map("users")
 }
@@ -227,6 +230,7 @@ model Season {
   collectionLayouts    CollectionLayout[]
   merchandisingPlans   MerchandisingPlan[]
   seasonCalendars      SeasonCalendar[]
+  vendorClosures       VendorClosurePeriod[]
 
   @@map("seasons")
 }
@@ -316,8 +320,11 @@ model CollectionLayout {
   skuBudget        Int?
   hiddenColumns    Json?    // String[] — colonne nascoste, null = tutte visibili
   availableGenders String[] @default(["MAN","WOMAN"])
+  lockedByEventId  String?
+  lockedAt         DateTime?
   brand            Brand    @relation(fields: [brandId], references: [id], onDelete: Restrict)
   season           Season   @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  lockedByEvent    CalendarEvent? @relation(fields: [lockedByEventId], references: [id], onDelete: SetNull)
   groups           CollectionGroup[]
   rows             CollectionLayoutRow[]
   revisions        CollectionLayoutRevision[]
@@ -326,6 +333,7 @@ model CollectionLayout {
 
   @@unique([brandId, seasonId])
   @@index([brandId, seasonId])
+  @@index([lockedByEventId])
   @@map("collection_layouts")
 }
 
@@ -464,6 +472,7 @@ model Vendor {
 
   collectionRows       CollectionLayoutRow[]
   enabledParameterSets PricingParameterSet[] @relation("VendorEnabledParameterSets")
+  closurePeriods       VendorClosurePeriod[]
 
   @@index([name])
   @@index([isActive])
@@ -1284,6 +1293,7 @@ model CompanyProfile {
   id             String   @id @default("singleton")
   legalName      String
   displayName    String
+  countryCode    String?
   vatNumber      String?
   taxCode        String?
   phone          String?
@@ -1412,6 +1422,32 @@ enum CalendarEventStatus {
   CANCELLED
 }
 
+enum DependencySeverity {
+  HARD
+  SOFT
+}
+
+enum EventSeverity {
+  CRITICAL
+  NORMAL
+  INFO
+}
+
+enum StateEffectType {
+  LOCK_COLLECTION_LAYOUT
+  UNLOCK_COLLECTION_LAYOUT
+}
+
+enum AnchorEntityType {
+  COLLECTION_LAYOUT
+  COLLECTION_LAYOUT_ROW
+}
+
+enum VendorOverrideType {
+  CLOSURE
+  OPEN
+}
+
 /**
  * Calendario stagionale per brand+stagione — unico per coppia.
  * anchorDate è la data di riferimento per i template (offset applica da qui).
@@ -1452,6 +1488,8 @@ model CalendarEvent {
   allDay            Boolean             @default(false)
   publishExternally Boolean             @default(true)
   templateItemId    String?
+  severity          EventSeverity       @default(NORMAL)
+  relevantCountries String[]
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
 
@@ -1462,6 +1500,12 @@ model CalendarEvent {
   notes            CalendarEventPersonalNote[]
   eventMappings    GoogleEventMapping[]
   userVisibilities CalendarEventUserVisibility[]
+  dependenciesAsPredecessor CalendarEventDependency[] @relation("DepPredecessor")
+  dependenciesAsSuccessor   CalendarEventDependency[] @relation("DepSuccessor")
+  stateEffects              CalendarEventStateEffect[]
+  anchors                   CalendarEventAnchor[]
+  effectExecutions          CalendarEventEffectExecution[]
+  lockedLayouts             CollectionLayout[]
 
   @@index([calendarId, startAt])
   @@index([ownerFunctionId])
@@ -1531,15 +1575,20 @@ model MilestoneTemplateItem {
   title             String
   description       String?
   offsetDays        Int
-  durationDays      Int      @default(0)
-  publishExternally Boolean  @default(true)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  durationDays      Int           @default(0)
+  publishExternally Boolean       @default(true)
+  severity          EventSeverity @default(NORMAL)
+  relevantCountries String[]
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
   template      MilestoneTemplate               @relation(fields: [templateId], references: [id], onDelete: Cascade)
   ownerFunction CompanyFunction                 @relation("TemplateItemOwnerFunction", fields: [ownerFunctionId], references: [id], onDelete: Restrict)
   events        CalendarEvent[]
   visibilities  MilestoneTemplateItemVisibility[]
+  dependenciesAsPredecessor MilestoneTemplateDependency[] @relation("TemplateDepPredecessor")
+  dependenciesAsSuccessor   MilestoneTemplateDependency[] @relation("TemplateDepSuccessor")
+  stateEffects              MilestoneTemplateStateEffect[]
 
   @@index([templateId])
   @@index([ownerFunctionId])
@@ -1639,4 +1688,167 @@ model NotificationPreference {
   @@unique([userId, category])
   @@index([userId])
   @@map("notification_preferences")
+}
+
+// ─── What-If Engine v2 ────────────────────────────────────────────────────────
+
+model MilestoneTemplateDependency {
+  id            String             @id @default(uuid())
+  predecessorId String
+  successorId   String
+  minGapDays    Int?
+  maxGapDays    Int?
+  severity      DependencySeverity
+  reason        String?            @db.VarChar(500)
+
+  predecessor MilestoneTemplateItem @relation("TemplateDepPredecessor", fields: [predecessorId], references: [id], onDelete: Cascade)
+  successor   MilestoneTemplateItem @relation("TemplateDepSuccessor",   fields: [successorId],   references: [id], onDelete: Cascade)
+
+  @@unique([predecessorId, successorId])
+  @@index([successorId])
+  @@map("milestone_template_dependencies")
+}
+
+model CalendarEventDependency {
+  id              String             @id @default(uuid())
+  predecessorId   String
+  successorId     String
+  minGapDays      Int?
+  maxGapDays      Int?
+  severity        DependencySeverity
+  reason          String?            @db.VarChar(500)
+  isDisabled      Boolean            @default(false)
+  inheritedFromId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  predecessor CalendarEvent @relation("DepPredecessor", fields: [predecessorId], references: [id], onDelete: Cascade)
+  successor   CalendarEvent @relation("DepSuccessor",   fields: [successorId],   references: [id], onDelete: Cascade)
+
+  @@unique([predecessorId, successorId])
+  @@index([successorId])
+  @@index([inheritedFromId])
+  @@map("calendar_event_dependencies")
+}
+
+model MilestoneTemplateStateEffect {
+  id                   String          @id @default(uuid())
+  templateItemId       String
+  effectType           StateEffectType
+  targetEntityType     String
+  requiresConfirmation Boolean         @default(true)
+
+  templateItem MilestoneTemplateItem @relation(fields: [templateItemId], references: [id], onDelete: Cascade)
+
+  @@index([templateItemId])
+  @@map("milestone_template_state_effects")
+}
+
+model CalendarEventStateEffect {
+  id                   String          @id @default(uuid())
+  eventId              String
+  effectType           StateEffectType
+  targetEntityType     String
+  targetEntityId       String
+  requiresConfirmation Boolean
+
+  event      CalendarEvent                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  executions CalendarEventEffectExecution[]
+
+  @@index([eventId])
+  @@index([targetEntityType, targetEntityId])
+  @@map("calendar_event_state_effects")
+}
+
+model CalendarEventEffectExecution {
+  id                    String    @id @default(uuid())
+  effectId              String
+  eventId               String
+  appliedAt             DateTime  @default(now())
+  appliedByUserId       String
+  previousStateSnapshot Json
+  rolledBackAt          DateTime?
+  rolledBackByUserId    String?
+
+  effect       CalendarEventStateEffect @relation(fields: [effectId],            references: [id], onDelete: Cascade)
+  event        CalendarEvent            @relation(fields: [eventId],             references: [id], onDelete: Cascade)
+  appliedBy    User                     @relation("EffectApplier",               fields: [appliedByUserId],    references: [id], onDelete: Restrict)
+  rolledBackBy User?                    @relation("EffectRollbacker",            fields: [rolledBackByUserId], references: [id], onDelete: SetNull)
+
+  @@index([eventId])
+  @@index([effectId])
+  @@map("calendar_event_effect_executions")
+}
+
+model CalendarEventAnchor {
+  id         String           @id @default(uuid())
+  eventId    String
+  entityType AnchorEntityType
+  entityId   String
+
+  createdAt DateTime @default(now())
+
+  event CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, entityType, entityId])
+  @@index([entityType, entityId])
+  @@map("calendar_event_anchors")
+}
+
+model HolidayCountry {
+  code   String  @id
+  name   String
+  active Boolean @default(true)
+
+  holidays       Holiday[]
+  vendorClosures VendorClosurePeriod[]
+
+  @@map("holiday_countries")
+}
+
+model Holiday {
+  id          String   @id @default(uuid())
+  countryCode String
+  name        String
+  nameEn      String?
+  startDate   DateTime @db.Date
+  endDate     DateTime @db.Date
+  isReligious Boolean  @default(false)
+  source      String?
+
+  country         HolidayCountry        @relation(fields: [countryCode], references: [code], onDelete: Restrict)
+  vendorOverrides VendorClosurePeriod[] @relation("ClosureSourceHoliday")
+
+  @@unique([countryCode, name, startDate])
+  @@index([countryCode, startDate, endDate])
+  @@map("holidays")
+}
+
+model VendorClosurePeriod {
+  id                String             @id @default(uuid())
+  vendorId          String
+  seasonId          String
+  countryCode       String?
+  name              String
+  startDate         DateTime           @db.Date
+  endDate           DateTime           @db.Date
+  type              VendorOverrideType @default(CLOSURE)
+  sourceHolidayId   String?
+  confirmedAt       DateTime?
+  confirmedByUserId String?
+  notes             String?            @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vendor        Vendor          @relation(fields: [vendorId],           references: [id], onDelete: Cascade)
+  season        Season          @relation(fields: [seasonId],           references: [id], onDelete: Cascade)
+  country       HolidayCountry? @relation(fields: [countryCode],        references: [code], onDelete: SetNull)
+  sourceHoliday Holiday?        @relation("ClosureSourceHoliday",       fields: [sourceHolidayId],   references: [id], onDelete: SetNull)
+  confirmedBy   User?           @relation("ClosureConfirmer",           fields: [confirmedByUserId],  references: [id], onDelete: SetNull)
+
+  @@index([vendorId, seasonId])
+  @@index([seasonId, startDate, endDate])
+  @@map("vendor_closure_periods")
 }

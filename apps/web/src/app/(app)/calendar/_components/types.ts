@@ -12,4 +12,7 @@ export interface CalendarEventItem {
   brandId?: string | null;
   visibilities: { functionId: string }[];
   notes?: { body: string }[];
+  severity?: string | null;
+  relevantCountries?: string[];
+  _proposed?: boolean;
 }

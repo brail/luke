@@ -25,6 +25,28 @@ import { useStorageUpload } from '../../../../../hooks/useStorageUpload';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
+const COUNTRIES = [
+  { code: 'IT', name: 'Italia' },
+  { code: 'CN', name: 'Cina' },
+  { code: 'VN', name: 'Vietnam' },
+  { code: 'IN', name: 'India' },
+  { code: 'TR', name: 'Turchia' },
+  { code: 'DE', name: 'Germania' },
+  { code: 'FR', name: 'Francia' },
+  { code: 'ES', name: 'Spagna' },
+  { code: 'PT', name: 'Portogallo' },
+  { code: 'GB', name: 'Regno Unito' },
+  { code: 'US', name: 'Stati Uniti' },
+  { code: 'JP', name: 'Giappone' },
+  { code: 'KR', name: 'Corea del Sud' },
+  { code: 'BD', name: 'Bangladesh' },
+  { code: 'PK', name: 'Pakistan' },
+  { code: 'MA', name: 'Marocco' },
+  { code: 'RO', name: 'Romania' },
+  { code: 'AL', name: 'Albania' },
+  { code: 'MK', name: 'Macedonia del Nord' },
+];
+
 export function ProfileTab() {
   const { can } = usePermission();
   const canUpdate = can('company_profile:update');
@@ -39,6 +61,11 @@ export function ProfileTab() {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [website, setWebsite] = useState('');
+  const [addrStreet, setAddrStreet] = useState('');
+  const [addrCity, setAddrCity] = useState('');
+  const [addrZip, setAddrZip] = useState('');
+  const [addrProvince, setAddrProvince] = useState('');
+  const [addrCountryCode, setAddrCountryCode] = useState('');
   const [footerText, setFooterText] = useState('');
   const [accentColorHex, setAccentColorHex] = useState('#000000');
   const [locale, setLocale] = useState<'it-IT' | 'en-US'>('it-IT');
@@ -62,6 +89,12 @@ export function ProfileTab() {
     setPhone((p.phone as string) ?? '');
     setEmail((p.email as string) ?? '');
     setWebsite((p.website as string) ?? '');
+    const addr: Record<string, string> = (p as any).address ?? {};
+    setAddrStreet(addr['street'] ?? '');
+    setAddrCity(addr['city'] ?? '');
+    setAddrZip(addr['zip'] ?? '');
+    setAddrProvince(addr['province'] ?? '');
+    setAddrCountryCode(addr['countryCode'] ?? (p as any).countryCode ?? '');
     const es: Record<string, string> = (p as any).exportSettings ?? {}; // tRPC infers exportSettings as unknown Json
     setFooterText(es['footerText'] ?? '');
     setAccentColorHex(es['accentColorHex'] ?? '#000000');
@@ -110,6 +143,13 @@ export function ProfileTab() {
         phone: phone.trim() || undefined,
         email: email.trim() || undefined,
         website: website.trim() || undefined,
+        address: {
+          street: addrStreet.trim() || undefined,
+          city: addrCity.trim() || undefined,
+          zip: addrZip.trim() || undefined,
+          province: addrProvince.trim() || undefined,
+          countryCode: addrCountryCode || undefined,
+        },
         logoKey,
         exportSettings: {
           footerText: footerText.trim() || undefined,
@@ -208,6 +248,51 @@ export function ProfileTab() {
               <Label htmlFor="website">Sito web</Label>
               <Input id="website" value={website} onChange={field(setWebsite)} disabled={!canUpdate} placeholder="https://…" />
             </div>
+          </div>
+        </div>
+      </SectionCard>
+
+      {/* ── Sede legale ── */}
+      <SectionCard title="Sede legale">
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="addrStreet">Indirizzo</Label>
+            <Input id="addrStreet" value={addrStreet} onChange={field(setAddrStreet)} disabled={!canUpdate} placeholder="Via Roma 1" />
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="addrZip">CAP</Label>
+              <Input id="addrZip" value={addrZip} onChange={field(setAddrZip)} disabled={!canUpdate} placeholder="20100" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="addrCity">Città</Label>
+              <Input id="addrCity" value={addrCity} onChange={field(setAddrCity)} disabled={!canUpdate} placeholder="Milano" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="addrProvince">Provincia</Label>
+              <Input id="addrProvince" value={addrProvince} onChange={field(setAddrProvince)} disabled={!canUpdate} placeholder="MI" maxLength={5} />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Paese</Label>
+            <Select
+              value={addrCountryCode}
+              onValueChange={v => { setAddrCountryCode(v); setDirty(true); }}
+              disabled={!canUpdate}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Seleziona paese…" />
+              </SelectTrigger>
+              <SelectContent>
+                {COUNTRIES.map(c => (
+                  <SelectItem key={c.code} value={c.code}>
+                    <span className="font-mono text-xs text-muted-foreground mr-2">{c.code}</span>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">Determina il paese di default per l'importazione festività.</p>
           </div>
         </div>
       </SectionCard>

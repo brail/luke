@@ -54,6 +54,8 @@ export const ACTIONS = {
   EXPORT: 'export',
   REVISE: 'revise',
   VIEW_REVISIONS: 'view_revisions',
+  SIMULATE: 'simulate',
+  CONFIGURE_DEPENDENCIES: 'configure_dependencies',
 } as const;
 
 export type Action = (typeof ACTIONS)[keyof typeof ACTIONS] | '*';
@@ -101,7 +103,7 @@ export const VALID_RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
   [RESOURCES.VENDORS]: ['create', 'read', 'update', 'delete'] as const,
   [RESOURCES.SALES]: ['read'] as const,
   [RESOURCES.MERCHANDISING_PLAN]: ['create', 'read', 'update', 'delete'] as const,
-  [RESOURCES.SEASON_CALENDAR]: ['create', 'read', 'update', 'delete', 'sync', 'export'] as const,
+  [RESOURCES.SEASON_CALENDAR]: ['create', 'read', 'update', 'delete', 'sync', 'export', 'simulate', 'configure_dependencies'] as const,
   [RESOURCES.MILESTONE_TEMPLATE]: ['create', 'read', 'update', 'delete'] as const,
   [RESOURCES.CALENDAR_CATALOG]: ['read', 'update'] as const,
   [RESOURCES.COMPANY_PROFILE]: ['read', 'update'] as const,
@@ -146,10 +148,12 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // Merchandising Plan: lettura e modifica
     'merchandising_plan:read',
     'merchandising_plan:update',
-    // Season Calendar: lettura, modifica, export
+    // Season Calendar: lettura, modifica, export, simulate, configure_dependencies
     'season_calendar:read',
     'season_calendar:update',
     'season_calendar:export',
+    'season_calendar:simulate',
+    'season_calendar:configure_dependencies',
     // Milestone Template: solo lettura
     'milestone_template:read',
     // Calendar Catalog: lettura (per dropdown tipi evento)
@@ -183,9 +187,10 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'sales:read',
     // Merchandising Plan: solo lettura
     'merchandising_plan:read',
-    // Season Calendar: lettura ed export
+    // Season Calendar: lettura, export, simulate
     'season_calendar:read',
     'season_calendar:export',
+    'season_calendar:simulate',
     // Milestone Template: solo lettura
     'milestone_template:read',
     // Calendar Catalog: lettura (per dropdown tipi evento)

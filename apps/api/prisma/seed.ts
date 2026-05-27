@@ -18,6 +18,7 @@ import { hashPassword } from '../src/lib/password';
 import { seedCalendarCatalog } from './seeds/calendarCatalog';
 import { seedCollectionCatalog } from './seeds/collectionCatalog';
 import { seedCompanyStructure } from './seeds/companyStructure';
+import { seedHolidayCountries } from './seeds/holidays';
 
 /**
  * Inizializza Prisma Client
@@ -577,6 +578,9 @@ async function main() {
 
     // Seeding calendar catalog (event types)
     await seedCalendarCatalog(prisma);
+
+    // Seeding holiday countries
+    await seedHolidayCountries(prisma);
 
     // Seeding milestone templates
     await seedMilestoneTemplates(prisma, functionIds);

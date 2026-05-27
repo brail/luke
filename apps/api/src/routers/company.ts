@@ -43,10 +43,11 @@ const companyProfileRouter = router({
     .use(withRateLimit('companyStructureMutations'))
     .input(CompanyProfileInputSchema)
     .mutation(async ({ ctx, input }) => {
+      const countryCode = (input.address as { countryCode?: string } | undefined)?.countryCode ?? undefined;
       const profile = await ctx.prisma.companyProfile.upsert({
         where: { id: SINGLETON_ID },
-        create: { id: SINGLETON_ID, ...input },
-        update: input,
+        create: { id: SINGLETON_ID, ...input, countryCode: countryCode ?? null },
+        update: { ...input, ...(countryCode !== undefined ? { countryCode } : {}) },
       });
 
       await logAudit(ctx, {

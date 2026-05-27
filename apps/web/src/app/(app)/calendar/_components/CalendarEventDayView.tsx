@@ -193,7 +193,7 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
 
           {showNow && (
             <div className="absolute pointer-events-none z-20 flex items-center" style={{ top: nowTop, left: 0, right: 0 }}>
-              <div className="text-[10px] text-blue-500 tabular-nums font-medium select-none" style={{ width: LABEL_W, textAlign: 'right', paddingRight: 6 }}>
+              <div className="text-[11px] text-blue-500 tabular-nums font-medium select-none" style={{ width: LABEL_W, textAlign: 'right', paddingRight: 8 }}>
                 {String(Math.floor(nowMinutes / 60)).padStart(2, '0')}:{String(nowMinutes % 60).padStart(2, '0')}
               </div>
               <div className="flex-1 h-px bg-blue-400" />

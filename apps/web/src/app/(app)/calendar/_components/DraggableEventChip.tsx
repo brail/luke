@@ -1,7 +1,7 @@
 'use client';
 
 import { useDraggable } from '@dnd-kit/core';
-import { StickyNote } from 'lucide-react';
+import { AlertTriangle, StickyNote } from 'lucide-react';
 import { type MouseEvent } from 'react';
 
 import { cn } from '../../../../lib/utils';
@@ -15,11 +15,13 @@ interface Props {
   span: number;
   isDragging: boolean;
   hasNote?: boolean;
+  severity?: string;
+  isProposed?: boolean;
   onClick: (e: MouseEvent) => void;
   onNoteClick?: (e: MouseEvent) => void;
 }
 
-export function DraggableEventChip({ id, title, status, color, span, isDragging, hasNote, onClick, onNoteClick }: Props) {
+export function DraggableEventChip({ id, title, status, color, span, isDragging, hasNote, severity, isProposed, onClick, onNoteClick }: Props) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id });
 
   const bg = color;
@@ -37,10 +39,12 @@ export function DraggableEventChip({ id, title, status, color, span, isDragging,
           onNoteClick && 'pr-5',
           STATUS_OPACITY[status] ?? 'opacity-100',
           isDragging && 'opacity-30',
+          isProposed && 'outline outline-1 outline-dashed outline-white/60',
         )}
         style={{ background: bg }}
         title={`${title}${span > 0 ? ` (${span + 1}gg)` : ''}`}
       >
+        {severity === 'CRITICAL' && <AlertTriangle size={9} className="mr-0.5 inline text-yellow-300" />}
         {title}
       </button>
 

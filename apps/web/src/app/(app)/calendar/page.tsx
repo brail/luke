@@ -1,12 +1,13 @@
 'use client';
 
-import { Calendar, CalendarClock, RefreshCw, Copy, Plus, List, GanttChart, CalendarRange, CalendarDays, Maximize2, Minimize2, ChevronDown, Check } from 'lucide-react';
+import { Calendar, CalendarClock, RefreshCw, Copy, Plus, List, GanttChart, CalendarRange, CalendarDays, Maximize2, Minimize2, ChevronDown, Check, FlaskConical, MoreHorizontal } from 'lucide-react';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent } from '../../../components/ui/card';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../../../components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
 import { useAppContext } from '../../../contexts/AppContextProvider';
 import { usePermission } from '../../../hooks/usePermission';
@@ -14,7 +15,10 @@ import { trpc } from '../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../lib/trpcErrorMessages';
 import { cn } from '../../../lib/utils';
 
+import type { SimulationResult } from '@luke/calendar';
+
 import { ApplyTemplateDialog } from './_components/ApplyTemplateDialog';
+import { useHolidays } from './_components/useHolidays';
 import { CalendarEventDayView } from './_components/CalendarEventDayView';
 import { CalendarEventDialog } from './_components/CalendarEventDialog';
 import { CalendarEventGantt } from './_components/CalendarEventGantt';
@@ -24,7 +28,8 @@ import { CalendarEventTimeline } from './_components/CalendarEventTimeline';
 import { CalendarEventWeekView } from './_components/CalendarEventWeekView';
 import { CloneBrandSeasonDialog } from './_components/CloneBrandSeasonDialog';
 import { ExportButton } from './_components/ExportButton';
-import { assignBrandColors, resolveBrandColor } from './utils';
+import { WhatIfBanner } from './_components/WhatIfBanner';
+import { addDays, assignBrandColors, daysBetween, resolveBrandColor } from './utils';
 
 export default function CalendarPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
@@ -41,6 +46,9 @@ export default function CalendarPage() {
   const [view, setView] = useState<'list' | 'gantt' | 'week' | 'day' | 'month'>('month');
   const [viewDate, setViewDate] = useState<Date>(() => new Date());
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [simulateMode, setSimulateMode] = useState(false);
+  const [proposedShifts, setProposedShifts] = useState<{ eventId: string; newStartAt: string }[]>([]);
+  const [simulateResult, setSimulateResult] = useState<SimulationResult | null>(null);
 
   useEffect(() => {
     if (!isFullscreen) return;
@@ -101,8 +109,19 @@ export default function CalendarPage() {
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
-  const handleEventUpdate = (id: string, data: { startAt: string; endAt?: string | null }) =>
+  const simulateMutation = trpc.seasonCalendar.simulate.useMutation({
+    onSuccess: (data) => setSimulateResult(data as SimulationResult),
+    onError: (err) => toast.error(getTrpcErrorMessage(err)),
+  });
+
+  const handleEventUpdate = (id: string, data: { startAt: string; endAt?: string | null }) => {
+    if (simulateMode) {
+      setProposedShifts(prev => [...prev.filter(s => s.eventId !== id), { eventId: id, newStartAt: data.startAt }]);
+      setSimulateResult(null);
+      return;
+    }
     updateEventMutation.mutate({ id, data: { ...data, endAt: data.endAt ?? undefined } });
+  };
 
   const deleteEventsMutation = trpc.seasonCalendar.deleteMilestones.useMutation({
     onSuccess: () => void refetch(),
@@ -117,11 +136,70 @@ export default function CalendarPage() {
   const onDayClickProp = canUpdate ? handleDayClick : undefined;
   const onDayClickTimedProp = canUpdate ? handleDayClickTimed : undefined;
 
+  const handleDayNumberClick = useCallback((isoDate: string) => {
+    setViewDate(new Date(isoDate));
+    setView('day');
+  }, []);
+  const handleWeekNumberClick = useCallback((isoDate: string) => {
+    setViewDate(new Date(isoDate));
+    setView('week');
+  }, []);
+
   const filteredMilestones = useMemo(() => {
     if (!milestones) return [];
     if (selectedFunctionIds.length === 0) return milestones;
     return milestones.filter(m => m.visibilities.some(v => selectedFunctionIds.includes(v.functionId)));
   }, [milestones, selectedFunctionIds]);
+
+  const handleSimulate = useCallback(() => {
+    if (!calendar) return;
+    simulateMutation.mutate({
+      calendarIds: [calendar.id],
+      proposedShifts,
+      requestSuggestion: true,
+    });
+  }, [calendar, proposedShifts, simulateMutation]);
+
+  const handleApplySuggestion = useCallback((shifts: { eventId: string; fromStartAt: string | Date; toStartAt: string | Date; reason: string }[]) => {
+    setProposedShifts(shifts.map(s => ({ eventId: s.eventId, newStartAt: new Date(s.toStartAt).toISOString() })));
+    setSimulateResult(null);
+  }, []);
+
+  const handleApplyShifts = useCallback(async () => {
+    const eventMap = new Map(filteredMilestones.map(m => [m.id, m]));
+    await Promise.all(proposedShifts.map(shift => {
+      const m = eventMap.get(shift.eventId);
+      if (!m) return Promise.resolve();
+      const delta = daysBetween(new Date(m.startAt), new Date(shift.newStartAt));
+      const newEnd = m.endAt ? addDays(new Date(m.endAt), delta).toISOString() : undefined;
+      return updateEventMutation.mutateAsync({ id: shift.eventId, data: { startAt: shift.newStartAt, endAt: newEnd } });
+    }));
+    setSimulateMode(false);
+    setProposedShifts([]);
+    setSimulateResult(null);
+    void refetch();
+  }, [proposedShifts, filteredMilestones, updateEventMutation, refetch]);
+
+  const handleResetSimulate = useCallback(() => {
+    setSimulateMode(false);
+    setProposedShifts([]);
+    setSimulateResult(null);
+  }, []);
+
+  const { data: holidayCountries = [] } = trpc.holidays.listCountries.useQuery(undefined, { staleTime: 60 * 60 * 1000 });
+  const holidayCountryCodes = useMemo(() => holidayCountries.map(c => c.code), [holidayCountries]);
+  const holidayDates = useHolidays(holidayCountryCodes);
+
+  const displayMilestones = useMemo(() => {
+    if (!simulateMode || proposedShifts.length === 0) return filteredMilestones;
+    const shiftsMap = new Map(proposedShifts.map(s => [s.eventId, s]));
+    return filteredMilestones.map(m => {
+      const shift = shiftsMap.get(m.id);
+      if (!shift) return m;
+      const delta = daysBetween(new Date(m.startAt), new Date(shift.newStartAt));
+      return { ...m, startAt: shift.newStartAt, endAt: m.endAt ? addDays(new Date(m.endAt), delta).toISOString() : null, _proposed: true };
+    });
+  }, [simulateMode, proposedShifts, filteredMilestones]);
 
   const activeEvent = useMemo(
     () => filteredMilestones.find(m => m.id === activeEventId) ?? null,
@@ -159,11 +237,9 @@ export default function CalendarPage() {
   const actionBar = (
     <div className="flex gap-2 items-center">
       {canUpdate && (
-        <>
-          <Button size="sm" onClick={() => setCreateDate('')} disabled={!calendar}><Plus size={14} className="mr-1" />Nuovo evento</Button>
-          <Button variant="outline" size="sm" onClick={() => setCloneOpen(true)} disabled={!calendar}><Copy size={14} className="mr-1" />Clona da…</Button>
-          <Button variant="outline" size="sm" onClick={() => setTemplateOpen(true)} disabled={!calendar}>Applica template</Button>
-        </>
+        <Button size="sm" onClick={() => setCreateDate('')} disabled={!calendar}>
+          <Plus size={14} className="mr-1" />Nuovo evento
+        </Button>
       )}
       <div className="flex border rounded-md overflow-hidden">
         <Button variant={view === 'month' ? 'default' : 'ghost'} size="sm" className="rounded-none border-0" onClick={() => setView('month')} title="Mese"><CalendarDays size={14} /></Button>
@@ -172,12 +248,44 @@ export default function CalendarPage() {
         <Button variant={view === 'day' ? 'default' : 'ghost'} size="sm" className="rounded-none border-0" onClick={() => setView('day')} title="Giorno"><CalendarClock size={14} /></Button>
         <Button variant={view === 'list' ? 'default' : 'ghost'} size="sm" className="rounded-none border-0" onClick={() => setView('list')} title="Lista"><List size={14} /></Button>
       </div>
-      <ExportButton seasonId={season?.id ?? ''} brandIds={selectedBrandIds} view={view} viewDate={viewDate} disabled={!season?.id} />
-      {canSync && (
-        <Button variant="outline" size="sm" onClick={() => calendar && triggerSyncMutation.mutate({ calendarId: calendar.id })} disabled={!calendar || triggerSyncMutation.isPending}>
-          <RefreshCw size={14} className={`mr-1 ${triggerSyncMutation.isPending ? 'animate-spin' : ''}`} />Sincronizza
+      {canUpdate && (
+        <Button
+          variant={simulateMode ? 'destructive' : 'outline'}
+          size="sm"
+          onClick={() => simulateMode ? handleResetSimulate() : setSimulateMode(true)}
+          disabled={!calendar}
+          title="What-If"
+        >
+          <FlaskConical size={14} className="mr-1" />What-If
         </Button>
       )}
+      <ExportButton seasonId={season?.id ?? ''} brandIds={selectedBrandIds} view={view} viewDate={viewDate} disabled={!season?.id} />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" title="Altre azioni"><MoreHorizontal size={14} /></Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {canUpdate && (
+            <>
+              <DropdownMenuItem onClick={() => setCloneOpen(true)} disabled={!calendar}>
+                <Copy size={13} className="mr-2" />Clona da…
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTemplateOpen(true)} disabled={!calendar}>
+                Applica template
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          )}
+          {canSync && (
+            <DropdownMenuItem
+              onClick={() => calendar && triggerSyncMutation.mutate({ calendarId: calendar.id })}
+              disabled={!calendar || triggerSyncMutation.isPending}
+            >
+              <RefreshCw size={13} className={cn('mr-2', triggerSyncMutation.isPending && 'animate-spin')} />Sincronizza
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 
@@ -273,42 +381,65 @@ export default function CalendarPage() {
     </div>
   );
 
+  const eventTitleById = useMemo(() =>
+    Object.fromEntries(filteredMilestones.map(m => [m.id, m.title])),
+    [filteredMilestones]
+  );
+
   const calendarBody = (
     <div>
       {filterStrip}
+      {simulateMode && (
+        <WhatIfBanner
+          shiftCount={proposedShifts.length}
+          violations={simulateResult?.violations ?? []}
+          suggestion={simulateResult?.suggestion ?? null}
+          loading={simulateMutation.isPending}
+          onSimulate={handleSimulate}
+          onApplySuggestion={handleApplySuggestion}
+          onApply={() => void handleApplyShifts()}
+          onReset={handleResetSimulate}
+          eventTitleById={eventTitleById}
+        />
+      )}
       <Card>
         <CardContent className="p-0">
           {calendarLoading || milestonesLoading ? (
             <div className="py-12 text-center text-muted-foreground">Caricamento…</div>
           ) : view === 'week' ? (
             <CalendarEventWeekView
-              milestones={filteredMilestones}
+              milestones={displayMilestones}
               viewDate={viewDate}
               onViewDateChange={setViewDate}
               onEventClick={id => setActiveEventId(id)}
               onNoteClick={id => setNoteEventId(id)}
               onEventUpdate={handleEventUpdate}
               onDayClick={onDayClickProp}
+              onDayNumberClick={handleDayNumberClick}
               activeBrandId={contextBrandId ?? undefined}
               canUpdate={canUpdate}
               brandColorMap={brandColorMap}
+              holidayDates={holidayDates}
             />
           ) : view === 'month' ? (
             <CalendarEventMonthView
-              milestones={filteredMilestones}
+              milestones={displayMilestones}
               viewDate={viewDate}
               onViewDateChange={setViewDate}
               onEventClick={id => setActiveEventId(id)}
               onNoteClick={id => setNoteEventId(id)}
               onEventUpdate={handleEventUpdate}
               onDayClick={onDayClickProp}
+              onDayNumberClick={handleDayNumberClick}
+              onWeekNumberClick={handleWeekNumberClick}
               activeBrandId={contextBrandId ?? undefined}
               canUpdate={canUpdate}
               brandColorMap={brandColorMap}
+              holidayDates={holidayDates}
             />
           ) : view === 'day' ? (
             <CalendarEventDayView
-              milestones={filteredMilestones}
+              milestones={displayMilestones}
               viewDate={viewDate}
               onViewDateChange={setViewDate}
               onEventClick={id => setActiveEventId(id)}
@@ -319,7 +450,7 @@ export default function CalendarPage() {
               canUpdate={canUpdate}
               brandColorMap={brandColorMap}
             />
-          ) : filteredMilestones.length === 0 ? (
+          ) : displayMilestones.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">
               <Calendar size={32} className="mx-auto mb-2 opacity-40" />
               <p>Nessun evento per i filtri selezionati</p>
@@ -331,7 +462,7 @@ export default function CalendarPage() {
             </div>
           ) : view === 'gantt' ? (
             <CalendarEventGantt
-              milestones={filteredMilestones}
+              milestones={displayMilestones}
               onEventClick={id => setActiveEventId(id)}
               onNoteClick={id => setNoteEventId(id)}
               onEventUpdate={handleEventUpdate}
@@ -340,10 +471,11 @@ export default function CalendarPage() {
               functionsById={functionsById}
               canUpdate={canUpdate}
               brandColorMap={brandColorMap}
+              holidayDates={holidayDates}
             />
           ) : (
             <CalendarEventTimeline
-              milestones={filteredMilestones}
+              milestones={displayMilestones}
               onEventClick={id => setActiveEventId(id)}
               onNoteClick={id => setNoteEventId(id)}
               onDayClick={onDayClickProp}
@@ -363,7 +495,7 @@ export default function CalendarPage() {
     <>
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Calendario Stagionale</h1>
+          <h1 className="text-2xl font-bold whitespace-nowrap">Calendario Stagionale</h1>
           {season && <p className="text-muted-foreground mt-1">{season.name}{season.year ? ` · ${season.year}` : ''}</p>}
         </div>
         <div className="flex gap-2 items-center">
@@ -403,6 +535,7 @@ export default function CalendarPage() {
           functionsById={functionsById}
           event={activeEvent}
           readOnly={!canEditActiveEvent}
+          allEvents={filteredMilestones}
         />
       )}
 

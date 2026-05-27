@@ -1,12 +1,11 @@
 import { PrismaClient } from '@prisma/client';
 
 const EVENT_TYPE_ITEMS = [
-  { value: 'KICKOFF',   label: 'Kickoff',   order: 0 },
-  { value: 'REVIEW',    label: 'Review',    order: 1 },
-  { value: 'GATE',      label: 'Gate',      order: 2 },
-  { value: 'DEADLINE',  label: 'Deadline',  order: 3 },
-  { value: 'MILESTONE', label: 'Milestone', order: 4 },
-  { value: 'CUSTOM',    label: 'Custom',    order: 5 },
+  { value: 'KICKOFF',  label: 'Kickoff',  order: 0 },
+  { value: 'REVIEW',   label: 'Review',   order: 1 },
+  { value: 'GATE',     label: 'Gate',     order: 2 },
+  { value: 'DEADLINE', label: 'Deadline', order: 3 },
+  { value: 'CUSTOM',   label: 'Custom',   order: 4 },
 ];
 
 export async function seedCalendarCatalog(prisma: PrismaClient): Promise<void> {

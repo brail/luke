@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
+import { detectViolations, suggestResolution, type GraphInput } from '@luke/calendar';
 
 import {
   CalendarEventInputSchema,
@@ -7,6 +8,10 @@ import {
   CloneSeasonCalendarInputSchema,
   CalendarEventPersonalNoteInputSchema,
   CalendarEventUserVisibilityInputSchema,
+  CalendarEventDependencyInputSchema,
+  UpdateDependencyGapsInputSchema,
+  CalendarEventAnchorInputSchema,
+  WhatIfRequestSchema,
   SEASON_CALENDAR_STATUS,
   CALENDAR_EVENT_STATUS,
   hasPermission,
@@ -25,6 +30,10 @@ import {
   cleanupMilestoneEvents,
   reconcileCalendar,
 } from '../services/googleCalendarSync.service.js';
+
+import { executeEffect } from '../services/calendar/effects/executor.js';
+import { rollbackEffect } from '../services/calendar/effects/rollback.js';
+import { loadHolidaysForSolver } from '../services/calendar/holidayQuery.js';
 
 import {
   assertBrandAccess,
@@ -207,7 +216,10 @@ export const seasonCalendarRouter = router({
     .mutation(async ({ input, ctx }) => {
       const event = await ctx.prisma.calendarEvent.findUnique({
         where: { id: input.id },
-        include: { calendar: { select: { brandId: true } } },
+        include: {
+          calendar: { select: { brandId: true } },
+          stateEffects: true,
+        },
       });
       if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
       await assertBrandAccess(ctx.session.user.id, event.calendar.brandId, ctx.prisma);
@@ -216,6 +228,41 @@ export const seasonCalendarRouter = router({
         where: { id: input.id },
         data: { status: input.status },
       });
+
+      // Auto-execute effects when transitioning to COMPLETED
+      const autoApplied: string[] = [];
+      const pending: string[] = [];
+      const autoRolledBack: string[] = [];
+      const pendingRollback: string[] = [];
+
+      if (input.status === 'COMPLETED') {
+        const auto = event.stateEffects.filter(e => !e.requiresConfirmation);
+        pending.push(...event.stateEffects.filter(e => e.requiresConfirmation).map(e => e.id));
+        await Promise.all(auto.map(async effect => {
+          try {
+            await executeEffect(ctx.prisma, effect.id, ctx.session.user.id);
+            autoApplied.push(effect.id);
+          } catch (err) {
+            ctx.logger.error(err, `auto-effect failed: ${effect.id}`);
+          }
+        }));
+      } else if ((event.status as string) === 'COMPLETED') {
+        const executions = await ctx.prisma.calendarEventEffectExecution.findMany({
+          where: { eventId: input.id, rolledBackAt: null },
+          include: { effect: { select: { requiresConfirmation: true } } },
+        });
+        const autoExecs = executions.filter(e => !e.effect.requiresConfirmation);
+        pendingRollback.push(...executions.filter(e => e.effect.requiresConfirmation).map(e => e.id));
+        await Promise.all(autoExecs.map(async exec => {
+          try {
+            await rollbackEffect(ctx.prisma, exec.id, ctx.session.user.id);
+            autoRolledBack.push(exec.id);
+          } catch (err) {
+            ctx.logger.error(err, `auto-rollback failed: ${exec.id}`);
+          }
+        }));
+      }
+
       await logAudit(ctx, { action: 'CALENDAR_EVENT_STATUS_UPDATE', targetType: 'CalendarEvent', targetId: input.id, result: 'SUCCESS', metadata: { status: input.status } });
       syncOneMilestone(input.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on status change'));
 
@@ -237,7 +284,7 @@ export const seasonCalendarRouter = router({
         )))
         .catch(err => ctx.logger.error(err, 'notification fanout failed on event status change'));
 
-      return result;
+      return { event: result, autoApplied, pending, autoRolledBack, pendingRollback };
     }),
 
   // ─── Personal notes ─────────────────────────────────────────────────────────
@@ -476,6 +523,240 @@ export const seasonCalendarRouter = router({
       );
 
       return { ok: true };
+    }),
+
+  // ─── Dependencies ───────────────────────────────────────────────────────────
+
+  getDependencies: protectedProcedure
+    .use(requirePermission('season_calendar:read'))
+    .input(z.object({ calendarId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      const calendar = await ctx.prisma.seasonCalendar.findUnique({
+        where: { id: input.calendarId },
+        select: { brandId: true },
+      });
+      if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
+      await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
+
+      const events = await ctx.prisma.calendarEvent.findMany({
+        where: { calendarId: input.calendarId },
+        select: { id: true },
+      });
+      const eventIds = events.map(e => e.id);
+
+      return ctx.prisma.calendarEventDependency.findMany({
+        where: { OR: [{ predecessorId: { in: eventIds } }, { successorId: { in: eventIds } }] },
+        orderBy: { createdAt: 'asc' },
+      });
+    }),
+
+  addDependency: protectedProcedure
+    .use(requirePermission('season_calendar:configure_dependencies'))
+    .use(withRateLimit('configMutations'))
+    .input(CalendarEventDependencyInputSchema)
+    .mutation(async ({ input, ctx }) => {
+      const [pred, succ] = await Promise.all([
+        ctx.prisma.calendarEvent.findUnique({
+          where: { id: input.predecessorId },
+          select: { calendarId: true },
+        }),
+        ctx.prisma.calendarEvent.findUnique({
+          where: { id: input.successorId },
+          select: { calendarId: true },
+        }),
+      ]);
+      if (!pred || !succ) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+
+      const result = await ctx.prisma.calendarEventDependency.create({
+        data: {
+          predecessorId: input.predecessorId,
+          successorId: input.successorId,
+          minGapDays: input.minGapDays,
+          maxGapDays: input.maxGapDays,
+          severity: input.severity,
+          reason: input.reason,
+          isDisabled: false,
+          inheritedFromId: null,
+        },
+      });
+      await logAudit(ctx, { action: 'CALENDAR_DEPENDENCY_ADD', targetType: 'CalendarEventDependency', targetId: result.id, result: 'SUCCESS', metadata: { predecessorId: input.predecessorId, successorId: input.successorId } });
+      return result;
+    }),
+
+  updateDependencyGaps: protectedProcedure
+    .use(requirePermission('season_calendar:configure_dependencies'))
+    .use(withRateLimit('configMutations'))
+    .input(UpdateDependencyGapsInputSchema)
+    .mutation(async ({ input, ctx }) => {
+      const dep = await ctx.prisma.calendarEventDependency.findUnique({ where: { id: input.id } });
+      if (!dep) throw new TRPCError({ code: 'NOT_FOUND', message: 'Dipendenza non trovata' });
+
+      const result = await ctx.prisma.calendarEventDependency.update({
+        where: { id: input.id },
+        data: {
+          ...(input.minGapDays !== undefined ? { minGapDays: input.minGapDays } : {}),
+          ...(input.maxGapDays !== undefined ? { maxGapDays: input.maxGapDays } : {}),
+        },
+      });
+      await logAudit(ctx, { action: 'CALENDAR_DEPENDENCY_UPDATE_GAPS', targetType: 'CalendarEventDependency', targetId: input.id, result: 'SUCCESS', metadata: { minGapDays: input.minGapDays, maxGapDays: input.maxGapDays } });
+      return result;
+    }),
+
+  toggleDependencyDisabled: protectedProcedure
+    .use(requirePermission('season_calendar:configure_dependencies'))
+    .use(withRateLimit('configMutations'))
+    .input(z.object({ id: z.string().uuid(), isDisabled: z.boolean() }))
+    .mutation(async ({ input, ctx }) => {
+      const dep = await ctx.prisma.calendarEventDependency.findUnique({ where: { id: input.id } });
+      if (!dep) throw new TRPCError({ code: 'NOT_FOUND', message: 'Dipendenza non trovata' });
+      if (!dep.inheritedFromId) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Solo le dipendenze ereditate possono essere disabilitate. Le dipendenze custom si eliminano.' });
+      }
+      const result = await ctx.prisma.calendarEventDependency.update({
+        where: { id: input.id },
+        data: { isDisabled: input.isDisabled },
+      });
+      await logAudit(ctx, { action: 'CALENDAR_DEPENDENCY_TOGGLE', targetType: 'CalendarEventDependency', targetId: input.id, result: 'SUCCESS', metadata: { isDisabled: input.isDisabled } });
+      return result;
+    }),
+
+  deleteDependency: protectedProcedure
+    .use(requirePermission('season_calendar:configure_dependencies'))
+    .use(withRateLimit('configMutations'))
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ input, ctx }) => {
+      const dep = await ctx.prisma.calendarEventDependency.findUnique({ where: { id: input.id } });
+      if (!dep) throw new TRPCError({ code: 'NOT_FOUND', message: 'Dipendenza non trovata' });
+      if (dep.inheritedFromId) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Le dipendenze ereditate non possono essere eliminate — usa disabilita.' });
+      }
+      await ctx.prisma.calendarEventDependency.delete({ where: { id: input.id } });
+      await logAudit(ctx, { action: 'CALENDAR_DEPENDENCY_DELETE', targetType: 'CalendarEventDependency', targetId: input.id, result: 'SUCCESS', metadata: {} });
+      return { success: true };
+    }),
+
+  // ─── Anchors ────────────────────────────────────────────────────────────────
+
+  setEventAnchors: protectedProcedure
+    .use(requirePermission('season_calendar:update'))
+    .use(withRateLimit('configMutations'))
+    .input(z.object({
+      eventId: z.string().uuid(),
+      anchors: z.array(CalendarEventAnchorInputSchema),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const event = await ctx.prisma.calendarEvent.findUnique({
+        where: { id: input.eventId },
+        include: { calendar: { select: { brandId: true } } },
+      });
+      if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+      await assertBrandAccess(ctx.session.user.id, event.calendar.brandId, ctx.prisma);
+
+      await ctx.prisma.$transaction(async tx => {
+        await tx.calendarEventAnchor.deleteMany({ where: { eventId: input.eventId } });
+        if (input.anchors.length > 0) {
+          await tx.calendarEventAnchor.createMany({
+            data: input.anchors.map(a => ({
+              eventId: input.eventId,
+              entityType: a.entityType,
+              entityId: a.entityId,
+            })),
+          });
+        }
+      });
+      await logAudit(ctx, { action: 'CALENDAR_EVENT_ANCHORS_SET', targetType: 'CalendarEventAnchor', targetId: input.eventId, result: 'SUCCESS', metadata: { count: input.anchors.length } });
+      return { success: true };
+    }),
+
+  // ─── State effects (manual) ─────────────────────────────────────────────────
+
+  executeStateEffect: protectedProcedure
+    .use(requirePermission('collection_layout:update'))
+    .use(withRateLimit('configMutations'))
+    .input(z.object({ effectId: z.string().uuid() }))
+    .mutation(async ({ input, ctx }) => {
+      const execution = await executeEffect(ctx.prisma, input.effectId, ctx.session.user.id);
+      await logAudit(ctx, { action: 'CALENDAR_STATE_EFFECT_EXECUTE', targetType: 'CalendarEventEffectExecution', targetId: execution.id, result: 'SUCCESS', metadata: { effectId: input.effectId } });
+      return execution;
+    }),
+
+  rollbackStateEffect: protectedProcedure
+    .use(requirePermission('collection_layout:update'))
+    .use(withRateLimit('configMutations'))
+    .input(z.object({ executionId: z.string().uuid() }))
+    .mutation(async ({ input, ctx }) => {
+      await rollbackEffect(ctx.prisma, input.executionId, ctx.session.user.id);
+      await logAudit(ctx, { action: 'CALENDAR_STATE_EFFECT_ROLLBACK', targetType: 'CalendarEventEffectExecution', targetId: input.executionId, result: 'SUCCESS', metadata: {} });
+      return { success: true };
+    }),
+
+  // ─── Simulate (what-if engine) ───────────────────────────────────────────────
+
+  simulate: protectedProcedure
+    .use(requirePermission('season_calendar:simulate'))
+    .input(WhatIfRequestSchema)
+    .mutation(async ({ input, ctx }) => {
+      // Load all events in the requested calendars
+      const events = await ctx.prisma.calendarEvent.findMany({
+        where: { calendarId: { in: input.calendarIds } },
+        select: {
+          id: true,
+          startAt: true,
+          endAt: true,
+          severity: true,
+          relevantCountries: true,
+          dependenciesAsPredecessor: {
+            select: {
+              id: true, predecessorId: true, successorId: true,
+              minGapDays: true, maxGapDays: true, severity: true,
+              reason: true, isDisabled: true,
+            },
+          },
+        },
+      });
+
+      // Collect all deps (each dep stored once on predecessor side)
+      const dependencies = events.flatMap(e => e.dependenciesAsPredecessor);
+
+      // Collect unique country codes to load holidays
+      const countryCodes = [...new Set(events.flatMap(e => e.relevantCountries))];
+      const holidays = await loadHolidaysForSolver(ctx.prisma, countryCodes);
+
+      const graphInput: GraphInput = {
+        events: events.map(e => ({
+          id: e.id,
+          startAt: e.startAt,
+          endAt: e.endAt,
+          severity: e.severity,
+          relevantCountries: e.relevantCountries,
+        })),
+        dependencies: dependencies.map(d => ({
+          id: d.id,
+          predecessorId: d.predecessorId,
+          successorId: d.successorId,
+          minGapDays: d.minGapDays ?? undefined,
+          maxGapDays: d.maxGapDays ?? undefined,
+          severity: d.severity,
+          reason: d.reason ?? undefined,
+          isDisabled: d.isDisabled,
+        })),
+        holidays,
+      };
+
+      const eventById = new Map(events.map(e => [e.id, e]));
+      const proposedShifts = input.proposedShifts.map(s => ({
+        eventId: s.eventId,
+        fromStartAt: eventById.get(s.eventId)?.startAt ?? new Date(s.newStartAt),
+        toStartAt: new Date(s.newStartAt),
+        reason: 'Proposta utente',
+      }));
+
+      const violations = detectViolations(graphInput, proposedShifts);
+      const suggestion = input.requestSuggestion
+        ? suggestResolution(graphInput, proposedShifts)
+        : null;
+
+      return { violations, suggestion };
     }),
 
   revokeUserVisibility: protectedProcedure
