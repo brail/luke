@@ -170,7 +170,7 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
                         ) : (
                           <div
                             className="flex items-center h-6 rounded-r px-1.5 text-[11px] truncate max-w-[200px] cursor-pointer hover:brightness-95 transition-all"
-                            style={{ borderLeft: `3px solid ${color}`, background: `${color}18`, color: '#6b7280' }}
+                            style={{ borderLeft: `3px solid ${color}`, background: `${color}18`, color: 'var(--muted-foreground)' }}
                             onClick={(e) => { e.stopPropagation(); onEventClick(m.id); }}
                             title={m.title}
                           >

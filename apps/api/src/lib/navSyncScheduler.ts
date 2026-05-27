@@ -93,13 +93,17 @@ export function registerNavSyncScheduler(
       const lastNotified = lastNavSuccessNotified.get(entity) ?? 0;
       if (Date.now() - lastNotified > NAV_SUCCESS_DEDUP_MS) {
         const totalUpserted = report.results.reduce((s, r) => s + (r.upserted ?? 0), 0);
-        await notifyAdmins(prisma, {
-          category: 'SYSTEM',
-          title: `NAV sync ${entity} completato`,
-          message: `${totalUpserted} record in ${durationMs}ms`,
-          data: { entity, type: 'nav_sync_success' },
-        });
-        lastNavSuccessNotified.set(entity, Date.now());
+        try {
+          await notifyAdmins(prisma, {
+            category: 'SYSTEM',
+            title: `NAV sync ${entity} completato`,
+            message: `${totalUpserted} record in ${durationMs}ms`,
+            data: { entity, type: 'nav_sync_success' },
+          });
+          lastNavSuccessNotified.set(entity, Date.now());
+        } catch (e) {
+          fastify.log.error({ err: e }, 'Failed to notify admins of sync success');
+        }
       }
     } catch (err) {
       fastify.log.error({ err, entity }, 'NAV sync scheduler: sync fallito');

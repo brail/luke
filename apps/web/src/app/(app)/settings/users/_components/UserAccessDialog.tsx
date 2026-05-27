@@ -106,7 +106,7 @@ export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogP
         const current = serverSectionMap[section] ?? null;
         return desired !== current;
       });
-      await Promise.all(
+      const results = await Promise.allSettled(
         changedSections.map(section =>
           setSectionMutation.mutateAsync({
             userId: user.id,
@@ -117,6 +117,16 @@ export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogP
       );
 
       await utils.sectionAccess.getByUser.invalidate({ userId: user.id });
+
+      const failures = results.filter(r => r.status === 'rejected');
+      if (failures.length > 0) {
+        const fresh = await utils.sectionAccess.getByUser.fetch({ userId: user.id });
+        const sectionMap: SectionOverrideMap = {};
+        fresh?.forEach(o => { if (o.enabled !== null) sectionMap[o.section as Section] = o.enabled!; });
+        setPendingSection(sectionMap);
+        toast.error(`${failures.length} sezione/i non aggiornata/e`);
+        return;
+      }
 
       toast.success('Accesso aggiornato');
       setIsDirty(false);

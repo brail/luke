@@ -335,7 +335,7 @@ export default function MailPage() {
                   </FormControl>
                   <FormDescription>
                     URL base per i link nelle email (reset password, verifica
-                    email). In sviluppo: http://localhost:3000
+                    email).
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

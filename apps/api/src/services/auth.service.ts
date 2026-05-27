@@ -443,7 +443,9 @@ export async function requestPasswordReset(ctx: Context, email: string) {
     // L'invio email è fallito (es. SMTP non configurato).
     // Elimina il token orfano e logga l'errore lato server.
     // Non esponiamo il problema all'utente per mantenere la protezione da enumeration.
-    await ctx.prisma.userToken.delete({ where: { id: userToken.id } }).catch(() => {});
+    await ctx.prisma.userToken.delete({ where: { id: userToken.id } }).catch(e => {
+      ctx.logger.warn({ err: e, tokenId: userToken.id }, 'Failed to delete orphaned password reset token');
+    });
 
     ctx.logger.error(
       { error: error instanceof Error ? error.message : 'Unknown error', userId: user.id },

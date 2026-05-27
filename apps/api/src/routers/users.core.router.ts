@@ -490,7 +490,7 @@ export const usersCoreRouter = router({
       }
 
       // Protezione: impedisci eliminazione definitiva dell'ultimo admin
-      if (user.role === 'admin') {
+      if (hasPermission({ role: user.role as Role }, '*:*')) {
         const adminCount = await ctx.prisma.user.count({
           where: {
             role: 'admin',

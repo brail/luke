@@ -6,7 +6,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { type LockedFields } from '@luke/core';
+import { hasPermission, type LockedFields, type Role } from '@luke/core';
 
 /**
  * Schema per ID utente — condiviso tra i sub-router
@@ -62,7 +62,7 @@ export async function deleteUserHandler({
   }
 
   // Protezione: impedisci eliminazione dell'ultimo admin
-  if (user.role === 'admin') {
+  if (hasPermission({ role: user.role as Role }, '*:*')) {
     const adminCount = await ctx.prisma.user.count({
       where: {
         role: 'admin',

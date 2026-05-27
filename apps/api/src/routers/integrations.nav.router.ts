@@ -18,6 +18,7 @@ import {
   toTRPCError,
 } from '../lib/errorHandler';
 import { requirePermission } from '../lib/permissions';
+import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
 
 // ── Sync sub-router ───────────────────────────────────────────────────────────
@@ -229,6 +230,7 @@ const navSyncRouter = router({
    */
   run: protectedProcedure
     .use(requirePermission('config:update'))
+    .use(withRateLimit('navSyncTrigger'))
     .input(z.object({ entity: z.enum(['vendor', 'brand', 'season']) }))
     .mutation(async ({ input, ctx }) => {
       const report = await runNavSync(ctx.prisma, getConfig, undefined, input.entity);

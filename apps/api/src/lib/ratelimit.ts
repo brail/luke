@@ -73,6 +73,11 @@ export const RATE_LIMIT_CONFIG = {
     windowMs: 60_000,
     keyBy: 'userId' as const,
   },
+  navSyncTrigger: {
+    max: 2,
+    windowMs: 300_000, // 5 minuti
+    keyBy: 'userId' as const,
+  },
 } as const;
 
 /**

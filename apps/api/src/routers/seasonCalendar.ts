@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
+import type { PrismaClient } from '@prisma/client';
 import { detectViolations, suggestResolution, type GraphInput } from '@luke/calendar';
 
 import {
@@ -81,13 +82,16 @@ export const seasonCalendarRouter = router({
       status: z.enum(SEASON_CALENDAR_STATUS),
     }))
     .mutation(async ({ input, ctx }) => {
-      const calendar = await ctx.prisma.seasonCalendar.findUnique({
-        where: { id: input.calendarId },
-        select: { brandId: true },
+      const result = await ctx.prisma.$transaction(async tx => {
+        const txClient = tx as unknown as PrismaClient;
+        const calendar = await txClient.seasonCalendar.findUnique({
+          where: { id: input.calendarId },
+          select: { brandId: true },
+        });
+        if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
+        await assertBrandAccess(ctx.session.user.id, calendar.brandId, txClient);
+        return updateCalendarStatus(input.calendarId, input.status, txClient);
       });
-      if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
-      await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
-      const result = await updateCalendarStatus(input.calendarId, input.status, ctx.prisma);
       await logAudit(ctx, { action: 'SEASON_CALENDAR_STATUS_UPDATE', targetType: 'SeasonCalendar', targetId: input.calendarId, result: 'SUCCESS', metadata: { status: input.status } });
       return result;
     }),
@@ -196,7 +200,7 @@ export const seasonCalendarRouter = router({
         where: { id: { in: input.ids } },
         include: { calendar: { select: { brandId: true } } },
       });
-      const uniqueBrandIds = [...new Set(events.map(e => e.calendar.brandId))];
+      const uniqueBrandIds = [...new Set(events.map(e => e.calendar.brandId).filter((id): id is string => id != null))];
       await Promise.all(uniqueBrandIds.map(brandId =>
         assertBrandAccess(ctx.session.user.id, brandId, ctx.prisma)
       ));
@@ -272,16 +276,23 @@ export const seasonCalendarRouter = router({
       };
       const statusLabel = STATUS_LABELS[input.status] ?? input.status;
       void getVisibleUserIdsForMilestone(input.id, ctx.prisma)
-        .then(userIds => Promise.all(userIds.map(userId =>
-          createNotification(ctx.prisma, {
-            userId,
-            category: 'CALENDAR',
-            title: 'Evento aggiornato',
-            message: `"${event.title}" → ${statusLabel}`,
-            link: '/calendar',
-            data: { eventId: input.id, status: input.status },
-          })
-        )))
+        .then(async userIds => {
+          const batchSize = 10;
+          for (let i = 0; i < userIds.length; i += batchSize) {
+            await Promise.allSettled(
+              userIds.slice(i, i + batchSize).map(userId =>
+                createNotification(ctx.prisma, {
+                  userId,
+                  category: 'CALENDAR',
+                  title: 'Evento aggiornato',
+                  message: `"${event.title}" → ${statusLabel}`,
+                  link: '/calendar',
+                  data: { eventId: input.id, status: input.status },
+                }).catch(e => ctx.logger.error({ err: e, userId }, 'notification failed on event status change'))
+              )
+            );
+          }
+        })
         .catch(err => ctx.logger.error(err, 'notification fanout failed on event status change'));
 
       return { event: result, autoApplied, pending, autoRolledBack, pendingRollback };
