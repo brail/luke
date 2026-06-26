@@ -4,41 +4,53 @@ All notable changes to Luke are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-## [Unreleased]
+## [1.9.0-rc.1] - 2026-06-26
 
 ### Added
 - **calendar**: Add fullscreen expand mode
+- **core**: Add company structure schemas and permissions
+- **api**: Migrate to company structure model
+- **api**: Add company.* router and team provisioning
+- **web**: Add company settings page and migrate calendar to function model
+- **api**: Assign real users to company teams in seed
+- **company**: Add logo upload and export settings
+- **company**: Ux overhaul profile/structure tabs and pdf company branding in footer
+- **rbac**: Opt-in brand access via team scopes, drop UserSeasonAccess
+- **notifications**: In-app notification system with SSE real-time delivery
+- **collection**: Collection layout versioning + progress catalog refactor
+- **calendar**: Vista mese default, numerazione settimane, gantt avanzato, drag-and-drop milestones
+- **calendar**: Day-click to create milestone, bulk delete, per-brand edit guard
+- **calendar**: Rename CalendarMilestone→CalendarEvent + configurable event types catalog
+- **calendar**: Day view, brand colors, filter strip, UX overhaul
+- **company**: Notify user of calendar access on team membership add
+- **calendar**: What-if engine v2 — UI, holiday visualization, dependencies, simulate
+- **collection**: Add collection progress + price positioning
+- **api**: Collection layout revision export + season calendar updates
+- **web**: Collection layout revision UI + calendar updates
+
+### Changed
+- **company**: Use useStorageUpload hook and fix logo removal bug
+- **company**: Ux overhaul settings/company page
+- **rbac**: Rename admin sections calendar and collection-catalog
 
 ### Fixed
 - Pass MinIO credentials to minio-init container
+- **api**: Refactor company router and improve team provisioning
+- **web**: Fix lint errors in company settings page and sidebar
+- **infra**: Provision company-assets MinIO bucket in all environments
+- **company**: Close spec gaps in company structure implementation
+- **company**: Soft-delete slug uniqueness + restore procedure
+- Audit findings — security, bugs, and compliance fixes
 
 ### Maintenance
 - Bump version to 1.9.0-dev.0
 - Bootstrap release tooling and conventions
+- Finalize changelog config and pre-1.9 history
+- Bump version to 1.9.0-rc.1
 
----
-
-## [1.9.0] — Collection Layout Versioning
-
-### Added
-
-- **feat(collection)**: Versioning ISO-compliant del Collection Layout — registro qualità formale conforme a PI 8.3-01 rev5 "Progettazione"
-  - Revisioni immutabili etichettate (rev0, rev1…) con snapshot completo di righe, foto, quotazioni
-  - Sei tipi di revisione preconfigurati con categorie ISO 9001:2015 (PIANIFICAZIONE, RIESAME, NORMALE, VERIFICA, VALIDAZIONE)
-  - Storico revisioni con drill-down per revisione
-  - Time-travel: query `getLayoutAsOfRevision` con backward lookup via `DISTINCT ON`
-
-- **feat(core)**: Nuovi permessi `collection_layout:revise` e `collection_layout:view_revisions`; schemi `CreateRevisionInputSchema`, `GetRevisionsListInputSchema`, `GetRevisionDetailInputSchema`, `GetLayoutAsOfRevisionInputSchema`
-
-- **feat(api)**: Quattro nuovi modelli Prisma (`CollectionLayoutRevision`, `CollectionGroupRevision`, `CollectionLayoutRowRevision`, `CollectionRowQuotationRevision`); service `collectionLayoutRevision.service.ts`; router tRPC `collectionLayoutRevision`
-
-- **feat(core,api)**: Bucket immutabile `collection-row-pictures-revisions` per le foto delle revisioni con dedup CAS via sha256; `copyToImmutableBucket()` nel layer storage
-
-- **feat(web)**: Drawer "Crea revisione" con selezione righe e warning ISO; pagine storico e drill-down revisioni; bottoni "Storico revisioni" e "Crea revisione" nel CL
-
-- **refactor(collection)**: Progress catalog refactoring — i valori `progress` passano da stringhe leggibili (`01 - FASE DI DESIGN`) a chiavi semantiche (`DESIGN`) con `code` separato per la visualizzazione; aggiornati export PDF/XLSX e badge CL
-
-- **feat(web)**: `PageHeader` ora accetta prop `actions` per bottoni nella testata della pagina
+### Tests
+- **api**: Company structure access and visibility tests
+- **api**: Point tests to luke_test database
 
 ---
 
