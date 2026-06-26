@@ -10,9 +10,11 @@ import type { PrismaClient } from '@prisma/client';
 import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 
 import { formatDateTime } from '@luke/core';
+import type { StorageBucket } from '@luke/core';
 
-import { buildBrandPageHeader, createPdfBuffer } from '../lib/export/pdf';
+import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
 import { readFileBuffer } from '../storage';
+import { buildProgressLabelMap } from './collectionLayout.service';
 import type { QuotationWithParamSet } from './collectionLayout.service';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -243,19 +245,22 @@ export async function buildCollectionLayoutPdf(
   extractedBy: string,
   extractedAt: Date,
   logger?: Logger,
+  pictureBucket: StorageBucket = 'collection-row-pictures',
 ): Promise<Buffer> {
   const allRows = layout.groups.flatMap(g => g.rows);
 
   const uniqueRowKeys = [...new Set(allRows.map(r => r.pictureKey).filter((k): k is string => !!k))];
   const keyToDataUriMap = new Map<string, string | null>();
-  const [brandLogoDataUri] = await Promise.all([
+  const [progressLabelMap, brandLogoDataUri, company] = await Promise.all([
+    buildProgressLabelMap(prisma),
     layout.brand.logoKey
       ? readFileBuffer(prisma, 'brand-logos', layout.brand.logoKey, logger).then(buf =>
           buf ? toDataUri(buf, layout.brand.logoKey!) : null,
         )
       : Promise.resolve(null),
+    fetchCompanyExportContext(prisma, logger),
     ...uniqueRowKeys.map(key =>
-      readFileBuffer(prisma, 'collection-row-pictures', key, logger)
+      readFileBuffer(prisma, pictureBucket, key, logger)
         .then(buf => keyToDataUriMap.set(key, buf ? toDataUri(buf, key) : null)),
     ),
   ]);
@@ -320,7 +325,7 @@ export async function buildCollectionLayoutPdf(
           { text: row.productCategory ?? '',  fontSize: 7, margin: CELL_MARGIN },
           { text: row.strategy ?? '',         fontSize: 7, margin: CELL_MARGIN, alignment: 'center' as const },
           { text: row.status ?? '',           fontSize: 7, margin: CELL_MARGIN, alignment: 'center' as const },
-          { text: row.progress ?? '',         fontSize: 7, margin: CELL_MARGIN },
+          { text: row.progress ? (progressLabelMap.get(row.progress) ?? row.progress) : '', fontSize: 7, margin: CELL_MARGIN },
           { text: String(row.skuForecast ?? ''), fontSize: 7, alignment: 'right' as const, margin: CELL_MARGIN },
           { text: String(row.qtyForecast ?? ''), fontSize: 7, alignment: 'right' as const, margin: CELL_MARGIN },
           marginCell,
@@ -372,7 +377,7 @@ export async function buildCollectionLayoutPdf(
   const docDefinition: TDocumentDefinitions = {
     pageSize: 'A3',
     pageOrientation: 'landscape',
-    pageMargins: [20, 68, 20, 30],
+    pageMargins: [20, 68, 20, 56],
     defaultStyle: { font: 'Roboto', fontSize: 8 },
     header: (currentPage: number, totalPages: number) =>
       buildBrandPageHeader(
@@ -381,13 +386,13 @@ export async function buildCollectionLayoutPdf(
         totalPages,
         { showPageNumber: false, subtitle, extractedInfo },
       ),
-    footer: (_currentPage: number, _totalPages: number): Content => ({
-      text: `${_currentPage} / ${_totalPages}`,
-      alignment: 'right',
-      margin: [0, 8, 20, 0],
-      fontSize: 8,
-      color: '#999999',
-    }),
+    footer: (currentPage: number, totalPages: number) =>
+      buildPdfFooter(currentPage, totalPages, {
+        logoDataUri: company.companyLogoDataUri,
+
+        address: company.address,
+        footerText: company.exportSettings.footerText,
+      }),
     content,
   };
 

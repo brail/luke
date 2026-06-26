@@ -51,6 +51,7 @@ interface CollectionLayoutTableProps {
   layout: CollectionLayoutData;
   canUpdate: boolean;
   parameterSets: PricingParameterSet[];
+  laggingRowIds?: Set<string>;
   onAddGroup: () => void;
   onAddRow: (groupId: string) => void;
   onEditRow: (row: CollectionRowData) => void;
@@ -66,12 +67,14 @@ interface CollectionLayoutTableProps {
   isExportingXlsx?: boolean;
   onExportPdf?: (filteredRowIds?: string[]) => void;
   isExportingPdf?: boolean;
+  readOnly?: boolean;
 }
 
 export function CollectionLayoutTable({
   layout,
   canUpdate,
   parameterSets,
+  laggingRowIds,
   onAddGroup,
   onAddRow,
   onEditRow,
@@ -87,6 +90,7 @@ export function CollectionLayoutTable({
   isExportingXlsx = false,
   onExportPdf,
   isExportingPdf = false,
+  readOnly = false,
 }: CollectionLayoutTableProps) {
   const [search, setSearch] = useState('');
   const [columnsPopoverOpen, setColumnsPopoverOpen] = useState(false);
@@ -109,7 +113,7 @@ export function CollectionLayoutTable({
 
   const totalRows = layout.groups.reduce((sum, g) => sum + g.rows.length, 0);
   const totalSku = layout.groups.reduce(
-    (sum, g) => sum + g.rows.reduce((s, r) => s + r.skuForecast, 0),
+    (sum, g) => sum + g.rows.reduce((s, r) => s + (r.skuForecast ?? 0), 0),
     0
   );
   const totalQty = layout.groups.reduce(
@@ -284,7 +288,7 @@ export function CollectionLayoutTable({
           </DropdownMenu>
         )}
 
-        {canUpdate && (
+        {canUpdate && !readOnly && (
           <Button size="sm" onClick={onAddGroup} className="ml-auto">
             <Plus className="h-4 w-4 mr-1" />
             Nuovo gruppo
@@ -298,10 +302,11 @@ export function CollectionLayoutTable({
           <CollectionGroupSection
             key={group.id}
             group={group}
-            canUpdate={canUpdate}
+            canUpdate={canUpdate && !readOnly}
             hiddenColumns={effectiveHiddenColumns}
             parameterSets={parameterSets}
             searchQuery={search}
+            laggingRowIds={laggingRowIds}
             onAddRow={onAddRow}
             onEditRow={onEditRow}
             onDuplicateRow={onDuplicateRow}

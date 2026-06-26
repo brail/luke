@@ -8,6 +8,7 @@ import type { Entry } from 'ldapts';
 import pino from 'pino';
 
 import {
+  getConfig,
   getLdapConfig,
   getLdapResilienceConfig,
   type LdapConfig,
@@ -409,6 +410,27 @@ async function createOrUpdateUser(
       );
       return newUser;
     });
+
+    const auditNoTeam = (meta: Record<string, unknown>) =>
+      prisma.auditLog.create({
+        data: { actorId: null, action: 'USER_PROVISIONED_NO_DEFAULT_TEAM', targetType: 'User', targetId: user!.id, result: 'FAILURE', metadata: { username: user!.username, ...meta } },
+      }).catch(e => logger.error({ err: e }, 'Failed to write provisioning audit log'));
+
+    // Auto-assign to default team if configured (graceful: failure leaves user without team)
+    const defaultTeamId = (await getConfig(prisma, 'auth.provisioning.defaultTeamId', false))?.trim() || null;
+    if (defaultTeamId) {
+      try {
+        await prisma.companyTeamMembership.create({
+          data: { teamId: defaultTeamId, userId: user.id },
+        });
+        logger.info({ defaultTeamId, userId: user.id }, 'Auto-assigned LDAP user to default team');
+      } catch (err) {
+        logger.warn({ defaultTeamId, userId: user.id, err }, 'Auto-team assignment failed, user created without team');
+        await auditNoTeam({ defaultTeamId });
+      }
+    } else {
+      await auditNoTeam({ reason: 'auth.provisioning.defaultTeamId not configured' });
+    }
   }
 
   return user;

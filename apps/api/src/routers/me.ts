@@ -166,13 +166,7 @@ export const meRouter = router({
         targetId: ctx.session.user.id,
         result: 'SUCCESS',
         metadata: {
-          changes: {
-            email: input.email,
-            firstName: input.firstName,
-            lastName: input.lastName,
-            locale: input.locale,
-            timezone: input.timezone,
-          },
+          emailChanged,
         },
       });
 

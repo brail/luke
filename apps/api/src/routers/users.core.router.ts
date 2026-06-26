@@ -13,6 +13,7 @@ import type { LockedFields, Role } from '@luke/core';
 import { invalidateRbacCache } from '@luke/core/server';
 
 import { logAudit } from '../lib/auditLog';
+import { createNotification } from '../lib/notifications';
 import { withAuditLog } from '../lib/auditMiddleware';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { requirePermission } from '../lib/permissions';
@@ -404,6 +405,23 @@ export const usersCoreRouter = router({
 
       if (updateData.role && updateData.role !== existingUser.role) {
         invalidateRbacCache();
+        await createNotification(ctx.prisma, {
+          userId: input.id,
+          category: 'WORKFLOW',
+          title: 'Ruolo aggiornato',
+          message: `Il tuo ruolo è cambiato da "${existingUser.role}" a "${updateData.role}"`,
+          data: { oldRole: existingUser.role, newRole: updateData.role },
+        });
+      }
+
+      if (typeof updateData.isActive === 'boolean' && updateData.isActive !== existingUser.isActive) {
+        await createNotification(ctx.prisma, {
+          userId: input.id,
+          category: 'WORKFLOW',
+          title: updateData.isActive ? 'Account attivato' : 'Account disattivato',
+          message: updateData.isActive ? 'Il tuo account è stato attivato' : 'Il tuo account è stato disattivato',
+          data: { isActive: updateData.isActive },
+        });
       }
 
       // Audit logging gestito automaticamente dal middleware withAuditLog
@@ -472,7 +490,7 @@ export const usersCoreRouter = router({
       }
 
       // Protezione: impedisci eliminazione definitiva dell'ultimo admin
-      if (user.role === 'admin') {
+      if (hasPermission({ role: user.role as Role }, '*:*')) {
         const adminCount = await ctx.prisma.user.count({
           where: {
             role: 'admin',

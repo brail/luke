@@ -32,6 +32,10 @@ export const RESOURCES = {
   MERCHANDISING_PLAN: 'merchandising_plan',
   SEASON_CALENDAR: 'season_calendar',
   MILESTONE_TEMPLATE: 'milestone_template',
+  CALENDAR_CATALOG: 'calendar_catalog',
+  COMPANY_PROFILE: 'company_profile',
+  COMPANY_FUNCTION: 'company_function',
+  COMPANY_TEAM: 'company_team',
 } as const;
 
 export type Resource = (typeof RESOURCES)[keyof typeof RESOURCES];
@@ -48,6 +52,10 @@ export const ACTIONS = {
   UPLOAD: 'upload',
   SYNC: 'sync',
   EXPORT: 'export',
+  REVISE: 'revise',
+  VIEW_REVISIONS: 'view_revisions',
+  SIMULATE: 'simulate',
+  CONFIGURE_DEPENDENCIES: 'configure_dependencies',
 } as const;
 
 export type Action = (typeof ACTIONS)[keyof typeof ACTIONS] | '*';
@@ -91,12 +99,16 @@ export const VALID_RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
   [RESOURCES.MAINTENANCE]: ['read', 'update'] as const,
   [RESOURCES.DASHBOARD]: ['read'] as const,
   [RESOURCES.PRICING]: ['read', 'update'] as const,
-  [RESOURCES.COLLECTION_LAYOUT]: ['read', 'update'] as const,
+  [RESOURCES.COLLECTION_LAYOUT]: ['read', 'update', 'revise', 'view_revisions'] as const,
   [RESOURCES.VENDORS]: ['create', 'read', 'update', 'delete'] as const,
   [RESOURCES.SALES]: ['read'] as const,
   [RESOURCES.MERCHANDISING_PLAN]: ['create', 'read', 'update', 'delete'] as const,
-  [RESOURCES.SEASON_CALENDAR]: ['create', 'read', 'update', 'delete', 'sync', 'export'] as const,
+  [RESOURCES.SEASON_CALENDAR]: ['create', 'read', 'update', 'delete', 'sync', 'export', 'simulate', 'configure_dependencies'] as const,
   [RESOURCES.MILESTONE_TEMPLATE]: ['create', 'read', 'update', 'delete'] as const,
+  [RESOURCES.CALENDAR_CATALOG]: ['read', 'update'] as const,
+  [RESOURCES.COMPANY_PROFILE]: ['read', 'update'] as const,
+  [RESOURCES.COMPANY_FUNCTION]: ['create', 'read', 'update', 'delete'] as const,
+  [RESOURCES.COMPANY_TEAM]: ['create', 'read', 'update', 'delete'] as const,
 } as const;
 
 /**
@@ -124,9 +136,11 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'dashboard:read',
     // Pricing: solo lettura (modifica varianti riservata ad admin)
     'pricing:read',
-    // Collection Layout: lettura e modifica
+    // Collection Layout: lettura, modifica, revisioni
     'collection_layout:read',
     'collection_layout:update',
+    'collection_layout:revise',
+    'collection_layout:view_revisions',
     // Vendors: accesso completo
     'vendors:*',
     // Sales: lettura statistiche
@@ -134,12 +148,20 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // Merchandising Plan: lettura e modifica
     'merchandising_plan:read',
     'merchandising_plan:update',
-    // Season Calendar: lettura, modifica, export
+    // Season Calendar: lettura, modifica, export, simulate, configure_dependencies
     'season_calendar:read',
     'season_calendar:update',
     'season_calendar:export',
+    'season_calendar:simulate',
+    'season_calendar:configure_dependencies',
     // Milestone Template: solo lettura
     'milestone_template:read',
+    // Calendar Catalog: lettura (per dropdown tipi evento)
+    'calendar_catalog:read',
+    // Company structure: solo lettura (per dropdown e badge)
+    'company_profile:read',
+    'company_function:read',
+    'company_team:read',
   ],
   viewer: [
     // Brands: solo lettura
@@ -156,19 +178,27 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'dashboard:read',
     // Pricing: solo lettura
     'pricing:read',
-    // Collection Layout: solo lettura
+    // Collection Layout: lettura + storico revisioni
     'collection_layout:read',
+    'collection_layout:view_revisions',
     // Vendors: solo lettura
     'vendors:read',
     // Sales: lettura statistiche
     'sales:read',
     // Merchandising Plan: solo lettura
     'merchandising_plan:read',
-    // Season Calendar: lettura ed export
+    // Season Calendar: lettura, export, simulate
     'season_calendar:read',
     'season_calendar:export',
+    'season_calendar:simulate',
     // Milestone Template: solo lettura
     'milestone_template:read',
+    // Calendar Catalog: lettura (per dropdown tipi evento)
+    'calendar_catalog:read',
+    // Company structure: solo lettura
+    'company_profile:read',
+    'company_function:read',
+    'company_team:read',
   ],
 };
 

@@ -1,5 +1,3 @@
-import type { PlanningSectionKey } from '@luke/core';
-
 export interface MilestoneForSync {
   id: string;
   title: string;
@@ -9,12 +7,12 @@ export interface MilestoneForSync {
   allDay: boolean;
   status: string;
   publishExternally: boolean;
-  visibleSectionKeys: PlanningSectionKey[];
+  visibilityFunctionIds: string[];
 }
 
 export interface GoogleEventMappingRecord {
-  milestoneId: string;
-  sectionKey: string;
+  eventId: string;
+  companyFunctionId: string;
   googleEventId: string;
   googleCalendarId: string;
   contentHash: string;
@@ -24,7 +22,7 @@ export interface GoogleEventMappingRecord {
 export interface GoogleCalendarBindingRecord {
   id: string;
   seasonCalendarId: string;
-  sectionKey: string;
+  companyFunctionId: string;
   googleCalendarId: string;
   isProvisioned: boolean;
 }
@@ -34,8 +32,8 @@ export interface SyncContext {
   brandCode: string;
   seasonCode: string;
   allowedUserEmails: string[];
-  getOrCreateBinding: (sectionKey: string) => Promise<GoogleCalendarBindingRecord>;
+  getOrCreateBinding: (companyFunctionId: string) => Promise<GoogleCalendarBindingRecord>;
   getMappings: (milestoneId: string) => Promise<GoogleEventMappingRecord[]>;
   upsertMapping: (mapping: Omit<GoogleEventMappingRecord, 'lastSyncedAt'>) => Promise<void>;
-  deleteMapping: (milestoneId: string, sectionKey: string) => Promise<void>;
+  deleteMapping: (milestoneId: string, companyFunctionId: string) => Promise<void>;
 }

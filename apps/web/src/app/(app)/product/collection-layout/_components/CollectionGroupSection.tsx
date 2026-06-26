@@ -283,11 +283,12 @@ function DragHandle({ listeners }: DragHandleProps) {
 interface SortableRowProps {
   id: string;
   disabled: boolean;
+  isLagging?: boolean;
   children: (listeners: Record<string, unknown> | undefined) => ReactNode;
   onClick: () => void;
 }
 
-function SortableRow({ id, disabled, children, onClick }: SortableRowProps) {
+function SortableRow({ id, disabled, isLagging, children, onClick }: SortableRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
     disabled,
@@ -302,7 +303,7 @@ function SortableRow({ id, disabled, children, onClick }: SortableRowProps) {
       ref={setNodeRef}
       style={style}
       {...attributes}
-      className="cursor-pointer hover:bg-muted/30"
+      className={cn('cursor-pointer hover:bg-muted/30', isLagging && 'bg-amber-50/60 dark:bg-amber-950/20 border-l-2 border-l-amber-400 dark:border-l-amber-500')}
       onClick={onClick}
     >
       {children(disabled ? undefined : listeners as Record<string, unknown>)}
@@ -313,12 +314,12 @@ function SortableRow({ id, disabled, children, onClick }: SortableRowProps) {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const PROGRESS_BADGE: Record<string, { label: string; className: string }> = {
-  '01 - FASE DI DESIGN': { label: 'DESIGN', className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
-  '02 - COSTRUZIONE OK': { label: 'COSTR. OK', className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
-  '03 - MODELLERIA OK': { label: 'MODELL. OK', className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' },
-  '04 - RENDERING FATTI': { label: 'RENDERING', className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' },
-  '05 - SPEC SHEETS PRONTE': { label: 'SPEC SHEETS', className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' },
-  '06 - SMS LANCIATI': { label: 'SMS LANCIATI', className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' },
+  DESIGN:           { label: '01 — Design',        className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
+  CONSTRUCTION_OK:  { label: '02 — Costr. OK',     className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
+  MODELLERIA_OK:    { label: '03 — Modell. OK',    className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' },
+  RENDERING:        { label: '04 — Rendering',     className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' },
+  SPECSHEETS_READY: { label: '05 — Spec Sheets',   className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' },
+  SMS_LAUNCHED:     { label: '06 — SMS Lanciati',  className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' },
 };
 
 const STATUS_LABELS: Record<string, string> = { CARRY_OVER: 'C/O', NEW: 'New' };
@@ -356,6 +357,7 @@ interface CollectionGroupSectionProps {
   hiddenColumns: string[];
   parameterSets: PricingParameterSet[];
   searchQuery?: string;
+  laggingRowIds?: Set<string>;
   onAddRow: (groupId: string) => void;
   onEditRow: (row: CollectionRowData) => void;
   onDuplicateRow: (rowId: string) => void;
@@ -374,6 +376,7 @@ export function CollectionGroupSection({
   hiddenColumns,
   parameterSets,
   searchQuery = '',
+  laggingRowIds,
   onAddRow,
   onEditRow,
   onDuplicateRow,
@@ -503,7 +506,8 @@ export function CollectionGroupSection({
       if (columnFilters.status && !enumMatch(row.status, columnFilters.status)) return false;
       if (columnFilters.styleStatus && !enumMatch(row.styleStatus, columnFilters.styleStatus)) return false;
       if (columnFilters.progress && !enumMatch(row.progress, columnFilters.progress)) return false;
-      if (columnFilters.skuForecast && !numberMatch(row.skuForecast, columnFilters.skuForecast)) return false;
+      if (columnFilters.pricePositioning && !textMatch(row.pricePositioning, columnFilters.pricePositioning)) return false;
+      if (columnFilters.skuForecast && !numberMatch(row.skuForecast ?? 0, columnFilters.skuForecast)) return false;
       if (columnFilters.qtyForecast && !numberMatch(row.qtyForecast, columnFilters.qtyForecast)) return false;
       if (columnFilters.margin) {
         const m = computeRowMargin(row, parameterSets);
@@ -540,7 +544,7 @@ export function CollectionGroupSection({
     onFilteredRowIdsChange?.(filteredRows.map(r => r.id));
   }, [filteredRows, onFilteredRowIdsChange]);
 
-  const skuTotal = group.rows.reduce((sum, r) => sum + r.skuForecast, 0);
+  const skuTotal = group.rows.reduce((sum, r) => sum + (r.skuForecast ?? 0), 0);
   const qtyTotal = group.rows.reduce((sum, r) => sum + r.qtyForecast, 0);
   const skuVariant = skuRatioVariant(skuTotal, group.skuBudget);
   const groupWeightedMargin = computeWeightedMargin(group.rows, parameterSets);
@@ -702,6 +706,9 @@ export function CollectionGroupSection({
                   {show('designer') && (
                     <FilterableHeader col="designer" label="Designer" type="text" {...sortProps} {...filterProps} filterValue={columnFilters.designer} />
                   )}
+                  {show('pricePositioning') && (
+                    <FilterableHeader col="pricePositioning" label="Posizionamento" type="text" {...sortProps} {...filterProps} filterValue={columnFilters.pricePositioning} allowNone />
+                  )}
 
                   <FilterableHeader col="skuForecast" label="SKU" type="number" {...sortProps} {...filterProps} filterValue={columnFilters.skuForecast} className="text-right" />
 
@@ -737,6 +744,7 @@ export function CollectionGroupSection({
                           key={row.id}
                           id={row.id}
                           disabled={!isDndMode || !canUpdate}
+                          isLagging={laggingRowIds?.has(row.id)}
                           onClick={() => onEditRow(row)}
                         >
                           {(listeners) => (<>
@@ -826,6 +834,13 @@ export function CollectionGroupSection({
                       )}
                       {show('designer') && (
                         <TableCell className="text-sm text-muted-foreground">{row.designer}</TableCell>
+                      )}
+                      {show('pricePositioning') && (
+                        <TableCell>
+                          {row.pricePositioning && (
+                            <Badge variant="outline" className="text-xs">{row.pricePositioning}</Badge>
+                          )}
+                        </TableCell>
                       )}
                       <TableCell className="text-right font-medium tabular-nums text-sm">
                         {row.skuForecast}

@@ -18,7 +18,7 @@ import {
 interface Props {
   seasonId: string;
   brandIds: string[];
-  view: 'list' | 'week' | 'month' | 'gantt';
+  view: 'list' | 'week' | 'month' | 'gantt' | 'day';
   viewDate: Date;
   disabled?: boolean;
 }

@@ -6,10 +6,13 @@
 import { router } from '../lib/trpc';
 
 import { authRouter } from './auth';
+import { companyRouter } from './company';
 import { brandRouter } from './brand';
 import { catalogRouter } from './catalog';
 import { collectionLayoutRouter } from './collectionLayout';
+import { calendarCatalogRouter } from './calendarCatalog';
 import { collectionCatalogRouter } from './collectionCatalog';
+import { collectionLayoutRevisionRouter } from './collectionLayoutRevision';
 import { merchandisingPlanRouter } from './merchandisingPlan';
 import { configRouter } from './config';
 import { contextRouter } from './context';
@@ -26,8 +29,10 @@ import { usersRouter } from './users';
 import { vendorsRouter } from './vendors';
 import { salesRouter } from './sales';
 import { seasonCalendarRouter } from './seasonCalendar';
+import { holidaysRouter } from './holidays';
 import { dashboardRouter } from './dashboard';
 import { feedbackRouter } from './feedback';
+import { notificationsRouter } from './notifications';
 
 /**
  * Router principale dell'applicazione
@@ -36,9 +41,12 @@ import { feedbackRouter } from './feedback';
 export const appRouter = router({
   auth: authRouter,
   brand: brandRouter,
+  company: companyRouter,
   catalog: catalogRouter,
   collectionLayout: collectionLayoutRouter,
+  calendarCatalog: calendarCatalogRouter,
   collectionCatalog: collectionCatalogRouter,
+  collectionLayoutRevision: collectionLayoutRevisionRouter,
   merchandisingPlan: merchandisingPlanRouter,
   config: configRouter,
   context: contextRouter,
@@ -55,8 +63,10 @@ export const appRouter = router({
   vendors: vendorsRouter,
   sales: salesRouter,
   seasonCalendar: seasonCalendarRouter,
+  holidays: holidaysRouter,
   dashboard: dashboardRouter,
   feedback: feedbackRouter,
+  notifications: notificationsRouter,
 });
 
 /**

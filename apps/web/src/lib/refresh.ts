@@ -45,6 +45,15 @@ export function useRefresh() {
     // Context management
     context: () => utils.context.get.invalidate(),
 
+    // Company structure (functions, teams)
+    company: async () => {
+      await Promise.all([
+        utils.company.function.list.invalidate(),
+        utils.company.team.listByFunction.invalidate(),
+        utils.company.team.getById.invalidate(),
+      ]);
+    },
+
     // Helper compositi per invalidazioni multiple
     allStorage: () =>
       Promise.all([

@@ -22,20 +22,20 @@ export function CollectionLayoutSummary({ layout }: CollectionLayoutSummaryProps
   const allRows = layout.groups.flatMap(g => g.rows);
   if (allRows.length === 0) return null;
 
-  const totalSku = allRows.reduce((sum, r) => sum + r.skuForecast, 0);
+  const totalSku = allRows.reduce((sum, r) => sum + (r.skuForecast ?? 0), 0);
 
   // ── Per Progress ──────────────────────────────────────────────────
   const progressStats = [
     ...COLLECTION_PROGRESS.map(progress => {
       const rows = allRows.filter(r => r.progress === progress);
-      const sku = rows.reduce((sum, r) => sum + r.skuForecast, 0);
+      const sku = rows.reduce((sum, r) => sum + (r.skuForecast ?? 0), 0);
       const qty = rows.reduce((sum, r) => sum + r.qtyForecast, 0);
       const pct = totalSku > 0 ? Math.round((sku / totalSku) * 100) : 0;
       return { label: progress, count: rows.length, sku, qty, pct };
     }),
     (() => {
       const rows = allRows.filter(r => !r.progress);
-      const sku = rows.reduce((sum, r) => sum + r.skuForecast, 0);
+      const sku = rows.reduce((sum, r) => sum + (r.skuForecast ?? 0), 0);
       const qty = rows.reduce((sum, r) => sum + r.qtyForecast, 0);
       const pct = totalSku > 0 ? Math.round((sku / totalSku) * 100) : 0;
       return { label: '—', count: rows.length, sku, qty, pct };
@@ -50,10 +50,10 @@ export function CollectionLayoutSummary({ layout }: CollectionLayoutSummaryProps
     const existing = vendorMap.get(key);
     if (existing) {
       existing.count++;
-      existing.sku += row.skuForecast;
+      existing.sku += row.skuForecast ?? 0;
       existing.qty += row.qtyForecast;
     } else {
-      vendorMap.set(key, { name, count: 1, sku: row.skuForecast, qty: row.qtyForecast });
+      vendorMap.set(key, { name, count: 1, sku: row.skuForecast ?? 0, qty: row.qtyForecast });
     }
   }
   const vendorStats = Array.from(vendorMap.values()).sort((a, b) => b.sku - a.sku);

@@ -115,9 +115,11 @@ services:
         mc mb --ignore-existing local/temp-collection-row-pictures &&
         mc mb --ignore-existing local/merchandising-specsheet-images &&
         mc mb --ignore-existing local/temp-merchandising-specsheet-images &&
+        mc mb --ignore-existing local/company-assets &&
         mc anonymous set download local/brand-logos &&
         mc anonymous set download local/collection-row-pictures &&
         mc anonymous set download local/merchandising-specsheet-images &&
+        mc anonymous set download local/company-assets &&
         mc ilm rule add --expire-days 1 local/temp-brand-logos &&
         mc ilm rule add --expire-days 1 local/temp-collection-row-pictures &&
         mc ilm rule add --expire-days 1 local/temp-merchandising-specsheet-images

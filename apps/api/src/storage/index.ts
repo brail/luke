@@ -5,9 +5,11 @@
  * Integra provider, persistenza DB e AuditLog
  */
 
+import { createHash } from 'crypto';
 import { randomUUID } from 'crypto';
 import { homedir } from 'os';
-import { join } from 'path';
+import { basename, join } from 'path';
+import { Readable } from 'stream';
 
 import type { PrismaClient } from '@prisma/client';
 
@@ -95,7 +97,9 @@ export async function loadMinioProvider(prisma: PrismaClient): Promise<MinioProv
     presignedGetTtl: parseInt(getTtlStr || '3600', 10),
   });
 
-  return new MinioProvider(config);
+  const provider = new MinioProvider(config);
+  await provider.init();
+  return provider;
 }
 
 /**
@@ -428,4 +432,68 @@ export async function listObjects(
     })),
     nextCursor: hasMore ? results[results.length - 1]?.id : undefined,
   };
+}
+
+/**
+ * Copia una foto dal bucket collection-row-pictures al bucket immutabile
+ * collection-row-pictures-revisions per il registro qualità ISO 9001.
+ *
+ * Dedup via checksumSha256: se il file esiste già nel bucket immutabile,
+ * restituisce la chiave esistente senza copiare (CAS semantics via DB lookup).
+ *
+ * Nota: se la transazione della revisione fallisce dopo questa chiamata,
+ * il file copiato rimane orfano nel bucket — questo è accettabile poiché
+ * il contenuto è identico (stesso sha256) e non produce duplicati logici.
+ */
+export async function copyToImmutableBucket(
+  prisma: PrismaClient,
+  sourceKey: string,
+  logger?: { warn: (obj: object, msg: string) => void },
+): Promise<string> {
+  // Read source file
+  const buffer = await readFileBuffer(prisma, 'collection-row-pictures', sourceKey, logger);
+  if (!buffer) {
+    throw new Error(`copyToImmutableBucket: source file not found — key=${sourceKey}`);
+  }
+
+  // Compute sha256 for dedup
+  const sha256 = createHash('sha256').update(buffer).digest('hex');
+
+  // Dedup: check if already in immutable bucket
+  const existing = await prisma.fileObject.findFirst({
+    where: { bucket: 'collection-row-pictures-revisions', checksumSha256: sha256 },
+    select: { key: true },
+  });
+  if (existing) {
+    return existing.key;
+  }
+
+  // Not found — upload to immutable bucket
+  const originalName = sanitizeFileName(basename(sourceKey)) || 'picture.jpg';
+  const provider = await getStorageProvider(prisma);
+  const stream = Readable.from(buffer);
+  const { key } = await provider.put({
+    bucket: 'collection-row-pictures-revisions',
+    originalName,
+    contentType: 'image/jpeg',
+    size: buffer.byteLength,
+    stream,
+  });
+
+  // Persist FileObject record
+  await prisma.fileObject.create({
+    data: {
+      id: randomUUID(),
+      bucket: 'collection-row-pictures-revisions',
+      key,
+      originalName,
+      size: buffer.byteLength,
+      contentType: 'image/jpeg',
+      checksumSha256: sha256,
+      createdBy: 'system',
+      confirmedAt: new Date(),
+    },
+  });
+
+  return key;
 }

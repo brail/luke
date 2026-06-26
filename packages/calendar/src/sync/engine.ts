@@ -4,13 +4,6 @@ import { syncCalendarReaders } from '../google/acl.js';
 import { computeContentHash } from './hash.js';
 import type { MilestoneForSync, SyncContext } from './types.js';
 
-const PLANNING_SECTION_LABELS: Record<string, string> = {
-  'planning.sales': 'Vendite',
-  'planning.product': 'Prodotto',
-  'planning.sourcing': 'Sourcing',
-  'planning.merchandising': 'Merchandising',
-};
-
 function milestoneStatusToGoogle(status: string): 'confirmed' | 'tentative' | 'cancelled' {
   if (status === 'CANCELLED') return 'cancelled';
   if (status === 'PLANNED') return 'tentative';
@@ -41,22 +34,22 @@ export async function syncMilestone(
 ): Promise<void> {
   const contentHash = computeContentHash(milestone);
   const existingMappings = await ctx.getMappings(milestone.id);
-  const mappingBySectionKey = new Map(existingMappings.map(m => [m.sectionKey, m]));
+  const mappingByFunctionId = new Map(existingMappings.map(m => [m.companyFunctionId, m]));
 
-  for (const sectionKey of milestone.visibleSectionKeys) {
+  for (const companyFunctionId of milestone.visibilityFunctionIds) {
     if (!milestone.publishExternally) {
-      const existing = mappingBySectionKey.get(sectionKey);
+      const existing = mappingByFunctionId.get(companyFunctionId);
       if (existing) {
         await withRetry(() => deleteEvent(existing.googleCalendarId, existing.googleEventId));
-        await ctx.deleteMapping(milestone.id, sectionKey);
+        await ctx.deleteMapping(milestone.id, companyFunctionId);
       }
       continue;
     }
 
-    const existing = mappingBySectionKey.get(sectionKey);
+    const existing = mappingByFunctionId.get(companyFunctionId);
     if (existing && existing.contentHash === contentHash) continue;
 
-    const binding = await ctx.getOrCreateBinding(sectionKey);
+    const binding = await ctx.getOrCreateBinding(companyFunctionId);
     const eventInput = {
       title: milestone.title,
       description: milestone.description ?? undefined,
@@ -69,8 +62,8 @@ export async function syncMilestone(
     if (existing) {
       await withRetry(() => updateEvent(existing.googleCalendarId, existing.googleEventId, eventInput));
       await ctx.upsertMapping({
-        milestoneId: milestone.id,
-        sectionKey,
+        eventId: milestone.id,
+        companyFunctionId,
         googleEventId: existing.googleEventId,
         googleCalendarId: existing.googleCalendarId,
         contentHash,
@@ -78,8 +71,8 @@ export async function syncMilestone(
     } else {
       const googleEventId = await withRetry(() => createEvent(binding.googleCalendarId, eventInput));
       await ctx.upsertMapping({
-        milestoneId: milestone.id,
-        sectionKey,
+        eventId: milestone.id,
+        companyFunctionId,
         googleEventId,
         googleCalendarId: binding.googleCalendarId,
         contentHash,
@@ -87,22 +80,23 @@ export async function syncMilestone(
     }
   }
 
-  // Remove mappings for sections no longer in visibleSectionKeys
-  const visibleSet = new Set(milestone.visibleSectionKeys);
-  for (const [sectionKey, mapping] of mappingBySectionKey) {
-    if (!visibleSet.has(sectionKey as never)) {
+  // Remove mappings for functions no longer in visibilityFunctionIds
+  const visibleSet = new Set(milestone.visibilityFunctionIds);
+  for (const [companyFunctionId, mapping] of mappingByFunctionId) {
+    if (!visibleSet.has(companyFunctionId)) {
       await withRetry(() => deleteEvent(mapping.googleCalendarId, mapping.googleEventId));
-      await ctx.deleteMapping(milestone.id, sectionKey);
+      await ctx.deleteMapping(milestone.id, companyFunctionId);
     }
   }
 }
 
 export async function provisionBinding(
   ctx: SyncContext,
-  sectionKey: string
+  companyFunctionId: string,
+  functionLabel?: string
 ): Promise<string> {
-  const sectionLabel = PLANNING_SECTION_LABELS[sectionKey] ?? sectionKey;
-  const summary = buildCalendarSummary(ctx.brandCode, ctx.seasonCode, sectionLabel);
+  const label = functionLabel ?? companyFunctionId;
+  const summary = buildCalendarSummary(ctx.brandCode, ctx.seasonCode, label);
   const { id: googleCalendarId } = await createCalendar(summary);
   await syncCalendarReaders(googleCalendarId, ctx.allowedUserEmails);
   return googleCalendarId;

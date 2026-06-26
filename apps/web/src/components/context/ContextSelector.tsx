@@ -31,12 +31,8 @@ export function ContextSelector() {
   const { data: brands = [], isLoading: brandsLoading } =
     trpc.catalog.brands.useQuery();
 
-  // Stagioni filtrate per whitelist utente nel brand corrente
   const { data: seasons = [], isLoading: seasonsLoading } =
-    trpc.catalog.seasons.useQuery(
-      { brandId: brand?.id },
-      { enabled: !!brand?.id }
-    );
+    trpc.catalog.seasons.useQuery(undefined, { enabled: !!brand?.id });
 
   // Loading state
   if (brandsLoading || (!!brand?.id && seasonsLoading)) {

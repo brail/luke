@@ -25,10 +25,12 @@ import {
   FormMessage,
 } from '../../../../../components/ui/form';
 import { Input } from '../../../../../components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../../components/ui/tabs';
 import { Textarea } from '../../../../../components/ui/textarea';
 import { useAppContext } from '../../../../../contexts/AppContextProvider';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { trpc } from '../../../../../lib/trpc';
+import { VendorClosurePeriodManager } from '../../calendar-configuration/_components/VendorClosurePeriodManager';
 
 import type { VendorItem } from './VendorTable';
 
@@ -116,7 +118,7 @@ export function VendorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[540px] max-h-[90vh] flex flex-col">
+      <DialogContent className="sm:max-w-[680px] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {!canEdit && (
@@ -126,7 +128,12 @@ export function VendorDialog({
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col min-h-0 flex-1">
-            <div className="overflow-y-auto flex-1 px-1">
+            <Tabs defaultValue="dati" className="flex flex-col min-h-0 flex-1">
+              <TabsList className="w-full shrink-0">
+                <TabsTrigger value="dati" className="flex-1">Dati generali</TabsTrigger>
+                {vendor && <TabsTrigger value="chiusure" className="flex-1">Chiusure</TabsTrigger>}
+              </TabsList>
+              <TabsContent value="dati" className="overflow-y-auto flex-1 px-1">
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -389,7 +396,17 @@ export function VendorDialog({
                 )}
               />
             </div>
-            </div>
+              </TabsContent>
+              {vendor && (
+                <TabsContent value="chiusure" className="overflow-y-auto flex-1 py-2">
+                  <VendorClosurePeriodManager
+                    vendorId={vendor.id}
+                    vendorName={vendor.name}
+                    vendorCountryCode={vendor.countryCode}
+                  />
+                </TabsContent>
+              )}
+            </Tabs>
             <DialogFooter className="pt-4 border-t shrink-0">
               <Button
                 type="button"

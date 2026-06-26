@@ -1,9 +1,10 @@
-export const SECTION_LABELS: Record<string, string> = {
-  'planning.sales': 'Vendite',
-  'planning.product': 'Prodotto',
-  'planning.sourcing': 'Sourcing',
-  'planning.merchandising': 'Merchandising',
-};
+export const MONTH_NAMES_IT = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio',
+  'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
+
+export const MONTH_NAMES_SHORT_IT = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu',
+  'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+
+export const DAY_LABELS_IT = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
 
 export const TYPE_LABELS: Record<string, string> = {
   KICKOFF: 'Kickoff',
@@ -28,9 +29,15 @@ export const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructi
   CANCELLED: 'destructive',
 };
 
+export const SEVERITY_LABELS: Record<string, string> = {
+  CRITICAL: 'Critico',
+  NORMAL: 'Normale',
+  INFO: 'Info',
+};
+
 export const STATUS_OPACITY: Record<string, string> = {
-  PLANNED: 'opacity-60',
+  PLANNED: 'opacity-70',
   IN_PROGRESS: 'opacity-100',
   COMPLETED: 'opacity-40',
-  CANCELLED: 'opacity-25',
+  CANCELLED: 'opacity-25 line-through',
 };

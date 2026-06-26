@@ -10,7 +10,7 @@ export function computeContentHash(milestone: MilestoneForSync): string {
     endAt: milestone.endAt?.toISOString() ?? null,
     allDay: milestone.allDay,
     status: milestone.status,
-    visibleSectionKeys: [...milestone.visibleSectionKeys].sort(),
+    visibilityFunctionIds: [...milestone.visibilityFunctionIds].sort(),
   });
   return createHash('sha256').update(payload).digest('hex').slice(0, 32);
 }

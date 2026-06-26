@@ -28,6 +28,13 @@ enum TokenType {
   VERIFY
 }
 
+enum NotificationCategory {
+  SYSTEM
+  CALENDAR
+  USER_ACTION
+  WORKFLOW
+}
+
 // Models
 model User {
   id                String    @id @default(uuid())
@@ -52,12 +59,19 @@ model User {
   auditLogs  AuditLog[]
   tokens     UserToken[]
   sectionAccess UserSectionAccess[]
-  brandAccess UserBrandAccess[]
-  seasonAccess UserSeasonAccess[]
   assignedMerchandisingRows MerchandisingPlanRow[]
   dashboardConfig DashboardConfig?
   dashboardTasks  DashboardTask[]
-  milestoneNotes  MilestonePersonalNote[]
+  calendarEventNotes                CalendarEventPersonalNote[]
+  teamMemberships                   CompanyTeamMembership[]
+  calendarEventVisibilitiesReceived CalendarEventUserVisibility[] @relation("CalendarEventUserVisibilityRecipient")
+  calendarEventVisibilitiesGranted  CalendarEventUserVisibility[] @relation("CalendarEventUserVisibilityGrantor")
+  notifications                     Notification[]
+  notificationPreferences           NotificationPreference[]
+  collectionLayoutRevisions         CollectionLayoutRevision[]
+  appliedEffects                    CalendarEventEffectExecution[] @relation("EffectApplier")
+  rolledBackEffects                 CalendarEventEffectExecution[] @relation("EffectRollbacker")
+  confirmedVendorClosures           VendorClosurePeriod[] @relation("ClosureConfirmer")
 
   @@map("users")
 }
@@ -194,8 +208,7 @@ model Brand {
   collectionLayouts    CollectionLayout[]
   merchandisingPlans   MerchandisingPlan[]
   seasonCalendars      SeasonCalendar[]
-  userBrandAccess      UserBrandAccess[]
-  userSeasonAccess     UserSeasonAccess[]
+  teamBrandScopes      CompanyTeamBrandScope[]
 
   @@index([name])
   @@index([isActive, name])
@@ -217,47 +230,9 @@ model Season {
   collectionLayouts    CollectionLayout[]
   merchandisingPlans   MerchandisingPlan[]
   seasonCalendars      SeasonCalendar[]
-  userSeasonAccess     UserSeasonAccess[]
+  vendorClosures       VendorClosurePeriod[]
 
   @@map("seasons")
-}
-
-/**
- * Whitelist brand per utente.
- * Se NON esistono righe per un utente → accesso a tutti i brand (default).
- * Se esistono righe → accesso solo ai brand elencati.
- */
-model UserBrandAccess {
-  id      String @id @default(uuid())
-  userId  String
-  brandId String
-
-  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, brandId])
-  @@index([userId])
-  @@map("user_brand_access")
-}
-
-/**
- * Whitelist stagioni per utente+brand.
- * Se NON esistono righe per (userId, brandId) → accesso a tutte le stagioni di quel brand.
- * Se esistono righe → accesso solo alle stagioni elencate.
- */
-model UserSeasonAccess {
-  id       String @id @default(uuid())
-  userId   String
-  brandId  String
-  seasonId String
-
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  brand  Brand  @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  season Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, brandId, seasonId])
-  @@index([userId, brandId])
-  @@map("user_season_access")
 }
 
 model DashboardConfig {
@@ -345,15 +320,20 @@ model CollectionLayout {
   skuBudget        Int?
   hiddenColumns    Json?    // String[] — colonne nascoste, null = tutte visibili
   availableGenders String[] @default(["MAN","WOMAN"])
+  lockedByEventId  String?
+  lockedAt         DateTime?
   brand            Brand    @relation(fields: [brandId], references: [id], onDelete: Restrict)
   season           Season   @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  lockedByEvent    CalendarEvent? @relation(fields: [lockedByEventId], references: [id], onDelete: SetNull)
   groups           CollectionGroup[]
   rows             CollectionLayoutRow[]
+  revisions        CollectionLayoutRevision[]
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   @@unique([brandId, seasonId])
   @@index([brandId, seasonId])
+  @@index([lockedByEventId])
   @@map("collection_layouts")
 }
 
@@ -492,6 +472,7 @@ model Vendor {
 
   collectionRows       CollectionLayoutRow[]
   enabledParameterSets PricingParameterSet[] @relation("VendorEnabledParameterSets")
+  closurePeriods       VendorClosurePeriod[]
 
   @@index([name])
   @@index([isActive])
@@ -517,7 +498,7 @@ model CollectionLayoutRow {
   line                   String
   article                String?               // testo libero corto, dopo line
   status                 String                // catalog-managed (lineStatus)
-  skuForecast            Int
+  skuForecast            Int?
   qtyForecast            Int
   productCategory        String
 
@@ -525,6 +506,7 @@ model CollectionLayoutRow {
   strategy               String?               // catalog-managed
   styleStatus            String?               // catalog-managed
   progress               String?               // catalog-managed
+  pricePositioning       String?               // catalog-managed
   designer               String?
   pictureKey             String?
 
@@ -537,6 +519,8 @@ model CollectionLayoutRow {
   // Optional — pricing
   toolingQuotation       Float?
   quotations             CollectionRowQuotation[]
+
+  lastRevisedAt          DateTime?             // updated when row is included in a revision
 
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
@@ -572,21 +556,135 @@ model CollectionRowQuotation {
 
 /**
  * Catalog items configurabili per collection layout
- * Tipi: strategy, lineStatus, styleStatus, progress
+ * Tipi: strategy, lineStatus, styleStatus, progress, revisionType
  */
 model CollectionCatalogItem {
-  id        String   @id @default(uuid())
-  type      String   // "strategy" | "lineStatus" | "styleStatus" | "progress"
-  value     String
-  label     String
-  order     Int      @default(0)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                   String   @id @default(uuid())
+  type                 String   // "strategy" | "lineStatus" | "styleStatus" | "progress" | "revisionType"
+  value                String
+  label                String
+  code                 String?  // codice user-visibile (es. "01") — popolato solo per type=progress
+  iso9001Categories    String[] @default([]) // categorie ISO 9001 — popolato solo per type=revisionType
+  expectedMinProgress  String?  // valore progress atteso — popolato solo per type=revisionType
+  order                Int      @default(0)
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   @@unique([type, value])
   @@index([type, isActive])
   @@map("collection_catalog_items")
+}
+
+// ─── Collection Layout Versioning ────────────────────────────────────────────
+
+/**
+ * Revisione formale del Collection Layout (registro qualità ISO 9001:2015)
+ * Immutabile dopo la creazione — non modificare i campi snapshot.
+ */
+model CollectionLayoutRevision {
+  id                 String           @id @default(uuid())
+  collectionLayoutId String
+  collectionLayout   CollectionLayout @relation(fields: [collectionLayoutId], references: [id], onDelete: Restrict)
+  revisionNumber     Int
+  revisionTypeValue  String
+  cause              String           // MANUAL | MILESTONE
+  milestoneId        String?
+  notes              String?
+  createdByUserId    String
+  createdBy          User             @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdAt          DateTime         @default(now())
+
+  groups             CollectionGroupRevision[]
+  rowRevisions       CollectionLayoutRowRevision[]
+
+  @@unique([collectionLayoutId, revisionNumber])
+  @@index([collectionLayoutId, createdAt])
+  @@index([milestoneId])
+  @@map("collection_layout_revisions")
+}
+
+/**
+ * Snapshot di un CollectionGroup al momento di una revisione.
+ * sourceGroupId è una soft FK (no @relation) — il gruppo vivo può essere cancellato.
+ */
+model CollectionGroupRevision {
+  id            String                     @id @default(uuid())
+  revisionId    String
+  revision      CollectionLayoutRevision   @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  sourceGroupId String
+  name          String
+  order         Int
+  skuBudget     Int?
+
+  rows          CollectionLayoutRowRevision[]
+
+  @@index([revisionId])
+  @@index([sourceGroupId])
+  @@map("collection_group_revisions")
+}
+
+/**
+ * Snapshot di una CollectionLayoutRow al momento di una revisione.
+ * sourceRowId è una soft FK (no @relation) — la riga viva può essere cancellata.
+ * wasDeleted=true indica che la riga era già stata eliminata quando è stata inclusa.
+ */
+model CollectionLayoutRowRevision {
+  id                    String                       @id @default(uuid())
+  revisionId            String
+  revision              CollectionLayoutRevision     @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  sourceGroupRevisionId String
+  sourceGroupRevision   CollectionGroupRevision      @relation(fields: [sourceGroupRevisionId], references: [id], onDelete: Cascade)
+  sourceRowId           String
+  wasDeleted            Boolean                      @default(false)
+
+  // Snapshot fields — denormalizzati dalla riga viva al momento della revisione
+  gender                String
+  vendorId              String?
+  vendorName            String?
+  line                  String
+  article               String?
+  status                String
+  skuForecast           Int?
+  qtyForecast           Int
+  productCategory       String
+  strategy              String?
+  styleStatus           String?
+  progress              String?
+  pricePositioning      String?
+  designer              String?
+  pictureKey            String?  // key nel bucket immutabile collection-row-pictures-revisions
+  styleNotes            String?
+  materialNotes         String?
+  colorNotes            String?
+  toolingNotes          String?
+  toolingQuotation      Float?
+  order                 Int
+
+  quotationRevisions    CollectionRowQuotationRevision[]
+
+  @@unique([revisionId, sourceRowId])
+  @@index([sourceRowId, revisionId])
+  @@map("collection_layout_row_revisions")
+}
+
+/**
+ * Snapshot di una CollectionRowQuotation al momento di una revisione.
+ */
+model CollectionRowQuotationRevision {
+  id                      String                      @id @default(uuid())
+  rowRevisionId           String
+  rowRevision             CollectionLayoutRowRevision @relation(fields: [rowRevisionId], references: [id], onDelete: Cascade)
+  order                   Int
+  pricingParameterSetId   String?
+  pricingParameterSetName String?  // denormalizzato
+  retailPrice             Float?
+  supplierQuotation       Float?
+  notes                   String?
+  sku                     Int?
+
+  @@index([rowRevisionId])
+  @@map("collection_row_quotation_revisions")
 }
 
 // ─── Merchandising Plan ───────────────────────────────────────────────────────
@@ -1191,6 +1289,126 @@ model NavKimoSalesLine {
   @@map("nav_kimo_sales_line")
 }
 
+// ─── Company Structure ────────────────────────────────────────────────────────
+
+model CompanyProfile {
+  id             String   @id @default("singleton")
+  legalName      String
+  displayName    String
+  countryCode    String?
+  vatNumber      String?
+  taxCode        String?
+  phone          String?
+  email          String?
+  website        String?
+  address        Json?
+  exportSettings Json?
+  logoKey        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("company_profile")
+}
+
+model CompanyFunction {
+  id          String   @id @default(uuid())
+  slug        String
+  name        String
+  description String?
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  teams                    CompanyTeam[]
+  ownedCalendarEvents      CalendarEvent[]               @relation("CalendarEventOwnerFunction")
+  calendarEventVisibilities CalendarEventVisibility[]
+  ownedTemplateItems       MilestoneTemplateItem[]           @relation("TemplateItemOwnerFunction")
+  templateItemVisibilities MilestoneTemplateItemVisibility[]
+  googleCalendarBindings   GoogleCalendarBinding[]
+  googleEventMappings      GoogleEventMapping[]
+
+  @@index([slug])
+  @@index([isActive, order])
+  @@map("company_functions")
+}
+
+enum CompanyTeamMemberRole {
+  LEADER
+  MEMBER
+}
+
+model CompanyTeam {
+  id          String   @id @default(uuid())
+  functionId  String
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  function    CompanyFunction         @relation(fields: [functionId], references: [id], onDelete: Restrict)
+  memberships CompanyTeamMembership[]
+  brandScopes CompanyTeamBrandScope[]
+
+  @@unique([functionId, name])
+  @@index([functionId])
+  @@map("company_teams")
+}
+
+model CompanyTeamMembership {
+  teamId    String
+  userId    String
+  role      CompanyTeamMemberRole @default(MEMBER)
+  createdAt DateTime              @default(now())
+
+  team CompanyTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([teamId, userId])
+  @@index([userId])
+  @@map("company_team_memberships")
+}
+
+model CompanyTeamBrandScope {
+  teamId  String
+  brandId String
+
+  team  CompanyTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  brand Brand       @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@id([teamId, brandId])
+  @@index([brandId])
+  @@map("company_team_brand_scopes")
+}
+
+model CalendarEventUserVisibility {
+  eventId   String
+  userId    String
+  grantedAt DateTime @default(now())
+  grantedBy String?
+
+  event   CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user    User          @relation("CalendarEventUserVisibilityRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  grantor User?         @relation("CalendarEventUserVisibilityGrantor", fields: [grantedBy], references: [id], onDelete: SetNull)
+
+  @@id([eventId, userId])
+  @@index([userId])
+  @@map("calendar_event_user_visibilities")
+}
+
+model MilestoneTemplateItemVisibility {
+  templateItemId String
+  functionId     String
+
+  templateItem MilestoneTemplateItem @relation(fields: [templateItemId], references: [id], onDelete: Cascade)
+  function     CompanyFunction       @relation(fields: [functionId], references: [id], onDelete: Restrict)
+
+  @@id([templateItemId, functionId])
+  @@index([functionId])
+  @@map("milestone_template_item_visibilities")
+}
+
 // ─── Season Calendar ──────────────────────────────────────────────────────────
 
 enum SeasonCalendarStatus {
@@ -1199,20 +1417,37 @@ enum SeasonCalendarStatus {
   ARCHIVED
 }
 
-enum CalendarMilestoneType {
-  KICKOFF
-  REVIEW
-  GATE
-  DEADLINE
-  MILESTONE
-  CUSTOM
-}
-
-enum CalendarMilestoneStatus {
+enum CalendarEventStatus {
   PLANNED
   IN_PROGRESS
   COMPLETED
   CANCELLED
+}
+
+enum DependencySeverity {
+  HARD
+  SOFT
+}
+
+enum EventSeverity {
+  CRITICAL
+  NORMAL
+  INFO
+}
+
+enum StateEffectType {
+  LOCK_COLLECTION_LAYOUT
+  UNLOCK_COLLECTION_LAYOUT
+}
+
+enum AnchorEntityType {
+  COLLECTION_LAYOUT
+  COLLECTION_LAYOUT_ROW
+}
+
+enum VendorOverrideType {
+  CLOSURE
+  OPEN
 }
 
 /**
@@ -1230,8 +1465,8 @@ model SeasonCalendar {
 
   brand      Brand                   @relation(fields: [brandId], references: [id], onDelete: Restrict)
   season     Season                  @relation(fields: [seasonId], references: [id], onDelete: Restrict)
-  milestones CalendarMilestone[]
-  bindings   GoogleCalendarBinding[]
+  events   CalendarEvent[]
+  bindings GoogleCalendarBinding[]
 
   @@unique([brandId, seasonId])
   @@index([seasonId])
@@ -1239,70 +1474,83 @@ model SeasonCalendar {
 }
 
 /**
- * Singola milestone/evento del calendario stagionale.
- * Visibilità per sezione gestita via MilestoneVisibility (M2M).
+ * Singolo evento del calendario stagionale.
+ * Visibilità per sezione gestita via CalendarEventVisibility (M2M).
  */
-model CalendarMilestone {
-  id                String                  @id @default(uuid())
+model CalendarEvent {
+  id                String              @id @default(uuid())
   calendarId        String
-  ownerSectionKey   String
-  type              CalendarMilestoneType
-  status            CalendarMilestoneStatus @default(PLANNED)
+  ownerFunctionId   String
+  type              String
+  status            CalendarEventStatus @default(PLANNED)
   title             String
   description       String?
   startAt           DateTime
   endAt             DateTime?
-  allDay            Boolean                 @default(false)
-  publishExternally Boolean                 @default(true)
-  templateItemId    String?
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
+  allDay                      Boolean             @default(false)
+  publishExternally           Boolean             @default(true)
+  templateItemId              String?
+  severity                    EventSeverity       @default(NORMAL)
+  relevantCountries           String[]
+  requiredCollectionProgress  String?
+  progressWarningDays         Int?
+  createdAt                   DateTime            @default(now())
+  updatedAt                   DateTime            @updatedAt
 
-  calendar      SeasonCalendar          @relation(fields: [calendarId], references: [id], onDelete: Cascade)
-  templateItem  MilestoneTemplateItem?  @relation(fields: [templateItemId], references: [id], onDelete: SetNull)
-  visibilities  MilestoneVisibility[]
-  notes         MilestonePersonalNote[]
-  eventMappings GoogleEventMapping[]
+  calendar         SeasonCalendar             @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  ownerFunction    CompanyFunction            @relation("CalendarEventOwnerFunction", fields: [ownerFunctionId], references: [id], onDelete: Restrict)
+  templateItem     MilestoneTemplateItem?     @relation(fields: [templateItemId], references: [id], onDelete: SetNull)
+  visibilities     CalendarEventVisibility[]
+  notes            CalendarEventPersonalNote[]
+  eventMappings    GoogleEventMapping[]
+  userVisibilities CalendarEventUserVisibility[]
+  dependenciesAsPredecessor CalendarEventDependency[] @relation("DepPredecessor")
+  dependenciesAsSuccessor   CalendarEventDependency[] @relation("DepSuccessor")
+  stateEffects              CalendarEventStateEffect[]
+  anchors                   CalendarEventAnchor[]
+  effectExecutions          CalendarEventEffectExecution[]
+  lockedLayouts             CollectionLayout[]
 
   @@index([calendarId, startAt])
-  @@index([ownerSectionKey])
-  @@map("calendar_milestones")
+  @@index([ownerFunctionId])
+  @@map("calendar_events")
 }
 
 /**
- * Sezioni a cui una milestone è visibile.
- * ownerSectionKey è sempre incluso come readOnly=false.
+ * Funzioni a cui un evento è visibile.
+ * ownerFunction è sempre inclusa come readOnly=false.
  */
-model MilestoneVisibility {
-  milestoneId String
-  sectionKey  String
-  readOnly    Boolean @default(true)
+model CalendarEventVisibility {
+  eventId    String
+  functionId String
+  readOnly   Boolean @default(true)
 
-  milestone CalendarMilestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  event    CalendarEvent   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  function CompanyFunction @relation(fields: [functionId], references: [id], onDelete: Restrict)
 
-  @@id([milestoneId, sectionKey])
-  @@index([sectionKey])
-  @@map("milestone_visibilities")
+  @@id([eventId, functionId])
+  @@index([functionId])
+  @@map("calendar_event_visibilities")
 }
 
 /**
- * Nota personale per-utente per-milestone.
+ * Nota personale per-utente per-evento calendario.
  * Non sincronizzata su Google Calendar.
  */
-model MilestonePersonalNote {
-  id          String   @id @default(uuid())
-  milestoneId String
-  userId      String
-  body        String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+model CalendarEventPersonalNote {
+  id        String   @id @default(uuid())
+  eventId   String
+  userId    String
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  milestone CalendarMilestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
-  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([milestoneId, userId])
+  @@unique([eventId, userId])
   @@index([userId])
-  @@map("milestone_personal_notes")
+  @@map("calendar_event_personal_notes")
 }
 
 /**
@@ -1324,23 +1572,30 @@ model MilestoneTemplate {
  * Singolo item di un template — offset in giorni da anchorDate.
  */
 model MilestoneTemplateItem {
-  id                 String                @id @default(uuid())
-  templateId         String
-  ownerSectionKey    String
-  type               CalendarMilestoneType
-  title              String
-  description        String?
-  offsetDays         Int
-  durationDays       Int                   @default(0)
-  publishExternally  Boolean               @default(true)
-  visibleSectionKeys String[]
-  createdAt          DateTime              @default(now())
-  updatedAt          DateTime              @updatedAt
+  id                String                @id @default(uuid())
+  templateId        String
+  ownerFunctionId   String
+  type              String
+  title             String
+  description       String?
+  offsetDays        Int
+  durationDays      Int           @default(0)
+  publishExternally Boolean       @default(true)
+  severity          EventSeverity @default(NORMAL)
+  relevantCountries String[]
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
-  template   MilestoneTemplate   @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  milestones CalendarMilestone[]
+  template      MilestoneTemplate               @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  ownerFunction CompanyFunction                 @relation("TemplateItemOwnerFunction", fields: [ownerFunctionId], references: [id], onDelete: Restrict)
+  events        CalendarEvent[]
+  visibilities  MilestoneTemplateItemVisibility[]
+  dependenciesAsPredecessor MilestoneTemplateDependency[] @relation("TemplateDepPredecessor")
+  dependenciesAsSuccessor   MilestoneTemplateDependency[] @relation("TemplateDepSuccessor")
+  stateEffects              MilestoneTemplateStateEffect[]
 
   @@index([templateId])
+  @@index([ownerFunctionId])
   @@map("milestone_template_items")
 }
 
@@ -1349,36 +1604,255 @@ model MilestoneTemplateItem {
  * Creato lazy al primo sync della sezione.
  */
 model GoogleCalendarBinding {
-  id               String   @id @default(uuid())
-  seasonCalendarId String
-  sectionKey       String
-  googleCalendarId String
-  isProvisioned    Boolean  @default(false)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                String   @id @default(uuid())
+  seasonCalendarId  String
+  companyFunctionId String
+  googleCalendarId  String
+  isProvisioned     Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  seasonCalendar SeasonCalendar @relation(fields: [seasonCalendarId], references: [id], onDelete: Cascade)
+  seasonCalendar  SeasonCalendar  @relation(fields: [seasonCalendarId], references: [id], onDelete: Cascade)
+  companyFunction CompanyFunction @relation(fields: [companyFunctionId], references: [id], onDelete: Restrict)
 
-  @@unique([seasonCalendarId, sectionKey])
+  @@unique([seasonCalendarId, companyFunctionId])
   @@index([googleCalendarId])
+  @@index([companyFunctionId])
   @@map("google_calendar_bindings")
 }
 
 /**
- * Mapping milestone → evento Google per ciascuna sezione visibile.
+ * Mapping evento calendario → evento Google per ciascuna funzione visibile.
  * contentHash deterministico: se cambia → rescheduled event.
  */
 model GoogleEventMapping {
-  milestoneId      String
-  sectionKey       String
-  googleEventId    String
-  googleCalendarId String
-  contentHash      String
-  lastSyncedAt     DateTime
+  eventId           String
+  companyFunctionId String
+  googleEventId     String
+  googleCalendarId  String
+  contentHash       String
+  lastSyncedAt      DateTime
 
-  milestone CalendarMilestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  event           CalendarEvent   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  companyFunction CompanyFunction @relation(fields: [companyFunctionId], references: [id], onDelete: Restrict)
 
-  @@id([milestoneId, sectionKey])
+  @@id([eventId, companyFunctionId])
   @@index([googleCalendarId])
   @@map("google_event_mappings")
+}
+
+// ─── Calendar Catalog ─────────────────────────────────────────────────────────
+
+/**
+ * Catalog configurabile per il dominio calendario.
+ * type discriminator: 'eventType'
+ * value è la chiave immutabile (es. 'KICKOFF'), label è editabile.
+ */
+model CalendarCatalogItem {
+  id        String   @id @default(uuid())
+  type      String
+  value     String
+  label     String
+  order     Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([type, value])
+  @@index([type, isActive])
+  @@map("calendar_catalog_items")
+}
+
+model Notification {
+  id        String               @id @default(uuid())
+  userId    String
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category  NotificationCategory
+  title     String
+  message   String
+  link      String?
+  data      Json?
+  isRead    Boolean              @default(false)
+  readAt    DateTime?
+  createdAt DateTime             @default(now())
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+model NotificationPreference {
+  id        String               @id @default(uuid())
+  userId    String
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category  NotificationCategory
+  enabled   Boolean              @default(true)
+  updatedAt DateTime             @updatedAt
+
+  @@unique([userId, category])
+  @@index([userId])
+  @@map("notification_preferences")
+}
+
+// ─── What-If Engine v2 ────────────────────────────────────────────────────────
+
+model MilestoneTemplateDependency {
+  id            String             @id @default(uuid())
+  predecessorId String
+  successorId   String
+  minGapDays    Int?
+  maxGapDays    Int?
+  severity      DependencySeverity
+  reason        String?            @db.VarChar(500)
+
+  predecessor MilestoneTemplateItem @relation("TemplateDepPredecessor", fields: [predecessorId], references: [id], onDelete: Cascade)
+  successor   MilestoneTemplateItem @relation("TemplateDepSuccessor",   fields: [successorId],   references: [id], onDelete: Cascade)
+
+  @@unique([predecessorId, successorId])
+  @@index([successorId])
+  @@map("milestone_template_dependencies")
+}
+
+model CalendarEventDependency {
+  id              String             @id @default(uuid())
+  predecessorId   String
+  successorId     String
+  minGapDays      Int?
+  maxGapDays      Int?
+  severity        DependencySeverity
+  reason          String?            @db.VarChar(500)
+  isDisabled      Boolean            @default(false)
+  inheritedFromId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  predecessor CalendarEvent @relation("DepPredecessor", fields: [predecessorId], references: [id], onDelete: Cascade)
+  successor   CalendarEvent @relation("DepSuccessor",   fields: [successorId],   references: [id], onDelete: Cascade)
+
+  @@unique([predecessorId, successorId])
+  @@index([successorId])
+  @@index([inheritedFromId])
+  @@map("calendar_event_dependencies")
+}
+
+model MilestoneTemplateStateEffect {
+  id                   String          @id @default(uuid())
+  templateItemId       String
+  effectType           StateEffectType
+  targetEntityType     String
+  requiresConfirmation Boolean         @default(true)
+
+  templateItem MilestoneTemplateItem @relation(fields: [templateItemId], references: [id], onDelete: Cascade)
+
+  @@index([templateItemId])
+  @@map("milestone_template_state_effects")
+}
+
+model CalendarEventStateEffect {
+  id                   String          @id @default(uuid())
+  eventId              String
+  effectType           StateEffectType
+  targetEntityType     String
+  targetEntityId       String
+  requiresConfirmation Boolean
+
+  event      CalendarEvent                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  executions CalendarEventEffectExecution[]
+
+  @@index([eventId])
+  @@index([targetEntityType, targetEntityId])
+  @@map("calendar_event_state_effects")
+}
+
+model CalendarEventEffectExecution {
+  id                    String    @id @default(uuid())
+  effectId              String
+  eventId               String
+  appliedAt             DateTime  @default(now())
+  appliedByUserId       String
+  previousStateSnapshot Json
+  rolledBackAt          DateTime?
+  rolledBackByUserId    String?
+
+  effect       CalendarEventStateEffect @relation(fields: [effectId],            references: [id], onDelete: Cascade)
+  event        CalendarEvent            @relation(fields: [eventId],             references: [id], onDelete: Cascade)
+  appliedBy    User                     @relation("EffectApplier",               fields: [appliedByUserId],    references: [id], onDelete: Restrict)
+  rolledBackBy User?                    @relation("EffectRollbacker",            fields: [rolledBackByUserId], references: [id], onDelete: SetNull)
+
+  @@index([eventId])
+  @@index([effectId])
+  @@map("calendar_event_effect_executions")
+}
+
+model CalendarEventAnchor {
+  id         String           @id @default(uuid())
+  eventId    String
+  entityType AnchorEntityType
+  entityId   String
+
+  createdAt DateTime @default(now())
+
+  event CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, entityType, entityId])
+  @@index([entityType, entityId])
+  @@map("calendar_event_anchors")
+}
+
+model HolidayCountry {
+  code   String  @id
+  name   String
+  active Boolean @default(true)
+
+  holidays       Holiday[]
+  vendorClosures VendorClosurePeriod[]
+
+  @@map("holiday_countries")
+}
+
+model Holiday {
+  id          String   @id @default(uuid())
+  countryCode String
+  name        String
+  nameEn      String?
+  startDate   DateTime @db.Date
+  endDate     DateTime @db.Date
+  isReligious Boolean  @default(false)
+  source      String?
+
+  country         HolidayCountry        @relation(fields: [countryCode], references: [code], onDelete: Restrict)
+  vendorOverrides VendorClosurePeriod[] @relation("ClosureSourceHoliday")
+
+  @@unique([countryCode, name, startDate])
+  @@index([countryCode, startDate, endDate])
+  @@map("holidays")
+}
+
+model VendorClosurePeriod {
+  id                String             @id @default(uuid())
+  vendorId          String
+  seasonId          String
+  countryCode       String?
+  name              String
+  startDate         DateTime           @db.Date
+  endDate           DateTime           @db.Date
+  type              VendorOverrideType @default(CLOSURE)
+  sourceHolidayId   String?
+  confirmedAt       DateTime?
+  confirmedByUserId String?
+  notes             String?            @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vendor        Vendor          @relation(fields: [vendorId],           references: [id], onDelete: Cascade)
+  season        Season          @relation(fields: [seasonId],           references: [id], onDelete: Cascade)
+  country       HolidayCountry? @relation(fields: [countryCode],        references: [code], onDelete: SetNull)
+  sourceHoliday Holiday?        @relation("ClosureSourceHoliday",       fields: [sourceHolidayId],   references: [id], onDelete: SetNull)
+  confirmedBy   User?           @relation("ClosureConfirmer",           fields: [confirmedByUserId],  references: [id], onDelete: SetNull)
+
+  @@index([vendorId, seasonId])
+  @@index([seasonId, startDate, endDate])
+  @@map("vendor_closure_periods")
 }

@@ -44,7 +44,7 @@ const GetDownloadLinkSchema = z.object({
   id: z.string().uuid(),
 });
 
-const IMAGE_BUCKETS = ['uploads', 'exports', 'assets', 'brand-logos', 'collection-row-pictures', 'merchandising-specsheet-images'] as const;
+const IMAGE_BUCKETS = ['uploads', 'exports', 'assets', 'brand-logos', 'collection-row-pictures', 'collection-row-pictures-revisions', 'merchandising-specsheet-images', 'company-assets'] as const;
 
 /**
  * Schema per create upload

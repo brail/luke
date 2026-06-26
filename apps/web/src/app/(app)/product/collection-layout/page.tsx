@@ -1,14 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { History, Plus } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
-import type { CollectionLayoutRowInput } from '@luke/core';
+import { COLLECTION_PROGRESS, type CollectionLayoutRowInput } from '@luke/core';
 
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
+import { Button } from '../../../../components/ui/button';
 import { Card, CardContent } from '../../../../components/ui/card';
 import { useAppContext } from '../../../../contexts/AppContextProvider';
 import { usePermission } from '../../../../hooks/usePermission';
@@ -16,10 +19,12 @@ import { triggerDownload } from '../../../../lib/download';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
+import { CollectionDeadlineBanner } from './_components/CollectionDeadlineBanner';
 import { CollectionGroupDialog } from './_components/CollectionGroupDialog';
 import { CollectionLayoutSummary } from './_components/CollectionLayoutSummary';
 import { CollectionLayoutTable } from './_components/CollectionLayoutTable';
 import { CollectionRowDrawer } from './_components/CollectionRowDrawer';
+import { CreateRevisionDrawer } from './_components/CreateRevisionDrawer';
 import { EmptyCollectionLayoutState } from './_components/EmptyCollectionLayoutState';
 
 type CollectionLayoutData = NonNullable<
@@ -28,10 +33,45 @@ type CollectionLayoutData = NonNullable<
 type CollectionGroupData = CollectionLayoutData['groups'][number];
 type CollectionRowData = CollectionGroupData['rows'][number];
 
+type CalEventSlim = { startAt: string | Date; requiredCollectionProgress: string | null; progressWarningDays: number | null };
+type RowSlim = { id: string; progress: string | null };
+
+function computeLaggingRowIds(
+  groups: Array<{ rows: RowSlim[] }>,
+  events: CalEventSlim[],
+): Set<string> | undefined {
+  const progressIndex = Object.fromEntries(COLLECTION_PROGRESS.map((p, i) => [p, i]));
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const activeRequiredProgress = new Set<string>();
+  for (const event of events) {
+    if (!event.requiredCollectionProgress) continue;
+    const target = new Date(event.startAt);
+    target.setHours(0, 0, 0, 0);
+    const daysLeft = Math.round((target.getTime() - now.getTime()) / 86_400_000);
+    if (daysLeft >= 0 && daysLeft <= (event.progressWarningDays ?? 7)) {
+      activeRequiredProgress.add(event.requiredCollectionProgress);
+    }
+  }
+  if (activeRequiredProgress.size === 0) return undefined;
+  const minReqIdx = Math.min(...[...activeRequiredProgress].map(p => progressIndex[p] ?? 0));
+  const lagging = new Set<string>();
+  for (const group of groups) {
+    for (const row of group.rows) {
+      const rowIdx = row.progress ? (progressIndex[row.progress] ?? -1) : -1;
+      if (rowIdx < minReqIdx) lagging.add(row.id);
+    }
+  }
+  return lagging.size > 0 ? lagging : undefined;
+}
+
 export default function CollectionLayoutPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
   const { can } = usePermission();
+  const router = useRouter();
   const canUpdate = can('collection_layout:update');
+  const canRevise = can('collection_layout:revise');
+  const canViewRevisions = can('collection_layout:view_revisions');
 
   const enabled = !!brand?.id && !!season?.id;
 
@@ -47,6 +87,19 @@ export default function CollectionLayoutPage() {
     { enabled }
   );
 
+  const { data: rawCalendarEvents = [] } = trpc.seasonCalendar.listEventsForCollection.useQuery(
+    { brandId: brand?.id ?? '', seasonId: season?.id ?? '' },
+    { enabled, staleTime: 60_000 },
+  );
+  const calendarEvents = rawCalendarEvents as CalEventSlim[];
+
+  // cast breaks TS2589 deep instantiation from RouterOutputs
+  const layoutGroupsSlim = layout?.groups as Array<{ rows: RowSlim[] }> | undefined;
+  const laggingRowIds = useMemo(
+    () => layoutGroupsSlim ? computeLaggingRowIds(layoutGroupsSlim, calendarEvents) : undefined,
+    [layoutGroupsSlim, calendarEvents],
+  );
+
   const utils = trpc.useUtils();
 
   const invalidateLayout = () => {
@@ -58,6 +111,7 @@ export default function CollectionLayoutPage() {
 
   // ─── UI state ───────────────────────────────────────────────────
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showCreateRevision, setShowCreateRevision] = useState(false);
 
   // Chiudi fullscreen con Escape
   useEffect(() => {
@@ -256,6 +310,29 @@ export default function CollectionLayoutPage() {
             ? `Collezione ${brand.name} — ${season.code} ${season.name}`
             : 'Pianificazione collezione stagionale'
         }
+        actions={layout && (
+          <div className="flex items-center gap-2">
+            {canViewRevisions && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push(`/product/collection-layout/revisions?layoutId=${layout.id}` as string as never)}
+              >
+                <History className="h-4 w-4 mr-1.5" />
+                Storico revisioni
+              </Button>
+            )}
+            {canRevise && (
+              <Button
+                size="sm"
+                onClick={() => setShowCreateRevision(true)}
+              >
+                <Plus className="h-4 w-4 mr-1.5" />
+                Crea revisione
+              </Button>
+            )}
+          </div>
+        )}
       />
 
       {!brand || !season ? (
@@ -294,12 +371,20 @@ export default function CollectionLayoutPage() {
       ) : (
         <>
           <CollectionLayoutSummary layout={layout} />
+          {brand && season && (
+            <CollectionDeadlineBanner
+              brandId={brand.id}
+              seasonId={season.id}
+              allRows={layout.groups.flatMap(g => g.rows)}
+            />
+          )}
           <Card>
             <CardContent className="pt-6">
               <CollectionLayoutTable
                 layout={layout}
                 canUpdate={canUpdate}
                 parameterSets={parameterSets}
+                laggingRowIds={laggingRowIds}
                 onAddGroup={() => setGroupDialog({ mode: 'create' })}
                 onAddRow={groupId =>
                   setRowDrawer({ mode: 'create', defaultGroupId: groupId })
@@ -353,6 +438,7 @@ export default function CollectionLayoutPage() {
                 layout={layout}
                 canUpdate={canUpdate}
                 parameterSets={parameterSets}
+                laggingRowIds={laggingRowIds}
                 onAddGroup={() => setGroupDialog({ mode: 'create' })}
                 onAddRow={groupId =>
                   setRowDrawer({ mode: 'create', defaultGroupId: groupId })
@@ -420,6 +506,16 @@ export default function CollectionLayoutPage() {
           onQuotationChange={() => invalidateLayout()}
           isLoading={isMutating}
           canUpdate={canUpdate}
+        />
+      )}
+
+      {/* Create revision drawer */}
+      {layout && (
+        <CreateRevisionDrawer
+          open={showCreateRevision}
+          onOpenChange={setShowCreateRevision}
+          layout={layout}
+          onSuccess={() => invalidateLayout()}
         />
       )}
     </div>

@@ -75,17 +75,14 @@ export function useSectionAccess() {
       'product.merchandising_plan': checkAccess('product.merchandising_plan'),
       admin: checkAccess('admin'),
       'admin.brands': checkAccess('admin.brands'),
-      'admin.collection_catalog': checkAccess('admin.collection_catalog'),
-      'admin.calendars': checkAccess('admin.calendars'),
+      'admin.collection_layout_configuration': checkAccess('admin.collection_layout_configuration'),
+      'admin.calendar_configuration': checkAccess('admin.calendar_configuration'),
       'admin.seasons': checkAccess('admin.seasons'),
       'admin.vendors': checkAccess('admin.vendors'),
       sales: checkAccess('sales'),
       'sales.statistics': checkAccess('sales.statistics'),
       planning: checkAccess('planning'),
-      'planning.sales': checkAccess('planning.sales'),
-      'planning.product': checkAccess('planning.product'),
-      'planning.sourcing': checkAccess('planning.sourcing'),
-      'planning.merchandising': checkAccess('planning.merchandising'),
+      'settings.company': checkAccess('settings.company'),
     };
   }, [session?.user, userOverrides]);
 

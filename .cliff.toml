@@ -1,0 +1,71 @@
+[changelog]
+header = """
+# Changelog
+
+All notable changes to Luke are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+"""
+body = """
+{% if version %}\
+## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+## [Unreleased]
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | upper_first }}
+{% for commit in commits %}\
+- {% if commit.scope %}**{{ commit.scope }}**: {% endif %}{{ commit.message | upper_first }}{% if commit.breaking %} ⚠️ **BREAKING**{% endif %}
+{% endfor %}\
+{% endfor %}\n
+"""
+footer = """
+---
+
+## Pre-1.9.0 history
+
+Versions prior to 1.9.0 are not tracked commit-by-commit. The cycle delivered:
+
+- **Season Calendar** (`@luke/calendar`): SeasonCalendar per brand+season, milestones with type/status/owner/visibility, multi-section visibility, personal notes, templates with offsetDays, calendar cloning with dateShift, Google Calendar 2-way sync with idempotent content hash, iCal export with signed token, PDF and XLSX export
+- **Merchandising Plan**: SKU-level rows (color granularity), SpecsheetModal with BOM editing and image gallery, contextualized for brand+season, dedicated RBAC and storage bucket
+- **Collection Catalog** (`admin.collection_catalog`): configurable items replacing hardcoded enums for Strategy, LineStatus, StyleStatus, Progress
+- **CollectionRowQuotation**: pricing extracted from row, 1:N instead of 1:1
+- **Dashboard widgets**: kpi-stats, season-progress, weekly-sales, tasks, forex, clocks — user-configurable
+- **Sales section** (`sales.statistics`): NAV order portfolio via `NavKimoSalesLine`, XLSX export
+- **Planning sections** (`planning.{sales,product,sourcing,merchandising}`): per-section calendar views
+- **Settings: Google OAuth** (`settings.google`): authentication for Google Calendar sync
+- **Pricing utility** extracted to `@luke/core/utils/pricing`
+
+For commit-level detail through 1.6.3: `git log v1.0.0..v1.6.3`. From 1.7.0 to 1.8.2 commits weren't tagged; see develop-2.0 branch history.
+"""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = false
+split_commits = false
+protect_breaking_commits = true
+filter_commits = false
+tag_pattern = "v[0-9].*"
+# Skip all pre-1.9 tags (1.0.0–1.6.3 + futuri 1.7/1.8 se mai taggati):
+# commit non-conventional, history sintetizzata nel footer
+skip_tags = "^v1\\.[0-8]\\..*"
+topo_order = false
+sort_commits = "oldest"
+
+commit_parsers = [
+  { message = "^feat",               group = "Added" },
+  { message = "^fix",                group = "Fixed" },
+  { message = "^perf",               group = "Performance" },
+  { message = "^refactor",           group = "Changed" },
+  { message = "^docs",               group = "Documentation" },
+  { message = "^test",               group = "Tests" },
+  { message = "^ci",                 group = "CI" },
+  { message = "^chore\\(release\\)", skip = true },
+  { message = "^chore\\(deps\\)",    group = "Dependencies" },
+  { message = "^chore",              group = "Maintenance" },
+  { message = "^style",              skip = true },
+  { body    = ".*BREAKING CHANGE.*", group = "Breaking" },
+  { message = ".*",                  group = "Other" },
+]

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { CALENDAR_MILESTONE_STATUS } from '@luke/core';
+import { CALENDAR_EVENT_STATUS } from '@luke/core';
 
 import { Button } from '../../../../components/ui/button';
 import {
@@ -68,7 +68,7 @@ export function CloneBrandSeasonDialog({ open, onClose, onCloned, targetBrandId,
       targetBrandId,
       targetSeasonId,
       dateShiftDays: isNaN(shift) ? 0 : shift,
-      includeStatuses: CALENDAR_MILESTONE_STATUS.filter(s => s !== 'CANCELLED'),
+      includeStatuses: CALENDAR_EVENT_STATUS.filter(s => s !== 'CANCELLED'),
     });
   };
 

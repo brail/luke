@@ -51,6 +51,11 @@ const DEFAULTS: Record<string, RateLimitPolicy> = {
     timeWindow: '15m',
     keyBy: 'userId',
   },
+  companyStructureMutations: {
+    max: isDevelopment() ? 100 : 30,
+    timeWindow: '1m',
+    keyBy: 'userId',
+  },
 };
 
 /**

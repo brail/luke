@@ -1,9 +1,9 @@
 import { TRPCError } from '@trpc/server';
-import type { PrismaClient, CalendarMilestoneType } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 import type {
-  CalendarMilestoneInput,
+  CalendarEventInput,
   CloneSeasonCalendarInput,
-  PlanningSectionKey,
+  Role,
 } from '@luke/core';
 
 import { getUserAllowedBrandIds } from './context.service.js';
@@ -15,9 +15,10 @@ const MS_PER_DAY = 86_400_000;
 export async function assertBrandAccess(
   userId: string,
   brandId: string,
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  userRole?: Role
 ): Promise<void> {
-  const allowed = await getUserAllowedBrandIds(userId, prisma);
+  const allowed = await getUserAllowedBrandIds(userId, prisma, userRole);
   if (allowed !== null && !allowed.includes(brandId)) {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'Accesso al brand negato' });
   }
@@ -26,9 +27,10 @@ export async function assertBrandAccess(
 export async function filterAllowedBrandIds(
   userId: string,
   requestedBrandIds: string[],
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  userRole?: Role
 ): Promise<string[]> {
-  const allowed = await getUserAllowedBrandIds(userId, prisma);
+  const allowed = await getUserAllowedBrandIds(userId, prisma, userRole);
   if (allowed === null) return requestedBrandIds;
   return requestedBrandIds.filter(id => allowed.includes(id));
 }
@@ -47,7 +49,7 @@ export async function getOrCreateCalendar(
     include: {
       brand: { select: { code: true, name: true } },
       season: { select: { code: true, name: true, year: true } },
-      _count: { select: { milestones: true } },
+      _count: { select: { events: true } },
     },
   });
 }
@@ -70,21 +72,12 @@ export async function setAnchorDate(
 
 // ─── Milestone list ───────────────────────────────────────────────────────────
 
-export async function listMilestones(
-  seasonId: string,
-  brandIds: string[],
-  userId: string,
-  sectionKey?: PlanningSectionKey
-) {
-  return { seasonId, brandIds, userId, sectionKey };
-}
-
 export async function listMilestonesDb(
   seasonId: string,
   brandIds: string[],
   userId: string,
   prisma: PrismaClient,
-  sectionKey?: PlanningSectionKey
+  functionId?: string
 ) {
   const calendars = await prisma.seasonCalendar.findMany({
     where: { seasonId, brandId: { in: brandIds } },
@@ -93,11 +86,11 @@ export async function listMilestonesDb(
   const calendarIds = calendars.map(c => c.id);
   const calendarBrandMap = new Map(calendars.map(c => [c.id, c.brandId]));
 
-  const milestones = await prisma.calendarMilestone.findMany({
+  const events = await prisma.calendarEvent.findMany({
     where: {
       calendarId: { in: calendarIds },
-      ...(sectionKey
-        ? { visibilities: { some: { sectionKey } } }
+      ...(functionId
+        ? { visibilities: { some: { functionId } } }
         : {}),
     },
     include: {
@@ -107,23 +100,23 @@ export async function listMilestonesDb(
     orderBy: { startAt: 'asc' },
   });
 
-  return milestones.map(m => ({
-    ...m,
-    brandId: calendarBrandMap.get(m.calendarId) ?? null,
+  return events.map(e => ({
+    ...e,
+    brandId: calendarBrandMap.get(e.calendarId) ?? null,
   }));
 }
 
 // ─── Milestone create/update/delete ──────────────────────────────────────────
 
 export async function createMilestone(
-  input: CalendarMilestoneInput,
+  input: CalendarEventInput,
   prisma: PrismaClient
 ) {
   return prisma.$transaction(async tx => {
-    const milestone = await tx.calendarMilestone.create({
+    const event = await tx.calendarEvent.create({
       data: {
         calendarId: input.calendarId,
-        ownerSectionKey: input.ownerSectionKey,
+        ownerFunctionId: input.ownerFunctionId,
         type: input.type,
         title: input.title,
         description: input.description,
@@ -133,29 +126,31 @@ export async function createMilestone(
         publishExternally: input.publishExternally,
         templateItemId: input.templateItemId,
         status: input.status,
+        requiredCollectionProgress: input.requiredCollectionProgress ?? null,
+        progressWarningDays: input.progressWarningDays ?? null,
       },
     });
 
-    await tx.milestoneVisibility.createMany({
-      data: input.visibleSectionKeys.map(sk => ({
-        milestoneId: milestone.id,
-        sectionKey: sk,
-        readOnly: sk !== input.ownerSectionKey,
+    await tx.calendarEventVisibility.createMany({
+      data: input.visibilityFunctionIds.map(fId => ({
+        eventId: event.id,
+        functionId: fId,
+        readOnly: fId !== input.ownerFunctionId,
       })),
     });
 
-    return milestone;
+    return event;
   });
 }
 
 export async function updateMilestone(
-  milestoneId: string,
-  input: Partial<CalendarMilestoneInput>,
+  eventId: string,
+  input: Partial<CalendarEventInput>,
   prisma: PrismaClient
 ) {
   return prisma.$transaction(async tx => {
-    const updated = await tx.calendarMilestone.update({
-      where: { id: milestoneId },
+    const updated = await tx.calendarEvent.update({
+      where: { id: eventId },
       data: {
         ...(input.title !== undefined ? { title: input.title } : {}),
         ...(input.description !== undefined ? { description: input.description } : {}),
@@ -165,18 +160,20 @@ export async function updateMilestone(
         ...(input.endAt !== undefined ? { endAt: new Date(input.endAt) } : {}),
         ...(input.allDay !== undefined ? { allDay: input.allDay } : {}),
         ...(input.publishExternally !== undefined ? { publishExternally: input.publishExternally } : {}),
-        ...(input.ownerSectionKey !== undefined ? { ownerSectionKey: input.ownerSectionKey } : {}),
+        ...(input.ownerFunctionId !== undefined ? { ownerFunctionId: input.ownerFunctionId } : {}),
+        ...(input.requiredCollectionProgress !== undefined ? { requiredCollectionProgress: input.requiredCollectionProgress ?? null } : {}),
+        ...(input.progressWarningDays !== undefined ? { progressWarningDays: input.progressWarningDays ?? null } : {}),
       },
     });
 
-    if (input.visibleSectionKeys) {
-      await tx.milestoneVisibility.deleteMany({ where: { milestoneId } });
-      const owner = input.ownerSectionKey ?? updated.ownerSectionKey;
-      await tx.milestoneVisibility.createMany({
-        data: input.visibleSectionKeys.map(sk => ({
-          milestoneId,
-          sectionKey: sk,
-          readOnly: sk !== owner,
+    if (input.visibilityFunctionIds) {
+      await tx.calendarEventVisibility.deleteMany({ where: { eventId } });
+      const owner = input.ownerFunctionId ?? updated.ownerFunctionId;
+      await tx.calendarEventVisibility.createMany({
+        data: input.visibilityFunctionIds.map(fId => ({
+          eventId,
+          functionId: fId,
+          readOnly: fId !== owner,
         })),
       });
     }
@@ -185,38 +182,48 @@ export async function updateMilestone(
   });
 }
 
-export async function deleteMilestone(milestoneId: string, prisma: PrismaClient): Promise<void> {
-  await prisma.calendarMilestone.delete({ where: { id: milestoneId } });
+export async function deleteMilestone(eventId: string, prisma: PrismaClient): Promise<void> {
+  await prisma.calendarEvent.delete({ where: { id: eventId } });
 }
 
 // ─── Note ────────────────────────────────────────────────────────────────────
 
 export async function upsertNote(
-  milestoneId: string,
+  eventId: string,
   userId: string,
   body: string,
   prisma: PrismaClient
 ) {
-  return prisma.milestonePersonalNote.upsert({
-    where: { milestoneId_userId: { milestoneId, userId } },
-    create: { milestoneId, userId, body },
+  return prisma.calendarEventPersonalNote.upsert({
+    where: { eventId_userId: { eventId, userId } },
+    create: { eventId, userId, body },
     update: { body },
   });
 }
 
 export async function deleteNote(
-  milestoneId: string,
+  eventId: string,
   userId: string,
   prisma: PrismaClient
 ): Promise<void> {
-  await prisma.milestonePersonalNote.deleteMany({ where: { milestoneId, userId } });
+  await prisma.calendarEventPersonalNote.deleteMany({ where: { eventId, userId } });
 }
 
 // ─── Template ─────────────────────────────────────────────────────────────────
 
 export async function listTemplates(prisma: PrismaClient) {
   return prisma.milestoneTemplate.findMany({
-    include: { items: { orderBy: { offsetDays: 'asc' } } },
+    include: {
+      items: {
+        orderBy: { offsetDays: 'asc' },
+        include: {
+          visibilities: true,
+          dependenciesAsPredecessor: {
+            include: { successor: { select: { id: true, title: true } } },
+          },
+        },
+      },
+    },
     orderBy: { name: 'asc' },
   });
 }
@@ -229,17 +236,25 @@ export async function applyTemplate(
   prisma: PrismaClient
 ) {
   return prisma.$transaction(async tx => {
-    const existing = await tx.calendarMilestone.count({ where: { calendarId } });
+    const existing = await tx.calendarEvent.count({ where: { calendarId } });
     if (existing > 0 && !force) {
       throw new TRPCError({
         code: 'CONFLICT',
-        message: 'Il calendario contiene già milestones. Usa force=true per sovrascrivere.',
+        message: 'Il calendario contiene già eventi. Usa force=true per sovrascrivere.',
       });
     }
 
     const template = await tx.milestoneTemplate.findUnique({
       where: { id: templateId },
-      include: { items: true },
+      include: {
+        items: {
+          include: {
+            visibilities: true,
+            dependenciesAsPredecessor: true,
+            stateEffects: true,
+          },
+        },
+      },
     });
     if (!template) throw new TRPCError({ code: 'NOT_FOUND', message: 'Template non trovato' });
 
@@ -252,10 +267,10 @@ export async function applyTemplate(
       return { item, startAt, endAt };
     });
 
-    const created = await tx.calendarMilestone.createManyAndReturn({
+    const created = await tx.calendarEvent.createManyAndReturn({
       data: itemsWithDates.map(({ item, startAt, endAt }) => ({
         calendarId,
-        ownerSectionKey: item.ownerSectionKey,
+        ownerFunctionId: item.ownerFunctionId,
         type: item.type,
         title: item.title,
         description: item.description,
@@ -263,21 +278,53 @@ export async function applyTemplate(
         endAt,
         publishExternally: item.publishExternally,
         templateItemId: item.id,
+        severity: item.severity,
+        relevantCountries: item.relevantCountries,
       })),
     });
 
     const itemById = new Map(template.items.map(item => [item.id, item]));
-    const visibilityData = created.flatMap(milestone => {
-      const item = itemById.get(milestone.templateItemId!);
+    // Map templateItemId → created CalendarEvent id
+    const templateItemToEventId = new Map(
+      created.map(e => [e.templateItemId!, e.id])
+    );
+
+    const visibilityData = created.flatMap(event => {
+      const item = itemById.get(event.templateItemId!);
       if (!item) return [];
-      return (item.visibleSectionKeys as string[]).map(sk => ({
-        milestoneId: milestone.id,
-        sectionKey: sk,
-        readOnly: sk !== item.ownerSectionKey,
+      return item.visibilities.map(v => ({
+        eventId: event.id,
+        functionId: v.functionId,
+        readOnly: v.functionId !== item.ownerFunctionId,
       }));
     });
+    await tx.calendarEventVisibility.createMany({ data: visibilityData });
 
-    await tx.milestoneVisibility.createMany({ data: visibilityData });
+    // Materialize template dependencies as CalendarEventDependency
+    const depData = template.items.flatMap(item => {
+      return item.dependenciesAsPredecessor.map(dep => {
+        const predecessorEventId = templateItemToEventId.get(item.id);
+        const successorEventId = templateItemToEventId.get(dep.successorId);
+        if (!predecessorEventId || !successorEventId) return null;
+        return {
+          predecessorId: predecessorEventId,
+          successorId: successorEventId,
+          minGapDays: dep.minGapDays,
+          maxGapDays: dep.maxGapDays,
+          severity: dep.severity,
+          reason: dep.reason,
+          isDisabled: false,
+          inheritedFromId: dep.id,
+        };
+      }).filter((d): d is NonNullable<typeof d> => d !== null);
+    });
+    if (depData.length > 0) {
+      await tx.calendarEventDependency.createMany({ data: depData });
+    }
+
+    // Materialize template state effects (only if targetEntityId can be inferred — skip otherwise)
+    // V2: skip effects without targetEntityId (must be configured by user after apply)
+
     return created;
   });
 }
@@ -307,9 +354,9 @@ export async function createTemplateItem(
   templateId: string,
   data: {
     title: string;
-    type: CalendarMilestoneType;
-    ownerSectionKey: string;
-    visibleSectionKeys: string[];
+    type: string;
+    ownerFunctionId: string;
+    visibilityFunctionIds: string[];
     offsetDays: number;
     durationDays: number;
     publishExternally: boolean;
@@ -317,8 +364,16 @@ export async function createTemplateItem(
   },
   prisma: PrismaClient
 ) {
+  const { visibilityFunctionIds, ...itemData } = data;
   return prisma.milestoneTemplateItem.create({
-    data: { templateId, ...data },
+    data: {
+      templateId,
+      ...itemData,
+      visibilities: {
+        createMany: { data: visibilityFunctionIds.map(functionId => ({ functionId })) },
+      },
+    },
+    include: { visibilities: true },
   });
 }
 
@@ -326,9 +381,9 @@ export async function updateTemplateItem(
   id: string,
   data: {
     title?: string;
-    type?: CalendarMilestoneType;
-    ownerSectionKey?: string;
-    visibleSectionKeys?: string[];
+    type?: string;
+    ownerFunctionId?: string;
+    visibilityFunctionIds?: string[];
     offsetDays?: number;
     durationDays?: number;
     publishExternally?: boolean;
@@ -336,7 +391,20 @@ export async function updateTemplateItem(
   },
   prisma: PrismaClient
 ) {
-  return prisma.milestoneTemplateItem.update({ where: { id }, data });
+  const { visibilityFunctionIds, ...itemData } = data;
+  return prisma.$transaction(async tx => {
+    const item = await tx.milestoneTemplateItem.update({ where: { id }, data: itemData });
+    if (visibilityFunctionIds) {
+      await tx.milestoneTemplateItemVisibility.deleteMany({ where: { templateItemId: id } });
+      await tx.milestoneTemplateItemVisibility.createMany({
+        data: visibilityFunctionIds.map(functionId => ({ templateItemId: id, functionId })),
+      });
+    }
+    return tx.milestoneTemplateItem.findUniqueOrThrow({
+      where: { id: item.id },
+      include: { visibilities: true },
+    });
+  });
 }
 
 export async function deleteTemplateItem(id: string, prisma: PrismaClient) {
@@ -354,9 +422,12 @@ export async function cloneFromBrandSeason(
   const sourceCalendar = await prisma.seasonCalendar.findUnique({
     where: { brandId_seasonId: { brandId: sourceBrandId, seasonId: sourceSeasonId } },
     include: {
-      milestones: {
+      events: {
         where: { status: { in: includeStatuses as ('PLANNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED')[] } },
-        include: { visibilities: true },
+        include: {
+          visibilities: true,
+          dependenciesAsPredecessor: true,
+        },
       },
     },
   });
@@ -390,30 +461,59 @@ export async function cloneFromBrandSeason(
       update: {},
     });
 
-    const created = await tx.calendarMilestone.createManyAndReturn({
-      data: sourceCalendar.milestones.map(m => ({
+    const created = await tx.calendarEvent.createManyAndReturn({
+      data: sourceCalendar.events.map(e => ({
         calendarId: targetCalendar.id,
-        ownerSectionKey: m.ownerSectionKey,
-        type: m.type,
-        title: m.title,
-        description: m.description,
-        startAt: new Date(m.startAt.getTime() + shift * MS_PER_DAY),
-        endAt: m.endAt ? new Date(m.endAt.getTime() + shift * MS_PER_DAY) : undefined,
-        allDay: m.allDay,
-        publishExternally: m.publishExternally,
+        ownerFunctionId: e.ownerFunctionId,
+        type: e.type,
+        title: e.title,
+        description: e.description,
+        startAt: new Date(e.startAt.getTime() + shift * MS_PER_DAY),
+        endAt: e.endAt ? new Date(e.endAt.getTime() + shift * MS_PER_DAY) : undefined,
+        allDay: e.allDay,
+        publishExternally: e.publishExternally,
         status: 'PLANNED' as const,
+        severity: e.severity,
+        relevantCountries: e.relevantCountries,
       })),
     });
 
-    const visibilityData = created.flatMap((newMilestone, i) => {
-      return sourceCalendar.milestones[i].visibilities.map(v => ({
-        milestoneId: newMilestone.id,
-        sectionKey: v.sectionKey,
+    // Map source event id → new event id
+    const sourceToNewId = new Map(
+      sourceCalendar.events.map((e, i) => [e.id, created[i].id])
+    );
+
+    const visibilityData = created.flatMap((newEvent, i) => {
+      return sourceCalendar.events[i].visibilities.map(v => ({
+        eventId: newEvent.id,
+        functionId: v.functionId,
         readOnly: v.readOnly,
       }));
     });
+    await tx.calendarEventVisibility.createMany({ data: visibilityData });
 
-    await tx.milestoneVisibility.createMany({ data: visibilityData });
+    // Copy dependencies preserving inheritedFromId lineage
+    const depData = sourceCalendar.events.flatMap(e => {
+      return e.dependenciesAsPredecessor.map(dep => {
+        const newPredecessorId = sourceToNewId.get(e.id);
+        const newSuccessorId = sourceToNewId.get(dep.successorId);
+        if (!newPredecessorId || !newSuccessorId) return null;
+        return {
+          predecessorId: newPredecessorId,
+          successorId: newSuccessorId,
+          minGapDays: dep.minGapDays,
+          maxGapDays: dep.maxGapDays,
+          severity: dep.severity,
+          reason: dep.reason,
+          isDisabled: dep.isDisabled,
+          inheritedFromId: dep.inheritedFromId,
+        };
+      }).filter((d): d is NonNullable<typeof d> => d !== null);
+    });
+    if (depData.length > 0) {
+      await tx.calendarEventDependency.createMany({ data: depData });
+    }
+
     return { calendarId: targetCalendar.id, milestonesCreated: created.length };
   });
 }
@@ -422,23 +522,23 @@ export async function cloneFromBrandSeason(
 
 export async function getSyncStatus(calendarId: string, prisma: PrismaClient) {
   const mappings = await prisma.googleEventMapping.findMany({
-    where: { milestone: { calendarId } },
+    where: { event: { calendarId } },
     orderBy: { lastSyncedAt: 'desc' as const },
   });
 
-  const bySection = new Map<string, { count: number; lastSyncedAt: Date | null }>();
+  const byFunction = new Map<string, { count: number; lastSyncedAt: Date | null }>();
   for (const m of mappings) {
-    const existing = bySection.get(m.sectionKey) ?? { count: 0, lastSyncedAt: null };
+    const existing = byFunction.get(m.companyFunctionId) ?? { count: 0, lastSyncedAt: null };
     existing.count++;
     if (!existing.lastSyncedAt || m.lastSyncedAt > existing.lastSyncedAt) {
       existing.lastSyncedAt = m.lastSyncedAt;
     }
-    bySection.set(m.sectionKey, existing);
+    byFunction.set(m.companyFunctionId, existing);
   }
 
   return {
     totalSynced: mappings.length,
     lastSyncedAt: mappings[0]?.lastSyncedAt ?? null,
-    bySection: Object.fromEntries(bySection),
+    byFunction: Object.fromEntries(byFunction),
   };
 }

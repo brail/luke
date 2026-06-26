@@ -24,7 +24,7 @@ interface ConfirmDialogProps {
   onConfirm: () => void;
   isLoading?: boolean;
   userEmail?: string;
-  actionType?: 'delete' | 'disable' | 'hardDelete' | 'revokeSessions';
+  actionType?: 'delete' | 'disable' | 'hardDelete' | 'revokeSessions' | 'warning';
 }
 
 /**
@@ -59,6 +59,8 @@ export function ConfirmDialog({
         return <AlertTriangle className="h-5 w-5 text-destructive" />;
       case 'disable':
         return <UserX className="h-5 w-5 text-orange-500" />;
+      case 'warning':
+        return <AlertTriangle className="h-5 w-5 text-orange-500" />;
       default:
         return <AlertTriangle className="h-5 w-5 text-destructive" />;
     }
@@ -71,6 +73,7 @@ export function ConfirmDialog({
       case 'hardDelete':
         return 'destructive';
       case 'disable':
+      case 'warning':
         return 'default';
       default:
         return variant;

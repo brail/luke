@@ -7,8 +7,8 @@ import ExcelJS from 'exceljs';
 import type { TDocumentDefinitions, TableCell, Content } from 'pdfmake/interfaces';
 
 import { generateIcal } from '@luke/calendar';
+import type { Role } from '@luke/core';
 import { authenticateRequest } from '../lib/auth';
-import { PLANNING_SECTION_KEYS, type PlanningSectionKey } from '@luke/core';
 import { filterAllowedBrandIds, listMilestonesDb } from '../services/seasonCalendar.service';
 
 // ─── Shared types ────────────────────────────────────────────────────────────
@@ -19,20 +19,14 @@ interface ExportMilestone {
   description?: string | null;
   type: string;
   status: string;
-  ownerSectionKey: string;
+  ownerFunctionId: string;
+  ownerFunctionName: string;
   startAt: Date;
   endAt: Date | null;
   allDay: boolean;
   publishExternally: boolean;
   brandCode: string;
 }
-
-const SECTION_LABELS: Record<string, string> = {
-  'planning.sales': 'Vendite',
-  'planning.product': 'Prodotto',
-  'planning.sourcing': 'Sourcing',
-  'planning.merchandising': 'Merchandising',
-};
 
 const TYPE_LABELS: Record<string, string> = {
   KICKOFF: 'Kickoff',
@@ -67,15 +61,13 @@ async function fetchExportMilestones(
   brandIds: string[],
   userId: string,
   prisma: PrismaClient,
-  sectionKey?: string
+  functionId?: string
 ): Promise<ExportMilestone[]> {
-  const validSectionKey = sectionKey && (PLANNING_SECTION_KEYS as readonly string[]).includes(sectionKey)
-    ? sectionKey as PlanningSectionKey
-    : undefined;
-
-  const milestones = await listMilestonesDb(seasonId, brandIds, userId, prisma, validSectionKey);
+  const milestones = await listMilestonesDb(seasonId, brandIds, userId, prisma, functionId);
 
   const brandMap = new Map<string, string>();
+  const functionNameMap = new Map<string, string>();
+
   if (milestones.length > 0) {
     const uniqueBrandIds = [...new Set(milestones.map(m => m.brandId).filter(Boolean) as string[])];
     const brands = await prisma.brand.findMany({
@@ -83,6 +75,13 @@ async function fetchExportMilestones(
       select: { id: true, code: true },
     });
     for (const b of brands) brandMap.set(b.id, b.code);
+
+    const uniqueFunctionIds = [...new Set(milestones.map(m => m.ownerFunctionId))];
+    const functions = await prisma.companyFunction.findMany({
+      where: { id: { in: uniqueFunctionIds } },
+      select: { id: true, name: true },
+    });
+    for (const f of functions) functionNameMap.set(f.id, f.name);
   }
 
   return milestones.map(m => ({
@@ -91,7 +90,8 @@ async function fetchExportMilestones(
     description: m.description,
     type: m.type,
     status: m.status,
-    ownerSectionKey: m.ownerSectionKey,
+    ownerFunctionId: m.ownerFunctionId,
+    ownerFunctionName: functionNameMap.get(m.ownerFunctionId) ?? m.ownerFunctionId,
     startAt: new Date(m.startAt),
     endAt: m.endAt ? new Date(m.endAt) : null,
     allDay: m.allDay,
@@ -147,7 +147,7 @@ function generatePdf(milestones: ExportMilestone[], seasonLabel: string): Promis
         dataCell(m.title, fill),
         dataCell(TYPE_LABELS[m.type] ?? m.type, fill),
         dataCell(m.brandCode, fill),
-        dataCell(SECTION_LABELS[m.ownerSectionKey] ?? m.ownerSectionKey, fill),
+        dataCell(m.ownerFunctionName, fill),
         dataCell(STATUS_LABELS[m.status] ?? m.status, fill),
         dataCell(m.publishExternally ? 'Sì' : 'No', fill),
       ];
@@ -240,7 +240,7 @@ function milestonesOnDay(milestones: ExportMilestone[], day: Date): ExportMilest
 const BRAND_PALETTE = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
 function milestoneColor(m: ExportMilestone): string {
-  const key = m.brandCode || m.ownerSectionKey;
+  const key = m.brandCode || m.ownerFunctionId;
   let hash = 0;
   for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) & 0xffffffff;
   return BRAND_PALETTE[Math.abs(hash) % BRAND_PALETTE.length]!;
@@ -533,7 +533,7 @@ async function generateXlsx(milestones: ExportMilestone[], seasonLabel: string):
       m.title,
       TYPE_LABELS[m.type] ?? m.type,
       m.brandCode,
-      SECTION_LABELS[m.ownerSectionKey] ?? m.ownerSectionKey,
+      m.ownerFunctionName,
       STATUS_LABELS[m.status] ?? m.status,
       m.publishExternally ? 'Sì' : 'No',
     ]);
@@ -563,14 +563,14 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
       return null;
     }
 
-    const { seasonId, brandIds: brandIdsCsv, sectionKey, view, viewDate } = req.query as Record<string, string | undefined>;
+    const { seasonId, brandIds: brandIdsCsv, functionId, view, viewDate } = req.query as Record<string, string | undefined>;
     if (!seasonId || !brandIdsCsv) {
       reply.code(400).send({ error: 'seasonId and brandIds are required' });
       return null;
     }
 
     const requestedBrandIds = brandIdsCsv.split(',').map(s => s.trim()).filter(Boolean);
-    const allowedBrandIds = await filterAllowedBrandIds(session.user.id, requestedBrandIds, prisma);
+    const allowedBrandIds = await filterAllowedBrandIds(session.user.id, requestedBrandIds, prisma, session.user.role as Role);
     if (allowedBrandIds.length === 0) {
       reply.code(403).send({ error: 'No accessible brands' });
       return null;
@@ -589,7 +589,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
       : 'list';
     const parsedViewDate = viewDate ? new Date(viewDate) : new Date();
 
-    return { session, seasonId, allowedBrandIds, sectionKey, seasonLabel, view: parsedView, viewDate: parsedViewDate };
+    return { session, seasonId, allowedBrandIds, functionId, seasonLabel, view: parsedView, viewDate: parsedViewDate };
   }
 
   app.get('/season-calendar/export/ical', async (req, reply) => {
@@ -597,7 +597,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
     if (!ctx) return;
 
     const milestones = await fetchExportMilestones(
-      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.sectionKey
+      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.functionId
     );
 
     const icalString = generateIcal(
@@ -620,7 +620,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
     if (!ctx) return;
 
     const milestones = await fetchExportMilestones(
-      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.sectionKey
+      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.functionId
     );
 
     let pdfBuffer: Buffer;
@@ -645,7 +645,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
     if (!ctx) return;
 
     const milestones = await fetchExportMilestones(
-      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.sectionKey
+      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.functionId
     );
 
     const xlsxBuffer = await generateXlsx(milestones, ctx.seasonLabel);

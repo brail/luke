@@ -71,7 +71,7 @@ export const sectionAccessRouter = router({
         }
       }
 
-      const result = await setOverride(ctx.prisma, userId, section, enabled);
+      const result = await setOverride(ctx.prisma, userId, section, enabled, ctx.logger);
 
       // Log audit
       await logAudit(ctx, {

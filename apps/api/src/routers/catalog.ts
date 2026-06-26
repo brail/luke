@@ -3,14 +3,11 @@
  * Implementa liste master per selezione context, filtrate per whitelist utente.
  */
 
-import { z } from 'zod';
+import type { Role } from '@luke/core';
 
 import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
-import {
-  getUserAllowedBrandIds,
-  getUserAllowedSeasonIds,
-} from '../services/context.service';
+import { getUserAllowedBrandIds } from '../services/context.service';
 
 /**
  * Router per catalog master data
@@ -22,7 +19,7 @@ export const catalogRouter = router({
    */
   brands: protectedProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
-    const allowedBrandIds = await getUserAllowedBrandIds(userId, ctx.prisma);
+    const allowedBrandIds = await getUserAllowedBrandIds(userId, ctx.prisma, ctx.session.user.role as Role);
 
     const brands = await ctx.prisma.brand.findMany({
       where: {
@@ -52,18 +49,10 @@ export const catalogRouter = router({
    * Se brandId è fornito, filtra anche per il whitelist stagioni di quel brand.
    */
   seasons: protectedProcedure
-    .input(z.object({ brandId: z.string().uuid().optional() }).optional())
-    .query(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-
-      const allowedSeasonIds = input?.brandId
-        ? await getUserAllowedSeasonIds(userId, input.brandId, ctx.prisma)
-        : null;
-
+    .query(async ({ ctx }) => {
       return ctx.prisma.season.findMany({
         where: {
           isActive: true,
-          ...(allowedSeasonIds ? { id: { in: allowedSeasonIds } } : {}),
         },
         orderBy: [{ year: 'desc' }, { code: 'asc' }],
         select: {

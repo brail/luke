@@ -1,6 +1,6 @@
 'use client';
 
-import { Settings2 } from 'lucide-react';
+import { Info, Settings2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -8,7 +8,6 @@ import { SECTION_ACCESS_DEFAULTS } from '@luke/core';
 import type { Section } from '@luke/core';
 
 import { Button } from '../../../../../components/ui/button';
-import { Checkbox } from '../../../../../components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -24,7 +23,6 @@ import { trpc } from '../../../../../lib/trpc';
 import {
   ALL_SECTIONS,
   SECTION_LABELS,
-  type SeasonAccessMap,
   type SectionOverrideMap,
   type UserListItem,
 } from './types';
@@ -35,77 +33,34 @@ interface UserAccessDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-/**
- * Dialog per gestione accesso sezioni + brand/season per un utente.
- * Le modifiche sono locali fino al click su "Salva".
- */
-export function UserAccessDialog({
-  user,
-  open,
-  onOpenChange,
-}: UserAccessDialogProps) {
+export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogProps) {
   const utils = trpc.useUtils();
   const initialized = useRef(false);
 
-  // --- Server data ---
   const { data: serverSectionOverrides, isLoading: loadingSection } =
     trpc.sectionAccess.getByUser.useQuery({ userId: user.id }, { enabled: open });
 
-  const { data: serverAccess, isLoading: loadingAccess } =
-    trpc.context.access.getByUser.useQuery({ userId: user.id }, { enabled: open });
-
-  // Admin sees ALL brands/seasons (not filtered by whitelist)
-  const { data: allBrands } = trpc.brand.list.useQuery(
-    { limit: 100 },
-    { enabled: open }
-  );
-  const { data: allSeasons } = trpc.season.list.useQuery(
-    { limit: 100 },
-    { enabled: open }
-  );
-
-  // --- Local pending state ---
   const [pendingSection, setPendingSection] = useState<SectionOverrideMap>({});
-  const [pendingBrandIds, setPendingBrandIds] = useState<string[] | null>(null);
-  const [pendingSeasonAccess, setPendingSeasonAccess] = useState<SeasonAccessMap>({});
   const [isDirty, setIsDirty] = useState(false);
 
-  // Initialize local state from server when data loads (only once per open)
   useEffect(() => {
     if (!open) {
       initialized.current = false;
       return;
     }
     if (initialized.current) return;
-    if (loadingSection || loadingAccess) return;
+    if (loadingSection) return;
 
     initialized.current = true;
 
-    // Section overrides
     const sectionMap: SectionOverrideMap = {};
     serverSectionOverrides?.forEach(o => {
       if (o.enabled !== null) sectionMap[o.section] = o.enabled;
     });
     setPendingSection(sectionMap);
     setIsDirty(false);
+  }, [open, loadingSection, serverSectionOverrides]);
 
-    // Brand access
-    setPendingBrandIds(serverAccess?.brandIds ?? null);
-
-    // Season access
-    const seasonMap: SeasonAccessMap = {};
-    const byBrand: Record<string, string[]> = {};
-    serverAccess?.brandSeasonRows.forEach(r => {
-      if (!byBrand[r.brandId]) byBrand[r.brandId] = [];
-      byBrand[r.brandId].push(r.seasonId);
-    });
-    Object.entries(byBrand).forEach(([brandId, ids]) => {
-      seasonMap[brandId] = ids;
-    });
-    setPendingSeasonAccess(seasonMap);
-  }, [open, loadingSection, loadingAccess, serverSectionOverrides, serverAccess]);
-
-  // --- Section handlers ---
   const getRoleDefault = (section: Section): boolean =>
     SECTION_ACCESS_DEFAULTS[user.role]?.[section] ?? false;
 
@@ -118,7 +73,7 @@ export function UserAccessDialog({
     setPendingSection(prev => {
       const next = { ...prev };
       if (checked === getRoleDefault(section)) {
-        delete next[section]; // remove override — matches role default
+        delete next[section];
       } else {
         next[section] = checked;
       }
@@ -136,72 +91,12 @@ export function UserAccessDialog({
     setIsDirty(true);
   };
 
-  // --- Brand handlers ---
-  const allBrandsAllowed = pendingBrandIds === null;
-
-  const handleAllBrandsToggle = (checked: boolean) => {
-    setPendingBrandIds(checked ? null : []);
-    setIsDirty(true);
-  };
-
-  const handleBrandToggle = (brandId: string, checked: boolean) => {
-    setPendingBrandIds(prev => {
-      const current = prev ?? [];
-      return checked
-        ? [...current, brandId]
-        : current.filter(id => id !== brandId);
-    });
-    setIsDirty(true);
-  };
-
-  // --- Season handlers ---
-  const getSeasonAccess = (brandId: string): string[] | null => {
-    return brandId in pendingSeasonAccess ? pendingSeasonAccess[brandId] : null;
-  };
-
-  const handleAllSeasonsToggle = (brandId: string, checked: boolean) => {
-    setPendingSeasonAccess(prev => {
-      const next = { ...prev };
-      if (checked) {
-        // "tutte le stagioni" → rimuovi restrizione
-        delete next[brandId];
-      } else {
-        // inizio selezione manuale → inizializza con TUTTE selezionate
-        next[brandId] = allSeasons?.items.map(s => s.id) ?? [];
-      }
-      return next;
-    });
-    setIsDirty(true);
-  };
-
-  const handleSeasonToggle = (
-    brandId: string,
-    seasonId: string,
-    checked: boolean
-  ) => {
-    setPendingSeasonAccess(prev => {
-      const current = prev[brandId] ?? [];
-      return {
-        ...prev,
-        [brandId]: checked
-          ? [...current, seasonId]
-          : current.filter(id => id !== seasonId),
-      };
-    });
-    setIsDirty(true);
-  };
-
-  // --- Save ---
   const setSectionMutation = trpc.sectionAccess.set.useMutation();
-  const setBrandAccessMutation = trpc.context.access.setBrandAccess.useMutation();
-  const setSeasonAccessMutation = trpc.context.access.setSeasonAccess.useMutation();
-
   const [isSaving, setIsSaving] = useState(false);
 
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      // 1. Section overrides: only update sections that changed vs server state
       const serverSectionMap: Record<string, boolean | null> = {};
       serverSectionOverrides?.forEach(o => {
         if (o.enabled !== null) serverSectionMap[o.section] = o.enabled;
@@ -211,7 +106,7 @@ export function UserAccessDialog({
         const current = serverSectionMap[section] ?? null;
         return desired !== current;
       });
-      await Promise.all(
+      const results = await Promise.allSettled(
         changedSections.map(section =>
           setSectionMutation.mutateAsync({
             userId: user.id,
@@ -221,31 +116,17 @@ export function UserAccessDialog({
         )
       );
 
-      // 2. Brand access
-      await setBrandAccessMutation.mutateAsync({
-        userId: user.id,
-        brandIds: pendingBrandIds ?? [],
-      });
+      await utils.sectionAccess.getByUser.invalidate({ userId: user.id });
 
-      // 3. Season access for each active brand
-      const activeBrands = allBrandsAllowed
-        ? (allBrands?.items.map(b => b.id) ?? [])
-        : (pendingBrandIds ?? []);
-
-      await Promise.all(
-        activeBrands.map(brandId =>
-          setSeasonAccessMutation.mutateAsync({
-            userId: user.id,
-            brandId,
-            seasonIds: pendingSeasonAccess[brandId] ?? [],
-          })
-        )
-      );
-
-      await Promise.all([
-        utils.sectionAccess.getByUser.invalidate({ userId: user.id }),
-        utils.context.access.getByUser.invalidate({ userId: user.id }),
-      ]);
+      const failures = results.filter(r => r.status === 'rejected');
+      if (failures.length > 0) {
+        const fresh = await utils.sectionAccess.getByUser.fetch({ userId: user.id });
+        const sectionMap: SectionOverrideMap = {};
+        fresh?.forEach(o => { if (o.enabled !== null) sectionMap[o.section as Section] = o.enabled!; });
+        setPendingSection(sectionMap);
+        toast.error(`${failures.length} sezione/i non aggiornata/e`);
+        return;
+      }
 
       toast.success('Accesso aggiornato');
       setIsDirty(false);
@@ -262,11 +143,6 @@ export function UserAccessDialog({
     onOpenChange(false);
   };
 
-  const isLoading = loadingSection || loadingAccess;
-  const activeBrandIds = allBrandsAllowed
-    ? (allBrands?.items.map(b => b.id) ?? [])
-    : (pendingBrandIds ?? []);
-
   return (
     <Dialog open={open} onOpenChange={open => { if (!open) handleCancel(); }}>
       <DialogContent className="sm:max-w-[560px] max-h-[85vh] overflow-y-auto">
@@ -276,18 +152,16 @@ export function UserAccessDialog({
             Gestisci accesso — {user.firstName} {user.lastName}
           </DialogTitle>
           <DialogDescription>
-            Configura sezioni visibili e brand/stagioni accessibili. Gli override
-            si applicano sopra i default del ruolo <strong>{user.role}</strong>.
+            Configura sezioni visibili. Gli override si applicano sopra i default del ruolo{' '}
+            <strong>{user.role}</strong>.
           </DialogDescription>
         </DialogHeader>
 
-        {isLoading ? (
-          <div className="py-8 text-center text-muted-foreground">
-            Caricamento...
-          </div>
+        {loadingSection ? (
+          <div className="py-8 text-center text-muted-foreground">Caricamento...</div>
         ) : (
           <div className="space-y-6 pt-2">
-            {/* Sezioni */}
+            {/* Section overrides */}
             <div>
               <h3 className="text-sm font-semibold mb-3">Visibilità sezioni</h3>
               <div className="space-y-2">
@@ -297,15 +171,9 @@ export function UserAccessDialog({
                   const roleDefault = getRoleDefault(section);
 
                   return (
-                    <div
-                      key={section}
-                      className="flex items-center justify-between py-1"
-                    >
+                    <div key={section} className="flex items-center justify-between py-1">
                       <div className="flex items-center gap-2">
-                        <Label
-                          htmlFor={`section-${section}`}
-                          className="text-sm font-normal"
-                        >
+                        <Label htmlFor={`section-${section}`} className="text-sm font-normal">
                           {SECTION_LABELS[section]}
                         </Label>
                         <span className="text-xs text-muted-foreground">
@@ -318,9 +186,7 @@ export function UserAccessDialog({
                         <Switch
                           id={`section-${section}`}
                           checked={effectiveValue}
-                          onCheckedChange={checked =>
-                            handleSectionToggle(section, checked)
-                          }
+                          onCheckedChange={checked => handleSectionToggle(section, checked)}
                         />
                         {isOverridden && (
                           <Button
@@ -339,111 +205,14 @@ export function UserAccessDialog({
               </div>
             </div>
 
-            {/* Brand */}
-            <div>
-              <h3 className="text-sm font-semibold mb-3">Brand accessibili</h3>
-              <div className="flex items-center gap-2 mb-3">
-                <Checkbox
-                  id="all-brands"
-                  checked={allBrandsAllowed}
-                  onCheckedChange={checked =>
-                    handleAllBrandsToggle(checked === true)
-                  }
-                />
-                <Label htmlFor="all-brands" className="text-sm font-normal">
-                  Tutti i brand (nessuna restrizione)
-                </Label>
-              </div>
-              {!allBrandsAllowed && (
-                <div className="grid grid-cols-2 gap-1 ml-6">
-                  {(allBrands?.items ?? []).map(brand => (
-                    <div key={brand.id} className="flex items-center gap-2">
-                      <Checkbox
-                        id={`brand-${brand.id}`}
-                        checked={pendingBrandIds?.includes(brand.id) ?? false}
-                        onCheckedChange={checked =>
-                          handleBrandToggle(brand.id, checked === true)
-                        }
-                      />
-                      <Label
-                        htmlFor={`brand-${brand.id}`}
-                        className="text-sm font-normal"
-                      >
-                        {brand.name}
-                      </Label>
-                    </div>
-                  ))}
-                </div>
-              )}
+            {/* Brand access info */}
+            <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2.5 text-sm text-muted-foreground">
+              <Info className="h-4 w-4 mt-0.5 shrink-0" />
+              <p>
+                L'accesso ai brand è gestito tramite la membership ai team aziendali.
+                Configura i team dalla pagina <strong>Impostazioni → Azienda</strong>.
+              </p>
             </div>
-
-            {/* Stagioni per brand */}
-            {activeBrandIds.length > 0 && (
-              <div>
-                <h3 className="text-sm font-semibold mb-3">
-                  Stagioni accessibili per brand
-                </h3>
-                <div className="space-y-4">
-                  {activeBrandIds.map(brandId => {
-                    const brand = allBrands?.items.find(b => b.id === brandId);
-                    if (!brand) return null;
-                    const seasonAccess = getSeasonAccess(brandId);
-                    const allSeasonsAllowed = seasonAccess === null;
-
-                    return (
-                      <div key={brandId}>
-                        <p className="text-xs font-medium text-muted-foreground mb-1">
-                          {brand.name}
-                        </p>
-                        <div className="flex items-center gap-2 mb-1">
-                          <Checkbox
-                            id={`all-seasons-${brandId}`}
-                            checked={allSeasonsAllowed}
-                            onCheckedChange={checked =>
-                              handleAllSeasonsToggle(brandId, checked === true)
-                            }
-                          />
-                          <Label
-                            htmlFor={`all-seasons-${brandId}`}
-                            className="text-xs font-normal"
-                          >
-                            Tutte le stagioni
-                          </Label>
-                        </div>
-                        {!allSeasonsAllowed && (
-                          <div className="grid grid-cols-2 gap-1 ml-6">
-                            {(allSeasons?.items ?? []).map(season => (
-                              <div
-                                key={season.id}
-                                className="flex items-center gap-2"
-                              >
-                                <Checkbox
-                                  id={`season-${brandId}-${season.id}`}
-                                  checked={seasonAccess?.includes(season.id) ?? false}
-                                  onCheckedChange={checked =>
-                                    handleSeasonToggle(
-                                      brandId,
-                                      season.id,
-                                      checked === true
-                                    )
-                                  }
-                                />
-                                <Label
-                                  htmlFor={`season-${brandId}-${season.id}`}
-                                  className="text-xs font-normal"
-                                >
-                                  {season.name}
-                                </Label>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
           </div>
         )}
 

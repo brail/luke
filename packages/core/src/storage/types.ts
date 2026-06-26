@@ -15,6 +15,7 @@
  * - assets: Asset statici e risorse
  * - brand-logos: Logo dei brand (pending + confirmed)
  * - collection-row-pictures: Foto righe collection layout
+ * - collection-row-pictures-revisions: Foto righe — bucket immutabile per registro qualità
  * - merchandising-specsheet-images: Immagini specsheet
  */
 export type StorageBucket =
@@ -23,7 +24,9 @@ export type StorageBucket =
   | 'assets'
   | 'brand-logos'
   | 'collection-row-pictures'
-  | 'merchandising-specsheet-images';
+  | 'collection-row-pictures-revisions'
+  | 'merchandising-specsheet-images'
+  | 'company-assets';
 
 /**
  * Metadati di un file memorizzato
@@ -209,4 +212,6 @@ export interface IStorageProvider {
   getPresignedPutUrl?(params: PresignedPutParams): Promise<PresignedPutResult>;
   /** Only present when capabilities.supportsPresignedDownload === true */
   getPresignedGetUrl?(params: PresignedGetParams): Promise<PresignedGetResult>;
+  /** One-time setup: ensure required buckets exist (idempotent) */
+  init?(): Promise<void>;
 }

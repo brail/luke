@@ -4,6 +4,7 @@
  */
 
 import type { PrismaClient } from '@prisma/client';
+import type { FastifyBaseLogger } from 'fastify';
 import type { Section } from '@luke/core';
 
 /**
@@ -30,7 +31,8 @@ export async function setOverride(
   prisma: PrismaClient,
   userId: string,
   section: Section,
-  enabled: boolean | null
+  enabled: boolean | null,
+  logger?: FastifyBaseLogger
 ) {
   if (enabled === null) {
     // Rimuovi override
@@ -41,7 +43,9 @@ export async function setOverride(
           section,
         },
       })
-      .catch(() => {}); // Ignora errore se record non esiste
+      .catch(e => {
+        logger?.error({ err: e, userId, section }, 'Failed to delete sectionAccess override');
+      });
     return null;
   }
 

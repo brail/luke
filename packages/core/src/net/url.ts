@@ -9,6 +9,7 @@
  */
 
 import { getApiBaseUrl as getCoreApiBaseUrl, isServer } from '../runtime/env';
+import { getProxyUrl } from '../storage/contracts';
 
 /**
  * Options for URL construction
@@ -124,6 +125,20 @@ export function buildTempCollectionRowPictureUploadUrl(
   options: UrlOptions = {}
 ): string {
   return buildApiUrl('/upload/collection-row-picture/temp', options);
+}
+
+/**
+ * Builds URL for company logo upload (singleton profile — no ID)
+ */
+export function buildCompanyLogoUploadUrl(options: UrlOptions = {}): string {
+  return buildApiUrl('/upload/company-logo', options);
+}
+
+/**
+ * Builds proxy URL for company logo (served via Next.js /api/uploads route)
+ */
+export function buildCompanyLogoUrl(logoKey: string): string {
+  return getProxyUrl('company-assets', logoKey);
 }
 
 /**

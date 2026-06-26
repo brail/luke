@@ -9,6 +9,7 @@ import { z } from 'zod';
 import {
   COLLECTION_CATALOG_TYPES,
   CollectionCatalogItemInputSchema,
+  CollectionCatalogItemInputBaseSchema,
 } from '@luke/core';
 
 import { TRPCError } from '@trpc/server';
@@ -69,6 +70,9 @@ export const collectionCatalogRouter = router({
           value: input.value,
           label: input.label,
           order: input.order ?? (maxOrder._max.order ?? -1) + 1,
+          code: input.code ?? null,
+          iso9001Categories: input.iso9001Categories ?? [],
+          expectedMinProgress: input.expectedMinProgress ?? null,
         },
       });
 
@@ -89,7 +93,7 @@ export const collectionCatalogRouter = router({
     .input(
       z.object({
         id: z.string().uuid(),
-        data: CollectionCatalogItemInputSchema.omit({ type: true }).partial(),
+        data: CollectionCatalogItemInputBaseSchema.omit({ type: true }).partial(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -100,9 +104,14 @@ export const collectionCatalogRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Item non trovato' });
       }
 
+      const { iso9001Categories, ...restData } = input.data;
       const result = await ctx.prisma.collectionCatalogItem.update({
         where: { id: input.id },
-        data: input.data,
+        data: {
+          ...restData,
+          // Prisma array fields don't accept null — null means "clear to empty"
+          ...(iso9001Categories !== undefined && { iso9001Categories: iso9001Categories ?? [] }),
+        },
       });
 
       await logAudit(ctx, {

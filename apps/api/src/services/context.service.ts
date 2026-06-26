@@ -6,7 +6,7 @@
 import { TRPCError } from '@trpc/server';
 import pino from 'pino';
 import type { PrismaClient } from '@prisma/client';
-import { AppContextDefaultsSchema, type AppContextDefaults } from '@luke/core';
+import { AppContextDefaultsSchema, type AppContextDefaults, type Role } from '@luke/core';
 
 import { makeUrlResolver } from '../lib/storageUrl';
 
@@ -33,34 +33,31 @@ export interface ContextResult {
 }
 
 /**
- * Restituisce i brand ID consentiti per un utente.
- * Se l'utente non ha restrizioni, restituisce null (= tutti i brand).
+ * Restituisce i brand ID consentiti per un utente tramite team membership.
+ * Admin: null (accesso illimitato).
+ * Opt-in: nessun team → [] (nessun accesso). Unione degli scope di tutti i team.
+ * Team senza scope contribuisce nulla (non sblocca accesso illimitato).
  */
 export async function getUserAllowedBrandIds(
   userId: string,
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  userRole?: Role
 ): Promise<string[] | null> {
-  const rows = await prisma.userBrandAccess.findMany({
-    where: { userId },
-    select: { brandId: true },
-  });
-  return rows.length > 0 ? rows.map(r => r.brandId) : null;
-}
+  if (userRole === 'admin') return null;
 
-/**
- * Restituisce i season ID consentiti per un utente+brand.
- * Se l'utente non ha restrizioni per quel brand, restituisce null (= tutte le stagioni).
- */
-export async function getUserAllowedSeasonIds(
-  userId: string,
-  brandId: string,
-  prisma: PrismaClient
-): Promise<string[] | null> {
-  const rows = await prisma.userSeasonAccess.findMany({
-    where: { userId, brandId },
-    select: { seasonId: true },
+  const memberships = await prisma.companyTeamMembership.findMany({
+    where: { userId, team: { isActive: true } },
+    include: { team: { include: { brandScopes: true } } },
   });
-  return rows.length > 0 ? rows.map(r => r.seasonId) : null;
+
+  if (memberships.length === 0) return [];
+
+  const brandIds = new Set<string>();
+  for (const m of memberships) {
+    for (const bs of m.team.brandScopes) brandIds.add(bs.brandId);
+  }
+
+  return [...brandIds];
 }
 
 /**
@@ -74,22 +71,29 @@ export async function getUserAllowedSeasonIds(
  */
 export async function resolveContext(
   userId: string,
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  userRole?: Role
 ): Promise<ContextResult> {
   // Carica dati in parallelo per performance
   const [prefs, allowedBrandIds, appConfig] = await Promise.all([
     prisma.userPreference.findUnique({ where: { userId } }),
-    getUserAllowedBrandIds(userId, prisma),
+    getUserAllowedBrandIds(userId, prisma, userRole),
     prisma.appConfig.findUnique({ where: { key: 'app.context.defaults' } }),
   ]);
 
-  const brands = await prisma.brand.findMany({
-    where: {
-      isActive: true,
-      ...(allowedBrandIds ? { id: { in: allowedBrandIds } } : {}),
-    },
-    orderBy: [{ updatedAt: 'desc' }, { name: 'asc' }],
-  });
+  const [brands, seasons] = await Promise.all([
+    prisma.brand.findMany({
+      where: {
+        isActive: true,
+        ...(allowedBrandIds ? { id: { in: allowedBrandIds } } : {}),
+      },
+      orderBy: [{ updatedAt: 'desc' }, { name: 'asc' }],
+    }),
+    prisma.season.findMany({
+      where: { isActive: true },
+      orderBy: [{ updatedAt: 'desc' }, { year: 'desc' }],
+    }),
+  ]);
 
   if (brands.length === 0) {
     throw new TRPCError({
@@ -98,21 +102,7 @@ export async function resolveContext(
     });
   }
 
-  // Determina il brand corrente per filtrare le stagioni
   const prefsBrandId = (prefs?.data as any)?.lastBrandId as string | undefined;
-  const activeBrandId = brands.find(b => b.id === prefsBrandId)?.id ?? brands[0].id;
-
-  const allowedSeasonIds = activeBrandId
-    ? await getUserAllowedSeasonIds(userId, activeBrandId, prisma)
-    : null;
-
-  const seasons = await prisma.season.findMany({
-    where: {
-      isActive: true,
-      ...(allowedSeasonIds ? { id: { in: allowedSeasonIds } } : {}),
-    },
-    orderBy: [{ updatedAt: 'desc' }, { year: 'desc' }],
-  });
 
   if (!seasons.length) {
     throw new TRPCError({

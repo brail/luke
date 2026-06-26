@@ -135,8 +135,7 @@ export default function AppSidebar() {
           {menuAccess.calendar && (
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={isActive('/calendar')}>
-                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                <Link href={'/calendar' as any}>
+                <Link href='/calendar'>
                   <CalendarDays size={18} />
                   <span>Calendario</span>
                 </Link>
@@ -280,19 +279,19 @@ export default function AppSidebar() {
                         </Link>
                       </DropdownMenuItem>
                     )}
-                    {menuAccess.adminItems.collectionCatalog && (
+                    {menuAccess.adminItems.collectionLayoutConfiguration && (
                       <DropdownMenuItem asChild>
-                        <Link href="/admin/collection-catalog" className="flex items-center gap-2">
+                        <Link href="/admin/collection-layout-configuration" className="flex items-center gap-2">
                           <ListTree size={16} />
-                          <span>Collection Catalog</span>
+                          <span>Collection Layout</span>
                         </Link>
                       </DropdownMenuItem>
                     )}
-                    {menuAccess.adminItems.calendars && (
+                    {menuAccess.adminItems.calendarConfiguration && (
                       <DropdownMenuItem asChild>
-                        <Link href={"/admin/calendars" as any} className="flex items-center gap-2">
+                        <Link href="/admin/calendar-configuration" className="flex items-center gap-2">
                           <LayoutTemplate size={16} />
-                          <span>Template Calendario</span>
+                          <span>Calendario</span>
                         </Link>
                       </DropdownMenuItem>
                     )}
@@ -313,6 +312,14 @@ export default function AppSidebar() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent side="top" align="start" className="w-56">
                   <DropdownMenuGroup>
+                    {menuAccess.settingsItems.company && (
+                      <DropdownMenuItem asChild>
+                        <Link href={"/settings/company" as any} className="flex items-center gap-2">
+                          <Building2 size={16} />
+                          <span>Azienda</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
                     {menuAccess.settingsItems.users && (
                       <DropdownMenuItem asChild>
                         <Link href="/settings/users" className="flex items-center gap-2">

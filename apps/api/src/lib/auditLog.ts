@@ -31,6 +31,7 @@ const CRITICAL_AUDIT_ACTIONS = new Set([
   'CONFIG_DELETE',
   'USER_HARD_DELETE',
   'SECTION_ACCESS_UPDATED',
+  'COLLECTION_LAYOUT_REVISION_CREATE',
 ]);
 
 const SAFE_KEYS = new Set([
@@ -78,6 +79,12 @@ const SAFE_KEYS = new Set([
   'ldapEnabled',
   'previousNavVendorId',
   'errorCode',
+  'collectionLayoutId',
+  'revisionNumber',
+  'revisionTypeValue',
+  'cause',
+  'milestoneId',
+  'rowsIncluded',
 ]);
 
 /**

@@ -12,6 +12,7 @@ import {
   BrandListInputSchema,
   BrandUpdateInputSchema,
   normalizeCode,
+  type Role,
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
@@ -62,7 +63,7 @@ export const brandRouter = router({
       const limit = input?.limit ?? 50;
 
       const where = buildWhereClause(input || {});
-      const allowedBrandIds = await getUserAllowedBrandIds(ctx.session.user.id, ctx.prisma);
+      const allowedBrandIds = await getUserAllowedBrandIds(ctx.session.user.id, ctx.prisma, ctx.session.user.role as Role);
       if (allowedBrandIds !== null) {
         where.id = { in: allowedBrandIds };
       }

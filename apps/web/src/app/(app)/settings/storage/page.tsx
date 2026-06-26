@@ -32,12 +32,13 @@ import { useStandardMutation } from '../../../../lib/useStandardMutation';
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const ALL_BUCKETS = [
-  { value: 'uploads',                        description: 'File caricati dagli utenti' },
-  { value: 'exports',                        description: 'File esportati dal sistema' },
-  { value: 'assets',                         description: 'Asset statici e risorse' },
-  { value: 'brand-logos',                    description: 'Logo brand' },
-  { value: 'collection-row-pictures',        description: 'Foto righe collection layout' },
-  { value: 'merchandising-specsheet-images', description: 'Immagini specsheet merchandising' },
+  { value: 'uploads',                              description: 'File caricati dagli utenti' },
+  { value: 'exports',                              description: 'File esportati dal sistema' },
+  { value: 'assets',                               description: 'Asset statici e risorse' },
+  { value: 'brand-logos',                          description: 'Logo brand' },
+  { value: 'collection-row-pictures',              description: 'Foto righe collection layout' },
+  { value: 'collection-row-pictures-revisions',    description: 'Foto righe CL — bucket immutabile per registro qualità' },
+  { value: 'merchandising-specsheet-images',       description: 'Immagini specsheet merchandising' },
 ] as const;
 
 type BucketValue = typeof ALL_BUCKETS[number]['value'];

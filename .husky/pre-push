@@ -1,0 +1,17 @@
+# Blocca push di tag se manca la entry corrispondente in CHANGELOG.md
+while read local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/tags/v*)
+      tag="${remote_ref#refs/tags/}"
+      version="${tag#v}"
+      if ! grep -q "^## \[$version\]" CHANGELOG.md; then
+        echo ""
+        echo "❌ Tag $tag mancante in CHANGELOG.md"
+        echo "   Aggiungi una entry [$version] o rigenera con:"
+        echo "   pnpm changelog:tag --tag $tag"
+        echo ""
+        exit 1
+      fi
+      ;;
+  esac
+done

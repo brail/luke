@@ -163,6 +163,10 @@ export function IdentificationSection({
     { type: 'progress' },
     { staleTime: 5 * 60 * 1000 }
   );
+  const { data: pricePositioningOptions = [] } = trpc.collectionCatalog.list.useQuery(
+    { type: 'pricePositioning' },
+    { staleTime: 5 * 60 * 1000 }
+  );
 
   return (
     <div className="space-y-4">
@@ -333,7 +337,7 @@ export function IdentificationSection({
                 <FormControl><SelectTrigger><SelectValue placeholder="—" /></SelectTrigger></FormControl>
                 <SelectContent>
                   <SelectItem value="_none">—</SelectItem>
-                  {progressOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                  {progressOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.code ? `${o.code} — ${o.label}` : o.label}</SelectItem>)}
                 </SelectContent>
               </Select>
               <FormMessage />
@@ -342,28 +346,52 @@ export function IdentificationSection({
         />
       </div>
 
-      {/* strategy — single field full-width hidden-ish but kept for data entry */}
-      <FormField
-        control={control}
-        name="strategy"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Strategy</FormLabel>
-            <Select
-              onValueChange={v => field.onChange(v === '_none' ? null : v)}
-              value={field.value ?? '_none'}
-              disabled={!canUpdate}
-            >
-              <FormControl><SelectTrigger><SelectValue placeholder="—" /></SelectTrigger></FormControl>
-              <SelectContent>
-                <SelectItem value="_none">—</SelectItem>
-                {strategyOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+      {/* strategy | posizionamento prezzo */}
+      <div className="grid grid-cols-2 gap-4">
+        <FormField
+          control={control}
+          name="strategy"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Strategy</FormLabel>
+              <Select
+                onValueChange={v => field.onChange(v === '_none' ? null : v)}
+                value={field.value ?? '_none'}
+                disabled={!canUpdate}
+              >
+                <FormControl><SelectTrigger><SelectValue placeholder="—" /></SelectTrigger></FormControl>
+                <SelectContent>
+                  <SelectItem value="_none">—</SelectItem>
+                  {strategyOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={control}
+          name="pricePositioning"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Posizionamento Prezzo</FormLabel>
+              <Select
+                onValueChange={v => field.onChange(v === '_none' ? null : v)}
+                value={field.value ?? '_none'}
+                disabled={!canUpdate}
+              >
+                <FormControl><SelectTrigger><SelectValue placeholder="—" /></SelectTrigger></FormControl>
+                <SelectContent>
+                  <SelectItem value="_none">—</SelectItem>
+                  {pricePositioningOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
 
     </div>
   );
@@ -511,14 +539,18 @@ export function ForecastSection({ control, canUpdate }: ForecastSectionProps) {
         name="skuForecast"
         render={({ field }) => (
           <FormItem>
-            <FormLabel>SKU Forecast *</FormLabel>
+            <FormLabel>SKU Forecast</FormLabel>
             <FormControl>
               <NumberInput
                 {...field}
-                value={isNaN(field.value as number) ? '' : field.value}
-                onChange={e => field.onChange(parseInt(e.target.value, 10))}
+                value={field.value == null || isNaN(field.value as number) ? '' : field.value}
+                onChange={e => {
+                  const v = parseInt(e.target.value, 10);
+                  field.onChange(isNaN(v) ? null : v);
+                }}
                 onFocus={e => e.target.select()}
                 disabled={!canUpdate}
+                placeholder="—"
               />
             </FormControl>
             <FormMessage />

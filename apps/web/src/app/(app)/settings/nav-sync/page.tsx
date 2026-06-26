@@ -75,7 +75,7 @@ function PortafoglioSyncTab() {
 
   const { data: syncState, refetch: refetchSyncState } =
     trpc.sales.statistics.portafoglio.getSyncState.useQuery(undefined, {
-      refetchInterval: (query) => (query.state.data?.isRunning ? 3_000 : 15_000),
+      refetchInterval: 30_000, // SSE push gestisce real-time, questo è solo fallback
     });
 
   const filterQuery = trpc.integrations.nav.sync.getFilter.useQuery(
@@ -240,7 +240,7 @@ function KimoSyncTab() {
 
   const { data: syncState, refetch: refetchSyncState } =
     trpc.sales.statistics.kimo.getSyncState.useQuery(undefined, {
-      refetchInterval: (query) => (query.state.data?.isRunning ? 3_000 : 15_000),
+      refetchInterval: 30_000, // SSE push gestisce real-time, questo è solo fallback
     });
 
   const filterQuery = trpc.integrations.nav.sync.getFilter.useQuery(

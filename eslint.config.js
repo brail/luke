@@ -64,6 +64,8 @@ export default [
         HTMLHeadingElement: 'readonly',
         HTMLParagraphElement: 'readonly',
         KeyboardEvent: 'readonly',
+        PointerEvent: 'readonly',
+        MouseEvent: 'readonly',
       },
     },
     plugins: {

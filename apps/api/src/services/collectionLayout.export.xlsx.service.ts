@@ -11,8 +11,11 @@ import type {
 
 import type { PrismaClient } from '@prisma/client';
 
+import type { StorageBucket } from '@luke/core';
+
 import { applyStreamingHeaderStyle } from '../lib/export/xlsx-streaming';
 import { readFileBuffer } from '../storage';
+import { buildProgressLabelMap } from './collectionLayout.service';
 import type { QuotationWithParamSet } from './collectionLayout.service';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -150,8 +153,11 @@ export async function buildCollectionLayoutXlsx(
   layout: CollectionLayoutForExport,
   prisma: PrismaClient,
   logger?: Logger,
+  pictureBucket: StorageBucket = 'collection-row-pictures',
 ): Promise<Buffer> {
   const allRows = layout.groups.flatMap((g: GroupWithRows) => g.rows);
+
+  const progressLabelMap = await buildProgressLabelMap(prisma);
 
   // Determine max quotations across all rows for dynamic columns
   const maxQ = allRows.reduce((m, r) => Math.max(m, r.quotations?.length ?? 0), 0);
@@ -183,7 +189,7 @@ export async function buildCollectionLayoutXlsx(
   const uniqueKeys = [...new Set(allRows.map(r => r.pictureKey).filter((k): k is string => !!k))];
   const keyToBuffer = new Map<string, Buffer | null>();
   await Promise.all(
-    uniqueKeys.map(key => readFileBuffer(prisma, 'collection-row-pictures', key, logger).then(buf => keyToBuffer.set(key, buf))),
+    uniqueKeys.map(key => readFileBuffer(prisma, pictureBucket, key, logger).then(buf => keyToBuffer.set(key, buf))),
   );
 
   // Data rows
@@ -203,7 +209,7 @@ export async function buildCollectionLayoutXlsx(
         row.strategy,
         row.status,
         row.styleStatus,
-        row.progress,
+        row.progress ? (progressLabelMap.get(row.progress) ?? row.progress) : null,
         row.skuForecast,
         row.qtyForecast,
         row.designer,

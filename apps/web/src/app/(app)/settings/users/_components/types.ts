@@ -119,15 +119,12 @@ export const SECTION_LABELS: Record<Section, string> = {
   'admin.brands': '↳ Brand',
   'admin.seasons': '↳ Stagioni',
   'admin.vendors': '↳ Fornitori',
-  'admin.collection_catalog': '↳ Catalogo collezioni',
-  'admin.calendars': '↳ Template calendario',
+  'admin.collection_layout_configuration': '↳ Configurazione Collection Layout',
+  'admin.calendar_configuration': '↳ Configurazione Calendario',
   sales: 'Vendite',
   'sales.statistics': '↳ Statistiche',
   planning: 'Pianificazione',
-  'planning.sales': '↳ Vendite',
-  'planning.product': '↳ Prodotto',
-  'planning.sourcing': '↳ Sourcing',
-  'planning.merchandising': '↳ Merchandising',
+  'settings.company': '↳ Azienda',
 };
 
 // Deriva direttamente da sectionEnum — mai duplicare manualmente
