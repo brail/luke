@@ -212,4 +212,6 @@ export interface IStorageProvider {
   getPresignedPutUrl?(params: PresignedPutParams): Promise<PresignedPutResult>;
   /** Only present when capabilities.supportsPresignedDownload === true */
   getPresignedGetUrl?(params: PresignedGetParams): Promise<PresignedGetResult>;
+  /** One-time setup: ensure required buckets exist (idempotent) */
+  init?(): Promise<void>;
 }

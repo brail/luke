@@ -53,6 +53,9 @@ export const UpdateDependencyGapsInputSchema = z.object({
 });
 export type UpdateDependencyGapsInput = z.infer<typeof UpdateDependencyGapsInputSchema>;
 
+export const TemplateDependencyInputSchema = CalendarEventDependencyInputSchema;
+export type TemplateDependencyInput = CalendarEventDependencyInput;
+
 export const CalendarEventStateEffectInputSchema = z.object({
   effectType:           z.enum(STATE_EFFECT_TYPE),
   targetEntityType:     z.literal('COLLECTION_LAYOUT'),
@@ -134,20 +137,22 @@ export type CalendarCatalogItemUpdate = z.infer<typeof CalendarCatalogItemUpdate
 // ─── CalendarEvent input ──────────────────────────────────────────────────────
 
 export const CalendarEventBaseSchema = z.object({
-  calendarId:           z.string().uuid(),
-  ownerFunctionId:      z.string().uuid(),
-  type:                 z.string().min(1),
-  title:                z.string().min(1).max(200),
-  startAt:              z.string().datetime(),
-  description:          z.string().max(2000).optional(),
-  endAt:                z.string().datetime().optional(),
-  allDay:               z.boolean().default(false),
-  publishExternally:    z.boolean().default(true),
-  templateItemId:       z.string().uuid().optional(),
-  status:               z.enum(CALENDAR_EVENT_STATUS).default('PLANNED'),
-  visibilityFunctionIds: z.array(z.string().uuid()).min(1),
-  severity:             z.enum(EVENT_SEVERITY).default('NORMAL'),
-  relevantCountries:    z.array(z.enum(RELEVANT_COUNTRY_CODES)).default([]),
+  calendarId:                   z.string().uuid(),
+  ownerFunctionId:              z.string().uuid(),
+  type:                         z.string().min(1),
+  title:                        z.string().min(1).max(200),
+  startAt:                      z.string().datetime(),
+  description:                  z.string().max(2000).optional(),
+  endAt:                        z.string().datetime().optional(),
+  allDay:                       z.boolean().default(false),
+  publishExternally:            z.boolean().default(true),
+  templateItemId:               z.string().uuid().optional(),
+  status:                       z.enum(CALENDAR_EVENT_STATUS).default('PLANNED'),
+  visibilityFunctionIds:        z.array(z.string().uuid()).min(1),
+  severity:                     z.enum(EVENT_SEVERITY).default('NORMAL'),
+  relevantCountries:            z.array(z.enum(RELEVANT_COUNTRY_CODES)).default([]),
+  requiredCollectionProgress:   z.string().min(1).nullish(),
+  progressWarningDays:          z.number().int().min(1).max(365).nullish(),
 });
 
 export const CalendarEventInputSchema = CalendarEventBaseSchema.refine(
@@ -209,3 +214,4 @@ export const CloneSeasonCalendarInputSchema = z.object({
     .default(['PLANNED', 'IN_PROGRESS']),
 });
 export type CloneSeasonCalendarInput = z.infer<typeof CloneSeasonCalendarInputSchema>;
+

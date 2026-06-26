@@ -12,9 +12,10 @@ export const COLLECTION_TABLE_COLUMNS = [
   { key: 'progress',        label: 'Progress' },
   { key: 'qtyForecast',     label: 'Qty' },
   { key: 'margin',          label: 'Margine' },
-  { key: 'gender',          label: 'Gender' },
-  { key: 'designer',        label: 'Designer' },
-  { key: 'styleStatus',     label: 'Style Status' },
+  { key: 'gender',            label: 'Gender' },
+  { key: 'designer',          label: 'Designer' },
+  { key: 'styleStatus',       label: 'Style Status' },
+  { key: 'pricePositioning',  label: 'Posizionamento' },
 ] as const;
 
 export const COLLECTION_COLUMNS_MAX_VISIBLE = 7;
@@ -26,6 +27,7 @@ export const COLLECTION_COLUMNS_DEFAULT_HIDDEN = [
   'designer',
   'styleStatus',
   'margin',
+  'pricePositioning',
 ] as const;
 
 export const COLLECTION_GENDER = ['MAN', 'WOMAN'] as const;
@@ -52,12 +54,15 @@ export type CollectionStatus = (typeof COLLECTION_STATUS)[number];
 export const COLLECTION_PROGRESS = DEFAULT_CATALOG_PROGRESS;
 export type CollectionProgress = (typeof COLLECTION_PROGRESS)[number];
 
+export const DEFAULT_CATALOG_PRICE_POSITIONING = ['ENTRY', 'MID_MARKET', 'PREMIUM', 'LUXURY'] as const;
+
 export const COLLECTION_CATALOG_TYPES = [
   'strategy',
   'lineStatus',
   'styleStatus',
   'progress',
   'revisionType',
+  'pricePositioning',
 ] as const;
 export type CollectionCatalogType = (typeof COLLECTION_CATALOG_TYPES)[number];
 
@@ -103,6 +108,7 @@ export const CollectionLayoutRowInputSchema = z.object({
   strategy: z.string().optional().nullable(),
   styleStatus: z.string().optional().nullable(),
   progress: z.string().optional().nullable(),
+  pricePositioning: z.string().optional().nullable(),
   designer: z.string().optional().nullable(),
   pictureKey: z.string().optional().nullable(),
   pendingPictureFileObjectId: z.string().uuid().optional().nullable(),

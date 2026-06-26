@@ -506,6 +506,7 @@ model CollectionLayoutRow {
   strategy               String?               // catalog-managed
   styleStatus            String?               // catalog-managed
   progress               String?               // catalog-managed
+  pricePositioning       String?               // catalog-managed
   designer               String?
   pictureKey             String?
 
@@ -650,6 +651,7 @@ model CollectionLayoutRowRevision {
   strategy              String?
   styleStatus           String?
   progress              String?
+  pricePositioning      String?
   designer              String?
   pictureKey            String?  // key nel bucket immutabile collection-row-pictures-revisions
   styleNotes            String?
@@ -1485,13 +1487,15 @@ model CalendarEvent {
   description       String?
   startAt           DateTime
   endAt             DateTime?
-  allDay            Boolean             @default(false)
-  publishExternally Boolean             @default(true)
-  templateItemId    String?
-  severity          EventSeverity       @default(NORMAL)
-  relevantCountries String[]
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  allDay                      Boolean             @default(false)
+  publishExternally           Boolean             @default(true)
+  templateItemId              String?
+  severity                    EventSeverity       @default(NORMAL)
+  relevantCountries           String[]
+  requiredCollectionProgress  String?
+  progressWarningDays         Int?
+  createdAt                   DateTime            @default(now())
+  updatedAt                   DateTime            @updatedAt
 
   calendar         SeasonCalendar             @relation(fields: [calendarId], references: [id], onDelete: Cascade)
   ownerFunction    CompanyFunction            @relation("CalendarEventOwnerFunction", fields: [ownerFunctionId], references: [id], onDelete: Restrict)
