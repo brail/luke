@@ -68,7 +68,6 @@ export function useNotifications() {
       esRef.current?.close();
       esRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return {

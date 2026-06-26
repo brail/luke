@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StickyNote } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { cn } from '../../../../lib/utils';
 import { MONTH_NAMES_SHORT_IT, STATUS_OPACITY } from '../constants';
 import { addDays, canEditMilestone, daysBetween, resolveBrandColor, startOfDay, toUtcIsoDate } from '../utils';
+
 import { type CalendarEventItem as CalendarEvent } from './types';
 import { type HolidayMap } from './useHolidays';
 

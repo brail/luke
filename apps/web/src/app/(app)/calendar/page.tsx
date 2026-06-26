@@ -5,6 +5,8 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 
+import type { SimulationResult } from '@luke/calendar';
+
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent } from '../../../components/ui/card';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../../../components/ui/dropdown-menu';
@@ -15,10 +17,7 @@ import { trpc } from '../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../lib/trpcErrorMessages';
 import { cn } from '../../../lib/utils';
 
-import type { SimulationResult } from '@luke/calendar';
-
 import { ApplyTemplateDialog } from './_components/ApplyTemplateDialog';
-import { useHolidays } from './_components/useHolidays';
 import { CalendarEventDayView } from './_components/CalendarEventDayView';
 import { CalendarEventDialog } from './_components/CalendarEventDialog';
 import { CalendarEventGantt } from './_components/CalendarEventGantt';
@@ -28,6 +27,7 @@ import { CalendarEventTimeline } from './_components/CalendarEventTimeline';
 import { CalendarEventWeekView } from './_components/CalendarEventWeekView';
 import { CloneBrandSeasonDialog } from './_components/CloneBrandSeasonDialog';
 import { ExportButton } from './_components/ExportButton';
+import { useHolidays } from './_components/useHolidays';
 import { WhatIfBanner } from './_components/WhatIfBanner';
 import { addDays, assignBrandColors, daysBetween, resolveBrandColor } from './utils';
 

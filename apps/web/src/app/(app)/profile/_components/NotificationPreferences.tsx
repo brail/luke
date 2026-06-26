@@ -2,9 +2,9 @@
 
 import { toast } from 'sonner';
 
-import { trpc } from '../../../../lib/trpc';
-import { Switch } from '../../../../components/ui/switch';
 import { Skeleton } from '../../../../components/ui/skeleton';
+import { Switch } from '../../../../components/ui/switch';
+import { trpc } from '../../../../lib/trpc';
 
 const CATEGORY_META: Record<string, { label: string; description: string }> = {
   SYSTEM: {

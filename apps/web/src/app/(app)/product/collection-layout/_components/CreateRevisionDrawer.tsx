@@ -27,9 +27,9 @@ import {
 } from '../../../../../components/ui/sheet';
 import { Textarea } from '../../../../../components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../../../../components/ui/tooltip';
-import { cn } from '../../../../../lib/utils';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
+import { cn } from '../../../../../lib/utils';
 
 const PROGRESS_INDEX = Object.fromEntries(COLLECTION_PROGRESS.map((p, i) => [p, i]));
 
@@ -100,7 +100,6 @@ export function CreateRevisionDrawer({
       }
       return next;
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revisionTypeValue]);
 
   const toggleRow = (rowId: string) => {

@@ -30,6 +30,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../components/ui/dialog';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '../../../components/ui/tabs';
 import { UserAvatar } from '../../../components/UserAvatar';
 import { useFormatDate } from '../../../hooks/use-format-date';
 import { trpc } from '../../../lib/trpc';
@@ -37,12 +43,6 @@ import { trpc } from '../../../lib/trpc';
 import { ChangePasswordCard } from './_components/ChangePasswordCard';
 import { NotificationPreferences } from './_components/NotificationPreferences';
 import { UserProfileForm } from './_components/UserProfileForm';
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '../../../components/ui/tabs';
 
 /**
  * Pagina Profilo Utente Semplificata

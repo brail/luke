@@ -1,16 +1,18 @@
 'use client';
 
 import { Bell, Check, Trash2 } from 'lucide-react';
-import type { Route } from 'next';
 import Link from 'next/link';
 import { toast } from 'sonner';
 
-import { cn } from '../lib/utils';
-import { trpc } from '../lib/trpc';
 import { useNotifications } from '../hooks/use-notifications';
+import { trpc } from '../lib/trpc';
+import { cn } from '../lib/utils';
+
 import { Button } from './ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Separator } from './ui/separator';
+
+import type { Route } from 'next';
 
 const NOTIFICATION_CATEGORY: Record<string, { style: string; label: string }> = {
   SYSTEM:      { style: 'bg-blue-100 text-blue-700',   label: 'Sistema' },

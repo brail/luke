@@ -10,6 +10,7 @@ import { Checkbox } from '../../../../components/ui/checkbox';
 import { cn } from '../../../../lib/utils';
 import { MONTH_NAMES_IT, STATUS_VARIANT } from '../constants';
 import { getIsoWeek, resolveBrandColor } from '../utils';
+
 import { type CalendarEventItem as CalendarEvent } from './types';
 
 interface Props {

@@ -1,7 +1,6 @@
 'use client';
 
-import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
-import { useDroppable } from '@dnd-kit/core';
+import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
 import { ChevronLeft, ChevronRight, StickyNote } from 'lucide-react';
 import { ReactNode, useCallback, useMemo, useState } from 'react';
 
@@ -10,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../../../../components/
 import { cn } from '../../../../lib/utils';
 import { DAY_LABELS_IT, MONTH_NAMES_IT, STATUS_OPACITY } from '../constants';
 import { addDays, addMonths, canEditMilestone, daysBetween, getIsoWeek, groupEventsByDay, mondayOf, resolveBrandColor, sameDay, startOfDay } from '../utils';
+
 import { DraggableEventChip } from './DraggableEventChip';
 import { type CalendarEventItem as CalendarEvent } from './types';
 import { type HolidayMap } from './useHolidays';

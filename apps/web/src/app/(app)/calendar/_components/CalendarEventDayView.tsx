@@ -1,12 +1,13 @@
 'use client';
 
 import { ChevronLeft, ChevronRight, StickyNote } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '../../../../components/ui/button';
 import { cn } from '../../../../lib/utils';
 import { STATUS_OPACITY } from '../constants';
 import { addDays, canEditMilestone, resolveBrandColor, sameDay } from '../utils';
+
 import { type CalendarEventItem as CalendarEvent } from './types';
 
 interface Props {
@@ -75,7 +76,7 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
     if (!isToday || !gridRef.current) return;
     const nowTop = Math.max(0, (nowMinutes / 60 - GRID_START) * ROW_H - 80);
     gridRef.current.scrollTop = nowTop;
-  }, [isToday]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isToday]);
 
   const nowTop = ((nowMinutes / 60) - GRID_START) * ROW_H;
   const showNow = isToday && nowMinutes / 60 >= GRID_START && nowMinutes / 60 <= GRID_END;

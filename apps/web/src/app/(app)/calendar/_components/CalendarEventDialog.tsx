@@ -31,6 +31,7 @@ import { Textarea } from '../../../../components/ui/textarea';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 import { SEVERITY_LABELS, STATUS_LABELS, STATUS_VARIANT, TYPE_LABELS } from '../constants';
+
 import { DependencyManager } from './DependencyManager';
 import { type CalendarEventItem } from './types';
 

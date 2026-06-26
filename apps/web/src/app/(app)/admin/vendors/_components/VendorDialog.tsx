@@ -27,10 +27,10 @@ import {
 import { Input } from '../../../../../components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../../components/ui/tabs';
 import { Textarea } from '../../../../../components/ui/textarea';
-import { VendorClosurePeriodManager } from '../../calendar-configuration/_components/VendorClosurePeriodManager';
 import { useAppContext } from '../../../../../contexts/AppContextProvider';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { trpc } from '../../../../../lib/trpc';
+import { VendorClosurePeriodManager } from '../../calendar-configuration/_components/VendorClosurePeriodManager';
 
 import type { VendorItem } from './VendorTable';
 

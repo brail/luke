@@ -7,8 +7,6 @@ import { toast } from 'sonner';
 import type { RouterOutputs } from '@luke/api';
 import { EVENT_SEVERITY, RELEVANT_COUNTRY_CODES, type EventSeverity } from '@luke/core';
 
-import { SEVERITY_LABELS } from '../../../calendar/constants';
-
 import { Button } from '../../../../../components/ui/button';
 import { Checkbox } from '../../../../../components/ui/checkbox';
 import {
@@ -30,6 +28,7 @@ import {
 import { Textarea } from '../../../../../components/ui/textarea';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
+import { SEVERITY_LABELS } from '../../../calendar/constants';
 
 type TemplateItem = RouterOutputs['seasonCalendar']['listTemplates'][number]['items'][number];
 
