@@ -1,7 +1,7 @@
 import js from '@eslint/js';
 import typescript from '@typescript-eslint/eslint-plugin';
 import typescriptParser from '@typescript-eslint/parser';
-import importPlugin from 'eslint-plugin-import';
+import importPlugin from 'eslint-plugin-import-x';
 
 export default [
   js.configs.recommended,
@@ -70,7 +70,7 @@ export default [
     },
     plugins: {
       '@typescript-eslint': typescript,
-      import: importPlugin,
+      'import-x': importPlugin,
     },
     rules: {
       'prefer-const': 'error',
@@ -85,7 +85,7 @@ export default [
         },
       ],
       // Import ordering and management rules
-      'import/order': [
+      'import-x/order': [
         'error',
         {
           groups: [
@@ -117,10 +117,20 @@ export default [
           pathGroupsExcludedImportTypes: ['builtin'],
         },
       ],
-      'import/no-duplicates': 'error',
-      'import/first': 'error',
-      'import/newline-after-import': 'error',
+      'import-x/no-duplicates': 'error',
+      'import-x/first': 'error',
+      'import-x/newline-after-import': 'error',
     },
+  },
+  {
+    files: ['apps/api/src/**/*.{ts,tsx}'],
+    rules: {
+      'no-console': ['error', { allow: ['warn', 'error'] }],
+    },
+  },
+  {
+    files: ['apps/api/src/instrument.ts'],
+    rules: { 'no-console': 'off' },
   },
   {
     ignores: [
