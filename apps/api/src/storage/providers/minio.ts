@@ -6,6 +6,8 @@ import {
   GetObjectCommand,
   DeleteObjectCommand,
   ListObjectsV2Command,
+  HeadBucketCommand,
+  CreateBucketCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -66,6 +68,27 @@ export class MinioProvider implements IStorageProvider {
           credentials,
           forcePathStyle: true,
         });
+  }
+
+  async init(): Promise<void> {
+    const allBuckets: StorageBucket[] = [
+      'uploads',
+      'exports',
+      'assets',
+      'brand-logos',
+      'collection-row-pictures',
+      'collection-row-pictures-revisions',
+      'merchandising-specsheet-images',
+      'company-assets',
+    ];
+
+    await Promise.all(allBuckets.map(async bucket => {
+      try {
+        await this.client.send(new HeadBucketCommand({ Bucket: bucket }));
+      } catch {
+        await this.client.send(new CreateBucketCommand({ Bucket: bucket }));
+      }
+    }));
   }
 
   /** Generate a key with the same date-partitioned format as LocalFsProvider */

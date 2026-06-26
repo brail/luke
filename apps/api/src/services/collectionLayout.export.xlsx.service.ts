@@ -11,6 +11,8 @@ import type {
 
 import type { PrismaClient } from '@prisma/client';
 
+import type { StorageBucket } from '@luke/core';
+
 import { applyStreamingHeaderStyle } from '../lib/export/xlsx-streaming';
 import { readFileBuffer } from '../storage';
 import { buildProgressLabelMap } from './collectionLayout.service';
@@ -151,6 +153,7 @@ export async function buildCollectionLayoutXlsx(
   layout: CollectionLayoutForExport,
   prisma: PrismaClient,
   logger?: Logger,
+  pictureBucket: StorageBucket = 'collection-row-pictures',
 ): Promise<Buffer> {
   const allRows = layout.groups.flatMap((g: GroupWithRows) => g.rows);
 
@@ -186,7 +189,7 @@ export async function buildCollectionLayoutXlsx(
   const uniqueKeys = [...new Set(allRows.map(r => r.pictureKey).filter((k): k is string => !!k))];
   const keyToBuffer = new Map<string, Buffer | null>();
   await Promise.all(
-    uniqueKeys.map(key => readFileBuffer(prisma, 'collection-row-pictures', key, logger).then(buf => keyToBuffer.set(key, buf))),
+    uniqueKeys.map(key => readFileBuffer(prisma, pictureBucket, key, logger).then(buf => keyToBuffer.set(key, buf))),
   );
 
   // Data rows

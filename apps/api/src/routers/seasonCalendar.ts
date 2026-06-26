@@ -10,6 +10,7 @@ import {
   CalendarEventPersonalNoteInputSchema,
   CalendarEventUserVisibilityInputSchema,
   CalendarEventDependencyInputSchema,
+  TemplateDependencyInputSchema,
   UpdateDependencyGapsInputSchema,
   CalendarEventAnchorInputSchema,
   WhatIfRequestSchema,
@@ -440,6 +441,56 @@ export const seasonCalendarRouter = router({
       return { success: true };
     }),
 
+  // ─── Template dependencies ───────────────────────────────────────────────────
+
+  addTemplateDependency: protectedProcedure
+    .use(requirePermission('milestone_template:update'))
+    .input(TemplateDependencyInputSchema)
+    .mutation(async ({ input, ctx }) => {
+      const foundItems = await ctx.prisma.milestoneTemplateItem.findMany({
+        where: { id: { in: [input.predecessorId, input.successorId] } },
+        select: { id: true, templateId: true },
+      });
+      const pred = foundItems.find(i => i.id === input.predecessorId);
+      const succ = foundItems.find(i => i.id === input.successorId);
+      if (!pred || !succ) throw new TRPCError({ code: 'NOT_FOUND', message: 'Template item non trovato' });
+      if (pred.templateId !== succ.templateId) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Gli item devono appartenere allo stesso template' });
+      const dep = await ctx.prisma.milestoneTemplateDependency.create({
+        data: {
+          predecessorId: input.predecessorId,
+          successorId:   input.successorId,
+          minGapDays:    input.minGapDays,
+          maxGapDays:    input.maxGapDays,
+          severity:      input.severity,
+          reason:        input.reason,
+        },
+      });
+      await logAudit(ctx, { action: 'TEMPLATE_DEPENDENCY_ADD', targetType: 'MilestoneTemplateDependency', targetId: dep.id, result: 'SUCCESS', metadata: { predecessorId: input.predecessorId, successorId: input.successorId } });
+      return dep;
+    }),
+
+  updateTemplateDependencyGaps: protectedProcedure
+    .use(requirePermission('milestone_template:update'))
+    .input(UpdateDependencyGapsInputSchema)
+    .mutation(async ({ input, ctx }) => {
+      const { id, ...gaps } = input;
+      const dep = await ctx.prisma.milestoneTemplateDependency.update({
+        where: { id },
+        data: gaps,
+      });
+      await logAudit(ctx, { action: 'TEMPLATE_DEPENDENCY_UPDATE', targetType: 'MilestoneTemplateDependency', targetId: id, result: 'SUCCESS', metadata: gaps });
+      return dep;
+    }),
+
+  deleteTemplateDependency: protectedProcedure
+    .use(requirePermission('milestone_template:update'))
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ input, ctx }) => {
+      await ctx.prisma.milestoneTemplateDependency.delete({ where: { id: input.id } });
+      await logAudit(ctx, { action: 'TEMPLATE_DEPENDENCY_DELETE', targetType: 'MilestoneTemplateDependency', targetId: input.id, result: 'SUCCESS' });
+      return { success: true };
+    }),
+
   // ─── Clone ──────────────────────────────────────────────────────────────────
 
   cloneFromBrandSeason: protectedProcedure
@@ -812,5 +863,22 @@ export const seasonCalendarRouter = router({
       );
 
       return { ok: true };
+    }),
+
+  listEventsForCollection: protectedProcedure
+    .use(requirePermission('season_calendar:read'))
+    .input(z.object({ brandId: z.string().uuid(), seasonId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      await assertBrandAccess(ctx.session.user.id, input.brandId, ctx.prisma);
+      const calendar = await ctx.prisma.seasonCalendar.findFirst({
+        where: { brandId: input.brandId, seasonId: input.seasonId },
+        select: { id: true },
+      });
+      if (!calendar) return [];
+      return ctx.prisma.calendarEvent.findMany({
+        where: { calendarId: calendar.id, requiredCollectionProgress: { not: null } },
+        select: { id: true, title: true, type: true, startAt: true, endAt: true, requiredCollectionProgress: true, progressWarningDays: true },
+        orderBy: { startAt: 'asc' },
+      });
     }),
 });

@@ -126,6 +126,8 @@ export async function createMilestone(
         publishExternally: input.publishExternally,
         templateItemId: input.templateItemId,
         status: input.status,
+        requiredCollectionProgress: input.requiredCollectionProgress ?? null,
+        progressWarningDays: input.progressWarningDays ?? null,
       },
     });
 
@@ -159,6 +161,8 @@ export async function updateMilestone(
         ...(input.allDay !== undefined ? { allDay: input.allDay } : {}),
         ...(input.publishExternally !== undefined ? { publishExternally: input.publishExternally } : {}),
         ...(input.ownerFunctionId !== undefined ? { ownerFunctionId: input.ownerFunctionId } : {}),
+        ...(input.requiredCollectionProgress !== undefined ? { requiredCollectionProgress: input.requiredCollectionProgress ?? null } : {}),
+        ...(input.progressWarningDays !== undefined ? { progressWarningDays: input.progressWarningDays ?? null } : {}),
       },
     });
 
@@ -212,7 +216,12 @@ export async function listTemplates(prisma: PrismaClient) {
     include: {
       items: {
         orderBy: { offsetDays: 'asc' },
-        include: { visibilities: true },
+        include: {
+          visibilities: true,
+          dependenciesAsPredecessor: {
+            include: { successor: { select: { id: true, title: true } } },
+          },
+        },
       },
     },
     orderBy: { name: 'asc' },

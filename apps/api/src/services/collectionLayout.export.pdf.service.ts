@@ -10,6 +10,7 @@ import type { PrismaClient } from '@prisma/client';
 import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 
 import { formatDateTime } from '@luke/core';
+import type { StorageBucket } from '@luke/core';
 
 import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
 import { readFileBuffer } from '../storage';
@@ -244,6 +245,7 @@ export async function buildCollectionLayoutPdf(
   extractedBy: string,
   extractedAt: Date,
   logger?: Logger,
+  pictureBucket: StorageBucket = 'collection-row-pictures',
 ): Promise<Buffer> {
   const allRows = layout.groups.flatMap(g => g.rows);
 
@@ -258,7 +260,7 @@ export async function buildCollectionLayoutPdf(
       : Promise.resolve(null),
     fetchCompanyExportContext(prisma, logger),
     ...uniqueRowKeys.map(key =>
-      readFileBuffer(prisma, 'collection-row-pictures', key, logger)
+      readFileBuffer(prisma, pictureBucket, key, logger)
         .then(buf => keyToDataUriMap.set(key, buf ? toDataUri(buf, key) : null)),
     ),
   ]);

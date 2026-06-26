@@ -163,6 +163,7 @@ export async function createRevision(
           colorNotes: row.colorNotes,
           toolingNotes: row.toolingNotes,
           toolingQuotation: row.toolingQuotation,
+          pricePositioning: row.pricePositioning,
           order: row.order,
         },
       });
@@ -278,22 +279,26 @@ export async function getLayoutAsOfRevision(
     },
   });
 
-  // Backward lookup: for each sourceRowId, find the most recent revision ≤ target
-  // Uses DISTINCT ON for efficient "latest-per-group" query
-  const rowRevisions = await prisma.$queryRaw<(CollectionLayoutRowRevision & { quotations_json: string })[]>(
+  // Backward lookup: for each sourceRowId, find the most recent revision ≤ target.
+  // JOIN on collection_group_revisions to carry sourceGroupId directly — rows from
+  // earlier revisions have a sourceGroupRevisionId that belongs to a different revision,
+  // so we cannot look it up from the target revision's group map alone.
+  const rowRevisions = await prisma.$queryRaw<(CollectionLayoutRowRevision & { source_group_id: string; quotations_json: string })[]>(
     Prisma.sql`
       SELECT DISTINCT ON (rr."sourceRowId")
         rr.*,
+        grv."sourceGroupId" AS source_group_id,
         COALESCE(
           json_agg(q.* ORDER BY q.order) FILTER (WHERE q.id IS NOT NULL),
           '[]'::json
         )::text AS quotations_json
       FROM collection_layout_row_revisions rr
       JOIN collection_layout_revisions r ON rr."revisionId" = r.id
+      JOIN collection_group_revisions grv ON rr."sourceGroupRevisionId" = grv.id
       LEFT JOIN collection_row_quotation_revisions q ON q."rowRevisionId" = rr.id
       WHERE r."collectionLayoutId" = ${collectionLayoutId}
         AND r."revisionNumber" <= ${targetRevision.revisionNumber}
-      GROUP BY rr.id, r."revisionNumber"
+      GROUP BY rr.id, r."revisionNumber", grv."sourceGroupId"
       ORDER BY rr."sourceRowId", r."revisionNumber" DESC
     `,
   );
@@ -302,7 +307,7 @@ export async function getLayoutAsOfRevision(
   const liveRowRevisions = rowRevisions.filter(r => !r.wasDeleted);
 
   // Hydrate quotationRevisions from json
-  const hydratedRows: RowRevisionData[] = liveRowRevisions.map(r => ({
+  const hydratedRows: (RowRevisionData & { source_group_id: string })[] = liveRowRevisions.map(r => ({
     ...r,
     quotationRevisions: JSON.parse((r as unknown as { quotations_json: string }).quotations_json) as QuotationRevisionData[],
   }));
@@ -313,19 +318,17 @@ export async function getLayoutAsOfRevision(
     orderBy: { order: 'asc' },
   });
 
-  // Build sourceGroupId lookup from already-fetched groups (avoids N+1)
-  const gRevSourceGroupId = new Map(groups.map(g => [g.id, g.sourceGroupId]));
-
-  const rowsByGroupId = new Map<string, RowRevisionData[]>();
+  // Bucket rows by sourceGroupId — available directly from the JOIN, works across revisions
+  const rowsBySourceGroupId = new Map<string, RowRevisionData[]>();
   for (const row of hydratedRows) {
-    const key = gRevSourceGroupId.get(row.sourceGroupRevisionId) ?? row.sourceGroupRevisionId;
-    if (!rowsByGroupId.has(key)) rowsByGroupId.set(key, []);
-    rowsByGroupId.get(key)!.push(row);
+    const key = row.source_group_id;
+    if (!rowsBySourceGroupId.has(key)) rowsBySourceGroupId.set(key, []);
+    rowsBySourceGroupId.get(key)!.push(row);
   }
 
   const groupsWithRows: GroupRevisionData[] = groups.map(g => ({
     ...g,
-    rows: rowsByGroupId.get(g.sourceGroupId) ?? [],
+    rows: rowsBySourceGroupId.get(g.sourceGroupId) ?? [],
   }));
 
   return {

@@ -97,7 +97,9 @@ export async function loadMinioProvider(prisma: PrismaClient): Promise<MinioProv
     presignedGetTtl: parseInt(getTtlStr || '3600', 10),
   });
 
-  return new MinioProvider(config);
+  const provider = new MinioProvider(config);
+  await provider.init();
+  return provider;
 }
 
 /**
