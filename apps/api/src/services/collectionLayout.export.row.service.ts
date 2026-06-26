@@ -162,7 +162,7 @@ export async function buildCollectionRowPdf(
     ['Style Status',row.styleStatus ?? '—'],
     ['Progress',    row.progress ? (progressLabelMap.get(row.progress) ?? row.progress) : '—'],
     ['Designer',    row.designer ?? '—'],
-    ['SKU Forecast',String(row.skuForecast)],
+    ['SKU Forecast', row.skuForecast != null ? String(row.skuForecast) : '—'],
     ['QTY Forecast',String(row.qtyForecast)],
   ];
   if (row.toolingQuotation) {

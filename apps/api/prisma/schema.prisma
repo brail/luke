@@ -498,7 +498,7 @@ model CollectionLayoutRow {
   line                   String
   article                String?               // testo libero corto, dopo line
   status                 String                // catalog-managed (lineStatus)
-  skuForecast            Int
+  skuForecast            Int?
   qtyForecast            Int
   productCategory        String
 
@@ -645,7 +645,7 @@ model CollectionLayoutRowRevision {
   line                  String
   article               String?
   status                String
-  skuForecast           Int
+  skuForecast           Int?
   qtyForecast           Int
   productCategory       String
   strategy              String?

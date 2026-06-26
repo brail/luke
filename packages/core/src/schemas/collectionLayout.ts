@@ -101,7 +101,7 @@ export const CollectionLayoutRowInputSchema = z.object({
   line: z.string().min(1, 'Linea obbligatoria'),
   article: z.string().max(100).optional().nullable(),
   status: z.string().min(1, 'Status obbligatorio'),
-  skuForecast: z.number().int().min(1, 'SKU Forecast deve essere almeno 1'),
+  skuForecast: z.number().int().min(1, 'SKU Forecast deve essere almeno 1').nullable(),
   qtyForecast: z.number().int().min(1, 'Qty Forecast deve essere almeno 1'),
   productCategory: z.string().min(1, 'Categoria prodotto obbligatoria'),
   // Optional — identification/progress

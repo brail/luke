@@ -539,14 +539,18 @@ export function ForecastSection({ control, canUpdate }: ForecastSectionProps) {
         name="skuForecast"
         render={({ field }) => (
           <FormItem>
-            <FormLabel>SKU Forecast *</FormLabel>
+            <FormLabel>SKU Forecast</FormLabel>
             <FormControl>
               <NumberInput
                 {...field}
-                value={isNaN(field.value as number) ? '' : field.value}
-                onChange={e => field.onChange(parseInt(e.target.value, 10))}
+                value={field.value == null || isNaN(field.value as number) ? '' : field.value}
+                onChange={e => {
+                  const v = parseInt(e.target.value, 10);
+                  field.onChange(isNaN(v) ? null : v);
+                }}
                 onFocus={e => e.target.select()}
                 disabled={!canUpdate}
+                placeholder="—"
               />
             </FormControl>
             <FormMessage />

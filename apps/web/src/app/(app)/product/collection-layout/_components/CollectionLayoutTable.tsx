@@ -113,7 +113,7 @@ export function CollectionLayoutTable({
 
   const totalRows = layout.groups.reduce((sum, g) => sum + g.rows.length, 0);
   const totalSku = layout.groups.reduce(
-    (sum, g) => sum + g.rows.reduce((s, r) => s + r.skuForecast, 0),
+    (sum, g) => sum + g.rows.reduce((s, r) => s + (r.skuForecast ?? 0), 0),
     0
   );
   const totalQty = layout.groups.reduce(

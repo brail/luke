@@ -507,7 +507,7 @@ export function CollectionGroupSection({
       if (columnFilters.styleStatus && !enumMatch(row.styleStatus, columnFilters.styleStatus)) return false;
       if (columnFilters.progress && !enumMatch(row.progress, columnFilters.progress)) return false;
       if (columnFilters.pricePositioning && !textMatch(row.pricePositioning, columnFilters.pricePositioning)) return false;
-      if (columnFilters.skuForecast && !numberMatch(row.skuForecast, columnFilters.skuForecast)) return false;
+      if (columnFilters.skuForecast && !numberMatch(row.skuForecast ?? 0, columnFilters.skuForecast)) return false;
       if (columnFilters.qtyForecast && !numberMatch(row.qtyForecast, columnFilters.qtyForecast)) return false;
       if (columnFilters.margin) {
         const m = computeRowMargin(row, parameterSets);
@@ -544,7 +544,7 @@ export function CollectionGroupSection({
     onFilteredRowIdsChange?.(filteredRows.map(r => r.id));
   }, [filteredRows, onFilteredRowIdsChange]);
 
-  const skuTotal = group.rows.reduce((sum, r) => sum + r.skuForecast, 0);
+  const skuTotal = group.rows.reduce((sum, r) => sum + (r.skuForecast ?? 0), 0);
   const qtyTotal = group.rows.reduce((sum, r) => sum + r.qtyForecast, 0);
   const skuVariant = skuRatioVariant(skuTotal, group.skuBudget);
   const groupWeightedMargin = computeWeightedMargin(group.rows, parameterSets);

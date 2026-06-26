@@ -14,6 +14,7 @@ import {
   buildTempCollectionRowPictureUploadUrl,
 } from '@luke/core';
 
+import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
 import { Button } from '../../../../../components/ui/button';
 import {
   Dialog,
@@ -124,6 +125,7 @@ export function CollectionRowDrawer({
   const [previewPictureUrl, setPreviewPictureUrl] = useState<string | null>(null);
   const [isUploadingPicture, setIsUploadingPicture] = useState(false);
   const [quotations, setQuotations] = useState<QuotationState[]>([]);
+  const [pendingData, setPendingData] = useState<CollectionLayoutRowInput | null>(null);
   const { data: session } = useSession();
 
   const { data: vendorsList } = trpc.vendors.list.useQuery(undefined, { staleTime: 5 * 60 * 1000 });
@@ -296,6 +298,7 @@ export function CollectionRowDrawer({
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-7xl w-full p-0 gap-0 flex flex-col max-h-[90vh]">
         {/* Fixed header */}
@@ -304,7 +307,10 @@ export function CollectionRowDrawer({
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
+          <form onSubmit={form.handleSubmit(data => {
+            if (data.skuForecast == null) { setPendingData(data); return; }
+            onSubmit(data);
+          })} className="flex flex-col flex-1 min-h-0">
             {/* Scrollable body */}
             <div className="flex-1 min-h-0 overflow-y-auto">
               {/* Top 3-column section */}
@@ -417,5 +423,18 @@ export function CollectionRowDrawer({
         </Form>
       </DialogContent>
     </Dialog>
+
+    <ConfirmDialog
+      open={pendingData != null}
+      onOpenChange={open => { if (!open) setPendingData(null); }}
+      title="SKU Forecast non impostato"
+      description="Stai salvando una riga senza SKU Forecast. Questo valore è necessario per i calcoli di budget del gruppo. Vuoi procedere senza impostarlo?"
+      confirmText="Salva comunque"
+      cancelText="Annulla"
+      actionType="warning"
+      onConfirm={() => { if (pendingData) { onSubmit(pendingData); setPendingData(null); } }}
+      isLoading={isLoading}
+    />
+    </>
   );
 }
