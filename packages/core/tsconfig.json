@@ -16,7 +16,8 @@
     "emitDeclarationOnly": false,
     "allowJs": true,
     "isolatedModules": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "types": ["node"]
   },
   "include": ["src/**/*"],
   "exclude": [
