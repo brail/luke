@@ -6,15 +6,17 @@
  */
 
 import { TRPCError } from '@trpc/server';
+
 import {
   hasPermission,
   hasPermissionWithGrants,
   type Permission,
   type PermissionDeclaration,
-  type PermissionContext,
+  type Role,
 } from '@luke/core';
-import type { Role } from '@luke/core';
+
 import { t } from './t';
+
 import type { Context } from './context';
 
 /**
@@ -158,7 +160,6 @@ export function requirePermission(
  *
  * @param ctx - Context tRPC
  * @param permission - Permission da verificare
- * @param context - Context opzionale per ABAC
  * @returns true se l'utente ha la permission
  *
  * @example
@@ -170,8 +171,7 @@ export function requirePermission(
  */
 export function can(
   ctx: Context,
-  permission: Permission,
-  context?: PermissionContext
+  permission: Permission
 ): boolean {
   if (!ctx.session?.user) {
     return false;
@@ -194,8 +194,7 @@ export function can(
   // Verifica permission
   const allowed = hasPermission(
     { role: user.role as Role },
-    permission,
-    context
+    permission
   );
 
   // Cache risultato

@@ -219,8 +219,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
  */
 export function hasPermission(
   user: { role: Role },
-  permission: Permission,
-  _context?: PermissionContext
+  permission: Permission
 ): boolean {
   const userPermissions = ROLE_PERMISSIONS[user.role];
 
@@ -416,10 +415,10 @@ export function hasPermissionWithGrants(
   user: { role: Role; id: string },
   permission: Permission,
   userGrants?: string[],
-  context?: PermissionContext
+  _context?: PermissionContext
 ): boolean {
   // 1. Controlla prima il ruolo (faster path)
-  if (hasPermission(user, permission, context)) {
+  if (hasPermission(user, permission)) {
     return true;
   }
 

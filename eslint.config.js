@@ -2,6 +2,7 @@ import js from '@eslint/js';
 import typescript from '@typescript-eslint/eslint-plugin';
 import typescriptParser from '@typescript-eslint/parser';
 import importPlugin from 'eslint-plugin-import-x';
+import globals from 'globals';
 
 export default [
   js.configs.recommended,
@@ -21,51 +22,9 @@ export default [
         },
       },
       globals: {
-        // Browser globals
-        window: 'readonly',
-        document: 'readonly',
-        navigator: 'readonly',
-        console: 'readonly',
-        setTimeout: 'readonly',
-        clearTimeout: 'readonly',
-        setInterval: 'readonly',
-        clearInterval: 'readonly',
-        alert: 'readonly',
-        prompt: 'readonly',
-        URL: 'readonly',
-        Blob: 'readonly',
-        File: 'readonly',
-        FileReader: 'readonly',
-        EventSource: 'readonly',
-        crypto: 'readonly',
-        fetch: 'readonly',
-        // Node.js globals
-        process: 'readonly',
-        Buffer: 'readonly',
+        ...globals.browser,
+        ...globals.node,
         NodeJS: 'readonly',
-        // HTML types
-        HTMLElement: 'readonly',
-        HTMLDivElement: 'readonly',
-        HTMLButtonElement: 'readonly',
-        HTMLInputElement: 'readonly',
-        HTMLFormElement: 'readonly',
-        HTMLSelectElement: 'readonly',
-        HTMLTextAreaElement: 'readonly',
-        HTMLTableElement: 'readonly',
-        HTMLTableRowElement: 'readonly',
-        HTMLTableCellElement: 'readonly',
-        HTMLTableSectionElement: 'readonly',
-        HTMLTableCaptionElement: 'readonly',
-        HTMLOListElement: 'readonly',
-        HTMLLIElement: 'readonly',
-        HTMLAnchorElement: 'readonly',
-        HTMLSpanElement: 'readonly',
-        HTMLUListElement: 'readonly',
-        HTMLHeadingElement: 'readonly',
-        HTMLParagraphElement: 'readonly',
-        KeyboardEvent: 'readonly',
-        PointerEvent: 'readonly',
-        MouseEvent: 'readonly',
       },
     },
     plugins: {
@@ -138,6 +97,9 @@ export default [
       '**/dist/**',
       '**/build/**',
       '**/.next/**',
+      'packages/core/src/**/*.js',
+      'packages/nav/src/**/*.js',
+      'packages/calendar/src/**/*.js',
       '**/.turbo/**',
       '**/*.d.ts',
       '**/*.js.map',

@@ -3,7 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useSession } from 'next-auth/react';
 import React, { useEffect, useState } from 'react';
-import { Resolver, useForm } from 'react-hook-form';
+import { type Resolver, useForm } from 'react-hook-form';
 import { z } from 'zod';
 
 import { PageHeader } from '../../../../components/PageHeader';
@@ -107,7 +107,7 @@ export default function StoragePage() {
   };
 
   const form = useForm<StorageForm>({
-    // z.coerce.* in Zod v4 exposes unknown as input type; cast to output type for hookform
+    // z.coerce.* in Zod v4 exposes unknown as input type — incompatible with hookform Resolver<T> inference
     resolver: zodResolver(formSchema) as Resolver<StorageForm>,
     defaultValues: {
       type: 'local',
