@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "@luke/core": "workspace:*",
-    "googleapis": "^144.0.0",
+    "googleapis": "^173.0.0",
     "ical-generator": "^8.0.0"
   },
   "devDependencies": {
