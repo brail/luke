@@ -39,9 +39,12 @@ export function CalendarEventNoteDialog({ open, onClose, eventId, eventTitle, in
     return () => { if (savedTimerRef.current) clearTimeout(savedTimerRef.current); };
   }, []);
 
+  const utils = trpc.useUtils();
+
   const upsertMutation = trpc.seasonCalendar.upsertNote.useMutation({
     onSuccess: () => {
       setStatus('saved');
+      void utils.seasonCalendar.listMilestones.invalidate();
       if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
       savedTimerRef.current = setTimeout(() => setStatus('idle'), 2500);
     },

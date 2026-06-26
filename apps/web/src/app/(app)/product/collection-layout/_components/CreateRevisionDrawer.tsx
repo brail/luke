@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
+import { COLLECTION_PROGRESS } from '@luke/core';
 
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
@@ -25,8 +26,12 @@ import {
   SheetTitle,
 } from '../../../../../components/ui/sheet';
 import { Textarea } from '../../../../../components/ui/textarea';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../../../../components/ui/tooltip';
+import { cn } from '../../../../../lib/utils';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
+
+const PROGRESS_INDEX = Object.fromEntries(COLLECTION_PROGRESS.map((p, i) => [p, i]));
 
 type CollectionLayoutData = NonNullable<RouterOutputs['collectionLayout']['get']>;
 type CollectionRowData = CollectionLayoutData['groups'][number]['rows'][number];
@@ -77,6 +82,27 @@ export function CreateRevisionDrawer({
 
   const selectedRevisionType = revisionTypeItems.find(i => i.value === revisionTypeValue);
 
+  const minProgressIdx = selectedRevisionType?.expectedMinProgress != null
+    ? (PROGRESS_INDEX[selectedRevisionType.expectedMinProgress] ?? -1)
+    : -1;
+
+  const isEligible = (row: CollectionRowData): boolean =>
+    minProgressIdx === -1 ||
+    (row.progress != null && (PROGRESS_INDEX[row.progress] ?? -1) >= minProgressIdx);
+
+  // Auto-deselect ineligible rows when revision type changes
+  useEffect(() => {
+    if (minProgressIdx === -1) return;
+    setSelectedRowIds(prev => {
+      const next = new Set(prev);
+      for (const row of allRows) {
+        if (!isEligible(row)) next.delete(row.id);
+      }
+      return next;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revisionTypeValue]);
+
   const toggleRow = (rowId: string) => {
     setSelectedRowIds(prev => {
       const next = new Set(prev);
@@ -86,8 +112,8 @@ export function CreateRevisionDrawer({
     });
   };
 
-  const selectAll = () => setSelectedRowIds(new Set(allRows.map(r => r.id)));
-  const selectModified = () => setSelectedRowIds(new Set(allRows.filter(isModified).map(r => r.id)));
+  const selectAll = () => setSelectedRowIds(new Set(allRows.filter(isEligible).map(r => r.id)));
+  const selectModified = () => setSelectedRowIds(new Set(allRows.filter(r => isModified(r) && isEligible(r)).map(r => r.id)));
   const selectNone = () => setSelectedRowIds(new Set());
 
   const canSubmit = revisionTypeValue.length > 0;
@@ -123,7 +149,7 @@ export function CreateRevisionDrawer({
               <SelectTrigger>
                 <SelectValue placeholder="Seleziona tipo revisione" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="w-[--radix-select-trigger-width]">
                 {revisionTypeItems.map(item => (
                   <SelectItem key={item.value} value={item.value}>
                     <div className="flex flex-col gap-0.5">
@@ -182,15 +208,52 @@ export function CreateRevisionDrawer({
                     </div>
                     {group.rows.map((row: CollectionRowData) => {
                       const rowIsModified = isModified(row);
+                      const eligible = isEligible(row);
                       return (
-                        <div key={row.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/50">
-                          <Checkbox
-                            checked={selectedRowIds.has(row.id)}
-                            onCheckedChange={() => toggleRow(row.id)}
-                          />
-                          <span className="text-sm flex-1 truncate">{row.line}{row.article ? ` — ${row.article}` : ''}</span>
+                        <div
+                          key={row.id}
+                          className={cn(
+                            'flex items-center gap-2 px-2 py-1.5 rounded',
+                            eligible ? 'hover:bg-muted/50' : 'opacity-50',
+                          )}
+                        >
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span>
+                                  <Checkbox
+                                    checked={selectedRowIds.has(row.id)}
+                                    onCheckedChange={() => eligible && toggleRow(row.id)}
+                                    disabled={!eligible}
+                                    className={!eligible ? 'cursor-not-allowed' : undefined}
+                                  />
+                                </span>
+                              </TooltipTrigger>
+                              {!eligible && (
+                                <TooltipContent>
+                                  <p>Progress insufficiente per questo tipo di revisione (richiesto: {selectedRevisionType?.expectedMinProgress})</p>
+                                </TooltipContent>
+                              )}
+                            </Tooltip>
+                          </TooltipProvider>
+                          {row.pictureUrl ? (
+                            <img
+                              src={row.pictureUrl}
+                              alt=""
+                              className="h-8 w-7 object-cover rounded shrink-0"
+                            />
+                          ) : (
+                            <div className="h-8 w-7 rounded bg-muted shrink-0" />
+                          )}
+                          <span className="text-sm flex-1 truncate">{row.line}</span>
+                          {row.article && (
+                            <span className="text-xs text-muted-foreground truncate max-w-[120px] shrink-0">{row.article}</span>
+                          )}
                           {rowIsModified && (
                             <Badge variant="secondary" className="text-xs px-1 py-0 shrink-0">Modificata</Badge>
+                          )}
+                          {!eligible && (
+                            <Badge variant="outline" className="text-xs px-1 py-0 shrink-0 text-muted-foreground">Progress insufficiente</Badge>
                           )}
                         </div>
                       );

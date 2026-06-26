@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
@@ -33,6 +33,12 @@ import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
 type TemplateItem = RouterOutputs['seasonCalendar']['listTemplates'][number]['items'][number];
 
+interface SiblingItem {
+  id: string;
+  title: string;
+  offsetDays: number;
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -40,6 +46,7 @@ interface Props {
   templateId: string;
   item?: TemplateItem | null;
   availableFunctions: { id: string; name: string }[];
+  siblingItems?: SiblingItem[];
 }
 
 interface FormValues {
@@ -55,10 +62,13 @@ interface FormValues {
   relevantCountries: string[];
 }
 
-export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, availableFunctions }: Props) {
+export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, availableFunctions, siblingItems = [] }: Props) {
   const isEdit = !!item;
   const defaultOwner = availableFunctions[0]?.id ?? '';
   const { register, handleSubmit, reset, watch, setValue, control, formState: { errors } } = useForm<FormValues>();
+
+  const [relItemId, setRelItemId] = useState('');
+  const [relDelta, setRelDelta] = useState('0');
 
   const { data: catalogItems = [] } = trpc.calendarCatalog.list.useQuery(
     { type: 'eventType' },
@@ -70,6 +80,8 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
 
   useEffect(() => {
     if (open) {
+      setRelItemId('');
+      setRelDelta('0');
       const owner = item?.ownerFunctionId ?? defaultOwner;
       reset({
         title: item?.title ?? '',
@@ -211,6 +223,51 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
               />
             </div>
           </div>
+
+          {siblingItems.length > 0 && (() => {
+            const relItem = siblingItems.find(i => i.id === relItemId);
+            const delta = parseInt(relDelta, 10);
+            const computed = relItem && !isNaN(delta) ? relItem.offsetDays + delta : null;
+            return (
+              <div className="rounded-md border px-3 py-2 space-y-2 bg-muted/20">
+                <p className="text-xs font-medium text-muted-foreground">Calcola offset da altro item <span className="font-normal">(solo aiuto al calcolo, non crea una dipendenza)</span></p>
+                <div className="flex items-center gap-2">
+                  <Select value={relItemId} onValueChange={setRelItemId}>
+                    <SelectTrigger className="h-8 text-xs flex-1"><SelectValue placeholder="Scegli item…" /></SelectTrigger>
+                    <SelectContent>
+                      {siblingItems.map(s => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.title} ({s.offsetDays >= 0 ? '+' : ''}{s.offsetDays}gg)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    type="number"
+                    value={relDelta}
+                    onChange={e => setRelDelta(e.target.value)}
+                    className="h-8 text-xs w-20"
+                    placeholder="±gg"
+                    disabled={!relItemId}
+                  />
+                  {computed !== null && (
+                    <>
+                      <span className="text-xs text-muted-foreground shrink-0">= {computed >= 0 ? '+' : ''}{computed}gg</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs shrink-0"
+                        onClick={() => setValue('offsetDays', computed)}
+                      >
+                        Usa
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="space-y-2">
             <Label>Visibile a</Label>

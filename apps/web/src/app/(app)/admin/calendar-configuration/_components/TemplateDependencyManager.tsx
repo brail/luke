@@ -4,33 +4,38 @@ import { Check, Plus, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
-import { Badge } from '../../../../components/ui/badge';
-import { Button } from '../../../../components/ui/button';
-import { ConfirmDialog } from '../../../../components/ConfirmDialog';
-import { Input } from '../../../../components/ui/input';
-import { Label } from '../../../../components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../../components/ui/select';
-import { Textarea } from '../../../../components/ui/textarea';
-import { trpc } from '../../../../lib/trpc';
-import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 import { DEPENDENCY_SEVERITY, type DependencySeverity } from '@luke/core';
-import { type CalendarEventItem as CalendarEvent } from './types';
 
-interface Dep {
+import { Badge } from '../../../../../components/ui/badge';
+import { Button } from '../../../../../components/ui/button';
+import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
+import { Input } from '../../../../../components/ui/input';
+import { Label } from '../../../../../components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../../../components/ui/select';
+import { Textarea } from '../../../../../components/ui/textarea';
+import { trpc } from '../../../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
+
+interface TemplateItem {
+  id: string;
+  title: string;
+  offsetDays: number;
+}
+
+interface TemplateDep {
   id: string;
   predecessorId: string;
   successorId: string;
   severity: string;
   minGapDays: number | null;
   maxGapDays: number | null;
-  isDisabled: boolean;
-  inheritedFromId: string | null;
+  reason: string | null;
+  successor: { id: string; title: string };
 }
 
 interface Props {
-  eventId: string;
-  calendarId: string;
-  allEvents: CalendarEvent[];
+  items: TemplateItem[];
+  dependencies: TemplateDep[];
   readOnly?: boolean;
 }
 
@@ -41,24 +46,36 @@ function GapRange({ min, max }: { min: number | null; max: number | null }) {
   return <span className="text-xs text-muted-foreground">{minStr} → {maxStr}</span>;
 }
 
+function GapViolationBadge({ currentGap, min, max }: { currentGap: number; min: number | null; max: number | null }) {
+  const underMin = min !== null && currentGap < min;
+  const overMax = max !== null && currentGap > max;
+  if (!underMin && !overMax) return null;
+  return (
+    <span className="text-[10px] text-amber-600 dark:text-amber-400 shrink-0" title={underMin ? `Gap attuale ${currentGap}gg < min ${min}gg` : `Gap attuale ${currentGap}gg > max ${max}gg`}>
+      ⚠ {currentGap}gg
+    </span>
+  );
+}
+
 function DepRow({
-  dep, otherEvent, canDelete, onDelete, onUpdateGaps,
+  dep, predecessorTitle, currentGap, canEdit, onDelete, onUpdateGaps,
 }: {
-  dep: Dep;
-  otherEvent: CalendarEvent | undefined;
-  canDelete: boolean;
+  dep: TemplateDep;
+  predecessorTitle: string;
+  currentGap: number | null;
+  canEdit: boolean;
   onDelete: (id: string) => void;
   onUpdateGaps: (id: string, min: number | undefined, max: number | undefined) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [minVal, setMinVal] = useState(dep.minGapDays !== null ? String(dep.minGapDays) : '');
   const [maxVal, setMaxVal] = useState(dep.maxGapDays !== null ? String(dep.maxGapDays) : '');
+  const [deleteTarget, setDeleteTarget] = useState(false);
 
   useEffect(() => {
     setMinVal(dep.minGapDays !== null ? String(dep.minGapDays) : '');
     setMaxVal(dep.maxGapDays !== null ? String(dep.maxGapDays) : '');
   }, [dep.minGapDays, dep.maxGapDays]);
-  const [deleteTarget, setDeleteTarget] = useState(false);
 
   const handleSave = () => {
     const min = minVal !== '' ? parseInt(minVal, 10) : undefined;
@@ -69,12 +86,17 @@ function DepRow({
 
   return (
     <div className="flex items-center gap-2 py-1.5 border-b last:border-b-0">
-      <div className="flex-1 min-w-0">
-        <span className="text-sm truncate block">{otherEvent?.title ?? dep.predecessorId}</span>
+      <div className="flex-1 min-w-0 flex items-center gap-1 text-sm">
+        <span className="truncate text-muted-foreground">{predecessorTitle}</span>
+        <span className="text-muted-foreground/50 shrink-0">→</span>
+        <span className="truncate">{dep.successor.title}</span>
       </div>
       <Badge variant={dep.severity === 'HARD' ? 'destructive' : 'secondary'} className="text-[10px] shrink-0">
         {dep.severity}
       </Badge>
+      {currentGap !== null && (
+        <GapViolationBadge currentGap={currentGap} min={dep.minGapDays} max={dep.maxGapDays} />
+      )}
       {editing ? (
         <div className="flex items-center gap-1 shrink-0">
           <Input
@@ -92,14 +114,18 @@ function DepRow({
       ) : (
         <button
           type="button"
-          onClick={() => !dep.isDisabled && setEditing(true)}
+          onClick={canEdit ? () => setEditing(true) : undefined}
           className="text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
         >
           <GapRange min={dep.minGapDays} max={dep.maxGapDays} />
         </button>
       )}
-      {canDelete && (
-        <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive shrink-0" onClick={() => setDeleteTarget(true)}>
+      {canEdit && (
+        <Button
+          variant="ghost" size="icon"
+          className="h-6 w-6 text-muted-foreground hover:text-destructive shrink-0"
+          onClick={() => setDeleteTarget(true)}
+        >
           <Trash2 size={12} />
         </Button>
       )}
@@ -107,7 +133,7 @@ function DepRow({
         open={deleteTarget}
         onOpenChange={open => { if (!open) setDeleteTarget(false); }}
         title="Elimina dipendenza"
-        description="Sei sicuro di voler eliminare questa dipendenza? L'operazione è irreversibile."
+        description={`Sei sicuro di voler eliminare la dipendenza "${predecessorTitle} → ${dep.successor.title}"?`}
         confirmText="Elimina"
         cancelText="Annulla"
         variant="destructive"
@@ -119,32 +145,36 @@ function DepRow({
 }
 
 interface AddFormProps {
-  eventId: string;
-  allEvents: CalendarEvent[];
-  existingIds: Set<string>;
+  items: TemplateItem[];
+  existingPairs: Set<string>;
   onSaved: () => void;
   onCancel: () => void;
 }
 
-function AddForm({ eventId, allEvents, existingIds, onSaved, onCancel }: AddFormProps) {
-  const [role, setRole] = useState<'predecessor' | 'successor'>('predecessor');
-  const [targetId, setTargetId] = useState('');
+function AddForm({ items, existingPairs, onSaved, onCancel }: AddFormProps) {
+  const [predecessorId, setPredecessorId] = useState('');
+  const [successorId, setSuccessorId] = useState('');
   const [severity, setSeverity] = useState<DependencySeverity>('SOFT');
   const [minGap, setMinGap] = useState('');
   const [maxGap, setMaxGap] = useState('');
   const [reason, setReason] = useState('');
 
-  const addMutation = trpc.seasonCalendar.addDependency.useMutation({
-    onSuccess: () => { onSaved(); },
+  const utils = trpc.useUtils();
+  const addMutation = trpc.seasonCalendar.addTemplateDependency.useMutation({
+    onSuccess: () => {
+      void utils.seasonCalendar.listTemplates.invalidate();
+      onSaved();
+    },
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
-  const available = allEvents.filter(e => e.id !== eventId && !existingIds.has(e.id));
+  const availableSuccessors = useMemo(
+    () => items.filter(i => i.id !== predecessorId && !existingPairs.has(`${predecessorId}:${i.id}`)),
+    [items, predecessorId, existingPairs],
+  );
 
   const handleSubmit = () => {
-    if (!targetId) return;
-    const predecessorId = role === 'predecessor' ? eventId : targetId;
-    const successorId = role === 'predecessor' ? targetId : eventId;
+    if (!predecessorId || !successorId) return;
     addMutation.mutate({
       predecessorId,
       successorId,
@@ -155,29 +185,47 @@ function AddForm({ eventId, allEvents, existingIds, onSaved, onCancel }: AddForm
     });
   };
 
+  const predItem = predecessorId ? items.find(i => i.id === predecessorId) : undefined;
+  const succItem = successorId ? items.find(i => i.id === successorId) : undefined;
+  const currentGap = predItem && succItem ? succItem.offsetDays - predItem.offsetDays : null;
+  const minGapNum = minGap !== '' ? parseInt(minGap, 10) : undefined;
+  const gapViolated = currentGap !== null && minGapNum !== undefined && currentGap < minGapNum;
+
   return (
     <div className="mt-3 border rounded-md p-3 bg-muted/10 space-y-3">
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1">
-          <Label className="text-xs">Ruolo di questo evento</Label>
-          <Select value={role} onValueChange={v => setRole(v as 'predecessor' | 'successor')}>
-            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+          <Label className="text-xs">Predecessore</Label>
+          <Select value={predecessorId} onValueChange={v => { setPredecessorId(v); setSuccessorId(''); }}>
+            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Seleziona…" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="predecessor">Predecessore</SelectItem>
-              <SelectItem value="successor">Successore</SelectItem>
+              {items.map(i => (
+                <SelectItem key={i.id} value={i.id}>
+                  {i.title} <span className="text-muted-foreground">({i.offsetDays >= 0 ? '+' : ''}{i.offsetDays}gg)</span>
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">Evento collegato</Label>
-          <Select value={targetId} onValueChange={setTargetId}>
+          <Label className="text-xs">Successore</Label>
+          <Select value={successorId} onValueChange={setSuccessorId} disabled={!predecessorId}>
             <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Seleziona…" /></SelectTrigger>
             <SelectContent>
-              {available.map(e => <SelectItem key={e.id} value={e.id}>{e.title}</SelectItem>)}
+              {availableSuccessors.map(i => (
+                <SelectItem key={i.id} value={i.id}>
+                  {i.title} <span className="text-muted-foreground">({i.offsetDays >= 0 ? '+' : ''}{i.offsetDays}gg)</span>
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
       </div>
+      {currentGap !== null && (
+        <p className={`text-xs ${gapViolated ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
+          Gap attuale: {currentGap}gg {gapViolated ? `⚠ < min ${minGapNum}gg` : ''}
+        </p>
+      )}
       <div className="grid grid-cols-3 gap-2">
         <div className="space-y-1">
           <Label className="text-xs">Severity</Label>
@@ -203,89 +251,68 @@ function AddForm({ eventId, allEvents, existingIds, onSaved, onCancel }: AddForm
       </div>
       <div className="flex gap-2 justify-end">
         <Button variant="ghost" size="sm" onClick={onCancel}>Annulla</Button>
-        <Button size="sm" onClick={handleSubmit} disabled={!targetId || addMutation.isPending}>Aggiungi</Button>
+        <Button size="sm" onClick={handleSubmit} disabled={!predecessorId || !successorId || addMutation.isPending}>
+          Aggiungi
+        </Button>
       </div>
     </div>
   );
 }
 
-export function DependencyManager({ eventId, calendarId, allEvents, readOnly }: Props) {
+export function TemplateDependencyManager({ items, dependencies, readOnly }: Props) {
   const [showAddForm, setShowAddForm] = useState(false);
+  const utils = trpc.useUtils();
 
-  const { data: allDeps = [], refetch } = trpc.seasonCalendar.getDependencies.useQuery(
-    { calendarId },
-    { enabled: !!calendarId, staleTime: 30_000 },
+  const itemById = useMemo(() => Object.fromEntries(items.map(i => [i.id, i])), [items]);
+
+  const existingPairs = useMemo(
+    () => new Set(dependencies.map(d => `${d.predecessorId}:${d.successorId}`)),
+    [dependencies],
   );
 
-  const deleteMutation = trpc.seasonCalendar.deleteDependency.useMutation({
-    onSuccess: () => void refetch(),
+  const deleteMutation = trpc.seasonCalendar.deleteTemplateDependency.useMutation({
+    onSuccess: () => void utils.seasonCalendar.listTemplates.invalidate(),
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
-  const updateGapsMutation = trpc.seasonCalendar.updateDependencyGaps.useMutation({
-    onSuccess: () => void refetch(),
+  const updateGapsMutation = trpc.seasonCalendar.updateTemplateDependencyGaps.useMutation({
+    onSuccess: () => void utils.seasonCalendar.listTemplates.invalidate(),
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
-
-  const predecessorDeps = allDeps.filter(d => d.successorId === eventId);
-  const successorDeps = allDeps.filter(d => d.predecessorId === eventId);
-
-  const existingLinkedIds = new Set([
-    ...predecessorDeps.map(d => d.predecessorId),
-    ...successorDeps.map(d => d.successorId),
-  ]);
-
-  const eventById = useMemo(() => Object.fromEntries(allEvents.map(e => [e.id, e])), [allEvents]);
 
   const handleDelete = (id: string) => deleteMutation.mutate({ id });
   const handleUpdateGaps = (id: string, min: number | undefined, max: number | undefined) =>
     updateGapsMutation.mutate({ id, minGapDays: min, maxGapDays: max });
 
   return (
-    <div className="space-y-4 py-1">
-      {predecessorDeps.length > 0 && (
-        <div>
-          <p className="text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wide">Predecessori</p>
-          {predecessorDeps.map(dep => (
-            <DepRow
-              key={dep.id}
-              dep={dep}
-              otherEvent={eventById[dep.predecessorId]}
-              canDelete={!readOnly && !dep.inheritedFromId}
-              onDelete={handleDelete}
-              onUpdateGaps={handleUpdateGaps}
-            />
-          ))}
-        </div>
+    <div className="space-y-2 py-1">
+      {dependencies.length === 0 && !showAddForm && (
+        <p className="text-sm text-muted-foreground text-center py-3">Nessuna dipendenza — aggiungine una per propagarla automaticamente al calendario.</p>
       )}
 
-      {successorDeps.length > 0 && (
-        <div>
-          <p className="text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wide">Successori</p>
-          {successorDeps.map(dep => (
-            <DepRow
-              key={dep.id}
-              dep={dep}
-              otherEvent={eventById[dep.successorId]}
-              canDelete={!readOnly && !dep.inheritedFromId}
-              onDelete={handleDelete}
-              onUpdateGaps={handleUpdateGaps}
-            />
-          ))}
-        </div>
-      )}
-
-      {predecessorDeps.length === 0 && successorDeps.length === 0 && (
-        <p className="text-sm text-muted-foreground text-center py-4">Nessuna dipendenza configurata</p>
-      )}
+      {dependencies.map(dep => {
+        const predOffset = itemById[dep.predecessorId]?.offsetDays;
+        const succOffset = itemById[dep.successorId]?.offsetDays;
+        const currentGap = predOffset !== undefined && succOffset !== undefined ? succOffset - predOffset : null;
+        return (
+          <DepRow
+            key={dep.id}
+            dep={dep}
+            predecessorTitle={itemById[dep.predecessorId]?.title ?? dep.predecessorId}
+            currentGap={currentGap}
+            canEdit={!readOnly}
+            onDelete={handleDelete}
+            onUpdateGaps={handleUpdateGaps}
+          />
+        );
+      })}
 
       {!readOnly && (
         showAddForm ? (
           <AddForm
-            eventId={eventId}
-            allEvents={allEvents}
-            existingIds={existingLinkedIds}
-            onSaved={() => { setShowAddForm(false); void refetch(); }}
+            items={items}
+            existingPairs={existingPairs}
+            onSaved={() => setShowAddForm(false)}
             onCancel={() => setShowAddForm(false)}
           />
         ) : (

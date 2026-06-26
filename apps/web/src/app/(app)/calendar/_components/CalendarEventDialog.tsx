@@ -4,7 +4,7 @@ import { AlertTriangle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
-import { CALENDAR_EVENT_STATUS, EVENT_SEVERITY, RELEVANT_COUNTRY_CODES, type EventSeverity, type RelevantCountryCode } from '@luke/core';
+import { CALENDAR_EVENT_STATUS, COLLECTION_PROGRESS, EVENT_SEVERITY, RELEVANT_COUNTRY_CODES, type EventSeverity, type RelevantCountryCode } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { Badge } from '../../../../components/ui/badge';
@@ -48,6 +48,8 @@ interface ExistingEvent {
   visibilities: { functionId: string }[];
   severity?: EventSeverity | null;
   relevantCountries?: string[];
+  requiredCollectionProgress?: string | null;
+  progressWarningDays?: number | null;
 }
 
 interface Props {
@@ -64,6 +66,15 @@ interface Props {
   onDeleted?: () => void;
   allEvents?: CalendarEventItem[];
 }
+
+const COLLECTION_PROGRESS_LABELS: Record<string, string> = {
+  DESIGN:           'Fase di design',
+  CONSTRUCTION_OK:  'Construction OK',
+  MODELLERIA_OK:    'Modelleria OK',
+  RENDERING:        'Rendering',
+  SPECSHEETS_READY: 'Spec sheets ready',
+  SMS_LAUNCHED:     'SMS lanciati',
+};
 
 function toDateInput(val: Date | string | null | undefined): string {
   if (!val) return '';
@@ -120,6 +131,8 @@ export function CalendarEventDialog({
   const [publishExternally, setPublishExternally] = useState(event?.publishExternally ?? true);
   const [severity, setSeverity] = useState<EventSeverity>(event?.severity ?? 'NORMAL');
   const [relevantCountries, setRelevantCountries] = useState<RelevantCountryCode[]>((event?.relevantCountries as RelevantCountryCode[]) ?? []);
+  const [collectionProgress, setCollectionProgress] = useState<string | null>(event?.requiredCollectionProgress ?? null);
+  const [collectionProgressDays, setCollectionProgressDays] = useState<number | null>(event?.progressWarningDays ?? null);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
@@ -140,6 +153,8 @@ export function CalendarEventDialog({
     setPublishExternally(event?.publishExternally ?? true);
     setSeverity(event?.severity ?? 'NORMAL');
     setRelevantCountries((event?.relevantCountries as RelevantCountryCode[]) ?? []);
+    setCollectionProgress(event?.requiredCollectionProgress ?? null);
+    setCollectionProgressDays(event?.progressWarningDays ?? null);
   }, [event?.id, open, defaultDate]);
 
   const handleOwnerChange = (val: string) => {
@@ -201,6 +216,8 @@ export function CalendarEventDialog({
       publishExternally,
       severity,
       relevantCountries,
+      requiredCollectionProgress: collectionProgress || undefined,
+      progressWarningDays: collectionProgress ? (collectionProgressDays ?? undefined) : undefined,
     };
 
     if (isEdit) {
@@ -392,6 +409,40 @@ export function CalendarEventDialog({
         <Label htmlFor="ev-desc">Descrizione</Label>
         <Textarea id="ev-desc" value={description} onChange={e => setDescription(e.target.value)}
           placeholder="Note opzionali…" className="resize-none text-sm" rows={3} />
+      </div>
+
+      <div className="space-y-2 pt-1 border-t">
+        <p className="text-xs font-medium text-muted-foreground">Scadenza collezione (opzionale)</p>
+        <div className="flex items-center gap-2">
+          <Select
+            value={collectionProgress ?? '__none__'}
+            onValueChange={v => { const val = v === '__none__' ? null : v; setCollectionProgress(val); if (!val) setCollectionProgressDays(null); }}
+          >
+            <SelectTrigger className="flex-1 text-sm h-8">
+              <SelectValue placeholder="Nessun requisito" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">Nessun requisito</SelectItem>
+              {COLLECTION_PROGRESS.map(p => (
+                <SelectItem key={p} value={p}>{COLLECTION_PROGRESS_LABELS[p] ?? p}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {collectionProgress && (
+            <div className="flex items-center gap-1 shrink-0">
+              <Input
+                type="number"
+                min={1}
+                max={365}
+                value={collectionProgressDays ?? ''}
+                onChange={e => setCollectionProgressDays(e.target.value ? Number(e.target.value) : null)}
+                className="w-16 h-8 text-sm"
+                placeholder="7"
+              />
+              <span className="text-xs text-muted-foreground">gg prima</span>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

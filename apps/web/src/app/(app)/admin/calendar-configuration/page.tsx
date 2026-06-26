@@ -33,6 +33,7 @@ import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 import { cn } from '../../../../lib/utils';
 
 import { HolidayImportTab } from './_components/HolidayImportTab';
+import { TemplateDependencyManager } from './_components/TemplateDependencyManager';
 import { TemplateDialog } from './_components/TemplateDialog';
 import { TemplateItemDialog } from './_components/TemplateItemDialog';
 
@@ -58,7 +59,7 @@ export default function CalendarConfigurationPage() {
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [templateDialog, setTemplateDialog] = useState<{ open: boolean; template?: Template | null }>({ open: false });
-  const [itemDialog, setItemDialog] = useState<{ open: boolean; templateId: string; item?: TemplateItem | null }>({ open: false, templateId: '' });
+  const [itemDialog, setItemDialog] = useState<{ open: boolean; templateId: string; item?: TemplateItem | null; siblingItems?: { id: string; title: string; offsetDays: number }[] }>({ open: false, templateId: '' });
   const [deletingTemplate, setDeletingTemplate] = useState<Template | null>(null);
   const [deletingItem, setDeletingItem] = useState<TemplateItem | null>(null);
 
@@ -158,6 +159,7 @@ export default function CalendarConfigurationPage() {
             )}
             {templates.map(t => {
               const expanded = expandedIds.has(t.id);
+              const templateDeps = t.items.flatMap(i => i.dependenciesAsPredecessor);
               return (
                 <Card key={t.id}>
                   <CardContent className="p-0">
@@ -171,6 +173,7 @@ export default function CalendarConfigurationPage() {
                         <span className="font-medium">{t.name}</span>
                         <span className="text-xs text-muted-foreground ml-1">
                           {t.items.length} item{t.items.length !== 1 ? 's' : ''}
+                          {templateDeps.length > 0 ? ` · ${templateDeps.length} link` : null}
                         </span>
                         {t.description && (
                           <span className="text-xs text-muted-foreground truncate max-w-xs">
@@ -239,7 +242,7 @@ export default function CalendarConfigurationPage() {
                                         variant="ghost"
                                         size="icon"
                                         className="h-6 w-6"
-                                        onClick={() => setItemDialog({ open: true, templateId: t.id, item })}
+                                        onClick={() => setItemDialog({ open: true, templateId: t.id, item, siblingItems: t.items.filter(i => i.id !== item.id).map(i => ({ id: i.id, title: i.title, offsetDays: i.offsetDays })) })}
                                       >
                                         <Pencil size={12} />
                                       </Button>
@@ -273,11 +276,22 @@ export default function CalendarConfigurationPage() {
                               variant="ghost"
                               size="sm"
                               className="text-xs"
-                              onClick={() => setItemDialog({ open: true, templateId: t.id, item: null })}
+                              onClick={() => setItemDialog({ open: true, templateId: t.id, item: null, siblingItems: t.items.map(i => ({ id: i.id, title: i.title, offsetDays: i.offsetDays })) })}
                             >
                               <Plus size={12} className="mr-1" />
                               Aggiungi item
                             </Button>
+                          </div>
+                        )}
+                        {t.items.length >= 2 && (
+                          <div className="px-4 py-3 border-t">
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Dipendenze</p>
+                            <p className="text-xs text-muted-foreground mb-2">Propagate automaticamente agli eventi del calendario all'applicazione del template.</p>
+                            <TemplateDependencyManager
+                              items={t.items.map(i => ({ id: i.id, title: i.title, offsetDays: i.offsetDays }))}
+                              dependencies={templateDeps}
+                              readOnly={!canUpdate}
+                            />
                           </div>
                         )}
                       </div>
@@ -435,6 +449,7 @@ export default function CalendarConfigurationPage() {
         onClose={() => setItemDialog({ open: false, templateId: '' })}
         onSaved={() => { setItemDialog({ open: false, templateId: '' }); void refetchTemplates(); }}
         availableFunctions={availableFunctions}
+        siblingItems={itemDialog.siblingItems}
       />
 
       <ConfirmDialog

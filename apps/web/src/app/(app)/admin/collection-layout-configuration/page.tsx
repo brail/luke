@@ -45,11 +45,12 @@ import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 import { cn } from '../../../../lib/utils';
 
 const TYPE_LABELS: Record<CollectionCatalogType, string> = {
-  strategy:     'Strategy',
-  lineStatus:   'Line Status',
-  styleStatus:  'Style Status',
-  progress:     'Progress',
-  revisionType: 'Tipo revisione',
+  strategy:         'Strategy',
+  lineStatus:       'Line Status',
+  styleStatus:      'Style Status',
+  progress:         'Progress',
+  revisionType:     'Tipo revisione',
+  pricePositioning: 'Posizionamento Prezzo',
 };
 
 type CatalogItem = {

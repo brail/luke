@@ -51,6 +51,7 @@ interface CollectionLayoutTableProps {
   layout: CollectionLayoutData;
   canUpdate: boolean;
   parameterSets: PricingParameterSet[];
+  laggingRowIds?: Set<string>;
   onAddGroup: () => void;
   onAddRow: (groupId: string) => void;
   onEditRow: (row: CollectionRowData) => void;
@@ -73,6 +74,7 @@ export function CollectionLayoutTable({
   layout,
   canUpdate,
   parameterSets,
+  laggingRowIds,
   onAddGroup,
   onAddRow,
   onEditRow,
@@ -304,6 +306,7 @@ export function CollectionLayoutTable({
             hiddenColumns={effectiveHiddenColumns}
             parameterSets={parameterSets}
             searchQuery={search}
+            laggingRowIds={laggingRowIds}
             onAddRow={onAddRow}
             onEditRow={onEditRow}
             onDuplicateRow={onDuplicateRow}
