@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@luke/core": "workspace:*",
-    "@prisma/client": "^6.17.1",
+    "@prisma/client": "^7.8.0",
     "mssql": "^11.0.0",
     "pino": "^9.5.0"
   },
