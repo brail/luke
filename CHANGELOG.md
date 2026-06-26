@@ -4,6 +4,11 @@ All notable changes to Luke are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [1.9.0] - 2026-06-26
+
+### Maintenance
+- Merge develop-2.0 into main for v1.9.0 release
+
 ## [1.9.0-rc.1] - 2026-06-26
 
 ### Added
@@ -27,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **collection**: Add collection progress + price positioning
 - **api**: Collection layout revision export + season calendar updates
 - **web**: Collection layout revision UI + calendar updates
+- **collection**: Allow null skuForecast with double-confirm on save
 
 ### Changed
 - **company**: Use useStorageUpload hook and fix logo removal bug
@@ -41,12 +47,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **company**: Close spec gaps in company structure implementation
 - **company**: Soft-delete slug uniqueness + restore procedure
 - Audit findings — security, bugs, and compliance fixes
+- **web**: Fix ESLint import/order violations blocking CI build
 
 ### Maintenance
 - Bump version to 1.9.0-dev.0
 - Bootstrap release tooling and conventions
 - Finalize changelog config and pre-1.9 history
 - Bump version to 1.9.0-rc.1
+- Update CHANGELOG for v1.9.0-rc.1
 
 ### Tests
 - **api**: Company structure access and visibility tests
