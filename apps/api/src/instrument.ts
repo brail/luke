@@ -7,7 +7,7 @@ import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import { FastifyInstrumentation } from '@opentelemetry/instrumentation-fastify';
 import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
 import { UndiciInstrumentation } from '@opentelemetry/instrumentation-undici';
-import { Resource } from '@opentelemetry/resources';
+import { resourceFromAttributes } from '@opentelemetry/resources';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import {
   SEMRESATTRS_SERVICE_NAME,
@@ -32,7 +32,7 @@ const otelEnabled = process.env.OTEL_ENABLED !== 'false' && otelEndpoint !== '';
 let sdk: NodeSDK | null = null;
 
 if (otelEnabled) {
-  const resource = new Resource({
+  const resource = resourceFromAttributes({
     [SEMRESATTRS_SERVICE_NAME]: '@luke/api',
     [SEMRESATTRS_SERVICE_VERSION]: process.env.npm_package_version || '0.1.0',
     [SEMRESATTRS_DEPLOYMENT_ENVIRONMENT]: isDevelopment()

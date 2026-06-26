@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Loader2, Info } from 'lucide-react';
+import { LoaderCircle, Info } from 'lucide-react';
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -130,7 +130,7 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
           >
             {isChangingEmail ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
                 Aggiorno...
               </>
             ) : (
@@ -286,7 +286,7 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
         >
           {isSubmitting ? (
             <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
               Salvataggio...
             </>
           ) : (

@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronLeft, ChevronRight, Loader2, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, LoaderCircle, RefreshCw } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 import { SectionCard } from '../../../../components/SectionCard';
@@ -172,7 +172,7 @@ function PortafoglioSyncTab() {
             >
               {isSyncing ? (
                 <>
-                  <Loader2 size={16} className="animate-spin" />
+                  <LoaderCircle size={16} className="animate-spin" />
                   Sincronizzazione…
                 </>
               ) : (
@@ -337,7 +337,7 @@ function KimoSyncTab() {
             >
               {isSyncing ? (
                 <>
-                  <Loader2 size={16} className="animate-spin" />
+                  <LoaderCircle size={16} className="animate-spin" />
                   Sincronizzazione…
                 </>
               ) : (

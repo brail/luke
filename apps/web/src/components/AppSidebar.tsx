@@ -28,7 +28,7 @@ import {
   ClipboardList,
   ListTree,
   LayoutTemplate,
-  Chrome,
+  Globe,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -371,7 +371,7 @@ export default function AppSidebar() {
                     {menuAccess.settingsItems.google && (
                       <DropdownMenuItem asChild>
                         <Link href="/settings/google" className="flex items-center gap-2">
-                          <Chrome size={16} />
+                          <Globe size={16} />
                           <span>Google Workspace</span>
                         </Link>
                       </DropdownMenuItem>

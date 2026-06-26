@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, Download, FileSpreadsheet, FileText, Loader2, Maximize2, Minimize2, Plus, RotateCcw, Search, Settings2 } from 'lucide-react';
+import { AlertTriangle, Download, FileSpreadsheet, FileText, LoaderCircle, Maximize2, Minimize2, Plus, RotateCcw, Search, Settings2 } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
@@ -254,7 +254,7 @@ export function CollectionLayoutTable({
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" disabled={isExportingXlsx || isExportingPdf}>
                 {(isExportingXlsx || isExportingPdf)
-                  ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Esportando…</>
+                  ? <><LoaderCircle className="h-4 w-4 mr-1 animate-spin" />Esportando…</>
                   : <><Download className="h-4 w-4 mr-1" />Esporta</>}
               </Button>
             </DropdownMenuTrigger>

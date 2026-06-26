@@ -1,6 +1,6 @@
 'use client';
 
-import { Calendar, Download, FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
+import { Calendar, Download, FileSpreadsheet, FileText, LoaderCircle } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -82,7 +82,7 @@ export function ExportButton({ seasonId, brandIds, view, viewDate, disabled }: P
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" disabled={disabled || loading || !brandIds.length}>
           {loading
-            ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Esportando…</>
+            ? <><LoaderCircle className="h-4 w-4 mr-1 animate-spin" />Esportando…</>
             : <><Download className="h-4 w-4 mr-1" />Esporta</>}
         </Button>
       </DropdownMenuTrigger>

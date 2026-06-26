@@ -3,7 +3,7 @@
  * Maschera i valori cifrati per sicurezza
  */
 
-import { Download, Loader2 } from 'lucide-react';
+import { Download, LoaderCircle } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -77,7 +77,7 @@ export function ConfigExportButton({ className, disabled }: ConfigExportButtonPr
     >
       {isExporting ? (
         <>
-          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          <LoaderCircle className="w-4 h-4 mr-2 animate-spin" />
           Esportazione...
         </>
       ) : (

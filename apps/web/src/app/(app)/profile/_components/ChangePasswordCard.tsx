@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Loader2, Eye, EyeOff } from 'lucide-react';
+import { LoaderCircle, Eye, EyeOff } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -237,7 +237,7 @@ export function ChangePasswordCard({
           >
             {isSubmitting ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
                 Cambio...
               </>
             ) : (

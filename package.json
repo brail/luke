@@ -37,7 +37,7 @@
     "git-cliff": "^2.13.1",
     "husky": "^9.1.7",
     "prettier": "^3.8.5",
-    "ts-morph": "^27.0.0",
+    "ts-morph": "^28.0.0",
     "tsx": "^4.22.4",
     "turbo": "^2.10.0",
     "typescript": "^5.9.3"

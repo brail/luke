@@ -14,7 +14,7 @@
  * 3. Importazione con progress bar
  */
 
-import { CheckCircle, XCircle, AlertTriangle, Loader2 } from 'lucide-react';
+import { CheckCircle, XCircle, AlertTriangle, LoaderCircle } from 'lucide-react';
 import React, { useState, useCallback } from 'react';
 import { toast } from 'sonner';
 
@@ -375,7 +375,7 @@ export function ConfigImportDialog({
         {step === 'importing' && (
           <div className="space-y-4">
             <div className="text-center">
-              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" />
+              <LoaderCircle className="w-8 h-8 animate-spin mx-auto mb-4" />
               <h3 className="text-lg font-medium">Importazione in corso...</h3>
               <p className="text-sm text-muted-foreground">
                 Importazione delle configurazioni
