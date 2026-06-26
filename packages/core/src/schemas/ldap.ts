@@ -72,7 +72,7 @@ export const ldapSearchTestResponseSchema = z.object({
   results: z.array(
     z.object({
       dn: z.string(),
-      attributes: z.record(z.array(z.string())),
+      attributes: z.record(z.string(), z.array(z.string())),
     })
   ),
   searchConfig: z.object({

@@ -29,7 +29,7 @@ export const WidgetConfigItemSchema = z.object({
   id: z.enum(WIDGET_IDS),
   enabled: z.boolean().default(true),
   position: z.number().int().min(0),
-  settings: z.record(z.unknown()).optional(),
+  settings: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type WidgetConfigItem = z.infer<typeof WidgetConfigItemSchema>;

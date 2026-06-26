@@ -15,7 +15,7 @@ export const PricingParameterSetInputSchema = z.object({
     .min(1, 'Il nome è obbligatorio')
     .max(100, 'Il nome non può superare 100 caratteri'),
   countryCode: z
-    .string({ required_error: 'Il codice paese è obbligatorio' })
+    .string({ error: 'Il codice paese è obbligatorio' })
     .regex(
       /^[A-Z]{2}$/,
       'Inserire un codice paese ISO 3166-1 alpha-2 valido (es. IT, CN, TR)'
@@ -23,30 +23,30 @@ export const PricingParameterSetInputSchema = z.object({
   purchaseCurrency: z.string().min(1, 'La valuta di acquisto è obbligatoria'),
   sellingCurrency: z.string().min(1, 'La valuta di vendita è obbligatoria'),
   qualityControlPercent: z
-    .number({ required_error: 'Campo obbligatorio' })
+    .number({ error: 'Campo obbligatorio' })
     .min(0, 'Il controllo qualità non può essere negativo')
     .max(100, 'Il controllo qualità non può superare il 100%'),
   transportInsuranceCost: z
-    .number({ required_error: 'Campo obbligatorio' })
+    .number({ error: 'Campo obbligatorio' })
     .min(0, 'Il costo di trasporto non può essere negativo'),
   duty: z
-    .number({ required_error: 'Campo obbligatorio' })
+    .number({ error: 'Campo obbligatorio' })
     .min(0, 'Il dazio non può essere negativo')
     .max(100, 'Il dazio non può superare il 100%'),
   exchangeRate: z
-    .number({ required_error: 'Campo obbligatorio' })
+    .number({ error: 'Campo obbligatorio' })
     .positive('Il tasso di cambio deve essere positivo'),
   italyAccessoryCosts: z
-    .number({ required_error: 'Campo obbligatorio' })
+    .number({ error: 'Campo obbligatorio' })
     .min(0, 'I costi accessori non possono essere negativi'),
   tools: z
-    .number({ required_error: 'Campo obbligatorio' })
+    .number({ error: 'Campo obbligatorio' })
     .min(0, 'I costi stampi non possono essere negativi'),
   retailMultiplier: z
-    .number({ required_error: 'Campo obbligatorio' })
+    .number({ error: 'Campo obbligatorio' })
     .positive('Il moltiplicatore retail deve essere positivo'),
   optimalMargin: z
-    .number({ required_error: 'Campo obbligatorio' })
+    .number({ error: 'Campo obbligatorio' })
     .min(0, 'Il margine ottimale non può essere negativo')
     .max(99.9, 'Il margine ottimale non può raggiungere il 100%'),
 });

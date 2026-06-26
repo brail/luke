@@ -14,7 +14,7 @@ export const notificationSchema = z.object({
   title: z.string(),
   message: z.string(),
   link: z.string().nullable(),
-  data: z.record(z.unknown()).nullable(),
+  data: z.record(z.string(), z.unknown()).nullable(),
   isRead: z.boolean(),
   readAt: z.date().nullable(),
   createdAt: z.date(),

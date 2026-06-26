@@ -203,9 +203,9 @@ export function UserForm({
 
     if (!result.success) {
       const fieldErrors: Record<string, string> = {};
-      result.error.errors.forEach(error => {
-        if (error.path[0]) {
-          fieldErrors[error.path[0] as string] = error.message;
+      result.error.issues.forEach(issue => {
+        if (issue.path[0]) {
+          fieldErrors[issue.path[0] as string] = issue.message;
         }
       });
       setErrors(fieldErrors);
