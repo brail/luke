@@ -8,7 +8,7 @@
  * @author Luke Team
  */
 
-import { getApiBaseUrl as getCoreApiBaseUrl, isServer } from '../runtime/env';
+import { getApiBaseUrl as getCoreApiBaseUrl } from '../runtime/env';
 import { getProxyUrl } from '../storage/contracts';
 
 /**

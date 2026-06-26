@@ -220,7 +220,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
 export function hasPermission(
   user: { role: Role },
   permission: Permission,
-  context?: PermissionContext
+  _context?: PermissionContext
 ): boolean {
   const userPermissions = ROLE_PERMISSIONS[user.role];
 

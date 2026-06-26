@@ -9,6 +9,7 @@ const nextConfig = {
     externalDir: true,
     proxyTimeout: 360_000, // 6 min — query portafoglio impiegano ~3–4 min, +2 min di margine
   },
+  turbopack: {},
   webpack: config => {
     config.resolve.alias = {
       ...config.resolve.alias,
