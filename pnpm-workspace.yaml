@@ -3,12 +3,16 @@ packages:
   - packages/*
   - tools/*
 
-onlyBuiltDependencies:
-  - '@prisma/client'
-  - '@prisma/engines'
-  - argon2
-  - esbuild
-  - prisma
-  - protobufjs
-  - sharp
-  - unrs-resolver
+allowBuilds:
+  '@prisma/engines': true
+  '@prisma/client': true
+  argon2: true
+  esbuild: true
+  prisma: true
+  protobufjs: true
+  sharp: true
+  unrs-resolver: true
+
+minimumReleaseAgeExclude:
+  - prettier@3.8.5
+  - electron-to-chromium
