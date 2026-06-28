@@ -1,6 +1,6 @@
 # ADR-006: Resource/Action Permissions System
 
-**Status**: Accepted  
+**Status**: Potentially stale — review needed  
 **Date**: 2025-01-27  
 **Authors**: Luke Team
 

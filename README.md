@@ -389,10 +389,10 @@ Il sistema include protezioni robuste per la gestione degli utenti:
 
 Le decisioni architetturali chiave del progetto sono documentate in ADR:
 
-- [ADR-001: JWT HS256 con HKDF-SHA256](docs/adr/001-jwt-hs256-hkdf.md) - Gestione segreti JWT con derivazione crittografica
-- [ADR-002: RBAC Policy e Enforcement](docs/adr/002-rbac-policy.md) - Controllo accessi basato su ruoli
-- [ADR-003: Core Package Server-Only Exports](docs/adr/003-core-server-only.md) - Isolamento codice server-only
-- [ADR-004: Prisma Select-Only Pattern](docs/adr/004-prisma-select-only.md) - Prevenzione data leakage
+- [ADR-001: JWT HS256 con HKDF-SHA256](docs/decisions/001-jwt-hs256-hkdf.md) - Gestione segreti JWT con derivazione crittografica
+- [ADR-002: RBAC Policy e Enforcement](docs/decisions/002-rbac-policy.md) - Controllo accessi basato su ruoli
+- [ADR-003: Core Package Server-Only Exports](docs/decisions/003-core-server-only.md) - Isolamento codice server-only
+- [ADR-004: Prisma Select-Only Pattern](docs/decisions/004-prisma-select-only.md) - Prevenzione data leakage
 
 Per contribuire al progetto, consulta le ADR per comprendere le convenzioni e i pattern adottati.
 
@@ -743,7 +743,7 @@ Con **local** (`enableProxy=true`, default): stesso proxy per consistenza. Con `
 
 `uploads`, `exports`, `assets`, `brand-logos`, `collection-row-pictures`, `merchandising-specsheet-images`
 
-Per l'architettura completa: [docs/adr/007-storage-layer-refactor.md](docs/adr/007-storage-layer-refactor.md)
+Per l'architettura completa: [docs/decisions/007-storage-layer-refactor.md](docs/decisions/007-storage-layer-refactor.md)
 
 ## Dashboard Widget System
 
@@ -794,7 +794,7 @@ Nessuna variabile aggiuntiva richiesta. Il widget Forex usa `api.frankfurter.app
 - [docs/nav-integration.md](docs/nav-integration.md) - Architettura integrazione NAV
 - [docs/collection-layout-versioning.md](docs/collection-layout-versioning.md) - Collection Layout Versioning — registro qualità ISO 9001:2015 per le revisioni del piano di collezione
 - [docs/storage-immutable-bucket.md](docs/storage-immutable-bucket.md) - Bucket immutabile per le foto delle revisioni
-- [docs/adr/](docs/adr/) - Architecture Decision Records
+- [docs/decisions/](docs/decisions/) - Architecture Decision Records
 
 ---
 
