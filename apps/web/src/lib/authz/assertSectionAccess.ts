@@ -12,6 +12,23 @@ import {
 import type { Section } from '@luke/core';
 
 import { auth } from '../../auth';
+import { debugWarn } from '../../lib/debug';
+
+async function safeFetchJson<T>(
+  url: string,
+  options: RequestInit,
+  label: string
+): Promise<T | undefined> {
+  try {
+    const res = await fetch(url, options);
+    if (!res.ok) return undefined;
+    const data = await res.json();
+    return data.result?.data as T;
+  } catch (err) {
+    debugWarn(`Errore fetch ${label}:`, err);
+    return undefined;
+  }
+}
 
 /**
  * Verifica accesso a una sezione e redirige se negato
@@ -24,39 +41,36 @@ export async function assertSectionAccess(section: Section) {
     redirect('/login');
   }
 
-  // Fetch user-specific section overrides from API
-  const rbacConfig = {
-    sectionAccessDefaults: {},
-    disabledSections: [] as string[],
+  const options: RequestInit = {
+    cache: 'no-store',
+    headers: {
+      Authorization: `Bearer ${session.accessToken}`,
+      'Content-Type': 'application/json',
+    },
   };
-  let override: { enabled?: boolean } | undefined;
 
-  try {
-    const overrideRes = await fetch(buildTrpcUrl('sectionAccess.getForMe'), {
-      cache: 'no-store',
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    });
+  const [overrides, defaults] = await Promise.all([
+    safeFetchJson<Array<{ section: string; enabled: boolean }>>(
+      buildTrpcUrl('sectionAccess.getForMe'),
+      options,
+      'section override'
+    ),
+    safeFetchJson<{ sectionAccessDefaults: Record<string, Record<string, string>>; disabledSections: string[] }>(
+      buildTrpcUrl('sectionAccess.getDefaults'),
+      options,
+      'section defaults'
+    ),
+  ]);
 
-    if (overrideRes.ok) {
-      const data = await overrideRes.json();
-      const found = data.result?.data?.find((o: any) => o.section === section);
-      if (found) override = { enabled: found.enabled };
-    }
-  } catch (err) {
-    console.warn('Errore fetch section access:', err);
-  }
-
-  const userRole = session.user.role as string;
+  const found = overrides?.find(o => o.section === section);
+  const userOverride = found ? { enabled: found.enabled } : undefined;
 
   const allowed = effectiveSectionAccess({
-    role: userRole,
-    sectionAccessDefaults: rbacConfig.sectionAccessDefaults,
-    userOverride: override,
+    role: session.user.role as string,
+    sectionAccessDefaults: defaults?.sectionAccessDefaults ?? {},
+    userOverride,
     section,
-    disabledSections: rbacConfig.disabledSections,
+    disabledSections: defaults?.disabledSections ?? [],
   });
 
   if (!allowed) {

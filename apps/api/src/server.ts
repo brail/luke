@@ -8,6 +8,7 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import Fastify from 'fastify';
@@ -71,7 +72,7 @@ const fastify = Fastify({
   logger: loggerConfig,
   requestTimeout: 360_000, // 6 min — allineato a proxyTimeout Next.js e pool NAV (300 s + margine)
   connectionTimeout: 0,    // disabilitato — requestTimeout gestisce il limite totale
-  maxParamLength: 5000, // tRPC batch requests contain multiple procedure names in the URL param
+  routerOptions: { maxParamLength: 5000 }, // tRPC batch requests contain multiple procedure names in the URL param
 });
 
 // Registra handler/onError globali per logging e risposta sicura
@@ -98,6 +99,7 @@ fastify.addContentTypeParser(
  * Inizializza Prisma Client
  */
 const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }),
   log: isDevelopment() ? ['query', 'info', 'warn', 'error'] : ['error'],
 });
 

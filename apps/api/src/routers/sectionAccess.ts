@@ -13,6 +13,7 @@ import {
 } from '../services/sectionAccess.service';
 import { logAudit } from '../lib/auditLog';
 import { withRateLimit } from '../lib/ratelimit';
+import { getSectionDefaults } from '../services/sectionAccess.service';
 import { sectionEnum } from '@luke/core';
 import type { Section } from '@luke/core';
 
@@ -25,6 +26,13 @@ const setInput = z.object({
 });
 
 export const sectionAccessRouter = router({
+  /**
+   * Ottiene sectionAccessDefaults e disabledSections per la valutazione client-side
+   */
+  getDefaults: protectedProcedure.query(async ({ ctx }) => {
+    return getSectionDefaults(ctx.prisma);
+  }),
+
   /**
    * Ottiene override per un utente specifico (admin only)
    */

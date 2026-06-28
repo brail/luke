@@ -16,6 +16,7 @@ export interface IPrismaConfigClientWithWrite extends IPrismaConfigClient {
 interface RbacConfig {
   roleToPermissions: Record<string, string[]>;
   sectionAccessDefaults: Record<string, Record<string, string>>;
+  disabledSections: string[];
 }
 
 /**
@@ -44,22 +45,30 @@ export async function getRbacConfig(
     return cached.data;
   }
 
-  // Leggi da AppConfig
-  const config = await prisma.appConfig.findUnique({
-    where: { key: 'rbac.sectionAccessDefaults' },
-  });
+  // Leggi entrambe le chiavi in parallelo
+  const [sectionDefaultsRow, disabledRow] = await Promise.all([
+    prisma.appConfig.findUnique({ where: { key: 'rbac.sectionAccessDefaults' } }),
+    prisma.appConfig.findUnique({ where: { key: 'app.sections.disabled' } }),
+  ]);
 
-  let sectionAccessDefaults = {};
-
-  if (config) {
+  let sectionAccessDefaults: Record<string, Record<string, string>> = {};
+  if (sectionDefaultsRow) {
     try {
-      sectionAccessDefaults = JSON.parse(config.value);
+      sectionAccessDefaults = JSON.parse(sectionDefaultsRow.value);
     } catch {
       // parsing error — usa default vuoto
     }
   }
 
-  // Costruisci configurazione completa
+  let disabledSections: string[] = [];
+  if (disabledRow) {
+    try {
+      disabledSections = z.array(z.string()).parse(JSON.parse(disabledRow.value));
+    } catch {
+      // parsing error — usa default vuoto
+    }
+  }
+
   const rbacConfig: RbacConfig = {
     roleToPermissions: {
       admin: ['*'],
@@ -67,12 +76,21 @@ export async function getRbacConfig(
       viewer: ['read'],
     },
     sectionAccessDefaults,
+    disabledSections,
   };
 
-  // Aggiorna cache
   cache.set('rbac', { data: rbacConfig, ts: Date.now() });
 
   return rbacConfig;
+}
+
+/**
+ * Ottiene le sezioni disabilitate globalmente (con cache via getRbacConfig)
+ */
+export async function getSectionsDisabled(
+  prisma: IPrismaConfigClient
+): Promise<string[]> {
+  return (await getRbacConfig(prisma)).disabledSections;
 }
 
 /**
@@ -84,7 +102,6 @@ export async function setRbacSectionDefaults(
   prisma: IPrismaConfigClientWithWrite,
   sectionAccessDefaults: Record<string, Partial<Record<string, string>>>
 ): Promise<void> {
-  // Salva in AppConfig
   await prisma.appConfig.upsert({
     where: { key: 'rbac.sectionAccessDefaults' },
     update: {
@@ -99,28 +116,5 @@ export async function setRbacSectionDefaults(
     },
   });
 
-  // Invalida cache
   invalidateRbacCache();
-}
-
-/**
- * Ottiene le sezioni disabilitate globalmente
- * @param prisma - Client Prisma
- * @returns Array di sezioni disabilitate
- */
-export async function getSectionsDisabled(
-  prisma: IPrismaConfigClient
-): Promise<string[]> {
-  const config = await prisma.appConfig.findUnique({
-    where: { key: 'app.sections.disabled' },
-  });
-
-  if (!config) return [];
-
-  try {
-    const parsed = JSON.parse(config.value);
-    return z.array(z.string()).parse(parsed);
-  } catch {
-    return [];
-  }
 }

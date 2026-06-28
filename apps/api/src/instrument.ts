@@ -10,9 +10,9 @@ import { UndiciInstrumentation } from '@opentelemetry/instrumentation-undici';
 import { resourceFromAttributes } from '@opentelemetry/resources';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import {
-  SEMRESATTRS_SERVICE_NAME,
-  SEMRESATTRS_SERVICE_VERSION,
-  SEMRESATTRS_DEPLOYMENT_ENVIRONMENT,
+  ATTR_DEPLOYMENT_ENVIRONMENT_NAME,
+  ATTR_SERVICE_NAME,
+  ATTR_SERVICE_VERSION,
 } from '@opentelemetry/semantic-conventions';
 import { PrismaInstrumentation } from '@prisma/instrumentation';
 import pino from 'pino';
@@ -33,11 +33,9 @@ let sdk: NodeSDK | null = null;
 
 if (otelEnabled) {
   const resource = resourceFromAttributes({
-    [SEMRESATTRS_SERVICE_NAME]: '@luke/api',
-    [SEMRESATTRS_SERVICE_VERSION]: process.env.npm_package_version || '0.1.0',
-    [SEMRESATTRS_DEPLOYMENT_ENVIRONMENT]: isDevelopment()
-      ? 'development'
-      : 'production',
+    [ATTR_SERVICE_NAME]: '@luke/api',
+    [ATTR_SERVICE_VERSION]: process.env.npm_package_version || '0.1.0',
+    [ATTR_DEPLOYMENT_ENVIRONMENT_NAME]: isDevelopment() ? 'development' : 'production',
   });
 
   sdk = new NodeSDK({

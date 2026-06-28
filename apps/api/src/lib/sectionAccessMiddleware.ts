@@ -9,7 +9,7 @@ import {
   effectiveSectionAccess,
   type Section,
 } from '@luke/core';
-import { getRbacConfig, getSectionsDisabled } from '@luke/core/server';
+import { getRbacConfig } from '@luke/core/server';
 import { t } from './t';
 import { getOverride } from '../services/sectionAccess.service';
 
@@ -32,12 +32,12 @@ export function withSectionAccess(section: Section) {
 
     const user = ctx.session.user;
 
-    // Recupera override, RBAC config e disabled sections in parallelo
-    const [override, rbacConfig, disabledSections] = await Promise.all([
+    // Recupera override e RBAC config in parallelo (disabledSections è dentro rbacConfig)
+    const [override, rbacConfig] = await Promise.all([
       getOverride(ctx.prisma, user.id, section).catch(() => null),
       getRbacConfig(ctx.prisma),
-      getSectionsDisabled(ctx.prisma),
     ]);
+    const { disabledSections } = rbacConfig;
 
     // 1. Kill switch: se la sezione è disabilitata globalmente, nega accesso
     if (disabledSections.includes(section)) {

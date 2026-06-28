@@ -387,13 +387,11 @@ describe('Permission Checking', () => {
       expect(hasPermission(unknownUser, 'users:read')).toBe(false);
     });
 
-    it('should handle context parameter gracefully (current implementation ignores it)', () => {
+    it('should check permissions correctly without context', () => {
       const editorUser = { role: 'editor' as Role };
-      const context = { brandId: 'brand123', seasonId: 'season456' };
 
-      // Should still work same way - context not used in current implementation
-      expect(hasPermission(editorUser, 'brands:read', context)).toBe(true);
-      expect(hasPermission(editorUser, 'users:delete', context)).toBe(false);
+      expect(hasPermission(editorUser, 'brands:read')).toBe(true);
+      expect(hasPermission(editorUser, 'users:delete')).toBe(false);
     });
 
     it('should check specific permissions before wildcard', () => {
@@ -526,14 +524,6 @@ describe('Permission Checking with Grants', () => {
       );
     });
 
-    it('should handle context parameter gracefully', () => {
-      const editorUser = { role: 'editor' as Role, id: 'user1' };
-      const context = { brandId: 'brand123' };
-
-      expect(
-        hasPermissionWithGrants(editorUser, 'brands:read', undefined, context)
-      ).toBe(true);
-    });
   });
 });
 

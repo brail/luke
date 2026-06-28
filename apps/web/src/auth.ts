@@ -1,13 +1,22 @@
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 
-
 import { buildTrpcUrl } from '@luke/core';
 import { getNextAuthSecret } from '@luke/core/server';
 
 import { debugError, debugLog } from './lib/debug';
 
 import type { NextAuthConfig } from 'next-auth';
+
+interface LukeAuthUser {
+  role: string;
+  accessToken: string;
+  firstName: string;
+  lastName: string;
+  locale: string;
+  timezone: string;
+  tokenVersion: number;
+}
 
 // Forza runtime Node.js: necessari moduli Node in @luke/core/server
 export const runtime = 'nodejs';
@@ -129,13 +138,14 @@ export const config = {
       // Passa i dati utente al token JWT
       if (user) {
         // Primo login: salva tutti i dati nel token
-        token.role = (user as any).role;
-        token.accessToken = (user as any).accessToken;
-        token.firstName = (user as any).firstName;
-        token.lastName = (user as any).lastName;
-        token.locale = (user as any).locale;
-        token.timezone = (user as any).timezone;
-        token.tokenVersion = (user as any).tokenVersion;
+        const lukeUser = user as unknown as LukeAuthUser;
+        token.role = lukeUser.role;
+        token.accessToken = lukeUser.accessToken;
+        token.firstName = lukeUser.firstName;
+        token.lastName = lukeUser.lastName;
+        token.locale = lukeUser.locale;
+        token.timezone = lukeUser.timezone;
+        token.tokenVersion = lukeUser.tokenVersion;
         // Aggiungi claim nbf (not-before) per prevenire uso anticipato
         token.nbf = Math.floor(Date.now() / 1000);
         // Aggiungi claim aud/iss per validazione cross-service
@@ -168,7 +178,10 @@ export const config = {
             debugError('Errore transitorio verifica tokenVersion (ignorato):', response.status);
           }
         } catch (error) {
-          debugError('Errore verifica tokenVersion durante refresh JWT:', error);
+          const isNetworkError = error instanceof TypeError && error.message === 'fetch failed';
+          if (!isNetworkError) {
+            debugError('Errore verifica tokenVersion durante refresh JWT:', error);
+          }
           // In caso di errore di rete, mantieni il token ma logga l'errore
         }
 

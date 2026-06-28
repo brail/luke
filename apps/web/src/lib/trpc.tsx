@@ -1,7 +1,8 @@
 'use client';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createTRPCReact, httpBatchLink } from '@trpc/react-query';
+import { httpBatchStreamLink } from '@trpc/client';
+import { createTRPCReact } from '@trpc/react-query';
 import { useSession } from 'next-auth/react';
 import React, { useState } from 'react';
 
@@ -44,18 +45,14 @@ export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
     () =>
       trpc.createClient({
         links: [
-          httpBatchLink({
+          httpBatchStreamLink({
             // Relative path — Next.js rewrites proxy /trpc/* → http://api:3001/trpc/*
             // This works whether the browser hits port 80 (via NPM) or port 3000 directly.
             url: '/trpc',
             // Headers per autenticazione, Content-Type e trace correlation
             headers() {
               const headers: Record<string, string> = {
-                'Content-Type': 'application/json',
-                'x-luke-trace-id':
-                  crypto.randomUUID?.() ||
-                  Math.random().toString(36).substring(2) +
-                    Date.now().toString(36), // Nuovo per ogni batch request
+                'x-luke-trace-id': crypto.randomUUID(),
               };
 
               // Aggiungi token JWT se disponibile

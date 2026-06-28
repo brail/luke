@@ -67,26 +67,12 @@ export type Action = (typeof ACTIONS)[keyof typeof ACTIONS] | '*';
 export type Permission = `${Resource}:${Action}` | '*:*';
 
 /**
- * Context per Attribute-Based Access Control (ABAC)
- * Placeholder per implementazioni future (ownership, team-based access)
- */
-export interface PermissionContext {
-  brandId?: string;
-  seasonId?: string;
-  teamId?: string;
-}
-
-/**
  * Dichiarazione di permission per un endpoint
  * Specifica le permissions richieste e il contesto di validazione
  */
 export interface PermissionDeclaration {
   required: Permission | Permission[];
   description: string;
-  context?: {
-    checkOwnership?: boolean; // Verifica solo il tuo dato
-    requireAdmin?: boolean; // Che sia admin
-  };
 }
 
 export const VALID_RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
@@ -414,8 +400,7 @@ export function createPermission(resource: Resource, action: Action): Permission
 export function hasPermissionWithGrants(
   user: { role: Role; id: string },
   permission: Permission,
-  userGrants?: string[],
-  _context?: PermissionContext
+  userGrants?: string[]
 ): boolean {
   // 1. Controlla prima il ruolo (faster path)
   if (hasPermission(user, permission)) {

@@ -80,7 +80,8 @@ export default function CollectionLayoutPage() {
       { brandId: brand?.id ?? '', seasonId: season?.id ?? '' },
       { enabled }
     );
-  const layout: CollectionLayoutData | null = (layoutData as any) ?? null;
+  // TS2589: RouterOutputs type is excessively deep — as any breaks instantiation before ?? null
+  const layout = ((layoutData as any) ?? null) as CollectionLayoutData | null;
 
   const { data: parameterSets = [] } = trpc.pricing.parameterSets.list.useQuery(
     { brandId: brand?.id ?? '', seasonId: season?.id ?? '' },

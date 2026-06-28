@@ -3,7 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useSession } from 'next-auth/react';
 import React, { useEffect, useState } from 'react';
-import { type Resolver, useForm } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
 import { PageHeader } from '../../../../components/PageHeader';
@@ -28,6 +28,11 @@ import { usePermission } from '../../../../hooks/usePermission';
 import { useRefresh } from '../../../../lib/refresh';
 import { trpc } from '../../../../lib/trpc';
 import { useStandardMutation } from '../../../../lib/useStandardMutation';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const onNumberChange = (onChange: (v: number) => void) =>
+  (e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.valueAsNumber);
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -54,7 +59,7 @@ const localSchema = z.object({
       /^(\/|~\/)[a-zA-Z0-9_./-]*$/,
       'Path deve iniziare con / oppure ~/'
     ),
-  maxFileSizeMB: z.coerce.number().int().min(1).max(1000),
+  maxFileSizeMB: z.number().int().min(1).max(1000),
   buckets: z.array(z.string()).min(1, 'Almeno un bucket richiesto'),
   enableProxy: z.boolean(),
 });
@@ -62,14 +67,14 @@ const localSchema = z.object({
 const minioSchema = z.object({
   type: z.literal('minio'),
   endpoint: z.string().min(1, 'Endpoint richiesto'),
-  port: z.coerce.number().int().min(1).max(65535),
+  port: z.number().int().min(1).max(65535),
   useSSL: z.boolean(),
   accessKey: z.string().min(1, 'Access key richiesta'),
   secretKey: z.string().min(1, 'Secret key richiesta'),
   region: z.string().min(1, 'Region richiesta'),
   publicBaseUrl: z.string().url('URL non valido').or(z.literal('')).optional(),
-  presignedPutTtl: z.coerce.number().int().min(60).max(86400),
-  presignedGetTtl: z.coerce.number().int().min(60).max(86400),
+  presignedPutTtl: z.number().int().min(60).max(86400),
+  presignedGetTtl: z.number().int().min(60).max(86400),
 });
 
 const formSchema = z.discriminatedUnion('type', [localSchema, minioSchema]);
@@ -107,8 +112,7 @@ export default function StoragePage() {
   };
 
   const form = useForm<StorageForm>({
-    // z.coerce.* in Zod v4 exposes unknown as input type — incompatible with hookform Resolver<T> inference
-    resolver: zodResolver(formSchema) as Resolver<StorageForm>,
+    resolver: zodResolver(formSchema),
     defaultValues: {
       type: 'local',
       basePath: '',
@@ -268,7 +272,7 @@ export default function StoragePage() {
                     <FormItem>
                       <FormLabel>Dimensione massima file (MB)</FormLabel>
                       <FormControl>
-                        <Input {...field} type="number" min={1} max={1000} disabled={disabled} className="w-32" />
+                        <Input {...field} type="number" min={1} max={1000} disabled={disabled} className="w-32" onChange={onNumberChange(field.onChange)} />
                       </FormControl>
                       <FormDescription>Range: 1 – 1000 MB. Default: 50 MB.</FormDescription>
                       <FormMessage />
@@ -355,7 +359,7 @@ export default function StoragePage() {
                         <FormItem>
                           <FormLabel>Porta</FormLabel>
                           <FormControl>
-                            <Input {...field} type="number" min={1} max={65535} disabled={disabled} />
+                            <Input {...field} type="number" min={1} max={65535} disabled={disabled} onChange={onNumberChange(field.onChange)} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -459,7 +463,7 @@ export default function StoragePage() {
                         <FormItem>
                           <FormLabel>TTL presigned PUT (secondi)</FormLabel>
                           <FormControl>
-                            <Input {...field} type="number" min={60} max={86400} disabled={disabled} />
+                            <Input {...field} type="number" min={60} max={86400} disabled={disabled} onChange={onNumberChange(field.onChange)} />
                           </FormControl>
                           <FormDescription>Validità URL per upload diretto. Default: 3600 (1h).</FormDescription>
                           <FormMessage />
@@ -473,7 +477,7 @@ export default function StoragePage() {
                         <FormItem>
                           <FormLabel>TTL presigned GET (secondi)</FormLabel>
                           <FormControl>
-                            <Input {...field} type="number" min={60} max={86400} disabled={disabled} />
+                            <Input {...field} type="number" min={60} max={86400} disabled={disabled} onChange={onNumberChange(field.onChange)} />
                           </FormControl>
                           <FormDescription>Validità URL per download firmati. Default: 3600 (1h).</FormDescription>
                           <FormMessage />

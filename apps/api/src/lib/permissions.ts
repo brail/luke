@@ -9,7 +9,6 @@ import { TRPCError } from '@trpc/server';
 
 import {
   hasPermission,
-  hasPermissionWithGrants,
   type Permission,
   type PermissionDeclaration,
   type Role,
@@ -31,7 +30,6 @@ type PermissionsCache = Map<string, boolean>;
 declare module './context' {
   interface Context {
     _permissionsCache?: PermissionsCache;
-    userGrants?: string[];
   }
 }
 
@@ -90,11 +88,6 @@ export function requirePermission(
       ctx._permissionsCache = new Map();
     }
 
-    // Grants espliciti rimossi — sempre array vuoto (sistema grants deprecato)
-    if (!ctx.userGrants) {
-      ctx.userGrants = [];
-    }
-
     // Verifica se l'utente ha almeno una delle permissions richieste (OR logic)
     let hasAnyPermission = false;
     const deniedPermissions: Permission[] = [];
@@ -113,12 +106,7 @@ export function requirePermission(
         continue;
       }
 
-      // Verifica permission (role-based + grants)
-      const allowed = hasPermissionWithGrants(
-        { role: user.role as Role, id: user.id },
-        perm,
-        ctx.userGrants || []
-      );
+      const allowed = hasPermission({ role: user.role as Role }, perm);
 
       // Cache risultato
       ctx._permissionsCache.set(cacheKey, allowed);
@@ -184,7 +172,7 @@ export function can(
     ctx._permissionsCache = new Map();
   }
 
-  const cacheKey = `${user.role}:${permission}`;
+  const cacheKey = `${user.role}:${user.id}:${permission}`;
 
   // Controlla cache
   if (ctx._permissionsCache.has(cacheKey)) {

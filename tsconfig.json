@@ -20,8 +20,6 @@
         "name": "next"
       }
     ],
-    "ignoreDeprecations": "6.0",
-    "baseUrl": ".",
     "paths": {
       "@luke/core": ["./packages/core/src"],
       "@luke/core/*": ["./packages/core/src/*"]

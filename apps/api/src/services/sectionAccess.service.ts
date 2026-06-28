@@ -5,7 +5,19 @@
 
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyBaseLogger } from 'fastify';
+import { getRbacConfig } from '@luke/core/server';
 import type { Section } from '@luke/core';
+
+/**
+ * Ottiene sectionAccessDefaults e disabledSections in un'unica chiamata cached
+ */
+export async function getSectionDefaults(prisma: PrismaClient) {
+  const rbacConfig = await getRbacConfig(prisma);
+  return {
+    sectionAccessDefaults: rbacConfig.sectionAccessDefaults,
+    disabledSections: rbacConfig.disabledSections,
+  };
+}
 
 /**
  * Ottiene l'override per un utente e sezione specifica
