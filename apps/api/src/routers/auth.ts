@@ -47,7 +47,11 @@ const LoginSchema = z.object({
  */
 export const authRouter = router({
   /**
-   * Login utente con fallback LDAP configurabile
+   * Authenticates a user using the configured strategy (local-first, ldap-first, etc.).
+   *
+   * @auth {public}
+   * @input {LoginSchema} — username and password.
+   * @output {Session token and user info as returned by authenticateUser().}
    */
   login: publicProcedure
     .use(withRateLimit('login'))
@@ -58,8 +62,11 @@ export const authRouter = router({
     }),
 
   /**
-   * Logout utente (soft logout)
-   * Rimuove solo la sessione corrente, mantiene altre sessioni attive
+   * Logs out the current session; cookie removal is handled by NextAuth on the web layer.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {{ success: true, message: string }}
    */
   logout: protectedProcedure.mutation(async ({ ctx: _ctx }) => {
     // Cookie API rimosso: Web gestisce logout tramite NextAuth signOut()
@@ -67,15 +74,22 @@ export const authRouter = router({
   }),
 
   /**
-   * Logout hard - Revoca tutte le sessioni dell'utente
-   * Invalida tokenVersion per forzare re-login su tutti i dispositivi
+   * Invalidates all sessions for the current user by incrementing tokenVersion.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {Result from logoutAllSessions().}
    */
   logoutAll: protectedProcedure.mutation(async ({ ctx }) => {
     return await logoutAllSessions(ctx);
   }),
 
   /**
-   * Verifica sessione corrente
+   * Returns the current authenticated user's session info.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {{ user: SessionUser }} — user object from the current session.
    */
   me: protectedProcedure.query(async ({ ctx }) => {
     // La sessione è già verificata dal middleware
@@ -85,8 +99,11 @@ export const authRouter = router({
   }),
 
   /**
-   * Richiesta reset password
-   * Genera token e invia email con link di reset
+   * Generates a password-reset token and sends the reset link by email.
+   *
+   * @auth {public}
+   * @input {RequestPasswordResetSchema} — user email address.
+   * @output {Success confirmation (always, to prevent email enumeration).}
    */
   requestPasswordReset: publicProcedure
     .use(withRateLimit('passwordReset'))
@@ -96,8 +113,11 @@ export const authRouter = router({
     }),
 
   /**
-   * Conferma reset password
-   * Valida token e aggiorna password
+   * Validates the reset token and sets the new password.
+   *
+   * @auth {public}
+   * @input {ConfirmPasswordResetSchema} — token and newPassword.
+   * @output {Success confirmation.}
    */
   confirmPasswordReset: publicProcedure
     .use(withRateLimit('passwordReset'))
@@ -108,8 +128,11 @@ export const authRouter = router({
     }),
 
   /**
-   * Richiesta verifica email
-   * Genera token e invia email con link di verifica
+   * Generates an email-verification token and sends the verification link.
+   *
+   * @auth {public}
+   * @input {RequestEmailVerificationSchema} — email address to verify.
+   * @output {Success confirmation.}
    */
   requestEmailVerification: publicProcedure
     .use(withRateLimit('passwordReset')) // Usa stessa policy
@@ -119,8 +142,11 @@ export const authRouter = router({
     }),
 
   /**
-   * Conferma verifica email
-   * Valida token e marca email come verificata
+   * Validates the email-verification token and marks the address as verified.
+   *
+   * @auth {public}
+   * @input {ConfirmEmailVerificationSchema} — verification token.
+   * @output {Success confirmation.}
    */
   confirmEmailVerification: publicProcedure
     .use(withRateLimit('passwordReset'))
@@ -130,9 +156,11 @@ export const authRouter = router({
     }),
 
   /**
-   * Controlla se un username corrisponde a un utente LDAP in attesa di approvazione.
-   * Usato dal login page dopo un CredentialsSignin fallito per distinguere
-   * "credenziali errate" da "account pending". Non richiede password.
+   * Checks whether a username belongs to an LDAP user awaiting admin approval.
+   *
+   * @auth {public}
+   * @input {{ username: string }} — username to check.
+   * @output {{ isPending: boolean, needsEmail: boolean }} — pending status and whether a real email is needed.
    */
   getPendingStatus: publicProcedure
     .use(withRateLimit('pendingEmail'))
@@ -156,8 +184,11 @@ export const authRouter = router({
     }),
 
   /**
-   * Salva l'email fornita da un utente LDAP in attesa di approvazione
-   * Endpoint pubblico — usato dalla pagina /auth/pending
+   * Saves a real email for an LDAP pending user and sends the verification email.
+   *
+   * @auth {public}
+   * @input {{ username: string, email: string }} — LDAP username and the email to register.
+   * @output {{ success: true }}
    */
   submitPendingEmail: publicProcedure
     .use(withRateLimit('pendingEmail'))
@@ -228,8 +259,11 @@ export const authRouter = router({
     }),
 
   /**
-   * Richiesta verifica email da admin (by userId)
-   * Usa helper DRY per evitare duplicazione codice
+   * Admin-triggered email verification for a specific user by userId.
+   *
+   * @auth {users:update (admin)}
+   * @input {RequestEmailVerificationAdminSchema} — userId of the target user.
+   * @output {Result from sendVerificationEmail().}
    */
   requestEmailVerificationAdmin: adminProcedure
     .use(requirePermission('users:update'))

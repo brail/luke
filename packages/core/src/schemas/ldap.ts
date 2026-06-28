@@ -1,13 +1,13 @@
 /**
- * Schema Zod per configurazione LDAP
- * Centralizzato in @luke/core per riuso tra API e frontend
+ * Zod schemas for LDAP configuration — shared between API and frontend.
+ * Password fields are never included in response schemas.
  */
 
 import { z } from 'zod';
 
 /**
- * Schema per configurazione LDAP (input per saveLdapConfig)
- * Basato su quello esistente in apps/api/src/routers/integrations.ts
+ * Input schema for saving LDAP configuration.
+ * `roleMapping` must be a valid JSON string mapping LDAP group names to Luke role names.
  */
 export const ldapConfigSchema = z.object({
   enabled: z.boolean(),
@@ -41,7 +41,8 @@ export const ldapConfigSchema = z.object({
 });
 
 /**
- * Schema per risposta getLdapConfig (output con dati sensibili omessi)
+ * Response shape for `getLdapConfig`. Sensitive fields (`bindDN`, `bindPassword`) are replaced
+ * with boolean presence flags.
  */
 export const ldapConfigResponseSchema = z.object({
   enabled: z.boolean(),
@@ -56,16 +57,12 @@ export const ldapConfigResponseSchema = z.object({
   strategy: z.enum(['local-first', 'ldap-first', 'local-only', 'ldap-only']),
 });
 
-/**
- * Schema per test ricerca LDAP
- */
+/** Input schema for testing LDAP user search by username. */
 export const ldapSearchTestSchema = z.object({
   username: z.string().min(1, 'Username è obbligatorio'),
 });
 
-/**
- * Schema per risposta test ricerca LDAP
- */
+/** Response shape for an LDAP search test, including matched entries and effective search config. */
 export const ldapSearchTestResponseSchema = z.object({
   success: z.boolean(),
   message: z.string(),
@@ -82,17 +79,13 @@ export const ldapSearchTestResponseSchema = z.object({
   }),
 });
 
-/**
- * Schema per risposta test connessione LDAP
- */
+/** Response shape for an LDAP connectivity test (bind attempt). */
 export const ldapConnectionTestResponseSchema = z.object({
   success: z.boolean(),
   message: z.string(),
 });
 
-/**
- * Schema per risposta generica operazioni LDAP
- */
+/** Generic success/failure response for LDAP write operations (save, enable, disable). */
 export const ldapOperationResponseSchema = z.object({
   success: z.boolean(),
   message: z.string(),
@@ -111,7 +104,8 @@ export type LdapConnectionTestResponse = z.infer<
 export type LdapOperationResponse = z.infer<typeof ldapOperationResponseSchema>;
 
 /**
- * Strategie di autenticazione LDAP supportate
+ * Supported LDAP authentication strategies. Must match the `auth.strategy` AppConfig value.
+ * `local-first` tries local credentials before LDAP; `ldap-only` disables local login entirely.
  */
 export const LDAP_STRATEGIES = [
   'local-first',

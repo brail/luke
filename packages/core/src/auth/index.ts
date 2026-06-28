@@ -1,6 +1,5 @@
 /**
- * Auth module exports
- * Re-export di tutti i types e helpers per permissions
+ * Auth module — re-exports all types and helpers from the permissions subsystem.
  */
 
 export * from './permissions';

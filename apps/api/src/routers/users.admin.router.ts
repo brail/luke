@@ -18,8 +18,11 @@ import { UserIdSchema } from '../services/users.service';
 
 export const usersAdminRouter = router({
   /**
-   * Lista utenti LDAP in attesa di approvazione admin
-   * Richiede permission users:read
+   * Lists LDAP users pending admin approval (pendingApproval=true and isActive=true).
+   *
+   * @auth {users:read}
+   * @input {none}
+   * @output {{ users: User[], total: number }}
    */
   listPending: protectedProcedure
     .use(requirePermission('users:read'))
@@ -48,8 +51,11 @@ export const usersAdminRouter = router({
     }),
 
   /**
-   * Approva un utente LDAP in attesa — abilita l'accesso
-   * Richiede permission users:update
+   * Approves a pending LDAP user (clears pendingApproval flag) and sends an account-approved email.
+   *
+   * @auth {users:update}
+   * @input {UserIdSchema}
+   * @output {{ success: true, message: string }}
    */
   approvePending: protectedProcedure
     .use(requirePermission('users:update'))
@@ -96,8 +102,11 @@ export const usersAdminRouter = router({
     }),
 
   /**
-   * Rifiuta e rimuove un utente LDAP in attesa
-   * Richiede permission users:delete
+   * Rejects and permanently deletes a pending LDAP user.
+   *
+   * @auth {users:delete}
+   * @input {UserIdSchema}
+   * @output {{ success: true, message: string }}
    */
   rejectPending: protectedProcedure
     .use(requirePermission('users:delete'))
@@ -132,8 +141,11 @@ export const usersAdminRouter = router({
 
 
   /**
-   * Revoca tutte le sessioni di un utente specifico
-   * Richiede permission users:update
+   * Revokes all sessions for a specific user by incrementing their tokenVersion; blocks self-revocation.
+   *
+   * @auth {users:update}
+   * @input {UserIdSchema}
+   * @output {{ success: true, message: string }}
    */
   revokeUserSessions: protectedProcedure
     .use(requirePermission('users:update'))
@@ -180,9 +192,11 @@ export const usersAdminRouter = router({
     }),
 
   /**
-   * Forza verifica email per un utente (admin only)
-   * Imposta o rimuove emailVerifiedAt bypassando il token
-   * Richiede permission users:update
+   * Force-sets or clears the emailVerifiedAt timestamp for a user, bypassing the token flow.
+   *
+   * @auth {users:update}
+   * @input {{ userId: string (UUID), verified: boolean }}
+   * @output {{ success: true, message: string }}
    */
   forceVerifyEmail: protectedProcedure
     .use(requirePermission('users:update'))
@@ -220,9 +234,11 @@ export const usersAdminRouter = router({
     }),
 
   /**
-   * Cambio email per utente autenticato
-   * Reset automatico di emailVerifiedAt + invio email verifica
-   * Richiede permission users:update
+   * Changes the current user's email, resets emailVerifiedAt, and sends a new verification email.
+   *
+   * @auth {users:update}
+   * @input {{ newEmail: string }}
+   * @output {{ success: true, message: string }}
    */
   changeEmail: protectedProcedure
     .use(requirePermission('users:update'))

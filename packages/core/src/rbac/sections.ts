@@ -1,7 +1,5 @@
 /**
- * Definizioni delle sezioni del sistema Luke
- * Ogni sezione rappresenta un'area funzionale che può essere protetta
- * con override per utente specifico
+ * Legacy narrow Section type — superseded by the full `Section` type in `schemas/rbac.ts`.
+ * Kept for backward compatibility with older internal consumers.
  */
-
 export type Section = 'dashboard' | 'settings' | 'maintenance';

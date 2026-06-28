@@ -25,8 +25,11 @@ import { router, protectedProcedure } from '../lib/trpc';
 
 const navSyncRouter = router({
   /**
-   * Preview live: query diretta su NAV SQL Server (non sulla replica Postgres).
-   * Restituisce i campi essenziali per la tabella di selezione.
+   * Queries NAV SQL Server directly (not the PG replica) for a live preview of vendor/brand/season records.
+   *
+   * @auth {config:read}
+   * @input {{ entity: "vendor" | "brand" | "season" }}
+   * @output {Array<{ navNo, name, city, countryCode, blocked }>}
    */
   preview: protectedProcedure
     .use(requirePermission('config:read'))
@@ -123,8 +126,11 @@ const navSyncRouter = router({
     }),
 
   /**
-   * Restituisce lo stato di pianificazione auto-sync per tutte le entità.
-   * Usato dalla UI per mostrare lo stato corrente per-entità.
+   * Returns the auto-sync schedule status (enabled, intervalMinutes) for all NAV sync entities.
+   *
+   * @auth {config:read}
+   * @input {none}
+   * @output {Record<string, { autoSyncEnabled: boolean, intervalMinutes: number }>}
    */
   getStatus: protectedProcedure
     .use(requirePermission('config:read'))
@@ -138,8 +144,11 @@ const navSyncRouter = router({
     }),
 
   /**
-   * Salva la configurazione di pianificazione auto-sync per un'entità.
-   * Crea il filtro con mode='all' se non esiste ancora.
+   * Saves the auto-sync schedule for a NAV entity; creates the filter with mode='all' if absent.
+   *
+   * @auth {config:update}
+   * @input {{ entity, autoSyncEnabled: boolean, intervalMinutes: number }}
+   * @output {NavSyncFilter}
    */
   saveSyncSchedule: protectedProcedure
     .use(requirePermission('config:update'))
@@ -180,7 +189,13 @@ const navSyncRouter = router({
       return filter;
     }),
 
-  /** Restituisce il NavSyncFilter corrente per l'entità. */
+  /**
+   * Returns the current NavSyncFilter for the given entity.
+   *
+   * @auth {config:read}
+   * @input {{ entity: string }}
+   * @output {NavSyncFilter | null}
+   */
   getFilter: protectedProcedure
     .use(requirePermission('config:read'))
     .input(z.object({ entity: z.string().min(1) }))
@@ -190,7 +205,13 @@ const navSyncRouter = router({
       });
     }),
 
-  /** Upsert del NavSyncFilter. */
+  /**
+   * Upserts the NavSyncFilter for an entity (mode, navNos whitelist/exclude, active flag).
+   *
+   * @auth {config:update}
+   * @input {{ entity, mode: "all"|"whitelist"|"exclude", navNos: string[], active? }}
+   * @output {NavSyncFilter}
+   */
   saveFilter: protectedProcedure
     .use(requirePermission('config:update'))
     .input(z.object({
@@ -225,8 +246,11 @@ const navSyncRouter = router({
     }),
 
   /**
-   * Esegue il sync manualmente on-demand per una singola entità.
-   * Restituisce i risultati con durationMs.
+   * Triggers an on-demand NAV sync for a single entity; returns per-entity results with durationMs.
+   *
+   * @auth {config:update}
+   * @input {{ entity: "vendor" | "brand" | "season" }}
+   * @output {{ results: Array<{ entity, upserted, skipped, filterMode, durationMs }> }}
    */
   run: protectedProcedure
     .use(requirePermission('config:update'))
@@ -267,8 +291,11 @@ const navSyncRouter = router({
 
 const navVendorsRouter = router({
   /**
-   * Lista vendor sincronizzati dal DB locale (non query live su NAV).
-   * Usato dalla tendina di selezione fornitore nel Collection Layout.
+   * Lists vendors synced from NAV in the local PG replica (not a live NAV query).
+   *
+   * @auth {collection_layout:update}
+   * @input {none}
+   * @output {Array<{ navNo, name, searchName }>} — sorted by searchName ascending.
    */
   list: protectedProcedure
     .use(requirePermission('collection_layout:update'))
@@ -284,9 +311,11 @@ const navVendorsRouter = router({
 
 const navBrandsRouter = router({
   /**
-   * Lista brand sincronizzati dal DB locale.
-   * Esclude i navCode già collegati a un brand locale (navBrandId univoco).
-   * excludeLinkedTo: navCode del brand corrente in modifica — resta visibile anche se già linkato.
+   * Lists NAV brands from the local replica, excluding codes already linked to a local brand (except excludeLinkedTo).
+   *
+   * @auth {brands:read}
+   * @input {{ excludeLinkedTo?: string }} — navCode of the brand currently being edited.
+   * @output {Array<{ navCode, description }>}
    */
   list: protectedProcedure
     .use(requirePermission('brands:read'))
@@ -315,9 +344,11 @@ const navBrandsRouter = router({
 
 const navSeasonsRouter = router({
   /**
-   * Lista season sincronizzate dal DB locale.
-   * Esclude i navCode già collegati a una season locale (navSeasonId univoco).
-   * excludeLinkedTo: navCode della season corrente in modifica — resta visibile anche se già linkato.
+   * Lists NAV seasons from the local replica, excluding codes already linked to a local season (except excludeLinkedTo).
+   *
+   * @auth {seasons:read}
+   * @input {{ excludeLinkedTo?: string }} — navCode of the season currently being edited.
+   * @output {Array<{ navCode, description, startingDate, endingDate }>}
    */
   list: protectedProcedure
     .use(requirePermission('seasons:read'))
@@ -345,6 +376,13 @@ const navSeasonsRouter = router({
 // ── Main router ───────────────────────────────────────────────────────────────
 
 export const navRouter = router({
+  /**
+   * Saves the NAV SQL Server connection config to AppConfig; resets the mssql pool if credentials changed.
+   *
+   * @auth {config:update}
+   * @input {navConfigSchema} — host, port, database, user, password (optional), company, readOnly, syncEnabled.
+   * @output {{ success: true, message: string, connectionChanged: boolean }}
+   */
   saveConfig: protectedProcedure
     .use(requirePermission('config:update'))
     .input(navConfigSchema)
@@ -410,6 +448,13 @@ export const navRouter = router({
       };
     }),
 
+  /**
+   * Tests the NAV SQL Server connection using the stored credentials.
+   *
+   * @auth {config:read}
+   * @input {none}
+   * @output {{ success: true, message: string, steps: Step[] }}
+   */
   testConnection: protectedProcedure
     .use(requirePermission('config:read'))
     .mutation(async ({ ctx }) => {

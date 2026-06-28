@@ -25,8 +25,11 @@ import { deleteUserHandler, getLockedFields, UserIdSchema } from '../services/us
 
 export const usersCoreRouter = router({
   /**
-   * Lista tutti gli utenti con paginazione e filtri
-   * Richiede permission users:read
+   * Lists all non-pending users with optional filters, sorting, and offset pagination; includes online presence status.
+   *
+   * @auth {users:read}
+   * @input {optional: { page, limit, search, role, sortBy, sortOrder }}
+   * @output {{ users: User[], total: number, page: number, limit: number, totalPages: number }}
    */
   list: protectedProcedure
     .use(requirePermission('users:read'))
@@ -137,8 +140,11 @@ export const usersCoreRouter = router({
     }),
 
   /**
-   * Ottiene un utente per ID
-   * Richiede permission users:read - solo self-profile o admin
+   * Returns a user by ID; non-admin users may only fetch their own profile.
+   *
+   * @auth {users:read}
+   * @input {UserIdSchema}
+   * @output {User with identities}
    */
   getById: protectedProcedure
     .use(requirePermission('users:read'))
@@ -188,8 +194,11 @@ export const usersCoreRouter = router({
     }),
 
   /**
-   * Crea un nuovo utente con identità locale
-   * Richiede permission users:create
+   * Creates a new user with a local identity and hashed password within a transaction.
+   *
+   * @auth {users:create}
+   * @input {CreateUserInputSchema}
+   * @output {User (without sensitive fields)}
    */
   create: protectedProcedure
     .use(requirePermission('users:create'))
@@ -275,8 +284,11 @@ export const usersCoreRouter = router({
     }),
 
   /**
-   * Aggiorna un utente esistente
-   * Richiede permission users:update
+   * Updates an existing user's fields, enforcing role/self-modification guards and uniqueness constraints.
+   *
+   * @auth {users:update}
+   * @input {UpdateUserInputSchema}
+   * @output {User (without sensitive fields)}
    */
   update: protectedProcedure
     .use(requirePermission('users:update'))
@@ -440,9 +452,11 @@ export const usersCoreRouter = router({
     }),
 
   /**
-   * Elimina un utente (soft delete)
-   * Imposta isActive = false invece di eliminare il record
-   * Richiede permission users:delete
+   * Soft-deletes a user by setting isActive to false without removing the record.
+   *
+   * @auth {users:delete}
+   * @input {UserIdSchema}
+   * @output {void}
    */
   softDelete: protectedProcedure
     .use(requirePermission('users:delete'))
@@ -452,8 +466,11 @@ export const usersCoreRouter = router({
     .mutation(deleteUserHandler),
 
   /**
-   * Heartbeat di presenza: aggiorna il timestamp online dell'utente corrente.
-   * Chiamato ogni 60s dal client autenticato.
+   * Presence heartbeat: updates the online timestamp for the currently authenticated user.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {{ ok: true }}
    */
   heartbeat: protectedProcedure.mutation(({ ctx }) => {
     updatePresence(ctx.session.user.id);
@@ -461,9 +478,11 @@ export const usersCoreRouter = router({
   }),
 
   /**
-   * Hard delete di un utente (elimina completamente dal database)
-   * ATTENZIONE: Questa operazione è irreversibile
-   * Richiede permission users:delete
+   * Permanently deletes a user and all cascade relations; blocked for self or last remaining admin.
+   *
+   * @auth {users:delete}
+   * @input {UserIdSchema}
+   * @output {{ success: true, message: string }}
    */
   hardDelete: protectedProcedure
     .use(requirePermission('users:delete'))

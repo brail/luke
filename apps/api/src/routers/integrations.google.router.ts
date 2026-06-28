@@ -26,6 +26,13 @@ const oauthConfigSchema = z.object({
 const saveConfigSchema = z.discriminatedUnion('authMode', [serviceAccountConfigSchema, oauthConfigSchema]);
 
 export const googleRouter = router({
+  /**
+   * Returns the current Google Workspace integration configuration (secrets masked).
+   *
+   * @auth {config:read}
+   * @input {none}
+   * @output {{ authMode, domain, calendarSyncEnabled, serviceEmail, hasServiceKey, oauthClientId, hasOauthToken, ... }}
+   */
   getConfig: protectedProcedure
     .use(requirePermission('config:read'))
     .query(async ({ ctx }) => {
@@ -71,6 +78,13 @@ export const googleRouter = router({
       };
     }),
 
+  /**
+   * Saves the Google Workspace integration configuration (service account or OAuth mode).
+   *
+   * @auth {config:update}
+   * @input {saveConfigSchema} — discriminated union on authMode: service_account or oauth_user fields.
+   * @output {{ success: true }}
+   */
   saveConfig: protectedProcedure
     .use(requirePermission('config:update'))
     .input(saveConfigSchema)
@@ -102,6 +116,13 @@ export const googleRouter = router({
       return { success: true };
     }),
 
+  /**
+   * Generates the Google OAuth2 authorization URL for the user to grant access.
+   *
+   * @auth {config:update}
+   * @input {{ redirectUri: string }} — OAuth redirect URI.
+   * @output {{ url: string }}
+   */
   getOAuthUrl: protectedProcedure
     .use(requirePermission('config:update'))
     .input(z.object({ redirectUri: z.string().url() }))
@@ -117,6 +138,13 @@ export const googleRouter = router({
       return { url };
     }),
 
+  /**
+   * Exchanges the OAuth authorization code for a refresh token and stores it encrypted.
+   *
+   * @auth {config:update}
+   * @input {{ code: string, redirectUri: string }}
+   * @output {{ userEmail: string }}
+   */
   exchangeOAuthCode: protectedProcedure
     .use(requirePermission('config:update'))
     .input(z.object({ code: z.string().min(1), redirectUri: z.string().url() }))
@@ -140,6 +168,13 @@ export const googleRouter = router({
       return { userEmail };
     }),
 
+  /**
+   * Disconnects the Google OAuth account by clearing the stored refresh token and user email.
+   *
+   * @auth {config:update}
+   * @input {none}
+   * @output {{ success: true }}
+   */
   disconnectOAuth: protectedProcedure
     .use(requirePermission('config:update'))
     .mutation(async ({ ctx }) => {
@@ -154,6 +189,13 @@ export const googleRouter = router({
       return { success: true };
     }),
 
+  /**
+   * Tests the configured Google Workspace connection using the stored credentials.
+   *
+   * @auth {config:read}
+   * @input {none}
+   * @output {{ ok: true } | { ok: false, error: string }}
+   */
   testConnection: protectedProcedure
     .use(requirePermission('config:read'))
     .mutation(async ({ ctx }) => {

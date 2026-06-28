@@ -7,7 +7,11 @@ import { resolveContext } from '../services/context.service';
 
 export const healthRouter = router({
   /**
-   * Verifica che il context layer risolva correttamente per l'utente corrente
+   * Verifies that the context layer resolves correctly for the current user.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {{ ok: true, brand: string, season: string }}
    */
   context: protectedProcedure.query(async ({ ctx }) => {
     const resolved = await resolveContext(ctx.session.user.id, ctx.prisma);

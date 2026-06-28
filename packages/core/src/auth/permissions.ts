@@ -13,8 +13,7 @@
 import type { Role } from '../rbac';
 
 /**
- * Risorse disponibili nel sistema Luke - Const Enum
- * Ogni risorsa rappresenta un'entità o area funzionale
+ * Available resources in the Luke system. Each entry represents a functional entity or domain area.
  */
 export const RESOURCES = {
   BRANDS: 'brands',
@@ -41,8 +40,7 @@ export const RESOURCES = {
 export type Resource = (typeof RESOURCES)[keyof typeof RESOURCES];
 
 /**
- * Azioni disponibili sulle risorse - Const Enum
- * '*' rappresenta wildcard per tutte le azioni
+ * Available actions on resources. `'*'` is the wildcard matching all actions.
  */
 export const ACTIONS = {
   CREATE: 'create',
@@ -61,14 +59,14 @@ export const ACTIONS = {
 export type Action = (typeof ACTIONS)[keyof typeof ACTIONS] | '*';
 
 /**
- * Permission = Resource:Action
- * Esempi: 'brands:create', 'users:read', 'settings:*', '*:*'
+ * A typed permission string in `Resource:Action` form.
+ *
+ * @example 'brands:create' | 'users:read' | 'settings:*' | '*:*'
  */
 export type Permission = `${Resource}:${Action}` | '*:*';
 
 /**
- * Dichiarazione di permission per un endpoint
- * Specifica le permissions richieste e il contesto di validazione
+ * Declarative permission requirement for an endpoint, used for documentation and tooling.
  */
 export interface PermissionDeclaration {
   required: Permission | Permission[];
@@ -98,8 +96,8 @@ export const VALID_RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
 } as const;
 
 /**
- * Mapping delle permissions per ruolo
- * Definisce le permissions di base per ogni ruolo nel sistema
+ * Base permission set for each role. Admin receives `*:*` wildcard; editor and viewer
+ * receive explicit resource:action grants. Used by `hasPermission` and `expandRole`.
  */
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   admin: [
@@ -279,14 +277,20 @@ export function expandRole(role: Role): Permission[] {
 const RESOURCE_VALUES = Object.values(RESOURCES) as string[];
 const ACTION_VALUES: string[] = [...Object.values(ACTIONS), '*'];
 
+/** Returns `true` if `v` is a known `Resource` value. */
 export function isResource(v: unknown): v is Resource {
   return typeof v === 'string' && RESOURCE_VALUES.includes(v);
 }
 
+/** Returns `true` if `v` is a known `Action` value (including `'*'`). */
 export function isAction(v: unknown): v is Action {
   return typeof v === 'string' && ACTION_VALUES.includes(v);
 }
 
+/**
+ * Returns `true` if `v` is a structurally valid `Permission` string.
+ * Validates that the resource is known and the action is valid for that resource.
+ */
 export function isPermission(v: unknown): v is Permission {
   if (typeof v !== 'string') return false;
   if (v === '*:*') return true;
@@ -307,7 +311,7 @@ export function isPermission(v: unknown): v is Permission {
 
 // ── Matrix utilities ──────────────────────────────────────────────────────────
 
-/** Restituisce tutte le permissions valide (wildcards + specifiche) */
+/** Returns all valid permissions including wildcards (`*:*`, `resource:*`) and specific grants. */
 export function getAllPermissions(): Permission[] {
   const result: Permission[] = ['*:*'];
 
@@ -322,7 +326,7 @@ export function getAllPermissions(): Permission[] {
   return result;
 }
 
-/** Restituisce una struttura completa per ispezione/debug della matrice */
+/** Returns a complete snapshot of the permission matrix for inspection and debugging. */
 export function getPermissionMatrix(): {
   resources: Resource[];
   actions: Action[];
@@ -346,7 +350,11 @@ export function getPermissionMatrix(): {
   };
 }
 
-/** Valida l'integrità della matrice di permissions */
+/**
+ * Validates the integrity of the permission matrix.
+ *
+ * @returns `{ valid: true }` when no issues are found, or `{ valid: false, errors }` listing problems.
+ */
 export function validatePermissionMatrix(): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
 
@@ -368,7 +376,7 @@ export function validatePermissionMatrix(): { valid: boolean; errors: string[] }
   return { valid: errors.length === 0, errors };
 }
 
-/** Esporta la matrice in formato CSV (Resource,Action,Admin,Editor,Viewer) */
+/** Serializes the permission matrix to CSV with columns: Resource, Action, Admin, Editor, Viewer. */
 export function permissionMatrixToCSV(): string {
   const roles: Role[] = ['admin', 'editor', 'viewer'];
   const rows: string[] = ['Resource,Action,Admin,Editor,Viewer'];
@@ -388,14 +396,18 @@ export function permissionMatrixToCSV(): string {
   return rows.join('\n');
 }
 
-/** Crea una stringa di permission tipizzata da resource e action */
+/** Builds a typed `Permission` string from a resource and action. */
 export function createPermission(resource: Resource, action: Action): Permission {
   return `${resource}:${action}` as Permission;
 }
 
 /**
- * Verifica se un utente ha una permission considerando sia ruolo che grants espliciti
- * Integra ROLE_PERMISSIONS con UserGrantedPermission dal database
+ * Checks whether a user holds a permission, considering both their role and any explicit database grants.
+ *
+ * @param user - User object with role and id
+ * @param permission - Permission to check
+ * @param userGrants - Optional array of explicit permission strings from `UserGrantedPermission`
+ * @returns `true` if the permission is granted via role or explicit grant
  */
 export function hasPermissionWithGrants(
   user: { role: Role; id: string },

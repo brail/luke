@@ -19,10 +19,11 @@ import { router, protectedProcedure } from '../lib/trpc';
 
 export const ldapRouter = router({
   /**
-   * Salva la configurazione LDAP globale dell'applicazione
-   * IMPORTANTE: La configurazione LDAP è GLOBALE e non legata a utenti specifici.
-   * Tutti gli amministratori vedono e modificano la stessa configurazione.
-   * Le chiavi sono salvate come 'auth.ldap.*' senza riferimenti a userId.
+   * Saves the global LDAP configuration; all fields are stored under auth.ldap.* in AppConfig (encrypted where sensitive).
+   *
+   * @auth {config:update}
+   * @input {ldapConfigSchema} — url, bindDN, bindPassword, searchBase/Filter, groupSearch*, roleMapping, strategy, enabled.
+   * @output {{ success: true, message: string }}
    */
   saveLdapConfig: protectedProcedure
     .use(requirePermission('config:update'))
@@ -165,9 +166,11 @@ export const ldapRouter = router({
     }),
 
   /**
-   * Recupera la configurazione LDAP globale dell'applicazione
-   * IMPORTANTE: Restituisce sempre la stessa configurazione per tutti gli amministratori.
-   * Non ci sono filtri basati su userId - la configurazione è globale.
+   * Returns the current global LDAP configuration; sensitive fields (bindDN, password) are omitted.
+   *
+   * @auth {config:read}
+   * @input {none}
+   * @output {{ enabled, url, hasBindDN, hasBindPassword, searchBase, searchFilter, roleMapping, strategy, ... }}
    */
   getLdapConfig: protectedProcedure
     .use(requirePermission('config:read'))
@@ -220,6 +223,13 @@ export const ldapRouter = router({
       }
     }),
 
+  /**
+   * Tests the LDAP connection by binding with the stored credentials.
+   *
+   * @auth {config:update}
+   * @input {none}
+   * @output {{ success: true, message: string }}
+   */
   testLdapConnection: protectedProcedure
     .use(requirePermission('config:update'))
     .use(withRateLimit('ldapTest'))
@@ -302,6 +312,13 @@ export const ldapRouter = router({
       }
     }),
 
+  /**
+   * Tests the LDAP user search using the configured searchFilter with the given username.
+   *
+   * @auth {config:read}
+   * @input {{ username: string }} — username to search for (LDAP-escaped to prevent injection).
+   * @output {{ success: true, message: string, results: Array<{ dn, attributes }> }}
+   */
   testLdapSearch: protectedProcedure
     .use(requirePermission('config:read'))
     .input(z.object({ username: z.string() }))

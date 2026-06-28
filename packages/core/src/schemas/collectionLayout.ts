@@ -1,7 +1,9 @@
 import { z } from 'zod';
 
-// Columns that can be toggled on/off. Always-visible: #, line, skuForecast, actions
-// Max 7 visible at a time.
+/**
+ * Toggleable columns for the collection table. Always-visible columns (#, line, skuForecast, actions)
+ * are not listed here. At most `COLLECTION_COLUMNS_MAX_VISIBLE` of these may be shown simultaneously.
+ */
 export const COLLECTION_TABLE_COLUMNS = [
   { key: 'foto',            label: 'Foto' },
   { key: 'article',         label: 'Articolo' },
@@ -18,9 +20,10 @@ export const COLLECTION_TABLE_COLUMNS = [
   { key: 'pricePositioning',  label: 'Posizionamento' },
 ] as const;
 
+/** Maximum number of toggleable columns that can be visible simultaneously. */
 export const COLLECTION_COLUMNS_MAX_VISIBLE = 7;
 
-// Columns hidden by default (when no user preference is saved)
+/** Columns hidden by default when no user preference has been saved. */
 export const COLLECTION_COLUMNS_DEFAULT_HIDDEN = [
   'article',
   'gender',
@@ -30,13 +33,17 @@ export const COLLECTION_COLUMNS_DEFAULT_HIDDEN = [
   'pricePositioning',
 ] as const;
 
+/** Allowed gender values for collection rows. Used in collection layout forms and filtering. */
 export const COLLECTION_GENDER = ['MAN', 'WOMAN'] as const;
 export type CollectionGender = (typeof COLLECTION_GENDER)[number];
 
-// Default catalog values — used for seeding CollectionCatalogItem on migration
+/** Default strategy catalog values — used to seed `CollectionCatalogItem` on migration. */
 export const DEFAULT_CATALOG_STRATEGY = ['CORE', 'INNOVATION'] as const;
+/** Default line-status catalog values. */
 export const DEFAULT_CATALOG_LINE_STATUS = ['CARRY_OVER', 'NEW'] as const;
+/** Default style-status catalog values. */
 export const DEFAULT_CATALOG_STYLE_STATUS = ['CARRY_OVER', 'NEW'] as const;
+/** Default production-progress catalog values in fixed display order. */
 export const DEFAULT_CATALOG_PROGRESS = [
   'DESIGN',
   'CONSTRUCTION_OK',
@@ -46,7 +53,7 @@ export const DEFAULT_CATALOG_PROGRESS = [
   'SMS_LAUNCHED',
 ] as const;
 
-// Kept for backward compat (export + xlsx/pdf services still reference these)
+// Kept for backward compatibility — export and xlsx/pdf services still reference these aliases.
 export const COLLECTION_STRATEGY = DEFAULT_CATALOG_STRATEGY;
 export type CollectionStrategy = (typeof COLLECTION_STRATEGY)[number];
 export const COLLECTION_STATUS = DEFAULT_CATALOG_LINE_STATUS;
@@ -54,8 +61,10 @@ export type CollectionStatus = (typeof COLLECTION_STATUS)[number];
 export const COLLECTION_PROGRESS = DEFAULT_CATALOG_PROGRESS;
 export type CollectionProgress = (typeof COLLECTION_PROGRESS)[number];
 
+/** Default price-positioning catalog values. */
 export const DEFAULT_CATALOG_PRICE_POSITIONING = ['ENTRY', 'MID_MARKET', 'PREMIUM', 'LUXURY'] as const;
 
+/** All catalog dimension types managed via the `CollectionCatalogItem` table. */
 export const COLLECTION_CATALOG_TYPES = [
   'strategy',
   'lineStatus',
@@ -66,7 +75,7 @@ export const COLLECTION_CATALOG_TYPES = [
 ] as const;
 export type CollectionCatalogType = (typeof COLLECTION_CATALOG_TYPES)[number];
 
-// ISO 9001:2015 categories — from Tabella correlazione §4.2 PI 8.3-01 rev5
+/** ISO 9001:2015 review categories — from Tabella correlazione §4.2 PI 8.3-01 rev5. Used on revision-type catalog items. */
 export const ISO9001_CATEGORIES = [
   'PIANIFICAZIONE',
   'RIESAME',
@@ -76,9 +85,11 @@ export const ISO9001_CATEGORIES = [
 ] as const;
 export type Iso9001Category = (typeof ISO9001_CATEGORIES)[number];
 
+/** Allowed causes for a collection layout revision. `MILESTONE` requires a linked `milestoneId`. */
 export const REVISION_CAUSES = ['MANUAL', 'MILESTONE'] as const;
 export type RevisionCause = (typeof REVISION_CAUSES)[number];
 
+/** Input schema for creating or updating a collection group. `skuBudget` belongs to the group, not to individual rows. */
 export const CollectionGroupInputSchema = z.object({
   name: z.string().min(1, 'Nome obbligatorio').max(100),
   order: z.number().int().optional(),
@@ -86,12 +97,17 @@ export const CollectionGroupInputSchema = z.object({
 });
 export type CollectionGroupInput = z.infer<typeof CollectionGroupInputSchema>;
 
+/** Layout-level settings persisted alongside the collection layout (column visibility, SKU budget, available genders). */
 export const CollectionLayoutSettingsSchema = z.object({
   skuBudget: z.number().int().min(0).optional().nullable(),
   hiddenColumns: z.array(z.string()).optional().nullable(),
   availableGenders: z.array(z.string()).min(1).optional(),
 });
 
+/**
+ * Input schema for a single collection layout row.
+ * `skuForecast` belongs to the row; `skuBudget` belongs to the parent group.
+ */
 export const CollectionLayoutRowInputSchema = z.object({
   groupId: z.string().min(1),
   order: z.number().int().optional(),
@@ -124,6 +140,7 @@ export type CollectionLayoutRowInput = z.infer<
   typeof CollectionLayoutRowInputSchema
 >;
 
+/** Input schema for creating or updating a quotation attached to a collection row. */
 export const CollectionRowQuotationInputSchema = z.object({
   rowId: z.string().uuid(),
   order: z.number().int().optional(),
@@ -143,6 +160,7 @@ export type CollectionRowQuotationUpdate = z.infer<
   typeof CollectionRowQuotationUpdateSchema
 >;
 
+/** Base fields for a catalog item before refinement constraints are applied. */
 export const CollectionCatalogItemInputBaseSchema = z.object({
   type: z.enum(COLLECTION_CATALOG_TYPES),
   value: z.string().min(1).max(100),
@@ -153,6 +171,11 @@ export const CollectionCatalogItemInputBaseSchema = z.object({
   expectedMinProgress: z.string().optional().nullable(),
 });
 
+/**
+ * Full input schema for a catalog item with cross-field constraints:
+ * - `revisionType` items require at least one `iso9001Categories` entry
+ * - `code` is only allowed when `type === 'progress'`
+ */
 export const CollectionCatalogItemInputSchema =
   CollectionCatalogItemInputBaseSchema.refine(
     data => data.type !== 'revisionType' || (data.iso9001Categories && data.iso9001Categories.length > 0),
@@ -167,6 +190,7 @@ export type CollectionCatalogItemInput = z.infer<
 
 // ─── Revision schemas ─────────────────────────────────────────────────────────
 
+/** Input schema for creating a new collection layout revision snapshot. */
 export const CreateRevisionInputSchema = z.object({
   collectionLayoutId: z.string().uuid(),
   revisionTypeValue: z.string().min(1),

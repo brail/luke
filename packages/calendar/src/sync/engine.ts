@@ -28,6 +28,21 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
   throw lastErr;
 }
 
+/**
+ * Syncs a single milestone to all Google Calendars it should appear in.
+ *
+ * For each company function in `milestone.visibilityFunctionIds`:
+ * - If `publishExternally` is `false`: deletes the existing Google event and mapping if present.
+ * - If the existing content hash matches: skips (no-op).
+ * - If an existing mapping exists: updates the Google event in place.
+ * - Otherwise: provisions the binding if needed, creates the event, and stores the mapping.
+ *
+ * Also removes mappings for company functions that are no longer in the visibility list.
+ * All Google API calls are retried up to 3 times with exponential back-off (skipping 4xx errors).
+ *
+ * @param milestone - Milestone data and its target function ids
+ * @param ctx - Database I/O context (bindings, mappings, brand/season metadata)
+ */
 export async function syncMilestone(
   milestone: MilestoneForSync,
   ctx: SyncContext
@@ -90,6 +105,15 @@ export async function syncMilestone(
   }
 }
 
+/**
+ * Creates a new Google Calendar for the given company function and configures
+ * reader ACL from `ctx.allowedUserEmails`.
+ *
+ * @param ctx - Sync context providing brand/season codes and allowed reader emails
+ * @param companyFunctionId - Identifier of the company function (used as calendar section label when no label is provided)
+ * @param functionLabel - Human-readable section label for the calendar summary (optional)
+ * @returns The newly provisioned Google Calendar id
+ */
 export async function provisionBinding(
   ctx: SyncContext,
   companyFunctionId: string,

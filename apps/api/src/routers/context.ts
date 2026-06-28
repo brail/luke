@@ -10,10 +10,24 @@ import {
 } from '../services/context.service';
 
 export const contextRouter = router({
+  /**
+   * Resolves the current brand/season context for the authenticated user.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {{ brand, season, ... }} — resolved context object from resolveContext().
+   */
   get: protectedProcedure.query(async ({ ctx }) => {
     return resolveContext(ctx.session.user.id, ctx.prisma, ctx.session.user.role as Role);
   }),
 
+  /**
+   * Sets the user's active brand/season context after validating brand access.
+   *
+   * @auth {authenticated}
+   * @input {{ brandId: string, seasonId: string }} — UUIDs of the target brand and season.
+   * @output {Updated context from setContext().}
+   */
   set: protectedProcedure
     .input(
       z.object({

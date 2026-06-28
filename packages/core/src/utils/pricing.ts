@@ -1,3 +1,7 @@
+/**
+ * Pricing parameter set values required for inverse and margin calculations.
+ * All percentage fields (e.g. `optimalMargin`, `duty`) are expressed as 0–100 numbers.
+ */
 export interface InverseCalcParams {
   retailMultiplier: number;
   optimalMargin: number;
@@ -9,12 +13,21 @@ export interface InverseCalcParams {
   tools: number;
 }
 
-/** Calcola il moltiplicatore aziendale dal margine target (es. 52% → 2.083). */
+/**
+ * Derives the company multiplier from the target margin percentage.
+ *
+ * @example calculateCompanyMultiplier(52) // → 2.08
+ */
 export function calculateCompanyMultiplier(optimalMargin: number): number {
   return Math.round((1 / (1 - optimalMargin / 100)) * 100) / 100;
 }
 
-/** Calcola il massimo costo FOB fornitore dato un prezzo retail target. */
+/**
+ * Calculates the maximum acceptable FOB supplier cost for a given retail target price.
+ * Applies the full cost chain in reverse: retail → wholesale → landed → FOB.
+ *
+ * @returns Maximum FOB cost, floored to one decimal place
+ */
 export function calcMaxSupplierCost(retailPrice: number, ps: InverseCalcParams): number {
   const cm = 1 / (1 - ps.optimalMargin / 100);
   const wholesale = retailPrice / ps.retailMultiplier;
@@ -26,7 +39,11 @@ export function calcMaxSupplierCost(retailPrice: number, ps: InverseCalcParams):
   return Math.floor(raw * 10) / 10;
 }
 
-/** Genera range di prezzi retail commerciali (es. 39.9, 49.9, ... 499.9). */
+/**
+ * Generates an array of commercial retail price points from `min` to `max` stepping by `step`.
+ *
+ * @example generateRetailPriceRange(39.9, 99.9, 10) // [39.9, 49.9, 59.9, 69.9, 79.9, 89.9, 99.9]
+ */
 export function generateRetailPriceRange(min = 39.9, max = 499.9, step = 10): number[] {
   const prices: number[] = [];
   let p = min;
@@ -38,9 +55,12 @@ export function generateRetailPriceRange(min = 39.9, max = 499.9, step = 10): nu
 }
 
 /**
- * Commercial rounding for retail prices.
- * Rounds to the nearest .9 or .4 threshold.
- * Examples: 21.43 → 19.9 | 45.60 → 44.9 | 67.80 → 69.9
+ * Rounds a raw price to the nearest commercial retail threshold (`.9` or `.4`).
+ *
+ * @example
+ * roundRetailPrice(21.43) // → 19.9
+ * roundRetailPrice(45.60) // → 44.9
+ * roundRetailPrice(67.80) // → 69.9
  */
 export function roundRetailPrice(price: number): number {
   if (price < 10) return 9.9;

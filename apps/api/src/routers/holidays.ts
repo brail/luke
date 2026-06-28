@@ -32,6 +32,13 @@ async function fetchNagerHolidays(countryCode: string, year: number): Promise<Na
 // ─── Router ──────────────────────────────────────────────────────────────────
 
 export const holidaysRouter = router({
+  /**
+   * Returns the list of country codes derived from active vendors and the company profile.
+   *
+   * @auth {config:read}
+   * @input {none}
+   * @output {Array<{ code: string, name: string }>} — country codes relevant to the company.
+   */
   listCountries: protectedProcedure
     .use(requirePermission('config:read'))
     .query(async ({ ctx }) => {
@@ -61,6 +68,13 @@ export const holidaysRouter = router({
       return codes.map(code => ({ code, name: nameMap.get(code) ?? code }));
     }),
 
+  /**
+   * Previews holidays to be imported from Nager.Date API without persisting them.
+   *
+   * @auth {config:update}
+   * @input {{ countryCodes: string[], year: number }} — 1–10 ISO 3166-1 alpha-2 codes and year.
+   * @output {Array<{ code, name, nameEn, date }>} — flattened holiday preview list.
+   */
   previewImport: protectedProcedure
     .use(requirePermission('config:update'))
     .input(z.object({
@@ -92,6 +106,13 @@ export const holidaysRouter = router({
       return preview;
     }),
 
+  /**
+   * Imports public holidays from Nager.Date API into the database (upsert by country+name+date).
+   *
+   * @auth {config:update}
+   * @input {{ countryCodes: string[], year: number }}
+   * @output {{ imported: number }}
+   */
   confirmImport: protectedProcedure
     .use(requirePermission('config:update'))
     .input(z.object({
@@ -158,6 +179,13 @@ export const holidaysRouter = router({
       return { imported };
     }),
 
+  /**
+   * Lists stored public holidays, optionally filtered by country codes and/or year.
+   *
+   * @auth {config:read}
+   * @input {{ countryCodes?: string[], year?: number }}
+   * @output {Holiday[]}
+   */
   listHolidays: protectedProcedure
     .use(requirePermission('config:read'))
     .input(z.object({
@@ -177,6 +205,13 @@ export const holidaysRouter = router({
       });
     }),
 
+  /**
+   * Hard-deletes a holiday record by ID.
+   *
+   * @auth {config:update}
+   * @input {{ id: string }} — holiday UUID.
+   * @output {{ success: true }}
+   */
   deleteHoliday: protectedProcedure
     .use(requirePermission('config:update'))
     .input(z.object({ id: z.string().uuid() }))
@@ -194,6 +229,13 @@ export const holidaysRouter = router({
 
   // ─── Vendor closures ───────────────────────────────────────────────────────
 
+  /**
+   * Lists vendor closure periods for a specific vendor and season.
+   *
+   * @auth {season_calendar:read}
+   * @input {{ vendorId: string, seasonId: string }}
+   * @output {VendorClosurePeriod[]} — sorted by startDate ascending.
+   */
   listVendorClosures: protectedProcedure
     .use(requirePermission('season_calendar:read'))
     .input(z.object({
@@ -207,6 +249,13 @@ export const holidaysRouter = router({
       });
     }),
 
+  /**
+   * Pre-fills vendor closure periods from stored holidays for the given country codes.
+   *
+   * @auth {season_calendar:update}
+   * @input {{ vendorId: string, seasonId: string, countryCodes: string[] }}
+   * @output {{ created: number }}
+   */
   prefillVendorClosures: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .input(z.object({
@@ -248,6 +297,13 @@ export const holidaysRouter = router({
       return { created };
     }),
 
+  /**
+   * Creates or updates a vendor closure period for a given vendor/season.
+   *
+   * @auth {season_calendar:update}
+   * @input {{ id?, vendorId, seasonId, countryCode, name, startDate, endDate, type, notes? }}
+   * @output {VendorClosurePeriod}
+   */
   upsertVendorClosure: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .input(z.object({
@@ -305,6 +361,13 @@ export const holidaysRouter = router({
       return created;
     }),
 
+  /**
+   * Hard-deletes a vendor closure period by ID.
+   *
+   * @auth {season_calendar:update}
+   * @input {{ id: string }}
+   * @output {{ success: true }}
+   */
   deleteVendorClosure: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .input(z.object({ id: z.string().uuid() }))
@@ -314,6 +377,13 @@ export const holidaysRouter = router({
       return { success: true };
     }),
 
+  /**
+   * Marks a set of vendor closure periods as confirmed by the current user.
+   *
+   * @auth {season_calendar:update}
+   * @input {{ ids: string[] }} — UUIDs of closure periods to confirm.
+   * @output {{ confirmed: number }}
+   */
   confirmVendorClosures: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .input(z.object({

@@ -1,10 +1,6 @@
 /**
- * @luke/core/storage - Configurazione storage
- *
- * Schema Zod per validazione configurazione storage providers
- *
- * @version 0.1.0
- * @author Luke Team
+ * @luke/core/storage — Zod schemas for storage provider configuration.
+ * Covers local filesystem and MinIO (S3-compatible) providers.
  */
 
 import { z } from 'zod';
@@ -108,7 +104,8 @@ export const storageTypeSchema = z.enum(['local', 'minio']);
 export type StorageType = z.infer<typeof storageTypeSchema>;
 
 /**
- * Helper per validare bucket
+ * Returns `true` if `bucket` is a recognized `StorageBucket` value.
+ * Use before constructing storage paths to avoid runtime errors from typos.
  */
 export function isValidBucket(bucket: string): bucket is StorageBucket {
   return [

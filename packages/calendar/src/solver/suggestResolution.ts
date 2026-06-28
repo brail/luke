@@ -4,7 +4,20 @@ import { buildGraph } from './graph.js';
 import { topologicalSort } from './topologicalSort.js';
 import type { GraphInput, ProposedShift } from './types.js';
 
-// Forward propagation greedy resolution. Returns null if overconstrained (maxGapDays HARD violated).
+/**
+ * Suggests a minimal set of date shifts that resolves all HARD `minGapDays` violations
+ * by forward-propagating each event in topological order.
+ *
+ * After propagation, verifies that no HARD `maxGapDays` constraint is violated.
+ * Returns `null` when the graph is over-constrained (a HARD max-gap would be
+ * exceeded) or cyclic (caller should run `detectViolations` first).
+ *
+ * Only HARD dependencies are used for propagation; SOFT violations are ignored.
+ *
+ * @param input - Graph input (events, dependencies, holidays)
+ * @param shifts - Initial shifts to apply before propagation
+ * @returns Array of additional proposed shifts, or `null` if unresolvable
+ */
 export function suggestResolution(
   input: GraphInput,
   shifts: ProposedShift[],

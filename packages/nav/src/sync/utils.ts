@@ -1,30 +1,40 @@
 import type { Logger } from 'pino';
 import type mssql from 'mssql';
 
-/** Risultato della valutazione del filtro di sync NAV. */
+/**
+ * Result of evaluating a `NavSyncFilter` record.
+ * When `shouldSkip` is `true` the caller must return early without querying NAV.
+ * When `false`, the caller receives SQL predicates and a bind-param helper
+ * to compose the WHERE clause.
+ */
 export type NavFilterResult =
   | { shouldSkip: true; filterMode: string }
   | {
       shouldSkip: false;
       filterMode: string;
-      /** Predicati SQL da combinare in WHERE (senza la keyword WHERE). */
+      /** SQL predicates to combine in the WHERE clause (without the `WHERE` keyword). */
       filterPredicates: string[];
       bindParams: (req: mssql.Request) => void;
     };
 
 /**
- * Valuta il NavSyncFilter e restituisce i predicati SQL pronti per il WHERE.
+ * Evaluates a `NavSyncFilter` record and returns SQL predicates ready to
+ * be embedded in a WHERE clause.
  *
- * Restituisce `filterPredicates` (array) anziché un `whereClause` già assemblato
- * per permettere al chiamante di aggiungere predicati extra (es. watermark differenziale).
- * Usa `buildWhereClause(predicates)` per assemblare il WHERE finale.
+ * Returns an array of predicates (not an assembled WHERE string) so that callers
+ * can append additional predicates (e.g. a differential watermark) before calling
+ * `buildWhereClause()`.
  *
- * Regole:
- * - active=false          → shouldSkip: true
- * - whitelist + navNos [] → shouldSkip: true (whitelist vuota = nessun record ammesso)
- * - whitelist + navNos    → predicato [codeField] IN (...)
- * - exclude  + navNos     → predicato [codeField] NOT IN (...)
- * - all (o nessun filtro) → nessun predicato
+ * Skip rules:
+ * - `active=false`              → `shouldSkip: true`
+ * - `whitelist` with empty list → `shouldSkip: true` (empty whitelist admits no rows)
+ * - `whitelist` with entries    → `[codeField] IN (...)`
+ * - `exclude`  with entries     → `[codeField] NOT IN (...)`
+ * - `all` or no filter record   → no predicates (full table)
+ *
+ * @param filter - Filter record from the database, or `null` if not configured
+ * @param entity - Entity name used in log messages
+ * @param codeField - NAV column name used for IN/NOT IN filtering (default: `'No_'`)
  */
 export function buildNavSyncFilter(
   filter: { mode: string; navNos: string[]; active: boolean } | null,
@@ -67,15 +77,17 @@ export function buildNavSyncFilter(
 }
 
 /**
- * Assembla una WHERE clause SQL da un array di predicati.
- * Restituisce stringa vuota se l'array è vuoto.
+ * Assembles a SQL WHERE clause from an array of predicate strings.
+ * Returns an empty string when the array is empty (no filtering).
  */
 export function buildWhereClause(predicates: string[]): string {
   return predicates.length > 0 ? `WHERE ${predicates.join(' AND ')}` : '';
 }
 
 /**
- * Esegue `fn` su tutti i `rows` in batch paralleli di dimensione `batchSize`.
+ * Processes all `rows` by executing `fn` on each one, in parallel batches of `batchSize`.
+ * Rows within a batch run concurrently; the next batch starts only after the current
+ * batch resolves.
  */
 export async function processInBatches<T>(
   rows: T[],

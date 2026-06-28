@@ -7,6 +7,7 @@ import { z } from 'zod';
 import type { IPrismaConfigClient } from '../runtime/env';
 
 // Extend interface for write operations if needed
+/** Extends `IPrismaConfigClient` with write capabilities needed for upsert operations. */
 export interface IPrismaConfigClientWithWrite extends IPrismaConfigClient {
   appConfig: IPrismaConfigClient['appConfig'] & {
     upsert(args: any): Promise<any>;
@@ -19,23 +20,23 @@ interface RbacConfig {
   disabledSections: string[];
 }
 
-/**
- * Cache in-memory per configurazioni RBAC
- */
+/** In-memory TTL cache for RBAC configuration. Invalidated by `invalidateRbacCache()`. */
 const cache = new Map<string, { data: RbacConfig; ts: number }>();
 const TTL = 60_000; // 60 secondi
 
 /**
- * Invalida la cache RBAC
+ * Clears the in-memory RBAC cache, forcing the next call to `getRbacConfig` to re-read from the database.
+ * Must be called after any write to RBAC-related AppConfig keys.
  */
 export function invalidateRbacCache(): void {
   cache.clear();
 }
 
 /**
- * Ottiene la configurazione RBAC da AppConfig con cache
- * @param prisma - Client Prisma
- * @returns Configurazione RBAC completa
+ * Retrieves the full RBAC configuration from AppConfig, using a 60-second in-memory cache.
+ *
+ * @param prisma - Prisma client instance
+ * @returns RBAC configuration including section defaults and disabled sections
  */
 export async function getRbacConfig(
   prisma: IPrismaConfigClient
@@ -85,7 +86,7 @@ export async function getRbacConfig(
 }
 
 /**
- * Ottiene le sezioni disabilitate globalmente (con cache via getRbacConfig)
+ * Returns the list of globally disabled sections (kill-switch), loaded via the cached `getRbacConfig`.
  */
 export async function getSectionsDisabled(
   prisma: IPrismaConfigClient
@@ -94,9 +95,10 @@ export async function getSectionsDisabled(
 }
 
 /**
- * Salva i default di accesso alle sezioni per ruolo
- * @param prisma - Client Prisma
- * @param sectionAccessDefaults - Default per ruolo e sezione
+ * Persists per-role section-access defaults to AppConfig and invalidates the RBAC cache.
+ *
+ * @param prisma - Prisma client with write capabilities
+ * @param sectionAccessDefaults - Map of role → section → `'enabled' | 'disabled' | 'auto'`
  */
 export async function setRbacSectionDefaults(
   prisma: IPrismaConfigClientWithWrite,

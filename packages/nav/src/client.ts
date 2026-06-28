@@ -2,6 +2,9 @@ import mssql from 'mssql';
 
 import type { NavDbConfig } from './config.js';
 
+/**
+ * Result of a single diagnostic step in a NAV connection test.
+ */
 export interface NavConnectionStep {
   name: string;
   ok: boolean;
@@ -9,12 +12,12 @@ export interface NavConnectionStep {
 }
 
 /**
- * Esegue un test completo della connessione NAV su un pool temporaneo isolato:
- * 1. Autenticazione SQL Server (host, porta, credenziali, database)
- * 2. Query SELECT 1 (accesso DB confermato)
- * 3. Verifica tabella [COMPANY$Vendor] (nome company corretto)
+ * Runs a full diagnostic against a NAV SQL Server using a temporary isolated pool:
+ * 1. SQL Server authentication (host, port, credentials, database)
+ * 2. SELECT 1 query (confirms DB access)
+ * 3. Existence of at least one table with the `[COMPANY$]` prefix (validates company name)
  *
- * Non influenza il pool singleton di produzione.
+ * Does not affect the production singleton pool.
  */
 export async function testNavConnection(config: NavDbConfig): Promise<{
   success: boolean;
@@ -136,13 +139,14 @@ function configChanged(a: NavDbConfig, b: NavDbConfig): boolean {
 }
 
 /**
- * Restituisce il connection pool mssql, creandolo o ricreandolo se la
- * configurazione è cambiata. Il pool è un singleton per processo.
+ * Returns the mssql connection pool, creating or recreating it when the
+ * configuration has changed. The pool is a per-process singleton.
  *
- * Chiamate concorrenti durante la fase di connect attendono la stessa
- * Promise invece di aprire pool duplicati.
+ * Concurrent callers during an in-flight connect await the same Promise
+ * instead of opening duplicate pools.
  *
- * readOnly=true imposta ApplicationIntent=ReadOnly (utile con SQL Server AG).
+ * `readOnly=true` sets `ApplicationIntent=ReadOnly`, useful with SQL Server
+ * Availability Groups to route reads to the secondary replica.
  */
 export async function getPool(
   config: NavDbConfig
@@ -194,6 +198,10 @@ export async function getPool(
   return connectingPromise;
 }
 
+/**
+ * Closes the singleton mssql pool and resets all connection state.
+ * Safe to call when no pool is open (no-op).
+ */
 export async function closePool(): Promise<void> {
   connectingPromise = null;
   if (pool) {

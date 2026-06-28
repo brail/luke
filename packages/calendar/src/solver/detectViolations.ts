@@ -4,6 +4,22 @@ import { buildGraph } from './graph.js';
 import { topologicalSort } from './topologicalSort.js';
 import type { GraphInput, ProposedShift, Violation } from './types.js';
 
+/**
+ * Detects all constraint violations in the event graph after applying `shifts`.
+ *
+ * Checks three violation types in order:
+ * 1. **CYCLE_DETECTED** — if a cycle exists, returns immediately (other checks are invalid).
+ * 2. **GAP_MIN / GAP_MAX** — for each active dependency, compares the effective gap
+ *    between predecessor end and successor start against configured thresholds.
+ * 3. **HOLIDAY_OVERLAP** — for events with `relevantCountries`, checks whether the
+ *    effective date range overlaps any supplied holiday (always SOFT severity).
+ *
+ * Shifts are applied virtually; the original `input` is never mutated.
+ *
+ * @param input - Graph input (events, dependencies, holidays)
+ * @param shifts - Proposed date shifts to apply before checking
+ * @returns Array of violations; empty when all constraints are satisfied
+ */
 export function detectViolations(
   input: GraphInput,
   shifts: ProposedShift[],

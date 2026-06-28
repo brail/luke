@@ -32,7 +32,11 @@ const SEASON_SELECT = {
 
 export const seasonRouter = router({
   /**
-   * Lista season con filtri opzionali e cursor pagination
+   * Lists seasons with optional filters and cursor-based pagination.
+   *
+   * @auth {seasons:read}
+   * @input {SeasonListInputSchema} — optional: isActive, search, limit, cursor.
+   * @output {{ items: Season[], nextCursor: string | null, hasMore: boolean }}
    */
   list: protectedProcedure
     .use(requirePermission('seasons:read'))
@@ -66,7 +70,11 @@ export const seasonRouter = router({
     }),
 
   /**
-   * Crea una nuova season
+   * Creates a new season, enforcing unique code and unique navSeasonId within a transaction.
+   *
+   * @auth {seasons:create}
+   * @input {SeasonInputSchema}
+   * @output {Season}
    */
   create: protectedProcedure
     .use(requirePermission('seasons:create'))
@@ -111,7 +119,11 @@ export const seasonRouter = router({
     }),
 
   /**
-   * Aggiorna una season esistente
+   * Updates an existing season; blocks navSeasonId changes if already linked (use unlink first).
+   *
+   * @auth {seasons:update}
+   * @input {SeasonUpdateInputSchema}
+   * @output {Season}
    */
   update: protectedProcedure
     .use(requirePermission('seasons:update'))
@@ -175,7 +187,11 @@ export const seasonRouter = router({
     }),
 
   /**
-   * Soft delete season (isActive = false)
+   * Soft-deletes a season by setting isActive to false.
+   *
+   * @auth {seasons:delete}
+   * @input {SeasonIdSchema}
+   * @output {Season}
    */
   remove: protectedProcedure
     .use(requirePermission('seasons:delete'))
@@ -198,8 +214,11 @@ export const seasonRouter = router({
     }),
 
   /**
-   * Scollega season da NAV e la soft-deletes atomicamente.
-   * Blocca se la season ha CollectionLayout o PricingParameterSet attivi.
+   * Unlinks a season from NAV (clears navSeasonId) and soft-deletes it atomically; blocked if CollectionLayouts or PricingParameterSets exist.
+   *
+   * @auth {seasons:delete}
+   * @input {SeasonIdSchema}
+   * @output {Season}
    */
   unlink: protectedProcedure
     .use(requirePermission('seasons:delete'))
@@ -239,7 +258,11 @@ export const seasonRouter = router({
     }),
 
   /**
-   * Hard delete season — solo per season senza collegamento NAV e senza dipendenze attive.
+   * Permanently deletes a season; only allowed for seasons not linked to NAV and without active dependencies.
+   *
+   * @auth {seasons:delete}
+   * @input {SeasonIdSchema}
+   * @output {{ success: true }}
    */
   hardDelete: protectedProcedure
     .use(requirePermission('seasons:delete'))
@@ -277,7 +300,11 @@ export const seasonRouter = router({
     }),
 
   /**
-   * Riattiva una season soft-deleted (isActive = true)
+   * Restores a soft-deleted season by setting isActive to true.
+   *
+   * @auth {seasons:update}
+   * @input {SeasonIdSchema}
+   * @output {Season}
    */
   restore: protectedProcedure
     .use(requirePermission('seasons:update'))

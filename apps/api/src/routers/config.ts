@@ -307,7 +307,13 @@ async function upsertConfig(
 }
 
 export const configRouter = router({
-  // ... (list, get, viewValue - unchanged) ...
+  /**
+   * Lists AppConfig entries with pagination, filtering by key prefix, category, and encryption status.
+   *
+   * @auth {authenticated (loggedProcedure)}
+   * @input {ListConfigsSchema} — q, category, isEncrypted, sortBy, sortDir, page, pageSize.
+   * @output {Paginated AppConfig list with metadata.}
+   */
   list: loggedProcedure
     .input(ListConfigsSchema)
     .query(async ({ input, ctx }) => {
@@ -322,6 +328,13 @@ export const configRouter = router({
       });
     }),
 
+  /**
+   * Fetches a single AppConfig value by key; decrypt=true requires admin role.
+   *
+   * @auth {authenticated (loggedProcedure); admin required for decrypt=true}
+   * @input {GetConfigSchema} — key, optional decrypt flag.
+   * @output {{ key, value, isEncrypted }} — value is [ENCRYPTED] if encrypted and not decrypted.
+   */
   get: loggedProcedure.input(GetConfigSchema).query(async ({ input, ctx }) => {
     // Se decrypt=true, verifica che l'utente sia admin
     if (input.decrypt && ctx.session?.user?.role !== 'admin') {
@@ -357,6 +370,13 @@ export const configRouter = router({
     };
   }),
 
+  /**
+   * Views a config value in masked or raw mode; raw mode requires admin and generates an audit log.
+   *
+   * @auth {authenticated (loggedProcedure); admin required for mode=raw}
+   * @input {ViewValueSchema} — key, mode ("masked" | "raw").
+   * @output {{ key, value, isEncrypted, mode }} — value is [ENCRYPTED] in masked mode for secrets.
+   */
   viewValue: loggedProcedure
     .input(ViewValueSchema)
     .query(async ({ input, ctx }) => {
@@ -426,6 +446,13 @@ export const configRouter = router({
       };
     }),
 
+  /**
+   * Creates or updates a single AppConfig entry (upsert).
+   *
+   * @auth {config:update}
+   * @input {SetConfigSchema} — key (allowed prefix), value, optional encrypt flag, optional category override.
+   * @output {{ key, value (redacted if encrypted), isEncrypted, message }}
+   */
   set: protectedProcedure
     .use(requirePermission('config:update'))
     .use(withRateLimit('configMutations'))
@@ -435,6 +462,13 @@ export const configRouter = router({
       return await upsertConfig(ctx, input.key, input.value, input.encrypt);
     }),
 
+  /**
+   * Deletes a single AppConfig entry; blocked for critical keys.
+   *
+   * @auth {config:update}
+   * @input {DeleteConfigSchema} — key to delete.
+   * @output {{ key, message }}
+   */
   delete: protectedProcedure
     .use(requirePermission('config:update'))
     .use(withRateLimit('configMutations'))
@@ -476,6 +510,13 @@ export const configRouter = router({
       };
     }),
 
+  /**
+   * Updates an existing AppConfig entry; fails with NOT_FOUND if the key doesn't exist.
+   *
+   * @auth {config:update}
+   * @input {SetConfigSchema} — key (must already exist), value, optional encrypt flag.
+   * @output {{ key, value (redacted if encrypted), isEncrypted, message }}
+   */
   update: protectedProcedure
     .use(requirePermission('config:update'))
     .use(withRateLimit('configMutations'))
@@ -487,6 +528,13 @@ export const configRouter = router({
       });
     }),
 
+  /**
+   * Fetches multiple AppConfig values in a single request; returns partial results on missing keys.
+   *
+   * @auth {authenticated (loggedProcedure)}
+   * @input {{ keys: string[], decrypt?: boolean }} — list of config keys, optional decrypt flag.
+   * @output {Array<{ key, value, found, error? }>}
+   */
   getMultiple: loggedProcedure
     .input(
       z.object({
@@ -521,6 +569,13 @@ export const configRouter = router({
       return results;
     }),
 
+  /**
+   * Upserts multiple AppConfig entries in one call; returns per-key success/error results.
+   *
+   * @auth {config:update}
+   * @input {{ configs: Array<{ key, value, encrypt? }> }} — list of key/value pairs to upsert.
+   * @output {Array<{ key, success, message?, error? }>}
+   */
   setMultiple: protectedProcedure
     .use(requirePermission('config:update'))
     .use(withRateLimit('configMutations'))
@@ -563,6 +618,13 @@ export const configRouter = router({
       return results;
     }),
 
+  /**
+   * Checks whether an AppConfig key exists and whether its value is encrypted.
+   *
+   * @auth {authenticated (loggedProcedure)}
+   * @input {{ key: string }}
+   * @output {{ key, exists: boolean, isEncrypted?: boolean }}
+   */
   exists: loggedProcedure
     .input(
       z.object({
@@ -582,6 +644,13 @@ export const configRouter = router({
       };
     }),
 
+  /**
+   * Exports all AppConfig entries as JSON; encrypted values are always shown as [ENCRYPTED].
+   *
+   * @auth {config:update}
+   * @input {ExportJsonSchema} — includeValues flag.
+   * @output {{ configs: ExportItem[], exportedAt, includeValues, count }}
+   */
   exportJson: protectedProcedure
     .use(requirePermission('config:update'))
     .input(ExportJsonSchema)
@@ -627,6 +696,13 @@ export const configRouter = router({
       };
     }),
 
+  /**
+   * Imports a batch of AppConfig entries from JSON; skips items with null values.
+   *
+   * @auth {config:update}
+   * @input {ImportJsonSchema} — array of { key, value, encrypt? } items.
+   * @output {{ successCount, errorCount, errors: Array<{ key, error }> }}
+   */
   importJson: protectedProcedure
     .use(requirePermission('config:update'))
     .input(ImportJsonSchema)

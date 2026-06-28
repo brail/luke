@@ -27,14 +27,22 @@ const setInput = z.object({
 
 export const sectionAccessRouter = router({
   /**
-   * Ottiene sectionAccessDefaults e disabledSections per la valutazione client-side
+   * Returns sectionAccessDefaults and disabledSections config used for client-side access evaluation.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {{ sectionAccessDefaults, disabledSections }}
    */
   getDefaults: protectedProcedure.query(async ({ ctx }) => {
     return getSectionDefaults(ctx.prisma);
   }),
 
   /**
-   * Ottiene override per un utente specifico (admin only)
+   * Returns section access overrides for a specific user (admin only).
+   *
+   * @auth {admin}
+   * @input {{ userId: string }}
+   * @output {{ section: Section, enabled: boolean }[]}
    */
   getByUser: adminProcedure
     .input(z.object({ userId: z.string().min(1) }))
@@ -47,7 +55,11 @@ export const sectionAccessRouter = router({
     }),
 
   /**
-   * Ottiene override per l'utente corrente
+   * Returns section access overrides for the currently authenticated user.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {{ section: Section, enabled: boolean }[]}
    */
   getForMe: protectedProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
@@ -59,7 +71,11 @@ export const sectionAccessRouter = router({
   }),
 
   /**
-   * Imposta override per un utente (admin only)
+   * Sets a section access override for a user; blocks removal of settings access from the last admin.
+   *
+   * @auth {admin}
+   * @input {{ userId: string, section: sectionEnum, enabled: boolean | null }}
+   * @output {UserSectionAccess | null} — null if override was removed (auto mode).
    */
   set: adminProcedure
     .input(setInput)

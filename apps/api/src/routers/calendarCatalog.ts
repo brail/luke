@@ -13,6 +13,13 @@ const CALENDAR_CATALOG_TYPES = ['eventType'] as const;
 const CatalogTypeSchema = z.enum(CALENDAR_CATALOG_TYPES);
 
 export const calendarCatalogRouter = router({
+  /**
+   * Lists active calendar catalog items of a given type, ordered by position.
+   *
+   * @auth {calendar_catalog:read}
+   * @input {{ type: CatalogTypeSchema }} — catalog type to filter (e.g. "eventType").
+   * @output {CalendarCatalogItem[]} — ordered list of active items for the requested type.
+   */
   list: protectedProcedure
     .use(requirePermission('calendar_catalog:read'))
     .input(z.object({ type: CatalogTypeSchema }))
@@ -23,6 +30,13 @@ export const calendarCatalogRouter = router({
       });
     }),
 
+  /**
+   * Lists all calendar catalog items (including inactive) for admin management.
+   *
+   * @auth {calendar_catalog:update}
+   * @input {{ type?: CatalogTypeSchema }} — optional type filter; if omitted returns all types.
+   * @output {CalendarCatalogItem[]} — full list sorted by type then position, including inactive.
+   */
   listAll: protectedProcedure
     .use(requirePermission('calendar_catalog:update'))
     .input(z.object({ type: CatalogTypeSchema.optional() }))
@@ -33,6 +47,13 @@ export const calendarCatalogRouter = router({
       });
     }),
 
+  /**
+   * Creates a new calendar catalog item for a given type.
+   *
+   * @auth {calendar_catalog:update}
+   * @input {CalendarCatalogItemCreateSchema} — type, value (unique per type), label, optional order.
+   * @output {CalendarCatalogItem} — the newly created item.
+   */
   create: protectedProcedure
     .use(requirePermission('calendar_catalog:update'))
     .use(withRateLimit('configMutations'))
@@ -73,6 +94,13 @@ export const calendarCatalogRouter = router({
       return result;
     }),
 
+  /**
+   * Updates label or order of an existing calendar catalog item.
+   *
+   * @auth {calendar_catalog:update}
+   * @input {CalendarCatalogItemUpdateSchema} — id, optional label, optional order.
+   * @output {CalendarCatalogItem} — the updated item.
+   */
   update: protectedProcedure
     .use(requirePermission('calendar_catalog:update'))
     .use(withRateLimit('configMutations'))
@@ -104,6 +132,13 @@ export const calendarCatalogRouter = router({
       return result;
     }),
 
+  /**
+   * Soft-deletes a calendar catalog item (sets isActive=false).
+   *
+   * @auth {calendar_catalog:update}
+   * @input {{ id: string }} — UUID of the item to deactivate.
+   * @output {{ success: true }}
+   */
   remove: protectedProcedure
     .use(requirePermission('calendar_catalog:update'))
     .use(withRateLimit('configMutations'))
@@ -132,6 +167,13 @@ export const calendarCatalogRouter = router({
       return { success: true };
     }),
 
+  /**
+   * Restores a soft-deleted calendar catalog item (sets isActive=true).
+   *
+   * @auth {calendar_catalog:update}
+   * @input {{ id: string }} — UUID of the item to reactivate.
+   * @output {{ success: true }}
+   */
   restore: protectedProcedure
     .use(requirePermission('calendar_catalog:update'))
     .use(withRateLimit('configMutations'))
@@ -160,6 +202,13 @@ export const calendarCatalogRouter = router({
       return { success: true };
     }),
 
+  /**
+   * Reorders calendar catalog items by assigning new position indices.
+   *
+   * @auth {calendar_catalog:update}
+   * @input {{ type: CatalogTypeSchema, orderedIds: string[] }} — type + full ordered array of UUIDs.
+   * @output {{ success: true }}
+   */
   reorder: protectedProcedure
     .use(requirePermission('calendar_catalog:update'))
     .use(withRateLimit('configMutations'))

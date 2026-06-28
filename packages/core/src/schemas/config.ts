@@ -2,13 +2,11 @@ import { z } from 'zod';
 import { RateLimitConfigSchema, LdapResilienceSchema } from './appConfig';
 
 /**
- * Registry centrale delle chiavi AppConfig con i relativi schemi Zod.
+ * Central registry of all AppConfig keys with their Zod validation schemas.
  *
- * Ogni chiave mappa al suo schema di validazione. I valori in DB sono sempre
- * stringhe; i tipi coerce (z.coerce.*) gestiscono la conversione automatica.
- *
- * Aggiungere nuove chiavi qui per ottenere type safety a compile-time
- * e validazione automatica al boot tramite validateCriticalConfig().
+ * All values stored in the database are raw strings; `z.coerce.*` schemas handle
+ * automatic type conversion. Add new keys here to gain compile-time type safety
+ * and automatic validation on boot via `validateCriticalConfig()`.
  */
 export const AppConfigRegistry = {
   // ── App ──────────────────────────────────────────────────────────────────
@@ -117,10 +115,13 @@ export type AppConfigKey = keyof typeof AppConfigRegistry;
 export type AppConfigValue<K extends AppConfigKey> = z.output<(typeof AppConfigRegistry)[K]>;
 
 /**
- * Funzione pura: valida una stringa grezza contro lo schema registrato per la chiave.
- * Non ha side effect, non dipende da framework — testabile in isolamento.
+ * Validates a raw string value against the registered Zod schema for the given key.
+ * Pure function — no side effects, no framework dependencies, fully unit-testable.
  *
- * @throws ZodError se il valore non supera la validazione
+ * @param key - Registry key identifying the schema to use
+ * @param raw - Raw string value as stored in the database
+ * @returns Parsed and typed value
+ * @throws {ZodError} When the value fails schema validation
  */
 export function parseConfigValue<K extends AppConfigKey>(
   key: K,
@@ -130,8 +131,8 @@ export function parseConfigValue<K extends AppConfigKey>(
 }
 
 /**
- * Chiavi critiche che devono essere presenti e valide al boot dell'API.
- * Se una di queste manca o è malformata, l'avvio fallisce in produzione.
+ * Config keys that must be present and valid at API boot time.
+ * A missing or malformed value for any of these keys causes the server to refuse to start in production.
  */
 export const CRITICAL_CONFIG_KEYS: AppConfigKey[] = [
   'auth.strategy',

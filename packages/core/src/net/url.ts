@@ -109,7 +109,9 @@ export function buildTempBrandLogoUploadUrl(options: UrlOptions = {}): string {
 }
 
 /**
- * Builds URL for collection row picture upload
+ * Builds the upload URL for a collection row picture.
+ *
+ * @param rowId - UUID of the collection row
  */
 export function buildCollectionRowPictureUploadUrl(
   rowId: string,
@@ -119,7 +121,8 @@ export function buildCollectionRowPictureUploadUrl(
 }
 
 /**
- * Builds URL for temporary collection row picture upload
+ * Builds the upload URL for a temporary (pre-commit) collection row picture.
+ * The file is later committed to a permanent key when the row is saved.
  */
 export function buildTempCollectionRowPictureUploadUrl(
   options: UrlOptions = {}
@@ -128,21 +131,25 @@ export function buildTempCollectionRowPictureUploadUrl(
 }
 
 /**
- * Builds URL for company logo upload (singleton profile — no ID)
+ * Builds the upload URL for the company logo. No ID is needed because the company profile is a singleton.
  */
 export function buildCompanyLogoUploadUrl(options: UrlOptions = {}): string {
   return buildApiUrl('/upload/company-logo', options);
 }
 
 /**
- * Builds proxy URL for company logo (served via Next.js /api/uploads route)
+ * Builds the proxy URL for serving the company logo through the Next.js `/api/uploads` route.
+ *
+ * @param logoKey - Storage key of the logo file
  */
 export function buildCompanyLogoUrl(logoKey: string): string {
   return getProxyUrl('company-assets', logoKey);
 }
 
 /**
- * Builds URL for specsheet image upload
+ * Builds the upload URL for a merchandising specsheet image.
+ *
+ * @param specsheetId - UUID of the specsheet
  */
 export function buildSpecsheetImageUploadUrl(
   specsheetId: string,
@@ -152,7 +159,8 @@ export function buildSpecsheetImageUploadUrl(
 }
 
 /**
- * Builds URL for temporary specsheet image upload
+ * Builds the upload URL for a temporary specsheet image.
+ * The file is committed to a permanent key when the specsheet is saved.
  */
 export function buildTempSpecsheetImageUploadUrl(
   options: UrlOptions = {}
@@ -217,8 +225,11 @@ export function isApiUrl(url: string): boolean {
 }
 
 /**
- * Builds iCal subscription URL for season calendar (multi-brand capable).
- * brandIds encoded as CSV query param. Includes a signed token for public subscribe.
+ * Builds the iCal subscription URL for a season calendar, supporting multiple brands.
+ * `brandIds` are encoded as a comma-separated query parameter. The `token` is a signed
+ * public-access token that allows unauthenticated calendar subscriptions.
+ *
+ * @param sectionKey - Optional section filter for partial calendar subscriptions
  */
 export function buildSeasonCalendarIcalUrl(
   seasonId: string,
@@ -236,7 +247,9 @@ export function buildSeasonCalendarIcalUrl(
 }
 
 /**
- * Builds PDF export URL for season calendar (multi-brand capable).
+ * Builds the PDF export URL for a season calendar, supporting multiple brands.
+ *
+ * @param sectionKey - Optional section filter for partial calendar exports
  */
 export function buildSeasonCalendarPdfUrl(
   seasonId: string,
@@ -250,7 +263,9 @@ export function buildSeasonCalendarPdfUrl(
 }
 
 /**
- * Builds XLSX export URL for season calendar (multi-brand capable).
+ * Builds the XLSX export URL for a season calendar, supporting multiple brands.
+ *
+ * @param sectionKey - Optional section filter for partial calendar exports
  */
 export function buildSeasonCalendarXlsxUrl(
   seasonId: string,

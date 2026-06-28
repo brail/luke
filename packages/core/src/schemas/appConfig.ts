@@ -1,8 +1,7 @@
 import { z } from 'zod';
 
 /**
- * Schema Zod per il modello AppConfig
- * Definisce la struttura di una configurazione dell'applicazione
+ * Shape of a single AppConfig record as persisted in the database (generic KV entry).
  */
 export const AppConfigSchema = z.object({
   /** Chiave identificativa della configurazione */
@@ -21,13 +20,12 @@ export const AppConfigSchema = z.object({
   updatedAt: z.date(),
 });
 
-/**
- * Tipo TypeScript inferito dallo schema AppConfig
- */
+/** TypeScript type inferred from `AppConfigSchema`. */
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 
 /**
- * Schema per una singola policy di rate limiting
+ * Rate limiting policy for a single endpoint category.
+ * `keyBy` controls whether the limit is per IP address or per authenticated user.
  */
 export const RateLimitPolicySchema = z.object({
   /** Numero massimo di richieste consentite */
@@ -39,7 +37,8 @@ export const RateLimitPolicySchema = z.object({
 });
 
 /**
- * Schema per la configurazione completa del rate limiting
+ * Full rate limiting configuration, with optional per-category policies.
+ * Stored as a JSON blob under the `rateLimit` AppConfig key.
  */
 export const RateLimitConfigSchema = z.object({
   /** Policy per endpoint di login */
@@ -57,7 +56,8 @@ export const RateLimitConfigSchema = z.object({
 });
 
 /**
- * Schema per la configurazione di resilienza LDAP
+ * LDAP connection resilience settings — timeouts, retries, and circuit-breaker parameters.
+ * All values correspond to individual AppConfig keys under `auth.ldap.resilience.*`.
  */
 export const LdapResilienceSchema = z.object({
   /** Timeout per operazione LDAP in millisecondi */
@@ -74,20 +74,13 @@ export const LdapResilienceSchema = z.object({
   halfOpenMaxAttempts: z.number().int().min(1).default(1),
 });
 
-/**
- * Tipi TypeScript per rate limiting
- */
 export type RateLimitPolicy = z.infer<typeof RateLimitPolicySchema>;
 export type RateLimitConfig = z.infer<typeof RateLimitConfigSchema>;
-
-/**
- * Tipo TypeScript per configurazione resilienza LDAP
- */
 export type LdapResilienceConfig = z.infer<typeof LdapResilienceSchema>;
 
 /**
- * Schema per i defaults del context (Brand/Season)
- * Utilizzato per configurare i default organizzativi
+ * Schema for the default Brand/Season context that applies to the organization.
+ * Stored in AppConfig and used when no user preference has been set.
  */
 export const AppContextDefaultsSchema = z.object({
   context: z
@@ -99,7 +92,4 @@ export const AppContextDefaultsSchema = z.object({
     .default({}),
 });
 
-/**
- * Tipo TypeScript per defaults del context
- */
 export type AppContextDefaults = z.infer<typeof AppContextDefaultsSchema>;

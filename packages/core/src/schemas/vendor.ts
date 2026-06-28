@@ -1,9 +1,11 @@
 /**
- * Schema Zod per Vendor (anagrafica interna fornitori)
+ * Zod schemas for the internal vendor registry (anagrafica fornitori).
+ * Vendors are soft-deleted; the NAV sync only updates `name` and never touches `isActive`.
  */
 
 import { z } from 'zod';
 
+/** Input schema for creating an internal vendor record. */
 export const VendorInputSchema = z.object({
   name: z.string().min(1, 'Nome obbligatorio').max(255).trim(),
   countryCode: z.string().max(10).trim().optional().nullable(),
@@ -19,15 +21,18 @@ export const VendorInputSchema = z.object({
   enabledParameterSetIds: z.array(z.string().uuid()).optional(),
 });
 
+/** Schema for identifying a single vendor by UUID. */
 export const VendorIdSchema = z.object({
   id: z.string().uuid('ID vendor non valido'),
 });
 
+/** Input schema for partially updating an existing vendor. */
 export const VendorUpdateInputSchema = z.object({
   id: z.string().uuid('ID vendor non valido'),
   data: VendorInputSchema.partial(),
 });
 
+/** Input schema for listing vendors with optional search, active filter, and cursor pagination. */
 export const VendorListInputSchema = z.object({
   search: z.string().optional(),
   isActive: z.boolean().optional(),
@@ -35,6 +40,7 @@ export const VendorListInputSchema = z.object({
   limit: z.number().min(1).max(100).default(100),
 });
 
+/** Full vendor record as returned by the API. */
 export const VendorSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),

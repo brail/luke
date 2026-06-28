@@ -5,33 +5,32 @@ import { SECTION_TO_PERMISSION, type Section } from '../schemas/rbac';
 type SectionDefault = 'auto' | 'enabled' | 'disabled';
 
 /**
- * Parametri per la valutazione dell'accesso effettivo
+ * Parameters for evaluating effective section access.
  */
 type EffectiveAccessParams = {
-  /** Ruolo dell'utente */
+  /** Role of the user being evaluated */
   role: string;
-  /** Default di accesso per ruolo e sezione */
+  /** Per-role section access defaults loaded from AppConfig */
   sectionAccessDefaults: Record<
     string,
     Partial<Record<Section, SectionDefault>>
   >;
-  /** Override utente specifico */
+  /** User-specific override, if any */
   userOverride: { enabled?: boolean | null } | null | undefined;
-  /** Sezione da valutare */
+  /** Section to evaluate */
   section: Section;
-  /** Sezioni disabilitate globalmente (kill switch) */
+  /** Globally disabled sections (kill switch — highest precedence) */
   disabledSections?: string[];
 };
 
 /**
- * Valuta l'accesso effettivo a una sezione considerando la precedenza:
- * 0. Kill switch globale (disabled sections)
- * 1. Override utente (disabled > enabled > manca)
- * 2. Default di ruolo (disabled > enabled > auto)
- * 3. RBAC di ruolo (hasPermission via SECTION_TO_PERMISSION)
+ * Resolves whether a user can access a section, applying four precedence layers in order:
+ * 0. Global kill switch (`disabledSections`)
+ * 1. Per-user override (`disabled > enabled > absent`)
+ * 2. Per-role AppConfig default (`disabled > enabled > auto`)
+ * 3. Role RBAC fallback via `SECTION_TO_PERMISSION`
  *
- * @param params - Parametri per la valutazione
- * @returns true se accesso consentito, false altrimenti
+ * @returns `true` if access is granted, `false` otherwise
  */
 export function effectiveSectionAccess({
   role,

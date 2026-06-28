@@ -10,23 +10,27 @@ datasource db {
 }
 
 // Enums
+/// RBAC role assigned to a user: admin (full access), editor (read+write), viewer (read-only).
 enum Role {
   admin
   editor
   viewer
 }
 
+/// Authentication provider for an identity: LOCAL (password-based), LDAP (directory), OIDC (OpenID Connect).
 enum Provider {
   LOCAL
   LDAP
   OIDC
 }
 
+/// Type of a one-time user token: RESET (password reset), VERIFY (email verification).
 enum TokenType {
   RESET
   VERIFY
 }
 
+/// Notification category used to group and filter user notifications.
 enum NotificationCategory {
   SYSTEM
   CALENDAR
@@ -35,17 +39,22 @@ enum NotificationCategory {
 }
 
 // Models
+/// Platform user. Holds identity, role, and preferences. Relations cover auth, audit, dashboard, calendar, and notifications.
 model User {
   id                String    @id @default(uuid())
   email             String    @unique
   username          String    @unique
   firstName         String    @default("")
   lastName          String    @default("")
+  /// RBAC role: admin (full access), editor (read+write), viewer (read-only).
   role              Role
+  /// Soft-delete flag. Inactive users cannot log in.
   isActive          Boolean   @default(true)
+  /// True while a newly registered user is awaiting admin approval.
   pendingApproval   Boolean   @default(false)
   locale            String    @default("it-IT")
   timezone          String    @default("Europe/Rome")
+  /// Incremented on password change or forced logout to invalidate existing JWTs.
   tokenVersion      Int       @default(0)
   emailVerifiedAt   DateTime?
   lastLoginAt       DateTime?
@@ -54,61 +63,93 @@ model User {
   updatedAt         DateTime  @updatedAt
 
   // Relations
+  /// Authentication identities (LOCAL, LDAP, OIDC) associated with this user.
   identities Identity[]
+  /// Audit log entries where this user is the actor.
   auditLogs  AuditLog[]
+  /// One-time tokens (password reset, email verification) belonging to this user.
   tokens     UserToken[]
+  /// Per-section visibility overrides for this user.
   sectionAccess UserSectionAccess[]
+  /// Merchandising plan rows assigned to this user.
   assignedMerchandisingRows MerchandisingPlanRow[]
+  /// Personal dashboard widget configuration (1:1).
   dashboardConfig DashboardConfig?
+  /// Personal dashboard task list items.
   dashboardTasks  DashboardTask[]
+  /// Personal notes on calendar events.
   calendarEventNotes                CalendarEventPersonalNote[]
+  /// Company team memberships.
   teamMemberships                   CompanyTeamMembership[]
+  /// Calendar events made visible to this user by a grantor.
   calendarEventVisibilitiesReceived CalendarEventUserVisibility[] @relation("CalendarEventUserVisibilityRecipient")
+  /// Calendar event visibility records granted by this user to others.
   calendarEventVisibilitiesGranted  CalendarEventUserVisibility[] @relation("CalendarEventUserVisibilityGrantor")
+  /// In-app notifications for this user.
   notifications                     Notification[]
+  /// Per-category notification preferences.
   notificationPreferences           NotificationPreference[]
+  /// Collection layout revisions created by this user.
   collectionLayoutRevisions         CollectionLayoutRevision[]
+  /// State effect executions applied by this user.
   appliedEffects                    CalendarEventEffectExecution[] @relation("EffectApplier")
+  /// State effect executions rolled back by this user.
   rolledBackEffects                 CalendarEventEffectExecution[] @relation("EffectRollbacker")
+  /// Vendor closure periods confirmed by this user.
   confirmedVendorClosures           VendorClosurePeriod[] @relation("ClosureConfirmer")
 
   @@map("users")
 }
 
+/// Authentication identity linked to a user. A user may have multiple identities (e.g. LOCAL + LDAP).
 model Identity {
   id         String   @id @default(uuid())
+  /// FK to User. Cascades delete: removing a user removes all their identities.
   userId     String
+  /// Authentication provider: LOCAL, LDAP, or OIDC.
   provider   Provider
+  /// Provider-specific subject identifier (e.g. LDAP DN, OIDC sub).
   providerId String
+  /// Optional provider-specific metadata (e.g. LDAP attributes).
   metadata   Json?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   // Relations
+  /// The user this identity belongs to.
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Local password credential, present only for LOCAL provider identities.
   localCredential LocalCredential?
 
   @@unique([provider, providerId])
   @@map("identities")
 }
 
+/// Bcrypt password credential for a LOCAL identity. One-to-one with Identity.
 model LocalCredential {
   id           String   @id @default(uuid())
+  /// FK to Identity (LOCAL provider). 1:1 unique constraint enforced.
   identityId   String   @unique
+  /// Bcrypt hash of the user's password. Never stored in plain text.
   passwordHash String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   // Relations
+  /// The LOCAL identity this credential belongs to.
   identity Identity @relation(fields: [identityId], references: [id], onDelete: Cascade)
 
   @@map("local_credentials")
 }
 
+/// Runtime configuration store (KV). All application settings live here — never in .env. Keys defined in AppConfigRegistry (@luke/core).
 model AppConfig {
   id         String   @id @default(uuid())
+  /// Dot-notation key (e.g. "auth.strategy", "smtp.host"). Must match an AppConfigRegistry entry.
   key        String   @unique
+  /// Stored value always as string. Use z.coerce.* or JSON.parse in the application layer.
   value      String
+  /// When true, value is AES-GCM encrypted at rest. Decrypted via getConfig({ decrypt: true }).
   isEncrypted Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -116,36 +157,52 @@ model AppConfig {
   @@map("app_configs")
 }
 
+/// Immutable audit trail entry. Every create/update/delete mutation must produce one record via logAudit() or withAuditLog middleware.
 model AuditLog {
   id         String   @id @default(uuid())
+  /// FK to User (actor). Nullable: system actions have no actor. SetNull on user deletion preserves the log.
   actorId    String?  // Sostituisce userId (più chiaro)
+  /// Action in SCREAMING_SNAKE_CASE (e.g. USER_CREATE, CONFIG_UPDATE).
   action     String   // SCREAMING_SNAKE_CASE (es. USER_CREATE)
+  /// Resource type targeted by the action (e.g. User, Config, Auth).
   targetType String   // Tipo risorsa (User, Config, Auth)
+  /// ID of the target resource. Null for bulk or non-entity actions.
   targetId   String?  // ID risorsa target (opzionale)
+  /// Outcome of the action: SUCCESS or FAILURE.
   result     String   // SUCCESS o FAILURE (esplicito)
+  /// Redacted supplemental data (e.g. changed fields). Secrets must never appear here.
   metadata   Json?    // Dati redatti
+  /// Distributed trace ID for correlating with API logs.
   traceId    String?
+  /// Client IP address at the time of the action.
   ip         String?  // Rinomina da ipAddress per brevità
   createdAt  DateTime @default(now()) // Rinomina da timestamp
-  
+
   // Relations
+  /// The user who performed the action. Null for system-initiated events.
   actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
-  
+
   @@index([action, createdAt])
   @@index([actorId, createdAt])
   @@index([targetType, targetId])
   @@map("audit_logs")
 }
 
+/// Short-lived one-time token for password reset or email verification. Invalidated after use or expiry.
 model UserToken {
   id         String    @id @default(uuid())
+  /// FK to User. Cascade delete: tokens are removed when the user is deleted.
   userId     String
+  /// Token purpose: RESET (password reset flow) or VERIFY (email verification flow).
   type       TokenType
+  /// SHA-256 hash of the raw token. The raw token is sent to the user; only the hash is stored.
   tokenHash  String
+  /// Absolute expiry timestamp. Tokens past this date must be rejected.
   expiresAt  DateTime
   createdAt  DateTime  @default(now())
 
   // Relations
+  /// The user this token belongs to.
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([type, tokenHash])
@@ -153,18 +210,27 @@ model UserToken {
   @@map("user_tokens")
 }
 
+/// Tracks every file uploaded to a storage bucket. Used for orphan cleanup and deduplication.
 model FileObject {
   id             String    @id @default(uuid())
+  /// Storage bucket name (e.g. "uploads", "collection-row-pictures"). Must be in localStorageConfigSchema.
   bucket         String
+  /// Path key within the bucket. Unique per bucket.
   key            String
   originalName   String
+  /// File size in bytes.
   size           Int
   contentType    String
+  /// SHA-256 checksum of file content for integrity verification.
   checksumSha256 String
+  /// User ID (string) of the uploader. Soft FK — no @relation, user may be deleted.
   createdBy      String
+  /// Orphan cleanup state: PENDING (awaiting confirmation), SUCCESS (cleaned up), FAILED (cleanup error).
   cleanupStatus  String    @default("PENDING")  // PENDING | SUCCESS | FAILED
+  /// Number of cleanup attempts made so far.
   cleanupAttempts Int      @default(0)
   lastCleanupAt  DateTime?
+  /// Null until the file is linked to an entity (e.g. brand logo saved). Unconfirmed files are eligible for cleanup.
   confirmedAt    DateTime?                       // null = pending confirmation; set on entity link
   createdAt      DateTime  @default(now())
 
@@ -177,14 +243,19 @@ model FileObject {
   @@map("file_objects")
 }
 
+/// Per-user override for section visibility. Takes precedence over role defaults and AppConfig in the 4-level access evaluation.
 model UserSectionAccess {
   id        String   @id @default(uuid())
+  /// FK to User. Cascade delete: overrides are removed when the user is deleted.
   userId    String
+  /// Dot-notation section key (e.g. 'settings', 'maintenance'). Must match sectionEnum.
   section   String   // 'settings' | 'maintenance'
+  /// true = explicitly allow access; false = explicitly deny access.
   enabled   Boolean  // true=allow, false=deny
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// The user this section override applies to.
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, section])
@@ -192,21 +263,32 @@ model UserSectionAccess {
   @@map("user_section_access")
 }
 
+/// Internal brand entity. Primary grouping for collections, pricing, and calendars. May be linked to a NAV brand record.
 model Brand {
   id          String    @id @default(uuid())
+  /// Unique short code (max 20 chars, aligned to NAV nvarchar).
   code        String    @unique
   name        String
+  /// Storage key for the brand logo in the "brand-logos" bucket. Null if no logo uploaded.
   logoKey     String?
+  /// FK to NavBrand (optional). Links this brand to the NAV replica. SetNull on NAV record deletion.
   navBrandId  String?   @unique
+  /// NAV brand replica linked to this brand.
   navBrand    NavBrand? @relation(fields: [navBrandId], references: [navCode], onDelete: SetNull)
+  /// Soft-delete flag. Inactive brands are hidden from normal listings.
   isActive    Boolean   @default(true)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  /// Pricing parameter sets scoped to this brand.
   pricingParameterSets PricingParameterSet[]
+  /// Collection layouts scoped to this brand.
   collectionLayouts    CollectionLayout[]
+  /// Merchandising plans scoped to this brand.
   merchandisingPlans   MerchandisingPlan[]
+  /// Season calendars scoped to this brand.
   seasonCalendars      SeasonCalendar[]
+  /// Team brand scope assignments granting teams access to this brand.
   teamBrandScopes      CompanyTeamBrandScope[]
 
   @@index([name])
@@ -214,41 +296,60 @@ model Brand {
   @@map("brands")
 }
 
+/// Fashion season entity. Secondary grouping dimension alongside Brand. May be linked to a NAV season record.
 model Season {
   id          String     @id @default(uuid())
+  /// Unique short code (max 10 chars, aligned to NAV nvarchar).
   code        String     @unique
+  /// Optional numeric year (e.g. 2026).
   year        Int?
   name        String
+  /// FK to NavSeason (optional). Links this season to the NAV replica. SetNull on NAV record deletion.
   navSeasonId String?    @unique
+  /// NAV season replica linked to this season.
   navSeason   NavSeason? @relation(fields: [navSeasonId], references: [navCode], onDelete: SetNull)
+  /// Soft-delete flag. Inactive seasons are hidden from normal listings.
   isActive    Boolean    @default(true)
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
+  /// Pricing parameter sets scoped to this season.
   pricingParameterSets PricingParameterSet[]
+  /// Collection layouts scoped to this season.
   collectionLayouts    CollectionLayout[]
+  /// Merchandising plans scoped to this season.
   merchandisingPlans   MerchandisingPlan[]
+  /// Season calendars scoped to this season.
   seasonCalendars      SeasonCalendar[]
+  /// Vendor closure periods associated with this season.
   vendorClosures       VendorClosurePeriod[]
 
   @@map("seasons")
 }
 
+/// Personal dashboard widget layout for a user. One record per user (1:1).
 model DashboardConfig {
   id        String   @id @default(cuid())
+  /// FK to User. 1:1 — one config per user. Cascade delete.
   userId    String   @unique
+  /// The user this dashboard config belongs to.
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// JSON blob describing widget positions and settings.
   widgets   Json
   updatedAt DateTime @updatedAt
 
   @@map("dashboard_configs")
 }
 
+/// Personal to-do task shown on a user's dashboard. Not shared across users.
 model DashboardTask {
   id        String    @id @default(cuid())
+  /// FK to User. Cascade delete.
   userId    String
+  /// The user who owns this task.
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   label     String
+  /// True when the task has been marked as completed.
   done      Boolean   @default(false)
   dueDate   DateTime?
   createdAt DateTime  @default(now())
@@ -257,12 +358,11 @@ model DashboardTask {
   @@map("dashboard_tasks")
 }
 
-/**
- * Preferenze utente consolidate in un singolo Json
- * Struttura: { lastBrandId?, lastSeasonId?, menuStates? }
- */
+/// Consolidated user preferences stored as a single JSON blob. Structure: { lastBrandId?, lastSeasonId?, menuStates? }. One record per user (PK = userId).
 model UserPreference {
+  /// PK = userId. No separate id field — one preference record per user.
   userId    String   @id
+  /// JSON blob. Structure: { lastBrandId?, lastSeasonId?, menuStates? }. Defaults to empty object.
   data      Json?    @default("{}")
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
@@ -271,18 +371,20 @@ model UserPreference {
 }
 
 
-/**
- * Set di parametri di pricing per brand+season
- * Ogni brand+season può avere più varianti (es. Pelle, Non Pelle, Tunisia)
- * I parametri guidano la calcolatrice di costi e prezzi
- */
+/// Pricing parameter set for a brand+season combination. Multiple variants per pair (e.g. Pelle, Non Pelle, Tunisia). Drives the pricing calculator.
 model PricingParameterSet {
   id                     String   @id @default(uuid())
+  /// FK to Brand. Restrict delete — cannot delete a brand while parameter sets exist.
   brandId                String
+  /// FK to Season. Restrict delete — cannot delete a season while parameter sets exist.
   seasonId               String
+  /// Human-readable variant name (e.g. "Pelle", "Non Pelle", "Tunisia"). Unique within brand+season.
   name                   String   // es. "Pelle", "Non Pelle", "Tunisia"
+  /// ISO 3166-1 alpha-2 country of production (e.g. "CN", "IT", "TR").
   countryCode            String   // es. "CN", "IT", "TR" — ISO 3166-1 alpha-2
+  /// Currency for supplier purchase prices. Supported: USD, EUR, GBP, CHF, CNY.
   purchaseCurrency       String   @default("USD")
+  /// Currency for retail/wholesale selling prices. Supported: USD, EUR, GBP, CHF, CNY.
   sellingCurrency        String   @default("EUR")
   qualityControlPercent  Float
   transportInsuranceCost Float
@@ -292,15 +394,22 @@ model PricingParameterSet {
   tools                  Float
   retailMultiplier       Float
   optimalMargin          Float
+  /// If true, this set is the default variant selected when creating a new quotation.
   isDefault              Boolean  @default(false)
+  /// Display order within the brand+season pair.
   orderIndex             Int      @default(0)
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
+  /// The brand this parameter set belongs to.
   brand  Brand  @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  /// The season this parameter set belongs to.
   season Season @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  /// Collection row quotations using this parameter set.
   quotations            CollectionRowQuotation[]
+  /// Merchandising plan rows using this parameter set.
   merchandisingPlanRows MerchandisingPlanRow[]
+  /// Vendors for whom this parameter set is enabled.
   enabledForVendors     Vendor[]                 @relation("VendorEnabledParameterSets")
 
   @@unique([brandId, seasonId, name])
@@ -308,24 +417,34 @@ model PricingParameterSet {
   @@map("pricing_parameter_sets")
 }
 
-/**
- * Collection Layout — unico per brand+stagione
- * Rappresenta l'elenco delle linee che compongono una collezione stagionale
- */
+/// Collection Layout — unique per brand+season pair. Represents the ordered list of lines composing a seasonal collection.
 model CollectionLayout {
   id               String   @id @default(uuid())
+  /// FK to Brand. Restrict delete.
   brandId          String
+  /// FK to Season. Restrict delete.
   seasonId         String
+  /// Total SKU budget for the entire layout.
   skuBudget        Int?
+  /// JSON array of hidden column keys. Null means all columns visible.
   hiddenColumns    Json?    // String[] — colonne nascoste, null = tutte visibili
+  /// Genders available for rows in this layout (e.g. ["MAN","WOMAN"]).
   availableGenders String[] @default(["MAN","WOMAN"])
+  /// FK to CalendarEvent that triggered a lock. Null when not locked.
   lockedByEventId  String?
+  /// Timestamp when the layout was locked. Null when not locked.
   lockedAt         DateTime?
+  /// The brand this layout belongs to.
   brand            Brand    @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  /// The season this layout belongs to.
   season           Season   @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  /// The calendar event that locked this layout, if any.
   lockedByEvent    CalendarEvent? @relation(fields: [lockedByEventId], references: [id], onDelete: SetNull)
+  /// Ordered groups (e.g. Uomo, Donna) within this layout.
   groups           CollectionGroup[]
+  /// All rows across all groups in this layout.
   rows             CollectionLayoutRow[]
+  /// Formal ISO 9001 revisions of this layout.
   revisions        CollectionLayoutRevision[]
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -336,17 +455,19 @@ model CollectionLayout {
   @@map("collection_layouts")
 }
 
-/**
- * Gruppo di righe all'interno di un Collection Layout
- * Es. "Collezione Uomo", "Collezione Donna", "Special Edition"
- */
+/// Group of rows within a Collection Layout (e.g. "Collezione Uomo", "Collezione Donna", "Special Edition"). Owns its own SKU budget.
 model CollectionGroup {
   id                 String           @id @default(uuid())
+  /// FK to CollectionLayout. Cascade delete — removing the layout removes all groups.
   collectionLayoutId String
+  /// The layout this group belongs to.
   collectionLayout   CollectionLayout @relation(fields: [collectionLayoutId], references: [id], onDelete: Cascade)
   name               String
+  /// Display order within the layout. Lower = first.
   order              Int              @default(0)
+  /// SKU budget allocated to this group (distinct from the layout-level skuBudget).
   skuBudget          Int?
+  /// Rows belonging to this group, ordered by their own order field.
   rows               CollectionLayoutRow[]
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
@@ -355,16 +476,16 @@ model CollectionGroup {
   @@map("collection_groups")
 }
 
-/**
- * Filtro di sincronizzazione per entità NAV.
- * Un record per entità (vendor, customer, item, …).
- * Controlla se il sync è attivo e quali No_ includere/escludere.
- */
+/// Sync filter configuration for a NAV entity type. One record per entity. Controls which NAV No_ are included in synchronization.
 model NavSyncFilter {
   id              String   @id @default(cuid())
+  /// Entity type discriminator: "vendor", "brand", or "season".
   entity          String   // "vendor" | "brand" | "season"
+  /// Sync scope: "all" (sync everything), "whitelist" (only listed navNos), "exclude" (all except listed navNos).
   mode            String   // "all" | "whitelist" | "exclude"
+  /// NAV No_ values used when mode is "whitelist" or "exclude".
   navNos          String[] // rilevante solo per whitelist/exclude
+  /// Whether this sync filter is currently active.
   active          Boolean  @default(true)
   note            String?
   /// Se true, lo scheduler sincronizza automaticamente questa entità
@@ -378,11 +499,7 @@ model NavSyncFilter {
   @@map("nav_sync_filters")
 }
 
-/**
- * Replica della tabella [COMPANY$Vendor] di Microsoft NAV
- * Il campo timestamp NAV è usato solo nelle query di sync differenziale
- * (WHERE timestamp > @lastTimestamp) — non è mappato nel modello.
- */
+/// Read-only replica of [COMPANY$Vendor] from Microsoft NAV. NAV timestamp used only in differential sync queries — not mapped here.
 model NavVendor {
   navNo           String    @id              // No_
   name            String                     // Name
@@ -407,8 +524,10 @@ model NavVendor {
   vendorType      String?                    // Vendor Type
 
   navLastModified DateTime?                  // Last Date Modified
+  /// Timestamp of the last successful sync from NAV.
   syncedAt        DateTime                   // timestamp ultimo sync
 
+  /// Internal Vendor record linked to this NAV vendor, if matched.
   vendor          Vendor?                    // collegamento all'anagrafica interna
 
   @@index([name])
@@ -417,60 +536,64 @@ model NavVendor {
   @@map("nav_vendors")
 }
 
-/**
- * Replica della tabella [COMPANY$Brand] di Microsoft NAV
- */
+/// Read-only replica of [COMPANY$Brand] from Microsoft NAV.
 model NavBrand {
   navCode     String   @id              // Code (PK)
   description String   @default("")     // Description
+  /// Timestamp of the last successful sync from NAV.
   syncedAt    DateTime                  // timestamp ultimo sync
 
+  /// Internal Brand record linked to this NAV brand, if matched.
   brand       Brand?                    // collegamento all'anagrafica interna
 
   @@index([description])
   @@map("nav_brands")
 }
 
-/**
- * Replica della tabella [COMPANY$Season] di Microsoft NAV
- */
+/// Read-only replica of [COMPANY$Season] from Microsoft NAV.
 model NavSeason {
   navCode      String    @id            // Code (PK)
   description  String    @default("")   // Description
   startingDate DateTime?                // Starting Date
   endingDate   DateTime?                // Ending Date
+  /// Timestamp of the last successful sync from NAV.
   syncedAt     DateTime                 // timestamp ultimo sync
 
+  /// Internal Season record linked to this NAV season, if matched.
   season       Season?                  // collegamento all'anagrafica interna
 
   @@index([description])
   @@map("nav_seasons")
 }
 
-/**
- * Anagrafica interna fornitori
- * Entità standalone — può esistere indipendentemente da NAV.
- * Il campo navVendorId è opzionale: se valorizzato collega il fornitore
- * alla corrispondente voce su Microsoft NAV.
- */
+/// Internal supplier (vendor) entity. Standalone — can exist independently of NAV. Optionally linked to a NAV vendor record.
 model Vendor {
   id          String    @id @default(uuid())
   name        String
   countryCode String?
+  /// Short nickname used in UI listings.
   nickname    String?
+  /// Name of the primary contact person at the vendor.
   referente   String?
   email       String?
   phone       String?
+  /// Messaging/chat contact (e.g. WhatsApp, WeChat).
   chat        String?
   notes       String?
+  /// FK to NavVendor (optional). SetNull on NAV record deletion.
   navVendorId String?   @unique
+  /// NAV vendor replica linked to this vendor, if matched.
   navVendor   NavVendor? @relation(fields: [navVendorId], references: [navNo], onDelete: SetNull)
+  /// Soft-delete flag. Inactive vendors are hidden from normal listings.
   isActive    Boolean   @default(true)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  /// Collection layout rows assigned to this vendor.
   collectionRows       CollectionLayoutRow[]
+  /// Pricing parameter sets for which this vendor is enabled.
   enabledParameterSets PricingParameterSet[] @relation("VendorEnabledParameterSets")
+  /// Closure and open-period overrides for this vendor.
   closurePeriods       VendorClosurePeriod[]
 
   @@index([name])
@@ -478,35 +601,48 @@ model Vendor {
   @@map("vendors")
 }
 
-/**
- * Singola riga del Collection Layout
- * Rappresenta una linea/stile all'interno di una collezione
- */
+/// Single row in a Collection Layout representing one line/style within a seasonal collection.
 model CollectionLayoutRow {
   id                     String                @id @default(uuid())
+  /// FK to CollectionLayout. Cascade delete.
   collectionLayoutId     String
+  /// The layout this row belongs to.
   collectionLayout       CollectionLayout      @relation(fields: [collectionLayoutId], references: [id], onDelete: Cascade)
+  /// FK to CollectionGroup. Cascade delete — removing a group removes all its rows.
   groupId                String
+  /// The group this row belongs to.
   group                  CollectionGroup       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  /// Display order within the group. Lower = first.
   order                  Int                   @default(0)
 
   // Required fields
+  /// Gender for this row. Validated against layout.availableGenders (MAN | WOMAN).
   gender                 String                // validated against layout.availableGenders
+  /// FK to Vendor (optional). SetNull if vendor is deleted.
   vendorId               String?
+  /// Vendor assigned to produce this row, if any.
   vendor                 Vendor?               @relation(fields: [vendorId], references: [id], onDelete: SetNull)
   line                   String
+  /// Short free-text article description appearing after the line name.
   article                String?               // testo libero corto, dopo line
+  /// Workflow status value from the lineStatus catalog (catalog-managed).
   status                 String                // catalog-managed (lineStatus)
+  /// Planned SKU count (distinct sizes/colors). Belongs to Row (not Group).
   skuForecast            Int?
   qtyForecast            Int
   productCategory        String
 
   // Optional — identification/progress
+  /// Strategy value from the strategy catalog (CORE | INNOVATION).
   strategy               String?               // catalog-managed
+  /// Style status value from the styleStatus catalog (catalog-managed).
   styleStatus            String?               // catalog-managed
+  /// Production progress phase (01 - FASE DI DESIGN → 06 - SMS LANCIATI).
   progress               String?               // catalog-managed
+  /// Price positioning value from the catalog (catalog-managed).
   pricePositioning       String?               // catalog-managed
   designer               String?
+  /// Storage key for the row photo in the "collection-row-pictures" bucket.
   pictureKey             String?
 
   // Optional — notes
@@ -516,9 +652,12 @@ model CollectionLayoutRow {
   toolingNotes           String?
 
   // Optional — pricing
+  /// Tooling/mold cost quoted for this row (in purchaseCurrency of the active parameter set).
   toolingQuotation       Float?
+  /// Pricing quotations for this row, one per parameter set variant.
   quotations             CollectionRowQuotation[]
 
+  /// Timestamp of the last revision snapshot that included this row.
   lastRevisedAt          DateTime?             // updated when row is included in a revision
 
   createdAt              DateTime              @default(now())
@@ -530,20 +669,24 @@ model CollectionLayoutRow {
   @@map("collection_layout_rows")
 }
 
-/**
- * Quotazione di pricing per una riga collection
- * Una riga può avere N quotazioni con parametri diversi (es. CN/USD vs IT/EUR)
- */
+/// Pricing quotation for a collection row. A row can have N quotations with different parameter sets (e.g. CN/USD vs IT/EUR).
 model CollectionRowQuotation {
   id                    String               @id @default(uuid())
+  /// FK to CollectionLayoutRow. Cascade delete.
   rowId                 String
+  /// The row this quotation belongs to.
   row                   CollectionLayoutRow  @relation(fields: [rowId], references: [id], onDelete: Cascade)
+  /// Display order within the row's quotation list.
   order                 Int                  @default(0)
+  /// FK to PricingParameterSet (optional). SetNull if the parameter set is deleted.
   pricingParameterSetId String?
+  /// The pricing parameter set used for this quotation.
   pricingParameterSet   PricingParameterSet? @relation(fields: [pricingParameterSetId], references: [id], onDelete: SetNull)
   retailPrice           Float?
+  /// FOB price in the purchaseCurrency defined by the linked parameter set.
   supplierQuotation     Float?               // FOB in purchaseCurrency del param set
   notes                 String?
+  /// SKU count specific to this quotation variant.
   sku                   Int?
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
@@ -553,19 +696,24 @@ model CollectionRowQuotation {
   @@map("collection_row_quotations")
 }
 
-/**
- * Catalog items configurabili per collection layout
- * Tipi: strategy, lineStatus, styleStatus, progress, revisionType
- */
+/// Configurable catalog items for collection layout dropdowns. Types: strategy, lineStatus, styleStatus, progress, revisionType.
 model CollectionCatalogItem {
   id                   String   @id @default(uuid())
+  /// Discriminator: "strategy" | "lineStatus" | "styleStatus" | "progress" | "revisionType".
   type                 String   // "strategy" | "lineStatus" | "styleStatus" | "progress" | "revisionType"
+  /// Immutable machine key (e.g. "CORE", "NEW"). Used as stored value in row fields.
   value                String
+  /// Human-readable display label (editable).
   label                String
+  /// User-visible short code (e.g. "01"). Populated only for type=progress.
   code                 String?  // codice user-visibile (es. "01") — popolato solo per type=progress
+  /// ISO 9001 categories associated with this item. Populated only for type=revisionType.
   iso9001Categories    String[] @default([]) // categorie ISO 9001 — popolato solo per type=revisionType
+  /// Minimum expected progress value for this revision type. Populated only for type=revisionType.
   expectedMinProgress  String?  // valore progress atteso — popolato solo per type=revisionType
+  /// Display order within the type group.
   order                Int      @default(0)
+  /// Soft-delete flag. Inactive items are hidden from pickers.
   isActive             Boolean  @default(true)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
@@ -577,24 +725,31 @@ model CollectionCatalogItem {
 
 // ─── Collection Layout Versioning ────────────────────────────────────────────
 
-/**
- * Revisione formale del Collection Layout (registro qualità ISO 9001:2015)
- * Immutabile dopo la creazione — non modificare i campi snapshot.
- */
+/// Formal ISO 9001:2015 revision of a Collection Layout. Immutable after creation — snapshot fields must never be updated.
 model CollectionLayoutRevision {
   id                 String           @id @default(uuid())
+  /// FK to CollectionLayout. Restrict delete — layout cannot be deleted while revisions exist.
   collectionLayoutId String
+  /// The layout this revision belongs to.
   collectionLayout   CollectionLayout @relation(fields: [collectionLayoutId], references: [id], onDelete: Restrict)
+  /// Sequential revision number within the layout (1, 2, 3…). Unique per layout.
   revisionNumber     Int
+  /// Value from the revisionType catalog (e.g. "DESIGN_CHANGE").
   revisionTypeValue  String
+  /// Trigger for this revision: MANUAL (user-initiated) or MILESTONE (calendar event).
   cause              String           // MANUAL | MILESTONE
+  /// Soft FK to the CalendarEvent milestone that triggered this revision. No @relation — event may be deleted.
   milestoneId        String?
   notes              String?
+  /// FK to User who created the revision. Restrict delete.
   createdByUserId    String
+  /// The user who created this revision.
   createdBy          User             @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
   createdAt          DateTime         @default(now())
 
+  /// Snapshot of all groups at the time of this revision.
   groups             CollectionGroupRevision[]
+  /// Snapshot of all rows at the time of this revision.
   rowRevisions       CollectionLayoutRowRevision[]
 
   @@unique([collectionLayoutId, revisionNumber])
@@ -603,19 +758,20 @@ model CollectionLayoutRevision {
   @@map("collection_layout_revisions")
 }
 
-/**
- * Snapshot di un CollectionGroup al momento di una revisione.
- * sourceGroupId è una soft FK (no @relation) — il gruppo vivo può essere cancellato.
- */
+/// Snapshot of a CollectionGroup at the time of a revision. sourceGroupId is a soft FK — the live group may have been deleted.
 model CollectionGroupRevision {
   id            String                     @id @default(uuid())
+  /// FK to CollectionLayoutRevision. Cascade delete.
   revisionId    String
+  /// The revision this group snapshot belongs to.
   revision      CollectionLayoutRevision   @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  /// Soft FK to the live CollectionGroup at revision time. No @relation — group may be deleted post-revision.
   sourceGroupId String
   name          String
   order         Int
   skuBudget     Int?
 
+  /// Row snapshots belonging to this group snapshot.
   rows          CollectionLayoutRowRevision[]
 
   @@index([revisionId])
@@ -623,23 +779,26 @@ model CollectionGroupRevision {
   @@map("collection_group_revisions")
 }
 
-/**
- * Snapshot di una CollectionLayoutRow al momento di una revisione.
- * sourceRowId è una soft FK (no @relation) — la riga viva può essere cancellata.
- * wasDeleted=true indica che la riga era già stata eliminata quando è stata inclusa.
- */
+/// Snapshot of a CollectionLayoutRow at the time of a revision. sourceRowId is a soft FK. wasDeleted=true means the row was already deleted when included in the revision.
 model CollectionLayoutRowRevision {
   id                    String                       @id @default(uuid())
+  /// FK to CollectionLayoutRevision. Cascade delete.
   revisionId            String
+  /// The revision this row snapshot belongs to.
   revision              CollectionLayoutRevision     @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  /// FK to CollectionGroupRevision. Cascade delete.
   sourceGroupRevisionId String
+  /// The group snapshot this row snapshot belongs to.
   sourceGroupRevision   CollectionGroupRevision      @relation(fields: [sourceGroupRevisionId], references: [id], onDelete: Cascade)
+  /// Soft FK to the live CollectionLayoutRow at revision time. No @relation — row may be deleted post-revision.
   sourceRowId           String
+  /// True if the row had already been soft-deleted at the time of the revision.
   wasDeleted            Boolean                      @default(false)
 
-  // Snapshot fields — denormalizzati dalla riga viva al momento della revisione
+  // Snapshot fields — denormalised from the live row at revision time
   gender                String
   vendorId              String?
+  /// Denormalised vendor name at revision time (vendor may be renamed or deleted later).
   vendorName            String?
   line                  String
   article               String?
@@ -652,6 +811,7 @@ model CollectionLayoutRowRevision {
   progress              String?
   pricePositioning      String?
   designer              String?
+  /// Storage key in the immutable "collection-row-pictures-revisions" bucket.
   pictureKey            String?  // key nel bucket immutabile collection-row-pictures-revisions
   styleNotes            String?
   materialNotes         String?
@@ -660,6 +820,7 @@ model CollectionLayoutRowRevision {
   toolingQuotation      Float?
   order                 Int
 
+  /// Quotation snapshots for this row at revision time.
   quotationRevisions    CollectionRowQuotationRevision[]
 
   @@unique([revisionId, sourceRowId])
@@ -667,15 +828,17 @@ model CollectionLayoutRowRevision {
   @@map("collection_layout_row_revisions")
 }
 
-/**
- * Snapshot di una CollectionRowQuotation al momento di una revisione.
- */
+/// Snapshot of a CollectionRowQuotation at the time of a revision. Fully denormalised — no FK to the live quotation.
 model CollectionRowQuotationRevision {
   id                      String                      @id @default(uuid())
+  /// FK to CollectionLayoutRowRevision. Cascade delete.
   rowRevisionId           String
+  /// The row revision this quotation snapshot belongs to.
   rowRevision             CollectionLayoutRowRevision @relation(fields: [rowRevisionId], references: [id], onDelete: Cascade)
   order                   Int
+  /// Soft FK to the live PricingParameterSet. No @relation — set may be deleted post-revision.
   pricingParameterSetId   String?
+  /// Denormalised parameter set name at revision time.
   pricingParameterSetName String?  // denormalizzato
   retailPrice             Float?
   supplierQuotation       Float?
@@ -688,11 +851,13 @@ model CollectionRowQuotationRevision {
 
 // ─── Merchandising Plan ───────────────────────────────────────────────────────
 
+/// Merchandising plan workflow status: DRAFT (editable) | CONFIRMED (locked for changes).
 enum MerchandisingPlanStatus {
   DRAFT
   CONFIRMED
 }
 
+/// Gender target for a merchandising plan row: MAN | WOMAN | UNISEX | KID.
 enum MerchandisingGender {
   MAN
   WOMAN
@@ -700,6 +865,7 @@ enum MerchandisingGender {
   KID
 }
 
+/// Product lifecycle type: NEW_LINE (new category), NEW_STYLE (new design), NEW_COLOR (color extension), CARRY_OVER (rerun from prior season).
 enum MerchandisingLifeType {
   NEW_LINE
   NEW_STYLE
@@ -707,11 +873,13 @@ enum MerchandisingLifeType {
   CARRY_OVER
 }
 
+/// Launch type for a row: SAMPLED (physical sample requested), OPEN_TO_BUY (available without sample).
 enum MerchandisingLaunchType {
   SAMPLED
   OPEN_TO_BUY
 }
 
+/// Bill-of-materials section in a specsheet: UPPER | LINING | ACCESSORIES | SOLE | OTHER.
 enum SpecsheetComponentSection {
   UPPER
   LINING
@@ -720,19 +888,23 @@ enum SpecsheetComponentSection {
   OTHER
 }
 
-/**
- * Piano merchandising per brand+stagione — unico per coppia
- */
+/// Merchandising plan for a brand+season pair. Unique per pair. Container for all SKU-level rows.
 model MerchandisingPlan {
   id        String                  @id @default(uuid())
+  /// FK to Brand. Restrict delete.
   brandId   String
+  /// FK to Season. Restrict delete.
   seasonId  String
+  /// Workflow status: DRAFT (editable) → CONFIRMED (locked).
   status    MerchandisingPlanStatus @default(DRAFT)
   createdAt DateTime                @default(now())
   updatedAt DateTime                @updatedAt
 
+  /// The brand this plan belongs to.
   brand   Brand                 @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  /// The season this plan belongs to.
   season  Season                @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  /// SKU-level rows belonging to this plan.
   rows    MerchandisingPlanRow[]
 
   @@unique([brandId, seasonId])
@@ -740,12 +912,12 @@ model MerchandisingPlan {
   @@map("merchandising_plans")
 }
 
-/**
- * Riga SKU del piano merchandising (granularità colore)
- */
+/// Single SKU row in a merchandising plan at colour granularity. One row = one article+colour combination.
 model MerchandisingPlanRow {
   id     String @id @default(uuid())
+  /// FK to MerchandisingPlan. Cascade delete.
   planId String
+  /// Display order within the plan.
   order  Int    @default(0)
 
   articleCode         String
@@ -753,18 +925,23 @@ model MerchandisingPlanRow {
   styleCode           String?
   colorCode           String
   colorDescription    String
+  /// Gender target: MAN | WOMAN | UNISEX | KID.
   gender              MerchandisingGender
   productCategory     String
   lineCode            String?
+  /// Lifecycle type: NEW_LINE | NEW_STYLE | NEW_COLOR | CARRY_OVER.
   lifeType            MerchandisingLifeType?
+  /// Season code from which this style is carried over (if lifeType=CARRY_OVER).
   carryoverFromSeason String?
 
+  /// Launch type: SAMPLED | OPEN_TO_BUY.
   launchType         MerchandisingLaunchType?
   smsPairsOrder      Int?
   targetPairs        Int?
   cancellationStatus String?
   designer           String?
 
+  /// FK to PricingParameterSet (optional). SetNull if deleted.
   pricingParameterSetId String?
 
   targetFobPrice   Decimal? @db.Decimal(10, 4)
@@ -778,14 +955,19 @@ model MerchandisingPlanRow {
   pricingNotes String?
   generalNotes String?
 
+  /// FK to User responsible for this row. SetNull if user is deleted.
   assignedUserId String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// The merchandising plan this row belongs to.
   plan                MerchandisingPlan       @relation(fields: [planId], references: [id], onDelete: Cascade)
+  /// Bill-of-materials specsheet linked to this row (1:1 optional).
   specsheet           MerchandisingSpecsheet?
+  /// User assigned to work on this row.
   assignedUser        User?                   @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
+  /// Pricing parameter set used for cost calculations on this row.
   pricingParameterSet PricingParameterSet?    @relation(fields: [pricingParameterSetId], references: [id], onDelete: SetNull)
 
   @@index([planId])
@@ -794,11 +976,10 @@ model MerchandisingPlanRow {
   @@map("merchandising_plan_rows")
 }
 
-/**
- * Specsheet (BOM semplificata) collegata 1:1 a una riga piano
- */
+/// Simplified bill-of-materials (specsheet) linked 1:1 to a merchandising plan row. Contains components and images.
 model MerchandisingSpecsheet {
   id    String @id @default(uuid())
+  /// FK to MerchandisingPlanRow. 1:1 — unique constraint enforced. Cascade delete.
   rowId String @unique
 
   madeIn       String?
@@ -808,20 +989,24 @@ model MerchandisingSpecsheet {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// The plan row this specsheet belongs to.
   row        MerchandisingPlanRow     @relation(fields: [rowId], references: [id], onDelete: Cascade)
+  /// BOM component lines (upper, lining, sole, etc.).
   components MerchandisingComponent[]
+  /// Product images for this specsheet.
   images     MerchandisingImage[]
 
   @@map("merchandising_specsheets")
 }
 
-/**
- * Componente BOM di una specsheet
- */
+/// Single BOM component line within a specsheet (e.g. upper leather, sole rubber).
 model MerchandisingComponent {
   id          String                    @id @default(uuid())
+  /// FK to MerchandisingSpecsheet. Cascade delete.
   specsheetId String
+  /// Display order within section.
   order       Int                       @default(0)
+  /// BOM section: UPPER | LINING | ACCESSORIES | SOLE | OTHER.
   section     SpecsheetComponentSection
 
   partNumber   String?
@@ -833,26 +1018,30 @@ model MerchandisingComponent {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// The specsheet this component belongs to.
   specsheet MerchandisingSpecsheet @relation(fields: [specsheetId], references: [id], onDelete: Cascade)
 
   @@index([specsheetId, section, order])
   @@map("merchandising_components")
 }
 
-/**
- * Immagini di una specsheet (galleria)
- */
+/// Image in a specsheet gallery. Stored in the storage layer; key references the bucket path.
 model MerchandisingImage {
   id          String  @id @default(uuid())
+  /// FK to MerchandisingSpecsheet. Cascade delete.
   specsheetId String
+  /// Storage key for the image file. Null until the upload is confirmed.
   key         String?
+  /// True if this is the primary display image for the specsheet.
   isDefault   Boolean @default(false)
+  /// Display order within the gallery.
   order       Int     @default(0)
   caption     String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// The specsheet this image belongs to.
   specsheet MerchandisingSpecsheet @relation(fields: [specsheetId], references: [id], onDelete: Cascade)
 
   @@index([specsheetId, order])
@@ -866,22 +1055,22 @@ model MerchandisingImage {
 // Aggiornate dal sync service (background ogni 5 min + trigger manuale).
 // NO soft-delete, NO entità locale: sono repliche pure in sola lettura dall'app.
 
-/**
- * Stato di sincronizzazione per tabella.
- * navRowversion = CONVERT(BIGINT, MAX(timestamp)) dell'ultimo sync su SQL Server.
- * Per le tabelle full-refresh (date_prenotazione, ddt_picking): rowversion = 0.
- */
+/// Sync state tracker per NAV portafoglio table. navRowversion = CONVERT(BIGINT, MAX(timestamp)) from last SQL Server sync. 0 for full-refresh tables.
 model NavPfSyncState {
+  /// Table name used as PK (e.g. "nav_pf_sales_header").
   tableName       String    @id
+  /// Last NAV rowversion processed. 0 for full-refresh tables (date_prenotazione, ddt_picking).
   lastRowversion  BigInt    @default(0)
   lastSyncedAt    DateTime?
+  /// Number of rows present after the last sync.
   rowCount        Int       @default(0)
+  /// Duration of the last sync in milliseconds.
   lastDurationMs  Int?
 
   @@map("nav_pf_sync_state")
 }
 
-/** Replica di [Company$Sales Header] */
+/// Read-only replica of [Company$Sales Header] from NAV. Synced incrementally via rowversion.
 model NavPfSalesHeader {
   no_                       String    @id
   documentType              Int
@@ -940,7 +1129,7 @@ model NavPfSalesHeader {
   @@map("nav_pf_sales_header")
 }
 
-/** Replica di [Company$Sales Line] */
+/// Read-only replica of [Company$Sales Line] from NAV. PK is composite (documentType, documentNo, lineNo).
 model NavPfSalesLine {
   documentType              Int
   documentNo                String
@@ -991,7 +1180,7 @@ model NavPfSalesLine {
   @@map("nav_pf_sales_line")
 }
 
-/** Replica di [Company$Sales Header Extension] */
+/// Read-only replica of [Company$Sales Header Extension] from NAV. Extends NavPfSalesHeader with additional fields.
 model NavPfSalesHeaderExt {
   documentType            Int
   documentNo              String
@@ -1006,11 +1195,7 @@ model NavPfSalesHeaderExt {
   @@map("nav_pf_sales_header_ext")
 }
 
-/**
- * Replica di [Company$Item] — solo Configurator Relation 2 (modelli) e 3 (SKU).
- * Relation 2: usato in Sales Line.No_ e come chiave principale.
- * Relation 3: usato per carry_over, landed_cost, must_buy (GROUP BY Model Item No_).
- */
+/// Read-only replica of [Company$Item] from NAV — only Configurator Relation 2 (models) and 3 (SKUs). Relation 2 used as Sales Line.No_ key; Relation 3 for carry_over/landed_cost/must_buy aggregations.
 model NavPfItem {
   no_                       String    @id
   description               String?
@@ -1059,7 +1244,7 @@ model NavPfItem {
   @@map("nav_pf_item")
 }
 
-/** Replica di [Company$Customer] */
+/// Read-only replica of [Company$Customer] from NAV.
 model NavPfCustomer {
   no_                    String    @id
   name                   String?
@@ -1118,7 +1303,7 @@ model NavPfCustomer {
   @@map("nav_pf_customer")
 }
 
-/** Replica di [Company$Ship-to Address] */
+/// Read-only replica of [Company$Ship-to Address] from NAV.
 model NavPfShipToAddress {
   customerNo          String
   code                String
@@ -1131,7 +1316,7 @@ model NavPfShipToAddress {
   @@map("nav_pf_ship_to_address")
 }
 
-/** Replica di [Company$Variable Code] (descrizioni colori) */
+/// Read-only replica of [Company$Variable Code] from NAV. Contains colour descriptions keyed by variableGroup+variableCode.
 model NavPfVariableCode {
   variableGroup String
   variableCode  String
@@ -1142,7 +1327,7 @@ model NavPfVariableCode {
   @@map("nav_pf_variable_code")
 }
 
-/** Replica di [Company$Salesperson/Purchaser] */
+/// Read-only replica of [Company$Salesperson/Purchaser] from NAV.
 model NavPfSalesperson {
   code          String  @id
   name          String?
@@ -1151,7 +1336,7 @@ model NavPfSalesperson {
   @@map("nav_pf_salesperson")
 }
 
-/** Replica di [Company$Geographical Zone] */
+/// Read-only replica of [Company$Geographical Zone] from NAV.
 model NavPfGeoZone {
   code          String  @id
   description   String?
@@ -1160,7 +1345,7 @@ model NavPfGeoZone {
   @@map("nav_pf_geo_zone")
 }
 
-/** Replica di [Company$Shipment Method] */
+/// Read-only replica of [Company$Shipment Method] from NAV.
 model NavPfShipmentMethod {
   code          String  @id
   description   String?
@@ -1169,7 +1354,7 @@ model NavPfShipmentMethod {
   @@map("nav_pf_shipment_method")
 }
 
-/** Replica di [Company$Transport Reason Code] */
+/// Read-only replica of [Company$Transport Reason Code] from NAV.
 model NavPfTransportReason {
   code          String  @id
   description   String?
@@ -1178,7 +1363,7 @@ model NavPfTransportReason {
   @@map("nav_pf_transport_reason")
 }
 
-/** Replica di [Company$Budget Header] */
+/// Read-only replica of [Company$Budget Header] from NAV.
 model NavPfBudgetHeader {
   no_           String  @id
   budgetArea    String?
@@ -1187,7 +1372,7 @@ model NavPfBudgetHeader {
   @@map("nav_pf_budget_header")
 }
 
-/** Replica di [Company$Vendor] — solo campi necessari per lookup nome */
+/// Read-only replica of [Company$Vendor] from NAV — only fields needed for name lookup in portafoglio queries.
 model NavPfVendor {
   no_           String  @id
   name          String?
@@ -1196,11 +1381,7 @@ model NavPfVendor {
   @@map("nav_pf_vendor")
 }
 
-/**
- * Pre-aggregazione di [Company$Reserv__Assign_ Link] (tipo 1).
- * Memorizza MAX(Date Reservation) per (Sales Document No_, Sales Line No_).
- * Full-refresh ad ogni ciclo di sync, scoped ai document nos presenti in nav_pf_sales_header.
- */
+/// Pre-aggregation of [Company$Reserv__Assign_ Link] (type 1). Stores MAX(Date Reservation) per (Sales Document No_, Sales Line No_). Full-refresh each sync cycle, scoped to document nos in nav_pf_sales_header.
 model NavPfDatePrenotazione {
   salesDocumentNo String
   salesLineNo     Int
@@ -1211,11 +1392,7 @@ model NavPfDatePrenotazione {
   @@map("nav_pf_date_prenotazione")
 }
 
-/**
- * Pre-aggregazione di [Company$DDT_Picking Line] JOIN [Company$DDT_Picking Header].
- * Memorizza SUM per status per (Order No_, Order Line No_).
- * Full-refresh ad ogni ciclo di sync, scoped ai document nos di nav_pf_sales_header.
- */
+/// Pre-aggregation of [Company$DDT_Picking Line] JOIN [Company$DDT_Picking Header]. Stores SUM per status per (Order No_, Order Line No_). Full-refresh each sync cycle, scoped to document nos in nav_pf_sales_header.
 model NavPfDdtPicking {
   orderNo               String
   orderLineNo           Int
@@ -1243,7 +1420,7 @@ model NavPfDdtPicking {
 // Alimentate da nav-kimo-sync.ts (background scheduler separato).
 // Sync state condiviso con nav_pf_sync_state (stesso schema, prefisso nav_kimo_).
 
-/** Replica di [Company$KIMO-FASHION Sales Order Hdr] — sync incrementale rowversion */
+/// Read-only replica of [Company$KIMO-FASHION Sales Order Hdr] from NAV. Incrementally synced via rowversion.
 model NavKimoSalesHeader {
   entryNo                  BigInt    @id
   trademarkCode            String?
@@ -1265,11 +1442,7 @@ model NavKimoSalesHeader {
   @@map("nav_kimo_sales_header")
 }
 
-/**
- * Replica di [Company$KIMO-FASHION Sales Order Line] — sync incrementale rowversion.
- * PK = Entry No_ (BigInt univoco per riga, come da schema NAV).
- * NON usa Line No_ (campo inesistente in questa tabella NAV).
- */
+/// Read-only replica of [Company$KIMO-FASHION Sales Order Line] from NAV. PK = Entry No_ (BigInt unique per row). Line No_ does not exist in this NAV table.
 model NavKimoSalesLine {
   entryNo                  BigInt    @id
   headerEntryNo            BigInt
@@ -1290,7 +1463,9 @@ model NavKimoSalesLine {
 
 // ─── Company Structure ────────────────────────────────────────────────────────
 
+/// Singleton company profile record. Always queried by id="singleton". Holds legal, contact and export settings.
 model CompanyProfile {
+  /// Fixed PK "singleton" — only one record allowed per deployment.
   id             String   @id @default("singleton")
   legalName      String
   displayName    String
@@ -1300,8 +1475,11 @@ model CompanyProfile {
   phone          String?
   email          String?
   website        String?
+  /// Structured postal address as JSON blob.
   address        Json?
+  /// Export configuration settings as JSON blob.
   exportSettings Json?
+  /// Storage key for the company logo in the "assets" bucket.
   logoKey        String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -1309,22 +1487,33 @@ model CompanyProfile {
   @@map("company_profile")
 }
 
+/// Organisational function (department/team unit) within the company. Used to scope calendar event visibility and team structure.
 model CompanyFunction {
   id          String   @id @default(uuid())
+  /// URL-safe slug used as stable identifier in configs and routes.
   slug        String
   name        String
   description String?
+  /// Display order in function listings.
   order       Int      @default(0)
+  /// Soft-delete flag.
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  /// Teams belonging to this function.
   teams                    CompanyTeam[]
+  /// Calendar events owned by this function.
   ownedCalendarEvents      CalendarEvent[]               @relation("CalendarEventOwnerFunction")
+  /// Calendar event visibility grants for this function.
   calendarEventVisibilities CalendarEventVisibility[]
+  /// Milestone template items owned by this function.
   ownedTemplateItems       MilestoneTemplateItem[]           @relation("TemplateItemOwnerFunction")
+  /// Milestone template item visibility grants for this function.
   templateItemVisibilities MilestoneTemplateItemVisibility[]
+  /// Google Calendar bindings for this function.
   googleCalendarBindings   GoogleCalendarBinding[]
+  /// Google event mappings for calendar events visible to this function.
   googleEventMappings      GoogleEventMapping[]
 
   @@index([slug])
@@ -1332,22 +1521,29 @@ model CompanyFunction {
   @@map("company_functions")
 }
 
+/// Role a user holds within a company team: LEADER (can manage team) or MEMBER (standard member).
 enum CompanyTeamMemberRole {
   LEADER
   MEMBER
 }
 
+/// Team within a company function. A function can have multiple teams; team names are unique within a function.
 model CompanyTeam {
   id          String   @id @default(uuid())
+  /// FK to CompanyFunction. Restrict delete.
   functionId  String
   name        String
   description String?
+  /// Soft-delete flag.
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  /// The function this team belongs to.
   function    CompanyFunction         @relation(fields: [functionId], references: [id], onDelete: Restrict)
+  /// User memberships in this team.
   memberships CompanyTeamMembership[]
+  /// Brand scopes this team has access to.
   brandScopes CompanyTeamBrandScope[]
 
   @@unique([functionId, name])
@@ -1355,13 +1551,19 @@ model CompanyTeam {
   @@map("company_teams")
 }
 
+/// M2M join table between CompanyTeam and User. Tracks role within the team.
 model CompanyTeamMembership {
+  /// FK to CompanyTeam. Cascade delete.
   teamId    String
+  /// FK to User. Cascade delete.
   userId    String
+  /// Role in this team: LEADER or MEMBER.
   role      CompanyTeamMemberRole @default(MEMBER)
   createdAt DateTime              @default(now())
 
+  /// The team this membership belongs to.
   team CompanyTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  /// The user who is a member.
   user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([teamId, userId])
@@ -1369,11 +1571,16 @@ model CompanyTeamMembership {
   @@map("company_team_memberships")
 }
 
+/// M2M join table granting a CompanyTeam access to a specific Brand.
 model CompanyTeamBrandScope {
+  /// FK to CompanyTeam. Cascade delete.
   teamId  String
+  /// FK to Brand. Cascade delete.
   brandId String
 
+  /// The team being granted access.
   team  CompanyTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  /// The brand the team has access to.
   brand Brand       @relation(fields: [brandId], references: [id], onDelete: Cascade)
 
   @@id([teamId, brandId])
@@ -1381,14 +1588,21 @@ model CompanyTeamBrandScope {
   @@map("company_team_brand_scopes")
 }
 
+/// Per-user visibility grant for a calendar event. Allows sharing individual events with specific users outside the normal function-based visibility.
 model CalendarEventUserVisibility {
+  /// FK to CalendarEvent. Cascade delete.
   eventId   String
+  /// FK to User (recipient). Cascade delete.
   userId    String
   grantedAt DateTime @default(now())
+  /// FK to User (grantor). SetNull if the grantor is deleted.
   grantedBy String?
 
+  /// The calendar event being shared.
   event   CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  /// The user receiving visibility.
   user    User          @relation("CalendarEventUserVisibilityRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  /// The user who granted visibility, if any.
   grantor User?         @relation("CalendarEventUserVisibilityGrantor", fields: [grantedBy], references: [id], onDelete: SetNull)
 
   @@id([eventId, userId])
@@ -1396,11 +1610,16 @@ model CalendarEventUserVisibility {
   @@map("calendar_event_user_visibilities")
 }
 
+/// M2M join table granting a CompanyFunction visibility of a MilestoneTemplateItem.
 model MilestoneTemplateItemVisibility {
+  /// FK to MilestoneTemplateItem. Cascade delete.
   templateItemId String
+  /// FK to CompanyFunction. Restrict delete.
   functionId     String
 
+  /// The template item being shared.
   templateItem MilestoneTemplateItem @relation(fields: [templateItemId], references: [id], onDelete: Cascade)
+  /// The function receiving visibility.
   function     CompanyFunction       @relation(fields: [functionId], references: [id], onDelete: Restrict)
 
   @@id([templateItemId, functionId])
@@ -1410,12 +1629,14 @@ model MilestoneTemplateItemVisibility {
 
 // ─── Season Calendar ──────────────────────────────────────────────────────────
 
+/// Season calendar lifecycle status: DRAFT (setup in progress) | ACTIVE (live, visible to all) | ARCHIVED (read-only).
 enum SeasonCalendarStatus {
   DRAFT
   ACTIVE
   ARCHIVED
 }
 
+/// Calendar event workflow status: PLANNED → IN_PROGRESS → COMPLETED | CANCELLED.
 enum CalendarEventStatus {
   PLANNED
   IN_PROGRESS
@@ -1423,48 +1644,58 @@ enum CalendarEventStatus {
   CANCELLED
 }
 
+/// Dependency constraint strength: HARD (successor cannot start until predecessor completes) | SOFT (warning only).
 enum DependencySeverity {
   HARD
   SOFT
 }
 
+/// Visual and alerting severity of a calendar event: CRITICAL (blocks) | NORMAL (default) | INFO (informational).
 enum EventSeverity {
   CRITICAL
   NORMAL
   INFO
 }
 
+/// Type of state side-effect a calendar event can trigger on an entity: LOCK_COLLECTION_LAYOUT | UNLOCK_COLLECTION_LAYOUT.
 enum StateEffectType {
   LOCK_COLLECTION_LAYOUT
   UNLOCK_COLLECTION_LAYOUT
 }
 
+/// Entity type that can be anchored to a calendar event for progress tracking.
 enum AnchorEntityType {
   COLLECTION_LAYOUT
   COLLECTION_LAYOUT_ROW
 }
 
+/// Vendor period type: CLOSURE (vendor unavailable) | OPEN (override — vendor is open despite a holiday).
 enum VendorOverrideType {
   CLOSURE
   OPEN
 }
 
-/**
- * Calendario stagionale per brand+stagione — unico per coppia.
- * anchorDate è la data di riferimento per i template (offset applica da qui).
- */
+/// Season calendar for a brand+season pair. Unique per pair. anchorDate is the reference date for template offset calculations.
 model SeasonCalendar {
   id         String               @id @default(uuid())
+  /// FK to Brand. Restrict delete.
   brandId    String
+  /// FK to Season. Restrict delete.
   seasonId   String
+  /// Lifecycle status: DRAFT → ACTIVE → ARCHIVED.
   status     SeasonCalendarStatus @default(DRAFT)
+  /// Reference date for milestone template offset calculations. Date only (no time).
   anchorDate DateTime?            @db.Date
   createdAt  DateTime             @default(now())
   updatedAt  DateTime             @updatedAt
 
+  /// The brand this calendar belongs to.
   brand      Brand                   @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  /// The season this calendar belongs to.
   season     Season                  @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  /// Events scheduled in this calendar.
   events   CalendarEvent[]
+  /// Google Calendar bindings per company function.
   bindings GoogleCalendarBinding[]
 
   @@unique([brandId, seasonId])
@@ -1472,42 +1703,63 @@ model SeasonCalendar {
   @@map("season_calendars")
 }
 
-/**
- * Singolo evento del calendario stagionale.
- * Visibilità per sezione gestita via CalendarEventVisibility (M2M).
- */
+/// Single event in a season calendar. Section visibility managed via CalendarEventVisibility (M2M with CompanyFunction).
 model CalendarEvent {
   id                String              @id @default(uuid())
+  /// FK to SeasonCalendar. Cascade delete.
   calendarId        String
+  /// FK to CompanyFunction that owns this event. Restrict delete.
   ownerFunctionId   String
+  /// Event type key from CalendarCatalogItem (type="eventType"). E.g. "KICKOFF", "SAMPLE_APPROVAL".
   type              String
+  /// Workflow status: PLANNED → IN_PROGRESS → COMPLETED | CANCELLED.
   status            CalendarEventStatus @default(PLANNED)
   title             String
   description       String?
   startAt           DateTime
   endAt             DateTime?
+  /// True if the event spans the full day (time portion ignored).
   allDay                      Boolean             @default(false)
+  /// If true, the event is exported to Google Calendar for visible functions.
   publishExternally           Boolean             @default(true)
+  /// FK to MilestoneTemplateItem that generated this event (optional). SetNull if template item is deleted.
   templateItemId              String?
+  /// Alert severity: CRITICAL | NORMAL | INFO.
   severity                    EventSeverity       @default(NORMAL)
+  /// ISO 3166-1 alpha-2 country codes this event is relevant to (e.g. ["IT","CN"]).
   relevantCountries           String[]
+  /// Minimum collection progress value required before this event's deadline.
   requiredCollectionProgress  String?
+  /// Days before startAt at which a progress warning is triggered.
   progressWarningDays         Int?
   createdAt                   DateTime            @default(now())
   updatedAt                   DateTime            @updatedAt
 
+  /// The season calendar this event belongs to.
   calendar         SeasonCalendar             @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  /// The company function that owns this event.
   ownerFunction    CompanyFunction            @relation("CalendarEventOwnerFunction", fields: [ownerFunctionId], references: [id], onDelete: Restrict)
+  /// The milestone template item that generated this event, if any.
   templateItem     MilestoneTemplateItem?     @relation(fields: [templateItemId], references: [id], onDelete: SetNull)
+  /// Function-level visibility grants for this event.
   visibilities     CalendarEventVisibility[]
+  /// Personal notes written by individual users on this event.
   notes            CalendarEventPersonalNote[]
+  /// Google event mappings per function.
   eventMappings    GoogleEventMapping[]
+  /// Per-user visibility grants for this event.
   userVisibilities CalendarEventUserVisibility[]
+  /// Dependencies where this event is the predecessor.
   dependenciesAsPredecessor CalendarEventDependency[] @relation("DepPredecessor")
+  /// Dependencies where this event is the successor.
   dependenciesAsSuccessor   CalendarEventDependency[] @relation("DepSuccessor")
+  /// State side-effects (e.g. lock/unlock collection layout) triggered by this event.
   stateEffects              CalendarEventStateEffect[]
+  /// Entity anchors tracking progress for this event.
   anchors                   CalendarEventAnchor[]
+  /// Execution records for state effects of this event.
   effectExecutions          CalendarEventEffectExecution[]
+  /// Collection layouts locked by this event.
   lockedLayouts             CollectionLayout[]
 
   @@index([calendarId, startAt])
@@ -1515,16 +1767,18 @@ model CalendarEvent {
   @@map("calendar_events")
 }
 
-/**
- * Funzioni a cui un evento è visibile.
- * ownerFunction è sempre inclusa come readOnly=false.
- */
+/// M2M visibility grant: which CompanyFunctions can see a CalendarEvent. The ownerFunction is always included with readOnly=false.
 model CalendarEventVisibility {
+  /// FK to CalendarEvent. Cascade delete.
   eventId    String
+  /// FK to CompanyFunction. Restrict delete.
   functionId String
+  /// If true, the function can see but not edit the event.
   readOnly   Boolean @default(true)
 
+  /// The calendar event being shared.
   event    CalendarEvent   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  /// The function receiving visibility.
   function CompanyFunction @relation(fields: [functionId], references: [id], onDelete: Restrict)
 
   @@id([eventId, functionId])
@@ -1532,19 +1786,20 @@ model CalendarEventVisibility {
   @@map("calendar_event_visibilities")
 }
 
-/**
- * Nota personale per-utente per-evento calendario.
- * Non sincronizzata su Google Calendar.
- */
+/// Personal note written by a user on a specific calendar event. Not synced to Google Calendar. One note per user per event.
 model CalendarEventPersonalNote {
   id        String   @id @default(uuid())
+  /// FK to CalendarEvent. Cascade delete.
   eventId   String
+  /// FK to User. Cascade delete.
   userId    String
   body      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// The calendar event this note is attached to.
   event CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  /// The user who wrote this note.
   user  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([eventId, userId])
@@ -1552,9 +1807,7 @@ model CalendarEventPersonalNote {
   @@map("calendar_event_personal_notes")
 }
 
-/**
- * Template di milestone predefinito (catalogo riutilizzabile).
- */
+/// Reusable milestone template (catalogue). Applied to a SeasonCalendar to generate CalendarEvents from offset-based items.
 model MilestoneTemplate {
   id          String   @id @default(uuid())
   name        String   @unique
@@ -1562,35 +1815,49 @@ model MilestoneTemplate {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  /// Template items (milestones) belonging to this template.
   items MilestoneTemplateItem[]
 
   @@map("milestone_templates")
 }
 
-/**
- * Singolo item di un template — offset in giorni da anchorDate.
- */
+/// Single milestone item within a template. Defines an event to be created at anchorDate + offsetDays.
 model MilestoneTemplateItem {
   id                String                @id @default(uuid())
+  /// FK to MilestoneTemplate. Cascade delete.
   templateId        String
+  /// FK to CompanyFunction that will own the generated event. Restrict delete.
   ownerFunctionId   String
+  /// Event type key from CalendarCatalogItem (type="eventType").
   type              String
   title             String
   description       String?
+  /// Days offset from SeasonCalendar.anchorDate to compute event startAt.
   offsetDays        Int
+  /// Duration of the generated event in days. 0 = single-day event.
   durationDays      Int           @default(0)
+  /// If true, the generated event is exported to Google Calendar.
   publishExternally Boolean       @default(true)
+  /// Alert severity for the generated event: CRITICAL | NORMAL | INFO.
   severity          EventSeverity @default(NORMAL)
+  /// ISO 3166-1 alpha-2 country codes this item is relevant to.
   relevantCountries String[]
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
+  /// The template this item belongs to.
   template      MilestoneTemplate               @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  /// The function that will own the generated event.
   ownerFunction CompanyFunction                 @relation("TemplateItemOwnerFunction", fields: [ownerFunctionId], references: [id], onDelete: Restrict)
+  /// Calendar events generated from this template item.
   events        CalendarEvent[]
+  /// Function visibility grants for this template item.
   visibilities  MilestoneTemplateItemVisibility[]
+  /// Dependencies where this item is the predecessor.
   dependenciesAsPredecessor MilestoneTemplateDependency[] @relation("TemplateDepPredecessor")
+  /// Dependencies where this item is the successor.
   dependenciesAsSuccessor   MilestoneTemplateDependency[] @relation("TemplateDepSuccessor")
+  /// State effects to apply when a generated event is completed.
   stateEffects              MilestoneTemplateStateEffect[]
 
   @@index([templateId])
@@ -1598,20 +1865,23 @@ model MilestoneTemplateItem {
   @@map("milestone_template_items")
 }
 
-/**
- * Binding tra un SeasonCalendar+sezione e il corrispettivo Google Calendar ID.
- * Creato lazy al primo sync della sezione.
- */
+/// Binding between a SeasonCalendar+CompanyFunction pair and the corresponding Google Calendar ID. Created lazily on first sync.
 model GoogleCalendarBinding {
   id                String   @id @default(uuid())
+  /// FK to SeasonCalendar. Cascade delete.
   seasonCalendarId  String
+  /// FK to CompanyFunction. Restrict delete.
   companyFunctionId String
+  /// Google Calendar ID (e.g. "abc123@group.calendar.google.com").
   googleCalendarId  String
+  /// True once the Google Calendar has been created and ACLs set up.
   isProvisioned     Boolean  @default(false)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
+  /// The season calendar this binding belongs to.
   seasonCalendar  SeasonCalendar  @relation(fields: [seasonCalendarId], references: [id], onDelete: Cascade)
+  /// The company function this binding applies to.
   companyFunction CompanyFunction @relation(fields: [companyFunctionId], references: [id], onDelete: Restrict)
 
   @@unique([seasonCalendarId, companyFunctionId])
@@ -1620,19 +1890,23 @@ model GoogleCalendarBinding {
   @@map("google_calendar_bindings")
 }
 
-/**
- * Mapping evento calendario → evento Google per ciascuna funzione visibile.
- * contentHash deterministico: se cambia → rescheduled event.
- */
+/// Maps a CalendarEvent to a Google Calendar event per visible CompanyFunction. contentHash is deterministic — a change triggers a Google event update.
 model GoogleEventMapping {
+  /// FK to CalendarEvent. Cascade delete.
   eventId           String
+  /// FK to CompanyFunction. Restrict delete.
   companyFunctionId String
+  /// Google event ID within the target Google Calendar.
   googleEventId     String
+  /// Google Calendar ID where this event lives.
   googleCalendarId  String
+  /// Deterministic hash of event content. Change triggers a Google Calendar update.
   contentHash       String
   lastSyncedAt      DateTime
 
+  /// The calendar event this mapping belongs to.
   event           CalendarEvent   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  /// The company function this mapping is for.
   companyFunction CompanyFunction @relation(fields: [companyFunctionId], references: [id], onDelete: Restrict)
 
   @@id([eventId, companyFunctionId])
@@ -1642,17 +1916,18 @@ model GoogleEventMapping {
 
 // ─── Calendar Catalog ─────────────────────────────────────────────────────────
 
-/**
- * Catalog configurabile per il dominio calendario.
- * type discriminator: 'eventType'
- * value è la chiave immutabile (es. 'KICKOFF'), label è editabile.
- */
+/// Configurable calendar domain catalog. type discriminator: "eventType". value is the immutable machine key (e.g. "KICKOFF"); label is the editable display name.
 model CalendarCatalogItem {
   id        String   @id @default(uuid())
+  /// Discriminator (e.g. "eventType"). Defines which dropdown/field this item populates.
   type      String
+  /// Immutable machine key (e.g. "KICKOFF"). Used as stored value in event.type.
   value     String
+  /// Human-readable display label (editable without changing the value).
   label     String
+  /// Display order within the type group.
   order     Int      @default(0)
+  /// Soft-delete flag. Inactive items are hidden from pickers.
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1662,15 +1937,22 @@ model CalendarCatalogItem {
   @@map("calendar_catalog_items")
 }
 
+/// In-app notification delivered to a user. Rendered in the notification bell and optionally linked to a resource.
 model Notification {
   id        String               @id @default(uuid())
+  /// FK to User (recipient). Cascade delete.
   userId    String
+  /// The user this notification is for.
   user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Category: SYSTEM | CALENDAR | USER_ACTION | WORKFLOW.
   category  NotificationCategory
   title     String
   message   String
+  /// Optional deep-link URL to the relevant resource.
   link      String?
+  /// Optional structured payload for custom rendering.
   data      Json?
+  /// False until the user opens/acknowledges the notification.
   isRead    Boolean              @default(false)
   readAt    DateTime?
   createdAt DateTime             @default(now())
@@ -1680,11 +1962,16 @@ model Notification {
   @@map("notifications")
 }
 
+/// Per-user, per-category notification preference. When enabled=false, notifications in that category are suppressed.
 model NotificationPreference {
   id        String               @id @default(uuid())
+  /// FK to User. Cascade delete.
   userId    String
+  /// The user this preference applies to.
   user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Notification category: SYSTEM | CALENDAR | USER_ACTION | WORKFLOW.
   category  NotificationCategory
+  /// When false, notifications in this category are suppressed for the user.
   enabled   Boolean              @default(true)
   updatedAt DateTime             @updatedAt
 
@@ -1695,16 +1982,24 @@ model NotificationPreference {
 
 // ─── What-If Engine v2 ────────────────────────────────────────────────────────
 
+/// Dependency constraint between two MilestoneTemplateItems. Inherited by CalendarEventDependency when a template is applied.
 model MilestoneTemplateDependency {
   id            String             @id @default(uuid())
+  /// FK to the predecessor MilestoneTemplateItem. Cascade delete.
   predecessorId String
+  /// FK to the successor MilestoneTemplateItem. Cascade delete.
   successorId   String
+  /// Minimum gap in days between predecessor end and successor start.
   minGapDays    Int?
+  /// Maximum gap in days between predecessor end and successor start.
   maxGapDays    Int?
+  /// HARD (blocks scheduling) or SOFT (warning only).
   severity      DependencySeverity
   reason        String?            @db.VarChar(500)
 
+  /// The predecessor template item.
   predecessor MilestoneTemplateItem @relation("TemplateDepPredecessor", fields: [predecessorId], references: [id], onDelete: Cascade)
+  /// The successor template item.
   successor   MilestoneTemplateItem @relation("TemplateDepSuccessor",   fields: [successorId],   references: [id], onDelete: Cascade)
 
   @@unique([predecessorId, successorId])
@@ -1712,21 +2007,29 @@ model MilestoneTemplateDependency {
   @@map("milestone_template_dependencies")
 }
 
+/// Live dependency constraint between two CalendarEvents. May be inherited from a MilestoneTemplateDependency or created manually.
 model CalendarEventDependency {
   id              String             @id @default(uuid())
+  /// FK to the predecessor CalendarEvent. Cascade delete.
   predecessorId   String
+  /// FK to the successor CalendarEvent. Cascade delete.
   successorId     String
   minGapDays      Int?
   maxGapDays      Int?
+  /// HARD (blocks scheduling) or SOFT (warning only).
   severity        DependencySeverity
   reason          String?            @db.VarChar(500)
+  /// When true, this dependency is temporarily suppressed without being deleted.
   isDisabled      Boolean            @default(false)
+  /// Soft FK to the MilestoneTemplateDependency that generated this constraint. Null if created manually.
   inheritedFromId String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// The predecessor calendar event.
   predecessor CalendarEvent @relation("DepPredecessor", fields: [predecessorId], references: [id], onDelete: Cascade)
+  /// The successor calendar event.
   successor   CalendarEvent @relation("DepSuccessor",   fields: [successorId],   references: [id], onDelete: Cascade)
 
   @@unique([predecessorId, successorId])
@@ -1735,28 +2038,42 @@ model CalendarEventDependency {
   @@map("calendar_event_dependencies")
 }
 
+/// State side-effect definition on a MilestoneTemplateItem. Applied to generated CalendarEventStateEffect records when a template is instantiated.
 model MilestoneTemplateStateEffect {
   id                   String          @id @default(uuid())
+  /// FK to MilestoneTemplateItem. Cascade delete.
   templateItemId       String
+  /// Type of state change: LOCK_COLLECTION_LAYOUT | UNLOCK_COLLECTION_LAYOUT.
   effectType           StateEffectType
+  /// Entity type the effect targets (e.g. "collection_layout").
   targetEntityType     String
+  /// If true, the user must confirm before the effect is applied.
   requiresConfirmation Boolean         @default(true)
 
+  /// The template item that owns this state effect definition.
   templateItem MilestoneTemplateItem @relation(fields: [templateItemId], references: [id], onDelete: Cascade)
 
   @@index([templateItemId])
   @@map("milestone_template_state_effects")
 }
 
+/// Live state side-effect attached to a CalendarEvent targeting a specific entity instance. Tracks executions and rollbacks.
 model CalendarEventStateEffect {
   id                   String          @id @default(uuid())
+  /// FK to CalendarEvent. Cascade delete.
   eventId              String
+  /// Type of state change: LOCK_COLLECTION_LAYOUT | UNLOCK_COLLECTION_LAYOUT.
   effectType           StateEffectType
+  /// Entity type the effect targets (e.g. "collection_layout").
   targetEntityType     String
+  /// ID of the specific entity instance to apply the effect to.
   targetEntityId       String
+  /// If true, the user must confirm before the effect is applied.
   requiresConfirmation Boolean
 
+  /// The calendar event that owns this state effect.
   event      CalendarEvent                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  /// Execution records tracking when this effect was applied and rolled back.
   executions CalendarEventEffectExecution[]
 
   @@index([eventId])
@@ -1764,19 +2081,30 @@ model CalendarEventStateEffect {
   @@map("calendar_event_state_effects")
 }
 
+/// Execution record for a CalendarEventStateEffect. Stores the pre-application state snapshot to enable rollback.
 model CalendarEventEffectExecution {
   id                    String    @id @default(uuid())
+  /// FK to CalendarEventStateEffect. Cascade delete.
   effectId              String
+  /// FK to CalendarEvent. Cascade delete.
   eventId               String
   appliedAt             DateTime  @default(now())
+  /// FK to User who applied the effect. Restrict delete.
   appliedByUserId       String
+  /// JSON snapshot of the entity state before the effect was applied (used for rollback).
   previousStateSnapshot Json
+  /// Timestamp when the effect was rolled back. Null if still active.
   rolledBackAt          DateTime?
+  /// FK to User who rolled back the effect. SetNull if user is deleted.
   rolledBackByUserId    String?
 
+  /// The state effect this execution belongs to.
   effect       CalendarEventStateEffect @relation(fields: [effectId],            references: [id], onDelete: Cascade)
+  /// The calendar event associated with this execution.
   event        CalendarEvent            @relation(fields: [eventId],             references: [id], onDelete: Cascade)
+  /// The user who applied the effect.
   appliedBy    User                     @relation("EffectApplier",               fields: [appliedByUserId],    references: [id], onDelete: Restrict)
+  /// The user who rolled back the effect, if any.
   rolledBackBy User?                    @relation("EffectRollbacker",            fields: [rolledBackByUserId], references: [id], onDelete: SetNull)
 
   @@index([eventId])
@@ -1784,14 +2112,19 @@ model CalendarEventEffectExecution {
   @@map("calendar_event_effect_executions")
 }
 
+/// Anchor linking a CalendarEvent to a specific entity for progress tracking (e.g. a CollectionLayout or CollectionLayoutRow).
 model CalendarEventAnchor {
   id         String           @id @default(uuid())
+  /// FK to CalendarEvent. Cascade delete.
   eventId    String
+  /// Entity type being anchored: COLLECTION_LAYOUT | COLLECTION_LAYOUT_ROW.
   entityType AnchorEntityType
+  /// ID of the specific entity instance being tracked.
   entityId   String
 
   createdAt DateTime @default(now())
 
+  /// The calendar event this anchor belongs to.
   event CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@unique([eventId, entityType, entityId])
@@ -1799,28 +2132,43 @@ model CalendarEventAnchor {
   @@map("calendar_event_anchors")
 }
 
+/// Country entity used as the scope for public holiday definitions and vendor closure periods.
 model HolidayCountry {
+  /// ISO 3166-1 alpha-2 country code (PK).
   code   String  @id
   name   String
+  /// When false, this country is excluded from holiday sync and closure calculations.
   active Boolean @default(true)
 
+  /// Public holidays defined for this country.
   holidays       Holiday[]
+  /// Vendor closure periods scoped to this country.
   vendorClosures VendorClosurePeriod[]
 
   @@map("holiday_countries")
 }
 
+/// Public holiday for a country. Used to auto-suggest vendor closure periods.
 model Holiday {
   id          String   @id @default(uuid())
+  /// FK to HolidayCountry. Restrict delete.
   countryCode String
+  /// Holiday name in the local language.
   name        String
+  /// Holiday name in English (optional).
   nameEn      String?
+  /// Start date of the holiday (date only, no time).
   startDate   DateTime @db.Date
+  /// End date of the holiday (date only, no time). Equal to startDate for single-day holidays.
   endDate     DateTime @db.Date
+  /// True for religious holidays (e.g. Christmas, Easter).
   isReligious Boolean  @default(false)
+  /// Data source identifier (e.g. "nager.date", "manual").
   source      String?
 
+  /// The country this holiday belongs to.
   country         HolidayCountry        @relation(fields: [countryCode], references: [code], onDelete: Restrict)
+  /// Vendor closure periods that were derived from this holiday.
   vendorOverrides VendorClosurePeriod[] @relation("ClosureSourceHoliday")
 
   @@unique([countryCode, name, startDate])
@@ -1828,27 +2176,43 @@ model Holiday {
   @@map("holidays")
 }
 
+/// Vendor unavailability or open-override period for a given season. Can be auto-suggested from a Holiday or created manually.
 model VendorClosurePeriod {
   id                String             @id @default(uuid())
+  /// FK to Vendor. Cascade delete.
   vendorId          String
+  /// FK to Season. Cascade delete.
   seasonId          String
+  /// FK to HolidayCountry (optional). Provides context for the closure reason. SetNull if country is deleted.
   countryCode       String?
+  /// Human-readable name for this period (e.g. "Chinese New Year 2026").
   name              String
+  /// Start date of the period (date only, no time).
   startDate         DateTime           @db.Date
+  /// End date of the period (date only, no time).
   endDate           DateTime           @db.Date
+  /// Type: CLOSURE (vendor unavailable) or OPEN (override — vendor is open despite a holiday).
   type              VendorOverrideType @default(CLOSURE)
+  /// FK to Holiday that originated this period (optional). SetNull if holiday is deleted.
   sourceHolidayId   String?
+  /// Timestamp when a user confirmed this period. Null = pending confirmation.
   confirmedAt       DateTime?
+  /// FK to User who confirmed this period. SetNull if user is deleted.
   confirmedByUserId String?
   notes             String?            @db.VarChar(500)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// The vendor this closure period applies to.
   vendor        Vendor          @relation(fields: [vendorId],           references: [id], onDelete: Cascade)
+  /// The season this closure period is scoped to.
   season        Season          @relation(fields: [seasonId],           references: [id], onDelete: Cascade)
+  /// The country associated with this closure period.
   country       HolidayCountry? @relation(fields: [countryCode],        references: [code], onDelete: SetNull)
+  /// The public holiday that suggested this closure period.
   sourceHoliday Holiday?        @relation("ClosureSourceHoliday",       fields: [sourceHolidayId],   references: [id], onDelete: SetNull)
+  /// The user who confirmed this period.
   confirmedBy   User?           @relation("ClosureConfirmer",           fields: [confirmedByUserId],  references: [id], onDelete: SetNull)
 
   @@index([vendorId, seasonId])

@@ -1,5 +1,8 @@
 import { getClient } from './client.js';
 
+/**
+ * Grants read access to a Google Calendar for the given user email.
+ */
 export async function addCalendarReader(
   googleCalendarId: string,
   email: string
@@ -14,6 +17,10 @@ export async function addCalendarReader(
   });
 }
 
+/**
+ * Revokes read access to a Google Calendar for the given user email.
+ * Idempotent: silently succeeds if the ACL rule does not exist (404).
+ */
 export async function removeCalendarReader(
   googleCalendarId: string,
   email: string
@@ -39,6 +46,12 @@ export async function listCalendarReaders(
     .map(r => r.scope!.value!);
 }
 
+/**
+ * Reconciles the reader ACL of a Google Calendar to exactly match `expectedEmails`.
+ * Adds missing readers and removes unexpected ones in parallel.
+ *
+ * @param expectedEmails - Complete desired set of reader email addresses
+ */
 export async function syncCalendarReaders(
   googleCalendarId: string,
   expectedEmails: string[]

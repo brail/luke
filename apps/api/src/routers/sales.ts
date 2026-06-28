@@ -50,9 +50,11 @@ const portafoglioDownloadInput = portafoglioBaseInput.extend({
 
 const portafoglioRouter = router({
   /**
-   * Restituisce i filtri disponibili per il portafoglio.
-   * Legge gli agenti da nav_pf_sales_header + nav_pf_salesperson (dati replicati in PG).
-   * Fallback su NAV diretto se la replica non ha ancora dati per questa stagione.
+   * Returns available filter options (salespersons) for the order portfolio of a brand+season, reading from PG replica with NAV direct fallback.
+   *
+   * @auth {sales:read}
+   * @input {{ brandId: string (UUID), seasonId: string (UUID) }}
+   * @output {{ brand, season, salespersons: { code, name }[] }}
    */
   getFilters: protectedProcedure
     .use(requirePermission('sales:read'))
@@ -127,8 +129,11 @@ const portafoglioRouter = router({
     }),
 
   /**
-   * Avvia un sync portafoglio NAV → PG immediatamente.
-   * Usato dal bottone "Aggiorna Ora" nell'UI.
+   * Triggers an immediate NAV→PG portafoglio sync; returns conflict error if a sync is already running.
+   *
+   * @auth {sales:read}
+   * @input {none}
+   * @output {Sync result from triggerPortafoglioSyncNow()}
    */
   triggerSync: protectedProcedure
     .use(requirePermission('sales:read'))
@@ -154,8 +159,11 @@ const portafoglioRouter = router({
     }),
 
   /**
-   * Restituisce lo stato di sync delle tabelle nav_pf_*.
-   * Usato dalla UI per mostrare last-sync timestamp e progress.
+   * Returns the sync state (last sync timestamp, row count, duration) for all nav_pf_* replica tables.
+   *
+   * @auth {sales:read}
+   * @input {none}
+   * @output {{ isRunning: boolean, tables: { tableName, lastSyncedAt, rowCount, lastDurationMs }[] }}
    */
   getSyncState: protectedProcedure
     .use(requirePermission('sales:read'))
@@ -176,8 +184,11 @@ const portafoglioRouter = router({
     }),
 
   /**
-   * Genera il file xlsx del portafoglio ordini per il brand/season corrente.
-   * Restituisce il buffer codificato in base64 per il download lato client.
+   * Generates and returns the order portfolio XLSX for a brand+season (base64-encoded); uses PG replica with NAV direct fallback.
+   *
+   * @auth {sales:read}
+   * @input {{ brandId, seasonId, salespersonCode?, customerCode? }}
+   * @output {{ data: string (base64), filename: string, rowCount: number, queryDurationMs: number }}
    */
   download: protectedProcedure
     .use(requirePermission('sales:read'))
@@ -285,8 +296,11 @@ const portafoglioRouter = router({
 
 const kimoRouter = router({
   /**
-   * Filtri disponibili per Vendite+Bidone Kimo.
-   * Legge gli agenti distinti da nav_kimo_sales_header per il brand corrente.
+   * Returns available filter options (salespersons) for the Kimo sales+basket report, merging agents from nav_pf_* and nav_kimo_*.
+   *
+   * @auth {sales:read}
+   * @input {{ brandId: string (UUID), seasonId: string (UUID) }}
+   * @output {{ brand, season, salespersons: { code, name }[] }}
    */
   getFilters: protectedProcedure
     .use(requirePermission('sales:read'))
@@ -340,7 +354,11 @@ const kimoRouter = router({
     }),
 
   /**
-   * Stato di sync delle tabelle nav_kimo_*.
+   * Returns the sync state for all nav_kimo_* replica tables.
+   *
+   * @auth {sales:read}
+   * @input {none}
+   * @output {{ isRunning: boolean, tables: { tableName, lastSyncedAt, rowCount, lastDurationMs }[] }}
    */
   getSyncState: protectedProcedure
     .use(requirePermission('sales:read'))
@@ -362,7 +380,11 @@ const kimoRouter = router({
     }),
 
   /**
-   * Avvia un sync KIMO NAV → PG immediatamente.
+   * Triggers an immediate NAV→PG KIMO sync; returns conflict error if already running.
+   *
+   * @auth {sales:read}
+   * @input {none}
+   * @output {Sync result from triggerKimoSyncNow()}
    */
   triggerSync: protectedProcedure
     .use(requirePermission('sales:read'))
@@ -388,8 +410,11 @@ const kimoRouter = router({
     }),
 
   /**
-   * Genera il file xlsx Vendite+Bidone Kimo per il brand/season corrente.
-   * UNION di SO da nav_pf_* e BASKET da nav_kimo_*.
+   * Generates and returns the Kimo sales+basket XLSX (UNION of nav_pf_* orders and nav_kimo_* baskets) for a brand+season.
+   *
+   * @auth {sales:read}
+   * @input {{ brandId, seasonId, salespersonCode?, customerCode? }}
+   * @output {{ data: string (base64), filename: string, rowCount: number, queryDurationMs: number }}
    */
   download: protectedProcedure
     .use(requirePermission('sales:read'))

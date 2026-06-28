@@ -1,10 +1,11 @@
 /**
- * Schema Zod per Season
- * Definisce validazione e tipi per operazioni CRUD Season
+ * Zod schemas for Season — create, update, list, and output shapes.
+ * `Season.code` is max 10 chars, aligned to NAV nvarchar constraints.
  */
 
 import { z } from 'zod';
 
+/** Input schema for creating a season. Code must be alphanumeric, max 10 chars (NAV constraint). */
 export const SeasonInputSchema = z.object({
   code: z
     .string()
@@ -33,10 +34,12 @@ export const SeasonInputSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
+/** Schema for identifying a single season by UUID. */
 export const SeasonIdSchema = z.object({
   id: z.string().uuid('ID season non valido'),
 });
 
+/** Input schema for listing seasons with optional search, active filter, and cursor pagination. */
 export const SeasonListInputSchema = z.object({
   isActive: z.boolean().optional(),
   search: z.string().optional(),
@@ -44,6 +47,7 @@ export const SeasonListInputSchema = z.object({
   limit: z.number().min(1).max(100).default(50),
 });
 
+/** Input schema for partially updating a season. */
 export const SeasonUpdateInputSchema = z.object({
   id: z.string().uuid('ID season non valido'),
   data: SeasonInputSchema.partial(),

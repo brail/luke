@@ -3,7 +3,8 @@ import { z } from 'zod';
 import type { Role } from '../rbac';
 
 /**
- * Enum per le sezioni del sistema (incluse sotto-sezioni con dot-notation)
+ * All navigable sections in the system, including sub-sections expressed in dot-notation
+ * (e.g. `'settings.ldap'`, `'product.pricing'`). Used as access-control keys throughout the RBAC layer.
  */
 export const sectionEnum = z.enum([
   'dashboard',
@@ -43,8 +44,8 @@ export const sectionEnum = z.enum([
 export type Section = z.infer<typeof sectionEnum>;
 
 /**
- * Mapping sezioni → permissions nel sistema Resource:Action
- * Unica source of truth, condivisa tra API e Web
+ * Maps each section key to the `Resource:Action` permission required to access it.
+ * Single source of truth shared between API and Web. Do not duplicate this mapping.
  */
 export const SECTION_TO_PERMISSION: Record<Section, string> = {
   dashboard: 'dashboard:read',
@@ -76,7 +77,11 @@ export const SECTION_TO_PERMISSION: Record<Section, string> = {
 } as const;
 
 /**
- * Sezione padre per le sotto-sezioni (dot-notation → parent)
+ * Returns the parent section for a dot-notation sub-section, or `null` if already a top-level section.
+ *
+ * @example
+ * getParentSection('settings.ldap') // → 'settings'
+ * getParentSection('dashboard')     // → null
  */
 export function getParentSection(section: Section): Section | null {
   const dot = section.indexOf('.');
@@ -85,12 +90,12 @@ export function getParentSection(section: Section): Section | null {
 }
 
 /**
- * Default di accesso alle sezioni per ruolo.
- * true  = visibile per default
- * false = nascosta per default (richiede override admin per abilitare)
+ * Static default section visibility per role.
+ * `true` = visible by default; `false` = hidden (requires an admin override to enable).
  *
- * Questa è la source of truth statica — non va in DB.
- * Gli override per-utente vengono applicati sopra questo livello.
+ * This is the version-controlled source of truth — it does not live in the database.
+ * Per-user overrides are layered on top at runtime by `effectiveSectionAccess`.
+ * Runtime per-role overrides live in AppConfig (`rbac.sectionAccessDefaults`).
  */
 export const SECTION_ACCESS_DEFAULTS: Record<Role, Record<Section, boolean>> =
   {

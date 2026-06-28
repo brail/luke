@@ -21,7 +21,11 @@ const menuCollapsibleStatesSchema = z.record(z.string(), z.boolean());
  */
 const menuRouter = router({
   /**
-   * Ottiene gli stati collapsibili dei menu per l'utente autenticato
+   * Returns the collapsible state map for all sidebar menu sections for the current user.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {Record<string, boolean>}
    */
   get: protectedProcedure.query(async ({ ctx }) => {
     const states = await getMenuCollapsibleStates(ctx.session.user.id, ctx.prisma);
@@ -29,7 +33,11 @@ const menuRouter = router({
   }),
 
   /**
-   * Imposta gli stati collapsibili dei menu per l'utente autenticato
+   * Persists the collapsible state map for all sidebar menu sections for the current user.
+   *
+   * @auth {authenticated}
+   * @input {Record<string, boolean>} — map of menu section keys to collapsed/expanded state
+   * @output {Record<string, boolean>}
    */
   set: protectedProcedure
     .input(menuCollapsibleStatesSchema)

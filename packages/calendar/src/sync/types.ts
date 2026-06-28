@@ -1,3 +1,7 @@
+/**
+ * Milestone data required by the Google Calendar sync engine.
+ * Contains only the fields needed to create/update/delete events and compute content hashes.
+ */
 export interface MilestoneForSync {
   id: string;
   title: string;
@@ -10,6 +14,10 @@ export interface MilestoneForSync {
   visibilityFunctionIds: string[];
 }
 
+/**
+ * Persisted mapping between a Luke milestone and a Google Calendar event,
+ * scoped to a specific company function (calendar per section).
+ */
 export interface GoogleEventMappingRecord {
   eventId: string;
   companyFunctionId: string;
@@ -19,6 +27,10 @@ export interface GoogleEventMappingRecord {
   lastSyncedAt: Date;
 }
 
+/**
+ * Binding between a season calendar section (company function) and a provisioned
+ * Google Calendar. Created on first sync for that function; cached for subsequent runs.
+ */
 export interface GoogleCalendarBindingRecord {
   id: string;
   seasonCalendarId: string;
@@ -27,6 +39,10 @@ export interface GoogleCalendarBindingRecord {
   isProvisioned: boolean;
 }
 
+/**
+ * Runtime context injected into the sync engine.
+ * Abstracts all database I/O so the engine remains pure and testable.
+ */
 export interface SyncContext {
   seasonCalendarId: string;
   brandCode: string;

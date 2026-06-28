@@ -1,16 +1,12 @@
 /**
- * Modulo RBAC (Role-Based Access Control) — Definizione ruoli
+ * RBAC (Role-Based Access Control) — role definitions.
  *
- * Le permission granulari Resource:Action sono in auth/permissions.ts.
- * Le sezioni e i loro mapping sono in schemas/rbac.ts.
+ * Granular Resource:Action permissions are defined in `auth/permissions.ts`.
+ * Section keys and their mappings live in `schemas/rbac.ts`.
  */
 
-/**
- * Ruoli disponibili nel sistema
- */
+/** All valid roles in the system. */
 export const Roles = ['admin', 'editor', 'viewer'] as const;
 
-/**
- * Tipo TypeScript per i ruoli
- */
+/** Union type of all valid role values. */
 export type Role = (typeof Roles)[number];

@@ -1,5 +1,8 @@
 import ical, { ICalEventStatus } from 'ical-generator';
 
+/**
+ * Minimal milestone data required to generate an iCal event.
+ */
 export interface ICalMilestone {
   id: string;
   title: string;
@@ -18,6 +21,17 @@ function milestoneStatusToIcal(status: string): ICalEventStatus {
   return ICalEventStatus.CONFIRMED;
 }
 
+/**
+ * Generates an iCal (`.ics`) feed string from a list of milestones.
+ *
+ * All-day events use the plain `date` format; timed events use `dateTime` with UTC.
+ * Milestone status is mapped: `CANCELLED` → CANCELLED, `PLANNED` → TENTATIVE, others → CONFIRMED.
+ *
+ * @param milestones - Array of milestone data to include in the feed
+ * @param calendarName - Display name of the calendar (CALNAME property)
+ * @param prodId - iCal PRODID string (defaults to `'-//Luke//SeasonCalendar//EN'`)
+ * @returns RFC 5545-compliant iCal string
+ */
 export function generateIcal(
   milestones: ICalMilestone[],
   calendarName: string,

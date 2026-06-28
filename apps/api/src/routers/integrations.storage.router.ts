@@ -30,6 +30,13 @@ const driveConfigSchema = z.object({
 });
 
 export const storageRouter = router({
+  /**
+   * Saves the legacy SMB or Google Drive storage provider configuration (encrypted).
+   *
+   * @auth {config:update}
+   * @input {{ provider: "smb"|"drive", config: smbConfigSchema | driveConfigSchema }}
+   * @output {{ success: true, message: string }}
+   */
   saveConfig: protectedProcedure
     .use(requirePermission('config:update'))
     .input(
@@ -91,6 +98,13 @@ export const storageRouter = router({
       }
     }),
 
+  /**
+   * Placeholder: tests the SMB or Drive storage connection (not yet implemented).
+   *
+   * @auth {config:read}
+   * @input {{ provider: string }}
+   * @output {{ success: true, message: string }}
+   */
   testConnection: protectedProcedure
     .use(requirePermission('config:read'))
     .input(

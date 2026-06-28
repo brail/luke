@@ -25,8 +25,11 @@ import {
 
 export const meRouter = router({
   /**
-   * Ottiene i dati del profilo utente corrente
-   * Include informazioni sul provider per determinare campi modificabili
+   * Returns the current user's full profile including provider info and profile completion percentage.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {User with provider, profileCompletion, loginCount, lastLoginAt.}
    */
   get: protectedProcedure.query(async ({ ctx }) => {
     const user = await ctx.prisma.user.findUnique({
@@ -82,8 +85,11 @@ export const meRouter = router({
   }),
 
   /**
-   * Aggiorna il profilo utente corrente
-   * Blocca la modifica di campi sincronizzati per provider esterni
+   * Updates the current user's editable profile fields; blocks sync-locked fields for LDAP/OIDC users.
+   *
+   * @auth {authenticated}
+   * @input {UserProfileSchema} — email, firstName, lastName, locale, timezone.
+   * @output {Partial User with updated fields.}
    */
   updateProfile: protectedProcedure
     .input(UserProfileSchema)
@@ -174,8 +180,11 @@ export const meRouter = router({
     }),
 
   /**
-   * Cambia l'email dell'utente corrente (self-service, nessun permesso extra)
-   * Invia email di verifica al nuovo indirizzo
+   * Changes the current user's email address and sends a verification email to the new address.
+   *
+   * @auth {authenticated}
+   * @input {{ newEmail: string }} — the new email address (must be unique).
+   * @output {{ success: true, message: string }}
    */
   changeEmail: protectedProcedure
     .use(withRateLimit('userMutations'))
@@ -228,8 +237,11 @@ export const meRouter = router({
     }),
 
   /**
-   * Cambia la password dell'utente corrente
-   * Disponibile solo per utenti con provider LOCAL
+   * Changes the current user's password; only available for LOCAL provider users.
+   *
+   * @auth {authenticated}
+   * @input {ChangePasswordSchema} — currentPassword, newPassword.
+   * @output {{ ok: true }}
    */
   changePassword: protectedProcedure
     .use(withRateLimit('passwordChange'))
@@ -336,8 +348,11 @@ export const meRouter = router({
     }),
 
   /**
-   * Ottiene la cronologia degli accessi dell'utente corrente
-   * Utilizza AuditLog per recuperare i login recenti
+   * Returns the current user's recent login history from the audit log.
+   *
+   * @auth {authenticated}
+   * @input {{ limit?: number }} — max entries to return (default 10).
+   * @output {Array<{ id, timestamp, success, ipAddress, location }>}
    */
   loginHistory: protectedProcedure
     .input(z.object({ limit: z.number().default(10) }).optional())
@@ -362,8 +377,11 @@ export const meRouter = router({
     }),
 
   /**
-   * Revoca tutte le sessioni dell'utente corrente
-   * Incrementa tokenVersion per invalidare tutti i token esistenti
+   * Revokes all sessions for the current user by incrementing tokenVersion.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {{ success: true }}
    */
   revokeAllSessions: protectedProcedure.mutation(async ({ ctx }) => {
     // Incrementa tokenVersion per invalidare tutte le sessioni
@@ -390,8 +408,11 @@ export const meRouter = router({
   }),
 
   /**
-   * Aggiorna solo il timezone dell'utente
-   * Endpoint specifico per aggiornamenti parziali del timezone
+   * Updates only the timezone field for the current user.
+   *
+   * @auth {authenticated}
+   * @input {UpdateTimezoneSchema} — timezone (IANA timezone identifier).
+   * @output {{ id, timezone, updatedAt }}
    */
   updateTimezone: protectedProcedure
     .input(UpdateTimezoneSchema)

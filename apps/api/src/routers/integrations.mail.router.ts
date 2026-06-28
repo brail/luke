@@ -30,6 +30,13 @@ const smtpConfigSchema = z.object({
 });
 
 export const mailRouter = router({
+  /**
+   * Saves the SMTP configuration to AppConfig; password is stored encrypted.
+   *
+   * @auth {config:update}
+   * @input {smtpConfigSchema} — host, port, secure, user, optional pass, from, baseUrl.
+   * @output {{ success: true, message: string }}
+   */
   saveConfig: protectedProcedure
     .use(requirePermission('config:update'))
     .input(smtpConfigSchema)
@@ -84,6 +91,13 @@ export const mailRouter = router({
       };
     }),
 
+  /**
+   * Tests the SMTP connection and sends a test email to the configured sender or a custom address.
+   *
+   * @auth {config:read}
+   * @input {{ testEmail?: string }} — optional override for the test recipient address.
+   * @output {{ success: true, message: string, sentTo: string }}
+   */
   test: protectedProcedure
     .use(requirePermission('config:read'))
     .input(

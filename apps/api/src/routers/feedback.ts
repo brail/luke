@@ -9,6 +9,13 @@ import { router, protectedProcedure } from '../lib/trpc';
 const LABEL_MAP = { bug: ['bug'], feature: ['enhancement'] } as const;
 
 export const feedbackRouter = router({
+  /**
+   * Submits a bug report or feature request as a GitHub issue using the configured feedback token.
+   *
+   * @auth {authenticated}
+   * @input {{ type: "bug" | "feature", title: string, description: string }}
+   * @output {{ issueUrl: string, issueNumber: number }}
+   */
   submit: protectedProcedure
     .use(withRateLimit('configMutations'))
     .input(z.object({

@@ -14,6 +14,10 @@ import { sanitizeCompany } from '../config.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+/**
+ * Filter parameters for the Portafoglio Ordini query.
+ * Season and trademark are mandatory; agent and customer are optional.
+ */
 export interface PortafoglioParams {
   /** Codice stagione NAV (es. 'E26'). Obbligatorio — viene dal contesto. */
   seasonCode: string;
@@ -26,9 +30,9 @@ export interface PortafoglioParams {
 }
 
 /**
- * Riga del risultato del portafoglio ordini.
- * Usa Record per evitare di tipizzare ~150 colonne NAV custom.
- * Il builder xlsx usa le chiavi del primo record come intestazioni.
+ * Single row returned by the Portafoglio Ordini query.
+ * Typed as a loose record to avoid enumerating ~150 NAV-specific columns.
+ * The xlsx builder uses keys from the first record as column headers.
  */
 export type PortafoglioRow = Record<string, unknown>;
 
@@ -761,22 +765,23 @@ OPTION (RECOMPILE);
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Esegue il portafoglio ordini completo su NAV SQL Server.
+ * Executes the full Portafoglio Ordini query against NAV SQL Server and returns
+ * all matching order lines with aggregated shipping, invoicing, and commission data.
  *
- * @param pool    - Pool di connessione mssql (da getPool())
- * @param company - Nome azienda NAV grezzo (es. 'NewEra') — viene sanitizzato internamente
- * @param params  - Parametri di filtro (season e trademark obbligatori)
- * @param logger  - Logger Pino
- * @returns Array di righe (Record<string, unknown>) pronte per il builder xlsx
+ * The company name is sanitized internally before being embedded in table identifiers.
+ *
+ * @param pool - mssql connection pool (from `getPool()`)
+ * @param company - Raw NAV company name (e.g. `'NewEra'`); bracket-escaped before use
+ * @param params - Filter parameters; `seasonCode` and `trademarkCode` are required
+ * @param logger - Pino logger instance (defaults to `info` level)
+ * @returns Array of rows ready for the xlsx builder; column names match NAV field aliases
  *
  * @example
- * ```typescript
  * const rows = await queryPortafoglioOrdini(pool, config.company, {
  *   seasonCode: 'E26',
  *   trademarkCode: 'CPH',
  *   salespersonCode: '1184',
  * }, logger);
- * ```
  */
 export async function queryPortafoglioOrdini(
   pool: mssql.ConnectionPool,

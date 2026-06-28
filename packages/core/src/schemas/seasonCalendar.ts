@@ -2,27 +2,42 @@ import { z } from 'zod';
 
 // ─── What-If Engine v2 types ──────────────────────────────────────────────────
 
+/**
+ * Severity levels for milestone dependencies.
+ * `HARD` blocks rescheduling; `SOFT` warns but allows override.
+ */
 export const DEPENDENCY_SEVERITY = ['HARD', 'SOFT'] as const;
 export type DependencySeverity = (typeof DEPENDENCY_SEVERITY)[number];
 
+/** Visual severity of a calendar event — drives color coding and alert prominence in the UI. */
 export const EVENT_SEVERITY = ['CRITICAL', 'NORMAL', 'INFO'] as const;
 export type EventSeverity = (typeof EVENT_SEVERITY)[number];
 
+/** Country codes considered relevant for production sourcing and public holiday lookups. */
 export const RELEVANT_COUNTRY_CODES = ['IT', 'CN', 'VN', 'IN', 'TR'] as const;
 export type RelevantCountryCode = (typeof RELEVANT_COUNTRY_CODES)[number];
 
+/**
+ * Allowed state-effect types triggered when a calendar milestone is completed.
+ * Used to automatically lock or unlock a collection layout.
+ */
 export const STATE_EFFECT_TYPE = [
   'LOCK_COLLECTION_LAYOUT',
   'UNLOCK_COLLECTION_LAYOUT',
 ] as const;
 export type StateEffectType = (typeof STATE_EFFECT_TYPE)[number];
 
+/** Entity types that can serve as anchors for calendar events (linking events to domain objects). */
 export const ANCHOR_ENTITY_TYPE = [
   'COLLECTION_LAYOUT',
   'COLLECTION_LAYOUT_ROW',
 ] as const;
 export type AnchorEntityType = (typeof ANCHOR_ENTITY_TYPE)[number];
 
+/**
+ * Input schema for a directed dependency between two calendar events.
+ * Validates that predecessor ≠ successor and `maxGapDays >= minGapDays` when both are provided.
+ */
 export const CalendarEventDependencyInputSchema = z
   .object({
     predecessorId: z.string().uuid(),
@@ -46,6 +61,7 @@ export const CalendarEventDependencyInputSchema = z
   );
 export type CalendarEventDependencyInput = z.infer<typeof CalendarEventDependencyInputSchema>;
 
+/** Input schema for updating only the gap constraints on an existing event dependency. */
 export const UpdateDependencyGapsInputSchema = z.object({
   id:         z.string().uuid(),
   minGapDays: z.number().int().min(0).optional(),
@@ -56,6 +72,7 @@ export type UpdateDependencyGapsInput = z.infer<typeof UpdateDependencyGapsInput
 export const TemplateDependencyInputSchema = CalendarEventDependencyInputSchema;
 export type TemplateDependencyInput = CalendarEventDependencyInput;
 
+/** Input schema for a state effect to be triggered by a calendar event (e.g. lock a collection layout). */
 export const CalendarEventStateEffectInputSchema = z.object({
   effectType:           z.enum(STATE_EFFECT_TYPE),
   targetEntityType:     z.literal('COLLECTION_LAYOUT'),
@@ -64,12 +81,17 @@ export const CalendarEventStateEffectInputSchema = z.object({
 });
 export type CalendarEventStateEffectInput = z.infer<typeof CalendarEventStateEffectInputSchema>;
 
+/** Input schema for anchoring a calendar event to a domain entity (collection layout or row). */
 export const CalendarEventAnchorInputSchema = z.object({
   entityType: z.enum(ANCHOR_ENTITY_TYPE),
   entityId:   z.string().uuid(),
 });
 export type CalendarEventAnchorInput = z.infer<typeof CalendarEventAnchorInputSchema>;
 
+/**
+ * Input schema for a What-If simulation request.
+ * Accepts one or more proposed event shifts and returns a cascade analysis of downstream impacts.
+ */
 export const WhatIfRequestSchema = z.object({
   calendarIds:       z.array(z.string().uuid()).min(1),
   proposedShifts:    z.array(
@@ -82,6 +104,7 @@ export const WhatIfRequestSchema = z.object({
 });
 export type WhatIfRequest = z.infer<typeof WhatIfRequestSchema>;
 
+/** Input schema for a vendor closure or open-day period within a season, used in working-day calculations. */
 export const VendorClosurePeriodInputSchema = z.object({
   vendorId:        z.string().uuid(),
   seasonId:        z.string().uuid(),
@@ -96,6 +119,7 @@ export type VendorClosurePeriodInput = z.infer<typeof VendorClosurePeriodInputSc
 
 // ─── Const arrays ─────────────────────────────────────────────────────────────
 
+/** Lifecycle statuses for an individual calendar event. */
 export const CALENDAR_EVENT_STATUS = [
   'PLANNED',
   'IN_PROGRESS',
@@ -104,11 +128,13 @@ export const CALENDAR_EVENT_STATUS = [
 ] as const;
 export type CalendarEventStatus = (typeof CALENDAR_EVENT_STATUS)[number];
 
+/** Lifecycle statuses for a season calendar. `ARCHIVED` calendars are read-only. */
 export const SEASON_CALENDAR_STATUS = ['DRAFT', 'ACTIVE', 'ARCHIVED'] as const;
 export type SeasonCalendarStatus = (typeof SEASON_CALENDAR_STATUS)[number];
 
 // ─── CalendarCatalogItem ──────────────────────────────────────────────────────
 
+/** Full calendar catalog item as returned by the API (event type, section label, ordering). */
 export const CalendarCatalogItemSchema = z.object({
   id: z.string().uuid(),
   type: z.string(),
@@ -119,6 +145,7 @@ export const CalendarCatalogItemSchema = z.object({
 });
 export type CalendarCatalogItem = z.infer<typeof CalendarCatalogItemSchema>;
 
+/** Input schema for creating a new calendar catalog item (admin-only). */
 export const CalendarCatalogItemCreateSchema = z.object({
   type: z.string().min(1),
   value: z.string().min(1).max(50),
@@ -127,6 +154,7 @@ export const CalendarCatalogItemCreateSchema = z.object({
 });
 export type CalendarCatalogItemCreate = z.infer<typeof CalendarCatalogItemCreateSchema>;
 
+/** Input schema for updating an existing calendar catalog item (label and order only). */
 export const CalendarCatalogItemUpdateSchema = z.object({
   id: z.string().uuid(),
   label: z.string().min(1).max(100),
@@ -136,6 +164,7 @@ export type CalendarCatalogItemUpdate = z.infer<typeof CalendarCatalogItemUpdate
 
 // ─── CalendarEvent input ──────────────────────────────────────────────────────
 
+/** Base fields shared by calendar event create and update inputs, before cross-field refinements. */
 export const CalendarEventBaseSchema = z.object({
   calendarId:                   z.string().uuid(),
   ownerFunctionId:              z.string().uuid(),
@@ -155,6 +184,10 @@ export const CalendarEventBaseSchema = z.object({
   progressWarningDays:          z.number().int().min(1).max(365).nullish(),
 });
 
+/**
+ * Full input schema for creating a calendar event.
+ * Enforces that `visibilityFunctionIds` includes the `ownerFunctionId`.
+ */
 export const CalendarEventInputSchema = CalendarEventBaseSchema.refine(
   data => data.visibilityFunctionIds.includes(data.ownerFunctionId),
   {
@@ -167,6 +200,7 @@ export type CalendarEventInput = z.infer<typeof CalendarEventInputSchema>;
 
 // ─── Personal note input ──────────────────────────────────────────────────────
 
+/** Input schema for creating or updating a user's personal note on a calendar event. */
 export const CalendarEventPersonalNoteInputSchema = z.object({
   eventId: z.string().uuid(),
   body: z.string().max(4000),
@@ -175,6 +209,10 @@ export type CalendarEventPersonalNoteInput = z.infer<typeof CalendarEventPersona
 
 // ─── Template inputs ──────────────────────────────────────────────────────────
 
+/**
+ * Input schema for a single item within a milestone template.
+ * `offsetDays` is relative to the template's anchor date; visibility must include the owner function.
+ */
 export const MilestoneTemplateItemInputSchema = z
   .object({
     ownerFunctionId:      z.string().uuid(),
@@ -195,6 +233,7 @@ export const MilestoneTemplateItemInputSchema = z
 
 export type MilestoneTemplateItemInput = z.infer<typeof MilestoneTemplateItemInputSchema>;
 
+/** Input schema for the header of a milestone template (name and optional description). */
 export const MilestoneTemplateInputSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(500).optional(),
@@ -203,6 +242,7 @@ export type MilestoneTemplateInput = z.infer<typeof MilestoneTemplateInputSchema
 
 // ─── Clone input ──────────────────────────────────────────────────────────────
 
+/** Input schema for cloning a season calendar from one brand/season to another, with optional date shift. */
 export const CloneSeasonCalendarInputSchema = z.object({
   sourceBrandId: z.string().uuid(),
   sourceSeasonId: z.string().uuid(),

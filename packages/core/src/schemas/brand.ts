@@ -1,14 +1,11 @@
 /**
- * Schema Zod per Brand
- * Definisce validazione e tipi per operazioni CRUD Brand
+ * Zod schemas for Brand — create, update, list, logo upload, and output shapes.
+ * `Brand.code` is max 20 chars, aligned to NAV nvarchar constraints.
  */
 
 import { z } from 'zod';
 
-/**
- * Schema per input Brand (create/update)
- * Utilizzato per validazione input in tRPC procedures
- */
+/** Input schema for creating a brand. Code must be alphanumeric with `_` and `-`, max 20 chars. */
 export const BrandInputSchema = z.object({
   /** Codice univoco del brand (max 20 caratteri) */
   code: z
@@ -39,19 +36,13 @@ export const BrandInputSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
-/**
- * Schema per ID Brand
- * Utilizzato per operazioni su singolo brand
- */
+/** Schema for identifying a single brand by UUID. */
 export const BrandIdSchema = z.object({
   /** UUID del brand */
   id: z.string().uuid('ID brand non valido'),
 });
 
-/**
- * Schema per Brand completo (output)
- * Utilizzato per response tRPC e type inference
- */
+/** Full brand record as returned by the API (includes all fields). */
 export const BrandSchema = z.object({
   /** UUID del brand */
   id: z.string().uuid(),
@@ -78,10 +69,7 @@ export const BrandSchema = z.object({
   updatedAt: z.date(),
 });
 
-/**
- * Schema per lista Brand con filtri opzionali e cursor pagination
- * Utilizzato per query con filtri e paginazione
- */
+/** Input schema for listing brands with optional search, active filter, and cursor pagination. */
 export const BrandListInputSchema = z.object({
   /** Filtro per brand attivi/disattivi */
   isActive: z.boolean().optional(),
@@ -96,10 +84,7 @@ export const BrandListInputSchema = z.object({
   limit: z.number().min(1).max(100).default(50),
 });
 
-/**
- * Schema per update Brand
- * Combina ID e dati parziali per update
- */
+/** Input schema for partially updating a brand. Relaxes code/name regex to allow NAV codes with spaces. */
 export const BrandUpdateInputSchema = z.object({
   /** UUID del brand da aggiornare */
   id: z.string().uuid('ID brand non valido'),
@@ -114,19 +99,13 @@ export const BrandUpdateInputSchema = z.object({
     .partial(),
 });
 
-/**
- * Tipi TypeScript inferiti dagli schemi
- */
 export type BrandInput = z.infer<typeof BrandInputSchema>;
 export type BrandId = z.infer<typeof BrandIdSchema>;
 export type Brand = z.infer<typeof BrandSchema>;
 export type BrandListInput = z.infer<typeof BrandListInputSchema>;
 export type BrandUpdateInput = z.infer<typeof BrandUpdateInputSchema>;
 
-/**
- * Schema per upload logo Brand
- * Utilizzato per validazione file upload
- */
+/** Input schema for validating a brand logo file upload request. */
 export const BrandLogoUploadSchema = z.object({
   /** UUID del brand */
   brandId: z.string().uuid('Brand ID deve essere un UUID valido'),
@@ -147,13 +126,10 @@ export const BrandLogoUploadSchema = z.object({
 export type BrandLogoUpload = z.infer<typeof BrandLogoUploadSchema>;
 
 /**
- * Normalizza il codice brand per consistency
- * - Trimma spazi bianchi
- * - Converte in maiuscolo
- * - Rimuove caratteri non validi (mantiene solo A-Z, 0-9, _, -)
+ * Normalizes a brand code for consistency: trims whitespace, uppercases,
+ * and strips any character that is not A–Z, 0–9, `_`, `-`, or space.
  *
- * @param code - Codice brand da normalizzare
- * @returns Codice normalizzato
+ * @returns Normalized uppercase code
  */
 export function normalizeCode(code: string): string {
   return code

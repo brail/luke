@@ -33,6 +33,13 @@ import {
 } from '../services/pricing.service';
 
 const exportRouter = router({
+  /**
+   * Exports the pricing parameter grid for a brand+season as an XLSX file (base64-encoded).
+   *
+   * @auth {pricing:read}
+   * @input {{ brandId: string (UUID), seasonId: string (UUID) }}
+   * @output {{ data: string (base64), filename: string }}
+   */
   xlsx: protectedProcedure
     .use(requirePermission('pricing:read'))
     .input(z.object({ brandId: z.string().uuid(), seasonId: z.string().uuid() }))
@@ -60,6 +67,13 @@ const exportRouter = router({
       return { data: buffer.toString('base64'), filename: `${brand.code}-${season.code}-Griglia-${exportTimestamp()}.xlsx` };
     }),
 
+  /**
+   * Exports the pricing parameter grid for a brand+season as a PDF file (base64-encoded).
+   *
+   * @auth {pricing:read}
+   * @input {{ brandId: string (UUID), seasonId: string (UUID) }}
+   * @output {{ data: string (base64), filename: string }}
+   */
   pdf: protectedProcedure
     .use(requirePermission('pricing:read'))
     .input(z.object({ brandId: z.string().uuid(), seasonId: z.string().uuid() }))
@@ -97,8 +111,11 @@ const exportRouter = router({
 
 const parameterSetsRouter = router({
   /**
-   * Lista le varianti di parametri per un brand+season.
-   * brandId e seasonId sono obbligatori.
+   * Lists all pricing parameter sets for the given brand+season, ordered by index.
+   *
+   * @auth {pricing:read}
+   * @input {{ brandId: string (UUID), seasonId: string (UUID) }}
+   * @output {PricingParameterSet[]}
    */
   list: protectedProcedure
     .use(requirePermission('pricing:read'))
@@ -113,8 +130,11 @@ const parameterSetsRouter = router({
     }),
 
   /**
-   * Crea una nuova variante di parametri.
-   * Se è la prima per brand+season, diventa automaticamente il default.
+   * Creates a new pricing parameter set; auto-sets it as default if it is the first for brand+season.
+   *
+   * @auth {pricing:update}
+   * @input {{ brandId: string, seasonId: string, data: PricingParameterSetInputSchema }}
+   * @output {PricingParameterSet}
    */
   create: protectedProcedure
     .use(requirePermission('pricing:update'))
@@ -138,7 +158,11 @@ const parameterSetsRouter = router({
     }),
 
   /**
-   * Aggiorna una variante esistente.
+   * Updates an existing pricing parameter set by ID.
+   *
+   * @auth {pricing:update}
+   * @input {{ brandId: string, seasonId: string, data: PricingParameterSetUpdateSchema }}
+   * @output {PricingParameterSet}
    */
   update: protectedProcedure
     .use(requirePermission('pricing:update'))
@@ -163,8 +187,11 @@ const parameterSetsRouter = router({
     }),
 
   /**
-   * Elimina una variante.
-   * Se era il default, promuove automaticamente la successiva.
+   * Deletes a pricing parameter set; auto-promotes the next set as default if needed.
+   *
+   * @auth {pricing:update}
+   * @input {{ id: string, brandId: string, seasonId: string }}
+   * @output {{ success: true }}
    */
   remove: protectedProcedure
     .use(requirePermission('pricing:update'))
@@ -187,7 +214,11 @@ const parameterSetsRouter = router({
     }),
 
   /**
-   * Imposta una variante come default per il brand+season.
+   * Sets a pricing parameter set as the default for the given brand+season.
+   *
+   * @auth {pricing:update}
+   * @input {{ id: string, brandId: string, seasonId: string }}
+   * @output {PricingParameterSet}
    */
   setDefault: protectedProcedure
     .use(requirePermission('pricing:update'))
@@ -205,8 +236,11 @@ const parameterSetsRouter = router({
     }),
 
   /**
-   * Restituisce i parametri dalla stagione più recente per quel brand.
-   * Non salva nulla: serve per la funzione "Copia da stagione precedente".
+   * Returns the parameter sets from the most recent previous season for the given brand (read-only, no save).
+   *
+   * @auth {pricing:read}
+   * @input {{ brandId: string, seasonId: string }}
+   * @output {PricingParameterSet[] from the previous season}
    */
   copyFromPreviousSeason: protectedProcedure
     .use(requirePermission('pricing:read'))
@@ -226,10 +260,11 @@ export const pricingRouter = router({
   export: exportRouter,
 
   /**
-   * Esegue il calcolo del prezzo in una delle tre modalità:
-   * - forward: purchasePrice → retailPrice
-   * - inverse: retailPrice → purchasePrice massimo
-   * - margin: entrambi i prezzi noti → companyMargin
+   * Runs a pricing calculation in one of three modes: forward (cost→retail), inverse (retail→max cost), or margin (both known→companyMargin).
+   *
+   * @auth {pricing:read}
+   * @input {PricingCalculateInputSchema} — mode, parameterSetId, brandId, seasonId, and relevant price fields.
+   * @output {Calculated pricing breakdown with margins, costs, and retail/purchase price.}
    */
   calculate: protectedProcedure
     .use(requirePermission('pricing:read'))

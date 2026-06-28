@@ -42,8 +42,11 @@ const VENDOR_SELECT = {
 
 export const vendorsRouter = router({
   /**
-   * Lista vendor con ricerca e cursor pagination.
-   * Per default mostra solo isActive=true; passare includeInactive=true per vedere tutti.
+   * Lists vendors with optional search and cursor-based pagination; defaults to active-only (pass includeInactive for all).
+   *
+   * @auth {vendors:read}
+   * @input {VendorListInputSchema} — optional: isActive, search, limit, cursor.
+   * @output {{ items: Vendor[], nextCursor: string | null, hasMore: boolean }}
    */
   list: protectedProcedure
     .use(requirePermission('vendors:read'))
@@ -78,7 +81,11 @@ export const vendorsRouter = router({
     }),
 
   /**
-   * Singolo vendor per ID
+   * Returns a single vendor by ID.
+   *
+   * @auth {vendors:read}
+   * @input {VendorIdSchema}
+   * @output {Vendor}
    */
   getById: protectedProcedure
     .use(requirePermission('vendors:read'))
@@ -97,7 +104,11 @@ export const vendorsRouter = router({
     }),
 
   /**
-   * Crea un nuovo vendor
+   * Creates a new vendor; enforces unique navVendorId if provided.
+   *
+   * @auth {vendors:create}
+   * @input {VendorInputSchema}
+   * @output {Vendor}
    */
   create: protectedProcedure
     .use(requirePermission('vendors:create'))
@@ -132,8 +143,11 @@ export const vendorsRouter = router({
     }),
 
   /**
-   * Aggiorna un vendor esistente.
-   * Non espone isActive — usare remove/restore per quello.
+   * Updates an existing vendor within a transaction; blocks navVendorId changes if already linked (use unlink first).
+   *
+   * @auth {vendors:update}
+   * @input {VendorUpdateInputSchema}
+   * @output {Vendor}
    */
   update: protectedProcedure
     .use(requirePermission('vendors:update'))
@@ -187,10 +201,11 @@ export const vendorsRouter = router({
     }),
 
   /**
-   * Soft delete: imposta isActive=false.
-   * Il record rimane in DB; le collection rows mantengono il riferimento
-   * ma il vendor non appare più nel combobox né nella lista default.
-   * Il sync NAV non riattiva mai un vendor soft-deleted.
+   * Soft-deletes a vendor (isActive=false); NAV sync will never re-activate a soft-deleted vendor.
+   *
+   * @auth {vendors:delete}
+   * @input {VendorIdSchema}
+   * @output {{ success: true }}
    */
   remove: protectedProcedure
     .use(requirePermission('vendors:delete'))
@@ -214,8 +229,11 @@ export const vendorsRouter = router({
     }),
 
   /**
-   * Scollega vendor da NAV e lo soft-deletes atomicamente.
-   * Blocca se il vendor è referenziato in CollectionLayoutRow attive.
+   * Unlinks a vendor from NAV (clears navVendorId) and soft-deletes it; blocked if vendor is referenced in any CollectionLayoutRow.
+   *
+   * @auth {vendors:delete}
+   * @input {VendorIdSchema}
+   * @output {{ success: true }}
    */
   unlink: protectedProcedure
     .use(requirePermission('vendors:delete'))
@@ -253,7 +271,11 @@ export const vendorsRouter = router({
     }),
 
   /**
-   * Hard delete vendor — solo per vendor senza collegamento NAV e senza dipendenze attive.
+   * Permanently deletes a vendor; only allowed for vendors not linked to NAV and without CollectionLayoutRow references.
+   *
+   * @auth {vendors:delete}
+   * @input {VendorIdSchema}
+   * @output {{ success: true }}
    */
   hardDelete: protectedProcedure
     .use(requirePermission('vendors:delete'))
@@ -290,7 +312,11 @@ export const vendorsRouter = router({
     }),
 
   /**
-   * Riattiva un vendor soft-deleted (admin only)
+   * Restores a soft-deleted vendor by setting isActive to true.
+   *
+   * @auth {vendors:update}
+   * @input {VendorIdSchema}
+   * @output {Vendor}
    */
   restore: protectedProcedure
     .use(requirePermission('vendors:update'))

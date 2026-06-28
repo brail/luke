@@ -1,6 +1,12 @@
 import type { SolverDependency } from './types.js';
 
-// Kahn's algorithm (BFS on in-degree). Throws if cycle detected.
+/**
+ * Sorts event ids in topological order using Kahn's BFS algorithm.
+ * Disabled dependencies are excluded from the sort.
+ *
+ * @throws {Error} With message `'CYCLE_DETECTED'` when the dependency graph contains a cycle
+ * @returns Event ids ordered such that every predecessor appears before its successors
+ */
 export function topologicalSort(
   eventIds: string[],
   dependencies: SolverDependency[],

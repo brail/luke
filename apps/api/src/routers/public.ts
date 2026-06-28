@@ -9,8 +9,11 @@ import { isDevelopment } from '@luke/core';
 
 export const publicRouter = router({
   /**
-   * Informazioni pubbliche dell'applicazione
-   * Accessibile senza autenticazione per login page
+   * Returns public application metadata (name, version, environment) for the login page and unauthenticated clients.
+   *
+   * @auth {public}
+   * @input {none}
+   * @output {{ name: string, version: string, environment: string, timestamp: string }}
    */
   appInfo: publicProcedure.query(async ({ ctx }) => {
     try {

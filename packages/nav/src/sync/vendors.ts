@@ -6,6 +6,9 @@ import { sanitizeCompany } from '../config.js';
 import type { NavDbConfig } from '../config.js';
 import { buildNavSyncFilter, buildWhereClause, processInBatches } from './utils.js';
 
+/**
+ * Outcome of a single entity sync run.
+ */
 export interface SyncResult {
   entity: string;
   upserted: number;
@@ -17,14 +20,23 @@ export interface SyncResult {
 const UPSERT_BATCH_SIZE = 100;
 
 /**
- * Sincronizza [COMPANY$Vendor] di NAV → tabella nav_vendors di Postgres.
+ * Syncs `[COMPANY$Vendor]` from NAV into the `nav_vendors` Postgres table,
+ * and creates or updates the corresponding local `Vendor` record.
  *
- * Sync differenziale:
- * - Se nav_vendors è vuota → full sync (no clausola temporale)
- * - Altrimenti → record con [Last Date Modified] > MAX(navLastModified) locale
- *   oppure [Last Date Modified] IS NULL (vendor senza data aggiornamento).
- *   Il secondo predicato è necessario perché SQL Server esclude i NULL dai
- *   confronti > , e quei record non verrebbero mai rilevati dopo il primo sync.
+ * Uses differential sync based on `[Last Date Modified]`:
+ * - First run (empty `nav_vendors`): full sync, no temporal clause.
+ * - Subsequent runs: only records where `[Last Date Modified] > MAX(navLastModified)`
+ *   **or** `[Last Date Modified] IS NULL` are fetched. The `IS NULL` predicate is
+ *   required because SQL Server excludes NULLs from `>` comparisons, so vendors
+ *   without a modification date would otherwise never be re-synced.
+ *
+ * Whitelist mode always performs a full sync of the selected vendors, ignoring
+ * the watermark — the list is small and a previously-synced vendor would
+ * otherwise be excluded when added to a new whitelist.
+ *
+ * Soft-deleted vendors are never reactivated by the sync.
+ *
+ * @returns `SyncResult` with the count of successfully upserted records
  */
 export async function syncVendors(
   pool: mssql.ConnectionPool,

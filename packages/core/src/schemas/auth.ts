@@ -1,12 +1,11 @@
 /**
- * Schema Zod per autenticazione e email transazionali
+ * Zod schemas for authentication flows and transactional emails
+ * (password reset, email verification).
  */
 
 import { z } from 'zod';
 
-/**
- * Schema per richiesta reset password
- */
+/** Input schema for requesting a password reset email. Email is normalized to lowercase. */
 export const RequestPasswordResetSchema = z.object({
   email: z
     .string()
@@ -17,9 +16,8 @@ export const RequestPasswordResetSchema = z.object({
 });
 
 /**
- * Schema per conferma reset password
- * Il token deve essere di 64 caratteri hex (32 byte)
- * La password sarà validata contro la password policy al momento della conferma
+ * Input schema for confirming a password reset.
+ * `token` must be a 64-character hex string (32 bytes). Password policy is validated server-side on confirm.
  */
 export const ConfirmPasswordResetSchema = z.object({
   token: z
@@ -33,9 +31,7 @@ export const ConfirmPasswordResetSchema = z.object({
   newPassword: z.string().min(1, 'Password richiesta'),
 });
 
-/**
- * Schema per richiesta verifica email
- */
+/** Input schema for requesting an email verification link. */
 export const RequestEmailVerificationSchema = z.object({
   email: z
     .string()
@@ -45,9 +41,7 @@ export const RequestEmailVerificationSchema = z.object({
     .trim(),
 });
 
-/**
- * Schema per conferma verifica email
- */
+/** Input schema for confirming email verification with a 64-character hex token. */
 export const ConfirmEmailVerificationSchema = z.object({
   token: z
     .string()
@@ -59,9 +53,7 @@ export const ConfirmEmailVerificationSchema = z.object({
     ),
 });
 
-/**
- * Schema per richiesta verifica email da admin (by userId)
- */
+/** Input schema for an admin to trigger email verification for a user by userId. */
 export const RequestEmailVerificationAdminSchema = z.object({
   userId: z.string().uuid('ID utente non valido'),
 });

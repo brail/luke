@@ -1,11 +1,7 @@
 /**
- * @luke/core/storage - Tipi per sistema storage
- *
- * Definisce l'interfaccia IStorageProvider e i tipi correlati per
- * gestire file storage in modo estensibile (local, SAMBA, GDrive, etc.)
- *
- * @version 0.1.0
- * @author Luke Team
+ * @luke/core/storage — Type definitions for the storage system.
+ * Defines `IStorageProvider` and all associated param/result interfaces.
+ * Implementations include local filesystem and MinIO; extensible to SAMBA, GDrive, etc.
  */
 
 /**
@@ -194,10 +190,10 @@ export interface PresignedGetResult {
 }
 
 /**
- * Interfaccia provider di storage
+ * Unified storage provider interface for all concrete implementations (LocalFs, MinIO, etc.).
+ * Implementations must be registered via the storage service — never instantiated directly by callers.
  *
- * Contratto unificato per implementazioni concrete (LocalFs, MinIO, etc.)
- * Garantisce estensibilità senza modifiche al service layer o router tRPC
+ * Check `capabilities` before calling optional methods (`getPresignedPutUrl`, `getPresignedGetUrl`).
  */
 export interface IStorageProvider {
   /** Capabilities advertised by this provider */

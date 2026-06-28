@@ -14,8 +14,11 @@ import { getUserAllowedBrandIds } from '../services/context.service';
  */
 export const catalogRouter = router({
   /**
-   * Lista i brand attivi accessibili all'utente corrente.
-   * Se l'utente ha un whitelist brand, restituisce solo quelli.
+   * Lists active brands accessible to the current user, applying per-user brand whitelist if present.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {Brand[]} — active brands with resolved logoUrl, sorted by name.
    */
   brands: protectedProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
@@ -45,8 +48,11 @@ export const catalogRouter = router({
   }),
 
   /**
-   * Lista le season attive accessibili all'utente corrente.
-   * Se brandId è fornito, filtra anche per il whitelist stagioni di quel brand.
+   * Lists all active seasons, sorted by year descending and code ascending.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {Season[]} — active seasons with id, code, year, name.
    */
   seasons: protectedProcedure
     .query(async ({ ctx }) => {

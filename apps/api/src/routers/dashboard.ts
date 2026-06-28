@@ -25,6 +25,13 @@ const DEFAULT_WIDGETS: WidgetConfigItem[] = [
 ];
 
 export const dashboardRouter = router({
+  /**
+   * Returns the current user's dashboard widget configuration, merging missing default widgets.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {{ widgets: WidgetConfigItem[] }}
+   */
   getConfig: protectedProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
     const record = await ctx.prisma.dashboardConfig.findUnique({ where: { userId } });
@@ -43,6 +50,13 @@ export const dashboardRouter = router({
     return { widgets: [...parsed.data, ...missing] };
   }),
 
+  /**
+   * Persists the current user's dashboard widget configuration.
+   *
+   * @auth {authenticated}
+   * @input {{ widgets: DashboardWidgetsSchema }} — ordered widget config array.
+   * @output {{ ok: true }}
+   */
   saveConfig: protectedProcedure
     .input(z.object({ widgets: DashboardWidgetsSchema }))
     .mutation(async ({ ctx, input }) => {
@@ -56,6 +70,13 @@ export const dashboardRouter = router({
       return { ok: true };
     }),
 
+  /**
+   * Returns the current user's dashboard tasks, newest first (limit 50).
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {DashboardTask[]}
+   */
   getTasks: protectedProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
     return ctx.prisma.dashboardTask.findMany({
@@ -65,6 +86,13 @@ export const dashboardRouter = router({
     });
   }),
 
+  /**
+   * Creates or updates a dashboard task for the current user.
+   *
+   * @auth {authenticated}
+   * @input {DashboardTaskInputSchema} — optional id (update if present), label, done, optional dueDate.
+   * @output {DashboardTask}
+   */
   upsertTask: protectedProcedure
     .input(DashboardTaskInputSchema)
     .mutation(async ({ ctx, input }) => {
@@ -97,6 +125,13 @@ export const dashboardRouter = router({
       return task;
     }),
 
+  /**
+   * Deletes a dashboard task owned by the current user.
+   *
+   * @auth {authenticated}
+   * @input {{ id: string }} — task UUID.
+   * @output {{ ok: true }}
+   */
   deleteTask: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
@@ -117,6 +152,13 @@ export const dashboardRouter = router({
       return { ok: true };
     }),
 
+  /**
+   * Returns aggregate KPI counts: active brands, seasons, users, and collection rows.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {{ brands, seasons, users, collectionRows: number }}
+   */
   getKpiStats: protectedProcedure.query(async ({ ctx }) => {
     const [brands, seasons, users, collectionRows] = await Promise.all([
       ctx.prisma.brand.count({ where: { isActive: true } }),
@@ -127,6 +169,13 @@ export const dashboardRouter = router({
     return { brands, seasons, users, collectionRows };
   }),
 
+  /**
+   * Fetches live FX rates from Frankfurter API for the requested currency pairs.
+   *
+   * @auth {authenticated}
+   * @input {{ pairs: string[] }} — 1–8 currency pairs in "BASE/QUOTE" format (e.g. "EUR/USD").
+   * @output {{ rates, previousRates: Record<string, number>, timestamp: string }}
+   */
   getForexRates: protectedProcedure
     .input(z.object({ pairs: z.array(z.string().regex(/^[A-Z]{3}\/[A-Z]{3}$/)).min(1).max(8) }))
     .query(async ({ ctx, input }) => {
@@ -172,6 +221,13 @@ export const dashboardRouter = router({
       return { rates, previousRates, timestamp };
     }),
 
+  /**
+   * Returns daily sales order counts for the past 7 days for a brand/season.
+   *
+   * @auth {authenticated}
+   * @input {{ brandId: string, seasonId: string }}
+   * @output {Array<{ date: string, count: number }>} — 7 entries, one per day.
+   */
   getWeeklySales: protectedProcedure
     .input(z.object({ brandId: z.string(), seasonId: z.string() }))
     .query(async ({ ctx, input }) => {
@@ -211,6 +267,13 @@ export const dashboardRouter = router({
     return result;
   }),
 
+  /**
+   * Returns collection layout progress summary (skuBudget, skuForecast, row and group counts).
+   *
+   * @auth {authenticated}
+   * @input {{ brandId: string, seasonId: string }}
+   * @output {{ brandName, seasonName, skuBudget, skuForecast, rowCount, groupCount } | null}
+   */
   getSeasonProgress: protectedProcedure
     .input(z.object({ brandId: z.string(), seasonId: z.string() }))
     .query(async ({ ctx, input }) => {

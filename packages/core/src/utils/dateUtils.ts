@@ -1,3 +1,7 @@
+/**
+ * Returns the number of calendar days from `a` to `b` (positive when `b` is after `a`).
+ * Calculation is UTC-based to avoid DST shifts.
+ */
 export function daysBetween(a: Date, b: Date): number {
   const msPerDay = 1000 * 60 * 60 * 24;
   const utcA = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
@@ -5,18 +9,32 @@ export function daysBetween(a: Date, b: Date): number {
   return Math.round((utcB - utcA) / msPerDay);
 }
 
+/**
+ * Returns a new `Date` that is `days` calendar days after `date` (negative values go backward).
+ * Does not mutate the input.
+ */
 export function addDays(date: Date, days: number): Date {
   const result = new Date(date);
   result.setDate(result.getDate() + days);
   return result;
 }
 
+/**
+ * A holiday or closure period for a specific country, used to exclude non-working days
+ * in `isWorkingDay` and `workingDaysBetween`.
+ */
 export interface WorkingDayHoliday {
   countryCode: string;
   startDate: Date;
   endDate: Date;
 }
 
+/**
+ * Returns `true` if `date` is a working day — i.e. Monday–Friday and not covered by any
+ * holiday period matching one of the specified `countryCodes`.
+ *
+ * @param countryCodes - If empty, holidays are applied regardless of country
+ */
 export function isWorkingDay(
   date: Date,
   countryCodes: string[],
@@ -36,6 +54,10 @@ export function isWorkingDay(
   return true;
 }
 
+/**
+ * Returns the number of working days between `from` and `to`, inclusive of both endpoints.
+ * Negative when `to` is before `from`. Respects holidays for the given `countryCodes`.
+ */
 export function workingDaysBetween(
   from: Date,
   to: Date,

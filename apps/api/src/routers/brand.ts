@@ -53,7 +53,11 @@ function buildWhereClause(filters: { isActive?: boolean; search?: string }): Pri
 
 export const brandRouter = router({
   /**
-   * Lista tutti i brand con filtri opzionali e cursor pagination
+   * Lists brands with optional filters and cursor-based pagination, scoped to the user's allowed brands.
+   *
+   * @auth {brands:read}
+   * @input {BrandListInputSchema} — optional cursor, limit, isActive filter, search string.
+   * @output {{ items: Brand[], nextCursor: string | null, hasMore: boolean }} — paginated brand list with resolved logoUrl.
    */
   list: protectedProcedure
     .use(requirePermission('brands:read'))
@@ -89,7 +93,11 @@ export const brandRouter = router({
     }),
 
   /**
-   * Crea un nuovo brand
+   * Creates a new brand, optionally linking a pending logo file object in the same transaction.
+   *
+   * @auth {brands:create}
+   * @input {BrandInputSchema} — code, name, navBrandId (optional), fileObjectId for logo (optional).
+   * @output {Brand} — the created brand with resolved logoUrl.
    */
   create: protectedProcedure
     .use(requirePermission('brands:create'))
@@ -167,7 +175,11 @@ export const brandRouter = router({
     }),
 
   /**
-   * Aggiorna un brand esistente
+   * Updates an existing brand's fields; blocks NAV-link change if already set.
+   *
+   * @auth {brands:update}
+   * @input {BrandUpdateInputSchema} — id, partial brand fields, optional fileObjectId for new logo.
+   * @output {Brand} — the updated brand with resolved logoUrl.
    */
   update: protectedProcedure
     .use(requirePermission('brands:update'))
@@ -263,7 +275,11 @@ export const brandRouter = router({
     }),
 
   /**
-   * Soft delete brand (isActive = false)
+   * Soft-deletes a brand by setting isActive=false.
+   *
+   * @auth {brands:delete}
+   * @input {BrandIdSchema} — brand UUID.
+   * @output {Brand} — the updated brand record.
    */
   remove: protectedProcedure
     .use(requirePermission('brands:delete'))
@@ -288,8 +304,11 @@ export const brandRouter = router({
     }),
 
   /**
-   * Scollega brand da NAV e lo soft-deletes atomicamente.
-   * Blocca se il brand ha CollectionLayout o PricingParameterSet attivi.
+   * Unlinks the NAV association and soft-deletes the brand atomically; blocked if active layouts or pricing sets exist.
+   *
+   * @auth {brands:delete}
+   * @input {BrandIdSchema} — brand UUID.
+   * @output {Brand} — the updated brand record.
    */
   unlink: protectedProcedure
     .use(requirePermission('brands:delete'))
@@ -330,7 +349,11 @@ export const brandRouter = router({
     }),
 
   /**
-   * Hard delete brand — solo per brand senza collegamento NAV e senza dipendenze attive.
+   * Permanently deletes a brand; blocked if it has a NAV link or active dependencies.
+   *
+   * @auth {brands:delete}
+   * @input {BrandIdSchema} — brand UUID.
+   * @output {{ success: true }}
    */
   hardDelete: protectedProcedure
     .use(requirePermission('brands:delete'))
@@ -368,7 +391,11 @@ export const brandRouter = router({
     }),
 
   /**
-   * Riattiva un brand soft-deleted (isActive = true)
+   * Restores a soft-deleted brand by setting isActive=true.
+   *
+   * @auth {brands:update}
+   * @input {BrandIdSchema} — brand UUID.
+   * @output {Brand} — the restored brand record with resolved logoUrl.
    */
   restore: protectedProcedure
     .use(requirePermission('brands:update'))

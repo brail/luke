@@ -10,6 +10,13 @@ import { protectedProcedure, router } from '../lib/trpc';
 const CATEGORIES = notificationCategoryEnum.options;
 
 export const notificationsRouter = router({
+  /**
+   * Lists notifications for the current user with cursor-based pagination.
+   *
+   * @auth {authenticated}
+   * @input {{ limit?: number, cursor?: string, unreadOnly?: boolean }}
+   * @output {{ items: Notification[], nextCursor: string | null }}
+   */
   list: protectedProcedure
     .input(
       z.object({
@@ -49,12 +56,26 @@ export const notificationsRouter = router({
       return { items: page, nextCursor };
     }),
 
+  /**
+   * Returns the count of unread notifications for the current user.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {number}
+   */
   unreadCount: protectedProcedure.query(async ({ ctx }) => {
     return ctx.prisma.notification.count({
       where: { userId: ctx.session.user.id, isRead: false },
     });
   }),
 
+  /**
+   * Marks a single notification as read for the current user.
+   *
+   * @auth {authenticated}
+   * @input {{ id: string }}
+   * @output {{ ok: true }}
+   */
   markAsRead: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
@@ -65,6 +86,13 @@ export const notificationsRouter = router({
       return { ok: true };
     }),
 
+  /**
+   * Marks all unread notifications as read for the current user.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {{ ok: true }}
+   */
   markAllAsRead: protectedProcedure.mutation(async ({ ctx }) => {
     await ctx.prisma.notification.updateMany({
       where: { userId: ctx.session.user.id, isRead: false },
@@ -73,6 +101,13 @@ export const notificationsRouter = router({
     return { ok: true };
   }),
 
+  /**
+   * Permanently deletes all read notifications for the current user.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {{ ok: true }}
+   */
   deleteRead: protectedProcedure.mutation(async ({ ctx }) => {
     await ctx.prisma.notification.deleteMany({
       where: { userId: ctx.session.user.id, isRead: true },
@@ -81,6 +116,13 @@ export const notificationsRouter = router({
   }),
 
   preferences: router({
+    /**
+     * Lists notification preferences for the current user across all categories (defaults to enabled).
+     *
+     * @auth {authenticated}
+     * @input {none}
+     * @output {Array<{ category: string, enabled: boolean }>}
+     */
     list: protectedProcedure.query(async ({ ctx }) => {
       const userId = ctx.session.user.id;
 
@@ -98,6 +140,13 @@ export const notificationsRouter = router({
       }));
     }),
 
+    /**
+     * Enables or disables notifications for a specific category for the current user.
+     *
+     * @auth {authenticated}
+     * @input {{ category: notificationCategoryEnum, enabled: boolean }}
+     * @output {{ ok: true }}
+     */
     update: protectedProcedure
       .input(z.object({ category: notificationCategoryEnum, enabled: z.boolean() }))
       .mutation(async ({ ctx, input }) => {
@@ -110,6 +159,13 @@ export const notificationsRouter = router({
       }),
   }),
 
+  /**
+   * Issues a short-lived SSE ticket (UUID) that the client uses to open the SSE stream.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {{ ticket: string }}
+   */
   getSseTicket: protectedProcedure.mutation(async ({ ctx }) => {
     const ticket = randomUUID();
     sseStore.createTicket(ticket, ctx.session.user.id);

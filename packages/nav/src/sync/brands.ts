@@ -10,11 +10,19 @@ import { buildNavSyncFilter, buildWhereClause, processInBatches } from './utils.
 const UPSERT_BATCH_SIZE = 100;
 
 /**
- * Sincronizza [COMPANY$Brand] di NAV → tabella nav_brands di Postgres.
+ * Syncs `[COMPANY$Brand]` from NAV into the `nav_brands` Postgres table,
+ * and creates or updates the corresponding local `Brand` record.
  *
- * Sync completo (no watermark differenziale): [COMPANY$Brand] espone solo il
- * campo timestamp SQL Server (rowversion binario), non una data di modifica.
- * La tabella è tipicamente piccola (<200 record) quindi il full sync è preferibile.
+ * Always performs a full sync (no differential watermark) because the NAV
+ * Brand table exposes only a SQL Server `rowversion` (binary), not a
+ * modification date. The table is typically small (<200 rows).
+ *
+ * Local `Brand` records that already exist with the same code but no NAV
+ * link are skipped (not auto-created); the user must link them manually.
+ * Only `name` is updated on existing local brands — `isActive`, `logoUrl`,
+ * and other enriched fields are never touched.
+ *
+ * @returns `SyncResult` with the count of successfully upserted records
  */
 export async function syncBrands(
   pool: mssql.ConnectionPool,

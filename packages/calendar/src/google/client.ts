@@ -1,6 +1,11 @@
 import { google } from 'googleapis';
 import type { calendar_v3 } from 'googleapis';
 
+/**
+ * Authentication configuration for the Google Calendar client.
+ * Supports two modes: a Google Workspace service account (with optional
+ * impersonation) or a user OAuth 2.0 refresh token.
+ */
 export type CalendarConfig =
   | {
       mode: 'service_account';
@@ -17,6 +22,9 @@ export type CalendarConfig =
       workspaceDomain: string;
     };
 
+/**
+ * Type alias for the googleapis `calendar_v3.Calendar` client instance.
+ */
 export type GoogleCalendarClient = calendar_v3.Calendar;
 
 let _client: GoogleCalendarClient | null = null;
@@ -46,6 +54,14 @@ function buildCalendarClientFromConfig(config: CalendarConfig): GoogleCalendarCl
   }
 }
 
+/**
+ * Initialises the singleton Google Calendar client with the given configuration.
+ * Must be called before any other function in this module that invokes `getClient()`.
+ *
+ * Calling this again with a new config replaces the active client.
+ *
+ * @returns The newly created `GoogleCalendarClient` instance
+ */
 export function createGoogleCalendarClient(config: CalendarConfig): GoogleCalendarClient {
   _config = config;
   _client = null;
@@ -64,6 +80,12 @@ export function getWorkspaceDomain(): string {
   return _config.workspaceDomain;
 }
 
+/**
+ * Generates a Google OAuth 2.0 authorization URL that requests offline access
+ * and forces the consent screen to always appear (ensuring a refresh token is returned).
+ *
+ * @returns The URL to redirect the user to for Google authorization
+ */
 export function generateOAuthUrl(clientId: string, clientSecret: string, redirectUri: string): string {
   const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
   return oauth2Client.generateAuthUrl({
@@ -73,6 +95,13 @@ export function generateOAuthUrl(clientId: string, clientSecret: string, redirec
   });
 }
 
+/**
+ * Exchanges a Google OAuth 2.0 authorization code for a refresh token and
+ * retrieves the authenticated user's email address.
+ *
+ * @throws {Error} When Google does not return a refresh token (prompt=consent must be enabled)
+ * @returns The permanent refresh token and the user's Google account email
+ */
 export async function exchangeOAuthCode(
   clientId: string,
   clientSecret: string,
@@ -90,6 +119,12 @@ export async function exchangeOAuthCode(
   return { refreshToken: tokens.refresh_token, userEmail: data.email ?? '' };
 }
 
+/**
+ * Validates a Google Calendar configuration by attempting to list calendars.
+ * Uses a temporary client so it does not affect the active singleton.
+ *
+ * @returns `{ ok: true }` on success, or `{ ok: false, error: string }` on failure
+ */
 export async function testGoogleConnection(config: CalendarConfig): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const cal = buildCalendarClientFromConfig(config);

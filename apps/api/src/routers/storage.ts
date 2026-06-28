@@ -101,8 +101,11 @@ const SaveStorageConfigSchema = z.discriminatedUnion('type', [
  */
 export const storageRouter = router({
   /**
-   * Lista file con paginazione
-   * Accessibile a tutti gli utenti autenticati
+   * Lists stored file objects with optional bucket filter and cursor-based pagination.
+   *
+   * @auth {config:read}
+   * @input {ListFilesSchema} — optional: bucket, limit, cursor.
+   * @output {{ items: FileObjectMetadata[], nextCursor: string | null }}
    */
   list: protectedProcedure
     .use(requirePermission('config:read'))
@@ -139,8 +142,11 @@ export const storageRouter = router({
     }),
 
   /**
-   * Ottieni metadati di un file
-   * Accessibile a tutti gli utenti autenticati
+   * Returns metadata for a single file object; enforces ownership or admin/editor role.
+   *
+   * @auth {authenticated (ownership or admin/editor)}
+   * @input {GetDownloadLinkSchema} — { id: string (UUID) }
+   * @output {FileObjectMetadata}
    */
   getMetadata: protectedProcedure
     .input(GetDownloadLinkSchema)
@@ -181,8 +187,11 @@ export const storageRouter = router({
     }),
 
   /**
-   * Genera link download firmato
-   * Accessibile a tutti gli utenti autenticati (con ownership check)
+   * Issues a signed download URL (TTL 5 min) for a file object; enforces ownership or admin/editor role.
+   *
+   * @auth {authenticated (ownership or admin/editor)}
+   * @input {GetDownloadLinkSchema} — { id: string (UUID) }
+   * @output {{ url: string, expiresIn: 300 }}
    */
   getDownloadLink: protectedProcedure
     .input(GetDownloadLinkSchema)
@@ -227,9 +236,11 @@ export const storageRouter = router({
     }),
 
   /**
-   * Request an upload slot.
-   * - MinIO: returns presigned PUT URL + key for direct client upload
-   * - Local: returns proxy info (use entity-specific Fastify endpoint as fallback)
+   * Requests an upload slot; returns a presigned PUT URL for MinIO or proxy fallback info for local storage.
+   *
+   * @auth {authenticated}
+   * @input {RequestUploadSchema} — bucket, contentType, size, originalName, optional key.
+   * @output {{ method: "presigned" | "proxy", presignedUrl, key, expiresAt }}
    */
   requestUpload: protectedProcedure
     .input(RequestUploadSchema)
@@ -271,8 +282,11 @@ export const storageRouter = router({
     }),
 
   /**
-   * Confirm a completed presigned upload — creates the FileObject DB record.
-   * Only needed for the presigned (MinIO) path; local proxy endpoints handle this internally.
+   * Confirms a completed presigned upload and creates the FileObject DB record; only needed for MinIO path.
+   *
+   * @auth {authenticated}
+   * @input {ConfirmUploadSchema} — bucket, key, contentType, size, originalName, optional checksumSha256.
+   * @output {{ fileId: string, publicUrl: string, key: string }}
    */
   confirmUpload: protectedProcedure
     .input(ConfirmUploadSchema)
@@ -301,8 +315,11 @@ export const storageRouter = router({
     }),
 
   /**
-   * Prepara upload (genera uploadId e URL) — legacy endpoint
-   * Accessibile a tutti gli utenti autenticati
+   * Legacy upload slot endpoint — generates an uploadId and proxy URL; use requestUpload for new code.
+   *
+   * @auth {authenticated}
+   * @input {CreateUploadSchema} — bucket, originalName, contentType, size.
+   * @output {{ uploadId: string, uploadUrl: string, bucket: string, maxSizeBytes: number }}
    */
   createUpload: protectedProcedure
     .input(CreateUploadSchema)
@@ -332,8 +349,11 @@ export const storageRouter = router({
     }),
 
   /**
-   * Cancella file
-   * Solo admin e editor possono cancellare file
+   * Deletes a file object and its underlying storage object.
+   *
+   * @auth {config:update}
+   * @input {DeleteFileSchema} — { id: string (UUID) }
+   * @output {{ success: true, message: string }}
    */
   delete: protectedProcedure
     .use(requirePermission('config:update'))
@@ -357,6 +377,13 @@ export const storageRouter = router({
       };
     }),
 
+  /**
+   * Tests the currently saved MinIO configuration by listing the uploads bucket and generating a test presigned URL.
+   *
+   * @auth {config:read}
+   * @input {none}
+   * @output {{ success: true, message: string, presignedUrlBase: string }}
+   */
   testMinioConnection: protectedProcedure
     .use(requirePermission('config:read'))
     .mutation(async ({ ctx }) => {
@@ -404,6 +431,13 @@ export const storageRouter = router({
       };
     }),
 
+  /**
+   * Returns the current storage configuration (local or MinIO), with sensitive credentials decrypted.
+   *
+   * @auth {config:read}
+   * @input {none}
+   * @output {{ type: "local" | "minio", local: {...}, minio: {...} }}
+   */
   getConfig: protectedProcedure
     .use(requirePermission('config:read'))
     .use(withSectionAccess('settings'))
@@ -459,6 +493,13 @@ export const storageRouter = router({
       };
     }),
 
+  /**
+   * Saves the storage configuration (local or MinIO) to AppConfig and resets the storage provider singleton.
+   *
+   * @auth {config:update}
+   * @input {SaveStorageConfigSchema} — discriminated union of local or minio config.
+   * @output {{ success: true }}
+   */
   saveConfig: protectedProcedure
     .use(requirePermission('config:update'))
     .use(withSectionAccess('settings'))

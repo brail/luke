@@ -1,9 +1,6 @@
 import { z } from 'zod';
 
-/**
- * Schema Zod per il modello User
- * Definisce la struttura di un utente con validazione dei campi
- */
+/** Full user record as returned by the API (excludes password hash). */
 export const UserSchema = z.object({
   /** ID univoco dell'utente (UUID v4) */
   id: z.string().uuid(),
@@ -33,9 +30,7 @@ export const UserSchema = z.object({
   updatedAt: z.date(),
 });
 
-/**
- * Schema per creazione utente
- */
+/** Input schema for creating a user. Password must be at least 12 characters (policy enforced server-side). */
 export const CreateUserInputSchema = z.object({
   email: z.string().email('Email non valida'),
   username: z.string().min(3, 'Username deve essere di almeno 3 caratteri'),
@@ -45,9 +40,7 @@ export const CreateUserInputSchema = z.object({
   role: z.enum(['admin', 'editor', 'viewer']),
 });
 
-/**
- * Schema per aggiornamento utente
- */
+/** Input schema for partially updating a user. All fields are optional except `id`. */
 export const UpdateUserInputSchema = z.object({
   id: z.string().uuid('ID utente non valido'),
   email: z.string().email('Email non valida').optional(),
@@ -61,23 +54,13 @@ export const UpdateUserInputSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-/**
- * Tipo TypeScript inferito dallo schema User
- */
 export type User = z.infer<typeof UserSchema>;
-
-/**
- * Tipo TypeScript per input creazione utente
- */
 export type CreateUserInput = z.infer<typeof CreateUserInputSchema>;
-
-/**
- * Tipo TypeScript per input aggiornamento utente
- */
 export type UpdateUserInput = z.infer<typeof UpdateUserInputSchema>;
 
 /**
- * Campi che possono essere bloccati per provider esterni
+ * User fields that may be locked when the account is managed by an external provider (e.g. LDAP).
+ * Locked fields cannot be edited by the user in their profile settings.
  */
 export type LockedFields =
   | 'email'
