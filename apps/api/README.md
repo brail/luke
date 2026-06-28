@@ -1,6 +1,8 @@
 # Luke API
 
+<!-- luke-docs:start:overview -->
 API server per Luke con tRPC, Prisma, autenticazione e sicurezza avanzata.
+<!-- luke-docs:end:overview -->
 
 ## Security Headers
 
@@ -149,3 +151,33 @@ Vedi `src/lib/config.ts` per dettagli.
 - tRPC `errorFormatter`: uniforma il body errore evitando leak di dettagli. `onError` tRPC logga `code` e `message` redatti.
 - Process guards: `SIGTERM`/`SIGINT` eseguono graceful shutdown con timeout; `uncaughtException`/`unhandledRejection` loggano a livello `fatal`, tentano `app.close()` best-effort, poi `process.exit(1)`.
 - Timeout: Fastify usa `requestTimeout` e `connectionTimeout` conservativi. Le integrazioni esterne (es. LDAP) rispettano `AbortController` per abort controllato.
+
+## Router tRPC
+
+<!-- luke-docs:start:trpc-routers -->
+<!-- luke-docs:end:trpc-routers -->
+
+## Packages interni utilizzati
+
+<!-- luke-docs:start:internal-deps -->
+<!-- luke-docs:end:internal-deps -->
+
+## Variabili d'ambiente
+
+<!-- luke-docs:start:env -->
+<!-- luke-docs:end:env -->
+
+## Database
+
+<!-- luke-docs:start:database -->
+<!-- luke-docs:end:database -->
+
+## NAV Sync
+
+<!-- luke-docs:start:nav -->
+<!-- luke-docs:end:nav -->
+
+## Storage
+
+<!-- luke-docs:start:storage -->
+<!-- luke-docs:end:storage -->

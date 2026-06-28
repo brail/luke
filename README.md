@@ -1,6 +1,8 @@
 # Luke Monorepo
 
+<!-- luke-docs:start:overview -->
 Monorepo enterprise con pnpm + Turborepo per applicazioni web moderne con focus su sicurezza, audit e qualità.
+<!-- luke-docs:end:overview -->
 
 ## Indice
 
@@ -25,6 +27,7 @@ Monorepo enterprise con pnpm + Turborepo per applicazioni web moderne con focus 
 
 ## Struttura
 
+<!-- luke-docs:start:structure -->
 ```
 luke/
 ├── apps/
@@ -35,16 +38,20 @@ luke/
 │   └── nav/          # Integrazione Microsoft Dynamics NAV (SQL Server)
 └── [config files]    # pnpm, turbo, typescript, eslint, prettier
 ```
+<!-- luke-docs:end:structure -->
 
 ## Quick Start
 
 ### Prerequisiti
 
+<!-- luke-docs:start:prerequisites -->
 - Node.js >= 20.0.0 (usa `nvm use` per versione automatica)
 - pnpm >= 8.0.0
+<!-- luke-docs:end:prerequisites -->
 
 ### Setup iniziale
 
+<!-- luke-docs:start:quickstart -->
 ```bash
 # Installa dipendenze
 pnpm install
@@ -61,6 +68,7 @@ pnpm --filter @luke/api run seed
 # Avvia in modalità sviluppo
 pnpm dev
 ```
+<!-- luke-docs:end:quickstart -->
 
 ## Workspaces
 
@@ -86,6 +94,7 @@ pnpm dev
 
 ## Scripts Disponibili
 
+<!-- luke-docs:start:scripts -->
 ```bash
 # Sviluppo
 pnpm dev              # Avvia tutti i workspace in dev mode
@@ -102,6 +111,7 @@ pnpm --filter @luke/web dev     # Solo frontend
 pnpm --filter @luke/api dev     # Solo backend
 pnpm --filter @luke/core build  # Solo core package
 ```
+<!-- luke-docs:end:scripts -->
 
 ## Convenzioni Naming
 
@@ -380,13 +390,16 @@ Il sistema include protezioni robuste per la gestione degli utenti:
 
 ## Workflow
 
+<!-- luke-docs:start:deployment -->
 1. **Sviluppo**: `pnpm dev` avvia frontend + backend
 2. **Build**: `pnpm build` compila tutto per produzione
 3. **Deploy**: CI/CD con Turborepo caching
 4. **Monitor**: Audit log + structured logging
+<!-- luke-docs:end:deployment -->
 
 ## Architecture Decision Records (ADR)
 
+<!-- luke-docs:start:adr-link -->
 Le decisioni architetturali chiave del progetto sono documentate in ADR:
 
 - [ADR-001: JWT HS256 con HKDF-SHA256](docs/decisions/001-jwt-hs256-hkdf.md) - Gestione segreti JWT con derivazione crittografica
@@ -395,6 +408,7 @@ Le decisioni architetturali chiave del progetto sono documentate in ADR:
 - [ADR-004: Prisma Select-Only Pattern](docs/decisions/004-prisma-select-only.md) - Prevenzione data leakage
 
 Per contribuire al progetto, consulta le ADR per comprendere le convenzioni e i pattern adottati.
+<!-- luke-docs:end:adr-link -->
 
 ## Error UX & User Experience
 
@@ -615,6 +629,7 @@ import {
 
 ## Tecnologie
 
+<!-- luke-docs:start:architecture -->
 - **Monorepo**: pnpm workspaces + Turborepo
 - **Frontend**: Next.js 15, React 19, shadcn/ui, Tailwind
 - **Backend**: Fastify 5, tRPC, Prisma, Zod
@@ -622,6 +637,7 @@ import {
 - **Auth**: JWT HS256+HKDF, RBAC, LDAP/OIDC
 - **Security**: AES-256-GCM, helmet, cors, rate limiting, idempotency
 - **Quality**: TypeScript strict, ESLint, Prettier, Husky
+<!-- luke-docs:end:architecture -->
 
 ## Manutenzione Import
 
@@ -795,6 +811,19 @@ Nessuna variabile aggiuntiva richiesta. Il widget Forex usa `api.frankfurter.app
 - [docs/collection-layout-versioning.md](docs/collection-layout-versioning.md) - Collection Layout Versioning — registro qualità ISO 9001:2015 per le revisioni del piano di collezione
 - [docs/storage-immutable-bucket.md](docs/storage-immutable-bucket.md) - Bucket immutabile per le foto delle revisioni
 - [docs/decisions/](docs/decisions/) - Architecture Decision Records
+
+## Release
+
+<!-- luke-docs:start:release -->
+Il progetto usa [Conventional Commits](https://www.conventionalcommits.org/) per generare automaticamente il CHANGELOG via `git-cliff`. I commit sono validati dall'hook `.husky/commit-msg` (commitlint).
+
+Tag naming: `vX.Y.Z` — criteri SemVer: `patch` per fix/refactor, `minor` per nuove feature, `major` per breaking change su API/contratti.
+
+```bash
+pnpm changelog        # Genera CHANGELOG.md dal tag corrente
+pnpm changelog:bump   # Genera CHANGELOG.md con bump automatico versione
+```
+<!-- luke-docs:end:release -->
 
 ---
 
