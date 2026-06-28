@@ -4,6 +4,7 @@ import Credentials from 'next-auth/providers/credentials';
 import { buildTrpcUrl } from '@luke/core';
 import { getNextAuthSecret } from '@luke/core/server';
 
+import { checkTokenVersion, populateSession, SESSION_MAX_AGE, SESSION_UPDATE_AGE } from './auth.shared';
 import { debugError, debugLog } from './lib/debug';
 
 import type { NextAuthConfig } from 'next-auth';
@@ -20,6 +21,11 @@ interface LukeAuthUser {
 
 // Forza runtime Node.js: necessari moduli Node in @luke/core/server
 export const runtime = 'nodejs';
+
+// Cache tokenVersion validation: evita fetch ripetuti a me.get per lo stesso utente.
+// TTL 30s — finestra accettabile tra revoca sessione e logout forzato.
+const tokenVersionCache = new Map<string, number>(); // userId → validatedAt (ms)
+const TOKEN_VERSION_CACHE_TTL = 30_000;
 
 /**
  * Helper per chiamare l'API tRPC
@@ -107,8 +113,8 @@ export const config = {
   ],
   session: {
     strategy: 'jwt',
-    maxAge: 8 * 60 * 60, // 8 ore
-    updateAge: 4 * 60 * 60, // Refresh ogni 4 ore (50% lifetime)
+    maxAge: SESSION_MAX_AGE,
+    updateAge: SESSION_UPDATE_AGE,
   },
   cookies: {
     sessionToken: {
@@ -152,37 +158,39 @@ export const config = {
         token.aud = 'luke.web';
         token.iss = 'urn:luke';
       } else if (token.sub && trigger !== 'update') {
-        // Se tokenVersion manca, forza re-login (opzione 1b)
-        if (token.tokenVersion === undefined || token.tokenVersion === null) {
-          debugLog('JWT senza tokenVersion, forzo logout');
-          return null;
-        }
+        if (checkTokenVersion(token) === null) return null;
 
-        // Refresh token: verifica tokenVersion chiamando API
-        try {
-          const response = await fetch(buildTrpcUrl('me.get'), {
-            method: 'GET',
-            headers: {
-              Authorization: `Bearer ${token.accessToken}`,
-              'Content-Type': 'application/json',
-            },
-          });
+        // Refresh token: verifica tokenVersion chiamando API (con TTL cache)
+        const cached = tokenVersionCache.get(token.sub);
+        if (!cached || Date.now() - cached >= TOKEN_VERSION_CACHE_TTL) {
+          try {
+            const response = await fetch(buildTrpcUrl('me.get'), {
+              method: 'GET',
+              headers: {
+                Authorization: `Bearer ${token.accessToken}`,
+                'Content-Type': 'application/json',
+              },
+            });
 
-          // Controlla il codice semantico tRPC nel body — più robusto dello status HTTP
-          const body = await response.json().catch(() => null);
-          if (body?.error?.data?.code === 'UNAUTHORIZED') {
-            debugLog('TokenVersion invalido durante refresh JWT, forzo logout');
-            return null; // Forza re-login
+            // Controlla il codice semantico tRPC nel body — più robusto dello status HTTP
+            const body = await response.json().catch(() => null);
+            if (body?.error?.data?.code === 'UNAUTHORIZED') {
+              debugLog('TokenVersion invalido durante refresh JWT, forzo logout');
+              tokenVersionCache.delete(token.sub);
+              return null; // Forza re-login
+            }
+            if (!response.ok) {
+              debugError('Errore transitorio verifica tokenVersion (ignorato):', response.status);
+            } else {
+              tokenVersionCache.set(token.sub, Date.now());
+            }
+          } catch (error) {
+            const isNetworkError = error instanceof TypeError && error.message === 'fetch failed';
+            if (!isNetworkError) {
+              debugError('Errore verifica tokenVersion durante refresh JWT:', error);
+            }
+            // In caso di errore di rete, mantieni il token ma logga l'errore
           }
-          if (!response.ok) {
-            debugError('Errore transitorio verifica tokenVersion (ignorato):', response.status);
-          }
-        } catch (error) {
-          const isNetworkError = error instanceof TypeError && error.message === 'fetch failed';
-          if (!isNetworkError) {
-            debugError('Errore verifica tokenVersion durante refresh JWT:', error);
-          }
-          // In caso di errore di rete, mantieni il token ma logga l'errore
         }
 
         debugLog('JWT refresh per utente:', token.sub);
@@ -190,17 +198,7 @@ export const config = {
       return token;
     },
     async session({ session, token }) {
-      // Passa i dati dal token alla sessione
-      if (token) {
-        session.user.id = token.sub || '';
-        session.user.role = token.role as string;
-        session.user.firstName = token.firstName as string;
-        session.user.lastName = token.lastName as string;
-        session.user.locale = token.locale as string;
-        session.user.timezone = token.timezone as string;
-        session.user.tokenVersion = token.tokenVersion as number;
-        session.accessToken = token.accessToken as string;
-      }
+      if (token) populateSession(session, token);
       return session;
     },
   },
@@ -211,9 +209,11 @@ export const config = {
   // Auth.js v5 validates the Host header; trustHost bypasses that check
   // and relies on NEXTAUTH_URL being set correctly instead.
   trustHost: true,
-  // Secret derivato deterministicamente dalla master key via HKDF-SHA256
-  // Nessuna esposizione HTTP, nessun valore in database
-  secret: getNextAuthSecret(),
+  // NEXTAUTH_SECRET (env) ha precedenza su getNextAuthSecret() (file system).
+  // In prod il web container non ha accesso a ~/.luke/secret.key (volume API-only);
+  // l'env var viene iniettata dal Docker compose con il valore derivato dalla master key.
+  // In dev: impostato in .env.local via `getNextAuthSecret()` al setup iniziale.
+  secret: process.env.NEXTAUTH_SECRET ?? getNextAuthSecret(),
 } satisfies NextAuthConfig;
 
 export const { handlers, auth, signIn, signOut } = NextAuth(config);

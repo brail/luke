@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { buildTrpcUrl } from '@luke/core';
 
-import { auth } from './auth';
+import { auth } from './auth.config';
 import { debugError, debugLog } from './lib/debug';
 
 /**
