@@ -1,7 +1,9 @@
 # Luke Monorepo
 
 <!-- luke-docs:start:overview -->
-Monorepo enterprise con pnpm + Turborepo per applicazioni web moderne con focus su sicurezza, audit e qualità.
+Luke è la piattaforma gestionale interna per la filiera moda wholesale. Gestisce il ciclo completo della stagione — dal piano campionario al pricing, dal merchandising alle statistiche portafoglio ordini — con integrazione nativa Microsoft Dynamics NAV come ERP di riferimento e supporto ai processi ISO 9001:2015 per il controllo qualità delle revisioni campionario.
+
+Sviluppato come monorepo pnpm + Turborepo con cinque workspace: frontend Next.js, backend Fastify + tRPC, package condivisi per schemi/RBAC, sync layer NAV e integrazione Google Calendar.
 <!-- luke-docs:end:overview -->
 
 ## Indice
@@ -28,16 +30,13 @@ Monorepo enterprise con pnpm + Turborepo per applicazioni web moderne con focus 
 ## Struttura
 
 <!-- luke-docs:start:structure -->
-```
-luke/
-├── apps/
-│   ├── web/          # Next.js 15 + shadcn/ui frontend
-│   └── api/          # Fastify 5 + tRPC + Prisma backend
-├── packages/
-│   ├── core/         # Zod schemas, RBAC, utilities condivise
-│   └── nav/          # Integrazione Microsoft Dynamics NAV (SQL Server)
-└── [config files]    # pnpm, turbo, typescript, eslint, prettier
-```
+| Workspace | Tipo | Descrizione |
+|-----------|------|-------------|
+| `apps/web` | App | Frontend Next.js — dashboard, campionario, pricing, calendario, vendite |
+| `apps/api` | App | Backend Fastify 5 + tRPC + Prisma — API RBAC, audit log, integrazione NAV |
+| `packages/core` | Package | Schemi Zod, RBAC, AppConfigRegistry, utility storage e crypto server-only |
+| `packages/nav` | Package | Sync layer unidirezionale Microsoft Dynamics NAV → PostgreSQL (mssql) |
+| `packages/calendar` | Package | Integrazione Google Calendar, feed iCal, solver dipendenze milestone |
 <!-- luke-docs:end:structure -->
 
 ## Quick Start
@@ -45,8 +44,11 @@ luke/
 ### Prerequisiti
 
 <!-- luke-docs:start:prerequisites -->
-- Node.js >= 20.0.0 (usa `nvm use` per versione automatica)
-- pnpm >= 8.0.0
+- Node.js >= 22.0.0
+- pnpm >= 10.0.0
+- Docker (per PostgreSQL locale e MinIO opzionale)
+- PostgreSQL 16 (sviluppo e produzione)
+- Microsoft SQL Server (solo per la funzionalità di sync NAV)
 <!-- luke-docs:end:prerequisites -->
 
 ### Setup iniziale
@@ -95,22 +97,20 @@ pnpm dev
 ## Scripts Disponibili
 
 <!-- luke-docs:start:scripts -->
-```bash
-# Sviluppo
-pnpm dev              # Avvia tutti i workspace in dev mode
-pnpm build            # Build tutti i workspace
-pnpm lint             # Lint tutti i file
-pnpm format           # Formatta codice con Prettier
+| Script | Descrizione |
+|--------|-------------|
+| `pnpm dev` | Avvia tutti i workspace in modalità sviluppo (via Turbo) |
+| `pnpm build` | Build completo di tutti i workspace |
+| `pnpm lint` | Lint di tutti i file TypeScript |
+| `pnpm typecheck` | Type check di tutti i workspace |
+| `pnpm format` | Formatta il codice con Prettier |
+| `pnpm db:seed` | Esegue il seed del database (`apps/api/prisma/seed.ts`) |
+| `pnpm changelog` | Genera `CHANGELOG.md` dal tag corrente via git-cliff |
+| `pnpm changelog:bump` | Genera `CHANGELOG.md` con bump automatico della versione |
+| `pnpm sync-version` | Allinea le versioni di tutti i `package.json` del monorepo |
+| `pnpm deps:latest` | Aggiorna tutte le dipendenze all'ultima versione |
 
-# Dipendenze
-pnpm deps:latest      # Aggiorna tutte le dipendenze all'ultima versione
-pnpm install          # Installa dipendenze
-
-# Workspace specifici
-pnpm --filter @luke/web dev     # Solo frontend
-pnpm --filter @luke/api dev     # Solo backend
-pnpm --filter @luke/core build  # Solo core package
-```
+Workspace specifici: `pnpm --filter @luke/web dev` · `pnpm --filter @luke/api dev` · `pnpm --filter @luke/core build`
 <!-- luke-docs:end:scripts -->
 
 ## Convenzioni Naming
@@ -391,23 +391,15 @@ Il sistema include protezioni robuste per la gestione degli utenti:
 ## Workflow
 
 <!-- luke-docs:start:deployment -->
-1. **Sviluppo**: `pnpm dev` avvia frontend + backend
-2. **Build**: `pnpm build` compila tutto per produzione
-3. **Deploy**: CI/CD con Turborepo caching
-4. **Monitor**: Audit log + structured logging
+Il flusso di release è attivato dal push di un tag `vX.Y.Z`. GitHub Actions builda le immagini Docker e le pubblica su `ghcr.io`. Portainer rileva le nuove immagini e rideploya automaticamente lo stack. Push su `main` eseguono solo lint e typecheck — nessuna build immagine.
+
+Il volume `luke_api_data` contiene la master key (`~/.luke/secret.key`) e non va mai eliminato. In produzione, `entrypoint.sh` esegue `prisma migrate deploy` prima dell'avvio del server.
 <!-- luke-docs:end:deployment -->
 
 ## Architecture Decision Records (ADR)
 
 <!-- luke-docs:start:adr-link -->
-Le decisioni architetturali chiave del progetto sono documentate in ADR:
-
-- [ADR-001: JWT HS256 con HKDF-SHA256](docs/decisions/001-jwt-hs256-hkdf.md) - Gestione segreti JWT con derivazione crittografica
-- [ADR-002: RBAC Policy e Enforcement](docs/decisions/002-rbac-policy.md) - Controllo accessi basato su ruoli
-- [ADR-003: Core Package Server-Only Exports](docs/decisions/003-core-server-only.md) - Isolamento codice server-only
-- [ADR-004: Prisma Select-Only Pattern](docs/decisions/004-prisma-select-only.md) - Prevenzione data leakage
-
-Per contribuire al progetto, consulta le ADR per comprendere le convenzioni e i pattern adottati.
+Le decisioni architetturali rilevanti sono documentate in [`docs/decisions/`](docs/decisions/README.md).
 <!-- luke-docs:end:adr-link -->
 
 ## Error UX & User Experience
@@ -630,13 +622,11 @@ import {
 ## Tecnologie
 
 <!-- luke-docs:start:architecture -->
-- **Monorepo**: pnpm workspaces + Turborepo
-- **Frontend**: Next.js 15, React 19, shadcn/ui, Tailwind
-- **Backend**: Fastify 5, tRPC, Prisma, Zod
-- **Database**: SQLite (dev) → PostgreSQL (prod)
-- **Auth**: JWT HS256+HKDF, RBAC, LDAP/OIDC
-- **Security**: AES-256-GCM, helmet, cors, rate limiting, idempotency
-- **Quality**: TypeScript strict, ESLint, Prettier, Husky
+Luke è un monorepo pnpm + Turborepo con cinque workspace. Il backend (`apps/api`) espone API tRPC type-safe su Fastify 5, con PostgreSQL 16 via Prisma e autenticazione RBAC granulare (`resource:action`). Il frontend (`apps/web`) è un'app Next.js con App Router, shadcn/ui e React 19. La sincronizzazione con Microsoft Dynamics NAV avviene tramite `packages/nav` (mssql diretto, unidirezionale). Le milestone stagionali sono gestite da `packages/calendar` con integrazione Google Calendar e solver topologico delle dipendenze.
+
+Stack: **Next.js 16** · **Fastify 5** · **tRPC 11** · **Prisma 7** · **PostgreSQL 16** · **TypeScript 6** · **Zod 4** · **pnpm 11** · **Turbo 2**
+
+Per le decisioni architetturali chiave: [`docs/decisions/`](docs/decisions/README.md).
 <!-- luke-docs:end:architecture -->
 
 ## Manutenzione Import

@@ -17,6 +17,7 @@ Gruppo autenticato `(app)/`:
 - `/admin/collection-layout-configuration` — Configurazione colonne del layout collezione
 - `/calendar` — Calendario milestones e scadenze stagionali (con sync Google Calendar)
 - `/product/collection-layout` — Piano campionario (layout a righe e gruppi, revisioni, quote)
+- `/product/collection-layout/revisions` — Storico revisioni del piano campionario (snapshot immutabili per controllo qualità ISO 9001)
 - `/product/merchandising-plan` — Piano merchandising con specsheet e immagini
 - `/product/pricing` — Motore di calcolo prezzi (forward / inverse / margin)
 - `/sales/statistics` — Statistiche portafoglio ordini (replica NAV in tempo reale)

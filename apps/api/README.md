@@ -155,29 +155,103 @@ Vedi `src/lib/config.ts` per dettagli.
 ## Router tRPC
 
 <!-- luke-docs:start:trpc-routers -->
+| Namespace | Descrizione |
+|-----------|-------------|
+| `auth.*` | Autenticazione, logout, cambio password, reset password, verifica email |
+| `brand.*` | Gestione brand (CRUD, soft delete, logo upload) |
+| `calendarCatalog.*` | Catalogo eventi calendario (template milestone) |
+| `catalog.*` | Catalogo articoli |
+| `collectionCatalog.*` | Catalogo collezione |
+| `collectionLayout.*` | Piano campionario — layout, gruppi, righe, quote, drag-and-drop |
+| `collectionLayoutRevision.*` | Revisioni piano campionario (snapshot ISO 9001) |
+| `company.*` | Profilo aziendale, funzioni, team e scopi brand |
+| `config.*` | Chiavi AppConfig — configurazione runtime centralizzata |
+| `context.*` | Contesto utente corrente (brand/stagione attivi) |
+| `dashboard.*` | Widget dashboard — dati KPI, avanzamento stagione, ordini settimanali |
+| `feedback.*` | Sistema feedback interno |
+| `health.*` | Health check e status API |
+| `holidays.*` | Festività nazionali e periodi di chiusura fornitori |
+| `integrations.google.*` | OAuth 2.0 Google Calendar — flusso di autorizzazione e binding |
+| `integrations.import.*` | Import dati da file |
+| `integrations.ldap.*` | Configurazione e test connessione LDAP |
+| `integrations.mail.*` | Configurazione SMTP e invio email di test |
+| `integrations.nav.*` | Configurazione NAV, trigger sync manuale, log sync |
+| `integrations.storage.*` | Configurazione provider storage (locale / MinIO) |
+| `maintenance.*` | Operazioni di manutenzione e admin di sistema |
+| `me.*` | Profilo utente corrente, sessioni attive, revoca sessioni |
+| `merchandisingPlan.*` | Piano merchandising — specsheet, componenti, immagini |
+| `notifications.*` | Notifiche utente e preferenze notifica |
+| `pricing.*` | Motore prezzi — parameter set, calcolo forward/inverse/margin |
+| `public.*` | Endpoint pubblici senza autenticazione |
+| `sales.*` | Statistiche portafoglio ordini (replica NAV `nav_pf_*`) |
+| `season.*` | Gestione stagioni (CRUD, soft delete) |
+| `seasonCalendar.*` | Calendario milestones stagionali, dipendenze, solver |
+| `sectionAccess.*` | Visibilità sezioni RBAC per utente (override user-level) |
+| `storage.*` | Upload file, conferma FileObject, download presigned URL |
+| `users.*` | Gestione utenti (`admin`, `core`, `preferences`) — CRUD, ruoli, preferenze |
+| `vendors.*` | Gestione fornitori (CRUD, soft delete, periodi di chiusura) |
 <!-- luke-docs:end:trpc-routers -->
 
 ## Packages interni utilizzati
 
 <!-- luke-docs:start:internal-deps -->
+- `@luke/core` — Schemi Zod, RBAC (`requirePermission`), `AppConfigRegistry`, `getConfigValue`, utility URL e storage, crypto server-only (`@luke/core/server`)
+- `@luke/nav` — Sync layer NAV, `runNavSync`, `testNavConnection`, `queryPortafoglioOrdini`
+- `@luke/calendar` — Sync Google Calendar, solver dipendenze milestone, generazione feed iCal
 <!-- luke-docs:end:internal-deps -->
 
 ## Variabili d'ambiente
 
 <!-- luke-docs:start:env -->
+| Variabile | Default | Descrizione |
+|-----------|---------|-------------|
+| `DATABASE_URL` | — | URL connessione PostgreSQL (richiesta) |
+| `PORT` | `3001` | Porta di ascolto del server |
+| `HOST` | `0.0.0.0` | Indirizzo di bind del server |
+| `NODE_ENV` | `development` | Runtime mode (`development` / `production` / `test`) |
+| `LUKE_CORS_ALLOWED_ORIGINS` | — | Origini CORS ammesse in produzione (separare con virgola) |
+| `OTEL_*` | — | OpenTelemetry — export trace (standard OTEL env vars) |
+| `LOG_LEVEL` | `info` | Livello log Pino (`trace` / `debug` / `info` / `warn` / `error`) |
+
+Al boot, `assertEnvPolicy()` in `src/server.ts` verifica che nessuna variabile vietata sia presente (pattern bloccati: `SMTP_*`, `LDAP_*`, `JWT_*`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, `*_TOKEN`). In produzione: `exit(1)`. Tutto il resto va in AppConfig (database).
 <!-- luke-docs:end:env -->
 
 ## Database
 
 <!-- luke-docs:start:database -->
+PostgreSQL 16 via Prisma 7. Schema in `apps/api/prisma/schema.prisma`.
+
+```bash
+pnpm --filter @luke/api prisma:studio   # Apre Prisma Studio (browser)
+pnpm --filter @luke/api db:seed         # Seed iniziale (primo avvio)
+pnpm --filter @luke/api db:bootstrap    # Bootstrap sviluppo con dati di esempio
+```
+
+In produzione `entrypoint.sh` esegue `prisma migrate deploy` prima dell'avvio del server. Le migration sono versionata in `prisma/migrations/`.
+
+**Model principali** (62 totali): `User`, `Identity`, `LocalCredential`, `AppConfig`, `AuditLog`, `FileObject`, `Brand`, `Season`, `Vendor`, `CollectionLayout`, `CollectionGroup`, `CollectionLayoutRow`, `CollectionLayoutRevision`, `PricingParameterSet`, `MerchandisingPlan`, `SeasonCalendar`, `CalendarEvent`, `MilestoneTemplate`, `GoogleCalendarBinding`, `NavVendor`, `NavBrand`, `NavSeason`, `NavPfSalesHeader`, `NavPfSalesLine`, `CompanyProfile`, `Notification`, `DashboardConfig`.
 <!-- luke-docs:end:database -->
 
 ## NAV Sync
 
 <!-- luke-docs:start:nav -->
+Il sync NAV usa `packages/nav` con connessione diretta SQL Server via mssql. La configurazione (server, database, company, credenziali) è salvata cifrata in AppConfig — nessuna env var.
+
+Pattern: sync **unidirezionale NAV → Luke**. Ogni entità ha una tabella replica `nav_*` (fedele a NAV) e una tabella locale arricchita (`vendors`, `brands`, `seasons`). Il sync non scrive mai su NAV, non tocca `isActive`, non riattiva entità disabilitate manualmente.
+
+Entità sincronizzate: **Vendor** (differenziale watermark), **Brand** (full sync), **Season** (full sync), **Portafoglio ordini** (replica `nav_pf_*` per statistiche vendite).
+
+Trigger sync: manuale via `/settings/nav-sync` nel frontend, oppure job periodico configurabile via AppConfig.
 <!-- luke-docs:end:nav -->
 
 ## Storage
 
 <!-- luke-docs:start:storage -->
+Il layer storage è astratto da `IStorageProvider` (da `@luke/core`). Il provider attivo è selezionato da `storage.type` in AppConfig — `local` o `minio` — senza env var né ricompilazione.
+
+**Upload a due fasi**: il file è caricato come `FileObject` pending (`confirmedAt = null`); la conferma avviene nella stessa transaction Prisma che crea l'entità. File pending abbandonati sono rimossi dal job di cleanup periodico.
+
+**Bucket validi**: `uploads`, `exports`, `assets`, `brand-logos`, `collection-row-pictures`, `collection-row-pictures-revisions`, `merchandising-specsheet-images`, `company-assets`
+
+Le immagini sono servite attraverso il proxy Next.js `/api/uploads/[...path]` — i bucket restano privati (non esposti pubblicamente).
 <!-- luke-docs:end:storage -->
