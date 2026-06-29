@@ -42,6 +42,14 @@ interface CollectionGroupDialogProps {
   isLoading?: boolean;
 }
 
+/**
+ * Dialog for creating or renaming a collection group.
+ *
+ * @param mode - Controls the dialog title ("create" vs "edit").
+ * @param initialName - Pre-filled name when editing an existing group.
+ * @param initialSkuBudget - Pre-filled SKU budget when editing (belongs to the group, not rows).
+ * @param onSubmit - Called with the validated name and skuBudget on save.
+ */
 export function CollectionGroupDialog({
   open,
   onOpenChange,

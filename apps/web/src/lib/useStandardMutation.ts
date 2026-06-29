@@ -1,26 +1,24 @@
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 
-/**
- * Opzioni per mutation standardizzata
- */
+/** Options for `useStandardMutation`. */
 type Options<TInput, TResult> = {
-  /** Funzione di mutation da eseguire */
+  /** The async mutation function to execute (e.g. `trpc.entity.create.mutateAsync`). */
   mutateFn: (input: TInput) => Promise<TResult>;
 
-  /** Callback per invalidare le query correlate dopo il successo */
+  /** Called after a successful mutation to invalidate related React Query caches. */
   invalidate?: () => void | Promise<void>;
 
-  /** Messaggio di successo da mostrare automaticamente */
+  /** Success toast message shown automatically after the mutation resolves. */
   onSuccessMessage?: string;
 
-  /** Messaggio di errore da mostrare automaticamente (opzionale se onError è fornito) */
+  /** Error toast message shown automatically when the mutation rejects. */
   onErrorMessage?: string;
 
-  /** Callback personalizzata dopo il successo (oltre al messaggio) */
+  /** Additional success callback invoked after the toast and cache invalidation. */
   onSuccess?: (result: TResult) => void;
 
-  /** Callback personalizzata dopo l'errore (oltre al messaggio) */
+  /** Additional error callback invoked after the error toast. */
   onError?: (error: any) => void;
 };
 

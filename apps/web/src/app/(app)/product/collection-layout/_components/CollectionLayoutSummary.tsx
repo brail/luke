@@ -18,6 +18,12 @@ interface CollectionLayoutSummaryProps {
   layout: CollectionLayoutData;
 }
 
+/**
+ * Summary cards for a collection layout showing progress distribution and
+ * per-group SKU budget vs forecast.
+ *
+ * Returns null when the layout has no rows.
+ */
 export function CollectionLayoutSummary({ layout }: CollectionLayoutSummaryProps) {
   const allRows = layout.groups.flatMap(g => g.rows);
   if (allRows.length === 0) return null;

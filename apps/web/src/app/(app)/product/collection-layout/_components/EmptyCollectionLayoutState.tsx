@@ -38,6 +38,16 @@ function genderKey(v: readonly string[]) {
 
 type RowSelection = { included: boolean; copyQuotations: boolean };
 
+/**
+ * Empty state shown when no collection layout exists for the active brand+season.
+ *
+ * Offers two paths: create a blank layout (with gender selection) or copy rows
+ * from a previous season via a two-step dialog. The copy dialog lets the user
+ * choose which rows to include and whether to carry over quotations.
+ *
+ * @param onCreateEmpty - Called with the selected gender array to create a blank layout.
+ * @param onCopyFromSeason - Called with the source season ID and row selection to copy.
+ */
 export function EmptyCollectionLayoutState({
   brandId,
   seasonId,

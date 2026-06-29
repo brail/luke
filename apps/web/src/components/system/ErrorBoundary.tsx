@@ -14,6 +14,12 @@ interface ErrorBoundaryState {
   hasError: boolean;
 }
 
+/**
+ * React class-based error boundary that catches render errors and shows a fallback UI.
+ *
+ * Renders `ErrorState` with a `RetryButton` that resets the boundary state.
+ * Calls the optional `onError` prop with the error and info for external reporting.
+ */
 export class ErrorBoundary extends React.Component<
   ErrorBoundaryProps,
   ErrorBoundaryState

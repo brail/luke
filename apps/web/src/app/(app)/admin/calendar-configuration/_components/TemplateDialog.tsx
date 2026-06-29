@@ -34,6 +34,12 @@ interface FormValues {
   description: string;
 }
 
+/**
+ * Dialog for creating or editing a season calendar template.
+ *
+ * @param onSaved - Called with the newly created or updated template.
+ * @param template - Existing template to edit; omit for create mode.
+ */
 export function TemplateDialog({ open, onClose, onSaved, template }: Props) {
   const isEdit = !!template;
   const { register, handleSubmit, reset, formState: { errors } } = useForm<FormValues>();

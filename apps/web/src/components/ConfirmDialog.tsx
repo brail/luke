@@ -28,8 +28,13 @@ interface ConfirmDialogProps {
 }
 
 /**
- * Dialog di conferma riutilizzabile per azioni critiche
- * Supporta diverse varianti e tipi di azione con icone appropriate
+ * Reusable confirmation dialog for destructive or critical actions.
+ *
+ * Renders an icon and button style appropriate for each `actionType`.
+ * Always use this instead of `globalThis.confirm()`.
+ *
+ * @param actionType - Controls the icon and button color: `delete` and `hardDelete` use destructive styling; `disable` and `warning` use default styling.
+ * @param userEmail - Optional email displayed below the description to identify the target user.
  */
 export function ConfirmDialog({
   open,

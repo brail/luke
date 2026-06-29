@@ -9,6 +9,14 @@ import { Skeleton } from '../../ui/skeleton';
 
 const FIFTEEN_MIN = 15 * 60 * 1000;
 
+/**
+ * Dashboard widget displaying live forex exchange rates for configurable currency pairs.
+ *
+ * Fetches rates via `dashboard.getForexRates` with a 15-minute stale time and auto-refetch.
+ * Shows percentage change vs. the previous rate with green/red coloring.
+ *
+ * @param settings - Widget settings typed as `ForexSettings`; falls back to `DEFAULT_FOREX_PAIRS`.
+ */
 export function ForexWidget({ settings }: { settings?: Record<string, unknown> }) {
   const pairs = (settings as ForexSettings | undefined)?.pairs ?? [...DEFAULT_FOREX_PAIRS];
 

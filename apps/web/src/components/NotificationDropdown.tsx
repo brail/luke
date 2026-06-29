@@ -31,6 +31,12 @@ function formatRelativeTime(date: Date): string {
   return `${Math.floor(hours / 24)} giorni fa`;
 }
 
+/**
+ * Bell icon dropdown that displays the current user's notifications.
+ *
+ * Refetches the notification list on popover open. Clicking an unread item marks it
+ * as read. Provides bulk "mark all as read" and "delete read" actions.
+ */
 export function NotificationDropdown() {
   const { notifications, unreadCount, refetch } = useNotifications();
   const markAsReadMutation = trpc.notifications.markAsRead.useMutation({

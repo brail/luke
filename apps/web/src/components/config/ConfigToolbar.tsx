@@ -1,8 +1,3 @@
-/**
- * Toolbar per la gestione delle configurazioni
- * Include ricerca, filtri e azioni principali
- */
-
 import { Search } from 'lucide-react';
 
 import { CATEGORIES } from '../../lib/config-helpers';
@@ -24,6 +19,12 @@ interface ConfigToolbarProps {
   onFilterCategoryChange: (filterCategory: string | undefined) => void;
 }
 
+/**
+ * Search and filter toolbar for the AppConfig table.
+ *
+ * Provides a key search input and two dropdowns to filter by encryption type and category.
+ * All state is controlled; the parent is responsible for storing and applying filter values.
+ */
 export function ConfigToolbar({
   searchTerm,
   onSearchChange,

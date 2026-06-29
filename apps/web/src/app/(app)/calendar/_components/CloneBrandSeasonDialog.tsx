@@ -33,6 +33,16 @@ interface Props {
   targetSeasonId: string;
 }
 
+/**
+ * Dialog for cloning milestones from another brand+season into the current calendar.
+ *
+ * Lets the user pick a source brand, source season, and an optional day-shift
+ * offset to apply to all cloned event dates.
+ *
+ * @param targetBrandId - Brand ID of the calendar that will receive the cloned events.
+ * @param targetSeasonId - Season ID of the calendar that will receive the cloned events.
+ * @param onCloned - Called after a successful clone operation.
+ */
 export function CloneBrandSeasonDialog({ open, onClose, onCloned, targetBrandId, targetSeasonId }: Props) {
   const [sourceBrandId, setSourceBrandId] = useState('');
   const [sourceSeasonId, setSourceSeasonId] = useState('');

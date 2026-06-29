@@ -10,6 +10,12 @@ interface SettingsActionsProps {
   disabled?: boolean;
 }
 
+/**
+ * Action bar for settings forms with optional Save and Test Connection buttons.
+ *
+ * Both buttons are disabled while either save or test is in progress.
+ * Omitting `onTest` or `onSave` hides the corresponding button.
+ */
 export function SettingsActions({
   onSave,
   isSaving = false,

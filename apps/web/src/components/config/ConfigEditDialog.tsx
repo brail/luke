@@ -1,8 +1,3 @@
-/**
- * Dialog per creare o modificare una configurazione
- * Include validazione client-side e gestione stati di loading
- */
-
 import React, { useState, useEffect } from 'react';
 
 import {
@@ -47,6 +42,16 @@ interface ConfigEditDialogProps {
   isLoading?: boolean;
 }
 
+/**
+ * Dialog for creating or editing an AppConfig key-value pair.
+ *
+ * In edit mode the key field is read-only. For encrypted values the current value
+ * is never pre-populated; the user must supply a new value to overwrite it.
+ * Calls `onSave` only after client-side validation passes.
+ *
+ * @param config - When provided, the dialog operates in edit mode.
+ * @param onSave - Async callback; errors should be handled by the parent.
+ */
 export function ConfigEditDialog({
   onOpenChange,
   config,

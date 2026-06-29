@@ -13,8 +13,13 @@ interface PasswordValidationIndicatorsProps {
 }
 
 /**
- * Componente per mostrare gli indicatori di validazione password
- * Riutilizzabile in diversi form
+ * Real-time password strength checklist rendered below a password input.
+ *
+ * Renders nothing when `password` is empty. Uses `usePasswordValidation` to evaluate
+ * minimum length, uppercase, lowercase, number, symbol, and optional confirmation match.
+ *
+ * @param showConfirmPassword - When true, also shows the "passwords match" indicator.
+ * @param confirmPassword - Required only when `showConfirmPassword` is true.
  */
 export function PasswordValidationIndicators({
   password,

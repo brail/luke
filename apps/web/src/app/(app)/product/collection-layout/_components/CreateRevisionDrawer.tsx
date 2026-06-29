@@ -43,6 +43,16 @@ interface CreateRevisionDrawerProps {
   onSuccess: () => void;
 }
 
+/**
+ * Drawer for creating a new collection layout revision snapshot.
+ *
+ * Lists rows that have been modified since the last revision and lets the user
+ * choose a progress milestone and add a note before committing. Calls
+ * `collectionLayout.createRevision` on save.
+ *
+ * @param layout - The full collection layout to derive modified rows from.
+ * @param onSuccess - Called after the revision is successfully created.
+ */
 export function CreateRevisionDrawer({
   open,
   onOpenChange,

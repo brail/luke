@@ -4,7 +4,6 @@ import { Info, Settings2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-import { SECTION_ACCESS_DEFAULTS } from '@luke/core';
 import type { Section } from '@luke/core';
 
 import { Button } from '../../../../../components/ui/button';
@@ -33,12 +32,20 @@ interface UserAccessDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+/**
+ * Dialog for editing section-visibility overrides for an existing user.
+ * @param user - The user whose section access is being managed.
+ */
 export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogProps) {
   const utils = trpc.useUtils();
   const initialized = useRef(false);
 
   const { data: serverSectionOverrides, isLoading: loadingSection } =
     trpc.sectionAccess.getByUser.useQuery({ userId: user.id }, { enabled: open });
+
+  const { data: sectionDefaults } = trpc.sectionAccess.getDefaults.useQuery(undefined, {
+    enabled: open,
+  });
 
   const [pendingSection, setPendingSection] = useState<SectionOverrideMap>({});
   const [isDirty, setIsDirty] = useState(false);
@@ -62,7 +69,7 @@ export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogP
   }, [open, loadingSection, serverSectionOverrides]);
 
   const getRoleDefault = (section: Section): boolean =>
-    SECTION_ACCESS_DEFAULTS[user.role]?.[section] ?? false;
+    sectionDefaults?.computedRoleDefaults?.[user.role]?.[section] ?? false;
 
   const getSectionValue = (section: Section): boolean => {
     if (section in pendingSection) return pendingSection[section]!;

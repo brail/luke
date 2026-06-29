@@ -51,6 +51,10 @@ interface SortableFunctionCardProps {
   isRestoring?: boolean;
 }
 
+/**
+ * Drag-and-drop sortable card representing a single company function in the sidebar.
+ * Renders a deactivated (dashed, struck-through) variant when `fn.isActive` is false.
+ */
 function SortableFunctionCard({ fn, isSelected, canUpdate, canDelete, onSelect, onEdit, onDelete, onRestore, isRestoring }: SortableFunctionCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: fn.id,
@@ -147,6 +151,11 @@ interface FunctionSidebarProps {
   onRefresh: () => Promise<void>;
 }
 
+/**
+ * Sidebar listing company functions with drag-and-drop reordering, inline create/edit/delete actions,
+ * and soft-delete restore support.
+ * @param onRefresh - async callback to reload the function list after a mutation
+ */
 export function FunctionSidebar({ functions, selectedId, canCreate, canUpdate, canDelete, onSelect, onRefresh }: FunctionSidebarProps) {
   const [items, setItems] = useState(functions);
   const [fnDialog, setFnDialog] = useState<{ open: boolean; fn?: CompanyFunction }>({ open: false });

@@ -35,6 +35,17 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/**
+ * Dialog for applying a calendar template to the current season calendar.
+ *
+ * The user picks a template and an anchor date; the backend computes each
+ * milestone's date from the template item's offsetDays. When `hasMilestones`
+ * is true a warning is shown and the request is sent with `force: true`.
+ *
+ * @param calendarId - Target season calendar ID.
+ * @param hasMilestones - Whether the calendar already contains milestones.
+ * @param onApplied - Called after the template is successfully applied.
+ */
 export function ApplyTemplateDialog({ open, onClose, onApplied, calendarId, hasMilestones }: Props) {
   const [templateId, setTemplateId] = useState('');
   const [anchorDate, setAnchorDate] = useState(todayIso());

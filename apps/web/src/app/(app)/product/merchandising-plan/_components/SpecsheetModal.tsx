@@ -60,6 +60,16 @@ interface Props {
   onSaved: () => void;
 }
 
+/**
+ * Modal for managing the specsheet of a merchandising plan row.
+ *
+ * Groups components by `SpecsheetComponentSection` (UPPER, SOLE, LINING, …).
+ * Supports adding, editing, reordering, and deleting components, as well as
+ * photo upload per component. Mutations are gated by `canUpdate`.
+ *
+ * @param row - The merchandising row whose specsheet is being edited.
+ * @param onSaved - Called after any successful mutation to trigger a parent refetch.
+ */
 export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: Props) {
   const utils = trpc.useUtils();
 

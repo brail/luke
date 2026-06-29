@@ -21,6 +21,17 @@ interface Props {
   onNoteClick?: (e: MouseEvent) => void;
 }
 
+/**
+ * Draggable event chip used in week and month calendar views.
+ *
+ * Integrates with dnd-kit via `useDraggable`. A sticky-note icon appears when
+ * `hasNote` is true or on hover. Critical events show an alert icon.
+ *
+ * @param span - Number of day columns the chip should span (used in week view CSS).
+ * @param isDragging - Hides the chip's original slot while dragging is in progress.
+ * @param isProposed - Applies a dashed outline to distinguish what-if preview events.
+ * @param onNoteClick - When provided, renders the sticky-note button.
+ */
 export function DraggableEventChip({ id, title, status, color, span, isDragging, hasNote, severity, isProposed, onClick, onNoteClick }: Props) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id });
 

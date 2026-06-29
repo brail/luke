@@ -1,8 +1,3 @@
-/**
- * Badge per visualizzare la categoria di una configurazione
- * Mostra icona e colore appropriati per ogni categoria
- */
-
 import {
   Shield,
   Settings,
@@ -31,6 +26,11 @@ const iconComponents = {
   Palette,
 };
 
+/**
+ * Badge displaying the category of an AppConfig key with a matching icon and color.
+ *
+ * Icon and color are resolved via `getCategoryIcon` and `getCategoryColor` from `config-helpers`.
+ */
 export function ConfigKeyBadge({
   category,
   className = '',

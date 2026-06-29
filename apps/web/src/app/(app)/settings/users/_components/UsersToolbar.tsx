@@ -13,8 +13,8 @@ interface UsersToolbarProps extends ToolbarProps, ToolbarHandlers {
 }
 
 /**
- * Toolbar per ricerca, filtri e paginazione utenti
- * Include search input, role filter, azioni e paginazione
+ * Toolbar with search input, role filter, create-user button, and pagination controls.
+ * @param canCreate - Whether the current user has permission to create new users.
  */
 export function UsersToolbar({
   searchTerm,

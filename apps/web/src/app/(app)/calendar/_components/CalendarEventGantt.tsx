@@ -48,6 +48,20 @@ function dragLabel(origStart: Date, origEnd: Date | null, dayDelta: number, mode
 
 type DragState = { id: string; mode: 'drag' | 'resize'; startX: number; deltaX: number };
 
+/**
+ * Gantt-chart view for calendar events with drag-to-move and drag-to-resize.
+ *
+ * The time axis auto-scales: when the range exceeds 150 days the day columns
+ * shrink from 24 px to 13 px. Holiday dates are highlighted with a coloured
+ * background. Dragging snaps to full-day resolution.
+ *
+ * @param functionsById - Map of function ID → name, used as row labels.
+ * @param onEventUpdate - Called after a drag completes with new ISO timestamps.
+ * @param onDayClick - Called with the clicked day's ISO date string.
+ * @param activeBrandId - Dims events that belong to a different brand.
+ * @param brandColorMap - Pre-computed brand-ID→colour map.
+ * @param holidayDates - HolidayMap used to shade holiday columns.
+ */
 export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, onNoteClick, onDayClick, activeBrandId, functionsById, canUpdate, brandColorMap, holidayDates }: Props) {
   const sorted = useMemo(
     () => [...milestones].sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime()),

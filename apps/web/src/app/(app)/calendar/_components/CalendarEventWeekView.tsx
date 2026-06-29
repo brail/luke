@@ -47,6 +47,20 @@ function WeekDayRow({ dayIso, isToday, isWeekend, isDragging, holidays, onDayCli
   );
 }
 
+/**
+ * Week grid calendar view with dnd-kit drag-and-drop for rescheduling events.
+ *
+ * Renders a 7-column grid from Monday to Sunday. Each column lists event chips
+ * via `DraggableEventChip`. Holiday columns are highlighted in rose. Day number
+ * clicks navigate to the day view.
+ *
+ * @param onEventUpdate - Called after a drag completes with new ISO timestamps.
+ * @param onDayClick - Called with the ISO date string of an empty cell click.
+ * @param onDayNumberClick - Called with the ISO date to navigate to day view.
+ * @param activeBrandId - Dims events that belong to a different brand.
+ * @param brandColorMap - Pre-computed brand-ID→colour map.
+ * @param holidayDates - HolidayMap used to shade holiday columns.
+ */
 export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, onEventClick, onEventUpdate, onNoteClick, onDayClick, onDayNumberClick, activeBrandId, canUpdate, brandColorMap, holidayDates }: Props) {
   const weekStart = useMemo(() => mondayOf(viewDate), [viewDate]);
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);

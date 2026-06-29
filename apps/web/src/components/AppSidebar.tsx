@@ -64,6 +64,12 @@ import {
   SidebarTrigger,
 } from './ui/sidebar';
 
+/**
+ * Main application sidebar with navigation links, collapsible sections, and a user menu dropdown.
+ *
+ * Renders menu items conditionally based on section access from `useMenuAccess`.
+ * Persists open/closed state for collapsible groups via `useMenuPreferences`.
+ */
 export default function AppSidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();

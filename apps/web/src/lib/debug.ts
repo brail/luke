@@ -1,11 +1,12 @@
 /**
- * Utility per logging di debug condizionale
- * Emette log solo in development o con flag NEXT_PUBLIC_LUKE_DEBUG_UI=true
+ * Conditional debug logging utilities for the web app.
+ * Output is suppressed in production unless `NEXT_PUBLIC_LUKE_DEBUG_UI=true`.
+ * Use these instead of `console.*` directly (CLAUDE.md rule #10).
  */
 
 /**
- * Log di debug condizionale
- * @param args - Argomenti da loggare
+ * Logs to `console.log` in non-production environments or when
+ * `NEXT_PUBLIC_LUKE_DEBUG_UI=true`.
  */
 export function debugLog(...args: unknown[]) {
   if (
@@ -18,8 +19,8 @@ export function debugLog(...args: unknown[]) {
 }
 
 /**
- * Warning di debug condizionale
- * @param args - Argomenti da loggare
+ * Logs to `console.warn` in non-production environments or when
+ * `NEXT_PUBLIC_LUKE_DEBUG_UI=true`.
  */
 export function debugWarn(...args: unknown[]) {
   if (
@@ -32,8 +33,8 @@ export function debugWarn(...args: unknown[]) {
 }
 
 /**
- * Error di debug condizionale
- * @param args - Argomenti da loggare
+ * Logs to `console.error` in non-production environments or when
+ * `NEXT_PUBLIC_LUKE_DEBUG_UI=true`.
  */
 export function debugError(...args: unknown[]) {
   if (

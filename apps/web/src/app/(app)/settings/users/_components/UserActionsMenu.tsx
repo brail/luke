@@ -36,8 +36,10 @@ interface UserActionsMenuProps {
 }
 
 /**
- * Menu dropdown azioni per utente
- * Include protezioni self-action e gestione stati
+ * Dropdown action menu for a single user row, with self-action guards.
+ * @param user - The user the actions apply to.
+ * @param currentUserId - ID of the currently logged-in user, used to block self-destructive actions.
+ * @param handlers - Callbacks for each available action (edit, disable, hard-delete, revoke sessions, manage access).
  */
 export function UserActionsMenu({
   user,

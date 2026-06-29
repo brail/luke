@@ -41,6 +41,18 @@ interface BrandTableWithPermissionsProps {
   onRetry?: () => void;
 }
 
+/**
+ * Brands data table with permission-aware action buttons.
+ *
+ * Action visibility follows the RBAC pattern: Modifica/Disattiva/Elimina are
+ * always rendered but disabled with a tooltip when the user lacks the required
+ * permission. NAV-linked brands show a "Scollega da NAV" action instead of
+ * Disattiva. Hard-delete is shown only to users with `brands:delete`.
+ *
+ * @param onUnlink - Called when the user requests to unlink a NAV-linked brand.
+ * @param onHardDelete - Called when the user requests a permanent deletion.
+ * @param onRetry - Optional; shown in the error state to retry the data fetch.
+ */
 export function BrandTableWithPermissions({
   brands,
   isLoading,

@@ -1,6 +1,8 @@
 /**
- * Hook per verificare periodicamente la validità della sessione
- * Verifica tokenVersion ogni 30 secondi per rilevare revoca sessioni da admin
+ * Periodically verifies the current session's validity by checking the user's
+ * `tokenVersion` via `trpc.me.get`. Triggers an immediate check on mount,
+ * then re-runs every 10 s, on tab visibility change, and on window focus.
+ * Redirects to `/login` when the session is detected as invalid (UNAUTHORIZED).
  */
 
 import { TRPCClientError } from '@trpc/client';

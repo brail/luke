@@ -98,6 +98,22 @@ function addOneHour(time: string): string {
   return `${((h + 1) % 24).toString().padStart(2, '0')}:${(m ?? 0).toString().padStart(2, '0')}`;
 }
 
+/**
+ * Dialog for creating or editing a calendar milestone/event.
+ *
+ * In edit mode the dialog shows two tabs: "Dettagli" (this form) and
+ * "Dipendenze" (the `DependencyManager`). In read-only mode it renders a
+ * compact information card with no form fields.
+ *
+ * @param calendarId - Parent season calendar ID (used only in create mode).
+ * @param availableFunctions - Company functions available as owner/visibility targets.
+ * @param functionsById - Map of function ID → name for display in read-only mode.
+ * @param event - Existing event to edit; omit for create mode.
+ * @param defaultDate - ISO date pre-filled in the start-date field on create.
+ * @param readOnly - When true renders a read-only info card instead of the form.
+ * @param onDeleted - Called after the event is successfully deleted.
+ * @param allEvents - Full list of events in the calendar, passed to DependencyManager.
+ */
 export function CalendarEventDialog({
   open, onClose, onSaved, calendarId, availableFunctions, functionsById = {},
   event, defaultDate, defaultAllDay = true, readOnly = false, onDeleted, allEvents = [],

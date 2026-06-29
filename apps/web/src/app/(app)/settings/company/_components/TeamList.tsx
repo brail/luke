@@ -31,6 +31,10 @@ interface TeamListProps {
   canDelete: boolean;
 }
 
+/**
+ * Displays the list of teams belonging to a company function with create, edit, and delete actions.
+ * @param functionId - ID of the parent company function whose teams are listed
+ */
 export function TeamList({ functionId, canCreate, canUpdate, canDelete }: TeamListProps) {
   const refresh = useRefresh();
   const { data: rawTeams = [], isLoading } = trpc.company.team.listByFunction.useQuery({ functionId });

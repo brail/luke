@@ -20,6 +20,11 @@ const STAT_DEFS: {
   { label: 'Righe collezione', key: 'collectionRows', unit: 'righe',    icon: Rows3  },
 ];
 
+/**
+ * Dashboard widget showing four system-wide KPI counters: active brands, seasons, users, and collection rows.
+ *
+ * Fetches data from `dashboard.getKpiStats`.
+ */
 export function KpiStatsWidget() {
   const { data, isLoading } = trpc.dashboard.getKpiStats.useQuery();
 

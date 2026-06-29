@@ -3,9 +3,17 @@ import { debugLog } from './lib/debug';
 import type { JWT } from 'next-auth/jwt';
 import type { Session } from 'next-auth';
 
-export const SESSION_MAX_AGE = 8 * 60 * 60; // 8 ore
-export const SESSION_UPDATE_AGE = 4 * 60 * 60; // Refresh ogni 4 ore (50% lifetime)
+/** Session lifetime in seconds (8 hours). */
+export const SESSION_MAX_AGE = 8 * 60 * 60;
 
+/** Session refresh interval in seconds (4 hours — 50 % of max age). */
+export const SESSION_UPDATE_AGE = 4 * 60 * 60;
+
+/**
+ * Guards the JWT token by ensuring `tokenVersion` is present.
+ * Returns `null` (forces re-login) when the claim is missing,
+ * otherwise returns the token unchanged.
+ */
 export function checkTokenVersion(token: JWT): JWT | null {
   if (token.tokenVersion === undefined || token.tokenVersion === null) {
     debugLog('JWT senza tokenVersion, forzo logout');
@@ -14,6 +22,10 @@ export function checkTokenVersion(token: JWT): JWT | null {
   return token;
 }
 
+/**
+ * Copies user claims from a JWT token into the Auth.js `Session` object.
+ * Called by both the Node.js and Edge `session` callbacks to keep them in sync.
+ */
 export function populateSession(session: Session, token: JWT): Session {
   session.user.id = token.sub || '';
   session.user.role = token.role as string;

@@ -53,8 +53,11 @@ interface UserDialogProps {
 }
 
 /**
- * Dialog modal per creazione e modifica utenti
- * Wrapper del UserForm con gestione modal
+ * Modal dialog for creating or editing a user, wrapping `UserForm`.
+ *
+ * @param mode - `create` shows a blank form; `edit` pre-populates fields from `user`.
+ * @param syncedFields - Fields managed externally (e.g. LDAP) are rendered as read-only.
+ * @param isSelfEdit - When true, prevents the user from changing their own role or disabling their own account.
  */
 export function UserDialog({
   open,

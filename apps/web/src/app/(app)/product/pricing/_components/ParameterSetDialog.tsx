@@ -47,6 +47,17 @@ interface ParameterSetDialogProps {
   mode: 'create' | 'edit';
 }
 
+/**
+ * Dialog for creating or editing a pricing parameter set.
+ *
+ * All monetary fields (duty, exchange rate, costs) are validated by
+ * `PricingParameterSetInputSchema`. Currencies are limited to `PRICING_CURRENCIES`.
+ * A live preview computes the effective landed cost for a sample supplier price.
+ *
+ * @param initialData - Pre-filled values in edit mode.
+ * @param onSubmit - Called with validated data and optional makeDefault flag.
+ * @param mode - Controls dialog title and whether `isDefault` toggle is shown.
+ */
 export function ParameterSetDialog({
   open,
   onOpenChange,

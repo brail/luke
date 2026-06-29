@@ -1,8 +1,3 @@
-/**
- * Dialog per visualizzare il valore completo di una configurazione
- * Read-only con possibilità di copiare il valore
- */
-
 import { Copy, Check, Code } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -26,6 +21,14 @@ interface ConfigValueDialogProps {
   keyName?: string;
 }
 
+/**
+ * Read-only dialog that displays the full value of an AppConfig entry.
+ *
+ * Detects JSON values and offers an expand/compact toggle. Provides a copy-to-clipboard button.
+ *
+ * @param value - The plain-text config value to display (never an encrypted value).
+ * @param keyName - Optional config key shown in the dialog title for context.
+ */
 export function ConfigValueDialog({
   onOpenChange,
   value,

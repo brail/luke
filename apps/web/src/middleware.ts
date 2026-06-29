@@ -6,10 +6,14 @@ import { auth } from './auth.config';
 import { debugError, debugLog } from './lib/debug';
 
 /**
- * Middleware per proteggere le rotte del dashboard
- * NextAuth gestisce automaticamente il redirect a /login se non autenticato
- * Protezione aggiuntiva per route admin-only
- * Verifica tokenVersion per invalidazione sessioni
+ * Next.js Edge middleware that protects all `/app/*` routes.
+ * For authenticated requests it verifies the JWT `tokenVersion` by calling
+ * `me.get` on the API — an `401` response forces a redirect to `/login`.
+ * Network errors are logged and let the request through to avoid false logouts.
+ * Unauthenticated requests are handled automatically by NextAuth.
+ *
+ * Section-level guards are enforced by server-side layout guards (`assertSectionAccess`)
+ * rather than here, to keep this middleware lightweight for the Edge Runtime.
  */
 export default auth(async req => {
   const session = req.auth;

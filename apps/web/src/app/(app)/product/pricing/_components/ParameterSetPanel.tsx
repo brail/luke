@@ -84,6 +84,17 @@ function buildRows(set: PricingParameterSet) {
   ];
 }
 
+/**
+ * Side panel listing pricing parameter sets with expand/collapse detail view.
+ *
+ * Lets the user select a set (highlighted as active), mark one as default,
+ * create new sets, edit existing ones, and delete non-default ones.
+ * All write actions are gated by `pricing:update`.
+ *
+ * @param selectedSetId - Currently selected parameter set ID.
+ * @param onSelectSet - Called when the user selects a different set.
+ * @param onSetDefault - Called with the set ID to mark it as the default.
+ */
 export function ParameterSetPanel({
   sets,
   selectedSetId,

@@ -45,9 +45,9 @@ interface ApproveUserDialogProps {
 }
 
 /**
- * Obbliga l'admin a configurare accesso (sezioni) prima di approvare.
- * Usato sia per LDAP pending che per utente locale appena creato (pendingApproval: true).
- * L'accesso ai brand è gestito tramite la membership ai team in Impostazioni → Azienda.
+ * Dialog that forces an admin to configure role and section access before approving a pending user.
+ * @param user - Pending user to approve, with current role pre-populated.
+ * @param onApproved - Called after the user has been successfully approved.
  */
 export function ApproveUserDialog({
   user,

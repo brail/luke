@@ -61,6 +61,18 @@ interface FormValues {
   relevantCountries: string[];
 }
 
+/**
+ * Dialog for adding or editing a milestone item within a calendar template.
+ *
+ * Includes an optional offset-calculator helper that computes the offsetDays
+ * relative to another sibling item without creating a formal dependency.
+ * The owner function is always included in the visibility list.
+ *
+ * @param templateId - Parent template ID (used only in create mode).
+ * @param item - Existing item to edit; omit for create mode.
+ * @param availableFunctions - Company functions available as owner/visibility targets.
+ * @param siblingItems - Other items in the same template, used by the offset calculator.
+ */
 export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, availableFunctions, siblingItems = [] }: Props) {
   const isEdit = !!item;
   const defaultOwner = availableFunctions[0]?.id ?? '';

@@ -48,6 +48,18 @@ async function downloadExport(
   URL.revokeObjectURL(objectUrl);
 }
 
+/**
+ * Dropdown button for exporting the current calendar view.
+ *
+ * Supports iCal (.ics), PDF, and XLSX formats. The PDF export passes the active
+ * view name and date so the backend renders the correct layout. Downloads are
+ * triggered via a hidden `<a>` element.
+ *
+ * @param seasonId - Season whose calendar events are exported.
+ * @param brandIds - Brand IDs included in the export scope.
+ * @param view - Active calendar view name (passed to PDF export only).
+ * @param viewDate - Currently visible date (passed to PDF export only).
+ */
 export function ExportButton({ seasonId, brandIds, view, viewDate, disabled }: Props) {
   const { data: session } = useSession();
   const [loading, setLoading] = useState(false);

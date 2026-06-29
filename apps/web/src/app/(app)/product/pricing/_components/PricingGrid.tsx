@@ -37,6 +37,10 @@ function commonValue<K extends keyof PricingParameterSet>(
   return sets.every(s => s[key] === first) ? first : null;
 }
 
+/**
+ * Collapsible reference grid mapping retail prices to max supplier costs for each parameter set.
+ * @param sets - List of parameter sets to display as columns; the first set is used as the reference for shared multipliers.
+ */
 export function PricingGrid({ sets }: PricingGridProps) {
   const { brand, season } = useAppContext();
   const [open, setOpen] = useState(false);

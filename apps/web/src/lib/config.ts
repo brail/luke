@@ -1,10 +1,10 @@
 /**
- * Configurazione centralizzata dell'applicazione
- * Accessibile sia dal frontend che dal backend
+ * Static application configuration derived from `NODE_ENV`.
+ * Does not read from the database — runtime config lives in AppConfig (see `useAppConfig`).
  */
 import { isDevelopment, isProduction } from '@luke/core';
 
-// Configurazioni statiche (non dipendenti dal database)
+/** Resolved environment flags. Immutable at runtime. */
 export const appConfig = {
   environment: isDevelopment()
     ? 'development'

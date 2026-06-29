@@ -20,8 +20,8 @@ interface Props {
 }
 
 /**
- * Dialog riusabile per conferma invio email verifica post-creazione utente
- * Usa endpoint admin requestEmailVerificationAdmin
+ * Confirmation dialog for sending an email verification link to a newly created user.
+ * @param userId - ID of the user to send the verification email to; no-op when null.
  */
 export function SendVerificationDialog({ userId, open, onOpenChange }: Props) {
   const sendVerifyMutation =

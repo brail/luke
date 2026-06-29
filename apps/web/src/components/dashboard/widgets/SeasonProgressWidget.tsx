@@ -5,6 +5,12 @@ import { trpc } from '../../../lib/trpc';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Skeleton } from '../../ui/skeleton';
 
+/**
+ * Dashboard widget showing SKU budget progress and collection stats for the active brand/season context.
+ *
+ * Reads `brand` and `season` from `useAppContext`; renders a placeholder when no context is active.
+ * Fetches data from `dashboard.getSeasonProgress` with `brandId` and `seasonId` as explicit inputs.
+ */
 export function SeasonProgressWidget() {
   const { brand, season } = useAppContext();
   const enabled = !!brand?.id && !!season?.id;

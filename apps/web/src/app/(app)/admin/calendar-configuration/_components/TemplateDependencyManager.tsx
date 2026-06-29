@@ -39,6 +39,10 @@ interface Props {
   readOnly?: boolean;
 }
 
+/**
+ * Displays the min–max gap constraint as a compact label (e.g. "2gg → 5gg").
+ * Returns an em-dash when both bounds are null.
+ */
 function GapRange({ min, max }: { min: number | null; max: number | null }) {
   if (min === null && max === null) return <span className="text-muted-foreground">—</span>;
   const minStr = min !== null ? `${min}gg` : '0gg';
@@ -46,6 +50,12 @@ function GapRange({ min, max }: { min: number | null; max: number | null }) {
   return <span className="text-xs text-muted-foreground">{minStr} → {maxStr}</span>;
 }
 
+/**
+ * Inline warning badge shown when the current gap between two template items
+ * falls outside the configured min/max bounds.
+ *
+ * @param currentGap - Actual day gap (successor.offsetDays − predecessor.offsetDays).
+ */
 function GapViolationBadge({ currentGap, min, max }: { currentGap: number; min: number | null; max: number | null }) {
   const underMin = min !== null && currentGap < min;
   const overMax = max !== null && currentGap > max;
@@ -259,6 +269,17 @@ function AddForm({ items, existingPairs, onSaved, onCancel }: AddFormProps) {
   );
 }
 
+/**
+ * Manages predecessor→successor dependencies for a calendar template.
+ *
+ * Renders the existing dependency list and, when not read-only, exposes an
+ * inline add form and per-row gap editing. All mutations invalidate
+ * `seasonCalendar.listTemplates`.
+ *
+ * @param items - Template items available for selection as predecessor/successor.
+ * @param dependencies - Current dependency list for the template.
+ * @param readOnly - Hides all mutation controls when true.
+ */
 export function TemplateDependencyManager({ items, dependencies, readOnly }: Props) {
   const [showAddForm, setShowAddForm] = useState(false);
   const utils = trpc.useUtils();

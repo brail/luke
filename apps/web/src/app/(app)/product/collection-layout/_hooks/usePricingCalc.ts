@@ -71,6 +71,10 @@ export function computeRowMargin(
 }
 
 /** Compute qty-weighted average margin across rows using first quotation per row. */
+/**
+ * Quantity-weighted average margin across multiple collection rows.
+ * Returns null when no row has computable margin data.
+ */
 export function computeWeightedMargin(
   rows: MarginComputeInput[],
   parameterSets: PricingParameterSet[]

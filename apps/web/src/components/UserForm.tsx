@@ -88,10 +88,15 @@ interface UserFormProps {
 }
 
 /**
- * Componente form per creazione e modifica utenti
- * Gestisce validazione client-side e stato del form
+ * Form for creating or editing a user with client-side Zod validation.
+ *
+ * In `edit` mode the password field is optional; leaving it blank retains the
+ * existing password. Fields listed in `syncedFields` (e.g. from LDAP) are
+ * rendered as read-only and excluded from the submitted payload.
+ *
+ * @param syncedFields - Field names managed by an external provider; rendered disabled and omitted from `onSubmit`.
+ * @param isSelfEdit - Prevents the current user from modifying their own role or active status.
  */
- 
 export function UserForm({
   mode,
   initialData,

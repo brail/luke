@@ -370,6 +370,20 @@ interface CollectionGroupSectionProps {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+/**
+ * Collapsible section rendering one collection group's rows in a sortable table.
+ *
+ * Supports column-level filtering, multi-column sorting, dnd-kit row
+ * reordering, and inline margin colouring via `computeRowMargin`. Notifies
+ * the parent of the currently visible row IDs via `onFilteredRowIdsChange`.
+ *
+ * @param group - The collection group and its rows to render.
+ * @param hiddenColumns - Column keys excluded from rendering.
+ * @param parameterSets - Pricing parameter sets used for margin calculation.
+ * @param searchQuery - Free-text filter applied across row fields.
+ * @param laggingRowIds - Row IDs that are behind a collection progress deadline.
+ * @param onFilteredRowIdsChange - Called whenever the visible row set changes.
+ */
 export function CollectionGroupSection({
   group,
   canUpdate,

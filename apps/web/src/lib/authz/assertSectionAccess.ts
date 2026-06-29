@@ -1,6 +1,7 @@
 /**
- * Server-side utility per controllo accesso alle sezioni
- * Implementa la stessa logica dell'API per enforcement uniforme
+ * Server-side section access guard for Next.js page layouts.
+ * Replicates the four-layer `effectiveSectionAccess` logic from the API so that
+ * unauthorised users are redirected before any page content is rendered.
  */
 
 import { redirect } from 'next/navigation';
@@ -31,8 +32,11 @@ async function safeFetchJson<T>(
 }
 
 /**
- * Verifica accesso a una sezione e redirige se negato
- * @param section - Sezione da verificare
+ * Asserts that the currently authenticated user has access to the given section.
+ * Redirects to `/login` if unauthenticated, or to `/app/dashboard` if access is denied.
+ * Must be called from a server component or async layout.
+ *
+ * @param section - The section key to check (e.g. `'settings.ldap'`).
  */
 export async function assertSectionAccess(section: Section) {
   const session = await auth();

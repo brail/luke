@@ -1,8 +1,3 @@
-/**
- * Dialog di conferma per l'eliminazione di una configurazione
- * Include protezione per chiavi critiche e input di conferma
- */
-
 import { AlertTriangle, Lock } from 'lucide-react';
 import { useState } from 'react';
 
@@ -28,6 +23,14 @@ interface ConfigDeleteDialogProps {
   isLoading?: boolean;
 }
 
+/**
+ * Confirmation dialog for deleting an AppConfig key.
+ *
+ * Critical keys (from `isCriticalKey`) are blocked from deletion and render a locked badge.
+ * For non-critical keys the user must type the exact key name to enable the confirm button.
+ *
+ * @param configKey - The config key to be deleted; used for the confirmation input and critical-key check.
+ */
 export function ConfigDeleteDialog({
   onOpenChange,
   configKey,

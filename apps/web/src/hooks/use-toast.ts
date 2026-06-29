@@ -6,6 +6,13 @@ export interface ToastOptions {
   duration?: number;
 }
 
+/**
+ * Returns a set of typed toast helpers (`success`, `error`, `info`, `warning`)
+ * backed by the Sonner library with per-variant default durations.
+ *
+ * @returns Object with `success`, `error`, `info`, and `warning` methods,
+ *   each accepting a message string and an optional `ToastOptions` object.
+ */
 export function useToast() {
   const toast = {
     success: (message: string, options?: ToastOptions) => {

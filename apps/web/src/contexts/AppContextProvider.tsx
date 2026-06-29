@@ -5,9 +5,7 @@ import React, { createContext, useContext, useState } from 'react';
 
 import { trpc } from '../lib/trpc';
 
-/**
- * Tipo per il context dell'applicazione
- */
+/** Shape of the application context available via `useAppContext()`. */
 interface AppContextType {
   brand: {
     id: string;
@@ -27,21 +25,16 @@ interface AppContextType {
   isLoading: boolean;
 }
 
-/**
- * Context per gestire lo stato dell'applicazione
- */
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-/**
- * Props per AppContextProvider
- */
 interface AppContextProviderProps {
   children: React.ReactNode;
 }
 
 /**
- * Provider per il context dell'applicazione
- * Carica il context corrente e gestisce lo stato di setup
+ * Provides the global application context (active brand and season) to the React tree.
+ * Fetches the current context from `trpc.context.get` when the user is authenticated.
+ * Sets `needsSetup = true` when the API returns `PRECONDITION_FAILED` (no context configured).
  */
 export function AppContextProvider({ children }: AppContextProviderProps) {
   const { data: session } = useSession();
@@ -75,9 +68,9 @@ export function AppContextProvider({ children }: AppContextProviderProps) {
 }
 
 /**
- * Hook per utilizzare il context dell'applicazione
- * @returns Il context dell'applicazione
- * @throws Error se utilizzato fuori da AppContextProvider
+ * Returns the current application context (brand, season, loading state).
+ *
+ * @throws {Error} When called outside of `AppContextProvider`.
  */
 export function useAppContext(): AppContextType {
   const context = useContext(AppContext);

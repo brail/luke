@@ -16,8 +16,11 @@ interface PermissionButtonProps extends ButtonProps {
 }
 
 /**
- * Bottone con gate permesso: se hasPermission=false mostra il bottone
- * disabilitato con tooltip esplicativo, altrimenti si comporta come <Button>.
+ * Button with a permission gate: renders as a normal `Button` when allowed, or as a
+ * disabled button with an explanatory tooltip when `hasPermission` is false.
+ *
+ * @param hasPermission - Boolean prop from `usePermission` — do NOT call as a function.
+ * @param tooltip - Message shown in the tooltip when the button is disabled.
  */
 export function PermissionButton({
   hasPermission,

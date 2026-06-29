@@ -28,6 +28,12 @@ import {
 } from './ui/select';
 import { Textarea } from './ui/textarea';
 
+/**
+ * Dialog for submitting bug reports and feature suggestions.
+ *
+ * On success it creates a GitHub issue via the `feedback.submit` tRPC mutation and
+ * shows a toast with a direct link to the created issue.
+ */
 export function FeedbackDialog() {
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<'bug' | 'feature'>('bug');

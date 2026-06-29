@@ -211,6 +211,18 @@ function AddForm({ eventId, allEvents, existingIds, onSaved, onCancel }: AddForm
   );
 }
 
+/**
+ * Manages predecessor/successor dependencies for a single calendar event.
+ *
+ * Fetches all dependencies for the calendar and filters to those involving
+ * `eventId`. Inherited dependencies (from a template) are shown but cannot
+ * be deleted. Gap bounds are editable inline.
+ *
+ * @param eventId - The event whose dependencies are displayed.
+ * @param calendarId - Parent calendar used to fetch all dependencies.
+ * @param allEvents - Full event list used to resolve names for related events.
+ * @param readOnly - Hides add/delete controls when true.
+ */
 export function DependencyManager({ eventId, calendarId, allEvents, readOnly }: Props) {
   const [showAddForm, setShowAddForm] = useState(false);
 

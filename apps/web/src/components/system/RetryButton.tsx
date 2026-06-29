@@ -10,6 +10,11 @@ interface RetryButtonProps {
   autoFocus?: boolean;
 }
 
+/**
+ * Button that triggers a retry action or falls back to `router.refresh()` if no callback is provided.
+ *
+ * @param onRetry - Optional callback; when omitted, the Next.js router is refreshed instead.
+ */
 export function RetryButton({ onRetry, autoFocus }: RetryButtonProps) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);

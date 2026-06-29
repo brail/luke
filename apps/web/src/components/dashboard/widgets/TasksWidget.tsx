@@ -23,6 +23,13 @@ function getDueDateStatus(dueDate: string | Date | null | undefined): 'today' | 
   return null;
 }
 
+/**
+ * Dashboard widget for managing personal to-do tasks.
+ *
+ * Supports adding tasks via the input field or Enter key, toggling completion via a checkbox,
+ * and deleting tasks through a `ConfirmDialog`. Displays at most 20 tasks; overdue and
+ * today-due tasks are highlighted with colored badges.
+ */
 export function TasksWidget() {
   const utils = trpc.useUtils();
   const [newLabel, setNewLabel] = useState('');

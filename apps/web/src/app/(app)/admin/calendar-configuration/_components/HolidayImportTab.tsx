@@ -18,6 +18,13 @@ import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 const CURRENT_YEAR = new Date().getFullYear();
 const YEAR_OPTIONS = [CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1, CURRENT_YEAR + 2];
 
+/**
+ * Tab for importing and managing public holidays used by the calendar engine.
+ *
+ * Fetches country and year options, shows a preview before committing, and
+ * lets admins delete individual saved holidays. Mutations are gated by
+ * `config:update`.
+ */
 export function HolidayImportTab() {
   const { can } = usePermission();
   const canUpdate = can('config:update');

@@ -28,7 +28,9 @@ const tokenVersionCache = new Map<string, number>(); // userId → validatedAt (
 const TOKEN_VERSION_CACHE_TTL = 30_000;
 
 /**
- * Helper per chiamare l'API tRPC
+ * Calls the `auth.login` tRPC endpoint and returns the raw API response data,
+ * or a `{ pendingApproval, needsEmail }` object for accounts awaiting approval.
+ * Returns `null` on any error or non-OK response.
  */
 async function callTRPCAuth(username: string, password: string) {
   try {
@@ -62,8 +64,11 @@ async function callTRPCAuth(username: string, password: string) {
 }
 
 /**
- * Configurazione Auth.js v5 per Luke
- * Integrata con il sistema di autenticazione tRPC
+ * Full Auth.js v5 configuration for Luke (Node.js runtime only).
+ * Uses the `Credentials` provider backed by the `auth.login` tRPC endpoint.
+ * JWT callbacks verify `tokenVersion` on each token refresh, using a 30 s
+ * in-memory cache to throttle redundant API calls. The `session` callback
+ * populates the client-visible session from the JWT via `populateSession`.
  */
 export const config = {
   providers: [

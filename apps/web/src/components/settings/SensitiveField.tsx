@@ -21,6 +21,15 @@ interface SensitiveFieldProps {
   field: any;
 }
 
+/**
+ * Password-type form field with a show/hide toggle for sensitive configuration values.
+ *
+ * When `hasValue` is true, the placeholder indicates that a value is already stored
+ * (encrypted in AppConfig) and the field can be left blank to retain it.
+ *
+ * @param hasValue - When true, shows a "already configured" placeholder and a description note.
+ * @param field - React Hook Form field object passed directly to the underlying `Input`.
+ */
 export function SensitiveField({
   label,
   description,

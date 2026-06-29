@@ -13,17 +13,18 @@ import {
 import { trpc } from '../lib/trpc';
 
 /**
- * Hook per formattare date con timezone dell'utente corrente
- * Utilizza i dati aggiornati dall'API tRPC invece della sessione NextAuth
+ * Returns date-formatting helpers scoped to the current user's timezone and locale.
+ * Fetches up-to-date user preferences from `trpc.me.get` (stale for 5 min) rather
+ * than reading them from the NextAuth session, which may lag after a profile update.
  *
- * @returns Oggetto con funzioni di formattazione date e info timezone/locale
+ * @returns Object containing formatting functions (`format`, `shortDate`, `dateTime`,
+ *   `compactDate`, `time`) plus the resolved `timezone` and `locale` strings.
  *
  * @example
  * ```tsx
- * const formatDate = useFormatDate();
- *
- * <p>{formatDate.compactDate(user.createdAt)}</p>
- * <p>{formatDate.time(user.lastLoginAt)}</p>
+ * const fmt = useFormatDate();
+ * <p>{fmt.compactDate(user.createdAt)}</p>
+ * <p>{fmt.time(user.lastLoginAt)}</p>
  * ```
  */
 export function useFormatDate() {
@@ -42,43 +43,38 @@ export function useFormatDate() {
 
   return {
     /**
-     * Formattazione custom con opzioni Intl personalizzate
-     * @param date - Data da formattare
-     * @param options - Opzioni Intl.DateTimeFormatOptions
+     * Formats a date with custom `Intl.DateTimeFormatOptions`.
+     * @param options - Intl date/time format options
      */
     format: (date: Date | string, options: Intl.DateTimeFormatOptions) =>
       formatDateWithTimezone(date, timezone, options, locale),
 
     /**
-     * Formatta data breve: "15/01/2024"
-     * @param date - Data da formattare
+     * Formats a date as a short numeric string, e.g. "15/01/2024".
      */
     shortDate: (date: Date | string) => formatShortDate(date, timezone, locale),
 
     /**
-     * Formatta data e ora: "15/01/2024, 14:30"
-     * @param date - Data da formattare
+     * Formats a date with time, e.g. "15/01/2024, 14:30".
      */
     dateTime: (date: Date | string) =>
       formatDateTimeWithTimezone(date, timezone, locale),
 
     /**
-     * Formatta compatta: "15 gen 2024"
-     * @param date - Data da formattare
+     * Formats a date in compact form, e.g. "15 gen 2024".
      */
     compactDate: (date: Date | string) =>
       formatCompactDate(date, timezone, locale),
 
     /**
-     * Formatta solo ora: "14:30"
-     * @param date - Data da formattare
+     * Formats only the time portion, e.g. "14:30".
      */
     time: (date: Date | string) => formatTime(date, timezone, locale),
 
-    /** Timezone corrente dell'utente */
+    /** The current user's resolved timezone (IANA identifier). */
     timezone,
 
-    /** Locale corrente dell'utente */
+    /** The current user's resolved locale (BCP 47 tag). */
     locale,
   };
 }

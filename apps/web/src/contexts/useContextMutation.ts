@@ -3,19 +3,18 @@ import { useStandardMutation } from '../lib/useStandardMutation';
 
 import { useInvalidateContext } from './useInvalidateContext';
 
-/**
- * Input per la mutation context.set
- */
+/** Input for the `context.set` mutation. */
 interface ContextSetInput {
   brandId: string;
   seasonId: string;
 }
 
 /**
- * Hook per gestire le mutation del context
+ * Returns a `setContext` function that updates the user's active brand and season.
+ * Wraps `trpc.context.set` with standardised toast notifications and automatic
+ * cache invalidation via `useInvalidateContext`.
  *
- * Wrapper standardizzato per context.set con gestione errori,
- * toast e invalidazioni automatiche.
+ * @returns `{ setContext, isPending }`
  */
 export function useContextMutation() {
   const invalidateContext = useInvalidateContext();
@@ -30,10 +29,7 @@ export function useContextMutation() {
   });
 
   return {
-    /**
-     * Imposta il context per l'utente
-     * @param input - Brand e Season ID da impostare
-     */
+    /** Sets the active brand and season for the current user. */
     setContext: (input: ContextSetInput) => mutate(input),
     isPending,
   };

@@ -53,6 +53,18 @@ const EMPTY_FORM: ClosureForm = {
   notes: '',
 };
 
+/**
+ * Card-based manager for a vendor's closure and extra-opening periods in the
+ * active season.
+ *
+ * Supports manual creation, editing, prefill from national holidays, and bulk
+ * confirmation. Requires an active season in AppContext; renders a placeholder
+ * when none is selected. Mutations are gated by `season_calendar:update`.
+ *
+ * @param vendorId - ID of the vendor whose closures are managed.
+ * @param vendorName - Display name shown in the card title.
+ * @param vendorCountryCode - When set, prefill uses only this country's holidays.
+ */
 export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountryCode }: Props) {
   const { can } = usePermission();
   const canUpdate = can('season_calendar:update');

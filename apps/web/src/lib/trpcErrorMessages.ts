@@ -1,6 +1,7 @@
 /**
- * Utility per messaggi di errore tRPC/HTTP uniformi
- * DRY: centralizza i messaggi comuni, permette override per entità specifica
+ * Utilities for mapping tRPC and HTTP errors to user-facing messages.
+ * Provides a shared set of default messages and supports per-entity overrides,
+ * eliminating duplicated error-handling code across mutation callbacks.
  */
 
 const HTTP_STATUS_TO_CODE: Record<number, string> = {
@@ -23,11 +24,13 @@ interface TrpcErrorLike {
 }
 
 /**
- * Mappa un errore tRPC/HTTP a un messaggio user-friendly in italiano
+ * Maps a tRPC or HTTP error to a localised user-facing message.
+ * Resolution order: entity override → `BAD_REQUEST` (uses error message) →
+ * shared default → raw error message → generic fallback.
  *
- * @param error - Errore tRPC o HTTP (accetta unknown, cast interno)
- * @param entityMessages - Override per codici specifici dell'entità (es. CONFLICT, NOT_FOUND)
- * @returns Messaggio localizzato
+ * @param error - Unknown error value (internally cast to `TrpcErrorLike`).
+ * @param entityMessages - Optional per-code overrides, e.g. `{ CONFLICT: 'Already exists' }`.
+ * @returns A human-readable string ready to display in a toast or form error.
  */
 export function getTrpcErrorMessage(
   error: unknown,

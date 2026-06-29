@@ -13,14 +13,18 @@ import type { AppRouter } from '@luke/api';
 // Nota: safe in monorepo; se separassimo i repo, considerare @luke/core/server
 
 /**
- * Client tRPC per React Query
- * Tipizzato con AppRouter reale per inferenza end-to-end
- * Nota futura: Migrare a import da @luke/core se web/api si separano in repository diversi
+ * Typed tRPC client bound to `AppRouter` for end-to-end type inference.
+ *
+ * Future: migrate to an import from `@luke/core` if `web` and `api` are split
+ * into separate repositories.
  */
 export const trpc = createTRPCReact<AppRouter>();
 
 /**
- * Provider tRPC con configurazione React Query
+ * Wraps children with the tRPC and React Query providers.
+ * Creates a `QueryClient` with project-wide defaults (1 min stale time, no
+ * window-focus refetch, no mutation retry) and attaches a `Bearer` JWT header
+ * from the NextAuth session on every tRPC request.
  */
 export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
   const { data: session } = useSession();

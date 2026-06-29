@@ -90,6 +90,13 @@ function EditableList({
 
 const FOREX_RE = /^[A-Z]{3}\/[A-Z]{3}$/;
 
+/**
+ * Side sheet for toggling and configuring dashboard widgets.
+ *
+ * Each widget in `WIDGET_REGISTRY` has a toggle switch. Configurable widgets
+ * (`clocks`, `forex`) expose a popover with an `EditableList` to add/remove
+ * IANA timezones or forex pairs. Saves changes immediately via `dashboard.saveConfig`.
+ */
 export function DashboardCustomizeSheet({
   open,
   onOpenChange,

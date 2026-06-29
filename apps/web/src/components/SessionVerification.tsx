@@ -3,9 +3,10 @@
 import { useSessionVerification } from '../hooks/use-session-verification';
 
 /**
- * Componente per la verifica periodica della sessione
- * Utilizza il hook useSessionVerification per verificare tokenVersion ogni 30s
- * e redirectare automaticamente a login se la sessione è stata revocata
+ * Invisible component that periodically verifies the session token.
+ *
+ * Mounts `useSessionVerification`, which polls every 30 seconds and redirects to
+ * `/login` automatically if the session has been revoked. Renders nothing.
  */
 export function SessionVerification() {
   useSessionVerification();

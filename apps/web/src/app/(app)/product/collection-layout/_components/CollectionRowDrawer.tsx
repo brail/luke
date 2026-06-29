@@ -107,6 +107,22 @@ function rowToQuotationState(q: CollectionRow['quotations'][number]): QuotationS
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+/**
+ * Slide-over drawer for creating or editing a collection row.
+ *
+ * Orchestrates the form (via react-hook-form + `CollectionLayoutRowInputSchema`),
+ * picture upload (temp-path → confirm on save), and inline quotation management.
+ * Sections are rendered by `CollectionRowSections` sub-components.
+ *
+ * @param mode - "create" shows empty defaults; "edit" pre-fills from `row`.
+ * @param row - Existing row to edit; omit in create mode.
+ * @param defaultGroupId - Group pre-selected when creating a new row.
+ * @param groups - All groups in the layout (used in the group selector).
+ * @param parameterSets - Available pricing parameter sets for quotations.
+ * @param availableGenders - Genders enabled for this layout (e.g. ['MAN','WOMAN']).
+ * @param onPictureUploaded - Called after a picture is confirmed server-side.
+ * @param onQuotationChange - Called after a quotation is added/removed/changed.
+ */
 export function CollectionRowDrawer({
   open,
   onOpenChange,

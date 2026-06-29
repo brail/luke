@@ -45,6 +45,17 @@ interface VendorTableProps {
   onRetry?: () => void;
 }
 
+/**
+ * Vendors data table with permission-aware action buttons.
+ *
+ * Action visibility follows the standard RBAC pattern: Modifica/Disattiva/Elimina
+ * are always rendered but gated by `vendors:update` and `vendors:delete`.
+ * NAV-linked vendors show "Scollega da NAV" instead of Disattiva.
+ *
+ * @param onUnlink - Called when the user requests to unlink a NAV-linked vendor.
+ * @param onHardDelete - Called when the user requests a permanent deletion.
+ * @param onRetry - Optional; shown in the error state to retry the data fetch.
+ */
 export function VendorTable({
   vendors,
   isLoading,

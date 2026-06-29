@@ -33,6 +33,15 @@ interface EmptyParameterStateProps {
   isLoading?: boolean;
 }
 
+/**
+ * Empty state shown when no pricing parameter sets exist for the active brand+season.
+ *
+ * Offers two paths: create from scratch via `ParameterSetDialog`, or copy all
+ * sets from the previous season (fetched automatically via tRPC). Copy is
+ * gated by `pricing:update`.
+ *
+ * @param onCreateSet - Called with validated `PricingParameterSetInput` for each set to create.
+ */
 export function EmptyParameterState({
   brandId,
   seasonId,

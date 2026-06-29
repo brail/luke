@@ -22,6 +22,13 @@ export interface WidgetDefinition {
   configurable: boolean;
 }
 
+/**
+ * Ordered list of all dashboard widget definitions.
+ *
+ * Each entry maps a `WidgetId` to its display label, React component, default visibility,
+ * default position, and whether it exposes user-configurable settings.
+ * `DashboardGrid` and `DashboardCustomizeSheet` read from this registry.
+ */
 export const WIDGET_REGISTRY: WidgetDefinition[] = [
   { id: 'kpi-stats',       label: 'Statistiche',          component: KpiStatsWidget,       defaultEnabled: true, defaultPosition: 0, configurable: false },
   { id: 'season-progress', label: 'Avanzamento stagione', component: SeasonProgressWidget, defaultEnabled: true, defaultPosition: 1, configurable: false },

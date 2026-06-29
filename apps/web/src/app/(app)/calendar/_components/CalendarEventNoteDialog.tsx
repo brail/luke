@@ -23,6 +23,16 @@ interface Props {
   initialNote: string;
 }
 
+/**
+ * Dialog for editing a personal note attached to a calendar event.
+ *
+ * Uses optimistic auto-save: changes are persisted via tRPC after the user
+ * stops typing. The status indicator cycles through idle → dirty → saving → saved.
+ *
+ * @param eventId - ID of the calendar event the note belongs to.
+ * @param eventTitle - Shown in the dialog title for context.
+ * @param initialNote - Current note body loaded by the parent before opening.
+ */
 export function CalendarEventNoteDialog({ open, onClose, eventId, eventTitle, initialNote }: Props) {
   const [body, setBody] = useState(initialNote);
   const [status, setStatus] = useState<'idle' | 'dirty' | 'saving' | 'saved'>('idle');

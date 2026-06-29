@@ -7,8 +7,12 @@ import { buildApiUrl } from '@luke/core';
 import { trpc } from '../lib/trpc';
 
 /**
- * Hook notifiche con dual-track: SSE push + React Query polling 30s come fallback.
- * SSE auth via ticket monouso (60s TTL) emesso da notifications.getSseTicket.
+ * Returns the current user's notifications, using a dual-track strategy:
+ * SSE push for real-time delivery and React Query polling every 30 s as fallback.
+ * The SSE connection is authenticated via a single-use ticket (60 s TTL) issued
+ * by `notifications.getSseTicket`. The connection is closed and cleaned up on unmount.
+ *
+ * @returns `{ notifications, nextCursor, unreadCount, isLoading, refetch }`
  */
 export function useNotifications() {
   const utils = trpc.useUtils();

@@ -1,21 +1,20 @@
 import { trpc } from '../lib/trpc';
 
 /**
- * Hook per invalidare le query context-aware
+ * Returns a function that invalidates all React Query caches that depend on
+ * the active Brand/Season context: `context.get`, `brand.list`,
+ * `catalog.brands`, and `catalog.seasons`.
  *
- * Fornisce una funzione centralizzata per invalidare tutte le query
- * che dipendono dal context (Brand/Season).
- *
- * @returns Funzione per invalidare le query context-aware
+ * @returns `invalidateContextQueries(brandId?)` — call after any mutation that
+ *   changes the active context or the brand/season catalog.
  */
 export function useInvalidateContext() {
   const utils = trpc.useUtils();
 
   /**
-   * Invalida tutte le query context-aware
+   * Invalidates all context-aware query caches.
    *
-   * @param brandId - ID del brand modificato (opzionale)
-   * Se fornito, invalida anche le query brand-specifiche
+   * @param brandId - Reserved for future brand-scoped query invalidations.
    */
   const invalidateContextQueries = (brandId?: string) => {
     // Invalida il context principale

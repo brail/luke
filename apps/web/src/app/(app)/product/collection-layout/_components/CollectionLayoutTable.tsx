@@ -70,6 +70,19 @@ interface CollectionLayoutTableProps {
   readOnly?: boolean;
 }
 
+/**
+ * Top-level collection layout table that orchestrates groups, toolbar, and exports.
+ *
+ * Renders a `CollectionGroupSection` for each group and a persistent toolbar
+ * with column-visibility controls, full-screen toggle, search, and export
+ * buttons (XLSX and PDF). Column visibility is persisted via `onUpdateSettings`.
+ *
+ * @param layout - Full collection layout including groups and hiddenColumns setting.
+ * @param parameterSets - Pricing parameter sets forwarded to each group section.
+ * @param laggingRowIds - Row IDs behind a collection deadline, forwarded for highlighting.
+ * @param onUpdateSettings - Called when the user changes column visibility.
+ * @param readOnly - Disables all mutation controls when true.
+ */
 export function CollectionLayoutTable({
   layout,
   canUpdate,

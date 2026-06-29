@@ -30,6 +30,17 @@ interface SeasonTableProps {
   onRetry?: () => void;
 }
 
+/**
+ * Seasons data table with permission-aware action buttons.
+ *
+ * Mirrors the BrandTableWithPermissions pattern: Modifica/Disattiva/Elimina
+ * are always visible but gated by `seasons:update` and `seasons:delete`.
+ * NAV-linked seasons show "Scollega da NAV" instead of Disattiva.
+ *
+ * @param onUnlink - Called when the user requests to unlink a NAV-linked season.
+ * @param onHardDelete - Called when the user requests a permanent deletion.
+ * @param onRetry - Optional; shown in the error state to retry the data fetch.
+ */
 export function SeasonTable({
   seasons,
   isLoading,

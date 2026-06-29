@@ -17,11 +17,11 @@ import { Skeleton } from '../ui/skeleton';
 import { BrandAvatar } from './BrandAvatar';
 
 /**
- * Componente selettore per Brand e Season nella navbar
+ * Navbar selector for switching the active Brand and Season context.
  *
- * Due Select indipendenti che permettono di cambiare Brand e Season
- * mantenendo l'altro valore corrente.
- * Le liste sono filtrate per il whitelist brand/stagioni dell'utente.
+ * Renders two independent dropdowns. Changing the brand retains the current season if
+ * still accessible. Lists are filtered to the user's whitelisted brands and seasons.
+ * Persists the selection via `useContextMutation`.
  */
 export function ContextSelector() {
   const { brand, season } = useAppContext();

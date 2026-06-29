@@ -15,6 +15,12 @@ const sizeClasses = {
   xl: 'w-24 h-24',
 };
 
+/**
+ * Static Luke SVG logo.
+ *
+ * @param size - Controls the wrapper dimensions: `sm` 32 px, `md` 48 px, `lg` 64 px, `xl` 96 px.
+ * @param animated - When true, applies a `animate-pulse` Tailwind animation to the SVG.
+ */
 export default function Logo({
   className,
   size = 'md',

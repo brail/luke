@@ -47,6 +47,10 @@ const COUNTRIES = [
   { code: 'MK', name: 'Macedonia del Nord' },
 ];
 
+/**
+ * "Profilo" settings tab for editing company identity, registered address, and export/branding settings.
+ * Includes logo upload via {@link useStorageUpload} and is gated by the `company_profile:update` permission.
+ */
 export function ProfileTab() {
   const { can } = usePermission();
   const canUpdate = can('company_profile:update');

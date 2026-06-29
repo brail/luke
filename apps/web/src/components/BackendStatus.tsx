@@ -8,10 +8,10 @@ interface BackendStatusProps {
 }
 
 /**
- * Indicatore di connettività al backend.
+ * Backend connectivity indicator shown as a colored dot.
  *
- * - Dev:  dot colorato + testo ("v1.2.3 · development" oppure messaggio di errore)
- * - Prod: solo dot colorato; in caso di errore aggiunge testo generico
+ * In development mode it also renders a text label with the app version or error message.
+ * In production only the dot is shown; a short generic error text appears on failure.
  */
 export function BackendStatus({ className }: BackendStatusProps) {
   const { isLoading, hasError } = useAppConfig();

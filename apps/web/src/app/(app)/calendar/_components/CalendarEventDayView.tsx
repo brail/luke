@@ -40,6 +40,19 @@ function dayLabel(date: Date): string {
 
 type DragState = { id: string; startY: number; deltaMinutes: number; origStartAt: Date; origEndAt: Date | null };
 
+/**
+ * Hour-grid day view for calendar events, with drag-to-reschedule support.
+ *
+ * Displays all-day events in a banner strip and timed events in a scrollable
+ * hour grid (07:00–22:00). Dragging a timed event updates `startAt`/`endAt`
+ * via `onEventUpdate` in 15-minute snaps.
+ *
+ * @param onEventUpdate - Called after a drag completes with the new ISO timestamps.
+ * @param onDayClick - Called with the ISO timestamp of the clicked hour slot.
+ * @param onNoteClick - Called with the event ID to open the personal-note dialog.
+ * @param activeBrandId - Dims events that belong to a different brand.
+ * @param brandColorMap - Pre-computed brand-ID→colour map from `assignBrandColors`.
+ */
 export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, onEventClick, onEventUpdate, onNoteClick, onDayClick, activeBrandId, brandColorMap, canUpdate }: Props) {
   const today = useMemo(() => new Date(), []);
   const isToday = sameDay(viewDate, today);

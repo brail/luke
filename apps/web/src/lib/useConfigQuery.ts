@@ -1,23 +1,12 @@
 /**
- * Hook centralizzato per la gestione delle query e mutations delle configurazioni
- *
- * Questo hook incapsula tutta la logica tRPC per le configurazioni, fornendo:
- * - Query paginata con filtri e ordinamento
- * - Mutations per CRUD operations (create, update, delete)
- * - Mutations per import/export batch
- * - Invalidazione automatica della cache React Query
- * - Gestione errori unificata con toast notifications
- * - Stati di loading aggregati per UX migliore
- *
- * @example
- * ```tsx
- * const { data, isLoading, saveConfig, deleteConfig } = useConfigQuery({
- *   q: 'ldap',
- *   category: 'auth',
- *   page: 1,
- *   pageSize: 20
- * });
- * ```
+ * Centralised hook for AppConfig query and mutation management.
+ * Encapsulates all tRPC calls for the configuration admin UI, providing:
+ * - Paginated list query with filtering and sorting
+ * - CRUD mutations (set, update, delete)
+ * - Batch import/export mutations
+ * - Automatic React Query cache invalidation
+ * - Unified error handling with toast notifications
+ * - Aggregated loading state (`isAnyLoading`)
  */
 
 import { useQueryClient } from '@tanstack/react-query';
@@ -27,9 +16,7 @@ import { toast } from 'sonner';
 import { debugError } from './debug';
 import { trpc } from './trpc';
 
-/**
- * Parametri per la query delle configurazioni
- */
+/** Parameters for the paginated config list query. */
 export interface ConfigQueryParams {
   /** Ricerca per chiave (case-insensitive) */
   q?: string;
@@ -47,9 +34,7 @@ export interface ConfigQueryParams {
   pageSize?: number;
 }
 
-/**
- * Dati per creare/aggiornare una configurazione
- */
+/** Payload for creating or updating a config entry. */
 export interface ConfigFormData {
   key: string;
   value: string;
@@ -58,20 +43,11 @@ export interface ConfigFormData {
 }
 
 /**
- * Hook personalizzato per gestire query e mutations delle configurazioni
+ * Provides query data and mutation helpers for the AppConfig management UI.
  *
- * @param params - Parametri per la query paginata
- * @returns Oggetto con query data, mutations e helper functions
- *
- * @example
- * ```tsx
- * const { data, isLoading, setMutation, updateMutation, deleteMutation } = useConfigQuery({
- *   q: 'ldap',
- *   category: 'auth',
- *   page: 1,
- *   pageSize: 20
- * });
- * ```
+ * @param params - Filters, sorting, and pagination for the config list.
+ * @returns Query state, raw mutation objects, and convenience helpers
+ *   (`saveConfig`, `deleteConfig`, `importConfigs`, `exportConfigs`, `invalidateQueries`).
  */
 export function useConfigQuery(params: ConfigQueryParams = {}) {
   const queryClient = useQueryClient();
@@ -174,20 +150,15 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
   });
 
   /**
-   * Invalida tutte le query delle configurazioni per forzare il refetch
+   * Invalidates all `config` React Query caches to force a refetch.
    */
   const invalidateQueries = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['config'] });
   }, [queryClient]);
 
   /**
-   * Helper per salvare una configurazione (create o update)
-   *
-   * Prova prima con update, se fallisce usa set per nuove configurazioni.
-   * Questo approccio è più semplice e robusto.
-   *
-   * @param formData - Dati della configurazione da salvare
-   * @returns Promise che si risolve con il risultato dell'operazione
+   * Saves a config entry using upsert semantics: tries `update` first,
+   * falling back to `set` when the key does not yet exist.
    */
   const saveConfig = useCallback(
     async (formData: ConfigFormData) => {
@@ -203,7 +174,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
   );
 
   /**
-   * Helper per eliminare una configurazione con conferma
+   * Deletes a config entry by key.
    */
   const deleteConfig = useCallback(
     async (key: string) => {
@@ -213,7 +184,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
   );
 
   /**
-   * Helper per importare configurazioni da JSON
+   * Imports a batch of config entries from a JSON array.
    */
   const importConfigs = useCallback(
     async (
@@ -229,7 +200,8 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
   );
 
   /**
-   * Helper per esportare configurazioni in JSON
+   * Exports all config entries as a JSON blob.
+   * @param includeValues - When `false`, values are omitted from the export.
    */
   const exportConfigs = useCallback(
     async (includeValues = true) => {

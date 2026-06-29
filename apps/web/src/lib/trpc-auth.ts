@@ -1,6 +1,6 @@
 /**
- * Client tRPC per autenticazione
- * Versione semplificata senza React Query per uso in auth.ts
+ * Lightweight tRPC client for use inside `auth.ts` (no React Query dependency).
+ * Calls the API directly via `httpBatchLink` using the internal base URL.
  */
 
 import { createTRPCClient, httpBatchLink } from '@trpc/client';
@@ -8,8 +8,9 @@ import { createTRPCClient, httpBatchLink } from '@trpc/client';
 import { getApiBaseUrl } from '@luke/core';
 
 /**
- * Client tRPC per autenticazione
- * Usa any per evitare problemi di tipo nel monorepo
+ * Vanilla tRPC client (no React hooks) used during NextAuth credential resolution.
+ * Typed as `any` to avoid a circular dependency between the web and api packages
+ * when their routers are not yet exported through a shared package.
  */
 export const trpcAuth = createTRPCClient<any>({
   links: [

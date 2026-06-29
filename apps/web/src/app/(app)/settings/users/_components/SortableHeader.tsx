@@ -16,8 +16,11 @@ interface SortableHeaderProps {
 }
 
 /**
- * Header tabella ordinabile con icone sort
- * Mostra stato attivo/inattivo e gestisce click per ordinamento
+ * Table header cell with sort icons that toggles sort direction on click.
+ * @param column - The data column this header controls.
+ * @param currentSort - The column currently being sorted.
+ * @param sortOrder - Current sort direction for the active column.
+ * @param onSort - Called with the column key when the header is clicked.
  */
 export function SortableHeader({
   column,

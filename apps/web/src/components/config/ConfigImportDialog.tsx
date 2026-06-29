@@ -1,19 +1,3 @@
-/**
- * Dialog per importare configurazioni da file JSON
- *
- * Questo componente gestisce l'importazione batch di configurazioni con:
- * - **Validazione file**: verifica formato JSON e struttura dati
- * - **Anteprima intelligente**: distingue tra nuove configurazioni e aggiornamenti
- * - **Validazione client-side**: controlla formato chiavi e valori
- * - **Progress bar funzionale**: feedback visivo durante l'importazione
- * - **Gestione errori**: report dettagliato di successi e fallimenti
- *
- * Il processo avviene in 3 step:
- * 1. Upload del file JSON
- * 2. Anteprima con validazione e distinzione new/update
- * 3. Importazione con progress bar
- */
-
 import { CheckCircle, XCircle, AlertTriangle, LoaderCircle } from 'lucide-react';
 import React, { useState, useCallback } from 'react';
 import { toast } from 'sonner';
@@ -63,6 +47,17 @@ interface ConfigImportDialogProps {
   onSuccess: () => void;
 }
 
+/**
+ * Three-step dialog for batch-importing AppConfig entries from a JSON file.
+ *
+ * Step 1 — file upload and JSON parsing. Step 2 — preview table distinguishing
+ * new vs. update vs. invalid entries (checked against existing keys via tRPC).
+ * Step 3 — import with a progress bar; reports per-item success and error counts.
+ *
+ * Existing keys are overwritten. Invalid entries (failed client-side validation) are skipped.
+ *
+ * @param onSuccess - Called after at least one config was imported successfully.
+ */
 export function ConfigImportDialog({
   onOpenChange,
   onSuccess,

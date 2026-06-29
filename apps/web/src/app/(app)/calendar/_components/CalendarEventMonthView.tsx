@@ -51,6 +51,21 @@ function MonthDayCell({ dayIso, isToday, isDragging, isCurrentMonth, holidays, o
   );
 }
 
+/**
+ * Month grid calendar view with dnd-kit drag-and-drop for rescheduling events.
+ *
+ * Shows a 6-week grid (42 cells). Each cell renders up to `MAX_CHIPS` (3) event
+ * chips; overflow is indicated with a "+N altri" button. Holiday cells are
+ * highlighted in rose. Week number clicks navigate to the week view.
+ *
+ * @param onEventUpdate - Called after a drag completes with new ISO timestamps.
+ * @param onDayClick - Called with the ISO date string of an empty day click.
+ * @param onDayNumberClick - Called with the ISO date to navigate to day view.
+ * @param onWeekNumberClick - Called with the ISO date of Monday to navigate to week view.
+ * @param activeBrandId - Dims events that belong to a different brand.
+ * @param brandColorMap - Pre-computed brand-ID→colour map.
+ * @param holidayDates - HolidayMap used to shade holiday cells.
+ */
 export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange, onEventClick, onEventUpdate, onNoteClick, onDayClick, onDayNumberClick, onWeekNumberClick, activeBrandId, canUpdate, brandColorMap, holidayDates }: Props) {
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();

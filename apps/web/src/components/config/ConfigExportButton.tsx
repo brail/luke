@@ -1,8 +1,3 @@
-/**
- * Componente per esportare le configurazioni in formato JSON
- * Maschera i valori cifrati per sicurezza
- */
-
 import { Download, LoaderCircle } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -17,6 +12,12 @@ interface ConfigExportButtonProps {
   disabled?: boolean;
 }
 
+/**
+ * Button that exports all AppConfig entries as a JSON file download.
+ *
+ * Encrypted values are replaced with `[ENCRYPTED]` in the export for security.
+ * Triggers a browser download via a temporary object URL.
+ */
 export function ConfigExportButton({ className, disabled }: ConfigExportButtonProps) {
   const [isExporting, setIsExporting] = useState(false);
 

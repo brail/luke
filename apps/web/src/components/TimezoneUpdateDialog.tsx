@@ -20,8 +20,11 @@ import {
 } from './ui/dialog';
 
 /**
- * Dialog per aggiornare il timezone dell'utente
- * Si mostra automaticamente solo al primo accesso post-login quando rileva un cambio di timezone dal browser
+ * Auto-shown dialog that prompts the user to update their timezone when a browser mismatch is detected.
+ *
+ * Appears at most once per session, with a 2-second delay after login to avoid a flash.
+ * Compares the browser's `Intl.DateTimeFormat` timezone against the value from `me.get`.
+ * Calls `me.updateTimezone` on confirmation.
  */
 export function TimezoneUpdateDialog() {
   const { data: session, status } = useSession();

@@ -25,6 +25,10 @@ const CATEGORY_META: Record<string, { label: string; description: string }> = {
   },
 };
 
+/**
+ * List of per-category notification toggles that persists preferences via `trpc.notifications.preferences.update`.
+ * Shows skeleton placeholders while the preferences query is loading.
+ */
 export function NotificationPreferences() {
   const { data: prefs, isLoading } = trpc.notifications.preferences.list.useQuery();
   const utils = trpc.useUtils();

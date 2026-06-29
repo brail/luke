@@ -63,6 +63,7 @@ export type QuotationState = {
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
+/** Styled section heading used between form sections in the row drawer. */
 export function SectionHeader({ title }: { title: string }) {
   return (
     <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
@@ -141,6 +142,11 @@ interface IdentificationSectionProps {
   groups: CollectionGroup[];
 }
 
+/**
+ * Form section for the core identification fields of a collection row:
+ * group, gender, line, article, strategy, status, progress, and designer.
+ * Catalog options (strategy, lineStatus, styleStatus) are fetched from tRPC.
+ */
 export function IdentificationSection({
   control,
   canUpdate,
@@ -404,6 +410,9 @@ interface VendorSectionProps {
   canUpdate: boolean;
 }
 
+/**
+ * Form section for selecting the vendor of a collection row via `VendorCombobox`.
+ */
 export function VendorSection({ control, canUpdate }: VendorSectionProps) {
   return (
     <FormField
@@ -431,6 +440,16 @@ interface PictureSidePanelProps {
   onUploadPicture: (file: File) => void;
 }
 
+/**
+ * Side panel for previewing and uploading the collection row picture.
+ *
+ * Shows the current image with a remove button, or a `FileDropZone` when
+ * empty. Upload is handled by the parent; this component only calls the
+ * callbacks.
+ *
+ * @param onUploadPicture - Called with the selected File for upload.
+ * @param onRemovePicture - Called when the user removes the existing picture.
+ */
 export function PictureSidePanel({
   canUpdate,
   pictureUrl,
@@ -497,6 +516,7 @@ interface GroupSelectFieldProps {
   groups: CollectionGroup[];
 }
 
+/** Form field for selecting the parent group of a collection row. */
 export function GroupSelectField({ control, canUpdate, groups }: GroupSelectFieldProps) {
   return (
     <FormField
@@ -531,6 +551,7 @@ interface ForecastSectionProps {
   canUpdate: boolean;
 }
 
+/** Form section for SKU forecast and quantity forecast fields. */
 export function ForecastSection({ control, canUpdate }: ForecastSectionProps) {
   return (
     <div className="grid grid-cols-2 gap-4">
@@ -597,6 +618,21 @@ interface PricingFooterSectionProps {
   isAddingQuotation?: boolean;
 }
 
+/**
+ * Form section for managing vendor quotations (price, supplier cost, SKU count)
+ * and the tooling quotation field.
+ *
+ * Only parameter sets enabled for the selected vendor are available for
+ * selection. Margin is computed live via `computeRowMargin` and displayed as a
+ * colour-coded indicator.
+ *
+ * @param quotations - Current quotation list managed by the parent drawer.
+ * @param enabledParameterSetIds - IDs of parameter sets enabled for the vendor.
+ * @param onAddQuotation - Called to append a new empty quotation row.
+ * @param onUpdateField - Called on every field change in a quotation row.
+ * @param onBlurQuotation - Called on blur to persist a quotation via tRPC.
+ * @param onDeleteQuotation - Called to remove a quotation row.
+ */
 export function PricingFooterSection({
   control,
   canUpdate,
@@ -902,6 +938,7 @@ const NOTE_FIELDS = [
   ['colorNotes', 'Note colori'],
 ] as const;
 
+/** Form section for the four free-text note fields of a collection row. */
 export function NotesSection({ control, canUpdate }: NotesSectionProps) {
   return (
     <div className="flex flex-col h-full gap-4">

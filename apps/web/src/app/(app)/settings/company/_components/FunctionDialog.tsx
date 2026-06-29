@@ -17,13 +17,19 @@ import { Textarea } from '../../../../../components/ui/textarea';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
+/** Props for {@link FunctionDialog}. */
 export interface FunctionDialogProps {
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
+  /** When provided the dialog opens in edit mode; omit to create a new function. */
   fn?: { id: string; slug: string; name: string; description?: string | null };
 }
 
+/**
+ * Modal dialog for creating or editing a company function (funzione aziendale).
+ * Operates in create mode when `fn` is omitted and edit mode when `fn` is provided.
+ */
 export function FunctionDialog({ open, onClose, onSaved, fn }: FunctionDialogProps) {
   const isEdit = !!fn;
   const [slug, setSlug] = useState(fn?.slug ?? '');

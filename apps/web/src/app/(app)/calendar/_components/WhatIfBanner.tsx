@@ -42,6 +42,22 @@ function ViolationRow({ v, eventTitleById }: { v: Violation; eventTitleById: Rec
   );
 }
 
+/**
+ * Sticky banner shown when the calendar is in what-if (drag-preview) mode.
+ *
+ * Displays the number of pending shifts, any HARD/SOFT dependency violations,
+ * and an AI-suggestion button. The "Apply" action is blocked when at least one
+ * HARD violation is present.
+ *
+ * @param shiftCount - Number of events with pending date shifts.
+ * @param violations - Dependency constraint violations detected by the simulator.
+ * @param suggestion - AI-proposed shift list; null while not yet simulated.
+ * @param onSimulate - Triggers constraint simulation for the current shifts.
+ * @param onApplySuggestion - Applies the AI-suggested shift set.
+ * @param onApply - Persists all pending shifts.
+ * @param onReset - Discards all pending shifts.
+ * @param eventTitleById - Map of event ID → title, used to label violations.
+ */
 export function WhatIfBanner({
   shiftCount,
   violations,

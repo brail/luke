@@ -1,6 +1,5 @@
 /**
- * Lista delle lingue supportate nel sistema
- * Utilizzata per la selezione del locale utente
+ * Supported UI locales (BCP 47 tags) for user profile selection.
  */
 
 export interface LocaleOption {
@@ -8,9 +7,7 @@ export interface LocaleOption {
   label: string;
 }
 
-/**
- * Lingue supportate con i loro codici locale
- */
+/** Full list of supported locales with human-readable labels. */
 export const LOCALES: LocaleOption[] = [
   { value: 'it-IT', label: 'Italiano' },
   { value: 'en-US', label: 'English (US)' },
@@ -34,16 +31,12 @@ export const LOCALES: LocaleOption[] = [
   { value: 'zh-TW', label: '中文 (繁體)' },
 ];
 
-/**
- * Trova un'opzione locale per valore
- */
+/** Finds a `LocaleOption` by its BCP 47 value, or `undefined` if not found. */
 export function findLocaleByValue(value: string): LocaleOption | undefined {
   return LOCALES.find(locale => locale.value === value);
 }
 
-/**
- * Ottiene il valore di default per il locale
- */
+/** Returns the application default locale (`it-IT`). */
 export function getDefaultLocale(): string {
   return 'it-IT';
 }

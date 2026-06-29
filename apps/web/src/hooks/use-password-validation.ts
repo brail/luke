@@ -3,8 +3,14 @@
 import { useMemo } from 'react';
 
 /**
- * Hook per validazione password in tempo reale
- * Fornisce controlli di validazione e messaggi di errore
+ * Validates a password and its confirmation field in real-time.
+ * All checks are memoized and re-evaluated only when the inputs change.
+ *
+ * @param password - The password being entered.
+ * @param confirmPassword - The confirmation field value (optional).
+ * @returns `{ passwordChecks, passwordErrors, confirmPasswordError, isValid, firstError }`
+ *   where `isValid` is `true` when all constraints pass and the passwords match.
+ *   An empty password is considered valid (suitable for optional edit-mode fields).
  */
 export function usePasswordValidation(
   password: string,

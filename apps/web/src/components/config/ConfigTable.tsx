@@ -1,8 +1,3 @@
-/**
- * Tabella per visualizzare le configurazioni
- * Include sorting, azioni dropdown e gestione valori cifrati
- */
-
 import {
   MoreHorizontal,
   Lock,
@@ -65,6 +60,15 @@ interface ConfigTableProps {
   canUpdate?: boolean;
 }
 
+/**
+ * Sortable table of AppConfig entries with inline actions for edit, view, copy, and delete.
+ *
+ * Encrypted values are displayed as masked text with a tooltip. Long plain values show
+ * an eye button to open `ConfigValueDialog`. Critical keys disable the delete action.
+ *
+ * @param canUpdate - When false, edit and delete actions are disabled.
+ * @param onSort - Called with the field name when a sortable column header is clicked.
+ */
 export function ConfigTable({
   configs,
   onEdit,

@@ -9,9 +9,10 @@ import { SessionVerification } from './SessionVerification';
 import { TimezoneUpdateDialog } from './TimezoneUpdateDialog';
 
 /**
- * Provider globale per l'applicazione
- * Combina SessionProvider (Auth.js), TRPCProvider (tRPC + React Query)
- * e componenti globali come TimezoneUpdateDialog e SessionVerification
+ * Root provider tree for the application.
+ *
+ * Composes `SessionProvider` (NextAuth), `TRPCProvider` (tRPC + React Query),
+ * and mounts global singleton components: `TimezoneUpdateDialog` and `SessionVerification`.
  */
 export default function Providers({ children }: { children: React.ReactNode }) {
   return (

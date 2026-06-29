@@ -8,6 +8,14 @@ interface TestStatusBannerProps {
   message?: string;
 }
 
+/**
+ * Alert banner displayed below a settings form after a connection test runs.
+ *
+ * Renders nothing when `status` is `idle` or `message` is absent.
+ * Uses ARIA live region so screen readers announce the result automatically.
+ *
+ * @param status - `success` renders a green check; `error` renders a destructive alert.
+ */
 export function TestStatusBanner({
   status = 'idle',
   message,

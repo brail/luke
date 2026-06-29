@@ -1,6 +1,8 @@
 /**
- * Hook per rilevare invalidazione sessioni in tempo reale
- * Utilizza Server-Sent Events (SSE) per notifiche immediate da admin
+ * Listens for real-time session-invalidation events pushed by the server via SSE.
+ * When a `SESSION_INVALIDATED` event is received the user is immediately redirected
+ * to `/login`. The SSE connection is opened only while the session is authenticated
+ * and is closed on unmount or when the session becomes unauthenticated.
  */
 
 import { useRouter } from 'next/navigation';

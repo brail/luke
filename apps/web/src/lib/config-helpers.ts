@@ -1,10 +1,11 @@
 /**
- * Helper e utilità per la gestione delle configurazioni
- * Costanti, validazioni e funzioni di supporto per l'interfaccia AppConfig
+ * Helper utilities for the AppConfig management UI.
+ * Provides constants, validators, and formatters used by the configuration pages.
+ * Must be kept in sync with the backend config router for key-format rules.
  */
 
 /**
- * Categorie supportate per le configurazioni
+ * Supported top-level config categories (must match the backend).
  */
 export const CATEGORIES = [
   'auth',
@@ -18,8 +19,8 @@ export const CATEGORIES = [
 ] as const;
 
 /**
- * Regex per chiavi critiche che non possono essere eliminate
- * (deve essere sincronizzato con il backend)
+ * Patterns matching config keys that cannot be deleted.
+ * Must stay in sync with the backend `CRITICAL_CONFIG_KEYS` list.
  */
 export const CRITICAL_KEY_PATTERNS = [
   /^auth\.ldap\..+/,
@@ -33,28 +34,28 @@ export const CRITICAL_KEY_PATTERNS = [
 ];
 
 /**
- * Genera regex dinamica per validazione formato chiavi
- * (deve essere sincronizzato con il backend)
+ * Builds the regex used to validate config key format: `<category>.<segment>[.<segment>...]`.
+ * Must stay in sync with the backend key-format validation.
  */
 export function getKeyRegex(): RegExp {
   const categories = CATEGORIES.join('|');
   return new RegExp(`^(${categories})(\\.[a-zA-Z0-9_-]+)+$`);
 }
 
-/**
- * Regex per validazione formato chiavi (per compatibilità)
- */
+/** Pre-built key-format regex (convenience re-export of `getKeyRegex()`). */
 export const KEY_REGEX = getKeyRegex();
 
 /**
- * Verifica se una chiave è critica e non può essere eliminata
+ * Returns `true` if the given key matches one of the critical-key patterns
+ * and therefore cannot be deleted.
  */
 export function isCriticalKey(key: string): boolean {
   return CRITICAL_KEY_PATTERNS.some(pattern => pattern.test(key));
 }
 
 /**
- * Deduce la categoria da una chiave basandosi sul prefix
+ * Extracts the category prefix from a config key (the segment before the first `.`).
+ * Returns `'unknown'` when the key has no prefix.
  */
 export function getCategoryFromKey(key: string): string {
   const match = key.match(/^([^.]+)/);
@@ -62,11 +63,12 @@ export function getCategoryFromKey(key: string): string {
 }
 
 /**
- * Formatta un valore per la visualizzazione
- * @param value - Valore da formattare
- * @param isEncrypted - Se il valore è cifrato
- * @param truncate - Lunghezza massima prima del troncamento
- * @returns Valore formattato per la visualizzazione
+ * Formats a config value for display.
+ * Encrypted values are replaced with `••••••`. Plain values are truncated to
+ * `truncate` characters (default 30; JSON blobs use at least 100).
+ *
+ * @param isEncrypted - When `true`, returns the redaction placeholder.
+ * @param truncate - Max display length before appending `…`.
  */
 export function formatValue(
   value: string | null | undefined,
@@ -86,9 +88,8 @@ export function formatValue(
 }
 
 /**
- * Formatta un JSON per la visualizzazione compatta
- * @param jsonString - Stringa JSON da formattare
- * @returns JSON formattato in modo compatto ma con spazi per il wrapping
+ * Serialises a JSON string in compact form with spaces after `,` and `:` to
+ * allow word-wrapping in narrow containers. Returns the original string on parse error.
  */
 export function formatJsonCompact(jsonString: string): string {
   try {
@@ -102,9 +103,8 @@ export function formatJsonCompact(jsonString: string): string {
 }
 
 /**
- * Formatta un JSON per la visualizzazione espansa
- * @param jsonString - Stringa JSON da formattare
- * @returns JSON formattato con indentazione
+ * Pretty-prints a JSON string with 2-space indentation.
+ * Returns the original string on parse error.
  */
 export function formatJsonExpanded(jsonString: string): string {
   try {
@@ -116,7 +116,8 @@ export function formatJsonExpanded(jsonString: string): string {
 }
 
 /**
- * Ottiene l'icona per una categoria
+ * Returns the Lucide icon name associated with a config category.
+ * Falls back to `'Settings'` for unknown categories.
  */
 export function getCategoryIcon(category: string): string {
   const iconMap: Record<string, string> = {
@@ -132,7 +133,8 @@ export function getCategoryIcon(category: string): string {
 }
 
 /**
- * Ottiene il colore per una categoria
+ * Returns the Tailwind badge class pair (`bg-*` + `text-*`) for a config category.
+ * Falls back to `'bg-gray-100 text-gray-800'` for unknown categories.
  */
 export function getCategoryColor(category: string): string {
   const colorMap: Record<string, string> = {
@@ -148,7 +150,8 @@ export function getCategoryColor(category: string): string {
 }
 
 /**
- * Valida una chiave di configurazione
+ * Validates a config key against the expected format (`<category>.<segment>...`).
+ * Returns `{ valid: true }` or `{ valid: false, error: string }`.
  */
 export function validateConfigKey(key: string): {
   valid: boolean;
@@ -169,7 +172,8 @@ export function validateConfigKey(key: string): {
 }
 
 /**
- * Valida un valore di configurazione
+ * Validates that a config value is non-empty.
+ * Returns `{ valid: true }` or `{ valid: false, error: string }`.
  */
 export function validateConfigValue(value: string): {
   valid: boolean;
@@ -183,7 +187,8 @@ export function validateConfigValue(value: string): {
 }
 
 /**
- * Genera un nome file per l'export
+ * Generates a timestamped filename for a config export, e.g.
+ * `luke-config-export-2026-06-28T14-30-00.json`.
  */
 export function generateExportFileName(): string {
   const now = new Date();
@@ -192,7 +197,7 @@ export function generateExportFileName(): string {
 }
 
 /**
- * Formatta una data per la visualizzazione
+ * Formats a date as `dd/MM/yyyy, HH:mm` using the `it-IT` locale.
  */
 export function formatDate(date: string | Date): string {
   const d = typeof date === 'string' ? new Date(date) : date;

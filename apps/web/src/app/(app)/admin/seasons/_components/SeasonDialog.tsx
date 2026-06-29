@@ -53,6 +53,15 @@ interface SeasonDialogProps {
   isLoading?: boolean;
 }
 
+/**
+ * Dialog for creating or editing a Season.
+ *
+ * Code and name fields are locked when the season is NAV-linked. An optional
+ * NAV-season selector is shown when unlinked NAV seasons are available.
+ *
+ * @param season - Existing season to edit; omit for create mode.
+ * @param onSubmit - Called with validated form data on submission.
+ */
 export function SeasonDialog({
   open,
   onOpenChange,

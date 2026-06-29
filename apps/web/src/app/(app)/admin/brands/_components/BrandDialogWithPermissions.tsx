@@ -71,15 +71,10 @@ interface BrandDialogWithPermissionsProps {
 }
 
 /**
- * Dialog per creazione e modifica Brand con permission-aware UI
+ * Wraps a form field with a tooltip when the field is disabled.
  *
- * Features:
- * - Disabilita i campi se l'utente non ha permessi di modifica
- * - Mostra "Read-Only" per i viewer
- * - Nasconde il pulsante di eliminazione se l'utente non ha permessi
- * - Mostra tooltip sui campi disabilitati spiegando il perché
- * - Conferma speciale per hard delete (solo admin)
- * - Disabilita upload logo se non admin/editor
+ * @param disabled - Whether the wrapped field should be treated as disabled.
+ * @param tooltip - Tooltip message shown when disabled is true.
  */
 function DisabledFieldWrapper({
   children,
@@ -104,6 +99,17 @@ function DisabledFieldWrapper({
   );
 }
 
+/**
+ * Permission-aware dialog for creating and editing a Brand.
+ *
+ * Disables all fields and the submit button for read-only users, and shows
+ * contextual tooltips explaining why. NAV-linked fields are locked regardless
+ * of the user's role. Logo upload is gated by `brands:update`.
+ *
+ * @param brand - Existing brand to edit; omit for create mode.
+ * @param onSubmit - Called with validated `BrandInput` after the user submits.
+ * @param isLoading - Shows a saving spinner on the submit button.
+ */
 export function BrandDialogWithPermissions({
   open,
   onOpenChange,

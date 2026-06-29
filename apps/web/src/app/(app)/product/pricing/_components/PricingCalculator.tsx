@@ -49,6 +49,17 @@ function fmt(value: number, currency: string) {
   }).format(value);
 }
 
+/**
+ * Interactive pricing calculator supporting three modes: forward (cost → price),
+ * inverse (price → max cost), and margin (cost + price → margin).
+ *
+ * Results are fetched from `trpc.pricing.calculate` and displayed with a
+ * colour-coded margin indicator. The lock icon freezes an intermediate field
+ * for what-if analysis.
+ *
+ * @param parameterSet - Active parameter set driving the calculation coefficients;
+ *   when null the calculator renders a disabled placeholder.
+ */
 export function PricingCalculator({ parameterSet }: PricingCalculatorProps) {
   const [purchasePrice, setPurchasePrice] = useState<string>('');
   const [retailPrice, setRetailPrice] = useState<string>('');

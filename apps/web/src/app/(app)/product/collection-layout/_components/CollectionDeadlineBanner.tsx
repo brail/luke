@@ -41,6 +41,16 @@ const PROGRESS_LABELS: Record<string, string> = {
   SMS_LAUNCHED:     'SMS lanciati',
 };
 
+/**
+ * Warning banner that alerts users when upcoming calendar events require a
+ * collection progress level that has not yet been reached by all rows.
+ *
+ * Queries `seasonCalendar.listEventsForCollection` and cross-references each
+ * event's `requiredCollectionProgress` against the current row `progress`
+ * values. Hidden when there are no upcoming deadline events.
+ *
+ * @param allRows - Current collection rows used to count progress laggards.
+ */
 export function CollectionDeadlineBanner({ brandId, seasonId, allRows }: Props) {
   const { data: events = [] } = trpc.seasonCalendar.listEventsForCollection.useQuery(
     { brandId, seasonId },

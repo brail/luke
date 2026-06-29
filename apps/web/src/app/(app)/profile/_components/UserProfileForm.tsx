@@ -24,7 +24,7 @@ import { trpc } from '../../../../lib/trpc';
 import { useStandardMutation } from '../../../../lib/useStandardMutation';
 
 interface UserProfileFormProps {
-  /** Dati utente correnti */
+  /** Current authenticated user data used to pre-populate the form. */
   user: {
     id: string;
     email: string;
@@ -38,6 +38,12 @@ interface UserProfileFormProps {
   };
 }
 
+/**
+ * Profile edit form covering display name, locale, timezone, and email change.
+ * Fields for first name and last name are read-only when the account is managed
+ * by an external provider (LDAP or SSO); a tooltip indicates the sync source.
+ * @param user - Current user data; `provider` determines which fields are editable.
+ */
 export function UserProfileForm({ user }: UserProfileFormProps) {
   const refresh = useRefresh();
 

@@ -5,13 +5,15 @@ import { useMemo } from 'react';
 import { useSectionAccess } from './useSectionAccess';
 
 /**
- * Hook per verificare l'accesso ai menu della sidebar
+ * Returns the sidebar visibility map for the current user, derived from
+ * `useSectionAccess`. Parent sections (settings, maintenance, admin) act as
+ * master switches: a sub-item is visible only when both the parent section and
+ * its own sub-section are enabled. A parent dropdown is shown only when at
+ * least one of its sub-items is visible.
  *
- * Il parent (settings/maintenance) fa da master switch:
- * - se il parent è false, nessun sub-item è visibile
- * - se il parent è true, ogni sub-item è visibile solo se anche la sua
- *   sotto-sezione è abilitata
- * La voce dropdown del parent appare solo se almeno un sub-item è visibile.
+ * @returns Object with boolean flags for each sidebar entry and grouped
+ *   sub-item maps (`settingsItems`, `maintenanceItems`, `adminItems`, `productItems`,
+ *   `salesItems`) plus `showGeneralSection` and `showSystemSection` macro-flags.
  */
 export function useMenuAccess() {
   const s = useSectionAccess();

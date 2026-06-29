@@ -3,8 +3,10 @@
 import { trpc } from '../lib/trpc';
 
 /**
- * Probe di connettività verso il backend.
- * La versione dell'app è disponibile a build time via NEXT_PUBLIC_APP_VERSION.
+ * Probes backend connectivity via the public `appInfo` tRPC endpoint.
+ * Re-fetches at most every 5 minutes; does not refetch on window focus.
+ *
+ * @returns `{ isLoading, hasError }` — `hasError` is true when the probe fails.
  */
 export function useAppConfig() {
   const { isLoading, error } = trpc.public.appInfo.useQuery(undefined, {

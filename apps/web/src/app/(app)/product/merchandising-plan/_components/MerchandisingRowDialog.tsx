@@ -85,6 +85,14 @@ interface Props {
   canUpdate: boolean;
 }
 
+/**
+ * Dialog for creating or editing a merchandising plan row.
+ *
+ * @param mode - "create" shows empty defaults; "edit" pre-fills from `row`.
+ * @param row - Existing row to edit; omit in create mode.
+ * @param planId - Parent merchandising plan ID.
+ * @param onDelete - When provided, shows a delete button gated by confirmation.
+ */
 export function MerchandisingRowDialog({
   open,
   onOpenChange,

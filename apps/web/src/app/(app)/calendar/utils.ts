@@ -1,23 +1,28 @@
+/** Returns the Monday of the ISO week containing `d`, at midnight local time. */
 export function mondayOf(d: Date): Date {
   const r = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   r.setDate(r.getDate() - ((r.getDay() + 6) % 7));
   return r;
 }
 
+/** Returns a new Date representing midnight (00:00:00) on the same local day as `d`. */
 export function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
+/** Returns a new Date equal to `d` plus `n` calendar days. */
 export function addDays(d: Date, n: number): Date {
   const r = new Date(d);
   r.setDate(r.getDate() + n);
   return r;
 }
 
+/** Returns the first day of the month `n` months after `d`. */
 export function addMonths(d: Date, n: number): Date {
   return new Date(d.getFullYear(), d.getMonth() + n, 1);
 }
 
+/** Returns true when `a` and `b` fall on the same local calendar day. */
 export function sameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
@@ -32,6 +37,7 @@ export function daysBetween(a: Date, b: Date): number {
   return Math.round((b.getTime() - a.getTime()) / 86_400_000);
 }
 
+/** Returns the ISO 8601 week number (1–53) for the given date. */
 export function getIsoWeek(d: Date): number {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
@@ -54,6 +60,10 @@ const PALETTE = [
   '#be123c', // rose
 ];
 
+/**
+ * Groups calendar events by day, returning one array per day in `days`.
+ * An event appears in every day it overlaps (i.e. start ≤ dayEnd and end ≥ dayStart).
+ */
 export function groupEventsByDay<T extends { startAt: Date | string; endAt?: Date | string | null }>(
   events: T[],
   days: Date[],
@@ -69,6 +79,15 @@ export function groupEventsByDay<T extends { startAt: Date | string; endAt?: Dat
   });
 }
 
+/**
+ * Returns true when the current user may drag or edit a milestone.
+ *
+ * A milestone is editable when the user has `canUpdate` and the milestone
+ * either has no brandId or belongs to the currently active brand.
+ *
+ * @param canUpdate - `can('season_calendar:update')` result from `usePermission`.
+ * @param activeBrandId - Currently selected brand from AppContext.
+ */
 export function canEditMilestone(
   m: { brandId?: string | null },
   canUpdate: boolean | undefined,
@@ -77,6 +96,10 @@ export function canEditMilestone(
   return !!canUpdate && (!m.brandId || m.brandId === activeBrandId);
 }
 
+/**
+ * Derives a deterministic colour from a brand ID by hashing into the palette.
+ * Use `assignBrandColors` when rendering a fixed set of brands for stable colours.
+ */
 export function brandColor(brandId: string): string {
   let hash = 0;
   for (let i = 0; i < brandId.length; i++) {
@@ -85,10 +108,18 @@ export function brandColor(brandId: string): string {
   return PALETTE[Math.abs(hash) % PALETTE.length]!;
 }
 
+/**
+ * Assigns a stable colour from the palette to each brand by list index.
+ * Preferred over `brandColor` when the full brand list is known upfront.
+ */
 export function assignBrandColors(brands: { id: string }[]): Record<string, string> {
   return Object.fromEntries(brands.map((b, i) => [b.id, PALETTE[i % PALETTE.length]!]));
 }
 
+/**
+ * Resolves a brand's colour from `map`, falling back to `brandColor()` for
+ * unknown IDs or to the CSS primary variable when `brandId` is nullish.
+ */
 export function resolveBrandColor(brandId: string | null | undefined, map: Record<string, string>): string {
   if (!brandId) return 'hsl(var(--primary))';
   return map[brandId] ?? brandColor(brandId);

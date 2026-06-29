@@ -25,6 +25,18 @@ interface Props {
   brandColorMap: Record<string, string>;
 }
 
+/**
+ * Chronological list view that groups calendar events by ISO week.
+ *
+ * Supports multi-select for bulk deletion (gated by `canUpdate`). Each row
+ * shows the event chip, owner function, and a sticky-note icon when a personal
+ * note exists.
+ *
+ * @param onBulkDelete - Called with the selected event IDs to trigger deletion.
+ * @param functionsById - Map of function ID → name, shown next to each event.
+ * @param activeBrandId - Dims events that belong to a different brand.
+ * @param brandColorMap - Pre-computed brand-ID→colour map.
+ */
 export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, onDayClick, onBulkDelete, activeBrandId, functionsById, canUpdate, brandColorMap }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);

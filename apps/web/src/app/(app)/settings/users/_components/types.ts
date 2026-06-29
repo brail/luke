@@ -1,7 +1,9 @@
 import { sectionEnum } from '@luke/core';
 import type { Role, Section } from '@luke/core';
 
-// Tipo per riga utente nella tabella (derivato da trpc.users.list response)
+/**
+ * Shape of a single user row returned by `trpc.users.list`.
+ */
 export interface UserListItem {
   id: string;
   email: string;
@@ -21,7 +23,9 @@ export interface UserListItem {
   isOnline: boolean;
 }
 
-// Colonne ordinabili della tabella
+/**
+ * Keys of user table columns that support server-side sorting.
+ */
 export type SortColumn =
   | 'email'
   | 'username'
@@ -33,13 +37,15 @@ export type SortColumn =
   | 'createdAt'
   | 'provider';
 
-// Ordine di sort
+/** Sort direction. */
 export type SortOrder = 'asc' | 'desc';
 
-// Azioni disponibili nel menu utente
+/** Identifiers for the actions available in the per-user dropdown menu. */
 export type UserAction = 'edit' | 'disable' | 'revokeSessions' | 'hardDelete';
 
-// Props per handlers di azioni utente
+/**
+ * Callbacks for each user action emitted by `UserActionsMenu`.
+ */
 export interface UserActionHandlers {
   onEdit: (user: UserListItem) => void;
   onDisable: (user: UserListItem) => void;
@@ -48,12 +54,16 @@ export interface UserActionHandlers {
   onManageAccess: (user: UserListItem) => void;
 }
 
-// Props per gestione sort
+/**
+ * Callback for triggering a sort change on a table column.
+ */
 export interface SortHandlers {
   onSort: (column: SortColumn) => void;
 }
 
-// Props per gestione toolbar
+/**
+ * Event callbacks exposed by `UsersToolbar` to the parent page.
+ */
 export interface ToolbarHandlers {
   onSearchChange: (value: string) => void;
   onRoleFilterChange: (value: string) => void;
@@ -61,13 +71,17 @@ export interface ToolbarHandlers {
   onPageChange: (page: number) => void;
 }
 
-// Stato sort corrente
+/**
+ * Current sort state shared between the toolbar and the table.
+ */
 export interface SortState {
   sortBy: SortColumn;
   sortOrder: SortOrder;
 }
 
-// Props per toolbar
+/**
+ * Read-only state props consumed by `UsersToolbar`.
+ */
 export interface ToolbarProps {
   searchTerm: string;
   roleFilter: string;
@@ -76,7 +90,9 @@ export interface ToolbarProps {
   totalUsers: number;
 }
 
-// Props per tabella
+/**
+ * Read-only state props consumed by `UsersTable`.
+ */
 export interface TableProps {
   users: UserListItem[];
   currentUserId: string;
@@ -84,12 +100,19 @@ export interface TableProps {
   error?: any;
 }
 
-// Tipi per gestione accesso sezioni/brand/stagioni
-// null = usa default ruolo, true/false = override esplicito
+/**
+ * Per-section visibility overrides for a user.
+ * A missing key means the role default applies; `true`/`false` is an explicit override.
+ */
 export type SectionOverrideMap = Partial<Record<string, boolean>>;
-// null = tutte le stagioni consentite per quel brand, string[] = whitelist
+
+/**
+ * Brand-scoped season access map.
+ * `null` value means all seasons are allowed for that brand; a string array is an explicit allowlist.
+ */
 export type SeasonAccessMap = Record<string, string[] | null>;
 
+/** Minimal user shape required by `ApproveUserDialog`. */
 export type UserForApproval = {
   id: string;
   username: string;
@@ -98,6 +121,7 @@ export type UserForApproval = {
   role: Role;
 };
 
+/** Human-readable display labels for every application section, used in access-management UIs. */
 export const SECTION_LABELS: Record<Section, string> = {
   dashboard: 'Dashboard',
   settings: 'Impostazioni',
@@ -127,5 +151,5 @@ export const SECTION_LABELS: Record<Section, string> = {
   'settings.company': '↳ Azienda',
 };
 
-// Deriva direttamente da sectionEnum — mai duplicare manualmente
+/** All valid section keys derived directly from `sectionEnum` — never duplicate manually. */
 export const ALL_SECTIONS: readonly Section[] = sectionEnum.options;

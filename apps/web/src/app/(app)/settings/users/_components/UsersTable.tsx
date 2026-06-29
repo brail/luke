@@ -36,8 +36,10 @@ interface UsersTableProps extends TableProps, SortHandlers, UserActionHandlers {
 }
 
 /**
- * Tabella utenti con header ordinabili e menu azioni
- * Gestisce rendering righe, stati vuoti e azioni utente
+ * Data table listing users with sortable headers, online-status indicator, and per-row action menu.
+ * @param sortBy - Column currently used for sorting.
+ * @param sortOrder - Direction of the active sort.
+ * @param currentUserId - ID of the logged-in user, forwarded to `UserActionsMenu` for self-action guards.
  */
 export function UsersTable({
   users,
