@@ -1,12 +1,8 @@
 /**
- * Idempotency Store per Luke API
- * Store in-memory con LRU cache per gestire richieste idempotenti
- *
- * Caratteristiche:
- * - LRU cache con max 1000 keys
- * - TTL: 5 minuti (auto-cleanup)
- * - Hash richiesta: SHA256(method + path + body)
- * - Header: Idempotency-Key: <client-uuid>
+ * In-memory idempotency store for Luke API.
+ * Uses an LRU-like Map with a configurable capacity (default: 1 000 keys)
+ * and a 5-minute TTL. Request identity is hashed as SHA-256(method + path + body).
+ * Clients signal intent via the `Idempotency-Key: <uuid-v4>` header.
  */
 
 import { createHash } from 'crypto';
@@ -17,7 +13,7 @@ import pino from 'pino';
 const logger = pino({ level: 'info' });
 
 /**
- * Entry nel store idempotency
+ * Internal cache entry for a single idempotency key.
  */
 interface IdempotencyEntry {
   /** Hash della richiesta originale */
@@ -31,7 +27,7 @@ interface IdempotencyEntry {
 }
 
 /**
- * Risultato del check idempotency
+ * Outcome of an idempotency cache lookup.
  */
 interface IdempotencyResult {
   /** true se trovato un match, false altrimenti */
@@ -45,7 +41,7 @@ interface IdempotencyResult {
 }
 
 /**
- * Store idempotency in-memory con LRU e TTL
+ * In-memory idempotency store with LRU eviction and TTL-based expiry.
  */
 class IdempotencyStore {
   private cache = new Map<string, IdempotencyEntry>();
@@ -223,6 +219,6 @@ class IdempotencyStore {
 }
 
 /**
- * Istanza singleton del store idempotency
+ * Singleton idempotency store shared by all request handlers.
  */
 export const idempotencyStore = new IdempotencyStore();

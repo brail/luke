@@ -1,18 +1,25 @@
 /**
- * Utility per configurazione CORS ibrida
- * Priorità: AppConfig → ENV → default
+ * Hybrid CORS configuration utility.
+ * Resolution priority: AppConfig → environment variable → built-in default.
  */
 
+/**
+ * Resolved CORS configuration including the source that produced it.
+ */
 export interface CorsConfig {
   source: 'appConfig' | 'env' | 'default-dev' | 'default-prod-deny';
   origins: string[];
 }
 
 /**
- * Costruisce la configurazione CORS con priorità:
- * 1. AppConfig.security.cors.allowedOrigins (se presente)
- * 2. LUKE_CORS_ALLOWED_ORIGINS (CSV)
- * 3. Default dev → localhost, prod → deny
+ * Builds the CORS allowed-origins list using a three-tier resolution cascade:
+ * 1. `AppConfig.security.cors.allowedOrigins` (highest priority)
+ * 2. `LUKE_CORS_ALLOWED_ORIGINS` environment variable (comma-separated)
+ * 3. Built-in defaults: localhost in development/test, deny-all in production
+ *
+ * @param env - Current runtime environment.
+ * @param appConfig - Optional pre-loaded AppConfig security section.
+ * @returns Resolved CORS config with the source that was used.
  */
 export function buildCorsAllowedOrigins(
   env: 'development' | 'production' | 'test',

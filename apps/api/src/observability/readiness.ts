@@ -1,6 +1,9 @@
 /**
- * Readiness Checks Estensibili
- * Sistema modulare per verifiche di readiness (DB, secrets, LDAP, integrations future)
+ * Extensible readiness check system.
+ *
+ * Provides modular checks (database, secrets, LDAP) that are run in parallel
+ * and aggregated into a single status response. New checks can be added to
+ * `getReadinessChecks` without modifying the runner or HTTP route.
  */
 
 import { Client } from 'ldapts';
@@ -13,16 +16,16 @@ import type { PrismaClient } from '@prisma/client';
 import type { FastifyLoggerInstance } from 'fastify';
 
 
-/**
- * Interfaccia per check di readiness
- */
+/** Describes a single readiness check with a name and an async probe function. */
 export interface ReadinessCheck {
   name: string;
   check: () => Promise<{ ok: boolean; message?: string }>;
 }
 
 /**
- * Verifica connessione database
+ * Probes the database connection by executing `SELECT 1`.
+ *
+ * @returns `{ ok: true }` on success, or `{ ok: false, message }` on failure.
  */
 export async function checkDatabase(
   prisma: PrismaClient
@@ -36,7 +39,9 @@ export async function checkDatabase(
 }
 
 /**
- * Verifica derivazione segreti
+ * Verifies that HKDF secret derivation is operational by performing a test derivation.
+ *
+ * @returns `{ ok: true }` on success, or `{ ok: false, message }` if derivation fails.
  */
 export async function checkSecrets(): Promise<{
   ok: boolean;
@@ -51,7 +56,11 @@ export async function checkSecrets(): Promise<{
 }
 
 /**
- * Verifica connessione LDAP (se abilitato)
+ * Probes the LDAP server with a bind/unbind cycle if LDAP is enabled in AppConfig.
+ *
+ * Skips and returns `ok: true` when LDAP is disabled. Uses a 2-second connect/operation timeout.
+ *
+ * @returns `{ ok: true }` on success, or `{ ok: false, message }` if the bind fails.
  */
 export async function checkLdap(
   prisma: PrismaClient
@@ -87,8 +96,10 @@ export async function checkLdap(
 }
 
 /**
- * Registry estensibile di readiness checks
- * Aggiungi nuovi check qui per integrations future (SAP, API esterne, etc.)
+ * Returns the list of all registered readiness checks.
+ *
+ * Add new entries here to extend the `/readyz` probe with additional integrations
+ * (e.g. SAP, external APIs) without modifying the runner or the HTTP route.
  */
 export function getReadinessChecks(prisma: PrismaClient): ReadinessCheck[] {
   return [
@@ -101,8 +112,10 @@ export function getReadinessChecks(prisma: PrismaClient): ReadinessCheck[] {
 }
 
 /**
- * Esegue tutti i readiness checks in parallelo
- * Ritorna status aggregato con dettagli per ogni check
+ * Runs all registered readiness checks in parallel and aggregates the results.
+ *
+ * @returns An object with `allOk` (true if every check passed), a per-check status map,
+ *          and the current ISO timestamp.
  */
 export async function runReadinessChecks(prisma: PrismaClient): Promise<{
   allOk: boolean;
@@ -136,9 +149,10 @@ export async function runReadinessChecks(prisma: PrismaClient): Promise<{
 }
 
 /**
- * Verifica dipendenze critiche durante bootstrap (fail-fast)
- * Esegue controlli che devono passare prima che il server si avvii
- * Lancia errori dettagliati in caso di fallimento per debugging
+ * Performs fail-fast checks that must pass before the server accepts traffic.
+ *
+ * Verifies: database connectivity, master key availability, and JWT secret derivation.
+ * Throws a detailed error if any check fails, allowing the boot sequence to exit cleanly.
  */
 export async function checkBootstrapDependencies(
   prisma: PrismaClient,

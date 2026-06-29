@@ -54,8 +54,10 @@ export interface KimoRow {
 // ─── Query ────────────────────────────────────────────────────────────────────
 
 /**
- * Esegue la UNION SO + BASKET su PostgreSQL (tabelle nav_pf_* e nav_kimo_*).
- * Restituisce le righe ordinate per trademarkCode, salespersonCodeNav.
+ * Runs the SO + BASKET UNION query on PostgreSQL against the nav_pf_* and nav_kimo_* replica tables.
+ * Mirrors the Access query logic (queries #13/#14/#15 from kimo-test.txt).
+ *
+ * @returns Rows ordered by trademarkCode, salespersonCodeNav.
  */
 export async function queryKimoFromPg(
   prisma: PrismaClient,

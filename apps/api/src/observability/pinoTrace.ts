@@ -1,6 +1,12 @@
 /**
- * Pino Trace Correlation & Security Serializers
- * Middleware per correlazione log-trace e redaction PII/secrets
+ * Pino trace correlation middleware and security serializers.
+ *
+ * Provides:
+ * - `pinoTraceMiddleware` — Fastify `onRequest` hook that attaches OpenTelemetry
+ *   trace/span IDs and a business-level `x-luke-trace-id` to every request logger.
+ * - `pinoSerializers` — custom Pino serializers that redact sensitive fields
+ *   (passwords, secrets, tokens, PII) before log output.
+ * - `createTraceLogger` — helper for creating a trace-aware child logger in tRPC procedures.
  */
 
 import { randomUUID } from 'crypto';
@@ -10,9 +16,7 @@ import serializers from 'pino-std-serializers';
 
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
-/**
- * Pattern per identificare campi sensibili da redigere
- */
+/** Patterns used to identify sensitive field names that should be redacted in logs. */
 const sensitivePatterns = [
   /password/i,
   /secret/i,
@@ -28,7 +32,8 @@ const sensitivePatterns = [
 ];
 
 /**
- * Funzione helper per redigere oggetti nested ricorsivamente
+ * Recursively redacts values whose key matches any sensitive pattern.
+ * Arrays are traversed element by element; nested objects are walked recursively.
  */
 function redactSensitiveFields(obj: any): any {
   if (obj === null || obj === undefined) return obj;
@@ -57,7 +62,12 @@ function redactSensitiveFields(obj: any): any {
 }
 
 /**
- * Serializer con redaction automatica di campi sensibili
+ * Pino serializers that automatically redact sensitive fields.
+ *
+ * - `req`/`res`/`err` — standard pino-std-serializers
+ * - `config` — redacts any key matching a sensitive pattern
+ * - `user` — keeps only `id` and `role`; redacts email, username, and names
+ * - `sensitive` — generic redaction for any arbitrary object
  */
 export const pinoSerializers = {
   req: serializers.req,
@@ -86,8 +96,11 @@ export const pinoSerializers = {
 };
 
 /**
- * Middleware per correlazione trace ID con log Pino
- * Legge span attivo da OpenTelemetry e x-luke-trace-id header
+ * Fastify `onRequest` hook that enriches the per-request Pino logger with trace context.
+ *
+ * Reads the active OpenTelemetry span and the `x-luke-trace-id` header (generating a UUID
+ * if absent), attaches both to the child logger, and echoes `x-luke-trace-id` in the response
+ * for front-end correlation.
  */
 export function pinoTraceMiddleware(
   req: FastifyRequest,
@@ -114,8 +127,10 @@ export function pinoTraceMiddleware(
 }
 
 /**
- * Helper per creare child logger con trace context
- * Utile per logging manuale in procedure tRPC
+ * Creates a Pino child logger enriched with the current OpenTelemetry trace and span IDs.
+ *
+ * Useful for manual logging inside tRPC procedures where the request-scoped logger
+ * is not directly available.
  */
 export function createTraceLogger(
   baseLogger: any,

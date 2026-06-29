@@ -1,10 +1,13 @@
 /**
- * Plugin Fastify per upload foto CollectionLayoutRow
- * Endpoint: POST /upload/collection-row-picture/temp  (create mode — no row ID)
- *           POST /upload/collection-row-picture/:rowId (edit mode — validates row)
+ * Fastify plugin for collection layout row picture upload.
  *
- * Upload stores the file in storage and returns the key.
- * The key is committed to DB when the form is saved (via tRPC rows.create / rows.update).
+ * Endpoints:
+ *  - POST /upload/collection-row-picture/temp     — temporary upload for row creation (no row ID yet)
+ *  - POST /upload/collection-row-picture/:rowId   — upload for an existing row (validates row exists)
+ *
+ * Both endpoints require authentication and the `collection_layout:update` permission.
+ * The file is stored and its key returned immediately; the key is persisted to the DB
+ * only when the containing form is saved via `tRPC collectionLayout.rows.create/update`.
  */
 
 import rateLimit from '@fastify/rate-limit';

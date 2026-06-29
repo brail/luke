@@ -1,6 +1,8 @@
 /**
- * Esportazioni pubbliche dell'API Luke
- * Utilizzate dal front-end per type-safety
+ * Public type exports for the Luke API.
+ *
+ * Re-exports `AppRouter` and the inferred `RouterOutputs` / `RouterInputs` types
+ * consumed by the Next.js frontend for end-to-end tRPC type safety.
  */
 
 import type { inferRouterOutputs, inferRouterInputs } from '@trpc/server';

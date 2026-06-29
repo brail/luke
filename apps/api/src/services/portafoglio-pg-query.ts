@@ -1,9 +1,8 @@
 /**
- * Portafoglio Ordini — query PostgreSQL su tabelle nav_pf_*.
- *
- * Produce lo stesso output della query SQL Server in packages/nav/src/statistics/portafoglio.ts,
- * ma lavora sulle repliche locali anziché su NAV SQL Server direttamente.
- * I campi pre-aggregati (date_prenotazione, ddt_picking) sono già materializzati dal sync.
+ * Order portfolio query — runs against the local nav_pf_* PostgreSQL replica tables.
+ * Produces the same output shape as the SQL Server path in packages/nav/src/statistics/portafoglio.ts,
+ * enabling buildPortafoglioXlsx to consume either source without changes.
+ * Pre-aggregated fields (date_prenotazione, ddt_picking) are already materialized by the sync job.
  */
 
 import type { PrismaClient } from '@prisma/client';
@@ -11,8 +10,10 @@ import type { PrismaClient } from '@prisma/client';
 import type { PortafoglioParams, PortafoglioRow } from '@luke/nav';
 
 /**
- * Esegue il portafoglio ordini su PostgreSQL (tabelle nav_pf_*).
- * Produce lo stesso set di colonne del path SQL Server per compatibilità con buildPortafoglioXlsx.
+ * Queries the order portfolio from the local nav_pf_* replica tables.
+ * Output columns are identical to the SQL Server path for compatibility with buildPortafoglioXlsx.
+ *
+ * @returns One PortafoglioRow per order line, enriched with item attributes, customer data, and computed margins.
  */
 export async function queryPortafoglioFromPg(
   prisma: PrismaClient,

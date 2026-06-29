@@ -10,10 +10,11 @@ import {
   setOverride,
   listOverridesForUser,
   countAdminsWithSettingsAccess,
+  getSectionDefaults,
+  computeEffectiveForUser,
 } from '../services/sectionAccess.service';
 import { logAudit } from '../lib/auditLog';
 import { withRateLimit } from '../lib/ratelimit';
-import { getSectionDefaults } from '../services/sectionAccess.service';
 import { sectionEnum } from '@luke/core';
 import type { Section } from '@luke/core';
 
@@ -68,6 +69,18 @@ export const sectionAccessRouter = router({
       section: r.section as Section,
       enabled: r.enabled,
     }));
+  }),
+
+  /**
+   * Returns the fully-computed effective section access map for the current user.
+   * Applies all 4 layers: kill switch → user override → role AppConfig → static RBAC.
+   * Single source of truth for client-side section visibility.
+   *
+   * @auth {authenticated}
+   * @output {Record<Section, boolean>}
+   */
+  getEffectiveForMe: protectedProcedure.query(async ({ ctx }) => {
+    return computeEffectiveForUser(ctx.prisma, ctx.session.user.id, ctx.session.user.role);
   }),
 
   /**

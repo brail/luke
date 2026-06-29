@@ -21,6 +21,12 @@ import { getConfig } from '../lib/configManager.js';
 
 // ─── Client factory ───────────────────────────────────────────────────────────
 
+/**
+ * Reads Google integration config from AppConfig and initialises the Google Calendar client.
+ * Supports oauth_user and service_account authentication modes.
+ *
+ * @returns The configured workspace domain, or null if the integration is disabled or misconfigured.
+ */
 export async function getConfiguredGoogleClient(prisma: PrismaClient): Promise<{ domain: string } | null> {
   const [authMode, domain, enabled] = await Promise.all([
     getConfig(prisma, 'integrations.google.authMode', false),
@@ -85,6 +91,9 @@ function mapMilestone(m: MilestoneRow): MilestoneForSync {
   };
 }
 
+/**
+ * Loads a calendar event and maps it to the MilestoneForSync shape expected by @luke/calendar.
+ */
 export async function getMilestoneForSync(
   milestoneId: string,
   prisma: PrismaClient
@@ -101,6 +110,12 @@ export async function getMilestoneForSync(
 
 // ─── SyncContext builder ──────────────────────────────────────────────────────
 
+/**
+ * Builds the SyncContext for a season calendar, wiring up the DB-backed callbacks
+ * (getOrCreateBinding, getMappings, upsertMapping, deleteMapping) used by @luke/calendar sync.
+ *
+ * @returns A fully configured SyncContext ready to be passed to syncMilestone.
+ */
 export async function buildSyncContext(
   calendarId: string,
   prisma: PrismaClient
@@ -170,6 +185,10 @@ export async function buildSyncContext(
 
 // ─── Sync operations ─────────────────────────────────────────────────────────
 
+/**
+ * Syncs a single calendar event to all bound Google Calendars. No-ops if the integration
+ * is disabled or not configured.
+ */
 export async function syncOneMilestone(
   milestoneId: string,
   prisma: PrismaClient,
@@ -191,6 +210,10 @@ export async function syncOneMilestone(
   logger.info({ milestoneId }, 'Google Calendar sync completed');
 }
 
+/**
+ * Deletes all Google Calendar events mapped to the given milestone and removes
+ * the local mapping records. No-ops if the integration is disabled.
+ */
 export async function cleanupMilestoneEvents(
   milestoneId: string,
   prisma: PrismaClient,
@@ -209,6 +232,12 @@ export async function cleanupMilestoneEvents(
   logger.info({ milestoneId, count: mappings.length }, 'Google Calendar events cleaned up');
 }
 
+/**
+ * Re-syncs all milestones of a season calendar to Google Calendar. Errors per milestone
+ * are caught individually so that a single failure does not abort the run.
+ *
+ * @returns Count of successfully synced milestones and count of errors.
+ */
 export async function reconcileCalendar(
   calendarId: string,
   prisma: PrismaClient,

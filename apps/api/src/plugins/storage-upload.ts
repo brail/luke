@@ -1,11 +1,14 @@
 /**
- * Plugin Fastify per upload e download file storage
+ * Fastify plugin for generic storage upload and download.
  *
- * - GET  /uploads/:bucket/*         - Stream asset autenticato dal provider attivo
- * - POST /storage/upload/:uploadId  - Upload multipart
- * - GET  /storage/download?token=.. - Download con token firmato
+ * Endpoints:
+ *  - GET  /uploads/:bucket/*          — Authenticated asset proxy; streams from the active provider
+ *                                       (works with both local FS and MinIO).
+ *  - POST /storage/upload/:uploadId   — Authenticated multipart upload to `uploads`, `exports`,
+ *                                       or `assets` buckets. Bucket-level RBAC enforced.
+ *  - GET  /storage/download?token=..  — Download via HMAC-signed token; no session required.
  *
- * Note: @fastify/multipart è registrato globalmente in server.ts
+ * @fastify/multipart must be registered globally before this plugin (done in server.ts).
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -21,7 +24,7 @@ import { verifyDownloadToken } from '../utils/downloadToken';
 import type { Context } from '../lib/trpc';
 
 /**
- * Plugin Fastify per storage upload/download
+ * Registers the storage upload/download routes on the Fastify instance.
  */
 export async function storagePlugin(
   fastify: FastifyInstance,

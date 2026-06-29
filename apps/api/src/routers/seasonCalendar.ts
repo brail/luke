@@ -1,3 +1,26 @@
+/**
+ * tRPC router for season calendar management.
+ *
+ * Covers the full lifecycle of a seasonal planning calendar:
+ *  - Calendar CRUD: getOrCreate, updateStatus, setAnchorDate
+ *  - Milestones: listMilestones, createMilestone, updateMilestone, deleteMilestone(s), setMilestoneStatus
+ *  - Personal notes: upsertNote, deleteNote
+ *  - Templates: listTemplates, applyTemplate, createTemplate, updateTemplate, deleteTemplate,
+ *               createTemplateItem, updateTemplateItem, deleteTemplateItem,
+ *               addTemplateDependency, updateTemplateDependencyGaps, deleteTemplateDependency
+ *  - Clone: cloneFromBrandSeason
+ *  - Google Calendar sync: getSyncStatus, triggerSync
+ *  - User visibility: grantUserVisibility, revokeUserVisibility
+ *  - Dependencies: getDependencies, addDependency, updateDependencyGaps,
+ *                  toggleDependencyDisabled, deleteDependency
+ *  - Anchors: setEventAnchors
+ *  - State effects: executeStateEffect, rollbackStateEffect
+ *  - What-if simulation: simulate
+ *  - Collection integration: listEventsForCollection
+ *
+ * Brand access is enforced per-operation via `assertBrandAccess`.
+ */
+
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import type { PrismaClient } from '@prisma/client';
@@ -64,6 +87,13 @@ import {
 export const seasonCalendarRouter = router({
   // ─── Calendar management ────────────────────────────────────────────────────
 
+  /**
+   * Returns the season calendar for a brand/season pair, creating one if it does not exist.
+   *
+   * @auth season_calendar:read
+   * @input { brandId, seasonId }
+   * @output SeasonCalendar record
+   */
   getOrCreate: protectedProcedure
     .use(requirePermission('season_calendar:read'))
     .input(z.object({
@@ -75,6 +105,13 @@ export const seasonCalendarRouter = router({
       return getOrCreateCalendar(input.brandId, input.seasonId, ctx.prisma);
     }),
 
+  /**
+   * Updates the status of a season calendar (e.g. DRAFT → ACTIVE → ARCHIVED).
+   *
+   * @auth season_calendar:update
+   * @input { calendarId, status }
+   * @output Updated SeasonCalendar
+   */
   updateStatus: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
@@ -97,6 +134,13 @@ export const seasonCalendarRouter = router({
       return result;
     }),
 
+  /**
+   * Sets the anchor date used to apply milestone templates with date offsets.
+   *
+   * @auth season_calendar:update
+   * @input { calendarId, anchorDate }
+   * @output Updated SeasonCalendar
+   */
   setAnchorDate: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
@@ -118,6 +162,15 @@ export const seasonCalendarRouter = router({
 
   // ─── Calendar event queries ─────────────────────────────────────────────────
 
+  /**
+   * Lists milestones for the given season and brands, filtered to brands the user can access.
+   *
+   * Admins see all requested brands; other roles are filtered by team-brand scopes.
+   *
+   * @auth season_calendar:read
+   * @input { seasonId, brandIds, functionId? }
+   * @output Array of CalendarEvent records
+   */
   listMilestones: protectedProcedure
     .use(requirePermission('season_calendar:read'))
     .input(z.object({
@@ -135,6 +188,13 @@ export const seasonCalendarRouter = router({
 
   // ─── Calendar event mutations ───────────────────────────────────────────────
 
+  /**
+   * Creates a calendar event (milestone) and triggers an async Google Calendar sync.
+   *
+   * @auth season_calendar:update
+   * @input CalendarEventInputSchema
+   * @output The created CalendarEvent
+   */
   createMilestone: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
@@ -153,6 +213,13 @@ export const seasonCalendarRouter = router({
       return result;
     }),
 
+  /**
+   * Updates a calendar event and triggers an async Google Calendar sync.
+   *
+   * @auth season_calendar:update
+   * @input { id, data: Partial<CalendarEventBase> }
+   * @output Updated CalendarEvent
+   */
   updateMilestone: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
@@ -174,6 +241,13 @@ export const seasonCalendarRouter = router({
       return result;
     }),
 
+  /**
+   * Deletes a calendar event and cleans up any associated Google Calendar events.
+   *
+   * @auth season_calendar:update
+   * @input { id }
+   * @output { success: true }
+   */
   deleteMilestone: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
@@ -192,6 +266,13 @@ export const seasonCalendarRouter = router({
       return { success: true };
     }),
 
+  /**
+   * Bulk-deletes up to 100 calendar events, cleaning up Google Calendar events for each.
+   *
+   * @auth season_calendar:update
+   * @input { ids: string[] (1–100) }
+   * @output { success: true, count: number }
+   */
   deleteMilestones: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
@@ -211,6 +292,18 @@ export const seasonCalendarRouter = router({
       return { success: true, count: input.ids.length };
     }),
 
+  /**
+   * Transitions a milestone to a new status, auto-applying or rolling back state effects.
+   *
+   * When transitioning to COMPLETED: non-confirmation-required effects are executed automatically;
+   * confirmation-required effects are returned as `pending`.
+   * When transitioning away from COMPLETED: previously auto-applied effects are rolled back.
+   * Triggers a Google Calendar sync and sends notifications to all visible users.
+   *
+   * @auth season_calendar:update
+   * @input { id, status }
+   * @output { event, autoApplied, pending, autoRolledBack, pendingRollback }
+   */
   setMilestoneStatus: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
@@ -301,6 +394,14 @@ export const seasonCalendarRouter = router({
 
   // ─── Personal notes ─────────────────────────────────────────────────────────
 
+  /**
+   * Creates or updates a personal note on a calendar event for the current user.
+   * Passing an empty body deletes the note.
+   *
+   * @auth season_calendar:read
+   * @input CalendarEventPersonalNoteInputSchema
+   * @output The upserted note, or null if deleted
+   */
   upsertNote: protectedProcedure
     .use(requirePermission('season_calendar:read'))
     .use(withRateLimit('configMutations'))
@@ -313,6 +414,13 @@ export const seasonCalendarRouter = router({
       return upsertNote(input.eventId, ctx.session.user.id, input.body, ctx.prisma);
     }),
 
+  /**
+   * Deletes the current user's personal note on a calendar event.
+   *
+   * @auth season_calendar:read
+   * @input { eventId }
+   * @output { success: true }
+   */
   deleteNote: protectedProcedure
     .use(requirePermission('season_calendar:read'))
     .use(withRateLimit('configMutations'))
@@ -324,10 +432,26 @@ export const seasonCalendarRouter = router({
 
   // ─── Templates ──────────────────────────────────────────────────────────────
 
+  /**
+   * Lists all milestone templates.
+   *
+   * @auth milestone_template:read
+   * @output Array of MilestoneTemplate
+   */
   listTemplates: protectedProcedure
     .use(requirePermission('milestone_template:read'))
     .query(async ({ ctx }) => listTemplates(ctx.prisma)),
 
+  /**
+   * Applies a milestone template to a calendar, generating events at computed anchor-relative dates.
+   *
+   * Uses `input.anchorDate` if provided, otherwise falls back to the calendar's stored anchor date.
+   * Requires `force: true` when the calendar already has events from this template.
+   *
+   * @auth season_calendar:update
+   * @input { calendarId, templateId, anchorDate?, force }
+   * @output Array of created CalendarEvent records
+   */
   applyTemplate: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
@@ -493,6 +617,13 @@ export const seasonCalendarRouter = router({
 
   // ─── Clone ──────────────────────────────────────────────────────────────────
 
+  /**
+   * Clones a season calendar (events and dependencies) from one brand/season to another.
+   *
+   * @auth season_calendar:update
+   * @input CloneSeasonCalendarInputSchema
+   * @output { calendarId, count }
+   */
   cloneFromBrandSeason: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
@@ -508,6 +639,13 @@ export const seasonCalendarRouter = router({
 
   // ─── Google sync ─────────────────────────────────────────────────────────────
 
+  /**
+   * Returns the Google Calendar sync status for a season calendar.
+   *
+   * @auth season_calendar:read
+   * @input { calendarId }
+   * @output Sync status details
+   */
   getSyncStatus: protectedProcedure
     .use(requirePermission('season_calendar:read'))
     .input(z.object({ calendarId: z.string().uuid() }))
@@ -521,6 +659,13 @@ export const seasonCalendarRouter = router({
       return getSyncStatus(input.calendarId, ctx.prisma);
     }),
 
+  /**
+   * Triggers a full reconcile sync of the calendar with Google Calendar.
+   *
+   * @auth season_calendar:sync
+   * @input { calendarId }
+   * @output { triggered: true, ...syncResult }
+   */
   triggerSync: protectedProcedure
     .use(requirePermission('season_calendar:sync'))
     .use(withRateLimit('configMutations'))
@@ -537,6 +682,16 @@ export const seasonCalendarRouter = router({
       return { triggered: true, ...syncResult };
     }),
 
+  /**
+   * Grants one or more users explicit visibility on a calendar event.
+   *
+   * Only the owning function's members or admins can grant visibility.
+   * Sends an in-app notification to each newly visible user.
+   *
+   * @auth season_calendar:update
+   * @input CalendarEventUserVisibilityInputSchema
+   * @output { ok: true }
+   */
   grantUserVisibility: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('companyStructureMutations'))
@@ -589,6 +744,13 @@ export const seasonCalendarRouter = router({
 
   // ─── Dependencies ───────────────────────────────────────────────────────────
 
+  /**
+   * Returns all event dependencies (predecessor/successor pairs) for a calendar.
+   *
+   * @auth season_calendar:read
+   * @input { calendarId }
+   * @output Array of CalendarEventDependency
+   */
   getDependencies: protectedProcedure
     .use(requirePermission('season_calendar:read'))
     .input(z.object({ calendarId: z.string().uuid() }))
@@ -754,6 +916,16 @@ export const seasonCalendarRouter = router({
 
   // ─── Simulate (what-if engine) ───────────────────────────────────────────────
 
+  /**
+   * Runs the what-if dependency violation engine against a set of proposed date shifts.
+   *
+   * Loads events, dependencies, and holidays for the requested calendars, then calls
+   * the `@luke/calendar` solver. Optionally returns a suggested resolution.
+   *
+   * @auth season_calendar:simulate
+   * @input WhatIfRequestSchema
+   * @output { violations, suggestion }
+   */
   simulate: protectedProcedure
     .use(requirePermission('season_calendar:simulate'))
     .input(WhatIfRequestSchema)
@@ -821,6 +993,16 @@ export const seasonCalendarRouter = router({
       return { violations, suggestion };
     }),
 
+  /**
+   * Revokes explicit visibility on a calendar event for one or more users.
+   *
+   * Only the owning function's members or admins can revoke visibility.
+   * Sends an in-app notification to each affected user.
+   *
+   * @auth season_calendar:update
+   * @input { eventId, userIds }
+   * @output { ok: true }
+   */
   revokeUserVisibility: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('companyStructureMutations'))
@@ -865,6 +1047,14 @@ export const seasonCalendarRouter = router({
       return { ok: true };
     }),
 
+  /**
+   * Lists calendar events that have a `requiredCollectionProgress` set, used to gate
+   * collection layout progress steps from the collection view.
+   *
+   * @auth season_calendar:read
+   * @input { brandId, seasonId }
+   * @output Array of calendar events with progress gate fields
+   */
   listEventsForCollection: protectedProcedure
     .use(requirePermission('season_calendar:read'))
     .input(z.object({ brandId: z.string().uuid(), seasonId: z.string().uuid() }))

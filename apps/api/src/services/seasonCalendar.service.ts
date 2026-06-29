@@ -12,6 +12,10 @@ const MS_PER_DAY = 86_400_000;
 
 // ─── Brand access helper ──────────────────────────────────────────────────────
 
+/**
+ * Throws FORBIDDEN if the user does not have access to the given brand.
+ * Admins (allowed === null) always pass.
+ */
 export async function assertBrandAccess(
   userId: string,
   brandId: string,
@@ -24,6 +28,10 @@ export async function assertBrandAccess(
   }
 }
 
+/**
+ * Filters a list of brand IDs to those the user is allowed to access.
+ * Returns the original list unchanged for admins (no restrictions).
+ */
 export async function filterAllowedBrandIds(
   userId: string,
   requestedBrandIds: string[],
@@ -37,6 +45,10 @@ export async function filterAllowedBrandIds(
 
 // ─── Calendar get/create ──────────────────────────────────────────────────────
 
+/**
+ * Returns the SeasonCalendar for the given brand+season, creating it if it does not exist.
+ * Includes brand/season metadata and event count.
+ */
 export async function getOrCreateCalendar(
   brandId: string,
   seasonId: string,
@@ -54,6 +66,9 @@ export async function getOrCreateCalendar(
   });
 }
 
+/**
+ * Updates the status of a SeasonCalendar (DRAFT | ACTIVE | ARCHIVED).
+ */
 export async function updateCalendarStatus(
   calendarId: string,
   status: 'DRAFT' | 'ACTIVE' | 'ARCHIVED',
@@ -62,6 +77,9 @@ export async function updateCalendarStatus(
   return prisma.seasonCalendar.update({ where: { id: calendarId }, data: { status } });
 }
 
+/**
+ * Sets the anchor date on a SeasonCalendar, used as the reference point for template offset calculations.
+ */
 export async function setAnchorDate(
   calendarId: string,
   anchorDate: Date,
@@ -72,6 +90,11 @@ export async function setAnchorDate(
 
 // ─── Milestone list ───────────────────────────────────────────────────────────
 
+/**
+ * Returns calendar events for the given season and brands, enriched with the caller's personal note.
+ *
+ * @param functionId - When provided, only events visible to this company function are returned.
+ */
 export async function listMilestonesDb(
   seasonId: string,
   brandIds: string[],
@@ -108,6 +131,10 @@ export async function listMilestonesDb(
 
 // ─── Milestone create/update/delete ──────────────────────────────────────────
 
+/**
+ * Creates a calendar event and its visibility entries within a single transaction.
+ * The owner function always receives a read-write visibility; all others are read-only.
+ */
 export async function createMilestone(
   input: CalendarEventInput,
   prisma: PrismaClient
@@ -143,6 +170,10 @@ export async function createMilestone(
   });
 }
 
+/**
+ * Partially updates a calendar event. When `visibilityFunctionIds` is provided,
+ * existing visibility entries are replaced atomically within a transaction.
+ */
 export async function updateMilestone(
   eventId: string,
   input: Partial<CalendarEventInput>,
@@ -182,12 +213,18 @@ export async function updateMilestone(
   });
 }
 
+/**
+ * Hard-deletes a calendar event and its related records (cascade).
+ */
 export async function deleteMilestone(eventId: string, prisma: PrismaClient): Promise<void> {
   await prisma.calendarEvent.delete({ where: { id: eventId } });
 }
 
 // ─── Note ────────────────────────────────────────────────────────────────────
 
+/**
+ * Creates or updates the caller's personal note on a calendar event.
+ */
 export async function upsertNote(
   eventId: string,
   userId: string,
@@ -201,6 +238,9 @@ export async function upsertNote(
   });
 }
 
+/**
+ * Deletes the caller's personal note on a calendar event, if any.
+ */
 export async function deleteNote(
   eventId: string,
   userId: string,
@@ -211,6 +251,10 @@ export async function deleteNote(
 
 // ─── Template ─────────────────────────────────────────────────────────────────
 
+/**
+ * Returns all milestone templates with their items (sorted by offsetDays),
+ * item visibilities, and predecessor dependencies.
+ */
 export async function listTemplates(prisma: PrismaClient) {
   return prisma.milestoneTemplate.findMany({
     include: {
@@ -228,6 +272,14 @@ export async function listTemplates(prisma: PrismaClient) {
   });
 }
 
+/**
+ * Materializes a milestone template onto a calendar anchored at `anchorDate`.
+ * Creates events, visibility entries, and dependency links within a transaction.
+ *
+ * @param force - When false, throws CONFLICT if the calendar already has events.
+ * @throws {TRPCError} CONFLICT if events exist and `force` is false.
+ * @throws {TRPCError} NOT_FOUND if the template does not exist.
+ */
 export async function applyTemplate(
   calendarId: string,
   templateId: string,
@@ -331,6 +383,9 @@ export async function applyTemplate(
 
 // ─── Template CRUD ────────────────────────────────────────────────────────────
 
+/**
+ * Creates a new milestone template with no items.
+ */
 export async function createTemplate(
   data: { name: string; description?: string },
   prisma: PrismaClient
@@ -338,6 +393,9 @@ export async function createTemplate(
   return prisma.milestoneTemplate.create({ data, include: { items: true } });
 }
 
+/**
+ * Updates the name or description of an existing milestone template.
+ */
 export async function updateTemplate(
   id: string,
   data: { name?: string; description?: string },
@@ -346,10 +404,16 @@ export async function updateTemplate(
   return prisma.milestoneTemplate.update({ where: { id }, data, include: { items: true } });
 }
 
+/**
+ * Deletes a milestone template and all its items (cascade).
+ */
 export async function deleteTemplate(id: string, prisma: PrismaClient) {
   await prisma.milestoneTemplate.delete({ where: { id } });
 }
 
+/**
+ * Adds an item to a milestone template with its visibility function assignments.
+ */
 export async function createTemplateItem(
   templateId: string,
   data: {
@@ -377,6 +441,10 @@ export async function createTemplateItem(
   });
 }
 
+/**
+ * Partially updates a template item. When `visibilityFunctionIds` is provided,
+ * existing visibility entries are replaced atomically within a transaction.
+ */
 export async function updateTemplateItem(
   id: string,
   data: {
@@ -407,12 +475,23 @@ export async function updateTemplateItem(
   });
 }
 
+/**
+ * Deletes a single template item (and its visibility entries via cascade).
+ */
 export async function deleteTemplateItem(id: string, prisma: PrismaClient) {
   await prisma.milestoneTemplateItem.delete({ where: { id } });
 }
 
 // ─── Clone ────────────────────────────────────────────────────────────────────
 
+/**
+ * Copies all matching events from a source brand+season calendar into a target brand+season calendar.
+ * Event dates are shifted by `dateShiftDays`; when omitted, the shift is computed from the
+ * difference between the two calendars' anchor dates.
+ *
+ * @throws {TRPCError} NOT_FOUND if the source calendar does not exist.
+ * @throws {TRPCError} BAD_REQUEST if `dateShiftDays` is omitted and either calendar lacks an anchor date.
+ */
 export async function cloneFromBrandSeason(
   input: CloneSeasonCalendarInput,
   prisma: PrismaClient
@@ -520,6 +599,10 @@ export async function cloneFromBrandSeason(
 
 // ─── Sync status ──────────────────────────────────────────────────────────────
 
+/**
+ * Returns Google Calendar sync status for a SeasonCalendar,
+ * aggregated by company function: event count and last sync timestamp.
+ */
 export async function getSyncStatus(calendarId: string, prisma: PrismaClient) {
   const mappings = await prisma.googleEventMapping.findMany({
     where: { event: { calendarId } },

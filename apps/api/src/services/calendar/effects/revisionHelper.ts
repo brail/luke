@@ -2,8 +2,10 @@ import type { PrismaClient } from '@prisma/client';
 
 import { createRevision } from '../../collectionLayoutRevision.service.js';
 
-// Creates a MILESTONE revision snapshot when a CalendarEvent locks a CollectionLayout.
-// Photos are NOT copied to the immutable bucket (V2 simplification — acceptable).
+/**
+ * Creates a MILESTONE_LOCK revision snapshot of a CollectionLayout when it is locked by a calendar event.
+ * Photos are not copied to the immutable bucket (V2 simplification — photo keys point to the original bucket).
+ */
 export async function createRevisionForEffect(
   prisma: PrismaClient,
   collectionLayoutId: string,

@@ -1,8 +1,11 @@
 /**
- * Configurazione centralizzata per Helmet security headers
- * Baseline invariabile per tutte le versioni dell'API
+ * Centralised Helmet security-header configuration.
+ * Provides an immutable baseline for all API versions.
  */
 
+/**
+ * Typed Helmet plugin configuration subset used by the API.
+ */
 export interface HelmetConfig {
   contentSecurityPolicy?:
     | false
@@ -27,9 +30,11 @@ export interface HelmetConfig {
 }
 
 /**
- * Costruisce la configurazione Helmet basata sull'ambiente
- * @param env - Ambiente: 'development', 'test', 'production'
- * @returns Configurazione Helmet ottimizzata per l'ambiente
+ * Builds a Helmet configuration object tuned for the given environment.
+ * CSP is disabled in development; HSTS is enabled only in production.
+ *
+ * @param env - Runtime environment (`'development'`, `'test'`, or `'production'`).
+ * @returns Helmet configuration optimised for the environment.
  */
 export function buildHelmetConfig(env: string): HelmetConfig {
   const isDevelopment = env === 'development';
@@ -65,7 +70,8 @@ export function buildHelmetConfig(env: string): HelmetConfig {
 }
 
 /**
- * Header di sicurezza applicati per ambiente
+ * Reference map of security headers applied per environment.
+ * Intended for documentation and test assertions; actual headers are set by Helmet.
  */
 export const SECURITY_HEADERS = {
   development: {

@@ -1,12 +1,8 @@
 /**
- * Idempotency tRPC Middleware per Luke API
- * Wrapper tRPC che riusa l'IdempotencyStore esistente
- *
- * Caratteristiche:
- * - Riusa IdempotencyStore esistente (DRY)
- * - Header: Idempotency-Key (UUID v4)
- * - Serializzazione input tRPC per hash
- * - TTL: 5 minuti (ereditato da IdempotencyStore)
+ * tRPC idempotency middleware for Luke API.
+ * Reuses the shared `IdempotencyStore` to deduplicate mutation requests
+ * identified by a client-supplied `Idempotency-Key: <uuid-v4>` header.
+ * TTL and capacity are inherited from the store defaults (5 min / 1 000 keys).
  */
 
 import { TRPCError } from '@trpc/server';
@@ -17,10 +13,12 @@ import { idempotencyStore } from './idempotency';
 const logger = pino({ level: 'info' });
 
 /**
- * Middleware tRPC per idempotency
- * Riusa l'IdempotencyStore esistente per gestire richieste duplicate
+ * Returns a raw tRPC middleware function that enforces idempotency for mutations.
+ * Requests without an `Idempotency-Key` header are passed through unchanged.
+ * A second request with the same key and identical body returns the cached response.
+ * A second request with the same key but a different body throws `CONFLICT`.
  *
- * @returns Middleware tRPC
+ * @returns Raw tRPC middleware (use directly with `.use()` on a procedure).
  */
 export function withIdempotency() {
   return async ({ ctx, next, path, type }: any) => {
@@ -97,27 +95,23 @@ export function withIdempotency() {
 }
 
 /**
- * Helper per verificare se una richiesta ha idempotency key
- *
- * @param ctx - Context tRPC
- * @returns true se ha idempotency key, false altrimenti
+ * Returns `true` if the request carries an `Idempotency-Key` header.
  */
 export function hasIdempotencyKey(ctx: { req: any }): boolean {
   return !!ctx.req.headers['idempotency-key'];
 }
 
 /**
- * Helper per estrarre l'idempotency key da una richiesta
+ * Extracts the `Idempotency-Key` header value from the request.
  *
- * @param ctx - Context tRPC
- * @returns Idempotency key o null
+ * @returns The key string, or `null` if the header is absent.
  */
 export function getIdempotencyKey(ctx: { req: any }): string | null {
   return ctx.req.headers['idempotency-key'] || null;
 }
 
 /**
- * Configurazione idempotency tRPC esportata
+ * Static configuration constants for the tRPC idempotency middleware.
  */
 export const IDEMPOTENCY_TRPC_CONFIG = {
   headerName: 'idempotency-key',

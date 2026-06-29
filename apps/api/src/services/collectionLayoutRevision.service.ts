@@ -49,6 +49,13 @@ export type CollectionLayoutAsOfRevision = {
 
 // ─── createRevision ───────────────────────────────────────────────────────────
 
+/**
+ * Snapshots the current collection layout as a new revision. Photos are copied to the
+ * immutable bucket before the transaction to keep the transaction short.
+ *
+ * @param copyPhoto - Callback that copies a photo by source key and returns the new key.
+ * @returns The created revision with all groups, rows, and quotation snapshots.
+ */
 export async function createRevision(
   input: CreateRevisionInput,
   userId: string,
@@ -213,6 +220,11 @@ export async function createRevision(
 
 // ─── listRevisions ────────────────────────────────────────────────────────────
 
+/**
+ * Lists all revisions for a collection layout in descending revision number order.
+ *
+ * @returns Lightweight revision summaries including row count and creator info.
+ */
 export async function listRevisions(
   collectionLayoutId: string,
   prisma: PrismaClient,
@@ -242,6 +254,11 @@ export async function listRevisions(
 
 // ─── getRevisionDetail ────────────────────────────────────────────────────────
 
+/**
+ * Fetches a single revision with its full group/row/quotation snapshot.
+ *
+ * @throws Prisma NotFoundError if the revision does not exist.
+ */
 export async function getRevisionDetail(
   revisionId: string,
   prisma: PrismaClient,
@@ -265,6 +282,12 @@ export async function getRevisionDetail(
 
 // ─── getLayoutAsOfRevision ────────────────────────────────────────────────────
 
+/**
+ * Reconstructs the layout state as it appeared at a specific revision by applying a
+ * "latest snapshot ≤ target revision number" strategy via raw SQL. Deleted rows are excluded.
+ *
+ * @returns The target revision summary plus the reconstructed group/row structure.
+ */
 export async function getLayoutAsOfRevision(
   collectionLayoutId: string,
   revisionId: string,

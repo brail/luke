@@ -15,6 +15,13 @@ const IMAGE_CONFIG = {
   allowedExtensions: ['.png', '.jpg', '.jpeg', '.webp'] as const,
 };
 
+/**
+ * Uploads a brand logo to the pending bucket without linking it to any brand.
+ * The caller must confirm the upload via the brand save flow.
+ *
+ * @returns Public URL and file object ID for the pending logo.
+ * @throws {TRPCError} BAD_REQUEST if the file type or magic bytes are invalid.
+ */
 export async function uploadTempBrandLogo(
   ctx: Context,
   params: {
@@ -60,6 +67,13 @@ export async function uploadTempBrandLogo(
   return { publicUrl, fileObjectId: fileObject.id };
 }
 
+/**
+ * Uploads a new logo for an existing brand, updates the brand record, and schedules
+ * asynchronous deletion of the previous logo file.
+ *
+ * @returns Public URL, bucket name, and storage key of the new logo.
+ * @throws {TRPCError} BAD_REQUEST if the file is invalid. NOT_FOUND if the brand does not exist.
+ */
 export async function uploadBrandLogo(
   ctx: Context,
   params: {
@@ -131,6 +145,14 @@ export async function uploadBrandLogo(
   return { publicUrl, bucket: 'brand-logos', key: fileObject.key };
 }
 
+/**
+ * Deletes a file from storage with exponential back-off retry. Updates the FileObject
+ * cleanup status in the database on success or final failure.
+ *
+ * @param maxRetries - Maximum number of attempts (default 3).
+ * @param baseDelay - Initial delay in milliseconds before the first retry (default 100).
+ * @returns true if the file was deleted successfully, false after all retries are exhausted.
+ */
 export async function deleteFileWithRetry(
   ctx: Context,
   params: {
@@ -188,6 +210,13 @@ export async function deleteFileWithRetry(
   return false;
 }
 
+/**
+ * Retries storage deletion for FileObjects whose previous cleanup attempts failed,
+ * skipping those that have already had 5 or more attempts or were cleaned up less
+ * than 1 hour ago.
+ *
+ * @returns Number of files successfully deleted in this run.
+ */
 export async function retryFailedCleanups(ctx: Context): Promise<number> {
   try {
     const failedFiles = await ctx.prisma.fileObject.findMany({

@@ -2,6 +2,9 @@ import type { PrismaClient, NotificationCategory, Prisma } from '@prisma/client'
 
 import { sseStore } from './sseStore';
 
+/**
+ * Parameters for creating a single in-app notification.
+ */
 interface CreateNotificationParams {
   userId: string;
   category: NotificationCategory;
@@ -11,6 +14,10 @@ interface CreateNotificationParams {
   data?: Record<string, unknown>;
 }
 
+/**
+ * Creates a single in-app notification for a user if the user has not disabled
+ * that notification category. Immediately pushes an SSE ping to connected clients.
+ */
 export async function createNotification(
   prisma: PrismaClient,
   params: CreateNotificationParams
@@ -36,6 +43,11 @@ export async function createNotification(
   sseStore.pushToUser(params.userId, { type: 'notification', payload: {} });
 }
 
+/**
+ * Returns the set of user IDs who should receive notifications for a milestone.
+ * Includes members of all company teams whose function is linked to the event,
+ * plus any users with a direct user-level visibility entry.
+ */
 export async function getVisibleUserIdsForMilestone(
   milestoneId: string,
   prisma: PrismaClient
@@ -59,6 +71,11 @@ export async function getVisibleUserIdsForMilestone(
   return Array.from(userIds);
 }
 
+/**
+ * Broadcasts a notification to all active admin users in a single `createMany` call.
+ * Respects per-user notification preferences (disabled entries are excluded).
+ * Sends an SSE ping to each notified admin's active connections.
+ */
 export async function notifyAdmins(
   prisma: PrismaClient,
   params: Omit<CreateNotificationParams, 'userId'>

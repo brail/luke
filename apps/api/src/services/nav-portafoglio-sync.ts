@@ -1,16 +1,16 @@
 /**
- * NAV → PostgreSQL sync per le tabelle analytics del portafoglio ordini.
+ * NAV → PostgreSQL sync for the order portfolio analytics tables.
  *
- * Strategia per tabella:
- *  - Sales Header / Line / Header Ext: incrementale via rowversion SQL Server,
- *    filtrato alle stagioni attive (Season.isActive = true).
- *  - Item / Customer / ShipToAddress: incrementale via rowversion, NO season filter.
- *  - Lookup (Salesperson, GeoZone, ecc.): full sync ad ogni ciclo (tabelle piccole).
- *  - DatePrenotazione / DdtPicking: full-refresh (query aggregata), scoped ai
- *    document-nos già presenti in nav_pf_sales_header.
+ * Strategy per table:
+ *  - Sales Header / Line / Header Ext: incremental via SQL Server rowversion,
+ *    filtered to active seasons (Season.isActive = true).
+ *  - Item / Customer / ShipToAddress: incremental via rowversion, no season filter.
+ *  - Lookup tables (Salesperson, GeoZone, etc.): full sync each cycle (small tables).
+ *  - DatePrenotazione / DdtPicking: full-refresh aggregated query, scoped to
+ *    document numbers already present in nav_pf_sales_header.
  *
- * Il ciclo è progettato per girare ogni 5 min in background.
- * Al di là del primo sync (full), le successive passate sono tipicamente <10 s.
+ * Designed to run every 5 minutes as a background job.
+ * After the initial full sync, subsequent runs are typically under 10 seconds.
  */
 
 import type { PrismaClient } from '@prisma/client';
@@ -104,8 +104,8 @@ async function updateSyncState(
 }
 
 /**
- * Aggiunge i parametri stagione a un request mssql e ritorna la IN clause.
- * Es: ["E26", "I26"] → "@s0, @s1"
+ * Binds season codes as named parameters on an mssql Request and returns the IN clause.
+ * Example: ["E26", "I26"] → "@s0, @s1"
  */
 function bindSeasons(req: mssql.Request, seasons: string[]): string {
   seasons.forEach((code, i) => req.input(`s${i}`, mssql.NVarChar(10), code));
@@ -737,12 +737,12 @@ async function syncDdtPicking(
 // ─── Orchestrator ──────────────────────────────────────────────────────────────
 
 /**
- * Esegue un ciclo completo di sync NAV → PG per le tabelle portafoglio.
+ * Runs a full NAV → PostgreSQL sync cycle for all order portfolio tables.
+ * Skips the run if no active seasons are found and returns an error result.
  *
- * @param pool     Pool mssql già connesso
- * @param company  Nome company NAV grezzo (es. 'NewEra') — sanitizzato internamente
- * @param prisma   PrismaClient
- * @param logger   Logger Pino
+ * @param pool - Already-connected mssql connection pool.
+ * @param company - Raw NAV company name (e.g. 'NewEra') — sanitized internally.
+ * @returns Sync stats per table, active season codes, total duration, and optional error string.
  */
 export async function syncPortafoglioNow(
   pool: mssql.ConnectionPool,

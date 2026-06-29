@@ -1,6 +1,6 @@
 /**
- * Setup tRPC per Luke API
- * Definisce il context e le procedure base per i router
+ * tRPC setup for Luke API.
+ * Defines the request context factory, base procedures, and shared middleware.
  */
 
 import { randomUUID } from 'crypto';
@@ -19,8 +19,8 @@ import type { Context } from './context';
 import type { PrismaClient } from '@prisma/client';
 
 /**
- * Cache in-memory per tokenVersion con TTL
- * Evita query DB ad ogni richiesta per verificare tokenVersion
+ * In-memory tokenVersion cache with TTL.
+ * Avoids a DB round-trip on every request to verify that the token has not been revoked.
  */
 const tokenVersionCache = new Map<
   string,
@@ -33,18 +33,13 @@ let cachedTTLTimestamp: number = 0;
 const TTL_REFRESH_INTERVAL = 5 * 60 * 1000; // Refresh config ogni 5min
 
 /**
- * Invalida la cache tokenVersion per un utente specifico
- * Chiamata dopo revoca sessioni o cambio password
+ * Removes the cached tokenVersion for a specific user.
+ * Call this after revoking sessions or changing a user's password.
  */
 export function invalidateTokenVersionCache(userId: string): void {
   tokenVersionCache.delete(userId);
 }
 
-/**
- * Ottiene il TTL della cache da AppConfig con refresh periodico
- * @param prisma - Client Prisma
- * @returns TTL in millisecondi
- */
 async function getCacheTTL(prisma: PrismaClient): Promise<number> {
   const now = Date.now();
 
@@ -59,13 +54,6 @@ async function getCacheTTL(prisma: PrismaClient): Promise<number> {
   return cachedTTLValue;
 }
 
-/**
- * Verifica tokenVersion con cache
- * @param userId - ID utente
- * @param tokenVersion - Versione dal JWT
- * @param prisma - Client Prisma
- * @returns true se valido, false se invalidato
- */
 async function verifyTokenVersion(
   userId: string,
   tokenVersion: number | undefined,
@@ -104,9 +92,8 @@ async function verifyTokenVersion(
 }
 
 /**
- * Crea il context per tRPC
- * @param context - Oggetto contenente le dipendenze
- * @returns Context per tRPC
+ * Creates a tRPC context for an incoming Fastify request.
+ * Authenticates the request, assigns a traceId, and injects dependencies.
  */
 export async function createContext({
   prisma,
@@ -134,30 +121,20 @@ export async function createContext({
 }
 
 /**
- * Inizializza tRPC con il context
- * NOTA: `t` è importato da './t.ts' per evitare circular dependencies
- */
-
-/**
- * Router base per tRPC
+ * Base tRPC router factory. Use this to create all domain routers.
  */
 export const router = t.router;
 
-/**
- * Esporta t per uso in middleware personalizzati
- */
 export { t };
 
 /**
- * Procedure pubblica (senza autenticazione)
- * Per ora tutte le procedure sono pubbliche
- * In futuro si aggiungerà middleware per autenticazione
+ * Base procedure with no authentication requirement.
+ * Use for endpoints that must be accessible without a session (e.g. login, health checks).
  */
 export const publicProcedure = t.procedure;
 
 /**
- * Middleware per logging delle procedure
- * Logga le chiamate tRPC per debugging
+ * Middleware that logs the start and completion of every tRPC call with duration.
  */
 export const loggingMiddleware = t.middleware(
   async ({ next, path, type, ctx }) => {
@@ -186,8 +163,8 @@ export const loggingMiddleware = t.middleware(
 );
 
 /**
- * Middleware per autenticazione
- * Verifica che l'utente sia autenticato e che il tokenVersion sia valido
+ * Middleware that enforces authentication and tokenVersion validity.
+ * Rejects requests with an `UNAUTHORIZED` error if the session is absent or the token has been revoked.
  */
 export const authMiddleware = t.middleware(async ({ ctx, next }) => {
   if (!ctx.session) {
@@ -220,8 +197,8 @@ export const authMiddleware = t.middleware(async ({ ctx, next }) => {
 });
 
 /**
- * Middleware per autorizzazione admin
- * Verifica che l'utente sia autenticato e abbia ruolo admin
+ * Middleware that restricts access to users with the `admin` role.
+ * Must be chained after `authMiddleware` (already done in `adminProcedure`).
  */
 export const adminMiddleware = t.middleware(async ({ ctx, next }) => {
   if (!ctx.session) {
@@ -247,27 +224,25 @@ export const adminMiddleware = t.middleware(async ({ ctx, next }) => {
 });
 
 /**
- * Procedure con logging automatico
+ * Public procedure with automatic request logging.
  */
 export const loggedProcedure = publicProcedure.use(loggingMiddleware);
 
 /**
- * Procedure protetta (richiede autenticazione)
+ * Procedure that requires a valid authenticated session.
  */
 export const protectedProcedure = publicProcedure
   .use(loggingMiddleware)
   .use(authMiddleware);
 
 /**
- * Procedure admin (richiede ruolo admin)
- * Chains authMiddleware so tokenVersion is verified before the role check.
+ * Procedure that requires admin role.
+ * Chains `authMiddleware` so tokenVersion is verified before the role check.
  */
 export const adminProcedure = publicProcedure
   .use(loggingMiddleware)
   .use(authMiddleware)
   .use(adminMiddleware);
 
-/**
- * Re-esporta Context da ./context per backward compatibility
- */
+/** Re-exported for backward compatibility. */
 export type { Context };

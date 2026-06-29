@@ -1,16 +1,20 @@
 /**
- * Middleware tRPC per AuditLog centralizzato
- * Gestisce automaticamente logging SUCCESS/FAILURE per tutte le mutation
+ * tRPC middleware for centralised audit logging.
+ * Automatically records SUCCESS or FAILURE for every mutation that uses it.
  */
 
 import { logAudit } from './auditLog';
 import { t } from './trpc';
 
 /**
- * Middleware per logging automatico di audit
- * @param action - Azione in SCREAMING_SNAKE_CASE (es. 'USER_CREATE')
- * @param targetType - Tipo risorsa (User, Config, Auth)
- * @returns Middleware tRPC
+ * Creates a tRPC middleware that automatically logs audit events for mutations.
+ * Query procedures are passed through without any audit entry.
+ * On success the `targetId` is extracted from the result or input; on failure
+ * only the error code and a truncated message are recorded (no PII).
+ *
+ * @param action - Action identifier in SCREAMING_SNAKE_CASE (e.g. 'USER_CREATE').
+ * @param targetType - Domain entity type affected (e.g. 'User', 'Config').
+ * @returns tRPC middleware.
  */
 export function withAuditLog(action: string, targetType: string) {
   return t.middleware(async ({ ctx, next, type, input }) => {

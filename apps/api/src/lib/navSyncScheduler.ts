@@ -44,6 +44,11 @@ const isRunning: Partial<Record<Entity, boolean>> = {};
 let _pauseResolve: (() => void) | null = null;
 let _isPaused = false;
 
+/**
+ * Pauses the NAV scheduler and waits for any in-progress sync runs to finish.
+ * Use this before closing the mssql pool (e.g. when reconfiguring the NAV connection)
+ * to avoid null-pool errors mid-operation. Call `resumeNavScheduler()` afterwards.
+ */
 export async function pauseNavScheduler(): Promise<void> {
   _isPaused = true;
   // Aspetta che tutte le entità in corso finiscano
@@ -55,6 +60,9 @@ export async function pauseNavScheduler(): Promise<void> {
   });
 }
 
+/**
+ * Resumes the NAV scheduler after a call to `pauseNavScheduler()`.
+ */
 export function resumeNavScheduler(): void {
   _isPaused = false;
   _pauseResolve = null;
@@ -67,6 +75,12 @@ function _checkAllDone(): void {
   }
 }
 
+/**
+ * Registers the NAV sync scheduler as a Fastify plugin.
+ * Starts a global 60-second tick on `onReady`; each tick re-reads per-entity
+ * `NavSyncFilter` settings from the database so interval/enable changes take
+ * effect within one minute without a restart. Closes the mssql pool on `onClose`.
+ */
 export function registerNavSyncScheduler(
   fastify: FastifyInstance,
   prisma: PrismaClient,

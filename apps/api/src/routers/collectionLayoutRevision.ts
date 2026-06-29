@@ -1,3 +1,14 @@
+/**
+ * tRPC router for collection layout revision management (ISO 9001 quality register).
+ *
+ * Exposes:
+ *  - collectionLayoutRevision.create — snapshot the current layout as a numbered revision
+ *  - collectionLayoutRevision.list   — list revisions for a layout
+ *  - collectionLayoutRevision.getDetail — full detail of a single revision
+ *  - collectionLayoutRevision.getLayoutAsOf — reconstruct the layout at a past revision
+ *  - collectionLayoutRevision.export.xlsx / pdf — export a revision
+ */
+
 import { z } from 'zod';
 
 import {
@@ -24,6 +35,16 @@ import {
 import { buildRevisionXlsx, buildRevisionPdf } from '../services/collectionLayout.export.revision.service';
 
 export const collectionLayoutRevisionRouter = router({
+  /**
+   * Creates a new numbered revision snapshot of the current collection layout.
+   *
+   * MILESTONE cause is rejected — those revisions are created automatically by the system
+   * when a calendar event is completed. Row photos are copied to the immutable bucket.
+   *
+   * @auth collection_layout:revise
+   * @input CreateRevisionInputSchema
+   * @output The created CollectionLayoutRevision record
+   */
   create: protectedProcedure
     .use(requirePermission('collection_layout:revise'))
     .use(withRateLimit('configMutations'))
@@ -64,6 +85,13 @@ export const collectionLayoutRevisionRouter = router({
       return revision;
     }),
 
+  /**
+   * Lists all revisions for a collection layout in chronological order.
+   *
+   * @auth collection_layout:view_revisions
+   * @input GetRevisionsListInputSchema
+   * @output Array of revision summaries
+   */
   list: protectedProcedure
     .use(requirePermission('collection_layout:view_revisions'))
     .input(GetRevisionsListInputSchema)
@@ -71,6 +99,13 @@ export const collectionLayoutRevisionRouter = router({
       return listRevisions(input.collectionLayoutId, ctx.prisma);
     }),
 
+  /**
+   * Returns full detail for a single revision, including all snapshotted row data.
+   *
+   * @auth collection_layout:view_revisions
+   * @input GetRevisionDetailInputSchema
+   * @output Full CollectionLayoutRevision with snapshot rows
+   */
   getDetail: protectedProcedure
     .use(requirePermission('collection_layout:view_revisions'))
     .input(GetRevisionDetailInputSchema)
@@ -78,6 +113,13 @@ export const collectionLayoutRevisionRouter = router({
       return getRevisionDetail(input.revisionId, ctx.prisma);
     }),
 
+  /**
+   * Reconstructs the collection layout as it was at a specific revision.
+   *
+   * @auth collection_layout:view_revisions
+   * @input GetLayoutAsOfRevisionInputSchema
+   * @output Layout snapshot data as of the specified revision
+   */
   getLayoutAsOf: protectedProcedure
     .use(requirePermission('collection_layout:view_revisions'))
     .input(GetLayoutAsOfRevisionInputSchema)

@@ -2,6 +2,9 @@ import { TRPCError } from '@trpc/server';
 
 import type { StateEffectHandler } from '../types.js';
 
+/**
+ * Effect handler that releases the lock on a CollectionLayout previously set by a calendar event.
+ */
 export const unlockCollectionLayoutHandler: StateEffectHandler = {
   async validate(ctx) {
     const layout = await ctx.prisma.collectionLayout.findUnique({

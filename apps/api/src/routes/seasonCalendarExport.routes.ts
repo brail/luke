@@ -1,3 +1,16 @@
+/**
+ * Fastify plugin for season calendar export endpoints.
+ *
+ * Endpoints (all require authentication; brand access is enforced per-request):
+ *  - GET /season-calendar/export/ical  — download milestones as an iCal (.ics) file
+ *  - GET /season-calendar/export/pdf   — download milestones as a PDF (list/week/month/gantt view)
+ *  - GET /season-calendar/export/xlsx  — download milestones as an Excel workbook
+ *
+ * Query parameters: seasonId (required), brandIds (comma-separated, required),
+ * functionId (optional filter), view (list|week|month|gantt, default: list),
+ * viewDate (ISO date string used by week/month views).
+ */
+
 import fp from 'fastify-plugin';
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import type { PrismaClient } from '@prisma/client';

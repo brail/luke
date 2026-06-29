@@ -1,6 +1,6 @@
 /**
- * Helper centralizzato per operazioni email verification
- * Elimina duplicazione di token generation + audit logging
+ * Centralised helper for email verification operations.
+ * Eliminates duplicated token generation and audit logging across callers.
  */
 
 import { randomBytes, createHash } from 'crypto';
@@ -11,6 +11,9 @@ import { logAudit } from './auditLog';
 import { getConfig } from './configManager';
 import { sendEmailVerificationEmail } from './mailer';
 
+/**
+ * Options for sending a verification email to a user.
+ */
 export interface SendVerificationEmailOptions {
   userId: string;
   reason?:
@@ -18,18 +21,22 @@ export interface SendVerificationEmailOptions {
     | 'email_changed'
     | 'admin_initiated'
     | 'user_requested';
-  actorId?: string; // Per audit log
+  /** ID of the user performing the action, used for audit logging. */
+  actorId?: string;
 }
 
 /**
- * Helper centralizzato per generare token + inviare email verifica
- * Gestisce: token generation, hash, DB save, email send, audit log
+ * Generates a verification token, persists it, sends the verification email,
+ * and records an audit log entry.
+ * Any previously pending VERIFY tokens for the user are invalidated first.
+ * If the email is already verified (and `reason` is not `'email_changed'`),
+ * the operation is a no-op and returns success immediately.
  *
- * @param prisma - Client Prisma
- * @param options - Opzioni invio (userId, reason, actorId)
- * @param ctx - Context tRPC opzionale per audit log
- * @returns Promise con risultato operazione
- * @throws Error se utente non trovato o invio email fallisce
+ * @param prisma - Prisma client.
+ * @param options - Target user, reason, and optional actor for audit logging.
+ * @param ctx - Optional tRPC-like context for request correlation in the audit log.
+ * @returns Success flag and a human-readable message.
+ * @throws {Error} If the user is not found or the email send fails after retries.
  */
 export async function sendVerificationEmail(
   prisma: PrismaClient,

@@ -3,6 +3,13 @@ import type { StateEffectType } from '@luke/core';
 
 import { getEffectHandler } from './registry.js';
 
+/**
+ * Executes a calendar state effect: validates it, then applies it within a transaction
+ * and records the execution with a previous-state snapshot for future rollback.
+ *
+ * @returns The created CalendarEventEffectExecution record.
+ * @throws {TRPCError} From the handler's `validate` call if the effect cannot be applied.
+ */
 export async function executeEffect(
   prisma: PrismaClient,
   effectId: string,

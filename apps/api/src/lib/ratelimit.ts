@@ -1,12 +1,8 @@
 /**
- * Rate-Limit Store per Luke API
- * Store in-memory con LRU cache per gestire rate limiting per-rotta
- *
- * Caratteristiche:
- * - LRU cache con max 1000 keys per rotta
- * - TTL: configurabile per rotta (1-15 minuti)
- * - Key extraction: IP per endpoint pubblici, userId per endpoint autenticati
- * - Cleanup automatico ogni minuto
+ * In-memory rate-limit store for Luke API.
+ * Uses a per-route LRU Map (max 1 000 keys per route) with configurable TTL windows.
+ * Key extraction is IP-based for public endpoints and user-ID-based for authenticated ones.
+ * Expired entries are evicted on a 60-second cleanup interval.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -19,8 +15,8 @@ import { resolveRateLimitPolicy } from './rateLimitPolicy';
 const logger = pino({ level: 'info' });
 
 /**
- * Configurazione rate-limit hardcoded
- * Valori conservativi per sicurezza
+ * Static fallback rate-limit configuration used when AppConfig / env overrides are absent.
+ * Values are conservative security defaults.
  */
 export const RATE_LIMIT_CONFIG = {
   login: {
@@ -81,7 +77,7 @@ export const RATE_LIMIT_CONFIG = {
 } as const;
 
 /**
- * Entry nel store rate-limit
+ * Internal sliding-window entry tracked per key.
  */
 interface RateLimitEntry {
   /** Numero di richieste nel window corrente */
@@ -93,7 +89,7 @@ interface RateLimitEntry {
 }
 
 /**
- * Store rate-limit in-memory con LRU e TTL
+ * In-memory rate-limit store with per-route LRU maps and TTL-based window expiry.
  */
 class RateLimitStore {
   private stores = new Map<string, Map<string, RateLimitEntry>>();
@@ -274,16 +270,16 @@ class RateLimitStore {
 }
 
 /**
- * Istanza singleton del store rate-limit
+ * Singleton rate-limit store shared by all tRPC procedures.
  */
 export const rateLimitStore = new RateLimitStore();
 
 /**
- * Estrae la chiave per rate-limit dal context tRPC
+ * Derives the rate-limit bucket key from the request context.
  *
- * @param ctx - Context tRPC
- * @param keyBy - Tipo di chiave ('ip' o 'userId')
- * @returns Chiave per rate-limit
+ * @param keyBy - `'ip'` for unauthenticated endpoints, `'userId'` for authenticated ones.
+ * @returns The resolved key string.
+ * @throws {Error} If `keyBy` is `'userId'` but the session is missing.
  */
 export function extractRateLimitKey(
   ctx: { req: any; session?: { user: { id: string } } | null },
@@ -304,12 +300,12 @@ export function extractRateLimitKey(
 }
 
 /**
- * Middleware tRPC per rate-limit
- * Factory che crea middleware per una specifica rotta
- * Usa risoluzione dinamica: AppConfig → ENV → Default
+ * Creates a tRPC middleware that enforces rate limiting for the specified route.
+ * Policy is resolved dynamically on every request: AppConfig → ENV → static default.
+ * Requests beyond the limit receive a `TOO_MANY_REQUESTS` tRPC error.
  *
- * @param routeName - Nome della rotta (deve essere in RATE_LIMIT_CONFIG)
- * @returns Middleware tRPC
+ * @param routeName - Route name (must be a key of `RATE_LIMIT_CONFIG`).
+ * @returns tRPC middleware.
  */
 export function withRateLimit(routeName: keyof typeof RATE_LIMIT_CONFIG) {
   return t.middleware(async ({ ctx, next }) => {
@@ -358,7 +354,7 @@ export function withRateLimit(routeName: keyof typeof RATE_LIMIT_CONFIG) {
 }
 
 /**
- * Configurazione rate-limit esportata
+ * Internal rate-limit store configuration constants.
  */
 export const RATE_LIMIT_CONFIG_EXPORT = {
   maxSize: 1000,

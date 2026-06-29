@@ -1,16 +1,16 @@
 /**
- * Scheduler per la sincronizzazione periodica NAV → PG del portafoglio ordini.
+ * Periodic scheduler for NAV → Postgres synchronisation of the order portafoglio.
  *
- * Avvio: hook onReady di Fastify (dopo che il server è in ascolto).
- * Arresto: hook onClose di Fastify (ferma il timer).
+ * Startup: Fastify `onReady` hook (after the server begins listening).
+ * Shutdown: Fastify `onClose` hook (stops the timer).
  *
  * Design:
- * - Tick ogni 1 minuto.
- * - Legge la configurazione (autoSyncEnabled, intervalMinutes) da NavSyncFilter
- *   dove entity='portafoglio' a ogni tick — nessun restart necessario per applicare modifiche.
- * - Se non esiste configurazione il sync automatico è disabilitato.
- * - `triggerPortafoglioSyncNow()` è esportato per il tRPC handler "Aggiorna Ora".
- * - Un errore di sync non causa il crash del server.
+ * - Global tick every 1 minute.
+ * - Reads `autoSyncEnabled` and `intervalMinutes` from NavSyncFilter (entity = 'portafoglio')
+ *   on every tick — changes take effect within one minute without a restart.
+ * - Automatic sync is disabled when no configuration row exists.
+ * - `triggerPortafoglioSyncNow()` is exported for the "Sync Now" tRPC handler.
+ * - Sync errors are logged but do not crash the server.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -79,21 +79,25 @@ async function _runSync(): Promise<PortafoglioSyncResult | null> {
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Avvia un sync del portafoglio immediatamente.
- * Restituisce null se un sync è già in corso o NAV non è configurato.
- * Usato dal tRPC handler "Aggiorna Ora".
+ * Triggers an immediate portafoglio sync run.
+ *
+ * @returns Sync result, or `null` if a sync is already in progress or NAV is not configured.
  */
 export async function triggerPortafoglioSyncNow(): Promise<PortafoglioSyncResult | null> {
   return _runSync();
 }
 
-/** Restituisce true se un sync è attualmente in corso. */
+/** Returns `true` if a portafoglio sync is currently in progress. */
 export function isPortafoglioSyncRunning(): boolean {
   return _isRunning;
 }
 
 // ─── Fastify registration ────────────────────────────────────────────────────
 
+/**
+ * Registers the portafoglio sync scheduler as a Fastify plugin.
+ * Starts the tick interval on `onReady` and clears it on `onClose`.
+ */
 export function registerPortafoglioSyncScheduler(
   fastify: FastifyInstance,
   prisma: PrismaClient,

@@ -1,6 +1,6 @@
 /**
- * Wrapper LDAP resiliente con circuit breaker, retry e timeout
- * Gestisce errori di rete, timeout e mappatura semantica per fallback sicuro
+ * Resilient LDAP client with circuit breaker, exponential-backoff retry, and timeout.
+ * Handles network errors, timeouts, and semantic error mapping for safe fallback behaviour.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -12,7 +12,7 @@ import type { LdapConfig } from './configManager';
 import type { LdapResilienceConfig } from '@luke/core';
 
 /**
- * Stati del circuit breaker
+ * Possible states of the circuit breaker state machine.
  */
 enum CircuitBreakerState {
   CLOSED = 'closed',
@@ -21,8 +21,8 @@ enum CircuitBreakerState {
 }
 
 /**
- * Circuit breaker custom per LDAP
- * Gestisce state machine: closed → open → halfOpen → closed
+ * LDAP-specific circuit breaker implementing the closed → open → half-open → closed
+ * state machine. Trips when the failure count reaches the configured threshold.
  */
 class CircuitBreaker {
   private state: CircuitBreakerState = CircuitBreakerState.CLOSED;
@@ -106,7 +106,8 @@ class CircuitBreaker {
 }
 
 /**
- * Client LDAP resiliente con retry, timeout e circuit breaker
+ * LDAP client with transparent retry, timeout, and circuit-breaker protection.
+ * All public operations route through the circuit breaker and the retry loop.
  */
 export class ResilientLdapClient {
   private _client: Client | null = null;
@@ -121,9 +122,8 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Connette al server LDAP
-   * ldapts usa connessione lazy: il Client viene creato qui,
-   * la connessione TCP avviene al primo bind().
+   * Initialises the underlying ldapts `Client`.
+   * The TCP connection is established lazily on the first `bind()` call.
    */
   async connect(): Promise<void> {
     return this.breaker.execute(async () => {
@@ -146,7 +146,10 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Bind con credenziali
+   * Binds to the LDAP server with the given DN and password.
+   * Maps `InvalidCredentialsError` (LDAP code 49) to a `UNAUTHORIZED` TRPCError.
+   *
+   * @throws {TRPCError} `UNAUTHORIZED` for invalid credentials; other errors are retried.
    */
   async bind(dn: string, password: string): Promise<void> {
     return this.breaker.execute(async () => {
@@ -172,7 +175,10 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Ricerca LDAP
+   * Performs an LDAP search under the given base DN.
+   *
+   * @returns Array of matching directory entries.
+   * @throws {TRPCError} `BAD_GATEWAY` on network errors, `BAD_REQUEST` for invalid filters.
    */
   async search(
     base: string,
@@ -208,7 +214,8 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Chiude connessione LDAP
+   * Gracefully closes the LDAP connection by sending an unbind request.
+   * Errors during unbind are logged as warnings and swallowed.
    */
   async unbind(): Promise<void> {
     if (this._client) {
@@ -226,7 +233,7 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Distrugge il client e chiude tutte le connessioni
+   * Forcefully destroys the client and closes all connections, ignoring any errors.
    */
   async destroy(): Promise<void> {
     if (this._client) {

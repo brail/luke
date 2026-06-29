@@ -1,6 +1,5 @@
 /**
- * Service per gestione utenti
- * Contiene logica di business comune per il router users
+ * User management service — shared business logic for the users router.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -8,15 +7,14 @@ import { z } from 'zod';
 
 import { hasPermission, type LockedFields, type Role } from '@luke/core';
 
-/**
- * Schema per ID utente — condiviso tra i sub-router
- */
+/** UUID schema for a user ID — shared across sub-routers. */
 export const UserIdSchema = z.object({
   id: z.string().uuid('ID utente non valido'),
 });
 
 /**
- * Helper per determinare i campi bloccati in base al provider
+ * Returns the set of user fields that cannot be edited for the given auth provider.
+ * LOCAL users have no locked fields; LDAP users have username, name, and password locked.
  */
 export function getLockedFields(provider: string): LockedFields[] {
   if (provider === 'LOCAL') {
@@ -32,8 +30,11 @@ export function getLockedFields(provider: string): LockedFields[] {
 }
 
 /**
- * Handler comune per soft delete utente
- * Imposta isActive = false invece di eliminare il record
+ * Soft-deletes a user by setting `isActive = false`.
+ * Guards against self-deactivation and deletion of the last admin.
+ *
+ * @throws {TRPCError} NOT_FOUND if the user does not exist.
+ * @throws {TRPCError} FORBIDDEN if the caller targets their own account or the last admin.
  */
 export async function deleteUserHandler({
   input,

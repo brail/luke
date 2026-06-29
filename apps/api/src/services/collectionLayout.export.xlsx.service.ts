@@ -27,6 +27,7 @@ type RowWithVendor = CollectionLayoutRow & {
 
 type GroupWithRows = CollectionGroup & { rows: RowWithVendor[] };
 
+/** Minimal layout shape required by the XLSX builder. */
 export type CollectionLayoutForExport = CollectionLayout & {
   brand:  Pick<Brand,  'name' | 'code' | 'logoKey'>;
   season: Pick<Season, 'name' | 'code' | 'year'>;
@@ -149,6 +150,14 @@ function fitInBox(imgW: number, imgH: number, boxW: number, boxH: number, paddin
 
 type Logger = { warn: (obj: object, msg: string) => void };
 
+/**
+ * Builds an XLSX workbook for the full collection layout.
+ * Includes a header row with auto-filter, embedded row photos, dynamic quotation columns,
+ * and margin colour coding. Photos are fetched in parallel from storage.
+ *
+ * @param pictureBucket - Storage bucket for row photos; defaults to `'collection-row-pictures'`.
+ * @returns A Buffer containing the XLSX file.
+ */
 export async function buildCollectionLayoutXlsx(
   layout: CollectionLayoutForExport,
   prisma: PrismaClient,

@@ -1,15 +1,14 @@
 /**
- * Plugin Fastify per upload logo Brand
- * Endpoint: POST /upload/brand-logo/:brandId
+ * Fastify plugin for brand logo upload.
  *
- * Features:
- * - Autenticazione richiesta
- * - Rate limiting: 10 req/min per IP
- * - Validazione MIME: png, jpeg, webp
- * - Size limit: 2MB
- * - Upload tramite storage service
- * - Aggiornamento Brand.logoUrl
- * - Audit log
+ * Endpoints:
+ *  - POST /upload/brand-logo/:brandId  — replace the logo for an existing brand
+ *  - POST /upload/brand-logo/temp      — upload a pending logo during brand creation
+ *
+ * Both endpoints require authentication and the appropriate RBAC permission.
+ * Rate-limited to 30 req/min per user (100 in development).
+ * Accepted MIME types: image/png, image/jpeg, image/webp. Max size: 2 MB.
+ * Writes are delegated to the storage service and produce an audit log entry.
  */
 
 import fp from 'fastify-plugin';

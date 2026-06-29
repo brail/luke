@@ -1,26 +1,74 @@
 /**
- * Service layer per gestione override di accesso alle sezioni
- * Gestisce CRUD e safety checks per UserSectionAccess
+ * Service layer for section access override management.
+ * Handles CRUD and safety checks for UserSectionAccess records.
  */
 
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyBaseLogger } from 'fastify';
 import { getRbacConfig } from '@luke/core/server';
-import type { Section } from '@luke/core';
+import { effectiveSectionAccess, sectionEnum, Roles } from '@luke/core';
+import type { Section, Role } from '@luke/core';
+
+const ALL_SECTIONS = sectionEnum.options;
 
 /**
- * Ottiene sectionAccessDefaults e disabledSections in un'unica chiamata cached
+ * Returns `sectionAccessDefaults`, `disabledSections`, and `computedRoleDefaults`
+ * in a single cached call. `computedRoleDefaults` represents effective section access
+ * per role without any user-level override (evaluation layers 0 + 2 + 3).
  */
 export async function getSectionDefaults(prisma: PrismaClient) {
   const rbacConfig = await getRbacConfig(prisma);
-  return {
-    sectionAccessDefaults: rbacConfig.sectionAccessDefaults,
-    disabledSections: rbacConfig.disabledSections,
-  };
+  const { sectionAccessDefaults, disabledSections } = rbacConfig;
+
+  const computedRoleDefaults = Object.fromEntries(
+    Roles.map(role => [
+      role,
+      Object.fromEntries(
+        ALL_SECTIONS.map(section => [
+          section,
+          effectiveSectionAccess({ role, sectionAccessDefaults, userOverride: null, section, disabledSections }),
+        ])
+      ),
+    ])
+  ) as Record<Role, Record<Section, boolean>>;
+
+  return { sectionAccessDefaults, disabledSections, computedRoleDefaults };
 }
 
 /**
- * Ottiene l'override per un utente e sezione specifica
+ * Computes effective section access for a user across all four evaluation layers
+ * (kill switch → user override → role defaults → RBAC fallback).
+ *
+ * @returns A map of every section to its resolved boolean access value.
+ */
+export async function computeEffectiveForUser(
+  prisma: PrismaClient,
+  userId: string,
+  role: string
+): Promise<Record<Section, boolean>> {
+  const [overrides, { sectionAccessDefaults, disabledSections }] = await Promise.all([
+    listOverridesForUser(prisma, userId),
+    getSectionDefaults(prisma),
+  ]);
+
+  const overrideMap = new Map(overrides.map(o => [o.section, o.enabled]));
+
+  return Object.fromEntries(
+    ALL_SECTIONS.map(section => [
+      section,
+      effectiveSectionAccess({
+        role,
+        sectionAccessDefaults,
+        userOverride: overrideMap.has(section) ? { enabled: overrideMap.get(section) } : null,
+        section,
+        disabledSections,
+      }),
+    ])
+  ) as Record<Section, boolean>;
+}
+
+/**
+ * Returns the explicit section access override for a specific user and section, or null if none exists.
  */
 export async function getOverride(
   prisma: PrismaClient,
@@ -36,8 +84,10 @@ export async function getOverride(
 }
 
 /**
- * Imposta o rimuove l'override per un utente e sezione
- * @param enabled - true=allow, false=deny, null=rimuovi override
+ * Sets or removes the section access override for a user.
+ *
+ * @param enabled - `true` to allow, `false` to deny, `null` to remove the override entirely.
+ * @returns The upserted record, or null when the override was removed.
  */
 export async function setOverride(
   prisma: PrismaClient,
@@ -70,7 +120,7 @@ export async function setOverride(
 }
 
 /**
- * Lista tutti gli override per un utente
+ * Returns all section access overrides for the given user.
  */
 export async function listOverridesForUser(
   prisma: PrismaClient,
@@ -82,8 +132,8 @@ export async function listOverridesForUser(
 }
 
 /**
- * Conta quanti admin hanno accesso ai settings
- * Usato per last-admin safety check
+ * Counts active admin users who have effective access to the `settings` section.
+ * Used for last-admin safety checks before revoking settings access.
  */
 export async function countAdminsWithSettingsAccess(
   prisma: PrismaClient

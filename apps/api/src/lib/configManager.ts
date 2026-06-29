@@ -1,7 +1,7 @@
 /**
- * Config Manager per Luke API
- * Gestisce la cifratura/decifratura dei valori sensibili in AppConfig
- * usando AES-256-GCM con master key da file ~/.luke/secret.key
+ * AppConfig manager for Luke API.
+ * Handles encryption and decryption of sensitive values stored in the AppConfig
+ * table using AES-256-GCM with a master key loaded from ~/.luke/secret.key.
  */
 
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
@@ -28,7 +28,7 @@ const logger = pino({ level: 'info' });
 const RoleMappingSchema = z.record(z.string(), z.enum(Roles));
 
 /**
- * Interfaccia per configurazione LDAP
+ * Full LDAP configuration assembled from AppConfig keys.
  */
 export interface LdapConfig {
   enabled: boolean;
@@ -50,8 +50,11 @@ const IV_LENGTH = 16; // 128 bits
 const KEY_LENGTH = 32; // 256 bits
 
 /**
- * Ottiene la master key per la cifratura
- * Se non esiste, la crea automaticamente
+ * Reads the 32-byte master key from `~/.luke/secret.key`.
+ * If the file does not exist it is created with a fresh random key (mode 0600).
+ *
+ * @returns Master key buffer (32 bytes).
+ * @throws {Error} If the key file exists but contains an unexpected number of bytes.
  */
 export function getMasterKey(): Buffer {
   const keyDir = join(homedir(), '.luke');
@@ -81,9 +84,10 @@ export function getMasterKey(): Buffer {
 }
 
 /**
- * Cifra un valore usando AES-256-GCM
- * @param plaintext - Testo da cifrare
- * @returns Stringa nel formato "iv:authTag:ciphertext" (tutto in hex)
+ * Encrypts a plaintext value using AES-256-GCM and the current master key.
+ *
+ * @param plaintext - Value to encrypt.
+ * @returns Hex-encoded string in the format `iv:authTag:ciphertext`.
  */
 export function encryptValue(plaintext: string): string {
   const masterKey = getMasterKey();
@@ -100,9 +104,11 @@ export function encryptValue(plaintext: string): string {
 }
 
 /**
- * Decifra un valore usando AES-256-GCM
- * @param encrypted - Stringa nel formato "iv:authTag:ciphertext"
- * @returns Testo decifrato
+ * Decrypts a value that was encrypted by `encryptValue`.
+ *
+ * @param encrypted - Hex-encoded string in the format `iv:authTag:ciphertext`.
+ * @returns Decrypted plaintext.
+ * @throws {Error} If the format is invalid or decryption fails (e.g. wrong key or tampered data).
  */
 export function decryptValue(encrypted: string): string {
   const masterKey = getMasterKey();
@@ -129,20 +135,20 @@ export function decryptValue(encrypted: string): string {
 }
 
 /**
- * Salva una configurazione nel database con supporto cifratura
+ * Upserts a configuration entry in the database.
  *
- * @param prisma - Client Prisma
- * @param key - Chiave della configurazione (deve rispettare formato e prefissi ammessi)
- * @param value - Valore da salvare
- * @param encrypt - Se true, cifra il valore con AES-256-GCM prima di salvarlo
+ * @param prisma - Prisma client.
+ * @param key - Configuration key (dot-notation, must conform to AppConfigRegistry).
+ * @param value - Value to store.
+ * @param encrypt - When `true`, the value is encrypted with AES-256-GCM before storage.
  *
  * @example
- * // Salva valore plaintext
+ * // Store plaintext value
  * await saveConfig(prisma, "app.name", "Luke", false);
  *
  * @example
- * // Salva valore cifrato
- * await saveConfig(prisma, "auth.ldap.password", "secret123", true);
+ * // Store encrypted value
+ * await saveConfig(prisma, "auth.ldap.bindPassword", "secret123", true);
  */
 export async function saveConfig(
   prisma: PrismaClient,
@@ -168,23 +174,23 @@ export async function saveConfig(
 }
 
 /**
- * Recupera una configurazione dal database con supporto decifratura
+ * Reads a single configuration value from the database.
  *
- * **SICUREZZA**: Per motivi di sicurezza, questa funzione dovrebbe essere usata
- * solo per singole chiavi. Per liste multiple, usare `listConfigsPaged`.
+ * **Security note**: Use this function only for individual keys.
+ * For paginated listings use `listConfigsPaged` instead.
  *
- * @param prisma - Client Prisma
- * @param key - Chiave della configurazione
- * @param decrypt - Se true, decifra automaticamente i valori cifrati
- * @returns Valore della configurazione (decifrato se richiesto e cifrato)
- *
- * @example
- * // Recupera valore decifrato
- * const value = await getConfig(prisma, "auth.ldap.password", true);
+ * @param prisma - Prisma client.
+ * @param key - Configuration key to look up.
+ * @param decrypt - When `true`, encrypted values are decrypted automatically.
+ * @returns Decrypted (or raw) string value, or `null` if the key does not exist.
  *
  * @example
- * // Recupera valore raw (cifrato rimane cifrato)
- * const value = await getConfig(prisma, "auth.ldap.password", false);
+ * // Read decrypted value
+ * const value = await getConfig(prisma, "auth.ldap.bindPassword", true);
+ *
+ * @example
+ * // Read raw value (encrypted blob is returned as-is)
+ * const value = await getConfig(prisma, "auth.ldap.bindPassword", false);
  */
 export async function getConfig(
   prisma: PrismaClient,
@@ -218,12 +224,14 @@ export async function getConfig(
 }
 
 /**
- * Recupera e valida una configurazione usando il registry tipizzato.
- * Restituisce il valore già parsato nel tipo corretto (number, boolean, ecc.)
- * secondo lo schema Zod definito in AppConfigRegistry.
+ * Reads a configuration value and parses it through the AppConfigRegistry Zod schema.
+ * Returns the value already coerced to the correct TypeScript type (number, boolean, etc.).
  *
- * @throws Error se la chiave non esiste nel DB
- * @throws ZodError se il valore non supera la validazione
+ * @param prisma - Prisma client.
+ * @param key - Typed configuration key defined in AppConfigRegistry.
+ * @returns Parsed and validated value.
+ * @throws {Error} If the key does not exist in the database.
+ * @throws {ZodError} If the stored value fails schema validation.
  */
 export async function getTypedConfig<K extends AppConfigKey>(
   prisma: PrismaClient,
@@ -237,9 +245,12 @@ export async function getTypedConfig<K extends AppConfigKey>(
 }
 
 /**
- * Verifica al boot che le chiavi critiche siano presenti e valide nel DB.
- * In produzione: lancia un'eccezione se una chiave è mancante o malformata.
- * In sviluppo: logga solo un warning.
+ * Validates all critical configuration keys on server boot.
+ * In production, throws an error if any key is missing or fails schema validation,
+ * preventing the server from starting in a broken state.
+ * In development, only a warning is logged.
+ *
+ * @throws {Error} In production if one or more critical keys are invalid.
  */
 export async function validateCriticalConfig(prisma: PrismaClient): Promise<void> {
   const errors: string[] = [];
@@ -269,10 +280,11 @@ export async function validateCriticalConfig(prisma: PrismaClient): Promise<void
 }
 
 /**
- * Lista tutte le configurazioni
- * @param prisma - Client Prisma
- * @param decrypt - Se true, decifra i valori cifrati
- * @returns Array di configurazioni
+ * Returns all configuration entries, optionally decrypting encrypted values.
+ *
+ * @param prisma - Prisma client.
+ * @param decrypt - When `true`, encrypted values are decrypted. Defaults to `true`.
+ * @returns Array of configuration records.
  */
 export async function listConfigs(
   prisma: PrismaClient,
@@ -307,37 +319,20 @@ export async function listConfigs(
 }
 
 /**
- * Lista configurazioni con paginazione, filtri e ordinamento
+ * Returns a paginated, filterable list of configuration entries.
  *
- * **SICUREZZA**: I valori cifrati non vengono mai decrittati in questa funzione.
- * Per valori cifrati, `valuePreview` sarà sempre `null`.
+ * **Security**: Encrypted values are never decrypted in this function.
+ * `valuePreview` is always `null` for encrypted entries.
  *
- * @param prisma - Client Prisma
- * @param params - Parametri per filtri, paginazione e ordinamento
- * @param params.q - Ricerca per chiave (case-insensitive)
- * @param params.category - Filtra per categoria (prefisso della chiave)
- * @param params.isEncrypted - Filtra per tipo di cifratura
- * @param params.sortBy - Campo per ordinamento
- * @param params.sortDir - Direzione ordinamento
- * @param params.page - Numero pagina (1-based)
- * @param params.pageSize - Dimensione pagina (5-100)
- * @returns Risultati paginati con metadati
- *
- * @example
- * // Lista base con paginazione
- * const result = await listConfigsPaged(prisma, { page: 1, pageSize: 20 });
- *
- * @example
- * // Ricerca con filtri
- * const result = await listConfigsPaged(prisma, {
- *   q: "ldap",
- *   category: "auth",
- *   isEncrypted: true,
- *   sortBy: "updatedAt",
- *   sortDir: "desc",
- *   page: 1,
- *   pageSize: 50
- * });
+ * @param prisma - Prisma client.
+ * @param params.q - Case-insensitive substring search on the key.
+ * @param params.category - Filter by key prefix (e.g. `"auth"` matches `"auth.ldap.url"`).
+ * @param params.isEncrypted - Filter by encryption status.
+ * @param params.sortBy - Field to sort by (`'key'` or `'updatedAt'`). Defaults to `'key'`.
+ * @param params.sortDir - Sort direction. Defaults to `'asc'`.
+ * @param params.page - 1-based page number. Defaults to `1`.
+ * @param params.pageSize - Page size (5–100). Defaults to `20`.
+ * @returns Paginated result with items, total count, and pagination metadata.
  */
 export async function listConfigsPaged(
   prisma: PrismaClient,
@@ -451,9 +446,7 @@ export async function listConfigsPaged(
 }
 
 /**
- * Elimina una configurazione
- * @param prisma - Client Prisma
- * @param key - Chiave della configurazione da eliminare
+ * Permanently deletes a configuration entry from the database.
  */
 export async function deleteConfig(
   prisma: PrismaClient,
@@ -465,11 +458,12 @@ export async function deleteConfig(
 }
 
 /**
- * Recupera un segreto dal database e lo decifra
- * @param prisma - Client Prisma
- * @param key - Chiave del segreto da recuperare
- * @returns Valore decifrato del segreto
- * @throws Error se la chiave non esiste o non è cifrata
+ * Reads and decrypts a secret value from the database.
+ * Unlike `getConfig`, this function enforces that the entry must be encrypted;
+ * calling it on a plaintext entry throws rather than returning the raw value.
+ *
+ * @returns Decrypted secret value.
+ * @throws {Error} If the key does not exist, is not encrypted, or decryption fails.
  */
 export async function getSecret(
   prisma: PrismaClient,
@@ -501,9 +495,10 @@ export async function getSecret(
 }
 
 /**
- * Recupera il TTL della cache tokenVersion da AppConfig
- * @param prisma - Client Prisma
- * @returns TTL in millisecondi (default: 60000ms = 60s)
+ * Reads the tokenVersion cache TTL from AppConfig.
+ * Enforces a minimum of 10 s and a maximum of 10 min; invalid values fall back to the default.
+ *
+ * @returns TTL in milliseconds. Defaults to 60 000 ms (60 s).
  */
 export async function getTokenVersionCacheTTL(
   prisma: PrismaClient
@@ -529,9 +524,11 @@ export async function getTokenVersionCacheTTL(
 }
 
 /**
- * Recupera la password policy da AppConfig
- * @param prisma - Client Prisma
- * @returns Password policy con validazioni hard minimum per sicurezza
+ * Reads the password policy from AppConfig.
+ * Individual keys are read concurrently; missing keys fall back to secure defaults.
+ * The `minLength` is always clamped to a minimum of 8 characters.
+ *
+ * @returns Password policy with validated constraints.
  */
 export async function getPasswordPolicy(prisma: PrismaClient): Promise<{
   minLength: number;
@@ -559,10 +556,11 @@ export async function getPasswordPolicy(prisma: PrismaClient): Promise<{
 }
 
 /**
- * Recupera la configurazione LDAP completa dal database
- * @param prisma - Client Prisma
- * @returns Configurazione LDAP decifrata e tipizzata
- * @throws Error se le configurazioni non sono complete
+ * Assembles the full LDAP configuration from multiple AppConfig keys.
+ * Encrypted values (e.g. `bindPassword`) are decrypted automatically.
+ * Returns a safe default configuration when no LDAP keys exist in the database.
+ *
+ * @returns Fully populated and decrypted `LdapConfig`.
  */
 export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
   const configKeys = [
@@ -655,9 +653,10 @@ export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
 }
 
 /**
- * Recupera la configurazione di resilienza LDAP dal database
- * @param prisma - Client Prisma
- * @returns Configurazione resilienza LDAP con fallback ai default dello schema
+ * Reads the LDAP resilience configuration (circuit breaker, retries, timeouts) from AppConfig.
+ * Each key is read independently; missing keys fall back to the LdapResilienceSchema defaults.
+ *
+ * @returns Validated `LdapResilienceConfig` object.
  */
 export async function getLdapResilienceConfig(
   prisma: PrismaClient,

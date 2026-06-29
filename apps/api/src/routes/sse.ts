@@ -1,3 +1,13 @@
+/**
+ * Registers the SSE (Server-Sent Events) route for real-time push notifications.
+ *
+ * Endpoint: GET /api/sse?ticket=<ticket>
+ *
+ * Authentication uses a single-use ticket (60 s TTL) issued by `tRPC notifications.getSseTicket`.
+ * EventSource browsers cannot send custom headers, so the ticket is passed as a query parameter.
+ * A heartbeat event is sent every 30 seconds to keep the connection alive through proxies.
+ */
+
 import type { FastifyInstance } from 'fastify';
 
 import { sseStore } from '../lib/sseStore';
@@ -5,10 +15,11 @@ import { sseStore } from '../lib/sseStore';
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
 /**
- * GET /api/sse?ticket=<ticket>
+ * Registers the SSE route on the given Fastify instance.
  *
- * Autenticazione via ticket monouso (60s TTL) emesso da tRPC notifications.getSseTicket.
- * EventSource browser non supporta header custom → ticket in query param.
+ * Opens a persistent `text/event-stream` connection for the authenticated user identified
+ * by the ticket. Sends a `connected` event immediately, heartbeats every 30 s, and
+ * cleans up the subscription when the client disconnects.
  */
 export async function registerSseRoute(app: FastifyInstance): Promise<void> {
   app.get<{ Querystring: { ticket?: string } }>('/api/sse', async (request, reply) => {

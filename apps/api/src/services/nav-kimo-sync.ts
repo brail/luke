@@ -1,13 +1,13 @@
 /**
- * NAV → PostgreSQL sync per le tabelle KIMO-FASHION.
+ * NAV → PostgreSQL sync for KIMO-FASHION tables.
  *
- * Strategia per tabella:
- *  - KIMO-FASHION Sales Order Hdr / Line: incrementale via rowversion SQL Server.
- *    Nessun filtro stagione: si replica tutto (i basket non hanno season direttamente).
- *  - AssortimentiQuantita: full-sync ad ogni ciclo (tabella piccola di lookup).
+ * Strategy per table:
+ *  - KIMO-FASHION Sales Order Hdr / Line: incremental via SQL Server rowversion.
+ *    No season filter: all basket records are replicated (baskets lack a season field).
+ *  - Lookup tables (e.g. AssortimentiQuantita): full-sync each cycle (small tables).
  *
- * Il ciclo è progettato per girare ogni N minuti in background.
- * Condivide nav_pf_sync_state (stesso schema, nomi tabella "nav_kimo_*") per il tracking.
+ * Designed to run every N minutes as a background job.
+ * Uses nav_pf_sync_state for tracking (same schema, "nav_kimo_*" table names).
  */
 
 import type { PrismaClient } from '@prisma/client';
@@ -41,8 +41,8 @@ const PG_BATCH = 500;
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Bulk upsert generico via raw SQL.
- * Stesso helper di nav-portafoglio-sync — le colonne sono controllate internamente.
+ * Generic bulk upsert via raw SQL. Column names are controlled internally (not user input),
+ * making $executeRawUnsafe safe here. PK columns are excluded from DO UPDATE SET.
  */
 async function bulkUpsert(
   prisma: PrismaClient,
@@ -212,12 +212,12 @@ async function syncKimoSalesLines(
 // ─── Orchestrator ──────────────────────────────────────────────────────────────
 
 /**
- * Esegue un ciclo completo di sync NAV → PG per le tabelle KIMO-FASHION.
+ * Runs a full NAV → PostgreSQL sync cycle for all KIMO-FASHION tables.
+ * Syncs header table first (lines depend on it for logical integrity), then lines.
  *
- * @param pool     Pool mssql già connesso
- * @param company  Nome company NAV grezzo (es. 'NewEra') — sanitizzato internamente
- * @param prisma   PrismaClient
- * @param logger   Logger Pino
+ * @param pool - Already-connected mssql connection pool.
+ * @param company - Raw NAV company name (e.g. 'NewEra') — sanitized internally.
+ * @returns Sync stats per table plus total duration. Includes an error string on fatal failure.
  */
 export async function syncKimoNow(
   pool: mssql.ConnectionPool,

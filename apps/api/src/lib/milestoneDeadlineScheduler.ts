@@ -67,6 +67,12 @@ async function checkDeadlines(prisma: PrismaClient): Promise<void> {
   ]);
 }
 
+/**
+ * Registers the milestone deadline notification scheduler as a Fastify plugin.
+ * Checks for upcoming (within 48 h) and overdue (within 3 days) calendar events
+ * on an hourly tick and creates per-user notifications with per-day deduplication.
+ * The first check runs 60 seconds after server ready to avoid boot-time noise.
+ */
 export function registerMilestoneDeadlineScheduler(
   fastify: FastifyInstance,
   prisma: PrismaClient,

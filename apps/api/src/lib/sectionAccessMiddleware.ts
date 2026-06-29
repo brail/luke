@@ -1,7 +1,7 @@
 /**
- * Middleware tRPC per controllo accesso alle sezioni
- * Implementa la precedenza: kill switch > deny > allow > role
- * Usa il sistema Resource:Action via effectiveSectionAccess
+ * tRPC middleware for section-level access control.
+ * Enforces the four-tier precedence: kill switch > user override > role default > RBAC permission.
+ * Delegates evaluation to `effectiveSectionAccess` from @luke/core.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -14,12 +14,11 @@ import { t } from './t';
 import { getOverride } from '../services/sectionAccess.service';
 
 /**
- * Factory middleware per controllo accesso sezione
+ * Creates a tRPC middleware that guards a named section.
+ * Precedence: kill switch > user override > role default > RBAC permission fallback.
  *
- * Precedenza: kill switch > user override > role default > RBAC permission
- *
- * @param section - Sezione da proteggere
- * @returns Middleware tRPC
+ * @param section - Section identifier to protect (e.g. `'product.pricing'`).
+ * @returns tRPC middleware that throws `FORBIDDEN` when access is denied.
  */
 export function withSectionAccess(section: Section) {
   return t.middleware(async ({ ctx, next }) => {

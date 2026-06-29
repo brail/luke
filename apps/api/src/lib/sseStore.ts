@@ -1,9 +1,10 @@
 /**
- * SSE connection pool + short-lived ticket store.
- * Pattern identico a presenceStore.ts (Map in-memory, volatile al restart).
+ * SSE connection pool and short-lived ticket store.
+ * State is in-memory and volatile (resets on restart), matching the pattern in presenceStore.ts.
  *
- * Auth SSE: EventSource browser non supporta header custom.
- * Soluzione: ticket monouso valido 60s, scambiato via tRPC prima di aprire SSE.
+ * Auth strategy: the browser EventSource API cannot send custom headers.
+ * Solution: a single-use ticket valid for 60 seconds is issued via tRPC before
+ * the client opens the SSE connection, then exchanged for the user identity.
  */
 
 import type { FastifyReply } from 'fastify';
@@ -25,6 +26,9 @@ function unsubscribe(userId: string, reply: FastifyReply): void {
   if (set.size === 0) connections.delete(userId);
 }
 
+/**
+ * Discriminated union of all SSE event shapes pushed to connected clients.
+ */
 export type SSEEvent =
   | { type: 'notification'; payload: Record<string, unknown> }
   | { type: 'sync-state'; entity: string; isRunning: boolean }
@@ -90,6 +94,15 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
+/**
+ * Singleton SSE store exposing the full connection pool and ticket API.
+ *
+ * - `subscribe` / `unsubscribe` — manage per-user reply sets.
+ * - `pushToUser` — write an SSE event to all connections for a single user.
+ * - `pushToAll` — broadcast an SSE event to every connected client.
+ * - `connectedUserIds` — returns the list of user IDs with active connections.
+ * - `createTicket` / `consumeTicket` — single-use 60-second auth tickets.
+ */
 export const sseStore = {
   subscribe,
   unsubscribe,

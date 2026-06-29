@@ -10,6 +10,10 @@ const REGISTRY: Record<StateEffectType, StateEffectHandler> = {
   UNLOCK_COLLECTION_LAYOUT: unlockCollectionLayoutHandler,
 };
 
+/**
+ * Returns the StateEffectHandler for the given effect type.
+ * The registry is exhaustive: TypeScript will error if a new StateEffectType is added without a handler.
+ */
 export function getEffectHandler(type: StateEffectType): StateEffectHandler {
   return REGISTRY[type];
 }

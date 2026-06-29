@@ -1,11 +1,11 @@
 /**
- * Scheduler per la sincronizzazione periodica NAV → PG delle tabelle KIMO-FASHION.
+ * Periodic scheduler for NAV → Postgres synchronisation of KIMO-FASHION tables.
  *
- * Design identico a portafoglioSyncScheduler:
- * - Tick ogni 1 minuto.
- * - Legge configurazione (autoSyncEnabled, intervalMinutes) da NavSyncFilter entity='kimo'.
- * - `triggerKimoSyncNow()` per trigger manuale dal tRPC handler.
- * - Errori di sync non causano crash del server.
+ * Design mirrors `portafoglioSyncScheduler`:
+ * - Global tick every 1 minute.
+ * - Reads `autoSyncEnabled` and `intervalMinutes` from NavSyncFilter (entity = 'kimo') on every tick.
+ * - `triggerKimoSyncNow()` is exposed for manual triggers from the tRPC handler.
+ * - Sync errors are logged but do not crash the server.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -74,20 +74,25 @@ async function _runSync(): Promise<KimoSyncResult | null> {
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Avvia un sync KIMO immediatamente.
- * Restituisce null se già in corso o NAV non configurato.
+ * Triggers an immediate KIMO sync run.
+ *
+ * @returns Sync result, or `null` if a sync is already in progress or NAV is not configured.
  */
 export async function triggerKimoSyncNow(): Promise<KimoSyncResult | null> {
   return _runSync();
 }
 
-/** Restituisce true se un sync KIMO è attualmente in corso. */
+/** Returns `true` if a KIMO sync is currently in progress. */
 export function isKimoSyncRunning(): boolean {
   return _isRunning;
 }
 
 // ─── Fastify registration ─────────────────────────────────────────────────────
 
+/**
+ * Registers the KIMO sync scheduler as a Fastify plugin.
+ * Starts the tick interval on `onReady` and clears it on `onClose`.
+ */
 export function registerKimoSyncScheduler(
   fastify: FastifyInstance,
   prisma: PrismaClient,

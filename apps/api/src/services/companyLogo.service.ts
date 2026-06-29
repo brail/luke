@@ -13,6 +13,12 @@ const IMAGE_CONFIG = {
   allowedExtensions: ['.png', '.jpg', '.jpeg', '.webp'] as const,
 };
 
+/**
+ * Uploads a company logo to the company-assets bucket.
+ *
+ * @returns Public URL, bucket name, and storage key of the uploaded logo.
+ * @throws {TRPCError} BAD_REQUEST if the file type or magic bytes are invalid.
+ */
 export async function uploadCompanyLogo(
   ctx: Context,
   params: {

@@ -87,6 +87,12 @@ async function buildRevisionExportLayout(
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
+/**
+ * Builds an XLSX export of a collection layout as it existed at a specific revision snapshot.
+ * Row photos are read from the revisions picture bucket.
+ *
+ * @returns A Buffer containing the XLSX file.
+ */
 export async function buildRevisionXlsx(
   revisionId: string,
   collectionLayoutId: string,
@@ -97,6 +103,13 @@ export async function buildRevisionXlsx(
   return buildCollectionLayoutXlsx(layout, prisma, logger, 'collection-row-pictures-revisions');
 }
 
+/**
+ * Builds a PDF export of a collection layout as it existed at a specific revision snapshot.
+ * Row photos are read from the revisions picture bucket.
+ *
+ * @param extractedBy - Display name of the requesting user (shown in the page header).
+ * @returns A Buffer containing the PDF file.
+ */
 export async function buildRevisionPdf(
   revisionId: string,
   collectionLayoutId: string,

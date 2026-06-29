@@ -3,6 +3,10 @@ import { TRPCError } from '@trpc/server';
 import type { StateEffectHandler } from '../types.js';
 import { createRevisionForEffect } from '../revisionHelper.js';
 
+/**
+ * Effect handler that locks a CollectionLayout to a calendar event
+ * and snapshots the layout as a MILESTONE_LOCK revision.
+ */
 export const lockCollectionLayoutHandler: StateEffectHandler = {
   async validate(ctx) {
     const layout = await ctx.prisma.collectionLayout.findUnique({

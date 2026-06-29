@@ -1,6 +1,6 @@
 /**
- * Mailer per Luke API
- * Gestisce l'invio di email transazionali tramite Nodemailer
+ * Transactional email layer for Luke API.
+ * Sends all outbound emails via Nodemailer using SMTP settings from AppConfig.
  */
 
 import { readFileSync } from 'fs';
@@ -17,7 +17,7 @@ import type Mail from 'nodemailer/lib/mailer';
 const logger = pino({ level: 'info' });
 
 /**
- * Configurazione SMTP recuperata da AppConfig
+ * Assembled SMTP configuration read from AppConfig keys.
  */
 export interface SmtpConfig {
   host: string;
@@ -31,10 +31,10 @@ export interface SmtpConfig {
 }
 
 /**
- * Recupera la configurazione SMTP da AppConfig
- * @param prisma - Client Prisma
- * @returns Configurazione SMTP
- * @throws Error se le configurazioni SMTP non sono complete
+ * Reads and assembles the SMTP configuration from AppConfig.
+ * The `smtp.pass` key is decrypted automatically.
+ *
+ * @throws {Error} If any required SMTP key (host, port, user, pass, from) is missing.
  */
 export async function getSmtpConfig(prisma: PrismaClient): Promise<SmtpConfig> {
   const [host, port, secure, user, pass, from] = await Promise.all([
@@ -65,12 +65,15 @@ export async function getSmtpConfig(prisma: PrismaClient): Promise<SmtpConfig> {
 }
 
 /**
- * Invia un'email generica con retry automatico
- * @param prisma - Client Prisma per recuperare config SMTP
- * @param to - Destinatario
- * @param subject - Oggetto email
- * @param html - Contenuto HTML
- * @param text - Contenuto testo plain
+ * Sends a generic email with automatic retry (up to 3 attempts, exponential backoff).
+ * The SMTP transporter is created fresh on each attempt and closed afterwards.
+ *
+ * @param prisma - Prisma client used to load SMTP configuration.
+ * @param to - Recipient email address.
+ * @param subject - Email subject line.
+ * @param html - HTML body content.
+ * @param text - Plain-text body content (fallback).
+ * @throws {Error} If all retry attempts fail.
  */
 export async function sendEmail(
   prisma: PrismaClient,
@@ -184,11 +187,11 @@ function generateBrandedHtml(
 }
 
 /**
- * Invia email per reset password
- * @param prisma - Client Prisma
- * @param to - Email destinatario
- * @param token - Token di reset (in chiaro)
- * @param baseUrl - Base URL dell'applicazione
+ * Sends a branded password-reset email containing a one-time link.
+ * The link is valid for 30 minutes.
+ *
+ * @param token - Plaintext reset token (hashed version is stored in the DB).
+ * @param baseUrl - Application base URL used to build the reset link.
  */
 export async function sendPasswordResetEmail(
   prisma: PrismaClient,
@@ -217,11 +220,11 @@ export async function sendPasswordResetEmail(
 }
 
 /**
- * Invia email per verifica indirizzo email
- * @param prisma - Client Prisma
- * @param to - Email destinatario
- * @param token - Token di verifica (in chiaro)
- * @param baseUrl - Base URL dell'applicazione
+ * Sends a branded email-verification email containing a one-time link.
+ * The link is valid for 24 hours.
+ *
+ * @param token - Plaintext verification token (hashed version is stored in the DB).
+ * @param baseUrl - Application base URL used to build the verification link.
  */
 export async function sendEmailVerificationEmail(
   prisma: PrismaClient,
@@ -250,7 +253,7 @@ export async function sendEmailVerificationEmail(
 }
 
 /**
- * Invia email di notifica attivazione account (approvazione admin)
+ * Sends a branded account-activation notification email after admin approval.
  */
 export async function sendAccountApprovedEmail(
   prisma: PrismaClient,

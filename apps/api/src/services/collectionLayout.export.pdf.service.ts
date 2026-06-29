@@ -26,6 +26,7 @@ type RowWithVendor = CollectionLayoutRow & {
 
 type GroupWithRows = CollectionGroup & { rows: RowWithVendor[] };
 
+/** Minimal layout shape required by the PDF builder. */
 export type CollectionLayoutForPdf = CollectionLayout & {
   brand:  Pick<Brand,  'name' | 'code' | 'logoKey'>;
   season: Pick<Season, 'name' | 'code' | 'year'>;
@@ -239,6 +240,15 @@ function makeHeightsFn(dataCount: number): (i: number) => number {
 
 type Logger = { warn: (obj: object, msg: string) => void };
 
+/**
+ * Builds an A3 landscape PDF of a collection layout, grouped by group with a grand-total summary.
+ * Fetches brand logo and row photos from storage, computes margin colour coding per row.
+ *
+ * @param extractedBy - Display name of the requesting user (shown in the page header).
+ * @param extractedAt - Timestamp to include in the header.
+ * @param pictureBucket - Storage bucket for row photos; defaults to `'collection-row-pictures'`.
+ * @returns A Buffer containing the complete PDF file.
+ */
 export async function buildCollectionLayoutPdf(
   layout: CollectionLayoutForPdf,
   prisma: PrismaClient,

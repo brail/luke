@@ -1,9 +1,6 @@
 /**
- * Pricing Service — Calcolatrice prezzi e gestione varianti parametri
- *
- * Implementa le stesse formule della PRICINGAPP esterna.
- * Le funzioni di calcolo sono pure (no dipendenze esterne).
- * Le funzioni CRUD ricevono il client Prisma come argomento.
+ * Pricing service — price calculation engine and parameter set CRUD.
+ * Calculation functions are pure (no I/O). CRUD functions receive PrismaClient as their last argument.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -81,7 +78,10 @@ export interface MarginResult {
 // ─────────────────────────────────────────────────────────────────
 
 /**
- * Calcolo forward: dato il prezzo di acquisto, calcola il prezzo retail.
+ * Forward calculation: given a purchase price, computes the retail price through
+ * QC → tools → transport → duty → currency conversion → landed cost → wholesale → retail.
+ *
+ * @returns Breakdown of every intermediate step plus the rounded retail price.
  */
 export function calculateForward(
   purchasePrice: number,
@@ -146,7 +146,10 @@ export function calculateForward(
 }
 
 /**
- * Calcolo inverso: dato il prezzo retail, calcola il prezzo di acquisto massimo.
+ * Inverse calculation: given a retail price, computes the maximum allowable purchase price
+ * while maintaining the target margin. Reverses the forward chain step by step.
+ *
+ * @returns Breakdown of every intermediate step plus the floor-rounded purchase price.
  */
 export function calculateInverse(
   retailPrice: number,
@@ -213,7 +216,8 @@ export function calculateInverse(
 }
 
 /**
- * Calcolo margine: noti entrambi i prezzi, calcola il margine aziendale reale.
+ * Margin-only calculation: given both purchase and retail prices, computes the actual
+ * company margin without rounding either input.
  */
 export function calculateMarginOnly(
   purchasePrice: number,
@@ -256,7 +260,7 @@ export function calculateMarginOnly(
 // ─────────────────────────────────────────────────────────────────
 
 /**
- * Restituisce i set di parametri per un brand+season, ordinati per orderIndex.
+ * Returns all pricing parameter sets for a brand+season ordered by orderIndex then createdAt.
  */
 export async function getParameterSets(
   brandId: string,
@@ -270,10 +274,10 @@ export async function getParameterSets(
 }
 
 /**
- * Cerca i set di parametri dalla stagione più recente con dati per quel brand.
- * Usato per la funzione "Copia da stagione precedente".
+ * Finds parameter sets from the most recent season (by year) that has data for the brand,
+ * excluding the current season. Used by the "copy from previous season" feature.
  *
- * @returns I set della stagione più recente, oppure null se non esistono
+ * @returns The previous season metadata and its full set list, or null if none exists.
  */
 export async function getPreviousSeasonSets(
   brandId: string,
@@ -319,7 +323,10 @@ export async function getPreviousSeasonSets(
 }
 
 /**
- * Imposta un set come default per brand+season (atomico: rimuove il default dagli altri).
+ * Atomically marks one parameter set as default and clears the flag on all others
+ * in the same brand+season scope.
+ *
+ * @throws {TRPCError} NOT_FOUND if the parameter set does not belong to the given brand+season.
  */
 export async function setAsDefault(
   id: string,
@@ -354,8 +361,11 @@ export async function setAsDefault(
 }
 
 /**
- * Crea un nuovo set di parametri.
- * Se è il primo per quel brand+season, viene automaticamente impostato come default.
+ * Creates a new pricing parameter set. Automatically marks it as default if it is the
+ * first set for the given brand+season.
+ *
+ * @throws {TRPCError} NOT_FOUND if the brand or season does not exist.
+ * @throws {TRPCError} CONFLICT if a set with the same name already exists for this brand+season.
  */
 export async function createParameterSet(
   brandId: string,
@@ -414,7 +424,10 @@ export async function createParameterSet(
 }
 
 /**
- * Aggiorna un set di parametri esistente.
+ * Updates an existing pricing parameter set.
+ *
+ * @throws {TRPCError} NOT_FOUND if the set does not belong to the given brand+season.
+ * @throws {TRPCError} CONFLICT if the new name conflicts with another set in the same scope.
  */
 export async function updateParameterSet(
   id: string,
@@ -466,8 +479,10 @@ export async function updateParameterSet(
 }
 
 /**
- * Elimina un set di parametri.
- * Se era il default, promuove automaticamente il successivo.
+ * Deletes a pricing parameter set. If it was the default, automatically promotes
+ * the next set (by orderIndex then createdAt) to default.
+ *
+ * @throws {TRPCError} NOT_FOUND if the set does not belong to the given brand+season.
  */
 export async function removeParameterSet(
   id: string,

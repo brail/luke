@@ -1,6 +1,6 @@
 /**
- * Modulo per autenticazione LDAP
- * Gestisce connessione, ricerca utenti e mapping ruoli
+ * LDAP authentication module.
+ * Manages directory connection, user search, credential verification, and role mapping.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -30,8 +30,8 @@ import type { PrismaClient, User } from '@prisma/client';
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
 /**
- * Escapa i caratteri speciali LDAP in un valore da inserire in un filtro di ricerca.
- * Segue RFC 4515 (Section 3).
+ * Escapes special characters in a value to be safely embedded in an LDAP search filter.
+ * Follows RFC 4515 §3.
  */
 export function escapeLdapFilter(value: string): string {
   return value
@@ -43,11 +43,14 @@ export function escapeLdapFilter(value: string): string {
 }
 
 /**
- * Autentica un utente via LDAP
- * @param prisma - Client Prisma
- * @param username - Username dell'utente
- * @param password - Password dell'utente
- * @returns User object se autenticazione riuscita, null altrimenti
+ * Authenticates a user against the configured LDAP directory.
+ * Performs bind authentication, group-based role resolution, and
+ * creates or updates the local user record on success.
+ *
+ * @param prisma - Prisma client.
+ * @returns Local `User` record on success, or `null` if authentication fails
+ *   (LDAP disabled, user not found, or invalid credentials).
+ * @throws {TRPCError} If the LDAP configuration is incomplete or an unexpected error occurs.
  */
 export async function authenticateViaLdap(
   prisma: PrismaClient,

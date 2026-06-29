@@ -1,3 +1,14 @@
+/**
+ * tRPC router for company structure management.
+ *
+ * Exposes three sub-routers:
+ *  - company.profile — singleton CompanyProfile CRUD
+ *  - company.function — CompanyFunction CRUD, reorder, soft-delete, restore
+ *  - company.team — CompanyTeam CRUD, brand scopes, membership management
+ *
+ * Also exports `assertFunctionMemberOrAdmin`, a guard used by the season calendar router.
+ */
+
 import { TRPCError } from '@trpc/server';
 import type { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
@@ -26,6 +37,12 @@ import { router, protectedProcedure } from '../lib/trpc.js';
 const SINGLETON_ID = 'singleton';
 
 const companyProfileRouter = router({
+  /**
+   * Returns the singleton company profile, auto-creating it with empty values on first access.
+   *
+   * @auth company_profile:read
+   * @output CompanyProfile singleton
+   */
   get: protectedProcedure
     .use(requirePermission('company_profile:read'))
     .query(async ({ ctx }) => {
@@ -38,6 +55,13 @@ const companyProfileRouter = router({
       });
     }),
 
+  /**
+   * Creates or updates the singleton company profile.
+   *
+   * @auth company_profile:update
+   * @input CompanyProfileInputSchema
+   * @output Updated CompanyProfile
+   */
   update: protectedProcedure
     .use(requirePermission('company_profile:update'))
     .use(withRateLimit('companyStructureMutations'))
@@ -64,6 +88,13 @@ const companyProfileRouter = router({
 // ─── Function ───────────────────────────────────────────────────────────────
 
 const companyFunctionRouter = router({
+  /**
+   * Lists active company functions ordered by `order` then `name`.
+   *
+   * @auth company_function:read
+   * @input { includeInactive? }
+   * @output Array of CompanyFunction with team count
+   */
   list: protectedProcedure
     .use(requirePermission('company_function:read'))
     .input(z.object({ includeInactive: z.boolean().optional() }).optional())
@@ -77,6 +108,13 @@ const companyFunctionRouter = router({
       });
     }),
 
+  /**
+   * Returns a company function by ID, including its teams and their membership counts.
+   *
+   * @auth company_function:read
+   * @input { id }
+   * @output CompanyFunction with teams
+   */
   getById: protectedProcedure
     .use(requirePermission('company_function:read'))
     .input(z.object({ id: z.string().uuid() }))
@@ -96,6 +134,13 @@ const companyFunctionRouter = router({
       return fn;
     }),
 
+  /**
+   * Creates a company function. Rejects on slug collision, suggesting restore if the existing one is inactive.
+   *
+   * @auth company_function:create
+   * @input CompanyFunctionInputSchema
+   * @output The created CompanyFunction
+   */
   create: protectedProcedure
     .use(requirePermission('company_function:create'))
     .use(withRateLimit('companyStructureMutations'))
@@ -138,6 +183,13 @@ const companyFunctionRouter = router({
       return fn;
     }),
 
+  /**
+   * Updates a company function's fields.
+   *
+   * @auth company_function:update
+   * @input CompanyFunctionUpdateInputSchema
+   * @output Updated CompanyFunction
+   */
   update: protectedProcedure
     .use(requirePermission('company_function:update'))
     .use(withRateLimit('companyStructureMutations'))
@@ -160,6 +212,13 @@ const companyFunctionRouter = router({
       return fn;
     }),
 
+  /**
+   * Updates the `order` field for all listed function IDs in a single transaction.
+   *
+   * @auth company_function:update
+   * @input { orderedIds }
+   * @output { ok: true }
+   */
   reorder: protectedProcedure
     .use(requirePermission('company_function:update'))
     .use(withRateLimit('companyStructureMutations'))
@@ -183,6 +242,15 @@ const companyFunctionRouter = router({
       return { ok: true };
     }),
 
+  /**
+   * Soft-deletes a company function (sets `isActive = false`).
+   *
+   * Blocked if the function owns active (non-cancelled) calendar events.
+   *
+   * @auth company_function:delete
+   * @input { id }
+   * @output The deactivated CompanyFunction
+   */
   delete: protectedProcedure
     .use(requirePermission('company_function:delete'))
     .use(withRateLimit('companyStructureMutations'))
@@ -222,6 +290,15 @@ const companyFunctionRouter = router({
       return fn;
     }),
 
+  /**
+   * Restores a soft-deleted company function (sets `isActive = true`).
+   *
+   * Blocked if another active function already holds the same slug (checked inside a transaction).
+   *
+   * @auth company_function:update
+   * @input { id }
+   * @output The restored CompanyFunction
+   */
   restore: protectedProcedure
     .use(requirePermission('company_function:update'))
     .use(withRateLimit('companyStructureMutations'))
@@ -524,6 +601,12 @@ const companyTeamRouter = router({
 
 // ─── Milestone user visibility ───────────────────────────────────────────────
 
+/**
+ * Throws FORBIDDEN unless the current user is an admin (has `company_function:update`)
+ * or is a member of at least one active team belonging to the given function.
+ *
+ * Used to gate personal-note and visibility operations on calendar events.
+ */
 async function assertFunctionMemberOrAdmin(
   ctx: { session: { user: { id: string; role: string } }; prisma: import('@prisma/client').PrismaClient },
   functionId: string

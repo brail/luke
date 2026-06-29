@@ -1,6 +1,12 @@
 /**
- * OpenTelemetry Instrumentation Bootstrap
- * Eseguito prima di qualsiasi import per catturare startup completo
+ * OpenTelemetry instrumentation bootstrap.
+ *
+ * Must be imported before any other module so that auto-instrumentation patches
+ * (Fastify, HTTP, Undici, Prisma) are applied from the very start of the process.
+ *
+ * Initialization is skipped when `OTEL_ENABLED=false` or when
+ * `OTEL_EXPORTER_OTLP_ENDPOINT` is not set. Graceful SDK shutdown is wired to
+ * `SIGTERM` and `SIGINT` signals.
  */
 
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';

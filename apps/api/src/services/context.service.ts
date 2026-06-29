@@ -1,6 +1,6 @@
 /**
- * Context Service per gestione Brand/Season e UserPreference
- * Implementa logica di risoluzione del context con priorità deterministiche
+ * Context service — brand/season resolution and user preference management.
+ * Resolution priority: last-used → org default → first active.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -13,7 +13,7 @@ import { makeUrlResolver } from '../lib/storageUrl';
 const logger = pino({ level: 'info' });
 
 /**
- * Risultato del context resolver
+ * Resolved brand and season for the current user session.
  */
 export interface ContextResult {
   brand: {
@@ -33,10 +33,11 @@ export interface ContextResult {
 }
 
 /**
- * Restituisce i brand ID consentiti per un utente tramite team membership.
- * Admin: null (accesso illimitato).
- * Opt-in: nessun team → [] (nessun accesso). Unione degli scope di tutti i team.
- * Team senza scope contribuisce nulla (non sblocca accesso illimitato).
+ * Returns the set of brand IDs the user may access via team membership.
+ * Admins receive null (unrestricted). Users in no team receive an empty array (no access).
+ * A team with no brand scopes contributes nothing — it does not grant unrestricted access.
+ *
+ * @returns null for admin (unrestricted), or an array of allowed brand IDs.
  */
 export async function getUserAllowedBrandIds(
   userId: string,
@@ -61,13 +62,11 @@ export async function getUserAllowedBrandIds(
 }
 
 /**
- * Risolve il context per un utente con algoritmo deterministico
- * Priorità: lastUsed → orgDefault → firstActive
- * Rispetta il whitelist brand/season dell'utente.
+ * Resolves the active brand and season for a user using a deterministic priority algorithm:
+ * last-used preference → org-level AppConfig default → first active record.
+ * Respects brand whitelisting from team memberships.
  *
- * @param userId - ID dell'utente
- * @param prisma - Client Prisma
- * @returns Context risolto (brand + season)
+ * @throws {TRPCError} PRECONDITION_FAILED if no active brand or season exists.
  */
 export async function resolveContext(
   userId: string,
@@ -150,14 +149,10 @@ export async function resolveContext(
 }
 
 /**
- * Imposta il context per un utente
- * Valida che brand e season siano attivi prima di salvare
+ * Saves the user's active brand and season preference. Merges with existing preferences
+ * to preserve unrelated fields such as menu state.
  *
- * @param userId - ID dell'utente
- * @param brandId - ID del brand
- * @param seasonId - ID del season
- * @param prisma - Client Prisma
- * @returns Context impostato (brand + season)
+ * @throws {TRPCError} BAD_REQUEST if the brand or season is inactive or not found.
  */
 export async function setContext(
   userId: string,
@@ -209,10 +204,9 @@ export async function setContext(
 }
 
 /**
- * Ottiene i defaults del context dall'AppConfig
+ * Reads the org-level context defaults (default brand and season) from AppConfig.
  *
- * @param prisma - Client Prisma
- * @returns Defaults del context o oggetto vuoto
+ * @returns Parsed AppContextDefaults, or an empty object if not configured.
  */
 export async function getContextDefaults(
   prisma: PrismaClient
@@ -235,12 +229,9 @@ export async function getContextDefaults(
 }
 
 /**
- * Ottiene lo stato collapsible dei menu per l'utente
- * Restituisce un oggetto con il mapping {menuName: isCollapsed}
+ * Reads the sidebar menu collapsed/expanded states for a user.
  *
- * @param userId - ID dell'utente
- * @param prisma - Client Prisma
- * @returns Object con stati dei menu collapsibili
+ * @returns A map of menu name to collapsed boolean. Empty object if no preference is saved.
  */
 export async function getMenuCollapsibleStates(
   userId: string,
@@ -265,13 +256,11 @@ export async function getMenuCollapsibleStates(
 }
 
 /**
- * Imposta lo stato collapsible dei menu per l'utente
- * Fa upsert sulla preferenza esistente preservando altri dati
+ * Persists sidebar menu collapsed/expanded states for a user.
+ * Merges with existing preferences to preserve brand/season selections.
  *
- * @param userId - ID dell'utente
- * @param menuStates - Object con mapping {menuName: isCollapsed}
- * @param prisma - Client Prisma
- * @returns Stati salvati
+ * @param menuStates - Map of menu name to collapsed boolean.
+ * @returns The saved menu states.
  */
 export async function setMenuCollapsibleStates(
   userId: string,

@@ -1,8 +1,9 @@
 /**
- * Storage Service Layer
+ * Storage service layer — factory and high-level file management functions.
  *
- * Factory per provider storage e funzioni high-level per gestione file
- * Integra provider, persistenza DB e AuditLog
+ * Instantiates the active storage provider (local FS or MinIO) from AppConfig,
+ * then exposes provider-agnostic operations that combine provider I/O with
+ * FileObject DB persistence and audit logging.
  */
 
 import { createHash } from 'crypto';
@@ -30,9 +31,7 @@ import type { Context } from '../lib/trpc';
 import { LocalFsProvider } from './providers/local';
 import { MinioProvider } from './providers/minio';
 
-/**
- * Istanza singleton del provider storage
- */
+/** Singleton instance of the active storage provider. */
 let providerInstance: IStorageProvider | null = null;
 // Promise-based init lock: concurrent callers await the same initialisation
 let providerInitPromise: Promise<IStorageProvider> | null = null;
@@ -71,6 +70,11 @@ async function loadLocalProvider(prisma: PrismaClient): Promise<LocalFsProvider>
   return provider;
 }
 
+/**
+ * Instantiates a MinioProvider configured from AppConfig values.
+ *
+ * @returns Initialized MinioProvider ready for use.
+ */
 export async function loadMinioProvider(prisma: PrismaClient): Promise<MinioProvider> {
   const [endpoint, portStr, useSslStr, accessKey, secretKey, region, publicBaseUrl, putTtlStr, getTtlStr] =
     await Promise.all([
@@ -103,7 +107,12 @@ export async function loadMinioProvider(prisma: PrismaClient): Promise<MinioProv
 }
 
 /**
- * Crea o ritorna istanza singleton del provider storage
+ * Returns the singleton storage provider, initializing it on first call.
+ *
+ * Concurrent callers during initialization await the same promise to avoid
+ * creating multiple provider instances.
+ *
+ * @returns The active IStorageProvider (local FS or MinIO).
  */
 export async function getStorageProvider(
   prisma: PrismaClient
@@ -132,7 +141,8 @@ export async function getStorageProvider(
 }
 
 /**
- * Reset provider instance (per testing o reload config)
+ * Resets the singleton provider, forcing re-initialization on the next call.
+ * Intended for testing and config-reload scenarios.
  */
 export function resetStorageProvider(): void {
   providerInstance = null;
@@ -140,7 +150,12 @@ export function resetStorageProvider(): void {
 }
 
 /**
- * Upload file e salva metadati in DB
+ * Uploads a file to the active storage provider and persists its metadata to the DB.
+ *
+ * Sanitizes the filename before upload and computes a SHA-256 checksum.
+ * Creates a FileObject record (unconfirmed when `pending: true`) and writes an audit log entry.
+ *
+ * @returns Metadata of the stored object, including its generated key and checksum.
  */
 export async function putObject(
   ctx: Context,
@@ -211,7 +226,9 @@ export async function putObject(
 }
 
 /**
- * Recupera metadati file dal DB
+ * Retrieves file metadata from the DB by FileObject ID.
+ *
+ * @returns The stored object metadata, or `null` if not found.
  */
 export async function getObjectMetadata(
   prisma: PrismaClient,
@@ -239,7 +256,11 @@ export async function getObjectMetadata(
 }
 
 /**
- * Download file dallo storage
+ * Downloads a file from storage by its FileObject ID.
+ *
+ * Fetches metadata from DB, retrieves the stream from the provider, and writes an audit log entry.
+ *
+ * @returns An object containing the readable stream and the file metadata.
  */
 export async function getObject(
   ctx: Context,
@@ -281,7 +302,9 @@ export async function getObject(
 }
 
 /**
- * Cancella file dallo storage e DB
+ * Deletes a file from storage and removes its metadata from the DB.
+ *
+ * Writes an audit log entry on success.
  */
 export async function deleteObject(ctx: Context, id: string): Promise<void> {
   const provider = await getStorageProvider(ctx.prisma);
@@ -318,9 +341,12 @@ export async function deleteObject(ctx: Context, id: string): Promise<void> {
 }
 
 /**
- * Cancella file dallo storage e DB tramite bucket+key (senza conoscerne l'ID).
- * Usato per cleanup delle vecchie versioni di file (brand logo, row picture, ecc.)
- * dove si conosce solo la key estratta dall'URL salvato in DB.
+ * Deletes a file from storage and the DB by bucket and key, without requiring its FileObject ID.
+ *
+ * Used to clean up old file versions (e.g. brand logo, row picture) when only the key
+ * extracted from a saved URL is available. Physical deletion is best-effort: if the file
+ * is already gone from the provider, the error is logged as a warning and DB cleanup proceeds.
+ * Writes an audit log entry only if a matching FileObject record exists in the DB.
  */
 export async function deleteObjectByKey(
   ctx: Context,
@@ -361,8 +387,10 @@ export async function deleteObjectByKey(
 }
 
 /**
- * Legge un file dallo storage come Buffer, identificato da bucket+key.
- * Usato internamente per export (PDF/XLSX) senza richiedere una session.
+ * Reads a file from storage as a Buffer, identified by bucket and key.
+ *
+ * Used internally for PDF/XLSX exports where no session context is available.
+ * Returns `null` and logs a warning if the file cannot be read.
  */
 export async function readFileBuffer(
   prisma: PrismaClient,
@@ -386,7 +414,11 @@ export async function readFileBuffer(
 }
 
 /**
- * Lista file paginata dal DB
+ * Returns a cursor-paginated list of stored file metadata from the DB.
+ *
+ * Results are ordered by creation time (newest first).
+ *
+ * @returns Page of file metadata and an optional cursor for the next page.
  */
 export async function listObjects(
   prisma: PrismaClient,
@@ -435,15 +467,17 @@ export async function listObjects(
 }
 
 /**
- * Copia una foto dal bucket collection-row-pictures al bucket immutabile
- * collection-row-pictures-revisions per il registro qualità ISO 9001.
+ * Copies a photo from `collection-row-pictures` into the immutable
+ * `collection-row-pictures-revisions` bucket for the ISO 9001 quality register.
  *
- * Dedup via checksumSha256: se il file esiste già nel bucket immutabile,
- * restituisce la chiave esistente senza copiare (CAS semantics via DB lookup).
+ * Deduplicates via SHA-256: if an identical file already exists in the immutable
+ * bucket, returns the existing key without re-uploading (CAS semantics via DB lookup).
  *
- * Nota: se la transazione della revisione fallisce dopo questa chiamata,
- * il file copiato rimane orfano nel bucket — questo è accettabile poiché
- * il contenuto è identico (stesso sha256) e non produce duplicati logici.
+ * If the enclosing revision transaction rolls back after this call, the copied file
+ * becomes an orphan in storage. This is acceptable because the content is identical
+ * (same SHA-256) and produces no logical duplicates.
+ *
+ * @returns The storage key of the immutable copy.
  */
 export async function copyToImmutableBucket(
   prisma: PrismaClient,

@@ -41,6 +41,10 @@ export const LUKE_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0
 
 let cachedFonts: TFontDictionary | null = null;
 
+/**
+ * Returns the pdfmake font dictionary loaded from the bundled VFS.
+ * The result is cached after the first call.
+ */
 export function getPdfFonts(): TFontDictionary {
   if (!cachedFonts) {
     // pdfmake/build/vfs_fonts exports the VFS object directly (not pdfMake.vfs)
@@ -58,6 +62,17 @@ export function getPdfFonts(): TFontDictionary {
   return cachedFonts;
 }
 
+/**
+ * Builds a pdfmake header block for a branded document page.
+ * Displays the Luke logo on the left, brand name + optional subtitle in the centre,
+ * and the brand logo + optional page number on the right.
+ *
+ * @param brand - Brand display data.
+ * @param currentPage - Current page number (provided by pdfmake's header callback).
+ * @param totalPages - Total page count (provided by pdfmake's header callback).
+ * @param opts - Optional rendering controls (subtitle, extractedInfo, showPageNumber).
+ * @returns pdfmake `Content` object for use in `header`.
+ */
 export function buildBrandPageHeader(
   brand: { name: string; logoDataUri?: string | null },
   currentPage: number,
@@ -112,6 +127,15 @@ function formatAddress(address: CompanyAddress | null | undefined): string {
   return parts.join(', ');
 }
 
+/**
+ * Builds a pdfmake footer block with optional company branding.
+ * Shows the company logo and address on the left and the page number on the right.
+ *
+ * @param currentPage - Current page number (provided by pdfmake's footer callback).
+ * @param totalPages - Total page count.
+ * @param company - Optional company context (logo data URI, address, footer text).
+ * @returns pdfmake `Content` object for use in `footer`.
+ */
 export function buildPdfFooter(
   currentPage: number,
   totalPages: number,
@@ -156,12 +180,23 @@ export function buildPdfFooter(
   } as Content;
 }
 
+/**
+ * Company branding and settings assembled for PDF export.
+ */
 export type CompanyExportContext = {
   companyLogoDataUri: string | null;
   exportSettings: CompanyExportSettings;
   address: CompanyAddress | null;
 };
 
+/**
+ * Loads the company profile, logo, and export settings from the database.
+ * Returns a safe empty context on any error so PDF generation can proceed without branding.
+ *
+ * @param prisma - Prisma client.
+ * @param logger - Optional logger for non-fatal warnings.
+ * @returns Populated `CompanyExportContext`, or a zeroed-out default on failure.
+ */
 export async function fetchCompanyExportContext(
   prisma: PrismaClient,
   logger?: { warn: (obj: object, msg: string) => void },
@@ -197,6 +232,12 @@ export async function fetchCompanyExportContext(
   }
 }
 
+/**
+ * Renders a pdfmake document definition to a `Buffer` containing the PDF binary.
+ *
+ * @param def - pdfmake `TDocumentDefinitions` object.
+ * @returns Buffer with the complete PDF content.
+ */
 export async function createPdfBuffer(def: TDocumentDefinitions): Promise<Buffer> {
   // eslint-disable-next-line no-undef
   const PdfPrinter = require('pdfmake') as new (fonts: TFontDictionary) => {

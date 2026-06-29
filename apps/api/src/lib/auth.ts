@@ -1,19 +1,16 @@
 /**
- * Sistema di autenticazione per Luke API
- * Gestisce JWT tokens e sessioni utente per Fastify + tRPC
- * JWT secret derivato dalla master key via HKDF-SHA256
+ * Authentication layer for Luke API.
+ * Manages JWT tokens and user sessions for Fastify + tRPC.
+ * JWT secret is derived from the master key via HKDF-SHA256.
  */
 
 import { signJWT, verifyJWT, type JWTPayload } from './jwt';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
-/**
- * Interfaccia per il payload JWT (re-export da jwt.ts)
- */
 export type { JWTPayload } from './jwt';
 
 /**
- * Interfaccia per la sessione utente
+ * Authenticated user session attached to every tRPC context.
  */
 export interface UserSession {
   user: {
@@ -25,13 +22,12 @@ export interface UserSession {
   };
 }
 
-/**
- * Configurazione JWT (migrata a jwt.ts)
- */
-const JWT_EXPIRES_IN = '8h'; // Allineato a NextAuth maxAge
+const JWT_EXPIRES_IN = '8h'; // aligned to NextAuth maxAge
 
 /**
- * Crea un JWT token per un utente
+ * Creates a signed JWT token for the given user payload.
+ *
+ * @returns Signed JWT string valid for 8 hours.
  */
 export function createToken(user: {
   id: string;
@@ -55,15 +51,19 @@ export function createToken(user: {
 }
 
 /**
- * Verifica e decodifica un JWT token
+ * Verifies and decodes a JWT token.
+ *
+ * @returns Decoded payload, or `null` if the token is invalid or expired.
  */
 export function verifyToken(token: string): JWTPayload | null {
   return verifyJWT(token);
 }
 
 /**
- * Estrae il token JWT dalla richiesta
- * Supporta solo Authorization header (cookie API rimosso)
+ * Extracts the JWT token from the request Authorization header.
+ * Only Bearer tokens are accepted; cookie-based auth has been removed.
+ *
+ * @returns Token string, or `null` if the header is absent or malformed.
  */
 export function extractTokenFromRequest(
   request: FastifyRequest
@@ -78,7 +78,9 @@ export function extractTokenFromRequest(
 }
 
 /**
- * Crea una sessione utente dal token JWT
+ * Builds a `UserSession` from a raw JWT token.
+ *
+ * @returns Session object, or `null` if the token is invalid.
  */
 export function createUserSession(token: string): UserSession | null {
   const payload = verifyToken(token);
@@ -98,8 +100,11 @@ export function createUserSession(token: string): UserSession | null {
 }
 
 /**
- * Middleware per verificare l'autenticazione
- * Estrae il token e verifica la sessione
+ * Fastify hook that authenticates an incoming request.
+ * Extracts the Bearer token, verifies it, and returns the session.
+ * Clears the legacy session cookie if the token is invalid.
+ *
+ * @returns Authenticated session, or `null` if the request is unauthenticated.
  */
 export async function authenticateRequest(
   request: FastifyRequest,

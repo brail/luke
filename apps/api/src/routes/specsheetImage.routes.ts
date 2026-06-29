@@ -1,13 +1,12 @@
 /**
- * Plugin Fastify per upload immagini MerchandisingSpecsheet
- * Endpoint: POST /upload/specsheet-image/:specsheetId
- *           POST /upload/specsheet-image/temp
+ * Fastify plugin for merchandising specsheet image upload.
  *
- * Features:
- * - Autenticazione richiesta
- * - Rate limiting: 30 req/min in prod
- * - Validazione MIME: png, jpeg, webp
- * - Size limit: 10MB
+ * Endpoint: POST /upload/specsheet-image/:specsheetId
+ *
+ * Requires authentication and the `merchandising_plan:update` permission.
+ * Rate-limited to 30 req/min per user (100 in development). Max file size: 10 MB.
+ * Accepted MIME types: image/png, image/jpeg, image/webp.
+ * An optional `caption` field may be included in the multipart form data.
  */
 
 import rateLimit from '@fastify/rate-limit';

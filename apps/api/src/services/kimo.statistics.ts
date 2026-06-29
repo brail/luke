@@ -1,8 +1,7 @@
 /**
- * Kimo + Bidone statistics service — xlsx builder (streaming)
- *
- * Stessa architettura di sales.statistics.ts (ExcelJS WorkbookWriter streaming).
- * 28 colonne fisse, schema SO (step0), con DocType che distingue SO vs BASKET.
+ * Kimo + Bidone statistics service — streaming XLSX builder.
+ * Uses ExcelJS WorkbookWriter (same architecture as sales.statistics.ts) for O(1) memory.
+ * 28 fixed columns following the SO schema (query step 0), with DocType distinguishing SO vs BASKET.
  */
 
 import ExcelJS from 'exceljs';
@@ -18,8 +17,7 @@ import {
 // ─── Column definitions ───────────────────────────────────────────────────────
 
 /**
- * Colonne output nell'ordine dell'Excel, con nome display e chiave in KimoRow.
- * Ordine fedele allo schema SO (query #14 kimo-test.txt).
+ * Output column definitions in Excel order, matching the SO schema (query #14 kimo-test.txt).
  */
 const KIMO_COLUMNS: { header: string; key: keyof KimoRow }[] = [
   { header: 'DocType',                    key: 'docType' },
@@ -58,8 +56,11 @@ const DATE_KEYS    = new Set<keyof KimoRow>(['createSoDateTime', 'releaseSoDateT
 // ─── Builder ─────────────────────────────────────────────────────────────────
 
 /**
- * Costruisce un buffer xlsx dal risultato della query KIMO (SO + BASKET).
- * WorkbookWriter streaming: memoria O(1) rispetto alle righe.
+ * Builds an XLSX buffer from KIMO SO + BASKET query results using streaming WorkbookWriter.
+ * Each row is committed immediately, keeping memory usage O(1) relative to row count.
+ *
+ * @param sheetName - Worksheet tab name (default: 'Vendite+Bidone').
+ * @param meta - Optional workbook metadata (title, author, etc.).
  */
 export async function buildKimoXlsx(
   rows: KimoRow[],

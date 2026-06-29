@@ -1,7 +1,7 @@
 /**
- * Export service per singola riga del Collection Layout
- * PDF: A4 landscape — product sheet con foto + dati + tabella quotazioni
- * XLSX: foglio unico con stessi dati
+ * Export service for a single Collection Layout row.
+ * PDF: A4 landscape — product sheet with photo, identification fields, and a quotations table.
+ * XLSX: single-workbook export with an identification sheet and a quotations sheet.
  */
 
 import ExcelJS from 'exceljs';
@@ -115,6 +115,14 @@ function fmtPct(val: number | null): string {
 
 type Logger = { warn: (obj: object, msg: string) => void };
 
+/**
+ * Builds an A4 landscape PDF product sheet for a single collection row.
+ * Includes the row photo, identification fields, and a per-quotation margin table.
+ *
+ * @param extractedBy - Display name of the requesting user (shown in the header).
+ * @param extractedAt - Timestamp to include in the header.
+ * @returns A Buffer containing the PDF file.
+ */
 export async function buildCollectionRowPdf(
   ctx: RowExportContext,
   prisma: PrismaClient,
@@ -261,6 +269,12 @@ export async function buildCollectionRowPdf(
 
 // ─── XLSX Builder ─────────────────────────────────────────────────────────────
 
+/**
+ * Builds a two-sheet XLSX workbook for a single collection row:
+ * `Riga` sheet with identification data and embedded photo, `Quotazioni` sheet with margin calculations.
+ *
+ * @returns A Buffer containing the XLSX file.
+ */
 export async function buildCollectionRowXlsx(
   ctx: RowExportContext,
   prisma: PrismaClient,

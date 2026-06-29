@@ -4,6 +4,12 @@ import type { StateEffectType } from '@luke/core';
 
 import { getEffectHandler } from './registry.js';
 
+/**
+ * Rolls back a previously executed calendar state effect by restoring the previous state snapshot.
+ * Marks the execution record as rolled back within a transaction.
+ *
+ * @throws {TRPCError} CONFLICT if the execution has already been rolled back.
+ */
 export async function rollbackEffect(
   prisma: PrismaClient,
   executionId: string,

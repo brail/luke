@@ -1,6 +1,6 @@
 /**
- * Rate Limit Policy Resolver
- * Implementa la cascata di risoluzione: AppConfig → ENV → Default
+ * Rate-limit policy resolver.
+ * Implements a three-tier resolution cascade: AppConfig → environment variable → built-in default.
  */
 
 import pino from 'pino';
@@ -14,8 +14,8 @@ const logger = pino({ level: 'info' });
 import type { PrismaClient } from '@prisma/client';
 
 /**
- * Default sicuri per backwards compatibility
- * Manteniamo gli stessi valori attuali come fallback
+ * Conservative built-in defaults for backwards compatibility.
+ * Development environments use relaxed limits (100× the production values).
  */
 const DEFAULTS: Record<string, RateLimitPolicy> = {
   login: { max: 5, timeWindow: '1m', keyBy: 'ip' },
@@ -58,10 +58,6 @@ const DEFAULTS: Record<string, RateLimitPolicy> = {
   },
 };
 
-/**
- * Parser per timeWindow: '1m' → 60000ms, '15m' → 900000ms
- * Supporta formati: '30s', '1m', '2h'
- */
 function parseTimeWindow(window: string): number {
   const match = window.match(/^(\d+)(s|m|h)$/);
   if (!match) {
@@ -92,12 +88,14 @@ function parseTimeWindow(window: string): number {
 }
 
 /**
- * Risolve la policy di rate limiting per una rotta specifica
- * Implementa la cascata: AppConfig → ENV → Default
+ * Resolves the effective rate-limit policy for a named route.
+ * Resolution order: AppConfig (`rateLimit` JSON key) → environment variables
+ * (`LUKE_RATE_LIMIT_<ROUTE>_MAX/WINDOW/KEY_BY`) → built-in defaults.
+ * Invalid or malformed config at any tier falls through to the next tier.
  *
- * @param routeName - Nome della rotta (deve essere in DEFAULTS)
- * @param prisma - Client Prisma per accedere ad AppConfig
- * @returns Configurazione rate limit con max, windowMs, keyBy
+ * @param routeName - Route identifier; must be present in the DEFAULTS map.
+ * @param prisma - Prisma client used to read AppConfig.
+ * @returns Resolved policy with `max`, `windowMs`, and `keyBy`.
  */
 export async function resolveRateLimitPolicy(
   routeName: keyof typeof DEFAULTS,

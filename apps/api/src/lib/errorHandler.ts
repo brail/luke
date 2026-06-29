@@ -1,12 +1,11 @@
 /**
- * Gestione errori uniforme per Luke API
- * Fornisce un modello standardizzato per errori e logging sicuro
+ * Unified error model and secure logging utilities for Luke API.
  */
 
 import { TRPCError } from '@trpc/server';
 
 /**
- * Codici di errore standardizzati
+ * Standardised error codes used across the API.
  */
 export enum ErrorCode {
   // Errori di validazione
@@ -36,7 +35,7 @@ export enum ErrorCode {
 }
 
 /**
- * Interfaccia per errori standardizzati
+ * Structured error object returned by `createStandardError`.
  */
 export interface StandardError {
   code: ErrorCode;
@@ -47,7 +46,7 @@ export interface StandardError {
 }
 
 /**
- * Crea un errore standardizzato
+ * Creates a `StandardError` with the current timestamp.
  */
 export function createStandardError(
   code: ErrorCode,
@@ -65,7 +64,7 @@ export function createStandardError(
 }
 
 /**
- * Converte un errore standardizzato in TRPCError
+ * Converts a `StandardError` into a `TRPCError` with the appropriate tRPC error code.
  */
 export function toTRPCError(error: StandardError): TRPCError {
   // const httpStatus = getHttpStatusFromErrorCode(error.code);
@@ -107,7 +106,10 @@ function getTRPCCodeFromErrorCode(
 }
 
 /**
- * Sanitizza i dati sensibili per il logging
+ * Recursively redacts values whose keys match known sensitive patterns
+ * (password, token, secret, key, auth, credential, apiKey, etc.).
+ *
+ * @returns Deep clone of `data` with sensitive values replaced by `'[REDACTED]'`.
  */
 export function sanitizeForLogging(data: any): any {
   if (!data || typeof data !== 'object') {
@@ -145,7 +147,8 @@ export function sanitizeForLogging(data: any): any {
 }
 
 /**
- * Logger sicuro che non espone dati sensibili
+ * Logger wrapper that automatically sanitises all data payloads before writing,
+ * ensuring sensitive fields are never emitted to the log stream.
  */
 export class SecureLogger {
   private logger: any;
@@ -172,7 +175,7 @@ export class SecureLogger {
 }
 
 /**
- * Utility per gestire errori di integrazione
+ * Factory helpers for common integration error scenarios (SMTP, storage, config).
  */
 export class IntegrationErrorHandler {
   static handleSMTPError(error: any): StandardError {

@@ -1,8 +1,7 @@
 /**
- * Collection Layout Service — Gestione Collection Layout per brand+stagione
- *
- * Funzioni pure esportate, prisma sempre ultimo argomento.
- * Errori: TRPCError con codici NOT_FOUND, CONFLICT, BAD_REQUEST.
+ * Collection Layout service — CRUD for collection layouts, groups, and rows scoped to brand+season.
+ * All exported functions receive PrismaClient as their last argument.
+ * Errors are surfaced as TRPCError with codes NOT_FOUND, CONFLICT, or BAD_REQUEST.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -78,6 +77,12 @@ const LAYOUT_INCLUDE = {
 // Collection Layout
 // ─────────────────────────────────────────────────────────────────
 
+/**
+ * Fetches the collection layout for a brand+season combination, including all groups,
+ * rows, vendor info, and quotations ordered by their display order.
+ *
+ * @returns The layout with relations, or null if not yet created.
+ */
 export async function getLayout(
   brandId: string,
   seasonId: string,
@@ -89,6 +94,12 @@ export async function getLayout(
   }) as Promise<CollectionLayoutWithRelations | null>;
 }
 
+/**
+ * Returns the existing collection layout for a brand+season, or creates an empty one
+ * if none exists yet.
+ *
+ * @param availableGenders - Optional gender filter to set on creation.
+ */
 export async function getOrCreateLayout(
   brandId: string,
   seasonId: string,
@@ -109,6 +120,14 @@ export async function getOrCreateLayout(
 
 type RowCopySelection = { id: string; copyQuotations: boolean };
 
+/**
+ * Copies a collection layout from one brand+season to another. Optionally restricts which
+ * rows are copied and whether their quotations are included.
+ *
+ * @param options - When provided, only the listed row IDs are copied; each entry controls quotation copy.
+ * @throws {TRPCError} NOT_FOUND if the source layout does not exist.
+ * @throws {TRPCError} CONFLICT if a layout already exists for the target brand+season.
+ */
 export async function copyFromSeason(
   fromBrandId: string,
   fromSeasonId: string,
@@ -214,6 +233,11 @@ export async function copyFromSeason(
 // Collection Groups
 // ─────────────────────────────────────────────────────────────────
 
+/**
+ * Creates a new group in the given collection layout.
+ *
+ * @throws {TRPCError} NOT_FOUND if the layout does not exist.
+ */
 export async function createGroup(
   collectionLayoutId: string,
   input: CollectionGroupInput,
@@ -244,6 +268,11 @@ export async function createGroup(
   });
 }
 
+/**
+ * Updates an existing group's name, order, or SKU budget.
+ *
+ * @throws {TRPCError} NOT_FOUND if the group does not exist.
+ */
 export async function updateGroup(
   groupId: string,
   input: Partial<CollectionGroupInput>,
@@ -270,6 +299,11 @@ export async function updateGroup(
   });
 }
 
+/**
+ * Deletes a group and all its rows (cascaded by DB relation).
+ *
+ * @throws {TRPCError} NOT_FOUND if the group does not exist.
+ */
 export async function deleteGroup(
   groupId: string,
   prisma: PrismaClient
@@ -292,6 +326,13 @@ export async function deleteGroup(
 // Collection Layout Rows
 // ─────────────────────────────────────────────────────────────────
 
+/**
+ * Creates a new row in the specified group. Validates that the gender is allowed by the
+ * layout's availableGenders filter.
+ *
+ * @throws {TRPCError} NOT_FOUND if the group does not exist.
+ * @throws {TRPCError} BAD_REQUEST if the gender is not in the layout's allowed set.
+ */
 export async function createRow(
   input: CollectionLayoutRowInput,
   prisma: PrismaClient
@@ -351,6 +392,13 @@ export async function createRow(
   }) as Promise<RowWithVendor>;
 }
 
+/**
+ * Updates fields on a collection row. Validates gender against the layout's filter
+ * and, if moving to a different group, ensures the destination belongs to the same layout.
+ *
+ * @throws {TRPCError} NOT_FOUND if the row or destination group does not exist.
+ * @throws {TRPCError} BAD_REQUEST if the gender or cross-layout move is invalid.
+ */
 export async function updateRow(
   rowId: string,
   input: Partial<CollectionLayoutRowInput>,
@@ -407,6 +455,11 @@ export async function updateRow(
   }) as Promise<RowWithVendor>;
 }
 
+/**
+ * Deletes a collection row.
+ *
+ * @throws {TRPCError} NOT_FOUND if the row does not exist.
+ */
 export async function deleteRow(
   rowId: string,
   prisma: PrismaClient
@@ -425,6 +478,12 @@ export async function deleteRow(
   await prisma.collectionLayoutRow.delete({ where: { id: rowId } });
 }
 
+/**
+ * Duplicates a row, inserting the copy immediately after the source row and shifting
+ * subsequent rows down by 1. Quotations are copied; picture key is not (shared references avoided).
+ *
+ * @throws {TRPCError} NOT_FOUND if the source row does not exist.
+ */
 export async function duplicateRow(
   rowId: string,
   prisma: PrismaClient
@@ -481,6 +540,11 @@ export async function duplicateRow(
   });
 }
 
+/**
+ * Updates layout-level settings: SKU budget, hidden columns, or available genders.
+ *
+ * @throws {TRPCError} NOT_FOUND if the layout does not exist.
+ */
 export async function updateLayoutSettings(
   collectionLayoutId: string,
   input: { skuBudget?: number | null; hiddenColumns?: string[] | null; availableGenders?: string[] },
@@ -509,6 +573,12 @@ export async function updateLayoutSettings(
   });
 }
 
+/**
+ * Reassigns the order index of all rows in a group based on the provided ordered ID list.
+ *
+ * @param orderedIds - Row IDs in the desired display order (0-indexed).
+ * @throws {TRPCError} NOT_FOUND if the group does not exist.
+ */
 export async function reorderRows(
   groupId: string,
   orderedIds: string[],
@@ -535,6 +605,12 @@ export async function reorderRows(
   );
 }
 
+/**
+ * Builds a map of progress value → display label from the collection catalog.
+ * Labels are formatted as "CODE — label" when a code is present.
+ *
+ * @returns Map keyed by progress value string.
+ */
 export async function buildProgressLabelMap(
   prisma: PrismaClient,
 ): Promise<Map<string, string>> {

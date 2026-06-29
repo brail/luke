@@ -31,6 +31,13 @@ function commonValue<K extends keyof PricingParameterSet>(
 
 // ─── XLSX ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Builds a streaming XLSX pricing grid for one or more parameter sets.
+ * Includes a parameters summary section and a retail → FOB lookup table
+ * across the full retail price range.
+ *
+ * @returns A Buffer containing the XLSX file.
+ */
 export async function buildPricingGridXlsx(
   sets: PricingParameterSet[],
   brand: Brand,
@@ -138,6 +145,15 @@ export async function buildPricingGridXlsx(
 
 // ─── PDF ──────────────────────────────────────────────────────────────────────
 
+/**
+ * Builds a PDF pricing grid for one or more parameter sets.
+ * Auto-selects A4 portrait (≤4 sets) or A4 landscape (>4 sets).
+ * Includes a parameters block and a styled retail → FOB lookup table.
+ *
+ * @param extractedBy - Display name of the requesting user (shown in the header).
+ * @param extractedAt - Timestamp to include in the header.
+ * @returns A Buffer containing the PDF file.
+ */
 export async function buildPricingGridPdf(
   sets: PricingParameterSet[],
   brand: Brand,

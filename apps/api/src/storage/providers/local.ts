@@ -1,14 +1,12 @@
 /**
- * Local Filesystem Storage Provider
+ * Local filesystem implementation of IStorageProvider.
  *
- * Implementazione IStorageProvider per storage su filesystem locale
- *
- * Sicurezza:
- * - Path traversal protection (realpath + startsWith)
- * - Atomic writes (tmp + rename)
- * - Limiti dimensione file
- * - Permessi directory 0700
- * - Checksum SHA-256
+ * Security measures applied:
+ * - Path traversal protection via `realpath` + relative-path check
+ * - Atomic writes: file written to a `.tmp` directory, then renamed to its final path
+ * - Configurable per-file size limit (default 50 MB)
+ * - Directory permissions set to 0700, file permissions to 0600
+ * - SHA-256 checksum computed after write and returned in the result
  */
 
 import { createHash, randomUUID } from 'crypto';
@@ -35,9 +33,7 @@ import type {
 
 import { isPathSafe } from '@luke/core';
 
-/**
- * Local Filesystem Provider
- */
+/** Local filesystem storage provider. Implements IStorageProvider over a configurable base directory. */
 export class LocalFsProvider implements IStorageProvider {
   readonly capabilities: IStorageCapabilities = {
     supportsPresignedUpload: false,
@@ -56,7 +52,8 @@ export class LocalFsProvider implements IStorageProvider {
   }
 
   /**
-   * Inizializza il provider creando directory bucket
+   * Initializes the provider by creating the base directory and one subdirectory per configured bucket.
+   * Each bucket also gets a `.tmp` subdirectory used for atomic writes.
    */
   async init(): Promise<void> {
     // Ottieni realpath del basePath
@@ -92,7 +89,10 @@ export class LocalFsProvider implements IStorageProvider {
   }
 
   /**
-   * Valida path safety contro traversal attacks e ritorna path canonico
+   * Validates a relative subpath against traversal attacks and returns its canonical absolute path.
+   *
+   * @returns Canonical absolute path within the base directory.
+   * @throws If the path contains traversal sequences or resolves outside the base directory.
    */
   private validatePathSafety(candidateSubpath: string): string {
     if (!this.realBasePath) {
@@ -137,7 +137,7 @@ export class LocalFsProvider implements IStorageProvider {
   }
 
   /**
-   * Genera chiave server-side con partizionamento temporale
+   * Generates a server-side storage key with date-based path partitioning: `YYYY/MM/DD/<uuid>[.ext]`.
    */
   private generateKey(contentType?: string): string {
     const now = new Date();
@@ -151,9 +151,7 @@ export class LocalFsProvider implements IStorageProvider {
     return `${year}/${month}/${day}/${uuid}${extension}`;
   }
 
-  /**
-   * Determina estensione file dal content-type
-   */
+  /** Returns the file extension for a given MIME type, or an empty string if unknown. */
   private getExtensionFromContentType(contentType?: string): string {
     if (!contentType) return '';
     
@@ -170,9 +168,7 @@ export class LocalFsProvider implements IStorageProvider {
     }
   }
 
-  /**
-   * Calcola SHA-256 di un file
-   */
+  /** Computes the SHA-256 hex digest of the file at the given path. */
   private async calculateChecksum(filePath: string): Promise<string> {
     const hash = createHash('sha256');
     const stream = createReadStream(filePath);
@@ -183,7 +179,10 @@ export class LocalFsProvider implements IStorageProvider {
   }
 
   /**
-   * Scrive stream su file con limite dimensione
+   * Pipes a readable stream to a file, enforcing a maximum byte limit.
+   *
+   * @returns Number of bytes written.
+   * @throws If the stream exceeds `maxSize` bytes.
    */
   private async writeStreamToFile(
     stream: NodeJS.ReadableStream,
@@ -233,7 +232,9 @@ export class LocalFsProvider implements IStorageProvider {
   }
 
   /**
-   * Upload file nello storage
+   * Stores a file in the local filesystem using an atomic write (temp file → rename).
+   *
+   * @returns The generated key, SHA-256 checksum, and final byte size.
    */
   async put(params: StoragePutParams): Promise<StoragePutResult> {
     // Genera chiave server-side con estensione
@@ -287,7 +288,10 @@ export class LocalFsProvider implements IStorageProvider {
   }
 
   /**
-   * Download file dallo storage
+   * Opens a readable stream for a stored file.
+   *
+   * @returns A stream, the file size, and a default content type (`application/octet-stream`).
+   * @throws If the path does not exist or is not a regular file.
    */
   async get(params: StorageGetParams): Promise<StorageGetResult> {
     const filePath = join(params.bucket, params.key);
@@ -318,7 +322,7 @@ export class LocalFsProvider implements IStorageProvider {
   }
 
   /**
-   * Cancella file dallo storage
+   * Deletes a stored file. If the file does not exist, the operation is treated as a success (idempotent).
    */
   async delete(params: StorageDeleteParams): Promise<void> {
     const filePath = join(params.bucket, params.key);
@@ -337,7 +341,9 @@ export class LocalFsProvider implements IStorageProvider {
   }
 
   /**
-   * Lista file in un bucket
+   * Lists files in a bucket with optional prefix filtering and cursor-based pagination.
+   *
+   * @returns Lexicographically sorted items and an optional cursor for the next page.
    */
   async list(params: StorageListParams): Promise<StorageListResult> {
     const prefix = params.prefix || '';

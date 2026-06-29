@@ -1,12 +1,12 @@
 /**
- * Router tRPC per Collection Layout
+ * tRPC router for collection layout management.
  *
- * Espone:
- *  - collectionLayout.get
- *  - collectionLayout.getOrCreate
- *  - collectionLayout.copyFromSeason
+ * Exposes:
+ *  - collectionLayout.get / getOrCreate / copyFromSeason / updateSettings
  *  - collectionLayout.groups.create / update / delete
  *  - collectionLayout.rows.create / update / delete / duplicate / reorder
+ *  - collectionLayout.quotations.create / update / delete / reorder
+ *  - collectionLayout.export.xlsx / pdf / rowXlsx / rowPdf
  */
 
 import { z } from 'zod';
@@ -275,7 +275,10 @@ const rowsRouter = router({
     }),
 });
 
-/** Resolve pictureKey → pictureUrl and logoKey → logoUrl in a layout response. */
+/**
+ * Resolves `pictureKey` → `pictureUrl` for each row and `logoKey` → `logoUrl` for the brand
+ * in a layout response, using the active storage provider to build URLs.
+ */
 async function resolveLayoutUrls<T extends {
   brand: { logoKey: string | null; [k: string]: unknown };
   groups: Array<{ rows: Array<{ pictureKey: string | null; [k: string]: unknown }>; [k: string]: unknown }>;
@@ -489,6 +492,13 @@ const exportRouter = router({
 });
 
 export const collectionLayoutRouter = router({
+  /**
+   * Returns the collection layout for a brand/season pair, or `null` if none exists yet.
+   *
+   * @auth collection_layout:read
+   * @input { brandId, seasonId }
+   * @output CollectionLayout with resolved pictureUrls and logoUrl, or null
+   */
   get: protectedProcedure
     .use(requirePermission('collection_layout:read'))
     .input(
@@ -502,6 +512,13 @@ export const collectionLayoutRouter = router({
       return layout ? resolveLayoutUrls(layout, ctx.prisma) : null;
     }),
 
+  /**
+   * Returns the collection layout for a brand/season pair, creating one if it does not exist.
+   *
+   * @auth collection_layout:update
+   * @input { brandId, seasonId, availableGenders? }
+   * @output CollectionLayout with resolved URLs
+   */
   getOrCreate: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
@@ -518,6 +535,13 @@ export const collectionLayoutRouter = router({
       return resolveLayoutUrls(result, ctx.prisma);
     }),
 
+  /**
+   * Copies a collection layout (groups, rows, and optionally quotations) from one brand/season to another.
+   *
+   * @auth collection_layout:update
+   * @input { fromBrandId, fromSeasonId, toBrandId, toSeasonId, rows? }
+   * @output The resulting target layout with resolved URLs
+   */
   copyFromSeason: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
@@ -543,6 +567,13 @@ export const collectionLayoutRouter = router({
       return resolveLayoutUrls(result, ctx.prisma);
     }),
 
+  /**
+   * Updates the column visibility and display settings for a collection layout.
+   *
+   * @auth collection_layout:update
+   * @input { collectionLayoutId, ...CollectionLayoutSettings }
+   * @output { success: true }
+   */
   updateSettings: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))

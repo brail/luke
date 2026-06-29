@@ -1,3 +1,13 @@
+/**
+ * Fastify plugin for company logo upload.
+ *
+ * Endpoint: POST /upload/company-logo
+ *
+ * Requires authentication and the `company_profile:update` permission.
+ * Delegates to the company logo service, which validates MIME type, enforces
+ * the file size limit, stores the file, and updates the CompanyProfile record.
+ */
+
 import fp from 'fastify-plugin';
 import { hasPermission, type Role } from '@luke/core';
 import type { FastifyInstance } from 'fastify';

@@ -1,8 +1,7 @@
 /**
- * Middleware tRPC per controllo permissions Resource:Action
- *
- * Implementa enforcement granulare con cache per-request per performance.
- * Supporta wildcard matching e backward compatibility con ruoli legacy.
+ * tRPC middleware for Resource:Action permission enforcement.
+ * Implements granular access control with a per-request cache for performance.
+ * Supports wildcard matching and backward compatibility with legacy roles.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -19,13 +18,12 @@ import { t } from './t';
 import type { Context } from './context';
 
 /**
- * Cache per-request delle permissions verificate
- * Evita verifiche duplicate durante la stessa request
+ * Per-request permission check cache — prevents duplicate lookups within a single request.
  */
 type PermissionsCache = Map<string, boolean>;
 
 /**
- * Estende il Context con cache permissions
+ * Augments the tRPC Context with the per-request permissions cache.
  */
 declare module './context' {
   interface Context {
@@ -143,17 +141,17 @@ export function requirePermission(
 }
 
 /**
- * Helper per verificare permissions nei resolver
- * Non lancia errori, ritorna solo boolean
+ * Checks a single permission for the current user without throwing.
+ * Results are cached per-request via `ctx._permissionsCache`.
  *
- * @param ctx - Context tRPC
- * @param permission - Permission da verificare
- * @returns true se l'utente ha la permission
+ * @param ctx - tRPC context.
+ * @param permission - Permission string to check (e.g. `'brands:update'`).
+ * @returns `true` if the user holds the permission, `false` otherwise (including unauthenticated).
  *
  * @example
  * ```typescript
  * if (can(ctx, 'brands:update')) {
- *   // Logica condizionale
+ *   // conditional logic
  * }
  * ```
  */

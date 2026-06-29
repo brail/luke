@@ -1,6 +1,5 @@
 /**
- * Service layer per gestione logica di autenticazione
- * Gestisce login, reset password, verifica email e logout
+ * Authentication service — handles login, password reset, email verification, and logout.
  */
 
 import { randomBytes, createHash } from 'crypto';
@@ -20,7 +19,9 @@ import {
 import { validatePassword } from '../lib/password';
 
 /**
- * Autentica un utente con credenziali locali
+ * Authenticates a user against local credentials (argon2 password hash).
+ *
+ * @returns The matching active User, or null if credentials are invalid.
  */
 export async function authenticateLocal(
   prisma: PrismaClient,
@@ -64,7 +65,11 @@ export async function authenticateLocal(
 }
 
 /**
- * Gestisce il fallback delle strategie di autenticazione (Local/LDAP)
+ * Authenticates a user using the configured auth strategy (local-first, ldap-first,
+ * local-only, or ldap-only). Writes an audit log entry on success or failure.
+ *
+ * @returns User profile, signed JWT token, and the auth method used.
+ * @throws {TRPCError} UNAUTHORIZED if credentials are invalid, FORBIDDEN if account is pending or email unverified.
  */
 export async function authenticateUser(
   ctx: Context,
@@ -327,7 +332,9 @@ export async function authenticateUser(
 }
 
 /**
- * Gestisce il logout "global" (invalida tutte le sessioni)
+ * Invalidates all active sessions for the current user by incrementing tokenVersion.
+ *
+ * @throws {TRPCError} UNAUTHORIZED if the caller is not authenticated.
  */
 export async function logoutAllSessions(ctx: Context) {
   if (!ctx.session?.user) {
@@ -370,7 +377,10 @@ export async function logoutAllSessions(ctx: Context) {
 }
 
 /**
- * Richiede reset password
+ * Sends a password reset email to the given address. Always returns a generic success
+ * response to prevent email enumeration, even if the user does not exist.
+ *
+ * @param email - Email address to send the reset link to.
  */
 export async function requestPasswordReset(ctx: Context, email: string) {
   const normalizedEmail = email.toLowerCase();
@@ -468,7 +478,12 @@ export async function requestPasswordReset(ctx: Context, email: string) {
 }
 
 /**
- * Conferma reset password
+ * Validates a password reset token and sets the new password. Invalidates all sessions
+ * by incrementing tokenVersion and deletes the consumed token atomically.
+ *
+ * @throws {TRPCError} NOT_FOUND if the token is invalid or expired.
+ * @throws {TRPCError} FORBIDDEN if the account is inactive.
+ * @throws {TRPCError} BAD_REQUEST if the new password fails the policy.
  */
 export async function confirmPasswordReset(
   ctx: Context,
@@ -584,7 +599,11 @@ export async function confirmPasswordReset(
 }
 
 /**
- * Richiede verifica email
+ * Sends an email verification link. Returns a generic success response to prevent
+ * enumeration. No-ops silently if the email is already verified.
+ *
+ * @param email - Email address to verify.
+ * @throws {TRPCError} INTERNAL_SERVER_ERROR if the email cannot be sent.
  */
 export async function requestEmailVerification(ctx: Context, email: string) {
   const normalizedEmail = email.toLowerCase();
@@ -684,7 +703,9 @@ export async function requestEmailVerification(ctx: Context, email: string) {
 }
 
 /**
- * Conferma verifica email
+ * Marks the user's email as verified and deletes the consumed token atomically.
+ *
+ * @throws {TRPCError} NOT_FOUND if the token is invalid or expired.
  */
 export async function confirmEmailVerification(
   ctx: Context,

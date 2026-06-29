@@ -4,6 +4,12 @@ import { extractBucketFromUrl, extractKeyFromUrl } from '@luke/core';
 
 import { readFileBuffer } from '../../storage';
 
+/**
+ * Fetches a remote image and returns its raw bytes.
+ *
+ * @param timeoutMs - Request timeout in milliseconds. Defaults to 5000.
+ * @returns Buffer with the image bytes, or `null` if the request fails or times out.
+ */
 export async function fetchImageAsBuffer(url: string, timeoutMs = 5000): Promise<Buffer | null> {
   try {
     const res = await fetch(url, { signal: globalThis.AbortSignal.timeout(timeoutMs) });
@@ -15,6 +21,12 @@ export async function fetchImageAsBuffer(url: string, timeoutMs = 5000): Promise
   }
 }
 
+/**
+ * Fetches a remote image and returns it as a base64-encoded string.
+ *
+ * @param timeoutMs - Request timeout in milliseconds. Defaults to 5000.
+ * @returns Base64 string, or `null` on failure.
+ */
 export async function fetchImageAsBase64(url: string, timeoutMs = 5000): Promise<string | null> {
   const buf = await fetchImageAsBuffer(url, timeoutMs);
   if (!buf) return null;
@@ -35,8 +47,10 @@ export async function fetchImageAsDataUri(url: string, timeoutMs = 5000): Promis
 }
 
 /**
- * Reads an image from local storage (for proxy URLs like /api/uploads/...)
- * or falls back to HTTP fetch for absolute URLs (prod with publicBaseUrl).
+ * Reads an image from local storage for proxy URLs (`/api/uploads/...`)
+ * or falls back to an HTTP fetch for absolute URLs (e.g. production with a public base URL).
+ *
+ * @returns Buffer with image bytes, or `null` if the image cannot be retrieved.
  */
 export async function fetchImageBufferFromUrl(
   url: string,
@@ -51,8 +65,11 @@ export async function fetchImageBufferFromUrl(
 }
 
 /**
- * Same as fetchImageBufferFromUrl but returns a data URI suitable for pdfmake.
- * MIME type is read from the fileObject record in DB when available.
+ * Same as `fetchImageBufferFromUrl` but returns a data URI suitable for pdfmake.
+ * MIME type is read from the `FileObject` database record when available,
+ * falling back to `image/jpeg`.
+ *
+ * @returns Data URI string (e.g. `data:image/png;base64,...`), or `null` on failure.
  */
 export async function fetchImageDataUriFromUrl(
   url: string,

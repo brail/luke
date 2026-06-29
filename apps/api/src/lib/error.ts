@@ -1,5 +1,6 @@
 /**
- * Error handling e formatter centralizzati per Luke API
+ * Centralised error handling and response formatting for Luke API.
+ * Registers Fastify's global error handler and exposes the tRPC error formatter.
  */
 
 import type {
@@ -13,6 +14,10 @@ import { isProduction } from '@luke/core';
 
 const isProd = isProduction();
 
+/**
+ * Extracts the trace ID from the `x-luke-trace-id` request header,
+ * falling back to the Fastify-assigned request ID.
+ */
 export function getTraceId(req: FastifyRequest): string | undefined {
   const header = req.headers['x-luke-trace-id'];
   return (Array.isArray(header) ? header[0] : header) || (req as any).id;
@@ -92,6 +97,11 @@ function toResponseBody(err: any, traceId?: string) {
   return base;
 }
 
+/**
+ * Registers the global Fastify error handler and `onError` hook.
+ * Maps tRPC and HTTP errors to appropriate status codes, redacts sensitive fields
+ * from error objects before logging, and suppresses stack traces in production.
+ */
 export function setGlobalErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler(
     (err: FastifyError, req: FastifyRequest, reply: FastifyReply) => {
@@ -122,7 +132,10 @@ export function setGlobalErrorHandler(app: FastifyInstance): void {
   });
 }
 
-// tRPC error formatter compatibile con initTRPC.create({ errorFormatter })
+/**
+ * tRPC error formatter compatible with `initTRPC.create({ errorFormatter })`.
+ * Replaces internal error messages with a generic string in production.
+ */
 export const trpcErrorFormatter = ({ shape }: any) => {
   return {
     ...shape,

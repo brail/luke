@@ -1,7 +1,7 @@
 /**
- * Presence store in-memory
- * Traccia gli utenti attualmente online tramite heartbeat periodico.
- * Lo stato è volatile: si azzera al restart del server (comportamento accettabile).
+ * In-memory presence store.
+ * Tracks currently online users via periodic heartbeats.
+ * State is volatile — it resets on server restart, which is the intended behaviour.
  */
 
 const ONLINE_TTL_MS = 2 * 60 * 1000; // 2 minuti
@@ -9,14 +9,15 @@ const ONLINE_TTL_MS = 2 * 60 * 1000; // 2 minuti
 const presenceMap = new Map<string, number>(); // userId -> timestamp ultimo heartbeat
 
 /**
- * Aggiorna il timestamp di presenza per un utente
+ * Records or refreshes a user's last-seen timestamp.
+ * Call this on every heartbeat request from the client.
  */
 export function updatePresence(userId: string): void {
   presenceMap.set(userId, Date.now());
 }
 
 /**
- * Verifica se un utente è online (heartbeat negli ultimi 2 minuti)
+ * Returns `true` if the user sent a heartbeat within the last 2 minutes.
  */
 export function isUserOnline(userId: string): boolean {
   const lastSeen = presenceMap.get(userId);
@@ -24,8 +25,8 @@ export function isUserOnline(userId: string): boolean {
 }
 
 /**
- * Restituisce il Set degli userId attualmente online.
- * Rimuove contestualmente le entry scadute.
+ * Returns the set of user IDs whose last heartbeat is within the 2-minute TTL.
+ * Expired entries are removed from the map as a side effect.
  */
 export function getOnlineUserIds(): Set<string> {
   const now = Date.now();

@@ -4,6 +4,10 @@ import { getPublicUrl, getProxyUrl, type StorageBucket, type UrlConfig } from '@
 
 import { getConfig } from './configManager';
 
+/**
+ * Reads the storage URL configuration from AppConfig and returns a `UrlConfig` object
+ * suitable for passing to `@luke/core` URL builder functions.
+ */
 export async function getStorageUrlConfig(
   prisma: PrismaClient
 ): Promise<UrlConfig> {
@@ -36,6 +40,10 @@ export async function makeUrlResolver(
   return (bucket, key) => getPublicUrl(bucket, key, urlConfig);
 }
 
+/**
+ * Resolves the public URL for a single storage object.
+ * Convenience wrapper around `makeUrlResolver` for one-off lookups.
+ */
 export async function resolvePublicUrl(
   prisma: PrismaClient,
   bucket: StorageBucket,

@@ -1,23 +1,24 @@
 /**
- * Service layer per AuditLog
- * Gestisce logging centralizzato con delta changes e traceId
+ * Centralised audit-log service.
+ * Persists structured audit events to the database with trace correlation,
+ * request IP, and automatic metadata sanitisation.
  */
 
 import type { Context } from './trpc';
 
 /**
- * Parametri per logging audit
+ * Parameters for a single audit log entry.
  */
 export interface AuditParams {
-  /** Azione eseguita (SCREAMING_SNAKE_CASE: es. 'USER_CREATE', 'AUTH_LOGIN') */
+  /** Action identifier in SCREAMING_SNAKE_CASE (e.g. 'USER_CREATE', 'AUTH_LOGIN'). */
   action: string;
-  /** Tipo di risorsa (User, Config, Auth) */
+  /** Domain entity type affected (e.g. 'User', 'Config', 'Auth'). */
   targetType: string;
-  /** ID della risorsa target dell'operazione (opzionale) */
+  /** Primary key of the affected entity, if applicable. */
   targetId?: string;
-  /** Risultato dell'operazione (default: SUCCESS) */
+  /** Outcome of the operation. Defaults to 'SUCCESS'. */
   result?: 'SUCCESS' | 'FAILURE';
-  /** Metadati aggiuntivi (saranno redatti automaticamente) */
+  /** Arbitrary metadata. Keys not on the allowlist are automatically redacted. */
   metadata?: Record<string, any>;
 }
 
@@ -87,10 +88,6 @@ const SAFE_KEYS = new Set([
   'rowsIncluded',
 ]);
 
-/**
- * Redazione ricorsiva dei metadati con whitelist + blacklist
- * Approccio secure-by-default: redatta tutto tranne whitelist + blacklist esplicita
- */
 function sanitizeMetadata(obj: any, depth = 0): any {
   // Limite ricorsione (DoS protection)
   if (depth > 5) return '[REDACTED:MAX_DEPTH]';
@@ -127,9 +124,14 @@ function sanitizeMetadata(obj: any, depth = 0): any {
 }
 
 /**
- * Logga un evento di audit nel database
- * @param ctx - Context tRPC con traceId
- * @param params - Parametri dell'audit
+ * Persists an audit event to the database and emits a structured Pino log entry.
+ * Metadata is sanitised before storage; keys matching sensitive patterns are redacted.
+ * For actions in `CRITICAL_AUDIT_ACTIONS`, any DB write failure is re-thrown
+ * rather than swallowed, surfacing the compliance risk to the caller.
+ *
+ * @param ctx - tRPC context supplying Prisma, session, traceId, and request IP.
+ * @param params - Audit event details.
+ * @throws If the DB write fails and the action is considered critical.
  */
 export async function logAudit(
   ctx: Context,

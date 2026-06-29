@@ -1,12 +1,7 @@
 /**
- * JWT Helper per Luke API
- * Wrapper centralizzato per jsonwebtoken con strategia HS256+HKDF consolidata
- *
- * Caratteristiche:
- * - Algoritmo esplicito: HS256
- * - Clock tolerance: ±60s
- * - Claim standard: iss, aud, exp, nbf
- * - Secret derivato via HKDF dalla master key
+ * JWT utility layer for Luke API.
+ * Centralises jsonwebtoken usage with an explicit HS256+HKDF-derived secret strategy.
+ * Enforces standard claims (iss, aud, exp, nbf) and a 30-second clock tolerance.
  */
 
 import jwt from 'jsonwebtoken';
@@ -18,7 +13,7 @@ import { getApiJwtSecret } from '@luke/core/server';
 const logger = pino({ level: 'info' });
 
 /**
- * Interfaccia per il payload JWT standardizzato
+ * Standardised JWT payload shape used across the API.
  */
 export interface JWTPayload {
   userId: string;
@@ -34,7 +29,7 @@ export interface JWTPayload {
 }
 
 /**
- * Opzioni per la firma JWT
+ * Optional overrides for JWT signing (expiry and not-before).
  */
 export interface JWTSignOptions {
   expiresIn?: string | number;
@@ -52,9 +47,6 @@ const JWT_CONFIG = {
   defaultExpiresIn: '7d',
 } as const;
 
-/**
- * Ottiene il JWT secret derivato dalla master key
- */
 function getJWTSecret(): string {
   return getApiJwtSecret();
 }
@@ -125,21 +117,17 @@ export function verifyJWT(token: string): JWTPayload | null {
 }
 
 /**
- * Verifica se un token è valido senza decodificarlo
- *
- * @param token - JWT token da verificare
- * @returns true se valido, false altrimenti
+ * Returns `true` if the token passes full JWT verification, `false` otherwise.
  */
 export function isValidJWT(token: string): boolean {
   return verifyJWT(token) !== null;
 }
 
 /**
- * Estrae i metadati di un token senza verificarlo completamente
- * Utile per logging sicuro
+ * Decodes a JWT token without verifying the signature.
+ * Safe to use for structured logging — never trust the result for authorisation.
  *
- * @param token - JWT token
- * @returns Metadati estratti o null se malformato
+ * @returns Extracted metadata fields, or `null` if the token is malformed.
  */
 export function extractJWTMetadata(token: string): {
   userId?: string;
@@ -169,7 +157,8 @@ export function extractJWTMetadata(token: string): {
 }
 
 /**
- * Configurazione JWT esportata per test e debugging
+ * Read-only JWT configuration snapshot for tests and debugging.
+ * The secret is never included.
  */
 export const JWT_CONFIG_EXPORT = {
   ...JWT_CONFIG,

@@ -1,6 +1,9 @@
 /**
- * Server Fastify per Luke API
- * Configurazione completa con tRPC, Prisma, sicurezza e logging
+ * Luke API server entry point.
+ *
+ * Bootstraps a Fastify instance with tRPC, Prisma, security plugins, and all upload/export routes.
+ * Startup sequence: env-policy guard → DB connection → master key validation → plugin registration
+ * → scheduler registration → listen.
  */
 
 import cookie from '@fastify/cookie';
@@ -48,9 +51,7 @@ import { getStorageProvider } from './storage';
 import { readdir, stat, unlink } from 'fs/promises';
 import { join } from 'path';
 
-/**
- * Configurazione del logger Pino con serializers per sicurezza
- */
+/** Pino logger configuration: `warn` in production, `info` + pino-pretty in development. */
 const loggerConfig = {
   level: isProduction() ? 'warn' : 'info',
   transport: isDevelopment()
@@ -65,9 +66,7 @@ const loggerConfig = {
     : undefined,
 } as any;
 
-/**
- * Inizializza Fastify con configurazione logger
- */
+/** Fastify instance shared across all route registrations in this module. */
 const fastify = Fastify({
   logger: loggerConfig,
   requestTimeout: 360_000, // 6 min — allineato a proxyTimeout Next.js e pool NAV (300 s + margine)
@@ -79,8 +78,10 @@ const fastify = Fastify({
 setGlobalErrorHandler(fastify);
 
 /**
- * Parser JSON personalizzato per gestire Content-Type con charset
- * Risolve il problema delle mutation tRPC che non ricevono i parametri
+ * Custom JSON content-type parser that accepts `application/json; charset=utf-8` and similar.
+ *
+ * Fixes tRPC mutations where the framework's default parser rejected the charset suffix,
+ * causing input parameters to be silently dropped.
  */
 fastify.addContentTypeParser(
   /^application\/json/,
@@ -95,16 +96,15 @@ fastify.addContentTypeParser(
   }
 );
 
-/**
- * Inizializza Prisma Client
- */
+/** Prisma client instance using the pg adapter. Shared across all route handlers and services. */
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }),
   log: isDevelopment() ? ['query', 'info', 'warn', 'error'] : ['error'],
 });
 
 /**
- * Registra plugin di sicurezza
+ * Registers security-related Fastify plugins: cookie, rate-limit, helmet, CORS,
+ * and the Pino trace-correlation hook.
  */
 async function registerSecurityPlugins() {
   // Cookie plugin per gestione sessioni
@@ -209,9 +209,7 @@ async function registerSecurityPlugins() {
 //   });
 // }
 
-/**
- * Registra tRPC plugin
- */
+/** Registers the tRPC Fastify adapter at the `/trpc` prefix. */
 async function registerTRPCPlugin() {
   await fastify.register(fastifyTRPCPlugin, {
     prefix: '/trpc',
@@ -237,8 +235,10 @@ async function registerTRPCPlugin() {
 }
 
 /**
- * Registra multipart plugin globalmente per tutti i route di upload
- * Limite 50MB (massimo per storage-upload generale); i service applicano limiti più stringenti per specifiche entità
+ * Registers `@fastify/multipart` globally with a 50 MB file size limit.
+ *
+ * This is the maximum allowed by the generic storage upload endpoint. Individual
+ * domain services (brand logo, collection pictures, etc.) enforce stricter limits.
  */
 async function registerMultipart() {
   await fastify.register(multipart, {
@@ -249,44 +249,43 @@ async function registerMultipart() {
   });
 }
 
-/**
- * Registra storage plugin per upload/download
- */
+/** Registers the generic storage upload/download plugin. */
 async function registerStoragePlugin() {
   await fastify.register(storagePlugin, { prisma });
 }
 
-/**
- * Registra brand logo routes
- */
+/** Registers the brand logo upload routes. */
 async function registerBrandLogoRoutes() {
   await fastify.register(brandLogoRoutes, { prisma });
 }
 
+/** Registers the company logo upload routes. */
 async function registerCompanyLogoRoutes() {
   await fastify.register(companyLogoRoutes, { prisma });
 }
 
-/**
- * Registra collection row picture routes
- */
+/** Registers the collection layout row picture upload routes. */
 async function registerCollectionRowPictureRoutes() {
   await fastify.register(collectionRowPictureRoutes, { prisma });
 }
 
-/**
- * Registra specsheet image routes
- */
+/** Registers the merchandising specsheet image upload routes. */
 async function registerSpecsheetImageRoutes() {
   await fastify.register(specsheetImageRoutes, { prisma });
 }
 
+/** Registers the season calendar export routes (iCal, PDF, XLSX). */
 async function registerSeasonCalendarExportRoutes() {
   await fastify.register(seasonCalendarExportRoutes, { prisma });
 }
 
 /**
- * Registra route di health check e readiness
+ * Registers health and readiness probe routes:
+ *  - GET /livez   — liveness (always 200 if the process is running)
+ *  - GET /readyz  — readiness (runs all registered checks, 503 if any fail)
+ *  - GET /healthz — legacy health endpoint for Portainer and Docker healthcheck
+ *  - GET /api/health — detailed health info including uptime and version
+ *  - GET /         — root discovery endpoint listing available endpoints
  */
 async function registerHealthRoute() {
   // Liveness: processo attivo (sempre 200 se process vivo)
@@ -352,7 +351,10 @@ async function registerHealthRoute() {
 }
 
 /**
- * Cron job per cleanup file temporanei più vecchi di 1 ora
+ * Starts a background interval that cleans up unconfirmed (pending) temp files
+ * older than 1 hour and orphaned `.tmp` partial files older than 2 hours.
+ *
+ * Runs immediately on startup, then every 30 minutes. The interval is cleared on server close.
  */
 function setupTempFileCleanup() {
   const cleanupInterval = 30 * 60 * 1000; // 30 minuti
@@ -452,7 +454,10 @@ function setupTempFileCleanup() {
 }
 
 /**
- * Configura graceful shutdown
+ * Wires up graceful shutdown for SIGTERM, SIGINT, uncaughtException, and unhandledRejection.
+ *
+ * On any termination signal: stops in-memory stores, closes the HTTP server (5 s timeout),
+ * disconnects Prisma, then exits. Fatal errors follow the same path with `process.exit(1)`.
  */
 function setupGracefulShutdown() {
   const closeWithTimeout = async (ms: number) => {
@@ -548,6 +553,11 @@ const FORBIDDEN_ENV_PATTERNS: RegExp[] = [
 
 const ALLOWED_ENV_EXCEPTIONS = new Set<string>([]);
 
+/**
+ * Enforces the env-var policy: exits with code 1 in production (warns in development)
+ * if any forbidden pattern (SMTP_*, LDAP_*, JWT_*, *_SECRET, *_PASSWORD, etc.) is found
+ * in `process.env`. See the policy comment block above for the full allowed-list.
+ */
 function assertEnvPolicy(): void {
   const violations = Object.keys(process.env).filter(key =>
     !ALLOWED_ENV_EXCEPTIONS.has(key) &&
@@ -568,7 +578,11 @@ function assertEnvPolicy(): void {
 }
 
 /**
- * Avvia il server
+ * Starts the Luke API server.
+ *
+ * Runs the full startup sequence: env-policy guard, DB connection, config validation,
+ * master key check, plugin registration, scheduler setup, and HTTP listen.
+ * Exits with code 1 on any startup failure.
  */
 const start = async () => {
   try {

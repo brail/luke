@@ -1,3 +1,12 @@
+/**
+ * MinIO (S3-compatible) implementation of IStorageProvider.
+ *
+ * Uses two S3Client instances: one for internal server-to-MinIO traffic and one
+ * for presigned URL generation that points to the browser-reachable public endpoint
+ * (configured via `storage.minio.publicBaseUrl` in AppConfig).
+ * Bucket auto-creation is performed at initialization for all known buckets.
+ */
+
 import { randomUUID } from 'crypto';
 
 import {
@@ -29,6 +38,7 @@ import type {
   StoragePutResult,
 } from '@luke/core';
 
+/** MinIO / S3-compatible storage provider. Implements IStorageProvider using the AWS SDK v3. */
 export class MinioProvider implements IStorageProvider {
   readonly capabilities: IStorageCapabilities = {
     supportsPresignedUpload: true,
@@ -70,6 +80,9 @@ export class MinioProvider implements IStorageProvider {
         });
   }
 
+  /**
+   * Ensures all known buckets exist in MinIO, creating any that are missing.
+   */
   async init(): Promise<void> {
     const allBuckets: StorageBucket[] = [
       'uploads',
@@ -112,6 +125,9 @@ export class MinioProvider implements IStorageProvider {
     }
   }
 
+  /**
+   * Uploads a file to MinIO and returns its generated key, SHA-256 checksum, and byte size.
+   */
   async put(params: StoragePutParams): Promise<StoragePutResult> {
     const key = this.generateKey(params.contentType);
     const chunks: Buffer[] = [];
@@ -133,6 +149,11 @@ export class MinioProvider implements IStorageProvider {
     return { key, checksumSha256, size: body.length };
   }
 
+  /**
+   * Retrieves a file from MinIO as a readable stream.
+   *
+   * @throws If the object does not exist in the bucket.
+   */
   async get(params: StorageGetParams): Promise<StorageGetResult> {
     const res = await this.client.send(new GetObjectCommand({
       Bucket: params.bucket,
@@ -148,6 +169,7 @@ export class MinioProvider implements IStorageProvider {
     };
   }
 
+  /** Deletes a file from MinIO. */
   async delete(params: StorageDeleteParams): Promise<void> {
     await this.client.send(new DeleteObjectCommand({
       Bucket: params.bucket,
@@ -155,6 +177,11 @@ export class MinioProvider implements IStorageProvider {
     }));
   }
 
+  /**
+   * Lists objects in a MinIO bucket, with optional prefix and limit.
+   *
+   * @returns Page items and an optional continuation token for the next page.
+   */
   async list(params: StorageListParams): Promise<StorageListResult> {
     const res = await this.client.send(new ListObjectsV2Command({
       Bucket: params.bucket,
@@ -175,6 +202,13 @@ export class MinioProvider implements IStorageProvider {
     };
   }
 
+  /**
+   * Generates a presigned PUT URL for direct browser-to-MinIO upload.
+   *
+   * Uses the public presign client so the URL points to the browser-reachable endpoint.
+   *
+   * @returns The presigned URL, the key under which the file will be stored, and its expiry time.
+   */
   async getPresignedPutUrl(params: PresignedPutParams): Promise<PresignedPutResult> {
     const key = params.key ?? this.generateKey(params.contentType);
     const ttl = params.expiresIn ?? this.config.presignedPutTtl;
@@ -196,6 +230,11 @@ export class MinioProvider implements IStorageProvider {
     };
   }
 
+  /**
+   * Generates a presigned GET URL for time-limited direct download from MinIO.
+   *
+   * @returns The presigned URL and its expiry time.
+   */
   async getPresignedGetUrl(params: PresignedGetParams): Promise<PresignedGetResult> {
     const ttl = params.expiresIn ?? this.config.presignedGetTtl;
 
