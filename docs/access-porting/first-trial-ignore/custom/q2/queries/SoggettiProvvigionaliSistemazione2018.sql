@@ -1,3 +1,0 @@
-SELECT SoggettiProvvigionaliControlloFattureENoteDiCredito.*
-FROM SoggettiProvvigionaliControlloFattureENoteDiCredito;
-
