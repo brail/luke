@@ -37,6 +37,7 @@ export const RESOURCES = {
   COMPANY_TEAM: 'company_team',
 } as const;
 
+/** Union of all valid resource string values (e.g. `'brands'`, `'users'`). */
 export type Resource = (typeof RESOURCES)[keyof typeof RESOURCES];
 
 /**
@@ -73,6 +74,7 @@ export interface PermissionDeclaration {
   description: string;
 }
 
+/** Allowlist of valid actions per resource. Used to expand wildcards and validate permission strings. */
 export const VALID_RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
   [RESOURCES.BRANDS]: ['create', 'read', 'update', 'delete'] as const,
   [RESOURCES.SEASONS]: ['create', 'read', 'update', 'delete'] as const,

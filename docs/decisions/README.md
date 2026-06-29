@@ -11,5 +11,5 @@
 | [006](006-resource-action-permissions.md) | Resource/Action Permissions System | Potentially stale — review needed |
 | [007](007-storage-layer-refactor.md) | Storage Layer Refactor — Key-Based Storage, MinIO, Two-Phase Upload | Accepted |
 
-*Ultimo aggiornamento: 2026-06-28*
+*Ultimo aggiornamento: 2026-06-30*
 <!-- luke-docs:end:adr-index -->

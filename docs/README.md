@@ -39,5 +39,5 @@ Le decisioni architetturali rilevanti sono documentate in [`decisions/`](decisio
 | [merchandising-reference/](merchandising-reference/) | Materiali di riferimento per il dominio merchandising |
 | [access-porting/](access-porting/) | Documentazione porting da Microsoft Access — reverse engineering e analisi query |
 
-*Ultimo aggiornamento: 2026-06-28*
+*Ultimo aggiornamento: 2026-06-30*
 <!-- luke-docs:end:index -->

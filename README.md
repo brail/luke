@@ -383,9 +383,8 @@ Il sistema include protezioni robuste per la gestione degli utenti:
 
 ## Database
 
-- **Sviluppo**: SQLite (file locale)
-- **Produzione**: PostgreSQL (Prisma compatibile)
-- **Migrations**: Prisma migrate
+- **Sviluppo e Produzione**: PostgreSQL 16 (via Prisma ORM)
+- **Migrations**: Prisma migrate (`prisma migrate deploy` in produzione, workflow Docker su porta 5433 per generazione)
 - **Schema**: Definito in `apps/api/prisma/schema.prisma`
 
 ## Workflow
@@ -679,7 +678,7 @@ pnpm install
 ## Note
 
 - **Master Key**: La prima volta, crea `~/.luke/secret.key` con una chiave AES-256
-- **Database**: SQLite file viene creato automaticamente al primo avvio
+- **Database**: PostgreSQL 16 — connessione via `DATABASE_URL` in `.env`
 - **Ports**: Frontend (3000), Backend (3001) - configurabili via AppConfig
 - **Caching**: Turborepo cache in `.turbo/` (ignorato da git)
 - **Segreti JWT**: Derivati automaticamente dalla master key via HKDF-SHA256 (nessun database)
