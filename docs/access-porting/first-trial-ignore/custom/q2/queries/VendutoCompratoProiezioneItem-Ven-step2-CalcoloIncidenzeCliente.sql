@@ -1,3 +1,0 @@
-SELECT [VendutoCompratoProiezioneItem-Ven-step2a-CalcoloIncidenzeCliente].*
-FROM [VendutoCompratoProiezioneItem-Ven-step2b-CalcoloIncidenzaCliente] INNER JOIN [VendutoCompratoProiezioneItem-Ven-step2a-CalcoloIncidenzeCliente] ON ([VendutoCompratoProiezioneItem-Ven-step2b-CalcoloIncidenzaCliente].MaxDiIncidenza = [VendutoCompratoProiezioneItem-Ven-step2a-CalcoloIncidenzeCliente].Incidenza) AND ([VendutoCompratoProiezioneItem-Ven-step2b-CalcoloIncidenzaCliente].[Constant Variable Code] = [VendutoCompratoProiezioneItem-Ven-step2a-CalcoloIncidenzeCliente].[Constant Variable Code]) AND ([VendutoCompratoProiezioneItem-Ven-step2b-CalcoloIncidenzaCliente].No_ = [VendutoCompratoProiezioneItem-Ven-step2a-CalcoloIncidenzeCliente].No_);
-

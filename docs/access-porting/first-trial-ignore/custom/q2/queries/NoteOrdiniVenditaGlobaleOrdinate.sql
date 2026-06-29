@@ -1,4 +1,0 @@
-SELECT NoteOrdiniVenditaGlobale.CodiceCliente, NoteOrdiniVenditaGlobale.ordinamentocommento, NoteOrdiniVenditaGlobale.Commento
-FROM NoteOrdiniVenditaGlobale
-ORDER BY NoteOrdiniVenditaGlobale.CodiceCliente, NoteOrdiniVenditaGlobale.ordinamentocommento;
-

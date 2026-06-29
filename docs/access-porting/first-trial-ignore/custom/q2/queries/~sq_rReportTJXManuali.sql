@@ -1,3 +1,0 @@
-SELECT DISTINCTROW *
-FROM TabellaAppoggioTJXManuali;
-

@@ -1,4 +1,0 @@
-SELECT tempiPagBaseDocumentiDaVerificareConDoppi.*, tempiPagDocumentiDeterminazioneDoppi.ConteggioDiChiaveMovimentoPagamento
-FROM tempiPagBaseDocumentiDaVerificareConDoppi INNER JOIN tempiPagDocumentiDeterminazioneDoppi ON tempiPagBaseDocumentiDaVerificareConDoppi.ChiaveMovimentoFatturaNotaCredito = tempiPagDocumentiDeterminazioneDoppi.ChiaveMovimentoFatturaNotaCredito
-WHERE (((tempiPagDocumentiDeterminazioneDoppi.ConteggioDiChiaveMovimentoPagamento)=1)) OR (((tempiPagDocumentiDeterminazioneDoppi.ConteggioDiChiaveMovimentoPagamento)>1) AND ((tempiPagBaseDocumentiDaVerificareConDoppi.ChiaveMovimentoPagamento)<>0));
-
