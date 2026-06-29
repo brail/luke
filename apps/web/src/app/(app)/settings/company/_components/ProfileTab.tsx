@@ -1,7 +1,7 @@
 'use client';
 
 import { ImageIcon, Trash2, UploadCloud } from 'lucide-react';
-import { type ChangeEvent, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, type ChangeEvent, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { buildCompanyLogoUploadUrl, buildCompanyLogoUrl } from '@luke/core';
@@ -322,8 +322,8 @@ export function ProfileTab() {
               <Label htmlFor="accentColor">Colore accento</Label>
               <div className="flex items-center gap-2">
                 <div
-                  className="h-9 w-9 flex-shrink-0 cursor-pointer rounded-md border"
-                  style={{ backgroundColor: accentColorHex }}
+                  className="h-9 w-9 flex-shrink-0 cursor-pointer rounded-md border [background:var(--swatch-color)]"
+                  style={{ '--swatch-color': accentColorHex } as CSSProperties}
                   onClick={() => canUpdate && colorInputRef.current?.click()}
                 />
                 <Input

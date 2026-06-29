@@ -121,7 +121,7 @@ async function registerSecurityPlugins() {
     skipOnError: true,
     // In dev, bypass rate limiting for localhost to avoid dev friction
     allowList: isDevelopment() ? ['127.0.0.1', '::1', '::ffff:127.0.0.1'] : [],
-    errorResponseBuilder: (request: any, context: any) => ({
+    errorResponseBuilder: (request: any, context: any) => ({ // Fastify rate-limit internals lack exported types
       statusCode: 429,
       error: 'Rate limit exceeded',
       message: `Too many requests from ${request.ip}`,
@@ -215,9 +215,9 @@ async function registerTRPCPlugin() {
     prefix: '/trpc',
     trpcOptions: {
       router: appRouter,
-      createContext: async ({ req, res }: any) =>
+      createContext: async ({ req, res }: any) => // fastify-trpc-plugin adapter types not exported
         createContext({ prisma, req, res }),
-      onError: ({ path, error, ctx }: any) => {
+      onError: ({ path, error, ctx }: any) => { // fastify-trpc-plugin OnErrorFn type not exported
         const traceId = ctx?.traceId;
         fastify.log.error(
           {
@@ -498,7 +498,7 @@ function setupGracefulShutdown() {
   process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
   // Gestisci errori non catturati
-  const onFatal = async (reason: any, type: string) => {
+  const onFatal = async (reason: any, type: string) => { // process events can propagate any thrown value, not just Error
     try {
       fastify.log.fatal({ reason }, `${type}: shutting down`);
       await closeWithTimeout(5_000);
@@ -509,11 +509,11 @@ function setupGracefulShutdown() {
     }
   };
 
-  process.on('uncaughtException', (error: any) => {
+  process.on('uncaughtException', (error: any) => { // Node.js listener signature accepts any thrown value
     void onFatal(error, 'uncaughtException');
   });
 
-  process.on('unhandledRejection', (reason: any) => {
+  process.on('unhandledRejection', (reason: any) => { // rejection reason can be any value
     void onFatal(reason, 'unhandledRejection');
   });
 }

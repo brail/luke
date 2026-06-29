@@ -1,13 +1,21 @@
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 
-import { buildTrpcUrl } from '@luke/core';
+import { buildTrpcUrl, isProduction } from '@luke/core';
 import { getNextAuthSecret } from '@luke/core/server';
 
 import { checkTokenVersion, populateSession, SESSION_MAX_AGE, SESSION_UPDATE_AGE } from './auth.shared';
 import { debugError, debugLog } from './lib/debug';
 
 import type { NextAuthConfig } from 'next-auth';
+
+function resolveNextAuthSecret(): string {
+  const envSecret = process.env.NEXTAUTH_SECRET;
+  if (!envSecret && isProduction()) {
+    throw new Error('NEXTAUTH_SECRET env var required in production');
+  }
+  return envSecret ?? getNextAuthSecret();
+}
 
 interface LukeAuthUser {
   role: string;
@@ -215,10 +223,10 @@ export const config = {
   // and relies on NEXTAUTH_URL being set correctly instead.
   trustHost: true,
   // NEXTAUTH_SECRET (env) ha precedenza su getNextAuthSecret() (file system).
-  // In prod il web container non ha accesso a ~/.luke/secret.key (volume API-only);
-  // l'env var viene iniettata dal Docker compose con il valore derivato dalla master key.
-  // In dev: impostato in .env.local via `getNextAuthSecret()` al setup iniziale.
-  secret: process.env.NEXTAUTH_SECRET ?? getNextAuthSecret(),
+  // In prod: l'env var è iniettata dal Docker compose; il fallback al file system è vietato
+  // perché il web container non monta il volume ~/.luke/secret.key (API-only).
+  // In dev: fallback al file system via getNextAuthSecret() per setup iniziale.
+  secret: resolveNextAuthSecret(),
 } satisfies NextAuthConfig;
 
 export const { handlers, auth, signIn, signOut } = NextAuth(config);

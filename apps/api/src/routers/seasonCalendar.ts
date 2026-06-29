@@ -46,6 +46,7 @@ import {
 import { assertFunctionMemberOrAdmin } from './company.js';
 
 import { logAudit } from '../lib/auditLog.js';
+import { toErrorMessage } from '../lib/error.js';
 import { createNotification, getVisibleUserIdsForMilestone } from '../lib/notifications.js';
 import { withRateLimit } from '../lib/ratelimit.js';
 import { router, protectedProcedure } from '../lib/trpc.js';
@@ -329,6 +330,7 @@ export const seasonCalendarRouter = router({
 
       // Auto-execute effects when transitioning to COMPLETED
       const autoApplied: string[] = [];
+      const autoFailed: { id: string; error: string }[] = [];
       const pending: string[] = [];
       const autoRolledBack: string[] = [];
       const pendingRollback: string[] = [];
@@ -342,6 +344,7 @@ export const seasonCalendarRouter = router({
             autoApplied.push(effect.id);
           } catch (err) {
             ctx.logger.error(err, `auto-effect failed: ${effect.id}`);
+            autoFailed.push({ id: effect.id, error: toErrorMessage(err) });
           }
         }));
       } else if ((event.status as string) === 'COMPLETED') {
@@ -389,7 +392,7 @@ export const seasonCalendarRouter = router({
         })
         .catch(err => ctx.logger.error(err, 'notification fanout failed on event status change'));
 
-      return { event: result, autoApplied, pending, autoRolledBack, pendingRollback };
+      return { event: result, autoApplied, autoFailed, pending, autoRolledBack, pendingRollback };
     }),
 
   // ─── Personal notes ─────────────────────────────────────────────────────────

@@ -2,7 +2,7 @@
 
 import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
 import { ChevronLeft, ChevronRight, StickyNote } from 'lucide-react';
-import { ReactNode, useCallback, useMemo, useState } from 'react';
+import { type CSSProperties, ReactNode, useCallback, useMemo, useState } from 'react';
 
 import { Button } from '../../../../components/ui/button';
 import { cn } from '../../../../lib/utils';
@@ -80,6 +80,7 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
   }, [weekStart, days]);
 
   const draggingEvent = useMemo(() => milestones.find(m => m.id === draggingId), [milestones, draggingId]);
+  const draggingColor = useMemo(() => draggingEvent ? resolveBrandColor(draggingEvent.brandId, brandColorMap) : undefined, [draggingEvent, brandColorMap]);
   const handleDragStart = useCallback((event: DragStartEvent) => { setDraggingId(event.active.id as string); }, []);
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     setDraggingId(null);
@@ -160,11 +161,11 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
                             <button
                               type="button"
                               onClick={(e) => { e.stopPropagation(); onEventClick(m.id); }}
-                              className={cn('text-left rounded px-1.5 py-0.5 text-xs text-white truncate max-w-[200px]',
+                              className={cn('text-left rounded px-1.5 py-0.5 text-xs text-white truncate max-w-[200px] [background:var(--ev-color)]', // max-w-[200px]: prevent chip overflow in narrow week cells
                                 'hover:brightness-110 transition-all',
                                 STATUS_OPACITY[m.status] ?? 'opacity-100',
                                 onNoteClick && 'pr-5')}
-                              style={{ background: color }}
+                              style={{ '--ev-color': color } as CSSProperties}
                               title={`${m.title}${span > 0 ? ` (${span + 1}gg)` : ''}`}
                             >
                               {m.title}
@@ -183,8 +184,8 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
                           </div>
                         ) : (
                           <div
-                            className="flex items-center h-6 rounded-r px-1.5 text-[11px] truncate max-w-[200px] cursor-pointer hover:brightness-95 transition-all"
-                            style={{ borderLeft: `3px solid ${color}`, background: `${color}18`, color: 'var(--muted-foreground)' }}
+                            className="flex items-center h-6 rounded-r px-1.5 text-[11px] truncate max-w-[200px] cursor-pointer hover:brightness-95 transition-all text-muted-foreground [border-left:3px_solid_var(--ev-color)]" // max-w-[200px]: prevent continuation chip overflow
+                            style={{ '--ev-color': color, background: `${color}18` } as CSSProperties}
                             onClick={(e) => { e.stopPropagation(); onEventClick(m.id); }}
                             title={m.title}
                           >
@@ -204,7 +205,7 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
       <DragOverlay>
         {draggingEvent && (
           <div className="rounded px-1.5 py-0.5 text-xs text-white truncate shadow-lg opacity-90 cursor-grabbing"
-            style={{ background: resolveBrandColor(draggingEvent.brandId, brandColorMap), minWidth: 80 }}>
+            style={{ background: draggingColor, minWidth: 80 }}>
             {draggingEvent.title}
           </div>
         )}

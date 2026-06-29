@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import React, { useState } from 'react';
 
+import { AppVersionLabel } from '../../../components/AppVersionLabel';
 import { BackendStatus } from '../../../components/BackendStatus';
 import Logo from '../../../components/Logo';
 import { Button } from '../../../components/ui/button';
@@ -133,6 +134,7 @@ export default function LoginPage() {
           <div className="mt-4">
             <BackendStatus />
           </div>
+          <AppVersionLabel className="mt-3 text-center text-[10px] text-muted-foreground/50 select-none" />
         </CardContent>
       </Card>
     </div>

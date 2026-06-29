@@ -60,6 +60,7 @@ function SortableFunctionCard({ fn, isSelected, canUpdate, canDelete, onSelect, 
     id: fn.id,
     disabled: !fn.isActive,
   });
+  // DnD transform binding — required by dnd-kit for drag animation
   const style = { transform: CSS.Transform.toString(transform), transition };
 
   if (!fn.isActive) {

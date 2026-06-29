@@ -14,6 +14,11 @@ import { isProduction } from '@luke/core';
 
 const isProd = isProduction();
 
+/** Extracts a readable message from any caught value. */
+export function toErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 /**
  * Extracts the trace ID from the `x-luke-trace-id` request header,
  * falling back to the Fastify-assigned request ID.

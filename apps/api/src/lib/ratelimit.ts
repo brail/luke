@@ -70,8 +70,8 @@ export const RATE_LIMIT_CONFIG = {
     keyBy: 'userId' as const,
   },
   navSyncTrigger: {
-    max: 2,
-    windowMs: 300_000, // 5 minuti
+    max: 1,
+    windowMs: 600_000, // 10 minuti — 1 sync per finestra, previene connection pool exhaustion
     keyBy: 'userId' as const,
   },
 } as const;

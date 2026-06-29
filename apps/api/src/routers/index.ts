@@ -33,6 +33,7 @@ import { holidaysRouter } from './holidays';
 import { dashboardRouter } from './dashboard';
 import { feedbackRouter } from './feedback';
 import { notificationsRouter } from './notifications';
+import { systemRouter } from './system';
 
 /**
  * Router principale dell'applicazione
@@ -67,6 +68,7 @@ export const appRouter = router({
   dashboard: dashboardRouter,
   feedback: feedbackRouter,
   notifications: notificationsRouter,
+  system: systemRouter,
 });
 
 /**

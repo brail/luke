@@ -128,10 +128,13 @@ export const meRouter = router({
           },
         });
 
+        if (!currentUser) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente non trovato' });
+        }
+
         if (
-          currentUser &&
-          (input.firstName !== currentUser.firstName ||
-            input.lastName !== currentUser.lastName)
+          input.firstName !== currentUser.firstName ||
+          input.lastName !== currentUser.lastName
         ) {
           throw new TRPCError({
             code: 'FORBIDDEN',
@@ -355,7 +358,7 @@ export const meRouter = router({
    * @output {Array<{ id, timestamp, success, ipAddress, location }>}
    */
   loginHistory: protectedProcedure
-    .input(z.object({ limit: z.number().default(10) }).optional())
+    .input(z.object({ limit: z.number().min(1).max(100).default(10) }).optional())
     .query(async ({ ctx, input }) => {
       const logs = await ctx.prisma.auditLog.findMany({
         where: {

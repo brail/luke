@@ -1,6 +1,6 @@
 'use client';
 
-import { ExternalLink, MessageSquarePlus } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -15,7 +15,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -28,14 +27,18 @@ import {
 } from './ui/select';
 import { Textarea } from './ui/textarea';
 
+interface FeedbackDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
 /**
- * Dialog for submitting bug reports and feature suggestions.
+ * Controlled dialog for submitting bug reports and feature suggestions.
  *
  * On success it creates a GitHub issue via the `feedback.submit` tRPC mutation and
  * shows a toast with a direct link to the created issue.
  */
-export function FeedbackDialog() {
-  const [open, setOpen] = useState(false);
+export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
   const [type, setType] = useState<'bug' | 'feature'>('bug');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -50,7 +53,7 @@ export function FeedbackDialog() {
           </a>
         </span>,
       );
-      setOpen(false);
+      onOpenChange(false);
       setTitle('');
       setDescription('');
       setType('bug');
@@ -63,13 +66,7 @@ export function FeedbackDialog() {
   const canSubmit = title.trim().length > 0 && description.trim().length > 0;
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground hover:text-foreground w-full justify-start">
-          <MessageSquarePlus className="h-4 w-4" />
-          Segnala / Suggerisci
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
           <DialogTitle>Segnalazione / Suggerimento</DialogTitle>
@@ -119,7 +116,7 @@ export function FeedbackDialog() {
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Annulla</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Annulla</Button>
           <Button
             onClick={() => submit.mutate({ type, title, description })}
             disabled={!canSubmit || submit.isPending}

@@ -41,7 +41,7 @@ export interface JWTSignOptions {
  */
 const JWT_CONFIG = {
   algorithm: 'HS256' as const,
-  clockTolerance: 30, // ±30 secondi (ridotto da 60s)
+  clockTolerance: 5, // ±5 secondi — sufficiente per skew NTP, riduce finestra replay
   issuer: 'urn:luke',
   audience: 'luke.api',
   defaultExpiresIn: '7d',

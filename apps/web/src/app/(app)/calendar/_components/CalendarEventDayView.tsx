@@ -160,8 +160,8 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
                 <button
                   type="button"
                   onClick={() => onEventClick(m.id)}
-                  className={cn('text-xs text-white rounded px-2 py-0.5 hover:brightness-110 transition-all', STATUS_OPACITY[m.status] ?? 'opacity-100')}
-                  style={{ background: color }}
+                  className={cn('text-xs text-white rounded px-2 py-0.5 hover:brightness-110 transition-all [background:var(--ev-color)]', STATUS_OPACITY[m.status] ?? 'opacity-100')}
+                  style={{ '--ev-color': color } as React.CSSProperties}
                 >
                   {m.title}
                 </button>
@@ -235,8 +235,8 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
             return (
               <div
                 key={m.id}
-                className={cn('absolute rounded-r group/timed z-10', isOtherBrand && 'opacity-40', STATUS_OPACITY[m.status] ?? 'opacity-100', isDragging && 'z-30 shadow-lg')}
-                style={{ top, left: LABEL_W + 4, right: 8, height, borderLeft: `3px solid ${color}`, background: isDragging ? `${color}44` : `${color}22`, cursor: canDrag ? (isDragging ? 'grabbing' : 'grab') : 'default' }}
+                className={cn('absolute rounded-r group/timed z-10 [border-left:3px_solid_var(--ev-color)]', isOtherBrand && 'opacity-40', STATUS_OPACITY[m.status] ?? 'opacity-100', isDragging && 'z-30 shadow-lg')}
+                style={{ top, left: LABEL_W + 4, right: 8, height, '--ev-color': color, background: isDragging ? `${color}44` : `${color}22`, cursor: canDrag ? (isDragging ? 'grabbing' : 'grab') : 'default' } as React.CSSProperties}
                 onPointerDown={canDrag ? (e) => startDrag(e, m) : undefined}
               >
                 <button
@@ -246,10 +246,9 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
                     if (wasDraggingRef.current) { wasDraggingRef.current = false; return; }
                     onEventClick(m.id);
                   }}
-                  className="w-full h-full flex flex-col items-start px-2 py-1 text-left rounded-r overflow-hidden"
-                  style={{ pointerEvents: isDragging ? 'none' : undefined }}
+                  className={cn('w-full h-full flex flex-col items-start px-2 py-1 text-left rounded-r overflow-hidden', isDragging && 'pointer-events-none')}
                 >
-                  <span className="text-xs font-medium truncate w-full" style={{ color }}>{m.title}</span>
+                  <span className="text-xs font-medium truncate w-full [color:var(--ev-color)]">{m.title}</span>
                   {height >= ROW_H * 0.8 && (
                     <span className="text-[11px] text-muted-foreground tabular-nums">
                       {timeLabel(previewStart)}{m.endAt ? ` – ${timeLabel(previewEnd)}` : ''}
