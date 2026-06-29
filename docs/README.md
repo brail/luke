@@ -24,6 +24,9 @@ Le decisioni architetturali rilevanti sono documentate in [`decisions/`](decisio
 | [005](decisions/005-shared-zod-schemas.md) | Schemi Zod centralizzati in `@luke/core` |
 | [006](decisions/006-resource-action-permissions.md) | Sistema permessi Resource:Action unificato |
 | [007](decisions/007-storage-layer-refactor.md) | Refactor storage layer — interfaccia `IStorageProvider` |
+| [008](decisions/008-appconfig-env-policy.md) | AppConfig KV System e Env Policy |
+| [009](decisions/009-tokenversion-session-invalidation.md) | TokenVersion Multi-Layer Session Invalidation |
+| [010](decisions/010-section-access-precedence.md) | Section Access a 4 Layer di Precedenza |
 
 ## Analisi & Report
 
