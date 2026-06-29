@@ -392,6 +392,9 @@ Mai `prisma migrate reset` in produzione.
 - Tag `vX.Y.Z` → build Docker images → push su `ghcr.io` → Portainer pull & redeploy
 - **MAI cancellare `luke_api_data` volume** — la master key vive lì
 
+**Al cambio di develop branch** (es. `develop-2.1` → `develop-2.2`):
+- Aggiornare `target-branch` in `.github/dependabot.yml` per tutti i blocchi `github-actions` e `docker`
+
 Per il processo completo: `docs/release-process.md`
 
 ---
