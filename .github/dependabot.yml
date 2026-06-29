@@ -23,6 +23,7 @@ updates:
   # Keep actions up to date automatically — low risk, no code changes
   - package-ecosystem: github-actions
     directory: /
+    target-branch: develop-2.1
     schedule:
       interval: monthly
       timezone: Europe/Rome
@@ -36,6 +37,7 @@ updates:
   # ── Docker base images ───────────────────────────────────────────────────────
   - package-ecosystem: docker
     directory: /apps/api
+    target-branch: develop-2.1
     schedule:
       interval: monthly
       timezone: Europe/Rome
@@ -45,6 +47,7 @@ updates:
 
   - package-ecosystem: docker
     directory: /apps/web
+    target-branch: develop-2.1
     schedule:
       interval: monthly
       timezone: Europe/Rome
