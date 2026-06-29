@@ -1,26 +1,35 @@
 /**
- * Lightweight tRPC client for use inside `auth.ts` (no React Query dependency).
- * Calls the API directly via `httpBatchLink` using the internal base URL.
+ * Lightweight tRPC clients for server-side use (no React Query dependency).
  */
 
 import { createTRPCClient, httpBatchLink } from '@trpc/client';
 
+import type { AppRouter } from '@luke/api';
 import { getApiBaseUrl } from '@luke/core';
 
-/**
- * Vanilla tRPC client (no React hooks) used during NextAuth credential resolution.
- * Typed as `any` to avoid a circular dependency between the web and api packages
- * when their routers are not yet exported through a shared package.
- */
-export const trpcAuth = createTRPCClient<any>({
+const trpcUrl = `${getApiBaseUrl()}/trpc`;
+
+/** Unauthenticated client — used during NextAuth credential resolution. */
+export const trpcAuth = createTRPCClient<AppRouter>({
   links: [
     httpBatchLink({
-      url: `${getApiBaseUrl()}/trpc`,
-      headers() {
-        return {
-          'Content-Type': 'application/json',
-        };
-      },
+      url: trpcUrl,
+      headers: () => ({ 'Content-Type': 'application/json' }),
     }),
   ],
 });
+
+/** Authenticated client factory — use when a Bearer token is available. */
+export function createAuthedTrpcClient(accessToken: string) {
+  return createTRPCClient<AppRouter>({
+    links: [
+      httpBatchLink({
+        url: trpcUrl,
+        headers: () => ({
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        }),
+      }),
+    ],
+  });
+}

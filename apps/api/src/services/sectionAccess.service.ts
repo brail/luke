@@ -48,22 +48,25 @@ export async function computeEffectiveForUser(
 ): Promise<Record<Section, boolean>> {
   const [overrides, { sectionAccessDefaults, disabledSections }] = await Promise.all([
     listOverridesForUser(prisma, userId),
-    getSectionDefaults(prisma),
+    getRbacConfig(prisma),
   ]);
 
   const overrideMap = new Map(overrides.map(o => [o.section, o.enabled]));
 
   return Object.fromEntries(
-    ALL_SECTIONS.map(section => [
-      section,
-      effectiveSectionAccess({
-        role,
-        sectionAccessDefaults,
-        userOverride: overrideMap.has(section) ? { enabled: overrideMap.get(section) } : null,
+    ALL_SECTIONS.map(section => {
+      const override = overrideMap.get(section);
+      return [
         section,
-        disabledSections,
-      }),
-    ])
+        effectiveSectionAccess({
+          role,
+          sectionAccessDefaults,
+          userOverride: override !== undefined ? { enabled: override } : null,
+          section,
+          disabledSections,
+        }),
+      ];
+    })
   ) as Record<Section, boolean>;
 }
 

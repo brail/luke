@@ -1,4 +1,16 @@
 
+## `as any` vietato — usare `as Route` per redirect con typedRoutes
+
+Con `typedRoutes: true` in `next.config.js`, `redirect()` richiede un tipo `Route`.
+Per path validi a runtime ma non nel manifest statico (es. route group `(app)`), usare:
+
+```typescript
+import type { Route } from 'next';
+redirect('/app/dashboard' as Route);
+```
+
+Mai `as any` — viola strict mode. Pattern già usato in `NotificationDropdown.tsx`.
+
 ## Soft-delete + slug uniqueness: usare partial index PostgreSQL
 
 Quando un modello ha soft-delete (`isActive: Boolean`) e uno slug che deve restare unico tra i record attivi, la soluzione corretta è un **partial unique index PostgreSQL**:
