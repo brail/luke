@@ -142,7 +142,7 @@ Workspace specifici: `pnpm --filter @luke/web dev` · `pnpm --filter @luke/api d
 - **Derivazione**: HKDF-SHA256 (RFC 5869) dalla master key
 - **Parametri HKDF**: salt='luke', info domain-specific, length=32 bytes
 - **Claim standard**: `iss: 'urn:luke'`, `aud: 'luke.api'`, `exp`, `nbf`
-- **Clock tolerance**: ±30 secondi per gestire skew temporale
+- **Clock tolerance**: ±5 secondi (sufficiente per skew NTP, riduce finestra replay)
 - **Domini isolati**:
   - `api.jwt` → JWT API backend
   - `nextauth.secret` → NextAuth web sessions
@@ -172,7 +172,7 @@ Workspace specifici: `pnpm --filter @luke/web dev` · `pnpm --filter @luke/api d
 - **NextAuth JWT**: `maxAge: 8h`, `updateAge: 4h` (refresh automatico ogni 4h)
 - **API JWT**: `expiresIn: 8h` (allineato con NextAuth)
 - **Cookie Policy**: `httpOnly: true`, `secure: production`, `sameSite: 'lax'`
-- **Clock Tolerance**: `±30s`
+- **Clock Tolerance**: `±5s`
 
 #### TokenVersion Enforcement Multi-Layer
 

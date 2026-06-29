@@ -26,7 +26,7 @@ Abbiamo adottato una strategia basata su **HS256 + HKDF-SHA256** con le seguenti
 ### Algoritmo e Configurazione
 
 - **Algoritmo**: HS256 (HMAC-SHA256) esplicito
-- **Clock tolerance**: ±30 secondi per gestire skew temporale
+- **Clock tolerance**: ±5 secondi (NTP skew, riduce finestra replay)
 - **Claim standard**: `iss: 'urn:luke'`, `aud: 'luke.api'`, `exp`, `nbf`
 - **TTL**: 8 ore per entrambi i tipi di token (sincronizzazione perfetta)
 
