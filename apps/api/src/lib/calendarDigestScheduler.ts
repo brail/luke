@@ -2,8 +2,11 @@
  * Daily calendar digest email scheduler.
  *
  * Runs at 07:00 every day. Queries AuditLog for CalendarEvent changes that
- * occurred yesterday, groups them by calendar (brand+season) and recipient,
- * and sends one branded email digest per calendar per user.
+ * occurred yesterday, collapses multiple touches to the same event into a
+ * single net-change entry (created+deleted in the same period cancels out;
+ * repeated edits show one diff from the period's first old value to the
+ * final live value), groups the result by calendar and recipient, and sends
+ * one branded email digest per calendar per user.
  *
  * Recipients for created/updated events: getVisibleUserIdsForMilestones() + admins.
  * Recipients for deleted events: snapshot stored in AuditLog.metadata.visibleUserIds + admins.
@@ -30,6 +33,34 @@ interface DigestEntry {
   title: string;
   actorName: string;
   time: string;
+  dateLabel?: string;
+  dateChangeLabel?: string;
+  statusChangeLabel?: string;
+  otherFieldsLabel?: string;
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  PLANNED: 'Pianificato', IN_PROGRESS: 'In corso', COMPLETED: 'Completata', CANCELLED: 'Annullata',
+};
+
+function formatShortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+}
+
+function formatEventDate(startAt: Date, endAt: Date | null, allDay: boolean): string {
+  const dateFmt = (d: Date) => d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' });
+  const timeFmt = (d: Date) => d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+  const sameDay = !endAt || startAt.toDateString() === endAt.toDateString();
+  if (!sameDay) return `${formatShortDate(startAt.toISOString())}–${dateFmt(endAt as Date)}`;
+  if (allDay) return dateFmt(startAt);
+  return `${dateFmt(startAt)}, ${timeFmt(startAt)}`;
+}
+
+/** Builds an event date label from raw (possibly redacted/missing) audit metadata values. */
+function dateLabelFromMeta(startAt: unknown, endAt: unknown, allDay: unknown): string | undefined {
+  if (typeof startAt !== 'string' || isRedactedValue(startAt)) return undefined;
+  const end = typeof endAt === 'string' && !isRedactedValue(endAt) ? new Date(endAt) : null;
+  return formatEventDate(new Date(startAt), end, allDay === true);
 }
 
 interface UserDigest {
@@ -41,7 +72,11 @@ interface UserDigest {
 // ─── HTML generation ─────────────────────────────────────────────────────────
 
 function entryRow(e: DigestEntry): string {
-  return `<tr><td style="padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:14px;color:#1e293b">${e.title}</td><td style="padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px;color:#64748b;text-align:right;white-space:nowrap">${e.actorName} · ${e.time}</td></tr>`;
+  const extraLines = [e.dateLabel, e.dateChangeLabel, e.statusChangeLabel, e.otherFieldsLabel]
+    .filter((l): l is string => !!l)
+    .map(l => `<div style="margin-top:2px;font-size:12px;color:#94a3b8">${l}</div>`)
+    .join('');
+  return `<tr><td style="padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:14px;color:#1e293b">${e.title}${extraLines}</td><td style="padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px;color:#64748b;text-align:right;white-space:nowrap">${e.actorName} · ${e.time}</td></tr>`;
 }
 
 function section(heading: string, color: string, entries: DigestEntry[]): string {
@@ -69,19 +104,27 @@ function generateDigestHtml(dateLabel: string, digest: UserDigest, calendarUrl: 
 function generateDigestText(dateLabel: string, digest: UserDigest, calendarLabel: string): string {
   const lines: string[] = [`Recap calendario — ${calendarLabel} — ${dateLabel}`, ''];
 
+  const entryLines = (e: DigestEntry): string[] => {
+    const out = [`• ${e.title}  (${e.actorName}, ${e.time})`];
+    for (const extra of [e.dateLabel, e.dateChangeLabel, e.statusChangeLabel, e.otherFieldsLabel]) {
+      if (extra) out.push(`   ${extra}`);
+    }
+    return out;
+  };
+
   if (digest.created.length > 0) {
     lines.push(`NUOVI EVENTI (${digest.created.length})`);
-    digest.created.forEach(e => lines.push(`• ${e.title}  (${e.actorName}, ${e.time})`));
+    digest.created.forEach(e => lines.push(...entryLines(e)));
     lines.push('');
   }
   if (digest.updated.length > 0) {
     lines.push(`MODIFICATI (${digest.updated.length})`);
-    digest.updated.forEach(e => lines.push(`• ${e.title}  (${e.actorName}, ${e.time})`));
+    digest.updated.forEach(e => lines.push(...entryLines(e)));
     lines.push('');
   }
   if (digest.deleted.length > 0) {
     lines.push(`ELIMINATI (${digest.deleted.length})`);
-    digest.deleted.forEach(e => lines.push(`• ${e.title}  (${e.actorName}, ${e.time})`));
+    digest.deleted.forEach(e => lines.push(...entryLines(e)));
     lines.push('');
   }
 
@@ -91,28 +134,44 @@ function generateDigestText(dateLabel: string, digest: UserDigest, calendarLabel
 
 // ─── Core logic ──────────────────────────────────────────────────────────────
 
+export interface DigestDateRange {
+  start: Date;
+  end: Date;
+}
+
 async function runDigestCore(
   prisma: PrismaClient,
   log: FastifyInstance['log'],
+  range?: DigestDateRange,
+  onlyUserId?: string,
 ): Promise<void> {
   log.info('Calendar digest scheduler: avvio digest giornaliero');
 
-  const now = new Date();
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStart = new Date(yesterday);
-  yesterdayStart.setHours(0, 0, 0, 0);
-  const todayStart = new Date(now);
-  todayStart.setHours(0, 0, 0, 0);
+  let rangeStart: Date;
+  let rangeEnd: Date;
+  if (range) {
+    rangeStart = range.start;
+    rangeEnd = range.end;
+  } else {
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    rangeStart = new Date(yesterday);
+    rangeStart.setHours(0, 0, 0, 0);
+    rangeEnd = new Date(now);
+    rangeEnd.setHours(0, 0, 0, 0);
+  }
 
-  const dateLabel = yesterdayStart.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+  const fmtDay = (d: Date) => d.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+  const sameDay = rangeEnd.getTime() - rangeStart.getTime() <= 24 * 60 * 60 * 1000;
+  const dateLabel = sameDay ? fmtDay(rangeStart) : `dal ${fmtDay(rangeStart)} al ${fmtDay(new Date(rangeEnd.getTime() - 1))}`;
 
   const logs = await prisma.auditLog.findMany({
     where: {
       targetType: { in: ['CalendarEvent', 'CalendarMilestone'] },
       action: { in: ['CALENDAR_EVENT_CREATE', 'CALENDAR_EVENT_UPDATE', 'CALENDAR_EVENT_STATUS_UPDATE', 'CALENDAR_MILESTONE_DELETE', 'CALENDAR_EVENT_DELETE'] },
       result: 'SUCCESS',
-      createdAt: { gte: yesterdayStart, lt: todayStart },
+      createdAt: { gte: rangeStart, lt: rangeEnd },
     },
     include: { actor: { select: { id: true, firstName: true, lastName: true, username: true } } },
     orderBy: { createdAt: 'asc' },
@@ -125,31 +184,61 @@ async function runDigestCore(
 
   const DELETE_ACTIONS = new Set(['CALENDAR_EVENT_DELETE', 'CALENDAR_MILESTONE_DELETE']);
 
-  // Derive IDs needed for parallel pre-fetches (sync, no await)
-  const liveTargetIds = [...new Set(
-    logs.filter(e => !DELETE_ACTIONS.has(e.action) && e.targetId).map(e => e.targetId as string),
-  )];
-  const needLiveInfoIds = [...new Set(
-    logs
-      .filter(e => {
-        const meta = (e.metadata ?? {}) as Record<string, unknown>;
-        return (!isRedactedValue(meta.title) === false || !isRedactedValue(meta.calendarId) === false
-          || typeof meta.title !== 'string' || typeof meta.calendarId !== 'string')
-          && !DELETE_ACTIONS.has(e.action) && e.targetId;
-      })
-      .map(e => e.targetId as string),
-  )];
+  // ─── Normalize + group audit logs by event, so multiple touches in the same
+  // period collapse into a single net-change entry (noise reduction) ─────────
+  interface Change {
+    eventId: string;
+    action: string;
+    actorId: string | null;
+    actorName: string;
+    time: string;
+    meta: Record<string, unknown>;
+  }
+
+  const changes: Change[] = [];
+  for (const entry of logs) {
+    const actor = entry.actor;
+    const actorName = actor ? fullName(actor) : 'Sistema';
+    const time = entry.createdAt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const meta = (entry.metadata ?? {}) as Record<string, unknown>;
+
+    if (entry.action === 'CALENDAR_EVENT_DELETE' && Array.isArray(meta.snapshots)) {
+      const snapshots = meta.snapshots as Array<{ id?: string; title?: string; calendarId?: string; visibleUserIds?: string[]; startAt?: string; endAt?: string | null; allDay?: boolean }>;
+      for (const snap of snapshots) {
+        if (typeof snap.id !== 'string') continue;
+        changes.push({
+          eventId: snap.id, action: entry.action, actorId: entry.actorId, actorName, time,
+          meta: { title: snap.title, calendarId: snap.calendarId, visibleUserIds: snap.visibleUserIds, startAt: snap.startAt, endAt: snap.endAt, allDay: snap.allDay },
+        });
+      }
+      continue;
+    }
+
+    if (!entry.targetId) continue;
+    changes.push({ eventId: entry.targetId, action: entry.action, actorId: entry.actorId, actorName, time, meta });
+  }
+
+  const byEvent = new Map<string, Change[]>();
+  for (const c of changes) {
+    if (!byEvent.has(c.eventId)) byEvent.set(c.eventId, []);
+    byEvent.get(c.eventId)!.push(c);
+  }
+
+  // An event is "net deleted" if its most recent touch in the period was a delete.
+  const liveTargetIds = [...byEvent.entries()]
+    .filter(([, chgs]) => !DELETE_ACTIONS.has(chgs[chgs.length - 1].action))
+    .map(([id]) => id);
 
   // Parallel pre-fetches
   const [adminResult, visibilityMap, liveEvents] = await Promise.all([
     prisma.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } }),
     getVisibleUserIdsForMilestones(liveTargetIds, prisma).catch(() => new Map<string, string[]>()),
-    needLiveInfoIds.length > 0
-      ? prisma.calendarEvent.findMany({ where: { id: { in: needLiveInfoIds } }, select: { id: true, title: true, calendarId: true } })
+    liveTargetIds.length > 0
+      ? prisma.calendarEvent.findMany({ where: { id: { in: liveTargetIds } }, select: { id: true, title: true, calendarId: true, startAt: true, endAt: true, allDay: true, status: true } })
       : Promise.resolve([]),
   ]);
   const adminIds = adminResult.map(a => a.id);
-  const liveEventMap = new Map(liveEvents.map(e => [e.id, { title: e.title, calendarId: e.calendarId }]));
+  const liveEventMap = new Map(liveEvents.map(e => [e.id, e]));
 
   // Build per-calendar per-user digest map: calendarId → userId → UserDigest
   const calendarDigests = new Map<string, Map<string, UserDigest>>();
@@ -161,49 +250,89 @@ async function runDigestCore(
     calMap.get(uid)![bucket].push(entry);
   };
 
-  for (const entry of logs) {
-    const actor = entry.actor;
-    const actorName = actor ? fullName(actor) : 'Sistema';
-    const time = entry.createdAt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    const meta = (entry.metadata ?? {}) as Record<string, unknown>;
+  for (const [eventId, chgs] of byEvent) {
+    const last = chgs[chgs.length - 1];
+    const isNetDeleted = DELETE_ACTIONS.has(last.action);
+    const hasCreate = chgs.some(c => c.action === 'CALENDAR_EVENT_CREATE');
+    const actorIds = chgs.map(c => c.actorId).filter((id): id is string => !!id);
 
-    const isDelete = DELETE_ACTIONS.has(entry.action);
-    const bucket: keyof UserDigest = entry.action === 'CALENDAR_EVENT_CREATE'
-      ? 'created'
-      : isDelete ? 'deleted' : 'updated';
+    // Created then deleted within the same period: net zero, drop entirely.
+    if (isNetDeleted && hasCreate) continue;
 
-    // Bulk delete: expand snapshots into individual entries
-    if (entry.action === 'CALENDAR_EVENT_DELETE' && Array.isArray(meta.snapshots)) {
-      const snapshots = meta.snapshots as Array<{ id?: string; title?: string; calendarId?: string; visibleUserIds?: string[] }>;
-      for (const snap of snapshots) {
-        const snapTitle = !isRedactedValue(snap.title) && typeof snap.title === 'string' ? snap.title : '(evento)';
-        const snapCalId = typeof snap.calendarId === 'string' && !isRedactedValue(snap.calendarId) ? snap.calendarId : null;
-        if (!snapCalId) continue;
-        const snapRecipients = new Set([...adminIds, ...(snap.visibleUserIds ?? [])]);
-        for (const uid of snapRecipients) {
-          if (uid !== entry.actorId) addEntry(snapCalId, uid, 'deleted', { title: snapTitle, actorName, time });
-        }
+    if (isNetDeleted) {
+      const meta = last.meta;
+      const title = (!isRedactedValue(meta.title) && typeof meta.title === 'string' ? meta.title : null) ?? '(evento)';
+      const calendarId = !isRedactedValue(meta.calendarId) && typeof meta.calendarId === 'string' ? meta.calendarId : null;
+      if (!calendarId) continue;
+      const dateLabel = dateLabelFromMeta(meta.startAt, meta.endAt, meta.allDay);
+      const extraIds = Array.isArray(meta.visibleUserIds) ? (meta.visibleUserIds as string[]) : [];
+      const recipientIds = new Set([...adminIds, ...extraIds, ...actorIds]);
+      for (const uid of recipientIds) {
+        addEntry(calendarId, uid, 'deleted', { title, actorName: last.actorName, time: last.time, dateLabel });
       }
       continue;
     }
 
-    // Resolve calendarId: prefer metadata unless redacted, fallback to live DB lookup
-    const calendarId = (!isRedactedValue(meta.calendarId) && typeof meta.calendarId === 'string' ? meta.calendarId : null)
-      ?? (entry.targetId ? (liveEventMap.get(entry.targetId)?.calendarId ?? null) : null);
+    // Event still exists — resolve calendarId/title/date from the LIVE row (final state)
+    const liveEvent = liveEventMap.get(eventId);
+    const metaCalendarId = chgs.map(c => c.meta.calendarId).find((v): v is string => typeof v === 'string' && !isRedactedValue(v));
+    const calendarId = liveEvent?.calendarId ?? metaCalendarId ?? null;
     if (!calendarId) continue;
+    const metaTitle = chgs.map(c => c.meta.title).find((v): v is string => typeof v === 'string' && !isRedactedValue(v));
+    const title = liveEvent?.title ?? metaTitle ?? eventId;
+    const dateLabel = liveEvent ? formatEventDate(liveEvent.startAt, liveEvent.endAt, liveEvent.allDay) : undefined;
+    const extraIds = visibilityMap.get(eventId) ?? [];
+    const recipientIds = new Set([...adminIds, ...extraIds, ...actorIds]);
 
-    // Recipient IDs: admins + visible users
-    const extraIds = isDelete
-      ? (Array.isArray(meta.visibleUserIds) ? (meta.visibleUserIds as string[]) : [])
-      : (entry.targetId ? (visibilityMap.get(entry.targetId) ?? []) : []);
-    const recipientIds = new Set([...adminIds, ...extraIds]);
+    if (hasCreate) {
+      // Brand-new event this period — final state is all that matters, no diff needed.
+      for (const uid of recipientIds) {
+        addEntry(calendarId, uid, 'created', { title, actorName: last.actorName, time: last.time, dateLabel });
+      }
+      continue;
+    }
 
-    // Title: prefer audit metadata unless redacted, fallback to live event, then targetId
-    const title = (!isRedactedValue(meta.title) && typeof meta.title === 'string' ? meta.title : null)
-      ?? (entry.targetId ? (liveEventMap.get(entry.targetId)?.title ?? entry.targetId ?? '(evento)') : '(evento)');
+    // Pure update(s)/status change(s) — collapse into a single net diff over the whole period.
+    const updateChanges = chgs.filter(c => c.action === 'CALENDAR_EVENT_UPDATE');
+    const statusChanges = chgs.filter(c => c.action === 'CALENDAR_EVENT_STATUS_UPDATE');
+
+    let dateChangeLabel: string | undefined;
+    const firstDateChange = updateChanges.find(c => typeof c.meta.oldStartAt === 'string');
+    if (firstDateChange && liveEvent) {
+      const oldStart = new Date(firstDateChange.meta.oldStartAt as string);
+      const newStart = liveEvent.startAt;
+      if (oldStart.getTime() !== newStart.getTime()) {
+        const direction = newStart.getTime() > oldStart.getTime() ? 'Posticipato' : 'Anticipato';
+        dateChangeLabel = `${direction}: ${formatShortDate(oldStart.toISOString())} → ${formatShortDate(newStart.toISOString())}`;
+      } else {
+        const oldEndRaw = firstDateChange.meta.oldEndAt;
+        const oldEnd = typeof oldEndRaw === 'string' ? formatShortDate(oldEndRaw) : '—';
+        const newEnd = liveEvent.endAt ? formatShortDate(liveEvent.endAt.toISOString()) : '—';
+        if (oldEnd !== newEnd) dateChangeLabel = `Durata modificata: fine ${oldEnd} → ${newEnd}`;
+      }
+    }
+
+    let statusChangeLabel: string | undefined;
+    const firstStatusChange = statusChanges.find(c => typeof c.meta.oldStatus === 'string');
+    if (firstStatusChange && liveEvent) {
+      const oldStatus = firstStatusChange.meta.oldStatus as string;
+      const newStatus = liveEvent.status;
+      if (oldStatus !== newStatus) {
+        statusChangeLabel = `Stato: ${STATUS_LABELS[oldStatus] ?? oldStatus} → ${STATUS_LABELS[newStatus] ?? newStatus}`;
+      }
+    }
+
+    const otherFieldsSet = new Set<string>();
+    for (const c of updateChanges) {
+      if (Array.isArray(c.meta.changedFields)) (c.meta.changedFields as string[]).forEach(f => otherFieldsSet.add(f));
+    }
+    const otherFieldsLabel = otherFieldsSet.size > 0 ? `Altri campi: ${[...otherFieldsSet].join(', ')}` : undefined;
+
+    // Net-zero guard: e.g. moved 3 times back to the original date — nothing actually changed, drop the noise.
+    if (!dateChangeLabel && !statusChangeLabel && !otherFieldsLabel) continue;
 
     for (const uid of recipientIds) {
-      if (uid !== entry.actorId) addEntry(calendarId, uid, bucket, { title, actorName, time });
+      addEntry(calendarId, uid, 'updated', { title, actorName: last.actorName, time: last.time, dateLabel, dateChangeLabel, statusChangeLabel, otherFieldsLabel });
     }
   }
 
@@ -235,8 +364,13 @@ async function runDigestCore(
     const calendarLabel = calendarLabelMap.get(calId) ?? calId;
     const subject = `Recap calendario — ${calendarLabel} — ${dateLabel}`;
 
-    for (const [userId, digest] of userDigestMap) {
-      if (disabledSet.has(userId)) continue;
+    const recipients = onlyUserId
+      ? (userDigestMap.has(onlyUserId) ? [[onlyUserId, userDigestMap.get(onlyUserId)!]] as const : [])
+      : [...userDigestMap];
+
+    for (const [userId, digest] of recipients) {
+      // Manual "send to me" runs bypass the CALENDAR notification-preference opt-out — it's an explicit request.
+      if (!onlyUserId && disabledSet.has(userId)) continue;
       const email = userEmailMap.get(userId);
       if (!email) continue;
       const total = digest.created.length + digest.updated.length + digest.deleted.length;
@@ -277,11 +411,19 @@ function runDigest(
 // ─── Manual trigger ──────────────────────────────────────────────────────────
 
 /**
- * Runs the digest immediately for the previous day, bypassing the hour guard.
+ * Runs the digest immediately, bypassing the hour guard.
+ * Defaults to the previous day if no range is given.
+ * When `onlyUserId` is given, sends only to that user's own digest slice
+ * (bypassing their CALENDAR preference opt-out) — used for manual "send to me" test runs.
  * Intended for admin-triggered manual runs and testing.
  */
-export async function runDigestNow(prisma: PrismaClient, log: FastifyInstance['log']): Promise<void> {
-  await runDigestCore(prisma, log);
+export async function runDigestNow(
+  prisma: PrismaClient,
+  log: FastifyInstance['log'],
+  range?: DigestDateRange,
+  onlyUserId?: string,
+): Promise<void> {
+  await runDigestCore(prisma, log, range, onlyUserId);
 }
 
 // ─── Registration ─────────────────────────────────────────────────────────────

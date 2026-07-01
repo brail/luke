@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '../../../../components/ui/button';
@@ -7,6 +8,7 @@ import { Skeleton } from '../../../../components/ui/skeleton';
 import { Switch } from '../../../../components/ui/switch';
 import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
+import { SendDigestDialog } from './SendDigestDialog';
 
 const CATEGORY_META: Record<string, { label: string; description: string }> = {
   SYSTEM: {
@@ -35,6 +37,7 @@ export function NotificationPreferences() {
   const { data: prefs, isLoading } = trpc.notifications.preferences.list.useQuery();
   const utils = trpc.useUtils();
   const { can } = usePermission();
+  const [digestDialogOpen, setDigestDialogOpen] = useState(false);
 
   const updateMutation = trpc.notifications.preferences.update.useMutation({
     onSuccess: () => {
@@ -44,11 +47,6 @@ export function NotificationPreferences() {
       toast.error('Errore nel salvataggio delle preferenze');
       void utils.notifications.preferences.list.invalidate();
     },
-  });
-
-  const digestMutation = trpc.system.triggerCalendarDigest.useMutation({
-    onSuccess: () => toast.success('Digest inviato'),
-    onError: () => toast.error('Errore nell\'invio del digest'),
   });
 
   if (isLoading) {
@@ -79,10 +77,9 @@ export function NotificationPreferences() {
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={digestMutation.isPending}
-                  onClick={() => digestMutation.mutate()}
+                  onClick={() => setDigestDialogOpen(true)}
                 >
-                  {digestMutation.isPending ? 'Invio...' : 'Manda digest'}
+                  Invia Recap
                 </Button>
               )}
               <Switch
@@ -96,6 +93,7 @@ export function NotificationPreferences() {
           </div>
         );
       })}
+      <SendDigestDialog open={digestDialogOpen} onClose={() => setDigestDialogOpen(false)} />
     </div>
   );
 }

@@ -93,6 +93,15 @@ const SAFE_KEYS = new Set([
   'snapshots',
   'templateId',
   'ownerFunctionId',
+  'startAt',
+  'endAt',
+  'oldStartAt',
+  'newStartAt',
+  'oldEndAt',
+  'newEndAt',
+  'allDay',
+  'oldStatus',
+  'changedFields',
 ]);
 
 /** Returns true if the value was produced by the sanitizer's redaction logic. */
