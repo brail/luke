@@ -32,6 +32,7 @@ import { registerNavSyncScheduler } from './lib/navSyncScheduler';
 import { registerPortafoglioSyncScheduler } from './lib/portafoglioSyncScheduler';
 import { registerKimoSyncScheduler } from './lib/kimoSyncScheduler';
 import { registerMilestoneDeadlineScheduler } from './lib/milestoneDeadlineScheduler';
+import { registerCalendarDigestScheduler } from './lib/calendarDigestScheduler';
 import { idempotencyStore } from './lib/idempotency';
 import { rateLimitStore } from './lib/ratelimit';
 import {
@@ -638,6 +639,9 @@ const start = async () => {
 
     // Registra scheduler notifiche deadline milestone (tick ogni ora)
     registerMilestoneDeadlineScheduler(fastify, prisma);
+
+    // Registra scheduler digest email calendario (esecuzione giornaliera alle 07:00)
+    registerCalendarDigestScheduler(fastify, prisma);
 
     // Configura graceful shutdown
     setupGracefulShutdown();

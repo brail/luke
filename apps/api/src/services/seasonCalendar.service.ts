@@ -593,7 +593,11 @@ export async function cloneFromBrandSeason(
       await tx.calendarEventDependency.createMany({ data: depData });
     }
 
-    return { calendarId: targetCalendar.id, milestonesCreated: created.length };
+    return {
+      calendarId: targetCalendar.id,
+      milestonesCreated: created.length,
+      createdEventIds: created.map(e => e.id),
+    };
   });
 }
 

@@ -32,6 +32,7 @@ function unsubscribe(userId: string, reply: FastifyReply): void {
 export type SSEEvent =
   | { type: 'notification'; payload: Record<string, unknown> }
   | { type: 'sync-state'; entity: string; isRunning: boolean }
+  | { type: 'calendar-updated'; seasonId: string }
   | { type: 'heartbeat' };
 
 function pushToUser(userId: string, event: SSEEvent): void {

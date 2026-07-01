@@ -86,7 +86,19 @@ const SAFE_KEYS = new Set([
   'cause',
   'milestoneId',
   'rowsIncluded',
+  'title',
+  'status',
+  'calendarId',
+  'visibleUserIds',
+  'snapshots',
+  'templateId',
+  'ownerFunctionId',
 ]);
+
+/** Returns true if the value was produced by the sanitizer's redaction logic. */
+export function isRedactedValue(v: unknown): boolean {
+  return typeof v === 'string' && (v.startsWith('[REDACTED') || v === '***REDACTED***');
+}
 
 function sanitizeMetadata(obj: any, depth = 0): any {
   // Limite ricorsione (DoS protection)

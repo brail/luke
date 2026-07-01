@@ -47,7 +47,8 @@ import { assertFunctionMemberOrAdmin } from './company.js';
 
 import { logAudit } from '../lib/auditLog.js';
 import { toErrorMessage } from '../lib/error.js';
-import { createNotification, getVisibleUserIdsForMilestone } from '../lib/notifications.js';
+import { createNotification, getVisibleUserIdsForMilestone, getVisibleUserIdsForMilestones, notifyCalendarChange } from '../lib/notifications.js';
+import { sseStore } from '../lib/sseStore.js';
 import { withRateLimit } from '../lib/ratelimit.js';
 import { router, protectedProcedure } from '../lib/trpc.js';
 import { requirePermission } from '../lib/permissions.js';
@@ -203,13 +204,21 @@ export const seasonCalendarRouter = router({
     .mutation(async ({ input, ctx }) => {
       const calendar = await ctx.prisma.seasonCalendar.findUnique({
         where: { id: input.calendarId },
-        select: { brandId: true },
+        select: { brandId: true, seasonId: true },
       });
       if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
       await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
 
       const result = await createMilestone(input, ctx.prisma);
-      await logAudit(ctx, { action: 'CALENDAR_EVENT_CREATE', targetType: 'CalendarEvent', targetId: result.id, result: 'SUCCESS', metadata: { calendarId: input.calendarId, ownerFunctionId: input.ownerFunctionId } });
+      await logAudit(ctx, { action: 'CALENDAR_EVENT_CREATE', targetType: 'CalendarEvent', targetId: result.id, result: 'SUCCESS', metadata: { calendarId: input.calendarId, ownerFunctionId: input.ownerFunctionId, title: result.title } });
+      sseStore.pushToAll({ type: 'calendar-updated', seasonId: calendar.seasonId });
+      notifyCalendarChange(ctx.prisma, {
+        eventId: result.id,
+        actorId: ctx.session.user.id,
+        titleSuffix: 'ha aggiunto un evento',
+        message: `"${result.title}"`,
+        calendarId: input.calendarId,
+      }).catch(err => ctx.logger.error(err, 'calendar notification failed on create'));
       syncOneMilestone(result.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on create'));
       return result;
     }),
@@ -231,13 +240,21 @@ export const seasonCalendarRouter = router({
     .mutation(async ({ input, ctx }) => {
       const event = await ctx.prisma.calendarEvent.findUnique({
         where: { id: input.id },
-        include: { calendar: { select: { brandId: true } } },
+        include: { calendar: { select: { brandId: true, seasonId: true } } },
       });
       if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
       await assertBrandAccess(ctx.session.user.id, event.calendar.brandId, ctx.prisma);
 
       const result = await updateMilestone(input.id, input.data, ctx.prisma);
-      await logAudit(ctx, { action: 'CALENDAR_EVENT_UPDATE', targetType: 'CalendarEvent', targetId: input.id, result: 'SUCCESS', metadata: {} });
+      await logAudit(ctx, { action: 'CALENDAR_EVENT_UPDATE', targetType: 'CalendarEvent', targetId: input.id, result: 'SUCCESS', metadata: { title: result.title, calendarId: event.calendarId } });
+      sseStore.pushToAll({ type: 'calendar-updated', seasonId: event.calendar.seasonId });
+      notifyCalendarChange(ctx.prisma, {
+        eventId: input.id,
+        actorId: ctx.session.user.id,
+        titleSuffix: 'ha modificato un evento',
+        message: `"${result.title}"`,
+        calendarId: event.calendarId,
+      }).catch(err => ctx.logger.error(err, 'calendar notification failed on update'));
       syncOneMilestone(input.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on update'));
       return result;
     }),
@@ -256,14 +273,24 @@ export const seasonCalendarRouter = router({
     .mutation(async ({ input, ctx }) => {
       const event = await ctx.prisma.calendarEvent.findUnique({
         where: { id: input.id },
-        include: { calendar: { select: { brandId: true } } },
+        include: { calendar: { select: { brandId: true, seasonId: true } } },
       });
       if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
       await assertBrandAccess(ctx.session.user.id, event.calendar.brandId, ctx.prisma);
 
+      // Snapshot visibility before delete so digest and notification can use it afterward
+      const visibleUserIds = await getVisibleUserIdsForMilestone(input.id, ctx.prisma);
       await cleanupMilestoneEvents(input.id, ctx.prisma, ctx.logger);
       await deleteMilestone(input.id, ctx.prisma);
-      await logAudit(ctx, { action: 'CALENDAR_MILESTONE_DELETE', targetType: 'CalendarMilestone', targetId: input.id, result: 'SUCCESS', metadata: {} });
+      await logAudit(ctx, { action: 'CALENDAR_MILESTONE_DELETE', targetType: 'CalendarMilestone', targetId: input.id, result: 'SUCCESS', metadata: { title: event.title, calendarId: event.calendarId, visibleUserIds } });
+      sseStore.pushToAll({ type: 'calendar-updated', seasonId: event.calendar.seasonId });
+      notifyCalendarChange(ctx.prisma, {
+        preloadedUserIds: visibleUserIds,
+        actorId: ctx.session.user.id,
+        titleSuffix: 'ha rimosso un evento',
+        message: `"${event.title}"`,
+        calendarId: event.calendarId,
+      }).catch(err => ctx.logger.error(err, 'calendar notification failed on delete'));
       return { success: true };
     }),
 
@@ -281,15 +308,40 @@ export const seasonCalendarRouter = router({
     .mutation(async ({ input, ctx }) => {
       const events = await ctx.prisma.calendarEvent.findMany({
         where: { id: { in: input.ids } },
-        include: { calendar: { select: { brandId: true } } },
+        include: { calendar: { select: { brandId: true, seasonId: true } } },
       });
       const uniqueBrandIds = [...new Set(events.map(e => e.calendar.brandId).filter((id): id is string => id != null))];
       await Promise.all(uniqueBrandIds.map(brandId =>
         assertBrandAccess(ctx.session.user.id, brandId, ctx.prisma)
       ));
+      // Snapshot visibility for each event before deletion (for digest + notifications)
+      const visibilityMap = await getVisibleUserIdsForMilestones(events.map(e => e.id), ctx.prisma);
+      const visibilitySnapshots = events.map(e => ({
+        id: e.id,
+        title: e.title,
+        calendarId: e.calendarId,
+        userIds: visibilityMap.get(e.id) ?? [],
+      }));
       await Promise.all(events.map(e => cleanupMilestoneEvents(e.id, ctx.prisma, ctx.logger)));
       await ctx.prisma.calendarEvent.deleteMany({ where: { id: { in: input.ids } } });
-      await logAudit(ctx, { action: 'CALENDAR_EVENT_DELETE', targetType: 'CalendarEvent', targetId: input.ids.join(','), result: 'SUCCESS', metadata: { count: input.ids.length } });
+      await logAudit(ctx, {
+        action: 'CALENDAR_EVENT_DELETE',
+        targetType: 'CalendarEvent',
+        targetId: input.ids.join(','),
+        result: 'SUCCESS',
+        metadata: { count: input.ids.length, snapshots: visibilitySnapshots.map(s => ({ id: s.id, title: s.title, calendarId: s.calendarId, visibleUserIds: s.userIds })) },
+      });
+      const uniqueSeasonIds = [...new Set(events.map(e => e.calendar.seasonId).filter((id): id is string => id != null))];
+      for (const seasonId of uniqueSeasonIds) sseStore.pushToAll({ type: 'calendar-updated', seasonId });
+      const allVisibleUserIds = [...new Set(visibilitySnapshots.flatMap(s => s.userIds))];
+      const uniqueCalendarIds = [...new Set(events.map(e => e.calendarId))];
+      notifyCalendarChange(ctx.prisma, {
+        preloadedUserIds: allVisibleUserIds,
+        actorId: ctx.session.user.id,
+        titleSuffix: `ha rimosso ${input.ids.length} eventi`,
+        message: `dal calendario`,
+        calendarId: uniqueCalendarIds.length === 1 ? uniqueCalendarIds[0] : undefined,
+      }).catch(err => ctx.logger.error(err, 'calendar notification failed on bulk delete'));
       return { success: true, count: input.ids.length };
     }),
 
@@ -316,7 +368,7 @@ export const seasonCalendarRouter = router({
       const event = await ctx.prisma.calendarEvent.findUnique({
         where: { id: input.id },
         include: {
-          calendar: { select: { brandId: true } },
+          calendar: { select: { brandId: true, seasonId: true } },
           stateEffects: true,
         },
       });
@@ -364,7 +416,8 @@ export const seasonCalendarRouter = router({
         }));
       }
 
-      await logAudit(ctx, { action: 'CALENDAR_EVENT_STATUS_UPDATE', targetType: 'CalendarEvent', targetId: input.id, result: 'SUCCESS', metadata: { status: input.status } });
+      await logAudit(ctx, { action: 'CALENDAR_EVENT_STATUS_UPDATE', targetType: 'CalendarEvent', targetId: input.id, result: 'SUCCESS', metadata: { status: input.status, title: event.title, calendarId: event.calendarId } });
+      sseStore.pushToAll({ type: 'calendar-updated', seasonId: event.calendar.seasonId });
       syncOneMilestone(input.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on status change'));
 
       const STATUS_LABELS: Record<string, string> = {
@@ -467,7 +520,7 @@ export const seasonCalendarRouter = router({
     .mutation(async ({ input, ctx }) => {
       const calendar = await ctx.prisma.seasonCalendar.findUnique({
         where: { id: input.calendarId },
-        select: { brandId: true, anchorDate: true },
+        select: { brandId: true, seasonId: true, anchorDate: true },
       });
       if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
       await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
@@ -479,6 +532,14 @@ export const seasonCalendarRouter = router({
 
       const result = await applyTemplate(input.calendarId, input.templateId, anchor, input.force, ctx.prisma);
       await logAudit(ctx, { action: 'SEASON_CALENDAR_APPLY_TEMPLATE', targetType: 'SeasonCalendar', targetId: input.calendarId, result: 'SUCCESS', metadata: { templateId: input.templateId, count: result.length } });
+      sseStore.pushToAll({ type: 'calendar-updated', seasonId: calendar.seasonId });
+      notifyCalendarChange(ctx.prisma, {
+        eventIds: result.map(e => e.id),
+        actorId: ctx.session.user.id,
+        titleSuffix: 'ha applicato un template',
+        message: `${result.length} eventi aggiunti al calendario`,
+        calendarId: input.calendarId,
+      }).catch(err => ctx.logger.error(err, 'calendar notification failed on apply template'));
       return result;
     }),
 
@@ -637,6 +698,14 @@ export const seasonCalendarRouter = router({
 
       const result = await cloneFromBrandSeason(input, ctx.prisma);
       await logAudit(ctx, { action: 'SEASON_CALENDAR_CLONE', targetType: 'SeasonCalendar', targetId: result.calendarId, result: 'SUCCESS', metadata: { sourceBrandId: input.sourceBrandId, sourceSeasonId: input.sourceSeasonId } });
+      sseStore.pushToAll({ type: 'calendar-updated', seasonId: input.targetSeasonId });
+      notifyCalendarChange(ctx.prisma, {
+        eventIds: result.createdEventIds,
+        actorId: ctx.session.user.id,
+        titleSuffix: 'ha clonato il calendario',
+        message: `${result.milestonesCreated} eventi copiati`,
+        calendarId: result.calendarId,
+      }).catch(err => ctx.logger.error(err, 'calendar notification failed on clone'));
       return result;
     }),
 

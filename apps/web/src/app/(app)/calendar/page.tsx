@@ -1,6 +1,7 @@
 'use client';
 
 import { Calendar, CalendarClock, RefreshCw, Copy, Plus, List, GanttChart, CalendarRange, CalendarDays, Maximize2, Minimize2, ChevronDown, Check, FlaskConical, MoreHorizontal } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
@@ -31,9 +32,14 @@ import { useHolidays } from './_components/useHolidays';
 import { WhatIfBanner } from './_components/WhatIfBanner';
 import { addDays, assignBrandColors, daysBetween, resolveBrandColor } from './utils';
 
+const VALID_VIEWS = ['list', 'gantt', 'week', 'day', 'month'] as const;
+type CalendarView = (typeof VALID_VIEWS)[number];
+
 export default function CalendarPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
   const { can } = usePermission();
+  const searchParams = useSearchParams();
+  const router = useRouter();
 
   const [selectedBrandIds, setSelectedBrandIds] = useState<string[]>([]);
   const [selectedFunctionIds, setSelectedFunctionIds] = useState<string[]>([]);
@@ -43,8 +49,15 @@ export default function CalendarPage() {
   const [createDefaultAllDay, setCreateDefaultAllDay] = useState(true);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
-  const [view, setView] = useState<'list' | 'gantt' | 'week' | 'day' | 'month'>('month');
-  const [viewDate, setViewDate] = useState<Date>(() => new Date());
+  const [view, setViewState] = useState<CalendarView>(() => {
+    const v = searchParams.get('view');
+    return (VALID_VIEWS as readonly string[]).includes(v ?? '') ? (v as CalendarView) : 'month';
+  });
+  const [viewDate, setViewDateState] = useState<Date>(() => {
+    const d = searchParams.get('date');
+    const parsed = d ? new Date(d) : null;
+    return parsed && !isNaN(parsed.getTime()) ? parsed : new Date();
+  });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [simulateMode, setSimulateMode] = useState(false);
   const [proposedShifts, setProposedShifts] = useState<{ eventId: string; newStartAt: string }[]>([]);
@@ -56,6 +69,22 @@ export default function CalendarPage() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [isFullscreen]);
+
+  const setSearchParam = useCallback((key: string, value: string) => {
+    const p = new URLSearchParams(searchParams.toString());
+    p.set(key, value);
+    router.replace(`?${p.toString()}`, { scroll: false });
+  }, [router, searchParams]);
+
+  const setView = useCallback((v: CalendarView) => {
+    setViewState(v);
+    setSearchParam('view', v);
+  }, [setSearchParam]);
+
+  const setViewDate = useCallback((d: Date) => {
+    setViewDateState(d);
+    setSearchParam('date', d.toISOString().slice(0, 10));
+  }, [setSearchParam]);
 
   const contextBrandId = brand?.id ?? null;
   const enabled = !!contextBrandId && !!season?.id;

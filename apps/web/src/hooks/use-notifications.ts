@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 
-import { buildApiUrl } from '@luke/core';
+import { buildApiUrl, calcBackoffDelay } from '@luke/core';
 
 import { trpc } from '../lib/trpc';
 
@@ -24,9 +24,20 @@ export function useNotifications() {
 
   const getSseTicketMutation = trpc.notifications.getSseTicket.useMutation();
   const esRef = useRef<EventSource | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptRef = useRef(0);
 
   useEffect(() => {
     let isMounted = true;
+    reconnectAttemptRef.current = 0;
+
+    const scheduleReconnect = () => {
+      if (!isMounted) return;
+      const delay = calcBackoffDelay(reconnectAttemptRef.current, 5_000, 60_000);
+      reconnectAttemptRef.current += 1;
+      clearTimeout(reconnectTimerRef.current ?? undefined);
+      reconnectTimerRef.current = setTimeout(() => void connect(), delay);
+    };
 
     const connect = async () => {
       try {
@@ -36,6 +47,8 @@ export function useNotifications() {
         const url = buildApiUrl(`/api/sse?ticket=${encodeURIComponent(ticket)}`);
         const es = new EventSource(url);
         esRef.current = es;
+
+        es.onopen = () => { reconnectAttemptRef.current = 0; };
 
         es.onmessage = (event) => {
           try {
@@ -49,19 +62,24 @@ export function useNotifications() {
               } else if (data.entity === 'kimo') {
                 void utils.sales.statistics.kimo.getSyncState.invalidate();
               }
+            } else if (data.type === 'calendar-updated') {
+              void utils.seasonCalendar.listMilestones.invalidate();
             }
           } catch {
             // Ignore malformed events
           }
         };
 
+        // Ticket è monouso: il reconnect automatico del browser fallirebbe con 401.
+        // Ottieni un nuovo ticket e riconnetti dopo 5s.
         es.onerror = () => {
           es.close();
           esRef.current = null;
-          // SSE caduta: React Query polling a 30s copre il fallback
+          scheduleReconnect();
         };
       } catch {
-        // Ticket fetch failed — polling fallback attivo
+        // Ticket fetch failed — polling fallback attivo; retry dopo 5s.
+        scheduleReconnect();
       }
     };
 
@@ -69,6 +87,8 @@ export function useNotifications() {
 
     return () => {
       isMounted = false;
+      clearTimeout(reconnectTimerRef.current ?? undefined);
+      reconnectTimerRef.current = null;
       esRef.current?.close();
       esRef.current = null;
     };

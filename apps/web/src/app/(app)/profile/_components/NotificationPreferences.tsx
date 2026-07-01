@@ -2,8 +2,10 @@
 
 import { toast } from 'sonner';
 
+import { Button } from '../../../../components/ui/button';
 import { Skeleton } from '../../../../components/ui/skeleton';
 import { Switch } from '../../../../components/ui/switch';
+import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
 
 const CATEGORY_META: Record<string, { label: string; description: string }> = {
@@ -32,6 +34,7 @@ const CATEGORY_META: Record<string, { label: string; description: string }> = {
 export function NotificationPreferences() {
   const { data: prefs, isLoading } = trpc.notifications.preferences.list.useQuery();
   const utils = trpc.useUtils();
+  const { can } = usePermission();
 
   const updateMutation = trpc.notifications.preferences.update.useMutation({
     onSuccess: () => {
@@ -41,6 +44,11 @@ export function NotificationPreferences() {
       toast.error('Errore nel salvataggio delle preferenze');
       void utils.notifications.preferences.list.invalidate();
     },
+  });
+
+  const digestMutation = trpc.system.triggerCalendarDigest.useMutation({
+    onSuccess: () => toast.success('Digest inviato'),
+    onError: () => toast.error('Errore nell\'invio del digest'),
   });
 
   if (isLoading) {
@@ -66,13 +74,25 @@ export function NotificationPreferences() {
               <p className="text-sm font-medium">{meta?.label ?? pref.category}</p>
               <p className="text-xs text-muted-foreground">{meta?.description}</p>
             </div>
-            <Switch
-              checked={pref.enabled}
-              disabled={updateMutation.isPending}
-              onCheckedChange={enabled => {
-                updateMutation.mutate({ category: pref.category as any, enabled });
-              }}
-            />
+            <div className="flex items-center gap-3">
+              {pref.category === 'CALENDAR' && can('config:update') && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={digestMutation.isPending}
+                  onClick={() => digestMutation.mutate()}
+                >
+                  {digestMutation.isPending ? 'Invio...' : 'Manda digest'}
+                </Button>
+              )}
+              <Switch
+                checked={pref.enabled}
+                disabled={updateMutation.isPending}
+                onCheckedChange={enabled => {
+                  updateMutation.mutate({ category: pref.category as any, enabled });
+                }}
+              />
+            </div>
           </div>
         );
       })}

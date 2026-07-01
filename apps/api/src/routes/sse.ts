@@ -34,12 +34,16 @@ export async function registerSseRoute(app: FastifyInstance): Promise<void> {
       return reply.status(401).send({ error: 'Invalid or expired SSE ticket' });
     }
 
-    // SSE headers — X-Accel-Buffering disabilita buffering nginx/proxy
+    // SSE headers — X-Accel-Buffering disabilita buffering nginx/proxy.
+    // reply.raw.writeHead() bypassa i Fastify hooks (incluso @fastify/cors), quindi
+    // Access-Control-Allow-Origin va aggiunto manualmente. Il ticket monouso garantisce
+    // l'autenticazione, quindi l'header wildcard è sicuro qui.
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
       'X-Accel-Buffering': 'no',
+      'Access-Control-Allow-Origin': request.headers.origin ?? '*',
     });
 
     // Flush iniziale per confermare connessione
