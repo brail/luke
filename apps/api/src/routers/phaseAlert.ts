@@ -8,8 +8,10 @@ import { z } from 'zod';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 import {
+  computeBottleneckByEvent,
   computeCriticality,
   computeCriticalityForLayout,
+  computeSaturationHeatmap,
   computeSchedulingVariance,
   resolveAlertThresholds,
 } from '../services/phaseAlert.service';
@@ -69,5 +71,35 @@ export const phaseAlertRouter = router({
     .use(requirePermission('collection_alert:read'))
     .query(async ({ ctx }) => {
       return resolveAlertThresholds(ctx.prisma);
+    }),
+
+  /**
+   * Saturation heatmap (Fase 6.1): row counts per criticality band, grouped by brand and
+   * product category, across every brand's layout for the given season.
+   *
+   * @auth {collection_alert:read}
+   * @input {{ seasonId: string, brandIds: string[] }}
+   * @output {{ brandId, productCategory, label, color, count }[]}
+   */
+  saturationHeatmap: protectedProcedure
+    .use(requirePermission('collection_alert:read'))
+    .input(z.object({ seasonId: z.string().uuid(), brandIds: z.array(z.string().uuid()).min(1) }))
+    .query(async ({ input, ctx }) => {
+      return computeSaturationHeatmap(input.seasonId, input.brandIds, new Date(), ctx.prisma);
+    }),
+
+  /**
+   * Bottleneck index (Fase 6.2): row counts per criticality band, grouped by active event —
+   * identifies which milestone is holding up the most rows in a layout.
+   *
+   * @auth {collection_alert:read}
+   * @input {{ collectionLayoutId: string }}
+   * @output {{ eventId, eventTitle, eventStartAt, bands: { label, color, count }[] }[]} — sorted by eventStartAt.
+   */
+  bottleneckByEvent: protectedProcedure
+    .use(requirePermission('collection_alert:read'))
+    .input(z.object({ collectionLayoutId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      return computeBottleneckByEvent(input.collectionLayoutId, new Date(), ctx.prisma);
     }),
 });

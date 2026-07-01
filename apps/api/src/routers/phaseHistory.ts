@@ -32,7 +32,12 @@ export const phaseHistoryRouter = router({
    * for every row in the given layout. A row's most recent transition has no dwell time yet
    * (still in that phase) and is excluded from the average.
    *
-   * @auth {collection_layout:read}
+   * @auth {collection_layout:read} — intentionally not `collection_alert:read`, same as when this
+   *   endpoint was added in Fase 4. The Fase 6.3 stagnation dashboard page sits behind the
+   *   `product.controllo` section (gated by `collection_alert:read`), so a role could see the page
+   *   shell without this query succeeding (or vice versa) if the two permissions are ever granted
+   *   differently via the AppConfig runtime override. Today both are granted identically to every
+   *   role's defaults, so this is a latent, not active, divergence.
    * @input {{ collectionLayoutId: string }}
    * @output {{ phaseId: string, phaseLabel: string, avgDays: number, medianDays: number, sampleCount: number }[]}
    */

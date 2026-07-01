@@ -197,6 +197,8 @@ function criticalityFromActivePhase(rowId: string, active: ActivePhaseResult, th
   return {
     rowId,
     eventId: deadlineInfo.event.id,
+    eventTitle: deadlineInfo.event.title,
+    eventStartAt: deadlineInfo.event.startAt,
     phaseId: deadlineInfo.event.phaseId,
     deadline: deadlineInfo.deadline,
     daysToDeadline,
@@ -229,25 +231,111 @@ export async function computeCriticality(rowId: string, now: Date, prisma: Prism
  * a single thresholds fetch, instead of once per row — the batch counterpart of `computeCriticality`
  * used by the Fase 6.1/6.2 dashboards.
  *
+ * @param thresholds - Pass an already-resolved value when calling this for multiple layouts in the
+ *   same request (e.g. `computeSaturationHeatmap`) — thresholds aren't layout-scoped, so refetching
+ *   per layout would be redundant. Defaults to resolving them internally for single-layout callers.
  * @returns One entry per row that has an active phase; rows with no active phase are omitted.
  */
-export async function computeCriticalityForLayout(collectionLayoutId: string, now: Date, prisma: PrismaClient) {
-  const [rows, events, thresholds] = await Promise.all([
+export async function computeCriticalityForLayout(
+  collectionLayoutId: string,
+  now: Date,
+  prisma: PrismaClient,
+  thresholds?: CollectionAlertThresholds
+) {
+  const [rows, events, resolvedThresholds] = await Promise.all([
     prisma.collectionLayoutRow.findMany({
       where: { collectionLayoutId },
-      select: { id: true, phase: { select: { order: true } } },
+      select: { id: true, productCategory: true, phase: { select: { order: true } } },
     }),
     getCalendarEventsForLayout(collectionLayoutId, prisma),
-    resolveAlertThresholds(prisma),
+    thresholds ? Promise.resolve(thresholds) : resolveAlertThresholds(prisma),
   ]);
 
   return rows
     .map(row => {
       const rowEvents = filterApplicableEvents(events, row.id);
       const active = getActivePhaseFromEvents(rowEvents, row.phase?.order ?? null);
-      return criticalityFromActivePhase(row.id, active, thresholds, now);
+      const criticality = criticalityFromActivePhase(row.id, active, resolvedThresholds, now);
+      return criticality ? { ...criticality, productCategory: row.productCategory } : null;
     })
     .filter((r): r is NonNullable<typeof r> => r !== null);
+}
+
+/**
+ * Saturation heatmap data (Fase 6.1): counts rows per criticality band, grouped by brand and
+ * product category, across every brand's collection layout for the given season. Brands with no
+ * layout yet are skipped.
+ */
+export async function computeSaturationHeatmap(
+  seasonId: string,
+  brandIds: string[],
+  now: Date,
+  prisma: PrismaClient
+) {
+  const [layouts, thresholds] = await Promise.all([
+    prisma.collectionLayout.findMany({
+      where: { seasonId, brandId: { in: brandIds } },
+      select: { id: true, brandId: true },
+    }),
+    resolveAlertThresholds(prisma),
+  ]);
+
+  const perLayoutRows = await Promise.all(
+    layouts.map(layout => computeCriticalityForLayout(layout.id, now, prisma, thresholds).then(rows => ({ layout, rows })))
+  );
+
+  const cellCounts = new Map<string, { brandId: string; productCategory: string; label: string; color: string; count: number }>();
+
+  for (const { layout, rows } of perLayoutRows) {
+    for (const row of rows) {
+      const key = `${layout.brandId}::${row.productCategory}::${row.band.label}`;
+      const existing = cellCounts.get(key);
+      if (existing) {
+        existing.count++;
+      } else {
+        cellCounts.set(key, {
+          brandId: layout.brandId,
+          productCategory: row.productCategory,
+          label: row.band.label,
+          color: row.band.color,
+          count: 1,
+        });
+      }
+    }
+  }
+
+  return Array.from(cellCounts.values());
+}
+
+/**
+ * Bottleneck index (Fase 6.2): for a single layout, counts rows per criticality band grouped by
+ * their active event — identifies which specific milestone is holding up the most rows.
+ */
+export async function computeBottleneckByEvent(collectionLayoutId: string, now: Date, prisma: PrismaClient) {
+  const rows = await computeCriticalityForLayout(collectionLayoutId, now, prisma);
+
+  const byEvent = new Map<string, {
+    eventId: string; eventTitle: string; eventStartAt: Date;
+    bands: Map<string, { label: string; color: string; count: number }>;
+  }>();
+
+  for (const row of rows) {
+    let eventEntry = byEvent.get(row.eventId);
+    if (!eventEntry) {
+      eventEntry = { eventId: row.eventId, eventTitle: row.eventTitle, eventStartAt: row.eventStartAt, bands: new Map() };
+      byEvent.set(row.eventId, eventEntry);
+    }
+    const bandEntry = eventEntry.bands.get(row.band.label);
+    if (bandEntry) {
+      bandEntry.count++;
+    } else {
+      eventEntry.bands.set(row.band.label, { label: row.band.label, color: row.band.color, count: 1 });
+    }
+  }
+
+  return Array.from(byEvent.values())
+    .map(e => ({ ...e, bands: Array.from(e.bands.values()) }))
+    .sort((a, b) => a.eventStartAt.getTime() - b.eventStartAt.getTime());
 }
 
 /**
