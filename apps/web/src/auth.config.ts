@@ -5,7 +5,7 @@ import { checkTokenVersion, populateSession, SESSION_MAX_AGE, SESSION_UPDATE_AGE
 import type { NextAuthConfig } from 'next-auth';
 
 /**
- * Edge-compatible Auth.js configuration used exclusively by `middleware.ts`.
+ * Edge-compatible Auth.js configuration used exclusively by `proxy.ts`.
  * Contains no Node.js modules (no providers, no `@luke/core/server` imports).
  * The `jwt` callback checks `tokenVersion` presence and the `session` callback
  * populates the session shape. The full provider config lives in `auth.ts`.
