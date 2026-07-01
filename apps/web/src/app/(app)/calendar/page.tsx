@@ -530,8 +530,11 @@ export default function CalendarPage() {
           onClose={() => setFreezeOpen(false)}
           onFrozen={() => { setFreezeOpen(false); void refetch(); }}
           calendarId={calendar.id}
+          brandId={calendar.brandId}
+          seasonId={calendar.seasonId}
           milestones={filteredMilestones}
           holidayDates={holidayDates}
+          onAnchorsChanged={() => void refetch()}
         />
       )}
 

@@ -161,6 +161,7 @@ export async function listMilestonesDb(
     include: {
       visibilities: true,
       notes: { where: { userId }, take: 1 },
+      anchors: { select: { entityType: true, entityId: true } },
     },
     orderBy: { startAt: 'asc' },
   });

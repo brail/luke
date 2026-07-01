@@ -37,6 +37,13 @@ export function daysBetween(a: Date, b: Date): number {
   return Math.round((b.getTime() - a.getTime()) / 86_400_000);
 }
 
+/** Describes a CalendarEvent's CalendarEventAnchor scope for display ("tutte le righe" | "N righe"). */
+export function describeAnchorScope(anchors: { entityType: string; entityId: string }[] | undefined): string {
+  const rowAnchors = (anchors ?? []).filter(a => a.entityType === 'COLLECTION_LAYOUT_ROW');
+  if (rowAnchors.length === 0) return 'tutte le righe';
+  return `${rowAnchors.length} riga${rowAnchors.length === 1 ? '' : 'e'}`;
+}
+
 /** Returns the ISO 8601 week number (1–53) for the given date. */
 export function getIsoWeek(d: Date): number {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));

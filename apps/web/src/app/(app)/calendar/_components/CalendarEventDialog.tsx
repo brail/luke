@@ -29,7 +29,7 @@ import { Textarea } from '../../../../components/ui/textarea';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 import { STATUS_LABELS, STATUS_VARIANT, TYPE_LABELS } from '../constants';
-import { daysBetween } from '../utils';
+import { daysBetween, describeAnchorScope } from '../utils';
 
 interface ExistingEvent {
   id: string;
@@ -45,6 +45,7 @@ interface ExistingEvent {
   ownerFunctionId: string;
   publishExternally: boolean;
   visibilities: { functionId: string }[];
+  anchors?: { entityType: string; entityId: string }[];
 }
 
 interface Props {
@@ -244,6 +245,7 @@ export function CalendarEventDialog({
               <Badge variant="outline">{typeLabel}</Badge>
               <Badge variant={STATUS_VARIANT[event.status] ?? 'outline'}>{STATUS_LABELS[event.status] ?? event.status}</Badge>
               <Badge variant="secondary">{functionsById[event.ownerFunctionId] ?? event.ownerFunctionId}</Badge>
+              <Badge variant="outline" className="text-muted-foreground">Ambito: {describeAnchorScope(event.anchors)}</Badge>
             </div>
             <div>
               <p className="text-sm font-medium text-muted-foreground mb-1">Data</p>

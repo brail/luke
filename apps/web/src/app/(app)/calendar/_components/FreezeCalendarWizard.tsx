@@ -1,6 +1,7 @@
 'use client';
 
 import { AlertTriangle } from 'lucide-react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { Badge } from '../../../../components/ui/badge';
@@ -15,7 +16,9 @@ import {
 import { ScrollArea } from '../../../../components/ui/scroll-area';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
-import { toUtcIsoDate } from '../utils';
+import { describeAnchorScope, toUtcIsoDate } from '../utils';
+
+import { EventAnchorDialog } from './EventAnchorDialog';
 
 import type { CalendarEventItem } from './types';
 import type { HolidayMap } from './useHolidays';
@@ -25,8 +28,11 @@ interface Props {
   onClose: () => void;
   onFrozen: () => void;
   calendarId: string;
+  brandId: string;
+  seasonId: string;
   milestones: CalendarEventItem[];
   holidayDates: HolidayMap;
+  onAnchorsChanged: () => void;
 }
 
 /**
@@ -41,7 +47,10 @@ interface Props {
  * @param holidayDates - Holiday map used to warn when an event falls on a holiday.
  * @param onFrozen - Called after the calendar is successfully frozen.
  */
-export function FreezeCalendarWizard({ open, onClose, onFrozen, calendarId, milestones, holidayDates }: Props) {
+export function FreezeCalendarWizard({ open, onClose, onFrozen, calendarId, brandId, seasonId, milestones, holidayDates, onAnchorsChanged }: Props) {
+  const [anchorEventId, setAnchorEventId] = useState<string | null>(null);
+  const anchorEvent = milestones.find(m => m.id === anchorEventId) ?? null;
+
   const freezeMutation = trpc.seasonCalendar.freezeCalendar.useMutation({
     onSuccess: () => {
       toast.success('Calendario congelato — baseline salvata');
@@ -58,6 +67,7 @@ export function FreezeCalendarWizard({ open, onClose, onFrozen, calendarId, mile
   const eventsOnHolidayCount = milestonesWithHolidayFlag.filter(m => m.onHoliday).length;
 
   return (
+    <>
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
       <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
@@ -90,6 +100,14 @@ export function FreezeCalendarWizard({ open, onClose, onFrozen, calendarId, mile
                     {new Date(m.startAt).toLocaleDateString('it-IT')}
                   </span>
                   {onHoliday && <Badge variant="outline" className="text-xs text-amber-700 border-amber-300">festivo</Badge>}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-1.5 text-xs text-muted-foreground"
+                    onClick={() => setAnchorEventId(m.id)}
+                  >
+                    {describeAnchorScope(m.anchors)}
+                  </Button>
                 </div>
               ))}
               {milestones.length === 0 && (
@@ -112,5 +130,20 @@ export function FreezeCalendarWizard({ open, onClose, onFrozen, calendarId, mile
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+      {anchorEvent && (
+        <EventAnchorDialog
+          key={anchorEvent.id}
+          open={!!anchorEventId}
+          onClose={() => setAnchorEventId(null)}
+          onSaved={() => { setAnchorEventId(null); onAnchorsChanged(); }}
+          eventId={anchorEvent.id}
+          eventTitle={anchorEvent.title}
+          brandId={brandId}
+          seasonId={seasonId}
+          currentAnchors={anchorEvent.anchors ?? []}
+        />
+      )}
+    </>
   );
 }
