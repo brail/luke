@@ -1678,6 +1678,8 @@ model SeasonCalendar {
   status     SeasonCalendarStatus @default(DRAFT)
   /// Reference date for milestone template offset calculations. Date only (no time).
   anchorDate DateTime?            @db.Date
+  /// Timestamp when the calendar's baseline was frozen (orthogonal to status — not a lifecycle state).
+  frozenAt   DateTime?
   createdAt  DateTime             @default(now())
   updatedAt  DateTime             @updatedAt
 
@@ -1712,6 +1714,11 @@ model CalendarEvent {
   description       String?
   startAt           DateTime
   endAt             DateTime?
+  /// Snapshot of startAt at freeze time. Written once by freezeCalendar, never updated afterwards —
+  /// the immutable "planned" baseline against which drift is measured. Null until the calendar is frozen.
+  baselineStartAt   DateTime?
+  /// Snapshot of endAt at freeze time. Same immutability contract as baselineStartAt.
+  baselineEndAt     DateTime?
   /// True if the event spans the full day (time portion ignored).
   allDay            Boolean             @default(false)
   /// If true, the event is exported to Google Calendar for visible functions.

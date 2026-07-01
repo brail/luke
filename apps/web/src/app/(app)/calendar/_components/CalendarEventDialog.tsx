@@ -29,6 +29,7 @@ import { Textarea } from '../../../../components/ui/textarea';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 import { STATUS_LABELS, STATUS_VARIANT, TYPE_LABELS } from '../constants';
+import { daysBetween } from '../utils';
 
 interface ExistingEvent {
   id: string;
@@ -36,6 +37,8 @@ interface ExistingEvent {
   description?: string | null;
   startAt: Date | string;
   endAt?: Date | string | null;
+  baselineStartAt?: Date | string | null;
+  baselineEndAt?: Date | string | null;
   allDay: boolean;
   status: string;
   type: string;
@@ -77,6 +80,16 @@ function buildIso(date: string, time: string): string {
 function addOneHour(time: string): string {
   const [h, m] = time.split(':').map(Number);
   return `${((h + 1) % 24).toString().padStart(2, '0')}:${(m ?? 0).toString().padStart(2, '0')}`;
+}
+
+// TODO(Fase5): motore alert avrà bisogno dello stesso calcolo di scostamento lato server —
+// se estratto in helper condiviso, mantenere identica la semantica di arrotondamento (daysBetween).
+/** Days elapsed between the frozen baseline start and the current start, or null if not frozen / unchanged. */
+function describeBaselineDrift(event: ExistingEvent): string | null {
+  if (!event.baselineStartAt) return null;
+  const diff = daysBetween(new Date(event.baselineStartAt), new Date(event.startAt));
+  if (diff === 0) return null;
+  return diff > 0 ? `Spostato di ${diff}g rispetto al piano originale` : `Anticipato di ${-diff}g rispetto al piano originale`;
 }
 
 /**
@@ -219,6 +232,7 @@ export function CalendarEventDialog({
       ? new Date(event.startAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
       : null;
     const typeLabel = catalogItems.find(c => c.value === event.type)?.label ?? TYPE_LABELS[event.type] ?? event.type;
+    const baselineDrift = describeBaselineDrift(event);
     return (
       <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
         <DialogContent className="sm:max-w-[480px]">
@@ -239,6 +253,11 @@ export function CalendarEventDialog({
                   → {new Date(event.endAt).toLocaleDateString('it-IT')}
                   {!event.allDay && ` · ${new Date(event.endAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`}
                 </p>
+              )}
+              {baselineDrift && (
+                <Badge variant="outline" className="mt-1.5 text-xs text-amber-700 border-amber-300 bg-amber-50">
+                  {baselineDrift}
+                </Badge>
               )}
             </div>
             {event.description && (
@@ -265,6 +284,8 @@ export function CalendarEventDialog({
       </Dialog>
     );
   }
+
+  const editFormBaselineDrift = event ? describeBaselineDrift(event) : null;
 
   return (
     <>
@@ -350,6 +371,12 @@ export function CalendarEventDialog({
                 )}
               </div>
             </div>
+
+            {editFormBaselineDrift && (
+              <Badge variant="outline" className="text-xs text-amber-700 border-amber-300 bg-amber-50">
+                {editFormBaselineDrift}
+              </Badge>
+            )}
 
             <div className="flex items-center gap-2">
               <Checkbox id="ev-publish" checked={publishExternally} onCheckedChange={v => setPublishExternally(!!v)} />

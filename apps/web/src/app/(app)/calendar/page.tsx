@@ -1,6 +1,6 @@
 'use client';
 
-import { Calendar, CalendarClock, RefreshCw, Copy, Plus, List, GanttChart, CalendarRange, CalendarDays, Maximize2, Minimize2, ChevronDown, Check, MoreHorizontal } from 'lucide-react';
+import { Calendar, CalendarClock, RefreshCw, Copy, Plus, List, GanttChart, CalendarRange, CalendarDays, Maximize2, Minimize2, ChevronDown, Check, MoreHorizontal, Snowflake } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
@@ -26,9 +26,11 @@ import { CalendarEventTimeline } from './_components/CalendarEventTimeline';
 import { CalendarEventWeekView } from './_components/CalendarEventWeekView';
 import { CloneBrandSeasonDialog } from './_components/CloneBrandSeasonDialog';
 import { ExportButton } from './_components/ExportButton';
-import type { CalendarEventItem } from './_components/types';
+import { FreezeCalendarWizard } from './_components/FreezeCalendarWizard';
 import { useHolidays } from './_components/useHolidays';
 import { assignBrandColors, resolveBrandColor } from './utils';
+
+import type { CalendarEventItem } from './_components/types';
 
 const VALID_VIEWS = ['list', 'gantt', 'week', 'day', 'month'] as const;
 type CalendarView = (typeof VALID_VIEWS)[number];
@@ -47,6 +49,7 @@ export default function CalendarPage() {
   const [createDefaultAllDay, setCreateDefaultAllDay] = useState(true);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
+  const [freezeOpen, setFreezeOpen] = useState(false);
   const [view, setViewState] = useState<CalendarView>(() => {
     const v = searchParams.get('view');
     return (VALID_VIEWS as readonly string[]).includes(v ?? '') ? (v as CalendarView) : 'month';
@@ -146,6 +149,7 @@ export default function CalendarPage() {
 
   const canSync = can('season_calendar:sync');
   const canUpdate = can('season_calendar:update');
+  const canFreeze = can('season_calendar:freeze');
 
   const handleDayClick = useCallback((isoDate: string) => { setCreateDefaultAllDay(true); setCreateDate(isoDate); }, []);
   const handleDayClickTimed = useCallback((isoDate: string) => { setCreateDefaultAllDay(false); setCreateDate(isoDate); }, []);
@@ -232,6 +236,12 @@ export default function CalendarPage() {
               <DropdownMenuItem onClick={() => setTemplateOpen(true)} disabled={!calendar}>
                 Applica template
               </DropdownMenuItem>
+              {canFreeze && (
+                <DropdownMenuItem onClick={() => setFreezeOpen(true)} disabled={!calendar || !!calendar.frozenAt}>
+                  <Snowflake size={13} className="mr-2" />
+                  {calendar?.frozenAt ? 'Pianificazione congelata' : 'Congela pianificazione'}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
             </>
           )}
@@ -511,6 +521,17 @@ export default function CalendarPage() {
           onApplied={() => { setTemplateOpen(false); void refetch(); }}
           calendarId={calendar.id}
           hasMilestones={(milestones?.length ?? 0) > 0}
+        />
+      )}
+
+      {calendar && freezeOpen && (
+        <FreezeCalendarWizard
+          open={freezeOpen}
+          onClose={() => setFreezeOpen(false)}
+          onFrozen={() => { setFreezeOpen(false); void refetch(); }}
+          calendarId={calendar.id}
+          milestones={filteredMilestones}
+          holidayDates={holidayDates}
         />
       )}
 

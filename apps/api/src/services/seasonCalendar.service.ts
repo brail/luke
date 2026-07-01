@@ -90,6 +90,46 @@ export async function setAnchorDate(
   return prisma.seasonCalendar.update({ where: { id: calendarId }, data: { anchorDate } });
 }
 
+/**
+ * Freezes a SeasonCalendar's baseline: snapshots the current startAt/endAt of every event into
+ * baselineStartAt/baselineEndAt (written once, never updated afterwards), then sets frozenAt.
+ * startAt/endAt remain freely editable after freeze — only the baseline snapshot is immutable.
+ *
+ * @throws {TRPCError} NOT_FOUND if the calendar does not exist.
+ * @throws {TRPCError} CONFLICT if the calendar was already frozen (re-freeze is not supported —
+ *   the baseline must reflect the plan "as it was" at first freeze, never a later re-snapshot).
+ */
+export async function freezeCalendar(calendarId: string, prisma: PrismaClient) {
+  return prisma.$transaction(async tx => {
+    const calendar = await tx.seasonCalendar.findUnique({ where: { id: calendarId } });
+    if (!calendar) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
+    }
+    if (calendar.frozenAt) {
+      throw new TRPCError({ code: 'CONFLICT', message: 'Calendario già congelato' });
+    }
+
+    const events = await tx.calendarEvent.findMany({
+      where: { calendarId },
+      select: { id: true, startAt: true, endAt: true },
+    });
+
+    await Promise.all(
+      events.map(event =>
+        tx.calendarEvent.update({
+          where: { id: event.id },
+          data: { baselineStartAt: event.startAt, baselineEndAt: event.endAt },
+        })
+      )
+    );
+
+    return tx.seasonCalendar.update({
+      where: { id: calendarId },
+      data: { frozenAt: new Date() },
+    });
+  });
+}
+
 // ─── Milestone list ───────────────────────────────────────────────────────────
 
 /**

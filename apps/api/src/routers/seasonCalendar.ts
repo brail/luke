@@ -2,7 +2,7 @@
  * tRPC router for season calendar management.
  *
  * Covers the full lifecycle of a seasonal planning calendar:
- *  - Calendar CRUD: getOrCreate, updateStatus, setAnchorDate
+ *  - Calendar CRUD: getOrCreate, updateStatus, setAnchorDate, freezeCalendar
  *  - Milestones: listMilestones, createMilestone, updateMilestone, deleteMilestone(s), setMilestoneStatus
  *  - Personal notes: upsertNote, deleteNote
  *  - Templates: listTemplates, applyTemplate, createTemplate, updateTemplate, deleteTemplate,
@@ -16,9 +16,9 @@
  * Brand access is enforced per-operation via `assertBrandAccess`.
  */
 
-import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import type { PrismaClient } from '@prisma/client';
+import { z } from 'zod';
+
 
 import {
   CalendarEventInputSchema,
@@ -33,30 +33,28 @@ import {
   type Role,
 } from '@luke/core';
 
-import { assertFunctionMemberOrAdmin } from './company.js';
 
 import { logAudit } from '../lib/auditLog.js';
 import { toErrorMessage } from '../lib/error.js';
 import { createNotification, getVisibleUserIdsForMilestone, getVisibleUserIdsForMilestones, notifyCalendarChange } from '../lib/notifications.js';
-import { sseStore } from '../lib/sseStore.js';
-import { withRateLimit } from '../lib/ratelimit.js';
-import { router, protectedProcedure } from '../lib/trpc.js';
 import { requirePermission } from '../lib/permissions.js';
+import { withRateLimit } from '../lib/ratelimit.js';
+import { sseStore } from '../lib/sseStore.js';
+import { router, protectedProcedure } from '../lib/trpc.js';
+import { executeEffect } from '../services/calendar/effects/executor.js';
+import { rollbackEffect } from '../services/calendar/effects/rollback.js';
 import {
   syncOneMilestone,
   cleanupMilestoneEvents,
   reconcileCalendar,
 } from '../services/googleCalendarSync.service.js';
-
-import { executeEffect } from '../services/calendar/effects/executor.js';
-import { rollbackEffect } from '../services/calendar/effects/rollback.js';
-
 import {
   assertBrandAccess,
   filterAllowedBrandIds,
   getOrCreateCalendar,
   updateCalendarStatus,
   setAnchorDate,
+  freezeCalendar,
   listMilestonesDb,
   createMilestone,
   updateMilestone,
@@ -74,6 +72,10 @@ import {
   cloneFromBrandSeason,
   getSyncStatus,
 } from '../services/seasonCalendar.service.js';
+
+import { assertFunctionMemberOrAdmin } from './company.js';
+
+import type { PrismaClient } from '@prisma/client';
 
 export const seasonCalendarRouter = router({
   // ─── Calendar management ────────────────────────────────────────────────────
@@ -148,6 +150,30 @@ export const seasonCalendarRouter = router({
       await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
       const result = await setAnchorDate(input.calendarId, new Date(input.anchorDate), ctx.prisma);
       await logAudit(ctx, { action: 'SEASON_CALENDAR_ANCHOR_SET', targetType: 'SeasonCalendar', targetId: input.calendarId, result: 'SUCCESS', metadata: {} });
+      return result;
+    }),
+
+  /**
+   * Freezes a calendar's baseline: snapshots every event's current startAt/endAt into
+   * baselineStartAt/baselineEndAt, written once. startAt/endAt remain freely editable afterwards.
+   *
+   * @auth season_calendar:freeze
+   * @input { calendarId }
+   * @output Updated SeasonCalendar
+   */
+  freezeCalendar: protectedProcedure
+    .use(requirePermission('season_calendar:freeze'))
+    .use(withRateLimit('configMutations'))
+    .input(z.object({ calendarId: z.string().uuid() }))
+    .mutation(async ({ input, ctx }) => {
+      const calendar = await ctx.prisma.seasonCalendar.findUnique({
+        where: { id: input.calendarId },
+        select: { brandId: true },
+      });
+      if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
+      await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
+      const result = await freezeCalendar(input.calendarId, ctx.prisma);
+      await logAudit(ctx, { action: 'CALENDAR_FROZEN', targetType: 'SeasonCalendar', targetId: input.calendarId, result: 'SUCCESS', metadata: {} });
       return result;
     }),
 

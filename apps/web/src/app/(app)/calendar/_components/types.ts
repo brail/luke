@@ -7,6 +7,8 @@ export interface CalendarEventItem {
   description?: string | null;
   startAt: Date | string;
   endAt?: Date | string | null;
+  baselineStartAt?: Date | string | null;
+  baselineEndAt?: Date | string | null;
   allDay: boolean;
   status: string;
   type: string;
