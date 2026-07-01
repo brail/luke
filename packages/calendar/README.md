@@ -1,7 +1,7 @@
 # @luke/calendar
 
 <!-- luke-docs:start:overview -->
-Libreria di integrazione calendario per Luke: sincronizza le milestone stagionali con Google Calendar, genera feed iCal e risolve dipendenze tra eventi tramite un solver topologico.
+Libreria di integrazione calendario per Luke: sincronizza le milestone stagionali con Google Calendar e genera feed iCal.
 <!-- luke-docs:end:overview -->
 
 ## Utilizzato da
@@ -40,23 +40,12 @@ Libreria di integrazione calendario per Luke: sincronizza le milestone stagional
 | Simbolo | Tipo | Descrizione |
 |---------|------|-------------|
 | `generateIcal` | funzione | Genera feed iCal (`.ics`) da lista di milestone — compatibile Outlook, Apple Calendar |
-
-### Solver dipendenze
-
-| Simbolo | Tipo | Descrizione |
-|---------|------|-------------|
-| `buildGraph` | funzione | Costruisce il grafo delle dipendenze tra milestone |
-| `topologicalSort` | funzione | Ordina le milestone rispettando i vincoli di dipendenza |
-| `detectViolations` | funzione | Rileva violazioni (scadenze incompatibili con le dipendenze) |
-| `suggestResolution` | funzione | Propone shift minimi di date per risolvere le violazioni |
-| `SolverEvent` / `SolverDependency` / `Violation` / `ProposedShift` | tipo | Tipi di input/output del solver |
 <!-- luke-docs:end:exports -->
 
 ## Concetti chiave
 
 <!-- luke-docs:start:concepts -->
 - **Sync idempotente**: `syncMilestone` usa `computeContentHash` per confrontare lo stato attuale dell'evento Google con i dati Luke. Scrive su Google Calendar solo se il contenuto è cambiato — zero scritture ridondanti.
-- **Solver topologico**: il modulo `solver/` risolve il grafo di dipendenze `MilestoneDependency` — rileva cicli, valida ordini temporali, propone spostamenti minimi per rispettare tutti i vincoli.
 - **Google OAuth 2.0**: le credenziali OAuth (client ID, secret, refresh token) sono salvate cifrate in AppConfig. Il flusso di autorizzazione è gestito via `/settings/google` nel frontend.
 - **iCal per export**: `generateIcal` produce feed `.ics` standard — usato dall'endpoint `/api/ical/:token` per abbonamenti calendario esterni.
 - **Nessun import da `apps/api`**: la configurazione OAuth è iniettata esternamente. Il package dipende solo da `@luke/core`, `googleapis` e `ical-generator`.
@@ -66,7 +55,7 @@ Libreria di integrazione calendario per Luke: sincronizza le milestone stagional
 
 <!-- luke-docs:start:example -->
 ```typescript
-import { createGoogleCalendarClient, syncMilestone, generateIcal, detectViolations } from '@luke/calendar';
+import { createGoogleCalendarClient, syncMilestone, generateIcal } from '@luke/calendar';
 
 // Istanzia client Google da config OAuth
 const client = await createGoogleCalendarClient(oauthConfig);
@@ -76,8 +65,5 @@ await syncMilestone(client, { milestone, binding, context });
 
 // Genera feed iCal per export/abbonamento
 const icsContent = generateIcal(milestones);
-
-// Rileva violazioni di dipendenza prima di salvare
-const violations = detectViolations(buildGraph({ events: milestones, dependencies }));
 ```
 <!-- luke-docs:end:example -->

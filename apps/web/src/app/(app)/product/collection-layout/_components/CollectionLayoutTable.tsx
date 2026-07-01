@@ -51,7 +51,6 @@ interface CollectionLayoutTableProps {
   layout: CollectionLayoutData;
   canUpdate: boolean;
   parameterSets: PricingParameterSet[];
-  laggingRowIds?: Set<string>;
   onAddGroup: () => void;
   onAddRow: (groupId: string) => void;
   onEditRow: (row: CollectionRowData) => void;
@@ -79,7 +78,6 @@ interface CollectionLayoutTableProps {
  *
  * @param layout - Full collection layout including groups and hiddenColumns setting.
  * @param parameterSets - Pricing parameter sets forwarded to each group section.
- * @param laggingRowIds - Row IDs behind a collection deadline, forwarded for highlighting.
  * @param onUpdateSettings - Called when the user changes column visibility.
  * @param readOnly - Disables all mutation controls when true.
  */
@@ -87,7 +85,6 @@ export function CollectionLayoutTable({
   layout,
   canUpdate,
   parameterSets,
-  laggingRowIds,
   onAddGroup,
   onAddRow,
   onEditRow,
@@ -319,7 +316,6 @@ export function CollectionLayoutTable({
             hiddenColumns={effectiveHiddenColumns}
             parameterSets={parameterSets}
             searchQuery={search}
-            laggingRowIds={laggingRowIds}
             onAddRow={onAddRow}
             onEditRow={onEditRow}
             onDuplicateRow={onDuplicateRow}

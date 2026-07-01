@@ -191,7 +191,6 @@ export default function RevisionDetailPage() {
         canUpdate={false}
         readOnly={true}
         parameterSets={parameterSets as any}
-        laggingRowIds={undefined}
         onAddGroup={() => {}}
         onAddRow={() => {}}
         onEditRow={row => setViewRow(row)}

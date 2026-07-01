@@ -6,17 +6,12 @@
  *  - Milestones: listMilestones, createMilestone, updateMilestone, deleteMilestone(s), setMilestoneStatus
  *  - Personal notes: upsertNote, deleteNote
  *  - Templates: listTemplates, applyTemplate, createTemplate, updateTemplate, deleteTemplate,
- *               createTemplateItem, updateTemplateItem, deleteTemplateItem,
- *               addTemplateDependency, updateTemplateDependencyGaps, deleteTemplateDependency
+ *               createTemplateItem, updateTemplateItem, deleteTemplateItem
  *  - Clone: cloneFromBrandSeason
  *  - Google Calendar sync: getSyncStatus, triggerSync
  *  - User visibility: grantUserVisibility, revokeUserVisibility
- *  - Dependencies: getDependencies, addDependency, updateDependencyGaps,
- *                  toggleDependencyDisabled, deleteDependency
  *  - Anchors: setEventAnchors
  *  - State effects: executeStateEffect, rollbackStateEffect
- *  - What-if simulation: simulate
- *  - Collection integration: listEventsForCollection
  *
  * Brand access is enforced per-operation via `assertBrandAccess`.
  */
@@ -24,7 +19,6 @@
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import type { PrismaClient } from '@prisma/client';
-import { detectViolations, suggestResolution, type GraphInput } from '@luke/calendar';
 
 import {
   CalendarEventInputSchema,
@@ -32,11 +26,7 @@ import {
   CloneSeasonCalendarInputSchema,
   CalendarEventPersonalNoteInputSchema,
   CalendarEventUserVisibilityInputSchema,
-  CalendarEventDependencyInputSchema,
-  TemplateDependencyInputSchema,
-  UpdateDependencyGapsInputSchema,
   CalendarEventAnchorInputSchema,
-  WhatIfRequestSchema,
   SEASON_CALENDAR_STATUS,
   CALENDAR_EVENT_STATUS,
   hasPermission,
@@ -60,7 +50,6 @@ import {
 
 import { executeEffect } from '../services/calendar/effects/executor.js';
 import { rollbackEffect } from '../services/calendar/effects/rollback.js';
-import { loadHolidaysForSolver } from '../services/calendar/holidayQuery.js';
 
 import {
   assertBrandAccess,
@@ -246,7 +235,31 @@ export const seasonCalendarRouter = router({
       await assertBrandAccess(ctx.session.user.id, event.calendar.brandId, ctx.prisma);
 
       const result = await updateMilestone(input.id, input.data, ctx.prisma);
-      await logAudit(ctx, { action: 'CALENDAR_EVENT_UPDATE', targetType: 'CalendarEvent', targetId: input.id, result: 'SUCCESS', metadata: { title: result.title, calendarId: event.calendarId } });
+
+      const dateChanged = event.startAt.getTime() !== result.startAt.getTime()
+        || (event.endAt?.getTime() ?? null) !== (result.endAt?.getTime() ?? null);
+      const FIELD_LABELS: Record<string, string> = {
+        description: 'Descrizione', type: 'Tipo evento',
+        ownerFunctionId: 'Owner',
+        publishExternally: 'Sincronizzazione Google', templateItemId: 'Template',
+        allDay: 'Giornata intera',
+      };
+      const changedFields = Object.keys(FIELD_LABELS).filter(
+        k => JSON.stringify((event as Record<string, unknown>)[k]) !== JSON.stringify((result as Record<string, unknown>)[k])
+      ).map(k => FIELD_LABELS[k]);
+
+      await logAudit(ctx, {
+        action: 'CALENDAR_EVENT_UPDATE', targetType: 'CalendarEvent', targetId: input.id, result: 'SUCCESS',
+        metadata: {
+          title: result.title, calendarId: event.calendarId,
+          ...(dateChanged && {
+            oldStartAt: event.startAt.toISOString(), newStartAt: result.startAt.toISOString(),
+            oldEndAt: event.endAt?.toISOString() ?? null, newEndAt: result.endAt?.toISOString() ?? null,
+            allDay: result.allDay,
+          }),
+          ...(changedFields.length > 0 && { changedFields }),
+        },
+      });
       sseStore.pushToAll({ type: 'calendar-updated', seasonId: event.calendar.seasonId });
       notifyCalendarChange(ctx.prisma, {
         eventId: input.id,
@@ -282,7 +295,13 @@ export const seasonCalendarRouter = router({
       const visibleUserIds = await getVisibleUserIdsForMilestone(input.id, ctx.prisma);
       await cleanupMilestoneEvents(input.id, ctx.prisma, ctx.logger);
       await deleteMilestone(input.id, ctx.prisma);
-      await logAudit(ctx, { action: 'CALENDAR_MILESTONE_DELETE', targetType: 'CalendarMilestone', targetId: input.id, result: 'SUCCESS', metadata: { title: event.title, calendarId: event.calendarId, visibleUserIds } });
+      await logAudit(ctx, {
+        action: 'CALENDAR_MILESTONE_DELETE', targetType: 'CalendarMilestone', targetId: input.id, result: 'SUCCESS',
+        metadata: {
+          title: event.title, calendarId: event.calendarId, visibleUserIds,
+          startAt: event.startAt.toISOString(), endAt: event.endAt?.toISOString() ?? null, allDay: event.allDay,
+        },
+      });
       sseStore.pushToAll({ type: 'calendar-updated', seasonId: event.calendar.seasonId });
       notifyCalendarChange(ctx.prisma, {
         preloadedUserIds: visibleUserIds,
@@ -321,6 +340,9 @@ export const seasonCalendarRouter = router({
         title: e.title,
         calendarId: e.calendarId,
         userIds: visibilityMap.get(e.id) ?? [],
+        startAt: e.startAt.toISOString(),
+        endAt: e.endAt?.toISOString() ?? null,
+        allDay: e.allDay,
       }));
       await Promise.all(events.map(e => cleanupMilestoneEvents(e.id, ctx.prisma, ctx.logger)));
       await ctx.prisma.calendarEvent.deleteMany({ where: { id: { in: input.ids } } });
@@ -329,7 +351,13 @@ export const seasonCalendarRouter = router({
         targetType: 'CalendarEvent',
         targetId: input.ids.join(','),
         result: 'SUCCESS',
-        metadata: { count: input.ids.length, snapshots: visibilitySnapshots.map(s => ({ id: s.id, title: s.title, calendarId: s.calendarId, visibleUserIds: s.userIds })) },
+        metadata: {
+          count: input.ids.length,
+          snapshots: visibilitySnapshots.map(s => ({
+            id: s.id, title: s.title, calendarId: s.calendarId, visibleUserIds: s.userIds,
+            startAt: s.startAt, endAt: s.endAt, allDay: s.allDay,
+          })),
+        },
       });
       const uniqueSeasonIds = [...new Set(events.map(e => e.calendar.seasonId).filter((id): id is string => id != null))];
       for (const seasonId of uniqueSeasonIds) sseStore.pushToAll({ type: 'calendar-updated', seasonId });
@@ -416,7 +444,7 @@ export const seasonCalendarRouter = router({
         }));
       }
 
-      await logAudit(ctx, { action: 'CALENDAR_EVENT_STATUS_UPDATE', targetType: 'CalendarEvent', targetId: input.id, result: 'SUCCESS', metadata: { status: input.status, title: event.title, calendarId: event.calendarId } });
+      await logAudit(ctx, { action: 'CALENDAR_EVENT_STATUS_UPDATE', targetType: 'CalendarEvent', targetId: input.id, result: 'SUCCESS', metadata: { status: input.status, oldStatus: event.status, title: event.title, calendarId: event.calendarId } });
       sseStore.pushToAll({ type: 'calendar-updated', seasonId: event.calendar.seasonId });
       syncOneMilestone(input.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on status change'));
 
@@ -629,56 +657,6 @@ export const seasonCalendarRouter = router({
       return { success: true };
     }),
 
-  // ─── Template dependencies ───────────────────────────────────────────────────
-
-  addTemplateDependency: protectedProcedure
-    .use(requirePermission('milestone_template:update'))
-    .input(TemplateDependencyInputSchema)
-    .mutation(async ({ input, ctx }) => {
-      const foundItems = await ctx.prisma.milestoneTemplateItem.findMany({
-        where: { id: { in: [input.predecessorId, input.successorId] } },
-        select: { id: true, templateId: true },
-      });
-      const pred = foundItems.find(i => i.id === input.predecessorId);
-      const succ = foundItems.find(i => i.id === input.successorId);
-      if (!pred || !succ) throw new TRPCError({ code: 'NOT_FOUND', message: 'Template item non trovato' });
-      if (pred.templateId !== succ.templateId) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Gli item devono appartenere allo stesso template' });
-      const dep = await ctx.prisma.milestoneTemplateDependency.create({
-        data: {
-          predecessorId: input.predecessorId,
-          successorId:   input.successorId,
-          minGapDays:    input.minGapDays,
-          maxGapDays:    input.maxGapDays,
-          severity:      input.severity,
-          reason:        input.reason,
-        },
-      });
-      await logAudit(ctx, { action: 'TEMPLATE_DEPENDENCY_ADD', targetType: 'MilestoneTemplateDependency', targetId: dep.id, result: 'SUCCESS', metadata: { predecessorId: input.predecessorId, successorId: input.successorId } });
-      return dep;
-    }),
-
-  updateTemplateDependencyGaps: protectedProcedure
-    .use(requirePermission('milestone_template:update'))
-    .input(UpdateDependencyGapsInputSchema)
-    .mutation(async ({ input, ctx }) => {
-      const { id, ...gaps } = input;
-      const dep = await ctx.prisma.milestoneTemplateDependency.update({
-        where: { id },
-        data: gaps,
-      });
-      await logAudit(ctx, { action: 'TEMPLATE_DEPENDENCY_UPDATE', targetType: 'MilestoneTemplateDependency', targetId: id, result: 'SUCCESS', metadata: gaps });
-      return dep;
-    }),
-
-  deleteTemplateDependency: protectedProcedure
-    .use(requirePermission('milestone_template:update'))
-    .input(z.object({ id: z.string().uuid() }))
-    .mutation(async ({ input, ctx }) => {
-      await ctx.prisma.milestoneTemplateDependency.delete({ where: { id: input.id } });
-      await logAudit(ctx, { action: 'TEMPLATE_DEPENDENCY_DELETE', targetType: 'MilestoneTemplateDependency', targetId: input.id, result: 'SUCCESS' });
-      return { success: true };
-    }),
-
   // ─── Clone ──────────────────────────────────────────────────────────────────
 
   /**
@@ -814,123 +792,6 @@ export const seasonCalendarRouter = router({
       return { ok: true };
     }),
 
-  // ─── Dependencies ───────────────────────────────────────────────────────────
-
-  /**
-   * Returns all event dependencies (predecessor/successor pairs) for a calendar.
-   *
-   * @auth season_calendar:read
-   * @input { calendarId }
-   * @output Array of CalendarEventDependency
-   */
-  getDependencies: protectedProcedure
-    .use(requirePermission('season_calendar:read'))
-    .input(z.object({ calendarId: z.string().uuid() }))
-    .query(async ({ input, ctx }) => {
-      const calendar = await ctx.prisma.seasonCalendar.findUnique({
-        where: { id: input.calendarId },
-        select: { brandId: true },
-      });
-      if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
-      await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
-
-      const events = await ctx.prisma.calendarEvent.findMany({
-        where: { calendarId: input.calendarId },
-        select: { id: true },
-      });
-      const eventIds = events.map(e => e.id);
-
-      return ctx.prisma.calendarEventDependency.findMany({
-        where: { OR: [{ predecessorId: { in: eventIds } }, { successorId: { in: eventIds } }] },
-        orderBy: { createdAt: 'asc' },
-      });
-    }),
-
-  addDependency: protectedProcedure
-    .use(requirePermission('season_calendar:configure_dependencies'))
-    .use(withRateLimit('configMutations'))
-    .input(CalendarEventDependencyInputSchema)
-    .mutation(async ({ input, ctx }) => {
-      const [pred, succ] = await Promise.all([
-        ctx.prisma.calendarEvent.findUnique({
-          where: { id: input.predecessorId },
-          select: { calendarId: true },
-        }),
-        ctx.prisma.calendarEvent.findUnique({
-          where: { id: input.successorId },
-          select: { calendarId: true },
-        }),
-      ]);
-      if (!pred || !succ) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
-
-      const result = await ctx.prisma.calendarEventDependency.create({
-        data: {
-          predecessorId: input.predecessorId,
-          successorId: input.successorId,
-          minGapDays: input.minGapDays,
-          maxGapDays: input.maxGapDays,
-          severity: input.severity,
-          reason: input.reason,
-          isDisabled: false,
-          inheritedFromId: null,
-        },
-      });
-      await logAudit(ctx, { action: 'CALENDAR_DEPENDENCY_ADD', targetType: 'CalendarEventDependency', targetId: result.id, result: 'SUCCESS', metadata: { predecessorId: input.predecessorId, successorId: input.successorId } });
-      return result;
-    }),
-
-  updateDependencyGaps: protectedProcedure
-    .use(requirePermission('season_calendar:configure_dependencies'))
-    .use(withRateLimit('configMutations'))
-    .input(UpdateDependencyGapsInputSchema)
-    .mutation(async ({ input, ctx }) => {
-      const dep = await ctx.prisma.calendarEventDependency.findUnique({ where: { id: input.id } });
-      if (!dep) throw new TRPCError({ code: 'NOT_FOUND', message: 'Dipendenza non trovata' });
-
-      const result = await ctx.prisma.calendarEventDependency.update({
-        where: { id: input.id },
-        data: {
-          ...(input.minGapDays !== undefined ? { minGapDays: input.minGapDays } : {}),
-          ...(input.maxGapDays !== undefined ? { maxGapDays: input.maxGapDays } : {}),
-        },
-      });
-      await logAudit(ctx, { action: 'CALENDAR_DEPENDENCY_UPDATE_GAPS', targetType: 'CalendarEventDependency', targetId: input.id, result: 'SUCCESS', metadata: { minGapDays: input.minGapDays, maxGapDays: input.maxGapDays } });
-      return result;
-    }),
-
-  toggleDependencyDisabled: protectedProcedure
-    .use(requirePermission('season_calendar:configure_dependencies'))
-    .use(withRateLimit('configMutations'))
-    .input(z.object({ id: z.string().uuid(), isDisabled: z.boolean() }))
-    .mutation(async ({ input, ctx }) => {
-      const dep = await ctx.prisma.calendarEventDependency.findUnique({ where: { id: input.id } });
-      if (!dep) throw new TRPCError({ code: 'NOT_FOUND', message: 'Dipendenza non trovata' });
-      if (!dep.inheritedFromId) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Solo le dipendenze ereditate possono essere disabilitate. Le dipendenze custom si eliminano.' });
-      }
-      const result = await ctx.prisma.calendarEventDependency.update({
-        where: { id: input.id },
-        data: { isDisabled: input.isDisabled },
-      });
-      await logAudit(ctx, { action: 'CALENDAR_DEPENDENCY_TOGGLE', targetType: 'CalendarEventDependency', targetId: input.id, result: 'SUCCESS', metadata: { isDisabled: input.isDisabled } });
-      return result;
-    }),
-
-  deleteDependency: protectedProcedure
-    .use(requirePermission('season_calendar:configure_dependencies'))
-    .use(withRateLimit('configMutations'))
-    .input(z.object({ id: z.string().uuid() }))
-    .mutation(async ({ input, ctx }) => {
-      const dep = await ctx.prisma.calendarEventDependency.findUnique({ where: { id: input.id } });
-      if (!dep) throw new TRPCError({ code: 'NOT_FOUND', message: 'Dipendenza non trovata' });
-      if (dep.inheritedFromId) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Le dipendenze ereditate non possono essere eliminate — usa disabilita.' });
-      }
-      await ctx.prisma.calendarEventDependency.delete({ where: { id: input.id } });
-      await logAudit(ctx, { action: 'CALENDAR_DEPENDENCY_DELETE', targetType: 'CalendarEventDependency', targetId: input.id, result: 'SUCCESS', metadata: {} });
-      return { success: true };
-    }),
-
   // ─── Anchors ────────────────────────────────────────────────────────────────
 
   setEventAnchors: protectedProcedure
@@ -986,85 +847,6 @@ export const seasonCalendarRouter = router({
       return { success: true };
     }),
 
-  // ─── Simulate (what-if engine) ───────────────────────────────────────────────
-
-  /**
-   * Runs the what-if dependency violation engine against a set of proposed date shifts.
-   *
-   * Loads events, dependencies, and holidays for the requested calendars, then calls
-   * the `@luke/calendar` solver. Optionally returns a suggested resolution.
-   *
-   * @auth season_calendar:simulate
-   * @input WhatIfRequestSchema
-   * @output { violations, suggestion }
-   */
-  simulate: protectedProcedure
-    .use(requirePermission('season_calendar:simulate'))
-    .input(WhatIfRequestSchema)
-    .mutation(async ({ input, ctx }) => {
-      // Load all events in the requested calendars
-      const events = await ctx.prisma.calendarEvent.findMany({
-        where: { calendarId: { in: input.calendarIds } },
-        select: {
-          id: true,
-          startAt: true,
-          endAt: true,
-          severity: true,
-          relevantCountries: true,
-          dependenciesAsPredecessor: {
-            select: {
-              id: true, predecessorId: true, successorId: true,
-              minGapDays: true, maxGapDays: true, severity: true,
-              reason: true, isDisabled: true,
-            },
-          },
-        },
-      });
-
-      // Collect all deps (each dep stored once on predecessor side)
-      const dependencies = events.flatMap(e => e.dependenciesAsPredecessor);
-
-      // Collect unique country codes to load holidays
-      const countryCodes = [...new Set(events.flatMap(e => e.relevantCountries))];
-      const holidays = await loadHolidaysForSolver(ctx.prisma, countryCodes);
-
-      const graphInput: GraphInput = {
-        events: events.map(e => ({
-          id: e.id,
-          startAt: e.startAt,
-          endAt: e.endAt,
-          severity: e.severity,
-          relevantCountries: e.relevantCountries,
-        })),
-        dependencies: dependencies.map(d => ({
-          id: d.id,
-          predecessorId: d.predecessorId,
-          successorId: d.successorId,
-          minGapDays: d.minGapDays ?? undefined,
-          maxGapDays: d.maxGapDays ?? undefined,
-          severity: d.severity,
-          reason: d.reason ?? undefined,
-          isDisabled: d.isDisabled,
-        })),
-        holidays,
-      };
-
-      const eventById = new Map(events.map(e => [e.id, e]));
-      const proposedShifts = input.proposedShifts.map(s => ({
-        eventId: s.eventId,
-        fromStartAt: eventById.get(s.eventId)?.startAt ?? new Date(s.newStartAt),
-        toStartAt: new Date(s.newStartAt),
-        reason: 'Proposta utente',
-      }));
-
-      const violations = detectViolations(graphInput, proposedShifts);
-      const suggestion = input.requestSuggestion
-        ? suggestResolution(graphInput, proposedShifts)
-        : null;
-
-      return { violations, suggestion };
-    }),
-
   /**
    * Revokes explicit visibility on a calendar event for one or more users.
    *
@@ -1117,30 +899,5 @@ export const seasonCalendarRouter = router({
       );
 
       return { ok: true };
-    }),
-
-  /**
-   * Lists calendar events that have a `requiredCollectionProgress` set, used to gate
-   * collection layout progress steps from the collection view.
-   *
-   * @auth season_calendar:read
-   * @input { brandId, seasonId }
-   * @output Array of calendar events with progress gate fields
-   */
-  listEventsForCollection: protectedProcedure
-    .use(requirePermission('season_calendar:read'))
-    .input(z.object({ brandId: z.string().uuid(), seasonId: z.string().uuid() }))
-    .query(async ({ input, ctx }) => {
-      await assertBrandAccess(ctx.session.user.id, input.brandId, ctx.prisma);
-      const calendar = await ctx.prisma.seasonCalendar.findFirst({
-        where: { brandId: input.brandId, seasonId: input.seasonId },
-        select: { id: true },
-      });
-      if (!calendar) return [];
-      return ctx.prisma.calendarEvent.findMany({
-        where: { calendarId: calendar.id, requiredCollectionProgress: { not: null } },
-        select: { id: true, title: true, type: true, startAt: true, endAt: true, requiredCollectionProgress: true, progressWarningDays: true },
-        orderBy: { startAt: 'asc' },
-      });
     }),
 });

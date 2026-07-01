@@ -153,8 +153,6 @@ export async function createMilestone(
         publishExternally: input.publishExternally,
         templateItemId: input.templateItemId,
         status: input.status,
-        requiredCollectionProgress: input.requiredCollectionProgress ?? null,
-        progressWarningDays: input.progressWarningDays ?? null,
       },
     });
 
@@ -192,8 +190,6 @@ export async function updateMilestone(
         ...(input.allDay !== undefined ? { allDay: input.allDay } : {}),
         ...(input.publishExternally !== undefined ? { publishExternally: input.publishExternally } : {}),
         ...(input.ownerFunctionId !== undefined ? { ownerFunctionId: input.ownerFunctionId } : {}),
-        ...(input.requiredCollectionProgress !== undefined ? { requiredCollectionProgress: input.requiredCollectionProgress ?? null } : {}),
-        ...(input.progressWarningDays !== undefined ? { progressWarningDays: input.progressWarningDays ?? null } : {}),
       },
     });
 
@@ -252,8 +248,7 @@ export async function deleteNote(
 // ─── Template ─────────────────────────────────────────────────────────────────
 
 /**
- * Returns all milestone templates with their items (sorted by offsetDays),
- * item visibilities, and predecessor dependencies.
+ * Returns all milestone templates with their items (sorted by offsetDays) and item visibilities.
  */
 export async function listTemplates(prisma: PrismaClient) {
   return prisma.milestoneTemplate.findMany({
@@ -262,9 +257,6 @@ export async function listTemplates(prisma: PrismaClient) {
         orderBy: { offsetDays: 'asc' },
         include: {
           visibilities: true,
-          dependenciesAsPredecessor: {
-            include: { successor: { select: { id: true, title: true } } },
-          },
         },
       },
     },
@@ -274,7 +266,7 @@ export async function listTemplates(prisma: PrismaClient) {
 
 /**
  * Materializes a milestone template onto a calendar anchored at `anchorDate`.
- * Creates events, visibility entries, and dependency links within a transaction.
+ * Creates events and visibility entries within a transaction.
  *
  * @param force - When false, throws CONFLICT if the calendar already has events.
  * @throws {TRPCError} CONFLICT if events exist and `force` is false.
@@ -302,7 +294,6 @@ export async function applyTemplate(
         items: {
           include: {
             visibilities: true,
-            dependenciesAsPredecessor: true,
             stateEffects: true,
           },
         },
@@ -330,16 +321,10 @@ export async function applyTemplate(
         endAt,
         publishExternally: item.publishExternally,
         templateItemId: item.id,
-        severity: item.severity,
-        relevantCountries: item.relevantCountries,
       })),
     });
 
     const itemById = new Map(template.items.map(item => [item.id, item]));
-    // Map templateItemId → created CalendarEvent id
-    const templateItemToEventId = new Map(
-      created.map(e => [e.templateItemId!, e.id])
-    );
 
     const visibilityData = created.flatMap(event => {
       const item = itemById.get(event.templateItemId!);
@@ -351,28 +336,6 @@ export async function applyTemplate(
       }));
     });
     await tx.calendarEventVisibility.createMany({ data: visibilityData });
-
-    // Materialize template dependencies as CalendarEventDependency
-    const depData = template.items.flatMap(item => {
-      return item.dependenciesAsPredecessor.map(dep => {
-        const predecessorEventId = templateItemToEventId.get(item.id);
-        const successorEventId = templateItemToEventId.get(dep.successorId);
-        if (!predecessorEventId || !successorEventId) return null;
-        return {
-          predecessorId: predecessorEventId,
-          successorId: successorEventId,
-          minGapDays: dep.minGapDays,
-          maxGapDays: dep.maxGapDays,
-          severity: dep.severity,
-          reason: dep.reason,
-          isDisabled: false,
-          inheritedFromId: dep.id,
-        };
-      }).filter((d): d is NonNullable<typeof d> => d !== null);
-    });
-    if (depData.length > 0) {
-      await tx.calendarEventDependency.createMany({ data: depData });
-    }
 
     // Materialize template state effects (only if targetEntityId can be inferred — skip otherwise)
     // V2: skip effects without targetEntityId (must be configured by user after apply)
@@ -505,7 +468,6 @@ export async function cloneFromBrandSeason(
         where: { status: { in: includeStatuses as ('PLANNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED')[] } },
         include: {
           visibilities: true,
-          dependenciesAsPredecessor: true,
         },
       },
     },
@@ -552,15 +514,8 @@ export async function cloneFromBrandSeason(
         allDay: e.allDay,
         publishExternally: e.publishExternally,
         status: 'PLANNED' as const,
-        severity: e.severity,
-        relevantCountries: e.relevantCountries,
       })),
     });
-
-    // Map source event id → new event id
-    const sourceToNewId = new Map(
-      sourceCalendar.events.map((e, i) => [e.id, created[i].id])
-    );
 
     const visibilityData = created.flatMap((newEvent, i) => {
       return sourceCalendar.events[i].visibilities.map(v => ({
@@ -570,28 +525,6 @@ export async function cloneFromBrandSeason(
       }));
     });
     await tx.calendarEventVisibility.createMany({ data: visibilityData });
-
-    // Copy dependencies preserving inheritedFromId lineage
-    const depData = sourceCalendar.events.flatMap(e => {
-      return e.dependenciesAsPredecessor.map(dep => {
-        const newPredecessorId = sourceToNewId.get(e.id);
-        const newSuccessorId = sourceToNewId.get(dep.successorId);
-        if (!newPredecessorId || !newSuccessorId) return null;
-        return {
-          predecessorId: newPredecessorId,
-          successorId: newSuccessorId,
-          minGapDays: dep.minGapDays,
-          maxGapDays: dep.maxGapDays,
-          severity: dep.severity,
-          reason: dep.reason,
-          isDisabled: dep.isDisabled,
-          inheritedFromId: dep.inheritedFromId,
-        };
-      }).filter((d): d is NonNullable<typeof d> => d !== null);
-    });
-    if (depData.length > 0) {
-      await tx.calendarEventDependency.createMany({ data: depData });
-    }
 
     return {
       calendarId: targetCalendar.id,

@@ -35,13 +35,6 @@ export const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructi
   CANCELLED: 'destructive',
 };
 
-/** Human-readable labels for event severity levels. */
-export const SEVERITY_LABELS: Record<string, string> = {
-  CRITICAL: 'Critico',
-  NORMAL: 'Normale',
-  INFO: 'Info',
-};
-
 /** Tailwind opacity/decoration classes applied to event chips per status. */
 export const STATUS_OPACITY: Record<string, string> = {
   PLANNED: 'opacity-70',

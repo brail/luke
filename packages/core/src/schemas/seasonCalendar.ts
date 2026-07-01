@@ -1,21 +1,6 @@
 import { z } from 'zod';
 
-// ─── What-If Engine v2 types ──────────────────────────────────────────────────
-
-/**
- * Severity levels for milestone dependencies.
- * `HARD` blocks rescheduling; `SOFT` warns but allows override.
- */
-export const DEPENDENCY_SEVERITY = ['HARD', 'SOFT'] as const;
-export type DependencySeverity = (typeof DEPENDENCY_SEVERITY)[number];
-
-/** Visual severity of a calendar event — drives color coding and alert prominence in the UI. */
-export const EVENT_SEVERITY = ['CRITICAL', 'NORMAL', 'INFO'] as const;
-export type EventSeverity = (typeof EVENT_SEVERITY)[number];
-
-/** Country codes considered relevant for production sourcing and public holiday lookups. */
-export const RELEVANT_COUNTRY_CODES = ['IT', 'CN', 'VN', 'IN', 'TR'] as const;
-export type RelevantCountryCode = (typeof RELEVANT_COUNTRY_CODES)[number];
+// ─── State effect / anchor types ──────────────────────────────────────────────
 
 /**
  * Allowed state-effect types triggered when a calendar milestone is completed.
@@ -34,44 +19,6 @@ export const ANCHOR_ENTITY_TYPE = [
 ] as const;
 export type AnchorEntityType = (typeof ANCHOR_ENTITY_TYPE)[number];
 
-/**
- * Input schema for a directed dependency between two calendar events.
- * Validates that predecessor ≠ successor and `maxGapDays >= minGapDays` when both are provided.
- */
-export const CalendarEventDependencyInputSchema = z
-  .object({
-    predecessorId: z.string().uuid(),
-    successorId:   z.string().uuid(),
-    minGapDays:    z.number().int().min(0).optional(),
-    maxGapDays:    z.number().int().min(0).optional(),
-    severity:      z.enum(DEPENDENCY_SEVERITY),
-    reason:        z.string().max(500).optional(),
-  })
-  .refine(d => d.predecessorId !== d.successorId, {
-    message: 'predecessorId e successorId devono essere distinti',
-  })
-  .refine(
-    d => {
-      if (d.minGapDays !== undefined && d.maxGapDays !== undefined) {
-        return d.maxGapDays >= d.minGapDays;
-      }
-      return true;
-    },
-    { message: 'maxGapDays deve essere >= minGapDays' },
-  );
-export type CalendarEventDependencyInput = z.infer<typeof CalendarEventDependencyInputSchema>;
-
-/** Input schema for updating only the gap constraints on an existing event dependency. */
-export const UpdateDependencyGapsInputSchema = z.object({
-  id:         z.string().uuid(),
-  minGapDays: z.number().int().min(0).optional(),
-  maxGapDays: z.number().int().min(0).optional(),
-});
-export type UpdateDependencyGapsInput = z.infer<typeof UpdateDependencyGapsInputSchema>;
-
-export const TemplateDependencyInputSchema = CalendarEventDependencyInputSchema;
-export type TemplateDependencyInput = CalendarEventDependencyInput;
-
 /** Input schema for a state effect to be triggered by a calendar event (e.g. lock a collection layout). */
 export const CalendarEventStateEffectInputSchema = z.object({
   effectType:           z.enum(STATE_EFFECT_TYPE),
@@ -87,22 +34,6 @@ export const CalendarEventAnchorInputSchema = z.object({
   entityId:   z.string().uuid(),
 });
 export type CalendarEventAnchorInput = z.infer<typeof CalendarEventAnchorInputSchema>;
-
-/**
- * Input schema for a What-If simulation request.
- * Accepts one or more proposed event shifts and returns a cascade analysis of downstream impacts.
- */
-export const WhatIfRequestSchema = z.object({
-  calendarIds:       z.array(z.string().uuid()).min(1),
-  proposedShifts:    z.array(
-    z.object({
-      eventId:    z.string().uuid(),
-      newStartAt: z.string().datetime(),
-    }),
-  ),
-  requestSuggestion: z.boolean().default(false),
-});
-export type WhatIfRequest = z.infer<typeof WhatIfRequestSchema>;
 
 /** Input schema for a vendor closure or open-day period within a season, used in working-day calculations. */
 export const VendorClosurePeriodInputSchema = z.object({
@@ -178,10 +109,6 @@ export const CalendarEventBaseSchema = z.object({
   templateItemId:               z.string().uuid().optional(),
   status:                       z.enum(CALENDAR_EVENT_STATUS).default('PLANNED'),
   visibilityFunctionIds:        z.array(z.string().uuid()).min(1),
-  severity:                     z.enum(EVENT_SEVERITY).default('NORMAL'),
-  relevantCountries:            z.array(z.enum(RELEVANT_COUNTRY_CODES)).default([]),
-  requiredCollectionProgress:   z.string().min(1).nullish(),
-  progressWarningDays:          z.number().int().min(1).max(365).nullish(),
 });
 
 /**
@@ -223,8 +150,6 @@ export const MilestoneTemplateItemInputSchema = z
     durationDays:         z.number().int().min(0).default(0),
     publishExternally:    z.boolean().default(true),
     visibilityFunctionIds: z.array(z.string().uuid()).min(1),
-    severity:             z.enum(EVENT_SEVERITY).default('NORMAL'),
-    relevantCountries:    z.array(z.enum(RELEVANT_COUNTRY_CODES)).default([]),
   })
   .refine(
     data => data.visibilityFunctionIds.includes(data.ownerFunctionId),

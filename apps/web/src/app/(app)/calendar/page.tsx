@@ -1,12 +1,10 @@
 'use client';
 
-import { Calendar, CalendarClock, RefreshCw, Copy, Plus, List, GanttChart, CalendarRange, CalendarDays, Maximize2, Minimize2, ChevronDown, Check, FlaskConical, MoreHorizontal } from 'lucide-react';
+import { Calendar, CalendarClock, RefreshCw, Copy, Plus, List, GanttChart, CalendarRange, CalendarDays, Maximize2, Minimize2, ChevronDown, Check, MoreHorizontal } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
-
-import type { SimulationResult } from '@luke/calendar';
 
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent } from '../../../components/ui/card';
@@ -28,9 +26,9 @@ import { CalendarEventTimeline } from './_components/CalendarEventTimeline';
 import { CalendarEventWeekView } from './_components/CalendarEventWeekView';
 import { CloneBrandSeasonDialog } from './_components/CloneBrandSeasonDialog';
 import { ExportButton } from './_components/ExportButton';
+import type { CalendarEventItem } from './_components/types';
 import { useHolidays } from './_components/useHolidays';
-import { WhatIfBanner } from './_components/WhatIfBanner';
-import { addDays, assignBrandColors, daysBetween, resolveBrandColor } from './utils';
+import { assignBrandColors, resolveBrandColor } from './utils';
 
 const VALID_VIEWS = ['list', 'gantt', 'week', 'day', 'month'] as const;
 type CalendarView = (typeof VALID_VIEWS)[number];
@@ -59,9 +57,6 @@ export default function CalendarPage() {
     return parsed && !isNaN(parsed.getTime()) ? parsed : new Date();
   });
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [simulateMode, setSimulateMode] = useState(false);
-  const [proposedShifts, setProposedShifts] = useState<{ eventId: string; newStartAt: string }[]>([]);
-  const [simulateResult, setSimulateResult] = useState<SimulationResult | null>(null);
 
   useEffect(() => {
     if (!isFullscreen) return;
@@ -118,10 +113,12 @@ export default function CalendarPage() {
     { enabled }
   );
 
-  const { data: milestones, isLoading: milestonesLoading, refetch } = trpc.seasonCalendar.listMilestones.useQuery(
+  const { data: rawMilestones, isLoading: milestonesLoading, refetch } = trpc.seasonCalendar.listMilestones.useQuery(
     { seasonId: season?.id ?? '', brandIds: selectedBrandIds.length > 0 ? selectedBrandIds : [contextBrandId ?? ''] },
     { enabled: enabled && selectedBrandIds.length > 0 }
   );
+  // TS2589: RouterOutputs type is excessively deep — as unknown breaks instantiation before re-narrowing
+  const milestones = rawMilestones as unknown as CalendarEventItem[] | undefined;
 
   const { data: syncStatus } = trpc.seasonCalendar.getSyncStatus.useQuery(
     { calendarId: calendar?.id ?? '' },
@@ -138,17 +135,7 @@ export default function CalendarPage() {
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
-  const simulateMutation = trpc.seasonCalendar.simulate.useMutation({
-    onSuccess: (data) => setSimulateResult(data as SimulationResult),
-    onError: (err) => toast.error(getTrpcErrorMessage(err)),
-  });
-
   const handleEventUpdate = (id: string, data: { startAt: string; endAt?: string | null }) => {
-    if (simulateMode) {
-      setProposedShifts(prev => [...prev.filter(s => s.eventId !== id), { eventId: id, newStartAt: data.startAt }]);
-      setSimulateResult(null);
-      return;
-    }
     updateEventMutation.mutate({ id, data: { ...data, endAt: data.endAt ?? undefined } });
   };
 
@@ -180,55 +167,9 @@ export default function CalendarPage() {
     return milestones.filter(m => m.visibilities.some(v => selectedFunctionIds.includes(v.functionId)));
   }, [milestones, selectedFunctionIds]);
 
-  const handleSimulate = useCallback(() => {
-    if (!calendar) return;
-    simulateMutation.mutate({
-      calendarIds: [calendar.id],
-      proposedShifts,
-      requestSuggestion: true,
-    });
-  }, [calendar, proposedShifts, simulateMutation]);
-
-  const handleApplySuggestion = useCallback((shifts: { eventId: string; fromStartAt: string | Date; toStartAt: string | Date; reason: string }[]) => {
-    setProposedShifts(shifts.map(s => ({ eventId: s.eventId, newStartAt: new Date(s.toStartAt).toISOString() })));
-    setSimulateResult(null);
-  }, []);
-
-  const handleApplyShifts = useCallback(async () => {
-    const eventMap = new Map(filteredMilestones.map(m => [m.id, m]));
-    await Promise.all(proposedShifts.map(shift => {
-      const m = eventMap.get(shift.eventId);
-      if (!m) return Promise.resolve();
-      const delta = daysBetween(new Date(m.startAt), new Date(shift.newStartAt));
-      const newEnd = m.endAt ? addDays(new Date(m.endAt), delta).toISOString() : undefined;
-      return updateEventMutation.mutateAsync({ id: shift.eventId, data: { startAt: shift.newStartAt, endAt: newEnd } });
-    }));
-    setSimulateMode(false);
-    setProposedShifts([]);
-    setSimulateResult(null);
-    void refetch();
-  }, [proposedShifts, filteredMilestones, updateEventMutation, refetch]);
-
-  const handleResetSimulate = useCallback(() => {
-    setSimulateMode(false);
-    setProposedShifts([]);
-    setSimulateResult(null);
-  }, []);
-
   const { data: holidayCountries = [] } = trpc.holidays.listCountries.useQuery(undefined, { staleTime: 60 * 60 * 1000 });
   const holidayCountryCodes = useMemo(() => holidayCountries.map(c => c.code), [holidayCountries]);
   const holidayDates = useHolidays(holidayCountryCodes);
-
-  const displayMilestones = useMemo(() => {
-    if (!simulateMode || proposedShifts.length === 0) return filteredMilestones;
-    const shiftsMap = new Map(proposedShifts.map(s => [s.eventId, s]));
-    return filteredMilestones.map(m => {
-      const shift = shiftsMap.get(m.id);
-      if (!shift) return m;
-      const delta = daysBetween(new Date(m.startAt), new Date(shift.newStartAt));
-      return { ...m, startAt: shift.newStartAt, endAt: m.endAt ? addDays(new Date(m.endAt), delta).toISOString() : null, _proposed: true };
-    });
-  }, [simulateMode, proposedShifts, filteredMilestones]);
 
   const activeEvent = useMemo(
     () => filteredMilestones.find(m => m.id === activeEventId) ?? null,
@@ -277,17 +218,6 @@ export default function CalendarPage() {
         <Button variant={view === 'day' ? 'default' : 'ghost'} size="sm" className="rounded-none border-0" onClick={() => setView('day')} title="Giorno"><CalendarClock size={14} /></Button>
         <Button variant={view === 'list' ? 'default' : 'ghost'} size="sm" className="rounded-none border-0" onClick={() => setView('list')} title="Lista"><List size={14} /></Button>
       </div>
-      {canUpdate && (
-        <Button
-          variant={simulateMode ? 'destructive' : 'outline'}
-          size="sm"
-          onClick={() => simulateMode ? handleResetSimulate() : setSimulateMode(true)}
-          disabled={!calendar}
-          title="What-If"
-        >
-          <FlaskConical size={14} className="mr-1" />What-If
-        </Button>
-      )}
       <ExportButton seasonId={season?.id ?? ''} brandIds={selectedBrandIds} view={view} viewDate={viewDate} disabled={!season?.id} />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -410,34 +340,16 @@ export default function CalendarPage() {
     </div>
   );
 
-  const eventTitleById = useMemo(() =>
-    Object.fromEntries(filteredMilestones.map(m => [m.id, m.title])),
-    [filteredMilestones]
-  );
-
   const calendarBody = (
     <div>
       {filterStrip}
-      {simulateMode && (
-        <WhatIfBanner
-          shiftCount={proposedShifts.length}
-          violations={simulateResult?.violations ?? []}
-          suggestion={simulateResult?.suggestion ?? null}
-          loading={simulateMutation.isPending}
-          onSimulate={handleSimulate}
-          onApplySuggestion={handleApplySuggestion}
-          onApply={() => void handleApplyShifts()}
-          onReset={handleResetSimulate}
-          eventTitleById={eventTitleById}
-        />
-      )}
       <Card>
         <CardContent className="p-0">
           {calendarLoading || milestonesLoading ? (
             <div className="py-12 text-center text-muted-foreground">Caricamento…</div>
           ) : view === 'week' ? (
             <CalendarEventWeekView
-              milestones={displayMilestones}
+              milestones={filteredMilestones}
               viewDate={viewDate}
               onViewDateChange={setViewDate}
               onEventClick={id => setActiveEventId(id)}
@@ -452,7 +364,7 @@ export default function CalendarPage() {
             />
           ) : view === 'month' ? (
             <CalendarEventMonthView
-              milestones={displayMilestones}
+              milestones={filteredMilestones}
               viewDate={viewDate}
               onViewDateChange={setViewDate}
               onEventClick={id => setActiveEventId(id)}
@@ -468,7 +380,7 @@ export default function CalendarPage() {
             />
           ) : view === 'day' ? (
             <CalendarEventDayView
-              milestones={displayMilestones}
+              milestones={filteredMilestones}
               viewDate={viewDate}
               onViewDateChange={setViewDate}
               onEventClick={id => setActiveEventId(id)}
@@ -479,7 +391,7 @@ export default function CalendarPage() {
               canUpdate={canUpdate}
               brandColorMap={brandColorMap}
             />
-          ) : displayMilestones.length === 0 ? (
+          ) : filteredMilestones.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">
               <Calendar size={32} className="mx-auto mb-2 opacity-40" />
               <p>Nessun evento per i filtri selezionati</p>
@@ -491,7 +403,7 @@ export default function CalendarPage() {
             </div>
           ) : view === 'gantt' ? (
             <CalendarEventGantt
-              milestones={displayMilestones}
+              milestones={filteredMilestones}
               onEventClick={id => setActiveEventId(id)}
               onNoteClick={id => setNoteEventId(id)}
               onEventUpdate={handleEventUpdate}
@@ -504,7 +416,7 @@ export default function CalendarPage() {
             />
           ) : (
             <CalendarEventTimeline
-              milestones={displayMilestones}
+              milestones={filteredMilestones}
               onEventClick={id => setActiveEventId(id)}
               onNoteClick={id => setNoteEventId(id)}
               onDayClick={onDayClickProp}
@@ -564,7 +476,6 @@ export default function CalendarPage() {
           functionsById={functionsById}
           event={activeEvent}
           readOnly={!canEditActiveEvent}
-          allEvents={filteredMilestones}
         />
       )}
 

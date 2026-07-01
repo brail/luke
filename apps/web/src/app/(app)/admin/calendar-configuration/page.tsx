@@ -33,7 +33,6 @@ import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 import { cn } from '../../../../lib/utils';
 
 import { HolidayImportTab } from './_components/HolidayImportTab';
-import { TemplateDependencyManager } from './_components/TemplateDependencyManager';
 import { TemplateDialog } from './_components/TemplateDialog';
 import { TemplateItemDialog } from './_components/TemplateItemDialog';
 
@@ -159,7 +158,6 @@ export default function CalendarConfigurationPage() {
             )}
             {templates.map(t => {
               const expanded = expandedIds.has(t.id);
-              const templateDeps = t.items.flatMap(i => i.dependenciesAsPredecessor);
               return (
                 <Card key={t.id}>
                   <CardContent className="p-0">
@@ -173,7 +171,6 @@ export default function CalendarConfigurationPage() {
                         <span className="font-medium">{t.name}</span>
                         <span className="text-xs text-muted-foreground ml-1">
                           {t.items.length} item{t.items.length !== 1 ? 's' : ''}
-                          {templateDeps.length > 0 ? ` · ${templateDeps.length} link` : null}
                         </span>
                         {t.description && (
                           <span className="text-xs text-muted-foreground truncate max-w-xs">
@@ -281,17 +278,6 @@ export default function CalendarConfigurationPage() {
                               <Plus size={12} className="mr-1" />
                               Aggiungi item
                             </Button>
-                          </div>
-                        )}
-                        {t.items.length >= 2 && (
-                          <div className="px-4 py-3 border-t">
-                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Dipendenze</p>
-                            <p className="text-xs text-muted-foreground mb-2">Propagate automaticamente agli eventi del calendario all'applicazione del template.</p>
-                            <TemplateDependencyManager
-                              items={t.items.map(i => ({ id: i.id, title: i.title, offsetDays: i.offsetDays }))}
-                              dependencies={templateDeps}
-                              readOnly={!canUpdate}
-                            />
                           </div>
                         )}
                       </div>

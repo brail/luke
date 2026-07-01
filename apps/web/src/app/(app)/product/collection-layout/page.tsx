@@ -2,12 +2,12 @@
 
 import { History, Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
-import { COLLECTION_PROGRESS, type CollectionLayoutRowInput } from '@luke/core';
+import type { CollectionLayoutRowInput } from '@luke/core';
 
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
@@ -19,7 +19,6 @@ import { triggerDownload } from '../../../../lib/download';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
-import { CollectionDeadlineBanner } from './_components/CollectionDeadlineBanner';
 import { CollectionGroupDialog } from './_components/CollectionGroupDialog';
 import { CollectionLayoutSummary } from './_components/CollectionLayoutSummary';
 import { CollectionLayoutTable } from './_components/CollectionLayoutTable';
@@ -32,38 +31,6 @@ type CollectionLayoutData = NonNullable<
 >;
 type CollectionGroupData = CollectionLayoutData['groups'][number];
 type CollectionRowData = CollectionGroupData['rows'][number];
-
-type CalEventSlim = { startAt: string | Date; requiredCollectionProgress: string | null; progressWarningDays: number | null };
-type RowSlim = { id: string; progress: string | null };
-
-function computeLaggingRowIds(
-  groups: Array<{ rows: RowSlim[] }>,
-  events: CalEventSlim[],
-): Set<string> | undefined {
-  const progressIndex = Object.fromEntries(COLLECTION_PROGRESS.map((p, i) => [p, i]));
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  const activeRequiredProgress = new Set<string>();
-  for (const event of events) {
-    if (!event.requiredCollectionProgress) continue;
-    const target = new Date(event.startAt);
-    target.setHours(0, 0, 0, 0);
-    const daysLeft = Math.round((target.getTime() - now.getTime()) / 86_400_000);
-    if (daysLeft >= 0 && daysLeft <= (event.progressWarningDays ?? 7)) {
-      activeRequiredProgress.add(event.requiredCollectionProgress);
-    }
-  }
-  if (activeRequiredProgress.size === 0) return undefined;
-  const minReqIdx = Math.min(...[...activeRequiredProgress].map(p => progressIndex[p] ?? 0));
-  const lagging = new Set<string>();
-  for (const group of groups) {
-    for (const row of group.rows) {
-      const rowIdx = row.progress ? (progressIndex[row.progress] ?? -1) : -1;
-      if (rowIdx < minReqIdx) lagging.add(row.id);
-    }
-  }
-  return lagging.size > 0 ? lagging : undefined;
-}
 
 export default function CollectionLayoutPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
@@ -86,19 +53,6 @@ export default function CollectionLayoutPage() {
   const { data: parameterSets = [] } = trpc.pricing.parameterSets.list.useQuery(
     { brandId: brand?.id ?? '', seasonId: season?.id ?? '' },
     { enabled }
-  );
-
-  const { data: rawCalendarEvents = [] } = trpc.seasonCalendar.listEventsForCollection.useQuery(
-    { brandId: brand?.id ?? '', seasonId: season?.id ?? '' },
-    { enabled, staleTime: 60_000 },
-  );
-  const calendarEvents = rawCalendarEvents as CalEventSlim[];
-
-  // cast breaks TS2589 deep instantiation from RouterOutputs
-  const layoutGroupsSlim = layout?.groups as Array<{ rows: RowSlim[] }> | undefined;
-  const laggingRowIds = useMemo(
-    () => layoutGroupsSlim ? computeLaggingRowIds(layoutGroupsSlim, calendarEvents) : undefined,
-    [layoutGroupsSlim, calendarEvents],
   );
 
   const utils = trpc.useUtils();
@@ -372,20 +326,12 @@ export default function CollectionLayoutPage() {
       ) : (
         <>
           <CollectionLayoutSummary layout={layout} />
-          {brand && season && (
-            <CollectionDeadlineBanner
-              brandId={brand.id}
-              seasonId={season.id}
-              allRows={layout.groups.flatMap(g => g.rows)}
-            />
-          )}
           <Card>
             <CardContent className="pt-6">
               <CollectionLayoutTable
                 layout={layout}
                 canUpdate={canUpdate}
                 parameterSets={parameterSets}
-                laggingRowIds={laggingRowIds}
                 onAddGroup={() => setGroupDialog({ mode: 'create' })}
                 onAddRow={groupId =>
                   setRowDrawer({ mode: 'create', defaultGroupId: groupId })
@@ -439,7 +385,6 @@ export default function CollectionLayoutPage() {
                 layout={layout}
                 canUpdate={canUpdate}
                 parameterSets={parameterSets}
-                laggingRowIds={laggingRowIds}
                 onAddGroup={() => setGroupDialog({ mode: 'create' })}
                 onAddRow={groupId =>
                   setRowDrawer({ mode: 'create', defaultGroupId: groupId })

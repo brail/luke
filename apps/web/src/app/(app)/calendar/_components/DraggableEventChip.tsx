@@ -1,7 +1,7 @@
 'use client';
 
 import { useDraggable } from '@dnd-kit/core';
-import { AlertTriangle, StickyNote } from 'lucide-react';
+import { StickyNote } from 'lucide-react';
 import { type MouseEvent } from 'react';
 
 import { cn } from '../../../../lib/utils';
@@ -15,8 +15,6 @@ interface Props {
   span: number;
   isDragging: boolean;
   hasNote?: boolean;
-  severity?: string;
-  isProposed?: boolean;
   onClick: (e: MouseEvent) => void;
   onNoteClick?: (e: MouseEvent) => void;
 }
@@ -25,14 +23,13 @@ interface Props {
  * Draggable event chip used in week and month calendar views.
  *
  * Integrates with dnd-kit via `useDraggable`. A sticky-note icon appears when
- * `hasNote` is true or on hover. Critical events show an alert icon.
+ * `hasNote` is true or on hover.
  *
  * @param span - Number of day columns the chip should span (used in week view CSS).
  * @param isDragging - Hides the chip's original slot while dragging is in progress.
- * @param isProposed - Applies a dashed outline to distinguish what-if preview events.
  * @param onNoteClick - When provided, renders the sticky-note button.
  */
-export function DraggableEventChip({ id, title, status, color, span, isDragging, hasNote, severity, isProposed, onClick, onNoteClick }: Props) {
+export function DraggableEventChip({ id, title, status, color, span, isDragging, hasNote, onClick, onNoteClick }: Props) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id });
 
   const bg = color;
@@ -50,12 +47,10 @@ export function DraggableEventChip({ id, title, status, color, span, isDragging,
           onNoteClick && 'pr-5',
           STATUS_OPACITY[status] ?? 'opacity-100',
           isDragging && 'opacity-30',
-          isProposed && 'outline outline-1 outline-dashed outline-white/60',
         )}
         style={{ background: bg }}
         title={`${title}${span > 0 ? ` (${span + 1}gg)` : ''}`}
       >
-        {severity === 'CRITICAL' && <AlertTriangle size={9} className="mr-0.5 inline text-yellow-300" />}
         {title}
       </button>
 

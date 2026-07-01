@@ -283,12 +283,11 @@ function DragHandle({ listeners }: DragHandleProps) {
 interface SortableRowProps {
   id: string;
   disabled: boolean;
-  isLagging?: boolean;
   children: (listeners: Record<string, unknown> | undefined) => ReactNode;
   onClick: () => void;
 }
 
-function SortableRow({ id, disabled, isLagging, children, onClick }: SortableRowProps) {
+function SortableRow({ id, disabled, children, onClick }: SortableRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
     disabled,
@@ -303,7 +302,7 @@ function SortableRow({ id, disabled, isLagging, children, onClick }: SortableRow
       ref={setNodeRef}
       style={style}
       {...attributes}
-      className={cn('cursor-pointer hover:bg-muted/30', isLagging && 'bg-amber-50/60 dark:bg-amber-950/20 border-l-2 border-l-amber-400 dark:border-l-amber-500')}
+      className="cursor-pointer hover:bg-muted/30"
       onClick={onClick}
     >
       {children(disabled ? undefined : listeners as Record<string, unknown>)}
@@ -357,7 +356,6 @@ interface CollectionGroupSectionProps {
   hiddenColumns: string[];
   parameterSets: PricingParameterSet[];
   searchQuery?: string;
-  laggingRowIds?: Set<string>;
   onAddRow: (groupId: string) => void;
   onEditRow: (row: CollectionRowData) => void;
   onDuplicateRow: (rowId: string) => void;
@@ -381,7 +379,6 @@ interface CollectionGroupSectionProps {
  * @param hiddenColumns - Column keys excluded from rendering.
  * @param parameterSets - Pricing parameter sets used for margin calculation.
  * @param searchQuery - Free-text filter applied across row fields.
- * @param laggingRowIds - Row IDs that are behind a collection progress deadline.
  * @param onFilteredRowIdsChange - Called whenever the visible row set changes.
  */
 export function CollectionGroupSection({
@@ -390,7 +387,6 @@ export function CollectionGroupSection({
   hiddenColumns,
   parameterSets,
   searchQuery = '',
-  laggingRowIds,
   onAddRow,
   onEditRow,
   onDuplicateRow,
@@ -758,7 +754,6 @@ export function CollectionGroupSection({
                           key={row.id}
                           id={row.id}
                           disabled={!isDndMode || !canUpdate}
-                          isLagging={laggingRowIds?.has(row.id)}
                           onClick={() => onEditRow(row)}
                         >
                           {(listeners) => (<>

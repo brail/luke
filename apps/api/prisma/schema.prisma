@@ -1644,19 +1644,6 @@ enum CalendarEventStatus {
   CANCELLED
 }
 
-/// Dependency constraint strength: HARD (successor cannot start until predecessor completes) | SOFT (warning only).
-enum DependencySeverity {
-  HARD
-  SOFT
-}
-
-/// Visual and alerting severity of a calendar event: CRITICAL (blocks) | NORMAL (default) | INFO (informational).
-enum EventSeverity {
-  CRITICAL
-  NORMAL
-  INFO
-}
-
 /// Type of state side-effect a calendar event can trigger on an entity: LOCK_COLLECTION_LAYOUT | UNLOCK_COLLECTION_LAYOUT.
 enum StateEffectType {
   LOCK_COLLECTION_LAYOUT
@@ -1724,14 +1711,6 @@ model CalendarEvent {
   publishExternally           Boolean             @default(true)
   /// FK to MilestoneTemplateItem that generated this event (optional). SetNull if template item is deleted.
   templateItemId              String?
-  /// Alert severity: CRITICAL | NORMAL | INFO.
-  severity                    EventSeverity       @default(NORMAL)
-  /// ISO 3166-1 alpha-2 country codes this event is relevant to (e.g. ["IT","CN"]).
-  relevantCountries           String[]
-  /// Minimum collection progress value required before this event's deadline.
-  requiredCollectionProgress  String?
-  /// Days before startAt at which a progress warning is triggered.
-  progressWarningDays         Int?
   createdAt                   DateTime            @default(now())
   updatedAt                   DateTime            @updatedAt
 
@@ -1749,10 +1728,6 @@ model CalendarEvent {
   eventMappings    GoogleEventMapping[]
   /// Per-user visibility grants for this event.
   userVisibilities CalendarEventUserVisibility[]
-  /// Dependencies where this event is the predecessor.
-  dependenciesAsPredecessor CalendarEventDependency[] @relation("DepPredecessor")
-  /// Dependencies where this event is the successor.
-  dependenciesAsSuccessor   CalendarEventDependency[] @relation("DepSuccessor")
   /// State side-effects (e.g. lock/unlock collection layout) triggered by this event.
   stateEffects              CalendarEventStateEffect[]
   /// Entity anchors tracking progress for this event.
@@ -1838,10 +1813,6 @@ model MilestoneTemplateItem {
   durationDays      Int           @default(0)
   /// If true, the generated event is exported to Google Calendar.
   publishExternally Boolean       @default(true)
-  /// Alert severity for the generated event: CRITICAL | NORMAL | INFO.
-  severity          EventSeverity @default(NORMAL)
-  /// ISO 3166-1 alpha-2 country codes this item is relevant to.
-  relevantCountries String[]
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
@@ -1853,12 +1824,8 @@ model MilestoneTemplateItem {
   events        CalendarEvent[]
   /// Function visibility grants for this template item.
   visibilities  MilestoneTemplateItemVisibility[]
-  /// Dependencies where this item is the predecessor.
-  dependenciesAsPredecessor MilestoneTemplateDependency[] @relation("TemplateDepPredecessor")
-  /// Dependencies where this item is the successor.
-  dependenciesAsSuccessor   MilestoneTemplateDependency[] @relation("TemplateDepSuccessor")
   /// State effects to apply when a generated event is completed.
-  stateEffects              MilestoneTemplateStateEffect[]
+  stateEffects  MilestoneTemplateStateEffect[]
 
   @@index([templateId])
   @@index([ownerFunctionId])
@@ -1978,64 +1945,6 @@ model NotificationPreference {
   @@unique([userId, category])
   @@index([userId])
   @@map("notification_preferences")
-}
-
-// ─── What-If Engine v2 ────────────────────────────────────────────────────────
-
-/// Dependency constraint between two MilestoneTemplateItems. Inherited by CalendarEventDependency when a template is applied.
-model MilestoneTemplateDependency {
-  id            String             @id @default(uuid())
-  /// FK to the predecessor MilestoneTemplateItem. Cascade delete.
-  predecessorId String
-  /// FK to the successor MilestoneTemplateItem. Cascade delete.
-  successorId   String
-  /// Minimum gap in days between predecessor end and successor start.
-  minGapDays    Int?
-  /// Maximum gap in days between predecessor end and successor start.
-  maxGapDays    Int?
-  /// HARD (blocks scheduling) or SOFT (warning only).
-  severity      DependencySeverity
-  reason        String?            @db.VarChar(500)
-
-  /// The predecessor template item.
-  predecessor MilestoneTemplateItem @relation("TemplateDepPredecessor", fields: [predecessorId], references: [id], onDelete: Cascade)
-  /// The successor template item.
-  successor   MilestoneTemplateItem @relation("TemplateDepSuccessor",   fields: [successorId],   references: [id], onDelete: Cascade)
-
-  @@unique([predecessorId, successorId])
-  @@index([successorId])
-  @@map("milestone_template_dependencies")
-}
-
-/// Live dependency constraint between two CalendarEvents. May be inherited from a MilestoneTemplateDependency or created manually.
-model CalendarEventDependency {
-  id              String             @id @default(uuid())
-  /// FK to the predecessor CalendarEvent. Cascade delete.
-  predecessorId   String
-  /// FK to the successor CalendarEvent. Cascade delete.
-  successorId     String
-  minGapDays      Int?
-  maxGapDays      Int?
-  /// HARD (blocks scheduling) or SOFT (warning only).
-  severity        DependencySeverity
-  reason          String?            @db.VarChar(500)
-  /// When true, this dependency is temporarily suppressed without being deleted.
-  isDisabled      Boolean            @default(false)
-  /// Soft FK to the MilestoneTemplateDependency that generated this constraint. Null if created manually.
-  inheritedFromId String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  /// The predecessor calendar event.
-  predecessor CalendarEvent @relation("DepPredecessor", fields: [predecessorId], references: [id], onDelete: Cascade)
-  /// The successor calendar event.
-  successor   CalendarEvent @relation("DepSuccessor",   fields: [successorId],   references: [id], onDelete: Cascade)
-
-  @@unique([predecessorId, successorId])
-  @@index([successorId])
-  @@index([inheritedFromId])
-  @@map("calendar_event_dependencies")
 }
 
 /// State side-effect definition on a MilestoneTemplateItem. Applied to generated CalendarEventStateEffect records when a template is instantiated.

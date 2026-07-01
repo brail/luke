@@ -166,8 +166,6 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
                                   span={span}
                                   isDragging={draggingId === m.id}
                                   hasNote={hasNote}
-                                  severity={m.severity ?? undefined}
-                                  isProposed={m._proposed}
                                   onClick={(e) => { e.stopPropagation(); onEventClick(m.id); }}
                                   onNoteClick={onNoteClick ? (e) => { e.stopPropagation(); onNoteClick(m.id); } : undefined}
                                 />

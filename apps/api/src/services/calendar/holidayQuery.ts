@@ -1,35 +1,9 @@
 /**
- * Data-access helpers that load calendar solver inputs from the database.
- *
- * Used by the `seasonCalendar.simulate` tRPC procedure to feed the what-if engine
- * with holiday and vendor closure data without coupling the solver to Prisma.
+ * Data-access helpers that load working-day holiday inputs from the database.
  */
 
+import type { WorkingDayHoliday } from '@luke/core';
 import type { PrismaClient } from '@prisma/client';
-import type { SolverHoliday } from '@luke/calendar';
-
-/**
- * Loads public holidays for the given country codes from the database.
- *
- * Returns an empty array when `countryCodes` is empty.
- */
-export async function loadHolidaysForSolver(
-  prisma: PrismaClient,
-  countryCodes: string[],
-): Promise<SolverHoliday[]> {
-  if (countryCodes.length === 0) return [];
-
-  const rows = await prisma.holiday.findMany({
-    where: { countryCode: { in: countryCodes } },
-    select: { countryCode: true, startDate: true, endDate: true },
-  });
-
-  return rows.map(r => ({
-    countryCode: r.countryCode,
-    startDate: r.startDate,
-    endDate: r.endDate,
-  }));
-}
 
 /**
  * Loads confirmed vendor closure periods for the given vendors and season.
@@ -41,7 +15,7 @@ export async function loadVendorClosuresForSolver(
   prisma: PrismaClient,
   vendorIds: string[],
   seasonId: string,
-): Promise<SolverHoliday[]> {
+): Promise<WorkingDayHoliday[]> {
   if (vendorIds.length === 0) return [];
 
   const rows = await prisma.vendorClosurePeriod.findMany({
