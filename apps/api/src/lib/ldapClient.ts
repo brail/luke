@@ -9,7 +9,7 @@ import type { SearchOptions, Entry } from 'ldapts';
 import pino from 'pino';
 
 import type { LdapConfig } from './configManager';
-import type { LdapResilienceConfig } from '@luke/core';
+import { calcBackoffDelay, type LdapResilienceConfig } from '@luke/core';
 
 /**
  * Possible states of the circuit breaker state machine.
@@ -301,10 +301,9 @@ export class ResilientLdapClient {
    * Calcola delay per exponential backoff con jitter
    */
   private calculateBackoffDelay(attempt: number): number {
-    const exponentialDelay =
-      this.resilienceConfig.baseDelayMs * Math.pow(2, attempt);
-    const jitter = Math.random() * 0.1 * exponentialDelay; // 10% jitter
-    return Math.min(exponentialDelay + jitter, 5000); // Max 5 secondi
+    const exponentialDelay = calcBackoffDelay(attempt, this.resilienceConfig.baseDelayMs, 5000);
+    const jitter = Math.random() * 0.1 * exponentialDelay;
+    return exponentialDelay + jitter;
   }
 
   /**

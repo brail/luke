@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { Readable } from 'stream';
 
-import { type StorageBucket } from '@luke/core';
+import { calcBackoffDelay, type StorageBucket } from '@luke/core';
 
 import { streamToBuffer, validateMagicBytes, validateImageFile } from '../lib/imageUpload';
 import { resolvePublicUrl } from '../lib/storageUrl';
@@ -201,7 +201,7 @@ export async function deleteFileWithRetry(
         return false;
       }
 
-      const delay = baseDelay * Math.pow(2, attempt);
+      const delay = calcBackoffDelay(attempt, baseDelay);
       await new Promise(resolve => setTimeout(resolve, delay));
       ctx.logger?.debug({ bucket, key, attempt: attempt + 1, nextDelay: delay }, 'File delete attempt failed, retrying...');
     }

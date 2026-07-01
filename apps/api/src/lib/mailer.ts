@@ -9,6 +9,8 @@ import { join } from 'path';
 import nodemailer from 'nodemailer';
 import pino from 'pino';
 
+import { calcBackoffDelay } from '@luke/core';
+
 import { getConfig } from './configManager';
 
 import type { PrismaClient } from '@prisma/client';
@@ -83,7 +85,6 @@ export async function sendEmail(
   text: string
 ): Promise<void> {
   const retries = 3;
-  const backoffMs = [250, 500, 1000];
 
   // Load SMTP config once instead of on every retry attempt
   const smtpConfig = await getSmtpConfig(prisma);
@@ -125,8 +126,7 @@ export async function sendEmail(
           `Impossibile inviare email: ${error instanceof Error ? error.message : 'Unknown error'}`
         );
       }
-      // Backoff esponenziale prima del prossimo tentativo
-      await new Promise(resolve => setTimeout(resolve, backoffMs[attempt]));
+      await new Promise(resolve => setTimeout(resolve, calcBackoffDelay(attempt, 250, 1000)));
     } finally {
       // Always close the TCP connection to the SMTP server
       transporter.close();

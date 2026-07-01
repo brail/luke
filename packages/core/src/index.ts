@@ -45,10 +45,12 @@ export { effectiveSectionAccess } from './rbac/effectiveAccess';
 export * from './auth/permissions';
 
 // Re-export utilities
+export * from './utils/backoff';
 export * from './utils/date';
 export * from './utils/dateUtils';
 export * from './utils/pricing';
 export * from './utils/sanitize';
+export * from './utils/user';
 
 // Re-export storage types and config
 export * from './storage/types';
