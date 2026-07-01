@@ -9,6 +9,8 @@
  *  - collectionLayout.export.xlsx / pdf / rowXlsx / rowPdf
  */
 
+
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import {
@@ -19,17 +21,19 @@ import {
   CollectionRowQuotationUpdateSchema,
 } from '@luke/core';
 
-import { TRPCError } from '@trpc/server';
-
-import type { PrismaClient } from '@prisma/client';
 
 import { logAudit } from '../lib/auditLog';
 import { exportTimestamp } from '../lib/export/xlsx-streaming';
+import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
-import { requirePermission } from '../lib/permissions';
-import { deleteObjectByKey } from '../storage';
+import { buildCollectionLayoutPdf } from '../services/collectionLayout.export.pdf.service';
+import {
+  buildCollectionRowPdf,
+  buildCollectionRowXlsx,
+} from '../services/collectionLayout.export.row.service';
+import { buildCollectionLayoutXlsx } from '../services/collectionLayout.export.xlsx.service';
 import {
   getLayout,
   getOrCreateLayout,
@@ -50,12 +54,9 @@ import {
   deleteQuotation,
   reorderQuotations,
 } from '../services/collectionRow.quotation.service';
-import { buildCollectionLayoutXlsx } from '../services/collectionLayout.export.xlsx.service';
-import { buildCollectionLayoutPdf } from '../services/collectionLayout.export.pdf.service';
-import {
-  buildCollectionRowPdf,
-  buildCollectionRowXlsx,
-} from '../services/collectionLayout.export.row.service';
+import { deleteObjectByKey } from '../storage';
+
+import type { PrismaClient } from '@prisma/client';
 
 const quotationsRouter = router({
   create: protectedProcedure
@@ -223,7 +224,8 @@ const rowsRouter = router({
         return updateRow(
           input.rowId,
           { ...rowData, ...(confirmedPictureKey ? { pictureKey: confirmedPictureKey } : {}) },
-          tx as any
+          tx as any,
+          ctx.session!.user.id
         );
       }, { timeout: 15000 });
 
@@ -235,7 +237,7 @@ const rowsRouter = router({
         }
       }
 
-      await logAudit(ctx, { action: 'COLLECTION_ROW_UPDATE', targetType: 'CollectionLayoutRow', targetId: input.rowId, result: 'SUCCESS', metadata: {} });
+      await logAudit(ctx, { action: 'COLLECTION_ROW_UPDATE', targetType: 'CollectionLayoutRow', targetId: input.rowId, result: 'SUCCESS', metadata: rowData.phaseId !== undefined ? { phaseId: rowData.phaseId } : {} });
       return result;
     }),
 

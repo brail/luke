@@ -402,7 +402,8 @@ export async function createRow(
 export async function updateRow(
   rowId: string,
   input: Partial<CollectionLayoutRowInput>,
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  userId?: string
 ): Promise<RowWithVendor> {
   const row = await prisma.collectionLayoutRow.findUnique({
     where: { id: rowId },
@@ -448,11 +449,26 @@ export async function updateRow(
     }
   }
 
-  return prisma.collectionLayoutRow.update({
+  const updated = await prisma.collectionLayoutRow.update({
     where: { id: rowId },
     data: input as any,
     include: ROW_VENDOR_INCLUDE,
-  }) as Promise<RowWithVendor>;
+  }) as RowWithVendor;
+
+  // Phase history hook: record every transition, never a separate job — avoids drift between
+  // the row's live phaseId and its history.
+  if (input.phaseId != null && input.phaseId !== row.phaseId) {
+    await prisma.collectionRowPhaseHistory.create({
+      data: {
+        rowId,
+        phaseId: input.phaseId,
+        reachedAt: new Date(),
+        recordedByUserId: userId ?? null,
+      },
+    });
+  }
+
+  return updated;
 }
 
 /**

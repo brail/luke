@@ -91,6 +91,8 @@ model User {
   notificationPreferences           NotificationPreference[]
   /// Collection layout revisions created by this user.
   collectionLayoutRevisions         CollectionLayoutRevision[]
+  /// Row phase history entries recorded by this user.
+  recordedRowPhaseHistory           CollectionRowPhaseHistory[]
   /// State effect executions applied by this user.
   appliedEffects                    CalendarEventEffectExecution[] @relation("EffectApplier")
   /// State effect executions rolled back by this user.
@@ -657,6 +659,8 @@ model CollectionLayoutRow {
   toolingQuotation Float?
   /// Pricing quotations for this row, one per parameter set variant.
   quotations       CollectionRowQuotation[]
+  /// Full history of phase transitions for this row.
+  phaseHistory     CollectionRowPhaseHistory[]
 
   /// Timestamp of the last revision snapshot that included this row.
   lastRevisedAt DateTime? // updated when row is included in a revision
@@ -696,6 +700,32 @@ model CollectionRowQuotation {
   @@index([rowId])
   @@index([pricingParameterSetId])
   @@map("collection_row_quotations")
+}
+
+/// Full history of phase transitions for a collection row — distinct from AuditLog, queried directly
+/// for plan-vs-actual KPIs (Fase 5/6). No unique on (rowId, phaseId): a row can regress or re-advance
+/// through phases, and every transition is recorded, not just the latest.
+model CollectionRowPhaseHistory {
+  id               String              @id @default(uuid())
+  /// FK to CollectionLayoutRow. Cascade delete — history is meaningless once the row is gone.
+  rowId            String
+  /// The row this history entry belongs to.
+  row              CollectionLayoutRow @relation(fields: [rowId], references: [id], onDelete: Cascade)
+  /// FK to Phase. Restrict delete — never silently lose historical data if a Phase is removed.
+  phaseId          String
+  /// The phase reached at reachedAt.
+  phase            Phase               @relation(fields: [phaseId], references: [id], onDelete: Restrict)
+  /// Timestamp when the row transitioned into this phase.
+  reachedAt        DateTime
+  /// FK to User who made the change, if known. SetNull if the user is deleted.
+  recordedByUserId String?
+  /// The user who made the change, if known.
+  recordedByUser   User?               @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  createdAt        DateTime            @default(now())
+
+  @@index([rowId, reachedAt])
+  @@index([phaseId, reachedAt])
+  @@map("collection_row_phase_history")
 }
 
 /// Configurable catalog items for collection layout dropdowns. Types: strategy, lineStatus, styleStatus, revisionType, pricePositioning.
@@ -1954,6 +1984,8 @@ model Phase {
   milestoneTemplateItems     MilestoneTemplateItem[]
   /// Revision-type catalog items whose expected minimum phase is this one.
   expectedMinForCatalogItems CollectionCatalogItem[]
+  /// Row history entries recording a transition into this phase.
+  rowPhaseHistory            CollectionRowPhaseHistory[]
 
   @@index([isActive])
   @@map("phases")

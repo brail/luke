@@ -25,6 +25,7 @@ import { meRouter } from './me';
 import { merchandisingPlanRouter } from './merchandisingPlan';
 import { notificationsRouter } from './notifications';
 import { phaseRouter } from './phase';
+import { phaseHistoryRouter } from './phaseHistory';
 import { pricingRouter } from './pricing';
 import { publicRouter } from './public';
 import { salesRouter } from './sales';
@@ -49,6 +50,7 @@ export const appRouter = router({
   calendarCatalog: calendarCatalogRouter,
   collectionCatalog: collectionCatalogRouter,
   phase: phaseRouter,
+  phaseHistory: phaseHistoryRouter,
   collectionLayoutRevision: collectionLayoutRevisionRouter,
   merchandisingPlan: merchandisingPlanRouter,
   config: configRouter,
