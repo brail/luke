@@ -16,7 +16,6 @@ interface BackendStatusProps {
 export function BackendStatus({ className }: BackendStatusProps) {
   const { isLoading, hasError } = useAppConfig();
   const isDev = process.env.NODE_ENV === 'development';
-  const version = process.env.NEXT_PUBLIC_APP_VERSION;
 
   const dotClass = cn(
     'h-2 w-2 rounded-full flex-shrink-0',
@@ -39,12 +38,6 @@ export function BackendStatus({ className }: BackendStatusProps) {
       {!isLoading && hasError && (
         <span>
           {isDev ? 'Backend non raggiungibile' : 'Servizio non disponibile'}
-        </span>
-      )}
-
-      {!isLoading && !hasError && isDev && (
-        <span>
-          {[version, 'development'].filter(Boolean).join(' · ')}
         </span>
       )}
     </div>
