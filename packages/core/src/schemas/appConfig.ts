@@ -74,6 +74,40 @@ export const LdapResilienceSchema = z.object({
   halfOpenMaxAttempts: z.number().int().min(1).default(1),
 });
 
+/**
+ * A single criticality band: rows whose days-to-deadline fall in
+ * [minDaysToDeadline, maxDaysToDeadline) are shown with this color/label.
+ * `maxDaysToDeadline: null` means "no upper bound" (furthest-out band).
+ */
+export const AlertBandSchema = z.object({
+  minDaysToDeadline: z.number().int(),
+  maxDaysToDeadline: z.number().int().nullable(),
+  color: z.string().min(1),
+  label: z.string().min(1),
+});
+
+/** Ordered list of criticality bands for one scope (default or a specific Phase override). */
+export const AlertBandSetSchema = z.object({
+  bands: z.array(AlertBandSchema).min(1),
+});
+
+/**
+ * Criticality thresholds for the collection-control alert engine (Fase 5).
+ * Global default bands, with an optional per-Phase override (fallback to `default` when absent).
+ * Stored as a JSON blob under the `collectionControl.alertThresholds` AppConfig key.
+ */
+export const CollectionAlertThresholdsSchema = z.object({
+  default: AlertBandSetSchema,
+  /** Keyed by `Phase.value` (the stable business key), not `Phase.id` — a generated UUID that
+   * differs per environment/seed and would silently stop matching if this config were copied
+   * across environments. */
+  perPhaseOverride: z.record(z.string(), AlertBandSetSchema).optional(),
+});
+
+export type AlertBand = z.infer<typeof AlertBandSchema>;
+export type AlertBandSet = z.infer<typeof AlertBandSetSchema>;
+export type CollectionAlertThresholds = z.infer<typeof CollectionAlertThresholdsSchema>;
+
 export type RateLimitPolicy = z.infer<typeof RateLimitPolicySchema>;
 export type RateLimitConfig = z.infer<typeof RateLimitConfigSchema>;
 export type LdapResilienceConfig = z.infer<typeof LdapResilienceSchema>;

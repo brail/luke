@@ -30,6 +30,7 @@ import { trpc } from '../../../../../lib/trpc';
 import { cn } from '../../../../../lib/utils';
 import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
 
+import { CriticalityBadge } from './CriticalityBadge';
 import { VendorCombobox } from './VendorCombobox';
 
 import type { PricingParameterSet } from '../_hooks/usePricingCalc';
@@ -141,6 +142,8 @@ interface IdentificationSectionProps {
   canUpdate: boolean;
   availableGenders: string[];
   groups: CollectionGroup[];
+  /** Present only in edit mode — enables the criticality badge next to the phase field. */
+  rowId?: string;
 }
 
 /**
@@ -153,6 +156,7 @@ export function IdentificationSection({
   canUpdate,
   availableGenders,
   groups,
+  rowId,
 }: IdentificationSectionProps) {
   const { data: strategyOptions = [] } = trpc.collectionCatalog.list.useQuery(
     { type: 'strategy' },
@@ -332,7 +336,10 @@ export function IdentificationSection({
           name="phaseId"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Fase</FormLabel>
+              <FormLabel className="flex items-center gap-1.5">
+                Fase
+                {rowId && <CriticalityBadge rowId={rowId} className="text-xs" />}
+              </FormLabel>
               <Select
                 onValueChange={v => field.onChange(v === '_none' ? null : v)}
                 value={field.value ?? '_none'}

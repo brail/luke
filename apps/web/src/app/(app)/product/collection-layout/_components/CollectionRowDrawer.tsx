@@ -338,6 +338,7 @@ export function CollectionRowDrawer({
                     canUpdate={canUpdate}
                     availableGenders={availableGenders}
                     groups={groups}
+                    rowId={mode === 'edit' ? row?.id : undefined}
                   />
                 </div>
 

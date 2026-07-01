@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { RateLimitConfigSchema, LdapResilienceSchema } from './appConfig';
+import { RateLimitConfigSchema, LdapResilienceSchema, CollectionAlertThresholdsSchema } from './appConfig';
 
 /**
  * Central registry of all AppConfig keys with their Zod validation schemas.
@@ -63,6 +63,9 @@ export const AppConfigRegistry = {
 
   // ── Rate limiting (JSON object) ───────────────────────────────────────────
   'rateLimit': z.string().transform(s => RateLimitConfigSchema.parse(JSON.parse(s))),
+
+  // ── Collection Control — motore alert (JSON object) ──────────────────────
+  'collectionControl.alertThresholds': z.string().transform(s => CollectionAlertThresholdsSchema.parse(JSON.parse(s))),
 
   // ── LDAP ─────────────────────────────────────────────────────────────────
   'auth.ldap.enabled':        z.coerce.boolean(),
