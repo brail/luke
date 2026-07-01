@@ -14,14 +14,19 @@ import {
 
 import { logAudit } from '../lib/auditLog';
 import { sendVerificationEmail } from '../lib/emailHelpers';
+import { getTimeBasedGreeting, GREETING_INTROS, selectGreetingContent } from '../lib/greetingPhrases';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { hashPassword, verifyPassword } from '../lib/password';
+import { pickRandom } from '../lib/random';
 import { withRateLimit } from '../lib/ratelimit';
 import {
   protectedProcedure,
   router,
   invalidateTokenVersionCache,
 } from '../lib/trpc';
+import { getUserPreferenceValue, setUserPreferenceValue } from '../services/context.service';
+
+const DAILY_GREETING_ENABLED_KEY = 'dailyGreetingEnabled';
 
 export const meRouter = router({
   /**
@@ -75,10 +80,18 @@ export const meRouter = router({
       timezone: user.timezone,
     });
 
+    const dailyGreetingEnabled = await getUserPreferenceValue(
+      user.id,
+      DAILY_GREETING_ENABLED_KEY,
+      true,
+      ctx.prisma
+    );
+
     return {
       ...user,
       provider,
       profileCompletion,
+      dailyGreetingEnabled,
       // Rimuovi identities dall'output (non necessario nel frontend)
       identities: undefined,
     };
@@ -444,6 +457,59 @@ export const meRouter = router({
       });
 
       return updated;
+    }),
+
+  /**
+   * Returns the daily greeting content for the current user (time-based greeting, random intro,
+   * and a quote or fact), or `{ enabled: false }` if the user disabled the feature.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {{ enabled: false } | { enabled: true, greeting, userName, intro, type, content, author }}
+   */
+  getDailyGreeting: protectedProcedure.query(async ({ ctx }) => {
+    const userId = ctx.session.user.id;
+
+    const enabled = await getUserPreferenceValue(userId, DAILY_GREETING_ENABLED_KEY, true, ctx.prisma);
+    if (!enabled) {
+      return { enabled: false as const };
+    }
+
+    const [user, content] = await Promise.all([
+      ctx.prisma.user.findUnique({ where: { id: userId }, select: { firstName: true } }),
+      selectGreetingContent(),
+    ]);
+
+    const hour = Number(
+      new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', hour: 'numeric', hour12: false }).format(new Date())
+    );
+
+    return {
+      enabled: true as const,
+      greeting: getTimeBasedGreeting(hour),
+      userName: user?.firstName ?? '',
+      intro: pickRandom(GREETING_INTROS),
+      ...content,
+    };
+  }),
+
+  /**
+   * Persists the current user's daily greeting kill-switch preference.
+   *
+   * @auth {authenticated}
+   * @input {{ enabled: boolean }}
+   * @output {{ enabled: boolean }}
+   */
+  updateGreetingPreference: protectedProcedure
+    .input(z.object({ enabled: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const enabled = await setUserPreferenceValue(
+        ctx.session.user.id,
+        DAILY_GREETING_ENABLED_KEY,
+        input.enabled,
+        ctx.prisma
+      );
+      return { enabled };
     }),
 });
 

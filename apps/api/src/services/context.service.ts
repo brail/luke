@@ -256,6 +256,55 @@ export async function getMenuCollapsibleStates(
 }
 
 /**
+ * Reads a single key out of the user's consolidated `UserPreference.data` JSON blob.
+ *
+ * @returns The stored value, or `defaultValue` if unset or of the wrong type.
+ */
+export async function getUserPreferenceValue<T>(
+  userId: string,
+  key: string,
+  defaultValue: T,
+  prisma: PrismaClient
+): Promise<T> {
+  const prefs = await prisma.userPreference.findUnique({
+    where: { userId },
+    select: { data: true },
+  });
+
+  const value = (prefs?.data as any)?.[key];
+  return value === undefined ? defaultValue : (value as T);
+}
+
+/**
+ * Persists a single key into the user's consolidated `UserPreference.data` JSON blob,
+ * merging with existing preferences to preserve unrelated fields (brand/season, menu state, ecc.).
+ */
+export async function setUserPreferenceValue<T>(
+  userId: string,
+  key: string,
+  value: T,
+  prisma: PrismaClient
+): Promise<T> {
+  const currentPrefs = await prisma.userPreference.findUnique({
+    where: { userId },
+    select: { data: true },
+  });
+
+  const mergedData = {
+    ...((currentPrefs?.data as any) ?? {}),
+    [key]: value,
+  };
+
+  await prisma.userPreference.upsert({
+    where: { userId },
+    create: { userId, data: mergedData },
+    update: { data: mergedData },
+  });
+
+  return value;
+}
+
+/**
  * Persists sidebar menu collapsed/expanded states for a user.
  * Merges with existing preferences to preserve brand/season selections.
  *

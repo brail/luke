@@ -41,6 +41,7 @@ import { useFormatDate } from '../../../hooks/use-format-date';
 import { trpc } from '../../../lib/trpc';
 
 import { ChangePasswordCard } from './_components/ChangePasswordCard';
+import { GreetingPreference } from './_components/GreetingPreference';
 import { NotificationPreferences } from './_components/NotificationPreferences';
 import { UserProfileForm } from './_components/UserProfileForm';
 
@@ -367,8 +368,9 @@ export default function ProfilePage() {
                     Scegli quali categorie di notifiche vuoi ricevere. Tutte abilitate per default.
                   </CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-3">
                   <NotificationPreferences />
+                  <GreetingPreference enabled={user.dailyGreetingEnabled} />
                 </CardContent>
               </Card>
             </TabsContent>

@@ -7,6 +7,7 @@ import React, { useEffect } from 'react';
 import AppSidebar from '../../components/AppSidebar';
 import { ContextGate } from '../../components/context/ContextGate';
 import { ContextSelector } from '../../components/context/ContextSelector';
+import { DailyGreetingModal } from '../../components/DailyGreetingModal';
 import { HeartbeatTicker } from '../../components/HeartbeatTicker';
 import LoadingLogo from '../../components/LoadingLogo';
 import { NotificationDropdown } from '../../components/NotificationDropdown';
@@ -74,6 +75,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Heartbeat silenzioso per presenza online */}
         <HeartbeatTicker />
+
+        {/* Modal saluto giornaliero, una volta al giorno per browser */}
+        <DailyGreetingModal />
       </SidebarProvider>
     </AppContextProvider>
   );
