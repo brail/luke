@@ -1,9 +1,11 @@
 /**
  * Router tRPC per Collection Catalog Items
  * Gestisce le opzioni configurabili dei campi Collection Layout:
- * strategy, lineStatus, styleStatus, progress
+ * strategy, lineStatus, styleStatus, revisionType, pricePositioning
+ * (la fase produzione è gestita dal catalogo Phase separato, vedi routers/phase.ts)
  */
 
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import {
@@ -12,12 +14,11 @@ import {
   CollectionCatalogItemInputBaseSchema,
 } from '@luke/core';
 
-import { TRPCError } from '@trpc/server';
 
 import { logAudit } from '../lib/auditLog';
+import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
-import { requirePermission } from '../lib/permissions';
 
 const CatalogTypeSchema = z.enum(COLLECTION_CATALOG_TYPES);
 
@@ -60,7 +61,7 @@ export const collectionCatalogRouter = router({
    * Creates a new collection catalog item for the specified type.
    *
    * @auth {collection_layout:update}
-   * @input {CollectionCatalogItemInputSchema} — type, value (unique per type), label, optional order and code.
+   * @input {CollectionCatalogItemInputSchema} — type, value (unique per type), label, optional order.
    * @output {CollectionCatalogItem} — the newly created item.
    */
   create: protectedProcedure
@@ -89,9 +90,8 @@ export const collectionCatalogRouter = router({
           value: input.value,
           label: input.label,
           order: input.order ?? (maxOrder._max.order ?? -1) + 1,
-          code: input.code ?? null,
           iso9001Categories: input.iso9001Categories ?? [],
-          expectedMinProgress: input.expectedMinProgress ?? null,
+          expectedMinPhaseId: input.expectedMinPhaseId ?? null,
         },
       });
 

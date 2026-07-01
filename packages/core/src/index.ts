@@ -24,6 +24,7 @@ export * from './schemas/brand';
 export * from './schemas/season';
 export * from './schemas/pricing';
 export * from './schemas/collectionLayout';
+export * from './schemas/phase';
 export * from './schemas/merchandisingPlan';
 export * from './schemas/seasonCalendar';
 export * from './schemas/company';

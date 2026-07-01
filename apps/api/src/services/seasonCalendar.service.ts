@@ -1,5 +1,5 @@
 import { TRPCError } from '@trpc/server';
-import type { PrismaClient } from '@prisma/client';
+
 import type {
   CalendarEventInput,
   CloneSeasonCalendarInput,
@@ -7,6 +7,8 @@ import type {
 } from '@luke/core';
 
 import { getUserAllowedBrandIds } from './context.service.js';
+
+import type { PrismaClient } from '@prisma/client';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -145,6 +147,7 @@ export async function createMilestone(
         calendarId: input.calendarId,
         ownerFunctionId: input.ownerFunctionId,
         type: input.type,
+        phaseId: input.phaseId,
         title: input.title,
         description: input.description,
         startAt: new Date(input.startAt),
@@ -184,6 +187,7 @@ export async function updateMilestone(
         ...(input.title !== undefined ? { title: input.title } : {}),
         ...(input.description !== undefined ? { description: input.description } : {}),
         ...(input.type !== undefined ? { type: input.type } : {}),
+        ...(input.phaseId !== undefined ? { phaseId: input.phaseId } : {}),
         ...(input.status !== undefined ? { status: input.status } : {}),
         ...(input.startAt !== undefined ? { startAt: new Date(input.startAt) } : {}),
         ...(input.endAt !== undefined ? { endAt: new Date(input.endAt) } : {}),
@@ -315,6 +319,7 @@ export async function applyTemplate(
         calendarId,
         ownerFunctionId: item.ownerFunctionId,
         type: item.type,
+        phaseId: item.phaseId,
         title: item.title,
         description: item.description,
         startAt,
@@ -382,6 +387,7 @@ export async function createTemplateItem(
   data: {
     title: string;
     type: string;
+    phaseId?: string | null;
     ownerFunctionId: string;
     visibilityFunctionIds: string[];
     offsetDays: number;
@@ -413,6 +419,7 @@ export async function updateTemplateItem(
   data: {
     title?: string;
     type?: string;
+    phaseId?: string | null;
     ownerFunctionId?: string;
     visibilityFunctionIds?: string[];
     offsetDays?: number;

@@ -1,7 +1,6 @@
 'use client';
 
 import type { RouterOutputs } from '@luke/api';
-import { COLLECTION_PROGRESS } from '@luke/core';
 
 import {
   Card,
@@ -10,6 +9,7 @@ import {
   CardTitle,
 } from '../../../../../components/ui/card';
 import { Progress } from '../../../../../components/ui/progress';
+import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
 
 type CollectionLayoutData = NonNullable<RouterOutputs['collectionLayout']['get']>;
 
@@ -25,22 +25,23 @@ interface CollectionLayoutSummaryProps {
  * Returns null when the layout has no rows.
  */
 export function CollectionLayoutSummary({ layout }: CollectionLayoutSummaryProps) {
+  const { phases } = usePhaseCatalog();
   const allRows = layout.groups.flatMap(g => g.rows);
   if (allRows.length === 0) return null;
 
   const totalSku = allRows.reduce((sum, r) => sum + (r.skuForecast ?? 0), 0);
 
-  // ── Per Progress ──────────────────────────────────────────────────
+  // ── Per Fase ──────────────────────────────────────────────────
   const progressStats = [
-    ...COLLECTION_PROGRESS.map(progress => {
-      const rows = allRows.filter(r => r.progress === progress);
+    ...phases.map(phase => {
+      const rows = allRows.filter(r => r.phaseId === phase.id);
       const sku = rows.reduce((sum, r) => sum + (r.skuForecast ?? 0), 0);
       const qty = rows.reduce((sum, r) => sum + r.qtyForecast, 0);
       const pct = totalSku > 0 ? Math.round((sku / totalSku) * 100) : 0;
-      return { label: progress, count: rows.length, sku, qty, pct };
+      return { label: phase.label, count: rows.length, sku, qty, pct };
     }),
     (() => {
-      const rows = allRows.filter(r => !r.progress);
+      const rows = allRows.filter(r => !r.phaseId);
       const sku = rows.reduce((sum, r) => sum + (r.skuForecast ?? 0), 0);
       const qty = rows.reduce((sum, r) => sum + r.qtyForecast, 0);
       const pct = totalSku > 0 ? Math.round((sku / totalSku) * 100) : 0;
@@ -66,10 +67,10 @@ export function CollectionLayoutSummary({ layout }: CollectionLayoutSummaryProps
 
   return (
     <div className="grid grid-cols-2 gap-4">
-      {/* Per Progress */}
+      {/* Per Fase */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium">Per Progress</CardTitle>
+          <CardTitle className="text-sm font-medium">Per Fase</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {progressStats.map(({ label, count, sku, qty, pct }) => (

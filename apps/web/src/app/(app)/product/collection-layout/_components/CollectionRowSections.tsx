@@ -28,6 +28,7 @@ import {
 import { Textarea } from '../../../../../components/ui/textarea';
 import { trpc } from '../../../../../lib/trpc';
 import { cn } from '../../../../../lib/utils';
+import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
 
 import { VendorCombobox } from './VendorCombobox';
 
@@ -144,7 +145,7 @@ interface IdentificationSectionProps {
 
 /**
  * Form section for the core identification fields of a collection row:
- * group, gender, line, article, strategy, status, progress, and designer.
+ * group, gender, line, article, strategy, status, phase, and designer.
  * Catalog options (strategy, lineStatus, styleStatus) are fetched from tRPC.
  */
 export function IdentificationSection({
@@ -165,10 +166,7 @@ export function IdentificationSection({
     { type: 'styleStatus' },
     { staleTime: 5 * 60 * 1000 }
   );
-  const { data: progressOptions = [] } = trpc.collectionCatalog.list.useQuery(
-    { type: 'progress' },
-    { staleTime: 5 * 60 * 1000 }
-  );
+  const { phaseOptions } = usePhaseCatalog();
   const { data: pricePositioningOptions = [] } = trpc.collectionCatalog.list.useQuery(
     { type: 'pricePositioning' },
     { staleTime: 5 * 60 * 1000 }
@@ -307,7 +305,7 @@ export function IdentificationSection({
         />
       </div>
 
-      {/* designer | progress */}
+      {/* designer | fase */}
       <div className="grid grid-cols-2 gap-4">
         <FormField
           control={control}
@@ -331,10 +329,10 @@ export function IdentificationSection({
 
         <FormField
           control={control}
-          name="progress"
+          name="phaseId"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Progress</FormLabel>
+              <FormLabel>Fase</FormLabel>
               <Select
                 onValueChange={v => field.onChange(v === '_none' ? null : v)}
                 value={field.value ?? '_none'}
@@ -343,7 +341,7 @@ export function IdentificationSection({
                 <FormControl><SelectTrigger><SelectValue placeholder="—" /></SelectTrigger></FormControl>
                 <SelectContent>
                   <SelectItem value="_none">—</SelectItem>
-                  {progressOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.code ? `${o.code} — ${o.label}` : o.label}</SelectItem>)}
+                  {phaseOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
                 </SelectContent>
               </Select>
               <FormMessage />

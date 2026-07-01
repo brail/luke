@@ -41,50 +41,50 @@ enum NotificationCategory {
 // Models
 /// Platform user. Holds identity, role, and preferences. Relations cover auth, audit, dashboard, calendar, and notifications.
 model User {
-  id                String    @id @default(uuid())
-  email             String    @unique
-  username          String    @unique
-  firstName         String    @default("")
-  lastName          String    @default("")
+  id              String    @id @default(uuid())
+  email           String    @unique
+  username        String    @unique
+  firstName       String    @default("")
+  lastName        String    @default("")
   /// RBAC role: admin (full access), editor (read+write), viewer (read-only).
-  role              Role
+  role            Role
   /// Soft-delete flag. Inactive users cannot log in.
-  isActive          Boolean   @default(true)
+  isActive        Boolean   @default(true)
   /// True while a newly registered user is awaiting admin approval.
-  pendingApproval   Boolean   @default(false)
-  locale            String    @default("it-IT")
-  timezone          String    @default("Europe/Rome")
+  pendingApproval Boolean   @default(false)
+  locale          String    @default("it-IT")
+  timezone        String    @default("Europe/Rome")
   /// Incremented on password change or forced logout to invalidate existing JWTs.
-  tokenVersion      Int       @default(0)
-  emailVerifiedAt   DateTime?
-  lastLoginAt       DateTime?
-  loginCount        Int       @default(0)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  tokenVersion    Int       @default(0)
+  emailVerifiedAt DateTime?
+  lastLoginAt     DateTime?
+  loginCount      Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   // Relations
   /// Authentication identities (LOCAL, LDAP, OIDC) associated with this user.
-  identities Identity[]
+  identities                        Identity[]
   /// Audit log entries where this user is the actor.
-  auditLogs  AuditLog[]
+  auditLogs                         AuditLog[]
   /// One-time tokens (password reset, email verification) belonging to this user.
-  tokens     UserToken[]
+  tokens                            UserToken[]
   /// Per-section visibility overrides for this user.
-  sectionAccess UserSectionAccess[]
+  sectionAccess                     UserSectionAccess[]
   /// Merchandising plan rows assigned to this user.
-  assignedMerchandisingRows MerchandisingPlanRow[]
+  assignedMerchandisingRows         MerchandisingPlanRow[]
   /// Personal dashboard widget configuration (1:1).
-  dashboardConfig DashboardConfig?
+  dashboardConfig                   DashboardConfig?
   /// Personal dashboard task list items.
-  dashboardTasks  DashboardTask[]
+  dashboardTasks                    DashboardTask[]
   /// Personal notes on calendar events.
   calendarEventNotes                CalendarEventPersonalNote[]
   /// Company team memberships.
   teamMemberships                   CompanyTeamMembership[]
   /// Calendar events made visible to this user by a grantor.
-  calendarEventVisibilitiesReceived CalendarEventUserVisibility[] @relation("CalendarEventUserVisibilityRecipient")
+  calendarEventVisibilitiesReceived CalendarEventUserVisibility[]  @relation("CalendarEventUserVisibilityRecipient")
   /// Calendar event visibility records granted by this user to others.
-  calendarEventVisibilitiesGranted  CalendarEventUserVisibility[] @relation("CalendarEventUserVisibilityGrantor")
+  calendarEventVisibilitiesGranted  CalendarEventUserVisibility[]  @relation("CalendarEventUserVisibilityGrantor")
   /// In-app notifications for this user.
   notifications                     Notification[]
   /// Per-category notification preferences.
@@ -96,7 +96,7 @@ model User {
   /// State effect executions rolled back by this user.
   rolledBackEffects                 CalendarEventEffectExecution[] @relation("EffectRollbacker")
   /// Vendor closure periods confirmed by this user.
-  confirmedVendorClosures           VendorClosurePeriod[] @relation("ClosureConfirmer")
+  confirmedVendorClosures           VendorClosurePeriod[]          @relation("ClosureConfirmer")
 
   @@map("users")
 }
@@ -144,15 +144,15 @@ model LocalCredential {
 
 /// Runtime configuration store (KV). All application settings live here — never in .env. Keys defined in AppConfigRegistry (@luke/core).
 model AppConfig {
-  id         String   @id @default(uuid())
+  id          String   @id @default(uuid())
   /// Dot-notation key (e.g. "auth.strategy", "smtp.host"). Must match an AppConfigRegistry entry.
-  key        String   @unique
+  key         String   @unique
   /// Stored value always as string. Use z.coerce.* or JSON.parse in the application layer.
-  value      String
+  value       String
   /// When true, value is AES-GCM encrypted at rest. Decrypted via getConfig({ decrypt: true }).
   isEncrypted Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@map("app_configs")
 }
@@ -161,21 +161,21 @@ model AppConfig {
 model AuditLog {
   id         String   @id @default(uuid())
   /// FK to User (actor). Nullable: system actions have no actor. SetNull on user deletion preserves the log.
-  actorId    String?  // Sostituisce userId (più chiaro)
+  actorId    String? // Sostituisce userId (più chiaro)
   /// Action in SCREAMING_SNAKE_CASE (e.g. USER_CREATE, CONFIG_UPDATE).
-  action     String   // SCREAMING_SNAKE_CASE (es. USER_CREATE)
+  action     String // SCREAMING_SNAKE_CASE (es. USER_CREATE)
   /// Resource type targeted by the action (e.g. User, Config, Auth).
-  targetType String   // Tipo risorsa (User, Config, Auth)
+  targetType String // Tipo risorsa (User, Config, Auth)
   /// ID of the target resource. Null for bulk or non-entity actions.
-  targetId   String?  // ID risorsa target (opzionale)
+  targetId   String? // ID risorsa target (opzionale)
   /// Outcome of the action: SUCCESS or FAILURE.
-  result     String   // SUCCESS o FAILURE (esplicito)
+  result     String // SUCCESS o FAILURE (esplicito)
   /// Redacted supplemental data (e.g. changed fields). Secrets must never appear here.
-  metadata   Json?    // Dati redatti
+  metadata   Json? // Dati redatti
   /// Distributed trace ID for correlating with API logs.
   traceId    String?
   /// Client IP address at the time of the action.
-  ip         String?  // Rinomina da ipAddress per brevità
+  ip         String? // Rinomina da ipAddress per brevità
   createdAt  DateTime @default(now()) // Rinomina da timestamp
 
   // Relations
@@ -190,16 +190,16 @@ model AuditLog {
 
 /// Short-lived one-time token for password reset or email verification. Invalidated after use or expiry.
 model UserToken {
-  id         String    @id @default(uuid())
+  id        String    @id @default(uuid())
   /// FK to User. Cascade delete: tokens are removed when the user is deleted.
-  userId     String
+  userId    String
   /// Token purpose: RESET (password reset flow) or VERIFY (email verification flow).
-  type       TokenType
+  type      TokenType
   /// SHA-256 hash of the raw token. The raw token is sent to the user; only the hash is stored.
-  tokenHash  String
+  tokenHash String
   /// Absolute expiry timestamp. Tokens past this date must be rejected.
-  expiresAt  DateTime
-  createdAt  DateTime  @default(now())
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
 
   // Relations
   /// The user this token belongs to.
@@ -212,27 +212,27 @@ model UserToken {
 
 /// Tracks every file uploaded to a storage bucket. Used for orphan cleanup and deduplication.
 model FileObject {
-  id             String    @id @default(uuid())
+  id              String    @id @default(uuid())
   /// Storage bucket name (e.g. "uploads", "collection-row-pictures"). Must be in localStorageConfigSchema.
-  bucket         String
+  bucket          String
   /// Path key within the bucket. Unique per bucket.
-  key            String
-  originalName   String
+  key             String
+  originalName    String
   /// File size in bytes.
-  size           Int
-  contentType    String
+  size            Int
+  contentType     String
   /// SHA-256 checksum of file content for integrity verification.
-  checksumSha256 String
+  checksumSha256  String
   /// User ID (string) of the uploader. Soft FK — no @relation, user may be deleted.
-  createdBy      String
+  createdBy       String
   /// Orphan cleanup state: PENDING (awaiting confirmation), SUCCESS (cleaned up), FAILED (cleanup error).
-  cleanupStatus  String    @default("PENDING")  // PENDING | SUCCESS | FAILED
+  cleanupStatus   String    @default("PENDING") // PENDING | SUCCESS | FAILED
   /// Number of cleanup attempts made so far.
-  cleanupAttempts Int      @default(0)
-  lastCleanupAt  DateTime?
+  cleanupAttempts Int       @default(0)
+  lastCleanupAt   DateTime?
   /// Null until the file is linked to an entity (e.g. brand logo saved). Unconfirmed files are eligible for cleanup.
-  confirmedAt    DateTime?                       // null = pending confirmation; set on entity link
-  createdAt      DateTime  @default(now())
+  confirmedAt     DateTime? // null = pending confirmation; set on entity link
+  createdAt       DateTime  @default(now())
 
   @@unique([bucket, key])
   @@index([bucket, key])
@@ -249,14 +249,14 @@ model UserSectionAccess {
   /// FK to User. Cascade delete: overrides are removed when the user is deleted.
   userId    String
   /// Dot-notation section key (e.g. 'settings', 'maintenance'). Must match sectionEnum.
-  section   String   // 'settings' | 'maintenance'
+  section   String // 'settings' | 'maintenance'
   /// true = explicitly allow access; false = explicitly deny access.
-  enabled   Boolean  // true=allow, false=deny
+  enabled   Boolean // true=allow, false=deny
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   /// The user this section override applies to.
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, section])
   @@index([userId, section])
@@ -265,20 +265,20 @@ model UserSectionAccess {
 
 /// Internal brand entity. Primary grouping for collections, pricing, and calendars. May be linked to a NAV brand record.
 model Brand {
-  id          String    @id @default(uuid())
+  id         String    @id @default(uuid())
   /// Unique short code (max 20 chars, aligned to NAV nvarchar).
-  code        String    @unique
-  name        String
+  code       String    @unique
+  name       String
   /// Storage key for the brand logo in the "brand-logos" bucket. Null if no logo uploaded.
-  logoKey     String?
+  logoKey    String?
   /// FK to NavBrand (optional). Links this brand to the NAV replica. SetNull on NAV record deletion.
-  navBrandId  String?   @unique
+  navBrandId String?   @unique
   /// NAV brand replica linked to this brand.
-  navBrand    NavBrand? @relation(fields: [navBrandId], references: [navCode], onDelete: SetNull)
+  navBrand   NavBrand? @relation(fields: [navBrandId], references: [navCode], onDelete: SetNull)
   /// Soft-delete flag. Inactive brands are hidden from normal listings.
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   /// Pricing parameter sets scoped to this brand.
   pricingParameterSets PricingParameterSet[]
@@ -370,7 +370,6 @@ model UserPreference {
   @@map("user_preferences")
 }
 
-
 /// Pricing parameter set for a brand+season combination. Multiple variants per pair (e.g. Pelle, Non Pelle, Tunisia). Drives the pricing calculator.
 model PricingParameterSet {
   id                     String   @id @default(uuid())
@@ -379,9 +378,9 @@ model PricingParameterSet {
   /// FK to Season. Restrict delete — cannot delete a season while parameter sets exist.
   seasonId               String
   /// Human-readable variant name (e.g. "Pelle", "Non Pelle", "Tunisia"). Unique within brand+season.
-  name                   String   // es. "Pelle", "Non Pelle", "Tunisia"
+  name                   String // es. "Pelle", "Non Pelle", "Tunisia"
   /// ISO 3166-1 alpha-2 country of production (e.g. "CN", "IT", "TR").
-  countryCode            String   // es. "CN", "IT", "TR" — ISO 3166-1 alpha-2
+  countryCode            String // es. "CN", "IT", "TR" — ISO 3166-1 alpha-2
   /// Currency for supplier purchase prices. Supported: USD, EUR, GBP, CHF, CNY.
   purchaseCurrency       String   @default("USD")
   /// Currency for retail/wholesale selling prices. Supported: USD, EUR, GBP, CHF, CNY.
@@ -402,9 +401,9 @@ model PricingParameterSet {
   updatedAt              DateTime @updatedAt
 
   /// The brand this parameter set belongs to.
-  brand  Brand  @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  brand                 Brand                    @relation(fields: [brandId], references: [id], onDelete: Restrict)
   /// The season this parameter set belongs to.
-  season Season @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  season                Season                   @relation(fields: [seasonId], references: [id], onDelete: Restrict)
   /// Collection row quotations using this parameter set.
   quotations            CollectionRowQuotation[]
   /// Merchandising plan rows using this parameter set.
@@ -419,7 +418,7 @@ model PricingParameterSet {
 
 /// Collection Layout — unique per brand+season pair. Represents the ordered list of lines composing a seasonal collection.
 model CollectionLayout {
-  id               String   @id @default(uuid())
+  id               String                     @id @default(uuid())
   /// FK to Brand. Restrict delete.
   brandId          String
   /// FK to Season. Restrict delete.
@@ -427,27 +426,27 @@ model CollectionLayout {
   /// Total SKU budget for the entire layout.
   skuBudget        Int?
   /// JSON array of hidden column keys. Null means all columns visible.
-  hiddenColumns    Json?    // String[] — colonne nascoste, null = tutte visibili
+  hiddenColumns    Json? // String[] — colonne nascoste, null = tutte visibili
   /// Genders available for rows in this layout (e.g. ["MAN","WOMAN"]).
-  availableGenders String[] @default(["MAN","WOMAN"])
+  availableGenders String[]                   @default(["MAN", "WOMAN"])
   /// FK to CalendarEvent that triggered a lock. Null when not locked.
   lockedByEventId  String?
   /// Timestamp when the layout was locked. Null when not locked.
   lockedAt         DateTime?
   /// The brand this layout belongs to.
-  brand            Brand    @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  brand            Brand                      @relation(fields: [brandId], references: [id], onDelete: Restrict)
   /// The season this layout belongs to.
-  season           Season   @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  season           Season                     @relation(fields: [seasonId], references: [id], onDelete: Restrict)
   /// The calendar event that locked this layout, if any.
-  lockedByEvent    CalendarEvent? @relation(fields: [lockedByEventId], references: [id], onDelete: SetNull)
+  lockedByEvent    CalendarEvent?             @relation(fields: [lockedByEventId], references: [id], onDelete: SetNull)
   /// Ordered groups (e.g. Uomo, Donna) within this layout.
   groups           CollectionGroup[]
   /// All rows across all groups in this layout.
   rows             CollectionLayoutRow[]
   /// Formal ISO 9001 revisions of this layout.
   revisions        CollectionLayoutRevision[]
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
 
   @@unique([brandId, seasonId])
   @@index([brandId, seasonId])
@@ -457,20 +456,20 @@ model CollectionLayout {
 
 /// Group of rows within a Collection Layout (e.g. "Collezione Uomo", "Collezione Donna", "Special Edition"). Owns its own SKU budget.
 model CollectionGroup {
-  id                 String           @id @default(uuid())
+  id                 String                @id @default(uuid())
   /// FK to CollectionLayout. Cascade delete — removing the layout removes all groups.
   collectionLayoutId String
   /// The layout this group belongs to.
-  collectionLayout   CollectionLayout @relation(fields: [collectionLayoutId], references: [id], onDelete: Cascade)
+  collectionLayout   CollectionLayout      @relation(fields: [collectionLayoutId], references: [id], onDelete: Cascade)
   name               String
   /// Display order within the layout. Lower = first.
-  order              Int              @default(0)
+  order              Int                   @default(0)
   /// SKU budget allocated to this group (distinct from the layout-level skuBudget).
   skuBudget          Int?
   /// Rows belonging to this group, ordered by their own order field.
   rows               CollectionLayoutRow[]
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
 
   @@index([collectionLayoutId])
   @@map("collection_groups")
@@ -480,9 +479,9 @@ model CollectionGroup {
 model NavSyncFilter {
   id              String   @id @default(cuid())
   /// Entity type discriminator: "vendor", "brand", or "season".
-  entity          String   // "vendor" | "brand" | "season"
+  entity          String // "vendor" | "brand" | "season"
   /// Sync scope: "all" (sync everything), "whitelist" (only listed navNos), "exclude" (all except listed navNos).
-  mode            String   // "all" | "whitelist" | "exclude"
+  mode            String // "all" | "whitelist" | "exclude"
   /// NAV No_ values used when mode is "whitelist" or "exclude".
   navNos          String[] // rilevante solo per whitelist/exclude
   /// Whether this sync filter is currently active.
@@ -501,34 +500,34 @@ model NavSyncFilter {
 
 /// Read-only replica of [COMPANY$Vendor] from Microsoft NAV. NAV timestamp used only in differential sync queries — not mapped here.
 model NavVendor {
-  navNo           String    @id              // No_
-  name            String                     // Name
-  name2           String?                    // Name 2
-  searchName      String?                    // Search Name
-  firstName       String?                    // First Name
-  lastName        String?                    // Last Name
+  navNo      String  @id // No_
+  name       String // Name
+  name2      String? // Name 2
+  searchName String? // Search Name
+  firstName  String? // First Name
+  lastName   String? // Last Name
 
-  address         String?                    // Address
-  address2        String?                    // Address 2
-  postCode        String?                    // Post Code
-  city            String?                    // City
-  county          String?                    // County
-  countryCode     String?                    // Country_Region Code
+  address     String? // Address
+  address2    String? // Address 2
+  postCode    String? // Post Code
+  city        String? // City
+  county      String? // County
+  countryCode String? // Country_Region Code
 
-  phoneNo         String?                    // Phone No_
-  faxNo           String?                    // Fax No_
-  email           String?                    // E-Mail
-  homePage        String?                    // Home Page
-  contact         String?                    // Contact
+  phoneNo  String? // Phone No_
+  faxNo    String? // Fax No_
+  email    String? // E-Mail
+  homePage String? // Home Page
+  contact  String? // Contact
 
-  vendorType      String?                    // Vendor Type
+  vendorType String? // Vendor Type
 
-  navLastModified DateTime?                  // Last Date Modified
+  navLastModified DateTime? // Last Date Modified
   /// Timestamp of the last successful sync from NAV.
-  syncedAt        DateTime                   // timestamp ultimo sync
+  syncedAt        DateTime // timestamp ultimo sync
 
   /// Internal Vendor record linked to this NAV vendor, if matched.
-  vendor          Vendor?                    // collegamento all'anagrafica interna
+  vendor Vendor? // collegamento all'anagrafica interna
 
   @@index([name])
   @@index([syncedAt])
@@ -538,13 +537,13 @@ model NavVendor {
 
 /// Read-only replica of [COMPANY$Brand] from Microsoft NAV.
 model NavBrand {
-  navCode     String   @id              // Code (PK)
-  description String   @default("")     // Description
+  navCode     String   @id // Code (PK)
+  description String   @default("") // Description
   /// Timestamp of the last successful sync from NAV.
-  syncedAt    DateTime                  // timestamp ultimo sync
+  syncedAt    DateTime // timestamp ultimo sync
 
   /// Internal Brand record linked to this NAV brand, if matched.
-  brand       Brand?                    // collegamento all'anagrafica interna
+  brand Brand? // collegamento all'anagrafica interna
 
   @@index([description])
   @@map("nav_brands")
@@ -552,15 +551,15 @@ model NavBrand {
 
 /// Read-only replica of [COMPANY$Season] from Microsoft NAV.
 model NavSeason {
-  navCode      String    @id            // Code (PK)
-  description  String    @default("")   // Description
-  startingDate DateTime?                // Starting Date
-  endingDate   DateTime?                // Ending Date
+  navCode      String    @id // Code (PK)
+  description  String    @default("") // Description
+  startingDate DateTime? // Starting Date
+  endingDate   DateTime? // Ending Date
   /// Timestamp of the last successful sync from NAV.
-  syncedAt     DateTime                 // timestamp ultimo sync
+  syncedAt     DateTime // timestamp ultimo sync
 
   /// Internal Season record linked to this NAV season, if matched.
-  season       Season?                  // collegamento all'anagrafica interna
+  season Season? // collegamento all'anagrafica interna
 
   @@index([description])
   @@map("nav_seasons")
@@ -568,7 +567,7 @@ model NavSeason {
 
 /// Internal supplier (vendor) entity. Standalone — can exist independently of NAV. Optionally linked to a NAV vendor record.
 model Vendor {
-  id          String    @id @default(uuid())
+  id          String     @id @default(uuid())
   name        String
   countryCode String?
   /// Short nickname used in UI listings.
@@ -581,13 +580,13 @@ model Vendor {
   chat        String?
   notes       String?
   /// FK to NavVendor (optional). SetNull on NAV record deletion.
-  navVendorId String?   @unique
+  navVendorId String?    @unique
   /// NAV vendor replica linked to this vendor, if matched.
   navVendor   NavVendor? @relation(fields: [navVendorId], references: [navNo], onDelete: SetNull)
   /// Soft-delete flag. Inactive vendors are hidden from normal listings.
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
   /// Collection layout rows assigned to this vendor.
   collectionRows       CollectionLayoutRow[]
@@ -603,69 +602,72 @@ model Vendor {
 
 /// Single row in a Collection Layout representing one line/style within a seasonal collection.
 model CollectionLayoutRow {
-  id                     String                @id @default(uuid())
+  id                 String           @id @default(uuid())
   /// FK to CollectionLayout. Cascade delete.
-  collectionLayoutId     String
+  collectionLayoutId String
   /// The layout this row belongs to.
-  collectionLayout       CollectionLayout      @relation(fields: [collectionLayoutId], references: [id], onDelete: Cascade)
+  collectionLayout   CollectionLayout @relation(fields: [collectionLayoutId], references: [id], onDelete: Cascade)
   /// FK to CollectionGroup. Cascade delete — removing a group removes all its rows.
-  groupId                String
+  groupId            String
   /// The group this row belongs to.
-  group                  CollectionGroup       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  group              CollectionGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
   /// Display order within the group. Lower = first.
-  order                  Int                   @default(0)
+  order              Int              @default(0)
 
   // Required fields
   /// Gender for this row. Validated against layout.availableGenders (MAN | WOMAN).
-  gender                 String                // validated against layout.availableGenders
+  gender          String // validated against layout.availableGenders
   /// FK to Vendor (optional). SetNull if vendor is deleted.
-  vendorId               String?
+  vendorId        String?
   /// Vendor assigned to produce this row, if any.
-  vendor                 Vendor?               @relation(fields: [vendorId], references: [id], onDelete: SetNull)
-  line                   String
+  vendor          Vendor? @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  line            String
   /// Short free-text article description appearing after the line name.
-  article                String?               // testo libero corto, dopo line
+  article         String? // testo libero corto, dopo line
   /// Workflow status value from the lineStatus catalog (catalog-managed).
-  status                 String                // catalog-managed (lineStatus)
+  status          String // catalog-managed (lineStatus)
   /// Planned SKU count (distinct sizes/colors). Belongs to Row (not Group).
-  skuForecast            Int?
-  qtyForecast            Int
-  productCategory        String
+  skuForecast     Int?
+  qtyForecast     Int
+  productCategory String
 
   // Optional — identification/progress
   /// Strategy value from the strategy catalog (CORE | INNOVATION).
-  strategy               String?               // catalog-managed
+  strategy         String? // catalog-managed
   /// Style status value from the styleStatus catalog (catalog-managed).
-  styleStatus            String?               // catalog-managed
-  /// Production progress phase (01 - FASE DI DESIGN → 06 - SMS LANCIATI).
-  progress               String?               // catalog-managed
+  styleStatus      String? // catalog-managed
+  /// FK to Phase (optional). Restrict delete — never silently lose production state if a Phase is removed.
+  phaseId          String?
+  /// Current production phase of this row.
+  phase            Phase?  @relation(fields: [phaseId], references: [id], onDelete: Restrict)
   /// Price positioning value from the catalog (catalog-managed).
-  pricePositioning       String?               // catalog-managed
-  designer               String?
+  pricePositioning String? // catalog-managed
+  designer         String?
   /// Storage key for the row photo in the "collection-row-pictures" bucket.
-  pictureKey             String?
+  pictureKey       String?
 
   // Optional — notes
-  styleNotes             String?
-  materialNotes          String?
-  colorNotes             String?
-  toolingNotes           String?
+  styleNotes    String?
+  materialNotes String?
+  colorNotes    String?
+  toolingNotes  String?
 
   // Optional — pricing
   /// Tooling/mold cost quoted for this row (in purchaseCurrency of the active parameter set).
-  toolingQuotation       Float?
+  toolingQuotation Float?
   /// Pricing quotations for this row, one per parameter set variant.
-  quotations             CollectionRowQuotation[]
+  quotations       CollectionRowQuotation[]
 
   /// Timestamp of the last revision snapshot that included this row.
-  lastRevisedAt          DateTime?             // updated when row is included in a revision
+  lastRevisedAt DateTime? // updated when row is included in a revision
 
-  createdAt              DateTime              @default(now())
-  updatedAt              DateTime              @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([collectionLayoutId])
   @@index([groupId])
   @@index([vendorId])
+  @@index([phaseId])
   @@map("collection_layout_rows")
 }
 
@@ -684,7 +686,7 @@ model CollectionRowQuotation {
   pricingParameterSet   PricingParameterSet? @relation(fields: [pricingParameterSetId], references: [id], onDelete: SetNull)
   retailPrice           Float?
   /// FOB price in the purchaseCurrency defined by the linked parameter set.
-  supplierQuotation     Float?               // FOB in purchaseCurrency del param set
+  supplierQuotation     Float? // FOB in purchaseCurrency del param set
   notes                 String?
   /// SKU count specific to this quotation variant.
   sku                   Int?
@@ -696,30 +698,33 @@ model CollectionRowQuotation {
   @@map("collection_row_quotations")
 }
 
-/// Configurable catalog items for collection layout dropdowns. Types: strategy, lineStatus, styleStatus, progress, revisionType.
+/// Configurable catalog items for collection layout dropdowns. Types: strategy, lineStatus, styleStatus, revisionType, pricePositioning.
 model CollectionCatalogItem {
-  id                   String   @id @default(uuid())
-  /// Discriminator: "strategy" | "lineStatus" | "styleStatus" | "progress" | "revisionType".
-  type                 String   // "strategy" | "lineStatus" | "styleStatus" | "progress" | "revisionType"
+  id                 String   @id @default(uuid())
+  /// Discriminator: "strategy" | "lineStatus" | "styleStatus" | "revisionType" | "pricePositioning".
+  type               String // "strategy" | "lineStatus" | "styleStatus" | "revisionType" | "pricePositioning"
   /// Immutable machine key (e.g. "CORE", "NEW"). Used as stored value in row fields.
-  value                String
+  value              String
   /// Human-readable display label (editable).
-  label                String
-  /// User-visible short code (e.g. "01"). Populated only for type=progress.
-  code                 String?  // codice user-visibile (es. "01") — popolato solo per type=progress
+  label              String
+  /// Unused since the progress domain moved to the Phase catalog. No remaining type writes this field.
+  code               String?
   /// ISO 9001 categories associated with this item. Populated only for type=revisionType.
-  iso9001Categories    String[] @default([]) // categorie ISO 9001 — popolato solo per type=revisionType
-  /// Minimum expected progress value for this revision type. Populated only for type=revisionType.
-  expectedMinProgress  String?  // valore progress atteso — popolato solo per type=revisionType
+  iso9001Categories  String[] @default([]) // categorie ISO 9001 — popolato solo per type=revisionType
+  /// FK to Phase (optional). Minimum expected phase for this revision type. Populated only for type=revisionType.
+  expectedMinPhaseId String?
+  /// Minimum expected phase for this revision type.
+  expectedMinPhase   Phase?   @relation(fields: [expectedMinPhaseId], references: [id], onDelete: Restrict)
   /// Display order within the type group.
-  order                Int      @default(0)
+  order              Int      @default(0)
   /// Soft-delete flag. Inactive items are hidden from pickers.
-  isActive             Boolean  @default(true)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   @@unique([type, value])
   @@index([type, isActive])
+  @@index([expectedMinPhaseId])
   @@map("collection_catalog_items")
 }
 
@@ -737,7 +742,7 @@ model CollectionLayoutRevision {
   /// Value from the revisionType catalog (e.g. "DESIGN_CHANGE").
   revisionTypeValue  String
   /// Trigger for this revision: MANUAL (user-initiated) or MILESTONE (calendar event).
-  cause              String           // MANUAL | MILESTONE
+  cause              String // MANUAL | MILESTONE
   /// Soft FK to the CalendarEvent milestone that triggered this revision. No @relation — event may be deleted.
   milestoneId        String?
   notes              String?
@@ -748,9 +753,9 @@ model CollectionLayoutRevision {
   createdAt          DateTime         @default(now())
 
   /// Snapshot of all groups at the time of this revision.
-  groups             CollectionGroupRevision[]
+  groups       CollectionGroupRevision[]
   /// Snapshot of all rows at the time of this revision.
-  rowRevisions       CollectionLayoutRowRevision[]
+  rowRevisions CollectionLayoutRowRevision[]
 
   @@unique([collectionLayoutId, revisionNumber])
   @@index([collectionLayoutId, createdAt])
@@ -760,11 +765,11 @@ model CollectionLayoutRevision {
 
 /// Snapshot of a CollectionGroup at the time of a revision. sourceGroupId is a soft FK — the live group may have been deleted.
 model CollectionGroupRevision {
-  id            String                     @id @default(uuid())
+  id            String                   @id @default(uuid())
   /// FK to CollectionLayoutRevision. Cascade delete.
   revisionId    String
   /// The revision this group snapshot belongs to.
-  revision      CollectionLayoutRevision   @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  revision      CollectionLayoutRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
   /// Soft FK to the live CollectionGroup at revision time. No @relation — group may be deleted post-revision.
   sourceGroupId String
   name          String
@@ -772,7 +777,7 @@ model CollectionGroupRevision {
   skuBudget     Int?
 
   /// Row snapshots belonging to this group snapshot.
-  rows          CollectionLayoutRowRevision[]
+  rows CollectionLayoutRowRevision[]
 
   @@index([revisionId])
   @@index([sourceGroupId])
@@ -781,47 +786,47 @@ model CollectionGroupRevision {
 
 /// Snapshot of a CollectionLayoutRow at the time of a revision. sourceRowId is a soft FK. wasDeleted=true means the row was already deleted when included in the revision.
 model CollectionLayoutRowRevision {
-  id                    String                       @id @default(uuid())
+  id                    String                   @id @default(uuid())
   /// FK to CollectionLayoutRevision. Cascade delete.
   revisionId            String
   /// The revision this row snapshot belongs to.
-  revision              CollectionLayoutRevision     @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  revision              CollectionLayoutRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
   /// FK to CollectionGroupRevision. Cascade delete.
   sourceGroupRevisionId String
   /// The group snapshot this row snapshot belongs to.
-  sourceGroupRevision   CollectionGroupRevision      @relation(fields: [sourceGroupRevisionId], references: [id], onDelete: Cascade)
+  sourceGroupRevision   CollectionGroupRevision  @relation(fields: [sourceGroupRevisionId], references: [id], onDelete: Cascade)
   /// Soft FK to the live CollectionLayoutRow at revision time. No @relation — row may be deleted post-revision.
   sourceRowId           String
   /// True if the row had already been soft-deleted at the time of the revision.
-  wasDeleted            Boolean                      @default(false)
+  wasDeleted            Boolean                  @default(false)
 
   // Snapshot fields — denormalised from the live row at revision time
-  gender                String
-  vendorId              String?
+  gender           String
+  vendorId         String?
   /// Denormalised vendor name at revision time (vendor may be renamed or deleted later).
-  vendorName            String?
-  line                  String
-  article               String?
-  status                String
-  skuForecast           Int?
-  qtyForecast           Int
-  productCategory       String
-  strategy              String?
-  styleStatus           String?
-  progress              String?
-  pricePositioning      String?
-  designer              String?
+  vendorName       String?
+  line             String
+  article          String?
+  status           String
+  skuForecast      Int?
+  qtyForecast      Int
+  productCategory  String
+  strategy         String?
+  styleStatus      String?
+  progress         String?
+  pricePositioning String?
+  designer         String?
   /// Storage key in the immutable "collection-row-pictures-revisions" bucket.
-  pictureKey            String?  // key nel bucket immutabile collection-row-pictures-revisions
-  styleNotes            String?
-  materialNotes         String?
-  colorNotes            String?
-  toolingNotes          String?
-  toolingQuotation      Float?
-  order                 Int
+  pictureKey       String? // key nel bucket immutabile collection-row-pictures-revisions
+  styleNotes       String?
+  materialNotes    String?
+  colorNotes       String?
+  toolingNotes     String?
+  toolingQuotation Float?
+  order            Int
 
   /// Quotation snapshots for this row at revision time.
-  quotationRevisions    CollectionRowQuotationRevision[]
+  quotationRevisions CollectionRowQuotationRevision[]
 
   @@unique([revisionId, sourceRowId])
   @@index([sourceRowId, revisionId])
@@ -839,7 +844,7 @@ model CollectionRowQuotationRevision {
   /// Soft FK to the live PricingParameterSet. No @relation — set may be deleted post-revision.
   pricingParameterSetId   String?
   /// Denormalised parameter set name at revision time.
-  pricingParameterSetName String?  // denormalizzato
+  pricingParameterSetName String? // denormalizzato
   retailPrice             Float?
   supplierQuotation       Float?
   notes                   String?
@@ -901,11 +906,11 @@ model MerchandisingPlan {
   updatedAt DateTime                @updatedAt
 
   /// The brand this plan belongs to.
-  brand   Brand                 @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  brand  Brand                  @relation(fields: [brandId], references: [id], onDelete: Restrict)
   /// The season this plan belongs to.
-  season  Season                @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  season Season                 @relation(fields: [seasonId], references: [id], onDelete: Restrict)
   /// SKU-level rows belonging to this plan.
-  rows    MerchandisingPlanRow[]
+  rows   MerchandisingPlanRow[]
 
   @@unique([brandId, seasonId])
   @@index([brandId, seasonId])
@@ -944,13 +949,13 @@ model MerchandisingPlanRow {
   /// FK to PricingParameterSet (optional). SetNull if deleted.
   pricingParameterSetId String?
 
-  targetFobPrice   Decimal? @db.Decimal(10, 4)
-  firstOfferPrice  Decimal? @db.Decimal(10, 4)
-  finalOfferPrice  Decimal? @db.Decimal(10, 4)
-  retailTargetIt   Decimal? @db.Decimal(10, 4)
-  wholesaleIt      Decimal? @db.Decimal(10, 4)
-  retailTargetEu   Decimal? @db.Decimal(10, 4)
-  wholesaleEu      Decimal? @db.Decimal(10, 4)
+  targetFobPrice  Decimal? @db.Decimal(10, 4)
+  firstOfferPrice Decimal? @db.Decimal(10, 4)
+  finalOfferPrice Decimal? @db.Decimal(10, 4)
+  retailTargetIt  Decimal? @db.Decimal(10, 4)
+  wholesaleIt     Decimal? @db.Decimal(10, 4)
+  retailTargetEu  Decimal? @db.Decimal(10, 4)
+  wholesaleEu     Decimal? @db.Decimal(10, 4)
 
   pricingNotes String?
   generalNotes String?
@@ -1058,68 +1063,68 @@ model MerchandisingImage {
 /// Sync state tracker per NAV portafoglio table. navRowversion = CONVERT(BIGINT, MAX(timestamp)) from last SQL Server sync. 0 for full-refresh tables.
 model NavPfSyncState {
   /// Table name used as PK (e.g. "nav_pf_sales_header").
-  tableName       String    @id
+  tableName      String    @id
   /// Last NAV rowversion processed. 0 for full-refresh tables (date_prenotazione, ddt_picking).
-  lastRowversion  BigInt    @default(0)
-  lastSyncedAt    DateTime?
+  lastRowversion BigInt    @default(0)
+  lastSyncedAt   DateTime?
   /// Number of rows present after the last sync.
-  rowCount        Int       @default(0)
+  rowCount       Int       @default(0)
   /// Duration of the last sync in milliseconds.
-  lastDurationMs  Int?
+  lastDurationMs Int?
 
   @@map("nav_pf_sync_state")
 }
 
 /// Read-only replica of [Company$Sales Header] from NAV. Synced incrementally via rowversion.
 model NavPfSalesHeader {
-  no_                       String    @id
-  documentType              Int
-  orderDate                 DateTime?
-  sellToCustomerNo          String?
-  billToCustomerNo          String?
-  billToName                String?
-  salespersonCode           String?
-  areaManagerCode           String?
-  subject1                  String?
-  subject2                  String?
-  currencyCode              String?
-  shipToCode                String?
-  shipToName                String?
-  shipToName2               String?
-  shipToAddress             String?
-  shipToAddress2            String?
-  shipToCity                String?
-  shipToPostCode            String?
-  shipToCounty              String?
-  shipmentMethodCode        String?
-  transportReasonCode       String?
-  shippingAgentCode         String?
-  shippingAgentServiceCode  String?
-  paymentTermsCode          String?
-  paymentMethodCode         String?
+  no_                        String    @id
+  documentType               Int
+  orderDate                  DateTime?
+  sellToCustomerNo           String?
+  billToCustomerNo           String?
+  billToName                 String?
+  salespersonCode            String?
+  areaManagerCode            String?
+  subject1                   String?
+  subject2                   String?
+  currencyCode               String?
+  shipToCode                 String?
+  shipToName                 String?
+  shipToName2                String?
+  shipToAddress              String?
+  shipToAddress2             String?
+  shipToCity                 String?
+  shipToPostCode             String?
+  shipToCounty               String?
+  shipmentMethodCode         String?
+  transportReasonCode        String?
+  shippingAgentCode          String?
+  shippingAgentServiceCode   String?
+  paymentTermsCode           String?
+  paymentMethodCode          String?
   invoiceDiscountCalculation String?
-  invoiceDiscountValue      Float?
-  consignment               Int?
-  rightOnReturnPct          Float?
-  note                      String?
-  campaignNo                String?
-  securitiesReceived        String?
-  anomalous                 Int?
-  notAnomalous              Int?
-  anomalousDate             DateTime?
-  checked                   Int?
-  checkedDate               DateTime?
-  budgetNo                  String?
-  courseDate                DateTime?
-  kimoFashionSoNo           String?
-  orderType                 Int?
-  fastShipping              Int?
-  commissionGroupCode       String?
-  geographicalZone          String?
-  sellingSeasonCode         String?
-  shortcutDimension2Code    String?
-  customerPostingGroup      String?
-  navRowversion             BigInt    @default(0)
+  invoiceDiscountValue       Float?
+  consignment                Int?
+  rightOnReturnPct           Float?
+  note                       String?
+  campaignNo                 String?
+  securitiesReceived         String?
+  anomalous                  Int?
+  notAnomalous               Int?
+  anomalousDate              DateTime?
+  checked                    Int?
+  checkedDate                DateTime?
+  budgetNo                   String?
+  courseDate                 DateTime?
+  kimoFashionSoNo            String?
+  orderType                  Int?
+  fastShipping               Int?
+  commissionGroupCode        String?
+  geographicalZone           String?
+  sellingSeasonCode          String?
+  shortcutDimension2Code     String?
+  customerPostingGroup       String?
+  navRowversion              BigInt    @default(0)
 
   @@index([sellingSeasonCode])
   @@index([shortcutDimension2Code])
@@ -1131,47 +1136,47 @@ model NavPfSalesHeader {
 
 /// Read-only replica of [Company$Sales Line] from NAV. PK is composite (documentType, documentNo, lineNo).
 model NavPfSalesLine {
-  documentType              Int
-  documentNo                String
-  lineNo                    Int
-  type                      Int?
-  no_                       String?
-  customerOrderRef          String?
-  reference                 String?
-  genBusPostingGroup        String?
-  vatBusPostingGroup        String?
-  unitOfMeasure             String?
-  constantVariableCode      String?
-  assortmentCode            String?
-  deleteReason              String?
-  salesPurchaseStatusCode   String?
-  salesPurchaseStatusItem   String?
-  deleteDate                DateTime?
-  customerPriceGroup        String?
-  averageUnitPrice          Float?
-  noOfPairs                 Float?
-  quantity                  Float?
-  lineAmount                Float?
-  invDiscountAmount         Float?
-  quantityShipped           Float?
-  quantityInvoiced          Float?
-  returnQtyReceived         Float?
-  subject1Commission        Float?
-  subject2Commission        Float?
-  subject3Commission        Float?
-  subject4Commission        Float?
-  areaManagerCommission     Float?
-  salespersonCommission     Float?
-  returnReasonCode          String?
-  requestedDeliveryDate     DateTime?
-  lineDiscountPct           Float?
-  discount1Pct              Float?
-  discount2Pct              Float?
-  discount3Pct              Float?
-  locationCode              String?
-  modelCrossReference       String?
-  constantAssortmentVarGrp  String?
-  navRowversion             BigInt    @default(0)
+  documentType             Int
+  documentNo               String
+  lineNo                   Int
+  type                     Int?
+  no_                      String?
+  customerOrderRef         String?
+  reference                String?
+  genBusPostingGroup       String?
+  vatBusPostingGroup       String?
+  unitOfMeasure            String?
+  constantVariableCode     String?
+  assortmentCode           String?
+  deleteReason             String?
+  salesPurchaseStatusCode  String?
+  salesPurchaseStatusItem  String?
+  deleteDate               DateTime?
+  customerPriceGroup       String?
+  averageUnitPrice         Float?
+  noOfPairs                Float?
+  quantity                 Float?
+  lineAmount               Float?
+  invDiscountAmount        Float?
+  quantityShipped          Float?
+  quantityInvoiced         Float?
+  returnQtyReceived        Float?
+  subject1Commission       Float?
+  subject2Commission       Float?
+  subject3Commission       Float?
+  subject4Commission       Float?
+  areaManagerCommission    Float?
+  salespersonCommission    Float?
+  returnReasonCode         String?
+  requestedDeliveryDate    DateTime?
+  lineDiscountPct          Float?
+  discount1Pct             Float?
+  discount2Pct             Float?
+  discount3Pct             Float?
+  locationCode             String?
+  modelCrossReference      String?
+  constantAssortmentVarGrp String?
+  navRowversion            BigInt    @default(0)
 
   @@id([documentType, documentNo, lineNo])
   @@index([documentNo])
@@ -1189,7 +1194,7 @@ model NavPfSalesHeaderExt {
   subject4                String?
   oldOrderNo              String?
   specialRequests         String?
-  navRowversion           BigInt    @default(0)
+  navRowversion           BigInt  @default(0)
 
   @@id([documentType, documentNo])
   @@map("nav_pf_sales_header_ext")
@@ -1246,70 +1251,70 @@ model NavPfItem {
 
 /// Read-only replica of [Company$Customer] from NAV.
 model NavPfCustomer {
-  no_                    String    @id
-  name                   String?
-  name2                  String?
-  address                String?
-  city                   String?
-  postCode               String?
-  county                 String?
-  countryRegionCode      String?
-  phoneNo                String?
-  faxNo                  String?
-  eMail                  String?
-  businessEMail          String?
-  contact                String?
-  geographicalZone       String?
-  geographicalZone2      String?
-  keyAccount             Int?
+  no_                     String    @id
+  name                    String?
+  name2                   String?
+  address                 String?
+  city                    String?
+  postCode                String?
+  county                  String?
+  countryRegionCode       String?
+  phoneNo                 String?
+  faxNo                   String?
+  eMail                   String?
+  businessEMail           String?
+  contact                 String?
+  geographicalZone        String?
+  geographicalZone2       String?
+  keyAccount              Int?
   warehouseSpecialityCode String?
-  languageCode           String?
-  fastShipment           Int?
-  blockedForAssignments  Int?
-  reasonBlockCode        String?
-  paymentMethodCode      String?
-  paymentTermsCode       String?
-  vatRegistrationNo      String?
-  fiscalCode             String?
-  currentRisk            String?
-  riskRating             String?
-  pmFailureAssignedScore String?
-  updatedDate            DateTime?
-  updatedType            String?
-  dueDate                DateTime?
-  internalValuation      String?
-  valuationDate          DateTime?
-  reservationPriority    String?
-  authorizedStoresNumber Int?
-  storeDistribution      Int?
-  storeImage             Int?
-  storeType              Int?
-  variousReferences      String?
-  homePage               String?
-  qualityControl         String?
-  oldFebosNo             String?
-  oldBridgeNo            String?
-  purchaseGroup          String?
-  distributionChannel    String?
-  creditManager          String?
-  eacLabels              String?
-  sovracolloCompleto     Int?
-  commissionGroupCode    String?
-  vatBusPostingGroup     String?
-  genBusPostingGroup     String?
-  customerPostingGroup   String?
-  navRowversion          BigInt    @default(0)
+  languageCode            String?
+  fastShipment            Int?
+  blockedForAssignments   Int?
+  reasonBlockCode         String?
+  paymentMethodCode       String?
+  paymentTermsCode        String?
+  vatRegistrationNo       String?
+  fiscalCode              String?
+  currentRisk             String?
+  riskRating              String?
+  pmFailureAssignedScore  String?
+  updatedDate             DateTime?
+  updatedType             String?
+  dueDate                 DateTime?
+  internalValuation       String?
+  valuationDate           DateTime?
+  reservationPriority     String?
+  authorizedStoresNumber  Int?
+  storeDistribution       Int?
+  storeImage              Int?
+  storeType               Int?
+  variousReferences       String?
+  homePage                String?
+  qualityControl          String?
+  oldFebosNo              String?
+  oldBridgeNo             String?
+  purchaseGroup           String?
+  distributionChannel     String?
+  creditManager           String?
+  eacLabels               String?
+  sovracolloCompleto      Int?
+  commissionGroupCode     String?
+  vatBusPostingGroup      String?
+  genBusPostingGroup      String?
+  customerPostingGroup    String?
+  navRowversion           BigInt    @default(0)
 
   @@map("nav_pf_customer")
 }
 
 /// Read-only replica of [Company$Ship-to Address] from NAV.
 model NavPfShipToAddress {
-  customerNo          String
-  code                String
-  geographicalZone2   String?
-  countryRegionCode   String?
-  navRowversion       BigInt    @default(0)
+  customerNo        String
+  code              String
+  geographicalZone2 String?
+  countryRegionCode String?
+  navRowversion     BigInt  @default(0)
 
   @@id([customerNo, code])
   @@index([customerNo])
@@ -1394,21 +1399,21 @@ model NavPfDatePrenotazione {
 
 /// Pre-aggregation of [Company$DDT_Picking Line] JOIN [Company$DDT_Picking Header]. Stores SUM per status per (Order No_, Order Line No_). Full-refresh each sync cycle, scoped to document nos in nav_pf_sales_header.
 model NavPfDdtPicking {
-  orderNo               String
-  orderLineNo           Int
-  pairsTotale           Float?
-  qtyTotale             Float?
-  pairsRilasciate       Float?
-  qtyRilasciate         Float?
-  pairsAperte           Float?
-  qtyAperte             Float?
-  pairsDaInviareWmsps   Float?
-  qtyDaInviareWmsps     Float?
-  pairsInviatoWmsps     Float?
-  qtyInviatoWmsps       Float?
-  pairsEvasoWmsps       Float?
-  qtyEvasoWmsps         Float?
-  syncedAt              DateTime @default(now())
+  orderNo             String
+  orderLineNo         Int
+  pairsTotale         Float?
+  qtyTotale           Float?
+  pairsRilasciate     Float?
+  qtyRilasciate       Float?
+  pairsAperte         Float?
+  qtyAperte           Float?
+  pairsDaInviareWmsps Float?
+  qtyDaInviareWmsps   Float?
+  pairsInviatoWmsps   Float?
+  qtyInviatoWmsps     Float?
+  pairsEvasoWmsps     Float?
+  qtyEvasoWmsps       Float?
+  syncedAt            DateTime @default(now())
 
   @@id([orderNo, orderLineNo])
   @@index([orderNo])
@@ -1422,16 +1427,16 @@ model NavPfDdtPicking {
 
 /// Read-only replica of [Company$KIMO-FASHION Sales Order Hdr] from NAV. Incrementally synced via rowversion.
 model NavKimoSalesHeader {
-  entryNo                  BigInt    @id
-  trademarkCode            String?
-  sellingSeasonCode        String?
-  salespersonCodeNav       String?
-  assignedSalesDocumentNo  String?
-  sellToCustomerNo         String?
-  createSoDateTime         DateTime?
-  releaseSoDateTime        DateTime?
-  kimoDocumentType         String?
-  navRowversion            BigInt    @default(0)
+  entryNo                 BigInt    @id
+  trademarkCode           String?
+  sellingSeasonCode       String?
+  salespersonCodeNav      String?
+  assignedSalesDocumentNo String?
+  sellToCustomerNo        String?
+  createSoDateTime        DateTime?
+  releaseSoDateTime       DateTime?
+  kimoDocumentType        String?
+  navRowversion           BigInt    @default(0)
 
   @@index([trademarkCode])
   @@index([sellingSeasonCode])
@@ -1444,17 +1449,17 @@ model NavKimoSalesHeader {
 
 /// Read-only replica of [Company$KIMO-FASHION Sales Order Line] from NAV. PK = Entry No_ (BigInt unique per row). Line No_ does not exist in this NAV table.
 model NavKimoSalesLine {
-  entryNo                  BigInt    @id
-  headerEntryNo            BigInt
-  no_                      String?
-  modelItemNo              String?
-  colorCode                String?
-  sizeCode                 String?
-  quantity                 Float?
-  lineAmount               Float?
-  kimoFashionSoReference   String?
-  type                     Int?
-  navRowversion            BigInt    @default(0)
+  entryNo                BigInt  @id
+  headerEntryNo          BigInt
+  no_                    String?
+  modelItemNo            String?
+  colorCode              String?
+  sizeCode               String?
+  quantity               Float?
+  lineAmount             Float?
+  kimoFashionSoReference String?
+  type                   Int?
+  navRowversion          BigInt  @default(0)
 
   @@index([headerEntryNo])
   @@index([modelItemNo])
@@ -1502,19 +1507,19 @@ model CompanyFunction {
   updatedAt   DateTime @updatedAt
 
   /// Teams belonging to this function.
-  teams                    CompanyTeam[]
+  teams                     CompanyTeam[]
   /// Calendar events owned by this function.
-  ownedCalendarEvents      CalendarEvent[]               @relation("CalendarEventOwnerFunction")
+  ownedCalendarEvents       CalendarEvent[]                   @relation("CalendarEventOwnerFunction")
   /// Calendar event visibility grants for this function.
   calendarEventVisibilities CalendarEventVisibility[]
   /// Milestone template items owned by this function.
-  ownedTemplateItems       MilestoneTemplateItem[]           @relation("TemplateItemOwnerFunction")
+  ownedTemplateItems        MilestoneTemplateItem[]           @relation("TemplateItemOwnerFunction")
   /// Milestone template item visibility grants for this function.
-  templateItemVisibilities MilestoneTemplateItemVisibility[]
+  templateItemVisibilities  MilestoneTemplateItemVisibility[]
   /// Google Calendar bindings for this function.
-  googleCalendarBindings   GoogleCalendarBinding[]
+  googleCalendarBindings    GoogleCalendarBinding[]
   /// Google event mappings for calendar events visible to this function.
-  googleEventMappings      GoogleEventMapping[]
+  googleEventMappings       GoogleEventMapping[]
 
   @@index([slug])
   @@index([isActive, order])
@@ -1677,9 +1682,9 @@ model SeasonCalendar {
   updatedAt  DateTime             @updatedAt
 
   /// The brand this calendar belongs to.
-  brand      Brand                   @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  brand    Brand                   @relation(fields: [brandId], references: [id], onDelete: Restrict)
   /// The season this calendar belongs to.
-  season     Season                  @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  season   Season                  @relation(fields: [seasonId], references: [id], onDelete: Restrict)
   /// Events scheduled in this calendar.
   events   CalendarEvent[]
   /// Google Calendar bindings per company function.
@@ -1699,6 +1704,8 @@ model CalendarEvent {
   ownerFunctionId   String
   /// Event type key from CalendarCatalogItem (type="eventType"). E.g. "KICKOFF", "SAMPLE_APPROVAL".
   type              String
+  /// FK to Phase (optional, additive to type). Null for non-productive events (e.g. review meetings).
+  phaseId           String?
   /// Workflow status: PLANNED → IN_PROGRESS → COMPLETED | CANCELLED.
   status            CalendarEventStatus @default(PLANNED)
   title             String
@@ -1706,20 +1713,22 @@ model CalendarEvent {
   startAt           DateTime
   endAt             DateTime?
   /// True if the event spans the full day (time portion ignored).
-  allDay                      Boolean             @default(false)
+  allDay            Boolean             @default(false)
   /// If true, the event is exported to Google Calendar for visible functions.
-  publishExternally           Boolean             @default(true)
+  publishExternally Boolean             @default(true)
   /// FK to MilestoneTemplateItem that generated this event (optional). SetNull if template item is deleted.
-  templateItemId              String?
-  createdAt                   DateTime            @default(now())
-  updatedAt                   DateTime            @updatedAt
+  templateItemId    String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
 
   /// The season calendar this event belongs to.
-  calendar         SeasonCalendar             @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  calendar         SeasonCalendar                 @relation(fields: [calendarId], references: [id], onDelete: Cascade)
   /// The company function that owns this event.
-  ownerFunction    CompanyFunction            @relation("CalendarEventOwnerFunction", fields: [ownerFunctionId], references: [id], onDelete: Restrict)
+  ownerFunction    CompanyFunction                @relation("CalendarEventOwnerFunction", fields: [ownerFunctionId], references: [id], onDelete: Restrict)
   /// The milestone template item that generated this event, if any.
-  templateItem     MilestoneTemplateItem?     @relation(fields: [templateItemId], references: [id], onDelete: SetNull)
+  templateItem     MilestoneTemplateItem?         @relation(fields: [templateItemId], references: [id], onDelete: SetNull)
+  /// The phase this event represents, if any.
+  phase            Phase?                         @relation(fields: [phaseId], references: [id], onDelete: SetNull)
   /// Function-level visibility grants for this event.
   visibilities     CalendarEventVisibility[]
   /// Personal notes written by individual users on this event.
@@ -1729,16 +1738,17 @@ model CalendarEvent {
   /// Per-user visibility grants for this event.
   userVisibilities CalendarEventUserVisibility[]
   /// State side-effects (e.g. lock/unlock collection layout) triggered by this event.
-  stateEffects              CalendarEventStateEffect[]
+  stateEffects     CalendarEventStateEffect[]
   /// Entity anchors tracking progress for this event.
-  anchors                   CalendarEventAnchor[]
+  anchors          CalendarEventAnchor[]
   /// Execution records for state effects of this event.
-  effectExecutions          CalendarEventEffectExecution[]
+  effectExecutions CalendarEventEffectExecution[]
   /// Collection layouts locked by this event.
-  lockedLayouts             CollectionLayout[]
+  lockedLayouts    CollectionLayout[]
 
   @@index([calendarId, startAt])
   @@index([ownerFunctionId])
+  @@index([phaseId])
   @@map("calendar_events")
 }
 
@@ -1798,28 +1808,32 @@ model MilestoneTemplate {
 
 /// Single milestone item within a template. Defines an event to be created at anchorDate + offsetDays.
 model MilestoneTemplateItem {
-  id                String                @id @default(uuid())
+  id                String   @id @default(uuid())
   /// FK to MilestoneTemplate. Cascade delete.
   templateId        String
   /// FK to CompanyFunction that will own the generated event. Restrict delete.
   ownerFunctionId   String
   /// Event type key from CalendarCatalogItem (type="eventType").
   type              String
+  /// FK to Phase (optional, additive to type). Propagated to CalendarEvent.phaseId on generation.
+  phaseId           String?
   title             String
   description       String?
   /// Days offset from SeasonCalendar.anchorDate to compute event startAt.
   offsetDays        Int
   /// Duration of the generated event in days. 0 = single-day event.
-  durationDays      Int           @default(0)
+  durationDays      Int      @default(0)
   /// If true, the generated event is exported to Google Calendar.
-  publishExternally Boolean       @default(true)
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  publishExternally Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   /// The template this item belongs to.
-  template      MilestoneTemplate               @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  template      MilestoneTemplate                 @relation(fields: [templateId], references: [id], onDelete: Cascade)
   /// The function that will own the generated event.
-  ownerFunction CompanyFunction                 @relation("TemplateItemOwnerFunction", fields: [ownerFunctionId], references: [id], onDelete: Restrict)
+  ownerFunction CompanyFunction                   @relation("TemplateItemOwnerFunction", fields: [ownerFunctionId], references: [id], onDelete: Restrict)
+  /// The phase this template item represents, if any.
+  phase         Phase?                            @relation(fields: [phaseId], references: [id], onDelete: SetNull)
   /// Calendar events generated from this template item.
   events        CalendarEvent[]
   /// Function visibility grants for this template item.
@@ -1829,6 +1843,7 @@ model MilestoneTemplateItem {
 
   @@index([templateId])
   @@index([ownerFunctionId])
+  @@index([phaseId])
   @@map("milestone_template_items")
 }
 
@@ -1902,6 +1917,39 @@ model CalendarCatalogItem {
   @@unique([type, value])
   @@index([type, isActive])
   @@map("calendar_catalog_items")
+}
+
+// ─── Phase Catalog ──────────────────────────────────────────────────────────
+
+/// Unified, ordered production/calendar phase catalog. Replaces the parallel, non-comparable
+/// CollectionCatalogItem(type=progress) and CalendarCatalogItem(type=eventType) domains so a
+/// row's production state and a calendar event's milestone can be compared on the same axis.
+model Phase {
+  id        String   @id @default(uuid())
+  /// Immutable machine key. Used as the stored FK target.
+  value     String   @unique
+  /// Human-readable display label (editable without changing the value).
+  label     String
+  /// User-visible short code (e.g. "01"), for compatibility with existing UI codes.
+  code      String?
+  /// Display order. Single source of truth for phase ordering (no hardcoded frontend constants).
+  order     Int      @default(0)
+  /// Soft-delete flag. Inactive phases are hidden from pickers.
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Rows currently in this phase.
+  collectionLayoutRows       CollectionLayoutRow[]
+  /// Calendar events tagged with this phase.
+  calendarEvents             CalendarEvent[]
+  /// Milestone template items tagged with this phase.
+  milestoneTemplateItems     MilestoneTemplateItem[]
+  /// Revision-type catalog items whose expected minimum phase is this one.
+  expectedMinForCatalogItems CollectionCatalogItem[]
+
+  @@index([isActive])
+  @@map("phases")
 }
 
 /// In-app notification delivered to a user. Rendered in the notification bell and optionally linked to a resource.
@@ -2008,13 +2056,13 @@ model CalendarEventEffectExecution {
   rolledBackByUserId    String?
 
   /// The state effect this execution belongs to.
-  effect       CalendarEventStateEffect @relation(fields: [effectId],            references: [id], onDelete: Cascade)
+  effect       CalendarEventStateEffect @relation(fields: [effectId], references: [id], onDelete: Cascade)
   /// The calendar event associated with this execution.
-  event        CalendarEvent            @relation(fields: [eventId],             references: [id], onDelete: Cascade)
+  event        CalendarEvent            @relation(fields: [eventId], references: [id], onDelete: Cascade)
   /// The user who applied the effect.
-  appliedBy    User                     @relation("EffectApplier",               fields: [appliedByUserId],    references: [id], onDelete: Restrict)
+  appliedBy    User                     @relation("EffectApplier", fields: [appliedByUserId], references: [id], onDelete: Restrict)
   /// The user who rolled back the effect, if any.
-  rolledBackBy User?                    @relation("EffectRollbacker",            fields: [rolledBackByUserId], references: [id], onDelete: SetNull)
+  rolledBackBy User?                    @relation("EffectRollbacker", fields: [rolledBackByUserId], references: [id], onDelete: SetNull)
 
   @@index([eventId])
   @@index([effectId])
@@ -2114,15 +2162,15 @@ model VendorClosurePeriod {
   updatedAt DateTime @updatedAt
 
   /// The vendor this closure period applies to.
-  vendor        Vendor          @relation(fields: [vendorId],           references: [id], onDelete: Cascade)
+  vendor        Vendor          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   /// The season this closure period is scoped to.
-  season        Season          @relation(fields: [seasonId],           references: [id], onDelete: Cascade)
+  season        Season          @relation(fields: [seasonId], references: [id], onDelete: Cascade)
   /// The country associated with this closure period.
-  country       HolidayCountry? @relation(fields: [countryCode],        references: [code], onDelete: SetNull)
+  country       HolidayCountry? @relation(fields: [countryCode], references: [code], onDelete: SetNull)
   /// The public holiday that suggested this closure period.
-  sourceHoliday Holiday?        @relation("ClosureSourceHoliday",       fields: [sourceHolidayId],   references: [id], onDelete: SetNull)
+  sourceHoliday Holiday?        @relation("ClosureSourceHoliday", fields: [sourceHolidayId], references: [id], onDelete: SetNull)
   /// The user who confirmed this period.
-  confirmedBy   User?           @relation("ClosureConfirmer",           fields: [confirmedByUserId],  references: [id], onDelete: SetNull)
+  confirmedBy   User?           @relation("ClosureConfirmer", fields: [confirmedByUserId], references: [id], onDelete: SetNull)
 
   @@index([vendorId, seasonId])
   @@index([seasonId, startDate, endDate])

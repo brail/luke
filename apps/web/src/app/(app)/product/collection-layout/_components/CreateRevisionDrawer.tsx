@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
-import { COLLECTION_PROGRESS } from '@luke/core';
 
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
@@ -30,8 +29,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 import { cn } from '../../../../../lib/utils';
-
-const PROGRESS_INDEX = Object.fromEntries(COLLECTION_PROGRESS.map((p, i) => [p, i]));
+import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
 
 type CollectionLayoutData = NonNullable<RouterOutputs['collectionLayout']['get']>;
 type CollectionRowData = CollectionLayoutData['groups'][number]['rows'][number];
@@ -73,6 +71,8 @@ export function CreateRevisionDrawer({
     { staleTime: 5 * 60 * 1000, enabled: open },
   );
 
+  const { phaseById } = usePhaseCatalog();
+
   const { data: revisionsList = [] } = trpc.collectionLayoutRevision.list.useQuery(
     { collectionLayoutId: layout.id },
     { staleTime: 30 * 1000, enabled: open },
@@ -92,17 +92,17 @@ export function CreateRevisionDrawer({
 
   const selectedRevisionType = revisionTypeItems.find(i => i.value === revisionTypeValue);
 
-  const minProgressIdx = selectedRevisionType?.expectedMinProgress != null
-    ? (PROGRESS_INDEX[selectedRevisionType.expectedMinProgress] ?? -1)
+  const minPhaseOrder = selectedRevisionType?.expectedMinPhaseId != null
+    ? (phaseById.get(selectedRevisionType.expectedMinPhaseId)?.order ?? -1)
     : -1;
 
   const isEligible = (row: CollectionRowData): boolean =>
-    minProgressIdx === -1 ||
-    (row.progress != null && (PROGRESS_INDEX[row.progress] ?? -1) >= minProgressIdx);
+    minPhaseOrder === -1 ||
+    (row.phaseId != null && (phaseById.get(row.phaseId)?.order ?? -1) >= minPhaseOrder);
 
   // Auto-deselect ineligible rows when revision type changes
   useEffect(() => {
-    if (minProgressIdx === -1) return;
+    if (minPhaseOrder === -1) return;
     setSelectedRowIds(prev => {
       const next = new Set(prev);
       for (const row of allRows) {
@@ -240,7 +240,7 @@ export function CreateRevisionDrawer({
                               </TooltipTrigger>
                               {!eligible && (
                                 <TooltipContent>
-                                  <p>Progress insufficiente per questo tipo di revisione (richiesto: {selectedRevisionType?.expectedMinProgress})</p>
+                                  <p>Fase insufficiente per questo tipo di revisione (richiesto: {selectedRevisionType?.expectedMinPhaseId ? phaseById.get(selectedRevisionType.expectedMinPhaseId)?.label : ''})</p>
                                 </TooltipContent>
                               )}
                             </Tooltip>
@@ -262,7 +262,7 @@ export function CreateRevisionDrawer({
                             <Badge variant="secondary" className="text-xs px-1 py-0 shrink-0">Modificata</Badge>
                           )}
                           {!eligible && (
-                            <Badge variant="outline" className="text-xs px-1 py-0 shrink-0 text-muted-foreground">Progress insufficiente</Badge>
+                            <Badge variant="outline" className="text-xs px-1 py-0 shrink-0 text-muted-foreground">Fase insufficiente</Badge>
                           )}
                         </div>
                       );

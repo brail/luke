@@ -71,6 +71,7 @@ export async function createRevision(
           rows: {
             include: {
               vendor: { select: { id: true, name: true, nickname: true } },
+              phase: { select: { value: true } },
               quotations: {
                 include: { pricingParameterSet: { select: { id: true, name: true } } },
                 orderBy: { order: 'asc' },
@@ -162,7 +163,7 @@ export async function createRevision(
           productCategory: row.productCategory,
           strategy: row.strategy,
           styleStatus: row.styleStatus,
-          progress: row.progress,
+          progress: row.phase?.value ?? null,
           designer: row.designer,
           pictureKey: photoCopyMap.get(rowId) ?? null,
           styleNotes: row.styleNotes,

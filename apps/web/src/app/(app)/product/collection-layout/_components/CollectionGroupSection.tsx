@@ -16,9 +16,9 @@ import { type CSSProperties, type HTMLAttributes, type ReactNode, useCallback, u
 import type { RouterOutputs } from '@luke/api';
 import {
   COLLECTION_GENDER,
-  COLLECTION_PROGRESS,
   COLLECTION_STATUS,
   COLLECTION_STRATEGY,
+  formatPhaseLabel,
 } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
@@ -52,6 +52,7 @@ import {
 } from '../../../../../components/ui/tooltip';
 import { trpc } from '../../../../../lib/trpc';
 import { cn } from '../../../../../lib/utils';
+import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
 import { computeRowMargin, computeWeightedMargin } from '../_hooks/usePricingCalc';
 
 import type { PricingParameterSet } from '../_hooks/usePricingCalc';
@@ -312,14 +313,21 @@ function SortableRow({ id, disabled, children, onClick }: SortableRowProps) {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const PROGRESS_BADGE: Record<string, { label: string; className: string }> = {
-  DESIGN:           { label: '01 — Design',        className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
-  CONSTRUCTION_OK:  { label: '02 — Costr. OK',     className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
-  MODELLERIA_OK:    { label: '03 — Modell. OK',    className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' },
-  RENDERING:        { label: '04 — Rendering',     className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' },
-  SPECSHEETS_READY: { label: '05 — Spec Sheets',   className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' },
-  SMS_LAUNCHED:     { label: '06 — SMS Lanciati',  className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' },
-};
+/** Classes cycling gray → yellow → blue → green as a Phase advances through the catalog order. */
+const PHASE_BADGE_CLASS_TIERS = [
+  'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+  'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
+  'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+  'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+];
+
+/** Picks a badge color tier for a Phase based on its relative position in the ordered catalog. */
+function phaseBadgeClassName(order: number, total: number): string {
+  if (total <= 1) return PHASE_BADGE_CLASS_TIERS[0];
+  const pct = order / (total - 1);
+  const idx = Math.min(PHASE_BADGE_CLASS_TIERS.length - 1, Math.floor(pct * PHASE_BADGE_CLASS_TIERS.length));
+  return PHASE_BADGE_CLASS_TIERS[idx];
+}
 
 const STATUS_LABELS: Record<string, string> = { CARRY_OVER: 'C/O', NEW: 'New' };
 
@@ -333,10 +341,6 @@ const NOTE_FIELDS: { key: keyof CollectionRowData; label: string }[] = [
 const GENDER_OPTIONS: FilterOption[] = COLLECTION_GENDER.map(v => ({ value: v, label: v }));
 const STRATEGY_OPTIONS: FilterOption[] = COLLECTION_STRATEGY.map(v => ({ value: v, label: v }));
 const STATUS_OPTIONS: FilterOption[] = COLLECTION_STATUS.map(v => ({ value: v, label: STATUS_LABELS[v] ?? v }));
-const PROGRESS_OPTIONS: FilterOption[] = COLLECTION_PROGRESS.map(v => ({
-  value: v,
-  label: PROGRESS_BADGE[v]?.label ?? v,
-}));
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -399,6 +403,8 @@ export function CollectionGroupSection({
   const [isExpanded, setIsExpanded] = useState(true);
   const [deleteRow, setDeleteRow] = useState<CollectionRowData | null>(null);
   const [deleteGroupConfirm, setDeleteGroupConfirm] = useState(false);
+
+  const { phases, phaseById, phaseOptions } = usePhaseCatalog();
 
   // Per-group sort/filter state
   const [sortCol, setSortCol] = useState<string | null>(null);
@@ -515,7 +521,7 @@ export function CollectionGroupSection({
       if (columnFilters.strategy && !enumMatch(row.strategy, columnFilters.strategy)) return false;
       if (columnFilters.status && !enumMatch(row.status, columnFilters.status)) return false;
       if (columnFilters.styleStatus && !enumMatch(row.styleStatus, columnFilters.styleStatus)) return false;
-      if (columnFilters.progress && !enumMatch(row.progress, columnFilters.progress)) return false;
+      if (columnFilters.progress && !enumMatch(row.phaseId, columnFilters.progress)) return false;
       if (columnFilters.pricePositioning && !textMatch(row.pricePositioning, columnFilters.pricePositioning)) return false;
       if (columnFilters.skuForecast && !numberMatch(row.skuForecast ?? 0, columnFilters.skuForecast)) return false;
       if (columnFilters.qtyForecast && !numberMatch(row.qtyForecast, columnFilters.qtyForecast)) return false;
@@ -536,6 +542,10 @@ export function CollectionGroupSection({
         if (sortCol === 'margin') {
           va = computeRowMargin(a, parameterSets)?.margin ?? -Infinity;
           vb = computeRowMargin(b, parameterSets)?.margin ?? -Infinity;
+        } else if (sortCol === 'progress') {
+          // Column key stays 'progress' for saved user column-visibility prefs; underlying field is phaseId.
+          va = a.phaseId ? (phaseById.get(a.phaseId)?.order ?? -1) : -1;
+          vb = b.phaseId ? (phaseById.get(b.phaseId)?.order ?? -1) : -1;
         } else {
           va = (a as Record<string, unknown>)[sortCol] as number | string ?? '';
           vb = (b as Record<string, unknown>)[sortCol] as number | string ?? '';
@@ -548,7 +558,7 @@ export function CollectionGroupSection({
     }
 
     return rows;
-  }, [group.rows, localRowOrder, searchQuery, columnFilters, columnFilterOperators, sortCol, sortDir, parameterSets]);
+  }, [group.rows, localRowOrder, searchQuery, columnFilters, columnFilterOperators, sortCol, sortDir, parameterSets, phaseById]);
 
   useEffect(() => {
     onFilteredRowIdsChange?.(filteredRows.map(r => r.id));
@@ -711,7 +721,7 @@ export function CollectionGroupSection({
                     <FilterableHeader col="styleStatus" label="Style St." type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.styleStatus} options={STATUS_OPTIONS} allowNone />
                   )}
                   {show('progress') && (
-                    <FilterableHeader col="progress" label="Progress" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.progress} options={PROGRESS_OPTIONS} allowNone />
+                    <FilterableHeader col="progress" label="Fase" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.progress} options={phaseOptions} allowNone />
                   )}
                   {show('designer') && (
                     <FilterableHeader col="designer" label="Designer" type="text" {...sortProps} {...filterProps} filterValue={columnFilters.designer} />
@@ -747,7 +757,13 @@ export function CollectionGroupSection({
                       </TableRow>
                     )}
                     {filteredRows.map((row, idx) => {
-                      const progressBadge = row.progress ? PROGRESS_BADGE[row.progress] : null;
+                      const rowPhase = row.phaseId ? phaseById.get(row.phaseId) : null;
+                      const progressBadge = rowPhase
+                        ? {
+                            label: formatPhaseLabel(rowPhase.code, rowPhase.label),
+                            className: phaseBadgeClassName(rowPhase.order, phases.length),
+                          }
+                        : null;
 
                       return (
                         <SortableRow

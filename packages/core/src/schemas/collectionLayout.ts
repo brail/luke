@@ -11,7 +11,7 @@ export const COLLECTION_TABLE_COLUMNS = [
   { key: 'productCategory', label: 'Categoria' },
   { key: 'strategy',        label: 'Strategy' },
   { key: 'status',          label: 'Status' },
-  { key: 'progress',        label: 'Progress' },
+  { key: 'progress',        label: 'Fase' }, // key kept for saved column-visibility prefs; maps to phaseId
   { key: 'qtyForecast',     label: 'Qty' },
   { key: 'margin',          label: 'Margine' },
   { key: 'gender',            label: 'Gender' },
@@ -43,23 +43,11 @@ export const DEFAULT_CATALOG_STRATEGY = ['CORE', 'INNOVATION'] as const;
 export const DEFAULT_CATALOG_LINE_STATUS = ['CARRY_OVER', 'NEW'] as const;
 /** Default style-status catalog values. */
 export const DEFAULT_CATALOG_STYLE_STATUS = ['CARRY_OVER', 'NEW'] as const;
-/** Default production-progress catalog values in fixed display order. */
-export const DEFAULT_CATALOG_PROGRESS = [
-  'DESIGN',
-  'CONSTRUCTION_OK',
-  'MODELLERIA_OK',
-  'RENDERING',
-  'SPECSHEETS_READY',
-  'SMS_LAUNCHED',
-] as const;
-
 // Kept for backward compatibility — export and xlsx/pdf services still reference these aliases.
 export const COLLECTION_STRATEGY = DEFAULT_CATALOG_STRATEGY;
 export type CollectionStrategy = (typeof COLLECTION_STRATEGY)[number];
 export const COLLECTION_STATUS = DEFAULT_CATALOG_LINE_STATUS;
 export type CollectionStatus = (typeof COLLECTION_STATUS)[number];
-export const COLLECTION_PROGRESS = DEFAULT_CATALOG_PROGRESS;
-export type CollectionProgress = (typeof COLLECTION_PROGRESS)[number];
 
 /** Default price-positioning catalog values. */
 export const DEFAULT_CATALOG_PRICE_POSITIONING = ['ENTRY', 'MID_MARKET', 'PREMIUM', 'LUXURY'] as const;
@@ -69,7 +57,6 @@ export const COLLECTION_CATALOG_TYPES = [
   'strategy',
   'lineStatus',
   'styleStatus',
-  'progress',
   'revisionType',
   'pricePositioning',
 ] as const;
@@ -123,7 +110,7 @@ export const CollectionLayoutRowInputSchema = z.object({
   // Optional — identification/progress
   strategy: z.string().optional().nullable(),
   styleStatus: z.string().optional().nullable(),
-  progress: z.string().optional().nullable(),
+  phaseId: z.string().uuid().optional().nullable(),
   pricePositioning: z.string().optional().nullable(),
   designer: z.string().optional().nullable(),
   pictureKey: z.string().optional().nullable(),
@@ -166,23 +153,18 @@ export const CollectionCatalogItemInputBaseSchema = z.object({
   value: z.string().min(1).max(100),
   label: z.string().min(1).max(200),
   order: z.number().int().min(0).optional(),
-  code: z.string().max(10).optional().nullable(),
   iso9001Categories: z.array(z.enum(ISO9001_CATEGORIES)).optional().nullable(),
-  expectedMinProgress: z.string().optional().nullable(),
+  expectedMinPhaseId: z.string().uuid().optional().nullable(),
 });
 
 /**
- * Full input schema for a catalog item with cross-field constraints:
- * - `revisionType` items require at least one `iso9001Categories` entry
- * - `code` is only allowed when `type === 'progress'`
+ * Full input schema for a catalog item with cross-field constraint:
+ * `revisionType` items require at least one `iso9001Categories` entry.
  */
 export const CollectionCatalogItemInputSchema =
   CollectionCatalogItemInputBaseSchema.refine(
     data => data.type !== 'revisionType' || (data.iso9001Categories && data.iso9001Categories.length > 0),
     { message: 'iso9001Categories obbligatorio per type=revisionType', path: ['iso9001Categories'] }
-  ).refine(
-    data => !data.code || data.type === 'progress',
-    { message: 'code è atteso solo per type=progress', path: ['code'] }
   );
 export type CollectionCatalogItemInput = z.infer<
   typeof CollectionCatalogItemInputSchema

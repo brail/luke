@@ -1,21 +1,21 @@
-import type {
-  Brand,
-  CollectionGroup,
-  CollectionLayout,
-  CollectionLayoutRow,
-  Season,
-  Vendor,
-} from '@prisma/client';
-import type { PrismaClient } from '@prisma/client';
-import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 
 import { formatDateTime } from '@luke/core';
 import type { StorageBucket } from '@luke/core';
 
 import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
 import { readFileBuffer } from '../storage';
+
 import { buildProgressLabelMap } from './collectionLayout.service';
+
 import type { QuotationWithParamSet } from './collectionLayout.service';
+import type { PrismaClient,
+  Brand,
+  CollectionGroup,
+  CollectionLayout,
+  CollectionLayoutRow,
+  Season,
+  Vendor } from '@prisma/client';
+import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -335,7 +335,7 @@ export async function buildCollectionLayoutPdf(
           { text: row.productCategory ?? '',  fontSize: 7, margin: CELL_MARGIN },
           { text: row.strategy ?? '',         fontSize: 7, margin: CELL_MARGIN, alignment: 'center' as const },
           { text: row.status ?? '',           fontSize: 7, margin: CELL_MARGIN, alignment: 'center' as const },
-          { text: row.progress ? (progressLabelMap.get(row.progress) ?? row.progress) : '', fontSize: 7, margin: CELL_MARGIN },
+          { text: row.phaseId ? (progressLabelMap.get(row.phaseId) ?? '') : '', fontSize: 7, margin: CELL_MARGIN },
           { text: String(row.skuForecast ?? ''), fontSize: 7, alignment: 'right' as const, margin: CELL_MARGIN },
           { text: String(row.qtyForecast ?? ''), fontSize: 7, alignment: 'right' as const, margin: CELL_MARGIN },
           marginCell,

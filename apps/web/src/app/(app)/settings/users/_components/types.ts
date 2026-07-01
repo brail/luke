@@ -145,6 +145,7 @@ export const SECTION_LABELS: Record<Section, string> = {
   'admin.vendors': '↳ Fornitori',
   'admin.collection_layout_configuration': '↳ Configurazione Collection Layout',
   'admin.calendar_configuration': '↳ Configurazione Calendario',
+  'admin.phase_catalog': '↳ Catalogo Fasi',
   sales: 'Vendite',
   'sales.statistics': '↳ Statistiche',
   planning: 'Pianificazione',

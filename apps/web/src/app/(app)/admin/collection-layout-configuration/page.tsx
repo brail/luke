@@ -48,7 +48,6 @@ const TYPE_LABELS: Record<CollectionCatalogType, string> = {
   strategy:         'Strategy',
   lineStatus:       'Line Status',
   styleStatus:      'Style Status',
-  progress:         'Progress',
   revisionType:     'Tipo revisione',
   pricePositioning: 'Posizionamento Prezzo',
 };
@@ -62,7 +61,16 @@ type CatalogItem = {
   order: number;
   isActive: boolean;
   iso9001Categories: Iso9001Category[];
-  expectedMinProgress: string | null;
+  expectedMinPhaseId: string | null;
+};
+
+type PhaseItem = {
+  id: string;
+  value: string;
+  label: string;
+  code: string | null;
+  order: number;
+  isActive: boolean;
 };
 
 type ItemDialogState = { mode: 'create'; type: CollectionCatalogType } | { mode: 'edit'; item: CatalogItem };
@@ -85,8 +93,8 @@ export default function CollectionCatalogPage() {
     { staleTime: 30 * 1000 },
   );
 
-  const { data: progressItems = [] } = trpc.collectionCatalog.list.useQuery(
-    { type: 'progress' },
+  const { data: phaseItems = [] } = trpc.phase.list.useQuery(
+    undefined,
     { staleTime: 5 * 60 * 1000 },
   );
 
@@ -291,7 +299,7 @@ export default function CollectionCatalogPage() {
       {itemDialog && (
         <CatalogItemDialog
           state={itemDialog}
-          progressItems={progressItems as CatalogItem[]}
+          phaseItems={phaseItems as PhaseItem[]}
           onClose={() => setItemDialog(null)}
           onSubmit={(data) => {
             if (itemDialog.mode === 'create') {
@@ -326,20 +334,19 @@ export default function CollectionCatalogPage() {
 type DialogSubmitData = {
   value: string;
   label: string;
-  code?: string | null;
   iso9001Categories?: Iso9001Category[] | null;
-  expectedMinProgress?: string | null;
+  expectedMinPhaseId?: string | null;
 };
 
 function CatalogItemDialog({
   state,
-  progressItems,
+  phaseItems,
   onClose,
   onSubmit,
   isLoading,
 }: {
   state: ItemDialogState;
-  progressItems: CatalogItem[];
+  phaseItems: PhaseItem[];
   onClose: () => void;
   onSubmit: (data: DialogSubmitData) => void;
   isLoading: boolean;
@@ -349,15 +356,13 @@ function CatalogItemDialog({
 
   const [value, setValue] = useState(initial?.value ?? '');
   const [label, setLabel] = useState(initial?.label ?? '');
-  const [code, setCode] = useState(initial?.code ?? '');
   const [selectedCategories, setSelectedCategories] = useState<Iso9001Category[]>(
     (initial?.iso9001Categories ?? []) as Iso9001Category[]
   );
-  const [expectedMinProgress, setExpectedMinProgress] = useState<string>(
-    initial?.expectedMinProgress ?? ''
+  const [expectedMinPhaseId, setExpectedMinPhaseId] = useState<string>(
+    initial?.expectedMinPhaseId ?? ''
   );
 
-  const isProgress     = activeType === 'progress';
   const isRevisionType = activeType === 'revisionType';
 
   const canSubmit =
@@ -375,9 +380,8 @@ function CatalogItemDialog({
     onSubmit({
       value: value.trim(),
       label: label.trim(),
-      code: isProgress ? (code.trim() || null) : null,
       iso9001Categories: isRevisionType ? selectedCategories : null,
-      expectedMinProgress: isRevisionType ? (expectedMinProgress || null) : null,
+      expectedMinPhaseId: isRevisionType ? (expectedMinPhaseId || null) : null,
     });
   };
 
@@ -417,20 +421,6 @@ function CatalogItemDialog({
             />
           </div>
 
-          {isProgress && (
-            <div className="space-y-1.5">
-              <Label htmlFor="cat-code">Codice (es. 01)</Label>
-              <Input
-                id="cat-code"
-                value={code}
-                onChange={e => setCode(e.target.value)}
-                placeholder="es. 01"
-                maxLength={10}
-              />
-              <p className="text-xs text-muted-foreground">Mostrato come "{code || '01'} — {label || 'Label'}"</p>
-            </div>
-          )}
-
           {isRevisionType && (
             <>
               <div className="space-y-2">
@@ -453,24 +443,24 @@ function CatalogItemDialog({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="cat-progress">Progress minimo atteso (opzionale)</Label>
+                <Label htmlFor="cat-phase">Fase minima attesa (opzionale)</Label>
                 <Select
-                  value={expectedMinProgress || '_none'}
-                  onValueChange={v => setExpectedMinProgress(v === '_none' ? '' : v)}
+                  value={expectedMinPhaseId || '_none'}
+                  onValueChange={v => setExpectedMinPhaseId(v === '_none' ? '' : v)}
                 >
-                  <SelectTrigger id="cat-progress">
-                    <SelectValue placeholder="Nessuno" />
+                  <SelectTrigger id="cat-phase">
+                    <SelectValue placeholder="Nessuna" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="_none">Nessuno</SelectItem>
-                    {progressItems.filter(p => p.isActive).map(p => (
-                      <SelectItem key={p.value} value={p.value}>
+                    <SelectItem value="_none">Nessuna</SelectItem>
+                    {phaseItems.filter(p => p.isActive).map(p => (
+                      <SelectItem key={p.id} value={p.id}>
                         {p.code ? `${p.code} — ${p.label}` : p.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">Se impostato, avvisa il PM se una riga inclusa non ha raggiunto questo progress.</p>
+                <p className="text-xs text-muted-foreground">Se impostato, avvisa il PM se una riga inclusa non ha raggiunto questa fase.</p>
               </div>
             </>
           )}

@@ -206,7 +206,7 @@ export async function copyFromSeason(
             collectionLayoutId: newLayout.id,
             groupId: newGroup.id,
             pictureKey: null,
-            progress: null,
+            phaseId: null,
           },
         });
 
@@ -378,7 +378,7 @@ export async function createRow(
       productCategory: rowData.productCategory,
       strategy: rowData.strategy ?? null,
       styleStatus: rowData.styleStatus ?? null,
-      progress: rowData.progress ?? null,
+      phaseId: rowData.phaseId ?? null,
       designer: rowData.designer ?? null,
       pictureKey: rowData.pictureKey ?? null,
       styleNotes: rowData.styleNotes ?? null,
@@ -606,18 +606,17 @@ export async function reorderRows(
 }
 
 /**
- * Builds a map of progress value → display label from the collection catalog.
+ * Builds a map of Phase id → display label from the Phase catalog.
  * Labels are formatted as "CODE — label" when a code is present.
  *
- * @returns Map keyed by progress value string.
+ * @returns Map keyed by Phase id.
  */
 export async function buildProgressLabelMap(
   prisma: PrismaClient,
 ): Promise<Map<string, string>> {
-  const items = await prisma.collectionCatalogItem.findMany({
-    where: { type: 'progress' },
-    select: { value: true, code: true, label: true },
+  const items = await prisma.phase.findMany({
+    select: { id: true, code: true, label: true },
   });
-  return new Map(items.map(p => [p.value, p.code ? `${p.code} — ${p.label}` : p.label]));
+  return new Map(items.map(p => [p.id, p.code ? `${p.code} — ${p.label}` : p.label]));
 }
 

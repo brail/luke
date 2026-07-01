@@ -28,6 +28,7 @@ import {
   ClipboardList,
   ListTree,
   LayoutTemplate,
+  GitBranch,
   Globe,
   Info,
   MessageSquarePlus,
@@ -316,6 +317,14 @@ export default function AppSidebar() {
                         <Link href="/admin/calendar-configuration" className="flex items-center gap-2">
                           <LayoutTemplate size={16} />
                           <span>Calendario</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                    {menuAccess.adminItems.phaseCatalog && (
+                      <DropdownMenuItem asChild>
+                        <Link href="/admin/phase-catalog" className="flex items-center gap-2">
+                          <GitBranch size={16} />
+                          <span>Fasi</span>
                         </Link>
                       </DropdownMenuItem>
                     )}

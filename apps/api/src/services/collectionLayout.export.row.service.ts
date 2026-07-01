@@ -6,22 +6,22 @@
 
 import ExcelJS from 'exceljs';
 
-import type {
-  Brand,
-  CollectionLayoutRow,
-  Season,
-  Vendor,
-} from '@prisma/client';
-import type { PrismaClient } from '@prisma/client';
-import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 
 import { calcMaxSupplierCost, formatDateTime } from '@luke/core';
 
 import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
 import { applyStreamingHeaderStyle } from '../lib/export/xlsx-streaming';
 import { readFileBuffer } from '../storage';
+
 import { buildProgressLabelMap } from './collectionLayout.service';
+
 import type { QuotationWithParamSet } from './collectionLayout.service';
+import type { PrismaClient,
+  Brand,
+  CollectionLayoutRow,
+  Season,
+  Vendor } from '@prisma/client';
+import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -168,7 +168,7 @@ export async function buildCollectionRowPdf(
     ['Strategy',    row.strategy ?? '—'],
     ['Status',      row.status],
     ['Style Status',row.styleStatus ?? '—'],
-    ['Progress',    row.progress ? (progressLabelMap.get(row.progress) ?? row.progress) : '—'],
+    ['Progress',    row.phaseId ? (progressLabelMap.get(row.phaseId) ?? '—') : '—'],
     ['Designer',    row.designer ?? '—'],
     ['SKU Forecast', row.skuForecast != null ? String(row.skuForecast) : '—'],
     ['QTY Forecast',String(row.qtyForecast)],
@@ -313,7 +313,7 @@ export async function buildCollectionRowXlsx(
     ['Strategy', row.strategy ?? null],
     ['Status', row.status],
     ['Style Status', row.styleStatus ?? null],
-    ['Progress', row.progress ? (progressLabelMap.get(row.progress) ?? row.progress) : null],
+    ['Progress', row.phaseId ? (progressLabelMap.get(row.phaseId) ?? null) : null],
     ['Designer', row.designer ?? null],
     ['SKU Forecast', row.skuForecast],
     ['QTY Forecast', row.qtyForecast],
@@ -338,7 +338,7 @@ export async function buildCollectionRowXlsx(
       imgW = Math.round(dims.width * scale);
       imgH = Math.round(dims.height * scale);
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const imageId = wb.addImage({ buffer: rowImageBuf as any, extension: ext });
     infoSheet.addImage(imageId, { tl: { col: 2, row: 0 }, ext: { width: imgW, height: imgH } });
     // Set row heights so the image region is visible (distribute imgH across rows 1-N)

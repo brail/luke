@@ -6,34 +6,35 @@
 import { router } from '../lib/trpc';
 
 import { authRouter } from './auth';
-import { companyRouter } from './company';
 import { brandRouter } from './brand';
-import { catalogRouter } from './catalog';
-import { collectionLayoutRouter } from './collectionLayout';
 import { calendarCatalogRouter } from './calendarCatalog';
+import { catalogRouter } from './catalog';
 import { collectionCatalogRouter } from './collectionCatalog';
+import { collectionLayoutRouter } from './collectionLayout';
 import { collectionLayoutRevisionRouter } from './collectionLayoutRevision';
-import { merchandisingPlanRouter } from './merchandisingPlan';
+import { companyRouter } from './company';
 import { configRouter } from './config';
 import { contextRouter } from './context';
+import { dashboardRouter } from './dashboard';
+import { feedbackRouter } from './feedback';
 import { healthRouter } from './health';
+import { holidaysRouter } from './holidays';
 import { integrationsRouter } from './integrations';
 import { maintenanceRouter } from './maintenance';
 import { meRouter } from './me';
+import { merchandisingPlanRouter } from './merchandisingPlan';
+import { notificationsRouter } from './notifications';
+import { phaseRouter } from './phase';
 import { pricingRouter } from './pricing';
 import { publicRouter } from './public';
+import { salesRouter } from './sales';
 import { seasonRouter } from './season';
+import { seasonCalendarRouter } from './seasonCalendar';
 import { sectionAccessRouter } from './sectionAccess';
 import { storageRouter } from './storage';
+import { systemRouter } from './system';
 import { usersRouter } from './users';
 import { vendorsRouter } from './vendors';
-import { salesRouter } from './sales';
-import { seasonCalendarRouter } from './seasonCalendar';
-import { holidaysRouter } from './holidays';
-import { dashboardRouter } from './dashboard';
-import { feedbackRouter } from './feedback';
-import { notificationsRouter } from './notifications';
-import { systemRouter } from './system';
 
 /**
  * Router principale dell'applicazione
@@ -47,6 +48,7 @@ export const appRouter = router({
   collectionLayout: collectionLayoutRouter,
   calendarCatalog: calendarCatalogRouter,
   collectionCatalog: collectionCatalogRouter,
+  phase: phaseRouter,
   collectionLayoutRevision: collectionLayoutRevisionRouter,
   merchandisingPlan: merchandisingPlanRouter,
   config: configRouter,

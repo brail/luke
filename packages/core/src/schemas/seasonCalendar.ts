@@ -100,6 +100,7 @@ export const CalendarEventBaseSchema = z.object({
   calendarId:                   z.string().uuid(),
   ownerFunctionId:              z.string().uuid(),
   type:                         z.string().min(1),
+  phaseId:                      z.string().uuid().optional().nullable(),
   title:                        z.string().min(1).max(200),
   startAt:                      z.string().datetime(),
   description:                  z.string().max(2000).optional(),
@@ -144,6 +145,7 @@ export const MilestoneTemplateItemInputSchema = z
   .object({
     ownerFunctionId:      z.string().uuid(),
     type:                 z.string().min(1),
+    phaseId:              z.string().uuid().optional().nullable(),
     title:                z.string().min(1).max(200),
     description:          z.string().max(2000).optional(),
     offsetDays:           z.number().int(),

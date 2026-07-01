@@ -1,22 +1,22 @@
 import ExcelJS from 'exceljs';
 
-import type {
-  CollectionLayout,
-  CollectionGroup,
-  CollectionLayoutRow,
-  Vendor,
-  Brand,
-  Season,
-} from '@prisma/client';
 
-import type { PrismaClient } from '@prisma/client';
 
 import type { StorageBucket } from '@luke/core';
 
 import { applyStreamingHeaderStyle } from '../lib/export/xlsx-streaming';
 import { readFileBuffer } from '../storage';
+
 import { buildProgressLabelMap } from './collectionLayout.service';
+
 import type { QuotationWithParamSet } from './collectionLayout.service';
+import type { PrismaClient,
+  CollectionLayout,
+  CollectionGroup,
+  CollectionLayoutRow,
+  Vendor,
+  Brand,
+  Season } from '@prisma/client';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -218,7 +218,7 @@ export async function buildCollectionLayoutXlsx(
         row.strategy,
         row.status,
         row.styleStatus,
-        row.progress ? (progressLabelMap.get(row.progress) ?? row.progress) : null,
+        row.phaseId ? (progressLabelMap.get(row.phaseId) ?? null) : null,
         row.skuForecast,
         row.qtyForecast,
         row.designer,
@@ -272,7 +272,7 @@ export async function buildCollectionLayoutXlsx(
       const imageBuf = row.pictureKey ? keyToBuffer.get(row.pictureKey) ?? null : null;
       if (imageBuf) {
         const ext = detectExtension(row.pictureKey!);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const imageId = wb.addImage({ buffer: imageBuf as any, extension: ext });
         const dims = getImageDimensions(imageBuf, row.pictureKey!);
         const fit = dims

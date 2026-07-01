@@ -46,6 +46,7 @@ export function useMenuAccess() {
       vendors: s.admin && s['admin.vendors'],
       collectionLayoutConfiguration: s.admin && s['admin.collection_layout_configuration'],
       calendarConfiguration: s.admin && s['admin.calendar_configuration'],
+      phaseCatalog: s.admin && s['admin.phase_catalog'],
     };
     const showAdmin = Object.values(adminItems).some(Boolean);
 
