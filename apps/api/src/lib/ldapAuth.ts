@@ -13,6 +13,7 @@ import {
   getLdapResilienceConfig,
   type LdapConfig,
 } from './configManager';
+import { sendVerificationEmail } from './emailHelpers';
 import { ResilientLdapClient } from './ldapClient';
 
 /**
@@ -23,6 +24,13 @@ function getAttr(entry: Entry, key: string): string[] {
   if (!v) return [];
   if (Array.isArray(v)) return (v as (Buffer | string)[]).filter((x): x is string => typeof x === 'string');
   return typeof v === 'string' ? [v] : [];
+}
+
+/**
+ * True se l'email è quella sintetica generata per un utente LDAP senza `mail` valorizzato.
+ */
+export function isSyntheticLdapEmail(email: string): boolean {
+  return email.endsWith('@ldap.local');
 }
 
 import type { PrismaClient, User } from '@prisma/client';
@@ -413,6 +421,21 @@ async function createOrUpdateUser(
       );
       return newUser;
     });
+
+    // Email reale già fornita da LDAP: invia subito la verifica, non serve
+    // aspettare che l'utente la inserisca manualmente in /auth/pending.
+    // Fire-and-forget: non bloccare la risposta di login per l'invio SMTP.
+    if (!isSyntheticLdapEmail(ldapEmail)) {
+      sendVerificationEmail(prisma, {
+        userId: user.id,
+        reason: 'user_created',
+      }).catch(err => {
+        logger.warn(
+          { username, err },
+          'Failed to send verification email for new LDAP user'
+        );
+      });
+    }
 
     const auditNoTeam = (meta: Record<string, unknown>) =>
       prisma.auditLog.create({

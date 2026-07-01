@@ -33,6 +33,17 @@ import {
   adminProcedure,
 } from '../lib/trpc';
 import { sendVerificationEmail } from '../lib/emailHelpers';
+import { isSyntheticLdapEmail } from '../lib/ldapAuth';
+
+/**
+ * Maschera un indirizzo email per esposizione da endpoint pubblico non autenticato
+ * (es. `a***@luke.com`), mantenendo dominio visibile per riconoscibilità.
+ */
+function maskEmail(email: string): string {
+  const [local, domain] = email.split('@');
+  if (!local || !domain) return email;
+  return `${local[0]}***@${domain}`;
+}
 
 /**
  * Schema per login
@@ -160,7 +171,8 @@ export const authRouter = router({
    *
    * @auth {public}
    * @input {{ username: string }} — username to check.
-   * @output {{ isPending: boolean, needsEmail: boolean }} — pending status and whether a real email is needed.
+   * @output {{ isPending: boolean, needsEmail: boolean, maskedEmail: string | null }} — pending status,
+   *   whether a real email is needed, and (if not) the masked address the verification mail was sent to.
    */
   getPendingStatus: publicProcedure
     .use(withRateLimit('pendingEmail'))
@@ -175,11 +187,14 @@ export const authRouter = router({
         select: { email: true },
       });
 
-      if (!user) return { isPending: false, needsEmail: false };
+      if (!user) return { isPending: false, needsEmail: false, maskedEmail: null };
+
+      const needsEmail = isSyntheticLdapEmail(user.email);
 
       return {
         isPending: true,
-        needsEmail: user.email.endsWith('@ldap.local'),
+        needsEmail,
+        maskedEmail: needsEmail ? null : maskEmail(user.email),
       };
     }),
 
