@@ -38,3 +38,11 @@ Se una libreria è già installata nel progetto (es. `pdfmake`), usarla — mai 
 **Root cause**: tRPC 11.18 aggiunge `isDataStream()` check — lancia `UNSUPPORTED_MEDIA_TYPE` se una procedura ritorna un oggetto con valori `Promise` o `AsyncIterable` in path non-streaming. Il Fastify custom content-type parser interferisce con `incomingMessageToRequest`.
 
 **Fix**: usare `httpBatchStreamLink` (import da `@trpc/client`, non `@trpc/react-query`) + aggiungere `trpc-accept: application/jsonl` esplicito nelle headers custom del client. Indagare quale procedura ritorna Promise-valued fields non awaited.
+
+## `prisma migrate deploy` su DB dev locale può bloccarsi per drift con `db push`
+
+**Problema**: il workflow documentato per nuove migration usa `db push` (porta 5432) per applicare lo schema al DB dev — questo NON scrive su `_prisma_migrations`. Se in passato è mai stato lanciato `migrate deploy` sullo stesso DB, può fallire a metà (es. `CREATE TYPE` già esistente per oggetti creati da un push precedente) lasciando una riga con `finished_at = NULL` che blocca ogni deploy successivo, anche su migration successive scorrelate.
+
+**Diagnosi**: `docker exec luke-db-1 psql -U luke -d luke -c "SELECT migration_name FROM _prisma_migrations m1 WHERE finished_at IS NULL AND NOT EXISTS (SELECT 1 FROM _prisma_migrations m2 WHERE m2.migration_name = m1.migration_name AND m2.finished_at IS NOT NULL) ORDER BY migration_name;"` — trova la/le migration bloccate senza retry riuscito.
+
+**Fix (solo dev, mai in prod)**: verificare che lo schema live rispecchi già l'effetto netto delle migration bloccate (confrontare colonne/tabelle/tipi con `\d` contro il contenuto di `migration.sql`), poi `prisma migrate resolve --applied <nome>` per ciascuna in ordine cronologico (serve `DATABASE_URL` esplicita nell'env: `set -a; source .env; set +a`). Non eseguire mai `resolve --applied` senza aver prima verificato che il DB rifletta davvero quello stato.
