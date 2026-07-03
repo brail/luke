@@ -10,6 +10,7 @@ Interfaccia utente web di Luke, costruita su Next.js con App Router, shadcn/ui e
 Gruppo autenticato `(app)/`:
 
 - `/dashboard` — Dashboard con widget configurabili per utente (KPI, avanzamento stagione, orologi, forex, ordini settimanali, attività personali)
+- `/about` — Pagina informativa: stack tecnologico e versione applicazione
 - `/admin/brands` — Gestione brand
 - `/admin/seasons` — Gestione stagioni
 - `/admin/vendors` — Gestione fornitori

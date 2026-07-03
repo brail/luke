@@ -229,7 +229,7 @@ pnpm --filter @luke/api db:bootstrap    # Bootstrap sviluppo con dati di esempio
 
 In produzione `entrypoint.sh` esegue `prisma migrate deploy` prima dell'avvio del server. Le migration sono versionata in `prisma/migrations/`.
 
-**Model principali** (62 totali): `User`, `Identity`, `LocalCredential`, `AppConfig`, `AuditLog`, `FileObject`, `Brand`, `Season`, `Vendor`, `CollectionLayout`, `CollectionGroup`, `CollectionLayoutRow`, `CollectionLayoutRevision`, `PricingParameterSet`, `MerchandisingPlan`, `SeasonCalendar`, `CalendarEvent`, `MilestoneTemplate`, `GoogleCalendarBinding`, `NavVendor`, `NavBrand`, `NavSeason`, `NavPfSalesHeader`, `NavPfSalesLine`, `CompanyProfile`, `Notification`, `DashboardConfig`.
+**Model principali** (76 totali): `User`, `Identity`, `LocalCredential`, `AppConfig`, `AuditLog`, `FileObject`, `Brand`, `Season`, `Vendor`, `CollectionLayout`, `CollectionGroup`, `CollectionLayoutRow`, `CollectionLayoutRevision`, `PricingParameterSet`, `MerchandisingPlan`, `SeasonCalendar`, `CalendarEvent`, `MilestoneTemplate`, `GoogleCalendarBinding`, `NavVendor`, `NavBrand`, `NavSeason`, `NavPfSalesHeader`, `NavPfSalesLine`, `CompanyProfile`, `Notification`, `DashboardConfig`.
 <!-- luke-docs:end:database -->
 
 ## NAV Sync

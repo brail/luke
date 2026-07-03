@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted** — 2026-04-22
+Potentially stale — review needed
 
 ## Context
 

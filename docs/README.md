@@ -10,6 +10,7 @@
 | [storage-immutable-bucket.md](storage-immutable-bucket.md) | Bucket immutabile per foto revisioni — content-addressed storage, SHA-256 key, policy di retention |
 | [nav-integration.md](nav-integration.md) | Architettura integrazione Microsoft Dynamics NAV — pattern entità duale, sync differenziale, tabelle replica |
 | [google-calendar-setup.md](google-calendar-setup.md) | Setup integrazione Google Calendar — configurazione OAuth, provisioning calendario stagione, sync milestone |
+| [genoma-collezione-pianificazione.md](genoma-collezione-pianificazione.md) | Recepimento in Luke dell'algoritmo "Genoma della Collezione" — alert e monitoraggio avanzamento campionario |
 
 ## Decisioni Architetturali (ADR)
 
@@ -41,6 +42,7 @@ Le decisioni architetturali rilevanti sono documentate in [`decisions/`](decisio
 |-----------|-------------|
 | [merchandising-reference/](merchandising-reference/) | Materiali di riferimento per il dominio merchandising |
 | [access-porting/](access-porting/) | Documentazione porting da Microsoft Access — reverse engineering e analisi query |
+| [archive/](archive/) | Feature rimosse archiviate — es. what-if calendar solver (rimosso 2026-07) |
 
-*Ultimo aggiornamento: 2026-06-30*
+*Ultimo aggiornamento: 2026-07-01*
 <!-- luke-docs:end:index -->
