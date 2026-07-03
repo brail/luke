@@ -68,6 +68,11 @@ export function createGoogleCalendarClient(config: CalendarConfig): GoogleCalend
   return getClient();
 }
 
+/**
+ * Returns the singleton Google Calendar client, building it lazily from the active config.
+ *
+ * @throws {Error} If `createGoogleCalendarClient` has not been called yet
+ */
 export function getClient(): GoogleCalendarClient {
   if (_client) return _client;
   if (!_config) throw new Error('GoogleCalendarClient not initialised — call createGoogleCalendarClient first');
@@ -75,6 +80,11 @@ export function getClient(): GoogleCalendarClient {
   return _client;
 }
 
+/**
+ * Returns the Google Workspace domain of the active configuration.
+ *
+ * @throws {Error} If `createGoogleCalendarClient` has not been called yet
+ */
 export function getWorkspaceDomain(): string {
   if (!_config) throw new Error('GoogleCalendarClient not initialised');
   return _config.workspaceDomain;

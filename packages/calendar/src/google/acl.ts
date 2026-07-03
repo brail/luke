@@ -35,6 +35,9 @@ export async function removeCalendarReader(
   }
 }
 
+/**
+ * Returns the email addresses of all users with reader access to a Google Calendar.
+ */
 export async function listCalendarReaders(
   googleCalendarId: string
 ): Promise<string[]> {
