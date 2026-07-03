@@ -29,9 +29,7 @@ import {
   ListTree,
   LayoutTemplate,
   GitBranch,
-  Thermometer,
   Gauge,
-  TrendingDown,
   Globe,
   Info,
   MessageSquarePlus,
@@ -260,41 +258,17 @@ export default function AppSidebar() {
                       </SidebarMenuSubItem>
                     )}
                     {menuAccess.productItems?.controllo && (
-                      <>
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton
-                            asChild
-                            isActive={isActive('/product/controllo/saturation')}
-                          >
-                            <Link href="/product/controllo/saturation">
-                              <Thermometer size={16} />
-                              <span>Saturazione</span>
-                            </Link>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton
-                            asChild
-                            isActive={isActive('/product/controllo/bottleneck')}
-                          >
-                            <Link href="/product/controllo/bottleneck">
-                              <Gauge size={16} />
-                              <span>Strozzatura</span>
-                            </Link>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton
-                            asChild
-                            isActive={isActive('/product/controllo/stagnation')}
-                          >
-                            <Link href="/product/controllo/stagnation">
-                              <TrendingDown size={16} />
-                              <span>Stagnazione</span>
-                            </Link>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      </>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          asChild
+                          isActive={isActive('/product/controllo')}
+                        >
+                          <Link href="/product/controllo">
+                            <Gauge size={16} />
+                            <span>Controllo</span>
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
                     )}
                   </SidebarMenuSub>
                 </CollapsibleContent>
