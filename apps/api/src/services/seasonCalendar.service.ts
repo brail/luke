@@ -130,6 +130,36 @@ export async function freezeCalendar(calendarId: string, prisma: PrismaClient) {
   });
 }
 
+/**
+ * Reverts `freezeCalendar`: clears the calendar's `frozenAt` and every event's baseline snapshot.
+ * Admin-only procedure (gated by `season_calendar:unfreeze`, granted only to the admin wildcard)
+ * to correct an accidental or premature freeze — not a normal planning operation.
+ *
+ * @throws {TRPCError} NOT_FOUND if the calendar does not exist.
+ * @throws {TRPCError} CONFLICT if the calendar is not currently frozen.
+ */
+export async function unfreezeCalendar(calendarId: string, prisma: PrismaClient) {
+  return prisma.$transaction(async tx => {
+    const calendar = await tx.seasonCalendar.findUnique({ where: { id: calendarId } });
+    if (!calendar) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
+    }
+    if (!calendar.frozenAt) {
+      throw new TRPCError({ code: 'CONFLICT', message: 'Calendario non è congelato' });
+    }
+
+    await tx.calendarEvent.updateMany({
+      where: { calendarId },
+      data: { baselineStartAt: null, baselineEndAt: null },
+    });
+
+    return tx.seasonCalendar.update({
+      where: { id: calendarId },
+      data: { frozenAt: null },
+    });
+  });
+}
+
 // ─── Milestone list ───────────────────────────────────────────────────────────
 
 /**
@@ -209,6 +239,78 @@ export async function createMilestone(
     });
 
     return event;
+  });
+}
+
+/**
+ * Duplicates a specific set of calendar events (by id) into new events anchored to `rowIds`.
+ * Used by the planning wizard's row-fork: when a subset of rows is scoped to an event, the
+ * complementary rows need their own copies of every remaining event from that point on.
+ *
+ * Takes an explicit `eventIds` list (a snapshot taken by the caller at fork time) rather than a
+ * date range, to avoid accidentally picking up events belonging to a different, unrelated branch
+ * that happens to share the same date.
+ *
+ * @returns The newly created events, shaped like `listMilestonesDb` output (visibilities + anchors
+ *   included) so the frontend can treat them as `CalendarEventItem` directly.
+ */
+export async function duplicateEventsFrom(eventIds: string[], rowIds: string[], prisma: PrismaClient) {
+  return prisma.$transaction(async tx => {
+    const originals = await tx.calendarEvent.findMany({
+      where: { id: { in: eventIds } },
+      include: { visibilities: true },
+      orderBy: { startAt: 'asc' },
+    });
+    if (originals.length === 0) return [];
+
+    const calendar = await tx.seasonCalendar.findUniqueOrThrow({
+      where: { id: originals[0]!.calendarId },
+      select: { brandId: true },
+    });
+
+    const anchors = rowIds.map(rowId => ({ entityType: 'COLLECTION_LAYOUT_ROW' as const, entityId: rowId }));
+
+    // Originals are independent of each other — duplicate them concurrently instead of one by one.
+    // Response fields are assembled from data already in memory (no trailing refetch needed).
+    return Promise.all(originals.map(async original => {
+      const duplicate = await tx.calendarEvent.create({
+        data: {
+          calendarId: original.calendarId,
+          ownerFunctionId: original.ownerFunctionId,
+          type: original.type,
+          phaseId: original.phaseId,
+          title: original.title,
+          description: original.description,
+          startAt: original.startAt,
+          endAt: original.endAt,
+          allDay: original.allDay,
+          publishExternally: original.publishExternally,
+          templateItemId: original.templateItemId,
+          status: original.status,
+        },
+      });
+
+      await Promise.all([
+        tx.calendarEventVisibility.createMany({
+          data: original.visibilities.map(v => ({
+            eventId: duplicate.id,
+            functionId: v.functionId,
+            readOnly: v.readOnly,
+          })),
+        }),
+        tx.calendarEventAnchor.createMany({
+          data: anchors.map(a => ({ ...a, eventId: duplicate.id })),
+        }),
+      ]);
+
+      return {
+        ...duplicate,
+        visibilities: original.visibilities.map(v => ({ functionId: v.functionId, readOnly: v.readOnly })),
+        anchors,
+        notes: [] as { body: string }[],
+        brandId: calendar.brandId,
+      };
+    }));
   });
 }
 
@@ -365,6 +467,7 @@ export async function applyTemplate(
         description: item.description,
         startAt,
         endAt,
+        allDay: item.allDay,
         publishExternally: item.publishExternally,
         templateItemId: item.id,
       })),
@@ -433,6 +536,7 @@ export async function createTemplateItem(
     visibilityFunctionIds: string[];
     offsetDays: number;
     durationDays: number;
+    allDay: boolean;
     publishExternally: boolean;
     description?: string;
   },
@@ -465,6 +569,7 @@ export async function updateTemplateItem(
     visibilityFunctionIds?: string[];
     offsetDays?: number;
     durationDays?: number;
+    allDay?: boolean;
     publishExternally?: boolean;
     description?: string;
   },

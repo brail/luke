@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { PrismaClient } from '@prisma/client';
 import { createNotification, getVisibleUserIdsForMilestone } from './notifications';
+import { computeCriticalityForLayout } from '../services/phaseAlert.service';
 
 const TICK_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -31,6 +32,52 @@ async function notifyMilestone(
       data: { milestoneId: m.id, type: `deadline_${type}` },
     });
   }));
+}
+
+/**
+ * Notifies once per row+event+day when a collection row's current phase has slipped past its
+ * calendar deadline (`daysToDeadline < 0`, per `computeCriticalityForLayout` — same criticality
+ * engine as the Controllo dashboards, no new calculation). Recipients are the event's visible
+ * users, same resolution as milestone deadline notifications.
+ */
+async function checkRowPhaseOverdue(prisma: PrismaClient, today: string): Promise<void> {
+  const layouts = await prisma.collectionLayout.findMany({ select: { id: true } });
+
+  const overdueRows = (
+    await Promise.all(
+      layouts.map(layout => computeCriticalityForLayout(layout.id, new Date(), prisma))
+    )
+  )
+    .flat()
+    .filter(r => r.daysToDeadline < 0);
+  if (overdueRows.length === 0) return;
+
+  const rowIds = overdueRows.map(r => r.rowId);
+  const rows = await prisma.collectionLayoutRow.findMany({
+    where: { id: { in: rowIds } },
+    select: { id: true, line: true },
+  });
+  const lineByRowId = new Map(rows.map(r => [r.id, r.line]));
+
+  await Promise.all(
+    overdueRows.map(async r => {
+      const userIds = await getVisibleUserIdsForMilestone(r.eventId, prisma);
+      const line = lineByRowId.get(r.rowId) ?? r.rowId;
+      await Promise.all(userIds.map(async userId => {
+        const key = `${userId}:${r.rowId}:phase_overdue:${today}`;
+        if (sentToday.has(key)) return;
+        sentToday.add(key);
+        await createNotification(prisma, {
+          userId,
+          category: 'CALENDAR',
+          title: 'Fase scaduta',
+          message: `"${line}" non ha completato "${r.eventTitle}" entro la scadenza`,
+          link: '/product/collection-layout',
+          data: { rowId: r.rowId, eventId: r.eventId, type: 'phase_overdue' },
+        });
+      }));
+    })
+  );
 }
 
 async function checkDeadlines(prisma: PrismaClient): Promise<void> {
@@ -64,6 +111,7 @@ async function checkDeadlines(prisma: PrismaClient): Promise<void> {
     ...overdue.map(m =>
       notifyMilestone(prisma, m, 'overdue', today, `"${m.title}" è scaduta senza essere completata`)
     ),
+    checkRowPhaseOverdue(prisma, today),
   ]);
 }
 

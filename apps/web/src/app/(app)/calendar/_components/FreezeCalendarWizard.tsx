@@ -1,7 +1,6 @@
 'use client';
 
 import { AlertTriangle } from 'lucide-react';
-import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { Badge } from '../../../../components/ui/badge';
@@ -18,8 +17,6 @@ import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 import { describeAnchorScope, toUtcIsoDate } from '../utils';
 
-import { EventAnchorDialog } from './EventAnchorDialog';
-
 import type { CalendarEventItem } from './types';
 import type { HolidayMap } from './useHolidays';
 
@@ -28,11 +25,8 @@ interface Props {
   onClose: () => void;
   onFrozen: () => void;
   calendarId: string;
-  brandId: string;
-  seasonId: string;
   milestones: CalendarEventItem[];
   holidayDates: HolidayMap;
-  onAnchorsChanged: () => void;
 }
 
 /**
@@ -40,17 +34,14 @@ interface Props {
  * into baselineStartAt/baselineEndAt (immutable, written once). startAt/endAt remain freely
  * editable afterwards — only this baseline snapshot is locked, for measuring plan-vs-actual drift.
  *
- * Row-scope selection (which rows an event applies to) is deferred — freezing always snapshots
- * the whole calendar for now.
+ * Row-scope (ambito) is read-only here — it's set earlier in the planning wizard's per-event
+ * steps, not re-editable at freeze time.
  *
  * @param milestones - Events currently in the calendar, used for the summary and holiday warnings.
  * @param holidayDates - Holiday map used to warn when an event falls on a holiday.
  * @param onFrozen - Called after the calendar is successfully frozen.
  */
-export function FreezeCalendarWizard({ open, onClose, onFrozen, calendarId, brandId, seasonId, milestones, holidayDates, onAnchorsChanged }: Props) {
-  const [anchorEventId, setAnchorEventId] = useState<string | null>(null);
-  const anchorEvent = milestones.find(m => m.id === anchorEventId) ?? null;
-
+export function FreezeCalendarWizard({ open, onClose, onFrozen, calendarId, milestones, holidayDates }: Props) {
   const freezeMutation = trpc.seasonCalendar.freezeCalendar.useMutation({
     onSuccess: () => {
       toast.success('Calendario congelato — baseline salvata');
@@ -67,9 +58,12 @@ export function FreezeCalendarWizard({ open, onClose, onFrozen, calendarId, bran
   const eventsOnHolidayCount = milestonesWithHolidayFlag.filter(m => m.onHoliday).length;
 
   return (
-    <>
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-      <DialogContent className="sm:max-w-[520px]">
+      <DialogContent
+        className="sm:max-w-[600px]"
+        onInteractOutside={e => e.preventDefault()}
+        onEscapeKeyDown={e => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>Congela pianificazione</DialogTitle>
         </DialogHeader>
@@ -100,14 +94,7 @@ export function FreezeCalendarWizard({ open, onClose, onFrozen, calendarId, bran
                     {new Date(m.startAt).toLocaleDateString('it-IT')}
                   </span>
                   {onHoliday && <Badge variant="outline" className="text-xs text-amber-700 border-amber-300">festivo</Badge>}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-1.5 text-xs text-muted-foreground"
-                    onClick={() => setAnchorEventId(m.id)}
-                  >
-                    {describeAnchorScope(m.anchors)}
-                  </Button>
+                  <span className="text-xs text-muted-foreground">{describeAnchorScope(m.anchors)}</span>
                 </div>
               ))}
               {milestones.length === 0 && (
@@ -130,20 +117,5 @@ export function FreezeCalendarWizard({ open, onClose, onFrozen, calendarId, bran
         </DialogFooter>
       </DialogContent>
     </Dialog>
-
-      {anchorEvent && (
-        <EventAnchorDialog
-          key={anchorEvent.id}
-          open={!!anchorEventId}
-          onClose={() => setAnchorEventId(null)}
-          onSaved={() => { setAnchorEventId(null); onAnchorsChanged(); }}
-          eventId={anchorEvent.id}
-          eventTitle={anchorEvent.title}
-          brandId={brandId}
-          seasonId={seasonId}
-          currentAnchors={anchorEvent.anchors ?? []}
-        />
-      )}
-    </>
   );
 }

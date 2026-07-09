@@ -27,6 +27,8 @@ import {
   CalendarEventPersonalNoteInputSchema,
   CalendarEventUserVisibilityInputSchema,
   CalendarEventAnchorInputSchema,
+  MilestoneTemplateItemBaseSchema,
+  MilestoneTemplateItemInputSchema,
   SEASON_CALENDAR_STATUS,
   CALENDAR_EVENT_STATUS,
   hasPermission,
@@ -43,6 +45,7 @@ import { sseStore } from '../lib/sseStore.js';
 import { router, protectedProcedure } from '../lib/trpc.js';
 import { executeEffect } from '../services/calendar/effects/executor.js';
 import { rollbackEffect } from '../services/calendar/effects/rollback.js';
+import { assertUnlocked } from '../services/editLock.service.js';
 import {
   syncOneMilestone,
   cleanupMilestoneEvents,
@@ -55,10 +58,12 @@ import {
   updateCalendarStatus,
   setAnchorDate,
   freezeCalendar,
+  unfreezeCalendar,
   listMilestonesDb,
   createMilestone,
   updateMilestone,
   deleteMilestone,
+  duplicateEventsFrom,
   upsertNote,
   deleteNote,
   listTemplates,
@@ -172,8 +177,33 @@ export const seasonCalendarRouter = router({
       });
       if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
       await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
+      await assertUnlocked('SEASON_CALENDAR', input.calendarId, ctx.session.user.id, ctx.prisma);
       const result = await freezeCalendar(input.calendarId, ctx.prisma);
       await logAudit(ctx, { action: 'CALENDAR_FROZEN', targetType: 'SeasonCalendar', targetId: input.calendarId, result: 'SUCCESS', metadata: {} });
+      return result;
+    }),
+
+  /**
+   * Admin-only: reverts a freeze, clearing the calendar's `frozenAt` and every event's baseline
+   * snapshot. Used to correct an accidental or premature freeze.
+   *
+   * @auth season_calendar:unfreeze (admin wildcard only — not granted to editor/viewer)
+   * @input { calendarId }
+   * @output Updated SeasonCalendar
+   */
+  unfreezeCalendar: protectedProcedure
+    .use(requirePermission('season_calendar:unfreeze'))
+    .use(withRateLimit('configMutations'))
+    .input(z.object({ calendarId: z.string().uuid() }))
+    .mutation(async ({ input, ctx }) => {
+      const calendar = await ctx.prisma.seasonCalendar.findUnique({
+        where: { id: input.calendarId },
+        select: { brandId: true },
+      });
+      if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
+      await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
+      const result = await unfreezeCalendar(input.calendarId, ctx.prisma);
+      await logAudit(ctx, { action: 'CALENDAR_UNFROZEN', targetType: 'SeasonCalendar', targetId: input.calendarId, result: 'SUCCESS', metadata: {} });
       return result;
     }),
 
@@ -223,6 +253,7 @@ export const seasonCalendarRouter = router({
       });
       if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
       await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
+      await assertUnlocked('SEASON_CALENDAR', input.calendarId, ctx.session.user.id, ctx.prisma);
 
       const result = await createMilestone(input, ctx.prisma);
       await logAudit(ctx, { action: 'CALENDAR_EVENT_CREATE', targetType: 'CalendarEvent', targetId: result.id, result: 'SUCCESS', metadata: { calendarId: input.calendarId, ownerFunctionId: input.ownerFunctionId, title: result.title } });
@@ -259,6 +290,7 @@ export const seasonCalendarRouter = router({
       });
       if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
       await assertBrandAccess(ctx.session.user.id, event.calendar.brandId, ctx.prisma);
+      await assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma);
 
       const result = await updateMilestone(input.id, input.data, ctx.prisma);
 
@@ -316,6 +348,7 @@ export const seasonCalendarRouter = router({
       });
       if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
       await assertBrandAccess(ctx.session.user.id, event.calendar.brandId, ctx.prisma);
+      await assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma);
 
       // Snapshot visibility before delete so digest and notification can use it afterward
       const visibleUserIds = await getVisibleUserIdsForMilestone(input.id, ctx.prisma);
@@ -358,6 +391,10 @@ export const seasonCalendarRouter = router({
       const uniqueBrandIds = [...new Set(events.map(e => e.calendar.brandId).filter((id): id is string => id != null))];
       await Promise.all(uniqueBrandIds.map(brandId =>
         assertBrandAccess(ctx.session.user.id, brandId, ctx.prisma)
+      ));
+      const calendarIdsToLockCheck = [...new Set(events.map(e => e.calendarId))];
+      await Promise.all(calendarIdsToLockCheck.map(id =>
+        assertUnlocked('SEASON_CALENDAR', id, ctx.session.user.id, ctx.prisma)
       ));
       // Snapshot visibility for each event before deletion (for digest + notifications)
       const visibilityMap = await getVisibleUserIdsForMilestones(events.map(e => e.id), ctx.prisma);
@@ -636,17 +673,7 @@ export const seasonCalendarRouter = router({
 
   createTemplateItem: protectedProcedure
     .use(requirePermission('milestone_template:create'))
-    .input(z.object({
-      templateId: z.string().uuid(),
-      title: z.string().min(1).max(200),
-      type: z.string().min(1),
-      ownerFunctionId: z.string().uuid(),
-      visibilityFunctionIds: z.array(z.string().uuid()).min(1),
-      offsetDays: z.number().int(),
-      durationDays: z.number().int().min(0).default(0),
-      publishExternally: z.boolean().default(true),
-      description: z.string().optional(),
-    }))
+    .input(z.object({ templateId: z.string().uuid() }).and(MilestoneTemplateItemInputSchema))
     .mutation(async ({ input, ctx }) => {
       const { templateId, ...data } = input;
       const result = await createTemplateItem(templateId, data, ctx.prisma);
@@ -656,17 +683,7 @@ export const seasonCalendarRouter = router({
 
   updateTemplateItem: protectedProcedure
     .use(requirePermission('milestone_template:update'))
-    .input(z.object({
-      id: z.string().uuid(),
-      title: z.string().min(1).max(200).optional(),
-      type: z.string().min(1).optional(),
-      ownerFunctionId: z.string().uuid().optional(),
-      visibilityFunctionIds: z.array(z.string().uuid()).min(1).optional(),
-      offsetDays: z.number().int().optional(),
-      durationDays: z.number().int().min(0).optional(),
-      publishExternally: z.boolean().optional(),
-      description: z.string().optional(),
-    }))
+    .input(z.object({ id: z.string().uuid() }).and(MilestoneTemplateItemBaseSchema.partial()))
     .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
       const result = await updateTemplateItem(id, data, ctx.prisma);
@@ -834,6 +851,7 @@ export const seasonCalendarRouter = router({
       });
       if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
       await assertBrandAccess(ctx.session.user.id, event.calendar.brandId, ctx.prisma);
+      await assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma);
 
       await ctx.prisma.$transaction(async tx => {
         await tx.calendarEventAnchor.deleteMany({ where: { eventId: input.eventId } });
@@ -849,6 +867,45 @@ export const seasonCalendarRouter = router({
       });
       await logAudit(ctx, { action: 'CALENDAR_EVENT_ANCHORS_SET', targetType: 'CalendarEventAnchor', targetId: input.eventId, result: 'SUCCESS', metadata: { count: input.anchors.length } });
       return { success: true };
+    }),
+
+  /**
+   * Duplicates a set of events (by id) into new events anchored to `rowIds` — used by the planning
+   * wizard's row-fork to give the complement of a scoped subset its own copies of the remaining
+   * events, from the fork point on.
+   *
+   * @auth season_calendar:update
+   * @input { eventIds, rowIds }
+   * @output Newly created CalendarEvent records (with visibilities/anchors), same shape as listMilestones
+   */
+  duplicateEventsFrom: protectedProcedure
+    .use(requirePermission('season_calendar:update'))
+    .use(withRateLimit('configMutations'))
+    .input(z.object({
+      eventIds: z.array(z.string().uuid()).min(1),
+      rowIds: z.array(z.string().uuid()).min(1),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const firstEvent = await ctx.prisma.calendarEvent.findUnique({
+        where: { id: input.eventIds[0] },
+        include: { calendar: { select: { brandId: true } } },
+      });
+      if (!firstEvent) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+      await assertBrandAccess(ctx.session.user.id, firstEvent.calendar.brandId, ctx.prisma);
+      await assertUnlocked('SEASON_CALENDAR', firstEvent.calendarId, ctx.session.user.id, ctx.prisma);
+
+      const duplicates = await duplicateEventsFrom(input.eventIds, input.rowIds, ctx.prisma);
+      await logAudit(ctx, {
+        action: 'CALENDAR_EVENT_FORK_DUPLICATE',
+        targetType: 'CalendarEvent',
+        targetId: firstEvent.calendarId,
+        result: 'SUCCESS',
+        metadata: { sourceEventIds: input.eventIds, rowCount: input.rowIds.length, duplicateCount: duplicates.length },
+      });
+      duplicates.forEach(d => {
+        syncOneMilestone(d.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on fork duplicate'));
+      });
+      return duplicates;
     }),
 
   // ─── State effects (manual) ─────────────────────────────────────────────────

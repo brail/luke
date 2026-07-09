@@ -20,24 +20,27 @@ import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 interface Props {
   open: boolean;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (anchors: { entityType: string; entityId: string }[]) => void;
   eventId: string;
   eventTitle: string;
   brandId: string;
   seasonId: string;
   /** Current anchors for this event, used to pre-select the scope. */
   currentAnchors: { entityType: string; entityId: string }[];
+  /** Restricts the row picker to this set (e.g. the active fork branch's rows). Default: whole layout. */
+  availableRowIds?: string[];
 }
 
 /**
- * Scopes a calendar event to either the whole collection layout or a specific subset of rows,
- * via `CalendarEventAnchor` (reused as-is — no new mutation). Rows not selected are unaffected
- * by this event when the alert/phase-resolution engine evaluates "which events apply to this row".
+ * Scopes a calendar event to either the whole collection layout (or, within a fork branch, all
+ * rows available to it) or a specific subset of rows, via `CalendarEventAnchor` (reused as-is — no
+ * new mutation). Rows not selected are unaffected by this event when the alert/phase-resolution
+ * engine evaluates "which events apply to this row".
  *
  * The parent must pass `key={eventId}` so switching to a different event remounts this dialog
  * and re-derives `scope`/`selectedRowIds` from that event's `currentAnchors`.
  */
-export function EventAnchorDialog({ open, onClose, onSaved, eventId, eventTitle, brandId, seasonId, currentAnchors }: Props) {
+export function EventAnchorDialog({ open, onClose, onSaved, eventId, eventTitle, brandId, seasonId, currentAnchors, availableRowIds }: Props) {
   const isCurrentlyScoped = currentAnchors.some(a => a.entityType === 'COLLECTION_LAYOUT_ROW');
   const [scope, setScope] = useState<'all' | 'subset'>(isCurrentlyScoped ? 'subset' : 'all');
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(
@@ -48,12 +51,13 @@ export function EventAnchorDialog({ open, onClose, onSaved, eventId, eventTitle,
     { brandId, seasonId },
     { enabled: open }
   );
-  const allRows = layout?.groups.flatMap(g => g.rows) ?? [];
+  const allRows = (layout?.groups.flatMap(g => g.rows) ?? [])
+    .filter(r => !availableRowIds || availableRowIds.includes(r.id));
 
   const setAnchorsMutation = trpc.seasonCalendar.setEventAnchors.useMutation({
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       toast.success('Ambito aggiornato');
-      onSaved();
+      onSaved(variables.anchors);
       onClose();
     },
     onError: err => toast.error(getTrpcErrorMessage(err)),
@@ -86,7 +90,9 @@ export function EventAnchorDialog({ open, onClose, onSaved, eventId, eventTitle,
           <RadioGroup value={scope} onValueChange={v => setScope(v as 'all' | 'subset')}>
             <div className="flex items-center gap-2">
               <RadioGroupItem value="all" id="anchor-all" />
-              <label htmlFor="anchor-all" className="text-sm cursor-pointer">Tutte le righe del layout</label>
+              <label htmlFor="anchor-all" className="text-sm cursor-pointer">
+                {availableRowIds ? 'Tutte le righe di questo ramo' : 'Tutte le righe del layout'}
+              </label>
             </div>
             <div className="flex items-center gap-2">
               <RadioGroupItem value="subset" id="anchor-subset" />

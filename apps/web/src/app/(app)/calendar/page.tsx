@@ -6,6 +6,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 
+import { ConfirmDialog } from '../../../components/ConfirmDialog';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent } from '../../../components/ui/card';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../../../components/ui/dropdown-menu';
@@ -26,7 +27,7 @@ import { CalendarEventTimeline } from './_components/CalendarEventTimeline';
 import { CalendarEventWeekView } from './_components/CalendarEventWeekView';
 import { CloneBrandSeasonDialog } from './_components/CloneBrandSeasonDialog';
 import { ExportButton } from './_components/ExportButton';
-import { FreezeCalendarWizard } from './_components/FreezeCalendarWizard';
+import { PlanningWizard } from './_components/PlanningWizard/PlanningWizard';
 import { useHolidays } from './_components/useHolidays';
 import { assignBrandColors, resolveBrandColor } from './utils';
 
@@ -128,6 +129,15 @@ export default function CalendarPage() {
     { enabled: !!calendar?.id }
   );
 
+  const utils = trpc.useUtils();
+  /** Refetches milestones and invalidates the criticality caches — an event's phase/date change
+   * affects the alert engine, so the collection layout badges must update without a page reload. */
+  const refetchAfterEventChange = () => {
+    void refetch();
+    utils.phaseAlert.criticalityForLayout.invalidate();
+    utils.phaseAlert.criticalityForRow.invalidate();
+  };
+
   const triggerSyncMutation = trpc.seasonCalendar.triggerSync.useMutation({
     onSuccess: () => { toast.success('Sincronizzazione avviata'); void refetch(); },
     onError: err => toast.error(getTrpcErrorMessage(err)),
@@ -147,9 +157,16 @@ export default function CalendarPage() {
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
+  const unfreezeMutation = trpc.seasonCalendar.unfreezeCalendar.useMutation({
+    onSuccess: () => { toast.success('Congelamento annullato'); void refetch(); },
+    onError: err => toast.error(getTrpcErrorMessage(err, { CONFLICT: 'Il calendario non è congelato' })),
+  });
+  const [unfreezeConfirmOpen, setUnfreezeConfirmOpen] = useState(false);
+
   const canSync = can('season_calendar:sync');
   const canUpdate = can('season_calendar:update');
   const canFreeze = can('season_calendar:freeze');
+  const canUnfreeze = can('season_calendar:unfreeze');
 
   const handleDayClick = useCallback((isoDate: string) => { setCreateDefaultAllDay(true); setCreateDate(isoDate); }, []);
   const handleDayClickTimed = useCallback((isoDate: string) => { setCreateDefaultAllDay(false); setCreateDate(isoDate); }, []);
@@ -240,6 +257,12 @@ export default function CalendarPage() {
                 <DropdownMenuItem onClick={() => setFreezeOpen(true)} disabled={!calendar || !!calendar.frozenAt}>
                   <Snowflake size={13} className="mr-2" />
                   {calendar?.frozenAt ? 'Pianificazione congelata' : 'Congela pianificazione'}
+                </DropdownMenuItem>
+              )}
+              {canUnfreeze && calendar?.frozenAt && (
+                <DropdownMenuItem onClick={() => setUnfreezeConfirmOpen(true)}>
+                  <Snowflake size={13} className="mr-2" />
+                  Forza de-freeze (admin)
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
@@ -479,8 +502,8 @@ export default function CalendarPage() {
         <CalendarEventDialog
           open={!!activeEventId}
           onClose={() => setActiveEventId(null)}
-          onSaved={() => void refetch()}
-          onDeleted={() => { setActiveEventId(null); void refetch(); }}
+          onSaved={refetchAfterEventChange}
+          onDeleted={() => { setActiveEventId(null); refetchAfterEventChange(); }}
           calendarId={calendar?.id ?? ''}
           availableFunctions={availableFunctions}
           functionsById={functionsById}
@@ -494,7 +517,7 @@ export default function CalendarPage() {
         <CalendarEventDialog
           open
           onClose={() => { setCreateDate(null); setCreateDefaultAllDay(true); }}
-          onSaved={() => { setCreateDate(null); setCreateDefaultAllDay(true); void refetch(); }}
+          onSaved={() => { setCreateDate(null); setCreateDefaultAllDay(true); refetchAfterEventChange(); }}
           calendarId={calendar.id}
           availableFunctions={availableFunctions}
           functionsById={functionsById}
@@ -525,7 +548,7 @@ export default function CalendarPage() {
       )}
 
       {calendar && freezeOpen && (
-        <FreezeCalendarWizard
+        <PlanningWizard
           open={freezeOpen}
           onClose={() => setFreezeOpen(false)}
           onFrozen={() => { setFreezeOpen(false); void refetch(); }}
@@ -547,6 +570,19 @@ export default function CalendarPage() {
           targetSeasonId={season.id}
         />
       )}
+
+      <ConfirmDialog
+        open={unfreezeConfirmOpen}
+        onOpenChange={setUnfreezeConfirmOpen}
+        title="Forzare il de-freeze del calendario?"
+        description="Azzera la baseline congelata di tutti gli eventi — lo scostamento piano/realtà misurato finora andrà perso. Operazione riservata agli amministratori, da usare solo per correggere un congelamento fatto per errore."
+        confirmText="Forza de-freeze"
+        cancelText="Annulla"
+        variant="destructive"
+        actionType="warning"
+        isLoading={unfreezeMutation.isPending}
+        onConfirm={() => calendar && unfreezeMutation.mutate({ calendarId: calendar.id })}
+      />
     </>
   );
 }

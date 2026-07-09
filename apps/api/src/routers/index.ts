@@ -16,6 +16,7 @@ import { companyRouter } from './company';
 import { configRouter } from './config';
 import { contextRouter } from './context';
 import { dashboardRouter } from './dashboard';
+import { editLockRouter } from './editLock';
 import { feedbackRouter } from './feedback';
 import { healthRouter } from './health';
 import { holidaysRouter } from './holidays';
@@ -48,6 +49,7 @@ export const appRouter = router({
   company: companyRouter,
   catalog: catalogRouter,
   collectionLayout: collectionLayoutRouter,
+  editLock: editLockRouter,
   calendarCatalog: calendarCatalogRouter,
   collectionCatalog: collectionCatalogRouter,
   phase: phaseRouter,

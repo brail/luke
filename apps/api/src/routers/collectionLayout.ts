@@ -54,6 +54,7 @@ import {
   deleteQuotation,
   reorderQuotations,
 } from '../services/collectionRow.quotation.service';
+import { assertUnlocked } from '../services/editLock.service';
 import { deleteObjectByKey } from '../storage';
 
 import type { PrismaClient } from '@prisma/client';
@@ -111,6 +112,7 @@ const groupsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await assertUnlocked('COLLECTION_LAYOUT', input.collectionLayoutId, ctx.session!.user.id, ctx.prisma);
       const result = await createGroup(input.collectionLayoutId, input.data, ctx.prisma);
       await logAudit(ctx, { action: 'COLLECTION_GROUP_CREATE', targetType: 'CollectionGroup', targetId: result.id, result: 'SUCCESS', metadata: { collectionLayoutId: input.collectionLayoutId } });
       return result;
@@ -126,6 +128,13 @@ const groupsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      const group = await ctx.prisma.collectionGroup.findUnique({
+        where: { id: input.groupId },
+        select: { collectionLayoutId: true },
+      });
+      if (!group) throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo non trovato' });
+      await assertUnlocked('COLLECTION_LAYOUT', group.collectionLayoutId, ctx.session!.user.id, ctx.prisma);
+
       const result = await updateGroup(input.groupId, input.data, ctx.prisma);
       await logAudit(ctx, { action: 'COLLECTION_GROUP_UPDATE', targetType: 'CollectionGroup', targetId: input.groupId, result: 'SUCCESS', metadata: {} });
       return result;
@@ -136,6 +145,13 @@ const groupsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ groupId: z.string() }))
     .mutation(async ({ input, ctx }) => {
+      const group = await ctx.prisma.collectionGroup.findUnique({
+        where: { id: input.groupId },
+        select: { collectionLayoutId: true },
+      });
+      if (!group) throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo non trovato' });
+      await assertUnlocked('COLLECTION_LAYOUT', group.collectionLayoutId, ctx.session!.user.id, ctx.prisma);
+
       await deleteGroup(input.groupId, ctx.prisma);
       await logAudit(ctx, { action: 'COLLECTION_GROUP_DELETE', targetType: 'CollectionGroup', targetId: input.groupId, result: 'SUCCESS', metadata: {} });
       return { success: true };
@@ -149,6 +165,13 @@ const rowsRouter = router({
     .input(CollectionLayoutRowInputSchema)
     .mutation(async ({ input, ctx }) => {
       const { pendingPictureFileObjectId, ...rowInput } = input;
+
+      const group = await ctx.prisma.collectionGroup.findUnique({
+        where: { id: input.groupId },
+        select: { collectionLayoutId: true },
+      });
+      if (!group) throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo non trovato' });
+      await assertUnlocked('COLLECTION_LAYOUT', group.collectionLayoutId, ctx.session!.user.id, ctx.prisma);
 
       const result = await ctx.prisma.$transaction(async tx => {
         let confirmedPictureKey: string | undefined;
@@ -191,6 +214,13 @@ const rowsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { pendingPictureFileObjectId, ...rowData } = input.data;
       let oldPictureKey: string | null = null;
+
+      const targetRow = await ctx.prisma.collectionLayoutRow.findUnique({
+        where: { id: input.rowId },
+        select: { collectionLayoutId: true },
+      });
+      if (!targetRow) throw new TRPCError({ code: 'NOT_FOUND', message: 'Riga non trovata' });
+      await assertUnlocked('COLLECTION_LAYOUT', targetRow.collectionLayoutId, ctx.session!.user.id, ctx.prisma);
 
       const result = await ctx.prisma.$transaction(async tx => {
         let confirmedPictureKey: string | undefined;
@@ -246,6 +276,13 @@ const rowsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ rowId: z.string() }))
     .mutation(async ({ input, ctx }) => {
+      const targetRow = await ctx.prisma.collectionLayoutRow.findUnique({
+        where: { id: input.rowId },
+        select: { collectionLayoutId: true },
+      });
+      if (!targetRow) throw new TRPCError({ code: 'NOT_FOUND', message: 'Riga non trovata' });
+      await assertUnlocked('COLLECTION_LAYOUT', targetRow.collectionLayoutId, ctx.session!.user.id, ctx.prisma);
+
       await deleteRow(input.rowId, ctx.prisma);
       await logAudit(ctx, { action: 'COLLECTION_ROW_DELETE', targetType: 'CollectionLayoutRow', targetId: input.rowId, result: 'SUCCESS', metadata: {} });
       return { success: true };
@@ -256,6 +293,13 @@ const rowsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ rowId: z.string() }))
     .mutation(async ({ input, ctx }) => {
+      const targetRow = await ctx.prisma.collectionLayoutRow.findUnique({
+        where: { id: input.rowId },
+        select: { collectionLayoutId: true },
+      });
+      if (!targetRow) throw new TRPCError({ code: 'NOT_FOUND', message: 'Riga non trovata' });
+      await assertUnlocked('COLLECTION_LAYOUT', targetRow.collectionLayoutId, ctx.session!.user.id, ctx.prisma);
+
       const result = await duplicateRow(input.rowId, ctx.prisma);
       await logAudit(ctx, { action: 'COLLECTION_ROW_DUPLICATE', targetType: 'CollectionLayoutRow', targetId: result.id, result: 'SUCCESS', metadata: { sourceRowId: input.rowId } });
       return result;
@@ -271,6 +315,13 @@ const rowsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      const group = await ctx.prisma.collectionGroup.findUnique({
+        where: { id: input.groupId },
+        select: { collectionLayoutId: true },
+      });
+      if (!group) throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo non trovato' });
+      await assertUnlocked('COLLECTION_LAYOUT', group.collectionLayoutId, ctx.session!.user.id, ctx.prisma);
+
       await reorderRows(input.groupId, input.orderedIds, ctx.prisma);
       await logAudit(ctx, { action: 'COLLECTION_ROW_REORDER', targetType: 'CollectionGroup', targetId: input.groupId, result: 'SUCCESS', metadata: { count: input.orderedIds.length } });
       return { success: true };
