@@ -146,8 +146,14 @@ export type ActivePhaseResult =
   | { status: 'no-calendar' };
 
 /**
- * Resolves the row's next unreached phase — the "active" milestone it is measured against — from
- * an already-fetched, row-scoped events array. Pure — no I/O.
+ * Resolves the phase the row is measured against — the "active" milestone — from an
+ * already-fetched, row-scoped events array. Pure — no I/O.
+ *
+ * A calendar event tagged with phase X means "X must be completed (the row must move past it) by
+ * this date". So the active event is the first one whose phase order is >= the row's current
+ * phase order (`>=`, not `>`): while the row sits *at* phase X, X's own deadline still applies —
+ * it hasn't been completed yet, only reached. Once the row advances past X, that event stops
+ * being relevant and the next one takes over.
  *
  * A row with no phase yet (`currentOrder === null`) is treated as before the first phase — the
  * first applicable event becomes active, matching "riga non ancora arrivata alla prima fase".
@@ -155,7 +161,7 @@ export type ActivePhaseResult =
 export function getActivePhaseFromEvents(rowEvents: CalendarEventWithContext[], currentOrder: number | null): ActivePhaseResult {
   if (rowEvents.length === 0) return { status: 'no-calendar' };
   const order = currentOrder ?? -Infinity;
-  const event = rowEvents.find(e => e.phase && e.phase.order > order);
+  const event = rowEvents.find(e => e.phase && e.phase.order >= order);
   return event ? { status: 'active', event } : { status: 'completed' };
 }
 
