@@ -62,6 +62,9 @@ export default function CollectionLayoutPage() {
       brandId: brand?.id,
       seasonId: season?.id,
     });
+    // Phase changes affect criticality — invalidate so the badge updates without a page reload.
+    utils.phaseAlert.criticalityForLayout.invalidate();
+    utils.phaseAlert.criticalityForRow.invalidate();
   };
 
   // ─── UI state ───────────────────────────────────────────────────

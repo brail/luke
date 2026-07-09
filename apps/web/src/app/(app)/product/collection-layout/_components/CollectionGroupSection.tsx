@@ -406,6 +406,16 @@ export function CollectionGroupSection({
 
   const { phases, phaseById, phaseOptions } = usePhaseCatalog();
 
+  // Single batched fetch for the whole group's layout, instead of one query per row.
+  const { data: criticalityList } = trpc.phaseAlert.criticalityForLayout.useQuery(
+    { collectionLayoutId: group.collectionLayoutId },
+    { staleTime: 60 * 1000 }
+  );
+  const criticalityByRowId = useMemo(
+    () => new Map((criticalityList ?? []).map(c => [c.rowId, c])),
+    [criticalityList]
+  );
+
   // Per-group sort/filter state
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -847,14 +857,31 @@ export function CollectionGroupSection({
                       )}
                       {show('progress') && (
                         <TableCell>
-                          {progressBadge && (
-                            <span className={cn(
-                              'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium',
-                              progressBadge.className
-                            )}>
-                              {progressBadge.label}
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {progressBadge && (
+                              <span className={cn(
+                                'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium',
+                                progressBadge.className
+                              )}>
+                                {progressBadge.label}
+                              </span>
+                            )}
+                            {(() => {
+                              const criticality = criticalityByRowId.get(row.id);
+                              if (!criticality) return null;
+                              return (
+                                // Color is an admin-configured hex value from AppConfig
+                                // (collectionControl.alertThresholds), not a design token.
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] px-1.5 py-0"
+                                  style={{ color: criticality.band.color, borderColor: criticality.band.color }}
+                                >
+                                  {criticality.band.label}
+                                </Badge>
+                              );
+                            })()}
+                          </div>
                         </TableCell>
                       )}
                       {show('designer') && (
