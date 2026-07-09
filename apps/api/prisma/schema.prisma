@@ -99,6 +99,8 @@ model User {
   rolledBackEffects                 CalendarEventEffectExecution[] @relation("EffectRollbacker")
   /// Vendor closure periods confirmed by this user.
   confirmedVendorClosures           VendorClosurePeriod[]          @relation("ClosureConfirmer")
+  /// Edit locks currently held by this user (planning wizard sessions).
+  editLocks                         EditLock[]
 
   @@map("users")
 }
@@ -1860,6 +1862,8 @@ model MilestoneTemplateItem {
   offsetDays        Int
   /// Duration of the generated event in days. 0 = single-day event.
   durationDays      Int      @default(0)
+  /// Propagated to CalendarEvent.allDay on generation.
+  allDay            Boolean  @default(true)
   /// If true, the generated event is exported to Google Calendar.
   publishExternally Boolean  @default(true)
   createdAt         DateTime @default(now())
@@ -2126,6 +2130,32 @@ model CalendarEventAnchor {
   @@unique([eventId, entityType, entityId])
   @@index([entityType, entityId])
   @@map("calendar_event_anchors")
+}
+
+/// Entity type an EditLock can target.
+enum LockEntityType {
+  SEASON_CALENDAR
+  COLLECTION_LAYOUT
+}
+
+/// Session-scoped edit lock preventing concurrent editing of a SeasonCalendar or CollectionLayout
+/// while a user has the planning wizard open. Distinct from CalendarEventStateEffect (a domain-level
+/// lock triggered by milestone events) — this is a UI-session lock, released on completion/unmount
+/// or expired via a fixed TTL (no renewal/heartbeat).
+model EditLock {
+  id             String         @id @default(uuid())
+  entityType     LockEntityType
+  entityId       String
+  /// FK to User. Cascade delete — a lock has no meaning once its owner is gone.
+  lockedByUserId String
+  /// The user holding this lock.
+  lockedByUser   User           @relation(fields: [lockedByUserId], references: [id], onDelete: Cascade)
+  lockedAt       DateTime       @default(now())
+  /// Hard cutoff — no renewal. Past this instant the lock is considered stale and ignorable.
+  expiresAt      DateTime
+
+  @@unique([entityType, entityId])
+  @@map("edit_locks")
 }
 
 /// Country entity used as the scope for public holiday definitions and vendor closure periods.
