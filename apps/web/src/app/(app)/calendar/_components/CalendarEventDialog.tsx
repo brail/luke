@@ -42,6 +42,7 @@ interface ExistingEvent {
   allDay: boolean;
   status: string;
   type: string;
+  phaseId?: string | null;
   ownerFunctionId: string;
   publishExternally: boolean;
   visibilities: { functionId: string }[];
@@ -117,10 +118,12 @@ export function CalendarEventDialog({
     { type: 'eventType' },
     { staleTime: 5 * 60 * 1000 }
   );
+  const { data: phases = [] } = trpc.phase.list.useQuery(undefined, { staleTime: 5 * 60 * 1000 });
 
   const [title, setTitle] = useState(event?.title ?? '');
   const [description, setDescription] = useState(event?.description ?? '');
   const [type, setType] = useState<string>(event?.type ?? 'MILESTONE');
+  const [phaseId, setPhaseId] = useState<string>(event?.phaseId ?? '_none');
   const [status, setStatus] = useState<(typeof CALENDAR_EVENT_STATUS)[number]>((event?.status as (typeof CALENDAR_EVENT_STATUS)[number]) ?? 'PLANNED');
   const [ownerFunctionId, setOwnerFunctionId] = useState<string>(event?.ownerFunctionId ?? availableFunctions[0]?.id ?? '');
   const [visibilityFunctionIds, setVisibilityFunctionIds] = useState<string[]>(() => {
@@ -145,6 +148,7 @@ export function CalendarEventDialog({
     setTitle(event?.title ?? '');
     setDescription(event?.description ?? '');
     setType(event?.type ?? 'MILESTONE');
+    setPhaseId(event?.phaseId ?? '_none');
     setStatus((event?.status as (typeof CALENDAR_EVENT_STATUS)[number]) ?? 'PLANNED');
     const owner = event?.ownerFunctionId ?? availableFunctions[0]?.id ?? '';
     setOwnerFunctionId(owner);
@@ -209,6 +213,7 @@ export function CalendarEventDialog({
       title: title.trim(),
       description: description.trim() || undefined,
       type,
+      phaseId: phaseId === '_none' ? null : phaseId,
       status,
       ownerFunctionId,
       visibilityFunctionIds,
@@ -233,6 +238,7 @@ export function CalendarEventDialog({
       ? new Date(event.startAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
       : null;
     const typeLabel = catalogItems.find(c => c.value === event.type)?.label ?? TYPE_LABELS[event.type] ?? event.type;
+    const phaseLabel = phases.find(p => p.id === event.phaseId)?.label;
     const baselineDrift = describeBaselineDrift(event);
     return (
       <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
@@ -243,6 +249,7 @@ export function CalendarEventDialog({
           <div className="space-y-4 py-2">
             <div className="flex flex-wrap gap-1.5">
               <Badge variant="outline">{typeLabel}</Badge>
+              {phaseLabel && <Badge variant="outline">{phaseLabel}</Badge>}
               <Badge variant={STATUS_VARIANT[event.status] ?? 'outline'}>{STATUS_LABELS[event.status] ?? event.status}</Badge>
               <Badge variant="secondary">{functionsById[event.ownerFunctionId] ?? event.ownerFunctionId}</Badge>
               <Badge variant="outline" className="text-muted-foreground">Ambito: {describeAnchorScope(event.anchors)}</Badge>
@@ -322,6 +329,20 @@ export function CalendarEventDialog({
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Fase</Label>
+              <Select value={phaseId} onValueChange={setPhaseId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">— Nessuna (evento non di fase) —</SelectItem>
+                  {phases.map(p => <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Collega l'evento a una fase di produzione — necessario perché il motore di criticità delle righe collezione lo consideri come scadenza.
+              </p>
             </div>
 
             <div className="space-y-1.5">

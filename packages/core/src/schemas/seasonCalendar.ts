@@ -138,25 +138,31 @@ export type CalendarEventPersonalNoteInput = z.infer<typeof CalendarEventPersona
 // ─── Template inputs ──────────────────────────────────────────────────────────
 
 /**
- * Input schema for a single item within a milestone template.
+ * Base fields for a single item within a milestone template — kept separate from
+ * `MilestoneTemplateItemInputSchema` (unrefined) so update endpoints can `.partial()` it, same
+ * pattern as `CalendarEventBaseSchema`/`CalendarEventInputSchema`.
+ */
+export const MilestoneTemplateItemBaseSchema = z.object({
+  ownerFunctionId:      z.string().uuid(),
+  type:                 z.string().min(1),
+  phaseId:              z.string().uuid().optional().nullable(),
+  title:                z.string().min(1).max(200),
+  description:          z.string().max(2000).optional(),
+  offsetDays:           z.number().int(),
+  durationDays:         z.number().int().min(0).default(0),
+  allDay:               z.boolean().default(true),
+  publishExternally:    z.boolean().default(true),
+  visibilityFunctionIds: z.array(z.string().uuid()).min(1),
+});
+
+/**
+ * Full input schema for creating a milestone template item.
  * `offsetDays` is relative to the template's anchor date; visibility must include the owner function.
  */
-export const MilestoneTemplateItemInputSchema = z
-  .object({
-    ownerFunctionId:      z.string().uuid(),
-    type:                 z.string().min(1),
-    phaseId:              z.string().uuid().optional().nullable(),
-    title:                z.string().min(1).max(200),
-    description:          z.string().max(2000).optional(),
-    offsetDays:           z.number().int(),
-    durationDays:         z.number().int().min(0).default(0),
-    publishExternally:    z.boolean().default(true),
-    visibilityFunctionIds: z.array(z.string().uuid()).min(1),
-  })
-  .refine(
-    data => data.visibilityFunctionIds.includes(data.ownerFunctionId),
-    { message: 'visibilityFunctionIds must include ownerFunctionId', path: ['visibilityFunctionIds'] }
-  );
+export const MilestoneTemplateItemInputSchema = MilestoneTemplateItemBaseSchema.refine(
+  data => data.visibilityFunctionIds.includes(data.ownerFunctionId),
+  { message: 'visibilityFunctionIds must include ownerFunctionId', path: ['visibilityFunctionIds'] }
+);
 
 export type MilestoneTemplateItemInput = z.infer<typeof MilestoneTemplateItemInputSchema>;
 

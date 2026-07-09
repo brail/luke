@@ -12,6 +12,7 @@ export interface CalendarEventItem {
   allDay: boolean;
   status: string;
   type: string;
+  phaseId?: string | null;
   ownerFunctionId: string;
   publishExternally: boolean;
   brandId?: string | null;

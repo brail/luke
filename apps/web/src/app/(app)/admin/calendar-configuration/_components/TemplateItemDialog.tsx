@@ -49,10 +49,12 @@ interface Props {
 interface FormValues {
   title: string;
   type: string;
+  phaseId: string;
   ownerFunctionId: string;
   visibilityFunctionIds: string[];
   offsetDays: number;
   durationDays: number;
+  allDay: boolean;
   publishExternally: boolean;
   description: string;
 }
@@ -81,6 +83,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
     { type: 'eventType' },
     { staleTime: 5 * 60 * 1000 }
   );
+  const { data: phases = [] } = trpc.phase.list.useQuery(undefined, { staleTime: 5 * 60 * 1000 });
 
   const ownerFunctionId = watch('ownerFunctionId');
   const visibilityFunctionIds = watch('visibilityFunctionIds') ?? [];
@@ -93,12 +96,14 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
       reset({
         title: item?.title ?? '',
         type: item?.type ?? 'MILESTONE',
+        phaseId: item?.phaseId ?? '_none',
         ownerFunctionId: owner,
         visibilityFunctionIds: item
           ? (item.visibilities?.map((v: NonNullable<TemplateItem['visibilities']>[number]) => v.functionId) ?? [owner])
           : [owner],
         offsetDays: item?.offsetDays ?? 0,
         durationDays: item?.durationDays ?? 0,
+        allDay: item?.allDay ?? true,
         publishExternally: item?.publishExternally ?? true,
         description: item?.description ?? '',
       });
@@ -128,10 +133,12 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
     const payload = {
       title: values.title.trim(),
       type: values.type,
+      phaseId: values.phaseId === '_none' ? null : values.phaseId,
       ownerFunctionId: values.ownerFunctionId,
       visibilityFunctionIds: values.visibilityFunctionIds,
       offsetDays: Number(values.offsetDays),
       durationDays: Number(values.durationDays),
+      allDay: values.allDay,
       publishExternally: values.publishExternally,
       description: values.description.trim() || undefined,
     };
@@ -204,6 +211,26 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
                 )}
               />
             </div>
+          </div>
+
+          <div className="space-y-1">
+            <Label>Fase</Label>
+            <Controller
+              name="phaseId"
+              control={control}
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">— Nessuna (evento non di fase) —</SelectItem>
+                    {phases.map(p => <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            <p className="text-xs text-muted-foreground">
+              Propagata all'evento generato quando il template viene applicato al calendario.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -286,6 +313,21 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
                 </label>
               ))}
             </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Controller
+              name="allDay"
+              control={control}
+              render={({ field }) => (
+                <Checkbox
+                  id="allDay"
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
+              )}
+            />
+            <Label htmlFor="allDay">Tutto il giorno</Label>
           </div>
 
           <div className="flex items-center gap-2">
