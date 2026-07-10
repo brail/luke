@@ -495,32 +495,48 @@ export async function getSecret(
 }
 
 /**
+ * Reads a numeric AppConfig value, clamped to `[min, max]`. Missing keys and out-of-range or
+ * non-numeric values both fall back to `defaultValue` — shared by every "TTL-style" getter below
+ * so the fetch/parse/bounds-check boilerplate lives in one place.
+ */
+async function getBoundedNumericConfig(
+  prisma: PrismaClient,
+  key: string,
+  { defaultValue, min, max }: { defaultValue: number; min: number; max: number }
+): Promise<number> {
+  const config = await getConfig(prisma, key, false);
+  if (!config) return defaultValue;
+
+  const value = parseInt(config, 10);
+  if (isNaN(value) || value < min || value > max) return defaultValue;
+
+  return value;
+}
+
+/**
  * Reads the tokenVersion cache TTL from AppConfig.
  * Enforces a minimum of 10 s and a maximum of 10 min; invalid values fall back to the default.
  *
  * @returns TTL in milliseconds. Defaults to 60 000 ms (60 s).
  */
-export async function getTokenVersionCacheTTL(
-  prisma: PrismaClient
-): Promise<number> {
-  const config = await getConfig(
-    prisma,
-    'security.tokenVersionCacheTTL',
-    false
-  );
+export function getTokenVersionCacheTTL(prisma: PrismaClient): Promise<number> {
+  return getBoundedNumericConfig(prisma, 'security.tokenVersionCacheTTL', {
+    defaultValue: 60000, min: 10000, max: 600000,
+  });
+}
 
-  if (!config) {
-    return 60000; // Default: 60 secondi
-  }
-
-  const ttl = parseInt(config, 10);
-
-  // Validazione: min 10s, max 10min
-  if (isNaN(ttl) || ttl < 10000 || ttl > 600000) {
-    return 60000;
-  }
-
-  return ttl;
+/**
+ * Reads the `EditLock` session TTL from AppConfig — currently only consumed by the planning
+ * wizard, but the getter (like the underlying lock mechanism) isn't wizard-specific.
+ * Enforces the same 5 min – 60 min bounds as `AppConfigRegistry`; invalid values fall back
+ * to the default.
+ *
+ * @returns TTL in milliseconds. Defaults to 900 000 ms (15 min).
+ */
+export function getEditLockTtlMs(prisma: PrismaClient): Promise<number> {
+  return getBoundedNumericConfig(prisma, 'editLock.ttlMs', {
+    defaultValue: 900000, min: 300000, max: 3600000,
+  });
 }
 
 /**

@@ -67,6 +67,9 @@ export const AppConfigRegistry = {
   // ── Collection Control — motore alert (JSON object) ──────────────────────
   'collectionControl.alertThresholds': z.string().transform(s => CollectionAlertThresholdsSchema.parse(JSON.parse(s))),
 
+  // ── Edit lock — session-scoped entity lock (currently: planning wizard) ────
+  'editLock.ttlMs': z.coerce.number().int().min(300_000).max(3_600_000),
+
   // ── LDAP ─────────────────────────────────────────────────────────────────
   'auth.ldap.enabled':        z.coerce.boolean(),
   'auth.ldap.url':            z.string().url(),

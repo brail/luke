@@ -11,7 +11,9 @@ import type { Permission } from '@luke/core';
 import { can } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
-import { acquireLocks, releaseLocks } from '../services/editLock.service';
+import { acquireLocks, releaseLocks, renewLocks } from '../services/editLock.service';
+
+import type { Context } from '../lib/trpc';
 
 const LockEntityTypeSchema = z.enum(['SEASON_CALENDAR', 'COLLECTION_LAYOUT']);
 const AcquireInputSchema = z.object({ entityType: LockEntityTypeSchema, entityId: z.string().uuid() });
@@ -21,6 +23,16 @@ const ReleaseManyInputSchema = z.object({ entities: z.array(AcquireInputSchema).
 /** SEASON_CALENDAR locks require calendar update rights, COLLECTION_LAYOUT locks require layout update rights. */
 function permissionFor(entityType: z.infer<typeof LockEntityTypeSchema>): Permission {
   return entityType === 'SEASON_CALENDAR' ? 'season_calendar:update' : 'collection_layout:update';
+}
+
+/**
+ * AND semantics (need every entity type's permission, not just one) — `requirePermission`'s
+ * array form is OR-only, so this is checked manually. Shared by `acquireMany` and `renew`.
+ */
+function assertLockPermissions(ctx: Context, entities: { entityType: z.infer<typeof LockEntityTypeSchema> }[]) {
+  const requiredPermissions = [...new Set(entities.map(e => permissionFor(e.entityType)))];
+  const missing = requiredPermissions.some(p => !can(ctx, p));
+  if (missing) throw new TRPCError({ code: 'FORBIDDEN', message: 'Permesso mancante' });
 }
 
 export const editLockRouter = router({
@@ -33,15 +45,20 @@ export const editLockRouter = router({
     .input(AcquireManyInputSchema)
     .use(withRateLimit('configMutations'))
     .mutation(async ({ input, ctx }) => {
-      // AND semantics (need every entity type's permission, not just one) — `requirePermission`'s
-      // array form is OR-only, so this is checked manually rather than forced through it. Uses the
-      // same cached `can()` every other manual check in the codebase uses, instead of a raw
-      // `hasPermission` call.
-      const requiredPermissions = [...new Set(input.entities.map(e => permissionFor(e.entityType)))];
-      const missing = requiredPermissions.some(p => !can(ctx, p));
-      if (missing) throw new TRPCError({ code: 'FORBIDDEN', message: 'Permesso mancante' });
-
+      assertLockPermissions(ctx, input.entities);
       return acquireLocks(input.entities, ctx.session!.user.id, ctx.prisma);
+    }),
+
+  /**
+   * Heartbeat, called periodically by the frontend while a wizard session is open — extends the
+   * TTL on locks already held by the caller. See `renewLocks` in the edit-lock service.
+   */
+  renew: protectedProcedure
+    .input(AcquireManyInputSchema)
+    .use(withRateLimit('configMutations'))
+    .mutation(async ({ input, ctx }) => {
+      assertLockPermissions(ctx, input.entities);
+      return renewLocks(input.entities, ctx.session!.user.id, ctx.prisma);
     }),
 
   /** Releases locks on several entities in a single query — mirrors `acquireMany`. */

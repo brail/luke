@@ -11,25 +11,30 @@ interface LockTarget {
 }
 
 interface WizardLockState {
-  /** Fixed cutoff shared by all acquired locks — `acquireLocks` stamps every lock with the same
-   * TTL in one transaction, so there's no "earliest" to pick. No renewal. */
+  /** Cutoff of the current lock period — pushed forward on every successful heartbeat renewal. */
   expiresAt: Date | null;
-  /** True once `expiresAt` has passed — caller should force the wizard closed. */
+  /** True once the lock has expired without being renewed — caller should force the wizard closed. */
   expired: boolean;
-  /** Set if a lock could not be acquired (e.g. another user is already planning). */
+  /** Set if a lock could not be acquired, or a renewal was rejected (session lost/reclaimed). */
   error: string | null;
 }
 
+/** Renew this far into the remaining TTL (fraction), leaving margin for a missed/slow heartbeat. */
+const RENEW_FRACTION = 0.5;
+
 /**
  * Acquires session locks on the given entities for the lifetime of the planning wizard, releasing
- * them on unmount. TTL is fixed (set server-side, ~15 min) — no heartbeat/renewal, matching the
- * "wizard restarts from scratch on expiry" behavior decided for this feature.
+ * them on unmount. Heartbeats via `editLock.renew` at RENEW_FRACTION of the remaining TTL, so a
+ * session actively being worked on never hits the hard expiry — only one left idle/offline does.
+ * A hard-expiry backstop timer (independent of the heartbeat) still force-closes the wizard if
+ * renewal silently stops happening (e.g. the tab lost connectivity).
  */
 export function useWizardLock(targets: LockTarget[], enabled: boolean): WizardLockState {
   const [state, setState] = useState<WizardLockState>({ expiresAt: null, expired: false, error: null });
   const acquiredRef = useRef(false);
 
   const acquireManyMutation = trpc.editLock.acquireMany.useMutation();
+  const renewMutation = trpc.editLock.renew.useMutation();
   const releaseMutation = trpc.editLock.release.useMutation();
 
   useEffect(() => {
@@ -59,16 +64,39 @@ export function useWizardLock(targets: LockTarget[], enabled: boolean): WizardLo
     // Targets are stable for the wizard's lifetime (calendar/layout don't change mid-session).
   }, [enabled]);
 
+  // Schedules both the hard-expiry backstop and the heartbeat renewal off one shared
+  // `msRemaining` computation. A successful renewal moves `expiresAt` forward, which reruns this
+  // effect and reschedules both timers from the new deadline; a failed renewal only sets `error`,
+  // leaving `expiresAt` untouched — the backstop below still fires at the original deadline as a
+  // final fallback if the session is truly gone.
   useEffect(() => {
     if (!state.expiresAt) return;
-    const ms = state.expiresAt.getTime() - Date.now();
-    if (ms <= 0) {
+
+    const msRemaining = state.expiresAt.getTime() - Date.now();
+    if (msRemaining <= 0) {
       setState(s => ({ ...s, expired: true }));
       return;
     }
-    const timer = setTimeout(() => setState(s => ({ ...s, expired: true })), ms);
-    return () => clearTimeout(timer);
-  }, [state.expiresAt]);
+
+    const backstop = setTimeout(() => setState(s => ({ ...s, expired: true })), msRemaining);
+    if (state.error) {
+      return () => clearTimeout(backstop);
+    }
+
+    let cancelled = false;
+    const heartbeat = setTimeout(async () => {
+      try {
+        const results = await renewMutation.mutateAsync({ entities: targets });
+        if (cancelled) return;
+        setState({ expiresAt: new Date(results[0]!.expiresAt), expired: false, error: null });
+      } catch (err) {
+        if (cancelled) return;
+        setState(s => ({ ...s, error: getTrpcErrorMessage(err) }));
+      }
+    }, msRemaining * RENEW_FRACTION);
+
+    return () => { cancelled = true; clearTimeout(backstop); clearTimeout(heartbeat); };
+  }, [state.expiresAt, state.error]);
 
   return state;
 }

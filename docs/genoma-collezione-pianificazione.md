@@ -39,19 +39,23 @@ Lo "Stato di Avanzamento" descritto nel PDF corrisponde al campo `progress` dell
 
 Riprendiamo il concetto proposto (tupla riga/fase/data effettiva) con una tabella storica dedicata, distinta dal log di audit generale già presente in LUKE. Motivazione: il log di audit esistente è pensato per tracciabilità/compliance (chi ha fatto cosa), non per interrogazioni statistiche ad alto volume; una tabella dedicata a "quando la riga X ha raggiunto la fase Y" permette query dirette per i KPI di scostamento descritti nel documento, senza dover interpretare contenuti liberi.
 
-## 4. Gestione dei sottoinsiemi ("fork")
+## 4. Gestione dei sottoinsiemi ("fork") — via PlanningGroup
 
 Questo è il punto di maggiore scostamento — e maggiore semplificazione — rispetto all'impostazione iniziale del PDF.
 
-Il PDF non tratta esplicitamente il caso in cui uno stesso evento di calendario debba avere date diverse per sottoinsiemi diversi di prodotti (es. "Rendering" a luglio per una parte della collezione, a settembre per un'altra, con "Consegna Finale" comune a tutti). Discutendo il caso con il team, la soluzione individuata non richiede un motore di regole nuovo: **si ottiene componendo dati già esistenti nel modello LUKE**.
+Il PDF non tratta esplicitamente il caso in cui uno stesso evento di calendario debba avere date diverse per sottoinsiemi diversi di prodotti (es. "Rendering" a luglio per una parte della collezione, a settembre per un'altra, con "Consegna Finale" comune a tutti). La soluzione individuata non richiede un motore di regole nuovo: **si ottiene componendo dati già esistenti nel modello LUKE**, tramite l'entità `PlanningGroup`.
+
+> Nota storica: una prima implementazione (commit `fe92c6e`) prevedeva un aggancio *per evento* — ogni evento poteva essere ristretto a un sottoinsieme di righe scelto passo-passo dentro la wizard, con fork/ricongiunzione automatica a livello di singola milestone. Questo meccanismo è stato **rimosso** (commit `a473884`) e sostituito dal modello `PlanningGroup` descritto sotto: più semplice da ragionare, ma più grezzo (lo scope è dell'intero gruppo di righe, non del singolo evento — vedi limite in fondo alla sezione).
 
 Meccanismo:
-- Un evento di calendario può essere "agganciato" (associato) all'intero layout, oppure a un sottoinsieme specifico di righe.
-- Se un evento non ha nessun aggancio esplicito, si considera valido per tutte le righe (comportamento di default, nessuna configurazione necessaria per il caso semplice/lineare).
-- Una fase può comparire più volte nello stesso calendario con date diverse (es. due eventi "Rendering", uno a luglio uno a settembre), ciascuno agganciato a un sottoinsieme differente e mutuamente esclusivo di righe.
-- Un evento successivo senza aggancio (es. "Collezione Lanciata") torna automaticamente a valere per tutte le righe, indipendentemente dal ramo seguito in precedenza — è così che i due sottoinsiemi "si ricongiungono", senza bisogno di un'operazione esplicita di merge.
+- Ogni riga del Collection Layout appartiene a un `PlanningGroup` (default: un gruppo unico creato automaticamente per calendario). L'assegnazione si fa a livello di riga — singola (row drawer) o bulk (`bulkAssignPlanningGroup`) — non dentro la wizard di pianificazione.
+- Ogni evento di calendario appartiene anch'esso a un `PlanningGroup` — è così che si determina a quali righe si applica: un evento vale per tutte e sole le righe del suo stesso gruppo.
+- Una fase può comparire più volte nello stesso calendario con date diverse (es. due eventi "Rendering", uno a luglio in un gruppo, uno a settembre in un altro) semplicemente perché appartengono a `PlanningGroup` diversi — non serve nessuna logica di aggancio/esclusione aggiuntiva.
+- Non esiste ricongiunzione automatica: se in futuro un evento deve tornare a valere per tutte le righe, va creato in un `PlanningGroup` che le contiene tutte (tipicamente il gruppo di default), oppure le righe vanno riassegnate a un gruppo comune.
 
-Il motore di alert, per ogni riga, considera solo gli eventi a cui la riga è effettivamente agganciata (o non ristretti): questo fa emergere il comportamento "a rami" senza dover implementare una logica di attraversamento di grafo. Segnaliamo esplicitamente che questa scelta è coerente con la recente semplificazione del modulo calendario (rimozione del motore a vincoli/solver), di cui manteniamo lo spirito: nessuna nuova componente di calcolo strutturale, solo composizione di dati.
+Il motore di alert, per ogni riga, considera solo gli eventi il cui `planningGroupId` coincide con quello della riga (`filterApplicableEvents` in `phaseAlert.service.ts`) — comportamento equivalente a quello descritto nel PDF, ma implementato per composizione di FK anziché per logica di grafo.
+
+**Limite noto**: lo scope è dell'intero gruppo, non del singolo evento — se due righe dello stesso gruppo devono divergere su un solo evento (es. "Rendering") ma restare insieme su tutti gli altri, serve comunque spostarle in due gruppi diversi, il che le separa anche per gli altri eventi a meno di duplicarli in entrambi i gruppi. Ri-scopare righe a metà pianificazione richiede uscire dalla wizard, riassegnare il gruppo dal Collection Layout, e rientrare — più oneroso del vecchio aggancio per-evento. Se questo limite si rivela un problema ricorrente in uso reale, va riconsiderato (senza però reintrodurre il vecchio meccanismo per-evento as-is, che aveva un costo di configurazione/comprensione giudicato troppo alto).
 
 ## 5. Il Motore di Alert
 
