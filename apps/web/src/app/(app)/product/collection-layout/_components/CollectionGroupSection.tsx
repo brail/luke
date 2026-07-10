@@ -56,6 +56,8 @@ import { cn } from '../../../../../lib/utils';
 import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
 import { computeRowMargin, computeWeightedMargin } from '../_hooks/usePricingCalc';
 
+import { CriticalityBandBadge, formatCriticalityTooltip } from './CriticalityBadge';
+
 import type { PricingParameterSet } from '../_hooks/usePricingCalc';
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 
@@ -890,15 +892,11 @@ export function CollectionGroupSection({
                               const criticality = criticalityByRowId.get(row.id);
                               if (!criticality) return null;
                               return (
-                                // Color is an admin-configured hex value from AppConfig
-                                // (collectionControl.alertThresholds), not a design token.
-                                <Badge
-                                  variant="outline"
+                                <CriticalityBandBadge
+                                  band={criticality.band}
+                                  tooltip={formatCriticalityTooltip(criticality)}
                                   className="text-[10px] px-1.5 py-0"
-                                  style={{ color: criticality.band.color, borderColor: criticality.band.color }}
-                                >
-                                  {criticality.band.label}
-                                </Badge>
+                                />
                               );
                             })()}
                           </div>

@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 
@@ -19,6 +20,7 @@ import { CollectionGroupDialog } from './_components/CollectionGroupDialog';
 import { CollectionLayoutSummary } from './_components/CollectionLayoutSummary';
 import { CollectionLayoutTable } from './_components/CollectionLayoutTable';
 import { CollectionRowDrawer } from './_components/CollectionRowDrawer';
+import { CriticalityLayoutBanner } from './_components/CriticalityLayoutBanner';
 import { EmptyCollectionLayoutState } from './_components/EmptyCollectionLayoutState';
 
 type CollectionLayoutData = NonNullable<
@@ -215,6 +217,34 @@ export default function CollectionLayoutPage() {
     setRowDrawer({ mode: 'edit', row: fresh });
   };
 
+  // Deep-link from the "Fase scaduta" notification (?rowId=...): opens that row's edit drawer
+  // once the layout has loaded, then strips the param so closing the drawer or refreshing doesn't
+  // reopen it. Row not found means the currently-selected brand/season doesn't match the one the
+  // notification was about — the page doesn't switch brand/season from the link (that's a
+  // separate, server-side user-preference concern, see milestoneDeadlineScheduler.ts) — so this
+  // is the expected failure mode, not an edge case, and gets an explicit toast rather than a
+  // silent no-op.
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const deepLinkHandledRef = useRef(false);
+  useEffect(() => {
+    if (deepLinkHandledRef.current || !layout) return;
+    const rowId = searchParams.get('rowId');
+    if (!rowId) return;
+    deepLinkHandledRef.current = true;
+    router.replace('/product/collection-layout');
+    // `as any` breaks instantiation depth before `.flatMap().find()` — same TS2589 workaround as
+    // the `layout` cast above (RouterOutputs is too deep for TS to chain two array ops over it).
+    const row = (layout.groups as any).flatMap((g: any) => g.rows).find((r: any) => r.id === rowId) as CollectionRowData | undefined;
+    if (row) {
+      openEditRow(row);
+    } else {
+      toast.error('Riga non trovata nel brand/stagione corrente — verifica di aver selezionato il contesto giusto');
+    }
+    // Depend on `layout?.id` (shallow) rather than `layout` itself — putting the full RouterOutputs
+    // type in a dependency array tuple hits the same TS2589 instantiation-depth wall as above.
+  }, [layout?.id, searchParams, router]);
+
   // ─── Render ─────────────────────────────────────────────────────
   if (contextLoading || layoutLoading) {
     return (
@@ -268,6 +298,7 @@ export default function CollectionLayoutPage() {
         </SectionCard>
       ) : (
         <>
+          <CriticalityLayoutBanner collectionLayoutId={layout.id} />
           <CollectionLayoutSummary layout={layout} />
           <Card>
             <CardContent className="pt-6">
