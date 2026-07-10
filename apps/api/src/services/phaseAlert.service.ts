@@ -10,9 +10,19 @@
 
 import pino from 'pino';
 
-import { daysBetween, CollectionAlertThresholdsSchema, type AlertBand, type CollectionAlertThresholds } from '@luke/core';
+import {
+  daysBetween,
+  workingDaysBetween,
+  CollectionAlertThresholdsSchema,
+  type AlertBand,
+  type CalendarDaysRelevance,
+  type CollectionAlertThresholds,
+  type WorkingDayHoliday,
+} from '@luke/core';
 
 import { getConfig } from '../lib/configManager';
+
+import { resolveCompanyCountryCode } from './companyProfile.service';
 
 import type { Prisma, PrismaClient } from '@prisma/client';
 
@@ -130,6 +140,81 @@ function bandsForPhase(thresholds: CollectionAlertThresholds, phaseValue: string
   return thresholds.default.bands;
 }
 
+// ─── Working-days deadline countdown (docs/TASK_working_days_calendar_relevance.md) ─────────────
+
+/** Pre-fetched data shared across every day-count resolution in one request — company's home
+ * country plus every `Holiday` row for any country code that could be needed (company + every
+ * vendor country in scope). Built once per top-level call, not per row. */
+interface WorkingDaysContext {
+  companyCountryCode: string | null;
+  holidays: WorkingDayHoliday[];
+}
+
+/** Empty context — used whenever nothing in scope has opted into working-days (the common case,
+ * `calendarDaysRelevance` is null by default), so `buildWorkingDaysContext`'s 2 queries aren't
+ * fired for nothing (`resolveDaysCount` ignores `ctx` entirely when `relevance` is null anyway). */
+const EMPTY_WORKING_DAYS_CONTEXT: WorkingDaysContext = { companyCountryCode: null, holidays: [] };
+
+/**
+ * Builds the shared context for resolving working-days countdowns: the company's country plus
+ * every `Holiday` row for the union of countries that could be needed (company + every distinct
+ * vendor country passed in). One query regardless of how many rows/vendors are in scope. Callers
+ * should only invoke this when something in scope actually has `calendarDaysRelevance` set —
+ * otherwise use `EMPTY_WORKING_DAYS_CONTEXT` and skip the fetch entirely.
+ */
+async function buildWorkingDaysContext(
+  prisma: PrismaClient,
+  vendorCountryCodes: (string | null)[]
+): Promise<WorkingDaysContext> {
+  const companyCountryCode = await resolveCompanyCountryCode(prisma);
+  const countryCodes = [...new Set([companyCountryCode, ...vendorCountryCodes].filter((c): c is string => !!c))];
+  const holidays = countryCodes.length === 0 ? [] : await prisma.holiday.findMany({
+    where: { countryCode: { in: countryCodes } },
+    select: { countryCode: true, startDate: true, endDate: true },
+  });
+  return { companyCountryCode, holidays };
+}
+
+/**
+ * Resolves the day count between two dates, honoring `relevance` when set: `null` keeps the
+ * existing plain-calendar-days behavior (`daysBetween`, unchanged for every event not explicitly
+ * opted in). When set, resolves the country list for the mode and switches to `workingDaysBetween`:
+ * - `COMPANY` → `[companyCountryCode]`
+ * - `VENDOR` → `[vendorCountryCode]`
+ * - `BOTH` → both (a day only counts if it's a working day in *both* — `workingDaysBetween`
+ *   excludes a date if it's a holiday in *either* listed country, which gives this for free)
+ *
+ * If the relevant country is unknown (company profile has no country set, or the row has no
+ * vendor/the vendor has no country), degrades to weekend-only — `holidays: []` is passed
+ * explicitly rather than `countryCodes: []`, because `isWorkingDay` treats an empty country list
+ * as "apply every fetched holiday regardless of country," the opposite of what's wanted here.
+ */
+function resolveDaysCount(
+  from: Date,
+  to: Date,
+  relevance: CalendarDaysRelevance | null,
+  vendorCountryCode: string | null,
+  ctx: WorkingDaysContext
+): { days: number; daysMode: 'calendar' | 'working'; relevantCountryCodes: string[] } {
+  if (!relevance) {
+    return { days: daysBetween(from, to), daysMode: 'calendar', relevantCountryCodes: [] };
+  }
+
+  const countryCodes: string[] = [];
+  if ((relevance === 'COMPANY' || relevance === 'BOTH') && ctx.companyCountryCode) {
+    countryCodes.push(ctx.companyCountryCode);
+  }
+  if ((relevance === 'VENDOR' || relevance === 'BOTH') && vendorCountryCode) {
+    countryCodes.push(vendorCountryCode);
+  }
+
+  if (countryCodes.length === 0) {
+    return { days: workingDaysBetween(from, to, [], []), daysMode: 'working', relevantCountryCodes: [] };
+  }
+
+  return { days: workingDaysBetween(from, to, countryCodes, ctx.holidays), daysMode: 'working', relevantCountryCodes: countryCodes };
+}
+
 /** Outcome of resolving a row's active phase — distinguishes "nothing to alert on" from why. */
 export type ActivePhaseResult =
   | { status: 'active'; event: CalendarEventWithContext }
@@ -182,13 +267,27 @@ function deadlineFromActivePhase(active: ActivePhaseResult) {
 
 /**
  * Computes the criticality band for an active-phase result at a given point in time, against the
- * given thresholds. Pure — no I/O — so batch callers can reuse one `thresholds` fetch across rows.
+ * given thresholds. Pure — no I/O — so batch callers can reuse one `thresholds`/`workingDaysCtx`
+ * fetch across rows.
+ *
+ * @param vendorCountryCode - The row's vendor country, if any (used only when the active event's
+ *   `calendarDaysRelevance` is `VENDOR` or `BOTH`).
+ * @param workingDaysCtx - Pre-fetched company country + holidays, from `buildWorkingDaysContext`.
  */
-function criticalityFromActivePhase(rowId: string, active: ActivePhaseResult, thresholds: CollectionAlertThresholds, now: Date) {
+function criticalityFromActivePhase(
+  rowId: string,
+  active: ActivePhaseResult,
+  thresholds: CollectionAlertThresholds,
+  now: Date,
+  vendorCountryCode: string | null,
+  workingDaysCtx: WorkingDaysContext
+) {
   const deadlineInfo = deadlineFromActivePhase(active);
   if (!deadlineInfo) return null;
 
-  const daysToDeadline = daysBetween(now, deadlineInfo.deadline);
+  const { days: daysToDeadline, daysMode, relevantCountryCodes } = resolveDaysCount(
+    now, deadlineInfo.deadline, deadlineInfo.event.calendarDaysRelevance, vendorCountryCode, workingDaysCtx
+  );
   const bands = bandsForPhase(thresholds, deadlineInfo.event.phase?.value ?? null);
   const band = bands.find(b => daysToDeadline >= b.minDaysToDeadline && (b.maxDaysToDeadline === null || daysToDeadline < b.maxDaysToDeadline))
     ?? bands[bands.length - 1];
@@ -201,6 +300,8 @@ function criticalityFromActivePhase(rowId: string, active: ActivePhaseResult, th
     phaseId: deadlineInfo.event.phaseId,
     deadline: deadlineInfo.deadline,
     daysToDeadline,
+    daysMode,
+    relevantCountryCodes,
     band,
   };
 }
@@ -218,11 +319,32 @@ export async function computeDeadline(rowId: string, prisma: PrismaClient) {
 /**
  * Computes the criticality band for a single row at a given point in time, against the configured
  * (or default) alert thresholds. `null` means no alert applies — the row has no active phase.
+ *
+ * Does its own row query (phase + vendor country in one shot) rather than delegating to
+ * `getActivePhaseForRow` — that helper only selects `phase`, and a second `findUnique` just to
+ * also get `vendor.countryCode` would be a redundant round-trip on the same row.
  */
 export async function computeCriticality(rowId: string, now: Date, prisma: PrismaClient) {
-  const active = await getActivePhaseForRow(rowId, prisma);
-  const thresholds = await resolveAlertThresholds(prisma);
-  return criticalityFromActivePhase(rowId, active, thresholds, now);
+  const [row, thresholds] = await Promise.all([
+    prisma.collectionLayoutRow.findUnique({
+      where: { id: rowId },
+      select: { phase: { select: { order: true } }, vendor: { select: { countryCode: true } } },
+    }),
+    resolveAlertThresholds(prisma),
+  ]);
+  if (!row) return null;
+
+  const events = await getApplicableEventsForRow(rowId, prisma);
+  const active = getActivePhaseFromEvents(events, row.phase?.order ?? null);
+  const vendorCountryCode = row.vendor?.countryCode ?? null;
+
+  // Only fetch company country + holidays when the active event actually opted in — the common
+  // case today (calendarDaysRelevance is null by default) skips both queries entirely.
+  const workingDaysCtx = active.status === 'active' && active.event.calendarDaysRelevance
+    ? await buildWorkingDaysContext(prisma, [vendorCountryCode])
+    : EMPTY_WORKING_DAYS_CONTEXT;
+
+  return criticalityFromActivePhase(rowId, active, thresholds, now, vendorCountryCode, workingDaysCtx);
 }
 
 /**
@@ -244,17 +366,34 @@ export async function computeCriticalityForLayout(
   const [rows, events, resolvedThresholds] = await Promise.all([
     prisma.collectionLayoutRow.findMany({
       where: { collectionLayoutId },
-      select: { id: true, planningGroupId: true, productCategory: true, phase: { select: { order: true } } },
+      select: {
+        id: true, planningGroupId: true, productCategory: true,
+        phase: { select: { order: true } },
+        vendor: { select: { countryCode: true } },
+      },
     }),
     getCalendarEventsForLayout(collectionLayoutId, prisma),
     thresholds ? Promise.resolve(thresholds) : resolveAlertThresholds(prisma),
   ]);
 
-  return rows
-    .map(row => {
-      const rowEvents = filterApplicableEvents(events, row.planningGroupId);
-      const active = getActivePhaseFromEvents(rowEvents, row.phase?.order ?? null);
-      const criticality = criticalityFromActivePhase(row.id, active, resolvedThresholds, now);
+  const rowActives = rows.map(row => ({
+    row,
+    active: getActivePhaseFromEvents(filterApplicableEvents(events, row.planningGroupId), row.phase?.order ?? null),
+  }));
+
+  // One working-days context for the whole batch (company country + every distinct vendor country
+  // among these rows), instead of one per row — same batching principle as events/thresholds above.
+  // Only fetched if at least one row's active event actually opted in (common case: none do).
+  const needsWorkingDays = rowActives.some(({ active }) => active.status === 'active' && active.event.calendarDaysRelevance);
+  const workingDaysCtx = needsWorkingDays
+    ? await buildWorkingDaysContext(prisma, rows.map(r => r.vendor?.countryCode ?? null))
+    : EMPTY_WORKING_DAYS_CONTEXT;
+
+  return rowActives
+    .map(({ row, active }) => {
+      const criticality = criticalityFromActivePhase(
+        row.id, active, resolvedThresholds, now, row.vendor?.countryCode ?? null, workingDaysCtx
+      );
       return criticality ? { ...criticality, productCategory: row.productCategory } : null;
     })
     .filter((r): r is NonNullable<typeof r> => r !== null);
@@ -348,7 +487,7 @@ export async function computeBottleneckByEvent(collectionLayoutId: string, now: 
 export async function computeSchedulingVariance(rowId: string, prisma: PrismaClient) {
   const row = await prisma.collectionLayoutRow.findUnique({
     where: { id: rowId },
-    select: { phaseId: true },
+    select: { phaseId: true, vendor: { select: { countryCode: true } } },
   });
   if (!row?.phaseId) return null;
 
@@ -362,11 +501,20 @@ export async function computeSchedulingVariance(rowId: string, prisma: PrismaCli
   });
   if (!historyEntry) return null;
 
+  const vendorCountryCode = row.vendor?.countryCode ?? null;
+  const workingDaysCtx = plannedEvent.calendarDaysRelevance
+    ? await buildWorkingDaysContext(prisma, [vendorCountryCode])
+    : EMPTY_WORKING_DAYS_CONTEXT;
+  const { days: varianceDays, daysMode } = resolveDaysCount(
+    plannedEvent.baselineStartAt, historyEntry.reachedAt, plannedEvent.calendarDaysRelevance, vendorCountryCode, workingDaysCtx
+  );
+
   return {
     rowId,
     phaseId: row.phaseId,
     plannedDate: plannedEvent.baselineStartAt,
     actualDate: historyEntry.reachedAt,
-    varianceDays: daysBetween(plannedEvent.baselineStartAt, historyEntry.reachedAt),
+    varianceDays,
+    daysMode,
   };
 }

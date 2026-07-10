@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
 
+import { CalendarDaysRelevanceSelect, NO_RELEVANCE_VALUE } from '../../../../../components/CalendarDaysRelevanceSelect';
 import { PhaseSelect } from '../../../../../components/PhaseSelect';
 import { Button } from '../../../../../components/ui/button';
 import { Checkbox } from '../../../../../components/ui/checkbox';
@@ -51,6 +52,7 @@ interface FormValues {
   title: string;
   type: string;
   phaseId: string;
+  calendarDaysRelevance: string;
   ownerFunctionId: string;
   visibilityFunctionIds: string[];
   offsetDays: number;
@@ -98,6 +100,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
         title: item?.title ?? '',
         type: item?.type ?? 'MILESTONE',
         phaseId: item?.phaseId ?? '_none',
+        calendarDaysRelevance: item?.calendarDaysRelevance ?? NO_RELEVANCE_VALUE,
         ownerFunctionId: owner,
         visibilityFunctionIds: item
           ? (item.visibilities?.map((v: NonNullable<TemplateItem['visibilities']>[number]) => v.functionId) ?? [owner])
@@ -135,6 +138,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
       title: values.title.trim(),
       type: values.type,
       phaseId: values.phaseId === '_none' ? null : values.phaseId,
+      calendarDaysRelevance: values.calendarDaysRelevance === NO_RELEVANCE_VALUE ? null : (values.calendarDaysRelevance as 'COMPANY' | 'VENDOR' | 'BOTH'),
       ownerFunctionId: values.ownerFunctionId,
       visibilityFunctionIds: values.visibilityFunctionIds,
       offsetDays: Number(values.offsetDays),
@@ -225,6 +229,20 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
             />
             <p className="text-xs text-muted-foreground">
               Propagata all'evento generato quando il template viene applicato al calendario.
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <Label>Conteggio giorni scadenza</Label>
+            <Controller
+              name="calendarDaysRelevance"
+              control={control}
+              render={({ field }) => (
+                <CalendarDaysRelevanceSelect value={field.value} onValueChange={field.onChange} />
+              )}
+            />
+            <p className="text-xs text-muted-foreground">
+              Propagato all'evento generato quando il template viene applicato al calendario.
             </p>
           </div>
 

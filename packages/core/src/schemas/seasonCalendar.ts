@@ -49,6 +49,14 @@ export type CalendarEventStatus = (typeof CALENDAR_EVENT_STATUS)[number];
 export const SEASON_CALENDAR_STATUS = ['DRAFT', 'ACTIVE', 'ARCHIVED'] as const;
 export type SeasonCalendarStatus = (typeof SEASON_CALENDAR_STATUS)[number];
 
+/**
+ * Which holiday calendar(s) count toward an event's working-days deadline countdown. Unset means
+ * the countdown stays in plain calendar days (default, opt-in only). See
+ * docs/TASK_working_days_calendar_relevance.md for the full design and resolution rules.
+ */
+export const CALENDAR_DAYS_RELEVANCE = ['COMPANY', 'VENDOR', 'BOTH'] as const;
+export type CalendarDaysRelevance = (typeof CALENDAR_DAYS_RELEVANCE)[number];
+
 // ─── CalendarCatalogItem ──────────────────────────────────────────────────────
 
 /** Full calendar catalog item as returned by the API (event type, section label, ordering). */
@@ -87,6 +95,7 @@ export const CalendarEventBaseSchema = z.object({
   ownerFunctionId:              z.string().uuid(),
   type:                         z.string().min(1),
   phaseId:                      z.string().uuid().optional().nullable(),
+  calendarDaysRelevance:        z.enum(CALENDAR_DAYS_RELEVANCE).optional().nullable(),
   title:                        z.string().min(1).max(200),
   startAt:                      z.string().datetime(),
   description:                  z.string().max(2000).optional(),
@@ -150,6 +159,7 @@ export const MilestoneTemplateItemBaseSchema = z.object({
   ownerFunctionId:      z.string().uuid(),
   type:                 z.string().min(1),
   phaseId:              z.string().uuid().optional().nullable(),
+  calendarDaysRelevance: z.enum(CALENDAR_DAYS_RELEVANCE).optional().nullable(),
   title:                z.string().min(1).max(200),
   description:          z.string().max(2000).optional(),
   offsetDays:           z.number().int(),

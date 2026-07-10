@@ -8,7 +8,7 @@ import type {
 
 import { getUserAllowedBrandIds } from './context.service.js';
 
-import type { PrismaClient } from '@prisma/client';
+import type { CalendarDaysRelevance, PrismaClient } from '@prisma/client';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -277,6 +277,7 @@ export async function createMilestone(
         ownerFunctionId: input.ownerFunctionId,
         type: input.type,
         phaseId: input.phaseId,
+        calendarDaysRelevance: input.calendarDaysRelevance,
         title: input.title,
         description: input.description,
         startAt: new Date(input.startAt),
@@ -317,6 +318,7 @@ export async function updateMilestone(
         ...(input.description !== undefined ? { description: input.description } : {}),
         ...(input.type !== undefined ? { type: input.type } : {}),
         ...(input.phaseId !== undefined ? { phaseId: input.phaseId } : {}),
+        ...(input.calendarDaysRelevance !== undefined ? { calendarDaysRelevance: input.calendarDaysRelevance } : {}),
         ...(input.status !== undefined ? { status: input.status } : {}),
         ...(input.startAt !== undefined ? { startAt: new Date(input.startAt) } : {}),
         ...(input.endAt !== undefined ? { endAt: new Date(input.endAt) } : {}),
@@ -454,6 +456,7 @@ export async function applyTemplate(
         ownerFunctionId: item.ownerFunctionId,
         type: item.type,
         phaseId: item.phaseId,
+        calendarDaysRelevance: item.calendarDaysRelevance,
         title: item.title,
         description: item.description,
         startAt,
@@ -588,6 +591,7 @@ export async function createTemplateItem(
     title: string;
     type: string;
     phaseId?: string | null;
+    calendarDaysRelevance?: CalendarDaysRelevance | null;
     ownerFunctionId: string;
     visibilityFunctionIds: string[];
     offsetDays: number;
@@ -621,6 +625,7 @@ export async function updateTemplateItem(
     title?: string;
     type?: string;
     phaseId?: string | null;
+    calendarDaysRelevance?: CalendarDaysRelevance | null;
     ownerFunctionId?: string;
     visibilityFunctionIds?: string[];
     offsetDays?: number;

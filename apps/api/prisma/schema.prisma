@@ -1678,6 +1678,17 @@ enum SeasonCalendarStatus {
   ARCHIVED
 }
 
+/// Which holiday calendar(s) count toward an event's working-days deadline countdown, if any.
+/// Null (unset) means the deadline countdown stays in plain calendar days — this is opt-in per
+/// event/template item, not a default behavior change. COMPANY resolves to `CompanyProfile.countryCode`;
+/// VENDOR resolves per-row to `CollectionLayoutRow.vendor.countryCode`; BOTH excludes a day only if
+/// it's a working day in both calendars. See docs/TASK_working_days_calendar_relevance.md.
+enum CalendarDaysRelevance {
+  COMPANY
+  VENDOR
+  BOTH
+}
+
 /// Calendar event workflow status: PLANNED → IN_PROGRESS → COMPLETED | CANCELLED.
 enum CalendarEventStatus {
   PLANNED
@@ -1771,6 +1782,9 @@ model CalendarEvent {
   type              String
   /// FK to Phase (optional, additive to type). Null for non-productive events (e.g. review meetings).
   phaseId           String?
+  /// Which holiday calendar(s) count toward this event's working-days deadline, if any. Null =
+  /// plain calendar days (default, unchanged behavior). Propagated from templateItem on generation.
+  calendarDaysRelevance CalendarDaysRelevance?
   /// Workflow status: PLANNED → IN_PROGRESS → COMPLETED | CANCELLED.
   status            CalendarEventStatus @default(PLANNED)
   title             String
@@ -1888,6 +1902,8 @@ model MilestoneTemplateItem {
   type              String
   /// FK to Phase (optional, additive to type). Propagated to CalendarEvent.phaseId on generation.
   phaseId           String?
+  /// Propagated to CalendarEvent.calendarDaysRelevance on generation. See CalendarEvent field doc.
+  calendarDaysRelevance CalendarDaysRelevance?
   title             String
   description       String?
   /// Days offset from the target PlanningGroup's anchorDate to compute event startAt.

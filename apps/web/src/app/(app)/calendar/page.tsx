@@ -7,10 +7,12 @@ import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 
 import { ConfirmDialog } from '../../../components/ConfirmDialog';
+import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent } from '../../../components/ui/card';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../../../components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../../components/ui/tooltip';
 import { useAppContext } from '../../../contexts/AppContextProvider';
 import { usePermission } from '../../../hooks/usePermission';
 import { trpc } from '../../../lib/trpc';
@@ -178,6 +180,27 @@ export default function CalendarPage() {
   const canFreeze = can('season_calendar:freeze');
   const canUnfreeze = can('season_calendar:unfreeze');
 
+  // ─── Planning vs maintenance state ───────────────────────────────────────
+  // Derived from PlanningGroup.frozenAt (no new endpoint — planningGroup.list already returns it
+  // for the group-management dialog). "Planning" means at least one group has events not yet
+  // frozen; "maintenance" means every group with events is frozen. See
+  // docs/TASK_calendar_ux_deferred_items.md §6 for the design rationale.
+  const { data: planningGroups } = trpc.planningGroup.list.useQuery(
+    { brandId: contextBrandId ?? '', seasonId: season?.id ?? '' },
+    { enabled }
+  );
+  const groupsWithEvents = (planningGroups ?? []).filter(g => g._count.events > 0);
+  const unfrozenGroupsWithEvents = groupsWithEvents.filter(g => !g.frozenAt);
+  const seasonState: 'not-started' | 'planning' | 'maintenance' =
+    groupsWithEvents.length === 0 ? 'not-started'
+      : unfrozenGroupsWithEvents.length > 0 ? 'planning'
+        : 'maintenance';
+  const mostRecentFreeze = groupsWithEvents
+    .map(g => g.frozenAt)
+    .filter((d): d is string => !!d)
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
+  const showFreezeInBar = canFreeze && seasonState === 'planning';
+
   const handleDayClick = useCallback((isoDate: string) => { setCreateDefaultAllDay(true); setCreateDate(isoDate); }, []);
   const handleDayClickTimed = useCallback((isoDate: string) => { setCreateDefaultAllDay(false); setCreateDate(isoDate); }, []);
   const onDayClickProp = canUpdate ? handleDayClick : undefined;
@@ -242,6 +265,11 @@ export default function CalendarPage() {
           <Plus size={14} className="mr-1" />Nuovo evento
         </Button>
       )}
+      {showFreezeInBar && (
+        <Button size="sm" variant="outline" onClick={() => setPickerAction('freeze')} disabled={!calendar}>
+          <Snowflake size={14} className="mr-1" />Congela pianificazione
+        </Button>
+      )}
       <div className="flex border rounded-md overflow-hidden">
         <Button variant={view === 'month' ? 'default' : 'ghost'} size="sm" className="rounded-none border-0" onClick={() => setView('month')} title="Mese"><CalendarDays size={14} /></Button>
         <Button variant={view === 'gantt' ? 'default' : 'ghost'} size="sm" className="rounded-none border-0" onClick={() => setView('gantt')} title="Gantt"><GanttChart size={14} /></Button>
@@ -266,7 +294,7 @@ export default function CalendarPage() {
               <DropdownMenuItem onClick={() => setManageGroupsOpen(true)} disabled={!calendar}>
                 Gruppi di pianificazione
               </DropdownMenuItem>
-              {canFreeze && (
+              {canFreeze && !showFreezeInBar && (
                 <DropdownMenuItem onClick={() => setPickerAction('freeze')} disabled={!calendar}>
                   <Snowflake size={13} className="mr-2" />
                   Congela pianificazione
@@ -478,11 +506,43 @@ export default function CalendarPage() {
     </div>
   );
 
+  const seasonStateCopy: Record<typeof seasonState, { label: string; tooltip: string }> = {
+    'not-started': {
+      label: 'Pianificazione da iniziare',
+      tooltip: 'Nessun gruppo di pianificazione ha ancora eventi. Applica un template o crea eventi per iniziare.',
+    },
+    planning: {
+      label: 'In pianificazione',
+      tooltip: `${unfrozenGroupsWithEvents.length} di ${groupsWithEvents.length} gruppi con eventi non ancora congelati — la pianificazione è ancora in corso.`,
+    },
+    maintenance: {
+      label: 'Congelata — manutenzione',
+      tooltip: `Tutti i gruppi con eventi sono congelati${mostRecentFreeze ? ` — ultimo congelamento il ${new Date(mostRecentFreeze).toLocaleDateString('it-IT')}` : ''}. Modifiche ora sono manutenzione, non pianificazione iniziale.`,
+    },
+  };
+  const seasonStateBadge = season && (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge variant={seasonState === 'maintenance' ? 'secondary' : 'outline'} className="cursor-help">
+            {seasonStateCopy[seasonState].label}
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs">
+          {seasonStateCopy[seasonState].tooltip}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+
   return (
     <>
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold whitespace-nowrap">Calendario Stagionale</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold whitespace-nowrap">Calendario Stagionale</h1>
+            {seasonStateBadge}
+          </div>
           {season && <p className="text-muted-foreground mt-1">{season.name}{season.year ? ` · ${season.year}` : ''}</p>}
         </div>
         <div className="flex gap-2 items-center">
@@ -498,6 +558,7 @@ export default function CalendarPage() {
           <div className="shrink-0 border-b px-6 py-3 flex items-center justify-between bg-card">
             <div className="flex items-center gap-3">
               <span className="font-semibold text-sm">Calendario Stagionale</span>
+              {seasonStateBadge}
               {season && <span className="text-sm text-muted-foreground">{season.name}{season.year ? ` · ${season.year}` : ''}</span>}
             </div>
             <div className="flex gap-2 items-center">

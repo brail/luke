@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 
 import { CALENDAR_EVENT_STATUS } from '@luke/core';
 
+import { CalendarDaysRelevanceSelect, NO_RELEVANCE_VALUE } from '../../../../components/CalendarDaysRelevanceSelect';
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { PhaseSelect } from '../../../../components/PhaseSelect';
 import { PlanningGroupSelect } from '../../../../components/PlanningGroupSelect';
@@ -45,6 +46,7 @@ interface ExistingEvent {
   status: string;
   type: string;
   phaseId?: string | null;
+  calendarDaysRelevance?: string | null;
   ownerFunctionId: string;
   publishExternally: boolean;
   visibilities: { functionId: string }[];
@@ -132,6 +134,7 @@ export function CalendarEventDialog({
   const [description, setDescription] = useState(event?.description ?? '');
   const [type, setType] = useState<string>(event?.type ?? 'MILESTONE');
   const [phaseId, setPhaseId] = useState<string>(event?.phaseId ?? '_none');
+  const [calendarDaysRelevance, setCalendarDaysRelevance] = useState<string>(event?.calendarDaysRelevance ?? NO_RELEVANCE_VALUE);
   const [status, setStatus] = useState<(typeof CALENDAR_EVENT_STATUS)[number]>((event?.status as (typeof CALENDAR_EVENT_STATUS)[number]) ?? 'PLANNED');
   const [ownerFunctionId, setOwnerFunctionId] = useState<string>(event?.ownerFunctionId ?? availableFunctions[0]?.id ?? '');
   const [visibilityFunctionIds, setVisibilityFunctionIds] = useState<string[]>(() => {
@@ -162,6 +165,7 @@ export function CalendarEventDialog({
     setDescription(event?.description ?? '');
     setType(event?.type ?? 'MILESTONE');
     setPhaseId(event?.phaseId ?? '_none');
+    setCalendarDaysRelevance(event?.calendarDaysRelevance ?? NO_RELEVANCE_VALUE);
     setStatus((event?.status as (typeof CALENDAR_EVENT_STATUS)[number]) ?? 'PLANNED');
     const owner = event?.ownerFunctionId ?? availableFunctions[0]?.id ?? '';
     setOwnerFunctionId(owner);
@@ -231,6 +235,7 @@ export function CalendarEventDialog({
       description: description.trim() || undefined,
       type,
       phaseId: phaseId === '_none' ? null : phaseId,
+      calendarDaysRelevance: calendarDaysRelevance === NO_RELEVANCE_VALUE ? null : (calendarDaysRelevance as 'COMPANY' | 'VENDOR' | 'BOTH'),
       status,
       ownerFunctionId,
       visibilityFunctionIds,
@@ -256,6 +261,9 @@ export function CalendarEventDialog({
       : null;
     const typeLabel = catalogItems.find(c => c.value === event.type)?.label ?? TYPE_LABELS[event.type] ?? event.type;
     const phaseLabel = phases.find(p => p.id === event.phaseId)?.label;
+    const relevanceLabel = event.calendarDaysRelevance
+      ? { COMPANY: 'gg lavorativi (azienda)', VENDOR: 'gg lavorativi (fornitore)', BOTH: 'gg lavorativi (entrambi)' }[event.calendarDaysRelevance]
+      : null;
     const baselineDrift = describeBaselineDrift(event);
     return (
       <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
@@ -267,6 +275,7 @@ export function CalendarEventDialog({
             <div className="flex flex-wrap gap-1.5">
               <Badge variant="outline">{typeLabel}</Badge>
               {phaseLabel && <Badge variant="outline">{phaseLabel}</Badge>}
+              {relevanceLabel && <Badge variant="outline" className="text-muted-foreground">{relevanceLabel}</Badge>}
               <Badge variant={STATUS_VARIANT[event.status] ?? 'outline'}>{STATUS_LABELS[event.status] ?? event.status}</Badge>
               <Badge variant="secondary">{functionsById[event.ownerFunctionId] ?? event.ownerFunctionId}</Badge>
               {event.planningGroupName && (
@@ -356,6 +365,11 @@ export function CalendarEventDialog({
               <p className="text-xs text-muted-foreground">
                 Collega l'evento a una fase di produzione — necessario perché il motore di criticità delle righe collezione lo consideri come scadenza.
               </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Conteggio giorni scadenza</Label>
+              <CalendarDaysRelevanceSelect value={calendarDaysRelevance} onValueChange={setCalendarDaysRelevance} />
             </div>
 
             {!isEdit && (
