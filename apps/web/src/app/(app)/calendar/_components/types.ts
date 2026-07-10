@@ -18,5 +18,6 @@ export interface CalendarEventItem {
   brandId?: string | null;
   visibilities: { functionId: string }[];
   notes?: { body: string }[];
-  anchors?: { entityType: string; entityId: string }[];
+  planningGroupId: string;
+  planningGroupName?: string;
 }

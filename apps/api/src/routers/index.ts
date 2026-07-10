@@ -28,6 +28,7 @@ import { notificationsRouter } from './notifications';
 import { phaseRouter } from './phase';
 import { phaseAlertRouter } from './phaseAlert';
 import { phaseHistoryRouter } from './phaseHistory';
+import { planningGroupRouter } from './planningGroup';
 import { pricingRouter } from './pricing';
 import { publicRouter } from './public';
 import { salesRouter } from './sales';
@@ -72,6 +73,7 @@ export const appRouter = router({
   vendors: vendorsRouter,
   sales: salesRouter,
   seasonCalendar: seasonCalendarRouter,
+  planningGroup: planningGroupRouter,
   holidays: holidaysRouter,
   dashboard: dashboardRouter,
   feedback: feedbackRouter,

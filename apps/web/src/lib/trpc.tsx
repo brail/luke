@@ -21,6 +21,22 @@ import type { AppRouter } from '@luke/api';
 export const trpc = createTRPCReact<AppRouter>();
 
 /**
+ * Narrows a deeply-nested tRPC `RouterOutputs` value to a shallower, hand-written local type — the
+ * workaround for TS2589 ("Type instantiation is excessively deep"), which some queries with several
+ * levels of nested `include` hit when consumed directly inside a `useMemo`/component. The cast is
+ * the actual fix here (there's no deeper one short of flattening the query shape), so keep this as
+ * the single documented place it happens rather than repeating `as unknown as T` ad hoc.
+ *
+ * Only fits when `T` is a shallow interface you wrote by hand (e.g. picking a few fields) — if `T`
+ * itself is (or embeds) the full deep `RouterOutputs` shape, instantiating this generic with it is
+ * itself expensive enough to retrigger TS2589; use a plain `(value as any) as T` expression at the
+ * call site instead in that case (see `collection-layout/page.tsx`'s `layout` for an example).
+ */
+export function narrowRouterOutput<T>(value: unknown): T {
+  return value as T;
+}
+
+/**
  * Wraps children with the tRPC and React Query providers.
  * Creates a `QueryClient` with project-wide defaults (1 min stale time, no
  * window-focus refetch, no mutation retry) and attaches a `Bearer` JWT header

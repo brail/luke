@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, Download, FileSpreadsheet, FileText, LoaderCircle, Maximize2, Minimize2, Plus, RotateCcw, Search, Settings2 } from 'lucide-react';
+import { AlertTriangle, Download, FileSpreadsheet, FileText, Layers, LoaderCircle, Maximize2, Minimize2, Plus, RotateCcw, Search, Settings2 } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
@@ -30,6 +30,7 @@ import {
 } from '../../../../../components/ui/popover';
 import { computeWeightedMargin } from '../_hooks/usePricingCalc';
 
+import { AssignPlanningGroupDialog } from './AssignPlanningGroupDialog';
 import { CollectionGroupSection } from './CollectionGroupSection';
 
 import type { PricingParameterSet } from '../_hooks/usePricingCalc';
@@ -105,7 +106,29 @@ export function CollectionLayoutTable({
   const [search, setSearch] = useState('');
   const [columnsPopoverOpen, setColumnsPopoverOpen] = useState(false);
   const [exportFilteredOnly, setExportFilteredOnly] = useState(false);
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const filteredRowIdsByGroup = useRef<Map<string, string[]>>(new Map());
+
+  const toggleRowSelection = useCallback((rowId: string) => {
+    setSelectedRowIds(prev => {
+      const next = new Set(prev);
+      if (next.has(rowId)) next.delete(rowId);
+      else next.add(rowId);
+      return next;
+    });
+  }, []);
+
+  const selectAllRows = useCallback((ids: string[], checked: boolean) => {
+    setSelectedRowIds(prev => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (checked) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }, []);
 
   const handleFilteredRowIdsChange = useCallback((groupId: string, ids: string[]) => {
     filteredRowIdsByGroup.current.set(groupId, ids);
@@ -298,6 +321,13 @@ export function CollectionLayoutTable({
           </DropdownMenu>
         )}
 
+        {canUpdate && !readOnly && selectedRowIds.size > 0 && (
+          <Button variant="outline" size="sm" onClick={() => setAssignDialogOpen(true)}>
+            <Layers className="h-4 w-4 mr-1" />
+            Assegna a gruppo di pianificazione ({selectedRowIds.size})
+          </Button>
+        )}
+
         {canUpdate && !readOnly && (
           <Button size="sm" onClick={onAddGroup} className="ml-auto">
             <Plus className="h-4 w-4 mr-1" />
@@ -324,6 +354,9 @@ export function CollectionLayoutTable({
             onDeleteGroup={onDeleteGroup}
             isDeletingRow={isDeletingRow}
             onFilteredRowIdsChange={ids => handleFilteredRowIdsChange(group.id, ids)}
+            selectedRowIds={selectedRowIds}
+            onToggleRowSelection={toggleRowSelection}
+            onSelectAllRows={selectAllRows}
           />
         ))}
 
@@ -333,6 +366,16 @@ export function CollectionLayoutTable({
           </div>
         )}
       </div>
+
+      <AssignPlanningGroupDialog
+        open={assignDialogOpen}
+        onClose={() => setAssignDialogOpen(false)}
+        onAssigned={() => { setAssignDialogOpen(false); setSelectedRowIds(new Set()); }}
+        brandId={layout.brandId}
+        seasonId={layout.seasonId}
+        collectionLayoutId={layout.id}
+        rowIds={[...selectedRowIds]}
+      />
     </div>
   );
 }

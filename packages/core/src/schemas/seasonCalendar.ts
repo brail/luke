@@ -12,13 +12,6 @@ export const STATE_EFFECT_TYPE = [
 ] as const;
 export type StateEffectType = (typeof STATE_EFFECT_TYPE)[number];
 
-/** Entity types that can serve as anchors for calendar events (linking events to domain objects). */
-export const ANCHOR_ENTITY_TYPE = [
-  'COLLECTION_LAYOUT',
-  'COLLECTION_LAYOUT_ROW',
-] as const;
-export type AnchorEntityType = (typeof ANCHOR_ENTITY_TYPE)[number];
-
 /** Input schema for a state effect to be triggered by a calendar event (e.g. lock a collection layout). */
 export const CalendarEventStateEffectInputSchema = z.object({
   effectType:           z.enum(STATE_EFFECT_TYPE),
@@ -27,13 +20,6 @@ export const CalendarEventStateEffectInputSchema = z.object({
   requiresConfirmation: z.boolean(),
 });
 export type CalendarEventStateEffectInput = z.infer<typeof CalendarEventStateEffectInputSchema>;
-
-/** Input schema for anchoring a calendar event to a domain entity (collection layout or row). */
-export const CalendarEventAnchorInputSchema = z.object({
-  entityType: z.enum(ANCHOR_ENTITY_TYPE),
-  entityId:   z.string().uuid(),
-});
-export type CalendarEventAnchorInput = z.infer<typeof CalendarEventAnchorInputSchema>;
 
 /** Input schema for a vendor closure or open-day period within a season, used in working-day calculations. */
 export const VendorClosurePeriodInputSchema = z.object({
@@ -97,7 +83,7 @@ export type CalendarCatalogItemUpdate = z.infer<typeof CalendarCatalogItemUpdate
 
 /** Base fields shared by calendar event create and update inputs, before cross-field refinements. */
 export const CalendarEventBaseSchema = z.object({
-  calendarId:                   z.string().uuid(),
+  planningGroupId:              z.string().uuid(),
   ownerFunctionId:              z.string().uuid(),
   type:                         z.string().min(1),
   phaseId:                      z.string().uuid().optional().nullable(),
@@ -125,6 +111,24 @@ export const CalendarEventInputSchema = CalendarEventBaseSchema.refine(
 );
 
 export type CalendarEventInput = z.infer<typeof CalendarEventInputSchema>;
+
+// ─── Planning group input ─────────────────────────────────────────────────────
+
+/** Input schema for creating or renaming a PlanningGroup within a SeasonCalendar. */
+export const PlanningGroupInputSchema = z.object({
+  name: z.string().min(1).max(100),
+});
+export type PlanningGroupInput = z.infer<typeof PlanningGroupInputSchema>;
+
+/** Input schema for applying a milestone template to a planning group. `calendarId` is derived
+ * server-side from `planningGroupId` — never accepted directly, to avoid a mismatched pair. */
+export const ApplyTemplateInputSchema = z.object({
+  planningGroupId: z.string().uuid(),
+  templateId:      z.string().uuid(),
+  anchorDate:      z.string().datetime().optional(),
+  force:           z.boolean().default(false),
+});
+export type ApplyTemplateInput = z.infer<typeof ApplyTemplateInputSchema>;
 
 // ─── Personal note input ──────────────────────────────────────────────────────
 
@@ -175,13 +179,19 @@ export type MilestoneTemplateInput = z.infer<typeof MilestoneTemplateInputSchema
 
 // ─── Clone input ──────────────────────────────────────────────────────────────
 
-/** Input schema for cloning a season calendar from one brand/season to another, with optional date shift. */
+/**
+ * Input schema for cloning a season calendar from one brand/season to another.
+ * The user picks which source planning groups to clone (matching groups are created/reused by name
+ * in the target calendar); `dateShiftDays` is mandatory since there's no longer a single calendar-wide
+ * anchorDate to auto-derive it from (anchorDate is now per planning group).
+ */
 export const CloneSeasonCalendarInputSchema = z.object({
   sourceBrandId: z.string().uuid(),
   sourceSeasonId: z.string().uuid(),
   targetBrandId: z.string().uuid(),
   targetSeasonId: z.string().uuid(),
-  dateShiftDays: z.number().int().optional(),
+  sourcePlanningGroupIds: z.array(z.string().uuid()).min(1),
+  dateShiftDays: z.number().int(),
   includeStatuses: z
     .array(z.enum(CALENDAR_EVENT_STATUS))
     .default(['PLANNED', 'IN_PROGRESS']),

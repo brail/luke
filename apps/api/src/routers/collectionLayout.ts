@@ -16,6 +16,7 @@ import { z } from 'zod';
 import {
   CollectionGroupInputSchema,
   CollectionLayoutRowInputSchema,
+  CollectionLayoutBulkAssignPlanningGroupInputSchema,
   CollectionLayoutSettingsSchema,
   CollectionRowQuotationInputSchema,
   CollectionRowQuotationUpdateSchema,
@@ -47,6 +48,7 @@ import {
   duplicateRow,
   reorderRows,
   updateLayoutSettings,
+  bulkAssignRowsPlanningGroup,
 } from '../services/collectionLayout.service';
 import {
   createQuotation,
@@ -128,14 +130,7 @@ const groupsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const group = await ctx.prisma.collectionGroup.findUnique({
-        where: { id: input.groupId },
-        select: { collectionLayoutId: true },
-      });
-      if (!group) throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo non trovato' });
-      await assertUnlocked('COLLECTION_LAYOUT', group.collectionLayoutId, ctx.session!.user.id, ctx.prisma);
-
-      const result = await updateGroup(input.groupId, input.data, ctx.prisma);
+      const result = await updateGroup(input.groupId, input.data, ctx.prisma, ctx.session!.user.id);
       await logAudit(ctx, { action: 'COLLECTION_GROUP_UPDATE', targetType: 'CollectionGroup', targetId: input.groupId, result: 'SUCCESS', metadata: {} });
       return result;
     }),
@@ -145,14 +140,7 @@ const groupsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ groupId: z.string() }))
     .mutation(async ({ input, ctx }) => {
-      const group = await ctx.prisma.collectionGroup.findUnique({
-        where: { id: input.groupId },
-        select: { collectionLayoutId: true },
-      });
-      if (!group) throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo non trovato' });
-      await assertUnlocked('COLLECTION_LAYOUT', group.collectionLayoutId, ctx.session!.user.id, ctx.prisma);
-
-      await deleteGroup(input.groupId, ctx.prisma);
+      await deleteGroup(input.groupId, ctx.prisma, ctx.session!.user.id);
       await logAudit(ctx, { action: 'COLLECTION_GROUP_DELETE', targetType: 'CollectionGroup', targetId: input.groupId, result: 'SUCCESS', metadata: {} });
       return { success: true };
     }),
@@ -165,13 +153,6 @@ const rowsRouter = router({
     .input(CollectionLayoutRowInputSchema)
     .mutation(async ({ input, ctx }) => {
       const { pendingPictureFileObjectId, ...rowInput } = input;
-
-      const group = await ctx.prisma.collectionGroup.findUnique({
-        where: { id: input.groupId },
-        select: { collectionLayoutId: true },
-      });
-      if (!group) throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo non trovato' });
-      await assertUnlocked('COLLECTION_LAYOUT', group.collectionLayoutId, ctx.session!.user.id, ctx.prisma);
 
       const result = await ctx.prisma.$transaction(async tx => {
         let confirmedPictureKey: string | undefined;
@@ -194,7 +175,8 @@ const rowsRouter = router({
         }
         return createRow(
           { ...rowInput, ...(confirmedPictureKey ? { pictureKey: confirmedPictureKey } : {}) },
-          tx as any
+          tx as any,
+          ctx.session!.user.id
         );
       }, { timeout: 15000 });
 
@@ -214,13 +196,6 @@ const rowsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { pendingPictureFileObjectId, ...rowData } = input.data;
       let oldPictureKey: string | null = null;
-
-      const targetRow = await ctx.prisma.collectionLayoutRow.findUnique({
-        where: { id: input.rowId },
-        select: { collectionLayoutId: true },
-      });
-      if (!targetRow) throw new TRPCError({ code: 'NOT_FOUND', message: 'Riga non trovata' });
-      await assertUnlocked('COLLECTION_LAYOUT', targetRow.collectionLayoutId, ctx.session!.user.id, ctx.prisma);
 
       const result = await ctx.prisma.$transaction(async tx => {
         let confirmedPictureKey: string | undefined;
@@ -276,14 +251,7 @@ const rowsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ rowId: z.string() }))
     .mutation(async ({ input, ctx }) => {
-      const targetRow = await ctx.prisma.collectionLayoutRow.findUnique({
-        where: { id: input.rowId },
-        select: { collectionLayoutId: true },
-      });
-      if (!targetRow) throw new TRPCError({ code: 'NOT_FOUND', message: 'Riga non trovata' });
-      await assertUnlocked('COLLECTION_LAYOUT', targetRow.collectionLayoutId, ctx.session!.user.id, ctx.prisma);
-
-      await deleteRow(input.rowId, ctx.prisma);
+      await deleteRow(input.rowId, ctx.prisma, ctx.session!.user.id);
       await logAudit(ctx, { action: 'COLLECTION_ROW_DELETE', targetType: 'CollectionLayoutRow', targetId: input.rowId, result: 'SUCCESS', metadata: {} });
       return { success: true };
     }),
@@ -293,14 +261,7 @@ const rowsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ rowId: z.string() }))
     .mutation(async ({ input, ctx }) => {
-      const targetRow = await ctx.prisma.collectionLayoutRow.findUnique({
-        where: { id: input.rowId },
-        select: { collectionLayoutId: true },
-      });
-      if (!targetRow) throw new TRPCError({ code: 'NOT_FOUND', message: 'Riga non trovata' });
-      await assertUnlocked('COLLECTION_LAYOUT', targetRow.collectionLayoutId, ctx.session!.user.id, ctx.prisma);
-
-      const result = await duplicateRow(input.rowId, ctx.prisma);
+      const result = await duplicateRow(input.rowId, ctx.prisma, ctx.session!.user.id);
       await logAudit(ctx, { action: 'COLLECTION_ROW_DUPLICATE', targetType: 'CollectionLayoutRow', targetId: result.id, result: 'SUCCESS', metadata: { sourceRowId: input.rowId } });
       return result;
     }),
@@ -315,16 +276,35 @@ const rowsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const group = await ctx.prisma.collectionGroup.findUnique({
-        where: { id: input.groupId },
-        select: { collectionLayoutId: true },
-      });
-      if (!group) throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo non trovato' });
-      await assertUnlocked('COLLECTION_LAYOUT', group.collectionLayoutId, ctx.session!.user.id, ctx.prisma);
-
-      await reorderRows(input.groupId, input.orderedIds, ctx.prisma);
+      await reorderRows(input.groupId, input.orderedIds, ctx.prisma, ctx.session!.user.id);
       await logAudit(ctx, { action: 'COLLECTION_ROW_REORDER', targetType: 'CollectionGroup', targetId: input.groupId, result: 'SUCCESS', metadata: { count: input.orderedIds.length } });
       return { success: true };
+    }),
+
+  bulkAssignPlanningGroup: protectedProcedure
+    .use(requirePermission('collection_layout:update'))
+    .use(withRateLimit('configMutations'))
+    .input(CollectionLayoutBulkAssignPlanningGroupInputSchema)
+    .mutation(async ({ input, ctx }) => {
+      const rows = await ctx.prisma.collectionLayoutRow.findMany({
+        where: { id: { in: input.rowIds } },
+        select: { collectionLayoutId: true },
+      });
+      if (rows.length === 0) throw new TRPCError({ code: 'NOT_FOUND', message: 'Nessuna riga trovata' });
+      const layoutIds = [...new Set(rows.map(r => r.collectionLayoutId))];
+      if (layoutIds.length > 1) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Le righe devono appartenere allo stesso layout' });
+      }
+
+      const result = await bulkAssignRowsPlanningGroup(input.rowIds, layoutIds[0]!, input.planningGroupId, ctx.prisma, ctx.session!.user.id);
+      await logAudit(ctx, {
+        action: 'COLLECTION_ROW_BULK_ASSIGN_PLANNING_GROUP',
+        targetType: 'CollectionLayoutRow',
+        targetId: input.rowIds.join(','),
+        result: 'SUCCESS',
+        metadata: { count: result.count, planningGroupId: input.planningGroupId },
+      });
+      return result;
     }),
 });
 

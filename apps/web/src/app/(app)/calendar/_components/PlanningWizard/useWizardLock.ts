@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { trpc } from '../../../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
 interface LockTarget {
   entityType: 'SEASON_CALENDAR' | 'COLLECTION_LAYOUT';
@@ -10,7 +11,8 @@ interface LockTarget {
 }
 
 interface WizardLockState {
-  /** Fixed cutoff shared by all acquired locks (the earliest of the two). No renewal. */
+  /** Fixed cutoff shared by all acquired locks — `acquireLocks` stamps every lock with the same
+   * TTL in one transaction, so there's no "earliest" to pick. No renewal. */
   expiresAt: Date | null;
   /** True once `expiresAt` has passed — caller should force the wizard closed. */
   expired: boolean;
@@ -27,7 +29,7 @@ export function useWizardLock(targets: LockTarget[], enabled: boolean): WizardLo
   const [state, setState] = useState<WizardLockState>({ expiresAt: null, expired: false, error: null });
   const acquiredRef = useRef(false);
 
-  const acquireMutation = trpc.editLock.acquire.useMutation();
+  const acquireManyMutation = trpc.editLock.acquireMany.useMutation();
   const releaseMutation = trpc.editLock.release.useMutation();
 
   useEffect(() => {
@@ -37,26 +39,22 @@ export function useWizardLock(targets: LockTarget[], enabled: boolean): WizardLo
     let cancelled = false;
     (async () => {
       try {
-        const results = await Promise.all(targets.map(t => acquireMutation.mutateAsync(t)));
+        const results = await acquireManyMutation.mutateAsync({ entities: targets });
         if (cancelled) return;
-        const earliest = results.reduce<Date | null>((min, r) => {
-          const exp = new Date(r.expiresAt);
-          return !min || exp < min ? exp : min;
-        }, null);
-        setState({ expiresAt: earliest, expired: false, error: null });
+        setState({ expiresAt: new Date(results[0]!.expiresAt), expired: false, error: null });
       } catch (err) {
         if (cancelled) return;
         setState({
           expiresAt: null,
           expired: false,
-          error: err instanceof Error ? err.message : 'Impossibile acquisire il lock di pianificazione',
+          error: getTrpcErrorMessage(err),
         });
       }
     })();
 
     return () => {
       cancelled = true;
-      targets.forEach(t => releaseMutation.mutate(t));
+      releaseMutation.mutate({ entities: targets });
     };
     // Targets are stable for the wizard's lifetime (calendar/layout don't change mid-session).
   }, [enabled]);

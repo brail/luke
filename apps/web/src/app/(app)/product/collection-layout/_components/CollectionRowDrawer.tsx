@@ -27,6 +27,7 @@ import { triggerDownload } from '../../../../../lib/download';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
+import { AssignPlanningGroupDialog } from './AssignPlanningGroupDialog';
 import {
   ForecastSection,
   IdentificationSection,
@@ -54,6 +55,8 @@ interface CollectionRowDrawerProps {
   groups: CollectionGroup[];
   parameterSets: PricingParameterSet[];
   availableGenders: string[];
+  brandId: string;
+  seasonId: string;
   onSubmit: (data: CollectionLayoutRowInput) => void;
   onPictureUploaded?: () => void;
   onQuotationChange?: () => void;
@@ -66,10 +69,12 @@ interface CollectionRowDrawerProps {
 function buildDefaultValues(
   defaultGroupId?: string,
   groups: CollectionGroup[] = [],
-  availableGenders: string[] = ['MAN', 'WOMAN']
+  availableGenders: string[] = ['MAN', 'WOMAN'],
+  defaultPlanningGroupId?: string
 ): CollectionLayoutRowInput {
   return {
     groupId: defaultGroupId ?? groups[0]?.id ?? '',
+    planningGroupId: defaultPlanningGroupId,
     gender: availableGenders[0] ?? 'MAN',
     vendorId: null,
     line: '',
@@ -132,6 +137,8 @@ export function CollectionRowDrawer({
   groups,
   parameterSets,
   availableGenders,
+  brandId,
+  seasonId,
   onSubmit,
   onPictureUploaded,
   onQuotationChange,
@@ -142,9 +149,15 @@ export function CollectionRowDrawer({
   const [isUploadingPicture, setIsUploadingPicture] = useState(false);
   const [quotations, setQuotations] = useState<QuotationState[]>([]);
   const [pendingData, setPendingData] = useState<CollectionLayoutRowInput | null>(null);
+  const [changeGroupOpen, setChangeGroupOpen] = useState(false);
   const { data: session } = useSession();
 
   const { data: vendorsList } = trpc.vendors.list.useQuery(undefined, { staleTime: 5 * 60 * 1000 });
+  const { data: planningGroups = [] } = trpc.planningGroup.list.useQuery(
+    { brandId, seasonId },
+    { enabled: open }
+  );
+  const defaultPlanningGroupId = planningGroups[0]?.id;
 
   const form = useForm<CollectionLayoutRowInput>({
     resolver: zodResolver(CollectionLayoutRowInputSchema),
@@ -165,6 +178,7 @@ export function CollectionRowDrawer({
     if (mode === 'edit' && row) {
       form.reset({
         groupId: row.groupId,
+        planningGroupId: row.planningGroupId,
         gender: row.gender,
         vendorId: row.vendorId ?? null,
         line: row.line,
@@ -188,11 +202,11 @@ export function CollectionRowDrawer({
       setPreviewPictureUrl(row.pictureUrl ?? null);
       setQuotations((row.quotations ?? []).map(rowToQuotationState));
     } else {
-      form.reset(buildDefaultValues(defaultGroupId, groups, availableGenders));
+      form.reset(buildDefaultValues(defaultGroupId, groups, availableGenders, defaultPlanningGroupId));
       setPreviewPictureUrl(null);
       setQuotations([]);
     }
-  }, [open, mode, row?.id, defaultGroupId]);
+  }, [open, mode, row?.id, defaultGroupId, defaultPlanningGroupId]);
 
   const title = mode === 'create' ? 'Nuova riga' : (row?.line ?? 'Modifica riga');
 
@@ -316,7 +330,25 @@ export function CollectionRowDrawer({
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-7xl w-full p-0 gap-0 flex flex-col max-h-[90vh]">
+      <DialogContent
+        className="max-w-7xl w-full p-0 gap-0 flex flex-col max-h-[90vh]"
+        // Radix's Select is always "modal" (no way to opt out) — while its dropdown is open it
+        // becomes the topmost dismissable layer and sets this DialogContent's own pointer-events
+        // to "none" (only the topmost layer stays interactive). Closing the Select then races with
+        // Dialog's own outside-click detection: the closing click falls through the now
+        // pointer-events:none DialogContent onto the DialogOverlay behind it, which reads as an
+        // "outside click" and closes this dialog too. Forcing pointer-events:auto here keeps the
+        // drawer itself always interactive regardless of any nested Select's layer state.
+        style={{ pointerEvents: 'auto' }}
+        onInteractOutside={event => {
+          // Extra safety: also ignore interactions that land inside any nested Radix popper
+          // content (Select/Popover), in case a future field renders one without full modality.
+          const target = event.target as HTMLElement | null;
+          if (target?.closest('[data-radix-popper-content-wrapper]')) {
+            event.preventDefault();
+          }
+        }}
+      >
         {/* Fixed header */}
         <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle className="text-lg">{title}</DialogTitle>
@@ -338,6 +370,9 @@ export function CollectionRowDrawer({
                     canUpdate={canUpdate}
                     availableGenders={availableGenders}
                     groups={groups}
+                    planningGroups={planningGroups}
+                    mode={mode}
+                    onRequestChangePlanningGroup={() => setChangeGroupOpen(true)}
                     rowId={mode === 'edit' ? row?.id : undefined}
                   />
                 </div>
@@ -452,6 +487,21 @@ export function CollectionRowDrawer({
       onConfirm={() => { if (pendingData) { onSubmit(pendingData); setPendingData(null); } }}
       isLoading={isLoading}
     />
+
+    {mode === 'edit' && row && (
+      <AssignPlanningGroupDialog
+        open={changeGroupOpen}
+        onClose={() => setChangeGroupOpen(false)}
+        onAssigned={newPlanningGroupId => {
+          setChangeGroupOpen(false);
+          form.setValue('planningGroupId', newPlanningGroupId, { shouldDirty: false });
+        }}
+        brandId={brandId}
+        seasonId={seasonId}
+        collectionLayoutId={row.collectionLayoutId}
+        rowIds={[row.id]}
+      />
+    )}
     </>
   );
 }

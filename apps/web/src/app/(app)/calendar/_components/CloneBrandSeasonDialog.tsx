@@ -5,7 +5,9 @@ import { toast } from 'sonner';
 
 import { CALENDAR_EVENT_STATUS } from '@luke/core';
 
+import { PlanningGroupListRow } from '../../../../components/PlanningGroupListRow';
 import { Button } from '../../../../components/ui/button';
+import { Checkbox } from '../../../../components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -15,6 +17,7 @@ import {
 } from '../../../../components/ui/dialog';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
+import { ScrollArea } from '../../../../components/ui/scroll-area';
 import {
   Select,
   SelectContent,
@@ -46,6 +49,7 @@ interface Props {
 export function CloneBrandSeasonDialog({ open, onClose, onCloned, targetBrandId, targetSeasonId }: Props) {
   const [sourceBrandId, setSourceBrandId] = useState('');
   const [sourceSeasonId, setSourceSeasonId] = useState('');
+  const [sourcePlanningGroupIds, setSourcePlanningGroupIds] = useState<Set<string>>(new Set());
   const [dateShiftDays, setDateShiftDays] = useState('0');
 
   const { data: brandsData } = trpc.brand.list.useQuery(
@@ -56,6 +60,19 @@ export function CloneBrandSeasonDialog({ open, onClose, onCloned, targetBrandId,
     { isActive: true, limit: 100 },
     { enabled: open }
   );
+  const { data: sourcePlanningGroups = [] } = trpc.planningGroup.list.useQuery(
+    { brandId: sourceBrandId, seasonId: sourceSeasonId },
+    { enabled: open && !!sourceBrandId && !!sourceSeasonId }
+  );
+
+  const toggleGroup = (groupId: string) => {
+    setSourcePlanningGroupIds(prev => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  };
 
   const cloneMutation = trpc.seasonCalendar.cloneFromBrandSeason.useMutation({
     onSuccess: data => {
@@ -71,12 +88,17 @@ export function CloneBrandSeasonDialog({ open, onClose, onCloned, targetBrandId,
       toast.error('Seleziona brand e stagione sorgente');
       return;
     }
+    if (sourcePlanningGroupIds.size === 0) {
+      toast.error('Seleziona almeno un gruppo di pianificazione da clonare');
+      return;
+    }
     const shift = parseInt(dateShiftDays, 10);
     cloneMutation.mutate({
       sourceBrandId,
       sourceSeasonId,
       targetBrandId,
       targetSeasonId,
+      sourcePlanningGroupIds: [...sourcePlanningGroupIds],
       dateShiftDays: isNaN(shift) ? 0 : shift,
       includeStatuses: CALENDAR_EVENT_STATUS.filter(s => s !== 'CANCELLED'),
     });
@@ -95,7 +117,7 @@ export function CloneBrandSeasonDialog({ open, onClose, onCloned, targetBrandId,
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
             <Label>Brand sorgente</Label>
-            <Select value={sourceBrandId} onValueChange={setSourceBrandId}>
+            <Select value={sourceBrandId} onValueChange={v => { setSourceBrandId(v); setSourcePlanningGroupIds(new Set()); }}>
               <SelectTrigger>
                 <SelectValue placeholder="Seleziona brand" />
               </SelectTrigger>
@@ -109,7 +131,7 @@ export function CloneBrandSeasonDialog({ open, onClose, onCloned, targetBrandId,
 
           <div className="space-y-1.5">
             <Label>Stagione sorgente</Label>
-            <Select value={sourceSeasonId} onValueChange={setSourceSeasonId}>
+            <Select value={sourceSeasonId} onValueChange={v => { setSourceSeasonId(v); setSourcePlanningGroupIds(new Set()); }}>
               <SelectTrigger>
                 <SelectValue placeholder="Seleziona stagione" />
               </SelectTrigger>
@@ -122,6 +144,28 @@ export function CloneBrandSeasonDialog({ open, onClose, onCloned, targetBrandId,
               </SelectContent>
             </Select>
           </div>
+
+          {sourceBrandId && sourceSeasonId && (
+            <div className="space-y-1.5">
+              <Label>Gruppi di pianificazione da clonare</Label>
+              <ScrollArea className="h-32 rounded-md border">
+                <div className="p-2 space-y-0.5">
+                  {sourcePlanningGroups.length === 0 && (
+                    <p className="text-sm text-muted-foreground p-4 text-center">Nessun gruppo nel calendario sorgente</p>
+                  )}
+                  {sourcePlanningGroups.map(g => (
+                    <div key={g.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/50">
+                      <Checkbox
+                        checked={sourcePlanningGroupIds.has(g.id)}
+                        onCheckedChange={() => toggleGroup(g.id)}
+                      />
+                      <PlanningGroupListRow group={g} />
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="shift-days">Offset giorni</Label>
@@ -148,7 +192,7 @@ export function CloneBrandSeasonDialog({ open, onClose, onCloned, targetBrandId,
           </Button>
           <Button
             onClick={handleClone}
-            disabled={cloneMutation.isPending || !sourceBrandId || !sourceSeasonId}
+            disabled={cloneMutation.isPending || !sourceBrandId || !sourceSeasonId || sourcePlanningGroupIds.size === 0}
           >
             {cloneMutation.isPending ? 'Clonazione…' : 'Clona'}
           </Button>

@@ -2,10 +2,8 @@
 
 import { useMemo } from 'react';
 
-import { addDays, daysBetween } from '@luke/core';
-
 import { trpc } from '../../../../../lib/trpc';
-import { toUtcIsoDate } from '../../utils';
+import { expandDateRangeToIsoDates } from '../../utils';
 
 /** Hard cap on distinct vendors checked per step — keeps the hook count fixed (rules of hooks). */
 const MAX_VENDOR_SLOTS = 8;
@@ -32,10 +30,9 @@ export function useVendorClosures(vendorIds: string[], seasonId: string): Set<st
     for (const q of queries) {
       for (const period of q.data ?? []) {
         if (period.type !== 'CLOSURE') continue;
-        const start = new Date(period.startDate);
-        const end = new Date(period.endDate);
-        const span = daysBetween(start, end);
-        for (let i = 0; i <= span; i++) dates.add(toUtcIsoDate(addDays(start, i)));
+        for (const iso of expandDateRangeToIsoDates(new Date(period.startDate), new Date(period.endDate))) {
+          dates.add(iso);
+        }
       }
     }
     return dates;

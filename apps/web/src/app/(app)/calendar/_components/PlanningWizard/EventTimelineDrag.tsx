@@ -34,7 +34,7 @@ function isBlocked(iso: string, holidayDates: HolidayMap, closedDates: Set<strin
  */
 export function EventTimelineDrag({ anchorDate, value, onChange, holidayDates, closedDates }: Props) {
   const stripRef = useRef<HTMLDivElement>(null);
-  const [dragOffsetPx, setDragOffsetPx] = useState<number | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const days = useMemo(
     () => Array.from({ length: WINDOW_HALF * 2 + 1 }, (_, i) => addDays(anchorDate, i - WINDOW_HALF)),
@@ -94,16 +94,16 @@ export function EventTimelineDrag({ anchorDate, value, onChange, holidayDates, c
             aria-label="Sposta evento"
             onPointerDown={e => {
               e.currentTarget.setPointerCapture(e.pointerId);
-              setDragOffsetPx(0);
+              setIsDragging(true);
             }}
             onPointerMove={e => {
-              if (dragOffsetPx === null) return;
+              if (!isDragging) return;
               commitDrag(e.clientX);
             }}
-            onPointerUp={() => setDragOffsetPx(null)}
+            onPointerUp={() => setIsDragging(false)}
             className={cn(
               'absolute top-0 flex items-center justify-center text-white text-xs font-medium rounded cursor-grab active:cursor-grabbing',
-              blocked ? 'bg-red-600' : 'bg-emerald-600'
+              blocked ? 'bg-destructive' : 'bg-emerald-600'
             )}
             style={{ left: valueIndex * CELL_WIDTH, width: CELL_WIDTH, height: 56 }}
           >
@@ -113,13 +113,13 @@ export function EventTimelineDrag({ anchorDate, value, onChange, holidayDates, c
       </div>
 
       {blocked && (
-        <div className="flex items-center justify-between rounded-md bg-red-50 border border-red-200 px-3 py-1.5 text-xs text-red-800">
+        <div className="flex items-center justify-between rounded-md bg-destructive/10 border border-destructive/20 px-3 py-1.5 text-xs text-destructive">
           <span>Data su giorno festivo o chiusura fornitore</span>
           {nextFreeDate && (
             <Button
               variant="outline"
               size="sm"
-              className="h-6 px-2 text-xs border-red-300"
+              className="h-6 px-2 text-xs border-destructive/30"
               onClick={() => onChange(nextFreeDate)}
             >
               Sposta al {nextFreeDate.toLocaleDateString('it-IT')}

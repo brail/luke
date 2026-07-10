@@ -32,10 +32,28 @@ declare module './context' {
 }
 
 /**
+ * Resolves the required permission(s) from the procedure's parsed input — for the rare case where
+ * the permission depends on a runtime field (e.g. which entity type is being locked). The `.use()`
+ * call must come *after* `.input()` in the procedure chain, otherwise `input` is not yet parsed.
+ */
+type PermissionResolver<TInput> = (input: TInput) => Permission | Permission[] | PermissionDeclaration;
+
+function normalizeDeclaration(
+  resolved: Permission | Permission[] | PermissionDeclaration
+): PermissionDeclaration {
+  return typeof resolved === 'string' || Array.isArray(resolved)
+    ? { required: resolved, description: '' }
+    : resolved;
+}
+
+/**
  * Factory per middleware che richiede una o più permissions
  * Supporta sia role-based che user-granted permissions
  *
- * @param permissions - Permission singola, array di permissions, o PermissionDeclaration
+ * @param permission - Permission singola, array di permissions, PermissionDeclaration, o una
+ *   funzione `(input) => Permission` per i casi in cui la permission dipende dall'input parsato
+ *   (in quel caso `.use(requirePermission(...))` va messo dopo `.input(...)` nella chain, e va
+ *   passato esplicitamente il tipo generico `TInput` — es. `requirePermission<MyInput>(...)`).
  * @returns Middleware tRPC che verifica le permissions
  *
  * @example
@@ -52,25 +70,25 @@ declare module './context' {
  *   description: 'Delete brand',
  *   context: { checkOwnership: true }
  * })
+ *
+ * // Dipendente dall'input (richiede .use() dopo .input())
+ * requirePermission<{ entityType: 'X' | 'Y' }>((input) => input.entityType === 'X' ? 'x:update' : 'y:update')
  * ```
  */
-export function requirePermission(
-  permission: Permission | Permission[] | PermissionDeclaration
+export function requirePermission<TInput = never>(
+  permission: Permission | Permission[] | PermissionDeclaration | PermissionResolver<TInput>
 ) {
-  // Normalizza input in PermissionDeclaration
-  const declaration: PermissionDeclaration =
-    typeof permission === 'string' || Array.isArray(permission)
-      ? {
-          required: permission,
-          description: '',
-        }
-      : permission;
+  // Static case: normalize once at middleware-construction time (router build), not per request —
+  // only the resolver form needs the parsed `input` and must wait for the request.
+  const staticDeclaration = typeof permission === 'function' ? null : normalizeDeclaration(permission);
 
-  const permissionArray = Array.isArray(declaration.required)
-    ? declaration.required
-    : [declaration.required];
+  return t.middleware(async ({ ctx, next, input }) => {
+    const declaration = staticDeclaration ?? normalizeDeclaration((permission as PermissionResolver<TInput>)(input as TInput));
 
-  return t.middleware(async ({ ctx, next }) => {
+    const permissionArray = Array.isArray(declaration.required)
+      ? declaration.required
+      : [declaration.required];
+
     // Verifica autenticazione
     if (!ctx.session?.user) {
       throw new TRPCError({

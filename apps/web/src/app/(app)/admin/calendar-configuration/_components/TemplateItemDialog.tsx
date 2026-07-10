@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
 
+import { PhaseSelect } from '../../../../../components/PhaseSelect';
 import { Button } from '../../../../../components/ui/button';
 import { Checkbox } from '../../../../../components/ui/checkbox';
 import {
@@ -219,13 +220,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
               name="phaseId"
               control={control}
               render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_none">— Nessuna (evento non di fase) —</SelectItem>
-                    {phases.map(p => <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <PhaseSelect value={field.value} onValueChange={field.onChange} phases={phases} />
               )}
             />
             <p className="text-xs text-muted-foreground">

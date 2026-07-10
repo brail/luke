@@ -7,6 +7,7 @@ import type { RouterOutputs } from '@luke/api';
 import { calcMaxSupplierCost, type CollectionLayoutRowInput } from '@luke/core';
 
 import { NumberInput } from '../../../../../components/NumberInput';
+import { formatPlanningGroupLabel, PlanningGroupSelect } from '../../../../../components/PlanningGroupSelect';
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
 import { FileDropZone } from '../../../../../components/ui/file-drop-zone';
@@ -142,6 +143,9 @@ interface IdentificationSectionProps {
   canUpdate: boolean;
   availableGenders: string[];
   groups: CollectionGroup[];
+  planningGroups: PlanningGroupOption[];
+  mode: 'create' | 'edit';
+  onRequestChangePlanningGroup?: () => void;
   /** Present only in edit mode — enables the criticality badge next to the phase field. */
   rowId?: string;
 }
@@ -156,6 +160,9 @@ export function IdentificationSection({
   canUpdate,
   availableGenders,
   groups,
+  planningGroups,
+  mode,
+  onRequestChangePlanningGroup,
   rowId,
 }: IdentificationSectionProps) {
   const { data: strategyOptions = [] } = trpc.collectionCatalog.list.useQuery(
@@ -182,6 +189,15 @@ export function IdentificationSection({
 
       {/* gruppo */}
       <GroupSelectField control={control} canUpdate={canUpdate} groups={groups} />
+
+      {/* gruppo di pianificazione */}
+      <PlanningGroupSelectField
+        control={control}
+        canUpdate={canUpdate}
+        planningGroups={planningGroups}
+        mode={mode}
+        onRequestChange={onRequestChangePlanningGroup}
+      />
 
       {/* gender | categoria */}
       <div className="grid grid-cols-2 gap-4">
@@ -545,6 +561,71 @@ export function GroupSelectField({ control, canUpdate, groups }: GroupSelectFiel
           <FormMessage />
         </FormItem>
       )}
+    />
+  );
+}
+
+// ─── Section: Gruppo di pianificazione ────────────────────────────────────────
+
+interface PlanningGroupOption { id: string; name: string; isDefault: boolean; }
+
+interface PlanningGroupSelectFieldProps {
+  control: Control<CollectionLayoutRowInput>;
+  canUpdate: boolean;
+  planningGroups: PlanningGroupOption[];
+  /** "create": plain selector (no calendar events depend on the row yet). "edit": read-only display
+   * + explicit "Cambia gruppo" action, so changing it (which re-scopes calendar events) is never a
+   * side effect of an unrelated field save. */
+  mode: 'create' | 'edit';
+  onRequestChange?: () => void;
+}
+
+export function PlanningGroupSelectField({
+  control,
+  canUpdate,
+  planningGroups,
+  mode,
+  onRequestChange,
+}: PlanningGroupSelectFieldProps) {
+  return (
+    <FormField
+      control={control}
+      name="planningGroupId"
+      render={({ field }) => {
+        if (mode === 'edit') {
+          const current = planningGroups.find(g => g.id === field.value);
+          return (
+            <FormItem>
+              <FormLabel>Gruppo di pianificazione</FormLabel>
+              <div className="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
+                <span className="text-sm">
+                  {current ? formatPlanningGroupLabel(current) : '—'}
+                </span>
+                <Button type="button" variant="outline" size="sm" disabled={!canUpdate} onClick={onRequestChange}>
+                  Cambia gruppo
+                </Button>
+              </div>
+              <FormMessage />
+            </FormItem>
+          );
+        }
+
+        return (
+          <FormItem>
+            <FormLabel>Gruppo di pianificazione</FormLabel>
+            <FormControl>
+              <PlanningGroupSelect
+                value={field.value ?? ''}
+                onValueChange={field.onChange}
+                groups={planningGroups}
+                disabled={!canUpdate}
+                placeholder="Seleziona gruppo…"
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        );
+      }}
     />
   );
 }

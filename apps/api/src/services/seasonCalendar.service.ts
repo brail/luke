@@ -31,6 +31,26 @@ export async function assertBrandAccess(
 }
 
 /**
+ * Resolves a PlanningGroup and asserts the user has brand access to it.
+ *
+ * @throws {TRPCError} NOT_FOUND if the group does not exist.
+ * @throws {TRPCError} FORBIDDEN if the user lacks brand access.
+ */
+export async function resolvePlanningGroupWithBrandAccess(
+  planningGroupId: string,
+  userId: string,
+  prisma: PrismaClient
+) {
+  const group = await prisma.planningGroup.findUnique({
+    where: { id: planningGroupId },
+    select: { calendarId: true, anchorDate: true, calendar: { select: { brandId: true, seasonId: true } } },
+  });
+  if (!group) throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo di pianificazione non trovato' });
+  await assertBrandAccess(userId, group.calendar.brandId, prisma);
+  return group;
+}
+
+/**
  * Filters a list of brand IDs to those the user is allowed to access.
  * Returns the original list unchanged for admins (no restrictions).
  */
@@ -48,7 +68,43 @@ export async function filterAllowedBrandIds(
 // ─── Calendar get/create ──────────────────────────────────────────────────────
 
 /**
+ * Resolves the id of a brand+season's default PlanningGroup, creating the SeasonCalendar and/or the
+ * default group if either doesn't exist yet. Does not open its own transaction — safe to call with
+ * either the plain PrismaClient or an interactive transaction client, so callers already inside a
+ * transaction (e.g. `collectionLayout.rows.create`) can use it without nesting `$transaction` calls.
+ */
+async function ensureDefaultPlanningGroup(calendarId: string, prisma: PrismaClient): Promise<string> {
+  const existing = await prisma.planningGroup.findFirst({
+    where: { calendarId, isDefault: true },
+  });
+  if (existing) return existing.id;
+  const created = await prisma.planningGroup.create({
+    data: { calendarId, name: 'Predefinito', isDefault: true },
+  });
+  return created.id;
+}
+
+/** Shared upsert shape for "find or create the brand+season calendar" — spread in an `include` where needed. */
+function calendarUpsertArgs(brandId: string, seasonId: string) {
+  return {
+    where: { brandId_seasonId: { brandId, seasonId } },
+    create: { brandId, seasonId },
+    update: {},
+  } as const;
+}
+
+export async function resolveDefaultPlanningGroupId(
+  brandId: string,
+  seasonId: string,
+  prisma: PrismaClient
+): Promise<string> {
+  const calendar = await prisma.seasonCalendar.upsert(calendarUpsertArgs(brandId, seasonId));
+  return ensureDefaultPlanningGroup(calendar.id, prisma);
+}
+
+/**
  * Returns the SeasonCalendar for the given brand+season, creating it if it does not exist.
+ * Also ensures the calendar's default PlanningGroup exists (auto-created, never renamed/deleted).
  * Includes brand/season metadata and event count.
  */
 export async function getOrCreateCalendar(
@@ -56,15 +112,19 @@ export async function getOrCreateCalendar(
   seasonId: string,
   prisma: PrismaClient
 ) {
-  return prisma.seasonCalendar.upsert({
-    where: { brandId_seasonId: { brandId, seasonId } },
-    create: { brandId, seasonId },
-    update: {},
-    include: {
-      brand: { select: { code: true, name: true } },
-      season: { select: { code: true, name: true, year: true } },
-      _count: { select: { events: true } },
-    },
+  return prisma.$transaction(async tx => {
+    const calendar = await tx.seasonCalendar.upsert({
+      ...calendarUpsertArgs(brandId, seasonId),
+      include: {
+        brand: { select: { code: true, name: true } },
+        season: { select: { code: true, name: true, year: true } },
+        _count: { select: { events: true } },
+      },
+    });
+
+    await ensureDefaultPlanningGroup(calendar.id, tx as unknown as PrismaClient);
+
+    return calendar;
   });
 }
 
@@ -80,37 +140,28 @@ export async function updateCalendarStatus(
 }
 
 /**
- * Sets the anchor date on a SeasonCalendar, used as the reference point for template offset calculations.
- */
-export async function setAnchorDate(
-  calendarId: string,
-  anchorDate: Date,
-  prisma: PrismaClient
-) {
-  return prisma.seasonCalendar.update({ where: { id: calendarId }, data: { anchorDate } });
-}
-
-/**
- * Freezes a SeasonCalendar's baseline: snapshots the current startAt/endAt of every event into
- * baselineStartAt/baselineEndAt (written once, never updated afterwards), then sets frozenAt.
- * startAt/endAt remain freely editable after freeze — only the baseline snapshot is immutable.
+ * Freezes a PlanningGroup's baseline: snapshots the current startAt/endAt of every event belonging
+ * to it into baselineStartAt/baselineEndAt (written once, never updated afterwards), then sets
+ * frozenAt. startAt/endAt remain freely editable after freeze — only the baseline snapshot is
+ * immutable. Events added to the group after freeze simply keep a null baseline (excluded from
+ * scheduling-variance comparisons) — freeze is never retroactively re-applied.
  *
- * @throws {TRPCError} NOT_FOUND if the calendar does not exist.
- * @throws {TRPCError} CONFLICT if the calendar was already frozen (re-freeze is not supported —
- *   the baseline must reflect the plan "as it was" at first freeze, never a later re-snapshot).
+ * @throws {TRPCError} NOT_FOUND if the planning group does not exist.
+ * @throws {TRPCError} CONFLICT if the group was already frozen (re-freeze is not supported — the
+ *   baseline must reflect the plan "as it was" at first freeze, never a later re-snapshot).
  */
-export async function freezeCalendar(calendarId: string, prisma: PrismaClient) {
+export async function freezePlanningGroup(planningGroupId: string, prisma: PrismaClient) {
   return prisma.$transaction(async tx => {
-    const calendar = await tx.seasonCalendar.findUnique({ where: { id: calendarId } });
-    if (!calendar) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
+    const group = await tx.planningGroup.findUnique({ where: { id: planningGroupId } });
+    if (!group) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo di pianificazione non trovato' });
     }
-    if (calendar.frozenAt) {
-      throw new TRPCError({ code: 'CONFLICT', message: 'Calendario già congelato' });
+    if (group.frozenAt) {
+      throw new TRPCError({ code: 'CONFLICT', message: 'Gruppo di pianificazione già congelato' });
     }
 
     const events = await tx.calendarEvent.findMany({
-      where: { calendarId },
+      where: { planningGroupId },
       select: { id: true, startAt: true, endAt: true },
     });
 
@@ -123,38 +174,38 @@ export async function freezeCalendar(calendarId: string, prisma: PrismaClient) {
       )
     );
 
-    return tx.seasonCalendar.update({
-      where: { id: calendarId },
+    return tx.planningGroup.update({
+      where: { id: planningGroupId },
       data: { frozenAt: new Date() },
     });
   });
 }
 
 /**
- * Reverts `freezeCalendar`: clears the calendar's `frozenAt` and every event's baseline snapshot.
- * Admin-only procedure (gated by `season_calendar:unfreeze`, granted only to the admin wildcard)
- * to correct an accidental or premature freeze — not a normal planning operation.
+ * Reverts `freezePlanningGroup`: clears the group's `frozenAt` and every one of its events' baseline
+ * snapshot. Admin-only procedure (gated by `season_calendar:unfreeze`, granted only to the admin
+ * wildcard) to correct an accidental or premature freeze — not a normal planning operation.
  *
- * @throws {TRPCError} NOT_FOUND if the calendar does not exist.
- * @throws {TRPCError} CONFLICT if the calendar is not currently frozen.
+ * @throws {TRPCError} NOT_FOUND if the planning group does not exist.
+ * @throws {TRPCError} CONFLICT if the group is not currently frozen.
  */
-export async function unfreezeCalendar(calendarId: string, prisma: PrismaClient) {
+export async function unfreezePlanningGroup(planningGroupId: string, prisma: PrismaClient) {
   return prisma.$transaction(async tx => {
-    const calendar = await tx.seasonCalendar.findUnique({ where: { id: calendarId } });
-    if (!calendar) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
+    const group = await tx.planningGroup.findUnique({ where: { id: planningGroupId } });
+    if (!group) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo di pianificazione non trovato' });
     }
-    if (!calendar.frozenAt) {
-      throw new TRPCError({ code: 'CONFLICT', message: 'Calendario non è congelato' });
+    if (!group.frozenAt) {
+      throw new TRPCError({ code: 'CONFLICT', message: 'Gruppo di pianificazione non è congelato' });
     }
 
     await tx.calendarEvent.updateMany({
-      where: { calendarId },
+      where: { planningGroupId },
       data: { baselineStartAt: null, baselineEndAt: null },
     });
 
-    return tx.seasonCalendar.update({
-      where: { id: calendarId },
+    return tx.planningGroup.update({
+      where: { id: planningGroupId },
       data: { frozenAt: null },
     });
   });
@@ -191,14 +242,15 @@ export async function listMilestonesDb(
     include: {
       visibilities: true,
       notes: { where: { userId }, take: 1 },
-      anchors: { select: { entityType: true, entityId: true } },
+      planningGroup: { select: { id: true, name: true } },
     },
     orderBy: { startAt: 'asc' },
   });
 
-  return events.map(e => ({
+  return events.map(({ planningGroup, ...e }) => ({
     ...e,
     brandId: calendarBrandMap.get(e.calendarId) ?? null,
+    planningGroupName: planningGroup.name,
   }));
 }
 
@@ -207,15 +259,21 @@ export async function listMilestonesDb(
 /**
  * Creates a calendar event and its visibility entries within a single transaction.
  * The owner function always receives a read-write visibility; all others are read-only.
+ *
+ * @param calendarId - The planning group's calendar id, already resolved by the caller (e.g. via
+ *   `resolvePlanningGroupWithBrandAccess`) — a group's calendar is immutable once created, so
+ *   there's no staleness risk in reusing it instead of re-fetching the group here.
  */
 export async function createMilestone(
   input: CalendarEventInput,
+  calendarId: string,
   prisma: PrismaClient
 ) {
   return prisma.$transaction(async tx => {
     const event = await tx.calendarEvent.create({
       data: {
-        calendarId: input.calendarId,
+        calendarId,
+        planningGroupId: input.planningGroupId,
         ownerFunctionId: input.ownerFunctionId,
         type: input.type,
         phaseId: input.phaseId,
@@ -239,78 +297,6 @@ export async function createMilestone(
     });
 
     return event;
-  });
-}
-
-/**
- * Duplicates a specific set of calendar events (by id) into new events anchored to `rowIds`.
- * Used by the planning wizard's row-fork: when a subset of rows is scoped to an event, the
- * complementary rows need their own copies of every remaining event from that point on.
- *
- * Takes an explicit `eventIds` list (a snapshot taken by the caller at fork time) rather than a
- * date range, to avoid accidentally picking up events belonging to a different, unrelated branch
- * that happens to share the same date.
- *
- * @returns The newly created events, shaped like `listMilestonesDb` output (visibilities + anchors
- *   included) so the frontend can treat them as `CalendarEventItem` directly.
- */
-export async function duplicateEventsFrom(eventIds: string[], rowIds: string[], prisma: PrismaClient) {
-  return prisma.$transaction(async tx => {
-    const originals = await tx.calendarEvent.findMany({
-      where: { id: { in: eventIds } },
-      include: { visibilities: true },
-      orderBy: { startAt: 'asc' },
-    });
-    if (originals.length === 0) return [];
-
-    const calendar = await tx.seasonCalendar.findUniqueOrThrow({
-      where: { id: originals[0]!.calendarId },
-      select: { brandId: true },
-    });
-
-    const anchors = rowIds.map(rowId => ({ entityType: 'COLLECTION_LAYOUT_ROW' as const, entityId: rowId }));
-
-    // Originals are independent of each other — duplicate them concurrently instead of one by one.
-    // Response fields are assembled from data already in memory (no trailing refetch needed).
-    return Promise.all(originals.map(async original => {
-      const duplicate = await tx.calendarEvent.create({
-        data: {
-          calendarId: original.calendarId,
-          ownerFunctionId: original.ownerFunctionId,
-          type: original.type,
-          phaseId: original.phaseId,
-          title: original.title,
-          description: original.description,
-          startAt: original.startAt,
-          endAt: original.endAt,
-          allDay: original.allDay,
-          publishExternally: original.publishExternally,
-          templateItemId: original.templateItemId,
-          status: original.status,
-        },
-      });
-
-      await Promise.all([
-        tx.calendarEventVisibility.createMany({
-          data: original.visibilities.map(v => ({
-            eventId: duplicate.id,
-            functionId: v.functionId,
-            readOnly: v.readOnly,
-          })),
-        }),
-        tx.calendarEventAnchor.createMany({
-          data: anchors.map(a => ({ ...a, eventId: duplicate.id })),
-        }),
-      ]);
-
-      return {
-        ...duplicate,
-        visibilities: original.visibilities.map(v => ({ functionId: v.functionId, readOnly: v.readOnly })),
-        anchors,
-        notes: [] as { body: string }[],
-        brandId: calendar.brandId,
-      };
-    }));
   });
 }
 
@@ -412,26 +398,30 @@ export async function listTemplates(prisma: PrismaClient) {
 }
 
 /**
- * Materializes a milestone template onto a calendar anchored at `anchorDate`.
- * Creates events and visibility entries within a transaction.
+ * Materializes a milestone template onto a planning group anchored at `anchorDate`.
+ * Creates events and visibility entries within a transaction, stamping each created event with the
+ * group's id — that's what makes them applicable only to the rows of the same group.
  *
- * @param force - When false, throws CONFLICT if the calendar already has events.
+ * @param force - When false, throws CONFLICT if the planning group already has events.
  * @throws {TRPCError} CONFLICT if events exist and `force` is false.
- * @throws {TRPCError} NOT_FOUND if the template does not exist.
+ * @throws {TRPCError} NOT_FOUND if the planning group or template does not exist.
  */
 export async function applyTemplate(
-  calendarId: string,
+  planningGroupId: string,
   templateId: string,
   anchorDate: Date,
   force: boolean,
   prisma: PrismaClient
 ) {
   return prisma.$transaction(async tx => {
-    const existing = await tx.calendarEvent.count({ where: { calendarId } });
+    const group = await tx.planningGroup.findUnique({ where: { id: planningGroupId } });
+    if (!group) throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo di pianificazione non trovato' });
+
+    const existing = await tx.calendarEvent.count({ where: { planningGroupId } });
     if (existing > 0 && !force) {
       throw new TRPCError({
         code: 'CONFLICT',
-        message: 'Il calendario contiene già eventi. Usa force=true per sovrascrivere.',
+        message: 'Il gruppo di pianificazione contiene già eventi. Usa force=true per sovrascrivere.',
       });
     }
 
@@ -459,7 +449,8 @@ export async function applyTemplate(
 
     const created = await tx.calendarEvent.createManyAndReturn({
       data: itemsWithDates.map(({ item, startAt, endAt }) => ({
-        calendarId,
+        calendarId: group.calendarId,
+        planningGroupId,
         ownerFunctionId: item.ownerFunctionId,
         type: item.type,
         phaseId: item.phaseId,
@@ -489,8 +480,73 @@ export async function applyTemplate(
     // Materialize template state effects (only if targetEntityId can be inferred — skip otherwise)
     // V2: skip effects without targetEntityId (must be configured by user after apply)
 
+    // Record the anchor date used, so a later re-apply/admin view can default to it.
+    await tx.planningGroup.update({ where: { id: planningGroupId }, data: { anchorDate } });
+
     return created;
   });
+}
+
+// ─── Planning group CRUD ──────────────────────────────────────────────────────
+
+/**
+ * Creates a new (non-default) PlanningGroup within a SeasonCalendar.
+ */
+export async function createPlanningGroup(calendarId: string, name: string, prisma: PrismaClient) {
+  return prisma.planningGroup.create({ data: { calendarId, name, isDefault: false } });
+}
+
+/**
+ * Lists all PlanningGroups of a SeasonCalendar, default group first, then alphabetically,
+ * with row/event counts (used to gate rename/delete in the admin UI).
+ */
+export async function listPlanningGroups(calendarId: string, prisma: PrismaClient) {
+  return prisma.planningGroup.findMany({
+    where: { calendarId },
+    include: { _count: { select: { events: true, rows: true } } },
+    orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
+  });
+}
+
+/**
+ * Renames a PlanningGroup. The default group cannot be renamed.
+ *
+ * @throws {TRPCError} NOT_FOUND if the group does not exist.
+ * @throws {TRPCError} BAD_REQUEST if the group is the default one.
+ */
+export async function renamePlanningGroup(id: string, name: string, prisma: PrismaClient) {
+  const group = await prisma.planningGroup.findUnique({ where: { id } });
+  if (!group) throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo di pianificazione non trovato' });
+  if (group.isDefault) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Il gruppo predefinito non può essere rinominato' });
+  }
+  return prisma.planningGroup.update({ where: { id }, data: { name } });
+}
+
+/**
+ * Deletes a PlanningGroup. The default group cannot be deleted, and a group still owning events or
+ * rows cannot be deleted either — reassign them to another group first.
+ *
+ * @throws {TRPCError} NOT_FOUND if the group does not exist.
+ * @throws {TRPCError} BAD_REQUEST if the group is the default one.
+ * @throws {TRPCError} CONFLICT if the group still owns events or rows.
+ */
+export async function deletePlanningGroup(id: string, prisma: PrismaClient) {
+  const group = await prisma.planningGroup.findUnique({
+    where: { id },
+    include: { _count: { select: { events: true, rows: true } } },
+  });
+  if (!group) throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo di pianificazione non trovato' });
+  if (group.isDefault) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Il gruppo predefinito non può essere eliminato' });
+  }
+  if (group._count.events > 0 || group._count.rows > 0) {
+    throw new TRPCError({
+      code: 'CONFLICT',
+      message: 'Il gruppo contiene ancora eventi o righe — riassegnale prima di eliminarlo',
+    });
+  }
+  await prisma.planningGroup.delete({ where: { id } });
 }
 
 // ─── Template CRUD ────────────────────────────────────────────────────────────
@@ -601,52 +657,41 @@ export async function deleteTemplateItem(id: string, prisma: PrismaClient) {
 // ─── Clone ────────────────────────────────────────────────────────────────────
 
 /**
- * Copies all matching events from a source brand+season calendar into a target brand+season calendar.
- * Event dates are shifted by `dateShiftDays`; when omitted, the shift is computed from the
- * difference between the two calendars' anchor dates.
+ * Copies events from a chosen set of source planning groups into a target brand+season calendar.
+ * For each selected source group, a matching target group is created (or reused, matched by name)
+ * in the target calendar, and that group's events are cloned into it, shifted by `dateShiftDays`
+ * (mandatory — there's no longer a single calendar-wide anchor date to auto-derive it from, since
+ * anchorDate now lives per planning group).
  *
- * @throws {TRPCError} NOT_FOUND if the source calendar does not exist.
- * @throws {TRPCError} BAD_REQUEST if `dateShiftDays` is omitted and either calendar lacks an anchor date.
+ * @throws {TRPCError} NOT_FOUND if the source calendar or any of the selected groups do not exist.
  */
 export async function cloneFromBrandSeason(
   input: CloneSeasonCalendarInput,
   prisma: PrismaClient
 ) {
-  const { sourceBrandId, sourceSeasonId, targetBrandId, targetSeasonId, dateShiftDays, includeStatuses } = input;
+  const { sourceBrandId, sourceSeasonId, targetBrandId, targetSeasonId, sourcePlanningGroupIds, dateShiftDays, includeStatuses } = input;
 
   const sourceCalendar = await prisma.seasonCalendar.findUnique({
     where: { brandId_seasonId: { brandId: sourceBrandId, seasonId: sourceSeasonId } },
-    include: {
-      events: {
-        where: { status: { in: includeStatuses as ('PLANNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED')[] } },
-        include: {
-          visibilities: true,
-        },
-      },
-    },
   });
   if (!sourceCalendar) {
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario sorgente non trovato' });
   }
 
-  let shiftDays = dateShiftDays;
-  if (shiftDays === undefined) {
-    const targetCalendarExisting = await prisma.seasonCalendar.findUnique({
-      where: { brandId_seasonId: { brandId: targetBrandId, seasonId: targetSeasonId } },
-      select: { anchorDate: true },
-    });
-    if (!sourceCalendar.anchorDate || !targetCalendarExisting?.anchorDate) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'dateShiftDays è richiesto quando i calendari non hanno anchorDate impostata',
-      });
-    }
-    const srcAnchor = sourceCalendar.anchorDate.getTime();
-    const tgtAnchor = targetCalendarExisting.anchorDate.getTime();
-    shiftDays = Math.round((tgtAnchor - srcAnchor) / MS_PER_DAY);
+  const sourceGroups = await prisma.planningGroup.findMany({
+    where: { id: { in: sourcePlanningGroupIds }, calendarId: sourceCalendar.id },
+    include: {
+      events: {
+        where: { status: { in: includeStatuses as ('PLANNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED')[] } },
+        include: { visibilities: true },
+      },
+    },
+  });
+  if (sourceGroups.length !== sourcePlanningGroupIds.length) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Uno o più gruppi di pianificazione sorgente non trovati' });
   }
 
-  const shift = shiftDays;
+  const shift = dateShiftDays;
 
   return prisma.$transaction(async tx => {
     const targetCalendar = await tx.seasonCalendar.upsert({
@@ -655,34 +700,51 @@ export async function cloneFromBrandSeason(
       update: {},
     });
 
-    const created = await tx.calendarEvent.createManyAndReturn({
-      data: sourceCalendar.events.map(e => ({
-        calendarId: targetCalendar.id,
-        ownerFunctionId: e.ownerFunctionId,
-        type: e.type,
-        title: e.title,
-        description: e.description,
-        startAt: new Date(e.startAt.getTime() + shift * MS_PER_DAY),
-        endAt: e.endAt ? new Date(e.endAt.getTime() + shift * MS_PER_DAY) : undefined,
-        allDay: e.allDay,
-        publishExternally: e.publishExternally,
-        status: 'PLANNED' as const,
-      })),
-    });
+    let totalCreated = 0;
+    const createdEventIds: string[] = [];
 
-    const visibilityData = created.flatMap((newEvent, i) => {
-      return sourceCalendar.events[i].visibilities.map(v => ({
-        eventId: newEvent.id,
-        functionId: v.functionId,
-        readOnly: v.readOnly,
-      }));
-    });
-    await tx.calendarEventVisibility.createMany({ data: visibilityData });
+    for (const sourceGroup of sourceGroups) {
+      const targetGroup = await tx.planningGroup.upsert({
+        where: { calendarId_name: { calendarId: targetCalendar.id, name: sourceGroup.name } },
+        create: { calendarId: targetCalendar.id, name: sourceGroup.name, isDefault: sourceGroup.isDefault },
+        update: {},
+      });
+
+      if (sourceGroup.events.length === 0) continue;
+
+      const created = await tx.calendarEvent.createManyAndReturn({
+        data: sourceGroup.events.map(e => ({
+          calendarId: targetCalendar.id,
+          planningGroupId: targetGroup.id,
+          ownerFunctionId: e.ownerFunctionId,
+          type: e.type,
+          title: e.title,
+          description: e.description,
+          startAt: new Date(e.startAt.getTime() + shift * MS_PER_DAY),
+          endAt: e.endAt ? new Date(e.endAt.getTime() + shift * MS_PER_DAY) : undefined,
+          allDay: e.allDay,
+          publishExternally: e.publishExternally,
+          status: 'PLANNED' as const,
+        })),
+      });
+
+      const visibilityData = created.flatMap((newEvent, i) =>
+        sourceGroup.events[i]!.visibilities.map(v => ({
+          eventId: newEvent.id,
+          functionId: v.functionId,
+          readOnly: v.readOnly,
+        }))
+      );
+      await tx.calendarEventVisibility.createMany({ data: visibilityData });
+
+      totalCreated += created.length;
+      createdEventIds.push(...created.map(e => e.id));
+    }
 
     return {
       calendarId: targetCalendar.id,
-      milestonesCreated: created.length,
-      createdEventIds: created.map(e => e.id),
+      milestonesCreated: totalCreated,
+      createdEventIds,
     };
   });
 }

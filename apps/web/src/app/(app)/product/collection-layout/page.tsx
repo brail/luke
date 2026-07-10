@@ -1,7 +1,5 @@
 'use client';
 
-import { History, Plus } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
@@ -11,11 +9,9 @@ import type { CollectionLayoutRowInput } from '@luke/core';
 
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
-import { Button } from '../../../../components/ui/button';
 import { Card, CardContent } from '../../../../components/ui/card';
 import { useAppContext } from '../../../../contexts/AppContextProvider';
 import { usePermission } from '../../../../hooks/usePermission';
-import { triggerDownload } from '../../../../lib/download';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -23,7 +19,6 @@ import { CollectionGroupDialog } from './_components/CollectionGroupDialog';
 import { CollectionLayoutSummary } from './_components/CollectionLayoutSummary';
 import { CollectionLayoutTable } from './_components/CollectionLayoutTable';
 import { CollectionRowDrawer } from './_components/CollectionRowDrawer';
-import { CreateRevisionDrawer } from './_components/CreateRevisionDrawer';
 import { EmptyCollectionLayoutState } from './_components/EmptyCollectionLayoutState';
 
 type CollectionLayoutData = NonNullable<
@@ -35,10 +30,7 @@ type CollectionRowData = CollectionGroupData['rows'][number];
 export default function CollectionLayoutPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
   const { can } = usePermission();
-  const router = useRouter();
   const canUpdate = can('collection_layout:update');
-  const canRevise = can('collection_layout:revise');
-  const canViewRevisions = can('collection_layout:view_revisions');
 
   const enabled = !!brand?.id && !!season?.id;
 
@@ -47,7 +39,10 @@ export default function CollectionLayoutPage() {
       { brandId: brand?.id ?? '', seasonId: season?.id ?? '' },
       { enabled }
     );
-  // TS2589: RouterOutputs type is excessively deep — as any breaks instantiation before ?? null
+  // TS2589: RouterOutputs type is excessively deep — as any breaks instantiation before ?? null.
+  // Can't route this through narrowRouterOutput<T>() like the other two sites: T here IS the full
+  // deep RouterOutputs type (not a shallow hand-written interface), so instantiating a generic
+  // function with it is itself what triggers TS2589 — only a plain expression-level `as` cast avoids it.
   const layout = ((layoutData as any) ?? null) as CollectionLayoutData | null;
 
   const { data: parameterSets = [] } = trpc.pricing.parameterSets.list.useQuery(
@@ -62,14 +57,10 @@ export default function CollectionLayoutPage() {
       brandId: brand?.id,
       seasonId: season?.id,
     });
-    // Phase changes affect criticality — invalidate so the badge updates without a page reload.
-    utils.phaseAlert.criticalityForLayout.invalidate();
-    utils.phaseAlert.criticalityForRow.invalidate();
   };
 
   // ─── UI state ───────────────────────────────────────────────────
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [showCreateRevision, setShowCreateRevision] = useState(false);
 
   // Chiudi fullscreen con Escape
   useEffect(() => {
@@ -184,32 +175,6 @@ export default function CollectionLayoutPage() {
       onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
     });
 
-  const exportXlsxMutation = trpc.collectionLayout.export.xlsx.useMutation({
-    onSuccess: result =>
-      triggerDownload(
-        result.data,
-        result.filename,
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      ),
-    onError: (err: unknown) =>
-      toast.error(
-        getTrpcErrorMessage(err, {
-          default: "Errore durante l'esportazione XLSX",
-        })
-      ),
-  });
-
-  const exportPdfMutation = trpc.collectionLayout.export.pdf.useMutation({
-    onSuccess: result =>
-      triggerDownload(result.data, result.filename, 'application/pdf'),
-    onError: (err: unknown) =>
-      toast.error(
-        getTrpcErrorMessage(err, {
-          default: "Errore durante l'esportazione PDF",
-        })
-      ),
-  });
-
   const isMutating =
     createGroupMutation.isPending ||
     updateGroupMutation.isPending ||
@@ -265,32 +230,9 @@ export default function CollectionLayoutPage() {
         title="Collection Layout"
         description={
           brand && season
-            ? `Collezione ${brand.name} — ${season.code} ${season.name}`
+            ? `Collezione ${brand.name} — ${season.code} ${season.year}`
             : 'Pianificazione collezione stagionale'
         }
-        actions={layout && (
-          <div className="flex items-center gap-2">
-            {canViewRevisions && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => router.push(`/product/collection-layout/revisions?layoutId=${layout.id}` as string as never)}
-              >
-                <History className="h-4 w-4 mr-1.5" />
-                Storico revisioni
-              </Button>
-            )}
-            {canRevise && (
-              <Button
-                size="sm"
-                onClick={() => setShowCreateRevision(true)}
-              >
-                <Plus className="h-4 w-4 mr-1.5" />
-                Crea revisione
-              </Button>
-            )}
-          </div>
-        )}
       />
 
       {!brand || !season ? (
@@ -305,20 +247,18 @@ export default function CollectionLayoutPage() {
           <EmptyCollectionLayoutState
             brandId={brand.id}
             seasonId={season.id}
-            onCreateEmpty={(availableGenders) =>
+            onCreateEmpty={() =>
               getOrCreateMutation.mutate({
                 brandId: brand.id,
                 seasonId: season.id,
-                availableGenders,
               })
             }
-            onCopyFromSeason={(fromSeasonId, rows) =>
+            onCopyFromSeason={fromSeasonId =>
               copyFromSeasonMutation.mutate({
                 fromBrandId: brand.id,
                 fromSeasonId,
                 toBrandId: brand.id,
                 toSeasonId: season.id,
-                rows,
               })
             }
             isLoading={
@@ -354,14 +294,6 @@ export default function CollectionLayoutPage() {
                 }
                 isDeletingRow={deleteRowMutation.isPending}
                 onToggleFullscreen={() => setIsFullscreen(true)}
-                onExportXlsx={rowIds =>
-                  exportXlsxMutation.mutate({ collectionLayoutId: layout.id, rowIds })
-                }
-                isExportingXlsx={exportXlsxMutation.isPending}
-                onExportPdf={rowIds =>
-                  exportPdfMutation.mutate({ collectionLayoutId: layout.id, rowIds })
-                }
-                isExportingPdf={exportPdfMutation.isPending}
               />
             </CardContent>
           </Card>
@@ -408,14 +340,6 @@ export default function CollectionLayoutPage() {
                 isDeletingRow={deleteRowMutation.isPending}
                 isFullscreen
                 onToggleFullscreen={() => setIsFullscreen(false)}
-                onExportXlsx={rowIds =>
-                  exportXlsxMutation.mutate({ collectionLayoutId: layout.id, rowIds })
-                }
-                isExportingXlsx={exportXlsxMutation.isPending}
-                onExportPdf={rowIds =>
-                  exportPdfMutation.mutate({ collectionLayoutId: layout.id, rowIds })
-                }
-                isExportingPdf={exportPdfMutation.isPending}
               />
             </div>
           </div>,
@@ -449,22 +373,13 @@ export default function CollectionLayoutPage() {
           defaultGroupId={rowDrawer?.defaultGroupId}
           groups={layout.groups}
           parameterSets={parameterSets}
-          availableGenders={layout.availableGenders ?? ['MAN', 'WOMAN']}
+          availableGenders={layout.availableGenders}
+          brandId={brand?.id ?? ''}
+          seasonId={season?.id ?? ''}
           onSubmit={handleRowSubmit}
           onPictureUploaded={() => invalidateLayout()}
-          onQuotationChange={() => invalidateLayout()}
           isLoading={isMutating}
           canUpdate={canUpdate}
-        />
-      )}
-
-      {/* Create revision drawer */}
-      {layout && (
-        <CreateRevisionDrawer
-          open={showCreateRevision}
-          onOpenChange={setShowCreateRevision}
-          layout={layout}
-          onSuccess={() => invalidateLayout()}
         />
       )}
     </div>

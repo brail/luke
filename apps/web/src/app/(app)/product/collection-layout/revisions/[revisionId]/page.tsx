@@ -219,6 +219,8 @@ export default function RevisionDetailPage() {
           groups={mappedLayout.groups as any}
           parameterSets={parameterSets as any}
           availableGenders={['MAN', 'WOMAN']}
+          brandId={brand?.id ?? ''}
+          seasonId={season?.id ?? ''}
           canUpdate={false}
           onSubmit={() => {}}
         />

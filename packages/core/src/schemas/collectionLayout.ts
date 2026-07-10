@@ -97,6 +97,8 @@ export const CollectionLayoutSettingsSchema = z.object({
  */
 export const CollectionLayoutRowInputSchema = z.object({
   groupId: z.string().min(1),
+  // FK to PlanningGroup. Omitted on create → backend resolves the season's default planning group.
+  planningGroupId: z.string().uuid().optional(),
   order: z.number().int().optional(),
   // Required
   gender: z.string().min(1, 'Gender obbligatorio'),
@@ -125,6 +127,15 @@ export const CollectionLayoutRowInputSchema = z.object({
 });
 export type CollectionLayoutRowInput = z.infer<
   typeof CollectionLayoutRowInputSchema
+>;
+
+/** Input schema for bulk-assigning a set of collection layout rows to a planning group. */
+export const CollectionLayoutBulkAssignPlanningGroupInputSchema = z.object({
+  rowIds: z.array(z.string().uuid()).min(1).max(100),
+  planningGroupId: z.string().uuid(),
+});
+export type CollectionLayoutBulkAssignPlanningGroupInput = z.infer<
+  typeof CollectionLayoutBulkAssignPlanningGroupInputSchema
 >;
 
 /** Input schema for creating or updating a quotation attached to a collection row. */

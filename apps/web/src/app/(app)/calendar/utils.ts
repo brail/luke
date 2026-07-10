@@ -37,11 +37,12 @@ export function daysBetween(a: Date, b: Date): number {
   return Math.round((b.getTime() - a.getTime()) / 86_400_000);
 }
 
-/** Describes a CalendarEvent's CalendarEventAnchor scope for display ("tutte le righe" | "N righe"). */
-export function describeAnchorScope(anchors: { entityType: string; entityId: string }[] | undefined): string {
-  const rowAnchors = (anchors ?? []).filter(a => a.entityType === 'COLLECTION_LAYOUT_ROW');
-  if (rowAnchors.length === 0) return 'tutte le righe';
-  return `${rowAnchors.length} riga${rowAnchors.length === 1 ? '' : 'e'}`;
+/** Expands a start/end range (inclusive) into its UTC ISO ('YYYY-MM-DD') dates, one per day. */
+export function expandDateRangeToIsoDates(start: Date, end: Date): string[] {
+  const span = daysBetween(start, end);
+  const dates: string[] = [];
+  for (let i = 0; i <= span; i++) dates.push(toUtcIsoDate(addDays(start, i)));
+  return dates;
 }
 
 /** Returns the ISO 8601 week number (1–53) for the given date. */

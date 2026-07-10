@@ -27,7 +27,10 @@ import { CalendarEventTimeline } from './_components/CalendarEventTimeline';
 import { CalendarEventWeekView } from './_components/CalendarEventWeekView';
 import { CloneBrandSeasonDialog } from './_components/CloneBrandSeasonDialog';
 import { ExportButton } from './_components/ExportButton';
+import { FreezePlanningGroupWizard } from './_components/FreezePlanningGroupWizard';
+import { ManagePlanningGroupsDialog } from './_components/ManagePlanningGroupsDialog';
 import { PlanningWizard } from './_components/PlanningWizard/PlanningWizard';
+import { SelectPlanningGroupDialog } from './_components/SelectPlanningGroupDialog';
 import { useHolidays } from './_components/useHolidays';
 import { assignBrandColors, resolveBrandColor } from './utils';
 
@@ -50,7 +53,15 @@ export default function CalendarPage() {
   const [createDefaultAllDay, setCreateDefaultAllDay] = useState(true);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
-  const [freezeOpen, setFreezeOpen] = useState(false);
+  const [manageGroupsOpen, setManageGroupsOpen] = useState(false);
+  /** Set by ApplyTemplateDialog's onApplied — drives the automatic post-apply wizard. */
+  const [postApplyWizard, setPostApplyWizard] = useState<{ planningGroupId: string; events: CalendarEventItem[] } | null>(null);
+  // Which planning-group picker is open — freeze and unfreeze share the same picker dialog,
+  // they only differ in title/filter/target once a group is chosen.
+  const [pickerAction, setPickerAction] = useState<'freeze' | 'unfreeze' | null>(null);
+  // Which group the picker resolved to, and what to do with it — freeze steps through a wizard,
+  // unfreeze just confirms, but there's only ever one active target regardless of which.
+  const [activeGroupAction, setActiveGroupAction] = useState<{ type: 'freeze' | 'unfreeze'; groupId: string } | null>(null);
   const [view, setViewState] = useState<CalendarView>(() => {
     const v = searchParams.get('view');
     return (VALID_VIEWS as readonly string[]).includes(v ?? '') ? (v as CalendarView) : 'month';
@@ -157,11 +168,10 @@ export default function CalendarPage() {
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
-  const unfreezeMutation = trpc.seasonCalendar.unfreezeCalendar.useMutation({
-    onSuccess: () => { toast.success('Congelamento annullato'); void refetch(); },
-    onError: err => toast.error(getTrpcErrorMessage(err, { CONFLICT: 'Il calendario non è congelato' })),
+  const unfreezeMutation = trpc.seasonCalendar.unfreezePlanningGroup.useMutation({
+    onSuccess: () => { toast.success('Congelamento annullato'); setActiveGroupAction(null); void refetch(); },
+    onError: err => toast.error(getTrpcErrorMessage(err, { CONFLICT: 'Il gruppo non è congelato' })),
   });
-  const [unfreezeConfirmOpen, setUnfreezeConfirmOpen] = useState(false);
 
   const canSync = can('season_calendar:sync');
   const canUpdate = can('season_calendar:update');
@@ -253,14 +263,17 @@ export default function CalendarPage() {
               <DropdownMenuItem onClick={() => setTemplateOpen(true)} disabled={!calendar}>
                 Applica template
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setManageGroupsOpen(true)} disabled={!calendar}>
+                Gruppi di pianificazione
+              </DropdownMenuItem>
               {canFreeze && (
-                <DropdownMenuItem onClick={() => setFreezeOpen(true)} disabled={!calendar || !!calendar.frozenAt}>
+                <DropdownMenuItem onClick={() => setPickerAction('freeze')} disabled={!calendar}>
                   <Snowflake size={13} className="mr-2" />
-                  {calendar?.frozenAt ? 'Pianificazione congelata' : 'Congela pianificazione'}
+                  Congela pianificazione
                 </DropdownMenuItem>
               )}
-              {canUnfreeze && calendar?.frozenAt && (
-                <DropdownMenuItem onClick={() => setUnfreezeConfirmOpen(true)}>
+              {canUnfreeze && (
+                <DropdownMenuItem onClick={() => setPickerAction('unfreeze')} disabled={!calendar}>
                   <Snowflake size={13} className="mr-2" />
                   Forza de-freeze (admin)
                 </DropdownMenuItem>
@@ -504,7 +517,8 @@ export default function CalendarPage() {
           onClose={() => setActiveEventId(null)}
           onSaved={refetchAfterEventChange}
           onDeleted={() => { setActiveEventId(null); refetchAfterEventChange(); }}
-          calendarId={calendar?.id ?? ''}
+          brandId={contextBrandId ?? ''}
+          seasonId={season?.id ?? ''}
           availableFunctions={availableFunctions}
           functionsById={functionsById}
           event={activeEvent}
@@ -518,7 +532,8 @@ export default function CalendarPage() {
           open
           onClose={() => { setCreateDate(null); setCreateDefaultAllDay(true); }}
           onSaved={() => { setCreateDate(null); setCreateDefaultAllDay(true); refetchAfterEventChange(); }}
-          calendarId={calendar.id}
+          brandId={contextBrandId ?? ''}
+          seasonId={season?.id ?? ''}
           availableFunctions={availableFunctions}
           functionsById={functionsById}
           defaultDate={createDate || undefined}
@@ -541,23 +556,66 @@ export default function CalendarPage() {
         <ApplyTemplateDialog
           open={templateOpen}
           onClose={() => setTemplateOpen(false)}
-          onApplied={() => { setTemplateOpen(false); void refetch(); }}
-          calendarId={calendar.id}
-          hasMilestones={(milestones?.length ?? 0) > 0}
+          onApplied={(createdEvents, planningGroupId) => {
+            setTemplateOpen(false);
+            void refetch();
+            setPostApplyWizard({ planningGroupId, events: createdEvents });
+          }}
+          brandId={contextBrandId ?? ''}
+          seasonId={season?.id ?? ''}
         />
       )}
 
-      {calendar && freezeOpen && (
-        <PlanningWizard
-          open={freezeOpen}
-          onClose={() => setFreezeOpen(false)}
-          onFrozen={() => { setFreezeOpen(false); void refetch(); }}
+      {calendar && manageGroupsOpen && (
+        <ManagePlanningGroupsDialog
+          open={manageGroupsOpen}
+          onClose={() => setManageGroupsOpen(false)}
           calendarId={calendar.id}
-          brandId={calendar.brandId}
-          seasonId={calendar.seasonId}
-          milestones={filteredMilestones}
+          brandId={contextBrandId ?? ''}
+          seasonId={season?.id ?? ''}
+        />
+      )}
+
+      {/* Automatic wizard, triggered right after a template is applied to a planning group */}
+      {calendar && postApplyWizard && (
+        <PlanningWizard
+          open
+          onClose={() => setPostApplyWizard(null)}
+          onFrozen={() => { setPostApplyWizard(null); void refetch(); }}
+          calendarId={calendar.id}
+          planningGroupId={postApplyWizard.planningGroupId}
+          brandId={contextBrandId ?? ''}
+          seasonId={season?.id ?? ''}
+          events={postApplyWizard.events}
           holidayDates={holidayDates}
-          onAnchorsChanged={() => void refetch()}
+        />
+      )}
+
+      {/* Manual freeze/unfreeze: pick a planning group, then either confirm (unfreeze) or step
+          through the freeze wizard (events are already set, no stepping needed there). */}
+      {pickerAction && (
+        <SelectPlanningGroupDialog
+          open
+          onClose={() => setPickerAction(null)}
+          onSelect={group => {
+            setActiveGroupAction({ type: pickerAction, groupId: group.id });
+            setPickerAction(null);
+          }}
+          brandId={contextBrandId ?? ''}
+          seasonId={season?.id ?? ''}
+          title={pickerAction === 'freeze' ? 'Congela quale gruppo di pianificazione?' : 'Sbloccare quale gruppo di pianificazione?'}
+          filter={pickerAction === 'freeze' ? g => !g.frozenAt && g._count.events > 0 : g => !!g.frozenAt}
+          emptyMessage={pickerAction === 'freeze' ? 'Nessun gruppo con eventi da congelare' : 'Nessun gruppo congelato'}
+        />
+      )}
+      {activeGroupAction?.type === 'freeze' && (
+        <FreezePlanningGroupWizard
+          open
+          onClose={() => setActiveGroupAction(null)}
+          onFrozen={() => { setActiveGroupAction(null); void refetch(); }}
+          planningGroupId={activeGroupAction.groupId}
+          milestones={filteredMilestones.filter(m => m.planningGroupId === activeGroupAction.groupId)}
+          holidayDates={holidayDates}
         />
       )}
 
@@ -572,16 +630,16 @@ export default function CalendarPage() {
       )}
 
       <ConfirmDialog
-        open={unfreezeConfirmOpen}
-        onOpenChange={setUnfreezeConfirmOpen}
-        title="Forzare il de-freeze del calendario?"
-        description="Azzera la baseline congelata di tutti gli eventi — lo scostamento piano/realtà misurato finora andrà perso. Operazione riservata agli amministratori, da usare solo per correggere un congelamento fatto per errore."
+        open={activeGroupAction?.type === 'unfreeze'}
+        onOpenChange={v => { if (!v) setActiveGroupAction(null); }}
+        title="Forzare il de-freeze del gruppo di pianificazione?"
+        description="Azzera la baseline congelata di tutti gli eventi del gruppo — lo scostamento piano/realtà misurato finora andrà perso. Operazione riservata agli amministratori, da usare solo per correggere un congelamento fatto per errore."
         confirmText="Forza de-freeze"
         cancelText="Annulla"
         variant="destructive"
         actionType="warning"
         isLoading={unfreezeMutation.isPending}
-        onConfirm={() => calendar && unfreezeMutation.mutate({ calendarId: calendar.id })}
+        onConfirm={() => activeGroupAction && unfreezeMutation.mutate({ planningGroupId: activeGroupAction.groupId })}
       />
     </>
   );

@@ -2,17 +2,18 @@
  * tRPC router for season calendar management.
  *
  * Covers the full lifecycle of a seasonal planning calendar:
- *  - Calendar CRUD: getOrCreate, updateStatus, setAnchorDate, freezeCalendar
+ *  - Calendar CRUD: getOrCreate, updateStatus
  *  - Milestones: listMilestones, createMilestone, updateMilestone, deleteMilestone(s), setMilestoneStatus
  *  - Personal notes: upsertNote, deleteNote
- *  - Templates: listTemplates, applyTemplate, createTemplate, updateTemplate, deleteTemplate,
- *               createTemplateItem, updateTemplateItem, deleteTemplateItem
+ *  - Templates: listTemplates, applyTemplate (per planning group), createTemplate, updateTemplate,
+ *               deleteTemplate, createTemplateItem, updateTemplateItem, deleteTemplateItem
+ *  - Planning group freeze: freezePlanningGroup, unfreezePlanningGroup
  *  - Clone: cloneFromBrandSeason
  *  - Google Calendar sync: getSyncStatus, triggerSync
  *  - User visibility: grantUserVisibility, revokeUserVisibility
- *  - Anchors: setEventAnchors
  *  - State effects: executeStateEffect, rollbackStateEffect
  *
+ * PlanningGroup CRUD (create/list/rename/delete) lives in `planningGroup.ts`.
  * Brand access is enforced per-operation via `assertBrandAccess`.
  */
 
@@ -26,7 +27,7 @@ import {
   CloneSeasonCalendarInputSchema,
   CalendarEventPersonalNoteInputSchema,
   CalendarEventUserVisibilityInputSchema,
-  CalendarEventAnchorInputSchema,
+  ApplyTemplateInputSchema,
   MilestoneTemplateItemBaseSchema,
   MilestoneTemplateItemInputSchema,
   SEASON_CALENDAR_STATUS,
@@ -53,17 +54,16 @@ import {
 } from '../services/googleCalendarSync.service.js';
 import {
   assertBrandAccess,
+  resolvePlanningGroupWithBrandAccess,
   filterAllowedBrandIds,
   getOrCreateCalendar,
   updateCalendarStatus,
-  setAnchorDate,
-  freezeCalendar,
-  unfreezeCalendar,
+  freezePlanningGroup,
+  unfreezePlanningGroup,
   listMilestonesDb,
   createMilestone,
   updateMilestone,
   deleteMilestone,
-  duplicateEventsFrom,
   upsertNote,
   deleteNote,
   listTemplates,
@@ -133,77 +133,41 @@ export const seasonCalendarRouter = router({
     }),
 
   /**
-   * Sets the anchor date used to apply milestone templates with date offsets.
-   *
-   * @auth season_calendar:update
-   * @input { calendarId, anchorDate }
-   * @output Updated SeasonCalendar
-   */
-  setAnchorDate: protectedProcedure
-    .use(requirePermission('season_calendar:update'))
-    .use(withRateLimit('configMutations'))
-    .input(z.object({
-      calendarId: z.string().uuid(),
-      anchorDate: z.string().datetime(),
-    }))
-    .mutation(async ({ input, ctx }) => {
-      const calendar = await ctx.prisma.seasonCalendar.findUnique({
-        where: { id: input.calendarId },
-        select: { brandId: true },
-      });
-      if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
-      await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
-      const result = await setAnchorDate(input.calendarId, new Date(input.anchorDate), ctx.prisma);
-      await logAudit(ctx, { action: 'SEASON_CALENDAR_ANCHOR_SET', targetType: 'SeasonCalendar', targetId: input.calendarId, result: 'SUCCESS', metadata: {} });
-      return result;
-    }),
-
-  /**
-   * Freezes a calendar's baseline: snapshots every event's current startAt/endAt into
-   * baselineStartAt/baselineEndAt, written once. startAt/endAt remain freely editable afterwards.
+   * Freezes a planning group's baseline: snapshots every one of its events' current startAt/endAt
+   * into baselineStartAt/baselineEndAt, written once. startAt/endAt remain freely editable afterwards.
    *
    * @auth season_calendar:freeze
-   * @input { calendarId }
-   * @output Updated SeasonCalendar
+   * @input { planningGroupId }
+   * @output Updated PlanningGroup
    */
-  freezeCalendar: protectedProcedure
+  freezePlanningGroup: protectedProcedure
     .use(requirePermission('season_calendar:freeze'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ calendarId: z.string().uuid() }))
+    .input(z.object({ planningGroupId: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      const calendar = await ctx.prisma.seasonCalendar.findUnique({
-        where: { id: input.calendarId },
-        select: { brandId: true },
-      });
-      if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
-      await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
-      await assertUnlocked('SEASON_CALENDAR', input.calendarId, ctx.session.user.id, ctx.prisma);
-      const result = await freezeCalendar(input.calendarId, ctx.prisma);
-      await logAudit(ctx, { action: 'CALENDAR_FROZEN', targetType: 'SeasonCalendar', targetId: input.calendarId, result: 'SUCCESS', metadata: {} });
+      const group = await resolvePlanningGroupWithBrandAccess(input.planningGroupId, ctx.session.user.id, ctx.prisma);
+      await assertUnlocked('SEASON_CALENDAR', group.calendarId, ctx.session.user.id, ctx.prisma);
+      const result = await freezePlanningGroup(input.planningGroupId, ctx.prisma);
+      await logAudit(ctx, { action: 'PLANNING_GROUP_FROZEN', targetType: 'PlanningGroup', targetId: input.planningGroupId, result: 'SUCCESS', metadata: {} });
       return result;
     }),
 
   /**
-   * Admin-only: reverts a freeze, clearing the calendar's `frozenAt` and every event's baseline
-   * snapshot. Used to correct an accidental or premature freeze.
+   * Admin-only: reverts a freeze, clearing the group's `frozenAt` and every one of its events'
+   * baseline snapshot. Used to correct an accidental or premature freeze.
    *
    * @auth season_calendar:unfreeze (admin wildcard only — not granted to editor/viewer)
-   * @input { calendarId }
-   * @output Updated SeasonCalendar
+   * @input { planningGroupId }
+   * @output Updated PlanningGroup
    */
-  unfreezeCalendar: protectedProcedure
+  unfreezePlanningGroup: protectedProcedure
     .use(requirePermission('season_calendar:unfreeze'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ calendarId: z.string().uuid() }))
+    .input(z.object({ planningGroupId: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      const calendar = await ctx.prisma.seasonCalendar.findUnique({
-        where: { id: input.calendarId },
-        select: { brandId: true },
-      });
-      if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
-      await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
-      const result = await unfreezeCalendar(input.calendarId, ctx.prisma);
-      await logAudit(ctx, { action: 'CALENDAR_UNFROZEN', targetType: 'SeasonCalendar', targetId: input.calendarId, result: 'SUCCESS', metadata: {} });
+      await resolvePlanningGroupWithBrandAccess(input.planningGroupId, ctx.session.user.id, ctx.prisma);
+      const result = await unfreezePlanningGroup(input.planningGroupId, ctx.prisma);
+      await logAudit(ctx, { action: 'PLANNING_GROUP_UNFROZEN', targetType: 'PlanningGroup', targetId: input.planningGroupId, result: 'SUCCESS', metadata: {} });
       return result;
     }),
 
@@ -247,23 +211,18 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(CalendarEventInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const calendar = await ctx.prisma.seasonCalendar.findUnique({
-        where: { id: input.calendarId },
-        select: { brandId: true, seasonId: true },
-      });
-      if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
-      await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
-      await assertUnlocked('SEASON_CALENDAR', input.calendarId, ctx.session.user.id, ctx.prisma);
+      const group = await resolvePlanningGroupWithBrandAccess(input.planningGroupId, ctx.session.user.id, ctx.prisma);
+      await assertUnlocked('SEASON_CALENDAR', group.calendarId, ctx.session.user.id, ctx.prisma);
 
-      const result = await createMilestone(input, ctx.prisma);
-      await logAudit(ctx, { action: 'CALENDAR_EVENT_CREATE', targetType: 'CalendarEvent', targetId: result.id, result: 'SUCCESS', metadata: { calendarId: input.calendarId, ownerFunctionId: input.ownerFunctionId, title: result.title } });
-      sseStore.pushToAll({ type: 'calendar-updated', seasonId: calendar.seasonId });
+      const result = await createMilestone(input, group.calendarId, ctx.prisma);
+      await logAudit(ctx, { action: 'CALENDAR_EVENT_CREATE', targetType: 'CalendarEvent', targetId: result.id, result: 'SUCCESS', metadata: { calendarId: group.calendarId, planningGroupId: input.planningGroupId, ownerFunctionId: input.ownerFunctionId, title: result.title } });
+      sseStore.pushToAll({ type: 'calendar-updated', seasonId: group.calendar.seasonId });
       notifyCalendarChange(ctx.prisma, {
         eventId: result.id,
         actorId: ctx.session.user.id,
         titleSuffix: 'ha aggiunto un evento',
         message: `"${result.title}"`,
-        calendarId: input.calendarId,
+        calendarId: group.calendarId,
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on create'));
       syncOneMilestone(result.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on create'));
       return result;
@@ -281,7 +240,7 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({
       id: z.string().uuid(),
-      data: CalendarEventBaseSchema.partial().omit({ calendarId: true }),
+      data: CalendarEventBaseSchema.partial().omit({ planningGroupId: true }),
     }))
     .mutation(async ({ input, ctx }) => {
       const event = await ctx.prisma.calendarEvent.findUnique({
@@ -289,8 +248,10 @@ export const seasonCalendarRouter = router({
         include: { calendar: { select: { brandId: true, seasonId: true } } },
       });
       if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
-      await assertBrandAccess(ctx.session.user.id, event.calendar.brandId, ctx.prisma);
-      await assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma);
+      await Promise.all([
+        assertBrandAccess(ctx.session.user.id, event.calendar.brandId, ctx.prisma),
+        assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma),
+      ]);
 
       const result = await updateMilestone(input.id, input.data, ctx.prisma);
 
@@ -347,8 +308,10 @@ export const seasonCalendarRouter = router({
         include: { calendar: { select: { brandId: true, seasonId: true } } },
       });
       if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
-      await assertBrandAccess(ctx.session.user.id, event.calendar.brandId, ctx.prisma);
-      await assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma);
+      await Promise.all([
+        assertBrandAccess(ctx.session.user.id, event.calendar.brandId, ctx.prisma),
+        assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma),
+      ]);
 
       // Snapshot visibility before delete so digest and notification can use it afterward
       const visibleUserIds = await getVisibleUserIdsForMilestone(input.id, ctx.prisma);
@@ -389,13 +352,11 @@ export const seasonCalendarRouter = router({
         include: { calendar: { select: { brandId: true, seasonId: true } } },
       });
       const uniqueBrandIds = [...new Set(events.map(e => e.calendar.brandId).filter((id): id is string => id != null))];
-      await Promise.all(uniqueBrandIds.map(brandId =>
-        assertBrandAccess(ctx.session.user.id, brandId, ctx.prisma)
-      ));
       const calendarIdsToLockCheck = [...new Set(events.map(e => e.calendarId))];
-      await Promise.all(calendarIdsToLockCheck.map(id =>
-        assertUnlocked('SEASON_CALENDAR', id, ctx.session.user.id, ctx.prisma)
-      ));
+      await Promise.all([
+        ...uniqueBrandIds.map(brandId => assertBrandAccess(ctx.session.user.id, brandId, ctx.prisma)),
+        ...calendarIdsToLockCheck.map(id => assertUnlocked('SEASON_CALENDAR', id, ctx.session.user.id, ctx.prisma)),
+      ]);
       // Snapshot visibility for each event before deletion (for digest + notifications)
       const visibilityMap = await getVisibleUserIdsForMilestones(events.map(e => e.id), ctx.prisma);
       const visibilitySnapshots = events.map(e => ({
@@ -590,46 +551,37 @@ export const seasonCalendarRouter = router({
     .query(async ({ ctx }) => listTemplates(ctx.prisma)),
 
   /**
-   * Applies a milestone template to a calendar, generating events at computed anchor-relative dates.
+   * Applies a milestone template to a planning group, generating events at computed
+   * anchor-relative dates, all stamped with that group's id.
    *
-   * Uses `input.anchorDate` if provided, otherwise falls back to the calendar's stored anchor date.
-   * Requires `force: true` when the calendar already has events from this template.
+   * Uses `input.anchorDate` if provided, otherwise falls back to the group's stored anchor date
+   * (set by a previous apply). Requires `force: true` when the group already has events.
    *
    * @auth season_calendar:update
-   * @input { calendarId, templateId, anchorDate?, force }
+   * @input { planningGroupId, templateId, anchorDate?, force }
    * @output Array of created CalendarEvent records
    */
   applyTemplate: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({
-      calendarId: z.string().uuid(),
-      templateId: z.string().uuid(),
-      anchorDate: z.string().datetime().optional(),
-      force: z.boolean().default(false),
-    }))
+    .input(ApplyTemplateInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const calendar = await ctx.prisma.seasonCalendar.findUnique({
-        where: { id: input.calendarId },
-        select: { brandId: true, seasonId: true, anchorDate: true },
-      });
-      if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
-      await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
+      const group = await resolvePlanningGroupWithBrandAccess(input.planningGroupId, ctx.session.user.id, ctx.prisma);
 
       const anchor = input.anchorDate
         ? new Date(input.anchorDate)
-        : (calendar.anchorDate ?? null);
+        : (group.anchorDate ?? null);
       if (!anchor) throw new TRPCError({ code: 'BAD_REQUEST', message: 'anchorDate richiesta' });
 
-      const result = await applyTemplate(input.calendarId, input.templateId, anchor, input.force, ctx.prisma);
-      await logAudit(ctx, { action: 'SEASON_CALENDAR_APPLY_TEMPLATE', targetType: 'SeasonCalendar', targetId: input.calendarId, result: 'SUCCESS', metadata: { templateId: input.templateId, count: result.length } });
-      sseStore.pushToAll({ type: 'calendar-updated', seasonId: calendar.seasonId });
+      const result = await applyTemplate(input.planningGroupId, input.templateId, anchor, input.force, ctx.prisma);
+      await logAudit(ctx, { action: 'PLANNING_GROUP_APPLY_TEMPLATE', targetType: 'PlanningGroup', targetId: input.planningGroupId, result: 'SUCCESS', metadata: { templateId: input.templateId, count: result.length } });
+      sseStore.pushToAll({ type: 'calendar-updated', seasonId: group.calendar.seasonId });
       notifyCalendarChange(ctx.prisma, {
         eventIds: result.map(e => e.id),
         actorId: ctx.session.user.id,
         titleSuffix: 'ha applicato un template',
         message: `${result.length} eventi aggiunti al calendario`,
-        calendarId: input.calendarId,
+        calendarId: group.calendarId,
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on apply template'));
       return result;
     }),
@@ -718,7 +670,7 @@ export const seasonCalendarRouter = router({
       await assertBrandAccess(ctx.session.user.id, input.targetBrandId, ctx.prisma);
 
       const result = await cloneFromBrandSeason(input, ctx.prisma);
-      await logAudit(ctx, { action: 'SEASON_CALENDAR_CLONE', targetType: 'SeasonCalendar', targetId: result.calendarId, result: 'SUCCESS', metadata: { sourceBrandId: input.sourceBrandId, sourceSeasonId: input.sourceSeasonId } });
+      await logAudit(ctx, { action: 'SEASON_CALENDAR_CLONE', targetType: 'SeasonCalendar', targetId: result.calendarId, result: 'SUCCESS', metadata: { sourceBrandId: input.sourceBrandId, sourceSeasonId: input.sourceSeasonId, sourcePlanningGroupIds: input.sourcePlanningGroupIds } });
       sseStore.pushToAll({ type: 'calendar-updated', seasonId: input.targetSeasonId });
       notifyCalendarChange(ctx.prisma, {
         eventIds: result.createdEventIds,
@@ -833,79 +785,6 @@ export const seasonCalendarRouter = router({
       );
 
       return { ok: true };
-    }),
-
-  // ─── Anchors ────────────────────────────────────────────────────────────────
-
-  setEventAnchors: protectedProcedure
-    .use(requirePermission('season_calendar:update'))
-    .use(withRateLimit('configMutations'))
-    .input(z.object({
-      eventId: z.string().uuid(),
-      anchors: z.array(CalendarEventAnchorInputSchema),
-    }))
-    .mutation(async ({ input, ctx }) => {
-      const event = await ctx.prisma.calendarEvent.findUnique({
-        where: { id: input.eventId },
-        include: { calendar: { select: { brandId: true } } },
-      });
-      if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
-      await assertBrandAccess(ctx.session.user.id, event.calendar.brandId, ctx.prisma);
-      await assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma);
-
-      await ctx.prisma.$transaction(async tx => {
-        await tx.calendarEventAnchor.deleteMany({ where: { eventId: input.eventId } });
-        if (input.anchors.length > 0) {
-          await tx.calendarEventAnchor.createMany({
-            data: input.anchors.map(a => ({
-              eventId: input.eventId,
-              entityType: a.entityType,
-              entityId: a.entityId,
-            })),
-          });
-        }
-      });
-      await logAudit(ctx, { action: 'CALENDAR_EVENT_ANCHORS_SET', targetType: 'CalendarEventAnchor', targetId: input.eventId, result: 'SUCCESS', metadata: { count: input.anchors.length } });
-      return { success: true };
-    }),
-
-  /**
-   * Duplicates a set of events (by id) into new events anchored to `rowIds` — used by the planning
-   * wizard's row-fork to give the complement of a scoped subset its own copies of the remaining
-   * events, from the fork point on.
-   *
-   * @auth season_calendar:update
-   * @input { eventIds, rowIds }
-   * @output Newly created CalendarEvent records (with visibilities/anchors), same shape as listMilestones
-   */
-  duplicateEventsFrom: protectedProcedure
-    .use(requirePermission('season_calendar:update'))
-    .use(withRateLimit('configMutations'))
-    .input(z.object({
-      eventIds: z.array(z.string().uuid()).min(1),
-      rowIds: z.array(z.string().uuid()).min(1),
-    }))
-    .mutation(async ({ input, ctx }) => {
-      const firstEvent = await ctx.prisma.calendarEvent.findUnique({
-        where: { id: input.eventIds[0] },
-        include: { calendar: { select: { brandId: true } } },
-      });
-      if (!firstEvent) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
-      await assertBrandAccess(ctx.session.user.id, firstEvent.calendar.brandId, ctx.prisma);
-      await assertUnlocked('SEASON_CALENDAR', firstEvent.calendarId, ctx.session.user.id, ctx.prisma);
-
-      const duplicates = await duplicateEventsFrom(input.eventIds, input.rowIds, ctx.prisma);
-      await logAudit(ctx, {
-        action: 'CALENDAR_EVENT_FORK_DUPLICATE',
-        targetType: 'CalendarEvent',
-        targetId: firstEvent.calendarId,
-        result: 'SUCCESS',
-        metadata: { sourceEventIds: input.eventIds, rowCount: input.rowIds.length, duplicateCount: duplicates.length },
-      });
-      duplicates.forEach(d => {
-        syncOneMilestone(d.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on fork duplicate'));
-      });
-      return duplicates;
     }),
 
   // ─── State effects (manual) ─────────────────────────────────────────────────

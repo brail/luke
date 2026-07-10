@@ -11,6 +11,9 @@ import type {
   CollectionLayoutRowInput,
 } from '@luke/core';
 
+import { assertUnlocked } from './editLock.service.js';
+import { resolveDefaultPlanningGroupId } from './seasonCalendar.service.js';
+
 import type {
   PrismaClient,
   Brand,
@@ -35,6 +38,38 @@ export type RowWithVendor = CollectionLayoutRow & {
   quotations: QuotationWithParamSet[];
   pictureUrl?: string | null;
 };
+
+/**
+ * Verifies a planning group belongs to the same brand+season as a collection layout.
+ *
+ * @throws {TRPCError} NOT_FOUND if the layout or planning group does not exist.
+ * @throws {TRPCError} BAD_REQUEST if they belong to a different brand/season.
+ */
+async function assertPlanningGroupInLayoutScope(
+  layoutId: string,
+  planningGroupId: string,
+  prisma: PrismaClient
+): Promise<void> {
+  const [layout, planningGroup] = await Promise.all([
+    prisma.collectionLayout.findUniqueOrThrow({
+      where: { id: layoutId },
+      select: { brandId: true, seasonId: true },
+    }),
+    prisma.planningGroup.findUnique({
+      where: { id: planningGroupId },
+      select: { calendar: { select: { brandId: true, seasonId: true } } },
+    }),
+  ]);
+  if (!planningGroup) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo di pianificazione destinazione non trovato' });
+  }
+  if (planningGroup.calendar.brandId !== layout.brandId || planningGroup.calendar.seasonId !== layout.seasonId) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'Il gruppo di pianificazione appartiene a una stagione diversa',
+    });
+  }
+}
 
 export type CollectionLayoutWithRelations = CollectionLayout & {
   brand: Pick<Brand, 'name' | 'code' | 'logoKey'>;
@@ -276,7 +311,8 @@ export async function createGroup(
 export async function updateGroup(
   groupId: string,
   input: Partial<CollectionGroupInput>,
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  userId: string
 ): Promise<CollectionGroup> {
   const group = await prisma.collectionGroup.findUnique({
     where: { id: groupId },
@@ -288,6 +324,7 @@ export async function updateGroup(
       message: 'Gruppo non trovato',
     });
   }
+  await assertUnlocked('COLLECTION_LAYOUT', group.collectionLayoutId, userId, prisma);
 
   return prisma.collectionGroup.update({
     where: { id: groupId },
@@ -306,7 +343,8 @@ export async function updateGroup(
  */
 export async function deleteGroup(
   groupId: string,
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  userId: string
 ): Promise<void> {
   const group = await prisma.collectionGroup.findUnique({
     where: { id: groupId },
@@ -318,6 +356,7 @@ export async function deleteGroup(
       message: 'Gruppo non trovato',
     });
   }
+  await assertUnlocked('COLLECTION_LAYOUT', group.collectionLayoutId, userId, prisma);
 
   await prisma.collectionGroup.delete({ where: { id: groupId } });
 }
@@ -335,7 +374,8 @@ export async function deleteGroup(
  */
 export async function createRow(
   input: CollectionLayoutRowInput,
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  userId: string
 ): Promise<RowWithVendor> {
   const group = await prisma.collectionGroup.findUnique({
     where: { id: input.groupId },
@@ -348,6 +388,7 @@ export async function createRow(
       message: 'Gruppo non trovato',
     });
   }
+  await assertUnlocked('COLLECTION_LAYOUT', group.collectionLayoutId, userId, prisma);
 
   // Validate gender against layout availableGenders
   const availableGenders = (group.collectionLayout as any).availableGenders as string[];
@@ -362,11 +403,17 @@ export async function createRow(
     where: { groupId: input.groupId },
   });
 
-  const { order, ...rowData } = input;
+  const { order, planningGroupId, ...rowData } = input;
+  const resolvedPlanningGroupId = planningGroupId ?? await resolveDefaultPlanningGroupId(
+    group.collectionLayout.brandId,
+    group.collectionLayout.seasonId,
+    prisma
+  );
 
   return prisma.collectionLayoutRow.create({
     data: {
       collectionLayoutId: group.collectionLayoutId,
+      planningGroupId: resolvedPlanningGroupId,
       order: order ?? existingCount,
       gender: rowData.gender,
       vendorId: rowData.vendorId ?? null,
@@ -403,7 +450,7 @@ export async function updateRow(
   rowId: string,
   input: Partial<CollectionLayoutRowInput>,
   prisma: PrismaClient,
-  userId?: string
+  userId: string
 ): Promise<RowWithVendor> {
   const row = await prisma.collectionLayoutRow.findUnique({
     where: { id: rowId },
@@ -415,6 +462,7 @@ export async function updateRow(
       message: 'Riga non trovata',
     });
   }
+  await assertUnlocked('COLLECTION_LAYOUT', row.collectionLayoutId, userId, prisma);
 
   if (input.gender) {
     const layout = await prisma.collectionLayout.findUnique({
@@ -428,6 +476,11 @@ export async function updateRow(
         message: `Gender '${input.gender}' non disponibile per questo layout`,
       });
     }
+  }
+
+  // Se si sposta il gruppo di pianificazione, verificare che appartenga allo stesso layout
+  if (input.planningGroupId && input.planningGroupId !== row.planningGroupId) {
+    await assertPlanningGroupInLayoutScope(row.collectionLayoutId, input.planningGroupId, prisma);
   }
 
   // Se si sposta il gruppo, verificare che il nuovo gruppo esista
@@ -472,13 +525,38 @@ export async function updateRow(
 }
 
 /**
+ * Bulk-assigns a set of rows, all already known to belong to `layoutId`, to a planning group.
+ * Callers are expected to have resolved and validated `layoutId` from `rowIds` themselves.
+ *
+ * @throws {TRPCError} BAD_REQUEST if the target planning group belongs to a different brand/season.
+ */
+export async function bulkAssignRowsPlanningGroup(
+  rowIds: string[],
+  layoutId: string,
+  planningGroupId: string,
+  prisma: PrismaClient,
+  userId: string
+): Promise<{ success: true; count: number }> {
+  await assertUnlocked('COLLECTION_LAYOUT', layoutId, userId, prisma);
+  await assertPlanningGroupInLayoutScope(layoutId, planningGroupId, prisma);
+
+  const { count } = await prisma.collectionLayoutRow.updateMany({
+    where: { id: { in: rowIds } },
+    data: { planningGroupId },
+  });
+
+  return { success: true, count };
+}
+
+/**
  * Deletes a collection row.
  *
  * @throws {TRPCError} NOT_FOUND if the row does not exist.
  */
 export async function deleteRow(
   rowId: string,
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  userId: string
 ): Promise<void> {
   const row = await prisma.collectionLayoutRow.findUnique({
     where: { id: rowId },
@@ -490,6 +568,7 @@ export async function deleteRow(
       message: 'Riga non trovata',
     });
   }
+  await assertUnlocked('COLLECTION_LAYOUT', row.collectionLayoutId, userId, prisma);
 
   await prisma.collectionLayoutRow.delete({ where: { id: rowId } });
 }
@@ -502,7 +581,8 @@ export async function deleteRow(
  */
 export async function duplicateRow(
   rowId: string,
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  userId: string
 ): Promise<RowWithVendor> {
   const row = await prisma.collectionLayoutRow.findUnique({
     where: { id: rowId },
@@ -520,6 +600,7 @@ export async function duplicateRow(
       message: 'Riga non trovata',
     });
   }
+  await assertUnlocked('COLLECTION_LAYOUT', row.collectionLayoutId, userId, prisma);
 
   return prisma.$transaction(async tx => {
     // Shift rows below source by +1
@@ -598,7 +679,8 @@ export async function updateLayoutSettings(
 export async function reorderRows(
   groupId: string,
   orderedIds: string[],
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  userId: string
 ): Promise<void> {
   const group = await prisma.collectionGroup.findUnique({
     where: { id: groupId },
@@ -610,6 +692,7 @@ export async function reorderRows(
       message: 'Gruppo non trovato',
     });
   }
+  await assertUnlocked('COLLECTION_LAYOUT', group.collectionLayoutId, userId, prisma);
 
   await prisma.$transaction(
     orderedIds.map((rowId, index) =>

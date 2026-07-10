@@ -24,6 +24,7 @@ import {
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
+import { Checkbox } from '../../../../../components/ui/checkbox';
 import {
   Command,
   CommandGroup,
@@ -368,6 +369,10 @@ interface CollectionGroupSectionProps {
   onDeleteGroup: (groupId: string, groupName: string) => void;
   isDeletingRow?: boolean;
   onFilteredRowIdsChange?: (ids: string[]) => void;
+  /** Row ids selected for bulk actions (e.g. "assign to planning group"), lifted to the parent page. */
+  selectedRowIds: Set<string>;
+  onToggleRowSelection: (rowId: string) => void;
+  onSelectAllRows: (ids: string[], checked: boolean) => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -399,6 +404,9 @@ export function CollectionGroupSection({
   onDeleteGroup,
   isDeletingRow = false,
   onFilteredRowIdsChange,
+  selectedRowIds,
+  onToggleRowSelection,
+  onSelectAllRows,
 }: CollectionGroupSectionProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [deleteRow, setDeleteRow] = useState<CollectionRowData | null>(null);
@@ -703,6 +711,12 @@ export function CollectionGroupSection({
               <Table className="min-w-max">
                 <TableHeader>
                   <TableRow className="bg-muted/10">
+                    <TableHead className="w-8">
+                      <Checkbox
+                        checked={filteredRows.length > 0 && filteredRows.every(r => selectedRowIds.has(r.id))}
+                        onCheckedChange={checked => onSelectAllRows(filteredRows.map(r => r.id), !!checked)}
+                      />
+                    </TableHead>
                     <TableHead className="w-8 text-center">#</TableHead>
                   {show('foto') && <TableHead className="w-24">Foto</TableHead>}
 
@@ -783,6 +797,12 @@ export function CollectionGroupSection({
                           onClick={() => onEditRow(row)}
                         >
                           {(listeners) => (<>
+                            <TableCell className="w-8" onClick={e => e.stopPropagation()}>
+                              <Checkbox
+                                checked={selectedRowIds.has(row.id)}
+                                onCheckedChange={() => onToggleRowSelection(row.id)}
+                              />
+                            </TableCell>
                             <TableCell className="text-center text-xs text-muted-foreground w-8">
                               {isDndMode && canUpdate ? (
                                 <DragHandle listeners={listeners} />

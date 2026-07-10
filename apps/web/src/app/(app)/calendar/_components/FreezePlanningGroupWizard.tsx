@@ -15,7 +15,7 @@ import {
 import { ScrollArea } from '../../../../components/ui/scroll-area';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
-import { describeAnchorScope, toUtcIsoDate } from '../utils';
+import { toUtcIsoDate } from '../utils';
 
 import type { CalendarEventItem } from './types';
 import type { HolidayMap } from './useHolidays';
@@ -24,31 +24,30 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onFrozen: () => void;
-  calendarId: string;
+  planningGroupId: string;
   milestones: CalendarEventItem[];
   holidayDates: HolidayMap;
 }
 
 /**
- * Confirms freezing a season calendar's baseline: snapshots every event's current startAt/endAt
- * into baselineStartAt/baselineEndAt (immutable, written once). startAt/endAt remain freely
- * editable afterwards — only this baseline snapshot is locked, for measuring plan-vs-actual drift.
+ * Confirms freezing a planning group's baseline: snapshots every one of its events' current
+ * startAt/endAt into baselineStartAt/baselineEndAt (immutable, written once). startAt/endAt remain
+ * freely editable afterwards — only this baseline snapshot is locked, for measuring plan-vs-actual
+ * drift. Events added to the group after freeze simply never get a baseline (freeze is never
+ * retroactively re-applied).
  *
- * Row-scope (ambito) is read-only here — it's set earlier in the planning wizard's per-event
- * steps, not re-editable at freeze time.
- *
- * @param milestones - Events currently in the calendar, used for the summary and holiday warnings.
+ * @param milestones - The planning group's events, used for the summary and holiday warnings.
  * @param holidayDates - Holiday map used to warn when an event falls on a holiday.
- * @param onFrozen - Called after the calendar is successfully frozen.
+ * @param onFrozen - Called after the group is successfully frozen.
  */
-export function FreezeCalendarWizard({ open, onClose, onFrozen, calendarId, milestones, holidayDates }: Props) {
-  const freezeMutation = trpc.seasonCalendar.freezeCalendar.useMutation({
+export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGroupId, milestones, holidayDates }: Props) {
+  const freezeMutation = trpc.seasonCalendar.freezePlanningGroup.useMutation({
     onSuccess: () => {
-      toast.success('Calendario congelato — baseline salvata');
+      toast.success('Gruppo di pianificazione congelato — baseline salvata');
       onFrozen();
       onClose();
     },
-    onError: err => toast.error(getTrpcErrorMessage(err, { CONFLICT: 'Calendario già congelato' })),
+    onError: err => toast.error(getTrpcErrorMessage(err, { CONFLICT: 'Gruppo già congelato' })),
   });
 
   const milestonesWithHolidayFlag = milestones.map(m => ({
@@ -70,9 +69,9 @@ export function FreezeCalendarWizard({ open, onClose, onFrozen, calendarId, mile
 
         <div className="space-y-4 py-2">
           <p className="text-sm text-muted-foreground">
-            Salva uno snapshot immutabile delle date correnti di tutti gli eventi ({milestones.length}) come
-            baseline "in teoria". Le date degli eventi restano modificabili dopo il congelamento — solo lo
-            snapshot resta fisso, per misurare in futuro lo scostamento tra piano e realtà.
+            Salva uno snapshot immutabile delle date correnti di tutti gli eventi ({milestones.length}) del
+            gruppo di pianificazione come baseline "in teoria". Le date degli eventi restano modificabili dopo
+            il congelamento — solo lo snapshot resta fisso, per misurare in futuro lo scostamento tra piano e realtà.
           </p>
 
           {eventsOnHolidayCount > 0 && (
@@ -94,11 +93,10 @@ export function FreezeCalendarWizard({ open, onClose, onFrozen, calendarId, mile
                     {new Date(m.startAt).toLocaleDateString('it-IT')}
                   </span>
                   {onHoliday && <Badge variant="outline" className="text-xs text-amber-700 border-amber-300">festivo</Badge>}
-                  <span className="text-xs text-muted-foreground">{describeAnchorScope(m.anchors)}</span>
                 </div>
               ))}
               {milestones.length === 0 && (
-                <p className="text-sm text-muted-foreground p-4 text-center">Nessun evento nel calendario</p>
+                <p className="text-sm text-muted-foreground p-4 text-center">Nessun evento nel gruppo</p>
               )}
             </div>
           </ScrollArea>
@@ -109,7 +107,7 @@ export function FreezeCalendarWizard({ open, onClose, onFrozen, calendarId, mile
             Annulla
           </Button>
           <Button
-            onClick={() => freezeMutation.mutate({ calendarId })}
+            onClick={() => freezeMutation.mutate({ planningGroupId })}
             disabled={freezeMutation.isPending || milestones.length === 0}
           >
             {freezeMutation.isPending ? 'Congelamento…' : 'Congela pianificazione'}

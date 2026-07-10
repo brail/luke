@@ -1,6 +1,7 @@
 /**
- * Phase/calendar resolution shared between the anchor UI (Fase 3) and the alert engine (Fase 5).
- * No graph traversal: for a given row, statically filters the events of its season calendar.
+ * Phase/calendar resolution shared between the planning group UI and the alert engine (Fase 5).
+ * No graph traversal: for a given row, statically filters the events of its season calendar down
+ * to those sharing its planningGroupId.
  *
  * Split into DB-fetching functions (per row or per layout) and pure functions operating on
  * already-fetched data, so batch callers (e.g. a whole layout's criticality) can fetch the
@@ -19,7 +20,6 @@ const logger = pino({ level: 'info' });
 
 type CalendarEventWithContext = Prisma.CalendarEventGetPayload<{
   include: {
-    anchors: { select: { entityType: true; entityId: true } };
     phase: { select: { order: true; value: true } };
   };
 }>;
@@ -40,8 +40,8 @@ const DEFAULT_ALERT_THRESHOLDS: CollectionAlertThresholds = {
 
 /**
  * Returns every calendar event for the season calendar backing a collection layout (unfiltered by
- * row anchors — use `filterApplicableEvents` to scope down to a specific row). Fetched once per
- * layout so batch callers avoid re-resolving the same calendar/events per row.
+ * planning group — use `filterApplicableEvents` to scope down to a specific row's group). Fetched
+ * once per layout so batch callers avoid re-resolving the same calendar/events per row.
  *
  * @returns Empty array if the layout has no season calendar yet.
  */
@@ -64,7 +64,6 @@ export async function getCalendarEventsForLayout(
   return prisma.calendarEvent.findMany({
     where: { calendarId: calendar.id },
     include: {
-      anchors: { select: { entityType: true, entityId: true } },
       phase: { select: { order: true, value: true } },
     },
     // Fetched pre-sorted by startAt: Array.prototype.sort is stable, so events sharing the
@@ -77,17 +76,11 @@ export async function getCalendarEventsForLayout(
  * Scopes a layout's events down to those applicable to one row, ordered by Phase.order.
  * Pure — no I/O — so it can run per row over an already-fetched events array.
  *
- * Resolution rule per event:
- * 1. No CalendarEventAnchor at all → applies to every row in the layout.
- * 2. Anchored to `COLLECTION_LAYOUT` (the whole layout) → equivalent to case 1.
- * 3. Anchored to one or more `COLLECTION_LAYOUT_ROW` → applies only to those specific rows.
+ * Resolution rule: an event applies to a row iff they share the same planningGroupId — planning
+ * groups fully decouple event scope from row scope, no per-event anchor list needed.
  */
-export function filterApplicableEvents(events: CalendarEventWithContext[], rowId: string): CalendarEventWithContext[] {
-  const applicable = events.filter(event => {
-    if (event.anchors.length === 0) return true;
-    if (event.anchors.some(a => a.entityType === 'COLLECTION_LAYOUT')) return true;
-    return event.anchors.some(a => a.entityType === 'COLLECTION_LAYOUT_ROW' && a.entityId === rowId);
-  });
+export function filterApplicableEvents(events: CalendarEventWithContext[], planningGroupId: string): CalendarEventWithContext[] {
+  const applicable = events.filter(event => event.planningGroupId === planningGroupId);
   return applicable.sort((a, b) => (a.phase?.order ?? Infinity) - (b.phase?.order ?? Infinity));
 }
 
@@ -101,12 +94,12 @@ export function filterApplicableEvents(events: CalendarEventWithContext[], rowId
 export async function getApplicableEventsForRow(rowId: string, prisma: PrismaClient): Promise<CalendarEventWithContext[]> {
   const row = await prisma.collectionLayoutRow.findUnique({
     where: { id: rowId },
-    select: { collectionLayoutId: true },
+    select: { collectionLayoutId: true, planningGroupId: true },
   });
   if (!row) return [];
 
   const events = await getCalendarEventsForLayout(row.collectionLayoutId, prisma);
-  return filterApplicableEvents(events, rowId);
+  return filterApplicableEvents(events, row.planningGroupId);
 }
 
 /**
@@ -251,7 +244,7 @@ export async function computeCriticalityForLayout(
   const [rows, events, resolvedThresholds] = await Promise.all([
     prisma.collectionLayoutRow.findMany({
       where: { collectionLayoutId },
-      select: { id: true, productCategory: true, phase: { select: { order: true } } },
+      select: { id: true, planningGroupId: true, productCategory: true, phase: { select: { order: true } } },
     }),
     getCalendarEventsForLayout(collectionLayoutId, prisma),
     thresholds ? Promise.resolve(thresholds) : resolveAlertThresholds(prisma),
@@ -259,7 +252,7 @@ export async function computeCriticalityForLayout(
 
   return rows
     .map(row => {
-      const rowEvents = filterApplicableEvents(events, row.id);
+      const rowEvents = filterApplicableEvents(events, row.planningGroupId);
       const active = getActivePhaseFromEvents(rowEvents, row.phase?.order ?? null);
       const criticality = criticalityFromActivePhase(row.id, active, resolvedThresholds, now);
       return criticality ? { ...criticality, productCategory: row.productCategory } : null;

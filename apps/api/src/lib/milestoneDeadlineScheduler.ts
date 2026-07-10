@@ -1,7 +1,9 @@
-import type { FastifyInstance } from 'fastify';
+import { computeCriticalityForLayout, resolveAlertThresholds } from '../services/phaseAlert.service';
+
+import { createNotification, getVisibleUserIdsForMilestone, getVisibleUserIdsForMilestones } from './notifications';
+
 import type { PrismaClient } from '@prisma/client';
-import { createNotification, getVisibleUserIdsForMilestone } from './notifications';
-import { computeCriticalityForLayout } from '../services/phaseAlert.service';
+import type { FastifyInstance } from 'fastify';
 
 const TICK_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -42,10 +44,11 @@ async function notifyMilestone(
  */
 async function checkRowPhaseOverdue(prisma: PrismaClient, today: string): Promise<void> {
   const layouts = await prisma.collectionLayout.findMany({ select: { id: true } });
+  const thresholds = await resolveAlertThresholds(prisma);
 
   const overdueRows = (
     await Promise.all(
-      layouts.map(layout => computeCriticalityForLayout(layout.id, new Date(), prisma))
+      layouts.map(layout => computeCriticalityForLayout(layout.id, new Date(), prisma, thresholds))
     )
   )
     .flat()
@@ -53,15 +56,19 @@ async function checkRowPhaseOverdue(prisma: PrismaClient, today: string): Promis
   if (overdueRows.length === 0) return;
 
   const rowIds = overdueRows.map(r => r.rowId);
-  const rows = await prisma.collectionLayoutRow.findMany({
-    where: { id: { in: rowIds } },
-    select: { id: true, line: true },
-  });
+  const uniqueEventIds = [...new Set(overdueRows.map(r => r.eventId))];
+  const [rows, visibilityMap] = await Promise.all([
+    prisma.collectionLayoutRow.findMany({
+      where: { id: { in: rowIds } },
+      select: { id: true, line: true },
+    }),
+    getVisibleUserIdsForMilestones(uniqueEventIds, prisma),
+  ]);
   const lineByRowId = new Map(rows.map(r => [r.id, r.line]));
 
   await Promise.all(
     overdueRows.map(async r => {
-      const userIds = await getVisibleUserIdsForMilestone(r.eventId, prisma);
+      const userIds = visibilityMap.get(r.eventId) ?? [];
       const line = lineByRowId.get(r.rowId) ?? r.rowId;
       await Promise.all(userIds.map(async userId => {
         const key = `${userId}:${r.rowId}:phase_overdue:${today}`;

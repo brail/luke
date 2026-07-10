@@ -2,10 +2,8 @@
 
 import { useMemo } from 'react';
 
-import { addDays, daysBetween } from '@luke/core';
-
 import { trpc } from '../../../../lib/trpc';
-import { toUtcIsoDate } from '../utils';
+import { expandDateRangeToIsoDates } from '../utils';
 
 /** A single holiday entry stored in the HolidayMap for a given ISO date key. */
 export interface HolidayEntry {
@@ -32,13 +30,8 @@ export function useHolidays(countryCodes: string[]): HolidayMap {
   return useMemo(() => {
     const map = new Map<string, HolidayEntry[]>();
     for (const h of data) {
-      const start = new Date(h.startDate);
-      const end = new Date(h.endDate);
-      const days = daysBetween(start, end);
-      for (let i = 0; i <= days; i++) {
-        const d = addDays(start, i);
-        const iso = toUtcIsoDate(d);
-        const entry: HolidayEntry = { countryCode: h.countryCode, name: h.name, nameEn: (h as any).nameEn ?? null };
+      const entry: HolidayEntry = { countryCode: h.countryCode, name: h.name, nameEn: (h as any).nameEn ?? null };
+      for (const iso of expandDateRangeToIsoDates(new Date(h.startDate), new Date(h.endDate))) {
         const existing = map.get(iso);
         if (existing) existing.push(entry);
         else map.set(iso, [entry]);

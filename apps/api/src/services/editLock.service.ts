@@ -19,39 +19,51 @@ function isLockedByOther(lock: Lock | null, userId: string): boolean {
 }
 
 /**
- * Acquires (or renews, if already held by the same user) a lock on the given entity.
- * Throws CONFLICT if another user currently holds a non-expired lock on it.
+ * Acquires locks on multiple entities atomically — if any is held by another user, none are
+ * written. Used by the planning wizard, which needs a `SeasonCalendar` + `CollectionLayout` lock
+ * together: acquiring them one at a time could leave one lock held and the other rejected, with
+ * no rollback of the first.
+ *
+ * @throws {TRPCError} CONFLICT if any entity is currently locked by a different user.
  */
-export async function acquireLock(
-  entityType: LockEntityType,
-  entityId: string,
+export async function acquireLocks(
+  entities: { entityType: LockEntityType; entityId: string }[],
   userId: string,
   prisma: PrismaClient
 ) {
-  const now = new Date();
-  const existing = await prisma.editLock.findUnique({
-    where: { entityType_entityId: { entityType, entityId } },
-  });
-  if (isLockedByOther(existing, userId)) {
-    throw new TRPCError({ code: 'CONFLICT', message: 'Elemento in modifica da un altro utente' });
-  }
+  return prisma.$transaction(async tx => {
+    const now = new Date();
+    // One query for all entities (not N) — `entityType_entityId` pairs only need an OR filter,
+    // and this runs on a single-connection interactive transaction anyway, so N parallel
+    // `findUnique`s wouldn't even overlap on the wire.
+    const existingLocks = await tx.editLock.findMany({
+      where: { OR: entities.map(e => ({ entityType: e.entityType, entityId: e.entityId })) },
+    });
+    if (existingLocks.some(lock => isLockedByOther(lock, userId))) {
+      throw new TRPCError({ code: 'CONFLICT', message: 'Elemento in modifica da un altro utente' });
+    }
 
-  const expiresAt = new Date(now.getTime() + LOCK_TTL_MS);
-  return prisma.editLock.upsert({
-    where: { entityType_entityId: { entityType, entityId } },
-    create: { entityType, entityId, lockedByUserId: userId, lockedAt: now, expiresAt },
-    update: { lockedByUserId: userId, lockedAt: now, expiresAt },
+    const expiresAt = new Date(now.getTime() + LOCK_TTL_MS);
+    return Promise.all(entities.map(e => tx.editLock.upsert({
+      where: { entityType_entityId: { entityType: e.entityType, entityId: e.entityId } },
+      create: { entityType: e.entityType, entityId: e.entityId, lockedByUserId: userId, lockedAt: now, expiresAt },
+      update: { lockedByUserId: userId, lockedAt: now, expiresAt },
+    })));
   });
 }
 
-/** Releases a lock — no-op if the caller doesn't currently hold it. */
-export async function releaseLock(
-  entityType: LockEntityType,
-  entityId: string,
+/** Releases locks on one or more entities in a single query — no-op for any the caller doesn't hold. */
+export async function releaseLocks(
+  entities: { entityType: LockEntityType; entityId: string }[],
   userId: string,
   prisma: PrismaClient
 ) {
-  await prisma.editLock.deleteMany({ where: { entityType, entityId, lockedByUserId: userId } });
+  await prisma.editLock.deleteMany({
+    where: {
+      lockedByUserId: userId,
+      OR: entities.map(e => ({ entityType: e.entityType, entityId: e.entityId })),
+    },
+  });
 }
 
 /**

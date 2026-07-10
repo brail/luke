@@ -6,6 +6,8 @@ import { toast } from 'sonner';
 import { CALENDAR_EVENT_STATUS } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
+import { PhaseSelect } from '../../../../components/PhaseSelect';
+import { PlanningGroupSelect } from '../../../../components/PlanningGroupSelect';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
 import { Checkbox } from '../../../../components/ui/checkbox';
@@ -29,7 +31,7 @@ import { Textarea } from '../../../../components/ui/textarea';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 import { STATUS_LABELS, STATUS_VARIANT, TYPE_LABELS } from '../constants';
-import { daysBetween, describeAnchorScope } from '../utils';
+import { daysBetween } from '../utils';
 
 interface ExistingEvent {
   id: string;
@@ -46,14 +48,15 @@ interface ExistingEvent {
   ownerFunctionId: string;
   publishExternally: boolean;
   visibilities: { functionId: string }[];
-  anchors?: { entityType: string; entityId: string }[];
+  planningGroupName?: string;
 }
 
 interface Props {
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
-  calendarId: string;
+  brandId: string;
+  seasonId: string;
   availableFunctions: { id: string; name: string }[];
   functionsById?: Record<string, string>;
   event?: ExistingEvent;
@@ -100,7 +103,8 @@ function describeBaselineDrift(event: ExistingEvent): string | null {
  * In edit and create mode the dialog shows a single "Dettagli" form.
  * In read-only mode it renders a compact information card with no form fields.
  *
- * @param calendarId - Parent season calendar ID (used only in create mode).
+ * @param brandId - Brand of the calendar (used to resolve planning groups in create mode).
+ * @param seasonId - Season of the calendar (used to resolve planning groups in create mode).
  * @param availableFunctions - Company functions available as owner/visibility targets.
  * @param functionsById - Map of function ID → name for display in read-only mode.
  * @param event - Existing event to edit; omit for create mode.
@@ -109,7 +113,7 @@ function describeBaselineDrift(event: ExistingEvent): string | null {
  * @param onDeleted - Called after the event is successfully deleted.
  */
 export function CalendarEventDialog({
-  open, onClose, onSaved, calendarId, availableFunctions, functionsById = {},
+  open, onClose, onSaved, brandId, seasonId, availableFunctions, functionsById = {},
   event, defaultDate, defaultAllDay = true, readOnly = false, onDeleted,
 }: Props) {
   const isEdit = !!event;
@@ -119,6 +123,10 @@ export function CalendarEventDialog({
     { staleTime: 5 * 60 * 1000 }
   );
   const { data: phases = [] } = trpc.phase.list.useQuery(undefined, { staleTime: 5 * 60 * 1000 });
+  const { data: planningGroups = [] } = trpc.planningGroup.list.useQuery(
+    { brandId, seasonId },
+    { enabled: open && !isEdit }
+  );
 
   const [title, setTitle] = useState(event?.title ?? '');
   const [description, setDescription] = useState(event?.description ?? '');
@@ -142,7 +150,12 @@ export function CalendarEventDialog({
   });
   const [allDay, setAllDay] = useState(event?.allDay ?? defaultAllDay);
   const [publishExternally, setPublishExternally] = useState(event?.publishExternally ?? true);
+  const [planningGroupId, setPlanningGroupId] = useState('');
   const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // Defaults to the first group until the user picks one — fully derivable from `planningGroups`,
+  // no need to sync it into state via an effect once the query resolves.
+  const effectivePlanningGroupId = planningGroupId || planningGroups[0]?.id || '';
 
   useEffect(() => {
     setTitle(event?.title ?? '');
@@ -206,6 +219,10 @@ export function CalendarEventDialog({
       toast.error('Seleziona almeno una funzione visibile');
       return;
     }
+    if (!isEdit && !effectivePlanningGroupId) {
+      toast.error('Seleziona un gruppo di pianificazione');
+      return;
+    }
     const startIso = allDay ? buildIso(startDate, '00:00') : buildIso(startDate, startTime);
     const endIso = endDate ? (allDay ? buildIso(endDate, '00:00') : buildIso(endDate, endTime)) : undefined;
 
@@ -226,7 +243,7 @@ export function CalendarEventDialog({
     if (isEdit) {
       updateMutation.mutate({ id: event.id, data: payload });
     } else {
-      createMutation.mutate({ calendarId, ...payload });
+      createMutation.mutate({ planningGroupId: effectivePlanningGroupId, ...payload });
     }
   };
 
@@ -252,7 +269,9 @@ export function CalendarEventDialog({
               {phaseLabel && <Badge variant="outline">{phaseLabel}</Badge>}
               <Badge variant={STATUS_VARIANT[event.status] ?? 'outline'}>{STATUS_LABELS[event.status] ?? event.status}</Badge>
               <Badge variant="secondary">{functionsById[event.ownerFunctionId] ?? event.ownerFunctionId}</Badge>
-              <Badge variant="outline" className="text-muted-foreground">Ambito: {describeAnchorScope(event.anchors)}</Badge>
+              {event.planningGroupName && (
+                <Badge variant="outline" className="text-muted-foreground">Gruppo: {event.planningGroupName}</Badge>
+              )}
             </div>
             <div>
               <p className="text-sm font-medium text-muted-foreground mb-1">Data</p>
@@ -333,17 +352,26 @@ export function CalendarEventDialog({
 
             <div className="space-y-1.5">
               <Label>Fase</Label>
-              <Select value={phaseId} onValueChange={setPhaseId}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">— Nessuna (evento non di fase) —</SelectItem>
-                  {phases.map(p => <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <PhaseSelect value={phaseId} onValueChange={setPhaseId} phases={phases} />
               <p className="text-xs text-muted-foreground">
                 Collega l'evento a una fase di produzione — necessario perché il motore di criticità delle righe collezione lo consideri come scadenza.
               </p>
             </div>
+
+            {!isEdit && (
+              <div className="space-y-1.5">
+                <Label>Gruppo di pianificazione *</Label>
+                <PlanningGroupSelect
+                  value={effectivePlanningGroupId}
+                  onValueChange={setPlanningGroupId}
+                  groups={planningGroups}
+                  placeholder="Seleziona gruppo…"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Determina a quali righe di collezione si applica questo evento.
+                </p>
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <Label>Owner *</Label>

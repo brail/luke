@@ -615,6 +615,10 @@ model CollectionLayoutRow {
   groupId            String
   /// The group this row belongs to.
   group              CollectionGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  /// FK to PlanningGroup. Restrict delete — a planning group can't be deleted while it still has rows.
+  planningGroupId    String
+  /// The planning group this row belongs to — determines which calendar events apply to it.
+  planningGroup      PlanningGroup    @relation(fields: [planningGroupId], references: [id], onDelete: Restrict)
   /// Display order within the group. Lower = first.
   order              Int              @default(0)
 
@@ -672,6 +676,7 @@ model CollectionLayoutRow {
 
   @@index([collectionLayoutId])
   @@index([groupId])
+  @@index([planningGroupId])
   @@index([vendorId])
   @@index([phaseId])
   @@map("collection_layout_rows")
@@ -1687,19 +1692,14 @@ enum StateEffectType {
   UNLOCK_COLLECTION_LAYOUT
 }
 
-/// Entity type that can be anchored to a calendar event for progress tracking.
-enum AnchorEntityType {
-  COLLECTION_LAYOUT
-  COLLECTION_LAYOUT_ROW
-}
-
 /// Vendor period type: CLOSURE (vendor unavailable) | OPEN (override — vendor is open despite a holiday).
 enum VendorOverrideType {
   CLOSURE
   OPEN
 }
 
-/// Season calendar for a brand+season pair. Unique per pair. anchorDate is the reference date for template offset calculations.
+/// Season calendar for a brand+season pair. Unique per pair. Owns N PlanningGroups (always at least
+/// one default) which carry the per-group anchorDate/frozenAt.
 model SeasonCalendar {
   id         String               @id @default(uuid())
   /// FK to Brand. Restrict delete.
@@ -1708,25 +1708,54 @@ model SeasonCalendar {
   seasonId   String
   /// Lifecycle status: DRAFT → ACTIVE → ARCHIVED.
   status     SeasonCalendarStatus @default(DRAFT)
-  /// Reference date for milestone template offset calculations. Date only (no time).
-  anchorDate DateTime?            @db.Date
-  /// Timestamp when the calendar's baseline was frozen (orthogonal to status — not a lifecycle state).
-  frozenAt   DateTime?
   createdAt  DateTime             @default(now())
   updatedAt  DateTime             @updatedAt
 
   /// The brand this calendar belongs to.
-  brand    Brand                   @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  brand          Brand                   @relation(fields: [brandId], references: [id], onDelete: Restrict)
   /// The season this calendar belongs to.
-  season   Season                  @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  season         Season                  @relation(fields: [seasonId], references: [id], onDelete: Restrict)
   /// Events scheduled in this calendar.
-  events   CalendarEvent[]
+  events         CalendarEvent[]
   /// Google Calendar bindings per company function.
-  bindings GoogleCalendarBinding[]
+  bindings       GoogleCalendarBinding[]
+  /// Planning groups scoping this calendar's events and the collection layout's rows.
+  planningGroups PlanningGroup[]
 
   @@unique([brandId, seasonId])
   @@index([seasonId])
   @@map("season_calendars")
+}
+
+/// A named scope within a SeasonCalendar decoupling calendar events from collection layout rows: an
+/// event applies to exactly the rows sharing its planningGroupId. Every SeasonCalendar gets exactly
+/// one auto-created default group (isDefault=true, never renamed/deleted); additional groups support
+/// parallel plans. Owns anchorDate/frozenAt — template application and freeze are per-group.
+model PlanningGroup {
+  id         String    @id @default(uuid())
+  /// FK to SeasonCalendar. Cascade delete — a calendar's groups are meaningless once it's gone.
+  calendarId String
+  name       String
+  /// True only for the single auto-created group per calendar. Enforced by a partial unique index
+  /// (see migration) plus an application-level check on creation — cannot be renamed or deleted.
+  isDefault  Boolean   @default(false)
+  /// Reference date for milestone template offset calculations, scoped to this group. Date only.
+  anchorDate DateTime? @db.Date
+  /// Timestamp when this group's baseline was frozen. One-shot — never re-frozen without admin unfreeze.
+  frozenAt   DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  /// The season calendar this group belongs to.
+  calendar SeasonCalendar        @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  /// Calendar events scoped to this group.
+  events   CalendarEvent[]
+  /// Collection layout rows scoped to this group.
+  rows     CollectionLayoutRow[]
+
+  @@unique([calendarId, name])
+  @@index([calendarId])
+  @@map("planning_groups")
 }
 
 /// Single event in a season calendar. Section visibility managed via CalendarEventVisibility (M2M with CompanyFunction).
@@ -1734,6 +1763,8 @@ model CalendarEvent {
   id                String              @id @default(uuid())
   /// FK to SeasonCalendar. Cascade delete.
   calendarId        String
+  /// FK to PlanningGroup. Restrict delete — a group can't be deleted while it still owns events.
+  planningGroupId   String
   /// FK to CompanyFunction that owns this event. Restrict delete.
   ownerFunctionId   String
   /// Event type key from CalendarCatalogItem (type="eventType"). E.g. "KICKOFF", "SAMPLE_APPROVAL".
@@ -1762,6 +1793,8 @@ model CalendarEvent {
 
   /// The season calendar this event belongs to.
   calendar         SeasonCalendar                 @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  /// The planning group this event applies to — determines which rows see it.
+  planningGroup    PlanningGroup                  @relation(fields: [planningGroupId], references: [id], onDelete: Restrict)
   /// The company function that owns this event.
   ownerFunction    CompanyFunction                @relation("CalendarEventOwnerFunction", fields: [ownerFunctionId], references: [id], onDelete: Restrict)
   /// The milestone template item that generated this event, if any.
@@ -1778,14 +1811,13 @@ model CalendarEvent {
   userVisibilities CalendarEventUserVisibility[]
   /// State side-effects (e.g. lock/unlock collection layout) triggered by this event.
   stateEffects     CalendarEventStateEffect[]
-  /// Entity anchors tracking progress for this event.
-  anchors          CalendarEventAnchor[]
   /// Execution records for state effects of this event.
   effectExecutions CalendarEventEffectExecution[]
   /// Collection layouts locked by this event.
   lockedLayouts    CollectionLayout[]
 
   @@index([calendarId, startAt])
+  @@index([planningGroupId])
   @@index([ownerFunctionId])
   @@index([phaseId])
   @@map("calendar_events")
@@ -1845,7 +1877,7 @@ model MilestoneTemplate {
   @@map("milestone_templates")
 }
 
-/// Single milestone item within a template. Defines an event to be created at anchorDate + offsetDays.
+/// Single milestone item within a template. Defines an event to be created at the target PlanningGroup's anchorDate + offsetDays.
 model MilestoneTemplateItem {
   id                String   @id @default(uuid())
   /// FK to MilestoneTemplate. Cascade delete.
@@ -1858,7 +1890,7 @@ model MilestoneTemplateItem {
   phaseId           String?
   title             String
   description       String?
-  /// Days offset from SeasonCalendar.anchorDate to compute event startAt.
+  /// Days offset from the target PlanningGroup's anchorDate to compute event startAt.
   offsetDays        Int
   /// Duration of the generated event in days. 0 = single-day event.
   durationDays      Int      @default(0)
@@ -2110,26 +2142,6 @@ model CalendarEventEffectExecution {
   @@index([eventId])
   @@index([effectId])
   @@map("calendar_event_effect_executions")
-}
-
-/// Anchor linking a CalendarEvent to a specific entity for progress tracking (e.g. a CollectionLayout or CollectionLayoutRow).
-model CalendarEventAnchor {
-  id         String           @id @default(uuid())
-  /// FK to CalendarEvent. Cascade delete.
-  eventId    String
-  /// Entity type being anchored: COLLECTION_LAYOUT | COLLECTION_LAYOUT_ROW.
-  entityType AnchorEntityType
-  /// ID of the specific entity instance being tracked.
-  entityId   String
-
-  createdAt DateTime @default(now())
-
-  /// The calendar event this anchor belongs to.
-  event CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  @@unique([eventId, entityType, entityId])
-  @@index([entityType, entityId])
-  @@map("calendar_event_anchors")
 }
 
 /// Entity type an EditLock can target.
