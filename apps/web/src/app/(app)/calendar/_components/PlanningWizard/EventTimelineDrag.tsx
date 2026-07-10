@@ -3,6 +3,8 @@
 import { useMemo, useRef, useState } from 'react';
 
 import { Button } from '../../../../../components/ui/button';
+import { Input } from '../../../../../components/ui/input';
+import { Label } from '../../../../../components/ui/label';
 import { cn } from '../../../../../lib/utils';
 import { addDays, toUtcIsoDate } from '../../utils';
 
@@ -64,6 +66,24 @@ export function EventTimelineDrag({ anchorDate, value, onChange, holidayDates, c
 
   return (
     <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <Label htmlFor="event-drag-exact-date" className="text-xs text-muted-foreground font-normal shrink-0">
+          Data esatta
+        </Label>
+        {/* The strip below only spans ±{WINDOW_HALF} days around the original date — reaching a
+            date further out otherwise means repeated "sposta al prossimo libero" clicks. */}
+        <Input
+          id="event-drag-exact-date"
+          type="date"
+          value={valueIso}
+          onChange={e => {
+            if (!e.target.value) return;
+            onChange(new Date(`${e.target.value}T00:00:00`));
+          }}
+          className="h-7 w-40 text-xs [&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground"
+        />
+      </div>
+
       <div
         ref={stripRef}
         className="relative flex border rounded-md overflow-hidden select-none"

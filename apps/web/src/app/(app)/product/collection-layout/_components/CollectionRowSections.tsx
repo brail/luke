@@ -7,6 +7,7 @@ import type { RouterOutputs } from '@luke/api';
 import { calcMaxSupplierCost, type CollectionLayoutRowInput } from '@luke/core';
 
 import { NumberInput } from '../../../../../components/NumberInput';
+import { PhaseSelect } from '../../../../../components/PhaseSelect';
 import { formatPlanningGroupLabel, PlanningGroupSelect } from '../../../../../components/PlanningGroupSelect';
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
@@ -32,6 +33,7 @@ import { cn } from '../../../../../lib/utils';
 import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
 
 import { CriticalityBadge } from './CriticalityBadge';
+import { SchedulingVarianceBadge } from './SchedulingVarianceBadge';
 import { VendorCombobox } from './VendorCombobox';
 
 import type { PricingParameterSet } from '../_hooks/usePricingCalc';
@@ -177,7 +179,7 @@ export function IdentificationSection({
     { type: 'styleStatus' },
     { staleTime: 5 * 60 * 1000 }
   );
-  const { phaseOptions } = usePhaseCatalog();
+  const { phases } = usePhaseCatalog();
   const { data: pricePositioningOptions = [] } = trpc.collectionCatalog.list.useQuery(
     { type: 'pricePositioning' },
     { staleTime: 5 * 60 * 1000 }
@@ -355,18 +357,17 @@ export function IdentificationSection({
               <FormLabel className="flex items-center gap-1.5">
                 Fase
                 {rowId && <CriticalityBadge rowId={rowId} className="text-xs" />}
+                {rowId && <SchedulingVarianceBadge rowId={rowId} className="text-xs" />}
               </FormLabel>
-              <Select
-                onValueChange={v => field.onChange(v === '_none' ? null : v)}
-                value={field.value ?? '_none'}
-                disabled={!canUpdate}
-              >
-                <FormControl><SelectTrigger><SelectValue placeholder="—" /></SelectTrigger></FormControl>
-                <SelectContent>
-                  <SelectItem value="_none">—</SelectItem>
-                  {phaseOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <FormControl>
+                <PhaseSelect
+                  value={field.value ?? '_none'}
+                  onValueChange={v => field.onChange(v === '_none' ? null : v)}
+                  phases={phases}
+                  disabled={!canUpdate}
+                  noneLabel="—"
+                />
+              </FormControl>
               <FormMessage />
             </FormItem>
           )}

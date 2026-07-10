@@ -1,5 +1,6 @@
 'use client';
 
+import { Info } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -12,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../../components/ui/dialog';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../../../../components/ui/tooltip';
 import { narrowRouterOutput, trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 import { FreezePlanningGroupWizard } from '../FreezePlanningGroupWizard';
@@ -96,8 +98,12 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
     return null;
   }
 
-  /** Only exit vector: any close attempt (overlay click, Escape, X, Annulla) opens the confirm step instead. */
-  const requestClose = () => setExitConfirmOpen(true);
+  /**
+   * Only exit vector: any close attempt (overlay click, Escape, X, Annulla) opens the confirm
+   * step instead — except when `lock.error` is set, since there's no in-progress edit to lose
+   * (the session was never usable) and forcing a confirm just adds a click the user can't avoid.
+   */
+  const requestClose = () => { if (lock.error) { onClose(); return; } setExitConfirmOpen(true); };
   const confirmExit = () => { setExitConfirmOpen(false); onClose(); };
 
   const handleNext = async () => {
@@ -154,9 +160,22 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
 
           {!lock.error && currentEvent && (
             <div className="space-y-4 py-2">
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
                 Evento {stepIndex + 1} di {sortedEvents.length}
                 {lock.expiresAt && ` — sessione valida fino alle ${lock.expiresAt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`}
+                {lock.expiresAt && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="h-3 w-3 cursor-help shrink-0" />
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">
+                        La sessione blocca calendario e collection layout per altri utenti mentre pianifichi.
+                        Si rinnova automaticamente finché resti nella wizard — scade solo se la lasci aperta e inattiva a lungo.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
               </p>
 
               <EventStep

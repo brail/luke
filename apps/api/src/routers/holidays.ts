@@ -4,6 +4,7 @@ import { TRPCError } from '@trpc/server';
 import { router, protectedProcedure } from '../lib/trpc.js';
 import { requirePermission } from '../lib/permissions.js';
 import { logAudit } from '../lib/auditLog.js';
+import { resolveCompanyCountryCode } from '../services/companyProfile.service.js';
 
 // ─── Nager.Date API ──────────────────────────────────────────────────────────
 
@@ -42,21 +43,18 @@ export const holidaysRouter = router({
   listCountries: protectedProcedure
     .use(requirePermission('config:read'))
     .query(async ({ ctx }) => {
-      const [vendors, company] = await Promise.all([
+      const [vendors, companyCountryCode] = await Promise.all([
         ctx.prisma.vendor.findMany({
           where: { isActive: true, countryCode: { not: null } },
           select: { countryCode: true },
           distinct: ['countryCode'],
           orderBy: { countryCode: 'asc' },
         }),
-        ctx.prisma.companyProfile.findUnique({
-          where: { id: 'singleton' },
-          select: { countryCode: true },
-        }),
+        resolveCompanyCountryCode(ctx.prisma),
       ]);
 
       const codeSet = new Set(vendors.map(v => v.countryCode as string));
-      if (company?.countryCode) codeSet.add(company.countryCode);
+      if (companyCountryCode) codeSet.add(companyCountryCode);
       const codes = [...codeSet].sort();
       if (codes.length === 0) return [];
 
@@ -245,6 +243,31 @@ export const holidaysRouter = router({
     .query(async ({ input, ctx }) => {
       return ctx.prisma.vendorClosurePeriod.findMany({
         where: { vendorId: input.vendorId, seasonId: input.seasonId },
+        orderBy: { startDate: 'asc' },
+      });
+    }),
+
+  /**
+   * Lists vendor closure periods for several vendors and one season in a single query — the
+   * planning wizard needs the union of closures across every vendor relevant to a planning
+   * group's rows, and this replaces what used to be one `listVendorClosures` call per vendor
+   * (capped at 8 to keep the hook count fixed client-side; no cap needed with a single query).
+   *
+   * @auth {season_calendar:read}
+   * @input {{ vendorIds: string[], seasonId: string }} — 1–100 vendor UUIDs.
+   * @output {VendorClosurePeriod[]} — sorted by startDate ascending, not grouped by vendor
+   *   (callers needing per-vendor date ranges filter client-side; the planning wizard only
+   *   needs the union).
+   */
+  listVendorClosuresBatch: protectedProcedure
+    .use(requirePermission('season_calendar:read'))
+    .input(z.object({
+      vendorIds: z.array(z.string().uuid()).min(1).max(100),
+      seasonId: z.string().uuid(),
+    }))
+    .query(async ({ input, ctx }) => {
+      return ctx.prisma.vendorClosurePeriod.findMany({
+        where: { vendorId: { in: input.vendorIds }, seasonId: input.seasonId },
         orderBy: { startDate: 'asc' },
       });
     }),

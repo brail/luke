@@ -79,7 +79,12 @@ async function checkRowPhaseOverdue(prisma: PrismaClient, today: string): Promis
           category: 'CALENDAR',
           title: 'Fase scaduta',
           message: `"${line}" non ha completato "${r.eventTitle}" entro la scadenza`,
-          link: '/product/collection-layout',
+          // Deep-links to the specific row (page.tsx opens its edit drawer on load) instead of
+          // dropping the user on the generic layout page to search for it manually. Only works
+          // if the user's currently-selected brand/season already matches the row's — the page
+          // doesn't switch context from the link, since that's driven by a separate, server-side
+          // user preference (no URL-param override exists for it today).
+          link: `/product/collection-layout?rowId=${encodeURIComponent(r.rowId)}`,
           data: { rowId: r.rowId, eventId: r.eventId, type: 'phase_overdue' },
         });
       }));

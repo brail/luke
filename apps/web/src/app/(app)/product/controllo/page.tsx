@@ -1,5 +1,6 @@
 'use client';
 
+import { AlertTriangle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { PageHeader } from '../../../../components/PageHeader';
@@ -9,6 +10,8 @@ import { useAppContext } from '../../../../contexts/AppContextProvider';
 import { trpc } from '../../../../lib/trpc';
 import { cn } from '../../../../lib/utils';
 import { assignBrandColors, resolveBrandColor } from '../../calendar/utils';
+
+import type { ReactNode } from 'react';
 
 /**
  * Controllo: Saturazione, Strozzatura, Stagnazione riunite in un'unica pagina a tab.
@@ -53,6 +56,44 @@ function EmptyContextCard({ message }: { message: string }) {
   );
 }
 
+/**
+ * Loading/empty/error placeholder for a tab's main query. `error` is visually distinct
+ * (destructive color + icon) from `empty` (plain muted text) — a failed fetch defaults `data` to
+ * `[]` same as a genuinely empty result, so without this the two were indistinguishable.
+ */
+function QueryStateMessage({ variant, message }: { variant: 'loading' | 'empty' | 'error'; message: string }) {
+  if (variant === 'error') {
+    return (
+      <div className="py-12 flex flex-col items-center gap-1.5 text-sm text-destructive">
+        <AlertTriangle className="h-5 w-5" />
+        {message}
+      </div>
+    );
+  }
+  return <div className="py-12 text-center text-muted-foreground">{message}</div>;
+}
+
+/**
+ * Wraps a tab's loaded content with the shared loading/error/empty branching — the mechanical
+ * part that's identical across all 3 tabs (only the content and the messages differ), pulled out
+ * so a future 4th tab can't forget the `isError` check the way the pre-fix code silently did.
+ */
+function QueryBoundary({
+  isError, isLoading, isEmpty, errorMessage, emptyMessage, children,
+}: {
+  isError: boolean;
+  isLoading: boolean;
+  isEmpty: boolean;
+  errorMessage: string;
+  emptyMessage: string;
+  children: ReactNode;
+}) {
+  if (isError) return <QueryStateMessage variant="error" message={errorMessage} />;
+  if (isLoading) return <QueryStateMessage variant="loading" message="Caricamento…" />;
+  if (isEmpty) return <QueryStateMessage variant="empty" message={emptyMessage} />;
+  return <>{children}</>;
+}
+
 function useControlloLayout() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
   const enabled = !!brand?.id && !!season?.id;
@@ -78,7 +119,7 @@ function SaturationTab() {
   const allBrands = brandsData?.items ?? [];
   const brandIds = selectedBrandIds.length > 0 ? selectedBrandIds : allBrands.map(b => b.id);
 
-  const { data: cells = [], isLoading } = trpc.phaseAlert.saturationHeatmap.useQuery(
+  const { data: cells = [], isLoading, isError } = trpc.phaseAlert.saturationHeatmap.useQuery(
     { seasonId: season?.id ?? '', brandIds },
     { enabled: !!season?.id && brandIds.length > 0 }
   );
@@ -137,11 +178,13 @@ function SaturationTab() {
 
       <Card>
         <CardContent className="p-0 overflow-x-auto">
-          {isLoading ? (
-            <div className="py-12 text-center text-muted-foreground">Caricamento…</div>
-          ) : cells.length === 0 ? (
-            <div className="py-12 text-center text-muted-foreground">Nessun dato di criticità disponibile</div>
-          ) : (
+          <QueryBoundary
+            isError={isError}
+            isLoading={isLoading}
+            isEmpty={cells.length === 0}
+            errorMessage="Errore nel caricamento dei dati di saturazione — riprova più tardi"
+            emptyMessage="Nessun dato di criticità disponibile"
+          >
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
@@ -178,7 +221,7 @@ function SaturationTab() {
                 ))}
               </tbody>
             </table>
-          )}
+          </QueryBoundary>
         </CardContent>
       </Card>
     </>
@@ -193,7 +236,7 @@ function SaturationTab() {
 function BottleneckTab() {
   const { layout, enabled, contextLoading } = useControlloLayout();
 
-  const { data: events = [], isLoading } = trpc.phaseAlert.bottleneckByEvent.useQuery(
+  const { data: events = [], isLoading, isError } = trpc.phaseAlert.bottleneckByEvent.useQuery(
     { collectionLayoutId: layout?.id ?? '' },
     { enabled: !!layout?.id }
   );
@@ -207,11 +250,13 @@ function BottleneckTab() {
   return (
     <Card>
       <CardContent className="p-4">
-        {isLoading ? (
-          <div className="py-12 text-center text-muted-foreground">Caricamento…</div>
-        ) : events.length === 0 ? (
-          <div className="py-12 text-center text-muted-foreground">Nessun evento attivo con righe in carico</div>
-        ) : (
+        <QueryBoundary
+          isError={isError}
+          isLoading={isLoading}
+          isEmpty={events.length === 0}
+          errorMessage="Errore nel caricamento dell'indice di strozzatura — riprova più tardi"
+          emptyMessage="Nessun evento attivo con righe in carico"
+        >
           <div className="space-y-4">
             {events.map(event => {
               const total = event.bands.reduce((s, b) => s + b.count, 0);
@@ -243,7 +288,7 @@ function BottleneckTab() {
               );
             })}
           </div>
-        )}
+        </QueryBoundary>
       </CardContent>
     </Card>
   );
@@ -258,7 +303,7 @@ function BottleneckTab() {
 function StagnationTab() {
   const { layout, enabled, contextLoading } = useControlloLayout();
 
-  const { data: stats = [], isLoading } = trpc.phaseHistory.layoutStats.useQuery(
+  const { data: stats = [], isLoading, isError } = trpc.phaseHistory.layoutStats.useQuery(
     { collectionLayoutId: layout?.id ?? '' },
     { enabled: !!layout?.id }
   );
@@ -273,13 +318,13 @@ function StagnationTab() {
   return (
     <Card>
       <CardContent className="p-0">
-        {isLoading ? (
-          <div className="py-12 text-center text-muted-foreground">Caricamento…</div>
-        ) : sorted.length === 0 ? (
-          <div className="py-12 text-center text-muted-foreground">
-            Nessuno storico di transizione fase disponibile per questo layout
-          </div>
-        ) : (
+        <QueryBoundary
+          isError={isError}
+          isLoading={isLoading}
+          isEmpty={sorted.length === 0}
+          errorMessage="Errore nel caricamento dello storico fasi — riprova più tardi"
+          emptyMessage="Nessuno storico di transizione fase disponibile per questo layout"
+        >
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/50">
@@ -309,7 +354,7 @@ function StagnationTab() {
               ))}
             </tbody>
           </table>
-        )}
+        </QueryBoundary>
       </CardContent>
     </Card>
   );
