@@ -256,13 +256,15 @@ export async function getActivePhaseForRow(rowId: string, prisma: PrismaClient):
 }
 
 /**
- * Resolves the deadline for an active-phase result: the frozen baseline date if the calendar has
- * been congelato, otherwise the event's current (freely-editable) startAt. No lead-time recompute.
- * Pure — no I/O.
+ * Resolves the deadline for an active-phase result: always the event's current `startAt`, live and
+ * freely editable even after freeze. The frozen `baselineStartAt` is the fixed commitment used only
+ * for `computeSchedulingVariance` (plan-vs-actual audit) — it must never feed the criticality
+ * countdown, or rescheduling an event during the season would leave the alert pinned to a dead date
+ * forever. No lead-time recompute. Pure — no I/O.
  */
 function deadlineFromActivePhase(active: ActivePhaseResult) {
   if (active.status !== 'active') return null;
-  return { event: active.event, deadline: active.event.baselineStartAt ?? active.event.startAt };
+  return { event: active.event, deadline: active.event.startAt };
 }
 
 /**
