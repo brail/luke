@@ -9,16 +9,15 @@
  *    dove assignedSalesDocumentNo = '' e type IN (2, 20)
  */
 
+import { PgParams } from './pgParams.js';
+
+import type { PortafoglioParams } from '../statistics/portafoglio.js';
 import type { PrismaClient } from '@prisma/client';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface KimoParams {
-  seasonCode: string;
-  trademarkCode: string;
-  salespersonCode?: string;
-  customerCode?: string;
-}
+/** Stessi filtri del portafoglio: stagione+marchio obbligatori, agente/cliente opzionali. */
+export type KimoParams = PortafoglioParams;
 
 export interface KimoRow {
   docType: string;
@@ -66,17 +65,22 @@ export async function queryKimoFromPg(
   const { seasonCode, trademarkCode, salespersonCode, customerCode } = params;
 
   // Parametri base: $1 = seasonCode, $2 = trademarkCode
-  const sqlParams: unknown[] = [seasonCode, trademarkCode];
-  let pi = 3;
+  const p = new PgParams([seasonCode, trademarkCode]);
 
   // Filtri opzionali identici per entrambi i rami della UNION
-  const spFilterSo = salespersonCode ? `AND sh."salespersonCode" = $${pi}` : '';
-  const spFilterBa = salespersonCode ? `AND kh."salespersonCodeNav" = $${pi}` : '';
-  if (salespersonCode) { sqlParams.push(salespersonCode); pi++; }
+  let spFilterSo = '', spFilterBa = '';
+  if (salespersonCode) {
+    const ph = p.add(salespersonCode);
+    spFilterSo = `AND sh."salespersonCode" = ${ph}`;
+    spFilterBa = `AND kh."salespersonCodeNav" = ${ph}`;
+  }
 
-  const custFilterSo = customerCode ? `AND sh."sellToCustomerNo" = $${pi}` : '';
-  const custFilterBa = customerCode ? `AND c."no_" = $${pi}` : '';
-  if (customerCode) { sqlParams.push(customerCode); pi++; }
+  let custFilterSo = '', custFilterBa = '';
+  if (customerCode) {
+    const ph = p.add(customerCode);
+    custFilterSo = `AND sh."sellToCustomerNo" = ${ph}`;
+    custFilterBa = `AND c."no_" = ${ph}`;
+  }
 
   const sql = `
 -- ── Step 0: Sales Orders (SO) ────────────────────────────────────────────────
@@ -158,7 +162,7 @@ SELECT
   c."name"                                             AS "customerName",
   kl."type"                                            AS "type",
   kh."createSoDateTime"                                AS "createSoDateTime",
-  kh."releaseSoDateTime"                               AS "releaseSoDateTime",
+  kh."releaseSoDateTime"                                AS "releaseSoDateTime",
   kl."kimoFashionSoReference"                          AS "kimoFashionSoReference",
   kh."kimoDocumentType"                                AS "kimoDocumentType"
 FROM nav_kimo_sales_line kl
@@ -210,6 +214,6 @@ GROUP BY
 ORDER BY "trademarkCode", "salespersonCodeNav"
   `;
 
-  const rows = await prisma.$queryRawUnsafe<KimoRow[]>(sql, ...sqlParams);
+  const rows = await prisma.$queryRawUnsafe<KimoRow[]>(sql, ...p.values);
   return rows;
 }

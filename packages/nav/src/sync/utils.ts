@@ -1,5 +1,5 @@
-import type { Logger } from 'pino';
 import type mssql from 'mssql';
+import type { Logger } from 'pino';
 
 /**
  * Result of evaluating a `NavSyncFilter` record.
@@ -82,6 +82,36 @@ export function buildNavSyncFilter(
  */
 export function buildWhereClause(predicates: string[]): string {
   return predicates.length > 0 ? `WHERE ${predicates.join(' AND ')}` : '';
+}
+
+/**
+ * Creates an mssql request with an explicit timeout instead of the driver default,
+ * since NAV sync queries scan large tables in chunked loops.
+ */
+export function createSyncRequest(pool: mssql.ConnectionPool, timeoutMs = 60_000): mssql.Request {
+  const request = pool.request();
+  // mssql type definitions don't expose `timeout` but it's a valid runtime property
+
+  (request as any).timeout = timeoutMs;
+  return request;
+}
+
+/**
+ * Binds an array of values as named parameters (`@{prefix}0, @{prefix}1, …`) on an
+ * mssql request and returns the comma-separated placeholder list for an IN clause.
+ * Owns the index/placeholder alignment so callers can't drift out of sync.
+ */
+export function bindInClause(
+  req: mssql.Request,
+  prefix: string,
+  values: readonly string[],
+  sqlType?: mssql.ISqlType | (() => mssql.ISqlType),
+): string {
+  values.forEach((v, i) => {
+    if (sqlType) req.input(`${prefix}${i}`, sqlType, v);
+    else req.input(`${prefix}${i}`, v);
+  });
+  return values.map((_, i) => `@${prefix}${i}`).join(', ');
 }
 
 /**

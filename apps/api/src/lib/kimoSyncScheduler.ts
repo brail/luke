@@ -8,16 +8,16 @@
  * - Sync errors are logged but do not crash the server.
  */
 
-import type { FastifyInstance } from 'fastify';
-import type { PrismaClient } from '@prisma/client';
-import type { Logger } from 'pino';
 
-import { getNavDbConfig, getPool } from '@luke/nav';
+import { getNavDbConfig, getPool, syncKimoNow, type KimoSyncResult } from '@luke/nav';
 
-import { syncKimoNow, type KimoSyncResult } from '../services/nav-kimo-sync';
 import { getConfig } from './configManager';
 import { notifyAdmins } from './notifications';
 import { sseStore } from './sseStore';
+
+import type { PrismaClient } from '@prisma/client';
+import type { FastifyInstance } from 'fastify';
+import type { Logger } from 'pino';
 
 export type { KimoSyncResult };
 

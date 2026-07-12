@@ -7,8 +7,8 @@
 import { z } from 'zod';
 
 import { navConfigSchema } from '@luke/core';
-import { getNavDbConfig, getPool, closePool, runNavSync, testNavConnection, sanitizeCompany } from '@luke/nav';
-import { pauseNavScheduler, resumeNavScheduler } from '../lib/navSyncScheduler';
+import { createSyncRequest, getNavDbConfig, getPool, closePool, runNavSync, testNavConnection, sanitizeCompany } from '@luke/nav';
+
 
 import { logAudit } from '../lib/auditLog';
 import { saveConfig, getConfig } from '../lib/configManager';
@@ -17,6 +17,7 @@ import {
   createStandardError,
   toTRPCError,
 } from '../lib/errorHandler';
+import { pauseNavScheduler, resumeNavScheduler } from '../lib/navSyncScheduler';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
@@ -42,8 +43,7 @@ const navSyncRouter = router({
         const tableName = `[${sanitizeCompany(config.company)}$Brand]`;
         let result;
         try {
-          const req = pool.request();
-          (req as any).timeout = 30_000;
+          const req = createSyncRequest(pool);
           result = await req.query<{ 'Code': string; 'Description': string | null }>(`
             SELECT [Code], [Description]
             FROM ${tableName}
@@ -66,8 +66,7 @@ const navSyncRouter = router({
         const tableName = `[${sanitizeCompany(config.company)}$Season]`;
         let result;
         try {
-          const req = pool.request();
-          (req as any).timeout = 30_000;
+          const req = createSyncRequest(pool);
           result = await req.query<{
             'Code': string;
             'Description': string | null;
@@ -104,8 +103,7 @@ const navSyncRouter = router({
 
       let result;
       try {
-        const req = pool.request();
-        (req as any).timeout = 30_000;
+        const req = createSyncRequest(pool);
         result = await req.query<NavVendorRow>(`
           SELECT [No_], [Name], [City], [Country_Region Code], [Blocked]
           FROM ${tableName}

@@ -1,10 +1,11 @@
-import type { PrismaClient, Prisma } from '@prisma/client';
-import type { Logger } from 'pino';
-import type mssql from 'mssql';
-
 import { sanitizeCompany } from '../config.js';
+
+import { buildNavSyncFilter, buildWhereClause, createSyncRequest, processInBatches } from './utils.js';
+
 import type { NavDbConfig } from '../config.js';
-import { buildNavSyncFilter, buildWhereClause, processInBatches } from './utils.js';
+import type { PrismaClient, Prisma } from '@prisma/client';
+import type mssql from 'mssql';
+import type { Logger } from 'pino';
 
 /**
  * Outcome of a single entity sync run.
@@ -78,10 +79,7 @@ export async function syncVendors(
   const whereClause = buildWhereClause(whereParts);
 
   const tableName = `[${sanitizeCompany(config.company)}$Vendor]`;
-  const request = pool.request();
-  // mssql type definitions don't expose `timeout` but it's a valid runtime property
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (request as any).timeout = 60_000;
+  const request = createSyncRequest(pool);
 
   if (lastModified) request.input('lastModified', lastModified);
   bindParams(request);

@@ -6,7 +6,7 @@
 
 import ExcelJS from 'exceljs';
 
-import type { KimoRow } from './kimo-pg-query';
+import type { KimoRow } from '@luke/nav';
 
 import {
   type XlsxMeta,

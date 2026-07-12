@@ -7,10 +7,11 @@
  * Genera il set di dati completo per il download Excel del portafoglio ordini.
  */
 
-import type * as mssql from 'mssql';
 import pino from 'pino';
 
 import { sanitizeCompany } from '../config.js';
+
+import type * as mssql from 'mssql';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

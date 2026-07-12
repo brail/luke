@@ -5,9 +5,10 @@
  * Pre-aggregated fields (date_prenotazione, ddt_picking) are already materialized by the sync job.
  */
 
-import type { PrismaClient } from '@prisma/client';
+import { PgParams } from './pgParams.js';
 
-import type { PortafoglioParams, PortafoglioRow } from '@luke/nav';
+import type { PortafoglioParams, PortafoglioRow } from '../statistics/portafoglio.js';
+import type { PrismaClient } from '@prisma/client';
 
 /**
  * Queries the order portfolio from the local nav_pf_* replica tables.
@@ -21,18 +22,14 @@ export async function queryPortafoglioFromPg(
 ): Promise<PortafoglioRow[]> {
   const { seasonCode, trademarkCode, salespersonCode, customerCode } = params;
 
-  const sqlParams: unknown[] = [seasonCode, trademarkCode];
-  let pi = 3;
+  const p = new PgParams([seasonCode, trademarkCode]);
 
   const spFilter = salespersonCode
-    ? `AND sh."salespersonCode" = $${pi++}`
+    ? `AND sh."salespersonCode" = ${p.add(salespersonCode)}`
     : '';
-  if (salespersonCode) sqlParams.push(salespersonCode);
-
   const custFilter = customerCode
-    ? `AND sh."sellToCustomerNo" = $${pi++}`
+    ? `AND sh."sellToCustomerNo" = ${p.add(customerCode)}`
     : '';
-  if (customerCode) sqlParams.push(customerCode);
 
   const sql = `
 WITH
@@ -722,6 +719,6 @@ LEFT JOIN landed_cost lc
   ON al."Article" = lc.no_
 `;
 
-  const rows = await prisma.$queryRawUnsafe<PortafoglioRow[]>(sql, ...sqlParams);
+  const rows = await prisma.$queryRawUnsafe<PortafoglioRow[]>(sql, ...p.values);
   return rows;
 }

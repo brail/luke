@@ -13,19 +13,17 @@
  * After the initial full sync, subsequent runs are typically under 10 seconds.
  */
 
-import type { PrismaClient } from '@prisma/client';
 import mssql from 'mssql';
+
+import { sanitizeCompany } from '../config.js';
+
+import { bulkUpsert, SS_CHUNK, syncIncremental, updateSyncState, type TableSyncStats } from './pgUpsert.js';
+import { bindInClause, createSyncRequest } from './utils.js';
+
+import type { PrismaClient } from '@prisma/client';
 import type { Logger } from 'pino';
 
-import { sanitizeCompany } from '@luke/nav';
-
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-export interface TableSyncStats {
-  table: string;
-  rowsUpserted: number;
-  durationMs: number;
-}
 
 export interface PortafoglioSyncResult {
   stats: TableSyncStats[];
@@ -36,104 +34,24 @@ export interface PortafoglioSyncResult {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** Righe per SELECT su SQL Server per ciclo (chunking). */
-const SS_CHUNK = 3_000;
-
-/** Righe per INSERT batch su PG. */
-const PG_BATCH = 500;
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/**
- * Bulk upsert generico via raw SQL.
- * I column names sono controllati internamente (non input utente): $executeRawUnsafe è sicuro.
- * Le colonne PK non vengono incluse nel DO UPDATE SET.
- */
-async function bulkUpsert(
-  prisma: PrismaClient,
-  table: string,
-  pk: readonly string[],
-  rows: Record<string, unknown>[],
-): Promise<void> {
-  if (!rows.length) return;
-  const cols = Object.keys(rows[0]!);
-  const nonPk = cols.filter(c => !pk.includes(c));
-  if (nonPk.length === 0) return; // no non-pk columns to update
-
-  const colList = cols.map(c => `"${c}"`).join(', ');
-  const pkList  = pk.map(c => `"${c}"`).join(', ');
-  const setList = nonPk.map(c => `"${c}" = EXCLUDED."${c}"`).join(', ');
-
-  for (let i = 0; i < rows.length; i += PG_BATCH) {
-    const chunk = rows.slice(i, i + PG_BATCH);
-    const params: unknown[] = [];
-    const vals = chunk.map(row => {
-      const placeholders = cols.map(c => {
-        let val = row[c] ?? null;
-        // mssql restituisce BIGINT come stringa JS; convertiamo a BigInt per PG
-        if (c === 'navRowversion' && typeof val === 'string') val = BigInt(val);
-        params.push(val);
-        return `$${params.length}`;
-      });
-      return `(${placeholders.join(', ')})`;
-    });
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO "${table}" (${colList}) VALUES ${vals.join(', ')} ON CONFLICT (${pkList}) DO UPDATE SET ${setList}`,
-      ...params,
-    );
-  }
-}
-
-async function getLastRowversion(prisma: PrismaClient, tableName: string): Promise<bigint> {
-  const s = await prisma.navPfSyncState.findUnique({ where: { tableName } });
-  return s?.lastRowversion ?? BigInt(0);
-}
-
-async function updateSyncState(
-  prisma: PrismaClient,
-  tableName: string,
-  lastRowversion: bigint,
-  rowCount: number,
-  durationMs: number,
-): Promise<void> {
-  await prisma.navPfSyncState.upsert({
-    where:  { tableName },
-    create: { tableName, lastRowversion, rowCount, lastDurationMs: durationMs, lastSyncedAt: new Date() },
-    update: { lastRowversion, rowCount, lastDurationMs: durationMs, lastSyncedAt: new Date() },
-  });
-}
-
-/**
- * Binds season codes as named parameters on an mssql Request and returns the IN clause.
- * Example: ["E26", "I26"] → "@s0, @s1"
- */
-function bindSeasons(req: mssql.Request, seasons: string[]): string {
-  seasons.forEach((code, i) => req.input(`s${i}`, mssql.NVarChar(10), code));
-  return seasons.map((_, i) => `@s${i}`).join(', ');
-}
+/** Batch di document numbers per la IN clause su SQL Server (pre-aggregated tables). */
+const DOC_BATCH = 2_000;
 
 // ─── Per-table sync functions ─────────────────────────────────────────────────
 
-async function syncSalesHeader(
+function syncSalesHeader(
   pool: mssql.ConnectionPool,
   co: string,
   prisma: PrismaClient,
   seasons: string[],
   logger: Logger,
 ): Promise<TableSyncStats> {
-  const TABLE = 'nav_pf_sales_header';
-  const t0 = Date.now();
-  let totalRows = 0;
-
-  let lastRv = await getLastRowversion(prisma, TABLE);
-
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const req = pool.request();
-    const inClause = bindSeasons(req, seasons);
-    req.input('rv', mssql.BigInt, lastRv);
-
-    const result = await req.query<Record<string, unknown>>(`
+  return syncIncremental(pool, prisma, logger, {
+    table: 'nav_pf_sales_header',
+    pk: ['no_'],
+    buildQuery: req => {
+      const inClause = bindInClause(req, 's', seasons, mssql.NVarChar(10));
+      return `
       SELECT TOP (${SS_CHUNK})
         sh.[No_]                              AS "no_",
         sh.[Document Type]                    AS "documentType",
@@ -188,48 +106,24 @@ async function syncSalesHeader(
         AND sh.[Selling Season Code] IN (${inClause})
         AND CONVERT(BIGINT, sh.[timestamp]) > @rv
       ORDER BY sh.[timestamp]
-    `);
-
-    const rows = result.recordset;
-    if (!rows.length) break;
-
-    await bulkUpsert(prisma, TABLE, ['no_'], rows);
-    totalRows += rows.length;
-
-    const maxRv = rows.reduce((m: bigint, r: Record<string, unknown>) => {
-      const v = BigInt(r['navRowversion'] as number);
-      return v > m ? v : m;
-    }, lastRv);
-    lastRv = maxRv;
-
-    if (rows.length < SS_CHUNK) break;
-  }
-
-  const dur = Date.now() - t0;
-  await updateSyncState(prisma, TABLE, lastRv, totalRows, dur);
-  logger.debug({ table: TABLE, rows: totalRows, ms: dur }, 'nav-pf sync done');
-  return { table: TABLE, rowsUpserted: totalRows, durationMs: dur };
+    `;
+    },
+  });
 }
 
-async function syncSalesLines(
+function syncSalesLines(
   pool: mssql.ConnectionPool,
   co: string,
   prisma: PrismaClient,
   seasons: string[],
   logger: Logger,
 ): Promise<TableSyncStats> {
-  const TABLE = 'nav_pf_sales_line';
-  const t0 = Date.now();
-  let totalRows = 0;
-  let lastRv = await getLastRowversion(prisma, TABLE);
-
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const req = pool.request();
-    const inClause = bindSeasons(req, seasons);
-    req.input('rv', mssql.BigInt, lastRv);
-
-    const result = await req.query<Record<string, unknown>>(`
+  return syncIncremental(pool, prisma, logger, {
+    table: 'nav_pf_sales_line',
+    pk: ['documentType', 'documentNo', 'lineNo'],
+    buildQuery: req => {
+      const inClause = bindInClause(req, 's', seasons, mssql.NVarChar(10));
+      return `
       SELECT TOP (${SS_CHUNK})
         sl.[Document Type]                    AS "documentType",
         sl.[Document No_]                     AS "documentNo",
@@ -280,48 +174,24 @@ async function syncSalesLines(
         AND sh.[Selling Season Code] IN (${inClause})
         AND CONVERT(BIGINT, sl.[timestamp]) > @rv
       ORDER BY sl.[timestamp]
-    `);
-
-    const rows = result.recordset;
-    if (!rows.length) break;
-
-    await bulkUpsert(prisma, TABLE, ['documentType', 'documentNo', 'lineNo'], rows);
-    totalRows += rows.length;
-
-    const maxRv = rows.reduce((m: bigint, r: Record<string, unknown>) => {
-      const v = BigInt(r['navRowversion'] as number);
-      return v > m ? v : m;
-    }, lastRv);
-    lastRv = maxRv;
-
-    if (rows.length < SS_CHUNK) break;
-  }
-
-  const dur = Date.now() - t0;
-  await updateSyncState(prisma, TABLE, lastRv, totalRows, dur);
-  logger.debug({ table: TABLE, rows: totalRows, ms: dur }, 'nav-pf sync done');
-  return { table: TABLE, rowsUpserted: totalRows, durationMs: dur };
+    `;
+    },
+  });
 }
 
-async function syncSalesHeaderExt(
+function syncSalesHeaderExt(
   pool: mssql.ConnectionPool,
   co: string,
   prisma: PrismaClient,
   seasons: string[],
   logger: Logger,
 ): Promise<TableSyncStats> {
-  const TABLE = 'nav_pf_sales_header_ext';
-  const t0 = Date.now();
-  let totalRows = 0;
-  let lastRv = await getLastRowversion(prisma, TABLE);
-
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const req = pool.request();
-    const inClause = bindSeasons(req, seasons);
-    req.input('rv', mssql.BigInt, lastRv);
-
-    const result = await req.query<Record<string, unknown>>(`
+  return syncIncremental(pool, prisma, logger, {
+    table: 'nav_pf_sales_header_ext',
+    pk: ['documentType', 'documentNo'],
+    buildQuery: req => {
+      const inClause = bindInClause(req, 's', seasons, mssql.NVarChar(10));
+      return `
       SELECT TOP (${SS_CHUNK})
         she.[Document Type]             AS "documentType",
         she.[Document No_]              AS "documentNo",
@@ -338,46 +208,21 @@ async function syncSalesHeaderExt(
       WHERE sh.[Selling Season Code] IN (${inClause})
         AND CONVERT(BIGINT, she.[timestamp]) > @rv
       ORDER BY she.[timestamp]
-    `);
-
-    const rows = result.recordset;
-    if (!rows.length) break;
-
-    await bulkUpsert(prisma, TABLE, ['documentType', 'documentNo'], rows);
-    totalRows += rows.length;
-
-    const maxRv = rows.reduce((m: bigint, r: Record<string, unknown>) => {
-      const v = BigInt(r['navRowversion'] as number);
-      return v > m ? v : m;
-    }, lastRv);
-    lastRv = maxRv;
-
-    if (rows.length < SS_CHUNK) break;
-  }
-
-  const dur = Date.now() - t0;
-  await updateSyncState(prisma, TABLE, lastRv, totalRows, dur);
-  logger.debug({ table: TABLE, rows: totalRows, ms: dur }, 'nav-pf sync done');
-  return { table: TABLE, rowsUpserted: totalRows, durationMs: dur };
+    `;
+    },
+  });
 }
 
-async function syncItems(
+function syncItems(
   pool: mssql.ConnectionPool,
   co: string,
   prisma: PrismaClient,
   logger: Logger,
 ): Promise<TableSyncStats> {
-  const TABLE = 'nav_pf_item';
-  const t0 = Date.now();
-  let totalRows = 0;
-  let lastRv = await getLastRowversion(prisma, TABLE);
-
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const req = pool.request();
-    req.input('rv', mssql.BigInt, lastRv);
-
-    const result = await req.query<Record<string, unknown>>(`
+  return syncIncremental(pool, prisma, logger, {
+    table: 'nav_pf_item',
+    pk: ['no_'],
+    buildQuery: () => `
       SELECT TOP (${SS_CHUNK})
         i.[No_]                              AS "no_",
         i.[Description]                      AS "description",
@@ -428,46 +273,20 @@ async function syncItems(
       )
         AND CONVERT(BIGINT, i.[timestamp]) > @rv
       ORDER BY i.[timestamp]
-    `);
-
-    const rows = result.recordset;
-    if (!rows.length) break;
-
-    await bulkUpsert(prisma, TABLE, ['no_'], rows);
-    totalRows += rows.length;
-
-    const maxRv = rows.reduce((m: bigint, r: Record<string, unknown>) => {
-      const v = BigInt(r['navRowversion'] as number);
-      return v > m ? v : m;
-    }, lastRv);
-    lastRv = maxRv;
-
-    if (rows.length < SS_CHUNK) break;
-  }
-
-  const dur = Date.now() - t0;
-  await updateSyncState(prisma, TABLE, lastRv, totalRows, dur);
-  logger.debug({ table: TABLE, rows: totalRows, ms: dur }, 'nav-pf sync done');
-  return { table: TABLE, rowsUpserted: totalRows, durationMs: dur };
+    `,
+  });
 }
 
-async function syncCustomers(
+function syncCustomers(
   pool: mssql.ConnectionPool,
   co: string,
   prisma: PrismaClient,
   logger: Logger,
 ): Promise<TableSyncStats> {
-  const TABLE = 'nav_pf_customer';
-  const t0 = Date.now();
-  let totalRows = 0;
-  let lastRv = await getLastRowversion(prisma, TABLE);
-
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const req = pool.request();
-    req.input('rv', mssql.BigInt, lastRv);
-
-    const result = await req.query<Record<string, unknown>>(`
+  return syncIncremental(pool, prisma, logger, {
+    table: 'nav_pf_customer',
+    pk: ['no_'],
+    buildQuery: () => `
       SELECT TOP (${SS_CHUNK})
         c.[No_]                          AS "no_",
         c.[Name]                         AS "name",
@@ -525,27 +344,31 @@ async function syncCustomers(
       FROM [${co}$Customer] c
       WHERE CONVERT(BIGINT, c.[timestamp]) > @rv
       ORDER BY c.[timestamp]
-    `);
+    `,
+  });
+}
 
-    const rows = result.recordset;
-    if (!rows.length) break;
-
-    await bulkUpsert(prisma, TABLE, ['no_'], rows);
-    totalRows += rows.length;
-
-    const maxRv = rows.reduce((m: bigint, r: Record<string, unknown>) => {
-      const v = BigInt(r['navRowversion'] as number);
-      return v > m ? v : m;
-    }, lastRv);
-    lastRv = maxRv;
-
-    if (rows.length < SS_CHUNK) break;
-  }
-
-  const dur = Date.now() - t0;
-  await updateSyncState(prisma, TABLE, lastRv, totalRows, dur);
-  logger.debug({ table: TABLE, rows: totalRows, ms: dur }, 'nav-pf sync done');
-  return { table: TABLE, rowsUpserted: totalRows, durationMs: dur };
+function syncShipToAddress(
+  pool: mssql.ConnectionPool,
+  co: string,
+  prisma: PrismaClient,
+  logger: Logger,
+): Promise<TableSyncStats> {
+  return syncIncremental(pool, prisma, logger, {
+    table: 'nav_pf_ship_to_address',
+    pk: ['customerNo', 'code'],
+    buildQuery: () => `
+      SELECT TOP (${SS_CHUNK})
+        sta.[Customer No_]              AS "customerNo",
+        sta.[Code]                      AS "code",
+        sta.[Geographical Zone 2]       AS "geographicalZone2",
+        sta.[Country_Region Code]       AS "countryRegionCode",
+        CONVERT(BIGINT, sta.[timestamp]) AS "navRowversion"
+      FROM [${co}$Ship-to Address] sta
+      WHERE CONVERT(BIGINT, sta.[timestamp]) > @rv
+      ORDER BY sta.[timestamp]
+    `,
+  });
 }
 
 // ─── Lookup tables (full sync ogni ciclo) ─────────────────────────────────────
@@ -561,7 +384,7 @@ async function syncLookup<T extends Record<string, unknown>>(
   logger: Logger,
 ): Promise<TableSyncStats> {
   const t0 = Date.now();
-  const req = pool.request();
+  const req = createSyncRequest(pool);
   const result = await req.query<T>(`SELECT ${selectSql} FROM [${co}$${navTable}]`);
   const rows = result.recordset as Record<string, unknown>[];
   await bulkUpsert(prisma, pgTable, pk, rows);
@@ -571,82 +394,27 @@ async function syncLookup<T extends Record<string, unknown>>(
   return { table: pgTable, rowsUpserted: rows.length, durationMs: dur };
 }
 
-async function syncShipToAddress(
-  pool: mssql.ConnectionPool,
-  co: string,
-  prisma: PrismaClient,
-  logger: Logger,
-): Promise<TableSyncStats> {
-  const TABLE = 'nav_pf_ship_to_address';
-  const t0 = Date.now();
-  let totalRows = 0;
-  let lastRv = await getLastRowversion(prisma, TABLE);
-
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const req = pool.request();
-    req.input('rv', mssql.BigInt, lastRv);
-
-    const result = await req.query<Record<string, unknown>>(`
-      SELECT TOP (${SS_CHUNK})
-        sta.[Customer No_]              AS "customerNo",
-        sta.[Code]                      AS "code",
-        sta.[Geographical Zone 2]       AS "geographicalZone2",
-        sta.[Country_Region Code]       AS "countryRegionCode",
-        CONVERT(BIGINT, sta.[timestamp]) AS "navRowversion"
-      FROM [${co}$Ship-to Address] sta
-      WHERE CONVERT(BIGINT, sta.[timestamp]) > @rv
-      ORDER BY sta.[timestamp]
-    `);
-
-    const rows = result.recordset;
-    if (!rows.length) break;
-
-    await bulkUpsert(prisma, TABLE, ['customerNo', 'code'], rows);
-    totalRows += rows.length;
-
-    const maxRv = rows.reduce((m: bigint, r: Record<string, unknown>) => {
-      const v = BigInt(r['navRowversion'] as number);
-      return v > m ? v : m;
-    }, lastRv);
-    lastRv = maxRv;
-
-    if (rows.length < SS_CHUNK) break;
-  }
-
-  const dur = Date.now() - t0;
-  await updateSyncState(prisma, TABLE, lastRv, totalRows, dur);
-  logger.debug({ table: TABLE, rows: totalRows, ms: dur }, 'nav-pf sync done');
-  return { table: TABLE, rowsUpserted: totalRows, durationMs: dur };
-}
-
 // ─── Pre-aggregated tables (full-refresh scoped ai doc_nos attivi) ─────────────
 
 async function syncDatePrenotazione(
   pool: mssql.ConnectionPool,
   co: string,
   prisma: PrismaClient,
+  docNos: string[],
   logger: Logger,
 ): Promise<TableSyncStats> {
   const TABLE = 'nav_pf_date_prenotazione';
   const t0 = Date.now();
-
-  // Prende i document nos dalle sales_header già sincronizzate
-  const headers = await prisma.navPfSalesHeader.findMany({ select: { no_: true } });
-  if (!headers.length) {
+  if (!docNos.length) {
     return { table: TABLE, rowsUpserted: 0, durationMs: 0 };
   }
 
-  // Batch da 2000 per la IN clause su SQL Server
-  const DOC_BATCH = 2_000;
-  const docNos = headers.map(h => h.no_);
   let totalRows = 0;
 
   for (let i = 0; i < docNos.length; i += DOC_BATCH) {
     const batch = docNos.slice(i, i + DOC_BATCH);
-    const req = pool.request();
-    batch.forEach((no, j) => req.input(`d${j}`, mssql.NVarChar(20), no));
-    const inClause = batch.map((_, j) => `@d${j}`).join(', ');
+    const req = createSyncRequest(pool);
+    const inClause = bindInClause(req, 'd', batch, mssql.NVarChar(20));
 
     const result = await req.query<Record<string, unknown>>(`
       SELECT
@@ -675,25 +443,21 @@ async function syncDdtPicking(
   pool: mssql.ConnectionPool,
   co: string,
   prisma: PrismaClient,
+  docNos: string[],
   logger: Logger,
 ): Promise<TableSyncStats> {
   const TABLE = 'nav_pf_ddt_picking';
   const t0 = Date.now();
-
-  const headers = await prisma.navPfSalesHeader.findMany({ select: { no_: true } });
-  if (!headers.length) {
+  if (!docNos.length) {
     return { table: TABLE, rowsUpserted: 0, durationMs: 0 };
   }
 
-  const DOC_BATCH = 2_000;
-  const docNos = headers.map(h => h.no_);
   let totalRows = 0;
 
   for (let i = 0; i < docNos.length; i += DOC_BATCH) {
     const batch = docNos.slice(i, i + DOC_BATCH);
-    const req = pool.request();
-    batch.forEach((no, j) => req.input(`d${j}`, mssql.NVarChar(20), no));
-    const inClause = batch.map((_, j) => `@d${j}`).join(', ');
+    const req = createSyncRequest(pool);
+    const inClause = bindInClause(req, 'd', batch, mssql.NVarChar(20));
 
     const result = await req.query<Record<string, unknown>>(`
       SELECT
@@ -806,10 +570,14 @@ export async function syncPortafoglioNow(
       }
     }
 
-    // 3. Pre-aggregated (dipendono da nav_pf_sales_header popolata)
+    // 3. Pre-aggregated (dipendono da nav_pf_sales_header popolata).
+    //    Doc numbers letti una sola volta e condivisi tra le due sync.
+    const headers = await prisma.navPfSalesHeader.findMany({ select: { no_: true } });
+    const docNos = headers.map(h => h.no_);
+
     const [prenotDate, ddt] = await Promise.allSettled([
-      syncDatePrenotazione(pool, co, prisma, log),
-      syncDdtPicking(pool, co, prisma, log),
+      syncDatePrenotazione(pool, co, prisma, docNos, log),
+      syncDdtPicking(pool, co, prisma, docNos, log),
     ]);
     if (prenotDate.status === 'fulfilled') stats.push(prenotDate.value);
     else log.error({ err: prenotDate.reason }, 'nav-pf date_prenotazione sync error');

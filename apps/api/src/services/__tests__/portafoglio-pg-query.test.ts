@@ -9,9 +9,10 @@
  * - Error handling (missing params, DB errors)
  */
 
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { PrismaClient } from '@prisma/client';
-import { queryPortafoglioFromPg } from '../portafoglio-pg-query';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+
+import { queryPortafoglioFromPg } from '@luke/nav';
 import type { PortafoglioParams, PortafoglioRow } from '@luke/nav';
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────

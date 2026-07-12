@@ -1,11 +1,12 @@
-import type { PrismaClient, Prisma } from '@prisma/client';
-import type { Logger } from 'pino';
-import type mssql from 'mssql';
-
 import { sanitizeCompany } from '../config.js';
+
+import { buildNavSyncFilter, buildWhereClause, createSyncRequest, processInBatches } from './utils.js';
+
 import type { NavDbConfig } from '../config.js';
 import type { SyncResult } from './vendors.js';
-import { buildNavSyncFilter, buildWhereClause, processInBatches } from './utils.js';
+import type { PrismaClient, Prisma } from '@prisma/client';
+import type mssql from 'mssql';
+import type { Logger } from 'pino';
 
 const UPSERT_BATCH_SIZE = 100;
 
@@ -43,9 +44,7 @@ export async function syncBrands(
   const whereClause = buildWhereClause(filterPredicates);
 
   const tableName = `[${sanitizeCompany(config.company)}$Brand]`;
-  const request = pool.request();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (request as any).timeout = 60_000;
+  const request = createSyncRequest(pool);
   bindParams(request);
 
   const result = await request.query<{

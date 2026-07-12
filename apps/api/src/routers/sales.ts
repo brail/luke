@@ -13,26 +13,25 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { getNavDbConfig, getPool, queryPortafoglioOrdini, sanitizeCompany } from '@luke/nav';
 import type { Role } from '@luke/core';
-import { getUserAllowedBrandIds } from '../services/context.service';
+import { createSyncRequest, getNavDbConfig, getPool, queryPortafoglioOrdini, sanitizeCompany, queryPortafoglioFromPg, queryKimoFromPg } from '@luke/nav';
 
 import { getConfig } from '../lib/configManager';
-import { requirePermission } from '../lib/permissions';
-import { router, protectedProcedure } from '../lib/trpc';
-import { buildPortafoglioXlsx } from '../services/sales.statistics';
-import { buildKimoXlsx } from '../services/kimo.statistics';
-
-import { queryPortafoglioFromPg } from '../services/portafoglio-pg-query';
-import { queryKimoFromPg } from '../services/kimo-pg-query';
-import {
-  triggerPortafoglioSyncNow,
-  isPortafoglioSyncRunning,
-} from '../lib/portafoglioSyncScheduler';
 import {
   triggerKimoSyncNow,
   isKimoSyncRunning,
 } from '../lib/kimoSyncScheduler';
+import { requirePermission } from '../lib/permissions';
+import {
+  triggerPortafoglioSyncNow,
+  isPortafoglioSyncRunning,
+} from '../lib/portafoglioSyncScheduler';
+import { router, protectedProcedure } from '../lib/trpc';
+import { getUserAllowedBrandIds } from '../services/context.service';
+import { buildKimoXlsx } from '../services/kimo.statistics';
+import { buildPortafoglioXlsx } from '../services/sales.statistics';
+
+import type { PrismaClient } from '@prisma/client';
 
 // ─── Input schema ─────────────────────────────────────────────────────────────
 
@@ -45,6 +44,22 @@ const portafoglioDownloadInput = portafoglioBaseInput.extend({
   salespersonCode: z.string().min(1).optional(),
   customerCode: z.string().min(1).optional(),
 });
+
+/**
+ * Resolves salesperson names for a set of codes from the nav_pf_salesperson replica.
+ * Returns a Map so callers can look up names for codes gathered from different sources.
+ */
+async function resolveSalespersonNames(
+  prisma: PrismaClient,
+  codes: string[],
+): Promise<Map<string, string>> {
+  if (!codes.length) return new Map();
+  const rows = await prisma.navPfSalesperson.findMany({
+    where: { code: { in: codes } },
+    select: { code: true, name: true },
+  });
+  return new Map(rows.map(r => [r.code, r.name ?? '']));
+}
 
 // ─── Sub-router: portafoglio ──────────────────────────────────────────────────
 
@@ -74,17 +89,25 @@ const portafoglioRouter = router({
       }
 
       // Prova prima con i dati replicati in PG
-      const pgRows = await ctx.prisma.$queryRaw<{ code: string; name: string }[]>`
-        SELECT DISTINCT sp.code, sp.name
-        FROM nav_pf_sales_header sh
-        JOIN nav_pf_salesperson sp ON sh."salespersonCode" = sp.code
-        WHERE sh."sellingSeasonCode" = ${season.code}
-          AND sh."shortcutDimension2Code" = ${brand.code}
-          AND sh."salespersonCode" IS NOT NULL
-        ORDER BY sp.name
-      `;
+      const headerRows = await ctx.prisma.navPfSalesHeader.findMany({
+        where: {
+          sellingSeasonCode: season.code,
+          shortcutDimension2Code: brand.code,
+          salespersonCode: { not: null },
+        },
+        select: { salespersonCode: true },
+        distinct: ['salespersonCode'],
+      });
+      const salespersonCodes = headerRows
+        .map(r => r.salespersonCode)
+        .filter((c): c is string => c !== null);
 
-      if (pgRows.length > 0) {
+      if (salespersonCodes.length > 0) {
+        const nameMap = await resolveSalespersonNames(ctx.prisma, salespersonCodes);
+        const pgRows = salespersonCodes
+          .map(code => ({ code, name: nameMap.get(code) ?? '' }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+
         return {
           brand: { code: brand.code, name: brand.name },
           season: { code: season.code, name: season.name },
@@ -98,8 +121,7 @@ const portafoglioRouter = router({
         const pool = await getPool(navConfig);
         const co = sanitizeCompany(navConfig.company);
 
-        const request = pool.request();
-        (request as unknown as Record<string, unknown>)['timeout'] = 15_000;
+        const request = createSyncRequest(pool, 15_000);
         request.input('SeasonCode', season.code);
         request.input('TrademarkCode', brand.code);
 
@@ -319,31 +341,39 @@ const kimoRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand o stagione non trovati' });
       }
 
-      // Agenti dalle SO (step0)
-      const spSo = await ctx.prisma.$queryRaw<{ code: string; name: string }[]>`
-        SELECT DISTINCT sp."code", sp."name"
-        FROM nav_pf_sales_header sh
-        JOIN nav_pf_salesperson sp ON sh."salespersonCode" = sp."code"
-        WHERE sh."sellingSeasonCode" = ${season.code}
-          AND sh."shortcutDimension2Code" = ${brand.code}
-          AND sh."salespersonCode" IS NOT NULL
-      `;
-
-      // Agenti dai BASKET (step1)
-      const spBa = await ctx.prisma.$queryRaw<{ code: string; name: string }[]>`
-        SELECT DISTINCT sp."code", sp."name"
-        FROM nav_kimo_sales_header kh
-        JOIN nav_pf_salesperson sp ON kh."salespersonCodeNav" = sp."code"
-        WHERE kh."trademarkCode" = ${brand.code}
-          AND (kh."assignedSalesDocumentNo" IS NULL OR kh."assignedSalesDocumentNo" = '')
-          AND kh."salespersonCodeNav" IS NOT NULL
-      `;
+      // Agenti dalle SO (step0) e dai BASKET (step1) — query indipendenti, in parallelo
+      const [soHeaderRows, basketHeaderRows] = await Promise.all([
+        ctx.prisma.navPfSalesHeader.findMany({
+          where: {
+            sellingSeasonCode: season.code,
+            shortcutDimension2Code: brand.code,
+            salespersonCode: { not: null },
+          },
+          select: { salespersonCode: true },
+          distinct: ['salespersonCode'],
+        }),
+        ctx.prisma.navKimoSalesHeader.findMany({
+          where: {
+            trademarkCode: brand.code,
+            salespersonCodeNav: { not: null },
+            OR: [{ assignedSalesDocumentNo: null }, { assignedSalesDocumentNo: '' }],
+          },
+          select: { salespersonCodeNav: true },
+          distinct: ['salespersonCodeNav'],
+        }),
+      ]);
+      const spSoCodes = soHeaderRows
+        .map(r => r.salespersonCode)
+        .filter((c): c is string => c !== null);
+      const spBaCodes = basketHeaderRows
+        .map(r => r.salespersonCodeNav)
+        .filter((c): c is string => c !== null);
 
       // Unione deduplicata
-      const spMap = new Map<string, string>();
-      for (const r of [...spSo, ...spBa]) spMap.set(r.code, r.name);
-      const salespersons = [...spMap.entries()]
-        .map(([code, name]) => ({ code, name }))
+      const allCodes = [...new Set([...spSoCodes, ...spBaCodes])];
+      const nameMap = await resolveSalespersonNames(ctx.prisma, allCodes);
+      const salespersons = allCodes
+        .map(code => ({ code, name: nameMap.get(code) ?? '' }))
         .sort((a, b) => a.name.localeCompare(b.name));
 
       return {
