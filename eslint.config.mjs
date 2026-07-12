@@ -11,6 +11,7 @@ export default [
       'apps/api/src/**/*.{ts,tsx}',
       'apps/web/src/**/*.{ts,tsx}',
       'packages/core/src/**/*.{ts,tsx}',
+      'packages/nav/src/**/*.{ts,tsx}',
     ],
     languageOptions: {
       parser: typescriptParser,

@@ -8,6 +8,7 @@ import { Skeleton } from '../../../../components/ui/skeleton';
 import { Switch } from '../../../../components/ui/switch';
 import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
+
 import { SendDigestDialog } from './SendDigestDialog';
 
 const CATEGORY_META: Record<string, { label: string; description: string }> = {

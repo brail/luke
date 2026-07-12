@@ -92,7 +92,7 @@ export default function RevisionDetailPage() {
   const { brand, season } = useAppContext();
   const canViewRevisions = can('collection_layout:view_revisions');
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const [viewRow, setViewRow] = useState<any | null>(null);
 
   // Step 1: fetch metadata + collectionLayoutId

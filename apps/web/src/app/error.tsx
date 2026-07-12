@@ -8,6 +8,7 @@ import { SectionCard } from '../components/SectionCard';
 import { ErrorState } from '../components/system/ErrorState';
 import { RetryButton } from '../components/system/RetryButton';
 import { Button } from '../components/ui/button';
+import { debugError } from '../lib/debug';
 
 export default function Error({
   error,
@@ -17,7 +18,7 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error(error);
+    debugError(error);
   }, [error]);
 
   return (

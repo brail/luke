@@ -4,6 +4,7 @@ import React from 'react';
 
 import { ErrorState } from '../../components/system/ErrorState';
 import { RetryButton } from '../../components/system/RetryButton';
+import { debugError } from '../../lib/debug';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -31,7 +32,7 @@ export class ErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo): void {
-    console.error(error);
+    debugError(error);
     this.props.onError?.(error, info);
   }
 

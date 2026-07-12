@@ -353,7 +353,11 @@ export default function CalendarPage() {
                 )}
                 style={selected ? { background: resolveBrandColor(b.id, brandColorMap) } : undefined}
               >
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: selected ? 'rgba(255,255,255,0.6)' : resolveBrandColor(b.id, brandColorMap) }} />
+                {/* Selected state uses a translucent white overlay dot (theme-independent by design); unselected uses the brand's own dynamic color */}
+                <span
+                  className={cn('w-2 h-2 rounded-full shrink-0', selected && 'bg-white/60')}
+                  style={selected ? undefined : { background: resolveBrandColor(b.id, brandColorMap) }}
+                />
                 {b.name}
               </button>
             );

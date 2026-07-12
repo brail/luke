@@ -1,7 +1,7 @@
 import { debugLog } from './lib/debug';
 
-import type { JWT } from 'next-auth/jwt';
 import type { Session } from 'next-auth';
+import type { JWT } from 'next-auth/jwt';
 
 /** Session lifetime in seconds (8 hours). */
 export const SESSION_MAX_AGE = 8 * 60 * 60;

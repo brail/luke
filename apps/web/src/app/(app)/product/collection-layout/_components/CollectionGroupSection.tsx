@@ -343,6 +343,7 @@ const NOTE_FIELDS: { key: keyof CollectionRowData; label: string }[] = [
 
 const GENDER_OPTIONS: FilterOption[] = COLLECTION_GENDER.map(v => ({ value: v, label: v }));
 const STRATEGY_OPTIONS: FilterOption[] = COLLECTION_STRATEGY.map(v => ({ value: v, label: v }));
+const [STRATEGY_CORE, STRATEGY_INNOVATION] = COLLECTION_STRATEGY;
 const STATUS_OPTIONS: FilterOption[] = COLLECTION_STATUS.map(v => ({ value: v, label: STATUS_LABELS[v] ?? v }));
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -853,10 +854,10 @@ export function CollectionGroupSection({
                         <TableCell>
                           {row.strategy && (
                             <Badge
-                              variant={row.strategy === 'INNOVATION' ? 'default' : 'secondary'}
+                              variant={row.strategy === STRATEGY_INNOVATION ? 'default' : 'secondary'}
                               className="text-xs"
                             >
-                              {row.strategy === 'INNOVATION' ? 'INNOV.' : 'CORE'}
+                              {row.strategy === STRATEGY_INNOVATION ? 'INNOV.' : STRATEGY_CORE}
                             </Badge>
                           )}
                         </TableCell>

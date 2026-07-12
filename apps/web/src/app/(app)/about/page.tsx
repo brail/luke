@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 
-import { trpc } from '../../../lib/trpc';
+import webPkg from '../../../../package.json';
 import { Badge } from '../../../components/ui/badge';
 import {
   Card,
@@ -10,7 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from '../../../components/ui/card';
-import webPkg from '../../../../package.json';
+import { trpc } from '../../../lib/trpc';
 
 const FRONTEND_DEPS: { label: string; key: string }[] = [
   { label: 'Next.js', key: 'next' },
