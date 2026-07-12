@@ -332,22 +332,6 @@ export function CollectionRowDrawer({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="max-w-7xl w-full p-0 gap-0 flex flex-col max-h-[90vh]"
-        // Radix's Select is always "modal" (no way to opt out) — while its dropdown is open it
-        // becomes the topmost dismissable layer and sets this DialogContent's own pointer-events
-        // to "none" (only the topmost layer stays interactive). Closing the Select then races with
-        // Dialog's own outside-click detection: the closing click falls through the now
-        // pointer-events:none DialogContent onto the DialogOverlay behind it, which reads as an
-        // "outside click" and closes this dialog too. Forcing pointer-events:auto here keeps the
-        // drawer itself always interactive regardless of any nested Select's layer state.
-        style={{ pointerEvents: 'auto' }}
-        onInteractOutside={event => {
-          // Extra safety: also ignore interactions that land inside any nested Radix popper
-          // content (Select/Popover), in case a future field renders one without full modality.
-          const target = event.target as HTMLElement | null;
-          if (target?.closest('[data-radix-popper-content-wrapper]')) {
-            event.preventDefault();
-          }
-        }}
       >
         {/* Fixed header */}
         <DialogHeader className="px-6 py-4 border-b shrink-0">

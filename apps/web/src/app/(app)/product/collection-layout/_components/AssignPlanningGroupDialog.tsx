@@ -63,14 +63,7 @@ export function AssignPlanningGroupDialog({ open, onClose, onAssigned, brandId, 
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-      <DialogContent
-        className="sm:max-w-[420px]"
-        // Same fix as CollectionRowDrawer: Select is unconditionally modal in this Radix version,
-        // so its own open dropdown makes this DialogContent's pointer-events "none" while topmost;
-        // closing the Select would otherwise let that click fall through onto DialogOverlay and
-        // close this dialog. See CollectionRowDrawer.tsx for the full explanation.
-        style={{ pointerEvents: 'auto' }}
-      >
+      <DialogContent className="sm:max-w-[420px]">
         <DialogHeader>
           <DialogTitle>Assegna a gruppo di pianificazione</DialogTitle>
         </DialogHeader>
