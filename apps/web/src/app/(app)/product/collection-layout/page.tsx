@@ -59,6 +59,7 @@ export default function CollectionLayoutPage() {
       brandId: brand?.id,
       seasonId: season?.id,
     });
+    utils.phaseAlert.invalidate();
   };
 
   // ─── UI state ───────────────────────────────────────────────────

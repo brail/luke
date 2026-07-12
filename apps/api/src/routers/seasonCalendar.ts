@@ -149,6 +149,7 @@ export const seasonCalendarRouter = router({
       await assertUnlocked('SEASON_CALENDAR', group.calendarId, ctx.session.user.id, ctx.prisma);
       const result = await freezePlanningGroup(input.planningGroupId, ctx.prisma);
       await logAudit(ctx, { action: 'PLANNING_GROUP_FROZEN', targetType: 'PlanningGroup', targetId: input.planningGroupId, result: 'SUCCESS', metadata: {} });
+      sseStore.pushToAll({ type: 'calendar-updated', seasonId: group.calendar.seasonId });
       return result;
     }),
 
@@ -165,9 +166,10 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ planningGroupId: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      await resolvePlanningGroupWithBrandAccess(input.planningGroupId, ctx.session.user.id, ctx.prisma);
+      const group = await resolvePlanningGroupWithBrandAccess(input.planningGroupId, ctx.session.user.id, ctx.prisma);
       const result = await unfreezePlanningGroup(input.planningGroupId, ctx.prisma);
       await logAudit(ctx, { action: 'PLANNING_GROUP_UNFROZEN', targetType: 'PlanningGroup', targetId: input.planningGroupId, result: 'SUCCESS', metadata: {} });
+      sseStore.pushToAll({ type: 'calendar-updated', seasonId: group.calendar.seasonId });
       return result;
     }),
 

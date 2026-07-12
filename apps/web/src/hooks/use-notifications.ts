@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 
 import { buildApiUrl, calcBackoffDelay } from '@luke/core';
 
+import { useAppContext } from '../contexts/AppContextProvider';
 import { trpc } from '../lib/trpc';
 
 /**
@@ -16,6 +17,7 @@ import { trpc } from '../lib/trpc';
  */
 export function useNotifications() {
   const utils = trpc.useUtils();
+  const { season } = useAppContext();
 
   const listQuery = trpc.notifications.list.useQuery({ limit: 20 }, { refetchInterval: 30_000 });
   const countQuery = trpc.notifications.unreadCount.useQuery(undefined, {
@@ -26,6 +28,10 @@ export function useNotifications() {
   const esRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
+  // Read inside the SSE handler without forcing a reconnect when the user switches season —
+  // the EventSource connection itself is season-agnostic (see empty deps array below).
+  const seasonIdRef = useRef(season?.id);
+  seasonIdRef.current = season?.id;
 
   useEffect(() => {
     let isMounted = true;
@@ -52,7 +58,7 @@ export function useNotifications() {
 
         es.onmessage = (event) => {
           try {
-            const data = JSON.parse(event.data) as { type: string; entity?: string };
+            const data = JSON.parse(event.data) as { type: string; entity?: string; seasonId?: string };
             if (data.type === 'notification') {
               void utils.notifications.list.invalidate();
               void utils.notifications.unreadCount.invalidate();
@@ -62,8 +68,11 @@ export function useNotifications() {
               } else if (data.entity === 'kimo') {
                 void utils.sales.statistics.kimo.getSyncState.invalidate();
               }
-            } else if (data.type === 'calendar-updated') {
+            } else if (data.type === 'calendar-updated' && data.seasonId === seasonIdRef.current) {
+              // Scoped to the season currently in view — otherwise every connected client would
+              // refetch calendar/alert-engine data for seasons it isn't even looking at.
               void utils.seasonCalendar.listMilestones.invalidate();
+              void utils.phaseAlert.invalidate();
             }
           } catch {
             // Ignore malformed events

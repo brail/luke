@@ -147,17 +147,16 @@ export default function CalendarPage() {
    * affects the alert engine, so the collection layout badges must update without a page reload. */
   const refetchAfterEventChange = () => {
     void refetch();
-    utils.phaseAlert.criticalityForLayout.invalidate();
-    utils.phaseAlert.criticalityForRow.invalidate();
+    utils.phaseAlert.invalidate();
   };
 
   const triggerSyncMutation = trpc.seasonCalendar.triggerSync.useMutation({
-    onSuccess: () => { toast.success('Sincronizzazione avviata'); void refetch(); },
+    onSuccess: () => { toast.success('Sincronizzazione avviata'); refetchAfterEventChange(); },
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
   const updateEventMutation = trpc.seasonCalendar.updateMilestone.useMutation({
-    onSuccess: () => void refetch(),
+    onSuccess: () => refetchAfterEventChange(),
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
@@ -166,12 +165,12 @@ export default function CalendarPage() {
   };
 
   const deleteEventsMutation = trpc.seasonCalendar.deleteMilestones.useMutation({
-    onSuccess: () => void refetch(),
+    onSuccess: () => refetchAfterEventChange(),
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
   const unfreezeMutation = trpc.seasonCalendar.unfreezePlanningGroup.useMutation({
-    onSuccess: () => { toast.success('Congelamento annullato'); setActiveGroupAction(null); void refetch(); },
+    onSuccess: () => { toast.success('Congelamento annullato'); setActiveGroupAction(null); refetchAfterEventChange(); },
     onError: err => toast.error(getTrpcErrorMessage(err, { CONFLICT: 'Il gruppo non è congelato' })),
   });
 
@@ -642,7 +641,7 @@ export default function CalendarPage() {
         <PlanningWizard
           open
           onClose={() => setPostApplyWizard(null)}
-          onFrozen={() => { setPostApplyWizard(null); void refetch(); }}
+          onFrozen={() => { setPostApplyWizard(null); refetchAfterEventChange(); }}
           calendarId={calendar.id}
           planningGroupId={postApplyWizard.planningGroupId}
           brandId={contextBrandId ?? ''}
@@ -673,7 +672,7 @@ export default function CalendarPage() {
         <FreezePlanningGroupWizard
           open
           onClose={() => setActiveGroupAction(null)}
-          onFrozen={() => { setActiveGroupAction(null); void refetch(); }}
+          onFrozen={() => { setActiveGroupAction(null); refetchAfterEventChange(); }}
           planningGroupId={activeGroupAction.groupId}
           milestones={filteredMilestones.filter(m => m.planningGroupId === activeGroupAction.groupId)}
           holidayDates={holidayDates}
