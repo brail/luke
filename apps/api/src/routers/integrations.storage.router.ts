@@ -5,12 +5,12 @@
 
 import { z } from 'zod';
 
+import { saveConfig } from '../lib/configManager';
 import {
   toTRPCError,
   IntegrationErrorHandler,
   SecureLogger,
 } from '../lib/errorHandler';
-import { saveConfig } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 
@@ -53,7 +53,7 @@ export const storageRouter = router({
         );
         const { provider, config } = input;
         const configKey = `storage.${provider}`;
-        const logger = new SecureLogger(console);
+        const logger = new SecureLogger(ctx.logger);
 
         // Cifra le credenziali sensibili
         let configToSave = { ...config };

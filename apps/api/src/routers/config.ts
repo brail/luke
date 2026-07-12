@@ -15,14 +15,13 @@ import {
   deleteConfig,
 } from '../lib/configManager';
 import { withIdempotency } from '../lib/idempotencyTrpc';
+import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import {
   router,
-  loggedProcedure,
   protectedProcedure,
   type Context,
 } from '../lib/trpc';
-import { requirePermission } from '../lib/permissions';
 
 /**
  * Chiavi critiche che non possono essere eliminate
@@ -310,11 +309,12 @@ export const configRouter = router({
   /**
    * Lists AppConfig entries with pagination, filtering by key prefix, category, and encryption status.
    *
-   * @auth {authenticated (loggedProcedure)}
+   * @auth {config:read}
    * @input {ListConfigsSchema} — q, category, isEncrypted, sortBy, sortDir, page, pageSize.
    * @output {Paginated AppConfig list with metadata.}
    */
-  list: loggedProcedure
+  list: protectedProcedure
+    .use(requirePermission('config:read'))
     .input(ListConfigsSchema)
     .query(async ({ input, ctx }) => {
       return await listConfigsPaged(ctx.prisma, {
@@ -331,11 +331,14 @@ export const configRouter = router({
   /**
    * Fetches a single AppConfig value by key; decrypt=true requires admin role.
    *
-   * @auth {authenticated (loggedProcedure); admin required for decrypt=true}
+   * @auth {config:read; admin required for decrypt=true}
    * @input {GetConfigSchema} — key, optional decrypt flag.
    * @output {{ key, value, isEncrypted }} — value is [ENCRYPTED] if encrypted and not decrypted.
    */
-  get: loggedProcedure.input(GetConfigSchema).query(async ({ input, ctx }) => {
+  get: protectedProcedure
+    .use(requirePermission('config:read'))
+    .input(GetConfigSchema)
+    .query(async ({ input, ctx }) => {
     // Se decrypt=true, verifica che l'utente sia admin
     if (input.decrypt && ctx.session?.user?.role !== 'admin') {
       throw new TRPCError({
@@ -373,11 +376,12 @@ export const configRouter = router({
   /**
    * Views a config value in masked or raw mode; raw mode requires admin and generates an audit log.
    *
-   * @auth {authenticated (loggedProcedure); admin required for mode=raw}
+   * @auth {config:read; admin required for mode=raw}
    * @input {ViewValueSchema} — key, mode ("masked" | "raw").
    * @output {{ key, value, isEncrypted, mode }} — value is [ENCRYPTED] in masked mode for secrets.
    */
-  viewValue: loggedProcedure
+  viewValue: protectedProcedure
+    .use(requirePermission('config:read'))
     .input(ViewValueSchema)
     .query(async ({ input, ctx }) => {
       // Se mode=raw, verifica che l'utente sia admin
@@ -531,11 +535,12 @@ export const configRouter = router({
   /**
    * Fetches multiple AppConfig values in a single request; returns partial results on missing keys.
    *
-   * @auth {authenticated (loggedProcedure)}
+   * @auth {config:read; admin required for decrypt=true}
    * @input {{ keys: string[], decrypt?: boolean }} — list of config keys, optional decrypt flag.
    * @output {Array<{ key, value, found, error? }>}
    */
-  getMultiple: loggedProcedure
+  getMultiple: protectedProcedure
+    .use(requirePermission('config:read'))
     .input(
       z.object({
         keys: z.array(
@@ -545,6 +550,13 @@ export const configRouter = router({
       })
     )
     .query(async ({ input, ctx }) => {
+      if (input.decrypt && ctx.session.user.role !== 'admin') {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Accesso negato: richiesto ruolo admin per decrittare valori',
+        });
+      }
+
       const results = await Promise.all(
         input.keys.map(async key => {
           try {
@@ -621,11 +633,12 @@ export const configRouter = router({
   /**
    * Checks whether an AppConfig key exists and whether its value is encrypted.
    *
-   * @auth {authenticated (loggedProcedure)}
+   * @auth {config:read}
    * @input {{ key: string }}
    * @output {{ key, exists: boolean, isEncrypted?: boolean }}
    */
-  exists: loggedProcedure
+  exists: protectedProcedure
+    .use(requirePermission('config:read'))
     .input(
       z.object({
         key: z.string().min(1, 'Chiave configurazione non può essere vuota'),

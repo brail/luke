@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { RateLimitConfigSchema, LdapResilienceSchema, CollectionAlertThresholdsSchema } from './appConfig';
+
+import { RateLimitConfigSchema, LdapResilienceSchema, CollectionAlertThresholdsSchema, AppContextDefaultsSchema } from './appConfig';
 
 /**
  * Central registry of all AppConfig keys with their Zod validation schemas.
@@ -16,12 +17,17 @@ export const AppConfigRegistry = {
   'app.locale':          z.string(),
   'app.defaultTimezone': z.string(),
   'app.baseUrl':         z.string().url(),
+  'app.sections.disabled': z.string().transform(s => z.array(z.string()).parse(JSON.parse(s))),
+  'app.context.defaults':  z.string().transform(s => AppContextDefaultsSchema.parse(JSON.parse(s))),
 
   // ── Auth ─────────────────────────────────────────────────────────────────
   'auth.strategy':                       z.enum(['local-first', 'ldap-first', 'local-only', 'ldap-only']),
   'auth.requireEmailVerification':       z.coerce.boolean(),
   'auth.nextAuthSecret':                 z.string().min(32),
   'auth.provisioning.defaultTeamId':     z.string(),
+
+  // ── RBAC ─────────────────────────────────────────────────────────────────
+  'rbac.sectionAccessDefaults': z.string().transform(s => JSON.parse(s) as Record<string, Record<string, string>>),
 
   // ── SMTP ─────────────────────────────────────────────────────────────────
   'smtp.host':   z.string().min(1),
@@ -97,6 +103,7 @@ export const AppConfigRegistry = {
   'integrations.nav.password':              z.string(),
   'integrations.nav.company':               z.string().min(1),
   'integrations.nav.readOnly':              z.coerce.boolean(),
+  'integrations.nav.syncEnabled':           z.coerce.boolean(),
 
   // ── Google Workspace ──────────────────────────────────────────────────────
   'integrations.google.authMode':              z.enum(['service_account', 'oauth_user']),

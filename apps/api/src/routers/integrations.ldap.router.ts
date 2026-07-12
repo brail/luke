@@ -30,7 +30,7 @@ export const ldapRouter = router({
     .input(ldapConfigSchema)
     .mutation(async ({ input, ctx }) => {
       try {
-        const logger = new SecureLogger(console);
+        const logger = new SecureLogger(ctx.logger);
 
         // Validare che roleMapping sia JSON valido (solo se presente)
         if (input.roleMapping && input.roleMapping.trim() !== '') {

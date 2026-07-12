@@ -3,9 +3,16 @@
  * Procedure per amministratori per gestire accessi utente
  */
 
-import { z } from 'zod';
-import { router, protectedProcedure, adminProcedure } from '../lib/trpc';
 import { TRPCError } from '@trpc/server';
+import { z } from 'zod';
+
+import { sectionEnum, Roles } from '@luke/core';
+import type { Section } from '@luke/core';
+import { setRbacSectionDefaults } from '@luke/core/server';
+
+import { logAudit } from '../lib/auditLog';
+import { withRateLimit } from '../lib/ratelimit';
+import { router, protectedProcedure, adminProcedure } from '../lib/trpc';
 import {
   setOverride,
   listOverridesForUser,
@@ -13,12 +20,15 @@ import {
   getSectionDefaults,
   computeEffectiveForUser,
 } from '../services/sectionAccess.service';
-import { logAudit } from '../lib/auditLog';
-import { withRateLimit } from '../lib/ratelimit';
-import { sectionEnum } from '@luke/core';
-import type { Section } from '@luke/core';
 
 const sectionSchema = sectionEnum;
+
+const setRoleDefaultsInput = z.object({
+  sectionAccessDefaults: z.record(
+    z.enum(Roles),
+    z.record(sectionEnum, z.enum(['enabled', 'disabled', 'auto']))
+  ),
+});
 
 const setInput = z.object({
   userId: z.string().min(1),
@@ -82,6 +92,32 @@ export const sectionAccessRouter = router({
   getEffectiveForMe: protectedProcedure.query(async ({ ctx }) => {
     return computeEffectiveForUser(ctx.prisma, ctx.session.user.id, ctx.session.user.role);
   }),
+
+  /**
+   * Persists per-role section-access defaults to AppConfig (`rbac.sectionAccessDefaults`)
+   * and invalidates the RBAC cache. This is the only reachable write path for that key —
+   * the generic config.set/update endpoints don't allow the `rbac` key prefix.
+   *
+   * @auth {admin}
+   * @input {{ sectionAccessDefaults: Record<Role, Partial<Record<Section, 'enabled'|'disabled'|'auto'>>> }}
+   * @output {{ success: true }}
+   */
+  setRoleDefaults: adminProcedure
+    .input(setRoleDefaultsInput)
+    .use(withRateLimit('sectionAccessSet'))
+    .mutation(async ({ input, ctx }) => {
+      await setRbacSectionDefaults(ctx.prisma, input.sectionAccessDefaults);
+
+      await logAudit(ctx, {
+        action: 'CONFIG_UPSERT',
+        targetType: 'Config',
+        targetId: 'rbac.sectionAccessDefaults',
+        result: 'SUCCESS',
+        metadata: { sectionAccessDefaults: input.sectionAccessDefaults },
+      });
+
+      return { success: true };
+    }),
 
   /**
    * Sets a section access override for a user; blocks removal of settings access from the last admin.

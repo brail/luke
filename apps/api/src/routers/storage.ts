@@ -5,19 +5,19 @@
  */
 
 import { randomUUID } from 'crypto';
-
-import { TRPCError } from '@trpc/server';
 import { homedir } from 'os';
 import { join } from 'path';
+
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { isValidBucket, localStorageConfigSchema, type StorageBucket } from '@luke/core';
 
-import { requirePermission } from '../lib/permissions';
-import { router, protectedProcedure } from '../lib/trpc';
-import { withSectionAccess } from '../lib/sectionAccessMiddleware';
 import { getConfig, saveConfig } from '../lib/configManager';
-import { getStorageUrlConfig, resolvePublicUrl } from '../lib/storageUrl';
+import { requirePermission } from '../lib/permissions';
+import { withSectionAccess } from '../lib/sectionAccessMiddleware';
+import { getStorageBaseUrl, resolvePublicUrl } from '../lib/storageUrl';
+import { router, protectedProcedure } from '../lib/trpc';
 import { getObjectMetadata, listObjects, deleteObject, resetStorageProvider, getStorageProvider, loadMinioProvider } from '../storage';
 import { signDownloadToken } from '../utils/downloadToken';
 
@@ -225,8 +225,7 @@ export const storageRouter = router({
       });
 
       // Costruisci URL usando la stessa base configurata per lo storage proxy
-      const { publicBaseUrl } = await getStorageUrlConfig(ctx.prisma);
-      const baseUrl = publicBaseUrl || `http://localhost:${process.env.PORT || 3001}`;
+      const baseUrl = await getStorageBaseUrl(ctx.prisma);
       const downloadUrl = `${baseUrl}/storage/download?token=${token}`;
 
       return {
@@ -336,8 +335,7 @@ export const storageRouter = router({
       }
 
       const uploadId = randomUUID();
-      const { publicBaseUrl } = await getStorageUrlConfig(ctx.prisma);
-      const baseUrl = publicBaseUrl || `http://localhost:${process.env.PORT || 3001}`;
+      const baseUrl = await getStorageBaseUrl(ctx.prisma);
       const uploadUrl = `${baseUrl}/storage/upload/${uploadId}`;
 
       return {

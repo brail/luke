@@ -307,6 +307,9 @@ export async function getLayoutAsOfRevision(
   // JOIN on collection_group_revisions to carry sourceGroupId directly — rows from
   // earlier revisions have a sourceGroupRevisionId that belongs to a different revision,
   // so we cannot look it up from the target revision's group map alone.
+  // Raw SQL exemption (CLAUDE.md Stack Constraints): DISTINCT ON + json_agg(...) FILTER
+  // has no Prisma ORM equivalent. Uses the safe Prisma.sql tagged template (parameterized),
+  // never $queryRawUnsafe.
   const rowRevisions = await prisma.$queryRaw<(CollectionLayoutRowRevision & { source_group_id: string; quotations_json: string })[]>(
     Prisma.sql`
       SELECT DISTINCT ON (rr."sourceRowId")

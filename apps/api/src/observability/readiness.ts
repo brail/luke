@@ -31,6 +31,7 @@ export async function checkDatabase(
   prisma: PrismaClient
 ): Promise<{ ok: boolean; message?: string }> {
   try {
+    // Raw SQL exemption (CLAUDE.md Stack Constraints): health-probe query.
     await prisma.$queryRaw`SELECT 1`;
     return { ok: true };
   } catch (error: any) {

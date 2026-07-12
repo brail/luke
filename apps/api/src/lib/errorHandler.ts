@@ -157,20 +157,23 @@ export class SecureLogger {
     this.logger = logger;
   }
 
+  // Pino expects (mergingObject, message) — object first — while console accepts args in
+  // any order without losing information, so putting the sanitized object first keeps it
+  // structured under Pino and stays harmless under console.
   info(message: string, data?: any) {
-    this.logger.info(message, data ? sanitizeForLogging(data) : undefined);
+    data ? this.logger.info(sanitizeForLogging(data), message) : this.logger.info(message);
   }
 
   warn(message: string, data?: any) {
-    this.logger.warn(message, data ? sanitizeForLogging(data) : undefined);
+    data ? this.logger.warn(sanitizeForLogging(data), message) : this.logger.warn(message);
   }
 
   error(message: string, error?: any) {
-    this.logger.error(message, error ? sanitizeForLogging(error) : undefined);
+    error ? this.logger.error(sanitizeForLogging(error), message) : this.logger.error(message);
   }
 
   debug(message: string, data?: any) {
-    this.logger.debug(message, data ? sanitizeForLogging(data) : undefined);
+    data ? this.logger.debug(sanitizeForLogging(data), message) : this.logger.debug(message);
   }
 }
 

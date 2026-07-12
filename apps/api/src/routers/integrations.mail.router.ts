@@ -107,7 +107,7 @@ export const mailRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       try {
-        const logger = new SecureLogger(console);
+        const logger = new SecureLogger(ctx.logger);
 
         // Recupera la configurazione SMTP dai singoli campi AppConfig
         const [host, port, secure, user, pass, from] = await Promise.all([

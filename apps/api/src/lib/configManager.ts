@@ -5,12 +5,10 @@
  */
 
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { homedir } from 'os';
-import { join } from 'path';
 
 import pino from 'pino';
 import { z } from 'zod';
+
 import {
   type AppConfigKey,
   type AppConfigValue,
@@ -20,6 +18,7 @@ import {
   type LdapResilienceConfig,
   Roles,
 } from '@luke/core';
+import { getMasterKey } from '@luke/core/server';
 
 import type { PrismaClient } from '@prisma/client';
 
@@ -43,45 +42,8 @@ export interface LdapConfig {
   strategy: 'local-first' | 'ldap-first' | 'local-only' | 'ldap-only';
 }
 
-const MASTER_KEY_PATH = join(homedir(), '.luke', 'secret.key');
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16; // 128 bits
-// const TAG_LENGTH = 16; // 128 bits
-const KEY_LENGTH = 32; // 256 bits
-
-/**
- * Reads the 32-byte master key from `~/.luke/secret.key`.
- * If the file does not exist it is created with a fresh random key (mode 0600).
- *
- * @returns Master key buffer (32 bytes).
- * @throws {Error} If the key file exists but contains an unexpected number of bytes.
- */
-export function getMasterKey(): Buffer {
-  const keyDir = join(homedir(), '.luke');
-
-  if (!existsSync(MASTER_KEY_PATH)) {
-    // Crea directory se non esiste
-    if (!existsSync(keyDir)) {
-      mkdirSync(keyDir, { mode: 0o700 });
-    }
-
-    // Genera nuova master key
-    const masterKey = randomBytes(KEY_LENGTH);
-    writeFileSync(MASTER_KEY_PATH, masterKey, { mode: 0o600 });
-
-    logger.info({ path: MASTER_KEY_PATH }, 'Master key creata');
-  }
-
-  const keyBuffer = readFileSync(MASTER_KEY_PATH);
-
-  if (keyBuffer.length !== KEY_LENGTH) {
-    throw new Error(
-      `Master key deve essere di ${KEY_LENGTH} bytes, trovati ${keyBuffer.length}`
-    );
-  }
-
-  return keyBuffer;
-}
 
 /**
  * Encrypts a plaintext value using AES-256-GCM and the current master key.
