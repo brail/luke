@@ -7,7 +7,7 @@ import * as React from 'react';
 
 import { cn } from '../../lib/utils';
 
-import { withNestedSelectFix } from './radix-nested-select-fix';
+import { withNestedOverlayFix } from './radix-nested-overlay-fix';
 
 const Sheet = SheetPrimitive.Root;
 
@@ -64,7 +64,7 @@ const SheetContent = React.forwardRef<
     <SheetPrimitive.Content
       ref={ref}
       className={cn(sheetVariants({ side }), className)}
-      {...withNestedSelectFix(style, onInteractOutside)}
+      {...withNestedOverlayFix(style, onInteractOutside)}
       {...props}
     >
       {children}
