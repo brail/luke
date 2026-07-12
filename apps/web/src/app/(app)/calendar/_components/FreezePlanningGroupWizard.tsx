@@ -44,10 +44,14 @@ interface Props {
  */
 export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGroupId, milestones, holidayDates }: Props) {
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const utils = trpc.useUtils();
 
   const freezeMutation = trpc.seasonCalendar.freezePlanningGroup.useMutation({
     onSuccess: () => {
       toast.success('Gruppo di pianificazione congelato — baseline salvata');
+      // frozenAt drives seasonState/showFreezeInBar and the freeze/unfreeze picker filter in every
+      // caller (manual picker, template-apply auto-freeze) — invalidate here once, not per-caller.
+      void utils.planningGroup.list.invalidate();
       onFrozen();
       onClose();
     },

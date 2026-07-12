@@ -149,6 +149,14 @@ export default function CalendarPage() {
     void refetch();
     utils.phaseAlert.invalidate();
   };
+  /** Unfreeze flips PlanningGroup.frozenAt, which drives seasonState/showFreezeInBar and the
+   * freeze/unfreeze picker's filter — without this they'd stay on stale data until reload. (Freeze
+   * invalidates the same query itself, in FreezePlanningGroupWizard, since it's shared by two
+   * callers here.) */
+  const refetchAfterFreezeChange = () => {
+    refetchAfterEventChange();
+    void utils.planningGroup.list.invalidate();
+  };
 
   const triggerSyncMutation = trpc.seasonCalendar.triggerSync.useMutation({
     onSuccess: () => { toast.success('Sincronizzazione avviata'); refetchAfterEventChange(); },
@@ -170,7 +178,7 @@ export default function CalendarPage() {
   });
 
   const unfreezeMutation = trpc.seasonCalendar.unfreezePlanningGroup.useMutation({
-    onSuccess: () => { toast.success('Congelamento annullato'); setActiveGroupAction(null); refetchAfterEventChange(); },
+    onSuccess: () => { toast.success('Congelamento annullato'); setActiveGroupAction(null); refetchAfterFreezeChange(); },
     onError: err => toast.error(getTrpcErrorMessage(err, { CONFLICT: 'Il gruppo non è congelato' })),
   });
 
