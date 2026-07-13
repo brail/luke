@@ -53,6 +53,8 @@ export const RateLimitConfigSchema = z.object({
   userMutations: RateLimitPolicySchema.optional(),
   /** Policy per mutazioni struttura company (funzioni, team, membri) */
   companyStructureMutations: RateLimitPolicySchema.optional(),
+  /** Policy per trigger sync NAV (fornitori, ecc.) */
+  navSyncTrigger: RateLimitPolicySchema.optional(),
 });
 
 /**
