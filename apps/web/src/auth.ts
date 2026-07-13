@@ -173,28 +173,35 @@ export const config = {
       } else if (token.sub && trigger !== 'update') {
         if (checkTokenVersion(token) === null) return null;
 
-        // Refresh token: verifica tokenVersion chiamando API (con TTL cache)
+        // Refresh token: ri-conia l'accessToken API chiamando auth.refreshToken
+        // (con TTL cache). protectedProcedure valida Bearer scaduto e tokenVersion
+        // revocato → UNAUTHORIZED → logout. In caso positivo aggiorna l'accessToken
+        // embedded, così una sessione NextAuth ancora valida non invia mai un JWT
+        // API scaduto (root cause dell'errore `jwt expired`).
         const cached = tokenVersionCache.get(token.sub);
         if (!cached || Date.now() - cached >= TOKEN_VERSION_CACHE_TTL) {
           try {
-            const response = await fetch(buildTrpcUrl('me.get'), {
-              method: 'GET',
+            const response = await fetch(buildTrpcUrl('auth.refreshToken'), {
+              method: 'POST',
               headers: {
                 Authorization: `Bearer ${token.accessToken}`,
                 'Content-Type': 'application/json',
               },
+              body: JSON.stringify({}),
             });
 
             // Controlla il codice semantico tRPC nel body — più robusto dello status HTTP
             const body = await response.json().catch(() => null);
             if (body?.error?.data?.code === 'UNAUTHORIZED') {
-              debugLog('TokenVersion invalido durante refresh JWT, forzo logout');
+              debugLog('TokenVersion invalido o token scaduto durante refresh JWT, forzo logout');
               tokenVersionCache.delete(token.sub);
               return null; // Forza re-login
             }
-            if (!response.ok) {
-              debugError('Errore transitorio verifica tokenVersion (ignorato):', response.status);
+            const freshToken = body?.result?.data?.token as string | undefined;
+            if (!response.ok || !freshToken) {
+              debugError('Errore transitorio refresh token (ignorato):', response.status);
             } else {
+              token.accessToken = freshToken;
               tokenVersionCache.set(token.sub, Date.now());
             }
           } catch (error) {

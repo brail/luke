@@ -14,6 +14,19 @@ import {
   RequestEmailVerificationAdminSchema,
 } from '@luke/core';
 
+import { logAudit } from '../lib/auditLog';
+import { createToken } from '../lib/auth';
+import { sendVerificationEmail } from '../lib/emailHelpers';
+import { withIdempotency } from '../lib/idempotencyTrpc';
+import { isSyntheticLdapEmail } from '../lib/ldapAuth';
+import { requirePermission } from '../lib/permissions';
+import { withRateLimit } from '../lib/ratelimit';
+import {
+  router,
+  publicProcedure,
+  protectedProcedure,
+  adminProcedure,
+} from '../lib/trpc';
 import {
   authenticateUser,
   logoutAllSessions,
@@ -22,18 +35,6 @@ import {
   requestEmailVerification,
   confirmEmailVerification,
 } from '../services/auth.service';
-import { logAudit } from '../lib/auditLog';
-import { withIdempotency } from '../lib/idempotencyTrpc';
-import { withRateLimit } from '../lib/ratelimit';
-import { requirePermission } from '../lib/permissions';
-import {
-  router,
-  publicProcedure,
-  protectedProcedure,
-  adminProcedure,
-} from '../lib/trpc';
-import { sendVerificationEmail } from '../lib/emailHelpers';
-import { isSyntheticLdapEmail } from '../lib/ldapAuth';
 
 /**
  * Maschera un indirizzo email per esposizione da endpoint pubblico non autenticato
@@ -107,6 +108,28 @@ export const authRouter = router({
     return {
       user: ctx.session.user,
     };
+  }),
+
+  /**
+   * Re-mints a fresh API access token for the current session.
+   * `protectedProcedure` già valida il Bearer (scaduto → UNAUTHORIZED) e il
+   * `tokenVersion` (revocato → UNAUTHORIZED): il web callback lo usa per
+   * rinnovare l'accessToken embedded prima che scada, evitando che una sessione
+   * NextAuth ancora valida invii un JWT API scaduto (`jwt expired`).
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {{ token: string, tokenVersion: number }}
+   */
+  refreshToken: protectedProcedure.mutation(async ({ ctx }) => {
+    const token = createToken({
+      id: ctx.session.user.id,
+      email: ctx.session.user.email,
+      username: ctx.session.user.username,
+      role: ctx.session.user.role,
+      tokenVersion: ctx.session.user.tokenVersion,
+    });
+    return { token, tokenVersion: ctx.session.user.tokenVersion ?? 0 };
   }),
 
   /**
