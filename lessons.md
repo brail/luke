@@ -71,3 +71,23 @@ Regola: mai `resolve --applied` senza aver verificato che il DB rifletta davvero
 ### Non duplicare librerie per lo stesso scopo
 
 Se una libreria è già installata nel progetto (es. `pdfmake`), usarla — mai aggiungerne un'altra che fa la stessa cosa (es. `pdfkit`). Controllare sempre `package.json` prima di installare nuove dipendenze.
+
+---
+
+## Rate Limiting
+
+### Nuova route rate-limited: aggiornare ENTRAMBE le mappe (drift = crash runtime)
+
+Il rate limit vive in due mappe separate che devono restare in sync:
+
+- `RATE_LIMIT_CONFIG` in `apps/api/src/lib/ratelimit.ts` — consumata da `withRateLimit(routeName)`.
+- `DEFAULTS` in `apps/api/src/lib/rateLimitPolicy.ts` — consumata da `resolveRateLimitPolicy()` (cascata AppConfig → ENV → default).
+
+`withRateLimit('foo')` chiama `resolveRateLimitPolicy('foo')`: se `foo` esiste solo in `RATE_LIMIT_CONFIG` ma NON in `DEFAULTS`, `DEFAULTS[routeName]` è `undefined` → `def.max` lancia `Cannot read properties of undefined (reading 'max')` a runtime (non a compile-time: il cast al call site nasconde il drift a TypeScript).
+
+**Regola**: ogni nuova route rate-limited va aggiunta in TRE posti in sync:
+1. `RATE_LIMIT_CONFIG` (`ratelimit.ts`)
+2. `DEFAULTS` (`rateLimitPolicy.ts`) — **obbligatorio, altrimenti crash**
+3. `RateLimitConfigSchema` (`packages/core/src/schemas/appConfig.ts`) — campo `.optional()`, altrimenti un override AppConfig/ENV viene silenziosamente ignorato dal resolver.
+
+Regressione reale: `navSyncTrigger` mancante da `DEFAULTS` → sync fornitori NAV in crash in produzione (hotfix v1.9.1).
