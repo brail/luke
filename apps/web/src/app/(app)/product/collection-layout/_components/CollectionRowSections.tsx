@@ -77,6 +77,14 @@ export function SectionHeader({ title }: { title: string }) {
   );
 }
 
+/**
+ * Fixed-height label for the compact Pianificazione fields. Forces phase and
+ * planning-group labels to the same height so the two selects below them align
+ * even when the phase label carries criticality/variance badges. Shared so the
+ * height can't drift between the fields.
+ */
+const PLANNING_FIELD_LABEL = 'flex h-6 items-center';
+
 function parsePositiveFloat(value: string): number | null {
   const parsed = parseFloat(value);
   return value !== '' && !isNaN(parsed) && parsed > 0 ? parsed : null;
@@ -138,6 +146,52 @@ function calcQuotationFields(q: QuotationState, ps: PricingParameterSet | null):
   };
 }
 
+// ─── Field: Catalog select ────────────────────────────────────────────────────
+
+interface CatalogSelectFieldProps {
+  control: Control<CollectionLayoutRowInput>;
+  name: 'status' | 'styleStatus' | 'strategy' | 'pricePositioning';
+  label: string;
+  options: { value: string; label: string }[];
+  canUpdate: boolean;
+  /** When false the field is required (no empty sentinel). Defaults to nullable. */
+  nullable?: boolean;
+}
+
+/**
+ * FormField wrapper for a collection-catalog Select. Nullable fields use the `_none`
+ * sentinel (Radix Select can't represent an empty value) mapped to/from `null`;
+ * required fields (`nullable={false}`) bind the value directly.
+ */
+function CatalogSelectField({ control, name, label, options, canUpdate, nullable = true }: CatalogSelectFieldProps) {
+  return (
+    <FormField
+      control={control}
+      name={name}
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>{label}</FormLabel>
+          <Select
+            onValueChange={nullable ? v => field.onChange(v === '_none' ? null : v) : field.onChange}
+            // `?? '_none'` is harmless for required fields — their value is never null.
+            value={field.value ?? '_none'}
+            disabled={!canUpdate}
+          >
+            <FormControl>
+              <SelectTrigger><SelectValue placeholder={nullable ? '—' : undefined} /></SelectTrigger>
+            </FormControl>
+            <SelectContent>
+              {nullable && <SelectItem value="_none">—</SelectItem>}
+              {options.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
 // ─── Section: Identificazione ─────────────────────────────────────────────────
 
 interface IdentificationSectionProps {
@@ -145,16 +199,12 @@ interface IdentificationSectionProps {
   canUpdate: boolean;
   availableGenders: string[];
   groups: CollectionGroup[];
-  planningGroups: PlanningGroupOption[];
-  mode: 'create' | 'edit';
-  onRequestChangePlanningGroup?: () => void;
-  /** Present only in edit mode — enables the criticality badge next to the phase field. */
-  rowId?: string;
 }
 
 /**
- * Form section for the core identification fields of a collection row:
- * group, gender, line, article, strategy, status, phase, and designer.
+ * Form section for the core identity fields of a collection row:
+ * group, gender, category, line, article, status, designer, strategy, and
+ * price positioning. Planning group and phase live in `PlanningSection`.
  * Catalog options (strategy, lineStatus, styleStatus) are fetched from tRPC.
  */
 export function IdentificationSection({
@@ -162,10 +212,6 @@ export function IdentificationSection({
   canUpdate,
   availableGenders,
   groups,
-  planningGroups,
-  mode,
-  onRequestChangePlanningGroup,
-  rowId,
 }: IdentificationSectionProps) {
   const { data: strategyOptions = [] } = trpc.collectionCatalog.list.useQuery(
     { type: 'strategy' },
@@ -179,7 +225,6 @@ export function IdentificationSection({
     { type: 'styleStatus' },
     { staleTime: 5 * 60 * 1000 }
   );
-  const { phases } = usePhaseCatalog();
   const { data: pricePositioningOptions = [] } = trpc.collectionCatalog.list.useQuery(
     { type: 'pricePositioning' },
     { staleTime: 5 * 60 * 1000 }
@@ -191,15 +236,6 @@ export function IdentificationSection({
 
       {/* gruppo */}
       <GroupSelectField control={control} canUpdate={canUpdate} groups={groups} />
-
-      {/* gruppo di pianificazione */}
-      <PlanningGroupSelectField
-        control={control}
-        canUpdate={canUpdate}
-        planningGroups={planningGroups}
-        mode={mode}
-        onRequestChange={onRequestChangePlanningGroup}
-      />
 
       {/* gender | categoria */}
       <div className="grid grid-cols-2 gap-4">
@@ -287,47 +323,25 @@ export function IdentificationSection({
 
       {/* line status | style status */}
       <div className="grid grid-cols-2 gap-4">
-        <FormField
+        <CatalogSelectField
           control={control}
           name="status"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Line Status *</FormLabel>
-              <Select onValueChange={field.onChange} value={field.value} disabled={!canUpdate}>
-                <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                <SelectContent>
-                  {lineStatusOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
+          label="Line Status *"
+          options={lineStatusOptions}
+          canUpdate={canUpdate}
+          nullable={false}
         />
 
-        <FormField
+        <CatalogSelectField
           control={control}
           name="styleStatus"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Style Status</FormLabel>
-              <Select
-                onValueChange={v => field.onChange(v === '_none' ? null : v)}
-                value={field.value ?? '_none'}
-                disabled={!canUpdate}
-              >
-                <FormControl><SelectTrigger><SelectValue placeholder="—" /></SelectTrigger></FormControl>
-                <SelectContent>
-                  <SelectItem value="_none">—</SelectItem>
-                  {styleStatusOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
+          label="Style Status"
+          options={styleStatusOptions}
+          canUpdate={canUpdate}
         />
       </div>
 
-      {/* designer | fase */}
+      {/* designer | strategy */}
       <div className="grid grid-cols-2 gap-4">
         <FormField
           control={control}
@@ -349,18 +363,76 @@ export function IdentificationSection({
           )}
         />
 
+        <CatalogSelectField
+          control={control}
+          name="strategy"
+          label="Strategy"
+          options={strategyOptions}
+          canUpdate={canUpdate}
+        />
+      </div>
+
+      {/* posizionamento prezzo */}
+      <div className="grid grid-cols-2 gap-4">
+        <CatalogSelectField
+          control={control}
+          name="pricePositioning"
+          label="Posizionamento Prezzo"
+          options={pricePositioningOptions}
+          canUpdate={canUpdate}
+        />
+      </div>
+
+    </div>
+  );
+}
+
+// ─── Section: Pianificazione ──────────────────────────────────────────────────
+
+interface PlanningSectionProps {
+  control: Control<CollectionLayoutRowInput>;
+  canUpdate: boolean;
+  planningGroups: PlanningGroupOption[];
+  mode: 'create' | 'edit';
+  onRequestChangePlanningGroup?: () => void;
+  /** Present only in edit mode — enables the criticality/variance badges next to the phase field. */
+  rowId?: string;
+}
+
+/**
+ * Planning/status band shown full-width above the identity grid: planning group
+ * and phase, with the criticality and scheduling-variance badges those two
+ * fields drive. Kept apart from the identity fields so process/status reads at
+ * a glance.
+ */
+export function PlanningSection({
+  control,
+  canUpdate,
+  planningGroups,
+  mode,
+  onRequestChangePlanningGroup,
+  rowId,
+}: PlanningSectionProps) {
+  const { phases } = usePhaseCatalog();
+
+  return (
+    <div className="space-y-4">
+      <SectionHeader title="Pianificazione" />
+      <div className="grid grid-cols-2 gap-4">
+        {/* fase */}
         <FormField
           control={control}
           name="phaseId"
           render={({ field }) => (
             <FormItem>
-              <FormLabel className="flex items-center gap-1.5">
+              <FormLabel className={cn(PLANNING_FIELD_LABEL, 'gap-1.5')}>
                 Fase
                 {rowId && <CriticalityBadge rowId={rowId} className="text-xs" />}
                 {rowId && <SchedulingVarianceBadge rowId={rowId} className="text-xs" />}
               </FormLabel>
               <FormControl>
                 <PhaseSelect
+                  size="xs"
                   value={field.value ?? '_none'}
                   onValueChange={v => field.onChange(v === '_none' ? null : v)}
                   phases={phases}
@@ -372,55 +444,16 @@ export function IdentificationSection({
             </FormItem>
           )}
         />
-      </div>
 
-      {/* strategy | posizionamento prezzo */}
-      <div className="grid grid-cols-2 gap-4">
-        <FormField
+        {/* gruppo di pianificazione */}
+        <PlanningGroupSelectField
           control={control}
-          name="strategy"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Strategy</FormLabel>
-              <Select
-                onValueChange={v => field.onChange(v === '_none' ? null : v)}
-                value={field.value ?? '_none'}
-                disabled={!canUpdate}
-              >
-                <FormControl><SelectTrigger><SelectValue placeholder="—" /></SelectTrigger></FormControl>
-                <SelectContent>
-                  <SelectItem value="_none">—</SelectItem>
-                  {strategyOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={control}
-          name="pricePositioning"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Posizionamento Prezzo</FormLabel>
-              <Select
-                onValueChange={v => field.onChange(v === '_none' ? null : v)}
-                value={field.value ?? '_none'}
-                disabled={!canUpdate}
-              >
-                <FormControl><SelectTrigger><SelectValue placeholder="—" /></SelectTrigger></FormControl>
-                <SelectContent>
-                  <SelectItem value="_none">—</SelectItem>
-                  {pricePositioningOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
+          canUpdate={canUpdate}
+          planningGroups={planningGroups}
+          mode={mode}
+          onRequestChange={onRequestChangePlanningGroup}
         />
       </div>
-
     </div>
   );
 }
@@ -597,12 +630,12 @@ export function PlanningGroupSelectField({
           const current = planningGroups.find(g => g.id === field.value);
           return (
             <FormItem>
-              <FormLabel>Gruppo di pianificazione</FormLabel>
-              <div className="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
-                <span className="text-sm">
+              <FormLabel className={PLANNING_FIELD_LABEL}>Gruppo di pianificazione</FormLabel>
+              <div className="flex h-7 items-center justify-between gap-2 rounded-md border pl-3 pr-1">
+                <span className="truncate text-xs">
                   {current ? formatPlanningGroupLabel(current) : '—'}
                 </span>
-                <Button type="button" variant="outline" size="sm" disabled={!canUpdate} onClick={onRequestChange}>
+                <Button type="button" variant="outline" size="sm" className="h-5 px-2 text-xs" disabled={!canUpdate} onClick={onRequestChange}>
                   Cambia gruppo
                 </Button>
               </div>
@@ -613,9 +646,10 @@ export function PlanningGroupSelectField({
 
         return (
           <FormItem>
-            <FormLabel>Gruppo di pianificazione</FormLabel>
+            <FormLabel className={PLANNING_FIELD_LABEL}>Gruppo di pianificazione</FormLabel>
             <FormControl>
               <PlanningGroupSelect
+                size="xs"
                 value={field.value ?? ''}
                 onValueChange={field.onChange}
                 groups={planningGroups}
@@ -845,7 +879,7 @@ export function PricingFooterSection({
                             }}
                             disabled={!canUpdate}
                           >
-                            <SelectTrigger className={cn('h-7 text-xs w-full', !q.pricingParameterSetId && 'border-destructive/60 text-muted-foreground')}>
+                            <SelectTrigger size="xs" className={cn('w-full', !q.pricingParameterSetId && 'border-destructive/60 text-muted-foreground')}>
                               <SelectValue placeholder="Seleziona *" />
                             </SelectTrigger>
                             <SelectContent>
@@ -874,7 +908,8 @@ export function PricingFooterSection({
                               </span>
                             )}
                             <NumberInput
-                              className={cn('h-7 text-xs w-[88px]', sellSym && 'pl-5')}
+                              inputSize="sm"
+                              className={cn('w-[88px]', sellSym && 'pl-5')}
                               placeholder="0.00"
                               step={0.01}
                               min={0}
@@ -895,7 +930,8 @@ export function PricingFooterSection({
                               </span>
                             )}
                             <NumberInput
-                              className={cn('h-7 text-xs w-[88px]', buySym && 'pl-5')}
+                              inputSize="sm"
+                              className={cn('w-[88px]', buySym && 'pl-5')}
                               placeholder="0.00"
                               step={0.01}
                               min={0}
@@ -949,7 +985,8 @@ export function PricingFooterSection({
                         {/* Note */}
                         <td className="px-3 py-1.5">
                           <Input
-                            className="h-7 text-xs w-full"
+                            inputSize="sm"
+                            className="w-full"
                             placeholder="Note…"
                             value={q.notes ?? ''}
                             onChange={e => onUpdateField(q.id, 'notes', e.target.value || null)}
@@ -961,7 +998,8 @@ export function PricingFooterSection({
                         {/* SKU (peso per media margine) */}
                         <td className="px-2 py-1.5">
                           <NumberInput
-                            className="h-7 text-xs w-14 text-center"
+                            inputSize="sm"
+                            className="w-14 text-center"
                             placeholder="—"
                             min={1}
                             step={1}
@@ -978,8 +1016,8 @@ export function PricingFooterSection({
                             <Button
                               type="button"
                               variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                              size="icon-sm"
+                              className="text-muted-foreground hover:text-destructive"
                               onClick={() => onDeleteQuotation(q.id)}
                             >
                               <Trash2 className="h-3.5 w-3.5" />

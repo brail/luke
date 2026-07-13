@@ -33,6 +33,7 @@ import {
   IdentificationSection,
   NotesSection,
   PictureSidePanel,
+  PlanningSection,
   PricingFooterSection,
   SectionHeader,
   VendorSection,
@@ -345,19 +346,27 @@ export function CollectionRowDrawer({
           })} className="flex flex-col flex-1 min-h-0">
             {/* Scrollable body */}
             <div className="flex-1 min-h-0 overflow-y-auto">
+              {/* Planning band — full width above the identity grid */}
+              <div className="border-b px-6 py-5">
+                <PlanningSection
+                  control={form.control}
+                  canUpdate={canUpdate}
+                  planningGroups={planningGroups}
+                  mode={mode}
+                  onRequestChangePlanningGroup={() => setChangeGroupOpen(true)}
+                  rowId={mode === 'edit' ? row?.id : undefined}
+                />
+              </div>
+
               {/* Top 3-column section */}
               <div className="grid grid-cols-7 divide-x">
-                {/* Left col: Identification (includes group at top) (3/7) */}
+                {/* Left col: Identity (includes group at top) (3/7) */}
                 <div className="col-span-3 px-6 py-6">
                   <IdentificationSection
                     control={form.control}
                     canUpdate={canUpdate}
                     availableGenders={availableGenders}
                     groups={groups}
-                    planningGroups={planningGroups}
-                    mode={mode}
-                    onRequestChangePlanningGroup={() => setChangeGroupOpen(true)}
-                    rowId={mode === 'edit' ? row?.id : undefined}
                   />
                 </div>
 
