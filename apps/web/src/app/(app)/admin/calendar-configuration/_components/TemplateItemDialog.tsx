@@ -276,7 +276,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
                 <p className="text-xs font-medium text-muted-foreground">Calcola offset da altro item <span className="font-normal">(solo aiuto al calcolo, non crea una dipendenza)</span></p>
                 <div className="flex items-center gap-2">
                   <Select value={relItemId} onValueChange={setRelItemId}>
-                    <SelectTrigger className="h-8 text-xs flex-1"><SelectValue placeholder="Scegli item…" /></SelectTrigger>
+                    <SelectTrigger size="sm" className="flex-1"><SelectValue placeholder="Scegli item…" /></SelectTrigger>
                     <SelectContent>
                       {siblingItems.map(s => (
                         <SelectItem key={s.id} value={s.id}>

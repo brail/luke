@@ -192,8 +192,7 @@ export function ParameterSetPanel({
                         <TooltipTrigger asChild>
                           <Button
                             variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
+                            size="icon-sm"
                             onClick={() => onSetDefault(set.id)}
                             disabled={isLoading}
                           >
@@ -210,8 +209,7 @@ export function ParameterSetPanel({
                     hasPermission={canUpdate}
                     tooltip="Non hai i permessi per modificare i parametri"
                     variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
+                    size="icon-sm"
                     onClick={() => setEditingSet(set)}
                     disabled={isLoading}
                   >
@@ -226,8 +224,8 @@ export function ParameterSetPanel({
                           <TooltipTrigger asChild>
                             <Button
                               variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-destructive hover:text-destructive"
+                              size="icon-sm"
+                              className="text-destructive hover:text-destructive"
                               onClick={() => setDeleteTarget(set)}
                               disabled={isLoading}
                             >
@@ -243,8 +241,8 @@ export function ParameterSetPanel({
                           <TooltipTrigger asChild>
                             <Button
                               variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 opacity-50 cursor-not-allowed"
+                              size="icon-sm"
+                              className="opacity-50 cursor-not-allowed"
                               disabled
                             >
                               <Trash2 className="h-3.5 w-3.5" />

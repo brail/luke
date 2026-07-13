@@ -147,9 +147,8 @@ export function ManagePlanningGroupsDialog({ open, onClose, calendarId, brandId,
                             <PermissionButton
                               hasPermission={canRenameGroup}
                               tooltip={g.isDefault ? 'Il gruppo predefinito non può essere rinominato' : 'Non hai i permessi per rinominare'}
-                              size="icon"
+                              size="icon-sm"
                               variant="ghost"
-                              className="h-7 w-7"
                               onClick={() => openRename(g)}
                             >
                               <Pencil className="h-3.5 w-3.5" />
@@ -163,9 +162,9 @@ export function ManagePlanningGroupsDialog({ open, onClose, calendarId, brandId,
                                     ? 'Riassegna righe ed eventi prima di eliminare'
                                     : 'Non hai i permessi per eliminare'
                               }
-                              size="icon"
+                              size="icon-sm"
                               variant="ghost"
-                              className="h-7 w-7 text-destructive"
+                              className="text-destructive"
                               onClick={() => setDeletingGroup(g)}
                             >
                               <Trash2 className="h-3.5 w-3.5" />

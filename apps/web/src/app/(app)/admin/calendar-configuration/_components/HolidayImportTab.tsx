@@ -249,8 +249,8 @@ export function HolidayImportTab() {
                         <td className="px-4 py-2 text-right">
                           <Button
                             variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                            size="icon-sm"
+                            className="text-destructive hover:text-destructive"
                             onClick={() => setDeleteTarget(h.id)}
                           >
                             <Trash2 className="h-3.5 w-3.5" />

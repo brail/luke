@@ -80,7 +80,8 @@ export function EventTimelineDrag({ anchorDate, value, onChange, holidayDates, c
             if (!e.target.value) return;
             onChange(new Date(`${e.target.value}T00:00:00`));
           }}
-          className="h-7 w-40 text-xs [&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground"
+          inputSize="sm"
+          className="w-40 [&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground"
         />
       </div>
 

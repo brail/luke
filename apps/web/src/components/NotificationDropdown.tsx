@@ -80,8 +80,8 @@ export function NotificationDropdown() {
             {unreadCount > 0 && (
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-7 text-xs px-2"
+                size="xs"
+                className="px-2"
                 onClick={() => markAllMutation.mutate()}
                 disabled={markAllMutation.isPending}
               >
@@ -91,8 +91,8 @@ export function NotificationDropdown() {
             )}
             <Button
               variant="ghost"
-              size="sm"
-              className="h-7 text-xs px-2 text-muted-foreground"
+              size="xs"
+              className="px-2 text-muted-foreground"
               onClick={() => deleteReadMutation.mutate()}
               disabled={deleteReadMutation.isPending}
             >

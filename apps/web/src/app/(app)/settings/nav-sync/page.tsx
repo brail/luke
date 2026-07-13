@@ -848,8 +848,7 @@ function NavSyncTab({
                   <div className="flex items-center gap-2">
                     <Button
                       variant="outline"
-                      size="icon"
-                      className="h-7 w-7"
+                      size="icon-sm"
                       onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                       disabled={currentPage === 1}
                       aria-label="Pagina precedente"
@@ -861,8 +860,7 @@ function NavSyncTab({
                     </span>
                     <Button
                       variant="outline"
-                      size="icon"
-                      className="h-7 w-7"
+                      size="icon-sm"
                       onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                       disabled={currentPage === totalPages}
                       aria-label="Pagina successiva"

@@ -93,8 +93,8 @@ export function PricingGrid({ sets }: PricingGridProps) {
           <div className="flex items-center gap-1.5">
             <Button
               variant="outline"
-              size="sm"
-              className="h-7 gap-1.5 text-xs"
+              size="xs"
+              className="gap-1.5"
               onClick={() => handleExport('xlsx')}
               disabled={exportXlsxMutation.isPending}
             >
@@ -103,8 +103,8 @@ export function PricingGrid({ sets }: PricingGridProps) {
             </Button>
             <Button
               variant="outline"
-              size="sm"
-              className="h-7 gap-1.5 text-xs"
+              size="xs"
+              className="gap-1.5"
               onClick={() => handleExport('pdf')}
               disabled={exportPdfMutation.isPending}
             >

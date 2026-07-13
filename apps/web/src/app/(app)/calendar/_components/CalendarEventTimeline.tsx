@@ -79,10 +79,10 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
       {canUpdate && selected.size > 0 && (
         <div className="flex items-center gap-2 px-3 py-2 bg-muted/40 border-b text-sm">
           <span className="text-muted-foreground">{selected.size} selezionat{selected.size === 1 ? 'a' : 'e'}</span>
-          <Button variant="destructive" size="sm" className="h-7 text-xs" onClick={() => setConfirmOpen(true)}>
+          <Button variant="destructive" size="xs" onClick={() => setConfirmOpen(true)}>
             Elimina selezionat{selected.size === 1 ? 'a' : 'e'}
           </Button>
-          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSelected(new Set())}>Deseleziona</Button>
+          <Button variant="ghost" size="xs" onClick={() => setSelected(new Set())}>Deseleziona</Button>
         </div>
       )}
 

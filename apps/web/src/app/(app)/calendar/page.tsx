@@ -369,7 +369,7 @@ export default function CalendarPage() {
       {availableFunctions.length > 0 && (
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs">
+            <Button variant="outline" size="xs" className="gap-1.5">
               <span className={cn(someFnsSelected && 'text-primary font-medium')}>
                 Visualizza
                 {someFnsSelected

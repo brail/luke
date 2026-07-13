@@ -192,9 +192,9 @@ function FilterableHeader({
               />
               <Button
                 variant="ghost"
-                size="sm"
+                size="xs"
                 className={cn(
-                  'mt-1 h-7 w-full justify-start px-2 text-xs',
+                  'mt-1 w-full justify-start px-2',
                   filterValue === '_none' ? 'text-primary font-medium' : 'text-muted-foreground'
                 )}
                 onClick={() => onFilter(col, filterValue === '_none' ? null : '_none')}
@@ -204,8 +204,8 @@ function FilterableHeader({
               {filterValue && filterValue !== '_none' && (
                 <Button
                   variant="ghost"
-                  size="sm"
-                  className="h-7 w-full justify-start px-2 text-xs text-muted-foreground"
+                  size="xs"
+                  className="w-full justify-start px-2 text-muted-foreground"
                   onClick={() => onFilter(col, null)}
                 >
                   Rimuovi filtro
@@ -242,8 +242,8 @@ function FilterableHeader({
               {filterValue && (
                 <Button
                   variant="ghost"
-                  size="sm"
-                  className="mt-1 h-7 w-full justify-start px-2 text-xs text-muted-foreground"
+                  size="xs"
+                  className="mt-1 w-full justify-start px-2 text-muted-foreground"
                   onClick={() => onFilter(col, null)}
                 >
                   Rimuovi filtro
@@ -635,8 +635,8 @@ export function CollectionGroupSection({
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-xs text-primary gap-1"
+                    size="xs"
+                    className="px-2 text-primary gap-1"
                     onClick={e => { e.stopPropagation(); resetFilters(); }}
                   >
                     <RotateCcw className="h-3 w-3" />

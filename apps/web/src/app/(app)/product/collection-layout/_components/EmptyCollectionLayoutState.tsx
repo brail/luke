@@ -263,18 +263,18 @@ export function EmptyCollectionLayoutState({
 
               {/* Shortcut globali */}
               <div className="flex flex-wrap gap-2 text-xs">
-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setAllIncluded(true)}>
+                <Button variant="ghost" size="xs" onClick={() => setAllIncluded(true)}>
                   Seleziona tutte
                 </Button>
-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setAllIncluded(false)}>
+                <Button variant="ghost" size="xs" onClick={() => setAllIncluded(false)}>
                   Deseleziona tutte
                 </Button>
                 <span className="text-muted-foreground self-center">·</span>
-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setAllQuotations(true)}
+                <Button variant="ghost" size="xs" onClick={() => setAllQuotations(true)}
                   disabled={selectedRows.length === 0}>
                   Tutte con quotazioni
                 </Button>
-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setAllQuotations(false)}
+                <Button variant="ghost" size="xs" onClick={() => setAllQuotations(false)}
                   disabled={selectedRows.length === 0}>
                   Tutte senza quotazioni
                 </Button>

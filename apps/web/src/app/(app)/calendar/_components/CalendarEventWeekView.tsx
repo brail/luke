@@ -98,10 +98,10 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="flex flex-col">
         <div className="flex items-center gap-2 px-4 py-2 border-b">
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onViewDateChange(addDays(weekStart, -7))}><ChevronLeft size={14} /></Button>
+          <Button variant="ghost" size="icon-sm" onClick={() => onViewDateChange(addDays(weekStart, -7))}><ChevronLeft size={14} /></Button>
           <span className="text-sm font-medium flex-1 text-center">{weekLabel}</span>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onViewDateChange(addDays(weekStart, 7))}><ChevronRight size={14} /></Button>
-          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => onViewDateChange(new Date())}>Oggi</Button>
+          <Button variant="ghost" size="icon-sm" onClick={() => onViewDateChange(addDays(weekStart, 7))}><ChevronRight size={14} /></Button>
+          <Button variant="outline" size="xs" onClick={() => onViewDateChange(new Date())}>Oggi</Button>
         </div>
 
         <div className="flex-1">

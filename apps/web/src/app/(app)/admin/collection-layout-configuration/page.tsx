@@ -228,9 +228,9 @@ export default function CollectionCatalogPage() {
                                     <TooltipTrigger asChild>
                                       <span>
                                         <Button
-                                          size="icon"
+                                          size="icon-sm"
                                           variant="ghost"
-                                          className={cn('h-7 w-7', !canWrite && 'opacity-50 cursor-not-allowed')}
+                                          className={cn(!canWrite && 'opacity-50 cursor-not-allowed')}
                                           disabled={!canWrite || restoreMutation.isPending}
                                           onClick={() => canWrite && restoreMutation.mutate({ id: item.id })}
                                         >
@@ -248,9 +248,9 @@ export default function CollectionCatalogPage() {
                                       <TooltipTrigger asChild>
                                         <span>
                                           <Button
-                                            size="icon"
+                                            size="icon-sm"
                                             variant="ghost"
-                                            className={cn('h-7 w-7', !canWrite && 'opacity-50 cursor-not-allowed')}
+                                            className={cn(!canWrite && 'opacity-50 cursor-not-allowed')}
                                             disabled={!canWrite || isMutating}
                                             onClick={() => canWrite && setItemDialog({ mode: 'edit', item })}
                                           >
@@ -267,9 +267,9 @@ export default function CollectionCatalogPage() {
                                       <TooltipTrigger asChild>
                                         <span>
                                           <Button
-                                            size="icon"
+                                            size="icon-sm"
                                             variant="ghost"
-                                            className={cn('h-7 w-7 text-destructive', !canWrite && 'opacity-50 cursor-not-allowed')}
+                                            className={cn('text-destructive', !canWrite && 'opacity-50 cursor-not-allowed')}
                                             disabled={!canWrite || isMutating}
                                             onClick={() => canWrite && setDeletingItem(item)}
                                           >

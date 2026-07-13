@@ -140,12 +140,12 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
   return (
     <div className="flex flex-col">
       <div className="flex items-center gap-2 px-4 py-2 border-b">
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onViewDateChange(addDays(viewDate, -1))}><ChevronLeft size={14} /></Button>
+        <Button variant="ghost" size="icon-sm" onClick={() => onViewDateChange(addDays(viewDate, -1))}><ChevronLeft size={14} /></Button>
         <span className={cn('text-sm font-medium flex-1 text-center capitalize', isToday && 'text-blue-600 dark:text-blue-400')}>
           {dayLabel(viewDate)}
         </span>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onViewDateChange(addDays(viewDate, 1))}><ChevronRight size={14} /></Button>
-        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => onViewDateChange(new Date())}>Oggi</Button>
+        <Button variant="ghost" size="icon-sm" onClick={() => onViewDateChange(addDays(viewDate, 1))}><ChevronRight size={14} /></Button>
+        <Button variant="outline" size="xs" onClick={() => onViewDateChange(new Date())}>Oggi</Button>
       </div>
 
       {allDayEvents.length > 0 && (

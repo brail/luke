@@ -182,8 +182,7 @@ export default function CalendarConfigurationPage() {
                         {canUpdate && (
                           <Button
                             variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
+                            size="icon-sm"
                             onClick={() => setTemplateDialog({ open: true, template: t })}
                           >
                             <Pencil size={14} />
@@ -192,8 +191,8 @@ export default function CalendarConfigurationPage() {
                         {canDelete && (
                           <Button
                             variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            size="icon-sm"
+                            className="text-destructive hover:text-destructive"
                             onClick={() => setDeletingTemplate(t)}
                           >
                             <Trash2 size={14} />
@@ -350,9 +349,9 @@ export default function CalendarConfigurationPage() {
                                 <TooltipTrigger asChild>
                                   <span>
                                     <Button
-                                      size="icon"
+                                      size="icon-sm"
                                       variant="ghost"
-                                      className={cn('h-7 w-7', !canWriteCatalog && 'opacity-50 cursor-not-allowed')}
+                                      className={cn(!canWriteCatalog && 'opacity-50 cursor-not-allowed')}
                                       disabled={!canWriteCatalog || restoreCatalogMutation.isPending}
                                       onClick={() => canWriteCatalog && restoreCatalogMutation.mutate({ id: item.id })}
                                     >
@@ -370,9 +369,9 @@ export default function CalendarConfigurationPage() {
                                   <TooltipTrigger asChild>
                                     <span>
                                       <Button
-                                        size="icon"
+                                        size="icon-sm"
                                         variant="ghost"
-                                        className={cn('h-7 w-7', !canWriteCatalog && 'opacity-50 cursor-not-allowed')}
+                                        className={cn(!canWriteCatalog && 'opacity-50 cursor-not-allowed')}
                                         disabled={!canWriteCatalog || isCatalogMutating}
                                         onClick={() => canWriteCatalog && setCatalogDialog({ mode: 'edit', item })}
                                       >
@@ -389,9 +388,9 @@ export default function CalendarConfigurationPage() {
                                   <TooltipTrigger asChild>
                                     <span>
                                       <Button
-                                        size="icon"
+                                        size="icon-sm"
                                         variant="ghost"
-                                        className={cn('h-7 w-7 text-destructive', !canWriteCatalog && 'opacity-50 cursor-not-allowed')}
+                                        className={cn('text-destructive', !canWriteCatalog && 'opacity-50 cursor-not-allowed')}
                                         disabled={!canWriteCatalog || isCatalogMutating}
                                         onClick={() => canWriteCatalog && setRemovingCatalogItem(item)}
                                       >
