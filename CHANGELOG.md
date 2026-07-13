@@ -4,6 +4,11 @@ All notable changes to Luke are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [1.9.1] - 2026-07-13
+
+### Fixed
+- **api**: Register `navSyncTrigger` in rate-limit `DEFAULTS` map — fixed crash (`Cannot read properties of undefined (reading 'max')`) that blocked NAV vendor sync in production
+
 ## [1.9.0] - 2026-06-26
 
 ### Maintenance
