@@ -9,9 +9,9 @@ import { RateLimitConfigSchema, type RateLimitPolicy, isDevelopment } from '@luk
 
 import { getConfig } from './configManager';
 
-const logger = pino({ level: 'info' });
-
 import type { PrismaClient } from '@prisma/client';
+
+const logger = pino({ level: 'info' });
 
 /**
  * Default sicuri per backwards compatibility
@@ -54,6 +54,11 @@ const DEFAULTS: Record<string, RateLimitPolicy> = {
   companyStructureMutations: {
     max: isDevelopment() ? 100 : 30,
     timeWindow: '1m',
+    keyBy: 'userId',
+  },
+  navSyncTrigger: {
+    max: 1, // 1 sync per finestra, previene connection pool exhaustion
+    timeWindow: '10m',
     keyBy: 'userId',
   },
 };
