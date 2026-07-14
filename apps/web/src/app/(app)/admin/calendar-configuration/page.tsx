@@ -299,7 +299,7 @@ export default function CalendarConfigurationPage() {
                     <Button
                       size="sm"
                       disabled={!canWriteCatalog}
-                      className={cn(!canWriteCatalog && 'opacity-50 cursor-not-allowed')}
+                      className={!canWriteCatalog ? 'opacity-50 cursor-not-allowed' : undefined}
                       onClick={() => canWriteCatalog && setCatalogDialog({ mode: 'create' })}
                     >
                       <Plus className="mr-1 h-4 w-4" />
@@ -351,7 +351,7 @@ export default function CalendarConfigurationPage() {
                                     <Button
                                       size="icon-sm"
                                       variant="ghost"
-                                      className={cn(!canWriteCatalog && 'opacity-50 cursor-not-allowed')}
+                                      className={!canWriteCatalog ? 'opacity-50 cursor-not-allowed' : undefined}
                                       disabled={!canWriteCatalog || restoreCatalogMutation.isPending}
                                       onClick={() => canWriteCatalog && restoreCatalogMutation.mutate({ id: item.id })}
                                     >
@@ -371,7 +371,7 @@ export default function CalendarConfigurationPage() {
                                       <Button
                                         size="icon-sm"
                                         variant="ghost"
-                                        className={cn(!canWriteCatalog && 'opacity-50 cursor-not-allowed')}
+                                        className={!canWriteCatalog ? 'opacity-50 cursor-not-allowed' : undefined}
                                         disabled={!canWriteCatalog || isCatalogMutating}
                                         onClick={() => canWriteCatalog && setCatalogDialog({ mode: 'edit', item })}
                                       >

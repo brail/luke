@@ -155,7 +155,7 @@ export default function CollectionCatalogPage() {
                     <Button
                       size="sm"
                       disabled={!canWrite}
-                      className={cn(!canWrite && 'opacity-50 cursor-not-allowed')}
+                      className={!canWrite ? 'opacity-50 cursor-not-allowed' : undefined}
                       onClick={() => canWrite && setItemDialog({ mode: 'create', type: activeTab })}
                     >
                       <Plus className="mr-1 h-4 w-4" />
@@ -230,7 +230,7 @@ export default function CollectionCatalogPage() {
                                         <Button
                                           size="icon-sm"
                                           variant="ghost"
-                                          className={cn(!canWrite && 'opacity-50 cursor-not-allowed')}
+                                          className={!canWrite ? 'opacity-50 cursor-not-allowed' : undefined}
                                           disabled={!canWrite || restoreMutation.isPending}
                                           onClick={() => canWrite && restoreMutation.mutate({ id: item.id })}
                                         >
@@ -250,7 +250,7 @@ export default function CollectionCatalogPage() {
                                           <Button
                                             size="icon-sm"
                                             variant="ghost"
-                                            className={cn(!canWrite && 'opacity-50 cursor-not-allowed')}
+                                            className={!canWrite ? 'opacity-50 cursor-not-allowed' : undefined}
                                             disabled={!canWrite || isMutating}
                                             onClick={() => canWrite && setItemDialog({ mode: 'edit', item })}
                                           >

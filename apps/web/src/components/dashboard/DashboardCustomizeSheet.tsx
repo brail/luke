@@ -80,7 +80,7 @@ function EditableList({
             className="font-mono"
             onKeyDown={e => { if (e.key === 'Enter') tryAdd(); }}
           />
-          <Button variant="outline" size="xs" className="px-2" onClick={tryAdd}>
+          <Button variant="outline" size="icon-sm" onClick={tryAdd}>
             <Plus className="h-3 w-3" />
           </Button>
         </div>
@@ -147,7 +147,7 @@ export function DashboardCustomizeSheet({
                 {def.configurable && enabled && (
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button variant="ghost" size="xs" className="px-2">
+                      <Button variant="ghost" size="icon-sm">
                         <Settings2 className="h-3.5 w-3.5" />
                       </Button>
                     </PopoverTrigger>
