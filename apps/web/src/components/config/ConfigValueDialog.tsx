@@ -10,6 +10,7 @@ import { Button } from '../ui/button';
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogDescription,
@@ -58,8 +59,8 @@ export function ConfigValueDialog({
 
   return (
     <Dialog open={true} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[80vh] w-full">
-        <DialogHeader>
+      <DialogContent className="max-w-4xl max-h-[80vh] w-full p-0 gap-0 flex flex-col">
+        <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle>
             Valore Configurazione
             {keyName && (
@@ -74,14 +75,15 @@ export function ConfigValueDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
           <div className="bg-muted p-4 rounded-lg">
             <pre className="whitespace-pre-wrap break-all text-sm overflow-auto max-h-96 font-mono">
               {displayValue}
             </pre>
           </div>
+        </div>
 
-          <div className="flex justify-between">
+          <DialogFooter className="flex-row justify-between sm:justify-between sm:space-x-0 px-6 py-4 border-t shrink-0">
             {isJson && (
               <Button
                 variant="outline"
@@ -112,8 +114,7 @@ export function ConfigValueDialog({
                 </>
               )}
             </Button>
-          </div>
-        </div>
+          </DialogFooter>
       </DialogContent>
     </Dialog>
   );

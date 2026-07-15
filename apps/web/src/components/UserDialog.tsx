@@ -90,8 +90,8 @@ export function UserDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] p-0 gap-0 flex flex-col">
+        <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle>
             {mode === 'create' ? 'Nuovo Utente' : 'Modifica Utente'}
           </DialogTitle>

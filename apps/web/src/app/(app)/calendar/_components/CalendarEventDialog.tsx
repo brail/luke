@@ -327,12 +327,12 @@ export function CalendarEventDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-        <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-[520px] max-h-[90vh] p-0 gap-0 flex flex-col">
+          <DialogHeader className="px-6 py-4 border-b shrink-0">
             <DialogTitle>{isEdit ? 'Modifica evento' : 'Nuovo evento'}</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="ev-title">Titolo *</Label>
               <Input id="ev-title" value={title} onChange={e => setTitle(e.target.value)} placeholder="Nome dell'evento" />
@@ -455,7 +455,7 @@ export function CalendarEventDialog({
             </div>
           </div>
 
-          <DialogFooter className="gap-2">
+          <DialogFooter className="gap-2 px-6 py-4 border-t shrink-0">
             {isEdit && onDeleted && (
               <Button variant="destructive" onClick={() => setDeleteOpen(true)} disabled={isPending} className="mr-auto">
                 Elimina

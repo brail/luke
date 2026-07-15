@@ -13,6 +13,7 @@ import { Button } from '../ui/button';
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogDescription,
@@ -262,10 +263,12 @@ export function ConfigImportDialog({
     }
   };
 
+  const isPreviewStep = step === 'preview';
+
   return (
     <Dialog open={true} onOpenChange={handleClose}>
-      <DialogContent className="max-w-4xl max-h-[80vh]">
-        <DialogHeader>
+      <DialogContent className="max-w-4xl max-h-[80vh] p-0 gap-0 flex flex-col">
+        <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle>Importa Configurazioni</DialogTitle>
           <DialogDescription>
             Importa configurazioni da un file JSON. Le configurazioni esistenti
@@ -273,6 +276,7 @@ export function ConfigImportDialog({
           </DialogDescription>
         </DialogHeader>
 
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
         {step === 'upload' && (
           <div className="space-y-4">
             <div className="space-y-2">
@@ -295,7 +299,7 @@ export function ConfigImportDialog({
           </div>
         )}
 
-        {step === 'preview' && (
+        {isPreviewStep && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-medium">Anteprima Importazione</h3>
@@ -350,20 +354,6 @@ export function ConfigImportDialog({
                 </TableBody>
               </Table>
             </div>
-
-            <div className="flex justify-end space-x-2">
-              <Button variant="outline" onClick={handleClose}>
-                Annulla
-              </Button>
-              <Button
-                onClick={handleImport}
-                disabled={
-                  preview.filter(p => p.status !== 'invalid').length === 0
-                }
-              >
-                Importa Configurazioni
-              </Button>
-            </div>
           </div>
         )}
 
@@ -378,6 +368,23 @@ export function ConfigImportDialog({
             </div>
             <Progress value={progress} className="w-full" />
           </div>
+        )}
+        </div>
+
+        {isPreviewStep && (
+          <DialogFooter className="px-6 py-4 border-t shrink-0">
+            <Button variant="outline" onClick={handleClose}>
+              Annulla
+            </Button>
+            <Button
+              onClick={handleImport}
+              disabled={
+                preview.filter(p => p.status !== 'invalid').length === 0
+              }
+            >
+              Importa Configurazioni
+            </Button>
+          </DialogFooter>
         )}
       </DialogContent>
     </Dialog>

@@ -152,8 +152,8 @@ export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogP
 
   return (
     <Dialog open={open} onOpenChange={open => { if (!open) handleCancel(); }}>
-      <DialogContent className="sm:max-w-[560px] max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-[560px] max-h-[85vh] p-0 gap-0 flex flex-col">
+        <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Settings2 className="h-4 w-4" />
             Gestisci accesso — {user.firstName} {user.lastName}
@@ -164,10 +164,11 @@ export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogP
           </DialogDescription>
         </DialogHeader>
 
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
         {loadingSection ? (
           <div className="py-8 text-center text-muted-foreground">Caricamento...</div>
         ) : (
-          <div className="space-y-6 pt-2">
+          <div className="space-y-6">
             {/* Section overrides */}
             <div>
               <h3 className="text-sm font-semibold mb-3">Visibilità sezioni</h3>
@@ -222,8 +223,9 @@ export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogP
             </div>
           </div>
         )}
+        </div>
 
-        <DialogFooter className="mt-6">
+        <DialogFooter className="px-6 py-4 border-t shrink-0">
           <Button variant="outline" onClick={handleCancel} disabled={isSaving}>
             Annulla
           </Button>

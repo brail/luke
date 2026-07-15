@@ -165,11 +165,12 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
+      <DialogContent className="max-w-lg max-h-[90vh] p-0 gap-0 flex flex-col">
+        <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle>{isEdit ? 'Modifica item' : 'Nuovo item'}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
           <div className="space-y-1">
             <Label htmlFor="title">Titolo *</Label>
             <Input
@@ -367,8 +368,9 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
               rows={2}
             />
           </div>
+          </div>
 
-          <DialogFooter>
+          <DialogFooter className="px-6 py-4 border-t shrink-0">
             <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>
               Annulla
             </Button>

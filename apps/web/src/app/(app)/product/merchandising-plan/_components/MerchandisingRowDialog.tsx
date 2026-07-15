@@ -190,15 +190,16 @@ export function MerchandisingRowDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="max-w-2xl max-h-[90vh] p-0 gap-0 flex flex-col">
+          <DialogHeader className="px-6 py-4 border-b shrink-0">
             <DialogTitle>
               {mode === 'create' ? 'Nuova riga SKU' : 'Modifica riga SKU'}
             </DialogTitle>
           </DialogHeader>
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+            <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col flex-1 min-h-0">
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
               {/* Identificazione */}
               <div className="grid grid-cols-2 gap-3">
                 <FormField
@@ -513,8 +514,9 @@ export function MerchandisingRowDialog({
                   </FormItem>
                 )}
               />
+            </div>
 
-              <DialogFooter className="flex items-center justify-between">
+              <DialogFooter className="flex items-center justify-between px-6 py-4 border-t shrink-0">
                 <div>
                   {mode === 'edit' && onDelete && canUpdate && (
                     <Button

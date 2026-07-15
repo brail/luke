@@ -6,7 +6,6 @@ import { z } from 'zod';
 
 import { PasswordValidationIndicators } from './PasswordValidationIndicators';
 import { Button } from './ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 
@@ -246,14 +245,8 @@ export function UserForm({
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>
-          {mode === 'create' ? 'Nuovo Utente' : 'Modifica Utente'}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
           {/* Prima riga: Email e Username */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Email */}
@@ -492,27 +485,26 @@ export function UserForm({
               )}
             </Label>
           </div>
+      </div>
 
-          {/* Pulsanti */}
-          <div className="flex justify-end space-x-2 pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onCancel}
-              disabled={isLoading}
-            >
-              Annulla
-            </Button>
-            <Button type="submit" disabled={isLoading}>
-              {isLoading
-                ? 'Salvataggio...'
-                : mode === 'create'
-                  ? 'Crea Utente'
-                  : 'Salva Modifiche'}
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+      {/* Pulsanti */}
+      <div className="flex justify-end space-x-2 px-6 py-4 border-t shrink-0">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onCancel}
+          disabled={isLoading}
+        >
+          Annulla
+        </Button>
+        <Button type="submit" disabled={isLoading}>
+          {isLoading
+            ? 'Salvataggio...'
+            : mode === 'create'
+              ? 'Crea Utente'
+              : 'Salva Modifiche'}
+        </Button>
+      </div>
+    </form>
   );
 }
