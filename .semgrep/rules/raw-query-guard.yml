@@ -12,7 +12,7 @@ rules:
       exclude:
         - '**/*.test.ts'
         - '**/*.spec.ts'
-        - 'apps/api/test/**'
+        - '/apps/api/test/**'
 
   - id: luke-nav-query-interpolation
     mode: taint
@@ -24,7 +24,7 @@ rules:
       Sanitizza sempre con sanitizeCompany() prima di interpolare.
     paths:
       include:
-        - 'packages/nav/**'
+        - '/packages/nav/**'
       exclude:
         - '**/*.test.ts'
         - '**/*.spec.ts'

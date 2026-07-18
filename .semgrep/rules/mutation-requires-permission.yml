@@ -11,7 +11,7 @@ rules:
       - pattern-not: <... requirePermission(...) ...>
     paths:
       include:
-        - 'apps/api/src/routers/**'
+        - '/apps/api/src/routers/**'
       exclude:
         - '**/*.test.ts'
         - '**/*.spec.ts'
