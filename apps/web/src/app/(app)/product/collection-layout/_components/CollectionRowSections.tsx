@@ -36,7 +36,7 @@ import { CriticalityBadge } from './CriticalityBadge';
 import { SchedulingVarianceBadge } from './SchedulingVarianceBadge';
 import { VendorCombobox } from './VendorCombobox';
 
-import type { PricingParameterSet } from '../_hooks/usePricingCalc';
+import type { PricingParameterSet } from '../../_shared/pricingCalc';
 import type { Control } from 'react-hook-form';
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
@@ -705,14 +705,18 @@ export function ForecastSection({ control, canUpdate }: ForecastSectionProps) {
         name="qtyForecast"
         render={({ field }) => (
           <FormItem>
-            <FormLabel>Qty Forecast *</FormLabel>
+            <FormLabel>Qty Forecast</FormLabel>
             <FormControl>
               <NumberInput
                 {...field}
-                value={isNaN(field.value as number) ? '' : field.value}
-                onChange={e => field.onChange(parseInt(e.target.value, 10))}
+                value={field.value == null || isNaN(field.value as number) ? '' : field.value}
+                onChange={e => {
+                  const v = parseInt(e.target.value, 10);
+                  field.onChange(isNaN(v) ? null : v);
+                }}
                 onFocus={e => e.target.select()}
                 disabled={!canUpdate}
+                placeholder="—"
               />
             </FormControl>
             <FormMessage />

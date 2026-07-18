@@ -82,7 +82,7 @@ function buildDefaultValues(
     article: null,
     status: 'NEW',
     skuForecast: 1,
-    qtyForecast: 1,
+    qtyForecast: null,
     productCategory: '',
     strategy: null,
     styleStatus: null,
@@ -96,6 +96,13 @@ function buildDefaultValues(
     toolingNotes: null,
     toolingQuotation: null,
   };
+}
+
+function missingForecastLabels(data: CollectionLayoutRowInput): string[] {
+  const missing: string[] = [];
+  if (data.skuForecast == null) missing.push('SKU Forecast');
+  if (data.qtyForecast == null) missing.push('Qty Forecast');
+  return missing;
 }
 
 function rowToQuotationState(q: CollectionRow['quotations'][number]): QuotationState {
@@ -328,6 +335,8 @@ export function CollectionRowDrawer({
     deleteQuotationMutation.mutate({ quotationId: id });
   };
 
+  const missingLabels = pendingData ? missingForecastLabels(pendingData) : [];
+
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -341,7 +350,7 @@ export function CollectionRowDrawer({
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(data => {
-            if (data.skuForecast == null) { setPendingData(data); return; }
+            if (missingForecastLabels(data).length > 0) { setPendingData(data); return; }
             onSubmit(data);
           })} className="flex flex-col flex-1 min-h-0">
             {/* Scrollable body */}
@@ -472,8 +481,12 @@ export function CollectionRowDrawer({
     <ConfirmDialog
       open={pendingData != null}
       onOpenChange={open => { if (!open) setPendingData(null); }}
-      title="SKU Forecast non impostato"
-      description="Stai salvando una riga senza SKU Forecast. Questo valore è necessario per i calcoli di budget del gruppo. Vuoi procedere senza impostarlo?"
+      title={
+        missingLabels.length > 1
+          ? 'Forecast non impostati'
+          : `${missingLabels[0] ?? ''} non impostato`
+      }
+      description={`Stai salvando una riga senza ${missingLabels.join(' e ')}. Questi valori sono necessari per i calcoli di budget del gruppo e di efficienza. Vuoi procedere senza impostarli?`}
       confirmText="Salva comunque"
       cancelText="Annulla"
       actionType="warning"

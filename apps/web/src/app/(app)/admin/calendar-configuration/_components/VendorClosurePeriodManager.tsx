@@ -164,8 +164,8 @@ export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountry
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium">
+        <CardHeader size="compact">
+          <CardTitle size="compact">
             Periodi di chiusura — {vendorName} ({season.name})
           </CardTitle>
         </CardHeader>

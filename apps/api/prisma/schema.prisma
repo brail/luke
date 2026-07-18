@@ -636,7 +636,7 @@ model CollectionLayoutRow {
   status          String // catalog-managed (lineStatus)
   /// Planned SKU count (distinct sizes/colors). Belongs to Row (not Group).
   skuForecast     Int?
-  qtyForecast     Int
+  qtyForecast     Int?
   productCategory String
 
   // Optional — identification/progress
@@ -846,7 +846,7 @@ model CollectionLayoutRowRevision {
   article          String?
   status           String
   skuForecast      Int?
-  qtyForecast      Int
+  qtyForecast      Int?
   productCategory  String
   strategy         String?
   styleStatus      String?

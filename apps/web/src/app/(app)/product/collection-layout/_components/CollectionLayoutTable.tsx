@@ -28,12 +28,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '../../../../../components/ui/popover';
-import { computeWeightedMargin } from '../_hooks/usePricingCalc';
+import { computeWeightedMargin } from '../../_shared/pricingCalc';
 
 import { AssignPlanningGroupDialog } from './AssignPlanningGroupDialog';
 import { CollectionGroupSection } from './CollectionGroupSection';
 
-import type { PricingParameterSet } from '../_hooks/usePricingCalc';
+import type { PricingParameterSet } from '../../_shared/pricingCalc';
 
 type CollectionLayoutData = NonNullable<RouterOutputs['collectionLayout']['get']>;
 
@@ -150,7 +150,7 @@ export function CollectionLayoutTable({
     0
   );
   const totalQty = layout.groups.reduce(
-    (sum, g) => sum + g.rows.reduce((s, r) => s + r.qtyForecast, 0),
+    (sum, g) => sum + g.rows.reduce((s, r) => s + (r.qtyForecast ?? 0), 0),
     0
   );
   const allRows = layout.groups.flatMap(g => g.rows);

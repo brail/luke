@@ -171,7 +171,7 @@ export async function buildCollectionRowPdf(
     ['Progress',    row.phaseId ? (progressLabelMap.get(row.phaseId) ?? '—') : '—'],
     ['Designer',    row.designer ?? '—'],
     ['SKU Forecast', row.skuForecast != null ? String(row.skuForecast) : '—'],
-    ['QTY Forecast',String(row.qtyForecast)],
+    ['QTY Forecast', row.qtyForecast != null ? String(row.qtyForecast) : '—'],
   ];
   if (row.toolingQuotation) {
     identFields.push(['Tooling', fmt(row.toolingQuotation, '€')]);

@@ -11,48 +11,55 @@ import { trpc } from '../../../../lib/trpc';
 import { cn } from '../../../../lib/utils';
 import { assignBrandColors, resolveBrandColor } from '../../calendar/utils';
 
+import { CollectionStatistics } from './_components/CollectionStatistics';
+import { EmptyContextCard } from './_components/EmptyContextCard';
+import { useControlloLayout } from './_hooks/useControlloLayout';
+
 import type { ReactNode } from 'react';
 
 /**
- * Controllo: Saturazione, Strozzatura, Stagnazione riunite in un'unica pagina a tab.
+ * Controllo: pianificazione fasi (Saturazione/Strozzatura/Stagnazione) e statistiche
+ * collezione riunite in un'unica pagina, separate da uno switch di primo livello —
+ * sono due letture diverse dei dati (salute del processo vs. contenuto della collezione).
  */
 export default function ControlloPage() {
   return (
     <>
       <PageHeader
         title="Controllo"
-        description="Saturazione, strozzatura e stagnazione delle righe di collezione"
+        description="Pianificazione fasi e statistiche del Collection Layout"
       />
 
       <div className="p-6">
-        <Tabs defaultValue="saturation">
+        <Tabs defaultValue="fasi">
           <TabsList>
-            <TabsTrigger value="saturation">Saturazione</TabsTrigger>
-            <TabsTrigger value="bottleneck">Strozzatura</TabsTrigger>
-            <TabsTrigger value="stagnation">Stagnazione</TabsTrigger>
+            <TabsTrigger value="fasi">Pianificazione Fasi</TabsTrigger>
+            <TabsTrigger value="statistiche">Statistiche Collezione</TabsTrigger>
           </TabsList>
-          <TabsContent value="saturation">
-            <SaturationTab />
+          <TabsContent value="fasi" className="space-y-6">
+            <Tabs defaultValue="saturation">
+              <TabsList>
+                <TabsTrigger value="saturation">Saturazione</TabsTrigger>
+                <TabsTrigger value="bottleneck">Strozzatura</TabsTrigger>
+                <TabsTrigger value="stagnation">Stagnazione</TabsTrigger>
+              </TabsList>
+              <TabsContent value="saturation">
+                <SaturationTab />
+              </TabsContent>
+              <TabsContent value="bottleneck">
+                <BottleneckTab />
+              </TabsContent>
+              <TabsContent value="stagnation">
+                <StagnationTab />
+              </TabsContent>
+            </Tabs>
           </TabsContent>
-          <TabsContent value="bottleneck">
-            <BottleneckTab />
-          </TabsContent>
-          <TabsContent value="stagnation">
-            <StagnationTab />
+          <TabsContent value="statistiche">
+            <CollectionStatistics />
           </TabsContent>
         </Tabs>
       </div>
     </>
-  );
-}
-
-function EmptyContextCard({ message }: { message: string }) {
-  return (
-    <Card>
-      <CardContent>
-        <p className="py-12 text-center text-muted-foreground">{message}</p>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -92,18 +99,6 @@ function QueryBoundary({
   if (isLoading) return <QueryStateMessage variant="loading" message="Caricamento…" />;
   if (isEmpty) return <QueryStateMessage variant="empty" message={emptyMessage} />;
   return <>{children}</>;
-}
-
-function useControlloLayout() {
-  const { brand, season, isLoading: contextLoading } = useAppContext();
-  const enabled = !!brand?.id && !!season?.id;
-
-  const { data: layout } = trpc.collectionLayout.get.useQuery(
-    { brandId: brand?.id ?? '', seasonId: season?.id ?? '' },
-    { enabled }
-  );
-
-  return { layout, enabled, contextLoading };
 }
 
 /**

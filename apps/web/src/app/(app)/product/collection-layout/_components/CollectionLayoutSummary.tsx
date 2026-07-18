@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from '../../../../../components/ui/card';
 import { Progress } from '../../../../../components/ui/progress';
+import { groupRowsByVendor } from '../../_shared/pricingCalc';
 import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
 
 type CollectionLayoutData = NonNullable<RouterOutputs['collectionLayout']['get']>;
@@ -36,41 +37,35 @@ export function CollectionLayoutSummary({ layout }: CollectionLayoutSummaryProps
     ...phases.map(phase => {
       const rows = allRows.filter(r => r.phaseId === phase.id);
       const sku = rows.reduce((sum, r) => sum + (r.skuForecast ?? 0), 0);
-      const qty = rows.reduce((sum, r) => sum + r.qtyForecast, 0);
+      const qty = rows.reduce((sum, r) => sum + (r.qtyForecast ?? 0), 0);
       const pct = totalSku > 0 ? Math.round((sku / totalSku) * 100) : 0;
       return { label: phase.label, count: rows.length, sku, qty, pct };
     }),
     (() => {
       const rows = allRows.filter(r => !r.phaseId);
       const sku = rows.reduce((sum, r) => sum + (r.skuForecast ?? 0), 0);
-      const qty = rows.reduce((sum, r) => sum + r.qtyForecast, 0);
+      const qty = rows.reduce((sum, r) => sum + (r.qtyForecast ?? 0), 0);
       const pct = totalSku > 0 ? Math.round((sku / totalSku) * 100) : 0;
       return { label: '—', count: rows.length, sku, qty, pct };
     })(),
   ].filter(s => s.count > 0);
 
   // ── Per Fornitore ─────────────────────────────────────────────────
-  const vendorMap = new Map<string, { name: string; count: number; sku: number; qty: number }>();
-  for (const row of allRows) {
-    const key = row.vendor?.id ?? '__none__';
-    const name = row.vendor ? (row.vendor.nickname ?? row.vendor.name) : '—';
-    const existing = vendorMap.get(key);
-    if (existing) {
-      existing.count++;
-      existing.sku += row.skuForecast ?? 0;
-      existing.qty += row.qtyForecast;
-    } else {
-      vendorMap.set(key, { name, count: 1, sku: row.skuForecast ?? 0, qty: row.qtyForecast });
-    }
-  }
-  const vendorStats = Array.from(vendorMap.values()).sort((a, b) => b.sku - a.sku);
+  const vendorStats = groupRowsByVendor(allRows, '—')
+    .map(v => ({
+      name: v.name,
+      count: v.rows.length,
+      sku: v.rows.reduce((sum, r) => sum + (r.skuForecast ?? 0), 0),
+      qty: v.rows.reduce((sum, r) => sum + (r.qtyForecast ?? 0), 0),
+    }))
+    .sort((a, b) => b.sku - a.sku);
 
   return (
     <div className="grid grid-cols-2 gap-4">
       {/* Per Fase */}
       <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium">Per Fase</CardTitle>
+        <CardHeader size="compact">
+          <CardTitle size="compact">Per Fase</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {progressStats.map(({ label, count, sku, qty, pct }) => (
@@ -92,8 +87,8 @@ export function CollectionLayoutSummary({ layout }: CollectionLayoutSummaryProps
 
       {/* Per Fornitore */}
       <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium">Per Fornitore</CardTitle>
+        <CardHeader size="compact">
+          <CardTitle size="compact">Per Fornitore</CardTitle>
         </CardHeader>
         <CardContent>
           {vendorStats.length === 0 ? (

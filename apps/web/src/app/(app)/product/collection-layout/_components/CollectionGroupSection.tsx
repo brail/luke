@@ -53,12 +53,12 @@ import {
 } from '../../../../../components/ui/tooltip';
 import { trpc } from '../../../../../lib/trpc';
 import { cn } from '../../../../../lib/utils';
+import { computeRowMargin, computeWeightedMargin, resolveVendorName } from '../../_shared/pricingCalc';
 import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
-import { computeRowMargin, computeWeightedMargin } from '../_hooks/usePricingCalc';
 
 import { CriticalityBandBadge, formatCriticalityTooltip } from './CriticalityBadge';
 
-import type { PricingParameterSet } from '../_hooks/usePricingCalc';
+import type { PricingParameterSet } from '../../_shared/pricingCalc';
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -531,7 +531,7 @@ export function CollectionGroupSection({
     }
 
     let rows = baseRows.filter(row => {
-      const vendorName = row.vendor?.nickname ?? row.vendor?.name ?? null;
+      const vendorName = resolveVendorName(row.vendor, null);
       if (searchQuery && !textMatch(row.line, searchQuery) && !textMatch(vendorName, searchQuery)) return false;
       if (columnFilters.line && !textMatch(row.line, columnFilters.line)) return false;
       if (columnFilters.article && !textMatch(row.article, columnFilters.article)) return false;
@@ -545,7 +545,7 @@ export function CollectionGroupSection({
       if (columnFilters.progress && !enumMatch(row.phaseId, columnFilters.progress)) return false;
       if (columnFilters.pricePositioning && !textMatch(row.pricePositioning, columnFilters.pricePositioning)) return false;
       if (columnFilters.skuForecast && !numberMatch(row.skuForecast ?? 0, columnFilters.skuForecast)) return false;
-      if (columnFilters.qtyForecast && !numberMatch(row.qtyForecast, columnFilters.qtyForecast)) return false;
+      if (columnFilters.qtyForecast && !numberMatch(row.qtyForecast ?? 0, columnFilters.qtyForecast)) return false;
       if (columnFilters.margin) {
         const m = computeRowMargin(row, parameterSets);
         const threshold = Number(columnFilters.margin);
@@ -586,7 +586,7 @@ export function CollectionGroupSection({
   }, [filteredRows, onFilteredRowIdsChange]);
 
   const skuTotal = group.rows.reduce((sum, r) => sum + (r.skuForecast ?? 0), 0);
-  const qtyTotal = group.rows.reduce((sum, r) => sum + r.qtyForecast, 0);
+  const qtyTotal = group.rows.reduce((sum, r) => sum + (r.qtyForecast ?? 0), 0);
   const skuVariant = skuRatioVariant(skuTotal, group.skuBudget);
   const groupWeightedMargin = computeWeightedMargin(group.rows, parameterSets);
 
@@ -843,7 +843,7 @@ export function CollectionGroupSection({
                       {show('supplier') && (
                         <TableCell className="w-36 max-w-[9rem] text-sm text-muted-foreground">
                           <span className="block truncate">
-                            {row.vendor?.nickname ?? row.vendor?.name ?? '—'}
+                            {resolveVendorName(row.vendor, '—')}
                           </span>
                         </TableCell>
                       )}
