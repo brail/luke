@@ -22,7 +22,11 @@
     "changelog": "git-cliff -o CHANGELOG.md",
     "changelog:bump": "git-cliff --bump -o CHANGELOG.md",
     "changelog:tag": "git-cliff -o CHANGELOG.md",
-    "prepare": "husky"
+    "prepare": "husky",
+    "security:sast": "semgrep scan --config p/typescript --config p/nextjs --config p/nodejs --config p/react --config p/sql-injection --config .semgrep/rules --error",
+    "security:secrets": "gitleaks detect --source .",
+    "security:deps": "osv-scanner scan -r .",
+    "security": "pnpm security:sast && pnpm security:secrets && pnpm security:deps"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.1.0",
