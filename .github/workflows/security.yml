@@ -1,0 +1,55 @@
+name: security
+
+on:
+  push:
+    branches: [develop-2.1, main]
+  schedule:
+    - cron: '0 6 * * 1' # lunedì 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  semgrep:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install semgrep (OSS, LGPL-2.1)
+        run: pip install semgrep
+
+      - name: Semgrep - regole bloccanti (community + custom ERROR-tier)
+        run: semgrep scan --config p/typescript --config p/nextjs --config p/nodejs --config p/react --config p/sql-injection --config .semgrep/rules/no-console.yml --config .semgrep/rules/raw-query-guard.yml --config .semgrep/rules/no-direct-env.yml --error
+
+      - name: Semgrep - luke-mutation-requires-permission (WARNING, non bloccante)
+        run: semgrep scan --config .semgrep/rules/mutation-requires-permission.yml
+
+  gitleaks:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Install gitleaks (CLI OSS/MIT — non gitleaks-action, che richiede licenza commerciale)
+        run: |
+          curl -sSL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+          rm gitleaks.tar.gz
+
+      - run: gitleaks detect --source .
+
+  osv-push:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    continue-on-error: true # decisione: report-only sui push
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google/osv-scanner-action/osv-scanner-action@v2
+
+  osv-weekly:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest # bloccante: il fail settimanale è il segnale vero
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google/osv-scanner-action/osv-scanner-action@v2
