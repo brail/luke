@@ -14,8 +14,6 @@ rules:
           regex: ^(?!NEXT_PUBLIC_)(?!NODE_ENV$)(?!APP_VERSION$).*
     paths:
       exclude:
-        - '**/*.test.ts'
-        - '**/*.spec.ts'
         - '/apps/api/test/**'
         - '/apps/api/scripts/**'
         - '/apps/api/prisma.config.ts'

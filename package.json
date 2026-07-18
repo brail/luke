@@ -23,7 +23,7 @@
     "changelog:bump": "git-cliff --bump -o CHANGELOG.md",
     "changelog:tag": "git-cliff -o CHANGELOG.md",
     "prepare": "husky",
-    "security:sast": "semgrep scan --config p/typescript --config p/nextjs --config p/nodejs --config p/react --config p/sql-injection --config .semgrep/rules/no-console.yml --config .semgrep/rules/raw-query-guard.yml --config .semgrep/rules/no-direct-env.yml --error; ec=$?; semgrep scan --config .semgrep/rules/mutation-requires-permission.yml; exit $ec",
+    "security:sast": "semgrep scan --config .semgrep/rules/mutation-requires-permission.yml; semgrep scan --config p/typescript --config p/nextjs --config p/nodejs --config p/react --config p/sql-injection --config .semgrep/rules/no-console.yml --config .semgrep/rules/raw-query-guard.yml --config .semgrep/rules/no-direct-env.yml --error",
     "security:secrets": "gitleaks detect --source .",
     "security:deps": "osv-scanner scan -r .",
     "security": "pnpm security:sast && pnpm security:secrets && pnpm security:deps"

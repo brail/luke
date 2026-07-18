@@ -10,8 +10,6 @@ rules:
       - pattern: $P.$executeRawUnsafe(...)
     paths:
       exclude:
-        - '**/*.test.ts'
-        - '**/*.spec.ts'
         - '/apps/api/test/**'
 
   - id: luke-nav-query-interpolation
@@ -25,9 +23,6 @@ rules:
     paths:
       include:
         - '/packages/nav/**'
-      exclude:
-        - '**/*.test.ts'
-        - '**/*.spec.ts'
     pattern-sources:
       - pattern: company
       - pattern: config.company

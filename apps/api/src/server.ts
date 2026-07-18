@@ -107,7 +107,7 @@ const prisma = new PrismaClient({
  * Registers security-related Fastify plugins: cookie, rate-limit, helmet, CORS,
  * and the Pino trace-correlation hook.
  */
-async function registerSecurityPlugins() {
+async function registerSecurityPlugins(): Promise<string[]> {
   // Cookie plugin per gestione sessioni
   // Secret derivato via HKDF-SHA256 dalla master key (dominio: cookie.secret)
   await fastify.register(cookie, {
@@ -197,6 +197,8 @@ async function registerSecurityPlugins() {
   // Rate limiting ora gestito via tRPC middleware per-rotta
 
   // Idempotency è gestito a livello tRPC middleware per procedure specifiche
+
+  return corsConfig.origins;
 }
 
 // /**
@@ -613,7 +615,7 @@ const start = async () => {
     }
 
     // Registra plugin e route nell'ordine corretto
-    await registerSecurityPlugins(); // CORS deve essere registrato prima di tRPC
+    const corsAllowedOrigins = await registerSecurityPlugins(); // CORS deve essere registrato prima di tRPC
     await registerTRPCPlugin();
     await registerMultipart(); // Multipart globale (richiesto da tutti i route di upload)
     await registerStoragePlugin(); // Storage upload/download routes
@@ -622,10 +624,7 @@ const start = async () => {
     await registerCollectionRowPictureRoutes(); // Collection row picture upload routes
     await registerSpecsheetImageRoutes(); // Specsheet image upload routes
     await registerSeasonCalendarExportRoutes(); // iCal + CSV export
-    const sseAllowedOrigins = buildCorsAllowedOrigins(
-      isDevelopment() ? 'development' : isProduction() ? 'production' : 'test'
-    ).origins;
-    await registerSseRoute(fastify, sseAllowedOrigins); // SSE real-time push
+    await registerSseRoute(fastify, corsAllowedOrigins); // SSE real-time push
     await registerHealthRoute();
 
     // Configura cleanup file temporanei

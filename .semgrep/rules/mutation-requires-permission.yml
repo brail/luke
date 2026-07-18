@@ -12,6 +12,3 @@ rules:
     paths:
       include:
         - '/apps/api/src/routers/**'
-      exclude:
-        - '**/*.test.ts'
-        - '**/*.spec.ts'

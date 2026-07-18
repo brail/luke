@@ -9,3 +9,7 @@ pnpm-lock.yaml
 
 # fixture di test per le regole custom (contengono positivi intenzionali)
 .semgrep/tests/
+
+# escluso globalmente per tutte le regole custom (evita di ripeterlo in ogni .yml)
+**/*.test.ts
+**/*.spec.ts
