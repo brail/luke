@@ -1,0 +1,20 @@
+rules:
+  - id: luke-no-console
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Usa il logger, non console.* (pattern non-negoziabile Luke). API: ctx.logger
+      (Fastify) o un'istanza pino locale. Web: debugLog/debugWarn/debugError da
+      lib/debug.ts.
+    pattern: console.$METHOD(...)
+    paths:
+      exclude:
+        - '**/*.test.ts'
+        - '**/*.spec.ts'
+        - 'apps/api/test/**'
+        - 'apps/api/scripts/**'
+        - 'apps/api/prisma/**'
+        - 'apps/web/tests/**'
+        - 'scripts/**'
+        - 'tools/**'
+        - 'apps/web/src/lib/debug.ts'

@@ -292,7 +292,7 @@ const portafoglioRouter = router({
         title: 'Analisi Vendite',
         subject: `${brand.name} - ${season.code}`,
         author: authorName,
-        manager: `Luke - v${process.env.npm_package_version ?? 'unknown'}`,
+        manager: `Luke - v${process.env.APP_VERSION ?? 'dev'}`,
       });
       const now = new Date();
       const pad = (n: number) => String(n).padStart(2, '0');
@@ -498,7 +498,7 @@ const kimoRouter = router({
         title:   'Vendite + Bidone Kimo',
         subject: `${brand.name} - ${season.code}`,
         author:  authorName,
-        manager: `Luke - v${process.env.npm_package_version ?? 'unknown'}`,
+        manager: `Luke - v${process.env.APP_VERSION ?? 'dev'}`,
       });
 
       const now = new Date();

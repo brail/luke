@@ -6,3 +6,6 @@ build/
 coverage/
 generated/
 pnpm-lock.yaml
+
+# fixture di test per le regole custom (contengono positivi intenzionali)
+.semgrep/tests/

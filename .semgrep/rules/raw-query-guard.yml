@@ -1,0 +1,37 @@
+rules:
+  - id: luke-prisma-raw-unsafe
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      $queryRawUnsafe/$executeRawUnsafe vietati: usa $queryRaw/$executeRaw con
+      Prisma.sql tagged template, mai stringhe interpolate a mano.
+    pattern-either:
+      - pattern: $P.$queryRawUnsafe(...)
+      - pattern: $P.$executeRawUnsafe(...)
+    paths:
+      exclude:
+        - '**/*.test.ts'
+        - '**/*.spec.ts'
+        - 'apps/api/test/**'
+
+  - id: luke-nav-query-interpolation
+    mode: taint
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      'company' interpolato in una query MSSQL senza passare da
+      sanitizeCompany(): rischio SQL injection sull'identificatore di tabella.
+      Sanitizza sempre con sanitizeCompany() prima di interpolare.
+    paths:
+      include:
+        - 'packages/nav/**'
+      exclude:
+        - '**/*.test.ts'
+        - '**/*.spec.ts'
+    pattern-sources:
+      - pattern: company
+      - pattern: config.company
+    pattern-sanitizers:
+      - pattern: sanitizeCompany(...)
+    pattern-sinks:
+      - pattern: $REQ.query(...)

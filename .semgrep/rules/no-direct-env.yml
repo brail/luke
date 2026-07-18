@@ -1,0 +1,30 @@
+rules:
+  - id: luke-no-direct-env
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      Config runtime via AppConfig KV (getConfigValue/tRPC config router), non
+      process.env diretto. Eccezioni: bootstrap infrastrutturale (vedi CLAUDE.md
+      Env Policy) e NEXT_PUBLIC_*/NODE_ENV/APP_VERSION (metadata build-time, non
+      un segreto) ovunque nel codice.
+    patterns:
+      - pattern: process.env.$VAR
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: ^(?!NEXT_PUBLIC_)(?!NODE_ENV$)(?!APP_VERSION$).*
+    paths:
+      exclude:
+        - '**/*.test.ts'
+        - '**/*.spec.ts'
+        - 'apps/api/test/**'
+        - 'apps/api/scripts/**'
+        - 'apps/api/prisma.config.ts'
+        - 'apps/api/src/server.ts'
+        - 'apps/api/src/instrument.ts'
+        - 'apps/api/src/lib/cors.ts'
+        - 'apps/api/src/lib/ldapAuth.ts'
+        - 'apps/api/src/lib/storageUrl.ts'
+        - 'apps/web/src/auth.ts'
+        - 'apps/web/playwright.config.ts'
+        - 'packages/core/src/runtime/env.ts'
+        - 'next.config.js'

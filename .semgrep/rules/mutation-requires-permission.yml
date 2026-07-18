@@ -1,0 +1,17 @@
+rules:
+  - id: luke-mutation-requires-permission
+    languages: [typescript]
+    severity: WARNING
+    message: >-
+      Mutation tRPC senza .use(requirePermission(...)) nella chain: verifica che
+      l'endpoint sia protetto da un controllo permessi esplicito (best-effort,
+      falsi positivi attesi — vedi CLAUDE.md RBAC).
+    patterns:
+      - pattern: $PROC. ... .mutation($HANDLER)
+      - pattern-not: <... requirePermission(...) ...>
+    paths:
+      include:
+        - 'apps/api/src/routers/**'
+      exclude:
+        - '**/*.test.ts'
+        - '**/*.spec.ts'

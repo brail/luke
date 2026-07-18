@@ -61,6 +61,7 @@ export async function bulkUpsert(
       });
       return `(${placeholders.join(', ')})`;
     });
+    // nosemgrep: luke-prisma-raw-unsafe -- identificatori (table/colonne) controllati internamente dal caller, mai da input utente; valori sempre parametrizzati ($1, $2...)
     await prisma.$executeRawUnsafe(
       `INSERT INTO "${table}" (${colList}) VALUES ${vals.join(', ')} ON CONFLICT (${pkList}) DO UPDATE SET ${setList}`,
       ...params,
