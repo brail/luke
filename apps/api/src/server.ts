@@ -622,7 +622,10 @@ const start = async () => {
     await registerCollectionRowPictureRoutes(); // Collection row picture upload routes
     await registerSpecsheetImageRoutes(); // Specsheet image upload routes
     await registerSeasonCalendarExportRoutes(); // iCal + CSV export
-    await registerSseRoute(fastify); // SSE real-time push
+    const sseAllowedOrigins = buildCorsAllowedOrigins(
+      isDevelopment() ? 'development' : isProduction() ? 'production' : 'test'
+    ).origins;
+    await registerSseRoute(fastify, sseAllowedOrigins); // SSE real-time push
     await registerHealthRoute();
 
     // Configura cleanup file temporanei

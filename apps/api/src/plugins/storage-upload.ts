@@ -257,6 +257,7 @@ export async function storagePlugin(
       reply.header('Cache-Control', 'private, max-age=300'); // 5 minuti
 
       // Stream file
+      // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Content-Disposition:attachment (riga 253-256) forza il download e impedisce il render inline; Content-Type è quello salvato in metadata, non sniffato dal client
       reply.send(stream);
     } catch (error) {
       fastify.log.error(

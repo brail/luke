@@ -57,7 +57,7 @@
     "jsonwebtoken": "^9.0.3",
     "ldapts": "^8.1.8",
     "mssql": "^12.6.0",
-    "next-auth": "5.0.0-beta.29",
+    "next-auth": "5.0.0-beta.30",
     "nodemailer": "^9.0.1",
     "pdfmake": "^0.3.11",
     "pg": "^8.22.0",

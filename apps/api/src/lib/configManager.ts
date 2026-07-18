@@ -44,6 +44,7 @@ export interface LdapConfig {
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16; // 128 bits
+const AUTH_TAG_LENGTH = 16; // 128 bits — esplicito per semgrep gcm-no-tag-length
 
 /**
  * Encrypts a plaintext value using AES-256-GCM and the current master key.
@@ -54,7 +55,9 @@ const IV_LENGTH = 16; // 128 bits
 export function encryptValue(plaintext: string): string {
   const masterKey = getMasterKey();
   const iv = randomBytes(IV_LENGTH);
-  const cipher = createCipheriv(ALGORITHM, masterKey, iv);
+  const cipher = createCipheriv(ALGORITHM, masterKey, iv, {
+    authTagLength: AUTH_TAG_LENGTH,
+  });
 
   let ciphertext = cipher.update(plaintext, 'utf8', 'hex');
   ciphertext += cipher.final('hex');
@@ -87,7 +90,9 @@ export function decryptValue(encrypted: string): string {
   const iv = Buffer.from(ivHex, 'hex');
   const authTag = Buffer.from(authTagHex, 'hex');
 
-  const decipher = createDecipheriv(ALGORITHM, masterKey, iv);
+  const decipher = createDecipheriv(ALGORITHM, masterKey, iv, {
+    authTagLength: AUTH_TAG_LENGTH,
+  });
   decipher.setAuthTag(authTag);
 
   let plaintext = decipher.update(ciphertext, 'hex', 'utf8');

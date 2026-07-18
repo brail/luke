@@ -21,7 +21,10 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
  * by the ticket. Sends a `connected` event immediately, heartbeats every 30 s, and
  * cleans up the subscription when the client disconnects.
  */
-export async function registerSseRoute(app: FastifyInstance): Promise<void> {
+export async function registerSseRoute(
+  app: FastifyInstance,
+  allowedOrigins: string[]
+): Promise<void> {
   app.get<{ Querystring: { ticket?: string } }>('/api/sse', async (request, reply) => {
     const { ticket } = request.query;
 
@@ -36,15 +39,20 @@ export async function registerSseRoute(app: FastifyInstance): Promise<void> {
 
     // SSE headers — X-Accel-Buffering disabilita buffering nginx/proxy.
     // reply.raw.writeHead() bypassa i Fastify hooks (incluso @fastify/cors), quindi
-    // Access-Control-Allow-Origin va aggiunto manualmente. Il ticket monouso garantisce
-    // l'autenticazione, quindi l'header wildcard è sicuro qui.
-    reply.raw.writeHead(200, {
+    // Access-Control-Allow-Origin va aggiunto manualmente. Origin validato contro la
+    // stessa allowlist (buildCorsAllowedOrigins) usata dal plugin @fastify/cors principale,
+    // non riflesso a prescindere.
+    const origin = request.headers.origin;
+    const headers: Record<string, string> = {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
       'X-Accel-Buffering': 'no',
-      'Access-Control-Allow-Origin': request.headers.origin ?? '*',
-    });
+    };
+    if (origin && allowedOrigins.includes(origin)) {
+      headers['Access-Control-Allow-Origin'] = origin;
+    }
+    reply.raw.writeHead(200, headers);
 
     // Flush iniziale per confermare connessione
     reply.raw.write('data: {"type":"connected"}\n\n');
