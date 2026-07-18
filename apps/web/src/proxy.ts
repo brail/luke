@@ -1,55 +1,25 @@
 import { NextResponse } from 'next/server';
 
-import { buildTrpcUrl } from '@luke/core';
-
-import { auth } from './auth.config';
-import { debugError, debugLog } from './lib/debug';
-
 /**
  * Next.js Edge middleware that protects all `/app/*` routes.
- * For authenticated requests it verifies the JWT `tokenVersion` by calling
- * `me.get` on the API — an `401` response forces a redirect to `/login`.
- * Network errors are logged and let the request through to avoid false logouts.
- * Unauthenticated requests are handled automatically by NextAuth.
+ * Unauthenticated requests are handled client-side (`(app)/layout.tsx`), not here.
+ *
+ * Used to also re-verify the embedded API accessToken against `me.get` on every
+ * request, but that check raced ahead of the Node-side refresh in `auth.ts`'s
+ * `jwt` callback (which keeps the token fresh via `auth.refreshToken`), forcing
+ * a logout every time the 8h token went stale even though the NextAuth session
+ * was still valid. tokenVersion/expiry is already re-enforced on every real
+ * tRPC call via `authMiddleware`, and revocation propagates within 60s via
+ * `HeartbeatTicker` — so this is now a plain passthrough rather than wrapping
+ * `auth()`, which would otherwise decode/verify the session JWT on every
+ * request for a result nothing here reads.
  *
  * Section-level guards are enforced by server-side layout guards (`assertSectionAccess`)
  * rather than here, to keep this middleware lightweight for the Edge Runtime.
  */
-export default auth(async req => {
-  const session = req.auth;
-
-  // Se non autenticato, NextAuth gestirà il redirect
-  if (!session) {
-    return NextResponse.next();
-  }
-
-  // Verifica tokenVersion se abbiamo accessToken
-  if (session.accessToken) {
-    try {
-      const response = await fetch(buildTrpcUrl('me.get'), {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${session.accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      // Se la chiamata API fallisce (401), il tokenVersion è invalido
-      if (!response.ok) {
-        debugLog('TokenVersion invalido, redirect a login');
-        return NextResponse.redirect(new URL('/login', req.url));
-      }
-    } catch (error) {
-      debugError('Errore verifica tokenVersion:', error);
-      // In caso di errore di rete, permetti l'accesso ma logga l'errore
-    }
-  }
-
-  // Protezione route admin-only ora gestita dai layout guards server-side
-  // Il controllo hard-coded è stato rimosso in favore di controlli granulari per sezione
-
+export default function middleware() {
   return NextResponse.next();
-});
+}
 
 // Configurazione matcher per proteggere solo le rotte del dashboard
 export const config = {

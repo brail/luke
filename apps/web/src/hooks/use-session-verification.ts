@@ -6,8 +6,7 @@
  */
 
 import { TRPCClientError } from '@trpc/client';
-import { useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
+import { signOut, useSession } from 'next-auth/react';
 import { useCallback, useEffect, useRef } from 'react';
 
 import { debugError, debugLog } from '../lib/debug';
@@ -15,8 +14,10 @@ import { trpc } from '../lib/trpc';
 
 export function useSessionVerification() {
   const { data: session, status } = useSession();
-  const router = useRouter();
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Guards against the 10s interval racing a focus/visibility-triggered check
+  // and firing signOut() (and its redirect) more than once.
+  const loggedOutRef = useRef(false);
 
   // Query per verificare la sessione (solo se autenticato)
   const { refetch: verifySession } = trpc.me.get.useQuery(undefined, {
@@ -25,27 +26,37 @@ export function useSessionVerification() {
     refetchOnWindowFocus: false,
   });
 
+  const forceLogout = useCallback(() => {
+    if (loggedOutRef.current) return;
+    loggedOutRef.current = true;
+    debugLog('Sessione invalida rilevata, logout e redirect a login');
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    signOut({ callbackUrl: '/login' });
+  }, []);
+
   const verifyImmediately = useCallback(async () => {
+    if (loggedOutRef.current) return;
     try {
       debugLog('Verifica tokenVersion immediata...');
       const result = await verifySession();
 
       if (!result.data) {
-        debugLog('Sessione invalida rilevata, redirect a login');
-        router.push('/login');
+        forceLogout();
         return;
       }
     } catch (error: unknown) {
       const isAuthError =
         error instanceof TRPCClientError && error.data?.code === 'UNAUTHORIZED';
       if (isAuthError) {
-        debugLog('Sessione invalida rilevata, redirect a login');
-        router.push('/login');
+        forceLogout();
       } else {
         debugError('Errore verifica sessione (transiente, ignorato):', error);
       }
     }
-  }, [verifySession, router]);
+  }, [verifySession, forceLogout]);
 
   const handleVisibilityChange = useCallback(() => {
     if (!document.hidden) {
