@@ -1,10 +1,3 @@
-import type { PrismaClient } from '@prisma/client';
-
-interface SyncLogger {
-  info(obj: unknown, msg?: string): void;
-  error(obj: unknown, msg?: string): void;
-  warn(obj: unknown, msg?: string): void;
-}
 
 import {
   createGoogleCalendarClient,
@@ -18,6 +11,14 @@ import {
 } from '@luke/calendar';
 
 import { getConfig } from '../lib/configManager.js';
+
+import type { PrismaClient } from '@prisma/client';
+
+interface SyncLogger {
+  info(obj: unknown, msg?: string): void;
+  error(obj: unknown, msg?: string): void;
+  warn(obj: unknown, msg?: string): void;
+}
 
 // ─── Client factory ───────────────────────────────────────────────────────────
 
@@ -72,7 +73,7 @@ type MilestoneRow = {
   startAt: Date;
   endAt: Date | null;
   allDay: boolean;
-  status: string;
+  cancelledAt: Date | null;
   publishExternally: boolean;
   visibilities: { companyFunctionId: string }[];
 };
@@ -85,7 +86,7 @@ function mapMilestone(m: MilestoneRow): MilestoneForSync {
     startAt: m.startAt,
     endAt: m.endAt,
     allDay: m.allDay,
-    status: m.status,
+    cancelled: !!m.cancelledAt,
     publishExternally: m.publishExternally,
     visibilityFunctionIds: m.visibilities.map(v => v.companyFunctionId),
   };

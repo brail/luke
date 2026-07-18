@@ -6,7 +6,7 @@ import { type CSSProperties, ReactNode, useCallback, useMemo, useState } from 'r
 
 import { Button } from '../../../../components/ui/button';
 import { cn } from '../../../../lib/utils';
-import { DAY_LABELS_IT, STATUS_OPACITY } from '../constants';
+import { DAY_LABELS_IT, cancelledClass } from '../constants';
 import { addDays, canEditMilestone, daysBetween, getIsoWeek, groupEventsByDay, mondayOf, resolveBrandColor, sameDay, startOfDay } from '../utils';
 
 import { DraggableEventChip } from './DraggableEventChip';
@@ -146,7 +146,7 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
                           <DraggableEventChip
                             id={m.id}
                             title={m.title}
-                            status={m.status}
+                            cancelled={!!m.cancelledAt}
                             color={color}
                             span={span}
                             isDragging={draggingId === m.id}
@@ -161,7 +161,7 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
                               onClick={(e) => { e.stopPropagation(); onEventClick(m.id); }}
                               className={cn('text-left rounded px-1.5 py-0.5 text-xs text-white truncate max-w-[200px] [background:var(--ev-color)]', // max-w-[200px]: prevent chip overflow in narrow week cells
                                 'hover:brightness-110 transition-all',
-                                STATUS_OPACITY[m.status] ?? 'opacity-100',
+                                cancelledClass(!!m.cancelledAt),
                                 onNoteClick && 'pr-5')}
                               style={{ '--ev-color': color } as CSSProperties}
                               title={`${m.title}${span > 0 ? ` (${span + 1}gg)` : ''}`}

@@ -5,12 +5,12 @@ import { StickyNote } from 'lucide-react';
 import { type MouseEvent } from 'react';
 
 import { cn } from '../../../../lib/utils';
-import { STATUS_OPACITY } from '../constants';
+import { cancelledClass } from '../constants';
 
 interface Props {
   id: string;
   title: string;
-  status: string;
+  cancelled: boolean;
   color: string;
   span: number;
   isDragging: boolean;
@@ -29,7 +29,7 @@ interface Props {
  * @param isDragging - Hides the chip's original slot while dragging is in progress.
  * @param onNoteClick - When provided, renders the sticky-note button.
  */
-export function DraggableEventChip({ id, title, status, color, span, isDragging, hasNote, onClick, onNoteClick }: Props) {
+export function DraggableEventChip({ id, title, cancelled, color, span, isDragging, hasNote, onClick, onNoteClick }: Props) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id });
 
   const bg = color;
@@ -45,7 +45,7 @@ export function DraggableEventChip({ id, title, status, color, span, isDragging,
           'w-full text-left rounded px-1.5 py-0.5 text-xs text-white truncate',
           'hover:brightness-110 transition-all cursor-grab active:cursor-grabbing',
           onNoteClick && 'pr-5',
-          STATUS_OPACITY[status] ?? 'opacity-100',
+          cancelledClass(cancelled),
           isDragging && 'opacity-30',
         )}
         style={{ background: bg }}

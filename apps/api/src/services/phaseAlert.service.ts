@@ -13,6 +13,7 @@ import pino from 'pino';
 import {
   daysBetween,
   workingDaysBetween,
+  eventDeadline,
   CollectionAlertThresholdsSchema,
   type AlertBand,
   type CalendarDaysRelevance,
@@ -72,7 +73,10 @@ export async function getCalendarEventsForLayout(
   if (!calendar) return [];
 
   return prisma.calendarEvent.findMany({
-    where: { calendarId: calendar.id },
+    // Cancelled events are retired: they must never drive the criticality countdown nor the
+    // scheduling-variance anchor. Filtered here at the single fetch shared by the per-row, batch
+    // and variance paths so the exclusion is centralized (not duplicated per caller).
+    where: { calendarId: calendar.id, cancelledAt: null },
     include: {
       phase: { select: { order: true, value: true } },
     },
@@ -256,15 +260,15 @@ export async function getActivePhaseForRow(rowId: string, prisma: PrismaClient):
 }
 
 /**
- * Resolves the deadline for an active-phase result: always the event's current `startAt`, live and
- * freely editable even after freeze. The frozen `baselineStartAt` is the fixed commitment used only
+ * Resolves the deadline for an active-phase result: always the event's current `endAt ?? startAt`,
+ * live and freely editable even after freeze. The frozen baseline is the fixed commitment used only
  * for `computeSchedulingVariance` (plan-vs-actual audit) — it must never feed the criticality
  * countdown, or rescheduling an event during the season would leave the alert pinned to a dead date
  * forever. No lead-time recompute. Pure — no I/O.
  */
 function deadlineFromActivePhase(active: ActivePhaseResult) {
   if (active.status !== 'active') return null;
-  return { event: active.event, deadline: active.event.startAt };
+  return { event: active.event, deadline: eventDeadline(active.event) };
 }
 
 /**
@@ -497,6 +501,11 @@ export async function computeSchedulingVariance(rowId: string, prisma: PrismaCli
   const plannedEvent = events.find(event => event.phaseId === row.phaseId);
   if (!plannedEvent?.baselineStartAt) return null;
 
+  // The frozen deadline mirrors the live one (`eventDeadline`): the phase was committed to close by
+  // the window's *end*, so variance measures against `baselineEndAt` when the frozen event spanned a
+  // window, else `baselineStartAt`. `baselineStartAt` above stays the freeze marker (always written).
+  const plannedDeadline = plannedEvent.baselineEndAt ?? plannedEvent.baselineStartAt;
+
   const historyEntry = await prisma.collectionRowPhaseHistory.findFirst({
     where: { rowId, phaseId: row.phaseId },
     orderBy: { reachedAt: 'desc' },
@@ -508,13 +517,13 @@ export async function computeSchedulingVariance(rowId: string, prisma: PrismaCli
     ? await buildWorkingDaysContext(prisma, [vendorCountryCode])
     : EMPTY_WORKING_DAYS_CONTEXT;
   const { days: varianceDays, daysMode } = resolveDaysCount(
-    plannedEvent.baselineStartAt, historyEntry.reachedAt, plannedEvent.calendarDaysRelevance, vendorCountryCode, workingDaysCtx
+    plannedDeadline, historyEntry.reachedAt, plannedEvent.calendarDaysRelevance, vendorCountryCode, workingDaysCtx
   );
 
   return {
     rowId,
     phaseId: row.phaseId,
-    plannedDate: plannedEvent.baselineStartAt,
+    plannedDate: plannedDeadline,
     actualDate: historyEntry.reachedAt,
     varianceDays,
     daysMode,

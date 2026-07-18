@@ -5,12 +5,9 @@
  *  - company.profile — singleton CompanyProfile CRUD
  *  - company.function — CompanyFunction CRUD, reorder, soft-delete, restore
  *  - company.team — CompanyTeam CRUD, brand scopes, membership management
- *
- * Also exports `assertFunctionMemberOrAdmin`, a guard used by the season calendar router.
  */
 
 import { TRPCError } from '@trpc/server';
-import type { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 
 import {
@@ -22,15 +19,15 @@ import {
   CompanyTeamMembershipInputSchema,
   CompanyTeamMembershipRemoveInputSchema,
   CompanyTeamMembershipUpdateRoleInputSchema,
-  hasPermission,
-  type Role,
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog.js';
 import { createNotification } from '../lib/notifications.js';
-import { withRateLimit } from '../lib/ratelimit.js';
 import { requirePermission } from '../lib/permissions.js';
+import { withRateLimit } from '../lib/ratelimit.js';
 import { router, protectedProcedure } from '../lib/trpc.js';
+
+import type { PrismaClient } from '@prisma/client';
 
 // ─── Profile ────────────────────────────────────────────────────────────────
 
@@ -245,7 +242,7 @@ const companyFunctionRouter = router({
   /**
    * Soft-deletes a company function (sets `isActive = false`).
    *
-   * Blocked if the function owns active (non-cancelled) calendar events.
+   * Blocked if the function is visible on active (non-cancelled) calendar events.
    *
    * @auth company_function:delete
    * @input { id }
@@ -264,14 +261,14 @@ const companyFunctionRouter = router({
       const fn = await ctx.prisma.$transaction(async tx => {
         const activeMilestones = await tx.calendarEvent.count({
           where: {
-            ownerFunctionId: input.id,
-            status: { not: 'CANCELLED' },
+            visibilities: { some: { functionId: input.id } },
+            cancelledAt: null,
           },
         });
         if (activeMilestones > 0) {
           throw new TRPCError({
             code: 'PRECONDITION_FAILED',
-            message: `Cannot deactivate: ${activeMilestones} active calendar event(s) owned by this function`,
+            message: `Cannot deactivate: ${activeMilestones} active calendar event(s) visible to this function`,
           });
         }
         return tx.companyFunction.update({
@@ -599,27 +596,6 @@ const companyTeamRouter = router({
     }),
 });
 
-// ─── Milestone user visibility ───────────────────────────────────────────────
-
-/**
- * Throws FORBIDDEN unless the current user is an admin (has `company_function:update`)
- * or is a member of at least one active team belonging to the given function.
- *
- * Used to gate personal-note and visibility operations on calendar events.
- */
-async function assertFunctionMemberOrAdmin(
-  ctx: { session: { user: { id: string; role: string } }; prisma: import('@prisma/client').PrismaClient },
-  functionId: string
-) {
-  if (hasPermission({ role: ctx.session.user.role as Role }, 'company_function:update')) return;
-  const membership = await ctx.prisma.companyTeamMembership.findFirst({
-    where: { userId: ctx.session.user.id, team: { functionId, isActive: true } },
-  });
-  if (!membership) {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'Not a member of the owning function' });
-  }
-}
-
 // ─── Export ──────────────────────────────────────────────────────────────────
 
 export const companyRouter = router({
@@ -627,5 +603,3 @@ export const companyRouter = router({
   function: companyFunctionRouter,
   team: companyTeamRouter,
 });
-
-export { assertFunctionMemberOrAdmin };

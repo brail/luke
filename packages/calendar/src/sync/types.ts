@@ -9,7 +9,7 @@ export interface MilestoneForSync {
   startAt: Date;
   endAt: Date | null;
   allDay: boolean;
-  status: string;
+  cancelled: boolean;
   publishExternally: boolean;
   visibilityFunctionIds: string[];
 }

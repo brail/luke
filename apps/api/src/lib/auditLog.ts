@@ -92,7 +92,6 @@ const SAFE_KEYS = new Set([
   'visibleUserIds',
   'snapshots',
   'templateId',
-  'ownerFunctionId',
   'startAt',
   'endAt',
   'oldStartAt',

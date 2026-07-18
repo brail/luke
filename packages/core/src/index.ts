@@ -47,6 +47,7 @@ export * from './auth/permissions';
 
 // Re-export utilities
 export * from './utils/backoff';
+export * from './utils/calendarEventLock';
 export * from './utils/date';
 export * from './utils/dateUtils';
 export * from './utils/pricing';

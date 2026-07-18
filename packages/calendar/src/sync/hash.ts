@@ -7,7 +7,7 @@ import type { MilestoneForSync } from './types.js';
  * affect the Google Calendar event. Used to detect whether an event needs to
  * be updated without fetching it from Google.
  *
- * Hashed fields: `title`, `description`, `startAt`, `endAt`, `allDay`, `status`,
+ * Hashed fields: `title`, `description`, `startAt`, `endAt`, `allDay`, `cancelled`,
  * and `visibilityFunctionIds` (sorted for stability).
  *
  * @returns First 32 hex characters of the SHA-256 hash
@@ -19,7 +19,7 @@ export function computeContentHash(milestone: MilestoneForSync): string {
     startAt: milestone.startAt.toISOString(),
     endAt: milestone.endAt?.toISOString() ?? null,
     allDay: milestone.allDay,
-    status: milestone.status,
+    cancelled: milestone.cancelled,
     visibilityFunctionIds: [...milestone.visibilityFunctionIds].sort(),
   });
   return createHash('sha256').update(payload).digest('hex').slice(0, 32);

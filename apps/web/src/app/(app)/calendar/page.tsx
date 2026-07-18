@@ -594,6 +594,7 @@ export default function CalendarPage() {
           availableFunctions={availableFunctions}
           functionsById={functionsById}
           event={activeEvent}
+          existingMilestones={milestones ?? []}
           readOnly={!canEditActiveEvent}
         />
       )}
@@ -608,6 +609,7 @@ export default function CalendarPage() {
           seasonId={season?.id ?? ''}
           availableFunctions={availableFunctions}
           functionsById={functionsById}
+          existingMilestones={milestones ?? []}
           defaultDate={createDate || undefined}
           defaultAllDay={createDefaultAllDay}
         />

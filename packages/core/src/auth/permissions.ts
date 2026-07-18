@@ -31,7 +31,6 @@ export const RESOURCES = {
   MERCHANDISING_PLAN: 'merchandising_plan',
   SEASON_CALENDAR: 'season_calendar',
   MILESTONE_TEMPLATE: 'milestone_template',
-  CALENDAR_CATALOG: 'calendar_catalog',
   PHASE_CATALOG: 'phase_catalog',
   COLLECTION_ALERT: 'collection_alert',
   COMPANY_PROFILE: 'company_profile',
@@ -57,6 +56,7 @@ export const ACTIONS = {
   VIEW_REVISIONS: 'view_revisions',
   FREEZE: 'freeze',
   UNFREEZE: 'unfreeze',
+  UNCANCEL: 'uncancel',
 } as const;
 
 export type Action = (typeof ACTIONS)[keyof typeof ACTIONS] | '*';
@@ -91,9 +91,8 @@ export const VALID_RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
   [RESOURCES.VENDORS]: ['create', 'read', 'update', 'delete'] as const,
   [RESOURCES.SALES]: ['read'] as const,
   [RESOURCES.MERCHANDISING_PLAN]: ['create', 'read', 'update', 'delete'] as const,
-  [RESOURCES.SEASON_CALENDAR]: ['create', 'read', 'update', 'delete', 'sync', 'export', 'freeze', 'unfreeze'] as const,
+  [RESOURCES.SEASON_CALENDAR]: ['create', 'read', 'update', 'delete', 'sync', 'export', 'freeze', 'unfreeze', 'uncancel'] as const,
   [RESOURCES.MILESTONE_TEMPLATE]: ['create', 'read', 'update', 'delete'] as const,
-  [RESOURCES.CALENDAR_CATALOG]: ['read', 'update'] as const,
   [RESOURCES.PHASE_CATALOG]: ['read', 'update'] as const,
   [RESOURCES.COLLECTION_ALERT]: ['read'] as const,
   [RESOURCES.COMPANY_PROFILE]: ['read', 'update'] as const,
@@ -145,8 +144,6 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'season_calendar:freeze',
     // Milestone Template: solo lettura
     'milestone_template:read',
-    // Calendar Catalog: lettura (per dropdown tipi evento)
-    'calendar_catalog:read',
     // Phase Catalog: solo lettura (modifica riservata ad admin, dominio separato dal calendario)
     'phase_catalog:read',
     // Collection Alert: lettura del motore alert (criticità, scostamento pianificazione)
@@ -185,8 +182,6 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'season_calendar:export',
     // Milestone Template: solo lettura
     'milestone_template:read',
-    // Calendar Catalog: lettura (per dropdown tipi evento)
-    'calendar_catalog:read',
     // Phase Catalog: solo lettura
     'phase_catalog:read',
     // Collection Alert: lettura del motore alert

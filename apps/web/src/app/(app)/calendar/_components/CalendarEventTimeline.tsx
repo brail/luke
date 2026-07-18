@@ -8,8 +8,8 @@ import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
 import { Checkbox } from '../../../../components/ui/checkbox';
 import { cn } from '../../../../lib/utils';
-import { MONTH_NAMES_IT, STATUS_VARIANT } from '../constants';
-import { getIsoWeek, resolveBrandColor } from '../utils';
+import { MONTH_NAMES_IT } from '../constants';
+import { formatVisibleFunctions, getIsoWeek, resolveBrandColor } from '../utils';
 
 import { type CalendarEventItem as CalendarEvent } from './types';
 
@@ -29,7 +29,7 @@ interface Props {
  * Chronological list view that groups calendar events by ISO week.
  *
  * Supports multi-select for bulk deletion (gated by `canUpdate`). Each row
- * shows the event chip, owner function, and a sticky-note icon when a personal
+ * shows the event chip, visible functions, and a sticky-note icon when a personal
  * note exists.
  *
  * @param onBulkDelete - Called with the selected event IDs to trigger deletion.
@@ -92,7 +92,7 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
           <span className="text-center">W</span>
           <span>Data</span>
           <span>Evento</span>
-          <span>Funzione</span>
+          <span>Visibile a</span>
           <span>Stato</span>
           <span />
         </div>
@@ -133,8 +133,8 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
                     {m.brandId && <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: resolveBrandColor(m.brandId, brandColorMap) }} />}
                     <span className="truncate font-medium">{m.title}</span>
                   </span>
-                  <span className="text-xs text-muted-foreground truncate">{functionsById[m.ownerFunctionId] ?? m.ownerFunctionId}</span>
-                  <span><Badge variant={STATUS_VARIANT[m.status] ?? 'outline'} className="text-xs">{m.status}</Badge></span>
+                  <span className="text-xs text-muted-foreground truncate">{formatVisibleFunctions(m.visibilities, functionsById)}</span>
+                  <span>{m.cancelledAt && <Badge variant="destructive" className="text-xs">Annullato</Badge>}</span>
                   <span className="flex items-center justify-center">
                     {onNoteClick && (
                       <button

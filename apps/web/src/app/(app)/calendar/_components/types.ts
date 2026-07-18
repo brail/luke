@@ -10,14 +10,14 @@ export interface CalendarEventItem {
   baselineStartAt?: Date | string | null;
   baselineEndAt?: Date | string | null;
   allDay: boolean;
-  status: string;
-  type: string;
+  cancelledAt?: Date | string | null;
+  cancelReason?: string | null;
   phaseId?: string | null;
-  ownerFunctionId: string;
   publishExternally: boolean;
   brandId?: string | null;
   visibilities: { functionId: string }[];
   notes?: { body: string }[];
   planningGroupId: string;
   planningGroupName?: string;
+  planningGroupFrozenAt?: Date | string | null;
 }

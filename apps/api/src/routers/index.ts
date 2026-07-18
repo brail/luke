@@ -7,7 +7,6 @@ import { router } from '../lib/trpc';
 
 import { authRouter } from './auth';
 import { brandRouter } from './brand';
-import { calendarCatalogRouter } from './calendarCatalog';
 import { catalogRouter } from './catalog';
 import { collectionCatalogRouter } from './collectionCatalog';
 import { collectionLayoutRouter } from './collectionLayout';
@@ -51,7 +50,6 @@ export const appRouter = router({
   catalog: catalogRouter,
   collectionLayout: collectionLayoutRouter,
   editLock: editLockRouter,
-  calendarCatalog: calendarCatalogRouter,
   collectionCatalog: collectionCatalogRouter,
   phase: phaseRouter,
   phaseHistory: phaseHistoryRouter,

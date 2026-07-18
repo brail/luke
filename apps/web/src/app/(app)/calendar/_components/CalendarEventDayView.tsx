@@ -5,7 +5,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '../../../../components/ui/button';
 import { cn } from '../../../../lib/utils';
-import { STATUS_OPACITY } from '../constants';
+import { cancelledClass } from '../constants';
 import { addDays, canEditMilestone, resolveBrandColor, sameDay } from '../utils';
 
 import { type CalendarEventItem as CalendarEvent } from './types';
@@ -160,7 +160,7 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
                 <button
                   type="button"
                   onClick={() => onEventClick(m.id)}
-                  className={cn('text-xs text-white rounded px-2 py-0.5 hover:brightness-110 transition-all [background:var(--ev-color)]', STATUS_OPACITY[m.status] ?? 'opacity-100')}
+                  className={cn('text-xs text-white rounded px-2 py-0.5 hover:brightness-110 transition-all [background:var(--ev-color)]', cancelledClass(!!m.cancelledAt))}
                   style={{ '--ev-color': color } as React.CSSProperties}
                 >
                   {m.title}
@@ -235,7 +235,7 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
             return (
               <div
                 key={m.id}
-                className={cn('absolute rounded-r group/timed z-10 [border-left:3px_solid_var(--ev-color)]', isOtherBrand && 'opacity-40', STATUS_OPACITY[m.status] ?? 'opacity-100', isDragging && 'z-30 shadow-lg')}
+                className={cn('absolute rounded-r group/timed z-10 [border-left:3px_solid_var(--ev-color)]', isOtherBrand && 'opacity-40', cancelledClass(!!m.cancelledAt), isDragging && 'z-30 shadow-lg')}
                 style={{ top, left: LABEL_W + 4, right: 8, height, '--ev-color': color, background: isDragging ? `${color}44` : `${color}22`, cursor: canDrag ? (isDragging ? 'grabbing' : 'grab') : 'default' } as React.CSSProperties}
                 onPointerDown={canDrag ? (e) => startDrag(e, m) : undefined}
               >

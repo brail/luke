@@ -4,10 +4,8 @@ import { syncCalendarReaders } from '../google/acl.js';
 import { computeContentHash } from './hash.js';
 import type { MilestoneForSync, SyncContext } from './types.js';
 
-function milestoneStatusToGoogle(status: string): 'confirmed' | 'tentative' | 'cancelled' {
-  if (status === 'CANCELLED') return 'cancelled';
-  if (status === 'PLANNED') return 'tentative';
-  return 'confirmed';
+function milestoneStatusToGoogle(cancelled: boolean): 'confirmed' | 'cancelled' {
+  return cancelled ? 'cancelled' : 'confirmed';
 }
 
 async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
@@ -71,7 +69,7 @@ export async function syncMilestone(
       startAt: milestone.startAt,
       endAt: milestone.endAt ?? undefined,
       allDay: milestone.allDay,
-      status: milestoneStatusToGoogle(milestone.status),
+      status: milestoneStatusToGoogle(milestone.cancelled),
     };
 
     if (existing) {

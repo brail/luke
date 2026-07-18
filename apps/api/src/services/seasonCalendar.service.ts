@@ -1,9 +1,12 @@
 import { TRPCError } from '@trpc/server';
 
-import type {
-  CalendarEventInput,
-  CloneSeasonCalendarInput,
-  Role,
+import {
+  eventDeadline,
+  isEventDateLocked as isEventDateLockedCore,
+  isEventDeleteLocked as isEventDeleteLockedCore,
+  type CalendarEventInput,
+  type CloneSeasonCalendarInput,
+  type Role,
 } from '@luke/core';
 
 import { getUserAllowedBrandIds } from './context.service.js';
@@ -211,6 +214,86 @@ export async function unfreezePlanningGroup(planningGroupId: string, prisma: Pri
   });
 }
 
+// ─── Post-freeze immutability (project_calendar_event_maintainability, Fase 4) ──
+
+/** Minimal shape needed to evaluate whether a calendar event is post-freeze locked. */
+type LockableEvent = {
+  phaseId: string | null;
+  startAt: Date;
+  endAt: Date | null;
+  planningGroup: { frozenAt: Date | null };
+};
+
+/**
+ * Thin adapter over the shared `@luke/core` predicate — only reshapes the server's nested
+ * `planningGroup.frozenAt` into the flat `frozenAt` the shared function expects. The actual lock
+ * logic lives in one place so the server and the client UX mirror (`apps/web/.../calendar/utils.ts`)
+ * can't drift on what "locked" means. The only way to move a locked event is a *motivated* reschedule
+ * (`rescheduleMilestone`, reason audited) — title/phaseId have no equivalent path, only unfreezing
+ * the group lifts the lock.
+ */
+export function isEventDateLocked(event: LockableEvent, now: Date = new Date()): boolean {
+  return isEventDateLockedCore({ phaseId: event.phaseId, frozenAt: event.planningGroup.frozenAt, startAt: event.startAt, endAt: event.endAt }, now);
+}
+
+/** Thin adapter over the shared `@luke/core` predicate — see `isEventDateLocked` above. */
+export function isEventDeleteLocked(event: LockableEvent): boolean {
+  return isEventDeleteLockedCore({ phaseId: event.phaseId, frozenAt: event.planningGroup.frozenAt });
+}
+
+/**
+ * Motivated in-place move of a locked (or any) event's dates. Only `startAt`/`endAt` change — the
+ * frozen baseline is never touched, so scheduling variance keeps measuring against the original plan
+ * while the alert countdown follows the new target. The reason is captured in the audit log by the caller.
+ */
+export async function rescheduleMilestone(
+  eventId: string,
+  startAt: string,
+  endAt: string | null | undefined,
+  prisma: PrismaClient
+) {
+  return prisma.calendarEvent.update({
+    where: { id: eventId },
+    data: {
+      startAt: new Date(startAt),
+      endAt: endAt ? new Date(endAt) : null,
+    },
+  });
+}
+
+/**
+ * Non-blocking sanity check (project_calendar_event_maintainability, Fase 6): flags when a phase
+ * event's date is out of order relative to its sibling phase events in the same planning group — an
+ * earlier phase scheduled after a later one, or vice versa. Returns a human message or null. This is
+ * a soft warning surfaced on save (toast); it does NOT block, and reintroduces no phase dependency
+ * graph (the what-if solver stays removed) — it only compares `Phase.order` against `endAt ?? startAt`.
+ */
+export async function detectPhaseOrderWarning(eventId: string, prisma: PrismaClient): Promise<string | null> {
+  const event = await prisma.calendarEvent.findUnique({
+    where: { id: eventId },
+    select: { planningGroupId: true, cancelledAt: true, startAt: true, endAt: true, phase: { select: { order: true, label: true } } },
+  });
+  if (!event || event.cancelledAt || !event.phase) return null;
+
+  const deadline = eventDeadline(event);
+  const siblings = await prisma.calendarEvent.findMany({
+    where: { planningGroupId: event.planningGroupId, cancelledAt: null, phaseId: { not: null }, id: { not: eventId } },
+    select: { startAt: true, endAt: true, phase: { select: { order: true, label: true } } },
+  });
+
+  for (const s of siblings) {
+    if (!s.phase) continue;
+    const sDeadline = eventDeadline(s);
+    if (s.phase.order < event.phase.order && sDeadline > deadline) {
+      return `Ordine fasi incoerente: la fase precedente «${s.phase.label}» è pianificata dopo «${event.phase.label}».`;
+    }
+    if (s.phase.order > event.phase.order && sDeadline < deadline) {
+      return `Ordine fasi incoerente: la fase successiva «${s.phase.label}» è pianificata prima di «${event.phase.label}».`;
+    }
+  }
+  return null;
+}
+
 // ─── Milestone list ───────────────────────────────────────────────────────────
 
 /**
@@ -242,7 +325,7 @@ export async function listMilestonesDb(
     include: {
       visibilities: true,
       notes: { where: { userId }, take: 1 },
-      planningGroup: { select: { id: true, name: true } },
+      planningGroup: { select: { id: true, name: true, frozenAt: true } },
     },
     orderBy: { startAt: 'asc' },
   });
@@ -251,6 +334,9 @@ export async function listMilestonesDb(
     ...e,
     brandId: calendarBrandMap.get(e.calendarId) ?? null,
     planningGroupName: planningGroup.name,
+    // Surfaced so the client can compute post-freeze date-lock (see isEventDateLocked) without a
+    // second round-trip: a phase event whose group is frozen and whose deadline has passed is locked.
+    planningGroupFrozenAt: planningGroup.frozenAt,
   }));
 }
 
@@ -274,8 +360,6 @@ export async function createMilestone(
       data: {
         calendarId,
         planningGroupId: input.planningGroupId,
-        ownerFunctionId: input.ownerFunctionId,
-        type: input.type,
         phaseId: input.phaseId,
         calendarDaysRelevance: input.calendarDaysRelevance,
         title: input.title,
@@ -285,7 +369,6 @@ export async function createMilestone(
         allDay: input.allDay,
         publishExternally: input.publishExternally,
         templateItemId: input.templateItemId,
-        status: input.status,
       },
     });
 
@@ -293,7 +376,6 @@ export async function createMilestone(
       data: input.visibilityFunctionIds.map(fId => ({
         eventId: event.id,
         functionId: fId,
-        readOnly: fId !== input.ownerFunctionId,
       })),
     });
 
@@ -316,26 +398,21 @@ export async function updateMilestone(
       data: {
         ...(input.title !== undefined ? { title: input.title } : {}),
         ...(input.description !== undefined ? { description: input.description } : {}),
-        ...(input.type !== undefined ? { type: input.type } : {}),
         ...(input.phaseId !== undefined ? { phaseId: input.phaseId } : {}),
         ...(input.calendarDaysRelevance !== undefined ? { calendarDaysRelevance: input.calendarDaysRelevance } : {}),
-        ...(input.status !== undefined ? { status: input.status } : {}),
         ...(input.startAt !== undefined ? { startAt: new Date(input.startAt) } : {}),
         ...(input.endAt !== undefined ? { endAt: new Date(input.endAt) } : {}),
         ...(input.allDay !== undefined ? { allDay: input.allDay } : {}),
         ...(input.publishExternally !== undefined ? { publishExternally: input.publishExternally } : {}),
-        ...(input.ownerFunctionId !== undefined ? { ownerFunctionId: input.ownerFunctionId } : {}),
       },
     });
 
     if (input.visibilityFunctionIds) {
       await tx.calendarEventVisibility.deleteMany({ where: { eventId } });
-      const owner = input.ownerFunctionId ?? updated.ownerFunctionId;
       await tx.calendarEventVisibility.createMany({
         data: input.visibilityFunctionIds.map(fId => ({
           eventId,
           functionId: fId,
-          readOnly: fId !== owner,
         })),
       });
     }
@@ -453,8 +530,6 @@ export async function applyTemplate(
       data: itemsWithDates.map(({ item, startAt, endAt }) => ({
         calendarId: group.calendarId,
         planningGroupId,
-        ownerFunctionId: item.ownerFunctionId,
-        type: item.type,
         phaseId: item.phaseId,
         calendarDaysRelevance: item.calendarDaysRelevance,
         title: item.title,
@@ -475,7 +550,6 @@ export async function applyTemplate(
       return item.visibilities.map(v => ({
         eventId: event.id,
         functionId: v.functionId,
-        readOnly: v.functionId !== item.ownerFunctionId,
       }));
     });
     await tx.calendarEventVisibility.createMany({ data: visibilityData });
@@ -589,10 +663,8 @@ export async function createTemplateItem(
   templateId: string,
   data: {
     title: string;
-    type: string;
     phaseId?: string | null;
     calendarDaysRelevance?: CalendarDaysRelevance | null;
-    ownerFunctionId: string;
     visibilityFunctionIds: string[];
     offsetDays: number;
     durationDays: number;
@@ -623,10 +695,8 @@ export async function updateTemplateItem(
   id: string,
   data: {
     title?: string;
-    type?: string;
     phaseId?: string | null;
     calendarDaysRelevance?: CalendarDaysRelevance | null;
-    ownerFunctionId?: string;
     visibilityFunctionIds?: string[];
     offsetDays?: number;
     durationDays?: number;
@@ -674,7 +744,7 @@ export async function cloneFromBrandSeason(
   input: CloneSeasonCalendarInput,
   prisma: PrismaClient
 ) {
-  const { sourceBrandId, sourceSeasonId, targetBrandId, targetSeasonId, sourcePlanningGroupIds, dateShiftDays, includeStatuses } = input;
+  const { sourceBrandId, sourceSeasonId, targetBrandId, targetSeasonId, sourcePlanningGroupIds, dateShiftDays, includeCancelled } = input;
 
   const sourceCalendar = await prisma.seasonCalendar.findUnique({
     where: { brandId_seasonId: { brandId: sourceBrandId, seasonId: sourceSeasonId } },
@@ -687,7 +757,8 @@ export async function cloneFromBrandSeason(
     where: { id: { in: sourcePlanningGroupIds }, calendarId: sourceCalendar.id },
     include: {
       events: {
-        where: { status: { in: includeStatuses as ('PLANNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED')[] } },
+        // Default clones only active events; cancelled ones are copied only when explicitly requested.
+        where: includeCancelled ? {} : { cancelledAt: null },
         include: { visibilities: true },
       },
     },
@@ -721,15 +792,12 @@ export async function cloneFromBrandSeason(
         data: sourceGroup.events.map(e => ({
           calendarId: targetCalendar.id,
           planningGroupId: targetGroup.id,
-          ownerFunctionId: e.ownerFunctionId,
-          type: e.type,
           title: e.title,
           description: e.description,
           startAt: new Date(e.startAt.getTime() + shift * MS_PER_DAY),
           endAt: e.endAt ? new Date(e.endAt.getTime() + shift * MS_PER_DAY) : undefined,
           allDay: e.allDay,
           publishExternally: e.publishExternally,
-          status: 'PLANNED' as const,
         })),
       });
 
@@ -737,7 +805,6 @@ export async function cloneFromBrandSeason(
         sourceGroup.events[i]!.visibilities.map(v => ({
           eventId: newEvent.id,
           functionId: v.functionId,
-          readOnly: v.readOnly,
         }))
       );
       await tx.calendarEventVisibility.createMany({ data: visibilityData });

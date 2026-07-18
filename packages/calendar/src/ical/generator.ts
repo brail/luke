@@ -10,22 +10,20 @@ export interface ICalMilestone {
   startAt: Date;
   endAt?: Date | null;
   allDay: boolean;
-  status: string;
+  cancelled: boolean;
   brandCode: string;
   sectionKey?: string;
 }
 
-function milestoneStatusToIcal(status: string): ICalEventStatus {
-  if (status === 'CANCELLED') return ICalEventStatus.CANCELLED;
-  if (status === 'PLANNED') return ICalEventStatus.TENTATIVE;
-  return ICalEventStatus.CONFIRMED;
+function milestoneStatusToIcal(cancelled: boolean): ICalEventStatus {
+  return cancelled ? ICalEventStatus.CANCELLED : ICalEventStatus.CONFIRMED;
 }
 
 /**
  * Generates an iCal (`.ics`) feed string from a list of milestones.
  *
  * All-day events use the plain `date` format; timed events use `dateTime` with UTC.
- * Milestone status is mapped: `CANCELLED` → CANCELLED, `PLANNED` → TENTATIVE, others → CONFIRMED.
+ * A cancelled milestone maps to CANCELLED, otherwise CONFIRMED.
  *
  * @param milestones - Array of milestone data to include in the feed
  * @param calendarName - Display name of the calendar (CALNAME property)
@@ -48,7 +46,7 @@ export function generateIcal(
       start: m.startAt,
       end,
       allDay: m.allDay,
-      status: milestoneStatusToIcal(m.status),
+      status: milestoneStatusToIcal(m.cancelled),
     });
   }
 

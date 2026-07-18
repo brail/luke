@@ -11,7 +11,7 @@ export interface EventInput {
   startAt: Date;
   endAt?: Date;
   allDay: boolean;
-  status: 'confirmed' | 'tentative' | 'cancelled';
+  status: 'confirmed' | 'cancelled';
 }
 
 function buildEventBody(input: EventInput): calendar_v3.Schema$Event {

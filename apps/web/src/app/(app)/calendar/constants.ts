@@ -9,36 +9,7 @@ export const MONTH_NAMES_SHORT_IT = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu',
 /** Abbreviated Italian weekday labels starting from Monday. */
 export const DAY_LABELS_IT = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
 
-/** Human-readable labels for calendar event types. */
-export const TYPE_LABELS: Record<string, string> = {
-  KICKOFF: 'Kickoff',
-  REVIEW: 'Review',
-  GATE: 'Gate',
-  DEADLINE: 'Deadline',
-  MILESTONE: 'Milestone',
-  CUSTOM: 'Custom',
-};
-
-/** Human-readable labels for calendar event statuses. */
-export const STATUS_LABELS: Record<string, string> = {
-  PLANNED: 'Pianificato',
-  IN_PROGRESS: 'In corso',
-  COMPLETED: 'Completato',
-  CANCELLED: 'Annullato',
-};
-
-/** Badge variant per calendar event status for consistent visual encoding. */
-export const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  PLANNED: 'outline',
-  IN_PROGRESS: 'default',
-  COMPLETED: 'secondary',
-  CANCELLED: 'destructive',
-};
-
-/** Tailwind opacity/decoration classes applied to event chips per status. */
-export const STATUS_OPACITY: Record<string, string> = {
-  PLANNED: 'opacity-70',
-  IN_PROGRESS: 'opacity-100',
-  COMPLETED: 'opacity-40',
-  CANCELLED: 'opacity-25 line-through',
-};
+/** Tailwind opacity/decoration classes for an event chip: cancelled events are dimmed + struck through. */
+export function cancelledClass(cancelled: boolean): string {
+  return cancelled ? 'opacity-25 line-through' : 'opacity-100';
+}

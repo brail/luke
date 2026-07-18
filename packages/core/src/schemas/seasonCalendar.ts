@@ -36,15 +36,6 @@ export type VendorClosurePeriodInput = z.infer<typeof VendorClosurePeriodInputSc
 
 // ─── Const arrays ─────────────────────────────────────────────────────────────
 
-/** Lifecycle statuses for an individual calendar event. */
-export const CALENDAR_EVENT_STATUS = [
-  'PLANNED',
-  'IN_PROGRESS',
-  'COMPLETED',
-  'CANCELLED',
-] as const;
-export type CalendarEventStatus = (typeof CALENDAR_EVENT_STATUS)[number];
-
 /** Lifecycle statuses for a season calendar. `ARCHIVED` calendars are read-only. */
 export const SEASON_CALENDAR_STATUS = ['DRAFT', 'ACTIVE', 'ARCHIVED'] as const;
 export type SeasonCalendarStatus = (typeof SEASON_CALENDAR_STATUS)[number];
@@ -57,43 +48,11 @@ export type SeasonCalendarStatus = (typeof SEASON_CALENDAR_STATUS)[number];
 export const CALENDAR_DAYS_RELEVANCE = ['COMPANY', 'VENDOR', 'BOTH'] as const;
 export type CalendarDaysRelevance = (typeof CALENDAR_DAYS_RELEVANCE)[number];
 
-// ─── CalendarCatalogItem ──────────────────────────────────────────────────────
-
-/** Full calendar catalog item as returned by the API (event type, section label, ordering). */
-export const CalendarCatalogItemSchema = z.object({
-  id: z.string().uuid(),
-  type: z.string(),
-  value: z.string(),
-  label: z.string(),
-  order: z.number().int(),
-  isActive: z.boolean(),
-});
-export type CalendarCatalogItem = z.infer<typeof CalendarCatalogItemSchema>;
-
-/** Input schema for creating a new calendar catalog item (admin-only). */
-export const CalendarCatalogItemCreateSchema = z.object({
-  type: z.string().min(1),
-  value: z.string().min(1).max(50),
-  label: z.string().min(1).max(100),
-  order: z.number().int().default(0),
-});
-export type CalendarCatalogItemCreate = z.infer<typeof CalendarCatalogItemCreateSchema>;
-
-/** Input schema for updating an existing calendar catalog item (label and order only). */
-export const CalendarCatalogItemUpdateSchema = z.object({
-  id: z.string().uuid(),
-  label: z.string().min(1).max(100),
-  order: z.number().int().optional(),
-});
-export type CalendarCatalogItemUpdate = z.infer<typeof CalendarCatalogItemUpdateSchema>;
-
 // ─── CalendarEvent input ──────────────────────────────────────────────────────
 
-/** Base fields shared by calendar event create and update inputs, before cross-field refinements. */
+/** Base fields shared by calendar event create and update inputs. */
 export const CalendarEventBaseSchema = z.object({
   planningGroupId:              z.string().uuid(),
-  ownerFunctionId:              z.string().uuid(),
-  type:                         z.string().min(1),
   phaseId:                      z.string().uuid().optional().nullable(),
   calendarDaysRelevance:        z.enum(CALENDAR_DAYS_RELEVANCE).optional().nullable(),
   title:                        z.string().min(1).max(200),
@@ -103,23 +62,10 @@ export const CalendarEventBaseSchema = z.object({
   allDay:                       z.boolean().default(false),
   publishExternally:            z.boolean().default(true),
   templateItemId:               z.string().uuid().optional(),
-  status:                       z.enum(CALENDAR_EVENT_STATUS).default('PLANNED'),
   visibilityFunctionIds:        z.array(z.string().uuid()).min(1),
 });
 
-/**
- * Full input schema for creating a calendar event.
- * Enforces that `visibilityFunctionIds` includes the `ownerFunctionId`.
- */
-export const CalendarEventInputSchema = CalendarEventBaseSchema.refine(
-  data => data.visibilityFunctionIds.includes(data.ownerFunctionId),
-  {
-    message: 'visibilityFunctionIds must include ownerFunctionId',
-    path: ['visibilityFunctionIds'],
-  }
-);
-
-export type CalendarEventInput = z.infer<typeof CalendarEventInputSchema>;
+export type CalendarEventInput = z.infer<typeof CalendarEventBaseSchema>;
 
 // ─── Planning group input ─────────────────────────────────────────────────────
 
@@ -150,14 +96,8 @@ export type CalendarEventPersonalNoteInput = z.infer<typeof CalendarEventPersona
 
 // ─── Template inputs ──────────────────────────────────────────────────────────
 
-/**
- * Base fields for a single item within a milestone template — kept separate from
- * `MilestoneTemplateItemInputSchema` (unrefined) so update endpoints can `.partial()` it, same
- * pattern as `CalendarEventBaseSchema`/`CalendarEventInputSchema`.
- */
+/** Base fields for a single item within a milestone template. */
 export const MilestoneTemplateItemBaseSchema = z.object({
-  ownerFunctionId:      z.string().uuid(),
-  type:                 z.string().min(1),
   phaseId:              z.string().uuid().optional().nullable(),
   calendarDaysRelevance: z.enum(CALENDAR_DAYS_RELEVANCE).optional().nullable(),
   title:                z.string().min(1).max(200),
@@ -169,16 +109,8 @@ export const MilestoneTemplateItemBaseSchema = z.object({
   visibilityFunctionIds: z.array(z.string().uuid()).min(1),
 });
 
-/**
- * Full input schema for creating a milestone template item.
- * `offsetDays` is relative to the template's anchor date; visibility must include the owner function.
- */
-export const MilestoneTemplateItemInputSchema = MilestoneTemplateItemBaseSchema.refine(
-  data => data.visibilityFunctionIds.includes(data.ownerFunctionId),
-  { message: 'visibilityFunctionIds must include ownerFunctionId', path: ['visibilityFunctionIds'] }
-);
-
-export type MilestoneTemplateItemInput = z.infer<typeof MilestoneTemplateItemInputSchema>;
+/** `offsetDays` is relative to the template's anchor date. */
+export type MilestoneTemplateItemInput = z.infer<typeof MilestoneTemplateItemBaseSchema>;
 
 /** Input schema for the header of a milestone template (name and optional description). */
 export const MilestoneTemplateInputSchema = z.object({
@@ -202,9 +134,8 @@ export const CloneSeasonCalendarInputSchema = z.object({
   targetSeasonId: z.string().uuid(),
   sourcePlanningGroupIds: z.array(z.string().uuid()).min(1),
   dateShiftDays: z.number().int(),
-  includeStatuses: z
-    .array(z.enum(CALENDAR_EVENT_STATUS))
-    .default(['PLANNED', 'IN_PROGRESS']),
+  /** When false (default), only active (non-cancelled) events are cloned. */
+  includeCancelled: z.boolean().default(false),
 });
 export type CloneSeasonCalendarInput = z.infer<typeof CloneSeasonCalendarInputSchema>;
 

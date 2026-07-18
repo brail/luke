@@ -50,10 +50,8 @@ interface Props {
 
 interface FormValues {
   title: string;
-  type: string;
   phaseId: string;
   calendarDaysRelevance: string;
-  ownerFunctionId: string;
   visibilityFunctionIds: string[];
   offsetDays: number;
   durationDays: number;
@@ -67,44 +65,34 @@ interface FormValues {
  *
  * Includes an optional offset-calculator helper that computes the offsetDays
  * relative to another sibling item without creating a formal dependency.
- * The owner function is always included in the visibility list.
  *
  * @param templateId - Parent template ID (used only in create mode).
  * @param item - Existing item to edit; omit for create mode.
- * @param availableFunctions - Company functions available as owner/visibility targets.
+ * @param availableFunctions - Company functions available as visibility targets.
  * @param siblingItems - Other items in the same template, used by the offset calculator.
  */
 export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, availableFunctions, siblingItems = [] }: Props) {
   const isEdit = !!item;
-  const defaultOwner = availableFunctions[0]?.id ?? '';
   const { register, handleSubmit, reset, watch, setValue, control, formState: { errors } } = useForm<FormValues>();
 
   const [relItemId, setRelItemId] = useState('');
   const [relDelta, setRelDelta] = useState('0');
 
-  const { data: catalogItems = [] } = trpc.calendarCatalog.list.useQuery(
-    { type: 'eventType' },
-    { staleTime: 5 * 60 * 1000 }
-  );
   const { data: phases = [] } = trpc.phase.list.useQuery(undefined, { staleTime: 5 * 60 * 1000 });
 
-  const ownerFunctionId = watch('ownerFunctionId');
   const visibilityFunctionIds = watch('visibilityFunctionIds') ?? [];
 
   useEffect(() => {
     if (open) {
       setRelItemId('');
       setRelDelta('0');
-      const owner = item?.ownerFunctionId ?? defaultOwner;
       reset({
         title: item?.title ?? '',
-        type: item?.type ?? 'MILESTONE',
         phaseId: item?.phaseId ?? '_none',
         calendarDaysRelevance: item?.calendarDaysRelevance ?? NO_RELEVANCE_VALUE,
-        ownerFunctionId: owner,
         visibilityFunctionIds: item
-          ? (item.visibilities?.map((v: NonNullable<TemplateItem['visibilities']>[number]) => v.functionId) ?? [owner])
-          : [owner],
+          ? (item.visibilities?.map((v: NonNullable<TemplateItem['visibilities']>[number]) => v.functionId) ?? [])
+          : [],
         offsetDays: item?.offsetDays ?? 0,
         durationDays: item?.durationDays ?? 0,
         allDay: item?.allDay ?? true,
@@ -113,13 +101,6 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
       });
     }
   }, [open, item?.id]);
-
-  // Keep owner always in visibility list
-  useEffect(() => {
-    if (ownerFunctionId && !visibilityFunctionIds.includes(ownerFunctionId)) {
-      setValue('visibilityFunctionIds', [...visibilityFunctionIds, ownerFunctionId]);
-    }
-  }, [ownerFunctionId]); // intentional: only sync when owner changes
 
   const createMutation = trpc.seasonCalendar.createTemplateItem.useMutation({
     onSuccess: () => { toast.success('Item aggiunto'); onSaved(); },
@@ -136,10 +117,8 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
   const onSubmit = (values: FormValues) => {
     const payload = {
       title: values.title.trim(),
-      type: values.type,
       phaseId: values.phaseId === '_none' ? null : values.phaseId,
       calendarDaysRelevance: values.calendarDaysRelevance === NO_RELEVANCE_VALUE ? null : (values.calendarDaysRelevance as 'COMPANY' | 'VENDOR' | 'BOTH'),
-      ownerFunctionId: values.ownerFunctionId,
       visibilityFunctionIds: values.visibilityFunctionIds,
       offsetDays: Number(values.offsetDays),
       durationDays: Number(values.durationDays),
@@ -155,7 +134,6 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
   };
 
   const toggleVisible = (fnId: string) => {
-    if (fnId === ownerFunctionId) return;
     const current = visibilityFunctionIds;
     setValue(
       'visibilityFunctionIds',
@@ -179,44 +157,6 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
               placeholder="es. Kickoff collezione"
             />
             {errors.title && <p className="text-xs text-destructive">{errors.title.message}</p>}
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label>Tipo *</Label>
-              <Controller
-                name="type"
-                control={control}
-                render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {catalogItems.map(item => (
-                        <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label>Funzione owner *</Label>
-              <Controller
-                name="ownerFunctionId"
-                control={control}
-                render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger><SelectValue placeholder="Seleziona…" /></SelectTrigger>
-                    <SelectContent>
-                      {availableFunctions.map(fn => (
-                        <SelectItem key={fn.id} value={fn.id}>{fn.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-            </div>
           </div>
 
           <div className="space-y-1">
@@ -314,14 +254,13 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
           })()}
 
           <div className="space-y-2">
-            <Label>Visibile a</Label>
+            <Label>Visibile a *</Label>
             <div className="flex flex-wrap gap-3">
               {availableFunctions.map(fn => (
                 <label key={fn.id} className="flex items-center gap-1.5 cursor-pointer">
                   <Checkbox
                     checked={visibilityFunctionIds.includes(fn.id)}
                     onCheckedChange={() => toggleVisible(fn.id)}
-                    disabled={fn.id === ownerFunctionId}
                   />
                   <span className="text-sm">{fn.name}</span>
                 </label>

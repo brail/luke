@@ -4,8 +4,8 @@ import { StickyNote } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { cn } from '../../../../lib/utils';
-import { MONTH_NAMES_SHORT_IT, STATUS_OPACITY } from '../constants';
-import { addDays, canEditMilestone, daysBetween, resolveBrandColor, startOfDay, toUtcIsoDate } from '../utils';
+import { MONTH_NAMES_SHORT_IT, cancelledClass } from '../constants';
+import { addDays, canEditMilestone, daysBetween, formatVisibleFunctions, resolveBrandColor, startOfDay, toUtcIsoDate } from '../utils';
 
 import { type CalendarEventItem as CalendarEvent } from './types';
 import { type HolidayMap } from './useHolidays';
@@ -136,8 +136,9 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
       const left = daysBetween(rangeStart, start) * dayW;
       const spanDays = Math.max(1, daysBetween(start, end));
       const width = Math.max(spanDays * dayW, dayW);
-      return { ...m, left, width, _start: start, _end: end };
-    }), [sorted, rangeStart, dayW]);
+      const visibleFunctionNames = formatVisibleFunctions(m.visibilities, functionsById);
+      return { ...m, left, width, _start: start, _end: end, visibleFunctionNames };
+    }), [sorted, rangeStart, dayW, functionsById]);
 
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -279,7 +280,7 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
                     )}
                     <div
                       className={cn('absolute top-1/2 -translate-y-1/2 rounded', 'text-white text-xs font-medium whitespace-nowrap',
-                        STATUS_OPACITY[m.status] ?? 'opacity-100',
+                        cancelledClass(!!m.cancelledAt),
                         isDragging ? 'shadow-lg z-20 cursor-grabbing' : cn(canUpdate && 'cursor-grab'))}
                       style={{ left: previewLeft, width: previewWidth, height: 22, background: barColor, userSelect: 'none', overflow: 'visible' }}
                       onPointerDown={canEditMilestone(m, canUpdate, activeBrandId) ? e => startDrag(e, m.id, 'drag') : undefined}
@@ -288,7 +289,7 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
                         if (wasDraggingRef.current) { wasDraggingRef.current = false; return; }
                         onEventClick(m.id);
                       }}
-                      title={`${m.title} — ${functionsById[m.ownerFunctionId] ?? m.ownerFunctionId}`}
+                      title={`${m.title} — ${m.visibleFunctionNames}`}
                     >
                       <span className="px-1.5 leading-[22px] block select-none pointer-events-none" style={{ overflow: 'hidden', width: previewWidth }}>
                         {previewWidth > 56 && m.title}

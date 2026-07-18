@@ -3,8 +3,6 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { CALENDAR_EVENT_STATUS } from '@luke/core';
-
 import { PlanningGroupListRow } from '../../../../components/PlanningGroupListRow';
 import { Button } from '../../../../components/ui/button';
 import { Checkbox } from '../../../../components/ui/checkbox';
@@ -100,7 +98,7 @@ export function CloneBrandSeasonDialog({ open, onClose, onCloned, targetBrandId,
       targetSeasonId,
       sourcePlanningGroupIds: [...sourcePlanningGroupIds],
       dateShiftDays: isNaN(shift) ? 0 : shift,
-      includeStatuses: CALENDAR_EVENT_STATUS.filter(s => s !== 'CANCELLED'),
+      includeCancelled: false,
     });
   };
 

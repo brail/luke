@@ -7,7 +7,7 @@ import { ReactNode, useCallback, useMemo, useState } from 'react';
 import { Button } from '../../../../components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../../components/ui/popover';
 import { cn } from '../../../../lib/utils';
-import { DAY_LABELS_IT, MONTH_NAMES_IT, STATUS_OPACITY } from '../constants';
+import { DAY_LABELS_IT, MONTH_NAMES_IT, cancelledClass } from '../constants';
 import { addDays, addMonths, canEditMilestone, daysBetween, getIsoWeek, groupEventsByDay, mondayOf, resolveBrandColor, sameDay, startOfDay } from '../utils';
 
 import { DraggableEventChip } from './DraggableEventChip';
@@ -161,7 +161,7 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
                                 <DraggableEventChip
                                   id={m.id}
                                   title={m.title}
-                                  status={m.status}
+                                  cancelled={!!m.cancelledAt}
                                   color={color}
                                   span={span}
                                   isDragging={draggingId === m.id}
@@ -176,7 +176,7 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
                                     onClick={(e) => { e.stopPropagation(); onEventClick(m.id); }}
                                     className={cn('w-full text-left rounded px-1 py-0.5 text-[11px] text-white truncate leading-tight',
                                       'hover:brightness-110 transition-all',
-                                      STATUS_OPACITY[m.status] ?? 'opacity-100',
+                                      cancelledClass(!!m.cancelledAt),
                                       !isStart && 'opacity-40',
                                       onNoteClick && isStart && 'pr-4')}
                                     style={{ background: color }}
@@ -223,7 +223,7 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
                                       key={ev.id}
                                       type="button"
                                       onClick={() => onEventClick(ev.id)}
-                                      className={cn('w-full text-left rounded px-1.5 py-0.5 text-[11px] text-white truncate leading-tight hover:brightness-110 transition-all', STATUS_OPACITY[ev.status] ?? 'opacity-100')}
+                                      className={cn('w-full text-left rounded px-1.5 py-0.5 text-[11px] text-white truncate leading-tight hover:brightness-110 transition-all', cancelledClass(!!ev.cancelledAt))}
                                       style={{ background: evColor }}
                                       title={ev.title}
                                     >

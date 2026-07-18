@@ -14,8 +14,6 @@
  * If SMTP is not configured the job logs a warning and skips — no crash.
  */
 
-import type { FastifyInstance } from 'fastify';
-import type { PrismaClient } from '@prisma/client';
 
 import { fullName } from '@luke/core';
 
@@ -23,6 +21,9 @@ import { isRedactedValue } from './auditLog';
 import { getConfig } from './configManager';
 import { sendEmail } from './mailer';
 import { getVisibleUserIdsForMilestones } from './notifications';
+
+import type { PrismaClient } from '@prisma/client';
+import type { FastifyInstance } from 'fastify';
 
 const TICK_INTERVAL_MS = 60 * 60 * 1000;
 const DIGEST_HOUR = 7;
@@ -38,10 +39,6 @@ interface DigestEntry {
   statusChangeLabel?: string;
   otherFieldsLabel?: string;
 }
-
-const STATUS_LABELS: Record<string, string> = {
-  PLANNED: 'Pianificato', IN_PROGRESS: 'In corso', COMPLETED: 'Completata', CANCELLED: 'Annullata',
-};
 
 function formatShortDate(iso: string): string {
   return new Date(iso).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
@@ -169,7 +166,7 @@ async function runDigestCore(
   const logs = await prisma.auditLog.findMany({
     where: {
       targetType: { in: ['CalendarEvent', 'CalendarMilestone'] },
-      action: { in: ['CALENDAR_EVENT_CREATE', 'CALENDAR_EVENT_UPDATE', 'CALENDAR_EVENT_STATUS_UPDATE', 'CALENDAR_MILESTONE_DELETE', 'CALENDAR_EVENT_DELETE'] },
+      action: { in: ['CALENDAR_EVENT_CREATE', 'CALENDAR_EVENT_UPDATE', 'CALENDAR_EVENT_CANCEL', 'CALENDAR_MILESTONE_DELETE', 'CALENDAR_EVENT_DELETE'] },
       result: 'SUCCESS',
       createdAt: { gte: rangeStart, lt: rangeEnd },
     },
@@ -234,7 +231,7 @@ async function runDigestCore(
     prisma.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } }),
     getVisibleUserIdsForMilestones(liveTargetIds, prisma).catch(() => new Map<string, string[]>()),
     liveTargetIds.length > 0
-      ? prisma.calendarEvent.findMany({ where: { id: { in: liveTargetIds } }, select: { id: true, title: true, calendarId: true, startAt: true, endAt: true, allDay: true, status: true } })
+      ? prisma.calendarEvent.findMany({ where: { id: { in: liveTargetIds } }, select: { id: true, title: true, calendarId: true, startAt: true, endAt: true, allDay: true, cancelledAt: true } })
       : Promise.resolve([]),
   ]);
   const adminIds = adminResult.map(a => a.id);
@@ -292,9 +289,9 @@ async function runDigestCore(
       continue;
     }
 
-    // Pure update(s)/status change(s) — collapse into a single net diff over the whole period.
+    // Pure update(s)/cancellation — collapse into a single net diff over the whole period.
     const updateChanges = chgs.filter(c => c.action === 'CALENDAR_EVENT_UPDATE');
-    const statusChanges = chgs.filter(c => c.action === 'CALENDAR_EVENT_STATUS_UPDATE');
+    const cancelChanges = chgs.filter(c => c.action === 'CALENDAR_EVENT_CANCEL');
 
     let dateChangeLabel: string | undefined;
     const firstDateChange = updateChanges.find(c => typeof c.meta.oldStartAt === 'string');
@@ -312,14 +309,11 @@ async function runDigestCore(
       }
     }
 
+    // A cancellation is terminal — surface it (with its reason) as the event's status line.
     let statusChangeLabel: string | undefined;
-    const firstStatusChange = statusChanges.find(c => typeof c.meta.oldStatus === 'string');
-    if (firstStatusChange && liveEvent) {
-      const oldStatus = firstStatusChange.meta.oldStatus as string;
-      const newStatus = liveEvent.status;
-      if (oldStatus !== newStatus) {
-        statusChangeLabel = `Stato: ${STATUS_LABELS[oldStatus] ?? oldStatus} → ${STATUS_LABELS[newStatus] ?? newStatus}`;
-      }
+    const cancelChange = cancelChanges.find(c => typeof c.meta.reason === 'string');
+    if (cancelChange) {
+      statusChangeLabel = `Annullato: ${cancelChange.meta.reason as string}`;
     }
 
     const otherFieldsSet = new Set<string>();

@@ -97,6 +97,8 @@ model User {
   appliedEffects                    CalendarEventEffectExecution[] @relation("EffectApplier")
   /// State effect executions rolled back by this user.
   rolledBackEffects                 CalendarEventEffectExecution[] @relation("EffectRollbacker")
+  /// Calendar events this user cancelled (with a reason).
+  cancelledCalendarEvents           CalendarEvent[]                @relation("CalendarEventCancelledBy")
   /// Vendor closure periods confirmed by this user.
   confirmedVendorClosures           VendorClosurePeriod[]          @relation("ClosureConfirmer")
   /// Edit locks currently held by this user (planning wizard sessions).
@@ -1545,12 +1547,8 @@ model CompanyFunction {
 
   /// Teams belonging to this function.
   teams                     CompanyTeam[]
-  /// Calendar events owned by this function.
-  ownedCalendarEvents       CalendarEvent[]                   @relation("CalendarEventOwnerFunction")
   /// Calendar event visibility grants for this function.
   calendarEventVisibilities CalendarEventVisibility[]
-  /// Milestone template items owned by this function.
-  ownedTemplateItems        MilestoneTemplateItem[]           @relation("TemplateItemOwnerFunction")
   /// Milestone template item visibility grants for this function.
   templateItemVisibilities  MilestoneTemplateItemVisibility[]
   /// Google Calendar bindings for this function.
@@ -1689,14 +1687,6 @@ enum CalendarDaysRelevance {
   BOTH
 }
 
-/// Calendar event workflow status: PLANNED → IN_PROGRESS → COMPLETED | CANCELLED.
-enum CalendarEventStatus {
-  PLANNED
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
-}
-
 /// Type of state side-effect a calendar event can trigger on an entity: LOCK_COLLECTION_LAYOUT | UNLOCK_COLLECTION_LAYOUT.
 enum StateEffectType {
   LOCK_COLLECTION_LAYOUT
@@ -1712,15 +1702,15 @@ enum VendorOverrideType {
 /// Season calendar for a brand+season pair. Unique per pair. Owns N PlanningGroups (always at least
 /// one default) which carry the per-group anchorDate/frozenAt.
 model SeasonCalendar {
-  id         String               @id @default(uuid())
+  id        String               @id @default(uuid())
   /// FK to Brand. Restrict delete.
-  brandId    String
+  brandId   String
   /// FK to Season. Restrict delete.
-  seasonId   String
+  seasonId  String
   /// Lifecycle status: DRAFT → ACTIVE → ARCHIVED.
-  status     SeasonCalendarStatus @default(DRAFT)
-  createdAt  DateTime             @default(now())
-  updatedAt  DateTime             @updatedAt
+  status    SeasonCalendarStatus @default(DRAFT)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
 
   /// The brand this calendar belongs to.
   brand          Brand                   @relation(fields: [brandId], references: [id], onDelete: Restrict)
@@ -1771,50 +1761,53 @@ model PlanningGroup {
 
 /// Single event in a season calendar. Section visibility managed via CalendarEventVisibility (M2M with CompanyFunction).
 model CalendarEvent {
-  id                String              @id @default(uuid())
+  id                    String                 @id @default(uuid())
   /// FK to SeasonCalendar. Cascade delete.
-  calendarId        String
+  calendarId            String
   /// FK to PlanningGroup. Restrict delete — a group can't be deleted while it still owns events.
-  planningGroupId   String
-  /// FK to CompanyFunction that owns this event. Restrict delete.
-  ownerFunctionId   String
-  /// Event type key from CalendarCatalogItem (type="eventType"). E.g. "KICKOFF", "SAMPLE_APPROVAL".
-  type              String
-  /// FK to Phase (optional, additive to type). Null for non-productive events (e.g. review meetings).
-  phaseId           String?
+  planningGroupId       String
+  /// FK to Phase (optional). Null for non-productive events (e.g. review meetings).
+  phaseId               String?
   /// Which holiday calendar(s) count toward this event's working-days deadline, if any. Null =
   /// plain calendar days (default, unchanged behavior). Propagated from templateItem on generation.
   calendarDaysRelevance CalendarDaysRelevance?
-  /// Workflow status: PLANNED → IN_PROGRESS → COMPLETED | CANCELLED.
-  status            CalendarEventStatus @default(PLANNED)
-  title             String
-  description       String?
-  startAt           DateTime
-  endAt             DateTime?
+  /// Cancellation timestamp. Null = active. A cancelled event is retired from the alert engine and
+  /// from the (planningGroup, phase) uniqueness constraint, but kept for audit/history — never
+  /// hard-deleted once frozen. Completion is NOT an event state: the truth of "phase done" lives in
+  /// CollectionRowPhaseHistory, per-row, not here.
+  cancelledAt           DateTime?
+  /// Mandatory reason captured when the event is cancelled. Non-null iff cancelledAt is non-null.
+  cancelReason          String?
+  /// FK to the User who cancelled the event. SetNull if that user is deleted.
+  cancelledByUserId     String?
+  title                 String
+  description           String?
+  startAt               DateTime
+  endAt                 DateTime?
   /// Snapshot of startAt at freeze time. Written once by freezeCalendar, never updated afterwards —
   /// the immutable "planned" baseline against which drift is measured. Null until the calendar is frozen.
-  baselineStartAt   DateTime?
+  baselineStartAt       DateTime?
   /// Snapshot of endAt at freeze time. Same immutability contract as baselineStartAt.
-  baselineEndAt     DateTime?
+  baselineEndAt         DateTime?
   /// True if the event spans the full day (time portion ignored).
-  allDay            Boolean             @default(false)
+  allDay                Boolean                @default(false)
   /// If true, the event is exported to Google Calendar for visible functions.
-  publishExternally Boolean             @default(true)
+  publishExternally     Boolean                @default(true)
   /// FK to MilestoneTemplateItem that generated this event (optional). SetNull if template item is deleted.
-  templateItemId    String?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  templateItemId        String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
 
   /// The season calendar this event belongs to.
   calendar         SeasonCalendar                 @relation(fields: [calendarId], references: [id], onDelete: Cascade)
   /// The planning group this event applies to — determines which rows see it.
   planningGroup    PlanningGroup                  @relation(fields: [planningGroupId], references: [id], onDelete: Restrict)
-  /// The company function that owns this event.
-  ownerFunction    CompanyFunction                @relation("CalendarEventOwnerFunction", fields: [ownerFunctionId], references: [id], onDelete: Restrict)
   /// The milestone template item that generated this event, if any.
   templateItem     MilestoneTemplateItem?         @relation(fields: [templateItemId], references: [id], onDelete: SetNull)
   /// The phase this event represents, if any.
   phase            Phase?                         @relation(fields: [phaseId], references: [id], onDelete: SetNull)
+  /// The user who cancelled this event, if any.
+  cancelledBy      User?                          @relation("CalendarEventCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
   /// Function-level visibility grants for this event.
   visibilities     CalendarEventVisibility[]
   /// Personal notes written by individual users on this event.
@@ -1832,19 +1825,16 @@ model CalendarEvent {
 
   @@index([calendarId, startAt])
   @@index([planningGroupId])
-  @@index([ownerFunctionId])
   @@index([phaseId])
   @@map("calendar_events")
 }
 
-/// M2M visibility grant: which CompanyFunctions can see a CalendarEvent. The ownerFunction is always included with readOnly=false.
+/// M2M visibility grant: which CompanyFunctions can see a CalendarEvent.
 model CalendarEventVisibility {
   /// FK to CalendarEvent. Cascade delete.
   eventId    String
   /// FK to CompanyFunction. Restrict delete.
   functionId String
-  /// If true, the function can see but not edit the event.
-  readOnly   Boolean @default(true)
 
   /// The calendar event being shared.
   event    CalendarEvent   @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -1893,34 +1883,28 @@ model MilestoneTemplate {
 
 /// Single milestone item within a template. Defines an event to be created at the target PlanningGroup's anchorDate + offsetDays.
 model MilestoneTemplateItem {
-  id                String   @id @default(uuid())
+  id                    String                 @id @default(uuid())
   /// FK to MilestoneTemplate. Cascade delete.
-  templateId        String
-  /// FK to CompanyFunction that will own the generated event. Restrict delete.
-  ownerFunctionId   String
-  /// Event type key from CalendarCatalogItem (type="eventType").
-  type              String
-  /// FK to Phase (optional, additive to type). Propagated to CalendarEvent.phaseId on generation.
-  phaseId           String?
+  templateId            String
+  /// FK to Phase (optional). Propagated to CalendarEvent.phaseId on generation.
+  phaseId               String?
   /// Propagated to CalendarEvent.calendarDaysRelevance on generation. See CalendarEvent field doc.
   calendarDaysRelevance CalendarDaysRelevance?
-  title             String
-  description       String?
+  title                 String
+  description           String?
   /// Days offset from the target PlanningGroup's anchorDate to compute event startAt.
-  offsetDays        Int
+  offsetDays            Int
   /// Duration of the generated event in days. 0 = single-day event.
-  durationDays      Int      @default(0)
+  durationDays          Int                    @default(0)
   /// Propagated to CalendarEvent.allDay on generation.
-  allDay            Boolean  @default(true)
+  allDay                Boolean                @default(true)
   /// If true, the generated event is exported to Google Calendar.
-  publishExternally Boolean  @default(true)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  publishExternally     Boolean                @default(true)
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
 
   /// The template this item belongs to.
   template      MilestoneTemplate                 @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  /// The function that will own the generated event.
-  ownerFunction CompanyFunction                   @relation("TemplateItemOwnerFunction", fields: [ownerFunctionId], references: [id], onDelete: Restrict)
   /// The phase this template item represents, if any.
   phase         Phase?                            @relation(fields: [phaseId], references: [id], onDelete: SetNull)
   /// Calendar events generated from this template item.
@@ -1931,7 +1915,6 @@ model MilestoneTemplateItem {
   stateEffects  MilestoneTemplateStateEffect[]
 
   @@index([templateId])
-  @@index([ownerFunctionId])
   @@index([phaseId])
   @@map("milestone_template_items")
 }
@@ -1983,29 +1966,6 @@ model GoogleEventMapping {
   @@id([eventId, companyFunctionId])
   @@index([googleCalendarId])
   @@map("google_event_mappings")
-}
-
-// ─── Calendar Catalog ─────────────────────────────────────────────────────────
-
-/// Configurable calendar domain catalog. type discriminator: "eventType". value is the immutable machine key (e.g. "KICKOFF"); label is the editable display name.
-model CalendarCatalogItem {
-  id        String   @id @default(uuid())
-  /// Discriminator (e.g. "eventType"). Defines which dropdown/field this item populates.
-  type      String
-  /// Immutable machine key (e.g. "KICKOFF"). Used as stored value in event.type.
-  value     String
-  /// Human-readable display label (editable without changing the value).
-  label     String
-  /// Display order within the type group.
-  order     Int      @default(0)
-  /// Soft-delete flag. Inactive items are hidden from pickers.
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([type, value])
-  @@index([type, isActive])
-  @@map("calendar_catalog_items")
 }
 
 // ─── Phase Catalog ──────────────────────────────────────────────────────────

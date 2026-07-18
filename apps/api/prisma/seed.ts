@@ -15,7 +15,6 @@ import { PrismaClient } from '@prisma/client';
 
 import { encryptValue } from '../src/lib/configManager';
 import { hashPassword } from '../src/lib/password';
-import { seedCalendarCatalog } from './seeds/calendarCatalog';
 import { seedCollectionCatalog } from './seeds/collectionCatalog';
 import { seedCompanyStructure } from './seeds/companyStructure';
 import { seedHolidayCountries } from './seeds/holidays';
@@ -458,56 +457,42 @@ async function seedMilestoneTemplates(
   });
 
   const items: Array<{
-    ownerFunctionSlug: string;
-    type: 'KICKOFF' | 'REVIEW' | 'GATE' | 'DEADLINE' | 'MILESTONE' | 'CUSTOM';
     title: string;
     offsetDays: number;
     durationDays: number;
     visibleFunctionSlugs: string[];
   }> = [
     {
-      ownerFunctionSlug: 'product',
-      type: 'KICKOFF',
       title: 'Kickoff',
       offsetDays: 0,
       durationDays: 0,
       visibleFunctionSlugs: ['sales', 'product', 'sourcing'],
     },
     {
-      ownerFunctionSlug: 'sourcing',
-      type: 'MILESTONE',
       title: 'Briefing materials',
       offsetDays: 14,
       durationDays: 0,
       visibleFunctionSlugs: ['product', 'sourcing'],
     },
     {
-      ownerFunctionSlug: 'product',
-      type: 'GATE',
       title: 'First samples',
       offsetDays: 60,
       durationDays: 0,
       visibleFunctionSlugs: ['product', 'sourcing'],
     },
     {
-      ownerFunctionSlug: 'product',
-      type: 'REVIEW',
       title: 'Linesheet review',
       offsetDays: 90,
       durationDays: 0,
       visibleFunctionSlugs: ['sales', 'product'],
     },
     {
-      ownerFunctionSlug: 'sales',
-      type: 'MILESTONE',
       title: 'Sales pre-opening',
       offsetDays: 120,
       durationDays: 0,
       visibleFunctionSlugs: ['sales', 'product'],
     },
     {
-      ownerFunctionSlug: 'sourcing',
-      type: 'DEADLINE',
       title: 'PO cutoff',
       offsetDays: 180,
       durationDays: 0,
@@ -516,12 +501,6 @@ async function seedMilestoneTemplates(
   ];
 
   for (const item of items) {
-    const ownerFunctionId = functionIds[item.ownerFunctionSlug];
-    if (!ownerFunctionId) {
-      console.warn(`   ⚠️  Function slug '${item.ownerFunctionSlug}' not found, skipping item '${item.title}'`);
-      continue;
-    }
-
     let templateItem = await prisma.milestoneTemplateItem.findFirst({
       where: { templateId: template.id, title: item.title },
     });
@@ -530,8 +509,6 @@ async function seedMilestoneTemplates(
       templateItem = await prisma.milestoneTemplateItem.create({
         data: {
           templateId:      template.id,
-          ownerFunctionId,
-          type:            item.type,
           title:           item.title,
           offsetDays:      item.offsetDays,
           durationDays:    item.durationDays,
@@ -575,9 +552,6 @@ async function main() {
 
     // Seeding collection catalog (revisionType items)
     await seedCollectionCatalog(prisma);
-
-    // Seeding calendar catalog (event types)
-    await seedCalendarCatalog(prisma);
 
     // Seeding holiday countries
     await seedHolidayCountries(prisma);
