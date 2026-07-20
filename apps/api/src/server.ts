@@ -28,6 +28,7 @@ import {
 } from '@luke/core/server';
 
 import { registerCalendarDigestScheduler } from './lib/calendarDigestScheduler';
+import { registerCalendarNotificationBuffer } from './lib/calendarNotificationBuffer';
 import { getConfig, validateCriticalConfig } from './lib/configManager';
 import { buildCorsAllowedOrigins } from './lib/cors';
 import { setGlobalErrorHandler } from './lib/error';
@@ -645,6 +646,9 @@ const start = async () => {
 
     // Registra scheduler digest email calendario (esecuzione giornaliera alle 07:00)
     registerCalendarDigestScheduler(fastify, prisma);
+
+    // Registra flush periodico del buffer di aggregazione notifiche calendario (tick ogni 30s)
+    registerCalendarNotificationBuffer(fastify, prisma);
 
     // Configura graceful shutdown
     setupGracefulShutdown();

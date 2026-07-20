@@ -562,25 +562,13 @@ export const seasonCalendarRouter = router({
       sseStore.pushToAll({ type: 'calendar-updated', seasonId: event.calendar.seasonId });
       syncOneMilestone(input.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on cancel'));
 
-      void getVisibleUserIdsForMilestone(input.id, ctx.prisma)
-        .then(async userIds => {
-          const batchSize = 10;
-          for (let i = 0; i < userIds.length; i += batchSize) {
-            await Promise.allSettled(
-              userIds.slice(i, i + batchSize).map(userId =>
-                createNotification(ctx.prisma, {
-                  userId,
-                  category: 'CALENDAR',
-                  title: 'Evento annullato',
-                  message: `"${event.title}" annullato: ${input.reason}`,
-                  link: '/calendar',
-                  data: { eventId: input.id, cancelled: true },
-                }).catch(e => ctx.logger.error({ err: e, userId }, 'notification failed on event cancel'))
-              )
-            );
-          }
-        })
-        .catch(err => ctx.logger.error(err, 'notification fanout failed on event cancel'));
+      notifyCalendarChange(ctx.prisma, {
+        eventId: input.id,
+        actorId: ctx.session.user.id,
+        titleSuffix: 'ha annullato un evento',
+        message: `"${event.title}" annullato: ${input.reason}`,
+        calendarId: event.calendarId,
+      }).catch(err => ctx.logger.error(err, 'calendar notification failed on cancel'));
 
       return { event: result, rolledBack };
     }),

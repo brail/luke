@@ -19,14 +19,12 @@
 import { closePool, runNavSync } from '@luke/nav';
 
 import { getConfig } from './configManager';
-import { notifyAdmins } from './notifications';
+import { notifyAdmins, notifyDeduped, SYSTEM_SUCCESS_DEDUP_MS, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
 
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 const TICK_INTERVAL_MS = 60 * 1000; // 1 minuto
-const NAV_SUCCESS_DEDUP_MS = 24 * 60 * 60 * 1000;
-const lastNavSuccessNotified = new Map<string, number>();
 
 const ENTITIES = ['vendor', 'brand', 'season'] as const;
 type Entity = (typeof ENTITIES)[number];
@@ -105,29 +103,21 @@ export function registerNavSyncScheduler(
           fastify.log.info({ entity: r.entity, upserted: r.upserted, durationMs }, 'NAV sync scheduler: entità completata');
         }
       }
-      const lastNotified = lastNavSuccessNotified.get(entity) ?? 0;
-      if (Date.now() - lastNotified > NAV_SUCCESS_DEDUP_MS) {
-        const totalUpserted = report.results.reduce((s, r) => s + (r.upserted ?? 0), 0);
-        try {
-          await notifyAdmins(prisma, {
-            category: 'SYSTEM',
-            title: `NAV sync ${entity} completato`,
-            message: `${totalUpserted} record in ${durationMs}ms`,
-            data: { entity, type: 'nav_sync_success' },
-          });
-          lastNavSuccessNotified.set(entity, Date.now());
-        } catch (e) {
-          fastify.log.error({ err: e }, 'Failed to notify admins of sync success');
-        }
-      }
+      const totalUpserted = report.results.reduce((s, r) => s + (r.upserted ?? 0), 0);
+      await notifyDeduped(`nav-sync:success:${entity}`, SYSTEM_SUCCESS_DEDUP_MS, () => notifyAdmins(prisma, {
+        category: 'SYSTEM',
+        title: `NAV sync ${entity} completato`,
+        message: `${totalUpserted} record in ${durationMs}ms`,
+        data: { entity, type: 'nav_sync_success' },
+      })).catch(e => fastify.log.error({ err: e }, 'Failed to notify admins of sync success'));
     } catch (err) {
       fastify.log.error({ err, entity }, 'NAV sync scheduler: sync fallito');
-      await notifyAdmins(prisma, {
+      await notifyDeduped(`nav-sync:failure:${entity}`, SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(prisma, {
         category: 'SYSTEM',
         title: `NAV sync ${entity} fallito`,
         message: (err as Error).message ?? 'Errore sconosciuto',
         data: { entity, type: 'nav_sync_failure' },
-      }).catch(e => fastify.log.error({ err: e }, 'Failed to notify admins of sync failure'));
+      })).catch(e => fastify.log.error({ err: e }, 'Failed to notify admins of sync failure'));
     } finally {
       isRunning[entity] = false;
       _checkAllDone();

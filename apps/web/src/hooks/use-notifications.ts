@@ -13,14 +13,14 @@ import { trpc } from '../lib/trpc';
  * The SSE connection is authenticated via a single-use ticket (60 s TTL) issued
  * by `notifications.getSseTicket`. The connection is closed and cleaned up on unmount.
  *
- * @returns `{ notifications, nextCursor, unreadCount, isLoading, refetch }`
+ * @returns `{ notifications, nextCursor, unreadCount, readCount, isLoading, refetch }`
  */
 export function useNotifications() {
   const utils = trpc.useUtils();
   const { season } = useAppContext();
 
   const listQuery = trpc.notifications.list.useQuery({ limit: 20 }, { refetchInterval: 30_000 });
-  const countQuery = trpc.notifications.unreadCount.useQuery(undefined, {
+  const countQuery = trpc.notifications.counts.useQuery(undefined, {
     refetchInterval: 30_000,
   });
 
@@ -61,7 +61,7 @@ export function useNotifications() {
             const data = JSON.parse(event.data) as { type: string; entity?: string; seasonId?: string };
             if (data.type === 'notification') {
               void utils.notifications.list.invalidate();
-              void utils.notifications.unreadCount.invalidate();
+              void utils.notifications.counts.invalidate();
             } else if (data.type === 'sync-state') {
               if (data.entity === 'portafoglio') {
                 void utils.sales.statistics.portafoglio.getSyncState.invalidate();
@@ -106,11 +106,12 @@ export function useNotifications() {
   return {
     notifications: listQuery.data?.items ?? [],
     nextCursor: listQuery.data?.nextCursor ?? null,
-    unreadCount: countQuery.data ?? 0,
+    unreadCount: countQuery.data?.unread ?? 0,
+    readCount: countQuery.data?.read ?? 0,
     isLoading: listQuery.isLoading,
     refetch: () => {
       void utils.notifications.list.invalidate();
-      void utils.notifications.unreadCount.invalidate();
+      void utils.notifications.counts.invalidate();
     },
   };
 }

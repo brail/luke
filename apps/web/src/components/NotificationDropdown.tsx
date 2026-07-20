@@ -31,6 +31,14 @@ function formatRelativeTime(date: Date): string {
   return `${Math.floor(hours / 24)} giorni fa`;
 }
 
+function formatCountsLabel(unread: number, read: number): string | null {
+  if (unread + read === 0) return null;
+  const parts: string[] = [];
+  if (unread > 0) parts.push(`${unread} non lett${unread === 1 ? 'a' : 'e'}`);
+  if (read > 0) parts.push(`${read} lett${read === 1 ? 'a' : 'e'}`);
+  return parts.join(' · ');
+}
+
 /**
  * Bell icon dropdown that displays the current user's notifications.
  *
@@ -38,7 +46,7 @@ function formatRelativeTime(date: Date): string {
  * as read. Provides bulk "mark all as read" and "delete read" actions.
  */
 export function NotificationDropdown() {
-  const { notifications, unreadCount, refetch } = useNotifications();
+  const { notifications, unreadCount, readCount, refetch } = useNotifications();
   const markAsReadMutation = trpc.notifications.markAsRead.useMutation({
     onSuccess: refetch,
   });
@@ -59,13 +67,15 @@ export function NotificationDropdown() {
     if (!isRead) markAsReadMutation.mutate({ id });
   };
 
+  const countsLabel = formatCountsLabel(unreadCount, readCount);
+
   return (
     <Popover onOpenChange={open => { if (open) refetch(); }}>
       <PopoverTrigger asChild>
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-5 w-5" />
           {unreadCount > 0 && (
-            <span className="absolute top-0.5 right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-destructive text-[9px] font-bold text-destructive-foreground">
+            <span className="absolute top-0.5 right-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold leading-none text-destructive-foreground">
               {unreadCount > 99 ? '99+' : unreadCount}
             </span>
           )}
@@ -75,7 +85,12 @@ export function NotificationDropdown() {
       <PopoverContent align="end" className="w-80 p-0">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b">
-          <span className="font-semibold text-sm">Notifiche</span>
+          <div className="flex flex-col">
+            <span className="font-semibold text-sm">Notifiche</span>
+            {countsLabel && (
+              <span className="text-[11px] text-muted-foreground">{countsLabel}</span>
+            )}
+          </div>
           <div className="flex items-center gap-1">
             {unreadCount > 0 && (
               <Button

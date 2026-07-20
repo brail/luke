@@ -57,16 +57,19 @@ export const notificationsRouter = router({
     }),
 
   /**
-   * Returns the count of unread notifications for the current user.
+   * Returns unread/read/total notification counts for the current user.
    *
    * @auth {authenticated}
    * @input {none}
-   * @output {number}
+   * @output {{ unread: number, read: number, total: number }}
    */
-  unreadCount: protectedProcedure.query(async ({ ctx }) => {
-    return ctx.prisma.notification.count({
-      where: { userId: ctx.session.user.id, isRead: false },
-    });
+  counts: protectedProcedure.query(async ({ ctx }) => {
+    const userId = ctx.session.user.id;
+    const [unread, read] = await Promise.all([
+      ctx.prisma.notification.count({ where: { userId, isRead: false } }),
+      ctx.prisma.notification.count({ where: { userId, isRead: true } }),
+    ]);
+    return { unread, read, total: unread + read };
   }),
 
   /**
