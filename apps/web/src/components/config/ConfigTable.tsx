@@ -10,8 +10,8 @@ import {
   ArrowUp,
   ArrowDown,
 } from 'lucide-react';
-import { toast } from 'sonner';
 
+import { COPY_ERROR_MESSAGE, useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import {
   formatValue,
   formatDate,
@@ -79,14 +79,9 @@ export function ConfigTable({
   onSort,
   canUpdate = true,
 }: ConfigTableProps) {
-  const handleCopyKey = async (key: string) => {
-    try {
-      await navigator.clipboard.writeText(key);
-      toast.success('Chiave copiata negli appunti');
-    } catch {
-      toast.error('Errore durante la copia');
-    }
-  };
+  const { copy } = useCopyToClipboard();
+  const handleCopyKey = (key: string) =>
+    copy(key, { successMessage: 'Chiave copiata negli appunti', errorMessage: COPY_ERROR_MESSAGE });
 
   const getSortIcon = (field: 'key' | 'updatedAt') => {
     if (sortBy !== field) {

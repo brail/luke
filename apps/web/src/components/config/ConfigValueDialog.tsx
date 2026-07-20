@@ -1,7 +1,7 @@
 import { Copy, Check, Code } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner';
 
+import { COPY_ERROR_MESSAGE, useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import {
   formatJsonExpanded,
   formatJsonCompact,
@@ -35,7 +35,7 @@ export function ConfigValueDialog({
   value,
   keyName,
 }: ConfigValueDialogProps) {
-  const [copied, setCopied] = useState(false);
+  const { copy, copiedValue } = useCopyToClipboard();
   const [isJsonExpanded, setIsJsonExpanded] = useState(false);
 
   // Verifica se il valore è un JSON
@@ -45,17 +45,6 @@ export function ConfigValueDialog({
       ? formatJsonExpanded(value)
       : formatJsonCompact(value)
     : value;
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      toast.success('Valore copiato negli appunti');
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      toast.error('Errore durante la copia');
-    }
-  };
 
   return (
     <Dialog open={true} onOpenChange={onOpenChange}>
@@ -99,10 +88,10 @@ export function ConfigValueDialog({
             <Button
               variant="outline"
               size="sm"
-              onClick={handleCopy}
+              onClick={() => copy(value, { successMessage: 'Valore copiato negli appunti', errorMessage: COPY_ERROR_MESSAGE })}
               className="flex items-center gap-2"
             >
-              {copied ? (
+              {copiedValue === value ? (
                 <>
                   <Check className="w-4 h-4" />
                   Copiato

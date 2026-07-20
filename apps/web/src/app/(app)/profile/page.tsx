@@ -38,6 +38,7 @@ import {
 } from '../../../components/ui/tabs';
 import { UserAvatar } from '../../../components/UserAvatar';
 import { useFormatDate } from '../../../hooks/use-format-date';
+import { useCopyToClipboard } from '../../../hooks/useCopyToClipboard';
 import { trpc } from '../../../lib/trpc';
 
 import { ChangePasswordCard } from './_components/ChangePasswordCard';
@@ -52,6 +53,7 @@ import { UserProfileForm } from './_components/UserProfileForm';
 export default function ProfilePage() {
   const { data: session, status } = useSession();
   const formatDate = useFormatDate();
+  const { copy } = useCopyToClipboard();
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
 
   // Query per ottenere i dati del profilo utente
@@ -144,10 +146,7 @@ export default function ProfilePage() {
     lastLogin: user.lastLoginAt || new Date(),
   };
 
-  const handleCopyEmail = () => {
-    navigator.clipboard.writeText(user.email);
-    toast.success('Email copiata negli appunti!');
-  };
+  const handleCopyEmail = () => copy(user.email, { successMessage: 'Email copiata negli appunti!' });
 
   const handleExportProfile = () => {
     const profileData = {
