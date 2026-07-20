@@ -20,6 +20,7 @@ import {
   CollectionLayoutSettingsSchema,
   CollectionRowQuotationInputSchema,
   CollectionRowQuotationUpdateSchema,
+  partialWithoutDefaults,
 } from '@luke/core';
 
 
@@ -126,7 +127,7 @@ const groupsRouter = router({
     .input(
       z.object({
         groupId: z.string(),
-        data: CollectionGroupInputSchema.partial(),
+        data: partialWithoutDefaults(CollectionGroupInputSchema),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -190,7 +191,7 @@ const rowsRouter = router({
     .input(
       z.object({
         rowId: z.string(),
-        data: CollectionLayoutRowInputSchema.partial(),
+        data: partialWithoutDefaults(CollectionLayoutRowInputSchema),
       })
     )
     .mutation(async ({ input, ctx }) => {

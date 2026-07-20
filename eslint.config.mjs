@@ -2,6 +2,7 @@ import js from '@eslint/js';
 import typescript from '@typescript-eslint/eslint-plugin';
 import typescriptParser from '@typescript-eslint/parser';
 import importPlugin from 'eslint-plugin-import-x';
+import lukePlugin from 'eslint-plugin-luke';
 import globals from 'globals';
 
 export default [
@@ -12,6 +13,7 @@ export default [
       'apps/web/src/**/*.{ts,tsx}',
       'packages/core/src/**/*.{ts,tsx}',
       'packages/nav/src/**/*.{ts,tsx}',
+      'packages/calendar/src/**/*.{ts,tsx}',
     ],
     languageOptions: {
       parser: typescriptParser,
@@ -31,10 +33,12 @@ export default [
     plugins: {
       '@typescript-eslint': typescript,
       'import-x': importPlugin,
+      '@luke': lukePlugin,
     },
     rules: {
       'prefer-const': 'error',
       'no-var': 'error',
+      '@luke/no-bare-zod-partial': 'error',
       'no-unused-vars': 'off', // Disabled in favor of @typescript-eslint/no-unused-vars
       '@typescript-eslint/no-unused-vars': [
         'error',
@@ -91,6 +95,11 @@ export default [
   {
     files: ['apps/api/src/instrument.ts'],
     rules: { 'no-console': 'off' },
+  },
+  {
+    // The one legitimate .partial() call — implements partialWithoutDefaults() itself.
+    files: ['packages/core/src/utils/zod.ts'],
+    rules: { '@luke/no-bare-zod-partial': 'off' },
   },
   {
     ignores: [

@@ -55,7 +55,8 @@ Dopo modifiche a router tRPC in `apps/api`: `cd apps/api && npx tsc -b`
 - **TypeScript**: strict mode — no `any`, no type assertion senza commento esplicativo
 - **URLs in frontend**: mai hardcode `localhost:3001` in `apps/web/src` — usare
   `buildApiUrl()`, `buildTrpcUrl()` da `@luke/core/net/url`
-  (enforced da ESLint `@luke/no-hardcoded-url`)
+  (check manuale: `pnpm codemod:check-urls` — non ancora una regola ESLint in
+  `packages/eslint-plugin-luke/`, né wired in CI/husky)
 
 ---
 

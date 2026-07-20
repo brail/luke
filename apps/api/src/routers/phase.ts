@@ -8,7 +8,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { PhaseInputSchema, PhaseInputBaseSchema } from '@luke/core';
+import { PhaseInputSchema, PhaseInputBaseSchema, partialWithoutDefaults } from '@luke/core';
 
 
 import { logAudit } from '../lib/auditLog';
@@ -105,7 +105,7 @@ export const phaseRouter = router({
     .input(
       z.object({
         id: z.string().uuid(),
-        data: PhaseInputBaseSchema.omit({ value: true }).partial(),
+        data: partialWithoutDefaults(PhaseInputBaseSchema.omit({ value: true })),
       })
     )
     .mutation(async ({ input, ctx }) => {

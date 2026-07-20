@@ -5,6 +5,8 @@
 
 import { z } from 'zod';
 
+import { partialWithoutDefaults } from '../utils/zod';
+
 /** Input schema for creating an internal vendor record. */
 export const VendorInputSchema = z.object({
   name: z.string().min(1, 'Nome obbligatorio').max(255).trim(),
@@ -29,7 +31,7 @@ export const VendorIdSchema = z.object({
 /** Input schema for partially updating an existing vendor. */
 export const VendorUpdateInputSchema = z.object({
   id: z.string().uuid('ID vendor non valido'),
-  data: VendorInputSchema.partial(),
+  data: partialWithoutDefaults(VendorInputSchema),
 });
 
 /** Input schema for listing vendors with optional search, active filter, and cursor pagination. */

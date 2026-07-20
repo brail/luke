@@ -12,6 +12,7 @@ import {
   COLLECTION_CATALOG_TYPES,
   CollectionCatalogItemInputSchema,
   CollectionCatalogItemInputBaseSchema,
+  partialWithoutDefaults,
 } from '@luke/core';
 
 
@@ -119,7 +120,7 @@ export const collectionCatalogRouter = router({
     .input(
       z.object({
         id: z.string().uuid(),
-        data: CollectionCatalogItemInputBaseSchema.omit({ type: true }).partial(),
+        data: partialWithoutDefaults(CollectionCatalogItemInputBaseSchema.omit({ type: true })),
       })
     )
     .mutation(async ({ input, ctx }) => {

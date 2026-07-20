@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { partialWithoutDefaults } from '../utils/zod';
+
 /**
  * Toggleable columns for the collection table. Always-visible columns (#, line, skuForecast, actions)
  * are not listed here. At most `COLLECTION_COLUMNS_MAX_VISIBLE` of these may be shown simultaneously.
@@ -152,8 +154,9 @@ export type CollectionRowQuotationInput = z.infer<
   typeof CollectionRowQuotationInputSchema
 >;
 
-export const CollectionRowQuotationUpdateSchema =
-  CollectionRowQuotationInputSchema.omit({ rowId: true }).partial();
+export const CollectionRowQuotationUpdateSchema = partialWithoutDefaults(
+  CollectionRowQuotationInputSchema.omit({ rowId: true })
+);
 export type CollectionRowQuotationUpdate = z.infer<
   typeof CollectionRowQuotationUpdateSchema
 >;
