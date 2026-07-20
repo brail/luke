@@ -53,6 +53,7 @@ export * from './utils/dateUtils';
 export * from './utils/pricing';
 export * from './utils/sanitize';
 export * from './utils/user';
+export * from './utils/zod';
 
 // Re-export storage types and config
 export * from './storage/types';

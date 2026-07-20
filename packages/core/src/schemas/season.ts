@@ -5,6 +5,8 @@
 
 import { z } from 'zod';
 
+import { partialWithoutDefaults } from '../utils/zod';
+
 /** Input schema for creating a season. Code must be alphanumeric, max 10 chars (NAV constraint). */
 export const SeasonInputSchema = z.object({
   code: z
@@ -50,7 +52,7 @@ export const SeasonListInputSchema = z.object({
 /** Input schema for partially updating a season. */
 export const SeasonUpdateInputSchema = z.object({
   id: z.string().uuid('ID season non valido'),
-  data: SeasonInputSchema.partial(),
+  data: partialWithoutDefaults(SeasonInputSchema),
 });
 
 /** Schema di output completo per Season (response dal server) */

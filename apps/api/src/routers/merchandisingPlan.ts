@@ -19,14 +19,15 @@ import {
   MerchandisingComponentInputSchema,
   MerchandisingSpecsheetInputSchema,
   MERCHANDISING_PLAN_STATUS,
+  partialWithoutDefaults,
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import { createNotification } from '../lib/notifications';
+import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
-import { requirePermission } from '../lib/permissions';
 
 export const merchandisingPlanRouter = router({
   /**
@@ -200,7 +201,7 @@ export const merchandisingPlanRouter = router({
     .input(
       z.object({
         id: z.string().uuid(),
-        data: MerchandisingPlanRowInputSchema.omit({ planId: true }).partial(),
+        data: partialWithoutDefaults(MerchandisingPlanRowInputSchema.omit({ planId: true })),
       })
     )
     .mutation(async ({ input, ctx }) => {

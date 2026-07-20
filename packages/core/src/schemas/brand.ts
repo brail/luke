@@ -5,6 +5,8 @@
 
 import { z } from 'zod';
 
+import { partialWithoutDefaults } from '../utils/zod';
+
 /** Input schema for creating a brand. Code must be alphanumeric with `_` and `-`, max 20 chars. */
 export const BrandInputSchema = z.object({
   /** Codice univoco del brand (max 20 caratteri) */
@@ -90,13 +92,14 @@ export const BrandUpdateInputSchema = z.object({
   id: z.string().uuid('ID brand non valido'),
 
   /** Dati parziali per l'aggiornamento — code/name senza regex: i codici NAV possono contenere spazi */
-  data: BrandInputSchema
-    .omit({ code: true, name: true })
-    .extend({
-      code: z.string().min(1, 'Codice obbligatorio').max(20, 'Max 20 caratteri'),
-      name: z.string().min(1, 'Nome obbligatorio').max(128, 'Max 128 caratteri'),
-    })
-    .partial(),
+  data: partialWithoutDefaults(
+    BrandInputSchema
+      .omit({ code: true, name: true })
+      .extend({
+        code: z.string().min(1, 'Codice obbligatorio').max(20, 'Max 20 caratteri'),
+        name: z.string().min(1, 'Nome obbligatorio').max(128, 'Max 128 caratteri'),
+      })
+  ),
 });
 
 export type BrandInput = z.infer<typeof BrandInputSchema>;
