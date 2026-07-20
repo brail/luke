@@ -297,7 +297,9 @@ tag `vX.Y.Z` → build Docker → `ghcr.io` → Portainer pull & redeploy.
 **MAI cancellare il volume `luke_api_data`** — la master key vive lì.
 
 **Al cambio di develop branch** (es. `develop-2.1` → `develop-2.2`):
-aggiornare `target-branch` in `.github/dependabot.yml` (blocchi `github-actions` e `docker`).
+aggiornare `target-branch` in `.github/dependabot.yml` (blocchi `github-actions` e
+`docker`) e la lista `branches` in `.github/workflows/ci.yml` (`push` e `pull_request`)
+— altrimenti lint/typecheck CI smette di girare sul nuovo branch senza segnalarlo.
 
 ## Commit Conventions
 
