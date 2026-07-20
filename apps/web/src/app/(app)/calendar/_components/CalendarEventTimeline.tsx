@@ -9,7 +9,7 @@ import { Button } from '../../../../components/ui/button';
 import { Checkbox } from '../../../../components/ui/checkbox';
 import { cn } from '../../../../lib/utils';
 import { MONTH_NAMES_IT } from '../constants';
-import { formatVisibleFunctions, getIsoWeek, resolveBrandColor } from '../utils';
+import { formatVisibleFunctions, getIsoWeek, groupBadge, groupTooltip, resolveBrandColor } from '../utils';
 
 import { type CalendarEventItem as CalendarEvent } from './types';
 
@@ -23,6 +23,9 @@ interface Props {
   functionsById: Record<string, string>;
   canUpdate?: boolean;
   brandColorMap: Record<string, string>;
+  /** Shows a fixed-width group-initials badge on each row — only worth the visual cost when the
+   * current view actually mixes events from >1 planning group. */
+  showGroupBadge?: boolean;
 }
 
 /**
@@ -37,7 +40,7 @@ interface Props {
  * @param activeBrandId - Dims events that belong to a different brand.
  * @param brandColorMap - Pre-computed brand-ID→colour map.
  */
-export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, onDayClick, onBulkDelete, activeBrandId, functionsById, canUpdate, brandColorMap }: Props) {
+export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, onDayClick, onBulkDelete, activeBrandId, functionsById, canUpdate, brandColorMap, showGroupBadge }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -115,6 +118,7 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
               const d = new Date(m.startAt);
               const isSelected = selected.has(m.id);
               const hasNote = !!(m.notes?.[0]?.body);
+              const badge = groupBadge(showGroupBadge, m.planningGroupName);
               return (
                 <div
                   key={m.id}
@@ -131,7 +135,10 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
                   <span className="text-muted-foreground tabular-nums">{d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })}</span>
                   <span className="flex items-center gap-2 min-w-0">
                     {m.brandId && <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: resolveBrandColor(m.brandId, brandColorMap) }} />}
-                    <span className="truncate font-medium">{m.title}</span>
+                    {badge && (
+                      <span className="text-[10px] font-semibold text-muted-foreground shrink-0">{badge}</span>
+                    )}
+                    <span className="truncate font-medium" title={m.planningGroupName ? groupTooltip(m.planningGroupName, m.title) : undefined}>{m.title}</span>
                   </span>
                   <span className="text-xs text-muted-foreground truncate">{formatVisibleFunctions(m.visibilities, functionsById)}</span>
                   <span>{m.cancelledAt && <Badge variant="destructive" className="text-xs">Annullato</Badge>}</span>

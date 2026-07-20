@@ -6,7 +6,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '../../../../components/ui/button';
 import { cn } from '../../../../lib/utils';
 import { cancelledClass } from '../constants';
-import { addDays, canEditMilestone, resolveBrandColor, sameDay } from '../utils';
+import { addDays, canEditMilestone, groupBadge, groupTooltip, resolveBrandColor, sameDay } from '../utils';
 
 import { type CalendarEventItem as CalendarEvent } from './types';
 
@@ -21,6 +21,9 @@ interface Props {
   activeBrandId?: string;
   brandColorMap: Record<string, string>;
   canUpdate?: boolean;
+  /** Shows a fixed-width group-initials badge on each event — only worth the visual cost when the
+   * current view actually mixes events from >1 planning group. */
+  showGroupBadge?: boolean;
 }
 
 const GRID_START = 7;
@@ -53,7 +56,7 @@ type DragState = { id: string; startY: number; deltaMinutes: number; origStartAt
  * @param activeBrandId - Dims events that belong to a different brand.
  * @param brandColorMap - Pre-computed brand-ID→colour map from `assignBrandColors`.
  */
-export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, onEventClick, onEventUpdate, onNoteClick, onDayClick, activeBrandId, brandColorMap, canUpdate }: Props) {
+export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, onEventClick, onEventUpdate, onNoteClick, onDayClick, activeBrandId, brandColorMap, canUpdate, showGroupBadge }: Props) {
   const today = useMemo(() => new Date(), []);
   const isToday = sameDay(viewDate, today);
 
@@ -155,14 +158,17 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
             const color = resolveBrandColor(m.brandId, brandColorMap);
             const isOtherBrand = !!activeBrandId && !!m.brandId && m.brandId !== activeBrandId;
             const hasNote = !!(m.notes?.[0]?.body);
+            const badge = groupBadge(showGroupBadge, m.planningGroupName);
             return (
               <div key={m.id} className={cn('flex items-center gap-1 group/all', isOtherBrand && 'opacity-40')}>
                 <button
                   type="button"
                   onClick={() => onEventClick(m.id)}
-                  className={cn('text-xs text-white rounded px-2 py-0.5 hover:brightness-110 transition-all [background:var(--ev-color)]', cancelledClass(!!m.cancelledAt))}
+                  className={cn('flex items-center text-xs text-white rounded px-2 py-0.5 hover:brightness-110 transition-all [background:var(--ev-color)]', cancelledClass(!!m.cancelledAt))}
                   style={{ '--ev-color': color } as React.CSSProperties}
+                  title={groupTooltip(m.planningGroupName, m.title)}
                 >
+                  {badge && <span className="opacity-80 mr-1 shrink-0">{badge}</span>}
                   {m.title}
                 </button>
                 {onNoteClick && (
@@ -232,6 +238,7 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
             const canDrag = canEditMilestone(m, canUpdate, activeBrandId);
             const previewStart = isDragging ? new Date(start.getTime() + deltaMin * 60_000) : start;
             const previewEnd = isDragging ? new Date(end.getTime() + deltaMin * 60_000) : end;
+            const badge = groupBadge(showGroupBadge, m.planningGroupName);
             return (
               <div
                 key={m.id}
@@ -247,8 +254,12 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
                     onEventClick(m.id);
                   }}
                   className={cn('w-full h-full flex flex-col items-start px-2 py-1 text-left rounded-r overflow-hidden', isDragging && 'pointer-events-none')}
+                  title={m.planningGroupName ? groupTooltip(m.planningGroupName, m.title) : undefined}
                 >
-                  <span className="text-xs font-medium truncate w-full [color:var(--ev-color)]">{m.title}</span>
+                  <span className="text-xs font-medium truncate w-full [color:var(--ev-color)] flex items-center">
+                    {badge && <span className="opacity-80 mr-1 shrink-0">{badge}</span>}
+                    <span className="truncate min-w-0">{m.title}</span>
+                  </span>
                   {height >= ROW_H * 0.8 && (
                     <span className="text-[11px] text-muted-foreground tabular-nums">
                       {timeLabel(previewStart)}{m.endAt ? ` – ${timeLabel(previewEnd)}` : ''}

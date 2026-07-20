@@ -10,11 +10,16 @@ import { cancelledClass } from '../constants';
 interface Props {
   id: string;
   title: string;
+  /** Full tooltip text (title, plus any group/duration context) — built by the caller via
+   * `groupTooltip()` so this component doesn't need to know about spans or group names. */
+  tooltip: string;
   cancelled: boolean;
   color: string;
-  span: number;
   isDragging: boolean;
   hasNote?: boolean;
+  /** Fixed-width group-initials badge (e.g. "U", "BR") — rendered outside the truncated title so it
+   * never crowds it out regardless of the full group name's length. */
+  groupInitials?: string;
   onClick: (e: MouseEvent) => void;
   onNoteClick?: (e: MouseEvent) => void;
 }
@@ -25,11 +30,10 @@ interface Props {
  * Integrates with dnd-kit via `useDraggable`. A sticky-note icon appears when
  * `hasNote` is true or on hover.
  *
- * @param span - Number of day columns the chip should span (used in week view CSS).
  * @param isDragging - Hides the chip's original slot while dragging is in progress.
  * @param onNoteClick - When provided, renders the sticky-note button.
  */
-export function DraggableEventChip({ id, title, cancelled, color, span, isDragging, hasNote, onClick, onNoteClick }: Props) {
+export function DraggableEventChip({ id, title, tooltip, cancelled, color, isDragging, hasNote, groupInitials, onClick, onNoteClick }: Props) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id });
 
   const bg = color;
@@ -42,16 +46,17 @@ export function DraggableEventChip({ id, title, cancelled, color, span, isDraggi
         {...listeners}
         {...attributes}
         className={cn(
-          'w-full text-left rounded px-1.5 py-0.5 text-xs text-white truncate',
+          'w-full flex items-center text-left rounded px-1.5 py-0.5 text-xs text-white',
           'hover:brightness-110 transition-all cursor-grab active:cursor-grabbing',
           onNoteClick && 'pr-5',
           cancelledClass(cancelled),
           isDragging && 'opacity-30',
         )}
         style={{ background: bg }}
-        title={`${title}${span > 0 ? ` (${span + 1}gg)` : ''}`}
+        title={tooltip}
       >
-        {title}
+        {groupInitials && <span className="opacity-80 mr-1 shrink-0">{groupInitials}</span>}
+        <span className="truncate min-w-0">{title}</span>
       </button>
 
       {onNoteClick && (

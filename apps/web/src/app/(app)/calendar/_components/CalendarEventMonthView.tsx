@@ -8,7 +8,7 @@ import { Button } from '../../../../components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../../components/ui/popover';
 import { cn } from '../../../../lib/utils';
 import { DAY_LABELS_IT, MONTH_NAMES_IT, cancelledClass } from '../constants';
-import { addDays, addMonths, canEditMilestone, daysBetween, getIsoWeek, groupEventsByDay, mondayOf, resolveBrandColor, sameDay, startOfDay } from '../utils';
+import { addDays, addMonths, canEditMilestone, daysBetween, getIsoWeek, groupBadge, groupEventsByDay, groupTooltip, mondayOf, resolveBrandColor, sameDay, startOfDay } from '../utils';
 
 import { DraggableEventChip } from './DraggableEventChip';
 import { type CalendarEventItem as CalendarEvent } from './types';
@@ -28,6 +28,9 @@ interface Props {
   canUpdate?: boolean;
   brandColorMap: Record<string, string>;
   holidayDates?: HolidayMap;
+  /** Shows a fixed-width group-initials badge on each chip — only worth the visual cost when the
+   * current view actually mixes events from >1 planning group. */
+  showGroupBadge?: boolean;
 }
 
 const MAX_CHIPS = 3;
@@ -66,7 +69,7 @@ function MonthDayCell({ dayIso, isToday, isDragging, isCurrentMonth, holidays, o
  * @param brandColorMap - Pre-computed brand-ID→colour map.
  * @param holidayDates - HolidayMap used to shade holiday cells.
  */
-export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange, onEventClick, onEventUpdate, onNoteClick, onDayClick, onDayNumberClick, onWeekNumberClick, activeBrandId, canUpdate, brandColorMap, holidayDates }: Props) {
+export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange, onEventClick, onEventUpdate, onNoteClick, onDayClick, onDayNumberClick, onWeekNumberClick, activeBrandId, canUpdate, brandColorMap, holidayDates, showGroupBadge }: Props) {
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -155,17 +158,19 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
                           const span = end ? daysBetween(start, end) : 0;
                           const hasNote = !!(m.notes?.[0]?.body);
                           const color = resolveBrandColor(m.brandId, brandColorMap);
+                          const badge = groupBadge(showGroupBadge, m.planningGroupName);
                           return (
                             <div key={m.id} className={cn(isOtherBrand && 'opacity-40')}>
                               {canEditMilestone(m, canUpdate, activeBrandId) && isStart ? (
                                 <DraggableEventChip
                                   id={m.id}
                                   title={m.title}
+                                  tooltip={groupTooltip(m.planningGroupName, m.title, span > 0 ? ` (${span + 1}gg)` : '')}
                                   cancelled={!!m.cancelledAt}
                                   color={color}
-                                  span={span}
                                   isDragging={draggingId === m.id}
                                   hasNote={hasNote}
+                                  groupInitials={badge}
                                   onClick={(e) => { e.stopPropagation(); onEventClick(m.id); }}
                                   onNoteClick={onNoteClick ? (e) => { e.stopPropagation(); onNoteClick(m.id); } : undefined}
                                 />
@@ -174,15 +179,20 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
                                   <button
                                     type="button"
                                     onClick={(e) => { e.stopPropagation(); onEventClick(m.id); }}
-                                    className={cn('w-full text-left rounded px-1 py-0.5 text-[11px] text-white truncate leading-tight',
+                                    className={cn('w-full flex items-center text-left rounded px-1 py-0.5 text-[11px] text-white leading-tight',
                                       'hover:brightness-110 transition-all',
                                       cancelledClass(!!m.cancelledAt),
                                       !isStart && 'opacity-40',
                                       onNoteClick && isStart && 'pr-4')}
                                     style={{ background: color }}
-                                    title={m.title}
+                                    title={isStart ? groupTooltip(m.planningGroupName, m.title) : m.title}
                                   >
-                                    {isStart ? m.title : '↳'}
+                                    {isStart ? (
+                                      <>
+                                        {badge && <span className="opacity-80 mr-1 shrink-0">{badge}</span>}
+                                        <span className="truncate min-w-0">{m.title}</span>
+                                      </>
+                                    ) : '↳'}
                                   </button>
                                   {onNoteClick && isStart && (
                                     <button
@@ -218,16 +228,18 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
                               <div className="space-y-1">
                                 {items.map(ev => {
                                   const evColor = resolveBrandColor(ev.brandId, brandColorMap);
+                                  const evBadge = groupBadge(showGroupBadge, ev.planningGroupName);
                                   return (
                                     <button
                                       key={ev.id}
                                       type="button"
                                       onClick={() => onEventClick(ev.id)}
-                                      className={cn('w-full text-left rounded px-1.5 py-0.5 text-[11px] text-white truncate leading-tight hover:brightness-110 transition-all', cancelledClass(!!ev.cancelledAt))}
+                                      className={cn('w-full flex items-center text-left rounded px-1.5 py-0.5 text-[11px] text-white leading-tight hover:brightness-110 transition-all', cancelledClass(!!ev.cancelledAt))}
                                       style={{ background: evColor }}
-                                      title={ev.title}
+                                      title={groupTooltip(ev.planningGroupName, ev.title)}
                                     >
-                                      {ev.title}
+                                      {evBadge && <span className="opacity-80 mr-1 shrink-0">{evBadge}</span>}
+                                      <span className="truncate min-w-0">{ev.title}</span>
                                     </button>
                                   );
                                 })}

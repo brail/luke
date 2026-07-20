@@ -1,6 +1,6 @@
 'use client';
 
-import { Calendar, CalendarClock, RefreshCw, Copy, Plus, List, GanttChart, CalendarRange, CalendarDays, Maximize2, Minimize2, ChevronDown, Check, MoreHorizontal, Snowflake } from 'lucide-react';
+import { Calendar, CalendarClock, CalendarPlus, RefreshCw, Copy, Plus, List, GanttChart, CalendarRange, CalendarDays, Maximize2, Minimize2, ChevronDown, Check, MoreHorizontal, Snowflake } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
@@ -30,6 +30,7 @@ import { CalendarEventWeekView } from './_components/CalendarEventWeekView';
 import { CloneBrandSeasonDialog } from './_components/CloneBrandSeasonDialog';
 import { ExportButton } from './_components/ExportButton';
 import { FreezePlanningGroupWizard } from './_components/FreezePlanningGroupWizard';
+import { GoogleCalendarSubscribeDialog } from './_components/GoogleCalendarSubscribeDialog';
 import { ManagePlanningGroupsDialog } from './_components/ManagePlanningGroupsDialog';
 import { PlanningWizard } from './_components/PlanningWizard/PlanningWizard';
 import { SelectPlanningGroupDialog } from './_components/SelectPlanningGroupDialog';
@@ -56,6 +57,7 @@ export default function CalendarPage() {
   const [templateOpen, setTemplateOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
   const [manageGroupsOpen, setManageGroupsOpen] = useState(false);
+  const [subscribeOpen, setSubscribeOpen] = useState(false);
   /** Set by ApplyTemplateDialog's onApplied — drives the automatic post-apply wizard. */
   const [postApplyWizard, setPostApplyWizard] = useState<{ planningGroupId: string; events: CalendarEventItem[] } | null>(null);
   // Which planning-group picker is open — freeze and unfreeze share the same picker dialog,
@@ -159,7 +161,14 @@ export default function CalendarPage() {
   };
 
   const triggerSyncMutation = trpc.seasonCalendar.triggerSync.useMutation({
-    onSuccess: () => { toast.success('Sincronizzazione avviata'); refetchAfterEventChange(); },
+    onSuccess: data => {
+      if (data.errors > 0) {
+        toast.error(`Sincronizzazione completata con errori: ${data.synced} ok, ${data.errors} falliti`);
+      } else {
+        toast.success(`Sincronizzazione completata: ${data.synced} evento/i sincronizzati`);
+      }
+      refetchAfterEventChange();
+    },
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
@@ -228,6 +237,13 @@ export default function CalendarPage() {
     return milestones.filter(m => m.visibilities.some(v => selectedFunctionIds.includes(v.functionId)));
   }, [milestones, selectedFunctionIds]);
 
+  /** Group badges only earn their visual cost when the current view actually mixes >1 planning
+   * group — the common case (a single group) would otherwise show a redundant label on every chip. */
+  const showGroupBadge = useMemo(
+    () => new Set(filteredMilestones.map(m => m.planningGroupId)).size > 1,
+    [filteredMilestones]
+  );
+
   const { data: holidayCountries = [] } = trpc.holidays.listCountries.useQuery(undefined, { staleTime: 60 * 60 * 1000 });
   const holidayCountryCodes = useMemo(() => holidayCountries.map(c => c.code), [holidayCountries]);
   const holidayDates = useHolidays(holidayCountryCodes);
@@ -290,6 +306,10 @@ export default function CalendarPage() {
           <Button variant="outline" size="sm" title="Altre azioni"><MoreHorizontal size={14} /></Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => setSubscribeOpen(true)} disabled={!calendar}>
+            <CalendarPlus size={13} className="mr-2" />Iscriviti ai calendari Google
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           {canUpdate && (
             <>
               <DropdownMenuItem onClick={() => setCloneOpen(true)} disabled={!calendar}>
@@ -446,6 +466,7 @@ export default function CalendarPage() {
               canUpdate={canUpdate}
               brandColorMap={brandColorMap}
               holidayDates={holidayDates}
+              showGroupBadge={showGroupBadge}
             />
           ) : view === 'month' ? (
             <CalendarEventMonthView
@@ -462,6 +483,7 @@ export default function CalendarPage() {
               canUpdate={canUpdate}
               brandColorMap={brandColorMap}
               holidayDates={holidayDates}
+              showGroupBadge={showGroupBadge}
             />
           ) : view === 'day' ? (
             <CalendarEventDayView
@@ -475,6 +497,7 @@ export default function CalendarPage() {
               activeBrandId={contextBrandId ?? undefined}
               canUpdate={canUpdate}
               brandColorMap={brandColorMap}
+              showGroupBadge={showGroupBadge}
             />
           ) : filteredMilestones.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">
@@ -498,6 +521,7 @@ export default function CalendarPage() {
               canUpdate={canUpdate}
               brandColorMap={brandColorMap}
               holidayDates={holidayDates}
+              showGroupBadge={showGroupBadge}
             />
           ) : (
             <CalendarEventTimeline
@@ -510,6 +534,7 @@ export default function CalendarPage() {
               functionsById={functionsById}
               canUpdate={canUpdate}
               brandColorMap={brandColorMap}
+              showGroupBadge={showGroupBadge}
             />
           )}
         </CardContent>
@@ -690,6 +715,14 @@ export default function CalendarPage() {
           planningGroupId={activeGroupAction.groupId}
           milestones={filteredMilestones.filter(m => m.planningGroupId === activeGroupAction.groupId)}
           holidayDates={holidayDates}
+        />
+      )}
+
+      {subscribeOpen && (
+        <GoogleCalendarSubscribeDialog
+          open={subscribeOpen}
+          onClose={() => setSubscribeOpen(false)}
+          calendarId={calendar?.id}
         />
       )}
 

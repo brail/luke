@@ -5,7 +5,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { cn } from '../../../../lib/utils';
 import { MONTH_NAMES_SHORT_IT, cancelledClass } from '../constants';
-import { addDays, canEditMilestone, daysBetween, formatVisibleFunctions, resolveBrandColor, startOfDay, toUtcIsoDate } from '../utils';
+import { addDays, canEditMilestone, daysBetween, formatVisibleFunctions, groupBadge, groupTooltip, resolveBrandColor, startOfDay, toUtcIsoDate } from '../utils';
 
 import { type CalendarEventItem as CalendarEvent } from './types';
 import { type HolidayMap } from './useHolidays';
@@ -21,6 +21,9 @@ interface Props {
   canUpdate?: boolean;
   brandColorMap: Record<string, string>;
   holidayDates?: HolidayMap;
+  /** Shows a fixed-width group-initials badge on each row — only worth the visual cost when the
+   * current view actually mixes events from >1 planning group. */
+  showGroupBadge?: boolean;
 }
 
 const ROW_H = 36;
@@ -62,7 +65,7 @@ type DragState = { id: string; mode: 'drag' | 'resize'; startX: number; deltaX: 
  * @param brandColorMap - Pre-computed brand-ID→colour map.
  * @param holidayDates - HolidayMap used to shade holiday columns.
  */
-export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, onNoteClick, onDayClick, activeBrandId, functionsById, canUpdate, brandColorMap, holidayDates }: Props) {
+export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, onNoteClick, onDayClick, activeBrandId, functionsById, canUpdate, brandColorMap, holidayDates, showGroupBadge }: Props) {
   const sorted = useMemo(
     () => [...milestones].sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime()),
     [milestones]
@@ -239,6 +242,7 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
             const barColor = resolveBrandColor(m.brandId, brandColorMap);
             const label = isDragging ? dragLabel(m._start, m.endAt ? m._end : null, dayDeltaPreview, drag.mode) : null;
             const hasNote = !!(m.notes?.[0]?.body);
+            const badge = groupBadge(showGroupBadge, m.planningGroupName);
 
             return (
               <div key={m.id} className={cn('flex group hover:bg-muted/20 transition-colors', isOtherBrand && 'opacity-40')} style={{ height: ROW_H }}>
@@ -249,7 +253,8 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
                   style={{ width: LABEL_W, height: ROW_H }}
                 >
                   {m.brandId && <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: barColor }} />}
-                  <span className="truncate text-sm font-medium flex-1 min-w-0">{m.title}</span>
+                  {badge && <span className="text-[10px] font-semibold text-muted-foreground shrink-0">{badge}</span>}
+                  <span className="truncate text-sm font-medium flex-1 min-w-0" title={m.planningGroupName ? groupTooltip(m.planningGroupName, m.title) : undefined}>{m.title}</span>
                   {onNoteClick && (
                     <span
                       onClick={(e) => { e.stopPropagation(); onNoteClick(m.id); }}
@@ -289,7 +294,7 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
                         if (wasDraggingRef.current) { wasDraggingRef.current = false; return; }
                         onEventClick(m.id);
                       }}
-                      title={`${m.title} — ${m.visibleFunctionNames}`}
+                      title={groupTooltip(m.planningGroupName, m.title, ` — ${m.visibleFunctionNames}`)}
                     >
                       <span className="px-1.5 leading-[22px] block select-none pointer-events-none" style={{ overflow: 'hidden', width: previewWidth }}>
                         {previewWidth > 56 && m.title}

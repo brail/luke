@@ -1,4 +1,5 @@
 import {
+  initials,
   isEventDateLocked as isEventDateLockedCore,
   isEventDeleteLocked as isEventDeleteLockedCore,
 } from '@luke/core';
@@ -165,4 +166,19 @@ export function assignBrandColors(brands: { id: string }[]): Record<string, stri
 export function resolveBrandColor(brandId: string | null | undefined, map: Record<string, string>): string {
   if (!brandId) return 'hsl(var(--primary))';
   return map[brandId] ?? brandColor(brandId);
+}
+
+/**
+ * Fixed-width group-initials badge text for an event chip, or `undefined` when badges are
+ * hidden (`show` false) or the milestone has no known group name. Keeps the badge out of the
+ * title's `truncate` budget regardless of how long the group name is — the full name belongs in
+ * the chip's tooltip instead (see `groupTooltip`).
+ */
+export function groupBadge(show: boolean | undefined, name: string | undefined): string | undefined {
+  return show && name ? initials(name) : undefined;
+}
+
+/** Tooltip text prefixing the group name onto an event title, when the group name is known. */
+export function groupTooltip(name: string | undefined, title: string, suffix = ''): string {
+  return `${name ? `Gruppo: ${name} — ` : ''}${title}${suffix}`;
 }

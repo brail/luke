@@ -78,7 +78,7 @@ export function EventTimelineDrag({ anchorDate, value, onChange, holidayDates, c
           value={valueIso}
           onChange={e => {
             if (!e.target.value) return;
-            onChange(new Date(`${e.target.value}T00:00:00`));
+            onChange(new Date(e.target.value));
           }}
           inputSize="sm"
           className="w-40 [&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground"

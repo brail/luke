@@ -5,10 +5,12 @@
 
 import { TRPCError } from '@trpc/server';
 import pino from 'pino';
-import type { PrismaClient } from '@prisma/client';
+
 import { AppContextDefaultsSchema, type AppContextDefaults, type Role } from '@luke/core';
 
 import { makeUrlResolver } from '../lib/storageUrl';
+
+import type { PrismaClient } from '@prisma/client';
 
 const logger = pino({ level: 'info' });
 
@@ -59,6 +61,27 @@ export async function getUserAllowedBrandIds(
   }
 
   return [...brandIds];
+}
+
+/**
+ * Returns the set of CompanyFunction IDs the user may access via team membership.
+ * Admins receive null (unrestricted). Users in no team receive an empty array (no access).
+ *
+ * @returns null for admin (unrestricted), or an array of allowed function IDs.
+ */
+export async function getUserAllowedFunctionIds(
+  userId: string,
+  prisma: PrismaClient,
+  userRole?: Role
+): Promise<string[] | null> {
+  if (userRole === 'admin') return null;
+
+  const memberships = await prisma.companyTeamMembership.findMany({
+    where: { userId, team: { isActive: true } },
+    select: { team: { select: { functionId: true } } },
+  });
+
+  return [...new Set(memberships.map(m => m.team.functionId))];
 }
 
 /**

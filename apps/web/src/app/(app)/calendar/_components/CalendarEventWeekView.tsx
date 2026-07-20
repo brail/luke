@@ -7,7 +7,7 @@ import { type CSSProperties, ReactNode, useCallback, useMemo, useState } from 'r
 import { Button } from '../../../../components/ui/button';
 import { cn } from '../../../../lib/utils';
 import { DAY_LABELS_IT, cancelledClass } from '../constants';
-import { addDays, canEditMilestone, daysBetween, getIsoWeek, groupEventsByDay, mondayOf, resolveBrandColor, sameDay, startOfDay } from '../utils';
+import { addDays, canEditMilestone, daysBetween, getIsoWeek, groupBadge, groupEventsByDay, groupTooltip, mondayOf, resolveBrandColor, sameDay, startOfDay } from '../utils';
 
 import { DraggableEventChip } from './DraggableEventChip';
 import { type CalendarEventItem as CalendarEvent } from './types';
@@ -26,6 +26,9 @@ interface Props {
   canUpdate?: boolean;
   brandColorMap: Record<string, string>;
   holidayDates?: HolidayMap;
+  /** Shows a fixed-width group-initials badge on each chip — only worth the visual cost when the
+   * current view actually mixes events from >1 planning group. */
+  showGroupBadge?: boolean;
 }
 
 function WeekDayRow({ dayIso, isToday, isWeekend, isDragging, holidays, onDayClick, children }: {
@@ -61,7 +64,7 @@ function WeekDayRow({ dayIso, isToday, isWeekend, isDragging, holidays, onDayCli
  * @param brandColorMap - Pre-computed brand-ID→colour map.
  * @param holidayDates - HolidayMap used to shade holiday columns.
  */
-export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, onEventClick, onEventUpdate, onNoteClick, onDayClick, onDayNumberClick, activeBrandId, canUpdate, brandColorMap, holidayDates }: Props) {
+export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, onEventClick, onEventUpdate, onNoteClick, onDayClick, onDayNumberClick, activeBrandId, canUpdate, brandColorMap, holidayDates, showGroupBadge }: Props) {
   const weekStart = useMemo(() => mondayOf(viewDate), [viewDate]);
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
   const today = useMemo(() => new Date(), []);
@@ -140,17 +143,19 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
                     const color = resolveBrandColor(m.brandId, brandColorMap);
                     const canDrag = canEditMilestone(m, canUpdate, activeBrandId) && isStart;
                     const isPlainStart = !canDrag && isStart;
+                    const badge = groupBadge(showGroupBadge, m.planningGroupName);
                     return (
                       <div key={m.id} className={cn('shrink-0', isOtherBrand && 'opacity-40')}>
                         {canDrag ? (
                           <DraggableEventChip
                             id={m.id}
                             title={m.title}
+                            tooltip={groupTooltip(m.planningGroupName, m.title, span > 0 ? ` (${span + 1}gg)` : '')}
                             cancelled={!!m.cancelledAt}
                             color={color}
-                            span={span}
                             isDragging={draggingId === m.id}
                             hasNote={hasNote}
+                            groupInitials={badge}
                             onClick={(e) => { e.stopPropagation(); onEventClick(m.id); }}
                             onNoteClick={onNoteClick ? (e) => { e.stopPropagation(); onNoteClick(m.id); } : undefined}
                           />
@@ -159,14 +164,15 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
                             <button
                               type="button"
                               onClick={(e) => { e.stopPropagation(); onEventClick(m.id); }}
-                              className={cn('text-left rounded px-1.5 py-0.5 text-xs text-white truncate max-w-[200px] [background:var(--ev-color)]', // max-w-[200px]: prevent chip overflow in narrow week cells
+                              className={cn('flex items-center text-left rounded px-1.5 py-0.5 text-xs text-white max-w-[200px] [background:var(--ev-color)]', // max-w-[200px]: prevent chip overflow in narrow week cells
                                 'hover:brightness-110 transition-all',
                                 cancelledClass(!!m.cancelledAt),
                                 onNoteClick && 'pr-5')}
                               style={{ '--ev-color': color } as CSSProperties}
-                              title={`${m.title}${span > 0 ? ` (${span + 1}gg)` : ''}`}
+                              title={groupTooltip(m.planningGroupName, m.title, span > 0 ? ` (${span + 1}gg)` : '')}
                             >
-                              {m.title}
+                              {badge && <span className="opacity-80 mr-1 shrink-0">{badge}</span>}
+                              <span className="truncate min-w-0">{m.title}</span>
                             </button>
                             {onNoteClick && (
                               <button

@@ -79,6 +79,17 @@ function buildIso(date: string, time: string): string {
   return new Date(`${date}T${time}:00`).toISOString();
 }
 
+/** Bare date parses as UTC midnight per spec — unlike `buildIso`, needed for all-day events so the
+ * calendar day survives round-tripping through non-UTC-midnight-aware consumers (e.g. Google Calendar). */
+function buildAllDayIso(date: string): string {
+  return new Date(date).toISOString();
+}
+
+/** Resolves a date/time pair to an ISO instant, using UTC-midnight semantics for all-day events. */
+function resolveIso(date: string, time: string, allDay: boolean): string {
+  return allDay ? buildAllDayIso(date) : buildIso(date, time);
+}
+
 function addOneHour(time: string): string {
   const [h, m] = time.split(':').map(Number);
   return `${((h + 1) % 24).toString().padStart(2, '0')}:${(m ?? 0).toString().padStart(2, '0')}`;
@@ -257,9 +268,9 @@ export function CalendarEventDialog({
 
   const handleReschedule = () => {
     if (!event || !startDate || !rescheduleReason.trim()) return;
-    const startIso = allDay ? buildIso(startDate, '00:00') : buildIso(startDate, startTime);
-    const endIso = endDate ? (allDay ? buildIso(endDate, '00:00') : buildIso(endDate, endTime)) : undefined;
-    rescheduleMutation.mutate({ id: event.id, startAt: startIso, endAt: endIso, reason: rescheduleReason.trim() });
+    const startIso = resolveIso(startDate, startTime, allDay);
+    const endIso = endDate ? resolveIso(endDate, endTime, allDay) : undefined;
+    rescheduleMutation.mutate({ id: event.id, startAt: startIso, endAt: endIso, allDay, reason: rescheduleReason.trim() });
   };
 
   const isPending = createMutation.isPending || updateMutation.isPending;
@@ -277,8 +288,8 @@ export function CalendarEventDialog({
       toast.error('Seleziona un gruppo di pianificazione');
       return;
     }
-    const startIso = allDay ? buildIso(startDate, '00:00') : buildIso(startDate, startTime);
-    const endIso = endDate ? (allDay ? buildIso(endDate, '00:00') : buildIso(endDate, endTime)) : undefined;
+    const startIso = resolveIso(startDate, startTime, allDay);
+    const endIso = endDate ? resolveIso(endDate, endTime, allDay) : undefined;
 
     const payload = {
       title: title.trim(),
@@ -396,7 +407,12 @@ export function CalendarEventDialog({
       <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
         <DialogContent className="sm:max-w-[680px] max-h-[90vh] p-0 gap-0 flex flex-col">
           <DialogHeader className="px-6 py-4 border-b shrink-0">
-            <DialogTitle>{isEdit ? 'Modifica evento' : 'Nuovo evento'}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              {isEdit ? 'Modifica evento' : 'Nuovo evento'}
+              {isEdit && event?.planningGroupName && (
+                <Badge variant="outline" className="text-muted-foreground font-normal">Gruppo: {event.planningGroupName}</Badge>
+              )}
+            </DialogTitle>
           </DialogHeader>
 
           <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
@@ -586,6 +602,10 @@ export function CalendarEventDialog({
                 La baseline congelata resta invariata — la varianza continua a misurare il piano originale;
                 si aggiorna solo la scadenza operativa. La motivazione è obbligatoria.
               </p>
+              <div className="flex items-center gap-2">
+                <Checkbox id="ev-resched-allday" checked={allDay} onCheckedChange={v => setAllDay(!!v)} />
+                <Label htmlFor="ev-resched-allday" className="cursor-pointer font-normal">Tutto il giorno</Label>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="ev-resched-start">Nuovo inizio *</Label>

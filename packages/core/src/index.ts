@@ -52,6 +52,7 @@ export * from './utils/date';
 export * from './utils/dateUtils';
 export * from './utils/pricing';
 export * from './utils/sanitize';
+export * from './utils/text';
 export * from './utils/user';
 export * from './utils/zod';
 

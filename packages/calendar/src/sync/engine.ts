@@ -1,7 +1,11 @@
+import { initials } from '@luke/core';
+
+import { syncCalendarReaders, enforceDomainReadOnly } from '../google/acl.js';
 import { buildCalendarSummary, createCalendar } from '../google/calendars.js';
 import { createEvent, deleteEvent, updateEvent } from '../google/events.js';
-import { syncCalendarReaders } from '../google/acl.js';
+
 import { computeContentHash } from './hash.js';
+
 import type { MilestoneForSync, SyncContext } from './types.js';
 
 function milestoneStatusToGoogle(cancelled: boolean): 'confirmed' | 'cancelled' {
@@ -64,7 +68,7 @@ export async function syncMilestone(
 
     const binding = await ctx.getOrCreateBinding(companyFunctionId);
     const eventInput = {
-      title: milestone.title,
+      title: `[${initials(milestone.planningGroupName)}] ${milestone.title}`,
       description: milestone.description ?? undefined,
       startAt: milestone.startAt,
       endAt: milestone.endAt ?? undefined,
@@ -105,9 +109,9 @@ export async function syncMilestone(
 
 /**
  * Creates a new Google Calendar for the given company function and configures
- * reader ACL from `ctx.allowedUserEmails`.
+ * reader ACL scoped to that function's team members (plus admins), via `ctx.getAllowedEmailsForFunction`.
  *
- * @param ctx - Sync context providing brand/season codes and allowed reader emails
+ * @param ctx - Sync context providing brand/season codes and the reader-email resolver
  * @param companyFunctionId - Identifier of the company function (used as calendar section label when no label is provided)
  * @param functionLabel - Human-readable section label for the calendar summary (optional)
  * @returns The newly provisioned Google Calendar id
@@ -120,6 +124,8 @@ export async function provisionBinding(
   const label = functionLabel ?? companyFunctionId;
   const summary = buildCalendarSummary(ctx.brandCode, ctx.seasonCode, label);
   const { id: googleCalendarId } = await createCalendar(summary);
-  await syncCalendarReaders(googleCalendarId, ctx.allowedUserEmails);
+  const allowedUserEmails = await ctx.getAllowedEmailsForFunction(companyFunctionId);
+  await syncCalendarReaders(googleCalendarId, allowedUserEmails);
+  await enforceDomainReadOnly(googleCalendarId);
   return googleCalendarId;
 }

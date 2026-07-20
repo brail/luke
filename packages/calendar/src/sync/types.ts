@@ -12,6 +12,9 @@ export interface MilestoneForSync {
   cancelled: boolean;
   publishExternally: boolean;
   visibilityFunctionIds: string[];
+  /** Planning group name, prefixed onto the Google event title to disambiguate same-named
+   * milestones from different groups sharing the same brand+season+function calendar. */
+  planningGroupName: string;
 }
 
 /**
@@ -47,7 +50,8 @@ export interface SyncContext {
   seasonCalendarId: string;
   brandCode: string;
   seasonCode: string;
-  allowedUserEmails: string[];
+  /** Resolves reader emails scoped to the company function — team members of that function, plus admins. */
+  getAllowedEmailsForFunction: (companyFunctionId: string) => Promise<string[]>;
   getOrCreateBinding: (companyFunctionId: string) => Promise<GoogleCalendarBindingRecord>;
   getMappings: (milestoneId: string) => Promise<GoogleEventMappingRecord[]>;
   upsertMapping: (mapping: Omit<GoogleEventMappingRecord, 'lastSyncedAt'>) => Promise<void>;

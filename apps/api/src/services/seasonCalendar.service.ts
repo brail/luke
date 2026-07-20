@@ -250,13 +250,15 @@ export async function rescheduleMilestone(
   eventId: string,
   startAt: string,
   endAt: string | null | undefined,
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  allDay?: boolean
 ) {
   return prisma.calendarEvent.update({
     where: { id: eventId },
     data: {
       startAt: new Date(startAt),
       endAt: endAt ? new Date(endAt) : null,
+      ...(allDay !== undefined && { allDay }),
     },
   });
 }

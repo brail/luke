@@ -10,7 +10,7 @@
  *               deleteTemplate, createTemplateItem, updateTemplateItem, deleteTemplateItem
  *  - Planning group freeze: freezePlanningGroup, unfreezePlanningGroup
  *  - Clone: cloneFromBrandSeason
- *  - Google Calendar sync: getSyncStatus, triggerSync
+ *  - Google Calendar sync: getSyncStatus, triggerSync, listGoogleCalendarBindings
  *  - User visibility: grantUserVisibility, revokeUserVisibility
  *  - State effects: executeStateEffect, rollbackStateEffect
  *
@@ -31,6 +31,7 @@ import {
   MilestoneTemplateItemBaseSchema,
   SEASON_CALENDAR_STATUS,
   hasPermission,
+  partialWithoutDefaults,
   type Role,
 } from '@luke/core';
 
@@ -48,6 +49,7 @@ import {
   syncOneMilestone,
   cleanupMilestoneEvents,
   reconcileCalendar,
+  listGoogleCalendarBindings,
 } from '../services/googleCalendarSync.service.js';
 import {
   assertBrandAccess,
@@ -249,7 +251,7 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({
       id: z.string().uuid(),
-      data: CalendarEventBaseSchema.partial().omit({ planningGroupId: true }),
+      data: partialWithoutDefaults(CalendarEventBaseSchema).omit({ planningGroupId: true }),
     }))
     .mutation(async ({ input, ctx }) => {
       const event = await ctx.prisma.calendarEvent.findUnique({
@@ -329,7 +331,7 @@ export const seasonCalendarRouter = router({
    * and recorded in the audit log alongside the old/new dates.
    *
    * @auth season_calendar:update
-   * @input { id, startAt, endAt?, reason }
+   * @input { id, startAt, endAt?, allDay?, reason }
    * @output Updated CalendarEvent
    */
   rescheduleMilestone: protectedProcedure
@@ -339,6 +341,7 @@ export const seasonCalendarRouter = router({
       id: z.string().uuid(),
       startAt: z.string().datetime(),
       endAt: z.string().datetime().optional().nullable(),
+      allDay: z.boolean().optional(),
       reason: z.string().min(1, 'Motivazione obbligatoria').max(500),
     }))
     .mutation(async ({ input, ctx }) => {
@@ -353,7 +356,7 @@ export const seasonCalendarRouter = router({
         assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma),
       ]);
 
-      const result = await rescheduleMilestone(input.id, input.startAt, input.endAt, ctx.prisma);
+      const result = await rescheduleMilestone(input.id, input.startAt, input.endAt, ctx.prisma, input.allDay);
 
       sseStore.pushToAll({ type: 'calendar-updated', seasonId: event.calendar.seasonId });
       notifyCalendarChange(ctx.prisma, {
@@ -370,6 +373,7 @@ export const seasonCalendarRouter = router({
           title: result.title, calendarId: event.calendarId, reason: input.reason,
           oldStartAt: event.startAt.toISOString(), newStartAt: result.startAt.toISOString(),
           oldEndAt: event.endAt?.toISOString() ?? null, newEndAt: result.endAt?.toISOString() ?? null,
+          ...(event.allDay !== result.allDay && { oldAllDay: event.allDay, newAllDay: result.allDay }),
         },
       }));
     }),
@@ -776,7 +780,10 @@ export const seasonCalendarRouter = router({
 
   updateTemplateItem: protectedProcedure
     .use(requirePermission('milestone_template:update'))
-    .input(z.object({ id: z.string().uuid() }).and(MilestoneTemplateItemBaseSchema.partial()))
+    // `.partial()` alone would re-inject `.default()` values (durationDays/allDay/publishExternally)
+    // for keys the caller omits — silently resetting them on every partial update. See `updateMilestone`
+    // above, same underlying Zod v4 behavior.
+    .input(z.object({ id: z.string().uuid() }).and(partialWithoutDefaults(MilestoneTemplateItemBaseSchema)))
     .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
       const result = await updateTemplateItem(id, data, ctx.prisma);
@@ -843,6 +850,27 @@ export const seasonCalendarRouter = router({
       if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
       await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
       return getSyncStatus(input.calendarId, ctx.prisma);
+    }),
+
+  /**
+   * Lists the provisioned Google Calendars for a season calendar, one per company function,
+   * so users can subscribe to them from their own Google Calendar.
+   *
+   * @auth season_calendar:read
+   * @input { calendarId }
+   * @output { companyFunctionId, functionName, googleCalendarId }[]
+   */
+  listGoogleCalendarBindings: protectedProcedure
+    .use(requirePermission('season_calendar:read'))
+    .input(z.object({ calendarId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      const calendar = await ctx.prisma.seasonCalendar.findUnique({
+        where: { id: input.calendarId },
+        select: { brandId: true },
+      });
+      if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
+      await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
+      return listGoogleCalendarBindings(input.calendarId, ctx.prisma, ctx.session.user.id, ctx.session.user.role as Role);
     }),
 
   /**
