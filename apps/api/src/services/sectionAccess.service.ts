@@ -3,11 +3,12 @@
  * Handles CRUD and safety checks for UserSectionAccess records.
  */
 
-import type { PrismaClient } from '@prisma/client';
-import type { FastifyBaseLogger } from 'fastify';
-import { getRbacConfig } from '@luke/core/server';
 import { effectiveSectionAccess, sectionEnum, Roles } from '@luke/core';
 import type { Section, Role } from '@luke/core';
+import { getRbacConfig } from '@luke/core/server';
+
+import type { PrismaClient } from '@prisma/client';
+import type { FastifyBaseLogger } from 'fastify';
 
 const ALL_SECTIONS = sectionEnum.options;
 

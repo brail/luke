@@ -3,8 +3,8 @@
  * Placeholder per funzionalità di manutenzione e diagnostica
  */
 
-import { router, protectedProcedure } from '../lib/trpc';
 import { requirePermission } from '../lib/permissions';
+import { router, protectedProcedure } from '../lib/trpc';
 
 export const maintenanceRouter = router({
   /**

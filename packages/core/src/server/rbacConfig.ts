@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod';
+
 import type { IPrismaConfigClient } from '../runtime/env';
 
 // Extend interface for write operations if needed

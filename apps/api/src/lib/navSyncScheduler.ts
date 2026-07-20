@@ -15,13 +15,14 @@
  * successivo parte normalmente.
  */
 
-import type { FastifyInstance } from 'fastify';
-import type { PrismaClient } from '@prisma/client';
 
 import { closePool, runNavSync } from '@luke/nav';
 
 import { getConfig } from './configManager';
 import { notifyAdmins } from './notifications';
+
+import type { PrismaClient } from '@prisma/client';
+import type { FastifyInstance } from 'fastify';
 
 const TICK_INTERVAL_MS = 60 * 1000; // 1 minuto
 const NAV_SUCCESS_DEDUP_MS = 24 * 60 * 60 * 1000;

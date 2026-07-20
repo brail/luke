@@ -12,8 +12,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import type { Role } from '../rbac';
-import type { Resource, Action, Permission } from '../permissions';
+
 import {
   isResource,
   isAction,
@@ -31,6 +30,9 @@ import {
   ROLE_PERMISSIONS,
   VALID_RESOURCE_ACTIONS,
 } from '../permissions';
+
+import type { Resource, Action } from '../permissions';
+import type { Role } from '../rbac';
 
 describe('Type Guards', () => {
   describe('isResource', () => {
@@ -715,7 +717,7 @@ describe('Matrix Functions', () => {
       expect(result.valid).toBe(true);
 
       // Check that validation checked ROLE_PERMISSIONS
-      for (const [role, permissions] of Object.entries(ROLE_PERMISSIONS)) {
+      for (const [_role, permissions] of Object.entries(ROLE_PERMISSIONS)) {
         for (const permission of permissions) {
           expect(isPermission(permission)).toBe(true);
         }
@@ -992,7 +994,7 @@ describe('Integration Tests', () => {
     expect(validation.valid).toBe(true);
 
     // All role permissions should be valid
-    for (const [role, perms] of Object.entries(ROLE_PERMISSIONS)) {
+    for (const [_role, perms] of Object.entries(ROLE_PERMISSIONS)) {
       perms.forEach(perm => {
         expect(isPermission(perm)).toBe(true);
       });

@@ -51,7 +51,7 @@ export async function checkSecrets(): Promise<{
   try {
     deriveSecret('api.jwt'); // Test derivazione
     return { ok: true };
-  } catch (error: any) {
+  } catch {
     return { ok: false, message: 'Secret derivation failed' };
   }
 }

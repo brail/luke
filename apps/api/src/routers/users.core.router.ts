@@ -4,7 +4,6 @@
  */
 
 import { TRPCError } from '@trpc/server';
-import type { Prisma } from '@prisma/client';
 import argon2 from 'argon2';
 import { z } from 'zod';
 
@@ -13,15 +12,16 @@ import type { LockedFields, Role } from '@luke/core';
 import { invalidateRbacCache } from '@luke/core/server';
 
 import { logAudit } from '../lib/auditLog';
-import { createNotification } from '../lib/notifications';
 import { withAuditLog } from '../lib/auditMiddleware';
 import { withIdempotency } from '../lib/idempotencyTrpc';
+import { createNotification } from '../lib/notifications';
 import { requirePermission } from '../lib/permissions';
 import { getOnlineUserIds, updatePresence } from '../lib/presenceStore';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
-
 import { deleteUserHandler, getLockedFields, UserIdSchema } from '../services/users.service';
+
+import type { Prisma } from '@prisma/client';
 
 export const usersCoreRouter = router({
   /**

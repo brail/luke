@@ -22,6 +22,7 @@ import {
 } from '@opentelemetry/semantic-conventions';
 import { PrismaInstrumentation } from '@prisma/instrumentation';
 import pino from 'pino';
+
 import { isDevelopment } from '@luke/core';
 
 const logger = pino({

@@ -1,8 +1,9 @@
-import type { PrismaClient, NotificationCategory, Prisma } from '@prisma/client';
 
 import { fullName } from '@luke/core';
 
 import { sseStore } from './sseStore';
+
+import type { PrismaClient, NotificationCategory, Prisma } from '@prisma/client';
 
 /**
  * Parameters for creating a single in-app notification.

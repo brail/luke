@@ -5,8 +5,8 @@
  * consumed by the Next.js frontend for end-to-end tRPC type safety.
  */
 
-import type { inferRouterOutputs, inferRouterInputs } from '@trpc/server';
 import type { AppRouter } from './routers';
+import type { inferRouterOutputs, inferRouterInputs } from '@trpc/server';
 
 export type { AppRouter };
 export type RouterOutputs = inferRouterOutputs<AppRouter>;

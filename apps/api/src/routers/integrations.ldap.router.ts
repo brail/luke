@@ -36,7 +36,7 @@ export const ldapRouter = router({
         if (input.roleMapping && input.roleMapping.trim() !== '') {
           try {
             JSON.parse(input.roleMapping);
-          } catch (error) {
+          } catch {
             throw new TRPCError({
               code: 'BAD_REQUEST',
               message: 'Role Mapping deve essere un JSON valido',

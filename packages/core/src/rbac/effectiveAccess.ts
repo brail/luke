@@ -1,6 +1,7 @@
-import type { Role } from '../rbac';
 import { hasPermission, type Permission } from '../auth/permissions';
 import { SECTION_TO_PERMISSION, type Section } from '../schemas/rbac';
+
+import type { Role } from '../rbac';
 
 type SectionDefault = 'auto' | 'enabled' | 'disabled';
 

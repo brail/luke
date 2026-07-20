@@ -11,16 +11,20 @@
  * Writes are delegated to the storage service and produce an audit log entry.
  */
 
-import fp from 'fastify-plugin';
 import rateLimit from '@fastify/rate-limit';
+import fp from 'fastify-plugin';
+
+import { isDevelopment, hasPermission, type Role } from '@luke/core';
+
+import { authenticateRequest } from '../lib/auth';
 import {
   uploadBrandLogo,
   uploadTempBrandLogo,
 } from '../services/brandLogo.service';
-import { authenticateRequest } from '../lib/auth';
-import type { FastifyInstance } from 'fastify';
+
 import type { PrismaClient } from '@prisma/client';
-import { isDevelopment, hasPermission, type Role } from '@luke/core';
+import type { FastifyInstance } from 'fastify';
+
 
 export default fp(
   async (app: FastifyInstance, options: { prisma: PrismaClient }) => {

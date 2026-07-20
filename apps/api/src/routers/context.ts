@@ -1,5 +1,6 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+
 import type { Role } from '@luke/core';
 
 import { router, protectedProcedure } from '../lib/trpc';

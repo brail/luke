@@ -10,13 +10,15 @@
  */
 
 import rateLimit from '@fastify/rate-limit';
-import type { FastifyInstance } from 'fastify';
-import type { PrismaClient } from '@prisma/client';
+
 
 import { isDevelopment, hasPermission, type Role } from '@luke/core';
 
 import { authenticateRequest } from '../lib/auth';
 import { uploadSpecsheetImage } from '../services/specsheetImage.service';
+
+import type { PrismaClient } from '@prisma/client';
+import type { FastifyInstance } from 'fastify';
 
 export default async function specsheetImageRoutes(
   app: FastifyInstance,

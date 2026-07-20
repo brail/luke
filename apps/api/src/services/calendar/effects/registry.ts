@@ -2,6 +2,7 @@ import type { StateEffectType } from '@luke/core';
 
 import { lockCollectionLayoutHandler } from './handlers/lockCollectionLayout.js';
 import { unlockCollectionLayoutHandler } from './handlers/unlockCollectionLayout.js';
+
 import type { StateEffectHandler } from './types.js';
 
 // Exhaustive record: TS error if StateEffectType is extended without adding a handler

@@ -3,10 +3,10 @@
  */
 
 import { randomBytes, createHash } from 'crypto';
+
 import { TRPCError } from '@trpc/server';
 import argon2 from 'argon2';
-import type { PrismaClient, User } from '@prisma/client';
-import type { Context } from '../lib/trpc';
+
 
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
@@ -17,6 +17,9 @@ import {
   sendEmailVerificationEmail,
 } from '../lib/mailer';
 import { validatePassword } from '../lib/password';
+
+import type { Context } from '../lib/trpc';
+import type { PrismaClient, User } from '@prisma/client';
 
 /**
  * Authenticates a user against local credentials (argon2 password hash).

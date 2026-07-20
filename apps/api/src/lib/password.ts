@@ -44,7 +44,7 @@ export async function verifyPassword(
 ): Promise<boolean> {
   try {
     return await argon2.verify(hash, password);
-  } catch (error) {
+  } catch {
     // In caso di errore (hash malformato, ecc.), considera la password non valida
     return false;
   }
@@ -104,7 +104,7 @@ export function validatePassword(
   // Verifica carattere speciale
   if (
     policy.requireSpecialChar &&
-    !/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)
+    !/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password)
   ) {
     errors.push('Richiesto almeno un carattere speciale');
   }

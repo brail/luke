@@ -1,8 +1,9 @@
-import type { PrismaClient } from '@prisma/client';
 
 import { extractBucketFromUrl, extractKeyFromUrl } from '@luke/core';
 
 import { readFileBuffer } from '../../storage';
+
+import type { PrismaClient } from '@prisma/client';
 
 /**
  * Fetches a remote image and returns its raw bytes.

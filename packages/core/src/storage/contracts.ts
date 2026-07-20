@@ -8,8 +8,8 @@
  * @author Luke Team
  */
 
-import type { StorageBucket } from './types';
 import type { LocalStorageConfig } from './config';
+import type { StorageBucket } from './types';
 
 const VALID_BUCKETS: readonly StorageBucket[] = [
   'uploads',
@@ -152,7 +152,7 @@ export function extractKeyFromUrl(url: string): string | null {
     }
 
     return null;
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -186,7 +186,7 @@ export function extractBucketFromUrl(url: string): StorageBucket | null {
     }
 
     return null;
-  } catch (error) {
+  } catch {
     return null;
   }
 }

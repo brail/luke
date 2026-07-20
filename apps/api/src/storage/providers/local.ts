@@ -10,13 +10,12 @@
  */
 
 import { createHash, randomUUID } from 'crypto';
-import pino from 'pino';
-
-const logger = pino({ level: 'info' });
 import { createReadStream, createWriteStream, realpathSync } from 'fs';
 import { readdir, mkdir, unlink, stat, realpath } from 'fs/promises';
 import { join, dirname, resolve, basename, relative, isAbsolute } from 'path';
 import { pipeline } from 'stream/promises';
+
+import pino from 'pino';
 
 import type {
   IStorageCapabilities,
@@ -30,8 +29,9 @@ import type {
   StorageListResult,
   LocalStorageConfig,
 } from '@luke/core';
-
 import { isPathSafe } from '@luke/core';
+
+const logger = pino({ level: 'info' });
 
 /** Local filesystem storage provider. Implements IStorageProvider over a configurable base directory. */
 export class LocalFsProvider implements IStorageProvider {
@@ -279,7 +279,9 @@ export class LocalFsProvider implements IStorageProvider {
       // Cleanup
       try {
         await unlink(absTmpPath);
-      } catch {}
+      } catch {
+        // Best-effort cleanup, ignora se il file temp non esiste già
+      }
 
       throw new Error(
         `Errore upload file: ${error instanceof Error ? error.message : 'Unknown'}`

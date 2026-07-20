@@ -11,13 +11,15 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { FastifyInstance } from 'fastify';
-import type { PrismaClient, NavSyncFilter } from '@prisma/client';
+
 import {
   registerPortafoglioSyncScheduler,
   triggerPortafoglioSyncNow,
   isPortafoglioSyncRunning,
 } from '../portafoglioSyncScheduler';
+
+import type { PrismaClient, NavSyncFilter } from '@prisma/client';
+import type { FastifyInstance } from 'fastify';
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 

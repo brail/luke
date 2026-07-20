@@ -8,9 +8,10 @@
  * A heartbeat event is sent every 30 seconds to keep the connection alive through proxies.
  */
 
+import { sseStore } from '../lib/sseStore';
+
 import type { FastifyInstance } from 'fastify';
 
-import { sseStore } from '../lib/sseStore';
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
 

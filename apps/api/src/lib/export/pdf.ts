@@ -1,6 +1,3 @@
-import type { PrismaClient } from '@prisma/client';
-import type { Content, TDocumentDefinitions, TFontDictionary } from 'pdfmake/interfaces';
-
 import {
   CompanyAddressSchema,
   CompanyExportSettingsSchema,
@@ -9,6 +6,11 @@ import {
 } from '@luke/core';
 
 import { readFileBuffer } from '../../storage/index.js';
+
+import type { PrismaClient } from '@prisma/client';
+import type { Content, TDocumentDefinitions, TFontDictionary } from 'pdfmake/interfaces';
+
+
 
 export { Content, TDocumentDefinitions, TFontDictionary };
 
@@ -48,7 +50,7 @@ let cachedFonts: TFontDictionary | null = null;
 export function getPdfFonts(): TFontDictionary {
   if (!cachedFonts) {
     // pdfmake/build/vfs_fonts exports the VFS object directly (not pdfMake.vfs)
-    // eslint-disable-next-line no-undef
+     
     const vfs = require('pdfmake/build/vfs_fonts') as Record<string, string>;
     cachedFonts = {
       Roboto: {
@@ -152,11 +154,11 @@ export function buildPdfFooter(
 
   // pdfmake column objects support a `width` key that the Content type doesn't declare — cast needed
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const columns: any[] = [];
 
   if (company?.logoDataUri) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     columns.push({ image: company.logoDataUri, fit: [48, 48], width: 'auto', margin: [0, 2, 8, 0] } as any);
   }
 
@@ -239,7 +241,7 @@ export async function fetchCompanyExportContext(
  * @returns Buffer with the complete PDF content.
  */
 export async function createPdfBuffer(def: TDocumentDefinitions): Promise<Buffer> {
-  // eslint-disable-next-line no-undef
+   
   const PdfPrinter = require('pdfmake') as new (fonts: TFontDictionary) => {
     createPdfKitDocument(
       def: TDocumentDefinitions,

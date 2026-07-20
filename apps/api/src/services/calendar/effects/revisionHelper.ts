@@ -1,6 +1,7 @@
+import { createRevision } from '../../collectionLayoutRevision.service.js';
+
 import type { PrismaClient } from '@prisma/client';
 
-import { createRevision } from '../../collectionLayoutRevision.service.js';
 
 /**
  * Creates a MILESTONE_LOCK revision snapshot of a CollectionLayout when it is locked by a calendar event.

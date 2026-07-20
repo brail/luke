@@ -1,8 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { LocalFsProvider } from '../local';
 import { mkdtempSync, symlinkSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+
+import { LocalFsProvider } from '../local';
 
 describe('LocalFsProvider - Path Traversal Protection', () => {
   let testDir: string;

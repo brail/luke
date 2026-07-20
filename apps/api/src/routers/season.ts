@@ -4,7 +4,7 @@
  */
 
 import { TRPCError } from '@trpc/server';
-import type { Prisma } from '@prisma/client';
+
 
 import {
   SeasonInputSchema,
@@ -15,9 +15,11 @@ import {
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
+import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
-import { requirePermission } from '../lib/permissions';
+
+import type { Prisma } from '@prisma/client';
 
 const SEASON_SELECT = {
   id: true,

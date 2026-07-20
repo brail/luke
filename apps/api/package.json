@@ -8,6 +8,7 @@
     "dev": "tsx watch --env-file=.env src/server.ts",
     "build": "tsc",
     "start": "node --require ./dist/instrument.js dist/server.js",
+    "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -18,7 +19,9 @@
     "db:reset": "prisma migrate reset --force --skip-seed",
     "db:seed": "tsx prisma/seed.ts",
     "db:bootstrap": "tsx scripts/dev-bootstrap.ts",
-    "db:nav-reset": "tsx scripts/nav-reset.ts"
+    "db:nav-reset": "tsx scripts/nav-reset.ts",
+    "db:harden-google-acl": "tsx --env-file=.env scripts/harden-google-calendar-acl.ts",
+    "db:fix-allday-dates": "TZ=Europe/Rome tsx --env-file=.env scripts/fix-allday-event-dates.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -9,12 +9,15 @@
  */
 
 import fp from 'fastify-plugin';
+
 import { hasPermission, type Role } from '@luke/core';
-import type { FastifyInstance } from 'fastify';
-import type { PrismaClient } from '@prisma/client';
+
 
 import { authenticateRequest } from '../lib/auth.js';
 import { uploadCompanyLogo } from '../services/companyLogo.service.js';
+
+import type { PrismaClient } from '@prisma/client';
+import type { FastifyInstance } from 'fastify';
 
 export default fp(
   async (app: FastifyInstance, options: { prisma: PrismaClient }) => {

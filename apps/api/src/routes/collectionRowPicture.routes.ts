@@ -11,11 +11,15 @@
  */
 
 import rateLimit from '@fastify/rate-limit';
-import { uploadCollectionRowPicture, uploadTempCollectionRowPicture } from '../services/collectionRowPicture.service';
-import { authenticateRequest } from '../lib/auth';
-import type { FastifyInstance } from 'fastify';
-import type { PrismaClient } from '@prisma/client';
+
 import { isDevelopment, hasPermission, type Role } from '@luke/core';
+
+import { authenticateRequest } from '../lib/auth';
+import { uploadCollectionRowPicture, uploadTempCollectionRowPicture } from '../services/collectionRowPicture.service';
+
+import type { PrismaClient } from '@prisma/client';
+import type { FastifyInstance } from 'fastify';
+
 
 export default async function collectionRowPictureRoutes(
   app: FastifyInstance,

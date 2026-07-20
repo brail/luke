@@ -3,14 +3,16 @@
  * Registers Fastify's global error handler and exposes the tRPC error formatter.
  */
 
+import { TRPCError } from '@trpc/server';
+
+import { isProduction } from '@luke/core';
+
 import type {
   FastifyInstance,
   FastifyError,
   FastifyRequest,
   FastifyReply,
 } from 'fastify';
-import { TRPCError } from '@trpc/server';
-import { isProduction } from '@luke/core';
 
 const isProd = isProduction();
 

@@ -11,7 +11,6 @@
  * @fastify/multipart must be registered globally before this plugin (done in server.ts).
  */
 
-import type { FastifyInstance } from 'fastify';
 import { type PrismaClient } from '@prisma/client';
 
 import type { StorageBucket } from '@luke/core';
@@ -22,6 +21,7 @@ import { putObject, getObject, getStorageProvider } from '../storage';
 import { verifyDownloadToken } from '../utils/downloadToken';
 
 import type { Context } from '../lib/trpc';
+import type { FastifyInstance } from 'fastify';
 
 /**
  * Registers the storage upload/download routes on the Fastify instance.

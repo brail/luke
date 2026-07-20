@@ -1,9 +1,9 @@
-import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
+import { z } from 'zod';
 
-import { router, protectedProcedure } from '../lib/trpc.js';
-import { requirePermission } from '../lib/permissions.js';
 import { logAudit } from '../lib/auditLog.js';
+import { requirePermission } from '../lib/permissions.js';
+import { router, protectedProcedure } from '../lib/trpc.js';
 import { resolveCompanyCountryCode } from '../services/companyProfile.service.js';
 
 // ─── Nager.Date API ──────────────────────────────────────────────────────────

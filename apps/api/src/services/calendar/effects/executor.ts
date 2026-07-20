@@ -1,7 +1,8 @@
-import type { CalendarEventEffectExecution, PrismaClient } from '@prisma/client';
 import type { StateEffectType } from '@luke/core';
 
 import { getEffectHandler } from './registry.js';
+
+import type { CalendarEventEffectExecution, PrismaClient } from '@prisma/client';
 
 /**
  * Executes a calendar state effect: validates it, then applies it within a transaction

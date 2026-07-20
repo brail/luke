@@ -10,8 +10,9 @@
  * - Context access validation
  */
 
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { TRPCError } from '@trpc/server';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+
 import type { PrismaClient, Brand, Season, User } from '@prisma/client';
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────

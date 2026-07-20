@@ -25,7 +25,7 @@ export function formatDate(date: Date, locale: string = 'it-IT'): string {
     });
 
     return formatter.format(date);
-  } catch (error) {
+  } catch {
     // Fallback a formato ISO se il locale non è valido
     return date.toLocaleDateString('it-IT');
   }
@@ -59,7 +59,7 @@ export function parseDate(input: string): Date | null {
     }
 
     return date;
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -87,7 +87,7 @@ export function formatDateTime(date: Date, locale: string = 'it-IT'): string {
     });
 
     return formatter.format(date);
-  } catch (error) {
+  } catch {
     // Fallback a formato ISO se il locale non è valido
     return date.toLocaleString('it-IT');
   }
@@ -138,7 +138,7 @@ export function formatDateWithTimezone(
       ...options,
       timeZone: timezone,
     }).format(dateObj);
-  } catch (error) {
+  } catch {
     // Fallback se timezone non valido
     const dateObj = typeof date === 'string' ? new Date(date) : date;
     return new Intl.DateTimeFormat(locale, options).format(dateObj);

@@ -1,7 +1,8 @@
 import { TRPCError } from '@trpc/server';
 
-import type { StateEffectHandler } from '../types.js';
 import { createRevisionForEffect } from '../revisionHelper.js';
+
+import type { StateEffectHandler } from '../types.js';
 
 /**
  * Effect handler that locks a CollectionLayout to a calendar event

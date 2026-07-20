@@ -7,16 +7,16 @@ import { randomUUID } from 'crypto';
 
 import { TRPCError } from '@trpc/server';
 
-import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import { hasPermission, type Role } from '@luke/core';
 
 import { authenticateRequest } from './auth';
 import { getTokenVersionCacheTTL } from './configManager';
 import { t } from './t';
-import type { Context } from './context';
 
+import type { Context } from './context';
 import type { PrismaClient } from '@prisma/client';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 
 /**
  * In-memory tokenVersion cache with TTL.

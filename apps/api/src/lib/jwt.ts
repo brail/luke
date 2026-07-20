@@ -151,7 +151,7 @@ export function extractJWTMetadata(token: string): {
       exp: payload.exp,
       iat: payload.iat,
     };
-  } catch (error) {
+  } catch {
     return null;
   }
 }

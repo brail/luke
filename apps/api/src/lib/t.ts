@@ -5,7 +5,9 @@
  */
 
 import { initTRPC } from '@trpc/server';
+
 import { trpcErrorFormatter } from './error';
+
 import type { Context } from './context';
 
 /**

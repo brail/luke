@@ -1,6 +1,7 @@
+import { getClient } from './client.js';
+
 import type { calendar_v3 } from 'googleapis';
 
-import { getClient } from './client.js';
 
 /**
  * Properties required to create or update a Google Calendar event.

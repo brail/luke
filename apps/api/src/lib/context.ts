@@ -3,10 +3,10 @@
  * Isolated in its own file to prevent circular dependency cycles.
  */
 
+import type { UserSession } from './auth';
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyRequest, FastifyReply, FastifyBaseLogger } from 'fastify';
 
-import type { UserSession } from './auth';
 
 /**
  * Request-scoped context injected into every tRPC procedure.

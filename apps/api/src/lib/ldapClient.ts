@@ -5,11 +5,12 @@
 
 import { TRPCError } from '@trpc/server';
 import { Client, InvalidCredentialsError } from 'ldapts';
-import type { SearchOptions, Entry } from 'ldapts';
 import pino from 'pino';
 
-import type { LdapConfig } from './configManager';
 import { calcBackoffDelay, type LdapResilienceConfig } from '@luke/core';
+
+import type { LdapConfig } from './configManager';
+import type { SearchOptions, Entry } from 'ldapts';
 
 /**
  * Possible states of the circuit breaker state machine.

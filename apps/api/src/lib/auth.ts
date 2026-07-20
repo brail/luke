@@ -5,6 +5,7 @@
  */
 
 import { signJWT, verifyJWT, type JWTPayload } from './jwt';
+
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 export type { JWTPayload } from './jwt';

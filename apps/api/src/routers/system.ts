@@ -3,8 +3,8 @@ import { join } from 'path';
 
 import { z } from 'zod';
 
-import { requirePermission } from '../lib/permissions';
 import { runDigestNow } from '../lib/calendarDigestScheduler';
+import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 
 const BACKEND_DEP_KEYS = [

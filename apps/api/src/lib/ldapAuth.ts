@@ -4,7 +4,6 @@
  */
 
 import { TRPCError } from '@trpc/server';
-import type { Entry } from 'ldapts';
 import pino from 'pino';
 
 import {
@@ -15,6 +14,9 @@ import {
 } from './configManager';
 import { sendVerificationEmail } from './emailHelpers';
 import { ResilientLdapClient } from './ldapClient';
+
+import type { PrismaClient, User } from '@prisma/client';
+import type { Entry } from 'ldapts';
 
 /**
  * Helper per normalizzare un attributo ldapts a array di stringhe
@@ -32,8 +34,6 @@ function getAttr(entry: Entry, key: string): string[] {
 export function isSyntheticLdapEmail(email: string): boolean {
   return email.endsWith('@ldap.local');
 }
-
-import type { PrismaClient, User } from '@prisma/client';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
@@ -198,28 +198,23 @@ async function searchUser(
     ],
   };
 
-  try {
-    const entries = await client.search(config.searchBase, options);
+  const entries = await client.search(config.searchBase, options);
 
-    if (entries.length === 0) {
-      return null;
-    }
-
-    // Prendi il primo risultato
-    // ldapts restituisce entry flat: { dn: string; [key]: string | string[] }
-    const entry = entries[0];
-    const dn = entry.dn;
-    const attributes: Record<string, string[]> = {};
-    for (const key of Object.keys(entry)) {
-      if (key === 'dn') continue;
-      attributes[key] = getAttr(entry, key);
-    }
-
-    return { dn, attributes };
-  } catch (error) {
-    // Il client resiliente gestisce già la mappatura degli errori
-    throw error;
+  if (entries.length === 0) {
+    return null;
   }
+
+  // Prendi il primo risultato
+  // ldapts restituisce entry flat: { dn: string; [key]: string | string[] }
+  const entry = entries[0];
+  const dn = entry.dn;
+  const attributes: Record<string, string[]> = {};
+  for (const key of Object.keys(entry)) {
+    if (key === 'dn') continue;
+    attributes[key] = getAttr(entry, key);
+  }
+
+  return { dn, attributes };
 }
 
 /**

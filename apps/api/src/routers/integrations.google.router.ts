@@ -1,10 +1,11 @@
 import { z } from 'zod';
 
+import { testGoogleConnection, generateOAuthUrl, exchangeOAuthCode } from '@luke/calendar';
+
 import { logAudit } from '../lib/auditLog';
 import { saveConfig, getConfig } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
-import { testGoogleConnection, generateOAuthUrl, exchangeOAuthCode } from '@luke/calendar';
 
 const serviceAccountConfigSchema = z.object({
   authMode: z.literal('service_account'),

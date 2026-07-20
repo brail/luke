@@ -5,13 +5,16 @@
  */
 
 import { TRPCError } from '@trpc/server';
+
 import {
   effectiveSectionAccess,
   type Section,
 } from '@luke/core';
 import { getRbacConfig } from '@luke/core/server';
-import { t } from './t';
+
 import { getOverride } from '../services/sectionAccess.service';
+
+import { t } from './t';
 
 /**
  * Creates a tRPC middleware that guards a named section.

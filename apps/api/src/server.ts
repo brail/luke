@@ -6,6 +6,9 @@
  * → scheduler registration → listen.
  */
 
+import { readdir, stat, unlink } from 'fs/promises';
+import { join } from 'path';
+
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
@@ -17,40 +20,38 @@ import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import Fastify from 'fastify';
 import pino from 'pino';
 
+import { isDevelopment, isProduction } from '@luke/core';
 import {
   validateMasterKey,
   deriveSecret,
   HKDF_INFO_COOKIE,
 } from '@luke/core/server';
-import { isDevelopment, isProduction } from '@luke/core';
 
-import { buildCorsAllowedOrigins } from './lib/cors';
-import { createContext } from './lib/trpc';
-import { setGlobalErrorHandler } from './lib/error';
+import { registerCalendarDigestScheduler } from './lib/calendarDigestScheduler';
 import { getConfig, validateCriticalConfig } from './lib/configManager';
-import { registerNavSyncScheduler } from './lib/navSyncScheduler';
-import { registerPortafoglioSyncScheduler } from './lib/portafoglioSyncScheduler';
+import { buildCorsAllowedOrigins } from './lib/cors';
+import { setGlobalErrorHandler } from './lib/error';
+import { idempotencyStore } from './lib/idempotency';
 import { registerKimoSyncScheduler } from './lib/kimoSyncScheduler';
 import { registerMilestoneDeadlineScheduler } from './lib/milestoneDeadlineScheduler';
-import { registerCalendarDigestScheduler } from './lib/calendarDigestScheduler';
-import { idempotencyStore } from './lib/idempotency';
+import { registerNavSyncScheduler } from './lib/navSyncScheduler';
+import { registerPortafoglioSyncScheduler } from './lib/portafoglioSyncScheduler';
 import { rateLimitStore } from './lib/ratelimit';
+import { createContext } from './lib/trpc';
 import {
   pinoTraceMiddleware,
   // pinoSerializers,
 } from './observability/pinoTrace';
 import { runReadinessChecks } from './observability/readiness';
 import { storagePlugin } from './plugins/storage-upload';
+import { appRouter } from './routers';
 import brandLogoRoutes from './routes/brandLogo.routes';
 import collectionRowPictureRoutes from './routes/collectionRowPicture.routes';
 import companyLogoRoutes from './routes/companyLogo.routes';
 import seasonCalendarExportRoutes from './routes/seasonCalendarExport.routes';
-import { registerSseRoute } from './routes/sse';
 import specsheetImageRoutes from './routes/specsheetImage.routes';
-import { appRouter } from './routers';
+import { registerSseRoute } from './routes/sse';
 import { getStorageProvider } from './storage';
-import { readdir, stat, unlink } from 'fs/promises';
-import { join } from 'path';
 
 /** Pino logger configuration: `warn` in production, `info` + pino-pretty in development. */
 const loggerConfig = {
@@ -609,7 +610,7 @@ const start = async () => {
     try {
       deriveSecret('api.jwt');
       fastify.log.info('Segreti JWT derivati con successo');
-    } catch (error: any) {
+    } catch {
       fastify.log.error('Impossibile derivare segreti JWT');
       process.exit(1);
     }
