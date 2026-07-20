@@ -12,7 +12,7 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install semgrep (OSS, LGPL-2.1)
         run: pip install semgrep
@@ -27,7 +27,7 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
 
       - name: Install gitleaks (CLI OSS/MIT — non gitleaks-action, che richiede licenza commerciale)
@@ -44,12 +44,12 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true # decisione: report-only sui push
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: google/osv-scanner-action/osv-scanner-action@v2.3.8
 
   osv-weekly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest # bloccante: il fail settimanale è il segnale vero
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: google/osv-scanner-action/osv-scanner-action@v2.3.8
