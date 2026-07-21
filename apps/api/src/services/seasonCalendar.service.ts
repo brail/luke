@@ -11,7 +11,7 @@ import {
 
 import { getUserAllowedBrandIds } from './context.service.js';
 
-import type { CalendarDaysRelevance, PrismaClient } from '@prisma/client';
+import type { CalendarDaysRelevance, Prisma, PrismaClient } from '@prisma/client';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -167,15 +167,7 @@ export async function freezePlanningGroup(planningGroupId: string, prisma: Prism
       where: { planningGroupId },
       select: { id: true, startAt: true, endAt: true },
     });
-
-    await Promise.all(
-      events.map(event =>
-        tx.calendarEvent.update({
-          where: { id: event.id },
-          data: { baselineStartAt: event.startAt, baselineEndAt: event.endAt },
-        })
-      )
-    );
+    await snapshotEventBaselines(tx, events);
 
     return tx.planningGroup.update({
       where: { id: planningGroupId },
@@ -212,6 +204,52 @@ export async function unfreezePlanningGroup(planningGroupId: string, prisma: Pri
       data: { frozenAt: null },
     });
   });
+}
+
+/**
+ * Amends an already-frozen PlanningGroup: assigns baselineStartAt/baselineEndAt to any event in the
+ * group that still lacks one (i.e. created after the original freeze), using each event's current
+ * startAt/endAt as its own baseline. Already-baselined events and the group's `frozenAt` are left
+ * untouched — this only fills the gap left by later additions, it never re-snapshots the whole plan
+ * (see `freezePlanningGroup` for why re-freezing the group itself isn't supported).
+ *
+ * @throws {TRPCError} NOT_FOUND if the planning group does not exist.
+ * @throws {TRPCError} CONFLICT if the group isn't frozen (nothing to amend).
+ */
+export async function amendPlanningGroupFreeze(planningGroupId: string, prisma: PrismaClient) {
+  return prisma.$transaction(async tx => {
+    const group = await tx.planningGroup.findUnique({ where: { id: planningGroupId } });
+    if (!group) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo di pianificazione non trovato' });
+    }
+    if (!group.frozenAt) {
+      throw new TRPCError({ code: 'CONFLICT', message: 'Gruppo di pianificazione non è congelato' });
+    }
+
+    const events = await tx.calendarEvent.findMany({
+      where: { planningGroupId, baselineStartAt: null },
+      select: { id: true, startAt: true, endAt: true },
+    });
+    await snapshotEventBaselines(tx, events);
+
+    return { group, amendedCount: events.length };
+  });
+}
+
+/** Snapshots each event's current startAt/endAt into its baselineStartAt/baselineEndAt. Shared by
+ * freezePlanningGroup (all group events) and amendPlanningGroupFreeze (only events still missing one). */
+async function snapshotEventBaselines(
+  tx: Prisma.TransactionClient,
+  events: { id: string; startAt: Date; endAt: Date | null }[]
+) {
+  await Promise.all(
+    events.map(event =>
+      tx.calendarEvent.update({
+        where: { id: event.id },
+        data: { baselineStartAt: event.startAt, baselineEndAt: event.endAt },
+      })
+    )
+  );
 }
 
 // ─── Post-freeze immutability (project_calendar_event_maintainability, Fase 4) ──

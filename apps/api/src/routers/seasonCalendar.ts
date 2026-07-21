@@ -59,6 +59,7 @@ import {
   updateCalendarStatus,
   freezePlanningGroup,
   unfreezePlanningGroup,
+  amendPlanningGroupFreeze,
   listMilestonesDb,
   createMilestone,
   updateMilestone,
@@ -179,6 +180,28 @@ export const seasonCalendarRouter = router({
       const group = await resolvePlanningGroupWithBrandAccess(input.planningGroupId, ctx.session.user.id, ctx.prisma);
       const result = await unfreezePlanningGroup(input.planningGroupId, ctx.prisma);
       await logAudit(ctx, { action: 'PLANNING_GROUP_UNFROZEN', targetType: 'PlanningGroup', targetId: input.planningGroupId, result: 'SUCCESS', metadata: {} });
+      sseStore.pushToAll({ type: 'calendar-updated', seasonId: group.calendar.seasonId });
+      return result;
+    }),
+
+  /**
+   * Amends an already-frozen planning group: assigns a baseline to any event added since the
+   * original freeze (i.e. still missing baselineStartAt/baselineEndAt), using its current dates.
+   * Already-baselined events and the group's frozenAt are untouched.
+   *
+   * @auth season_calendar:freeze (same tier as freezing — not a separate governance action)
+   * @input { planningGroupId }
+   * @output { group, amendedCount }
+   */
+  amendPlanningGroupFreeze: protectedProcedure
+    .use(requirePermission('season_calendar:freeze'))
+    .use(withRateLimit('configMutations'))
+    .input(z.object({ planningGroupId: z.string().uuid() }))
+    .mutation(async ({ input, ctx }) => {
+      const group = await resolvePlanningGroupWithBrandAccess(input.planningGroupId, ctx.session.user.id, ctx.prisma);
+      await assertUnlocked('SEASON_CALENDAR', group.calendarId, ctx.session.user.id, ctx.prisma);
+      const result = await amendPlanningGroupFreeze(input.planningGroupId, ctx.prisma);
+      await logAudit(ctx, { action: 'PLANNING_GROUP_FREEZE_AMENDED', targetType: 'PlanningGroup', targetId: input.planningGroupId, result: 'SUCCESS', metadata: { amendedCount: result.amendedCount } });
       sseStore.pushToAll({ type: 'calendar-updated', seasonId: group.calendar.seasonId });
       return result;
     }),

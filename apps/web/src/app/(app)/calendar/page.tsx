@@ -62,10 +62,10 @@ export default function CalendarPage() {
   const [postApplyWizard, setPostApplyWizard] = useState<{ planningGroupId: string; events: CalendarEventItem[] } | null>(null);
   // Which planning-group picker is open — freeze and unfreeze share the same picker dialog,
   // they only differ in title/filter/target once a group is chosen.
-  const [pickerAction, setPickerAction] = useState<'freeze' | 'unfreeze' | null>(null);
+  const [pickerAction, setPickerAction] = useState<'freeze' | 'unfreeze' | 'amend' | null>(null);
   // Which group the picker resolved to, and what to do with it — freeze steps through a wizard,
   // unfreeze just confirms, but there's only ever one active target regardless of which.
-  const [activeGroupAction, setActiveGroupAction] = useState<{ type: 'freeze' | 'unfreeze'; groupId: string } | null>(null);
+  const [activeGroupAction, setActiveGroupAction] = useState<{ type: 'freeze' | 'unfreeze' | 'amend'; groupId: string } | null>(null);
   const [view, setViewState] = useState<CalendarView>(() => {
     const v = searchParams.get('view');
     return (VALID_VIEWS as readonly string[]).includes(v ?? '') ? (v as CalendarView) : 'month';
@@ -188,6 +188,15 @@ export default function CalendarPage() {
 
   const unfreezeMutation = trpc.seasonCalendar.unfreezePlanningGroup.useMutation({
     onSuccess: () => { toast.success('Congelamento annullato'); setActiveGroupAction(null); refetchAfterFreezeChange(); },
+    onError: err => toast.error(getTrpcErrorMessage(err, { CONFLICT: 'Il gruppo non è congelato' })),
+  });
+
+  const amendMutation = trpc.seasonCalendar.amendPlanningGroupFreeze.useMutation({
+    onSuccess: data => {
+      toast.success(data.amendedCount > 0 ? `Baseline assegnata a ${data.amendedCount} fase/i aggiunta/e dopo il congelamento` : 'Nessuna fase da aggiornare — tutti gli eventi hanno già una baseline');
+      setActiveGroupAction(null);
+      refetchAfterFreezeChange();
+    },
     onError: err => toast.error(getTrpcErrorMessage(err, { CONFLICT: 'Il gruppo non è congelato' })),
   });
 
@@ -325,6 +334,12 @@ export default function CalendarPage() {
                 <DropdownMenuItem onClick={() => setPickerAction('freeze')} disabled={!calendar}>
                   <Snowflake size={13} className="mr-2" />
                   Congela pianificazione
+                </DropdownMenuItem>
+              )}
+              {canFreeze && (
+                <DropdownMenuItem onClick={() => setPickerAction('amend')} disabled={!calendar}>
+                  <Snowflake size={13} className="mr-2" />
+                  Aggiorna congelamento
                 </DropdownMenuItem>
               )}
               {canUnfreeze && (
@@ -702,7 +717,12 @@ export default function CalendarPage() {
           }}
           brandId={contextBrandId ?? ''}
           seasonId={season?.id ?? ''}
-          title={pickerAction === 'freeze' ? 'Congela quale gruppo di pianificazione?' : 'Sbloccare quale gruppo di pianificazione?'}
+          title={
+            pickerAction === 'freeze' ? 'Congela quale gruppo di pianificazione?'
+              : pickerAction === 'amend' ? 'Aggiorna il congelamento di quale gruppo?'
+                : 'Sbloccare quale gruppo di pianificazione?'
+          }
+          // amend shares unfreeze's branch here on purpose: both only make sense on an already-frozen group
           filter={pickerAction === 'freeze' ? g => !g.frozenAt && g._count.events > 0 : g => !!g.frozenAt}
           emptyMessage={pickerAction === 'freeze' ? 'Nessun gruppo con eventi da congelare' : 'Nessun gruppo congelato'}
         />
@@ -747,6 +767,18 @@ export default function CalendarPage() {
         actionType="warning"
         isLoading={unfreezeMutation.isPending}
         onConfirm={() => activeGroupAction && unfreezeMutation.mutate({ planningGroupId: activeGroupAction.groupId })}
+      />
+
+      <ConfirmDialog
+        open={activeGroupAction?.type === 'amend'}
+        onOpenChange={v => { if (!v) setActiveGroupAction(null); }}
+        title="Aggiornare il congelamento del gruppo di pianificazione?"
+        description="Assegna una baseline alle fasi/eventi aggiunti dopo il congelamento originale, usando le loro date correnti. Gli eventi già congelati e la data di congelamento del gruppo non vengono toccati."
+        confirmText="Aggiorna congelamento"
+        cancelText="Annulla"
+        actionType="warning"
+        isLoading={amendMutation.isPending}
+        onConfirm={() => activeGroupAction && amendMutation.mutate({ planningGroupId: activeGroupAction.groupId })}
       />
     </>
   );
