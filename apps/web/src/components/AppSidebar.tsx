@@ -33,6 +33,7 @@ import {
   Globe,
   Info,
   MessageSquarePlus,
+  AlertTriangle,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -420,6 +421,15 @@ export default function AppSidebar() {
                         <Link href="/settings/google" className="flex items-center gap-2">
                           <Globe size={16} />
                           <span>Google Workspace</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                    {menuAccess.settingsItems.collectionControl && (
+                      <DropdownMenuItem asChild>
+                        {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime (mirrors settings/company above) */}
+                        <Link href={"/settings/collection-control" as any} className="flex items-center gap-2">
+                          <AlertTriangle size={16} />
+                          <span>Alert Calendario/Fasi</span>
                         </Link>
                       </DropdownMenuItem>
                     )}

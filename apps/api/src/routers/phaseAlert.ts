@@ -5,6 +5,10 @@
 
 import { z } from 'zod';
 
+import { CollectionAlertThresholdsSchema } from '@luke/core';
+
+import { logAudit } from '../lib/auditLog';
+import { saveConfig } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 import {
@@ -71,6 +75,36 @@ export const phaseAlertRouter = router({
     .use(requirePermission('collection_alert:read'))
     .query(async ({ ctx }) => {
       return resolveAlertThresholds(ctx.prisma);
+    }),
+
+  /**
+   * Overwrites `collectionControl.alertThresholds` — the admin-configured criticality bands
+   * consumed by `resolveAlertThresholds`. Same `config:update` gate as the other AppConfig-backed
+   * settings pages (mail/ldap/storage), not `collection_alert:*` — `COLLECTION_ALERT` only grants
+   * `read` in `RESOURCE_ACTIONS`, and this is config administration, not alert-engine usage.
+   *
+   * @auth {config:update}
+   * @input {CollectionAlertThresholdsSchema} — default bands + optional per-Phase overrides.
+   * @output {{ success: true }}
+   */
+  updateThresholds: protectedProcedure
+    .use(requirePermission('config:update'))
+    .input(CollectionAlertThresholdsSchema)
+    .mutation(async ({ input, ctx }) => {
+      await saveConfig(ctx.prisma, 'collectionControl.alertThresholds', JSON.stringify(input), false);
+
+      await logAudit(ctx, {
+        action: 'CONFIG_UPSERT',
+        targetType: 'Config',
+        targetId: 'collectionControl.alertThresholds',
+        result: 'SUCCESS',
+        metadata: {
+          bandCount: input.default.bands.length,
+          overriddenPhases: Object.keys(input.perPhaseOverride ?? {}),
+        },
+      });
+
+      return { success: true };
     }),
 
   /**

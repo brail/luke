@@ -29,6 +29,7 @@ export function useMenuAccess() {
       nav: s.settings && s['settings.nav'],
       nav_sync: s.settings && s['settings.nav_sync'],
       google: s.settings && s['settings.google'],
+      collectionControl: s.settings && s['settings.collection_control'],
     };
     const showSettings = Object.values(settingsItems).some(Boolean);
 

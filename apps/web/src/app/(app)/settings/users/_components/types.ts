@@ -132,6 +132,7 @@ export const SECTION_LABELS: Record<Section, string> = {
   'settings.nav': '↳ Microsoft NAV',
   'settings.nav_sync': '↳ Sincronizzazione NAV',
   'settings.google': '↳ Google Workspace',
+  'settings.collection_control': '↳ Alert Calendario/Fasi',
   maintenance: 'Manutenzione',
   'maintenance.config': '↳ Configurazioni',
   'maintenance.import_export': '↳ Import/Export',
