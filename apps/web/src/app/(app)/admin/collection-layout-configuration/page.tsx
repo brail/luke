@@ -25,13 +25,6 @@ import {
 } from '../../../../components/ui/dialog';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../../../../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../components/ui/tabs';
 import {
   Tooltip,
@@ -61,16 +54,6 @@ type CatalogItem = {
   order: number;
   isActive: boolean;
   iso9001Categories: Iso9001Category[];
-  expectedMinPhaseId: string | null;
-};
-
-type PhaseItem = {
-  id: string;
-  value: string;
-  label: string;
-  code: string | null;
-  order: number;
-  isActive: boolean;
 };
 
 type ItemDialogState = { mode: 'create'; type: CollectionCatalogType } | { mode: 'edit'; item: CatalogItem };
@@ -91,11 +74,6 @@ export default function CollectionCatalogPage() {
   const { data: items = [], isLoading } = trpc.collectionCatalog.listAll.useQuery(
     { type: activeTab },
     { staleTime: 30 * 1000 },
-  );
-
-  const { data: phaseItems = [] } = trpc.phase.list.useQuery(
-    undefined,
-    { staleTime: 5 * 60 * 1000 },
   );
 
   const createMutation = trpc.collectionCatalog.create.useMutation({
@@ -299,7 +277,6 @@ export default function CollectionCatalogPage() {
       {itemDialog && (
         <CatalogItemDialog
           state={itemDialog}
-          phaseItems={phaseItems as PhaseItem[]}
           onClose={() => setItemDialog(null)}
           onSubmit={(data) => {
             if (itemDialog.mode === 'create') {
@@ -335,18 +312,15 @@ type DialogSubmitData = {
   value: string;
   label: string;
   iso9001Categories?: Iso9001Category[] | null;
-  expectedMinPhaseId?: string | null;
 };
 
 function CatalogItemDialog({
   state,
-  phaseItems,
   onClose,
   onSubmit,
   isLoading,
 }: {
   state: ItemDialogState;
-  phaseItems: PhaseItem[];
   onClose: () => void;
   onSubmit: (data: DialogSubmitData) => void;
   isLoading: boolean;
@@ -358,9 +332,6 @@ function CatalogItemDialog({
   const [label, setLabel] = useState(initial?.label ?? '');
   const [selectedCategories, setSelectedCategories] = useState<Iso9001Category[]>(
     (initial?.iso9001Categories ?? []) as Iso9001Category[]
-  );
-  const [expectedMinPhaseId, setExpectedMinPhaseId] = useState<string>(
-    initial?.expectedMinPhaseId ?? ''
   );
 
   const isRevisionType = activeType === 'revisionType';
@@ -381,7 +352,6 @@ function CatalogItemDialog({
       value: value.trim(),
       label: label.trim(),
       iso9001Categories: isRevisionType ? selectedCategories : null,
-      expectedMinPhaseId: isRevisionType ? (expectedMinPhaseId || null) : null,
     });
   };
 
@@ -440,27 +410,6 @@ function CatalogItemDialog({
                 {selectedCategories.length === 0 && (
                   <p className="text-xs text-destructive">Selezionare almeno una categoria</p>
                 )}
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="cat-phase">Fase minima attesa (opzionale)</Label>
-                <Select
-                  value={expectedMinPhaseId || '_none'}
-                  onValueChange={v => setExpectedMinPhaseId(v === '_none' ? '' : v)}
-                >
-                  <SelectTrigger id="cat-phase">
-                    <SelectValue placeholder="Nessuna" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_none">Nessuna</SelectItem>
-                    {phaseItems.filter(p => p.isActive).map(p => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.code ? `${p.code} — ${p.label}` : p.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">Se impostato, avvisa il PM se una riga inclusa non ha raggiunto questa fase.</p>
               </div>
             </>
           )}

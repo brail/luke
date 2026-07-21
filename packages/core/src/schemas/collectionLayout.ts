@@ -168,7 +168,6 @@ export const CollectionCatalogItemInputBaseSchema = z.object({
   label: z.string().min(1).max(200),
   order: z.number().int().min(0).optional(),
   iso9001Categories: z.array(z.enum(ISO9001_CATEGORIES)).optional().nullable(),
-  expectedMinPhaseId: z.string().uuid().optional().nullable(),
 });
 
 /**
@@ -193,7 +192,6 @@ export const CreateRevisionInputSchema = z.object({
   cause: z.enum(REVISION_CAUSES).default('MANUAL'),
   milestoneId: z.string().uuid().optional().nullable(),
   notes: z.string().max(1000).optional().nullable(),
-  includedRowIds: z.array(z.string().uuid()).min(0),
 }).refine(
   data => data.cause !== 'MILESTONE' || !!data.milestoneId,
   { message: 'milestoneId richiesto se cause=MILESTONE', path: ['milestoneId'] }

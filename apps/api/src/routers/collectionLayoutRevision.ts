@@ -78,7 +78,7 @@ export const collectionLayoutRevisionRouter = router({
           revisionTypeValue: input.revisionTypeValue,
           cause: input.cause,
           milestoneId: input.milestoneId ?? undefined,
-          rowsIncluded: input.includedRowIds.length,
+          rowsIncluded: revision.groups.flatMap(g => g.rows).length,
         },
       });
 
@@ -141,9 +141,9 @@ export const collectionLayoutRevisionRouter = router({
       .mutation(async ({ input, ctx }) => {
         const revision = await ctx.prisma.collectionLayoutRevision.findUniqueOrThrow({
           where: { id: input.revisionId },
-          select: { revisionNumber: true, revisionTypeValue: true, collectionLayout: { select: { brand: { select: { code: true } }, season: { select: { code: true } } } } },
+          select: { revisionNumber: true, revisionTypeValue: true, notes: true, collectionLayout: { select: { brand: { select: { code: true } }, season: { select: { code: true } } } } },
         });
-        const buf = await buildRevisionXlsx(input.revisionId, input.collectionLayoutId, ctx.prisma, ctx.logger);
+        const buf = await buildRevisionXlsx(input.revisionId, input.collectionLayoutId, revision, ctx.prisma, ctx.logger);
         const { brand, season } = revision.collectionLayout;
         return {
           data: buf.toString('base64'),
@@ -160,7 +160,7 @@ export const collectionLayoutRevisionRouter = router({
       .mutation(async ({ input, ctx }) => {
         const revision = await ctx.prisma.collectionLayoutRevision.findUniqueOrThrow({
           where: { id: input.revisionId },
-          select: { revisionNumber: true, revisionTypeValue: true, collectionLayout: { select: { brand: { select: { code: true } }, season: { select: { code: true } } } } },
+          select: { revisionNumber: true, revisionTypeValue: true, notes: true, collectionLayout: { select: { brand: { select: { code: true } }, season: { select: { code: true } } } } },
         });
         const exportUser = await ctx.prisma.user.findUnique({
           where: { id: ctx.session.user.id },
@@ -169,7 +169,7 @@ export const collectionLayoutRevisionRouter = router({
         const fullName = exportUser
           ? [exportUser.firstName, exportUser.lastName].filter(Boolean).join(' ') || exportUser.username
           : ctx.session.user.email;
-        const buf = await buildRevisionPdf(input.revisionId, input.collectionLayoutId, fullName, ctx.prisma, ctx.logger);
+        const buf = await buildRevisionPdf(input.revisionId, input.collectionLayoutId, fullName, revision, ctx.prisma, ctx.logger);
         const { brand, season } = revision.collectionLayout;
         return {
           data: buf.toString('base64'),

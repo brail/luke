@@ -34,6 +34,20 @@ export type CollectionLayoutForExport = CollectionLayout & {
   groups: GroupWithRows[];
 };
 
+/** Caller-defined label/value sheet appended after the main layout sheet. */
+export type ExtraInfoSheet = {
+  sheetName: string;
+  title: string;
+  subtitle: string;
+  rows: [string, string][];
+};
+
+/** Adds a bold-label row followed by a value cell to a label/value info sheet. */
+function addLabelValueRow(sheet: ExcelJS.Worksheet, label: string, value: string): void {
+  const row = sheet.addRow([label, value]);
+  row.getCell(1).font = { bold: true };
+}
+
 // ─── Margin computation per quotation ─────────────────────────────────────────
 
 type QuotationMarginResult = {
@@ -156,6 +170,7 @@ type Logger = { warn: (obj: object, msg: string) => void };
  * and margin colour coding. Photos are fetched in parallel from storage.
  *
  * @param pictureBucket - Storage bucket for row photos; defaults to `'collection-row-pictures'`.
+ * @param extraInfoSheet - Optional caller-defined label/value sheet appended after the main sheet (e.g. revision notes).
  * @returns A Buffer containing the XLSX file.
  */
 export async function buildCollectionLayoutXlsx(
@@ -163,6 +178,7 @@ export async function buildCollectionLayoutXlsx(
   prisma: PrismaClient,
   logger?: Logger,
   pictureBucket: StorageBucket = 'collection-row-pictures',
+  extraInfoSheet?: ExtraInfoSheet | null,
 ): Promise<Buffer> {
   const allRows = layout.groups.flatMap((g: GroupWithRows) => g.rows);
 
@@ -290,6 +306,19 @@ export async function buildCollectionLayoutXlsx(
 
   for (let r = 2; r <= dataRowIndex; r++) {
     sheet.getRow(r).height = ROW_HEIGHT_WITH_IMAGE;
+  }
+
+  if (extraInfoSheet) {
+    const infoSheet = wb.addWorksheet(extraInfoSheet.sheetName);
+    infoSheet.columns = [{ key: 'label', width: 20 }, { key: 'value', width: 80 }];
+
+    const headerRow = infoSheet.addRow([extraInfoSheet.title, extraInfoSheet.subtitle]);
+    applyStreamingHeaderStyle(headerRow, 'planning');
+
+    for (const [label, value] of extraInfoSheet.rows) {
+      addLabelValueRow(infoSheet, label, value);
+      infoSheet.getCell(infoSheet.rowCount, 2).alignment = { wrapText: true, vertical: 'top' };
+    }
   }
 
   const arrayBuffer = await wb.xlsx.writeBuffer();

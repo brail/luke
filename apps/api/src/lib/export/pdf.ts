@@ -136,6 +136,7 @@ function formatAddress(address: CompanyAddress | null | undefined): string {
  * @param currentPage - Current page number (provided by pdfmake's footer callback).
  * @param totalPages - Total page count.
  * @param company - Optional company context (logo data URI, address, footer text).
+ * @param extraLine - Optional extra text line appended after the company info (already formatted by the caller).
  * @returns pdfmake `Content` object for use in `footer`.
  */
 export function buildPdfFooter(
@@ -146,11 +147,13 @@ export function buildPdfFooter(
     address?: CompanyAddress | null;
     footerText?: string | null;
   },
+  extraLine?: string | null,
 ): Content {
   const addressLine = formatAddress(company?.address);
   const infoLines: string[] = [];
   if (addressLine)         infoLines.push(addressLine);
   if (company?.footerText) infoLines.push(company.footerText);
+  if (extraLine)           infoLines.push(extraLine);
 
   // pdfmake column objects support a `width` key that the Content type doesn't declare — cast needed
 

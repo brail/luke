@@ -92,7 +92,6 @@ export const collectionCatalogRouter = router({
           label: input.label,
           order: input.order ?? (maxOrder._max.order ?? -1) + 1,
           iso9001Categories: input.iso9001Categories ?? [],
-          expectedMinPhaseId: input.expectedMinPhaseId ?? null,
         },
       });
 

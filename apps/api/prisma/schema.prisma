@@ -750,10 +750,6 @@ model CollectionCatalogItem {
   code               String?
   /// ISO 9001 categories associated with this item. Populated only for type=revisionType.
   iso9001Categories  String[] @default([]) // categorie ISO 9001 — popolato solo per type=revisionType
-  /// FK to Phase (optional). Minimum expected phase for this revision type. Populated only for type=revisionType.
-  expectedMinPhaseId String?
-  /// Minimum expected phase for this revision type.
-  expectedMinPhase   Phase?   @relation(fields: [expectedMinPhaseId], references: [id], onDelete: Restrict)
   /// Display order within the type group.
   order              Int      @default(0)
   /// Soft-delete flag. Inactive items are hidden from pickers.
@@ -763,7 +759,6 @@ model CollectionCatalogItem {
 
   @@unique([type, value])
   @@index([type, isActive])
-  @@index([expectedMinPhaseId])
   @@map("collection_catalog_items")
 }
 
@@ -1994,8 +1989,6 @@ model Phase {
   calendarEvents             CalendarEvent[]
   /// Milestone template items tagged with this phase.
   milestoneTemplateItems     MilestoneTemplateItem[]
-  /// Revision-type catalog items whose expected minimum phase is this one.
-  expectedMinForCatalogItems CollectionCatalogItem[]
   /// Row history entries recording a transition into this phase.
   rowPhaseHistory            CollectionRowPhaseHistory[]
 

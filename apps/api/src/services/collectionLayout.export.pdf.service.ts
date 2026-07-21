@@ -247,6 +247,7 @@ type Logger = { warn: (obj: object, msg: string) => void };
  * @param extractedBy - Display name of the requesting user (shown in the page header).
  * @param extractedAt - Timestamp to include in the header.
  * @param pictureBucket - Storage bucket for row photos; defaults to `'collection-row-pictures'`.
+ * @param extraFooterNote - Optional pre-formatted extra line appended to the footer (caller-formatted, this builder has no opinion on its content).
  * @returns A Buffer containing the complete PDF file.
  */
 export async function buildCollectionLayoutPdf(
@@ -256,6 +257,7 @@ export async function buildCollectionLayoutPdf(
   extractedAt: Date,
   logger?: Logger,
   pictureBucket: StorageBucket = 'collection-row-pictures',
+  extraFooterNote?: string | null,
 ): Promise<Buffer> {
   const allRows = layout.groups.flatMap(g => g.rows);
 
@@ -399,10 +401,9 @@ export async function buildCollectionLayoutPdf(
     footer: (currentPage: number, totalPages: number) =>
       buildPdfFooter(currentPage, totalPages, {
         logoDataUri: company.companyLogoDataUri,
-
         address: company.address,
         footerText: company.exportSettings.footerText,
-      }),
+      }, extraFooterNote),
     content,
   };
 

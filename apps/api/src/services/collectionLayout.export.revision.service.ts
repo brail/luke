@@ -4,11 +4,13 @@ import { buildCollectionLayoutXlsx } from './collectionLayout.export.xlsx.servic
 import { getLayoutAsOfRevision } from './collectionLayoutRevision.service';
 
 import type { CollectionLayoutForPdf } from './collectionLayout.export.pdf.service';
-import type { CollectionLayoutForExport } from './collectionLayout.export.xlsx.service';
+import type { CollectionLayoutForExport, ExtraInfoSheet } from './collectionLayout.export.xlsx.service';
 import type { QuotationWithParamSet } from './collectionLayout.service';
 import type { PrismaClient } from '@prisma/client';
 
 type Logger = { warn: (obj: object, msg: string) => void };
+
+type RevisionMeta = { revisionNumber: number; revisionTypeValue: string; notes: string | null };
 
 // ─── Mapper ───────────────────────────────────────────────────────────────────
 
@@ -90,23 +92,36 @@ async function buildRevisionExportLayout(
 
 /**
  * Builds an XLSX export of a collection layout as it existed at a specific revision snapshot.
- * Row photos are read from the revisions picture bucket.
+ * Row photos are read from the revisions picture bucket. The revision's free-text note, if
+ * any, is rendered as a separate "Nota revisione" sheet.
  *
  * @returns A Buffer containing the XLSX file.
  */
 export async function buildRevisionXlsx(
   revisionId: string,
   collectionLayoutId: string,
+  revisionMeta: RevisionMeta,
   prisma: PrismaClient,
   logger?: Logger,
 ): Promise<Buffer> {
   const layout = await buildRevisionExportLayout(revisionId, collectionLayoutId, prisma);
-  return buildCollectionLayoutXlsx(layout, prisma, logger, 'collection-row-pictures-revisions');
+  const extraInfoSheet: ExtraInfoSheet = {
+    sheetName: 'Nota revisione',
+    title: 'NOTA REVISIONE',
+    subtitle: `rev${revisionMeta.revisionNumber} — ${revisionMeta.revisionTypeValue}`,
+    rows: [
+      ['Numero revisione', `rev${revisionMeta.revisionNumber}`],
+      ['Tipo revisione', revisionMeta.revisionTypeValue],
+      ['Nota', revisionMeta.notes ?? ''],
+    ],
+  };
+  return buildCollectionLayoutXlsx(layout, prisma, logger, 'collection-row-pictures-revisions', extraInfoSheet);
 }
 
 /**
  * Builds a PDF export of a collection layout as it existed at a specific revision snapshot.
- * Row photos are read from the revisions picture bucket.
+ * Row photos are read from the revisions picture bucket. The revision's free-text note, if
+ * any, is rendered as an extra footer line.
  *
  * @param extractedBy - Display name of the requesting user (shown in the page header).
  * @returns A Buffer containing the PDF file.
@@ -115,9 +130,11 @@ export async function buildRevisionPdf(
   revisionId: string,
   collectionLayoutId: string,
   extractedBy: string,
+  revisionMeta: RevisionMeta,
   prisma: PrismaClient,
   logger?: Logger,
 ): Promise<Buffer> {
   const layout = await buildRevisionExportLayout(revisionId, collectionLayoutId, prisma) as unknown as CollectionLayoutForPdf;
-  return buildCollectionLayoutPdf(layout, prisma, extractedBy, new Date(), logger, 'collection-row-pictures-revisions');
+  const extraFooterNote = revisionMeta.notes ? `Nota revisione: ${revisionMeta.notes}` : null;
+  return buildCollectionLayoutPdf(layout, prisma, extractedBy, new Date(), logger, 'collection-row-pictures-revisions', extraFooterNote);
 }

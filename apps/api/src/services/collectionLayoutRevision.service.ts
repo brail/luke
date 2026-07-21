@@ -85,16 +85,11 @@ export async function createRevision(
     },
   });
 
-  // Gather all rows indexed by id for quick lookup
-  const allRowsById = new Map(
-    layout.groups.flatMap(g => g.rows).map(r => [r.id, r]),
-  );
+  const allRows = layout.groups.flatMap(g => g.rows);
 
   // Pre-copy photos OUTSIDE the transaction — orphan files if tx fails are acceptable
   // (CAS via sha256 dedup ensures no data loss, only unreferenced bytes in the bucket)
-  const rowsWithPhotos = input.includedRowIds
-    .map(id => allRowsById.get(id))
-    .filter((r): r is NonNullable<typeof r> => !!r?.pictureKey);
+  const rowsWithPhotos = allRows.filter(r => !!r.pictureKey);
 
   const photoCopyEntries = await Promise.all(
     rowsWithPhotos.map(async r => [r.id, await copyPhoto(r.pictureKey!)] as const),
@@ -137,12 +132,8 @@ export async function createRevision(
       groupRevisionMap.set(group.id, groupRev.id);
     }
 
-    // Snapshot included rows
-    const includedRowIdSet = new Set(input.includedRowIds);
-    for (const rowId of input.includedRowIds) {
-      const row = allRowsById.get(rowId);
-      if (!row) continue;
-
+    // Snapshot every row in the layout — revisions always cover the full layout
+    for (const row of allRows) {
       const sourceGroupRevisionId = groupRevisionMap.get(row.groupId);
       if (!sourceGroupRevisionId) continue;
 
@@ -150,7 +141,7 @@ export async function createRevision(
         data: {
           revisionId: revision.id,
           sourceGroupRevisionId,
-          sourceRowId: rowId,
+          sourceRowId: row.id,
           wasDeleted: false,
           gender: row.gender,
           vendorId: row.vendorId,
@@ -165,7 +156,7 @@ export async function createRevision(
           styleStatus: row.styleStatus,
           progress: row.phase?.value ?? null,
           designer: row.designer,
-          pictureKey: photoCopyMap.get(rowId) ?? null,
+          pictureKey: photoCopyMap.get(row.id) ?? null,
           styleNotes: row.styleNotes,
           materialNotes: row.materialNotes,
           colorNotes: row.colorNotes,
@@ -194,7 +185,7 @@ export async function createRevision(
 
       // Mark row as revised
       await tx.collectionLayoutRow.update({
-        where: { id: rowId },
+        where: { id: row.id },
         data: { lastRevisedAt: new Date() },
       });
     }
@@ -207,7 +198,6 @@ export async function createRevision(
         groups: {
           include: {
             rows: {
-              where: { sourceRowId: { in: [...includedRowIdSet] } },
               include: { quotationRevisions: true },
               orderBy: { order: 'asc' },
             },
