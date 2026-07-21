@@ -197,6 +197,7 @@ export function CollectionRowDrawer({
         productCategory: row.productCategory,
         strategy: row.strategy ?? null,
         styleStatus: row.styleStatus ?? null,
+        pricePositioning: row.pricePositioning ?? null,
         phaseId: row.phaseId ?? null,
         designer: row.designer ?? null,
         pictureKey: row.pictureKey ?? null,
