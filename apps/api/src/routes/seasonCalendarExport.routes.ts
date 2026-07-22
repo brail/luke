@@ -26,7 +26,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import type { TDocumentDefinitions, TableCell, Content } from 'pdfmake/interfaces';
 
  
-const PdfPrinter = require('pdfmake/src/printer');
+const PdfPrinter = require('pdfmake/src/Printer');
 
 // ─── Shared types ────────────────────────────────────────────────────────────
 
