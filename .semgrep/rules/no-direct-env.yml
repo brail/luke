@@ -17,6 +17,8 @@ rules:
         - '/apps/api/test/**'
         - '/apps/api/scripts/**'
         - '/apps/api/prisma.config.ts'
+        - '/apps/api/prisma/seed.ts'
+        - '/apps/api/prisma/migrate-sqlite-to-postgres.ts'
         - '/apps/api/src/server.ts'
         - '/apps/api/src/instrument.ts'
         - '/apps/api/src/lib/cors.ts'

@@ -11,6 +11,7 @@ import { randomBytes } from 'crypto';
 import { join } from 'path';
 import { homedir } from 'os';
 
+import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
 import { encryptValue } from '../src/lib/configManager';
@@ -22,7 +23,7 @@ import { seedHolidayCountries } from './seeds/holidays';
 /**
  * Inizializza Prisma Client
  */
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) });
 
 /**
  * Crea/aggiorna l'utente admin con identità locale
