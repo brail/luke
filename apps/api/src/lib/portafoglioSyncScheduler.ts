@@ -17,6 +17,7 @@
 import { getNavDbConfig, getPool, syncPortafoglioNow, type PortafoglioSyncResult } from '@luke/nav';
 
 import { getConfig } from './configManager';
+import { guardMaintenance } from './maintenanceMode';
 import { notifyAdmins, notifyDeduped, SYSTEM_SUCCESS_DEDUP_MS, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
 import { sseStore } from './sseStore';
 
@@ -123,14 +124,16 @@ export function registerPortafoglioSyncScheduler(
     void _runSync();
   };
 
+  const guardedTick = guardMaintenance(prisma, tick);
+
   fastify.addHook('onReady', async () => {
     _logger = fastify.log as unknown as Logger;
     fastify.log.info('Portafoglio sync scheduler: avviato (tick ogni minuto, intervallo configurabile)');
 
     // Prima esecuzione subito dopo il ready (rispettando la config DB)
-    void tick();
+    void guardedTick();
 
-    timer = setInterval(() => void tick(), TICK_INTERVAL_MS);
+    timer = setInterval(() => void guardedTick(), TICK_INTERVAL_MS);
   });
 
   fastify.addHook('onClose', async () => {

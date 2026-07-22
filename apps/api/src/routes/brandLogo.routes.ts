@@ -14,9 +14,9 @@
 import rateLimit from '@fastify/rate-limit';
 import fp from 'fastify-plugin';
 
-import { isDevelopment, hasPermission, type Role } from '@luke/core';
+import { isDevelopment } from '@luke/core';
 
-import { authenticateRequest } from '../lib/auth';
+import { requireSessionWithPermission } from '../lib/auth';
 import {
   uploadBrandLogo,
   uploadTempBrandLogo,
@@ -42,20 +42,8 @@ export default fp(
     app.post<{
       Params: { brandId: string };
     }>('/upload/brand-logo/:brandId', async (req, reply) => {
-      const session = await authenticateRequest(req, reply);
-      if (!session) {
-        return reply.code(401).send({
-          error: 'Unauthorized',
-          message: 'Autenticazione richiesta',
-        });
-      }
-
-      if (!hasPermission(session.user as { role: Role }, 'brands:update')) {
-        return reply.code(403).send({
-          error: 'Forbidden',
-          message: 'Permesso negato: richiesta brands:update',
-        });
-      }
+      const session = await requireSessionWithPermission(req, reply, 'brands:update');
+      if (!session) return;
 
       const ctx = {
         session,
@@ -119,20 +107,8 @@ export default fp(
     app.post<{
       Body: { tempId: string };
     }>('/upload/brand-logo/temp', async (req, reply) => {
-      const session = await authenticateRequest(req, reply);
-      if (!session) {
-        return reply.code(401).send({
-          error: 'Unauthorized',
-          message: 'Autenticazione richiesta',
-        });
-      }
-
-      if (!hasPermission(session.user as { role: Role }, 'brands:create')) {
-        return reply.code(403).send({
-          error: 'Forbidden',
-          message: 'Permesso negato: richiesta brands:create',
-        });
-      }
+      const session = await requireSessionWithPermission(req, reply, 'brands:create');
+      if (!session) return;
 
       const ctx = {
         session,

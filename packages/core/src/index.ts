@@ -32,6 +32,8 @@ export * from './schemas/companyProfile';
 export * from './schemas/vendor';
 export * from './schemas/dashboard';
 export * from './schemas/notification';
+export * from './schemas/backup';
+export * from './schemas/maintenanceMode';
 
 // Re-export RBAC
 export * from './rbac';

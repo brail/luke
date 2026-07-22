@@ -12,33 +12,20 @@ import { hasPermission, type Role } from '@luke/core';
 
 import { authenticateRequest } from './auth';
 import { getTokenVersionCacheTTL } from './configManager';
+import { assertNotBlockedByMaintenance } from './maintenanceMode';
 import { t } from './t';
+import { tokenVersionCache } from './tokenVersionCache';
 
 import type { Context } from './context';
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
-/**
- * In-memory tokenVersion cache with TTL.
- * Avoids a DB round-trip on every request to verify that the token has not been revoked.
- */
-const tokenVersionCache = new Map<
-  string,
-  { version: number; timestamp: number }
->();
+export { invalidateTokenVersionCache } from './tokenVersionCache';
 
 // Cache per TTL dinamico da AppConfig
 let cachedTTLValue: number | null = null;
 let cachedTTLTimestamp: number = 0;
 const TTL_REFRESH_INTERVAL = 5 * 60 * 1000; // Refresh config ogni 5min
-
-/**
- * Removes the cached tokenVersion for a specific user.
- * Call this after revoking sessions or changing a user's password.
- */
-export function invalidateTokenVersionCache(userId: string): void {
-  tokenVersionCache.delete(userId);
-}
 
 async function getCacheTTL(prisma: PrismaClient): Promise<number> {
   const now = Date.now();
@@ -197,6 +184,30 @@ export const authMiddleware = t.middleware(async ({ ctx, next }) => {
 });
 
 /**
+ * Middleware that blocks non-admin traffic while Maintenance Mode is `ACTIVE`.
+ * Must be chained after `authMiddleware` (already done in `protectedProcedure`) so
+ * `ctx.session` is guaranteed. Admins are never blocked — they need `adminProcedure`
+ * (e.g. `maintenance.mode.end`) to keep working during the very maintenance they're managing.
+ */
+export const maintenanceGuard = t.middleware(async ({ ctx, next }) => {
+  if (!ctx.session) {
+    throw new TRPCError({
+      code: 'UNAUTHORIZED',
+      message: 'Devi essere autenticato per accedere a questa risorsa',
+    });
+  }
+
+  await assertNotBlockedByMaintenance(ctx.prisma, ctx.session.user.role);
+
+  return next({
+    ctx: {
+      ...ctx,
+      session: ctx.session, // Type-safe: session non è più null
+    },
+  });
+});
+
+/**
  * Middleware that restricts access to users with the `admin` role.
  * Must be chained after `authMiddleware` (already done in `adminProcedure`).
  */
@@ -233,7 +244,8 @@ export const loggedProcedure = publicProcedure.use(loggingMiddleware);
  */
 export const protectedProcedure = publicProcedure
   .use(loggingMiddleware)
-  .use(authMiddleware);
+  .use(authMiddleware)
+  .use(maintenanceGuard);
 
 /**
  * Procedure that requires admin role.

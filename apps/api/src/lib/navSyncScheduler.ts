@@ -19,6 +19,7 @@
 import { closePool, runNavSync } from '@luke/nav';
 
 import { getConfig } from './configManager';
+import { guardMaintenance } from './maintenanceMode';
 import { notifyAdmins, notifyDeduped, SYSTEM_SUCCESS_DEDUP_MS, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
 
 import type { PrismaClient } from '@prisma/client';
@@ -158,13 +159,15 @@ export function registerNavSyncScheduler(
     }
   };
 
+  const guardedTick = guardMaintenance(prisma, tick);
+
   fastify.addHook('onReady', async () => {
     fastify.log.info('NAV sync scheduler: avviato (tick ogni 60s, intervalli per-entità)');
 
     // Prima esecuzione subito dopo il ready
-    void tick();
+    void guardedTick();
 
-    timer = setInterval(() => void tick(), TICK_INTERVAL_MS);
+    timer = setInterval(() => void guardedTick(), TICK_INTERVAL_MS);
   });
 
   fastify.addHook('onClose', async () => {

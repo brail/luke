@@ -12,9 +12,9 @@
 
 import rateLimit from '@fastify/rate-limit';
 
-import { isDevelopment, hasPermission, type Role } from '@luke/core';
+import { isDevelopment } from '@luke/core';
 
-import { authenticateRequest } from '../lib/auth';
+import { requireSessionWithPermission } from '../lib/auth';
 import { uploadCollectionRowPicture, uploadTempCollectionRowPicture } from '../services/collectionRowPicture.service';
 
 import type { PrismaClient } from '@prisma/client';
@@ -36,14 +36,8 @@ export default async function collectionRowPictureRoutes(
   // Temp endpoint — no row ID required (create mode)
   // Registered before /:rowId so the literal "temp" path takes precedence.
   app.post('/upload/collection-row-picture/temp', async (req, reply) => {
-    const session = await authenticateRequest(req, reply);
-    if (!session) {
-      return reply.code(401).send({ error: 'Unauthorized', message: 'Autenticazione richiesta' });
-    }
-
-    if (!hasPermission(session.user as { role: Role }, 'collection_layout:update')) {
-      return reply.code(403).send({ error: 'Forbidden', message: 'Permesso negato: richiesta collection_layout:update' });
-    }
+    const session = await requireSessionWithPermission(req, reply, 'collection_layout:update');
+    if (!session) return;
 
     const ctx = {
       session,
@@ -90,14 +84,8 @@ export default async function collectionRowPictureRoutes(
   app.post<{
     Params: { rowId: string };
   }>('/upload/collection-row-picture/:rowId', async (req, reply) => {
-    const session = await authenticateRequest(req, reply);
-    if (!session) {
-      return reply.code(401).send({ error: 'Unauthorized', message: 'Autenticazione richiesta' });
-    }
-
-    if (!hasPermission(session.user as { role: Role }, 'collection_layout:update')) {
-      return reply.code(403).send({ error: 'Forbidden', message: 'Permesso negato: richiesta collection_layout:update' });
-    }
+    const session = await requireSessionWithPermission(req, reply, 'collection_layout:update');
+    if (!session) return;
 
     const ctx = {
       session,

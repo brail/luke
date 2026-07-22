@@ -19,7 +19,8 @@ import { fullName } from '@luke/core';
 
 import { isRedactedValue } from './auditLog';
 import { getConfig } from './configManager';
-import { sendEmail } from './mailer';
+import { sendBulkEmail, sendEmail } from './mailer';
+import { guardMaintenance } from './maintenanceMode';
 import { getVisibleUserIdsForMilestones } from './notifications';
 
 import type { PrismaClient } from '@prisma/client';
@@ -351,8 +352,10 @@ async function runDigestCore(
   const disabledSet = new Set(disabledPrefs.map(p => p.userId));
   const calendarUrl = `${baseUrlRaw || 'http://localhost:3000'}/calendar`;
 
-  // Send one email per calendar per user
-  const sendTasks: Promise<void>[] = [];
+  // One email per calendar per user — content varies per (calendar, user) pair, so each task
+  // carries its own fully-rendered subject/html/text rather than being a plain recipient list.
+  interface EmailTask { email: string; subject: string; html: string; text: string }
+  const tasks: EmailTask[] = [];
 
   for (const [calId, userDigestMap] of calendarDigests) {
     const calendarLabel = calendarLabelMap.get(calId) ?? calId;
@@ -370,34 +373,34 @@ async function runDigestCore(
       const total = digest.created.length + digest.updated.length + digest.deleted.length;
       if (total === 0) continue;
 
-      const html = generateDigestHtml(dateLabel, digest, calendarUrl, calendarLabel);
-      const text = generateDigestText(dateLabel, digest, calendarLabel);
-      sendTasks.push(sendEmail(prisma, email, subject, html, text));
+      tasks.push({
+        email,
+        subject,
+        html: generateDigestHtml(dateLabel, digest, calendarUrl, calendarLabel),
+        text: generateDigestText(dateLabel, digest, calendarLabel),
+      });
     }
   }
 
-  const results = await Promise.allSettled(sendTasks);
-  const sent = results.filter(r => r.status === 'fulfilled').length;
-  const failed = results.filter(r => r.status === 'rejected').length;
-
-  for (const result of results) {
-    if (result.status === 'rejected') {
-      log.error({ err: result.reason }, 'Calendar digest: invio email fallito');
-    }
-  }
+  const { sent, failed } = await sendBulkEmail(tasks, task =>
+    sendEmail(prisma, task.email, task.subject, task.html, task.text).catch(err => {
+      log.error({ err }, 'Calendar digest: invio email fallito');
+      throw err;
+    })
+  );
 
   log.info({ sent, failed, calendars: calendarDigests.size }, 'Calendar digest: completato');
 }
 
-function runDigest(
+async function runDigest(
   prisma: PrismaClient,
   log: FastifyInstance['log'],
   state: { lastDigestDate: string | null },
 ): Promise<void> {
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
-  if (state.lastDigestDate === today) return Promise.resolve();
-  if (now.getHours() !== DIGEST_HOUR) return Promise.resolve();
+  if (state.lastDigestDate === today) return;
+  if (now.getHours() !== DIGEST_HOUR) return;
   state.lastDigestDate = today;
   return runDigestCore(prisma, log);
 }
@@ -436,8 +439,9 @@ export function registerCalendarDigestScheduler(
   let timer: ReturnType<typeof setInterval> | null = null;
   const state = { lastDigestDate: null as string | null };
 
+  const guardedDigest = guardMaintenance(prisma, () => runDigest(prisma, fastify.log, state));
   const run = () =>
-    runDigest(prisma, fastify.log, state).catch(err =>
+    guardedDigest().catch(err =>
       fastify.log.error({ err }, 'Calendar digest scheduler: errore non gestito')
     );
 

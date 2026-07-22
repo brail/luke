@@ -33,6 +33,7 @@ export type SSEEvent =
   | { type: 'notification'; payload: Record<string, unknown> }
   | { type: 'sync-state'; entity: string; isRunning: boolean }
   | { type: 'calendar-updated'; seasonId: string }
+  | { type: 'maintenance-mode'; status: 'INACTIVE' | 'SCHEDULED' | 'ACTIVE'; scheduledAt: string | null; message: string | null }
   | { type: 'heartbeat' };
 
 function pushToUser(userId: string, event: SSEEvent): void {

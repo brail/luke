@@ -20,7 +20,7 @@ import {
 } from '@luke/core';
 import { getMasterKey } from '@luke/core/server';
 
-import type { PrismaClient } from '@prisma/client';
+import type { BackupScope, PrismaClient } from '@prisma/client';
 
 const logger = pino({ level: 'info' });
 
@@ -42,9 +42,11 @@ export interface LdapConfig {
   strategy: 'local-first' | 'ldap-first' | 'local-only' | 'ldap-only';
 }
 
-const ALGORITHM = 'aes-256-gcm';
-const IV_LENGTH = 16; // 128 bits
-const AUTH_TAG_LENGTH = 16; // 128 bits — esplicito per semgrep gcm-no-tag-length
+// Esportate per riuso da altri moduli AES-256-GCM (es. apps/api/src/lib/backup/crypto.ts)
+// che devono restare sugli stessi parametri della master-key crypto.
+export const ALGORITHM = 'aes-256-gcm';
+export const IV_LENGTH = 16; // 128 bits
+export const AUTH_TAG_LENGTH = 16; // 128 bits — esplicito per semgrep gcm-no-tag-length
 
 /**
  * Encrypts a plaintext value using AES-256-GCM and the current master key.
@@ -504,6 +506,82 @@ export function getEditLockTtlMs(prisma: PrismaClient): Promise<number> {
   return getBoundedNumericConfig(prisma, 'editLock.ttlMs', {
     defaultValue: 900000, min: 300000, max: 3600000,
   });
+}
+
+/**
+ * Reads how many days a backup stays before it's eligible for retention pruning.
+ *
+ * @returns Retention window in days. Defaults to 30; invalid values fall back to the default.
+ */
+export function getBackupRetentionDays(prisma: PrismaClient): Promise<number> {
+  return getBoundedNumericConfig(prisma, 'backup.retentionDays', {
+    defaultValue: 30, min: 1, max: 3650,
+  });
+}
+
+/**
+ * Reads the minimum number of completed backups the retention sweep must always keep,
+ * even if they're past their retention window.
+ *
+ * @returns Minimum backup count to retain. Defaults to 3; invalid values fall back to the default.
+ */
+export function getBackupRetentionMinCount(prisma: PrismaClient): Promise<number> {
+  return getBoundedNumericConfig(prisma, 'backup.retentionMinCount', {
+    defaultValue: 3, min: 0, max: 1000,
+  });
+}
+
+/** Automatic-backup schedule + retention settings, resolved from AppConfig with the scheduler's own defaults. */
+export interface BackupScheduleSettings {
+  enabled: boolean;
+  dailyTime: string;
+  scope: BackupScope;
+  retentionDays: number;
+  retentionMinCount: number;
+  notifyOnFailure: boolean;
+}
+
+/**
+ * Parses a raw config value through its `AppConfigRegistry` Zod schema, falling back to
+ * `fallback` if the key is unset or the stored value no longer validates.
+ */
+function parseConfigOrDefault<K extends AppConfigKey>(
+  raw: string | null,
+  key: K,
+  fallback: AppConfigValue<K>
+): AppConfigValue<K> {
+  if (raw === null) return fallback;
+  try {
+    return parseConfigValue(key, raw);
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Reads the automatic-backup schedule settings — single source of truth shared by the
+ * scheduler tick and the admin settings UI, so both agree on defaults for unset keys.
+ */
+export async function getBackupScheduleSettings(prisma: PrismaClient): Promise<BackupScheduleSettings> {
+  const [enabledRaw, dailyTimeRaw, scopeRaw, notifyRaw, retentionDays, retentionMinCount] = await Promise.all([
+    getConfig(prisma, 'backup.schedule.enabled', false),
+    getConfig(prisma, 'backup.schedule.dailyTime', false),
+    getConfig(prisma, 'backup.schedule.scope', false),
+    getConfig(prisma, 'backup.notifyOnFailure', false),
+    getBackupRetentionDays(prisma),
+    getBackupRetentionMinCount(prisma),
+  ]);
+
+  return {
+    // z.coerce.boolean() treats any non-empty string (including the literal "false") as true —
+    // explicit string comparison sidesteps that footgun for these two, unlike dailyTime/scope below.
+    enabled: enabledRaw === 'true',
+    dailyTime: parseConfigOrDefault(dailyTimeRaw, 'backup.schedule.dailyTime', '03:00'),
+    scope: parseConfigOrDefault(scopeRaw, 'backup.schedule.scope', 'DB'),
+    retentionDays,
+    retentionMinCount,
+    notifyOnFailure: notifyRaw !== 'false',
+  };
 }
 
 /**

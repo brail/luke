@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { RateLimitConfigSchema, LdapResilienceSchema, CollectionAlertThresholdsSchema, AppContextDefaultsSchema } from './appConfig';
+import { MaintenanceModeStateSchema } from './maintenanceMode';
 
 /**
  * Central registry of all AppConfig keys with their Zod validation schemas.
@@ -122,6 +123,21 @@ export const AppConfigRegistry = {
   // ── Feedback ──────────────────────────────────────────────────────────────
   'integrations.github.feedbackToken': z.string().min(1),   // GitHub PAT (encrypted)
   'integrations.github.feedbackRepo':  z.string().min(1),   // format: "owner/repo"
+
+  // ── Backup & Disaster Recovery ────────────────────────────────────────────
+  'backup.schedule.enabled':        z.coerce.boolean(),
+  'backup.schedule.dailyTime':      z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), // "HH:mm"
+  'backup.schedule.scope':          z.enum(['DB', 'DB_AND_FILES']),
+  'backup.retentionDays':           z.coerce.number().int().min(1),
+  'backup.retentionMinCount':       z.coerce.number().int().min(0),
+  'backup.target.bucket':           z.string().min(1),
+  'backup.notifyOnFailure':         z.coerce.boolean(),
+
+  // ── Maintenance Mode (schedulable, system-wide) ───────────────────────────
+  // Single JSON blob, not one key per field: nothing outside maintenanceMode.ts (apps/api)
+  // ever reads an individual sub-field, so one row keeps writes atomic for free instead of
+  // needing a $transaction across 9 rows.
+  'maintenance.mode.state': z.string().transform(s => MaintenanceModeStateSchema.parse(JSON.parse(s))),
 } as const satisfies Record<string, z.ZodTypeAny>;
 
 export type AppConfigKey = keyof typeof AppConfigRegistry;

@@ -11,7 +11,7 @@ import { join } from 'path';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { isValidBucket, localStorageConfigSchema, type StorageBucket } from '@luke/core';
+import { APP_STORAGE_BUCKETS, isValidBucket, localStorageConfigSchema, type StorageBucket } from '@luke/core';
 
 import { getConfig, saveConfig } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
@@ -44,20 +44,18 @@ const GetDownloadLinkSchema = z.object({
   id: z.string().uuid(),
 });
 
-const IMAGE_BUCKETS = ['uploads', 'exports', 'assets', 'brand-logos', 'collection-row-pictures', 'collection-row-pictures-revisions', 'merchandising-specsheet-images', 'company-assets'] as const;
-
 /**
  * Schema per create upload
  */
 const CreateUploadSchema = z.object({
-  bucket: z.enum(IMAGE_BUCKETS),
+  bucket: z.enum(APP_STORAGE_BUCKETS),
   originalName: z.string().min(1).max(255),
   contentType: z.string().optional(),
   size: z.number().int().positive(),
 });
 
 const RequestUploadSchema = z.object({
-  bucket: z.enum(IMAGE_BUCKETS),
+  bucket: z.enum(APP_STORAGE_BUCKETS),
   contentType: z.string().min(1),
   size: z.number().int().positive(),
   originalName: z.string().min(1).max(255),
@@ -66,7 +64,7 @@ const RequestUploadSchema = z.object({
 });
 
 const ConfirmUploadSchema = z.object({
-  bucket: z.enum(IMAGE_BUCKETS),
+  bucket: z.enum(APP_STORAGE_BUCKETS),
   key: z.string().min(1),
   contentType: z.string().min(1),
   size: z.number().int().positive(),
@@ -79,7 +77,7 @@ const SaveStorageConfigSchema = z.discriminatedUnion('type', [
     type: z.literal('local'),
     basePath: z.string().min(1),
     maxFileSizeMB: z.number().int().positive().min(1).max(1000),
-    buckets: z.array(z.enum(IMAGE_BUCKETS)),
+    buckets: z.array(z.enum(APP_STORAGE_BUCKETS)),
     enableProxy: z.boolean().optional(),
   }),
   z.object({
@@ -464,7 +462,7 @@ export const storageRouter = router({
 
       let buckets: string[];
       try {
-        buckets = bucketsStr ? JSON.parse(bucketsStr) : IMAGE_BUCKETS.slice();
+        buckets = bucketsStr ? JSON.parse(bucketsStr) : APP_STORAGE_BUCKETS.slice();
       } catch {
         buckets = ['uploads'];
       }

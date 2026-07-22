@@ -103,6 +103,8 @@ model User {
   confirmedVendorClosures           VendorClosurePeriod[]          @relation("ClosureConfirmer")
   /// Edit locks currently held by this user (planning wizard sessions).
   editLocks                         EditLock[]
+  /// Manual backups triggered by this user.
+  backupRecords                      BackupRecord[]
 
   @@map("users")
 }
@@ -2225,4 +2227,78 @@ model VendorClosurePeriod {
   @@index([vendorId, seasonId])
   @@index([seasonId, startDate, endDate])
   @@map("vendor_closure_periods")
+}
+
+// ─── Backup & Disaster Recovery ───────────────────────────────────────────────
+
+/// Scope of a database backup: DB (schema+data only) or DB_AND_FILES (includes all storage bucket objects).
+enum BackupScope {
+  DB
+  DB_AND_FILES
+}
+
+/// What triggered a backup: MANUAL (admin-initiated), SCHEDULED (automatic per backup.schedule.* config), PRE_RESTORE_SAFETY (automatic safety snapshot taken right before a restore).
+enum BackupTrigger {
+  MANUAL
+  SCHEDULED
+  PRE_RESTORE_SAFETY
+}
+
+/// Lifecycle status of a backup job.
+enum BackupStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+/// Catalog entry for an encrypted, compressed full-system backup. The actual blob lives in the
+/// "backups" storage bucket; a sidecar `<id>.meta.json` file next to it duplicates the crypto/
+/// integrity metadata below so a backup remains decryptable/restorable even if this row (and the
+/// whole database) is lost — the row exists purely for a convenient admin-facing catalog UI.
+model BackupRecord {
+  id     String @id @default(uuid())
+  /// Storage key of the encrypted blob within the "backups" bucket.
+  filename String
+
+  scope   BackupScope
+  trigger BackupTrigger
+  status  BackupStatus @default(PENDING)
+
+  /// Size of the final encrypted+compressed blob in bytes. Null until the job completes.
+  sizeBytesEncrypted BigInt?
+  /// SHA-256 checksum of the encrypted blob, for integrity verification before restore.
+  checksumSha256     String?
+
+  /// AES-256-GCM initialization vector (hex) used to encrypt this backup's data-encryption-key-wrapped stream.
+  ivHex        String?
+  /// AES-256-GCM authentication tag (hex), known only once the stream has been fully written.
+  authTagHex   String?
+  /// Per-backup random data-encryption-key (DEK), itself encrypted ("wrapped") with the server master key.
+  wrappedDekHex String?
+  /// Symmetric algorithm used. Always "aes-256-gcm" today; kept explicit for future rotation.
+  algorithm    String  @default("aes-256-gcm")
+
+  /// Application version (APP_VERSION) that produced this backup.
+  appVersion         String?
+  /// Name of the latest Prisma migration applied at backup time — used to warn on cross-schema restores.
+  schemaMigrationName String?
+
+  /// Populated on failure. Null on success.
+  errorMessage String?
+
+  /// FK to User who triggered a MANUAL backup. Null for SCHEDULED/PRE_RESTORE_SAFETY or if the user was deleted.
+  createdById String?
+  /// The user who triggered this backup, if manual.
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  /// Retention cutoff — scheduled cleanup deletes backups past this date, subject to backup.retentionMinCount.
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([createdAt])
+  @@index([status])
+  @@map("backup_records")
 }

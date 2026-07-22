@@ -13,6 +13,7 @@
  * - collection-row-pictures: Foto righe collection layout
  * - collection-row-pictures-revisions: Foto righe — bucket immutabile per registro qualità
  * - merchandising-specsheet-images: Immagini specsheet
+ * - backups: Archivi di backup cifrati (privato, mai esposto tramite il proxy pubblico /uploads/:bucket/*)
  */
 export type StorageBucket =
   | 'uploads'
@@ -22,7 +23,26 @@ export type StorageBucket =
   | 'collection-row-pictures'
   | 'collection-row-pictures-revisions'
   | 'merchandising-specsheet-images'
-  | 'company-assets';
+  | 'company-assets'
+  | 'backups';
+
+/**
+ * Buckets that hold real application files, as opposed to `backups` (internal/private).
+ * Used by the backup engine to enumerate "all files" for a DB_AND_FILES backup — deliberately
+ * excludes `backups` itself so a backup never recursively embeds prior backup blobs. Also the
+ * single source of truth for "which buckets are user/upload-facing" — `z.enum(APP_STORAGE_BUCKETS)`
+ * needs the literal tuple shape (not just `readonly StorageBucket[]`), hence the `as const satisfies`.
+ */
+export const APP_STORAGE_BUCKETS = [
+  'uploads',
+  'exports',
+  'assets',
+  'brand-logos',
+  'collection-row-pictures',
+  'collection-row-pictures-revisions',
+  'merchandising-specsheet-images',
+  'company-assets',
+] as const satisfies readonly StorageBucket[];
 
 /**
  * Metadati di un file memorizzato
@@ -62,6 +82,10 @@ export interface StoragePutParams {
   size: number;
   /** Stream del file da scrivere */
   stream: NodeJS.ReadableStream;
+  /** Chiave esplicita da usare al posto di quella auto-generata (es. per accoppiare blob e sidecar). Opzionale — se assente, il provider genera una chiave date-partitioned. */
+  key?: string;
+  /** Se true, salta il limite `maxFileSizeMB` del provider locale. Riservato a scritture interne privilegiate (es. backup engine) — mai da esporre a upload lato utente. */
+  bypassSizeLimit?: boolean;
 }
 
 /**

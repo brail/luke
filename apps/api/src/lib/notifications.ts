@@ -105,8 +105,12 @@ export async function getVisibleUserIdsForMilestone(
 
 /**
  * Shared core: filters disabled prefs, bulk-creates notifications, SSE-pings each recipient.
+ * Exported (not just used internally by `notifyAdmins`/`notifyAllUsers`) so a caller that
+ * already has the recipient id list on hand — e.g. because it also needs it for something
+ * else in the same request — can call this directly instead of forcing another `user.findMany`
+ * through `notifyAllUsers`'s own internal query.
  */
-async function bulkNotify(
+export async function bulkNotify(
   prisma: PrismaClient,
   userIds: string[],
   params: {
@@ -356,4 +360,20 @@ export async function notifyAdmins(
     select: { id: true },
   });
   await bulkNotify(prisma, admins.map(a => a.id), params);
+}
+
+/**
+ * Broadcasts a notification to every active user (all roles) in a single `createMany` call.
+ * Respects per-user notification preferences (disabled entries are excluded).
+ * Sends an SSE ping to each notified user's active connections.
+ */
+export async function notifyAllUsers(
+  prisma: PrismaClient,
+  params: Omit<CreateNotificationParams, 'userId'>
+): Promise<void> {
+  const users = await prisma.user.findMany({
+    where: { isActive: true },
+    select: { id: true },
+  });
+  await bulkNotify(prisma, users.map(u => u.id), params);
 }

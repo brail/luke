@@ -27,6 +27,7 @@ import {
   HKDF_INFO_COOKIE,
 } from '@luke/core/server';
 
+import { registerBackupScheduler } from './lib/backupScheduler';
 import { registerCalendarDigestScheduler } from './lib/calendarDigestScheduler';
 import { registerCalendarNotificationBuffer } from './lib/calendarNotificationBuffer';
 import { getConfig, validateCriticalConfig } from './lib/configManager';
@@ -34,6 +35,7 @@ import { buildCorsAllowedOrigins } from './lib/cors';
 import { setGlobalErrorHandler } from './lib/error';
 import { idempotencyStore } from './lib/idempotency';
 import { registerKimoSyncScheduler } from './lib/kimoSyncScheduler';
+import { registerMaintenanceModeScheduler } from './lib/maintenanceModeScheduler';
 import { registerMilestoneDeadlineScheduler } from './lib/milestoneDeadlineScheduler';
 import { registerNavSyncScheduler } from './lib/navSyncScheduler';
 import { registerPortafoglioSyncScheduler } from './lib/portafoglioSyncScheduler';
@@ -46,6 +48,7 @@ import {
 import { runReadinessChecks } from './observability/readiness';
 import { storagePlugin } from './plugins/storage-upload';
 import { appRouter } from './routers';
+import { registerBackupDownloadRoute } from './routes/backupDownload';
 import brandLogoRoutes from './routes/brandLogo.routes';
 import collectionRowPictureRoutes from './routes/collectionRowPicture.routes';
 import companyLogoRoutes from './routes/companyLogo.routes';
@@ -621,6 +624,7 @@ const start = async () => {
     await registerTRPCPlugin();
     await registerMultipart(); // Multipart globale (richiesto da tutti i route di upload)
     await registerStoragePlugin(); // Storage upload/download routes
+    await registerBackupDownloadRoute(fastify, prisma); // Backup blob download (admin-only, streamed)
     await registerBrandLogoRoutes(); // Brand logo upload routes
     await registerCompanyLogoRoutes(); // Company logo upload routes
     await registerCollectionRowPictureRoutes(); // Collection row picture upload routes
@@ -646,6 +650,12 @@ const start = async () => {
 
     // Registra scheduler digest email calendario (esecuzione giornaliera alle 07:00)
     registerCalendarDigestScheduler(fastify, prisma);
+
+    // Registra scheduler backup automatici + retention pruning (tick ogni ora)
+    registerBackupScheduler(fastify, prisma);
+
+    // Registra scheduler modalità manutenzione: warning ladder + attivazione automatica (tick ogni 60s)
+    registerMaintenanceModeScheduler(fastify, prisma);
 
     // Registra flush periodico del buffer di aggregazione notifiche calendario (tick ogni 30s)
     registerCalendarNotificationBuffer(fastify, prisma);

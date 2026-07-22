@@ -34,6 +34,8 @@ import {
   Info,
   MessageSquarePlus,
   AlertTriangle,
+  Archive,
+  ShieldAlert,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -463,6 +465,24 @@ export default function AppSidebar() {
                         <Link href="/maintenance/import-export" className="flex items-center gap-2">
                           <FolderTree size={16} />
                           <span>Import/Export</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                    {menuAccess.maintenanceItems.backup && (
+                      <DropdownMenuItem asChild>
+                        {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime (mirrors settings/collection-control above) */}
+                        <Link href={"/maintenance/backup" as any} className="flex items-center gap-2">
+                          <Archive size={16} />
+                          <span>Backup & Restore</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                    {menuAccess.maintenanceItems.mode && (
+                      <DropdownMenuItem asChild>
+                        {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime (mirrors settings/collection-control above) */}
+                        <Link href={"/maintenance/mode" as any} className="flex items-center gap-2">
+                          <ShieldAlert size={16} />
+                          <span>Modalità Manutenzione</span>
                         </Link>
                       </DropdownMenuItem>
                     )}

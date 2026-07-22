@@ -1,17 +1,21 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-
-import { buildApiUrl, calcBackoffDelay } from '@luke/core';
+import { useRef } from 'react';
 
 import { useAppContext } from '../contexts/AppContextProvider';
+import { useSseMessage } from '../contexts/SseProvider';
 import { trpc } from '../lib/trpc';
+
+interface SseMessage {
+  type: string;
+  entity?: string;
+  seasonId?: string;
+}
 
 /**
  * Returns the current user's notifications, using a dual-track strategy:
- * SSE push for real-time delivery and React Query polling every 30 s as fallback.
- * The SSE connection is authenticated via a single-use ticket (60 s TTL) issued
- * by `notifications.getSseTicket`. The connection is closed and cleaned up on unmount.
+ * SSE push for real-time delivery (via the shared `SseProvider` connection) and React Query
+ * polling every 30 s as fallback.
  *
  * @returns `{ notifications, nextCursor, unreadCount, readCount, isLoading, refetch }`
  */
@@ -24,84 +28,28 @@ export function useNotifications() {
     refetchInterval: 30_000,
   });
 
-  const getSseTicketMutation = trpc.notifications.getSseTicket.useMutation();
-  const esRef = useRef<EventSource | null>(null);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reconnectAttemptRef = useRef(0);
   // Read inside the SSE handler without forcing a reconnect when the user switches season —
-  // the EventSource connection itself is season-agnostic (see empty deps array below).
+  // the shared connection itself is season-agnostic.
   const seasonIdRef = useRef(season?.id);
   seasonIdRef.current = season?.id;
 
-  useEffect(() => {
-    let isMounted = true;
-    reconnectAttemptRef.current = 0;
-
-    const scheduleReconnect = () => {
-      if (!isMounted) return;
-      const delay = calcBackoffDelay(reconnectAttemptRef.current, 5_000, 60_000);
-      reconnectAttemptRef.current += 1;
-      clearTimeout(reconnectTimerRef.current ?? undefined);
-      reconnectTimerRef.current = setTimeout(() => void connect(), delay);
-    };
-
-    const connect = async () => {
-      try {
-        const { ticket } = await getSseTicketMutation.mutateAsync();
-        if (!isMounted) return;
-
-        const url = buildApiUrl(`/api/sse?ticket=${encodeURIComponent(ticket)}`);
-        const es = new EventSource(url);
-        esRef.current = es;
-
-        es.onopen = () => { reconnectAttemptRef.current = 0; };
-
-        es.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data) as { type: string; entity?: string; seasonId?: string };
-            if (data.type === 'notification') {
-              void utils.notifications.list.invalidate();
-              void utils.notifications.counts.invalidate();
-            } else if (data.type === 'sync-state') {
-              if (data.entity === 'portafoglio') {
-                void utils.sales.statistics.portafoglio.getSyncState.invalidate();
-              } else if (data.entity === 'kimo') {
-                void utils.sales.statistics.kimo.getSyncState.invalidate();
-              }
-            } else if (data.type === 'calendar-updated' && data.seasonId === seasonIdRef.current) {
-              // Scoped to the season currently in view — otherwise every connected client would
-              // refetch calendar/alert-engine data for seasons it isn't even looking at.
-              void utils.seasonCalendar.listMilestones.invalidate();
-              void utils.phaseAlert.invalidate();
-            }
-          } catch {
-            // Ignore malformed events
-          }
-        };
-
-        // Ticket è monouso: il reconnect automatico del browser fallirebbe con 401.
-        // Ottieni un nuovo ticket e riconnetti dopo 5s.
-        es.onerror = () => {
-          es.close();
-          esRef.current = null;
-          scheduleReconnect();
-        };
-      } catch {
-        // Ticket fetch failed — polling fallback attivo; retry dopo 5s.
-        scheduleReconnect();
+  useSseMessage<SseMessage>(data => {
+    if (data.type === 'notification') {
+      void utils.notifications.list.invalidate();
+      void utils.notifications.counts.invalidate();
+    } else if (data.type === 'sync-state') {
+      if (data.entity === 'portafoglio') {
+        void utils.sales.statistics.portafoglio.getSyncState.invalidate();
+      } else if (data.entity === 'kimo') {
+        void utils.sales.statistics.kimo.getSyncState.invalidate();
       }
-    };
-
-    void connect();
-
-    return () => {
-      isMounted = false;
-      clearTimeout(reconnectTimerRef.current ?? undefined);
-      reconnectTimerRef.current = null;
-      esRef.current?.close();
-      esRef.current = null;
-    };
-  }, []);
+    } else if (data.type === 'calendar-updated' && data.seasonId === seasonIdRef.current) {
+      // Scoped to the season currently in view — otherwise every connected client would
+      // refetch calendar/alert-engine data for seasons it isn't even looking at.
+      void utils.seasonCalendar.listMilestones.invalidate();
+      void utils.phaseAlert.invalidate();
+    }
+  });
 
   return {
     notifications: listQuery.data?.items ?? [],

@@ -283,3 +283,67 @@ export async function sendAccountApprovedEmail(
 
   await sendEmail(prisma, to, subject, html, text);
 }
+
+/**
+ * Sends a branded notice that a maintenance window has been scheduled or started.
+ * `reason` is the free-text message the admin entered when scheduling/activating, if any.
+ */
+export async function sendMaintenanceScheduledEmail(
+  prisma: PrismaClient,
+  to: string,
+  scheduledAt: Date,
+  reason: string | null,
+  baseUrl: string
+): Promise<void> {
+  const subject = 'Manutenzione programmata - Luke';
+  const whenLabel = scheduledAt.toLocaleString('it-IT', { dateStyle: 'full', timeStyle: 'short' });
+  const message = reason
+    ? `È stata programmata una manutenzione del sistema per ${whenLabel}.<br/><br/><strong>Motivo:</strong> ${reason}<br/><br/>Salva il lavoro in corso prima di quel momento: durante la manutenzione l'accesso sarà bloccato.`
+    : `È stata programmata una manutenzione del sistema per ${whenLabel}. Salva il lavoro in corso prima di quel momento: durante la manutenzione l'accesso sarà bloccato.`;
+
+  const html = generateBrandedHtml(
+    subject,
+    'Manutenzione programmata',
+    message,
+    'Vai a Luke',
+    baseUrl,
+    'Riceverai ulteriori avvisi mano a mano che si avvicina il momento della manutenzione.'
+  );
+  const text = `Manutenzione programmata\n\nÈ stata programmata una manutenzione del sistema per ${whenLabel}.${reason ? `\n\nMotivo: ${reason}` : ''}\n\nSalva il lavoro in corso prima di quel momento.\n\n${baseUrl}`;
+
+  await sendEmail(prisma, to, subject, html, text);
+}
+
+/**
+ * Sends a branded notice that a maintenance window has concluded and the system is available again.
+ * Only sent to users who received the corresponding `sendMaintenanceScheduledEmail` (i.e. when
+ * the admin opted in to email notifications for that specific maintenance window).
+ */
+export async function sendMaintenanceEndedEmail(
+  prisma: PrismaClient,
+  to: string,
+  baseUrl: string
+): Promise<void> {
+  const subject = 'Manutenzione conclusa - Luke';
+  const message = 'La manutenzione programmata del sistema è terminata. Il servizio è di nuovo pienamente disponibile.';
+
+  const html = generateBrandedHtml(subject, 'Manutenzione conclusa', message, 'Vai a Luke', baseUrl, 'Grazie per la pazienza.');
+  const text = `Manutenzione conclusa\n\n${message}\n\n${baseUrl}`;
+
+  await sendEmail(prisma, to, subject, html, text);
+}
+
+/**
+ * Fans a per-item send out in parallel via `Promise.allSettled`, tolerating individual failures
+ * (never throws) — shared by any bulk-notification email flow. Generic over `T` (not just a
+ * recipient address) so a caller whose per-recipient content varies (e.g. a personalized digest)
+ * can pass richer items instead of re-deriving content from the address alone.
+ */
+export async function sendBulkEmail<T>(
+  items: T[],
+  send: (item: T) => Promise<void>
+): Promise<{ sent: number; failed: number }> {
+  const results = await Promise.allSettled(items.map(send));
+  const sent = results.filter(r => r.status === 'fulfilled').length;
+  return { sent, failed: results.length - sent };
+}

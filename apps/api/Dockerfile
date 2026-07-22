@@ -26,6 +26,10 @@ FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
+# postgresql16-client: pg_dump/pg_restore for the backup/restore feature (maintenance.backup router).
+# Version pinned to 16 to match the `postgres:16-alpine` service in docker-compose.yml.
+RUN apk add --no-cache postgresql16-client
+
 # APP_VERSION is injected at build time from the git tag (e.g. v1.2.3).
 ARG APP_VERSION=dev
 ENV APP_VERSION=$APP_VERSION

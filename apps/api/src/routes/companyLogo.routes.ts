@@ -10,10 +10,7 @@
 
 import fp from 'fastify-plugin';
 
-import { hasPermission, type Role } from '@luke/core';
-
-
-import { authenticateRequest } from '../lib/auth.js';
+import { requireSessionWithPermission } from '../lib/auth.js';
 import { uploadCompanyLogo } from '../services/companyLogo.service.js';
 
 import type { PrismaClient } from '@prisma/client';
@@ -22,14 +19,8 @@ import type { FastifyInstance } from 'fastify';
 export default fp(
   async (app: FastifyInstance, options: { prisma: PrismaClient }) => {
     app.post('/upload/company-logo', async (req, reply) => {
-      const session = await authenticateRequest(req, reply);
-      if (!session) {
-        return reply.code(401).send({ error: 'Unauthorized', message: 'Autenticazione richiesta' });
-      }
-
-      if (!hasPermission(session.user as { role: Role }, 'company_profile:update')) {
-        return reply.code(403).send({ error: 'Forbidden', message: 'Permesso negato: richiesta company_profile:update' });
-      }
+      const session = await requireSessionWithPermission(req, reply, 'company_profile:update');
+      if (!session) return;
 
       const ctx = {
         session,

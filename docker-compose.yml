@@ -107,6 +107,7 @@ services:
         mc mb --ignore-existing local/temp-collection-row-pictures &&
         mc mb --ignore-existing local/merchandising-specsheet-images &&
         mc mb --ignore-existing local/temp-merchandising-specsheet-images &&
+        mc mb --ignore-existing local/backups &&
         mc anonymous set download local/brand-logos &&
         mc anonymous set download local/collection-row-pictures &&
         mc anonymous set download local/merchandising-specsheet-images &&

@@ -3,7 +3,7 @@
 import { useSession } from 'next-auth/react';
 import { useCallback, useState } from 'react';
 
-import type { StorageBucket } from '@luke/core';
+import { type APP_STORAGE_BUCKETS } from '@luke/core';
 
 import { trpc } from '../lib/trpc';
 
@@ -12,6 +12,9 @@ export interface StorageUploadResult {
   fileId: string;
   key?: string;
 }
+
+/** Upload-facing buckets only — excludes internal/private buckets like "backups". */
+export type UploadableBucket = (typeof APP_STORAGE_BUCKETS)[number];
 
 export interface UseStorageUploadOptions {
   /**
@@ -25,7 +28,7 @@ export interface UseStorageUploadOptions {
 }
 
 export interface UseStorageUploadReturn {
-  upload: (file: File, bucket: StorageBucket) => Promise<StorageUploadResult>;
+  upload: (file: File, bucket: UploadableBucket) => Promise<StorageUploadResult>;
   isUploading: boolean;
   progress: number;
 }
@@ -39,7 +42,7 @@ export function useStorageUpload(options: UseStorageUploadOptions = {}): UseStor
   const requestUpload = trpc.storage.requestUpload.useMutation();
   const confirmUpload = trpc.storage.confirmUpload.useMutation();
 
-  const upload = useCallback(async (file: File, bucket: StorageBucket): Promise<StorageUploadResult> => {
+  const upload = useCallback(async (file: File, bucket: UploadableBucket): Promise<StorageUploadResult> => {
     setIsUploading(true);
     setProgress(0);
 

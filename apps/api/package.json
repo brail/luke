@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1075.0",
+    "@aws-sdk/lib-storage": "^3.1075.0",
     "@aws-sdk/s3-request-presigner": "^3.1075.0",
     "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^11.2.0",
@@ -68,6 +69,7 @@
     "pino-pretty": "^13.0.0",
     "pino-std-serializers": "^7.0.0",
     "prisma": "^7.0.0",
+    "tar-stream": "^3.2.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -76,6 +78,7 @@
     "@types/nodemailer": "^6.4.0",
     "@types/pdfmake": "^0.3.2",
     "@types/supertest": "^6.0.3",
+    "@types/tar-stream": "^3.1.4",
     "@vitest/ui": "^4.1.9",
     "supertest": "^7.1.4",
     "tsx": "^4.22.4",

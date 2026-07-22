@@ -4,6 +4,8 @@
  * JWT secret is derived from the master key via HKDF-SHA256.
  */
 
+import { hasPermission, type Permission, type Role } from '@luke/core';
+
 import { signJWT, verifyJWT, type JWTPayload } from './jwt';
 
 import type { FastifyRequest, FastifyReply } from 'fastify';
@@ -124,5 +126,30 @@ export async function authenticateRequest(
     return null;
   }
 
+  return session;
+}
+
+/**
+ * Authenticates a raw (non-tRPC) Fastify route and checks a permission, sending the
+ * appropriate 401/403 response itself on failure. For routes like file streaming/download
+ * that can't go through tRPC's request/response cycle.
+ *
+ * @returns The session if authenticated and permitted, or `null` after already sending
+ *   the error response — callers should `return` immediately when this is `null`.
+ */
+export async function requireSessionWithPermission(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  permission: Permission
+): Promise<UserSession | null> {
+  const session = await authenticateRequest(request, reply);
+  if (!session) {
+    reply.code(401).send({ error: 'Unauthorized' });
+    return null;
+  }
+  if (!hasPermission({ role: session.user.role as Role }, permission)) {
+    reply.code(403).send({ error: 'Forbidden' });
+    return null;
+  }
   return session;
 }

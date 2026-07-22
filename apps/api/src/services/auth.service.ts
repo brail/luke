@@ -16,6 +16,7 @@ import {
   sendPasswordResetEmail,
   sendEmailVerificationEmail,
 } from '../lib/mailer';
+import { assertNotBlockedByMaintenance, isMaintenanceActive } from '../lib/maintenanceMode';
 import { validatePassword } from '../lib/password';
 
 import type { Context } from '../lib/trpc';
@@ -282,6 +283,21 @@ export async function authenticateUser(
       message:
         'Email non verificata. Controlla la tua casella di posta per il link di verifica.',
     });
+  }
+
+  // Blocca login dei non-admin durante la modalità manutenzione attiva
+  if (authenticatedUser.role !== 'admin' && await isMaintenanceActive(ctx.prisma)) {
+    await logAudit(ctx, {
+      action: 'AUTH_LOGIN_FAILED',
+      targetType: 'Auth',
+      targetId: authenticatedUser.id,
+      result: 'FAILURE',
+      metadata: { username: input.username, reason: 'maintenance_mode_active', strategy },
+    });
+
+    // Stesso enforcement (predicato + errore) della guardia tRPC in trpc.ts — un'unica fonte
+    // di verità per non far divergere le due copie in futuro.
+    await assertNotBlockedByMaintenance(ctx.prisma, authenticatedUser.role);
   }
 
   // Aggiorna statistiche login

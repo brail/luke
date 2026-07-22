@@ -1,5 +1,6 @@
 import { computeCriticalityForLayout, resolveAlertThresholds } from '../services/phaseAlert.service';
 
+import { guardMaintenance } from './maintenanceMode';
 import { createNotification, getVisibleUserIdsForMilestone, getVisibleUserIdsForMilestones } from './notifications';
 
 import type { PrismaClient } from '@prisma/client';
@@ -139,8 +140,9 @@ export function registerMilestoneDeadlineScheduler(
 ): void {
   let timer: ReturnType<typeof setInterval> | null = null;
 
+  const guardedCheck = guardMaintenance(prisma, () => checkDeadlines(prisma));
   const run = () =>
-    checkDeadlines(prisma).catch(err =>
+    guardedCheck().catch(err =>
       fastify.log.error({ err }, 'Milestone deadline check failed')
     );
 

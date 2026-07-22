@@ -33,6 +33,8 @@ const CRITICAL_AUDIT_ACTIONS = new Set([
   'USER_HARD_DELETE',
   'SECTION_ACCESS_UPDATED',
   'COLLECTION_LAYOUT_REVISION_CREATE',
+  'BACKUP_RESTORE',
+  'MAINTENANCE_MODE_ACTIVATED',
 ]);
 
 const SAFE_KEYS = new Set([
@@ -101,6 +103,18 @@ const SAFE_KEYS = new Set([
   'allDay',
   'oldStatus',
   'changedFields',
+  'safetySnapshotId',
+  'scope',
+  'trigger',
+  'preserveAuditLog',
+  'restoreFiles',
+  'dailyTime',
+  'retentionDays',
+  'retentionMinCount',
+  'notifyOnFailure',
+  'scheduledAt',
+  'forceLogout',
+  'warningLeadMinutes',
 ]);
 
 /** Returns true if the value was produced by the sanitizer's redaction logic. */

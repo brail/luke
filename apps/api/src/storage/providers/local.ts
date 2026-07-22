@@ -179,15 +179,16 @@ export class LocalFsProvider implements IStorageProvider {
   }
 
   /**
-   * Pipes a readable stream to a file, enforcing a maximum byte limit.
+   * Pipes a readable stream to a file, optionally enforcing a maximum byte limit.
    *
+   * @param maxSize - Byte limit, or `null` to skip the check entirely (privileged internal writes only).
    * @returns Number of bytes written.
    * @throws If the stream exceeds `maxSize` bytes.
    */
   private async writeStreamToFile(
     stream: NodeJS.ReadableStream,
     targetPath: string,
-    maxSize: number
+    maxSize: number | null
   ): Promise<number> {
     let bytesWritten = 0;
 
@@ -200,8 +201,8 @@ export class LocalFsProvider implements IStorageProvider {
       stream.on('data', (chunk: Buffer) => {
         bytesWritten += chunk.length;
 
-        // Verifica limite dimensione
-        if (bytesWritten > maxSize) {
+        // Verifica limite dimensione (se applicabile)
+        if (maxSize !== null && bytesWritten > maxSize) {
           // Chiudi gli stream
           if (typeof (stream as any).destroy === 'function') {
             (stream as any).destroy();
@@ -234,11 +235,11 @@ export class LocalFsProvider implements IStorageProvider {
   /**
    * Stores a file in the local filesystem using an atomic write (temp file → rename).
    *
-   * @returns The generated key, SHA-256 checksum, and final byte size.
+   * @returns The (generated or caller-supplied via `params.key`) key, SHA-256 checksum, and final byte size.
    */
   async put(params: StoragePutParams): Promise<StoragePutResult> {
-    // Genera chiave server-side con estensione
-    const key = this.generateKey(params.contentType);
+    // Usa la chiave fornita dal chiamante, se presente; altrimenti genera server-side con estensione
+    const key = params.key ?? this.generateKey(params.contentType);
 
     // Path finale e temporaneo
     const finalPath = join(params.bucket, key);
@@ -257,7 +258,7 @@ export class LocalFsProvider implements IStorageProvider {
       const size = await this.writeStreamToFile(
         params.stream,
         absTmpPath,
-        this.maxFileSizeBytes
+        params.bypassSizeLimit ? null : this.maxFileSizeBytes
       );
 
       // Calcola checksum

@@ -7,17 +7,19 @@
  * Bucket auto-creation is performed at initialization for all known buckets.
  */
 
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
+import { Transform, type TransformCallback } from 'stream';
 
 import {
   S3Client,
-  PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
   ListObjectsV2Command,
   HeadBucketCommand,
   CreateBucketCommand,
+  PutObjectCommand,
 } from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 import type {
@@ -93,6 +95,7 @@ export class MinioProvider implements IStorageProvider {
       'collection-row-pictures-revisions',
       'merchandising-specsheet-images',
       'company-assets',
+      'backups',
     ];
 
     await Promise.all(allBuckets.map(async bucket => {
@@ -126,27 +129,42 @@ export class MinioProvider implements IStorageProvider {
   }
 
   /**
-   * Uploads a file to MinIO and returns its generated key, SHA-256 checksum, and byte size.
+   * Uploads a file to MinIO via a true streaming multipart upload (`@aws-sdk/lib-storage`),
+   * without buffering the payload in memory — required for arbitrarily large files (e.g. DB backups).
+   *
+   * @returns The (generated or caller-supplied via `params.key`) key, SHA-256 checksum, and byte size.
    */
   async put(params: StoragePutParams): Promise<StoragePutResult> {
-    const key = this.generateKey(params.contentType);
-    const chunks: Buffer[] = [];
-    for await (const chunk of params.stream) {
-      chunks.push(chunk as Buffer);
-    }
-    const body = Buffer.concat(chunks);
+    const key = params.key ?? this.generateKey(params.contentType);
 
-    await this.client.send(new PutObjectCommand({
-      Bucket: params.bucket,
-      Key: key,
-      Body: body,
-      ContentType: params.contentType,
-    }));
+    // Single consumer of params.stream: a Transform that hashes each chunk while forwarding it
+    // unchanged as the upload Body. Attaching two independent consumers to the same source stream
+    // (e.g. a raw 'data' listener alongside a separate .pipe()) risks losing chunks emitted before
+    // the second listener attaches — this sidesteps that entirely.
+    const hash = createHash('sha256');
+    let size = 0;
+    const hashingStream = new Transform({
+      transform(chunk: Buffer, _encoding, callback: TransformCallback) {
+        size += chunk.length;
+        hash.update(chunk);
+        callback(null, chunk);
+      },
+    });
+    params.stream.pipe(hashingStream);
 
-    const { createHash } = await import('crypto');
-    const checksumSha256 = createHash('sha256').update(body).digest('hex');
+    const upload = new Upload({
+      client: this.client,
+      params: {
+        Bucket: params.bucket,
+        Key: key,
+        Body: hashingStream,
+        ContentType: params.contentType,
+      },
+    });
 
-    return { key, checksumSha256, size: body.length };
+    await upload.done();
+
+    return { key, checksumSha256: hash.digest('hex'), size };
   }
 
   /**

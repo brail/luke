@@ -14,7 +14,7 @@
 import { type PrismaClient } from '@prisma/client';
 
 import type { StorageBucket } from '@luke/core';
-import { hasPermission } from '@luke/core';
+import { APP_STORAGE_BUCKETS, hasPermission } from '@luke/core';
 
 import { authenticateRequest as auth } from '../lib/auth';
 import { putObject, getObject, getStorageProvider } from '../storage';
@@ -45,6 +45,17 @@ export async function storagePlugin(
 
     if (!bucket || !key) {
       reply.code(400).send({ error: 'Bad Request' });
+      return;
+    }
+
+    // Allowlist, non denylist: solo i bucket applicativi pubblici passano da questo proxy
+    // generico (nessuna allowlist/RBAC per-bucket qui sotto, a differenza della route POST
+    // /storage/upload/:uploadId più in basso). Bucket interni/sensibili come "backups" restano
+    // esclusi di default — un nuovo bucket privato futuro non richiede di ricordarsi di
+    // aggiungere un carve-out qui. "backups" passa esclusivamente dalla route dedicata
+    // admin-only di maintenance.backup.
+    if (!(APP_STORAGE_BUCKETS as readonly string[]).includes(bucket)) {
+      reply.code(403).send({ error: 'Forbidden' });
       return;
     }
 

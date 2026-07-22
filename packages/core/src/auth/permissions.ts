@@ -57,6 +57,10 @@ export const ACTIONS = {
   FREEZE: 'freeze',
   UNFREEZE: 'unfreeze',
   UNCANCEL: 'uncancel',
+  BACKUP_CREATE: 'backup_create',
+  BACKUP_RESTORE: 'backup_restore',
+  BACKUP_DELETE: 'backup_delete',
+  MODE_MANAGE: 'mode_manage',
 } as const;
 
 export type Action = (typeof ACTIONS)[keyof typeof ACTIONS] | '*';
@@ -84,7 +88,7 @@ export const VALID_RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
   [RESOURCES.CONFIG]: ['read', 'update'] as const,
   [RESOURCES.AUDIT]: ['read'] as const,
   [RESOURCES.SETTINGS]: ['read', 'update'] as const,
-  [RESOURCES.MAINTENANCE]: ['read', 'update'] as const,
+  [RESOURCES.MAINTENANCE]: ['read', 'update', 'backup_create', 'backup_restore', 'backup_delete', 'mode_manage'] as const,
   [RESOURCES.DASHBOARD]: ['read'] as const,
   [RESOURCES.PRICING]: ['read', 'update'] as const,
   [RESOURCES.COLLECTION_LAYOUT]: ['read', 'update', 'revise', 'view_revisions'] as const,
