@@ -7,6 +7,13 @@ import type { RouterOutputs } from '@luke/api';
 
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../../../../../components/ui/dialog';
 import { Label } from '../../../../../components/ui/label';
 import {
   Select,
@@ -15,20 +22,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../../../../components/ui/select';
-import {
-  Sheet,
-  SheetContent,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from '../../../../../components/ui/sheet';
 import { Textarea } from '../../../../../components/ui/textarea';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
 type CollectionLayoutData = NonNullable<RouterOutputs['collectionLayout']['get']>;
 
-interface CreateRevisionDrawerProps {
+interface CreateRevisionDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   layout: CollectionLayoutData;
@@ -36,21 +36,21 @@ interface CreateRevisionDrawerProps {
 }
 
 /**
- * Drawer for creating a new collection layout revision snapshot.
+ * Dialog for creating a new collection layout revision snapshot.
  *
- * Lets the user choose a revision type and add a free-text note before committing.
- * The snapshot always covers every row in the layout. Calls
- * `collectionLayoutRevision.create` on save.
+ * Lets the user choose a revision type (drives the ISO 9001 category tag on the
+ * revision) and add a free-text note before committing. The snapshot always
+ * covers every row in the layout. Calls `collectionLayoutRevision.create` on save.
  *
  * @param layout - The collection layout the revision is created for.
  * @param onSuccess - Called after the revision is successfully created.
  */
-export function CreateRevisionDrawer({
+export function CreateRevisionDialog({
   open,
   onOpenChange,
   layout,
   onSuccess,
-}: CreateRevisionDrawerProps) {
+}: CreateRevisionDialogProps) {
   const [revisionTypeValue, setRevisionTypeValue] = useState<string>('');
   const [notes, setNotes] = useState('');
 
@@ -65,11 +65,11 @@ export function CreateRevisionDrawer({
   );
 
   // list is sorted desc by revisionNumber — first element is the latest
-  const nextRevisionNumber = (revisionsList[0]?.revisionNumber ?? -1) + 1;
+  const nextRevisionCode = `rev${(revisionsList[0]?.revisionNumber ?? -1) + 1}`;
 
   const createMutation = trpc.collectionLayoutRevision.create.useMutation({
     onSuccess: () => {
-      toast.success(`Revisione rev${nextRevisionNumber} creata`);
+      toast.success(`Revisione ${nextRevisionCode} creata`);
       onOpenChange(false);
       onSuccess();
     },
@@ -91,18 +91,18 @@ export function CreateRevisionDrawer({
   };
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-[480px] sm:max-w-[480px] flex flex-col">
-        <SheetHeader>
-          <SheetTitle>
-            Crea revisione
-            <span className="ml-2 text-sm font-normal text-muted-foreground">
-              rev{nextRevisionNumber} (prossima)
-            </span>
-          </SheetTitle>
-        </SheetHeader>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Crea revisione</DialogTitle>
+        </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto space-y-5 py-4">
+        <div className="flex flex-col items-center gap-1 py-2">
+          <span className="text-xs text-muted-foreground">Codice revisione</span>
+          <span className="text-2xl font-semibold tracking-tight">{nextRevisionCode}</span>
+        </div>
+
+        <div className="space-y-4">
           {/* Tipo revisione */}
           <div className="space-y-1.5">
             <Label>Tipo revisione <span className="text-destructive">*</span></Label>
@@ -150,15 +150,15 @@ export function CreateRevisionDrawer({
           </div>
         </div>
 
-        <SheetFooter>
+        <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={createMutation.isPending}>
             Annulla
           </Button>
           <Button onClick={handleSubmit} disabled={!canSubmit || createMutation.isPending}>
-            {createMutation.isPending ? 'Creazione…' : `Crea rev${nextRevisionNumber}`}
+            {createMutation.isPending ? 'Creazione…' : `Crea ${nextRevisionCode}`}
           </Button>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { History } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -8,7 +9,9 @@ import { toast } from 'sonner';
 import type { RouterOutputs } from '@luke/api';
 import type { CollectionLayoutRowInput } from '@luke/core';
 
+import { CreateActionButton } from '../../../../components/CreateActionButton';
 import { PageHeader } from '../../../../components/PageHeader';
+import { PermissionButton } from '../../../../components/PermissionButton';
 import { SectionCard } from '../../../../components/SectionCard';
 import { Card, CardContent } from '../../../../components/ui/card';
 import { useAppContext } from '../../../../contexts/AppContextProvider';
@@ -20,6 +23,7 @@ import { CollectionGroupDialog } from './_components/CollectionGroupDialog';
 import { CollectionLayoutSummary } from './_components/CollectionLayoutSummary';
 import { CollectionLayoutTable } from './_components/CollectionLayoutTable';
 import { CollectionRowDrawer } from './_components/CollectionRowDrawer';
+import { CreateRevisionDialog } from './_components/CreateRevisionDialog';
 import { CriticalityLayoutBanner } from './_components/CriticalityLayoutBanner';
 import { EmptyCollectionLayoutState } from './_components/EmptyCollectionLayoutState';
 
@@ -33,6 +37,8 @@ export default function CollectionLayoutPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
   const { can } = usePermission();
   const canUpdate = can('collection_layout:update');
+  const canRevise = can('collection_layout:revise');
+  const canViewRevisions = can('collection_layout:view_revisions');
 
   const enabled = !!brand?.id && !!season?.id;
 
@@ -64,6 +70,7 @@ export default function CollectionLayoutPage() {
 
   // ─── UI state ───────────────────────────────────────────────────
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showCreateRevision, setShowCreateRevision] = useState(false);
 
   // Chiudi fullscreen con Escape
   useEffect(() => {
@@ -264,6 +271,26 @@ export default function CollectionLayoutPage() {
             ? `Collezione ${brand.name} — ${season.code} ${season.year}`
             : 'Pianificazione collezione stagionale'
         }
+        actions={layout && (
+          <div className="flex items-center gap-2">
+            <PermissionButton
+              hasPermission={canViewRevisions}
+              tooltip="Non hai i permessi per visualizzare le revisioni"
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(`/product/collection-layout/revisions?layoutId=${layout.id}` as string as never)}
+            >
+              <History className="h-4 w-4 mr-1.5" />
+              Storico revisioni
+            </PermissionButton>
+            <CreateActionButton
+              label="Crea revisione"
+              onClick={() => setShowCreateRevision(true)}
+              canCreate={canRevise}
+              resourceName="revisioni"
+            />
+          </div>
+        )}
       />
 
       {!brand || !season ? (
@@ -412,6 +439,16 @@ export default function CollectionLayoutPage() {
           onPictureUploaded={() => invalidateLayout()}
           isLoading={isMutating}
           canUpdate={canUpdate}
+        />
+      )}
+
+      {/* Create revision dialog */}
+      {layout && (
+        <CreateRevisionDialog
+          open={showCreateRevision}
+          onOpenChange={setShowCreateRevision}
+          layout={layout}
+          onSuccess={() => invalidateLayout()}
         />
       )}
     </div>
