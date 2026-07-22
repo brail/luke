@@ -4,6 +4,14 @@ All notable changes to Luke are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [1.10.0-rc.2] - 2026-07-22
+
+### Fixed
+- **web**: Add build-time placeholder for NEXTAUTH_SECRET
+
+### Maintenance
+- Bump version to 1.10.0-rc.2
+
 ## [1.10.0-rc.1] - 2026-07-22
 
 ### Added
@@ -129,6 +137,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **lint**: Add eslint-plugin-luke with no-bare-zod-partial gate
 - Wire lint script into every package, clear accumulated lint debt
 - Bump version to 1.10.0-rc.1
+- Update CHANGELOG for v1.10.0-rc.1
 
 ## [1.9.0] - 2026-06-26
 
