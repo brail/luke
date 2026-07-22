@@ -4,6 +4,15 @@ All notable changes to Luke are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [1.10.0-rc.6] - 2026-07-22
+
+### Fixed
+- **scripts**: Drop+recreate schema instead of pg_restore --clean
+- **api**: Require pdfmake's compiled js/Printer, not raw ESM src/Printer
+
+### Maintenance
+- Bump version to 1.10.0-rc.6
+
 ## [1.10.0-rc.5] - 2026-07-22
 
 ### Fixed
@@ -11,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Maintenance
 - Bump version to 1.10.0-rc.5
+- Update CHANGELOG for v1.10.0-rc.5
 
 ## [1.10.0-rc.4] - 2026-07-22
 
