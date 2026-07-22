@@ -245,7 +245,7 @@ export async function fetchCompanyExportContext(
  */
 export async function createPdfBuffer(def: TDocumentDefinitions): Promise<Buffer> {
    
-  const PdfPrinter = require('pdfmake') as new (fonts: TFontDictionary) => {
+  const PdfPrinter = require('pdfmake/js/Printer').default as new (fonts: TFontDictionary) => {
     createPdfKitDocument(
       def: TDocumentDefinitions,
       options?: Record<string, unknown>,
