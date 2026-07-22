@@ -14,12 +14,15 @@
 # stack name.
 #
 # What it does:
-#   1. Streams pg_dump (prod) -> pg_restore (RC), no dump file ever touches
-#      disk (prod DB contains real user data).
-#   2. Copies prod's master key (~/.luke/secret.key) into the RC api
+#   1. Drops and recreates RC's 'public' schema (pg_restore --clean doesn't
+#      order DROPs by FK dependency across tables and leaves a half-migrated
+#      DB behind on failure — a clean schema sidesteps that entirely).
+#   2. Streams pg_dump (prod) -> pg_restore (RC) in a single transaction, no
+#      dump file ever touches disk (prod DB contains real user data).
+#   3. Copies prod's master key (~/.luke/secret.key) into the RC api
 #      container, so AppConfig secrets (SMTP/LDAP/NAV passwords) encrypted
 #      under prod's key can still be decrypted in RC.
-#   3. Restarts api-rc so Prisma applies pending migrations against the
+#   4. Restarts api-rc so Prisma applies pending migrations against the
 #      freshly restored schema and picks up the new master key.
 #
 # NOT handled (by design): SMTP is left pointing at whatever RC's AppConfig
@@ -78,9 +81,12 @@ echo "==> Terminating any remaining connections to RC 'luke' database"
 docker exec "${RC_PG}" psql -U luke -d luke -c \
   "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'luke' AND pid <> pg_backend_pid();" >/dev/null
 
-echo "==> Streaming pg_dump (prod) -> pg_restore (RC), no dump file written to disk"
+echo "==> Dropping and recreating RC 'public' schema (pg_restore --clean doesn't order DROPs by FK dependency)"
+docker exec "${RC_PG}" psql -U luke -d luke -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null
+
+echo "==> Streaming pg_dump (prod) -> pg_restore (RC), single transaction, no dump file written to disk"
 docker exec "${PROD_PG}" pg_dump -U luke -d luke -F custom \
-  | docker exec -i "${RC_PG}" pg_restore -U luke -d luke --clean --if-exists --no-owner
+  | docker exec -i "${RC_PG}" pg_restore -U luke -d luke --no-owner --single-transaction
 
 echo "==> Copying prod master key into RC api container (so encrypted AppConfig values decrypt)"
 KEY_TMP=$(mktemp -d)
