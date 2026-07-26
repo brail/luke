@@ -71,8 +71,12 @@ export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
             url: '/trpc',
             // Headers per autenticazione, Content-Type e trace correlation
             headers() {
+              // crypto.randomUUID() requires a secure context (HTTPS or localhost) — falls back
+              // to a non-crypto random id over plain HTTP (e.g. an internal http:// hostname).
               const headers: Record<string, string> = {
-                'x-luke-trace-id': crypto.randomUUID(),
+                'x-luke-trace-id':
+                  crypto.randomUUID?.() ||
+                  Math.random().toString(36).substring(2) + Date.now().toString(36),
               };
 
               // Aggiungi token JWT se disponibile

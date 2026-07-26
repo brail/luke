@@ -42,25 +42,12 @@ export function useSessionVerification() {
     try {
       debugLog('Verifica tokenVersion immediata...');
       const result = await verifySession();
-      // TEMP diagnostic (unconditional, remove after RC investigation)
-      // nosemgrep: luke-no-console
-      console.error(
-        '[DIAG] verifySession result:',
-        result,
-        'error.message:',
-        result.error?.message,
-        'error.data:',
-        (result.error as unknown as { data?: unknown })?.data
-      );
 
       if (!result.data) {
         forceLogout();
         return;
       }
     } catch (error: unknown) {
-      // TEMP diagnostic (unconditional, remove after RC investigation)
-      // nosemgrep: luke-no-console
-      console.error('[DIAG] verifySession threw:', error);
       const isAuthError =
         error instanceof TRPCClientError && error.data?.code === 'UNAUTHORIZED';
       if (isAuthError) {
