@@ -44,7 +44,14 @@ export function useSessionVerification() {
       const result = await verifySession();
       // TEMP diagnostic (unconditional, remove after RC investigation)
       // nosemgrep: luke-no-console
-      console.error('[DIAG] verifySession result:', JSON.stringify(result));
+      console.error(
+        '[DIAG] verifySession result:',
+        result,
+        'error.message:',
+        result.error?.message,
+        'error.data:',
+        (result.error as unknown as { data?: unknown })?.data
+      );
 
       if (!result.data) {
         forceLogout();
