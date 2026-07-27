@@ -4,6 +4,14 @@ All notable changes to Luke are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [1.10.0-rc.11] - 2026-07-27
+
+### Fixed
+- **backup**: Loosen runCommand env type to allow partial overrides
+
+### Maintenance
+- Bump version to 1.10.0-rc.11
+
 ## [1.10.0-rc.10] - 2026-07-27
 
 ### Added
@@ -11,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Maintenance
 - Bump version to 1.10.0-rc.10
+- Update CHANGELOG for v1.10.0-rc.10
 
 ## [1.10.0-rc.9] - 2026-07-26
 
