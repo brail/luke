@@ -2237,11 +2237,14 @@ enum BackupScope {
   DB_AND_FILES
 }
 
-/// What triggered a backup: MANUAL (admin-initiated), SCHEDULED (automatic per backup.schedule.* config), PRE_RESTORE_SAFETY (automatic safety snapshot taken right before a restore).
+/// What triggered a backup: MANUAL (admin-initiated), SCHEDULED (automatic per backup.schedule.* config), PRE_RESTORE_SAFETY (automatic safety snapshot taken right before a restore), IMPORTED (uploaded from a passphrase-protected export package, possibly created on a different instance), PRE_MIGRATION_SAFETY (snapshot of the migration bridge's temp DB right after pg_restore, before migrations are applied), MIGRATED (a migration bridge's final output — an older backup brought up to the current schema, ready for a normal restore).
 enum BackupTrigger {
   MANUAL
   SCHEDULED
   PRE_RESTORE_SAFETY
+  IMPORTED
+  PRE_MIGRATION_SAFETY
+  MIGRATED
 }
 
 /// Lifecycle status of a backup job.
@@ -2265,10 +2268,15 @@ model BackupRecord {
   trigger BackupTrigger
   status  BackupStatus @default(PENDING)
 
+  /// Optional free-text label set by the admin at creation time (e.g. "prima di migrazione X").
+  label String?
+
   /// Size of the final encrypted+compressed blob in bytes. Null until the job completes.
   sizeBytesEncrypted BigInt?
   /// SHA-256 checksum of the encrypted blob, for integrity verification before restore.
   checksumSha256     String?
+  /// Number of storage files included (scope DB_AND_FILES only). Null for scope DB or until the job completes.
+  fileCount          Int?
 
   /// AES-256-GCM initialization vector (hex) used to encrypt this backup's data-encryption-key-wrapped stream.
   ivHex        String?
@@ -2292,6 +2300,14 @@ model BackupRecord {
   /// The user who triggered this backup, if manual.
   createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
+  /// FK to the original BackupRecord this one was derived from by the migration bridge — set only
+  /// for PRE_MIGRATION_SAFETY/MIGRATED, null otherwise. SetNull: deleting the source only loses the
+  /// lineage link, not this record (it remains a perfectly valid, independently restorable backup).
+  sourceBackupId String?
+  sourceBackup   BackupRecord?  @relation("BackupMigrationLineage", fields: [sourceBackupId], references: [id], onDelete: SetNull)
+  /// Backups produced FROM this one by the migration bridge.
+  derivedBackups BackupRecord[] @relation("BackupMigrationLineage")
+
   startedAt   DateTime  @default(now())
   completedAt DateTime?
   /// Retention cutoff — scheduled cleanup deletes backups past this date, subject to backup.retentionMinCount.
@@ -2300,5 +2316,6 @@ model BackupRecord {
 
   @@index([createdAt])
   @@index([status])
+  @@index([sourceBackupId])
   @@map("backup_records")
 }

@@ -8,8 +8,12 @@ import argon2 from 'argon2';
 /**
  * Configurazione Argon2 per hash password
  * Usa argon2id per sicurezza ottimale
+ *
+ * Esportata per riuso da altri moduli Argon2id (es. `lib/backup/crypto.ts`, che deriva una
+ * chiave da passphrase con lo stesso tuning invece di un hash di verifica) che devono restare
+ * allineati su questi parametri.
  */
-const ARGON2_OPTIONS: argon2.Options = {
+export const ARGON2_OPTIONS: argon2.Options = {
   type: argon2.argon2id,
   memoryCost: 2 ** 16, // 64 MB
   timeCost: 3, // 3 iterazioni

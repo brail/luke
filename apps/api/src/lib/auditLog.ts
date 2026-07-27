@@ -34,6 +34,9 @@ const CRITICAL_AUDIT_ACTIONS = new Set([
   'SECTION_ACCESS_UPDATED',
   'COLLECTION_LAYOUT_REVISION_CREATE',
   'BACKUP_RESTORE',
+  'BACKUP_EXPORT',
+  'BACKUP_IMPORT',
+  'BACKUP_MIGRATION_BRIDGE',
   'MAINTENANCE_MODE_ACTIVATED',
 ]);
 
@@ -115,6 +118,8 @@ const SAFE_KEYS = new Set([
   'scheduledAt',
   'forceLogout',
   'warningLeadMinutes',
+  'migratedBackupId',
+  'migrationsApplied',
 ]);
 
 /** Returns true if the value was produced by the sanitizer's redaction logic. */

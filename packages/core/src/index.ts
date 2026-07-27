@@ -89,6 +89,8 @@ export {
   buildTempCollectionRowPictureUploadUrl,
   buildSpecsheetImageUploadUrl,
   buildTempSpecsheetImageUploadUrl,
+  buildBackupExportDownloadUrl,
+  buildBackupImportUrl,
   buildTrpcUrl,
   buildSeasonCalendarIcalUrl,
   buildSeasonCalendarPdfUrl,

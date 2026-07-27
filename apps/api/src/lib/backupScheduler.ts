@@ -14,9 +14,9 @@
  *   `expiresAt`, always keeping at least `backup.retentionMinCount` of the most recent ones —
  *   the one category with genuine safety-net value, hence the floor. `FAILED` backups past
  *   their `expiresAt` are deleted too, but with no floor: a failed attempt has no recovery
- *   value once expired, so there's nothing worth keeping N of. `PRE_RESTORE_SAFETY` snapshots
- *   are never swept here — see `createPendingBackupRecord` in dumpPipeline.ts, their `expiresAt`
- *   is always `null`.
+ *   value once expired, so there's nothing worth keeping N of. `PRE_RESTORE_SAFETY`/
+ *   `PRE_MIGRATION_SAFETY` snapshots are never swept here — see `createPendingBackupRecord` in
+ *   dumpPipeline.ts, their `expiresAt` is always `null`.
  */
 
 import { getStorageProvider } from '../storage';

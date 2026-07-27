@@ -24,6 +24,7 @@ import { addFileEntry, addStreamEntry, createArchivePacker } from './archiveForm
 import { createBackupCipher, generateDek, wrapDek } from './crypto';
 import { parseDatabaseUrl, runPgBinary } from './pgConnection';
 
+import type { PgConnectionParts } from './pgConnection';
 import type { BackupScope, BackupTrigger, PrismaClient } from '@prisma/client';
 import type { FastifyBaseLogger } from 'fastify';
 
@@ -70,9 +71,12 @@ export interface BackupSidecarMeta {
   createdAt: string;
 }
 
-/** Runs `pg_dump` (custom format, compressed) directly to a local file via `--file`. */
-async function dumpDatabaseToFile(destPath: string): Promise<void> {
-  const db = parseDatabaseUrl();
+/**
+ * Runs `pg_dump` (custom format, compressed) directly to a local file via `--file`.
+ * `db` defaults to this instance's own database — the migration bridge overrides it to point at
+ * its disposable temp database instead, both before and after applying migrations there.
+ */
+async function dumpDatabaseToFile(destPath: string, db: PgConnectionParts = parseDatabaseUrl()): Promise<void> {
   await runPgBinary('pg_dump', [
     '--format=custom',
     '--no-owner',
@@ -106,8 +110,20 @@ async function addAllStorageFiles(
   return fileCount;
 }
 
-/** Reads the name of the most recently applied Prisma migration, or `null` if unavailable. */
-async function getLatestMigrationName(prisma: PrismaClient): Promise<string | null> {
+// This instance's own applied-migrations state only ever advances at boot (entrypoint.sh's
+// `migrate deploy`, before the server starts listening) — nothing in-app migrates it at runtime,
+// so a successful read is safe to cache for the process's lifetime. A transient failure is never
+// cached (returns null for that call only), so it can't poison every later call.
+let cachedLatestMigrationName: string | null | undefined;
+
+/**
+ * Reads the name of the most recently applied Prisma migration, or `null` if unavailable.
+ * Exported for reuse by the restore/import compatibility check (`maintenance.backup.router.ts`) —
+ * comparing this against a backup's stored `schemaMigrationName` is how a cross-schema restore
+ * gets flagged before it can silently corrupt the database.
+ */
+export async function getLatestMigrationName(prisma: PrismaClient): Promise<string | null> {
+  if (cachedLatestMigrationName !== undefined) return cachedLatestMigrationName;
   try {
     const rows = await prisma.$queryRaw<{ migration_name: string }[]>`
       SELECT migration_name FROM "_prisma_migrations"
@@ -115,10 +131,16 @@ async function getLatestMigrationName(prisma: PrismaClient): Promise<string | nu
       ORDER BY finished_at DESC
       LIMIT 1
     `;
-    return rows[0]?.migration_name ?? null;
+    cachedLatestMigrationName = rows[0]?.migration_name ?? null;
+    return cachedLatestMigrationName;
   } catch {
     return null;
   }
+}
+
+/** Computes a retention cutoff `retentionDays` from now — shared by fresh backups and imports. */
+export function computeBackupExpiresAt(retentionDays: number): Date {
+  return new Date(Date.now() + retentionDays * 24 * 60 * 60 * 1000);
 }
 
 /**
@@ -127,19 +149,26 @@ async function getLatestMigrationName(prisma: PrismaClient): Promise<string | nu
  * retention window in effect right now, so a later change to `backup.retentionDays` only affects
  * backups created after the change.
  *
- * `PRE_RESTORE_SAFETY` snapshots are the exception: `expiresAt` stays `null` (never auto-expires).
- * It's a disaster-recovery safety net for one specific restore, not a routine backup — if an
- * admin lowers `backup.retentionDays` for cost/space reasons, that shouldn't silently shorten the
- * window in which a bad restore can still be undone. It's only ever removed by an explicit
- * manual delete.
+ * `PRE_RESTORE_SAFETY`/`PRE_MIGRATION_SAFETY` snapshots are the exception: `expiresAt` stays
+ * `null` (never auto-expires). Each is a disaster-recovery safety net for one specific operation
+ * (a restore, or a migration bridge run), not a routine backup — if an admin lowers
+ * `backup.retentionDays` for cost/space reasons, that shouldn't silently shorten the window in
+ * which the operation can still be undone. They're only ever removed by an explicit manual delete.
  */
 export async function createPendingBackupRecord(
   prisma: PrismaClient,
-  params: { scope: BackupScope; trigger: BackupTrigger; createdById?: string }
+  params: {
+    scope: BackupScope;
+    trigger: BackupTrigger;
+    createdById?: string;
+    label?: string;
+    /** Set only by the migration bridge — the original backup this one was derived from. */
+    sourceBackupId?: string;
+  }
 ): Promise<{ id: string }> {
-  const expiresAt = params.trigger === 'PRE_RESTORE_SAFETY'
+  const expiresAt = params.trigger === 'PRE_RESTORE_SAFETY' || params.trigger === 'PRE_MIGRATION_SAFETY'
     ? null
-    : new Date(Date.now() + (await getBackupRetentionDays(prisma)) * 24 * 60 * 60 * 1000);
+    : computeBackupExpiresAt(await getBackupRetentionDays(prisma));
 
   return prisma.backupRecord.create({
     data: {
@@ -149,6 +178,8 @@ export async function createPendingBackupRecord(
       trigger: params.trigger,
       status: 'PENDING',
       createdById: params.createdById ?? null,
+      label: params.label ?? null,
+      sourceBackupId: params.sourceBackupId ?? null,
       expiresAt,
     },
     select: { id: true },
@@ -160,6 +191,13 @@ export interface RunBackupJobParams {
   backupId: string;
   scope: BackupScope;
   logger: BackupLogger;
+  /** DB to `pg_dump` from. Default: this instance's own database. The migration bridge overrides
+   *  this to point at its disposable temp database instead. */
+  sourceConnection?: PgConnectionParts;
+  /** Overrides the auto-detected `schemaMigrationName`. Needed whenever `sourceConnection` isn't
+   *  this instance's own database — querying `_prisma_migrations` on `prisma` would otherwise
+   *  report the wrong value (this instance's schema, not the dumped DB's). */
+  schemaMigrationNameOverride?: string | null;
 }
 
 /**
@@ -168,7 +206,7 @@ export interface RunBackupJobParams {
  * so a fire-and-forget caller doesn't need to handle rejections.
  */
 export async function runBackupJob(params: RunBackupJobParams): Promise<void> {
-  const { prisma, backupId, scope, logger } = params;
+  const { prisma, backupId, scope, logger, sourceConnection, schemaMigrationNameOverride } = params;
   const workDir = join(TEMP_DIR, backupId);
 
   try {
@@ -177,7 +215,7 @@ export async function runBackupJob(params: RunBackupJobParams): Promise<void> {
 
     const dumpPath = join(workDir, 'db.dump');
     logger.info({ backupId }, 'Backup: avvio pg_dump');
-    await dumpDatabaseToFile(dumpPath);
+    await dumpDatabaseToFile(dumpPath, sourceConnection);
 
     const provider = await getStorageProvider(prisma);
     const pack = createArchivePacker();
@@ -216,7 +254,9 @@ export async function runBackupJob(params: RunBackupJobParams): Promise<void> {
     const authTag = cipher.getAuthTag();
 
     const appVersion = process.env.APP_VERSION ?? null;
-    const schemaMigrationName = await getLatestMigrationName(prisma);
+    const schemaMigrationName = schemaMigrationNameOverride !== undefined
+      ? schemaMigrationNameOverride
+      : await getLatestMigrationName(prisma);
 
     const sidecar: BackupSidecarMeta = {
       version: 1,
@@ -255,6 +295,7 @@ export async function runBackupJob(params: RunBackupJobParams): Promise<void> {
         wrappedDekHex: sidecar.wrappedDekHex,
         appVersion,
         schemaMigrationName,
+        fileCount: scope === 'DB_AND_FILES' ? fileCount : null,
         completedAt: new Date(),
       },
     });

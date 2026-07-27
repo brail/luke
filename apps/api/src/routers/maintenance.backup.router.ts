@@ -12,21 +12,26 @@ import { TRPCError } from '@trpc/server';
 
 import {
   BackupCreateInputSchema,
+  BackupExportInputSchema,
   BackupIdSchema,
   BackupListInputSchema,
   BackupRestoreInputSchema,
   BackupScheduleConfigSchema,
+  RunMigrationBridgeInputSchema,
+  type BackupExportHeader,
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
+import { unwrapDek, wrapDekWithPassphrase } from '../lib/backup/crypto';
 import { createPendingBackupRecord, deleteBackupBlob, runBackupJob } from '../lib/backup/dumpPipeline';
+import { classifySchemaCompatibility, runMigrationBridgeJob } from '../lib/backup/migrationBridge';
 import { runRestoreJob } from '../lib/backup/restorePipeline';
 import { getBackupScheduleSettings, saveConfig } from '../lib/configManager';
 import { forceLogoutNonAdmins, writeMaintenanceState } from '../lib/maintenanceMode';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 import { getStorageProvider } from '../storage';
-import { signDownloadToken } from '../utils/downloadToken';
+import { signDownloadToken, signExportToken } from '../utils/downloadToken';
 
 const BACKUP_SELECT = {
   id: true,
@@ -34,12 +39,15 @@ const BACKUP_SELECT = {
   scope: true,
   trigger: true,
   status: true,
+  label: true,
   sizeBytesEncrypted: true,
   checksumSha256: true,
+  fileCount: true,
   appVersion: true,
   schemaMigrationName: true,
   errorMessage: true,
   createdById: true,
+  sourceBackupId: true,
   startedAt: true,
   completedAt: true,
   createdAt: true,
@@ -117,6 +125,80 @@ export const backupRouter = router({
     }),
 
   /**
+   * Prepares a passphrase-protected, instance-portable export package (`.lukebak`) for a
+   * completed backup: unwraps its DEK with the server master key, re-wraps it with a key derived
+   * from the given passphrase (Argon2id), and mints a signed token embedding that re-wrapped
+   * envelope so `/maintenance/backup/:id/export` can stream the package without hitting the DB
+   * again. The passphrase itself is never persisted or included in the token.
+   *
+   * @auth {maintenance:backup_export}
+   */
+  prepareExport: protectedProcedure
+    .use(requirePermission('maintenance:backup_export'))
+    .input(BackupExportInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const record = await ctx.prisma.backupRecord.findUnique({ where: { id: input.id } });
+      if (!record || record.status !== 'COMPLETED' || !record.filename) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Backup non trovato o non completato' });
+      }
+      if (!record.ivHex || !record.authTagHex || !record.wrappedDekHex || !record.checksumSha256) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Metadati crittografici del backup mancanti' });
+      }
+
+      const dek = unwrapDek(record.wrappedDekHex);
+      const passphraseWrapped = await wrapDekWithPassphrase(dek, input.passphrase);
+
+      const header: BackupExportHeader = {
+        version: 1,
+        backupId: record.id,
+        scope: record.scope,
+        algorithm: 'aes-256-gcm',
+        kdf: 'argon2id',
+        passphraseWrapped,
+        bodyIvHex: record.ivHex,
+        bodyAuthTagHex: record.authTagHex,
+        checksumSha256: record.checksumSha256,
+        sizeBytesEncrypted: record.sizeBytesEncrypted?.toString() ?? '0',
+        appVersion: record.appVersion,
+        schemaMigrationName: record.schemaMigrationName,
+        createdAt: (record.completedAt ?? record.createdAt).toISOString(),
+      };
+
+      const token = signExportToken({ bucket: 'backups', key: record.filename, header });
+
+      await logAudit(ctx, {
+        action: 'BACKUP_EXPORT',
+        targetType: 'BackupRecord',
+        targetId: record.id,
+        result: 'SUCCESS',
+        metadata: { scope: record.scope },
+      });
+
+      return { token, filename: `${record.id}.lukebak` };
+    }),
+
+  /**
+   * Classifies a backup's schema against this instance's current one (SAME/OLDER/NEWER_OR_UNKNOWN)
+   * — the frontend uses this to decide which of the three restore-dialog branches to show before
+   * the admin even attempts anything.
+   *
+   * @auth {maintenance:read}
+   */
+  checkRestoreCompatibility: protectedProcedure
+    .use(requirePermission('maintenance:read'))
+    .input(BackupIdSchema)
+    .query(async ({ ctx, input }) => {
+      const target = await ctx.prisma.backupRecord.findUnique({
+        where: { id: input.id },
+        select: { schemaMigrationName: true },
+      });
+      if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: 'Backup non trovato' });
+
+      const compat = await classifySchemaCompatibility(ctx.prisma, target.schemaMigrationName);
+      return { ...compat, backupSchemaMigrationName: target.schemaMigrationName };
+    }),
+
+  /**
    * Triggers a manual backup. Returns immediately with the record id (status PENDING);
    * the job itself runs in the background.
    *
@@ -130,6 +212,7 @@ export const backupRouter = router({
         scope: input.scope,
         trigger: 'MANUAL',
         createdById: ctx.session.user.id,
+        label: input.label,
       });
 
       // Fire-and-forget: runBackupJob non lancia mai, cattura ogni errore nel record stesso.
@@ -149,6 +232,73 @@ export const backupRouter = router({
       });
 
       return { id: record.id };
+    }),
+
+  /**
+   * Runs the migration bridge on a backup classified `OLDER`: creates a disposable temp database,
+   * restores the old backup into it, snapshots it (`PRE_MIGRATION_SAFETY`), applies the missing
+   * migrations there, and saves the result as a new `MIGRATED` backup. Never touches this
+   * instance's real database. Fire-and-forget like `create` — the bridge can take minutes (restore
+   * + dump + migrate + dump again), so the mutation returns immediately with the new backup's id
+   * (status PENDING) and the frontend polls `list` for progress, same as any other backup job.
+   *
+   * @auth {maintenance:backup_restore}
+   */
+  runMigrationBridge: protectedProcedure
+    .use(requirePermission('maintenance:backup_restore'))
+    .input(RunMigrationBridgeInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const target = await ctx.prisma.backupRecord.findUnique({ where: { id: input.id } });
+      if (!target || target.status !== 'COMPLETED') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Backup non trovato o non completato' });
+      }
+      if (!target.ivHex || !target.authTagHex || !target.wrappedDekHex) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Metadati crittografici del backup mancanti' });
+      }
+
+      // Ri-valida sempre server-side, mai fidarsi della classificazione mostrata al client.
+      const compat = await classifySchemaCompatibility(ctx.prisma, target.schemaMigrationName);
+      if (compat.classification !== 'OLDER' || !target.schemaMigrationName || !compat.currentSchemaMigrationName) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'Questo backup non ha uno schema più vecchio di quello corrente: il migration bridge non si applica.',
+        });
+      }
+
+      const migrated = await createPendingBackupRecord(ctx.prisma, {
+        scope: 'DB',
+        trigger: 'MIGRATED',
+        createdById: ctx.session.user.id,
+        sourceBackupId: target.id,
+      });
+
+      // Fire-and-forget: runMigrationBridgeJob non lancia mai, cattura ogni errore nel record stesso.
+      void runMigrationBridgeJob({
+        prisma: ctx.prisma,
+        migratedBackupId: migrated.id,
+        sourceBackup: {
+          id: target.id,
+          filename: target.filename,
+          ivHex: target.ivHex,
+          authTagHex: target.authTagHex,
+          wrappedDekHex: target.wrappedDekHex,
+          schemaMigrationName: target.schemaMigrationName,
+        },
+        pendingMigrations: compat.pendingMigrations,
+        currentSchemaMigrationName: compat.currentSchemaMigrationName,
+        createdById: ctx.session.user.id,
+        logger: ctx.logger,
+      });
+
+      await logAudit(ctx, {
+        action: 'BACKUP_MIGRATION_BRIDGE',
+        targetType: 'BackupRecord',
+        targetId: target.id,
+        result: 'SUCCESS',
+        metadata: { migratedBackupId: migrated.id, migrationsApplied: compat.pendingMigrations.length },
+      });
+
+      return { id: migrated.id };
     }),
 
   /**
@@ -197,6 +347,19 @@ export const backupRouter = router({
       }
       if (!target.ivHex || !target.authTagHex || !target.wrappedDekHex) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Metadati crittografici del backup mancanti' });
+      }
+
+      // Un backup con schema diverso da quello corrente può lasciare il DB in stato incoerente dopo
+      // pg_restore --clean (colonne mancanti/impreviste, enum sconosciuti). SAME procede come
+      // sempre; OLDER va prima portato a schema corrente col migration bridge; NEWER_OR_UNKNOWN è
+      // un blocco hard senza bypass (le migration sono solo forward, andare indietro significa
+      // inventare dati cancellati legittimamente).
+      const compat = await classifySchemaCompatibility(ctx.prisma, target.schemaMigrationName);
+      if (compat.classification !== 'SAME') {
+        const message = compat.classification === 'NEWER_OR_UNKNOWN'
+          ? `Schema del backup ("${target.schemaMigrationName}") più recente o sconosciuto rispetto a quello corrente ("${compat.currentSchemaMigrationName}"). Aggiorna questa istanza a una versione ≥ di quella del backup, poi riprova.`
+          : `Schema del backup ("${target.schemaMigrationName}") più vecchio di quello corrente ("${compat.currentSchemaMigrationName}"). Usa prima "Applica migrazioni", poi ripristina il risultato.`;
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message });
       }
 
       // Snapshot di sicurezza obbligatorio: se fallisce, il restore non parte — nulla è stato toccato.

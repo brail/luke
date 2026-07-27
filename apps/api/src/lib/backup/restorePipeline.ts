@@ -34,6 +34,7 @@ import { createBackupDecipher, unwrapDek } from './crypto';
 import { parseDatabaseUrl, runPgBinary } from './pgConnection';
 
 import type { BackupLogger } from './dumpPipeline';
+import type { PgConnectionParts } from './pgConnection';
 import type { PrismaClient } from '@prisma/client';
 
 const TEMP_DIR = join(homedir(), '.luke', 'restore-tmp');
@@ -45,18 +46,32 @@ interface StagedFileEntry {
   size: number;
 }
 
+export interface RestoreDatabaseFromFileOptions {
+  /** If true, `audit_logs` is excluded so the current audit trail is preserved untouched. Default `false`. */
+  excludeAuditLog?: boolean;
+  /** DB to `pg_restore` into. Default: this instance's own database. The migration bridge
+   *  overrides this to point at its disposable temp database instead. */
+  db?: PgConnectionParts;
+  /** Whether to pass `--clean --if-exists` (drop existing objects before recreating them).
+   *  Default `true` — a real restore overwrites an already-populated database. The migration
+   *  bridge sets this `false`: its temp database is freshly created and already empty. */
+  clean?: boolean;
+}
+
 /**
- * Runs `pg_restore` against the current database from a local dump file.
- * Deliberately strict: any non-zero exit (pg_restore can exit 1 even for warnings, e.g. skipped
- * GRANT/OWNER statements under --no-owner) is treated as failure. For a disaster-recovery tool, a
- * false "failed" that the admin has to double-check via stderr is far preferable to a false
- * "succeeded" on a restore that silently had issues.
+ * Runs `pg_restore` from a local dump file into `options.db` (default: this instance's own
+ * database). Deliberately strict: any non-zero exit (pg_restore can exit 1 even for warnings,
+ * e.g. skipped GRANT/OWNER statements under --no-owner) is treated as failure. For a
+ * disaster-recovery tool, a false "failed" that the admin has to double-check via stderr is far
+ * preferable to a false "succeeded" on a restore that silently had issues.
  */
-async function restoreDatabaseFromFile(dumpPath: string, excludeAuditLog: boolean): Promise<void> {
-  const db = parseDatabaseUrl();
+export async function restoreDatabaseFromFile(
+  dumpPath: string,
+  options: RestoreDatabaseFromFileOptions = {}
+): Promise<void> {
+  const { excludeAuditLog = false, db = parseDatabaseUrl(), clean = true } = options;
   await runPgBinary('pg_restore', [
-    '--clean',
-    '--if-exists',
+    ...(clean ? ['--clean', '--if-exists'] : []),
     '--no-owner',
     '--no-privileges',
     '--host', db.host,
@@ -66,6 +81,33 @@ async function restoreDatabaseFromFile(dumpPath: string, excludeAuditLog: boolea
     ...(excludeAuditLog ? ['--exclude-table=public.audit_logs'] : []),
     dumpPath,
   ], db.password);
+}
+
+/**
+ * Downloads + decrypts a backup's blob into a ready-to-iterate tar extraction stream — shared by
+ * a real restore (which also replays `files/*`) and the migration bridge (which only wants
+ * `db.dump`, discarding everything else).
+ */
+export async function openBackupArchiveStream(params: {
+  prisma: PrismaClient;
+  filename: string;
+  ivHex: string;
+  authTagHex: string;
+  wrappedDekHex: string;
+}): Promise<ReturnType<typeof createArchiveExtractor>> {
+  const provider = await getStorageProvider(params.prisma);
+  const { stream: blobStream } = await provider.get({ bucket: 'backups', key: params.filename });
+
+  const dek = unwrapDek(params.wrappedDekHex);
+  const decipher = createBackupDecipher(dek, params.ivHex, params.authTagHex);
+  const gunzip = createGunzip();
+  const extract = createArchiveExtractor();
+
+  blobStream.pipe(decipher);
+  decipher.pipe(gunzip);
+  gunzip.pipe(extract);
+
+  return extract;
 }
 
 /** Parses a `files/<bucket>/<key...>` tar entry name. Returns `null` if the bucket isn't recognized. */
@@ -105,16 +147,7 @@ export async function runRestoreJob(params: RunRestoreJobParams): Promise<void> 
     const provider = await getStorageProvider(params.prisma);
 
     logger.info({ filename }, 'Restore: download e decifratura archivio');
-    const { stream: blobStream } = await provider.get({ bucket: 'backups', key: filename });
-
-    const dek = unwrapDek(wrappedDekHex);
-    const decipher = createBackupDecipher(dek, ivHex, authTagHex);
-    const gunzip = createGunzip();
-    const extract = createArchiveExtractor();
-
-    blobStream.pipe(decipher);
-    decipher.pipe(gunzip);
-    gunzip.pipe(extract);
+    const extract = await openBackupArchiveStream({ prisma: params.prisma, filename, ivHex, authTagHex, wrappedDekHex });
 
     const stagedFiles: StagedFileEntry[] = [];
     let fileIndex = 0;
@@ -139,7 +172,7 @@ export async function runRestoreJob(params: RunRestoreJobParams): Promise<void> 
     });
 
     logger.info({ filename }, 'Restore: avvio pg_restore');
-    await restoreDatabaseFromFile(dumpPath, preserveAuditLog);
+    await restoreDatabaseFromFile(dumpPath, { excludeAuditLog: preserveAuditLog });
     logger.info({ filename }, 'Restore: database ripristinato, replay file storage');
 
     if (restoreFiles) {

@@ -169,6 +169,27 @@ export function buildTempSpecsheetImageUploadUrl(
 }
 
 /**
+ * Builds the download URL for a passphrase-protected, instance-portable backup export package.
+ *
+ * @param id - Backup UUID
+ * @param token - Signed export token minted by `maintenance.backup.prepareExport`
+ */
+export function buildBackupExportDownloadUrl(
+  id: string,
+  token: string,
+  options: UrlOptions = {}
+): string {
+  return buildApiUrl(`/maintenance/backup/${id}/export?token=${encodeURIComponent(token)}`, options);
+}
+
+/**
+ * Builds the upload URL for importing a passphrase-protected backup export package.
+ */
+export function buildBackupImportUrl(options: UrlOptions = {}): string {
+  return buildApiUrl('/maintenance/backup/import', options);
+}
+
+/**
  * Builds URL for tRPC endpoint
  *
  * @param procedure - tRPC procedure path (e.g., 'auth.login')

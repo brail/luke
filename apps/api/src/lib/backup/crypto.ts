@@ -17,9 +17,59 @@ import {
   type DecipherGCM,
 } from 'crypto';
 
+import argon2 from 'argon2';
+
+import type { PassphraseWrappedDek } from '@luke/core';
+
 import { ALGORITHM, AUTH_TAG_LENGTH, decryptValue, encryptValue, IV_LENGTH } from '../configManager';
+import { ARGON2_OPTIONS } from '../password';
 
 const DEK_LENGTH = 32; // 256 bits, matches AES-256
+
+const PASSPHRASE_SALT_LENGTH = 16;
+
+/** Same Argon2id tuning as `lib/password.ts`, reused here for a raw-key KDF instead of a verify-hash. */
+async function derivePassphraseKey(passphrase: string, salt: Buffer): Promise<Buffer> {
+  return argon2.hash(passphrase, { ...ARGON2_OPTIONS, raw: true, salt }) as Promise<Buffer>;
+}
+
+/**
+ * Wraps a backup's DEK a second time with a key derived from a user-supplied passphrase
+ * (Argon2id), independent of the server master key. This is what makes a `.lukebak` export
+ * package decryptable on a different Luke instance — the only shared secret needed is the
+ * passphrase itself.
+ */
+export async function wrapDekWithPassphrase(dek: Buffer, passphrase: string): Promise<PassphraseWrappedDek> {
+  const salt = randomBytes(PASSPHRASE_SALT_LENGTH);
+  const key = await derivePassphraseKey(passphrase, salt);
+  const iv = randomBytes(IV_LENGTH);
+  const cipher = createCipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH });
+  const ciphertext = Buffer.concat([cipher.update(dek), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+
+  return {
+    saltHex: salt.toString('hex'),
+    ivHex: iv.toString('hex'),
+    authTagHex: authTag.toString('hex'),
+    ciphertextHex: ciphertext.toString('hex'),
+  };
+}
+
+/**
+ * Recovers a DEK from its passphrase-wrapped form. Throws (GCM auth-tag mismatch) if the
+ * passphrase is wrong or the package was tampered with — this doubles as passphrase validation,
+ * no separate check needed.
+ */
+export async function unwrapDekWithPassphrase(wrapped: PassphraseWrappedDek, passphrase: string): Promise<Buffer> {
+  const salt = Buffer.from(wrapped.saltHex, 'hex');
+  const key = await derivePassphraseKey(passphrase, salt);
+  const iv = Buffer.from(wrapped.ivHex, 'hex');
+  const authTag = Buffer.from(wrapped.authTagHex, 'hex');
+  const decipher = createDecipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH });
+  decipher.setAuthTag(authTag);
+
+  return Buffer.concat([decipher.update(Buffer.from(wrapped.ciphertextHex, 'hex')), decipher.final()]);
+}
 
 /** Generates a random 256-bit data-encryption-key for a single backup. */
 export function generateDek(): Buffer {

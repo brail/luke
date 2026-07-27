@@ -49,6 +49,8 @@ import { runReadinessChecks } from './observability/readiness';
 import { storagePlugin } from './plugins/storage-upload';
 import { appRouter } from './routers';
 import { registerBackupDownloadRoute } from './routes/backupDownload';
+import { registerBackupExportDownloadRoute } from './routes/backupExportDownload';
+import { registerBackupImportRoute } from './routes/backupImport';
 import brandLogoRoutes from './routes/brandLogo.routes';
 import collectionRowPictureRoutes from './routes/collectionRowPicture.routes';
 import companyLogoRoutes from './routes/companyLogo.routes';
@@ -625,6 +627,8 @@ const start = async () => {
     await registerMultipart(); // Multipart globale (richiesto da tutti i route di upload)
     await registerStoragePlugin(); // Storage upload/download routes
     await registerBackupDownloadRoute(fastify, prisma); // Backup blob download (admin-only, streamed)
+    await registerBackupExportDownloadRoute(fastify, prisma); // Passphrase-protected portable export download (streamed)
+    await registerBackupImportRoute(fastify, prisma); // Passphrase-protected portable export upload
     await registerBrandLogoRoutes(); // Brand logo upload routes
     await registerCompanyLogoRoutes(); // Company logo upload routes
     await registerCollectionRowPictureRoutes(); // Collection row picture upload routes
