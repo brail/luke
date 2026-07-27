@@ -77,7 +77,7 @@ export function runPgBinary(
 export function runCommand(
   command: string,
   args: string[],
-  options: { env?: NodeJS.ProcessEnv; cwd?: string } = {},
+  options: { env?: Partial<NodeJS.ProcessEnv>; cwd?: string } = {},
   stderrLimit = 4000
 ): Promise<void> {
   return spawnAndCapture(command, args, { env: { ...process.env, ...options.env }, cwd: options.cwd }, stderrLimit);
