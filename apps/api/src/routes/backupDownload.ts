@@ -48,13 +48,24 @@ export async function registerBackupDownloadRoute(
         const provider = await getStorageProvider(prisma);
         const { stream, size } = await provider.get({ bucket: 'backups', key: record.filename });
 
-        reply.header('Content-Type', 'application/octet-stream');
-        reply.header('Content-Length', size);
-        reply.header('Content-Disposition', `attachment; filename="${encodeURIComponent(record.filename)}"`);
-        reply.header('Cache-Control', 'private, no-store');
-
-        // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Content-Disposition:attachment forces download; Content-Type is a fixed constant, not sniffed from the client
-        reply.send(stream);
+        // reply.send(stream) silently truncates large streamed payloads under this Fastify
+        // version (Content-Length reset to 0, response body empty, "stream closed prematurely"
+        // logged) — reproduced with backup blobs (tens of MB+) sourced from the MinIO provider's
+        // underlying `http.IncomingMessage`. Bypassing Fastify's reply pipeline via `hijack()` +
+        // the raw Node response avoids whatever internal handling causes this.
+        reply.hijack();
+        reply.raw.writeHead(200, {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': size,
+          // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Content-Disposition:attachment forces download; Content-Type is a fixed constant, not sniffed from the client
+          'Content-Disposition': `attachment; filename="${encodeURIComponent(record.filename)}"`,
+          'Cache-Control': 'private, no-store',
+        });
+        (stream as NodeJS.ReadableStream).on('error', err => {
+          fastify.log.error({ err, backupId: record.id }, 'Backup download stream failed');
+          reply.raw.destroy();
+        });
+        (stream as NodeJS.ReadableStream).pipe(reply.raw);
       } catch (err) {
         fastify.log.error({ err, backupId: record.id }, 'Backup download failed');
         reply.code(500).send({ error: 'Internal Server Error' });

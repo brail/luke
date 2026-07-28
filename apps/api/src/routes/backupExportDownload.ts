@@ -53,12 +53,22 @@ export async function registerBackupExportDownloadRoute(
         (stream as Readable).on('error', err => combined.destroy(err));
         (stream as Readable).pipe(combined);
 
-        reply.header('Content-Type', 'application/octet-stream');
-        reply.header('Content-Disposition', `attachment; filename="${record.id}.lukebak"`);
-        reply.header('Cache-Control', 'private, no-store');
-
-        // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Content-Disposition:attachment forces download; Content-Type is a fixed constant, not sniffed from the client
-        reply.send(combined);
+        // reply.send(stream) silently truncates large streamed payloads under this Fastify
+        // version (empty body, "stream closed prematurely" logged) — same issue and same fix
+        // as backupDownload.ts: bypass Fastify's reply pipeline via `hijack()` + the raw Node
+        // response.
+        reply.hijack();
+        reply.raw.writeHead(200, {
+          'Content-Type': 'application/octet-stream',
+          // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Content-Disposition:attachment forces download; Content-Type is a fixed constant, not sniffed from the client
+          'Content-Disposition': `attachment; filename="${record.id}.lukebak"`,
+          'Cache-Control': 'private, no-store',
+        });
+        combined.on('error', err => {
+          fastify.log.error({ err, backupId: record.id }, 'Backup export stream failed');
+          reply.raw.destroy();
+        });
+        combined.pipe(reply.raw);
       } catch (err) {
         fastify.log.error({ err, backupId: record.id }, 'Backup export failed');
         reply.code(500).send({ error: 'Internal Server Error' });

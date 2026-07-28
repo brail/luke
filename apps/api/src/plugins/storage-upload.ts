@@ -258,18 +258,23 @@ export async function storagePlugin(
       // Download file tramite service layer
       const { stream, metadata } = await getObject(ctx, fileObject.id);
 
-      // Imposta headers
-      reply.header('Content-Type', metadata.contentType);
-      reply.header('Content-Length', metadata.size);
-      reply.header(
-        'Content-Disposition',
-        `attachment; filename="${encodeURIComponent(metadata.originalName)}"`
-      );
-      reply.header('Cache-Control', 'private, max-age=300'); // 5 minuti
-
-      // Stream file
-      // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Content-Disposition:attachment (riga 253-256) forza il download e impedisce il render inline; Content-Type è quello salvato in metadata, non sniffato dal client
-      reply.send(stream);
+      // reply.send(stream) tronca silenziosamente le risposte in streaming abbastanza grandi
+      // sotto questa versione di Fastify (Content-Length azzerato, "stream closed prematurely",
+      // corpo vuoto — riscontrato con blob multi-MB) — bypassa la pipeline di reply.send()
+      // tramite hijack() + risposta Node grezza, stesso fix di backupDownload.ts.
+      reply.hijack();
+      reply.raw.writeHead(200, {
+        'Content-Type': metadata.contentType,
+        'Content-Length': metadata.size,
+        // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Content-Disposition:attachment forza il download e impedisce il render inline; Content-Type è quello salvato in metadata, non sniffato dal client
+        'Content-Disposition': `attachment; filename="${encodeURIComponent(metadata.originalName)}"`,
+        'Cache-Control': 'private, max-age=300', // 5 minuti
+      });
+      (stream as NodeJS.ReadableStream).on('error', err => {
+        fastify.log.error({ err, fileObjectId: fileObject.id }, 'Storage download stream failed');
+        reply.raw.destroy();
+      });
+      (stream as NodeJS.ReadableStream).pipe(reply.raw);
     } catch (error) {
       fastify.log.error(
         {
