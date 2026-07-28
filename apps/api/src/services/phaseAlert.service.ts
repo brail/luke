@@ -13,6 +13,7 @@ import pino from 'pino';
 import {
   daysBetween,
   workingDaysBetween,
+  isWorkingDay,
   eventDeadline,
   CollectionAlertThresholdsSchema,
   type AlertBand,
@@ -193,6 +194,18 @@ async function buildWorkingDaysContext(
  * explicitly rather than `countryCodes: []`, because `isWorkingDay` treats an empty country list
  * as "apply every fetched holiday regardless of country," the opposite of what's wanted here.
  */
+/** Whether a `calendarDaysRelevance` value makes the company's holiday calendar count. Shared by
+ * `resolveDaysCount` (the deadline countdown) and `resolveHolidayOverlapsForGroup` (the freeze-time
+ * warning) so the two can't drift on what each relevance mode means. */
+function appliesToCompany(relevance: CalendarDaysRelevance): boolean {
+  return relevance === 'COMPANY' || relevance === 'BOTH';
+}
+
+/** Whether a `calendarDaysRelevance` value makes a vendor's holiday calendar count — see `appliesToCompany`. */
+function appliesToVendor(relevance: CalendarDaysRelevance): boolean {
+  return relevance === 'VENDOR' || relevance === 'BOTH';
+}
+
 function resolveDaysCount(
   from: Date,
   to: Date,
@@ -205,10 +218,10 @@ function resolveDaysCount(
   }
 
   const countryCodes: string[] = [];
-  if ((relevance === 'COMPANY' || relevance === 'BOTH') && ctx.companyCountryCode) {
+  if (appliesToCompany(relevance) && ctx.companyCountryCode) {
     countryCodes.push(ctx.companyCountryCode);
   }
-  if ((relevance === 'VENDOR' || relevance === 'BOTH') && vendorCountryCode) {
+  if (appliesToVendor(relevance) && vendorCountryCode) {
     countryCodes.push(vendorCountryCode);
   }
 
@@ -217,6 +230,83 @@ function resolveDaysCount(
   }
 
   return { days: workingDaysBetween(from, to, countryCodes, ctx.holidays), daysMode: 'working', relevantCountryCodes: countryCodes };
+}
+
+/** One event flagged as landing on a non-working day, for `resolveHolidayOverlapsForGroup`. */
+export interface HolidayOverlapEntry {
+  eventId: string;
+  eventTitle: string;
+  eventStartAt: Date;
+  /** Which check tripped: a weekend date (checked first, independent of country), the company's
+   * holiday calendar, or a vendor's — `vendorName` is set only for `'vendor'`. */
+  reason: 'weekend' | 'company' | 'vendor';
+  vendorName?: string;
+}
+
+/**
+ * Flags, for every non-cancelled phase-tagged event in a planning group, whether it lands on a
+ * non-working day per the *same* resolution `resolveDaysCount` uses for the deadline countdown
+ * itself (company/vendor `Holiday` rows + weekend, by `calendarDaysRelevance`) — not the separate
+ * `VendorClosurePeriod` concept used at event-creation time, which the deadline math never reads.
+ * An event with `calendarDaysRelevance: null` is skipped entirely: its countdown isn't affected by
+ * holidays, so an overlap here wouldn't mean anything.
+ *
+ * Purely informational (soft warning) — callers decide whether to let the user proceed regardless.
+ * Rows with no vendor assigned simply don't contribute a vendor country — no error, no false alert.
+ *
+ * @returns One entry per (event, reason) — an event under `BOTH` can appear once for the company
+ *   calendar and once per distinct vendor country among the group's rows.
+ */
+export async function resolveHolidayOverlapsForGroup(planningGroupId: string, prisma: PrismaClient): Promise<HolidayOverlapEntry[]> {
+  const [events, rows] = await Promise.all([
+    prisma.calendarEvent.findMany({
+      where: { planningGroupId, cancelledAt: null, phaseId: { not: null }, calendarDaysRelevance: { not: null } },
+      select: { id: true, title: true, startAt: true, calendarDaysRelevance: true },
+    }),
+    prisma.collectionLayoutRow.findMany({
+      where: { planningGroupId, vendorId: { not: null } },
+      select: { vendor: { select: { countryCode: true, name: true } } },
+    }),
+  ]);
+  if (events.length === 0) return [];
+
+  // Distinct vendor countries in scope, first vendor name per country kept only for the UI label.
+  const vendorsByCountry = new Map<string, string>();
+  for (const row of rows) {
+    if (row.vendor?.countryCode && !vendorsByCountry.has(row.vendor.countryCode)) {
+      vendorsByCountry.set(row.vendor.countryCode, row.vendor.name);
+    }
+  }
+
+  const workingDaysCtx = await buildWorkingDaysContext(prisma, [...vendorsByCountry.keys()]);
+
+  const overlaps: HolidayOverlapEntry[] = [];
+  for (const event of events) {
+    const flag = (reason: HolidayOverlapEntry['reason'], vendorName?: string) =>
+      overlaps.push({ eventId: event.id, eventTitle: event.title, eventStartAt: event.startAt, reason, vendorName });
+
+    // Empty countryCodes/holidays reduces isWorkingDay to a pure weekend check — same definition
+    // of "weekend" the company/vendor checks below build on, no separate day-of-week logic here.
+    if (!isWorkingDay(event.startAt, [], [])) {
+      // Weekend already explains it regardless of relevance/country — skip the holiday checks
+      // below, they'd just re-flag the same event for the same reason.
+      flag('weekend');
+      continue;
+    }
+
+    const relevance = event.calendarDaysRelevance!;
+    if (appliesToCompany(relevance) && workingDaysCtx.companyCountryCode && !isWorkingDay(event.startAt, [workingDaysCtx.companyCountryCode], workingDaysCtx.holidays)) {
+      flag('company');
+    }
+    if (appliesToVendor(relevance)) {
+      for (const [countryCode, vendorName] of vendorsByCountry) {
+        if (!isWorkingDay(event.startAt, [countryCode], workingDaysCtx.holidays)) {
+          flag('vendor', vendorName);
+        }
+      }
+    }
+  }
+  return overlaps;
 }
 
 /** Outcome of resolving a row's active phase — distinguishes "nothing to alert on" from why. */
@@ -261,10 +351,10 @@ export async function getActivePhaseForRow(rowId: string, prisma: PrismaClient):
 
 /**
  * Resolves the deadline for an active-phase result: always the event's current `endAt ?? startAt`,
- * live and freely editable even after freeze. The frozen baseline is the fixed commitment used only
- * for `computeSchedulingVariance` (plan-vs-actual audit) — it must never feed the criticality
- * countdown, or rescheduling an event during the season would leave the alert pinned to a dead date
- * forever. No lead-time recompute. Pure — no I/O.
+ * live and freely editable even after freeze. The frozen baseline (`baselineStartAt`/`baselineEndAt`,
+ * written once by `freezePlanningGroup`) is a separate, fixed commitment — it must never feed the
+ * criticality countdown, or rescheduling an event during the season would leave the alert pinned to
+ * a dead date forever. No lead-time recompute. Pure — no I/O.
  */
 function deadlineFromActivePhase(active: ActivePhaseResult) {
   if (active.status !== 'active') return null;
@@ -480,52 +570,4 @@ export async function computeBottleneckByEvent(collectionLayoutId: string, now: 
   return Array.from(byEvent.values())
     .map(e => ({ ...e, bands: Array.from(e.bands.values()) }))
     .sort((a, b) => a.eventStartAt.getTime() - b.eventStartAt.getTime());
-}
-
-/**
- * Compares the frozen baseline date for the row's *current* phase (the "in teoria" plan) against
- * the date the row actually reached that phase per `CollectionRowPhaseHistory` (the "in verità"
- * outcome) — the plan-vs-actual scheduling variance requested alongside Fase 2's freeze/baseline.
- *
- * @returns `null` if the row has no current phase, the calendar is not frozen, or the row has no
- *   history entry for that phase yet.
- */
-export async function computeSchedulingVariance(rowId: string, prisma: PrismaClient) {
-  const row = await prisma.collectionLayoutRow.findUnique({
-    where: { id: rowId },
-    select: { phaseId: true, vendor: { select: { countryCode: true } } },
-  });
-  if (!row?.phaseId) return null;
-
-  const events = await getApplicableEventsForRow(rowId, prisma);
-  const plannedEvent = events.find(event => event.phaseId === row.phaseId);
-  if (!plannedEvent?.baselineStartAt) return null;
-
-  // The frozen deadline mirrors the live one (`eventDeadline`): the phase was committed to close by
-  // the window's *end*, so variance measures against `baselineEndAt` when the frozen event spanned a
-  // window, else `baselineStartAt`. `baselineStartAt` above stays the freeze marker (always written).
-  const plannedDeadline = plannedEvent.baselineEndAt ?? plannedEvent.baselineStartAt;
-
-  const historyEntry = await prisma.collectionRowPhaseHistory.findFirst({
-    where: { rowId, phaseId: row.phaseId },
-    orderBy: { reachedAt: 'desc' },
-  });
-  if (!historyEntry) return null;
-
-  const vendorCountryCode = row.vendor?.countryCode ?? null;
-  const workingDaysCtx = plannedEvent.calendarDaysRelevance
-    ? await buildWorkingDaysContext(prisma, [vendorCountryCode])
-    : EMPTY_WORKING_DAYS_CONTEXT;
-  const { days: varianceDays, daysMode } = resolveDaysCount(
-    plannedDeadline, historyEntry.reachedAt, plannedEvent.calendarDaysRelevance, vendorCountryCode, workingDaysCtx
-  );
-
-  return {
-    rowId,
-    phaseId: row.phaseId,
-    plannedDate: plannedDeadline,
-    actualDate: historyEntry.reachedAt,
-    varianceDays,
-    daysMode,
-  };
 }

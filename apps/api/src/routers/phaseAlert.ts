@@ -16,7 +16,6 @@ import {
   computeCriticality,
   computeCriticalityForLayout,
   computeSaturationHeatmap,
-  computeSchedulingVariance,
   resolveAlertThresholds,
 } from '../services/phaseAlert.service';
 
@@ -33,20 +32,6 @@ export const phaseAlertRouter = router({
     .input(z.object({ rowId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
       return computeCriticality(input.rowId, new Date(), ctx.prisma);
-    }),
-
-  /**
-   * Plan-vs-actual scheduling variance for a row's current phase (baseline vs CollectionRowPhaseHistory).
-   *
-   * @auth {collection_alert:read}
-   * @input {{ rowId: string }}
-   * @output {{ rowId, phaseId, plannedDate, actualDate, varianceDays } | null}
-   */
-  schedulingVarianceForRow: protectedProcedure
-    .use(requirePermission('collection_alert:read'))
-    .input(z.object({ rowId: z.string().uuid() }))
-    .query(async ({ input, ctx }) => {
-      return computeSchedulingVariance(input.rowId, ctx.prisma);
     }),
 
   /**

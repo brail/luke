@@ -66,15 +66,11 @@ export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGro
   );
 
   const overlapsByEvent = useMemo(() => {
-    const map = new Map<string, string[]>();
+    const map = new Map<string, Set<string>>();
     for (const entry of holidayOverlaps ?? []) {
       const label = overlapReasonLabel(entry);
-      const existing = map.get(entry.eventId);
-      if (existing) {
-        if (!existing.includes(label)) existing.push(label);
-      } else {
-        map.set(entry.eventId, [label]);
-      }
+      if (!map.has(entry.eventId)) map.set(entry.eventId, new Set());
+      map.get(entry.eventId)!.add(label);
     }
     return map;
   }, [holidayOverlaps]);
@@ -146,7 +142,7 @@ export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGro
                       </span>
                       {overlapReasons && (
                         <Badge variant="outline" className="text-xs text-amber-700 border-amber-300">
-                          {overlapReasons.join(', ')}
+                          {[...overlapReasons].join(', ')}
                         </Badge>
                       )}
                     </div>

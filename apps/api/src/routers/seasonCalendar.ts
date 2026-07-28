@@ -51,6 +51,7 @@ import {
   reconcileCalendar,
   listGoogleCalendarBindings,
 } from '../services/googleCalendarSync.service.js';
+import { resolveHolidayOverlapsForGroup } from '../services/phaseAlert.service.js';
 import {
   assertBrandAccess,
   resolvePlanningGroupWithBrandAccess,
@@ -58,6 +59,7 @@ import {
   getOrCreateCalendar,
   updateCalendarStatus,
   freezePlanningGroup,
+  resolveMissingPhasesForGroup,
   unfreezePlanningGroup,
   amendPlanningGroupFreeze,
   listMilestonesDb,
@@ -204,6 +206,41 @@ export const seasonCalendarRouter = router({
       await logAudit(ctx, { action: 'PLANNING_GROUP_FREEZE_AMENDED', targetType: 'PlanningGroup', targetId: input.planningGroupId, result: 'SUCCESS', metadata: { amendedCount: result.amendedCount } });
       sseStore.pushToAll({ type: 'calendar-updated', seasonId: group.calendar.seasonId });
       return result;
+    }),
+
+  /**
+   * Active phases with no completion event in the group yet — empty means the group is ready to
+   * freeze. Same check `freezePlanningGroup` enforces server-side; exposed here so the wizard can
+   * show it (and disable the button) before the user attempts to freeze.
+   *
+   * @auth season_calendar:read
+   * @input { planningGroupId }
+   * @output { id, value, label }[]
+   */
+  missingPhasesForGroup: protectedProcedure
+    .use(requirePermission('season_calendar:read'))
+    .input(z.object({ planningGroupId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      await resolvePlanningGroupWithBrandAccess(input.planningGroupId, ctx.session.user.id, ctx.prisma);
+      return resolveMissingPhasesForGroup(input.planningGroupId, ctx.prisma);
+    }),
+
+  /**
+   * Flags, per event, whether a phase-tagged event in the group lands on a non-working day
+   * (weekend, company holiday, or a vendor's holiday) — but only for events whose
+   * `calendarDaysRelevance` actually makes that relevant to their deadline countdown. Purely
+   * informational: never blocks `freezePlanningGroup`, the caller decides whether to warn.
+   *
+   * @auth season_calendar:read
+   * @input { planningGroupId }
+   * @output HolidayOverlapEntry[]
+   */
+  holidayOverlapsForGroup: protectedProcedure
+    .use(requirePermission('season_calendar:read'))
+    .input(z.object({ planningGroupId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      await resolvePlanningGroupWithBrandAccess(input.planningGroupId, ctx.session.user.id, ctx.prisma);
+      return resolveHolidayOverlapsForGroup(input.planningGroupId, ctx.prisma);
     }),
 
   // ─── Calendar event queries ─────────────────────────────────────────────────

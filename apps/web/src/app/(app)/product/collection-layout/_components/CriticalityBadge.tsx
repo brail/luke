@@ -46,13 +46,26 @@ export function formatCriticalityTooltip({ daysToDeadline, deadline, eventTitle,
   return `${daysToDeadline} ${unitLabel} alla scadenza — «${eventTitle}»: ${dateLabel}`;
 }
 
+/** "5gg ritardo" (overdue, negative) / "scade oggi" (zero) / "tra 12gg" (days left, positive) —
+ * same day count `formatCriticalityTooltip` spells out, condensed for inline display in the badge. */
+export function formatDaysLabel(daysToDeadline: number): string {
+  if (daysToDeadline < 0) return `${Math.abs(daysToDeadline)}gg ritardo`;
+  if (daysToDeadline === 0) return 'scade oggi';
+  return `tra ${daysToDeadline}gg`;
+}
+
 /**
  * Presentational band badge + tooltip — the outline/colored-by-band-hex rendering shared by
  * `CriticalityBadge` (per-row query) and `CollectionGroupSection`'s table cell (batched lookup).
  * Takes already-resolved data, no fetch of its own, so both call sites can keep their own
- * (deliberately different) data-fetching strategy.
+ * (deliberately different) data-fetching strategy. Purely presentational — deciding what the label
+ * says (band only, or band + day count) is the caller's call, not this component's.
+ *
+ * @param label - Defaults to `band.label`. Pass a combined string (e.g. `` `${band.label} · tra 12gg` ``,
+ *   via `formatDaysLabel`) when the caller wants the day count appended — the row-drawer header
+ *   wants this, the table cell stays band-only.
  */
-export function CriticalityBandBadge({ band, tooltip, className }: { band: CriticalityBand; tooltip: string; className?: string }) {
+export function CriticalityBandBadge({ band, tooltip, className, label = band.label }: { band: CriticalityBand; tooltip: string; className?: string; label?: string }) {
   return (
     <TooltipProvider>
       <Tooltip>
@@ -64,7 +77,7 @@ export function CriticalityBandBadge({ band, tooltip, className }: { band: Criti
             className={className}
             style={{ color: band.color, borderColor: band.color }}
           >
-            {band.label}
+            {label}
           </Badge>
         </TooltipTrigger>
         <TooltipContent>{tooltip}</TooltipContent>
@@ -74,13 +87,21 @@ export function CriticalityBandBadge({ band, tooltip, className }: { band: Criti
 }
 
 /**
- * Shows the current alert-engine criticality band for a row (days to deadline vs configured
- * thresholds). Renders nothing when the row has no active phase (calendar not set up, or the
- * row already reached its last applicable phase — no alert needed).
+ * Shows the current alert-engine criticality band for a row, combined with the day count (days
+ * overdue from the oldest uncompleted phase, or days left to the next phase-completion event) vs
+ * configured thresholds. Renders nothing when the row has no active phase (calendar not set up, or
+ * the row already reached its last applicable phase — no alert needed).
  */
 export function CriticalityBadge({ rowId, className }: Props) {
   const { data } = trpc.phaseAlert.criticalityForRow.useQuery({ rowId }, { staleTime: 60 * 1000 });
   if (!data) return null;
 
-  return <CriticalityBandBadge band={data.band} tooltip={formatCriticalityTooltip(data)} className={className} />;
+  return (
+    <CriticalityBandBadge
+      band={data.band}
+      tooltip={formatCriticalityTooltip(data)}
+      className={className}
+      label={`${data.band.label} · ${formatDaysLabel(data.daysToDeadline)}`}
+    />
+  );
 }

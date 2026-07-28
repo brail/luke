@@ -133,7 +133,6 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
         onFrozen={onFrozen}
         planningGroupId={planningGroupId}
         milestones={sortedEvents}
-        holidayDates={holidayDates}
       />
     );
   }

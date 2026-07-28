@@ -145,10 +145,12 @@ export async function updateCalendarStatus(
 /**
  * Active `Phase` rows with no non-cancelled, phase-tagged `CalendarEvent` in the given planning
  * group — i.e. phases with no completion event yet. Empty means the group is ready to freeze (or,
- * for an already-frozen group, that nothing new needs an `amendPlanningGroupFreeze`).
+ * for an already-frozen group, that nothing new needs an `amendPlanningGroupFreeze`). Used by the
+ * `missingPhasesForGroup` query so the freeze wizard can preview this before the user attempts to
+ * freeze — `freezePlanningGroup` re-derives the same check itself, inline in its own transaction,
+ * to fetch the covering events only once (it needs them again right after for the baseline snapshot).
  *
- * Accepts either the top-level client or a transaction client — `freezePlanningGroup` calls this
- * from inside its own transaction to keep the check atomic with the freeze itself.
+ * Accepts either the top-level client or a transaction client.
  */
 export async function resolveMissingPhasesForGroup(
   planningGroupId: string,
@@ -188,7 +190,18 @@ export async function freezePlanningGroup(planningGroupId: string, prisma: Prism
       throw new TRPCError({ code: 'CONFLICT', message: 'Gruppo di pianificazione già congelato' });
     }
 
-    const missingPhases = await resolveMissingPhasesForGroup(planningGroupId, tx);
+    // Fetched once with the extra fields resolveMissingPhasesForGroup would otherwise query for
+    // separately — one round trip instead of two inside a transaction that's holding row locks.
+    const [activePhases, events] = await Promise.all([
+      tx.phase.findMany({ where: { isActive: true }, select: { id: true, label: true }, orderBy: { order: 'asc' } }),
+      tx.calendarEvent.findMany({
+        where: { planningGroupId },
+        select: { id: true, startAt: true, endAt: true, phaseId: true, cancelledAt: true },
+      }),
+    ]);
+
+    const coveredPhaseIds = new Set(events.filter(e => !e.cancelledAt && e.phaseId).map(e => e.phaseId));
+    const missingPhases = activePhases.filter(p => !coveredPhaseIds.has(p.id));
     if (missingPhases.length > 0) {
       throw new TRPCError({
         code: 'PRECONDITION_FAILED',
@@ -196,10 +209,6 @@ export async function freezePlanningGroup(planningGroupId: string, prisma: Prism
       });
     }
 
-    const events = await tx.calendarEvent.findMany({
-      where: { planningGroupId },
-      select: { id: true, startAt: true, endAt: true },
-    });
     await snapshotEventBaselines(tx, events);
 
     return tx.planningGroup.update({
@@ -657,6 +666,13 @@ export async function createPlanningGroup(calendarId: string, name: string, pris
  * Computed at read time, nothing persisted — a second query only for the frozen groups among the
  * results (skipped entirely when none are frozen), not one `Phase`/`schema.prisma` change per state.
  */
+export type PlanningGroupFreezeState = 'unfrozen' | 'frozen-partial' | 'frozen';
+
+function deriveFreezeState(frozenAt: Date | null, unbaselinedCount: number): PlanningGroupFreezeState {
+  if (!frozenAt) return 'unfrozen';
+  return unbaselinedCount > 0 ? 'frozen-partial' : 'frozen';
+}
+
 export async function listPlanningGroups(calendarId: string, prisma: PrismaClient) {
   const groups = await prisma.planningGroup.findMany({
     where: { calendarId },
@@ -674,8 +690,7 @@ export async function listPlanningGroups(calendarId: string, prisma: PrismaClien
 
   return groups.map(g => ({
     ...g,
-    freezeState: (!g.frozenAt ? 'unfrozen' : (unbaselinedByGroup.get(g.id) ?? 0) > 0 ? 'frozen-partial' : 'frozen') as
-      'unfrozen' | 'frozen-partial' | 'frozen',
+    freezeState: deriveFreezeState(g.frozenAt, unbaselinedByGroup.get(g.id) ?? 0),
   }));
 }
 

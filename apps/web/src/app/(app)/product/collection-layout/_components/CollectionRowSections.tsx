@@ -33,7 +33,6 @@ import { cn } from '../../../../../lib/utils';
 import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
 
 import { CriticalityBadge } from './CriticalityBadge';
-import { SchedulingVarianceBadge } from './SchedulingVarianceBadge';
 import { VendorCombobox } from './VendorCombobox';
 
 import type { PricingParameterSet } from '../../_shared/pricingCalc';
@@ -428,7 +427,6 @@ export function PlanningSection({
               <FormLabel className={cn(PLANNING_FIELD_LABEL, 'gap-1.5')}>
                 Fase
                 {rowId && <CriticalityBadge rowId={rowId} className="text-xs" />}
-                {rowId && <SchedulingVarianceBadge rowId={rowId} className="text-xs" />}
               </FormLabel>
               <FormControl>
                 <PhaseSelect
