@@ -2,8 +2,8 @@
  * Raw Fastify route for downloading an encrypted backup blob.
  *
  * Deliberately NOT a tRPC procedure and NOT the generic `/uploads/:bucket/*` proxy: the payload
- * can be many GB, so it must stream (`reply.send(stream)`), and the "backups" bucket is excluded
- * from the generic proxy on purpose (see storage-upload.ts).
+ * can be many GB, so it must stream (see `streamRawResponse`), and the "backups" bucket is
+ * excluded from the generic proxy on purpose (see storage-upload.ts).
  *
  * Authorized via a short-lived signed token (`maintenance.backup.getDownloadLink` mints it,
  * same `downloadToken.ts` HMAC primitive as `/storage/download`) rather than a Bearer session —
@@ -15,6 +15,7 @@
 
 import { getStorageProvider } from '../storage';
 import { verifyDownloadToken } from '../utils/downloadToken';
+import { streamRawResponse } from '../utils/streamResponse';
 
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
@@ -48,24 +49,18 @@ export async function registerBackupDownloadRoute(
         const provider = await getStorageProvider(prisma);
         const { stream, size } = await provider.get({ bucket: 'backups', key: record.filename });
 
-        // reply.send(stream) silently truncates large streamed payloads under this Fastify
-        // version (Content-Length reset to 0, response body empty, "stream closed prematurely"
-        // logged) — reproduced with backup blobs (tens of MB+) sourced from the MinIO provider's
-        // underlying `http.IncomingMessage`. Bypassing Fastify's reply pipeline via `hijack()` +
-        // the raw Node response avoids whatever internal handling causes this.
-        reply.hijack();
-        reply.raw.writeHead(200, {
-          'Content-Type': 'application/octet-stream',
-          'Content-Length': size,
-          // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Content-Disposition:attachment forces download; Content-Type is a fixed constant, not sniffed from the client
-          'Content-Disposition': `attachment; filename="${encodeURIComponent(record.filename)}"`,
-          'Cache-Control': 'private, no-store',
-        });
-        (stream as NodeJS.ReadableStream).on('error', err => {
-          fastify.log.error({ err, backupId: record.id }, 'Backup download stream failed');
-          reply.raw.destroy();
-        });
-        (stream as NodeJS.ReadableStream).pipe(reply.raw);
+        streamRawResponse(
+          reply,
+          stream,
+          {
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': size,
+            // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Content-Disposition:attachment forces download; Content-Type is a fixed constant, not sniffed from the client
+            'Content-Disposition': `attachment; filename="${encodeURIComponent(record.filename)}"`,
+            'Cache-Control': 'private, no-store',
+          },
+          err => fastify.log.error({ err, backupId: record.id }, 'Backup download stream failed')
+        );
       } catch (err) {
         fastify.log.error({ err, backupId: record.id }, 'Backup download failed');
         reply.code(500).send({ error: 'Internal Server Error' });

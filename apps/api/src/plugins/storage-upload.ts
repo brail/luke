@@ -19,6 +19,7 @@ import { APP_STORAGE_BUCKETS, hasPermission } from '@luke/core';
 import { authenticateRequest as auth } from '../lib/auth';
 import { putObject, getObject, getStorageProvider } from '../storage';
 import { verifyDownloadToken } from '../utils/downloadToken';
+import { streamRawResponse } from '../utils/streamResponse';
 
 import type { Context } from '../lib/trpc';
 import type { FastifyInstance } from 'fastify';
@@ -258,23 +259,18 @@ export async function storagePlugin(
       // Download file tramite service layer
       const { stream, metadata } = await getObject(ctx, fileObject.id);
 
-      // reply.send(stream) tronca silenziosamente le risposte in streaming abbastanza grandi
-      // sotto questa versione di Fastify (Content-Length azzerato, "stream closed prematurely",
-      // corpo vuoto — riscontrato con blob multi-MB) — bypassa la pipeline di reply.send()
-      // tramite hijack() + risposta Node grezza, stesso fix di backupDownload.ts.
-      reply.hijack();
-      reply.raw.writeHead(200, {
-        'Content-Type': metadata.contentType,
-        'Content-Length': metadata.size,
-        // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Content-Disposition:attachment forza il download e impedisce il render inline; Content-Type è quello salvato in metadata, non sniffato dal client
-        'Content-Disposition': `attachment; filename="${encodeURIComponent(metadata.originalName)}"`,
-        'Cache-Control': 'private, max-age=300', // 5 minuti
-      });
-      (stream as NodeJS.ReadableStream).on('error', err => {
-        fastify.log.error({ err, fileObjectId: fileObject.id }, 'Storage download stream failed');
-        reply.raw.destroy();
-      });
-      (stream as NodeJS.ReadableStream).pipe(reply.raw);
+      streamRawResponse(
+        reply,
+        stream,
+        {
+          'Content-Type': metadata.contentType,
+          'Content-Length': metadata.size,
+          // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Content-Disposition:attachment forza il download e impedisce il render inline; Content-Type è quello salvato in metadata, non sniffato dal client
+          'Content-Disposition': `attachment; filename="${encodeURIComponent(metadata.originalName)}"`,
+          'Cache-Control': 'private, max-age=300', // 5 minuti
+        },
+        err => fastify.log.error({ err, fileObjectId: fileObject.id }, 'Storage download stream failed')
+      );
     } catch (error) {
       fastify.log.error(
         {

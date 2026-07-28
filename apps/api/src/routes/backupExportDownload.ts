@@ -15,6 +15,7 @@ import { PassThrough, type Readable } from 'stream';
 import { encodeExportHeader } from '../lib/backup/exportFormat';
 import { getStorageProvider } from '../storage';
 import { verifyExportToken } from '../utils/downloadToken';
+import { streamRawResponse } from '../utils/streamResponse';
 
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
@@ -53,22 +54,17 @@ export async function registerBackupExportDownloadRoute(
         (stream as Readable).on('error', err => combined.destroy(err));
         (stream as Readable).pipe(combined);
 
-        // reply.send(stream) silently truncates large streamed payloads under this Fastify
-        // version (empty body, "stream closed prematurely" logged) — same issue and same fix
-        // as backupDownload.ts: bypass Fastify's reply pipeline via `hijack()` + the raw Node
-        // response.
-        reply.hijack();
-        reply.raw.writeHead(200, {
-          'Content-Type': 'application/octet-stream',
-          // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Content-Disposition:attachment forces download; Content-Type is a fixed constant, not sniffed from the client
-          'Content-Disposition': `attachment; filename="${record.id}.lukebak"`,
-          'Cache-Control': 'private, no-store',
-        });
-        combined.on('error', err => {
-          fastify.log.error({ err, backupId: record.id }, 'Backup export stream failed');
-          reply.raw.destroy();
-        });
-        combined.pipe(reply.raw);
+        streamRawResponse(
+          reply,
+          combined,
+          {
+            'Content-Type': 'application/octet-stream',
+            // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Content-Disposition:attachment forces download; Content-Type is a fixed constant, not sniffed from the client
+            'Content-Disposition': `attachment; filename="${record.id}.lukebak"`,
+            'Cache-Control': 'private, no-store',
+          },
+          err => fastify.log.error({ err, backupId: record.id }, 'Backup export stream failed')
+        );
       } catch (err) {
         fastify.log.error({ err, backupId: record.id }, 'Backup export failed');
         reply.code(500).send({ error: 'Internal Server Error' });
