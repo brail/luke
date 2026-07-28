@@ -33,6 +33,7 @@ export * from './schemas/vendor';
 export * from './schemas/dashboard';
 export * from './schemas/notification';
 export * from './schemas/backup';
+export * from './schemas/auditLog';
 export * from './schemas/maintenanceMode';
 
 // Re-export RBAC
@@ -57,6 +58,7 @@ export * from './utils/sanitize';
 export * from './utils/text';
 export * from './utils/user';
 export * from './utils/zod';
+export * from './utils/auditLogLabels';
 
 // Re-export storage types and config
 export * from './storage/types';
@@ -91,6 +93,7 @@ export {
   buildTempSpecsheetImageUploadUrl,
   buildBackupExportDownloadUrl,
   buildBackupImportUrl,
+  buildAuditLogExportUrl,
   buildTrpcUrl,
   buildSeasonCalendarIcalUrl,
   buildSeasonCalendarPdfUrl,

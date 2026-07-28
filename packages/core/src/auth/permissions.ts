@@ -62,6 +62,7 @@ export const ACTIONS = {
   BACKUP_DELETE: 'backup_delete',
   BACKUP_EXPORT: 'backup_export',
   MODE_MANAGE: 'mode_manage',
+  READ_ALL: 'read_all',
 } as const;
 
 export type Action = (typeof ACTIONS)[keyof typeof ACTIONS] | '*';
@@ -87,7 +88,7 @@ export const VALID_RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
   [RESOURCES.SEASONS]: ['create', 'read', 'update', 'delete'] as const,
   [RESOURCES.USERS]: ['create', 'read', 'update', 'delete'] as const,
   [RESOURCES.CONFIG]: ['read', 'update'] as const,
-  [RESOURCES.AUDIT]: ['read'] as const,
+  [RESOURCES.AUDIT]: ['read', 'read_all'] as const,
   [RESOURCES.SETTINGS]: ['read', 'update'] as const,
   [RESOURCES.MAINTENANCE]: ['read', 'update', 'backup_create', 'backup_restore', 'backup_delete', 'backup_export', 'mode_manage'] as const,
   [RESOURCES.DASHBOARD]: ['read'] as const,

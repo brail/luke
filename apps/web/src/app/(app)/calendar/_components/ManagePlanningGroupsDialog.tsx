@@ -8,6 +8,7 @@ import type { RouterOutputs } from '@luke/api';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { CreateActionButton } from '../../../../components/CreateActionButton';
+import { LastModifiedBy } from '../../../../components/LastModifiedBy';
 import { PermissionButton } from '../../../../components/PermissionButton';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
@@ -49,6 +50,7 @@ interface Props {
 export function ManagePlanningGroupsDialog({ open, onClose, calendarId, brandId, seasonId }: Props) {
   const { can } = usePermission();
   const canWrite = can('season_calendar:update');
+  const canFreeze = can('season_calendar:freeze');
 
   const [groupForm, setGroupForm] = useState<GroupFormState>({ open: false });
   const [deletingGroup, setDeletingGroup] = useState<PlanningGroup | null>(null);
@@ -70,6 +72,10 @@ export function ManagePlanningGroupsDialog({ open, onClose, calendarId, brandId,
   const deleteMutation = trpc.planningGroup.delete.useMutation({
     onSuccess: () => { toast.success('Gruppo eliminato'); setDeletingGroup(null); void refetch(); },
     onError: err => toast.error(getTrpcErrorMessage(err, { CONFLICT: 'Il gruppo contiene ancora righe o eventi — riassegnali prima di eliminarlo' })),
+  });
+  const amendMutation = trpc.seasonCalendar.amendPlanningGroupFreeze.useMutation({
+    onSuccess: result => { toast.success(`Freeze esteso — ${result.amendedCount} eventi aggiornati`); void refetch(); },
+    onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
   const isEditingGroup = !!groupForm.group;
@@ -136,9 +142,35 @@ export function ManagePlanningGroupsDialog({ open, onClose, calendarId, brandId,
                         <td className="px-4 py-2 text-muted-foreground tabular-nums">{g._count.rows}</td>
                         <td className="px-4 py-2 text-muted-foreground tabular-nums">{g._count.events}</td>
                         <td className="px-4 py-2">
-                          {g.frozenAt ? (
-                            <Badge variant="outline" className="text-xs">Congelato</Badge>
-                          ) : (
+                          {g.freezeState === 'frozen' && (
+                            <div className="space-y-0.5">
+                              <Badge variant="outline" className="text-xs">Congelato</Badge>
+                              <LastModifiedBy targetType="PlanningGroup" targetId={g.id} className="text-[11px] text-muted-foreground" />
+                            </div>
+                          )}
+                          {g.freezeState === 'frozen-partial' && (
+                            <div className="space-y-1">
+                              <Badge
+                                variant="outline"
+                                className="text-xs border-amber-500 text-amber-700 bg-amber-50 dark:bg-amber-950/20 dark:text-amber-400"
+                              >
+                                Freeze parziale
+                              </Badge>
+                              <div>
+                                <PermissionButton
+                                  hasPermission={canFreeze}
+                                  tooltip="Non hai i permessi per estendere il freeze"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 text-[11px] px-2"
+                                  onClick={() => amendMutation.mutate({ planningGroupId: g.id })}
+                                >
+                                  {amendMutation.isPending ? 'Estensione…' : 'Estendi freeze'}
+                                </PermissionButton>
+                              </div>
+                            </div>
+                          )}
+                          {g.freezeState === 'unfrozen' && (
                             <Badge variant="outline" className="text-xs text-muted-foreground">—</Badge>
                           )}
                         </td>

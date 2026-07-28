@@ -15,6 +15,7 @@ import {
 } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
+import { LastModifiedBy } from '../../../../../components/LastModifiedBy';
 import { Button } from '../../../../../components/ui/button';
 import {
   Dialog,
@@ -347,6 +348,9 @@ export function CollectionRowDrawer({
         {/* Fixed header */}
         <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle className="text-lg">{title}</DialogTitle>
+          {mode === 'edit' && row?.id && (
+            <LastModifiedBy targetType="CollectionLayoutRow" targetId={row.id} />
+          )}
         </DialogHeader>
 
         <Form {...form}>

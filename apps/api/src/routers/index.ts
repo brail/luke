@@ -5,6 +5,7 @@
 
 import { router } from '../lib/trpc';
 
+import { auditLogRouter } from './auditLog';
 import { authRouter } from './auth';
 import { brandRouter } from './brand';
 import { catalogRouter } from './catalog';
@@ -44,6 +45,7 @@ import { vendorsRouter } from './vendors';
  * Combina tutti i router disponibili
  */
 export const appRouter = router({
+  auditLog: auditLogRouter,
   auth: authRouter,
   brand: brandRouter,
   company: companyRouter,

@@ -190,6 +190,15 @@ export function buildBackupImportUrl(options: UrlOptions = {}): string {
 }
 
 /**
+ * Builds the CSV export download URL for the audit log.
+ *
+ * @param token - Signed export token minted by `auditLog.getExportLink`, encoding the applied filters
+ */
+export function buildAuditLogExportUrl(token: string, options: UrlOptions = {}): string {
+  return buildApiUrl(`/maintenance/audit-log/export?token=${encodeURIComponent(token)}`, options);
+}
+
+/**
  * Builds URL for tRPC endpoint
  *
  * @param procedure - tRPC procedure path (e.g., 'auth.login')

@@ -48,6 +48,7 @@ import {
 import { runReadinessChecks } from './observability/readiness';
 import { storagePlugin } from './plugins/storage-upload';
 import { appRouter } from './routers';
+import { registerAuditLogExportDownloadRoute } from './routes/auditLogExportDownload';
 import { registerBackupDownloadRoute } from './routes/backupDownload';
 import { registerBackupExportDownloadRoute } from './routes/backupExportDownload';
 import { registerBackupImportRoute } from './routes/backupImport';
@@ -628,6 +629,7 @@ const start = async () => {
     await registerStoragePlugin(); // Storage upload/download routes
     await registerBackupDownloadRoute(fastify, prisma); // Backup blob download (admin-only, streamed)
     await registerBackupExportDownloadRoute(fastify, prisma); // Passphrase-protected portable export download (streamed)
+    await registerAuditLogExportDownloadRoute(fastify, prisma); // Audit log CSV export (admin-only, streamed)
     await registerBackupImportRoute(fastify, prisma); // Passphrase-protected portable export upload
     await registerBrandLogoRoutes(); // Brand logo upload routes
     await registerCompanyLogoRoutes(); // Company logo upload routes

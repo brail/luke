@@ -14,6 +14,7 @@ import type { RouterOutputs } from '@luke/api';
 import type { PricingParameterSetInput } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
+import { LastModifiedBy } from '../../../../../components/LastModifiedBy';
 import { PermissionButton } from '../../../../../components/PermissionButton';
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
@@ -290,6 +291,9 @@ export function ParameterSetPanel({
                       ))}
                     </TableBody>
                   </Table>
+                  <div className="px-2 pb-1 pt-2">
+                    <LastModifiedBy targetType="PricingParameterSet" targetId={set.id} />
+                  </div>
                 </div>
               )}
             </div>

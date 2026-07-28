@@ -36,6 +36,7 @@ import {
   AlertTriangle,
   Archive,
   ShieldAlert,
+  ScrollText,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -483,6 +484,15 @@ export default function AppSidebar() {
                         <Link href={"/maintenance/mode" as any} className="flex items-center gap-2">
                           <ShieldAlert size={16} />
                           <span>Modalità Manutenzione</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                    {menuAccess.maintenanceItems.auditLog && (
+                      <DropdownMenuItem asChild>
+                        {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime (mirrors settings/collection-control above) */}
+                        <Link href={"/maintenance/audit-log" as any} className="flex items-center gap-2">
+                          <ScrollText size={16} />
+                          <span>Audit Log</span>
                         </Link>
                       </DropdownMenuItem>
                     )}

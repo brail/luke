@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 
 import { CalendarDaysRelevanceSelect, NO_RELEVANCE_VALUE } from '../../../../components/CalendarDaysRelevanceSelect';
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
+import { LastModifiedBy } from '../../../../components/LastModifiedBy';
 import { PermissionButton } from '../../../../components/PermissionButton';
 import { PhaseSelect } from '../../../../components/PhaseSelect';
 import { PlanningGroupSelect } from '../../../../components/PlanningGroupSelect';
@@ -333,6 +334,7 @@ export function CalendarEventDialog({
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
             <DialogTitle className="leading-snug">{event.title}</DialogTitle>
+            <LastModifiedBy targetType="CalendarEvent" targetId={event.id} />
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="flex flex-wrap gap-1.5">
@@ -413,6 +415,9 @@ export function CalendarEventDialog({
                 <Badge variant="outline" className="text-muted-foreground font-normal">Gruppo: {event.planningGroupName}</Badge>
               )}
             </DialogTitle>
+            {isEdit && event?.id && (
+              <LastModifiedBy targetType="CalendarEvent" targetId={event.id} />
+            )}
           </DialogHeader>
 
           <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">

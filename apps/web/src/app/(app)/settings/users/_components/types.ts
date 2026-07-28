@@ -138,6 +138,7 @@ export const SECTION_LABELS: Record<Section, string> = {
   'maintenance.import_export': '↳ Import/Export',
   'maintenance.backup': '↳ Backup & Restore',
   'maintenance.mode': '↳ Modalità Manutenzione',
+  'maintenance.audit_log': '↳ Audit Log',
   product: 'Prodotto',
   'product.pricing': '↳ Pricing',
   'product.collection_layout': '↳ Collection Layout',

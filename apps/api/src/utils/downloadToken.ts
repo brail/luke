@@ -1,19 +1,19 @@
 /**
- * Download/Export Token HMAC per storage
+ * Download/Export Token HMAC
  *
- * Sistema stateless per generare e verificare token temporanei
- * per download/export di file dallo storage.
+ * Sistema stateless per generare e verificare token temporanei per download/export —
+ * di file dallo storage (bucket/key) o di dati generati on-the-fly (es. CSV audit log).
  *
  * Sicurezza:
  * - HMAC-SHA256 con chiave derivata via HKDF
  * - TTL breve (5 minuti)
  * - Stateless (no Redis/DB)
- * - Payload minimo (bucket, key, exp [, extra])
+ * - Payload minimo (exp [, extra])
  */
 
 import { createHmac, timingSafeEqual } from 'crypto';
 
-import type { BackupExportHeader, StorageBucket } from '@luke/core';
+import type { AuditLogFilters, BackupExportHeader, StorageBucket } from '@luke/core';
 import { deriveSecret } from '@luke/core/server';
 
 
@@ -28,10 +28,8 @@ const DOWNLOAD_TOKEN_TTL_MS = 5 * 60 * 1000;
  */
 const HMAC_KEY = deriveSecret('luke:download-token');
 
-/** Campi comuni a ogni token bucket/key firmato da questo modulo. */
+/** Campo comune a ogni payload firmato da questo modulo: scadenza. Il resto del payload (bucket/key, filtri, ...) è specifico di ogni variante di token e passato via `requiredKeys` a `verifyTokenPayload`. */
 interface BaseTokenPayload {
-  bucket: StorageBucket;
-  key: string;
   exp: number;
 }
 
@@ -90,9 +88,9 @@ function verifySignature(payload: string, signature: string): boolean {
 }
 
 /**
- * Firma un payload bucket/key/exp (+ eventuali campi extra) nel formato
+ * Firma un payload (exp + campi specifici della variante) nel formato
  * `base64url(payload).base64url(signature)`, condiviso da tutte le varianti di token
- * (download semplice, export con header allegato, ...).
+ * (download semplice, export con header allegato, export CSV audit log, ...).
  */
 function signTokenPayload<T extends BaseTokenPayload>(payload: T): string {
   const payloadStr = JSON.stringify(payload);
@@ -112,7 +110,7 @@ function signTokenPayload<T extends BaseTokenPayload>(payload: T): string {
  * Verifica e decodifica un token firmato da `signTokenPayload`.
  *
  * @param token - Token da verificare
- * @param requiredKeys - Campi extra (oltre a bucket/key/exp) che devono essere presenti
+ * @param requiredKeys - Campi oltre a `exp` che devono essere presenti (es. `['bucket', 'key']`)
  * @throws Error se token invalido, incompleto o scaduto
  */
 function verifyTokenPayload<T extends BaseTokenPayload>(token: string, requiredKeys: (keyof T)[] = []): T {
@@ -143,7 +141,7 @@ function verifyTokenPayload<T extends BaseTokenPayload>(token: string, requiredK
     throw new Error('Token payload JSON invalido');
   }
 
-  if (!payload.bucket || !payload.key || typeof payload.exp !== 'number') {
+  if (typeof payload.exp !== 'number') {
     throw new Error('Token payload incompleto');
   }
   for (const key of requiredKeys) {
@@ -166,7 +164,10 @@ function verifyTokenPayload<T extends BaseTokenPayload>(token: string, requiredK
 /**
  * Payload del token download
  */
-export type DownloadTokenPayload = BaseTokenPayload;
+export interface DownloadTokenPayload extends BaseTokenPayload {
+  bucket: StorageBucket;
+  key: string;
+}
 
 /**
  * Genera un token firmato per download di un file
@@ -200,7 +201,7 @@ export function signDownloadToken(params: {
  * }
  */
 export function verifyDownloadToken(token: string): DownloadTokenPayload {
-  return verifyTokenPayload<DownloadTokenPayload>(token);
+  return verifyTokenPayload<DownloadTokenPayload>(token, ['bucket', 'key']);
 }
 
 /**
@@ -209,6 +210,8 @@ export function verifyDownloadToken(token: string): DownloadTokenPayload {
  * così la route di streaming non deve rileggere il DB per ricostruirlo.
  */
 export interface ExportTokenPayload extends BaseTokenPayload {
+  bucket: StorageBucket;
+  key: string;
   header: BackupExportHeader;
 }
 
@@ -225,5 +228,28 @@ export function signExportToken(params: {
 
 /** Verifica e decodifica un token export. @throws Error se token invalido o scaduto. */
 export function verifyExportToken(token: string): ExportTokenPayload {
-  return verifyTokenPayload<ExportTokenPayload>(token, ['header']);
+  return verifyTokenPayload<ExportTokenPayload>(token, ['bucket', 'key', 'header']);
+}
+
+/**
+ * Payload del token export CSV dell'audit log — stesso HMAC stateless delle altre varianti,
+ * ma senza bucket/key: non è un file già presente nello storage, il CSV viene generato
+ * on-the-fly dai filtri incapsulati nel token.
+ */
+export interface AuditLogExportTokenPayload extends BaseTokenPayload {
+  filters: AuditLogFilters;
+}
+
+/** Firma un token per l'export CSV dell'audit log, incapsulando i filtri applicati. */
+export function signAuditLogExportToken(params: {
+  filters: AuditLogFilters;
+  exp?: number;
+}): string {
+  const exp = params.exp || Date.now() + DOWNLOAD_TOKEN_TTL_MS;
+  return signTokenPayload<AuditLogExportTokenPayload>({ filters: params.filters, exp });
+}
+
+/** Verifica e decodifica un token export audit log. @throws Error se token invalido o scaduto. */
+export function verifyAuditLogExportToken(token: string): AuditLogExportTokenPayload {
+  return verifyTokenPayload<AuditLogExportTokenPayload>(token, ['filters']);
 }

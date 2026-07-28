@@ -1,10 +1,15 @@
 /**
  * Centralised audit-log service.
  * Persists structured audit events to the database with trace correlation,
- * request IP, and automatic metadata sanitisation.
+ * request IP, and automatic metadata sanitisation. Also the shared home for reading it back —
+ * `buildAuditLogWhere`/`auditActorName` are used by both the `auditLog` tRPC router and the raw
+ * `/maintenance/audit-log/export` CSV route, so neither has to import from the other.
  */
 
+import { fullName, type AuditLogFilters } from '@luke/core';
+
 import type { Context } from './trpc';
+import type { Prisma } from '@prisma/client';
 
 /**
  * Parameters for a single audit log entry.
@@ -219,3 +224,26 @@ export async function logAudit(
 
 // Helper specifici rimossi - tutto centralizzato in logAudit() per DRY
 // Usa direttamente logAudit() con i nuovi parametri standardizzati
+
+/** Translates audit log page/export filters into a Prisma where clause — shared by `auditLog.list` and the `/maintenance/audit-log/export` CSV route. */
+export function buildAuditLogWhere(filters: AuditLogFilters): Prisma.AuditLogWhereInput {
+  return {
+    ...(filters.actorId ? { actorId: filters.actorId } : {}),
+    ...(filters.action ? { action: { contains: filters.action, mode: 'insensitive' } } : {}),
+    ...(filters.targetType ? { targetType: { contains: filters.targetType, mode: 'insensitive' } } : {}),
+    ...(filters.result ? { result: filters.result } : {}),
+    ...(filters.dateFrom || filters.dateTo
+      ? {
+          createdAt: {
+            ...(filters.dateFrom ? { gte: new Date(filters.dateFrom) } : {}),
+            ...(filters.dateTo ? { lte: new Date(filters.dateTo) } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+/** "Nome Cognome" (falling back to username) for an audit log actor — null when the actor itself is null (system action, or the user was hard-deleted). */
+export function auditActorName(actor: { firstName: string; lastName: string; username: string } | null): string | null {
+  return actor ? fullName(actor) : null;
+}

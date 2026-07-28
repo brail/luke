@@ -39,6 +39,7 @@ export function useMenuAccess() {
       import_export: s.maintenance && s['maintenance.import_export'],
       backup: s.maintenance && s['maintenance.backup'],
       mode: s.maintenance && s['maintenance.mode'],
+      auditLog: s.maintenance && s['maintenance.audit_log'],
     };
     const showMaintenance = Object.values(maintenanceItems).some(Boolean);
 
