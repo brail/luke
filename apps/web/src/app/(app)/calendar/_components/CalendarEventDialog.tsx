@@ -28,6 +28,7 @@ import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 import { daysBetween, isEventDateLocked, isEventDeleteLocked } from '../utils';
 
 import { type CalendarEventItem } from './types';
+import { addOneHour, resolveIso, toDateInput, toTimeInput, useLinkedDateRange } from './useLinkedDateRange';
 
 interface ExistingEvent {
   id: string;
@@ -62,38 +63,6 @@ interface Props {
   defaultAllDay?: boolean;
   readOnly?: boolean;
   onDeleted?: () => void;
-}
-
-function toDateInput(val: Date | string | null | undefined): string {
-  if (!val) return '';
-  const d = new Date(val);
-  return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
-}
-
-function toTimeInput(val: Date | string | null | undefined): string {
-  if (!val) return '09:00';
-  const d = new Date(val);
-  return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-}
-
-function buildIso(date: string, time: string): string {
-  return new Date(`${date}T${time}:00`).toISOString();
-}
-
-/** Bare date parses as UTC midnight per spec — unlike `buildIso`, needed for all-day events so the
- * calendar day survives round-tripping through non-UTC-midnight-aware consumers (e.g. Google Calendar). */
-function buildAllDayIso(date: string): string {
-  return new Date(date).toISOString();
-}
-
-/** Resolves a date/time pair to an ISO instant, using UTC-midnight semantics for all-day events. */
-function resolveIso(date: string, time: string, allDay: boolean): string {
-  return allDay ? buildAllDayIso(date) : buildIso(date, time);
-}
-
-function addOneHour(time: string): string {
-  const [h, m] = time.split(':').map(Number);
-  return `${((h + 1) % 24).toString().padStart(2, '0')}:${(m ?? 0).toString().padStart(2, '0')}`;
 }
 
 // TODO(Fase5): motore alert avrà bisogno dello stesso calcolo di scostamento lato server —
@@ -153,16 +122,10 @@ export function CalendarEventDialog({
   const [visibilityFunctionIds, setVisibilityFunctionIds] = useState<string[]>(() =>
     event ? event.visibilities.map(v => v.functionId) : []
   );
-  const [startDate, setStartDate] = useState(() => toDateInput(event?.startAt ?? defaultDate));
-  const [startTime, setStartTime] = useState(() => event ? toTimeInput(event.startAt) : (defaultAllDay ? '09:00' : toTimeInput(defaultDate)));
-  const [endDate, setEndDate] = useState(() => {
-    const sd = toDateInput(event?.startAt ?? defaultDate);
-    return event?.endAt ? toDateInput(event.endAt) : sd;
-  });
-  const [endTime, setEndTime] = useState(() => {
-    const st = event ? toTimeInput(event.startAt) : (defaultAllDay ? '09:00' : toTimeInput(defaultDate));
-    return event?.endAt ? toTimeInput(event.endAt) : addOneHour(st);
-  });
+  const {
+    startDate, startTime, endDate, endTime, reset: resetDateRange,
+    onStartDateChange, onStartTimeChange, onEndDateChange, onEndTimeChange,
+  } = useLinkedDateRange();
   const [allDay, setAllDay] = useState(event?.allDay ?? defaultAllDay);
   const [publishExternally, setPublishExternally] = useState(event?.publishExternally ?? true);
   const [planningGroupId, setPlanningGroupId] = useState('');
@@ -201,10 +164,12 @@ export function CalendarEventDialog({
     setVisibilityFunctionIds(event ? event.visibilities.map(v => v.functionId) : []);
     const sd = toDateInput(event?.startAt ?? defaultDate);
     const st = event ? toTimeInput(event.startAt) : (defaultAllDay ? '09:00' : toTimeInput(defaultDate));
-    setStartDate(sd);
-    setStartTime(st);
-    setEndDate(event?.endAt ? toDateInput(event.endAt) : sd);
-    setEndTime(event?.endAt ? toTimeInput(event.endAt) : addOneHour(st));
+    resetDateRange({
+      startDate: sd,
+      startTime: st,
+      endDate: event?.endAt ? toDateInput(event.endAt) : sd,
+      endTime: event?.endAt ? toTimeInput(event.endAt) : addOneHour(st),
+    });
     setAllDay(event?.allDay ?? defaultAllDay);
     setPublishExternally(event?.publishExternally ?? true);
   }, [event?.id, open, defaultDate]);
@@ -475,20 +440,20 @@ export function CalendarEventDialog({
               <div className="space-y-1.5">
                 <Label htmlFor="ev-start-date">Inizio *</Label>
                 <Input id="ev-start-date" type="date" value={startDate} disabled={isDateLocked}
-                  onChange={e => { setStartDate(e.target.value); if (!endDate) setEndDate(e.target.value); }}
+                  onChange={e => onStartDateChange(e.target.value, allDay)}
                   className="[&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground" />
                 {!allDay && (
                   <Input type="time" value={startTime} disabled={isDateLocked}
-                    onChange={e => { setStartTime(e.target.value); setEndTime(addOneHour(e.target.value)); }}
+                    onChange={e => onStartTimeChange(e.target.value, allDay)}
                     className="[&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground" />
                 )}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="ev-end-date">Fine</Label>
-                <Input id="ev-end-date" type="date" value={endDate} disabled={isDateLocked} onChange={e => setEndDate(e.target.value)}
+                <Input id="ev-end-date" type="date" value={endDate} disabled={isDateLocked} onChange={e => onEndDateChange(e.target.value, allDay)}
                   className="[&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground" />
                 {!allDay && (
-                  <Input type="time" value={endTime} disabled={isDateLocked} onChange={e => setEndTime(e.target.value)}
+                  <Input type="time" value={endTime} disabled={isDateLocked} onChange={e => onEndTimeChange(e.target.value, allDay)}
                     className="[&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground" />
                 )}
               </div>
@@ -615,17 +580,17 @@ export function CalendarEventDialog({
                 <div className="space-y-1.5">
                   <Label htmlFor="ev-resched-start">Nuovo inizio *</Label>
                   <Input id="ev-resched-start" type="date" value={startDate}
-                    onChange={e => { setStartDate(e.target.value); if (!endDate) setEndDate(e.target.value); }} />
+                    onChange={e => onStartDateChange(e.target.value, allDay)} />
                   {!allDay && (
                     <Input type="time" value={startTime}
-                      onChange={e => { setStartTime(e.target.value); setEndTime(addOneHour(e.target.value)); }} />
+                      onChange={e => onStartTimeChange(e.target.value, allDay)} />
                   )}
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="ev-resched-end">Nuova fine</Label>
-                  <Input id="ev-resched-end" type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+                  <Input id="ev-resched-end" type="date" value={endDate} onChange={e => onEndDateChange(e.target.value, allDay)} />
                   {!allDay && (
-                    <Input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} />
+                    <Input type="time" value={endTime} onChange={e => onEndTimeChange(e.target.value, allDay)} />
                   )}
                 </div>
               </div>

@@ -167,7 +167,7 @@ export default function CalendarConfigurationPage() {
                                   {item.offsetDays > 0 ? `+${item.offsetDays}` : item.offsetDays}g
                                 </td>
                                 <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">
-                                  {item.durationDays > 0 ? `${item.durationDays}g` : '—'}
+                                  {item.durationDays}g
                                 </td>
                                 <td className="px-4 py-2">
                                   <div className="flex gap-1 justify-end">

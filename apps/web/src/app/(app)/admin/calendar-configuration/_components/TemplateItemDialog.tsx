@@ -73,14 +73,12 @@ interface FormValues {
  */
 export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, availableFunctions, siblingItems = [] }: Props) {
   const isEdit = !!item;
-  const { register, handleSubmit, reset, watch, setValue, control, formState: { errors } } = useForm<FormValues>();
+  const { register, handleSubmit, reset, setValue, control, formState: { errors } } = useForm<FormValues>();
 
   const [relItemId, setRelItemId] = useState('');
   const [relDelta, setRelDelta] = useState('0');
 
   const { data: phases = [] } = trpc.phase.list.useQuery(undefined, { staleTime: 5 * 60 * 1000 });
-
-  const visibilityFunctionIds = watch('visibilityFunctionIds') ?? [];
 
   useEffect(() => {
     if (open) {
@@ -94,7 +92,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
           ? (item.visibilities?.map((v: NonNullable<TemplateItem['visibilities']>[number]) => v.functionId) ?? [])
           : [],
         offsetDays: item?.offsetDays ?? 0,
-        durationDays: item?.durationDays ?? 0,
+        durationDays: item?.durationDays ?? 1,
         allDay: item?.allDay ?? true,
         publishExternally: item?.publishExternally ?? true,
         description: item?.description ?? '',
@@ -131,14 +129,6 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
     } else {
       createMutation.mutate({ templateId, ...payload });
     }
-  };
-
-  const toggleVisible = (fnId: string) => {
-    const current = visibilityFunctionIds;
-    setValue(
-      'visibilityFunctionIds',
-      current.includes(fnId) ? current.filter(s => s !== fnId) : [...current, fnId]
-    );
   };
 
   return (
@@ -202,9 +192,10 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
               <Input
                 id="durationDays"
                 type="number"
-                min={0}
-                {...register('durationDays', { valueAsNumber: true })}
+                min={1}
+                {...register('durationDays', { valueAsNumber: true, min: 1 })}
               />
+              <p className="text-xs text-muted-foreground">1 = evento di un giorno singolo, N = N giorni consecutivi</p>
             </div>
           </div>
 
@@ -255,17 +246,36 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
 
           <div className="space-y-2">
             <Label>Visibile a *</Label>
-            <div className="flex flex-wrap gap-3">
-              {availableFunctions.map(fn => (
-                <label key={fn.id} className="flex items-center gap-1.5 cursor-pointer">
-                  <Checkbox
-                    checked={visibilityFunctionIds.includes(fn.id)}
-                    onCheckedChange={() => toggleVisible(fn.id)}
-                  />
-                  <span className="text-sm">{fn.name}</span>
-                </label>
-              ))}
-            </div>
+            <Controller
+              name="visibilityFunctionIds"
+              control={control}
+              rules={{ validate: v => (v?.length ?? 0) > 0 || 'Seleziona almeno una funzione' }}
+              render={({ field }) => (
+                <div className="flex flex-wrap gap-3">
+                  {availableFunctions.map(fn => {
+                    const isChecked = field.value?.includes(fn.id) ?? false;
+                    return (
+                      <label key={fn.id} className="flex items-center gap-1.5 cursor-pointer">
+                        <Checkbox
+                          checked={isChecked}
+                          onCheckedChange={() =>
+                            field.onChange(
+                              isChecked
+                                ? field.value.filter((s: string) => s !== fn.id)
+                                : [...(field.value ?? []), fn.id]
+                            )
+                          }
+                        />
+                        <span className="text-sm">{fn.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            />
+            {errors.visibilityFunctionIds && (
+              <p className="text-xs text-destructive">{errors.visibilityFunctionIds.message}</p>
+            )}
           </div>
 
           <div className="flex items-center gap-2">

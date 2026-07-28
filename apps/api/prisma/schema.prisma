@@ -1891,8 +1891,8 @@ model MilestoneTemplateItem {
   description           String?
   /// Days offset from the target PlanningGroup's anchorDate to compute event startAt.
   offsetDays            Int
-  /// Duration of the generated event in days. 0 = single-day event.
-  durationDays          Int                    @default(0)
+  /// Duration of the generated event in days (1-based). 1 = single-day event, N = N consecutive days.
+  durationDays          Int                    @default(1)
   /// Propagated to CalendarEvent.allDay on generation.
   allDay                Boolean                @default(true)
   /// If true, the generated event is exported to Google Calendar.

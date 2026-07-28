@@ -143,6 +143,29 @@ export async function updateCalendarStatus(
 }
 
 /**
+ * Active `Phase` rows with no non-cancelled, phase-tagged `CalendarEvent` in the given planning
+ * group — i.e. phases with no completion event yet. Empty means the group is ready to freeze (or,
+ * for an already-frozen group, that nothing new needs an `amendPlanningGroupFreeze`).
+ *
+ * Accepts either the top-level client or a transaction client — `freezePlanningGroup` calls this
+ * from inside its own transaction to keep the check atomic with the freeze itself.
+ */
+export async function resolveMissingPhasesForGroup(
+  planningGroupId: string,
+  prisma: PrismaClient | Prisma.TransactionClient
+) {
+  const [activePhases, coveredEvents] = await Promise.all([
+    prisma.phase.findMany({ where: { isActive: true }, select: { id: true, value: true, label: true }, orderBy: { order: 'asc' } }),
+    prisma.calendarEvent.findMany({
+      where: { planningGroupId, cancelledAt: null, phaseId: { not: null } },
+      select: { phaseId: true },
+    }),
+  ]);
+  const coveredPhaseIds = new Set(coveredEvents.map(e => e.phaseId));
+  return activePhases.filter(p => !coveredPhaseIds.has(p.id));
+}
+
+/**
  * Freezes a PlanningGroup's baseline: snapshots the current startAt/endAt of every event belonging
  * to it into baselineStartAt/baselineEndAt (written once, never updated afterwards), then sets
  * frozenAt. startAt/endAt remain freely editable after freeze — only the baseline snapshot is
@@ -152,6 +175,8 @@ export async function updateCalendarStatus(
  * @throws {TRPCError} NOT_FOUND if the planning group does not exist.
  * @throws {TRPCError} CONFLICT if the group was already frozen (re-freeze is not supported — the
  *   baseline must reflect the plan "as it was" at first freeze, never a later re-snapshot).
+ * @throws {TRPCError} PRECONDITION_FAILED if any active Phase has no completion event in the group
+ *   yet — freezing with uncovered phases would leave no way to ever measure them against a baseline.
  */
 export async function freezePlanningGroup(planningGroupId: string, prisma: PrismaClient) {
   return prisma.$transaction(async tx => {
@@ -161,6 +186,14 @@ export async function freezePlanningGroup(planningGroupId: string, prisma: Prism
     }
     if (group.frozenAt) {
       throw new TRPCError({ code: 'CONFLICT', message: 'Gruppo di pianificazione già congelato' });
+    }
+
+    const missingPhases = await resolveMissingPhasesForGroup(planningGroupId, tx);
+    if (missingPhases.length > 0) {
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: `Fasi senza evento di completamento: ${missingPhases.map(p => p.label).join(', ')}`,
+      });
     }
 
     const events = await tx.calendarEvent.findMany({
@@ -560,8 +593,8 @@ export async function applyTemplate(
     const itemsWithDates = template.items.map(item => {
       const startAt = new Date(anchorDate);
       startAt.setDate(startAt.getDate() + item.offsetDays);
-      const endAt = item.durationDays > 0
-        ? new Date(startAt.getTime() + item.durationDays * MS_PER_DAY)
+      const endAt = item.durationDays > 1
+        ? new Date(startAt.getTime() + (item.durationDays - 1) * MS_PER_DAY)
         : undefined;
       return { item, startAt, endAt };
     });
@@ -614,15 +647,36 @@ export async function createPlanningGroup(calendarId: string, name: string, pris
 }
 
 /**
- * Lists all PlanningGroups of a SeasonCalendar, default group first, then alphabetically,
- * with row/event counts (used to gate rename/delete in the admin UI).
+ * Lists all PlanningGroups of a SeasonCalendar, default group first, then alphabetically, with
+ * row/event counts (used to gate rename/delete in the admin UI) and a derived `freezeState`:
+ * - `unfrozen`: `frozenAt` is null.
+ * - `frozen-partial`: `frozenAt` is set, but at least one non-cancelled phase-tagged event still
+ *   has no baseline — added after the original freeze, still needs `amendPlanningGroupFreeze`.
+ * - `frozen`: `frozenAt` is set and every phase-tagged event has a baseline.
+ *
+ * Computed at read time, nothing persisted — a second query only for the frozen groups among the
+ * results (skipped entirely when none are frozen), not one `Phase`/`schema.prisma` change per state.
  */
 export async function listPlanningGroups(calendarId: string, prisma: PrismaClient) {
-  return prisma.planningGroup.findMany({
+  const groups = await prisma.planningGroup.findMany({
     where: { calendarId },
     include: { _count: { select: { events: true, rows: true } } },
     orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
   });
+
+  const frozenGroupIds = groups.filter(g => g.frozenAt).map(g => g.id);
+  const unbaselinedCounts = frozenGroupIds.length === 0 ? [] : await prisma.calendarEvent.groupBy({
+    by: ['planningGroupId'],
+    where: { planningGroupId: { in: frozenGroupIds }, cancelledAt: null, phaseId: { not: null }, baselineStartAt: null },
+    _count: { _all: true },
+  });
+  const unbaselinedByGroup = new Map(unbaselinedCounts.map(c => [c.planningGroupId, c._count._all]));
+
+  return groups.map(g => ({
+    ...g,
+    freezeState: (!g.frozenAt ? 'unfrozen' : (unbaselinedByGroup.get(g.id) ?? 0) > 0 ? 'frozen-partial' : 'frozen') as
+      'unfrozen' | 'frozen-partial' | 'frozen',
+  }));
 }
 
 /**

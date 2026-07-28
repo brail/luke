@@ -62,7 +62,7 @@ export const CalendarEventBaseSchema = z.object({
   allDay:                       z.boolean().default(false),
   publishExternally:            z.boolean().default(true),
   templateItemId:               z.string().uuid().optional(),
-  visibilityFunctionIds:        z.array(z.string().uuid()).min(1),
+  visibilityFunctionIds:        z.array(z.string().uuid()).min(1, 'Seleziona almeno una funzione'),
 });
 
 export type CalendarEventInput = z.infer<typeof CalendarEventBaseSchema>;
@@ -103,10 +103,10 @@ export const MilestoneTemplateItemBaseSchema = z.object({
   title:                z.string().min(1).max(200),
   description:          z.string().max(2000).optional(),
   offsetDays:           z.number().int(),
-  durationDays:         z.number().int().min(0).default(0),
+  durationDays:         z.number().int().min(1).default(1),
   allDay:               z.boolean().default(true),
   publishExternally:    z.boolean().default(true),
-  visibilityFunctionIds: z.array(z.string().uuid()).min(1),
+  visibilityFunctionIds: z.array(z.string().uuid()).min(1, 'Seleziona almeno una funzione'),
 });
 
 /** `offsetDays` is relative to the template's anchor date. */

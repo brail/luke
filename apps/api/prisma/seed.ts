@@ -466,37 +466,37 @@ async function seedMilestoneTemplates(
     {
       title: 'Kickoff',
       offsetDays: 0,
-      durationDays: 0,
+      durationDays: 1,
       visibleFunctionSlugs: ['sales', 'product', 'sourcing'],
     },
     {
       title: 'Briefing materials',
       offsetDays: 14,
-      durationDays: 0,
+      durationDays: 1,
       visibleFunctionSlugs: ['product', 'sourcing'],
     },
     {
       title: 'First samples',
       offsetDays: 60,
-      durationDays: 0,
+      durationDays: 1,
       visibleFunctionSlugs: ['product', 'sourcing'],
     },
     {
       title: 'Linesheet review',
       offsetDays: 90,
-      durationDays: 0,
+      durationDays: 1,
       visibleFunctionSlugs: ['sales', 'product'],
     },
     {
       title: 'Sales pre-opening',
       offsetDays: 120,
-      durationDays: 0,
+      durationDays: 1,
       visibleFunctionSlugs: ['sales', 'product'],
     },
     {
       title: 'PO cutoff',
       offsetDays: 180,
-      durationDays: 0,
+      durationDays: 1,
       visibleFunctionSlugs: ['product', 'sourcing'],
     },
   ];

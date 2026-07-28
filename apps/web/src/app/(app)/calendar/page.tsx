@@ -187,7 +187,7 @@ export default function CalendarPage() {
   });
 
   const unfreezeMutation = trpc.seasonCalendar.unfreezePlanningGroup.useMutation({
-    onSuccess: () => { toast.success('Congelamento annullato'); setActiveGroupAction(null); refetchAfterFreezeChange(); },
+    onSuccess: () => { toast.success('Pianificazione scongelata'); setActiveGroupAction(null); refetchAfterFreezeChange(); },
     onError: err => toast.error(getTrpcErrorMessage(err, { CONFLICT: 'Il gruppo non è congelato' })),
   });
 
@@ -342,15 +342,15 @@ export default function CalendarPage() {
                   Aggiorna congelamento
                 </DropdownMenuItem>
               )}
-              {canUnfreeze && (
-                <DropdownMenuItem onClick={() => setPickerAction('unfreeze')} disabled={!calendar}>
-                  <Snowflake size={13} className="mr-2" />
-                  Forza de-freeze (admin)
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
             </>
           )}
+          {canUnfreeze && (
+            <DropdownMenuItem onClick={() => setPickerAction('unfreeze')} disabled={!calendar}>
+              <Snowflake size={13} className="mr-2" />
+              Forza scongelamento (admin)
+            </DropdownMenuItem>
+          )}
+          {(canUpdate || canUnfreeze) && <DropdownMenuSeparator />}
           {canSync && (
             <DropdownMenuItem
               onClick={() => calendar && triggerSyncMutation.mutate({ calendarId: calendar.id })}
@@ -720,7 +720,7 @@ export default function CalendarPage() {
           title={
             pickerAction === 'freeze' ? 'Congela quale gruppo di pianificazione?'
               : pickerAction === 'amend' ? 'Aggiorna il congelamento di quale gruppo?'
-                : 'Sbloccare quale gruppo di pianificazione?'
+                : 'Scongelare quale gruppo di pianificazione?'
           }
           // amend shares unfreeze's branch here on purpose: both only make sense on an already-frozen group
           filter={pickerAction === 'freeze' ? g => !g.frozenAt && g._count.events > 0 : g => !!g.frozenAt}
@@ -734,7 +734,6 @@ export default function CalendarPage() {
           onFrozen={() => { setActiveGroupAction(null); refetchAfterEventChange(); }}
           planningGroupId={activeGroupAction.groupId}
           milestones={filteredMilestones.filter(m => m.planningGroupId === activeGroupAction.groupId)}
-          holidayDates={holidayDates}
         />
       )}
 
@@ -759,9 +758,9 @@ export default function CalendarPage() {
       <ConfirmDialog
         open={activeGroupAction?.type === 'unfreeze'}
         onOpenChange={v => { if (!v) setActiveGroupAction(null); }}
-        title="Forzare il de-freeze del gruppo di pianificazione?"
+        title="Forzare lo scongelamento del gruppo di pianificazione?"
         description="Azzera la baseline congelata di tutti gli eventi del gruppo — lo scostamento piano/realtà misurato finora andrà perso. Operazione riservata agli amministratori, da usare solo per correggere un congelamento fatto per errore."
-        confirmText="Forza de-freeze"
+        confirmText="Forza scongelamento"
         cancelText="Annulla"
         variant="destructive"
         actionType="warning"
