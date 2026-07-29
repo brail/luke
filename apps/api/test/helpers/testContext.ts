@@ -12,13 +12,22 @@ import { randomUUID } from 'crypto';
 
 import type { Role } from '@luke/core';
 
-import { ensureTestSchema, getTestPrismaClient } from './database';
+import { ensureTestSchema, getTestPrismaClient, resetTestData } from './database';
 import { createSilentLogger } from './logger';
 
 import type { Context } from '../../src/lib/trpc';
 
 /**
  * Crea un context di test con un utente reale del ruolo richiesto.
+ *
+ * Tronca i dati prima di costruire il context, così ogni test parte da un
+ * database vuoto. Non è ridondante con le spec che chiamano già
+ * `resetTestData()`: prima l'isolamento era una convenzione per-file, e bastava
+ * un file senza pulizia iniziale per ereditare le righe di quello precedente.
+ * È successo davvero — `brand.integration.spec.ts` non aveva `afterEach` e
+ * lasciava un brand con codice fisso, che faceva fallire con P2002 le suite
+ * successive. Su un database già popolato il difetto non si vedeva; è emerso
+ * solo in CI, sul primo database davvero vuoto.
  *
  * @param role - Ruolo dell'utente di sessione. Default `admin`.
  */
@@ -31,6 +40,7 @@ export async function createTestContext(
   // solo di rimbalzo, quando un'altra suite aveva già creato le tabelle.
   const prisma = getTestPrismaClient();
   await ensureTestSchema(prisma);
+  await resetTestData(prisma);
 
   const uid = randomUUID().substring(0, 8);
   const user = await prisma.user.create({
