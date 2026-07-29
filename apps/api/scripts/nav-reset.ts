@@ -13,7 +13,7 @@
  * ATTENZIONE: distruttivo — solo per ambienti di sviluppo/test.
  */
 
-import { PrismaClient } from '@prisma/client';
+import { createScriptPrismaClient } from './lib/prisma';
 
 const SEED_BRAND_CODE = 'ACME';
 const SEED_SEASON_CODE = 'PE00';
@@ -28,7 +28,7 @@ async function main() {
     process.exit(1);
   }
 
-  const prisma = new PrismaClient();
+  const prisma = createScriptPrismaClient();
 
   try {
     console.log('🔄 NAV Reset — avvio pulizia dati...\n');

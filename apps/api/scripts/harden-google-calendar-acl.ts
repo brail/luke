@@ -15,14 +15,15 @@
  *   pnpm --filter @luke/api db:harden-google-acl
  */
 
-import { PrismaClient } from '@prisma/client';
 
 import { enforceDomainReadOnly, syncCalendarReaders } from '@luke/calendar';
 
 import { getConfiguredGoogleClient, getAllowedEmailsForFunction } from '../src/services/googleCalendarSync.service.js';
 
+import { createScriptPrismaClient } from './lib/prisma';
+
 async function main() {
-  const prisma = new PrismaClient();
+  const prisma = createScriptPrismaClient();
 
   try {
     const creds = await getConfiguredGoogleClient(prisma);

@@ -16,9 +16,10 @@
  *   pnpm --filter @luke/api db:fix-allday-dates [--dry-run] [--no-sync]
  */
 
-import { PrismaClient } from '@prisma/client';
-
 import { getConfiguredGoogleClient, reconcileCalendar } from '../src/services/googleCalendarSync.service.js';
+
+import { createScriptPrismaClient } from './lib/prisma';
+
 
 function utcMidnightOfLocalDay(d: Date): Date {
   return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -33,7 +34,7 @@ async function main() {
     process.exit(1);
   }
 
-  const prisma = new PrismaClient();
+  const prisma = createScriptPrismaClient();
 
   try {
     const events = await prisma.calendarEvent.findMany({

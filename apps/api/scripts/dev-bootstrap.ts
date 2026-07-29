@@ -14,9 +14,10 @@
 import { execSync } from 'child_process';
 import { join } from 'path';
 
-import { PrismaClient } from '@prisma/client';
-
 import { getMasterKey } from '@luke/core/server';
+
+import { createScriptPrismaClient } from './lib/prisma';
+
 
 /**
  * Funzione principale di bootstrap
@@ -59,7 +60,7 @@ async function bootstrap() {
 
   // 4. Seed database
   console.log('\n🌱 Esecuzione seed...');
-  const prisma = new PrismaClient();
+  const prisma = createScriptPrismaClient();
 
   try {
     // Importa e esegui funzioni di seed
