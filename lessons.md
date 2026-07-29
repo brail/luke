@@ -91,3 +91,36 @@ Il rate limit vive in due mappe separate che devono restare in sync:
 3. `RateLimitConfigSchema` (`packages/core/src/schemas/appConfig.ts`) — campo `.optional()`, altrimenti un override AppConfig/ENV viene silenziosamente ignorato dal resolver.
 
 Regressione reale: `navSyncTrigger` mancante da `DEFAULTS` → sync fornitori NAV in crash in produzione (hotfix v1.9.1).
+
+## Test di integrazione
+
+### L'ordine dei file di test non è alfabetico né stabile
+
+Vitest usa un proprio sequencer: due esecuzioni su macchine diverse possono
+eseguire i file in ordine diverso. Ogni suite che assume "un'altra ha già
+creato le tabelle" o "un'altra ha già pulito i dati" funziona **per caso**.
+
+Regressione reale: il job CI `integration` è fallito al primo giro con 40 test
+rossi, mentre in locale passava da mesi. Due cause, entrambe invisibili su un
+database già popolato:
+
+- `resetTestData()` memoizzava l'elenco tabelle **anche quando vuoto**. Su un
+  database senza schema la query tornava zero righe, venivano memoizzate, e da
+  lì in poi la funzione era un no-op silenzioso per tutto il file: i test
+  giravano senza isolamento e collidevano sui dati a codice fisso.
+- quattro suite costruivano le fixture con `createTestPrismaClient()` in
+  `beforeAll`, prima di qualunque `ensureTestSchema()`.
+
+**Regole**:
+
+1. Una suite di integrazione ottiene il client **solo** da `setupTestDb()` o
+   `createTestContext()` — mai da `createTestPrismaClient()` diretto. Entrambi
+   garantiscono lo schema e troncano.
+2. Mai memoizzare un risultato vuoto se il vuoto è uno stato transitorio: o si
+   garantisce la precondizione prima di calcolarlo, o non si memoizza.
+3. Un helper di isolamento che non riesce a isolare deve **sollevare**, non
+   proseguire: test senza isolamento passano verdi e non provano niente.
+4. Prima di dichiarare verde una suite di integrazione, provarla almeno una
+   volta su un database vergine (`DROP SCHEMA public CASCADE; CREATE SCHEMA
+   public;`). Un DB di sviluppo accumula stato che maschera le dipendenze
+   d'ordine.
