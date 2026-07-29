@@ -294,9 +294,20 @@ Luke adotta una separazione netta tra **bootstrap infrastrutturale** e **configu
 |---|---|
 | `DATABASE_URL` | Prisma richiede l'URL DB prima del boot |
 | `PORT` / `HOST` | Override porta/bind opzionale |
-| `NODE_ENV` | Runtime mode |
+| `NODE_ENV` | Runtime mode — **impostare `development` in locale**, vedi sotto |
 | `LUKE_CORS_ALLOWED_ORIGINS` | Override CORS di deploy (non segreto) |
 | `OTEL_*`, `LOG_LEVEL` | Observability infra standard |
+
+> **`NODE_ENV=development` va messa a mano in `apps/api/.env`.**
+> Lo script dev è `tsx watch --env-file=.env`: nessuno la imposta al posto tuo, e
+> `isDevelopment()` confronta esattamente con `'development'`. Senza quella riga
+> l'API locale gira con la **postura di produzione** — CSP e HSTS attivi, e
+> soprattutto il rate limit a 100 req/min *senza* l'allowList per localhost che
+> `server.ts` prevede apposta per lo sviluppo. Il sintomo non è un errore chiaro:
+> sono 429 sporadici che nel browser arrivano come "Backend non raggiungibile" e
+> nelle suite E2E come login falliti. `apps/api/.env` è gitignored, quindi la riga
+> non arriva da sola su una macchina nuova.
+> Dettagli: [`docs/quality-hardening-plan.md`](docs/quality-hardening-plan.md) §5.
 
 #### Cosa può stare in `.env` — Web (eccezioni framework)
 
