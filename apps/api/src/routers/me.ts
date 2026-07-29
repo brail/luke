@@ -83,7 +83,7 @@ export const meRouter = router({
     const dailyGreetingEnabled = await getUserPreferenceValue(
       user.id,
       DAILY_GREETING_ENABLED_KEY,
-      true,
+      false,
       ctx.prisma
     );
 
@@ -470,7 +470,7 @@ export const meRouter = router({
   getDailyGreeting: protectedProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
 
-    const enabled = await getUserPreferenceValue(userId, DAILY_GREETING_ENABLED_KEY, true, ctx.prisma);
+    const enabled = await getUserPreferenceValue(userId, DAILY_GREETING_ENABLED_KEY, false, ctx.prisma);
     if (!enabled) {
       return { enabled: false as const };
     }
