@@ -2014,16 +2014,19 @@ model Notification {
   /// Optional structured payload for custom rendering.
   data      Json?
   /// False until the user opens/acknowledges the notification.
-  isRead    Boolean              @default(false)
-  readAt    DateTime?
-  createdAt DateTime             @default(now())
+  isRead     Boolean              @default(false)
+  readAt     DateTime?
+  createdAt  DateTime             @default(now())
+  /// Soft-archived by the user (bulk "archive read" action) — hidden from default views.
+  isArchived Boolean              @default(false)
 
   @@index([userId, isRead])
   @@index([userId, createdAt])
+  @@index([userId, isArchived])
   @@map("notifications")
 }
 
-/// Per-user, per-category notification preference. When enabled=false, notifications in that category are suppressed.
+/// Per-user, per-category (or per-event) notification preference. When enabled=false, notifications for that scope are suppressed.
 model NotificationPreference {
   id        String               @id @default(uuid())
   /// FK to User. Cascade delete.
@@ -2032,11 +2035,13 @@ model NotificationPreference {
   user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// Notification category: SYSTEM | CALENDAR | USER_ACTION | WORKFLOW.
   category  NotificationCategory
-  /// When false, notifications in this category are suppressed for the user.
+  /// Empty string = category-level row. Non-empty = event-level override scoped to a specific event key within the category.
+  eventKey  String               @default("")
+  /// When false, notifications in this category/event are suppressed for the user.
   enabled   Boolean              @default(true)
   updatedAt DateTime             @updatedAt
 
-  @@unique([userId, category])
+  @@unique([userId, category, eventKey])
   @@index([userId])
   @@map("notification_preferences")
 }

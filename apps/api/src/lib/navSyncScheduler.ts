@@ -20,7 +20,7 @@ import { closePool, runNavSync } from '@luke/nav';
 
 import { getConfig } from './configManager';
 import { guardMaintenance } from './maintenanceMode';
-import { notifyAdmins, notifyDeduped, SYSTEM_SUCCESS_DEDUP_MS, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
+import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
 
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
@@ -104,13 +104,6 @@ export function registerNavSyncScheduler(
           fastify.log.info({ entity: r.entity, upserted: r.upserted, durationMs }, 'NAV sync scheduler: entità completata');
         }
       }
-      const totalUpserted = report.results.reduce((s, r) => s + (r.upserted ?? 0), 0);
-      await notifyDeduped(`nav-sync:success:${entity}`, SYSTEM_SUCCESS_DEDUP_MS, () => notifyAdmins(prisma, {
-        category: 'SYSTEM',
-        title: `NAV sync ${entity} completato`,
-        message: `${totalUpserted} record in ${durationMs}ms`,
-        data: { entity, type: 'nav_sync_success' },
-      })).catch(e => fastify.log.error({ err: e }, 'Failed to notify admins of sync success'));
     } catch (err) {
       fastify.log.error({ err, entity }, 'NAV sync scheduler: sync fallito');
       await notifyDeduped(`nav-sync:failure:${entity}`, SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(prisma, {

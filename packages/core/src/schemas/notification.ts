@@ -23,9 +23,32 @@ export const notificationSchema = z.object({
 });
 export type Notification = z.infer<typeof notificationSchema>;
 
-/** Per-category notification preference controlling whether the user receives notifications for that category. */
+/** Sentinel `eventKey` value marking a category-level preference row (as opposed to a specific event-level override). */
+export const CATEGORY_LEVEL_EVENT_KEY = '';
+
+/** Per-category (or per-event, when `eventKey` is set) notification preference controlling whether the user receives notifications for that scope. */
 export const notificationPreferenceSchema = z.object({
   category: notificationCategoryEnum,
+  eventKey: z.string(),
   enabled: z.boolean(),
 });
 export type NotificationPreference = z.infer<typeof notificationPreferenceSchema>;
+
+/**
+ * Fine-grained event keys within the CALENDAR category, one per `notifyCalendarChange` call site
+ * in `seasonCalendar.ts`. Lets a user opt out of a specific event type (e.g. reschedules) while
+ * keeping the rest of the CALENDAR category enabled — an optional override on top of the
+ * coarser per-category toggle, not a replacement for it.
+ */
+export const CALENDAR_EVENT_KEYS = [
+  'CALENDAR_CREATE',
+  'CALENDAR_UPDATE',
+  'CALENDAR_RESCHEDULE',
+  'CALENDAR_DELETE',
+  'CALENDAR_BULK_DELETE',
+  'CALENDAR_CANCEL',
+  'CALENDAR_UNCANCEL',
+  'CALENDAR_APPLY_TEMPLATE',
+  'CALENDAR_CLONE',
+] as const;
+export type CalendarEventKey = typeof CALENDAR_EVENT_KEYS[number];

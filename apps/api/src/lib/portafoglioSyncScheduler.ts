@@ -18,7 +18,7 @@ import { getNavDbConfig, getPool, syncPortafoglioNow, type PortafoglioSyncResult
 
 import { getConfig } from './configManager';
 import { guardMaintenance } from './maintenanceMode';
-import { notifyAdmins, notifyDeduped, SYSTEM_SUCCESS_DEDUP_MS, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
+import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
 import { sseStore } from './sseStore';
 
 import type { PrismaClient } from '@prisma/client';
@@ -51,12 +51,6 @@ async function _runSync(): Promise<PortafoglioSyncResult | null> {
     const navConfig = await getNavDbConfig(prisma, getConfig);
     const pool = await getPool(navConfig);
     const result = await syncPortafoglioNow(pool, navConfig.company, prisma, log);
-    await notifyDeduped('portafoglio-sync:success', SYSTEM_SUCCESS_DEDUP_MS, () => notifyAdmins(prisma, {
-      category: 'SYSTEM',
-      title: 'Portafoglio sync completato',
-      message: `${result.totalDurationMs}ms`,
-      data: { type: 'portafoglio_sync_success' },
-    })).catch(e => log.error({ err: e }, 'Failed to notify admins of sync success'));
     return result;
   } catch (err) {
     log.error({ err }, 'Portafoglio sync scheduler: sync fallito');

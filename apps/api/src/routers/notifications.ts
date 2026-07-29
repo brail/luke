@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 
 import { z } from 'zod';
 
-import { notificationCategoryEnum } from '@luke/core';
+import { CALENDAR_EVENT_KEYS, CATEGORY_LEVEL_EVENT_KEY, notificationCategoryEnum } from '@luke/core';
 
 import { sseStore } from '../lib/sseStore';
 import { protectedProcedure, router } from '../lib/trpc';
@@ -14,7 +14,7 @@ export const notificationsRouter = router({
    * Lists notifications for the current user with cursor-based pagination.
    *
    * @auth {authenticated}
-   * @input {{ limit?: number, cursor?: string, unreadOnly?: boolean }}
+   * @input {{ limit?: number, cursor?: string, unreadOnly?: boolean, includeArchived?: boolean, category?: notificationCategoryEnum }}
    * @output {{ items: Notification[], nextCursor: string | null }}
    */
   list: protectedProcedure
@@ -23,16 +23,20 @@ export const notificationsRouter = router({
         limit: z.number().min(1).max(50).default(20),
         cursor: z.string().optional(),
         unreadOnly: z.boolean().optional(),
+        includeArchived: z.boolean().optional(),
+        category: notificationCategoryEnum.optional(),
       })
     )
     .query(async ({ ctx, input }) => {
-      const { limit, cursor, unreadOnly } = input;
+      const { limit, cursor, unreadOnly, includeArchived, category } = input;
       const userId = ctx.session.user.id;
 
       const items = await ctx.prisma.notification.findMany({
         where: {
           userId,
+          ...(includeArchived ? {} : { isArchived: false }),
           ...(unreadOnly ? { isRead: false } : {}),
+          ...(category ? { category } : {}),
           ...(cursor ? { createdAt: { lt: new Date(cursor) } } : {}),
         },
         orderBy: { createdAt: 'desc' },
@@ -45,6 +49,7 @@ export const notificationsRouter = router({
           link: true,
           isRead: true,
           readAt: true,
+          isArchived: true,
           createdAt: true,
         },
       });
@@ -66,8 +71,8 @@ export const notificationsRouter = router({
   counts: protectedProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
     const [unread, read] = await Promise.all([
-      ctx.prisma.notification.count({ where: { userId, isRead: false } }),
-      ctx.prisma.notification.count({ where: { userId, isRead: true } }),
+      ctx.prisma.notification.count({ where: { userId, isRead: false, isArchived: false } }),
+      ctx.prisma.notification.count({ where: { userId, isRead: true, isArchived: false } }),
     ]);
     return { unread, read, total: unread + read };
   }),
@@ -105,15 +110,17 @@ export const notificationsRouter = router({
   }),
 
   /**
-   * Permanently deletes all read notifications for the current user.
+   * Archives (soft-hides) all read notifications for the current user. Archived notifications
+   * stay in the database and remain visible in the Notification Center with `includeArchived: true`.
    *
    * @auth {authenticated}
    * @input {none}
    * @output {{ ok: true }}
    */
-  deleteRead: protectedProcedure.mutation(async ({ ctx }) => {
-    await ctx.prisma.notification.deleteMany({
-      where: { userId: ctx.session.user.id, isRead: true },
+  archiveRead: protectedProcedure.mutation(async ({ ctx }) => {
+    await ctx.prisma.notification.updateMany({
+      where: { userId: ctx.session.user.id, isRead: true, isArchived: false },
+      data: { isArchived: true },
     });
     return { ok: true };
   }),
@@ -130,7 +137,7 @@ export const notificationsRouter = router({
       const userId = ctx.session.user.id;
 
       const stored = await ctx.prisma.notificationPreference.findMany({
-        where: { userId },
+        where: { userId, eventKey: CATEGORY_LEVEL_EVENT_KEY },
         select: { category: true, enabled: true },
       });
 
@@ -154,8 +161,52 @@ export const notificationsRouter = router({
       .input(z.object({ category: notificationCategoryEnum, enabled: z.boolean() }))
       .mutation(async ({ ctx, input }) => {
         await ctx.prisma.notificationPreference.upsert({
-          where: { userId_category: { userId: ctx.session.user.id, category: input.category } },
-          create: { userId: ctx.session.user.id, category: input.category, enabled: input.enabled },
+          where: { userId_category_eventKey: { userId: ctx.session.user.id, category: input.category, eventKey: CATEGORY_LEVEL_EVENT_KEY } },
+          create: { userId: ctx.session.user.id, category: input.category, eventKey: CATEGORY_LEVEL_EVENT_KEY, enabled: input.enabled },
+          update: { enabled: input.enabled },
+        });
+        return { ok: true };
+      }),
+
+    /**
+     * Lists the current user's per-event overrides within the CALENDAR category
+     * (defaults to enabled for any event key without a stored row).
+     *
+     * @auth {authenticated}
+     * @input {none}
+     * @output {Array<{ eventKey: CalendarEventKey, enabled: boolean }>}
+     */
+    listCalendarEventOverrides: protectedProcedure.query(async ({ ctx }) => {
+      const userId = ctx.session.user.id;
+
+      const stored = await ctx.prisma.notificationPreference.findMany({
+        where: { userId, category: 'CALENDAR', eventKey: { in: [...CALENDAR_EVENT_KEYS] } },
+        select: { eventKey: true, enabled: true },
+      });
+
+      const storedMap = new Map(stored.map(p => [p.eventKey, p.enabled]));
+
+      return CALENDAR_EVENT_KEYS.map(eventKey => ({
+        eventKey,
+        enabled: storedMap.get(eventKey) ?? true,
+      }));
+    }),
+
+    /**
+     * Enables or disables notifications for a specific CALENDAR event key for the current user —
+     * a finer override on top of the CALENDAR category-level toggle above.
+     *
+     * @auth {authenticated}
+     * @input {{ eventKey: CalendarEventKey, enabled: boolean }}
+     * @output {{ ok: true }}
+     */
+    updateCalendarEventOverride: protectedProcedure
+      .input(z.object({ eventKey: z.enum(CALENDAR_EVENT_KEYS), enabled: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        const userId = ctx.session.user.id;
+        await ctx.prisma.notificationPreference.upsert({
+          where: { userId_category_eventKey: { userId, category: 'CALENDAR', eventKey: input.eventKey } },
+          create: { userId, category: 'CALENDAR', eventKey: input.eventKey, enabled: input.enabled },
           update: { enabled: input.enabled },
         });
         return { ok: true };

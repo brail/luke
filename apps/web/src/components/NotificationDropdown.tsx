@@ -1,35 +1,16 @@
 'use client';
 
-import { Bell, Check, Trash2 } from 'lucide-react';
+import { Archive, Bell, Check } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 
 import { useNotifications } from '../hooks/use-notifications';
 import { trpc } from '../lib/trpc';
-import { cn } from '../lib/utils';
 
+import { NotificationRow } from './NotificationRow';
 import { Button } from './ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Separator } from './ui/separator';
-
-import type { Route } from 'next';
-
-const NOTIFICATION_CATEGORY: Record<string, { style: string; label: string }> = {
-  SYSTEM:      { style: 'bg-blue-100 text-blue-700',   label: 'Sistema' },
-  CALENDAR:    { style: 'bg-yellow-100 text-yellow-700', label: 'Calendario' },
-  USER_ACTION: { style: 'bg-green-100 text-green-700',  label: 'Azioni' },
-  WORKFLOW:    { style: 'bg-purple-100 text-purple-700', label: 'Workflow' },
-};
-
-function formatRelativeTime(date: Date): string {
-  const diff = Date.now() - new Date(date).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return 'ora';
-  if (mins < 60) return `${mins} min fa`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} ore fa`;
-  return `${Math.floor(hours / 24)} giorni fa`;
-}
 
 function formatCountsLabel(unread: number, read: number): string | null {
   if (unread + read === 0) return null;
@@ -43,7 +24,7 @@ function formatCountsLabel(unread: number, read: number): string | null {
  * Bell icon dropdown that displays the current user's notifications.
  *
  * Refetches the notification list on popover open. Clicking an unread item marks it
- * as read. Provides bulk "mark all as read" and "delete read" actions.
+ * as read. Provides bulk "mark all as read" and "archive read" actions.
  */
 export function NotificationDropdown() {
   const { notifications, unreadCount, readCount, refetch } = useNotifications();
@@ -56,16 +37,14 @@ export function NotificationDropdown() {
       toast.success('Tutte le notifiche segnate come lette');
     },
   });
-  const deleteReadMutation = trpc.notifications.deleteRead.useMutation({
+  const archiveReadMutation = trpc.notifications.archiveRead.useMutation({
     onSuccess: () => {
       refetch();
-      toast.success('Notifiche lette eliminate');
+      toast.success('Notifiche lette archiviate');
     },
   });
 
-  const handleItemClick = (id: string, isRead: boolean) => {
-    if (!isRead) markAsReadMutation.mutate({ id });
-  };
+  const handleMarkAsRead = (id: string) => markAsReadMutation.mutate({ id });
 
   const countsLabel = formatCountsLabel(unreadCount, readCount);
 
@@ -108,10 +87,10 @@ export function NotificationDropdown() {
               variant="ghost"
               size="xs"
               className="px-2 text-muted-foreground"
-              onClick={() => deleteReadMutation.mutate()}
-              disabled={deleteReadMutation.isPending}
+              onClick={() => archiveReadMutation.mutate()}
+              disabled={archiveReadMutation.isPending}
             >
-              <Trash2 className="h-3 w-3" />
+              <Archive className="h-3 w-3" />
             </Button>
           </div>
         </div>
@@ -127,45 +106,7 @@ export function NotificationDropdown() {
               {notifications.map((n, i) => (
                 <div key={n.id}>
                   {i > 0 && <Separator />}
-                  <div
-                    className={cn(
-                      'px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors',
-                      !n.isRead && 'bg-muted/30'
-                    )}
-                    onClick={() => handleItemClick(n.id, n.isRead)}
-                  >
-                    <div className="flex items-start gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                          <span
-                            className={cn(
-                              'text-[10px] font-medium px-1.5 py-0.5 rounded',
-                              NOTIFICATION_CATEGORY[n.category]?.style ?? 'bg-muted text-muted-foreground'
-                            )}
-                          >
-                            {NOTIFICATION_CATEGORY[n.category]?.label ?? n.category}
-                          </span>
-                          {!n.isRead && (
-                            <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
-                          )}
-                        </div>
-                        <p className="text-sm font-medium leading-tight truncate">{n.title}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
-                        <p className="text-[10px] text-muted-foreground mt-1">
-                          {formatRelativeTime(new Date(n.createdAt))}
-                        </p>
-                      </div>
-                    </div>
-                    {n.link && (
-                      <Link
-                        href={n.link as Route}
-                        className="text-xs text-primary hover:underline mt-1 block"
-                        onClick={e => e.stopPropagation()}
-                      >
-                        Vai →
-                      </Link>
-                    )}
-                  </div>
+                  <NotificationRow notification={n} onMarkAsRead={handleMarkAsRead} />
                 </div>
               ))}
             </div>
@@ -173,7 +114,13 @@ export function NotificationDropdown() {
         </div>
 
         {/* Footer */}
-        <div className="border-t px-4 py-2">
+        <div className="border-t px-4 py-2 flex items-center justify-between">
+          <Link
+            href="/notifications"
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Vedi tutte →
+          </Link>
           <Link
             href="/profile"
             className="text-xs text-muted-foreground hover:text-foreground transition-colors"

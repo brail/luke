@@ -13,7 +13,7 @@ import { getNavDbConfig, getPool, syncKimoNow, type KimoSyncResult } from '@luke
 
 import { getConfig } from './configManager';
 import { guardMaintenance } from './maintenanceMode';
-import { notifyAdmins, notifyDeduped, SYSTEM_SUCCESS_DEDUP_MS, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
+import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
 import { sseStore } from './sseStore';
 
 import type { PrismaClient } from '@prisma/client';
@@ -46,12 +46,6 @@ async function _runSync(): Promise<KimoSyncResult | null> {
     const navConfig = await getNavDbConfig(prisma, getConfig);
     const pool = await getPool(navConfig);
     const result = await syncKimoNow(pool, navConfig.company, prisma, log);
-    await notifyDeduped('kimo-sync:success', SYSTEM_SUCCESS_DEDUP_MS, () => notifyAdmins(prisma, {
-      category: 'SYSTEM',
-      title: 'KIMO sync completato',
-      message: `${result.totalDurationMs}ms`,
-      data: { type: 'kimo_sync_success' },
-    })).catch(e => log.error({ err: e }, 'Failed to notify admins of sync success'));
     return result;
   } catch (err) {
     log.error({ err }, 'Kimo sync scheduler: sync fallito');

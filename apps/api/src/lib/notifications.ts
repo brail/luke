@@ -1,5 +1,5 @@
 
-import { fullName } from '@luke/core';
+import { CATEGORY_LEVEL_EVENT_KEY, fullName } from '@luke/core';
 
 import { sseStore } from './sseStore';
 
@@ -11,6 +11,8 @@ import type { PrismaClient, NotificationCategory, Prisma } from '@prisma/client'
 interface CreateNotificationParams {
   userId: string;
   category: NotificationCategory;
+  /** Optional fine-grained event key within `category` (e.g. a `CalendarEventKey`) — checked before the category-level preference. */
+  eventKey?: string;
   title: string;
   message: string;
   link?: string;
@@ -18,19 +20,27 @@ interface CreateNotificationParams {
 }
 
 /**
- * Creates a single in-app notification for a user if the user has not disabled
- * that notification category. Immediately pushes an SSE ping to connected clients.
+ * Creates a single in-app notification for a user if the user has not disabled that
+ * notification category (or, when `eventKey` is set, the specific event). Immediately
+ * pushes an SSE ping to connected clients.
  */
 export async function createNotification(
   prisma: PrismaClient,
   params: CreateNotificationParams
 ): Promise<void> {
-  const pref = await prisma.notificationPreference.findUnique({
-    where: { userId_category: { userId: params.userId, category: params.category } },
-    select: { enabled: true },
+  // Single query covering both the event-level row (if `eventKey` is set) and the category-level
+  // fallback row — event-level wins when present, otherwise the category-level row applies.
+  const eventKeysToCheck = params.eventKey
+    ? [params.eventKey, CATEGORY_LEVEL_EVENT_KEY]
+    : [CATEGORY_LEVEL_EVENT_KEY];
+  const prefs = await prisma.notificationPreference.findMany({
+    where: { userId: params.userId, category: params.category, eventKey: { in: eventKeysToCheck } },
+    select: { eventKey: true, enabled: true },
   });
-
-  if (pref?.enabled === false) return;
+  const eventPref = params.eventKey ? prefs.find(p => p.eventKey === params.eventKey) : undefined;
+  const categoryPref = prefs.find(p => p.eventKey === CATEGORY_LEVEL_EVENT_KEY);
+  const enabled = eventPref ? eventPref.enabled : (categoryPref?.enabled ?? true);
+  if (!enabled) return;
 
   await prisma.notification.create({
     data: {
@@ -123,8 +133,10 @@ export async function bulkNotify(
 ): Promise<void> {
   if (userIds.length === 0) return;
 
+  // Scoped to eventKey:'' (category-level rows only) — an event-level override that mutes
+  // one specific event must not suppress the user's entire category-level aggregate notification.
   const disabledPrefs = await prisma.notificationPreference.findMany({
-    where: { userId: { in: userIds }, category: params.category, enabled: false },
+    where: { userId: { in: userIds }, category: params.category, eventKey: CATEGORY_LEVEL_EVENT_KEY, enabled: false },
     select: { userId: true },
   });
   const disabledSet = new Set(disabledPrefs.map(p => p.userId));
@@ -164,6 +176,13 @@ interface CalendarBufferEntry {
   titleSuffix: string;
   rawMessage: string;
   singleLink: string;
+  /**
+   * Event key of the first (and, if the entry flushes with `count === 1`, only) call.
+   * Only consulted when `count === 1` — an entry that collapsed multiple event types
+   * together has no single well-defined event key, so per-event mutes don't apply to it
+   * (only the coarser category-level mute does, via `bulkNotify`'s own check).
+   */
+  eventKey: string | undefined;
 }
 
 const calendarBuffer = new Map<string, CalendarBufferEntry>();
@@ -199,6 +218,8 @@ export async function notifyCalendarChange(
     message: string;
     link?: string;
     calendarId?: string;
+    /** Fine-grained CALENDAR event key (e.g. a `CalendarEventKey`) — see `CalendarBufferEntry.eventKey`. */
+    eventKey?: string;
   }
 ): Promise<void> {
   let visibleUserIds: string[];
@@ -260,15 +281,26 @@ export async function notifyCalendarChange(
     titleSuffix: params.titleSuffix,
     rawMessage: params.message,
     singleLink: params.link ?? '/calendar',
+    eventKey: params.eventKey,
   });
 }
 
 async function flushCalendarEntry(prisma: PrismaClient, entry: CalendarBufferEntry): Promise<void> {
   const userIds = [...entry.userIds];
   if (entry.count === 1) {
+    let recipients = userIds;
+    if (entry.eventKey) {
+      const eventDisabled = await prisma.notificationPreference.findMany({
+        where: { userId: { in: userIds }, category: 'CALENDAR', eventKey: entry.eventKey, enabled: false },
+        select: { userId: true },
+      });
+      const eventDisabledSet = new Set(eventDisabled.map(p => p.userId));
+      recipients = userIds.filter(id => !eventDisabledSet.has(id));
+      if (recipients.length === 0) return;
+    }
     const title = `${entry.actorName} ${entry.titleSuffix}`;
     const message = entry.calendarLabel ? `${entry.rawMessage} · ${entry.calendarLabel}` : entry.rawMessage;
-    await bulkNotify(prisma, userIds, { category: 'CALENDAR', title, message, link: entry.singleLink });
+    await bulkNotify(prisma, recipients, { category: 'CALENDAR', title, message, link: entry.singleLink });
     return;
   }
 
@@ -331,7 +363,6 @@ export async function flushAllCalendarNotifications(prisma: PrismaClient, log: L
 
 const dedupLastSentAt = new Map<string, number>();
 
-export const SYSTEM_SUCCESS_DEDUP_MS = 24 * 60 * 60 * 1000;
 export const SYSTEM_FAILURE_DEDUP_MS = 2 * 60 * 60 * 1000;
 
 /**

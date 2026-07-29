@@ -294,6 +294,7 @@ export const seasonCalendarRouter = router({
         titleSuffix: 'ha aggiunto un evento',
         message: `"${result.title}"`,
         calendarId: group.calendarId,
+        eventKey: 'CALENDAR_CREATE',
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on create'));
       syncOneMilestone(result.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on create'));
       return withPhaseOrderWarning(result, ctx.prisma, logAudit(ctx, { action: 'CALENDAR_EVENT_CREATE', targetType: 'CalendarEvent', targetId: result.id, result: 'SUCCESS', metadata: { calendarId: group.calendarId, planningGroupId: input.planningGroupId, title: result.title } }));
@@ -368,6 +369,7 @@ export const seasonCalendarRouter = router({
         titleSuffix: 'ha modificato un evento',
         message: `"${result.title}"`,
         calendarId: event.calendarId,
+        eventKey: 'CALENDAR_UPDATE',
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on update'));
       syncOneMilestone(input.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on update'));
       return withPhaseOrderWarning(result, ctx.prisma, logAudit(ctx, {
@@ -425,6 +427,7 @@ export const seasonCalendarRouter = router({
         titleSuffix: 'ha spostato un evento',
         message: `"${result.title}" — ${input.reason}`,
         calendarId: event.calendarId,
+        eventKey: 'CALENDAR_RESCHEDULE',
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on reschedule'));
       syncOneMilestone(input.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on reschedule'));
       return withPhaseOrderWarning(result, ctx.prisma, logAudit(ctx, {
@@ -490,6 +493,7 @@ export const seasonCalendarRouter = router({
         titleSuffix: 'ha rimosso un evento',
         message: `"${event.title}"`,
         calendarId: event.calendarId,
+        eventKey: 'CALENDAR_DELETE',
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on delete'));
       return { success: true };
     }),
@@ -562,6 +566,7 @@ export const seasonCalendarRouter = router({
         titleSuffix: `ha rimosso ${input.ids.length} eventi`,
         message: `dal calendario`,
         calendarId: uniqueCalendarIds.length === 1 ? uniqueCalendarIds[0] : undefined,
+        eventKey: 'CALENDAR_BULK_DELETE',
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on bulk delete'));
       return { success: true, count: input.ids.length };
     }),
@@ -628,6 +633,7 @@ export const seasonCalendarRouter = router({
         titleSuffix: 'ha annullato un evento',
         message: `"${event.title}" annullato: ${input.reason}`,
         calendarId: event.calendarId,
+        eventKey: 'CALENDAR_CANCEL',
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on cancel'));
 
       return { event: result, rolledBack };
@@ -688,6 +694,7 @@ export const seasonCalendarRouter = router({
         titleSuffix: 'ha ripristinato un evento annullato',
         message: `"${event.title}"`,
         calendarId: event.calendarId,
+        eventKey: 'CALENDAR_UNCANCEL',
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on uncancel'));
 
       return result;
@@ -775,6 +782,7 @@ export const seasonCalendarRouter = router({
         titleSuffix: 'ha applicato un template',
         message: `${result.length} eventi aggiunti al calendario`,
         calendarId: group.calendarId,
+        eventKey: 'CALENDAR_APPLY_TEMPLATE',
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on apply template'));
       return result;
     }),
@@ -874,6 +882,7 @@ export const seasonCalendarRouter = router({
         titleSuffix: 'ha clonato il calendario',
         message: `${result.milestonesCreated} eventi copiati`,
         calendarId: result.calendarId,
+        eventKey: 'CALENDAR_CLONE',
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on clone'));
       return result;
     }),
