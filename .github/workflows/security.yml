@@ -45,17 +45,26 @@ jobs:
 
       - run: gitleaks detect --source .
 
+  # Bloccante. Era `continue-on-error: true` — "report-only sui push", con il
+  # segnale vero delegato a `osv-weekly`. Ma `osv-weekly` non è mai partito una
+  # volta: GitHub esegue i trigger `schedule` usando i workflow del **branch di
+  # default**, e questo file non esiste su `main`. Risultato: l'unico job che
+  # girava era volutamente non bloccante, e quello bloccante non aveva un file da
+  # eseguire. Sono passate inosservate 24 vulnerabilità note, 3 delle quali
+  # critiche sul layer di autenticazione.
   osv-push:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    continue-on-error: true # decisione: report-only sui push
     steps:
       - uses: actions/checkout@v7
       - uses: google/osv-scanner-action/osv-scanner-action@v2.3.8
 
+  # Copre il caso che il job su push non può coprire: una vulnerabilità
+  # divulgata dopo l'ultimo commit, su codice fermo. Resta inerte finché questo
+  # file non arriva anche su `main` — vedi il commento sopra.
   osv-weekly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest # bloccante: il fail settimanale è il segnale vero
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: google/osv-scanner-action/osv-scanner-action@v2.3.8

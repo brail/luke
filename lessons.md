@@ -124,3 +124,45 @@ database già popolato:
    volta su un database vergine (`DROP SCHEMA public CASCADE; CREATE SCHEMA
    public;`). Un DB di sviluppo accumula stato che maschera le dipendenze
    d'ordine.
+
+## CI / Gate di sicurezza
+
+### Un job `schedule` gira solo se il workflow esiste sul branch di default
+
+GitHub esegue i trigger `schedule` usando i file di workflow del **branch di
+default**, non del branch dove il file è stato scritto. Un `cron` su un workflow
+che vive solo su un branch di sviluppo non parte mai, e non produce alcun
+errore: semplicemente non esiste alcuna esecuzione.
+
+Regressione reale: `security.yml` aveva `osv-push` con `continue-on-error: true`
+("report-only sui push") e `osv-weekly` bloccante, con il commento *"il fail
+settimanale è il segnale vero"*. Ma `security.yml` esisteva solo su
+`develop-2.1`, mai su `main`: in 24 esecuzioni del workflow, zero da schedule.
+L'unico job che girava era volutamente non bloccante, e quello bloccante non
+aveva un file da eseguire. Sono passate inosservate 24 vulnerabilità note — 3
+critiche (CVSS 9.1) su `next-auth`/`@auth/core`, fra cui un bypass di
+autenticazione via omoglifi nella normalizzazione email.
+
+**Regole**:
+
+1. Prima di affidare un controllo a un `schedule`, verificare che il workflow
+   sia sul branch di default: `git ls-tree --name-only origin/main .github/workflows/`.
+2. Controllare che sia davvero partito almeno una volta:
+   `gh run list --workflow <nome> --limit 30 --json event -q '.[].event' | sort | uniq -c`.
+   Zero `schedule` significa che il gate non esiste.
+3. `continue-on-error: true` su un job di sicurezza va accompagnato da un gate
+   che blocca davvero, e quel gate va verificato in esecuzione — non solo scritto.
+4. Un workflow che risulta `success` non dice che i suoi job siano passati:
+   `continue-on-error` maschera il fallimento a livello di run. Guardare i job:
+   `gh run view <id> --json jobs -q '.jobs[] | "\(.conclusion)\t\(.name)"'`.
+
+### Gli `overrides` di pnpm possono pinnare una versione vulnerabile
+
+`pnpm-workspace.yaml` conteneva `brace-expansion@1: '1.1.16'` e analoghi, aggiunti
+per deduplicare. Quando è uscita GHSA-mh99-v99m-4gvg (range `<= 5.0.7`, fix solo
+in 5.0.8) l'override ha continuato a forzare la versione vulnerabile, e
+`pnpm update` non poteva farci nulla: l'override vince.
+
+**Regola**: un override che pinna una versione **esatta** è debito a scadenza. Se
+si pinna, pinnare un range (`'>=x.y.z'`) e rivedere gli override ad ogni finding
+di `pnpm security:deps`.

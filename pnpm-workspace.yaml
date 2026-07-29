@@ -19,13 +19,16 @@ minimumReleaseAgeExclude:
 
 overrides:
   uuid@<11.1.1: '>=11.1.1'
-  postcss@<8.5.10: '>=8.5.10'
+  postcss@<8.5.18: '>=8.5.18'
   '@hono/node-server@<1.19.13': '>=1.19.13'
   '@opentelemetry/propagator-jaeger': '2.9.0'
-  brace-expansion@1: '1.1.16'
-  brace-expansion@2: '2.1.2'
-  brace-expansion@5: '5.0.7'
+  # GHSA-mh99-v99m-4gvg copre <= 5.0.7 in un unico range: non esiste una patch
+  # nelle linee 1.x e 2.x, l'unica versione sana è la 5.0.8. Ha export duali
+  # (ESM + CJS), quindi i consumer CJS come minimatch@3 continuano a funzionare.
+  brace-expansion: '>=5.0.8'
+  find-my-way: '>=9.7.0' # GHSA-c96f-x56v-gq3h — DoS via HTTP/2
   fast-uri: '3.1.4'
   js-yaml: '4.3.0'
   protobufjs: '7.6.5'
   sharp: '0.35.0'
+  valibot: '>=1.4.2'
