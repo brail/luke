@@ -1,0 +1,25 @@
+name: Setup workspace
+description: >-
+  pnpm, Node con cache e client Prisma generato. Il setup era identico in
+  quattro job: duplicato significa che un bump di Node va fatto in quattro
+  punti, e dimenticarne uno fa girare un job su una versione diversa senza che
+  nulla lo segnali. Il `checkout` resta al chiamante — un'action locale non è
+  raggiungibile prima che il repo sia sul runner.
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v6
+
+    - uses: actions/setup-node@v7
+      with:
+        node-version: '22'
+        cache: 'pnpm'
+
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile
+
+    - name: Generate Prisma client
+      shell: bash
+      run: pnpm --filter @luke/api exec prisma generate

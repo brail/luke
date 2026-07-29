@@ -1,0 +1,14 @@
+rules:
+  - id: luke-no-native-confirm
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Usa <ConfirmDialog> da components/ConfirmDialog.tsx, mai il confirm nativo
+      del browser (pattern non-negoziabile Luke). Il dialog nativo ignora il tema,
+      non è testabile e non rispetta il resto della UI.
+    pattern-either:
+      - pattern: globalThis.confirm(...)
+      - pattern: window.confirm(...)
+    paths:
+      include:
+        - '/apps/web/src/**'

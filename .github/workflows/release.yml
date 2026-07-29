@@ -13,9 +13,19 @@ env:
   PNPM_VERSION: '10.32.1'
 
 jobs:
+  # ── Gate: nessuna immagine se la CI non è verde ──────────────────────────────
+  # Riusa ci.yml invece di duplicarne gli step: lint, typecheck, typecheck:test,
+  # unit test, integration e migrazioni. Nessuno è continue-on-error — dallo
+  # svuotamento della quarantena anche `integration` blocca il tag
+  # (docs/quality-hardening-plan.md §5).
+  verify:
+    name: Verify
+    uses: ./.github/workflows/ci.yml
+
   # ── Build & push API image ───────────────────────────────────────────────────
   build-api:
     name: Build API image
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -64,6 +74,7 @@ jobs:
   # ── Build & push Web image ───────────────────────────────────────────────────
   build-web:
     name: Build Web image
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: read

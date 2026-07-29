@@ -17,8 +17,14 @@ jobs:
       - name: Install semgrep (OSS, LGPL-2.1)
         run: pip install semgrep
 
-      - name: Semgrep - regole bloccanti (community + custom ERROR-tier)
-        run: semgrep scan --config p/typescript --config p/nextjs --config p/nodejs --config p/react --config p/sql-injection --config .semgrep/rules/no-console.yml --config .semgrep/rules/raw-query-guard.yml --config .semgrep/rules/no-direct-env.yml --error
+      - name: Semgrep - community ruleset (bloccante)
+        run: semgrep scan --config p/typescript --config p/nextjs --config p/nodejs --config p/react --config p/sql-injection --error
+
+      # Directory intera filtrata per severità: una regola ERROR nuova entra da
+      # sola in tutti i gate, senza modifiche sincronizzate qui, in
+      # `security:sast` e in `.husky/pre-commit`.
+      - name: Semgrep - regole custom ERROR-tier (bloccante)
+        run: semgrep scan --config .semgrep/rules/ --severity ERROR --error
 
       - name: Semgrep - luke-mutation-requires-permission (WARNING, non bloccante)
         run: semgrep scan --config .semgrep/rules/mutation-requires-permission.yml

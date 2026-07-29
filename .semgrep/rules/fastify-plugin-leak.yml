@@ -1,0 +1,19 @@
+rules:
+  - id: luke-fastify-plugin-leak
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      Un file di route non deve registrare plugin dentro `fp()`. `fastify-plugin`
+      rompe l'incapsulamento di proposito: il plugin finisce nello scope root e
+      diventa globale per tutto il server. È già successo con il rate limiter di
+      brandLogo.routes.ts, che ha sostituito il limite globale con 30 req/min per
+      utente su ogni rotta in produzione. Esporta una normale funzione async —
+      nessun file in routes/ usa decorate o addHook, quindi nessuno ha bisogno di
+      fp().
+    patterns:
+      - pattern-inside: |
+          fp(async ($APP, ...) => { ... }, ...)
+      - pattern: $APP.register(...)
+    paths:
+      include:
+        - '/apps/api/src/routes/**'

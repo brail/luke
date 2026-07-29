@@ -11,4 +11,9 @@ gitleaks protect --staged || exit 1
 
 # Solo regole ERROR-tier per velocità (<5s): community ruleset e la regola
 # WARNING (luke-mutation-requires-permission) girano in CI, non qui.
-semgrep scan --config .semgrep/rules/no-console.yml --config .semgrep/rules/raw-query-guard.yml --config .semgrep/rules/no-direct-env.yml --error --baseline-commit HEAD
+#
+# La directory intera, filtrata per severità, invece dell'elenco file per file:
+# una regola nuova entra automaticamente in tutti e tre i gate (questo hook,
+# `security:sast`, `security.yml`). Enumerarli significava tre modifiche
+# sincronizzate per ogni regola, e dimenticarne una la disattivava in silenzio.
+semgrep scan --config .semgrep/rules/ --severity ERROR --error --baseline-commit HEAD

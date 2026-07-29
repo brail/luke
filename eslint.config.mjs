@@ -10,7 +10,10 @@ export default [
   {
     files: [
       'apps/api/src/**/*.{ts,tsx}',
+      'apps/api/test/**/*.{ts,tsx}',
+      'apps/api/scripts/**/*.{ts,tsx}',
       'apps/web/src/**/*.{ts,tsx}',
+      'apps/web/tests/**/*.{ts,tsx}',
       'packages/core/src/**/*.{ts,tsx}',
       'packages/nav/src/**/*.{ts,tsx}',
       'packages/calendar/src/**/*.{ts,tsx}',

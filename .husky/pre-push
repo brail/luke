@@ -15,3 +15,15 @@ while read local_ref local_sha remote_ref remote_sha; do
       ;;
   esac
 done
+
+# Unit test prima del push. Non in pre-commit: là serve latenza bassa e il ciclo
+# di lavoro ne farebbe a meno. I test di integrazione restano fuori: richiedono
+# Docker, e un hook che dipende da un container non è affidabile.
+echo "🧪 Unit test..."
+if ! pnpm test; then
+  echo ""
+  echo "❌ Test falliti — push bloccato."
+  echo "   Per saltare (solo se sai perché): git push --no-verify"
+  echo ""
+  exit 1
+fi

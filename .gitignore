@@ -56,6 +56,13 @@ pids
 coverage/
 *.lcov
 
+# Playwright: report, artefatti dei fallimenti e storageState autenticato
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+apps/web/tests/.auth/
+
 # nyc test coverage
 .nyc_output
 
