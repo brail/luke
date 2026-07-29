@@ -356,9 +356,27 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Verifica se l'errore non è retryable
+   * Verifica se l'errore non è retryable.
+   *
+   * Include i `TRPCError` già mappati da `bind()` e `search()`: quei metodi
+   * traducono l'errore della libreria PRIMA che il retry lo veda, quindi
+   * controllare solo l'errore originale non basta. In particolare una password
+   * sbagliata diventa `UNAUTHORIZED`, e senza questo controllo veniva ritentata
+   * `maxRetries + 1` volte — cioè ogni login errato colpiva Active Directory tre
+   * volte, avvicinando il lockout dell'account a ogni typo.
+   *
+   * `BAD_GATEWAY` resta volutamente fuori: è la mappatura degli errori di rete
+   * in `search()`, transitori e quindi legittimamente ritentabili.
    */
   private isNonRetryableError(error: unknown): boolean {
+    if (error instanceof TRPCError) {
+      return (
+        error.code === 'UNAUTHORIZED' ||
+        error.code === 'FORBIDDEN' ||
+        error.code === 'BAD_REQUEST'
+      );
+    }
+
     return (
       this.isInvalidCredentialsError(error) || this.isInvalidFilterError(error)
     );

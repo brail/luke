@@ -164,7 +164,22 @@ export const brandRouter = router({
         }
 
         return brand;
-      }, { timeout: 15000 });
+      }, { timeout: 15000 })
+        // Il check-then-act sopra è in transaction, ma PostgreSQL gira in READ
+        // COMMITTED: due create concorrenti sullo stesso codice non si vedono a
+        // vicenda e arrivano entrambe all'insert. Il vincolo unique impedisce il
+        // duplicato — senza questa traduzione però il perdente riceveva un errore
+        // Prisma grezzo (500) invece del CONFLICT che riceve chi perde la corsa
+        // per via del controllo esplicito. Stesso pattern del P2025 in company.ts.
+        .catch((e: unknown) => {
+          if ((e as { code?: string })?.code === 'P2002') {
+            throw new TRPCError({
+              code: 'CONFLICT',
+              message: 'Codice brand già esistente',
+            });
+          }
+          throw e;
+        });
 
       let finalLogoUrl: string | null = null;
       if (created.logoKey) {

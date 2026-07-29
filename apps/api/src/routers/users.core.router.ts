@@ -203,9 +203,9 @@ export const usersCoreRouter = router({
   create: protectedProcedure
     .use(requirePermission('users:create'))
     .use(withRateLimit('userMutations'))
+    .input(CreateUserInputSchema)
     .use(withIdempotency())
     .use(withAuditLog('USER_CREATE', 'User'))
-    .input(CreateUserInputSchema)
     .mutation(async ({ input, ctx }) => {
       // Verifica che email e username non esistano già
       const existingUser = await ctx.prisma.user.findFirst({
@@ -293,9 +293,9 @@ export const usersCoreRouter = router({
   update: protectedProcedure
     .use(requirePermission('users:update'))
     .use(withRateLimit('userMutations'))
+    .input(UpdateUserInputSchema)
     .use(withIdempotency())
     .use(withAuditLog('USER_UPDATE', 'User'))
-    .input(UpdateUserInputSchema)
     .mutation(async ({ input, ctx }) => {
       const { id, ...updateData } = input;
 
@@ -461,8 +461,8 @@ export const usersCoreRouter = router({
   softDelete: protectedProcedure
     .use(requirePermission('users:delete'))
     .use(withRateLimit('userMutations'))
-    .use(withAuditLog('USER_DELETE', 'User'))
     .input(UserIdSchema)
+    .use(withAuditLog('USER_DELETE', 'User'))
     .mutation(deleteUserHandler),
 
   /**

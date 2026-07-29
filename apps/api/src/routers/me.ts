@@ -261,8 +261,8 @@ export const meRouter = router({
    */
   changePassword: protectedProcedure
     .use(withRateLimit('passwordChange'))
-    .use(withIdempotency())
     .input(ChangePasswordSchema)
+    .use(withIdempotency())
     .mutation(async ({ ctx, input }) => {
       // Verifica che l'utente abbia provider LOCAL
       const userWithProvider = await ctx.prisma.user.findUnique({

@@ -460,8 +460,8 @@ export const configRouter = router({
   set: protectedProcedure
     .use(requirePermission('config:update'))
     .use(withRateLimit('configMutations'))
-    .use(withIdempotency())
     .input(SetConfigSchema)
+    .use(withIdempotency())
     .mutation(async ({ input, ctx }) => {
       return await upsertConfig(ctx, input.key, input.value, input.encrypt);
     }),
@@ -524,8 +524,8 @@ export const configRouter = router({
   update: protectedProcedure
     .use(requirePermission('config:update'))
     .use(withRateLimit('configMutations'))
-    .use(withIdempotency())
     .input(SetConfigSchema)
+    .use(withIdempotency())
     .mutation(async ({ input, ctx }) => {
       return await upsertConfig(ctx, input.key, input.value, input.encrypt, {
         strictUpdate: true,
@@ -591,7 +591,6 @@ export const configRouter = router({
   setMultiple: protectedProcedure
     .use(requirePermission('config:update'))
     .use(withRateLimit('configMutations'))
-    .use(withIdempotency())
     .input(
       z.object({
         configs: z.array(
@@ -605,6 +604,7 @@ export const configRouter = router({
         ),
       })
     )
+    .use(withIdempotency())
     .mutation(async ({ input, ctx }) => {
       const results = await Promise.all(
         input.configs.map(async config => {

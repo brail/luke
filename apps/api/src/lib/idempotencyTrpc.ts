@@ -21,7 +21,7 @@ const logger = pino({ level: 'info' });
  * @returns Raw tRPC middleware (use directly with `.use()` on a procedure).
  */
 export function withIdempotency() {
-  return async ({ ctx, next, path, type }: any) => {
+  return async ({ ctx, next, path, type, input }: any) => {
     // Solo per mutation (query non hanno bisogno di idempotency)
     if (type !== 'mutation') {
       return next();
@@ -48,7 +48,13 @@ export function withIdempotency() {
     // Serializza input per hash (usa path + input come identificatore)
     const method = 'POST'; // tRPC usa sempre POST per mutation
     const pathStr = `/trpc/${path}`;
-    const body = JSON.stringify(ctx.input || {});
+    // `input` arriva dal middleware, non da `ctx`: `ctx.input` non esiste sul
+    // context tRPC e valeva sempre undefined, quindi il body hash era
+    // costantemente "{}" — due richieste con la stessa key ma payload diversi
+    // risultavano identiche e la seconda riceveva in replay la risposta della
+    // prima invece del CONFLICT previsto. Richiede che `.use(withIdempotency())`
+    // sia concatenato DOPO `.input(...)`, altrimenti l'input non è ancora parsato.
+    const body = JSON.stringify(input ?? {});
 
     // Check se esiste già una risposta
     const result = idempotencyStore.check(

@@ -67,8 +67,8 @@ export const authRouter = router({
    */
   login: publicProcedure
     .use(withRateLimit('login'))
-    .use(withIdempotency())
     .input(LoginSchema)
+    .use(withIdempotency())
     .mutation(async ({ input, ctx }) => {
       return await authenticateUser(ctx, input);
     }),

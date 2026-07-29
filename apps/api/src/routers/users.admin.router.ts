@@ -59,8 +59,8 @@ export const usersAdminRouter = router({
    */
   approvePending: protectedProcedure
     .use(requirePermission('users:update'))
-    .use(withAuditLog('USER_APPROVED', 'User'))
     .input(UserIdSchema)
+    .use(withAuditLog('USER_APPROVED', 'User'))
     .mutation(async ({ input, ctx }) => {
       const user = await ctx.prisma.user.findUnique({
         where: { id: input.id },
@@ -149,8 +149,8 @@ export const usersAdminRouter = router({
    */
   revokeUserSessions: protectedProcedure
     .use(requirePermission('users:update'))
-    .use(withAuditLog('USER_REVOKE_SESSIONS', 'User'))
     .input(UserIdSchema)
+    .use(withAuditLog('USER_REVOKE_SESSIONS', 'User'))
     .mutation(async ({ ctx, input }) => {
       // Verifica che l'utente esista
       const targetUser = await ctx.prisma.user.findUnique({
@@ -200,13 +200,13 @@ export const usersAdminRouter = router({
    */
   forceVerifyEmail: protectedProcedure
     .use(requirePermission('users:update'))
-    .use(withAuditLog('EMAIL_VERIFICATION_FORCED', 'User'))
     .input(
       z.object({
         userId: z.string().uuid(),
         verified: z.boolean(),
       })
     )
+    .use(withAuditLog('EMAIL_VERIFICATION_FORCED', 'User'))
     .mutation(async ({ input, ctx }) => {
       const { userId, verified } = input;
 

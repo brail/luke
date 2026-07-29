@@ -412,8 +412,8 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
 }
 
 /**
- * Crea Brand e Season minimi per il context layer
- * Funzione idempotente: può essere eseguita multiple volte senza duplicazioni
+ * Crea Brand, Season e un set di parametri pricing minimi per il context layer.
+ * Funzione idempotente: può essere eseguita multiple volte senza duplicazioni.
  */
 export async function seedContextData(prisma: PrismaClient): Promise<void> {
   console.log('🏢 Seeding context data (Brand & Season)...');
@@ -443,6 +443,49 @@ export async function seedContextData(prisma: PrismaClient): Promise<void> {
   });
 
   console.log(`✅ Season '${season.code}' ready (ID: ${season.id})`);
+
+  // Seed set parametri pricing.
+  //
+  // Non è decorazione: senza almeno un set, la pagina Costi e Prezzi mostra
+  // l'empty state e lo smoke E2E salta il calcolo (`test.skip`). Il risultato
+  // sarebbe una suite verde che non ha mai eseguito il pricing — esattamente il
+  // verde che non prova niente da cui è nato tutto il piano qualità.
+  //
+  // Valori plausibili per una produzione in Cina con acquisto in USD e vendita
+  // in EUR; servono a far girare la catena completa, non a rappresentare
+  // condizioni commerciali reali.
+  const parameterSet = await prisma.pricingParameterSet.upsert({
+    where: {
+      brandId_seasonId_name: {
+        brandId: brand.id,
+        seasonId: season.id,
+        name: 'Standard',
+      },
+    },
+    update: {},
+    create: {
+      brandId: brand.id,
+      seasonId: season.id,
+      name: 'Standard',
+      countryCode: 'CN',
+      purchaseCurrency: 'USD',
+      sellingCurrency: 'EUR',
+      qualityControlPercent: 2,
+      transportInsuranceCost: 3,
+      duty: 8,
+      exchangeRate: 1.08,
+      italyAccessoryCosts: 2,
+      tools: 1,
+      retailMultiplier: 2.6,
+      optimalMargin: 62,
+      isDefault: true,
+      orderIndex: 0,
+    },
+  });
+
+  console.log(
+    `✅ Pricing parameter set '${parameterSet.name}' ready (ID: ${parameterSet.id})`
+  );
 }
 
 async function seedMilestoneTemplates(
@@ -583,14 +626,27 @@ async function main() {
 }
 
 /**
- * Esegui seed e chiudi connessione
+ * Esegui seed e chiudi connessione — solo quando questo file è l'entrypoint.
+ *
+ * Senza la guardia, un semplice `import { seedAdminUser } from '../prisma/seed'`
+ * faceva partire l'intero seed come effetto collaterale dell'import, e il suo
+ * `process.exit(1)` in caso di errore abbatteva il processo chiamante (nei test
+ * si portava giù il runner).
  */
-main()
-  .catch(e => {
-    console.error('💥 Seed fallito:', e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-    console.log('🔌 Connessione database chiusa');
-  });
+function isEntrypoint(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  return require.resolve(entry) === __filename;
+}
+
+if (isEntrypoint()) {
+  main()
+    .catch(e => {
+      console.error('💥 Seed fallito:', e);
+      process.exit(1);
+    })
+    .finally(async () => {
+      await prisma.$disconnect();
+      console.log('🔌 Connessione database chiusa');
+    });
+}
