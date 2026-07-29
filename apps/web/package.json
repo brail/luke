@@ -6,12 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint src/",
+    "lint": "eslint src/ tests/",
     "typecheck": "tsc --noEmit",
-    "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui",
-    "test:e2e:debug": "playwright test --debug",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e": "playwright test --project=smoke",
+    "test:e2e:ui": "playwright test --project=smoke --ui",
+    "test:e2e:debug": "playwright test --project=smoke --debug",
+    "test:e2e:headed": "playwright test --project=smoke --headed"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

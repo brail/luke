@@ -4,17 +4,10 @@ import { useEffect, useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
 
+import { dailyGreetingSeenKey } from '../lib/dailyGreetingKey';
 import { trpc } from '../lib/trpc';
 
 type DailyGreetingData = Extract<RouterOutputs['me']['getDailyGreeting'], { enabled: true }>;
-
-function todayLocalKey(): string {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
-  return `luke-greeting-seen-${yyyy}-${mm}-${dd}`;
-}
 
 /**
  * Gates the daily greeting modal to once per day per browser via localStorage.
@@ -28,7 +21,7 @@ export function useDailyGreeting(): {
   dismiss: () => void;
 } {
   const [alreadySeen, setAlreadySeen] = useState(
-    () => typeof window !== 'undefined' && localStorage.getItem(todayLocalKey()) === '1'
+    () => typeof window !== 'undefined' && localStorage.getItem(dailyGreetingSeenKey()) === '1'
   );
 
   const { data } = trpc.me.getDailyGreeting.useQuery(undefined, {
@@ -37,7 +30,7 @@ export function useDailyGreeting(): {
 
   useEffect(() => {
     if (!alreadySeen && data?.enabled) {
-      localStorage.setItem(todayLocalKey(), '1');
+      localStorage.setItem(dailyGreetingSeenKey(), '1');
     }
   }, [alreadySeen, data]);
 
