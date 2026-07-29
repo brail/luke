@@ -6,7 +6,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { appRouter } from '../src/routers/index';
 import { getVisibleMilestoneIdsForUser } from '../src/services/milestoneVisibility.service';
 
-import { createTestPrismaClient } from './helpers/database';
+import { setupTestDb } from './helpers/database';
 import { createSilentLogger } from './helpers/logger';
 
 import type { UserSession } from '../src/lib/auth';
@@ -51,7 +51,10 @@ async function createUser(role: 'admin' | 'editor' | 'viewer') {
 }
 
 beforeAll(async () => {
-  prisma = createTestPrismaClient();
+  // `setupTestDb()` garantisce lo schema e tronca: l'ordine dei file non è
+  // alfabetico né stabile, quindi nessuna suite può assumere che un'altra
+  // abbia già creato le tabelle.
+  prisma = await setupTestDb();
 
   const uid = randomUUID().substring(0, 6);
 
@@ -119,7 +122,6 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await prisma.$disconnect();
 });
 
 describe('getVisibleMilestoneIdsForUser', () => {

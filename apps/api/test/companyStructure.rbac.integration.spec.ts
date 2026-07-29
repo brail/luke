@@ -5,7 +5,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 import { appRouter } from '../src/routers/index';
 
-import { createTestPrismaClient } from './helpers/database';
+import { setupTestDb } from './helpers/database';
 import { createSilentLogger } from './helpers/logger';
 
 
@@ -49,7 +49,10 @@ async function makeUser(role: 'admin' | 'editor' | 'viewer') {
 }
 
 beforeAll(async () => {
-  prisma = createTestPrismaClient();
+  // `setupTestDb()` garantisce lo schema e tronca: l'ordine dei file non è
+  // alfabetico né stabile, quindi nessuna suite può assumere che un'altra
+  // abbia già creato le tabelle.
+  prisma = await setupTestDb();
 
   [users.admin, users.editor, users.viewer] = await Promise.all([
     makeUser('admin'),
@@ -74,7 +77,6 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await prisma.$disconnect();
 });
 
 function expectForbidden(promise: Promise<unknown>) {

@@ -4,7 +4,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 import { getUserAllowedBrandIds } from '../src/services/context.service';
 
-import { createTestPrismaClient } from './helpers/database';
+import { setupTestDb } from './helpers/database';
 
 import type { PrismaClient } from '@prisma/client';
 
@@ -42,7 +42,10 @@ async function createTeam(opts: { isActive?: boolean } = {}) {
 }
 
 beforeAll(async () => {
-  prisma = createTestPrismaClient();
+  // `setupTestDb()` garantisce lo schema e tronca: l'ordine dei file non è
+  // alfabetico né stabile, quindi nessuna suite può assumere che un'altra
+  // abbia già creato le tabelle.
+  prisma = await setupTestDb();
 
   const [brandA, brandB] = await Promise.all([
     prisma.brand.create({ data: { code: `ACCA-${randomUUID().substring(0, 6)}`, name: 'Brand A', isActive: true } }),
@@ -58,7 +61,6 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await prisma.$disconnect();
 });
 
 /**

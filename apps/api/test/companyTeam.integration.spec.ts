@@ -15,7 +15,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 import { appRouter } from '../src/routers/index';
 
-import { createTestPrismaClient } from './helpers/database';
+import { setupTestDb } from './helpers/database';
 import { createSilentLogger } from './helpers/logger';
 
 import type { UserSession } from '../src/lib/auth';
@@ -46,7 +46,10 @@ async function createFunction(): Promise<string> {
 }
 
 beforeAll(async () => {
-  prisma = createTestPrismaClient();
+  // `setupTestDb()` garantisce lo schema e tronca: l'ordine dei file non è
+  // alfabetico né stabile, quindi nessuna suite può assumere che un'altra
+  // abbia già creato le tabelle.
+  prisma = await setupTestDb();
 
   const uid = randomUUID().substring(0, 8);
   const user = await prisma.user.create({
@@ -56,7 +59,6 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await prisma.$disconnect();
 });
 
 describe('CompanyTeam invariants', () => {

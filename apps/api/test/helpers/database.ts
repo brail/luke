@@ -124,11 +124,21 @@ export async function ensureTestSchema(
  *
  * È il meccanismo di isolamento fra test: molto più rapido di ricreare lo schema,
  * e soprattutto non tocca la connessione.
+ *
+ * Garantisce lo schema prima di leggere l'elenco tabelle, e **non memoizza un
+ * elenco vuoto**. La versione precedente faceva entrambe le cose al contrario:
+ * su un database ancora senza schema la query tornava zero righe, che venivano
+ * memoizzate, e da lì in poi la funzione era un no-op silenzioso per tutto il
+ * file — i test continuavano a girare senza alcun isolamento e collidevano sui
+ * dati a codice fisso. Non si vedeva su un database già popolato: è emerso solo
+ * in CI, sul primo database davvero vuoto.
  */
 export async function resetTestData(
   prisma: PrismaClient = getTestPrismaClient()
 ): Promise<void> {
-  if (!truncatableTables) {
+  if (!truncatableTables?.length) {
+    await ensureTestSchema(prisma);
+
     const rows = await prisma.$queryRaw<{ tablename: string }[]>`
       SELECT tablename FROM pg_tables
       WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'
@@ -136,7 +146,13 @@ export async function resetTestData(
     truncatableTables = rows.map(r => r.tablename);
   }
 
-  if (truncatableTables.length === 0) return;
+  if (truncatableTables.length === 0) {
+    throw new Error(
+      'Nessuna tabella da troncare dopo `ensureTestSchema`: le migration non ' +
+        'hanno prodotto alcuna tabella. Proseguire significherebbe eseguire i ' +
+        'test senza isolamento.'
+    );
+  }
 
   // `$executeRawUnsafe` è inevitabile: i nomi di tabella sono identificatori, non
   // parametri, e non sono esprimibili con Prisma.sql. Le stringhe arrivano da
