@@ -1,7 +1,13 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'crypto';
+
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+
 import { getUserAllowedBrandIds } from '../src/services/context.service';
+
+import { createTestPrismaClient } from './helpers/database';
+
+import type { PrismaClient } from '@prisma/client';
+
 
 let prisma: PrismaClient;
 
@@ -24,20 +30,19 @@ async function createUser() {
   return user.id;
 }
 
-async function createTeam(opts: { isMain?: boolean; isActive?: boolean } = {}) {
+async function createTeam(opts: { isActive?: boolean } = {}) {
   const id = randomUUID().substring(0, 8);
   return prisma.companyTeam.create({
     data: {
       functionId,
       name: `team-${id}`,
-      isMain: opts.isMain ?? false,
       isActive: opts.isActive ?? true,
     },
   });
 }
 
 beforeAll(async () => {
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
 
   const [brandA, brandB] = await Promise.all([
     prisma.brand.create({ data: { code: `ACCA-${randomUUID().substring(0, 6)}`, name: 'Brand A', isActive: true } }),
@@ -56,6 +61,16 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
+/**
+ * Policy vigente (commit 28b1873, "opt-in brand access via team scopes"):
+ * l'accesso ai brand è **opt-in stretto**. `null` significa "nessun vincolo" ed è
+ * riservato al ruolo admin; per tutti gli altri l'accesso è esattamente l'unione
+ * dei brandScopes dei team attivi di cui l'utente è membro. Nessun team, o team
+ * senza scope, significa nessun brand — non "tutti".
+ *
+ * La versione precedente di questi test asseriva la policy opposta (unione più
+ * permissiva, `null` = tutti i brand) ed è rimasta indietro alla migrazione.
+ */
 describe('getUserAllowedBrandIds', () => {
   it('utente senza team → []', async () => {
     const userId = await createUser();
@@ -63,13 +78,19 @@ describe('getUserAllowedBrandIds', () => {
     expect(result).toEqual([]);
   });
 
-  it('utente in team con brandScopes=[] → null (tutti i brand)', async () => {
+  it('admin → null (nessun vincolo, unico caso che restituisce null)', async () => {
+    const userId = await createUser();
+    const result = await getUserAllowedBrandIds(userId, prisma, 'admin');
+    expect(result).toBeNull();
+  });
+
+  it('utente in team senza brandScopes → [] (opt-in: nessuno scope, nessun brand)', async () => {
     const userId = await createUser();
     const team = await createTeam();
     await prisma.companyTeamMembership.create({ data: { teamId: team.id, userId } });
 
     const result = await getUserAllowedBrandIds(userId, prisma);
-    expect(result).toBeNull();
+    expect(result).toEqual([]);
   });
 
   it('utente in team con brandScopes=[brandA] → [brandA.id]', async () => {
@@ -99,7 +120,7 @@ describe('getUserAllowedBrandIds', () => {
     expect(result).toHaveLength(2);
   });
 
-  it('utente in più team, almeno uno con brandScopes=[] → null', async () => {
+  it('un team senza scope non allarga l\'accesso degli altri team', async () => {
     const userId = await createUser();
     const teamScoped = await createTeam();
     const teamUnscoped = await createTeam();
@@ -109,8 +130,10 @@ describe('getUserAllowedBrandIds', () => {
       prisma.companyTeamMembership.create({ data: { teamId: teamUnscoped.id, userId } }),
     ]);
 
+    // Sotto la vecchia policy il team senza scope avrebbe promosso l'utente a
+    // "tutti i brand". Con l'opt-in non aggiunge nulla: resta il solo brandA.
     const result = await getUserAllowedBrandIds(userId, prisma);
-    expect(result).toBeNull();
+    expect(result).toEqual([brandAId]);
   });
 
   it('utente in team isActive=false → [] (team inattivo non conta)', async () => {

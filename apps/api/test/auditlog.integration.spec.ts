@@ -12,6 +12,7 @@ import {
   setupTestDb,
   teardownTestDb,
   createTestUser,
+  TEST_USER_PASSWORD,
   createTestContext,
   createCallerAs,
 } from './helpers';
@@ -143,43 +144,31 @@ describe('AuditLog Integration', () => {
       expect(auditLogs).toHaveLength(1);
       const log = auditLogs[0];
 
+      // `targetId` viene ora popolato: un log di cancellazione senza l'id di ciò
+      // che è stato cancellato non è tracciabile. Il commento originale
+      // ("il middleware non può estrarre l'ID dall'input") descrive un limite
+      // ormai superato.
       expect(log).toMatchObject({
         action: 'USER_HARD_DELETE',
         targetType: 'User',
-        targetId: null, // Il middleware non può estrarre l'ID dall'input
         actorId: admin.id,
         result: 'SUCCESS',
       });
+      expect(log.targetId).toEqual(expect.any(String));
     });
   });
 
   describe('USER_PASSWORD_CHANGE', () => {
     it('dovrebbe loggare entry per cambio password senza password in chiaro', async () => {
+      // `createTestUser` crea già identità LOCAL **e** credenziale: crearne una
+      // seconda viola il vincolo unique su identityId.
       const { user: user, session } = await createTestUser('viewer');
-
-      // Crea credenziale locale per l'utente (l'identità esiste già)
-      const identity = await testPrisma.identity.findFirst({
-        where: { userId: user.id, provider: 'LOCAL' },
-      });
-
-      if (identity) {
-        // Crea hash valido per la password 'oldpass'
-        const argon2 = await import('argon2');
-        const passwordHash = await argon2.hash('oldpass');
-
-        await testPrisma.localCredential.create({
-          data: {
-            identityId: identity.id,
-            passwordHash: passwordHash,
-          },
-        });
-      }
 
       const ctx = createTestContext(session);
       const caller = appRouter.createCaller(ctx);
 
       await caller.me.changePassword({
-        currentPassword: 'oldpass',
+        currentPassword: TEST_USER_PASSWORD,
         newPassword: 'NewSecurePass123!',
         confirmNewPassword: 'NewSecurePass123!',
       });
@@ -208,32 +197,15 @@ describe('AuditLog Integration', () => {
 
   describe('AUTH_LOGIN', () => {
     it('dovrebbe loggare entry per login riuscito', async () => {
+      // Credenziale già creata da `createTestUser`
       const { user } = await createTestUser('viewer');
 
-      // Crea credenziale locale per l'utente (l'identità esiste già)
-      const identity = await testPrisma.identity.findFirst({
-        where: { userId: user.id, provider: 'LOCAL' },
-      });
-
-      if (identity) {
-        // Crea hash valido per la password 'testpass'
-        const argon2 = await import('argon2');
-        const passwordHash = await argon2.hash('testpass');
-
-        await testPrisma.localCredential.create({
-          data: {
-            identityId: identity.id,
-            passwordHash: passwordHash,
-          },
-        });
-      }
-
-      const caller = createCallerAs(null); // Non autenticato
+      const caller = await createCallerAs(null); // Non autenticato
 
       // Simula login con password corretta
       await caller.auth.login({
         username: user.username,
-        password: 'testpass',
+        password: TEST_USER_PASSWORD,
       });
 
       const auditLogs = await testPrisma.auditLog.findMany({
@@ -292,7 +264,7 @@ describe('AuditLog Integration', () => {
 
   describe('Ordering e timestamp', () => {
     it('dovrebbe ordinare per createdAt DESC', async () => {
-      const { user: admin, session } = await createTestUser('admin');
+      const { session } = await createTestUser('admin');
       const ctx = createTestContext(session);
       const caller = appRouter.createCaller(ctx);
 
@@ -304,7 +276,7 @@ describe('AuditLog Integration', () => {
         role: 'viewer',
       });
 
-      const user2 = await caller.users.create({
+      await caller.users.create({
         username: 'user2',
         email: 'user2@test.com',
         password: 'SecurePassword123!',
@@ -332,7 +304,7 @@ describe('AuditLog Integration', () => {
 
   describe('Metadata redaction', () => {
     it('dovrebbe redattare campi sensibili nei metadata', async () => {
-      const { user: admin, session } = await createTestUser('admin');
+      const { session } = await createTestUser('admin');
       const ctx = createTestContext(session);
       const caller = appRouter.createCaller(ctx);
 
@@ -366,7 +338,7 @@ describe('AuditLog Integration', () => {
 
   describe('USER_HARD_DELETE con targetId corretto', () => {
     it('dovrebbe loggare targetId corretto per hard delete', async () => {
-      const { user: admin, session } = await createTestUser('admin');
+      const { session } = await createTestUser('admin');
       const { user: targetUser } = await createTestUser('viewer');
       const ctx = createTestContext(session);
       const caller = appRouter.createCaller(ctx);
@@ -392,7 +364,7 @@ describe('AuditLog Integration', () => {
 
   describe('CONFIG_VIEW_VALUE con targetId', () => {
     it('dovrebbe loggare targetId per visualizzazione valore raw', async () => {
-      const { user: admin, session } = await createTestUser('admin');
+      const { session } = await createTestUser('admin');
       const ctx = createTestContext(session);
       const caller = appRouter.createCaller(ctx);
 
@@ -467,18 +439,38 @@ describe('AuditLog Integration', () => {
     });
 
     it('dovrebbe loggare FAILURE per errore LDAP', async () => {
-      const { user: admin, session } = await createTestUser('admin');
+      const { session } = await createTestUser('admin');
       const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+
+      // Il ramo FAILURE non è raggiungibile con un input malformato: `ldapConfigSchema`
+      // valida già URL e roleMapping (il `JSON.parse` dentro il handler è di fatto
+      // ridondante), quindi la procedura verrebbe respinta da `.input()` senza mai
+      // eseguire il corpo — e senza scrivere alcun audit. L'unico modo realistico
+      // di arrivarci è un guasto sulla scrittura, che qui viene iniettato.
+      const failingCtx = {
+        ...ctx,
+        prisma: new Proxy(ctx.prisma, {
+          get(target, prop, receiver) {
+            if (prop === '$transaction') {
+              return async () => {
+                throw new Error('scrittura AppConfig fallita');
+              };
+            }
+            return Reflect.get(target, prop, receiver);
+          },
+        }),
+      } as typeof ctx;
+
+      const caller = appRouter.createCaller(failingCtx);
 
       await expect(
         caller.integrations.auth.saveLdapConfig({
           enabled: true,
-          url: 'invalid-url',
-          bindDN: '',
-          bindPassword: '',
-          searchBase: '',
-          searchFilter: '',
+          url: 'ldap://ldap.example.com',
+          bindDN: 'cn=admin,dc=example,dc=com',
+          bindPassword: 'secret',
+          searchBase: 'dc=example,dc=com',
+          searchFilter: '(uid={{username}})',
           groupSearchBase: '',
           groupSearchFilter: '',
           roleMapping: '',

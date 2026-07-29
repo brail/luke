@@ -7,12 +7,15 @@
  * - seedAppConfigs crea configurazioni base
  * - seedAppConfigs è idempotente (nessuna duplicazione)
  * - Nessuna configurazione LDAP nel seed
+ * - seedContextData crea brand, stagione e set parametri pricing utilizzabile
  */
 
 import { PrismaClient } from '@prisma/client';
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 
-import { seedAdminUser, seedAppConfigs } from '../prisma/seed';
+import { seedAdminUser, seedAppConfigs, seedContextData } from '../prisma/seed';
+import { calculateForward } from '../src/services/pricing.service';
+
 import { setupTestDb, teardownTestDb } from './helpers/database';
 
 describe('Bootstrap & Seed', () => {
@@ -23,7 +26,7 @@ describe('Bootstrap & Seed', () => {
   });
 
   afterAll(async () => {
-    await teardownTestDb(prisma);
+    await teardownTestDb();
   });
 
   beforeEach(async () => {
@@ -163,5 +166,62 @@ describe('Bootstrap & Seed', () => {
     expect(rateLimit).toHaveProperty('userMutations');
 
     expect(rateLimit.login).toEqual({ max: 5, timeWindow: '1m', keyBy: 'ip' });
+  });
+
+  /**
+   * `seedContextData` non era coperta da nulla, e il seed si è già rotto una
+   * volta in silenzio (un campo `isMain` rimasto dopo la sua rimozione dallo
+   * schema): l'installazione da zero falliva senza che alcun test lo dicesse.
+   */
+  describe('seedContextData', () => {
+    beforeEach(async () => {
+      await prisma.pricingParameterSet.deleteMany();
+      await prisma.brand.deleteMany();
+      await prisma.season.deleteMany();
+    });
+
+    it('crea brand, stagione e set parametri pricing', async () => {
+      await seedContextData(prisma);
+
+      const brand = await prisma.brand.findUnique({ where: { code: 'ACME' } });
+      const season = await prisma.season.findUnique({ where: { code: 'PE00' } });
+      expect(brand?.isActive).toBe(true);
+      expect(season?.isActive).toBe(true);
+
+      // Il set parametri è la precondizione della calcolatrice: senza, la
+      // pagina Costi e Prezzi mostra l'empty state e lo smoke E2E salta il
+      // calcolo invece di verificarlo.
+      const sets = await prisma.pricingParameterSet.findMany();
+      expect(sets).toHaveLength(1);
+      expect(sets[0]).toMatchObject({
+        brandId: brand!.id,
+        seasonId: season!.id,
+        isDefault: true,
+      });
+    });
+
+    it('è idempotente', async () => {
+      await seedContextData(prisma);
+      await seedContextData(prisma);
+
+      expect(await prisma.brand.count()).toBe(1);
+      expect(await prisma.season.count()).toBe(1);
+      expect(await prisma.pricingParameterSet.count()).toBe(1);
+    });
+
+    it('il set parametri produce un calcolo forward coerente', async () => {
+      await seedContextData(prisma);
+      const set = await prisma.pricingParameterSet.findFirstOrThrow();
+
+      const result = calculateForward(100, set);
+
+      // Non asserisce il numero esatto — sarebbe un test tautologico sulla
+      // formula. Asserisce le due proprietà che rendono il seed *utilizzabile*:
+      // il retail supera il costo d'acquisto, e il margine centra il target
+      // dichiarato. Un set con valori incoerenti passerebbe comunque i due test
+      // sopra e romperebbe solo lo smoke, a valle.
+      expect(result.retailPrice).toBeGreaterThan(100);
+      expect(result.companyMargin * 100).toBeCloseTo(set.optimalMargin, 1);
+    });
   });
 });

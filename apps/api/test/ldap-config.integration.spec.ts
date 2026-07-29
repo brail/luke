@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 import { getLdapConfig } from '../src/lib/configManager';
+
 import { setupTestDb, teardownTestDb } from './helpers/database';
 
 describe('LDAP Config Management', () => {
@@ -12,7 +13,7 @@ describe('LDAP Config Management', () => {
   });
 
   afterAll(async () => {
-    await teardownTestDb(prisma);
+    await teardownTestDb();
   });
 
   it('restituisce configurazione di default quando non esistono configurazioni LDAP', async () => {

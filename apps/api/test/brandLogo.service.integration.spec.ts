@@ -3,15 +3,17 @@
  * Verifica validazioni MIME, size, magic bytes e logica di upload
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { TRPCError } from '@trpc/server';
 import { Readable } from 'stream';
 
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+import { rateLimitStore } from '../src/lib/ratelimit';
+import { brandRouter } from '../src/routers/brand';
 import {
   uploadBrandLogo,
   uploadTempBrandLogo,
-  moveTempLogoToBrand,
 } from '../src/services/brandLogo.service';
+
 import {
   createTestContextWithMockStorage,
   createTestFile,
@@ -41,7 +43,12 @@ describe('Brand Logo Upload Service', () => {
       '../src/storage'
     );
 
-    vi.mocked(putObject).mockImplementation(async (ctx: any, params: any) => {
+    // I mock coprono solo la parte di superficie che il service usa: i cast
+    // riconoscono che sono stub parziali, non implementazioni complete.
+    vi.mocked(putObject).mockImplementation((async (
+      _ctx: unknown,
+      params: Parameters<typeof putObject>[1]
+    ) => {
       const fileObject = await mockStorage.put(params);
       return {
         id: fileObject.id,
@@ -51,27 +58,28 @@ describe('Brand Logo Upload Service', () => {
         size: fileObject.size,
         createdAt: fileObject.createdAt,
       };
-    });
+    }) as unknown as typeof putObject);
 
-    vi.mocked(deleteObject).mockImplementation(
-      async (ctx: any, key: string) => {
-        // Estrai bucket e key dal parametro
-        const parts = key.split('/');
-        const bucket = parts[0] || 'brand-logos';
-        const keyPath = parts.slice(1).join('/');
-        await mockStorage.delete({ bucket, key: keyPath });
-      }
-    );
+    vi.mocked(deleteObject).mockImplementation((async (
+      _ctx: unknown,
+      key: string
+    ) => {
+      // Estrai bucket e key dal parametro
+      const parts = key.split('/');
+      const bucket = parts[0] || 'brand-logos';
+      const keyPath = parts.slice(1).join('/');
+      await mockStorage.delete({ bucket, key: keyPath });
+    }) as unknown as typeof deleteObject);
 
     vi.mocked(getStorageProvider).mockResolvedValue({
-      get: async (params: any) => {
+      get: async (params: { bucket: string; key: string }) => {
         const { stream } = await mockStorage.get(params);
         return { stream };
       },
-      delete: async (params: any) => {
+      delete: async (params: { bucket: string; key: string }) => {
         await mockStorage.delete(params);
       },
-    });
+    } as unknown as Awaited<ReturnType<typeof getStorageProvider>>);
   });
 
   afterEach(async () => {
@@ -115,11 +123,11 @@ describe('Brand Logo Upload Service', () => {
       expect(result.bucket).toBe('brand-logos');
       expect(result.key).toBeDefined();
 
-      // Verifica che il brand sia stato aggiornato con il logoUrl
+      // In DB si salva la storage key, non l'URL pubblico (derivato a runtime)
       const updatedBrand = await testContext.prisma.brand.findUnique({
         where: { id: testBrand.id },
       });
-      expect(updatedBrand?.logoUrl).toBe(result.publicUrl);
+      expect(updatedBrand?.logoKey).toBe(result.key);
     });
 
     it('should upload valid JPEG logo successfully', async () => {
@@ -270,7 +278,7 @@ describe('Brand Logo Upload Service', () => {
       const updatedBrand = await testContext.prisma.brand.findUnique({
         where: { id: testBrand.id },
       });
-      expect(updatedBrand?.logoUrl).toBe(result2.publicUrl);
+      expect(updatedBrand?.logoKey).toBe(result2.key);
     });
 
     it('should sanitize filename to prevent path traversal', async () => {
@@ -302,24 +310,21 @@ describe('Brand Logo Upload Service', () => {
         pngBuffer.length,
         pngBuffer
       );
-      const tempId = 'temp-123';
-
       const result = await uploadTempBrandLogo(testContext, {
-        tempId,
         file: testFile,
       });
 
-      expect(result.tempLogoId).toBe(tempId);
-      expect(result.publicUrl).toMatch(/^\/api\/uploads\/temp-brand-logos\//);
+      // Non esiste più un `tempId` fornito dal client né un bucket separato:
+      // il file finisce in `brand-logos` come fileObject *pending*, e viene
+      // confermato al salvataggio del brand tramite `fileObjectId`.
+      expect(result.fileObjectId).toBeDefined();
+      expect(result.publicUrl).toMatch(/^\/api\/uploads\/brand-logos\//);
     });
 
     it('should reject invalid MIME type for temp upload', async () => {
       const testFile = createTestFile('temp.txt', 'text/plain', 100);
-      const tempId = 'temp-123';
-
       await expect(
         uploadTempBrandLogo(testContext, {
-          tempId,
           file: testFile,
         })
       ).rejects.toMatchObject({
@@ -337,11 +342,8 @@ describe('Brand Logo Upload Service', () => {
         largeBuffer.length,
         largeBuffer
       );
-      const tempId = 'temp-123';
-
       await expect(
         uploadTempBrandLogo(testContext, {
-          tempId,
           file: testFile,
         })
       ).rejects.toMatchObject({
@@ -351,7 +353,7 @@ describe('Brand Logo Upload Service', () => {
     });
   });
 
-  describe('moveTempLogoToBrand', () => {
+  describe('conferma logo pending via brandRouter.update', () => {
     let testBrand: any;
 
     beforeEach(async () => {
@@ -365,55 +367,62 @@ describe('Brand Logo Upload Service', () => {
       });
     });
 
-    it('should move temp logo to brand successfully', async () => {
-      const tempId = 'temp-123';
-      const pngBuffer = createValidPngBuffer();
-
-      // Prima crea un file temporaneo
-      await mockStorage.put({
-        bucket: 'temp-brand-logos',
-        key: `${tempId}/temp-logo.png`,
-        contentType: 'image/png',
-        size: pngBuffer.length,
-        stream: Readable.from(pngBuffer),
-      });
-
-      // Mock del fileObject nel DB
-      await testContext.prisma.fileObject.create({
+    it('confirms a pending upload and links it to the brand', async () => {
+      // Lo storage è mockato in questa suite, quindi `putObject` non scrive la
+      // riga fileObject: la si crea qui a mano nello stato in cui la lascerebbe
+      // un upload pending. L'oggetto sotto test è la logica di conferma del
+      // router, non l'upload.
+      const pending = await testContext.prisma.fileObject.create({
         data: {
-          bucket: 'temp-brand-logos',
-          key: `${tempId}/temp-logo.png`,
+          bucket: 'brand-logos',
+          key: `pending-${Date.now()}.png`,
+          originalName: 'temp-logo.png',
           contentType: 'image/png',
-          size: pngBuffer.length,
+          size: 1024,
+          checksumSha256: 'x'.repeat(64),
+          createdBy: testContext.session.user.id,
+          confirmedAt: null,
         },
       });
 
-      const result = await moveTempLogoToBrand(testContext, {
-        tempLogoId: tempId,
-        brandId: testBrand.id,
+      rateLimitStore.clear();
+      const caller = brandRouter.createCaller(testContext);
+      await caller.update({
+        id: testBrand.id,
+        data: { name: 'Brand con logo', fileObjectId: pending.id },
       });
 
-      expect(result.publicUrl).toMatch(/^\/api\/uploads\/brand-logos\//);
-
-      // Verifica che il brand sia stato aggiornato
       const updatedBrand = await testContext.prisma.brand.findUnique({
         where: { id: testBrand.id },
       });
-      expect(updatedBrand?.logoUrl).toBe(result.url);
+      expect(updatedBrand?.logoKey).toBe(pending.key);
+
+      const confirmed = await testContext.prisma.fileObject.findUnique({
+        where: { id: pending.id },
+      });
+      expect(confirmed?.confirmedAt).not.toBeNull();
     });
 
-    it('should reject move for non-existent temp file', async () => {
-      const tempId = 'non-existent';
+    it('ignores a fileObjectId that does not exist', async () => {
+      rateLimitStore.clear();
+      const caller = brandRouter.createCaller(testContext);
 
-      await expect(
-        moveTempLogoToBrand(testContext, {
-          tempLogoId: tempId,
-          brandId: testBrand.id,
-        })
-      ).rejects.toMatchObject({
-        code: 'NOT_FOUND',
-        message: 'File temporaneo non trovato',
+      // Un id inesistente non deve far fallire l'update né sporcare logoKey:
+      // il logo è opzionale, e un riferimento morto non è motivo per rifiutare
+      // il salvataggio degli altri campi.
+      await caller.update({
+        id: testBrand.id,
+        data: {
+          name: 'Brand senza logo',
+          fileObjectId: '00000000-0000-0000-0000-000000000000',
+        },
       });
+
+      const updatedBrand = await testContext.prisma.brand.findUnique({
+        where: { id: testBrand.id },
+      });
+      expect(updatedBrand?.name).toBe('Brand senza logo');
+      expect(updatedBrand?.logoKey).toBeNull();
     });
   });
 

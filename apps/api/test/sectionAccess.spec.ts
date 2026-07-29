@@ -3,9 +3,15 @@
  * Verifica precedenza, safety rule e middleware enforcement
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { PrismaClient } from '@prisma/client';
+import { describe, it, expect } from 'vitest';
+
 import { effectiveSectionAccess } from '@luke/core';
+
+import { router, publicProcedure } from '../src/lib/trpc';
+
+import { createSilentLogger } from './helpers/logger';
+
+import type { Context } from '../src/lib/trpc';
 
 describe('Section Access Overrides', () => {
   describe('effectiveSectionAccess', () => {
@@ -54,7 +60,9 @@ describe('Section Access Overrides', () => {
       });
       expect(viewerResult).toBe(false);
 
-      // Editor ha accesso read a settings
+      // Editor non ha accesso a settings: la sezione è admin-only per design
+      // (`SECTION_ACCESS_DEFAULTS.editor.settings === false`, nessun grant
+      // `settings:*` nel ruolo). Con defaults vuoti il fallback RBAC nega.
       const editorResult = effectiveSectionAccess({
         role: 'editor',
 
@@ -62,7 +70,7 @@ describe('Section Access Overrides', () => {
         userOverride: undefined,
         section: 'settings',
       });
-      expect(editorResult).toBe(true);
+      expect(editorResult).toBe(false);
     });
 
     it('should follow precedence: deny > allow > role', () => {
@@ -113,24 +121,13 @@ describe('Section Access Overrides', () => {
   });
 
   describe('Last-admin safety check', () => {
-    let prisma: PrismaClient;
-
-    beforeEach(async () => {
-      prisma = new PrismaClient();
-    });
-
-    afterEach(async () => {
-      await prisma.$disconnect();
-    });
-
     it('should prevent removing settings access from last admin', async () => {
-      // Questo test richiede setup del database
-      // Per ora testiamo la logica del service
       const { countAdminsWithSettingsAccess } = await import(
         '../src/services/sectionAccess.service'
       );
 
-      // Mock del database per test
+      // Il test esercita solo la logica del service: il conteggio arriva da un
+      // mock, quindi non serve (né si apre) alcuna connessione reale.
       const mockPrisma = {
         user: {
           count: async () => 1, // Simula solo 1 admin
@@ -144,14 +141,19 @@ describe('Section Access Overrides', () => {
 
   describe('Middleware enforcement', () => {
     it('should throw FORBIDDEN when access denied', async () => {
-      // Test del middleware withSectionAccess
       const { withSectionAccess } = await import(
         '../src/lib/sectionAccessMiddleware'
       );
 
-      const middleware = withSectionAccess('settings');
+      // `withSectionAccess` ritorna un MiddlewareBuilder tRPC, non un callable:
+      // va esercitato attraverso una procedura reale, come in produzione.
+      const probeRouter = router({
+        probe: publicProcedure
+          .use(withSectionAccess('settings'))
+          .query(() => 'success'),
+      });
 
-      // Mock context con utente viewer senza override
+      // Context con utente viewer senza override
       const mockCtx = {
         session: {
           user: {
@@ -163,15 +165,18 @@ describe('Section Access Overrides', () => {
           userSectionAccess: {
             findUnique: async () => null, // Nessun override
           },
+          // `getRbacConfig` legge rbac.sectionAccessDefaults e app.sections.disabled:
+          // nessuna riga → defaults statici, nessuna sezione disabilitata.
+          appConfig: {
+            findUnique: async () => null,
+          },
         },
-      };
+        logger: createSilentLogger(),
+      } as unknown as Context;
 
-      const mockNext = async () => 'success';
-
-      // Dovrebbe lanciare TRPCError FORBIDDEN
-      await expect(
-        middleware({ ctx: mockCtx, next: mockNext })
-      ).rejects.toThrow('Accesso negato alla sezione settings');
+      await expect(probeRouter.createCaller(mockCtx).probe()).rejects.toThrow(
+        'Accesso negato alla sezione settings'
+      );
     });
   });
 });

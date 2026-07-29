@@ -1,0 +1,23 @@
+# PostgreSQL effimero per i test di integrazione.
+#
+#   pnpm test:db:up      avvia (porta 5434, non collide con dev:5432 né migrate:5433)
+#   pnpm test:integration esegue le suite
+#   pnpm test:db:down    ferma e cancella il volume
+#
+# Nessun volume persistente: i dati sono usa-e-getta per costruzione.
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: luke_test
+      POSTGRES_USER: luke
+      POSTGRES_PASSWORD: luke_test
+    ports:
+      - '5434:5432'
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U luke -d luke_test']
+      interval: 2s
+      timeout: 3s
+      retries: 20

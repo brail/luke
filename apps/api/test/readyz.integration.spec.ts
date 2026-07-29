@@ -23,6 +23,8 @@ import {
 
 
 import { setupTestDb, teardownTestDb } from './helpers';
+import { getTestPrismaClient } from './helpers/database';
+import { createSilentLogger } from './helpers/logger';
 
 // Mock della configurazione LDAP
 vi.mock('../src/lib/configManager', () => ({
@@ -243,13 +245,8 @@ describe('Integration: Server Bootstrap Fail-Fast', () => {
     // Simula il comportamento del server.ts
     const start = async () => {
       try {
-        const prisma = new PrismaClient();
-        const mockLogger = {
-          info: vi.fn(),
-          error: vi.fn(),
-          warn: vi.fn(),
-          debug: vi.fn(),
-        };
+        const prisma = getTestPrismaClient();
+        const mockLogger = createSilentLogger();
 
         await checkBootstrapDependencies(prisma, mockLogger);
       } catch (error: any) {

@@ -3,10 +3,12 @@
  * Usa un database in memoria per evitare interferenze con il database di sviluppo
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { PrismaClient } from '@prisma/client';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+
 import { getLdapConfig } from '../src/lib/configManager';
-import { setupTestDb, teardownTestDb } from './helpers/test-db';
+
+import { setupTestDb, teardownTestDb } from './helpers';
 
 describe('LDAP Config Management (Simple)', () => {
   let prisma: PrismaClient;
@@ -16,7 +18,7 @@ describe('LDAP Config Management (Simple)', () => {
   });
 
   afterAll(async () => {
-    await teardownTestDb(prisma);
+    await teardownTestDb();
   });
 
   it('restituisce configurazione di default quando non esistono configurazioni LDAP', async () => {

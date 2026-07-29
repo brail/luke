@@ -3,10 +3,12 @@
  * Verifica validazioni file, magic bytes e cleanup
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Readable } from 'stream';
 
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+
 import { uploadBrandLogo } from '../src/services/brandLogo.service';
+
 import { createTestContext } from './helpers/testContext';
 
 describe('Brand Logo Upload', () => {
@@ -167,8 +169,8 @@ describe('Brand Logo Upload', () => {
         },
       });
 
-      expect(result).toHaveProperty('url');
-      expect(result.url).toMatch(/^\/api\/uploads\/brand-logos\//);
+      expect(result).toHaveProperty('publicUrl');
+      expect(result.publicUrl).toMatch(/^\/api\/uploads\/brand-logos\//);
     });
 
     it('should accept valid JPEG files', async () => {
@@ -210,8 +212,8 @@ describe('Brand Logo Upload', () => {
         },
       });
 
-      expect(result).toHaveProperty('url');
-      expect(result.url).toMatch(/^\/api\/uploads\/brand-logos\//);
+      expect(result).toHaveProperty('publicUrl');
+      expect(result.publicUrl).toMatch(/^\/api\/uploads\/brand-logos\//);
     });
   });
 
@@ -235,7 +237,7 @@ describe('Brand Logo Upload', () => {
       const brandAfterFirst = await testContext.prisma.brand.findUnique({
         where: { id: testBrand.id },
       });
-      expect(brandAfterFirst?.logoUrl).toBe(firstResult.url);
+      expect(brandAfterFirst?.logoKey).toBe(firstResult.key);
 
       // Secondo upload
       const secondBuffer = Buffer.from([0xff, 0xd8, 0xff, 0xe0]); // JPEG magic bytes
@@ -255,13 +257,13 @@ describe('Brand Logo Upload', () => {
       const brandAfterSecond = await testContext.prisma.brand.findUnique({
         where: { id: testBrand.id },
       });
-      expect(brandAfterSecond?.logoUrl).toBe(secondResult.url);
-      expect(brandAfterSecond?.logoUrl).not.toBe(firstResult.url);
+      expect(brandAfterSecond?.logoKey).toBe(secondResult.key);
+      expect(brandAfterSecond?.logoKey).not.toBe(firstResult.key);
     });
   });
 
   describe('transaction atomicity', () => {
-    it('should update brand logoUrl atomically', async () => {
+    it('should update brand logoKey atomically', async () => {
       const pngBuffer = Buffer.from([
         0x89,
         0x50,
@@ -309,13 +311,13 @@ describe('Brand Logo Upload', () => {
         },
       });
 
-      // Verifica che il brand sia stato aggiornato con il nuovo logoUrl
+      // Verifica che il brand sia stato aggiornato con la nuova logoKey
       const updatedBrand = await testContext.prisma.brand.findUnique({
         where: { id: testBrand.id },
       });
 
-      expect(updatedBrand?.logoUrl).toBe(result.url);
-      expect(result.url).toMatch(/^\/api\/uploads\/brand-logos\//);
+      expect(updatedBrand?.logoKey).toBe(result.key);
+      expect(result.publicUrl).toMatch(/^\/api\/uploads\/brand-logos\//);
     });
   });
 });

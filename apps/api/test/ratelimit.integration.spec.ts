@@ -3,8 +3,6 @@
  * Verifica rate-limiting end-to-end con chiamate tRPC reali
  */
 
-import { randomUUID } from 'crypto';
-
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import { rateLimitStore } from '../src/lib/ratelimit';
@@ -15,6 +13,7 @@ import {
   createCallerWithIP,
   createCallerAs,
   expectToThrow,
+  TEST_USER_PASSWORD,
 } from './helpers';
 
 
@@ -32,7 +31,7 @@ describe('Rate-Limit Integration', () => {
 
   describe('auth.login rate limiting', () => {
     it('dovrebbe bloccare dopo 5 tentativi dallo stesso IP', async () => {
-      const caller = createCallerWithIP('192.168.1.100', null);
+      const caller = await createCallerWithIP('192.168.1.100', null);
 
       // Prime 5 richieste dovrebbero fallire per credenziali sbagliate ma non per rate-limit
       for (let i = 0; i < 5; i++) {
@@ -50,8 +49,8 @@ describe('Rate-Limit Integration', () => {
     });
 
     it('dovrebbe permettere richieste da IP diversi', async () => {
-      const caller1 = createCallerWithIP('192.168.1.100', null);
-      const caller2 = createCallerWithIP('192.168.1.200', null);
+      const caller1 = await createCallerWithIP('192.168.1.100', null);
+      const caller2 = await createCallerWithIP('192.168.1.200', null);
 
       // Raggiungi limite per IP1
       for (let i = 0; i < 5; i++) {
@@ -77,25 +76,26 @@ describe('Rate-Limit Integration', () => {
 
   describe('me.changePassword rate limiting', () => {
     it('dovrebbe bloccare dopo 3 tentativi in 15min per stesso utente', async () => {
-      const adminCaller = createCallerAs('admin');
+      const adminCaller = await createCallerAs('admin');
 
       // Crea un utente per testare cambio password
-      const testUser = await adminCaller.users.create({
+      await adminCaller.users.create({
         username: 'testuser',
         email: 'testuser@test.com',
-        password: 'Test123!',
+        password: TEST_USER_PASSWORD,
         role: 'viewer',
       });
 
       // Crea caller per l'utente test
-      const userCaller = createCallerAs('viewer');
+      const userCaller = await createCallerAs('viewer');
 
       // Prime 3 richieste dovrebbero fallire per password sbagliata ma non per rate-limit
       for (let i = 0; i < 3; i++) {
         await expectToThrow(
           userCaller.me.changePassword({
-            currentPassword: 'WrongPassword',
-            newPassword: 'NewPassword123!',
+            currentPassword: 'WrongPassw0rd!23',
+            newPassword: 'NewPassw0rd!2345',
+            confirmNewPassword: 'NewPassw0rd!2345',
           }),
           { code: 'UNAUTHORIZED' }
         );
@@ -104,8 +104,9 @@ describe('Rate-Limit Integration', () => {
       // 4a richiesta deve fallire con TOO_MANY_REQUESTS
       await expectToThrow(
         userCaller.me.changePassword({
-          currentPassword: 'WrongPassword',
-          newPassword: 'NewPassword123!',
+          currentPassword: 'WrongPassw0rd!23',
+          newPassword: 'NewPassw0rd!2345',
+            confirmNewPassword: 'NewPassw0rd!2345',
         }),
         { code: 'TOO_MANY_REQUESTS' }
       );
@@ -114,14 +115,14 @@ describe('Rate-Limit Integration', () => {
 
   describe('users mutations rate limiting', () => {
     it('dovrebbe bloccare dopo 10 richieste create/update/delete per stesso utente', async () => {
-      const adminCaller = createCallerAs('admin');
+      const adminCaller = await createCallerAs('admin');
 
       // Prime 10 richieste create dovrebbero funzionare
       for (let i = 0; i < 10; i++) {
         await adminCaller.users.create({
           username: `testuser${i}`,
           email: `testuser${i}@test.com`,
-          password: 'Test123!',
+          password: TEST_USER_PASSWORD,
           role: 'viewer',
         });
       }
@@ -131,7 +132,7 @@ describe('Rate-Limit Integration', () => {
         adminCaller.users.create({
           username: 'testuser11',
           email: 'testuser11@test.com',
-          password: 'Test123!',
+          password: TEST_USER_PASSWORD,
           role: 'viewer',
         }),
         { code: 'TOO_MANY_REQUESTS' }
@@ -141,7 +142,7 @@ describe('Rate-Limit Integration', () => {
 
   describe('config mutations rate limiting', () => {
     it('dovrebbe bloccare dopo 20 richieste set/update per stesso utente', async () => {
-      const adminCaller = createCallerAs('admin');
+      const adminCaller = await createCallerAs('admin');
 
       // Prime 20 richieste set dovrebbero funzionare
       for (let i = 0; i < 20; i++) {
@@ -166,7 +167,7 @@ describe('Rate-Limit Integration', () => {
 
   describe('rate limit window reset', () => {
     it('dovrebbe permettere nuove richieste dopo scadenza window', async () => {
-      const caller = createCallerWithIP('192.168.1.100', null);
+      const caller = await createCallerWithIP('192.168.1.100', null);
 
       // Raggiungi limite
       for (let i = 0; i < 5; i++) {
@@ -195,7 +196,7 @@ describe('Rate-Limit Integration', () => {
 
   describe('rate limit statistics', () => {
     it('dovrebbe tracciare statistiche correttamente', async () => {
-      const caller = createCallerWithIP('192.168.1.100', null);
+      const caller = await createCallerWithIP('192.168.1.100', null);
 
       const initialStats = rateLimitStore.getStats();
       expect(initialStats.routes).toBe(0);
@@ -222,7 +223,7 @@ describe('Rate-Limit Integration', () => {
       process.env.LUKE_RATE_LIMIT_LOGIN_MAX = '3';
       process.env.LUKE_RATE_LIMIT_LOGIN_WINDOW = '1m';
 
-      const caller = createCallerWithIP('192.168.1.100', null);
+      const caller = await createCallerWithIP('192.168.1.100', null);
 
       // Con limite custom di 3, la 4a richiesta dovrebbe essere bloccata
       for (let i = 0; i < 3; i++) {
@@ -248,26 +249,27 @@ describe('Rate-Limit Integration', () => {
       process.env.LUKE_RATE_LIMIT_PASSWORDCHANGE_WINDOW = '5m';
       process.env.LUKE_RATE_LIMIT_PASSWORDCHANGE_KEY_BY = 'ip';
 
-      const caller = createCallerWithIP('192.168.1.100', null);
+      await createCallerWithIP('192.168.1.100', null);
 
       // Crea un utente per testare cambio password
-      const adminCaller = createCallerAs('admin');
-      const testUser = await adminCaller.users.create({
+      const adminCaller = await createCallerAs('admin');
+      await adminCaller.users.create({
         username: 'testuser',
         email: 'testuser@test.com',
-        password: 'Test123!',
+        password: TEST_USER_PASSWORD,
         role: 'viewer',
       });
 
       // Crea caller per l'utente test
-      const userCaller = createCallerAs('viewer');
+      const userCaller = await createCallerAs('viewer');
 
       // Con limite custom di 2, la 3a richiesta dovrebbe essere bloccata
       for (let i = 0; i < 2; i++) {
         await expectToThrow(
           userCaller.me.changePassword({
-            currentPassword: 'WrongPassword',
-            newPassword: 'NewPassword123!',
+            currentPassword: 'WrongPassw0rd!23',
+            newPassword: 'NewPassw0rd!2345',
+            confirmNewPassword: 'NewPassw0rd!2345',
           }),
           { code: 'UNAUTHORIZED' }
         );
@@ -275,8 +277,9 @@ describe('Rate-Limit Integration', () => {
 
       await expectToThrow(
         userCaller.me.changePassword({
-          currentPassword: 'WrongPassword',
-          newPassword: 'NewPassword123!',
+          currentPassword: 'WrongPassw0rd!23',
+          newPassword: 'NewPassw0rd!2345',
+            confirmNewPassword: 'NewPassw0rd!2345',
         }),
         { code: 'TOO_MANY_REQUESTS' }
       );

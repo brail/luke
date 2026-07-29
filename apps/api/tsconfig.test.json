@@ -1,0 +1,33 @@
+{
+  // Typecheck di tutto ciò che sta FUORI dal grafo di build: `tsconfig.json`
+  // include solo `src/**/*`, quindi `test/`, `scripts/` e `prisma/` non passavano
+  // da tsc. È così che l'opzione `datasources`, rimossa in Prisma 7, è
+  // sopravvissuta negli helper di test e in 5 script CLI senza segnalazioni.
+  //
+  // La quarantena è vuota: tutte le suite sono state riparate e sono coperte
+  // dal typecheck (vedi docs/quality-hardening-plan.md).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    // `rootDir: src` viene dal tsconfig di build: qui non si emette nulla e il
+    // programma include `test/` e i sorgenti di @luke/core, entrambi fuori da src.
+    "rootDir": "../..",
+    // Il runtime dei test è vitest, non il module loader di Node: la risoluzione
+    // bundler evita di pretendere estensioni `.js` sugli import relativi.
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["node", "vitest/globals"]
+  },
+  "include": [
+    "src/**/*",
+    "test/**/*",
+    "scripts/**/*",
+    "prisma/**/*.ts",
+    "vitest.config.ts",
+    "vitest.integration.config.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
+}

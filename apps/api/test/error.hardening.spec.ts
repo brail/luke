@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import Fastify from 'fastify';
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
+
 import { setGlobalErrorHandler } from '../src/lib/error';
 
 describe('API Hardening - error handler e process guards', () => {
@@ -36,7 +37,7 @@ describe('API Hardening - error handler e process guards', () => {
 
     // Simula handler: registriamo listener temporaneo
     const fastify = Fastify({ logger: false });
-    const closeSpy = vi.spyOn(fastify, 'close').mockResolvedValue();
+    const closeSpy = vi.spyOn(fastify, 'close').mockResolvedValue(undefined);
 
     // Implementazione minimale del guard
     const onFatal = async () => {

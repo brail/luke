@@ -10,8 +10,15 @@ import { PrismaClient } from '@prisma/client';
 import Fastify from 'fastify';
 
 import { buildHelmetConfig } from '../src/lib/helmet';
+import { hashPassword } from '../src/lib/password';
 import { type Context } from '../src/lib/trpc';
 import { appRouter } from '../src/routers/index';
+
+import {
+  setupTestDb as setupSharedTestDb,
+  teardownTestDb as teardownSharedTestDb,
+} from './helpers/database';
+import { createSilentLogger } from './helpers/logger';
 
 import type { UserSession } from '../src/lib/auth';
 
@@ -21,55 +28,34 @@ import type { UserSession } from '../src/lib/auth';
 let testPrisma: PrismaClient;
 
 /**
- * Inizializza il database di test
+ * Inizializza il database di test.
+ * Delega a `helpers/database.ts`, unica fonte per l'URL e il reset dello schema.
  */
 export async function setupTestDb(): Promise<PrismaClient> {
-  // Usa un database di test completamente separato
-  const testDbPath = './test.db';
-  testPrisma = new PrismaClient({
-    datasources: {
-      db: {
-        url: `file:${testDbPath}`,
-      },
-    },
-  });
-
-  // Applica le migrazioni al database di test
-  const { execSync } = await import('child_process');
-  try {
-    execSync('npx prisma migrate deploy', {
-      cwd: process.cwd(),
-      stdio: 'pipe',
-      env: {
-        ...process.env,
-        DATABASE_URL: `file:${testDbPath}`,
-      },
-    });
-  } catch (error) {
-    console.warn('Failed to apply migrations:', error);
-  }
-
+  testPrisma = await setupSharedTestDb();
   return testPrisma;
 }
 
 /**
- * Pulisce il database di test
+ * No-op, non chiude nulla — vedi `helpers/database.ts`. La connessione si chiude
+ * una volta sola per file, da `disconnectTestDb()` nel setup globale di vitest.
+ * Resta solo perché invocata da molte spec in `afterAll`.
  */
 export async function teardownTestDb(): Promise<void> {
-  if (testPrisma) {
-    await testPrisma.$disconnect();
-
-    // Rimuovi il file del database di test
-    const { unlinkSync, existsSync } = await import('fs');
-    const testDbPath = './test.db';
-    if (existsSync(testDbPath)) {
-      unlinkSync(testDbPath);
-    }
-  }
+  await teardownSharedTestDb();
 }
 
 /**
- * Crea un utente di test con ruolo specificato
+ * Password degli utenti di test. Serve ai test che esercitano `me.changePassword`:
+ * senza credenziale locale il router risponde FORBIDDEN ("cambio password non
+ * consentito per provider esterni") invece di UNAUTHORIZED, e il test finisce per
+ * misurare il ramo sbagliato.
+ */
+export const TEST_USER_PASSWORD = 'TestPassw0rd!23';
+
+/**
+ * Crea un utente di test con ruolo specificato, completo di identità locale e
+ * credenziale — cioè un utente locale reale, non un guscio.
  */
 export async function createTestUser(
   role: 'admin' | 'editor' | 'viewer'
@@ -94,12 +80,19 @@ export async function createTestUser(
     },
   });
 
-  // Crea identità locale per l'utente
-  await testPrisma.identity.create({
+  // Crea identità locale + credenziale per l'utente
+  const identity = await testPrisma.identity.create({
     data: {
       userId: user.id,
       provider: 'LOCAL',
       providerId: `${role}-${uniqueId}`, // Assicura unicità
+    },
+  });
+
+  await testPrisma.localCredential.create({
+    data: {
+      identityId: identity.id,
+      passwordHash: await hashPassword(TEST_USER_PASSWORD),
     },
   });
 
@@ -123,21 +116,11 @@ export function createTestContext(session: UserSession | null = null): Context {
   return {
     prisma: testPrisma,
     session,
-    logger: {
-      info: () => {},
-      error: () => {},
-      warn: () => {},
-      debug: () => {},
-    },
+    logger: createSilentLogger(),
     req: {
       headers: { 'x-luke-trace-id': randomUUID() },
       ip: '127.0.0.1',
-      log: {
-        info: () => {},
-        error: () => {},
-        warn: () => {},
-        debug: () => {},
-      },
+      log: createSilentLogger(),
     } as any,
     res: {} as any,
     traceId: randomUUID(),
@@ -211,12 +194,7 @@ export function mockReqWithHeader(
       [headerName]: value,
       'x-luke-trace-id': randomUUID(),
     },
-    log: {
-      info: () => {},
-      error: () => {},
-      warn: () => {},
-      debug: () => {},
-    },
+    log: createSilentLogger(),
   };
 }
 
@@ -241,24 +219,38 @@ export async function expectToThrow<T>(
   promise: Promise<T>,
   expectedError?: { code?: string; message?: string }
 ): Promise<void> {
+  // Il caso "non ha lanciato" va distinto PRIMA di entrare nel catch: la versione
+  // precedente lanciava dentro il `try`, il proprio `catch` intercettava
+  // quell'Error (che non ha `.code`) e riportava "Expected error code 'X', got
+  // 'undefined'" — cioè un fallimento di codice errore al posto di "la promise si
+  // è risolta". Diagnosi sbagliata su ogni test di questo tipo.
+  let caught: any;
+  let threw = false;
+
   try {
     await promise;
+  } catch (error) {
+    threw = true;
+    caught = error;
+  }
+
+  if (!threw) {
     throw new Error('Expected promise to throw, but it resolved');
-  } catch (error: any) {
-    if (expectedError) {
-      if (expectedError.code && error.code !== expectedError.code) {
-        throw new Error(
-          `Expected error code '${expectedError.code}', got '${error.code}'`
-        );
-      }
-      if (
-        expectedError.message &&
-        !error.message.includes(expectedError.message)
-      ) {
-        throw new Error(
-          `Expected error message to contain '${expectedError.message}', got '${error.message}'`
-        );
-      }
+  }
+
+  if (expectedError) {
+    if (expectedError.code && caught.code !== expectedError.code) {
+      throw new Error(
+        `Expected error code '${expectedError.code}', got '${caught.code}'`
+      );
+    }
+    if (
+      expectedError.message &&
+      !caught.message.includes(expectedError.message)
+    ) {
+      throw new Error(
+        `Expected error message to contain '${expectedError.message}', got '${caught.message}'`
+      );
     }
   }
 }

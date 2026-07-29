@@ -36,6 +36,12 @@ const mockPrisma = {
   navSyncFilter: {
     findUnique: vi.fn(),
   },
+  // Il tick passa da `guardMaintenance` → `isMaintenanceActive` → `getConfig`,
+  // che legge AppConfig: senza questo mock il tick esplode dentro un timer e
+  // l'errore emerge come unhandled rejection invece che come test rosso.
+  appConfig: {
+    findUnique: vi.fn().mockResolvedValue(null),
+  },
 } as unknown as PrismaClient;
 
 // ─── Test Data ────────────────────────────────────────────────────────────────
@@ -101,11 +107,10 @@ describe('portafoglioSyncScheduler', () => {
 
       await onReadyHandler();
 
-      // Move time forward past interval
-      vi.advanceTimersByTime(5 * 60 * 1000 + 1000); // 5 min + 1 sec
-
-      // Give async tasks time to resolve
-      await vi.runAllTimersAsync();
+      // Avanza oltre l'intervallo e lascia risolvere il lavoro async del tick.
+      // `runAllTimersAsync` non è utilizzabile: il tick è un setInterval ricorrente,
+      // e "esegui tutti i timer" su un timer che si ri-arma non termina mai.
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1000); // 5 min + 1 sec
     });
 
     it('should not trigger sync when config is disabled', async () => {
@@ -140,9 +145,7 @@ describe('portafoglioSyncScheduler', () => {
       await onReadyHandler();
 
       // Move time forward less than interval
-      vi.advanceTimersByTime(2 * 60 * 1000); // 2 min
-
-      await vi.runAllTimersAsync();
+      await vi.advanceTimersByTimeAsync(2 * 60 * 1000); // 2 min
 
       // Config should not have been checked multiple times beyond initial setup
     });
@@ -164,8 +167,7 @@ describe('portafoglioSyncScheduler', () => {
       await onReadyHandler();
 
       // Advance less than 10 min
-      vi.advanceTimersByTime(9 * 60 * 1000);
-      await vi.runAllTimersAsync();
+      await vi.advanceTimersByTimeAsync(9 * 60 * 1000);
 
       // Re-check config call count (should not trigger sync yet)
     });
@@ -303,8 +305,7 @@ describe('portafoglioSyncScheduler', () => {
       await onReadyHandler();
 
       // Advance 60 seconds (one tick)
-      vi.advanceTimersByTime(60 * 1000);
-      await vi.runAllTimersAsync();
+      await vi.advanceTimersByTimeAsync(60 * 1000);
 
       // Config should be checked at each tick
     });

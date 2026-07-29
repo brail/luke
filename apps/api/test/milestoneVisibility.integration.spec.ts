@@ -1,10 +1,17 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { PrismaClient } from '@prisma/client';
+
 import { randomUUID } from 'crypto';
-import type { UserSession } from '../src/lib/auth';
-import type { Context } from '../src/lib/trpc';
+
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+
 import { appRouter } from '../src/routers/index';
 import { getVisibleMilestoneIdsForUser } from '../src/services/milestoneVisibility.service';
+
+import { createTestPrismaClient } from './helpers/database';
+import { createSilentLogger } from './helpers/logger';
+
+import type { UserSession } from '../src/lib/auth';
+import type { Context } from '../src/lib/trpc';
+import type { PrismaClient } from '@prisma/client';
 
 let prisma: PrismaClient;
 
@@ -29,8 +36,8 @@ function createContext(session: UserSession): Context {
   return {
     prisma,
     session,
-    logger: { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} },
-    req: { headers: {}, ip: '127.0.0.1', log: { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} } } as any,
+    logger: createSilentLogger(),
+    req: { headers: {}, ip: '127.0.0.1', log: createSilentLogger() } as any,
     res: {} as any,
     traceId: randomUUID(),
   };
@@ -44,7 +51,7 @@ async function createUser(role: 'admin' | 'editor' | 'viewer') {
 }
 
 beforeAll(async () => {
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
 
   const uid = randomUUID().substring(0, 6);
 
@@ -58,8 +65,8 @@ beforeAll(async () => {
 
   // Main teams
   const [salesTeam] = await Promise.all([
-    prisma.companyTeam.create({ data: { functionId: salesFunctionId, name: 'Sales Main', isMain: true, isActive: true } }),
-    prisma.companyTeam.create({ data: { functionId: productFunctionId, name: 'Product Main', isMain: true, isActive: true } }),
+    prisma.companyTeam.create({ data: { functionId: salesFunctionId, name: 'Sales Main', isActive: true } }),
+    prisma.companyTeam.create({ data: { functionId: productFunctionId, name: 'Product Main', isActive: true } }),
   ]);
   salesTeamId = salesTeam.id;
 
@@ -83,14 +90,22 @@ beforeAll(async () => {
   const calendar = await prisma.seasonCalendar.create({ data: { brandId, seasonId } });
   calendarId = calendar.id;
 
-  // Milestones
+  // Eventi di calendario.
+  // `CalendarMilestone` è stato rinominato `CalendarEvent` (commit fbaa00f), e con
+  // esso `MilestoneVisibility`→`CalendarEventVisibility` e
+  // `MilestoneUserVisibility`→`CalendarEventUserVisibility`. L'appartenenza non è
+  // più `ownerFunctionId` ma `planningGroupId`, obbligatorio.
+  const group = await prisma.planningGroup.create({
+    data: { calendarId, name: `Vis Group ${uid}` },
+  });
+
   const startAt = new Date('2099-01-01');
   const [mSales, mProduct] = await Promise.all([
-    prisma.calendarMilestone.create({
-      data: { calendarId, ownerFunctionId: salesFunctionId, type: 'MILESTONE', title: 'Sales Milestone', startAt },
+    prisma.calendarEvent.create({
+      data: { calendarId, planningGroupId: group.id, title: 'Sales Milestone', startAt },
     }),
-    prisma.calendarMilestone.create({
-      data: { calendarId, ownerFunctionId: productFunctionId, type: 'MILESTONE', title: 'Product Milestone', startAt },
+    prisma.calendarEvent.create({
+      data: { calendarId, planningGroupId: group.id, title: 'Product Milestone', startAt },
     }),
   ]);
   milestoneSalesId = mSales.id;
@@ -98,8 +113,8 @@ beforeAll(async () => {
 
   // Visibilities
   await Promise.all([
-    prisma.milestoneVisibility.create({ data: { milestoneId: milestoneSalesId, functionId: salesFunctionId } }),
-    prisma.milestoneVisibility.create({ data: { milestoneId: milestoneProductId, functionId: productFunctionId } }),
+    prisma.calendarEventVisibility.create({ data: { eventId: milestoneSalesId, functionId: salesFunctionId } }),
+    prisma.calendarEventVisibility.create({ data: { eventId: milestoneProductId, functionId: productFunctionId } }),
   ]);
 });
 
@@ -118,14 +133,14 @@ describe('getVisibleMilestoneIdsForUser', () => {
     expect(visible.has(milestoneProductId)).toBe(false);
   });
 
-  it('utente Sales con MilestoneUserVisibility su Product → vede Product (override)', async () => {
-    await prisma.milestoneUserVisibility.create({ data: { milestoneId: milestoneProductId, userId: salesUserId } });
+  it('utente Sales con CalendarEventUserVisibility su Product → vede Product (override)', async () => {
+    await prisma.calendarEventUserVisibility.create({ data: { eventId: milestoneProductId, userId: salesUserId } });
 
     const visible = await getVisibleMilestoneIdsForUser(salesUserId, [milestoneSalesId, milestoneProductId], prisma);
     expect(visible.has(milestoneProductId)).toBe(true);
 
     // Cleanup
-    await prisma.milestoneUserVisibility.delete({ where: { milestoneId_userId: { milestoneId: milestoneProductId, userId: salesUserId } } });
+    await prisma.calendarEventUserVisibility.delete({ where: { eventId_userId: { eventId: milestoneProductId, userId: salesUserId } } });
   });
 });
 

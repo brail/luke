@@ -1,10 +1,20 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { TRPCError } from '@trpc/server';
-import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'crypto';
+
+import { TRPCError } from '@trpc/server';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+
+import { appRouter } from '../src/routers/index';
+
+import { createTestPrismaClient } from './helpers/database';
+import { createSilentLogger } from './helpers/logger';
+
+
+
+
 import type { UserSession } from '../src/lib/auth';
 import type { Context } from '../src/lib/trpc';
-import { appRouter } from '../src/routers/index';
+import type { PrismaClient } from '@prisma/client';
+
 
 let prisma: PrismaClient;
 
@@ -22,8 +32,8 @@ function createContext(session: UserSession): Context {
   return {
     prisma,
     session,
-    logger: { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} },
-    req: { headers: {}, ip: '127.0.0.1', log: { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} } } as any,
+    logger: createSilentLogger(),
+    req: { headers: {}, ip: '127.0.0.1', log: createSilentLogger() } as any,
     res: {} as any,
     traceId: randomUUID(),
   };
@@ -39,7 +49,7 @@ async function makeUser(role: 'admin' | 'editor' | 'viewer') {
 }
 
 beforeAll(async () => {
-  prisma = new PrismaClient();
+  prisma = createTestPrismaClient();
 
   [users.admin, users.editor, users.viewer] = await Promise.all([
     makeUser('admin'),
@@ -53,7 +63,7 @@ beforeAll(async () => {
   });
   testFunctionId = fn.id;
 
-  const team = await prisma.companyTeam.create({ data: { functionId: fn.id, name: `RBAC Team ${uid}`, isMain: true } });
+  const team = await prisma.companyTeam.create({ data: { functionId: fn.id, name: `RBAC Team ${uid}` } });
   testTeamId = team.id;
 
   // Un utente da usare come membro nei test addMembers/removeMembers
@@ -131,9 +141,11 @@ describe('RBAC — company.function', () => {
     await expectForbidden(caller.company.function.update({ id: testFunctionId, name: 'Y' }));
   });
 
-  it('editor: deactivate → FORBIDDEN', async () => {
+  // `deactivate` è stato rinominato `delete` quando il soft-delete è diventato la
+  // semantica unica di cancellazione: la procedura vecchia non esiste più.
+  it('editor: delete (soft) → FORBIDDEN', async () => {
     const caller = appRouter.createCaller(createContext(users.editor.session));
-    await expectForbidden(caller.company.function.deactivate({ id: testFunctionId }));
+    await expectForbidden(caller.company.function.delete({ id: testFunctionId }));
   });
 });
 

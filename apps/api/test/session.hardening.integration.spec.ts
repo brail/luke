@@ -124,7 +124,7 @@ describe('Session Hardening — tokenVersion', () => {
     });
 
     // 2. Login simulato (genera token JWT con tokenVersion=0)
-    const token = signJWT(
+    signJWT(
       {
         userId: user.id,
         email: user.email,

@@ -4,6 +4,7 @@
  */
 
 import { Readable } from 'stream';
+
 import type { Context } from '../../src/lib/trpc';
 
 export interface MockFileObject {
@@ -20,10 +21,17 @@ export class MockStorageProvider {
   private files: Map<string, MockFileObject> = new Map();
   private nextId = 1;
 
+  /**
+   * `key` è opzionale perché il vero `putObject` non la riceve: la genera il
+   * provider a partire da `originalName`. Il mock fa lo stesso — pretenderla in
+   * ingresso produceva "Invalid key: must be non-empty string".
+   */
   async put(params: {
     bucket: string;
-    key: string;
-    contentType: string;
+    key?: string;
+    originalName?: string;
+    /** Opzionale come nel vero `putObject`, che ripiega su application/octet-stream. */
+    contentType?: string;
     size: number;
     stream: NodeJS.ReadableStream;
   }): Promise<MockFileObject> {
@@ -34,17 +42,20 @@ export class MockStorageProvider {
     }
     const data = Buffer.concat(chunks);
 
+    const key =
+      params.key ?? `${this.nextId}-${params.originalName ?? 'file.bin'}`;
+
     const fileObject: MockFileObject = {
       id: `mock-${this.nextId++}`,
       bucket: params.bucket,
-      key: params.key,
-      contentType: params.contentType,
+      key,
+      contentType: params.contentType ?? 'application/octet-stream',
       size: params.size,
       data,
       createdAt: new Date(),
     };
 
-    this.files.set(`${params.bucket}/${params.key}`, fileObject);
+    this.files.set(`${params.bucket}/${key}`, fileObject);
     return fileObject;
   }
 

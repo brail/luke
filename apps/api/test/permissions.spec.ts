@@ -3,8 +3,8 @@
  * Verifica hasPermission, expandRole e middleware requirePermission
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TRPCError } from '@trpc/server';
+import { describe, it, expect } from 'vitest';
 
 import {
   hasPermission,
@@ -15,6 +15,10 @@ import {
 } from '@luke/core';
 
 import { requirePermission, can } from '../src/lib/permissions';
+import { router, publicProcedure } from '../src/lib/trpc';
+
+import { createSilentLogger } from './helpers/logger';
+
 import type { Context } from '../src/lib/trpc';
 
 // Mock context per test
@@ -24,31 +28,33 @@ const createMockContext = (
 ): Context => ({
   prisma: {} as any,
   session: {
+    // La sessione porta solo i campi necessari all'autorizzazione: il resto del
+    // profilo non fa parte di `UserSession` e non va rimesso qui.
     user: {
       id: userId,
       role: userRole,
       email: 'test@example.com',
       username: 'testuser',
-      firstName: 'Test',
-      lastName: 'User',
-      isActive: true,
-      locale: 'it-IT',
-      timezone: 'Europe/Rome',
       tokenVersion: 0,
-      emailVerifiedAt: null,
-      lastLoginAt: null,
-      loginCount: 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
     },
-    accessToken: 'mock-token',
   },
   req: {} as any,
   res: {} as any,
   traceId: 'test-trace-id',
-  logger: {} as any,
+  // Logger funzionante, non `{}`: il deny path fa `ctx.logger?.warn(...)`, e
+  // l'optional chaining protegge dal logger assente, non dal metodo mancante.
+  // Con un mock vuoto il TypeError mascherava il FORBIDDEN in INTERNAL_SERVER_ERROR.
+  logger: createSilentLogger() as any,
   _permissionsCache: new Map(),
 });
+
+/**
+ * Chiave della cache permessi: `role:userId:permission`.
+ * Lo userId è parte della chiave per costruzione — senza, due utenti con lo stesso
+ * ruolo condividerebbero le decisioni di accesso nello stesso context.
+ */
+const cacheKey = (role: Role, permission: Permission, userId = 'test-user-id') =>
+  `${role}:${userId}:${permission}`;
 
 describe('hasPermission', () => {
   it('should return true for admin with wildcard permission', () => {
@@ -139,86 +145,88 @@ describe('expandRole', () => {
 });
 
 describe('requirePermission middleware', () => {
-  let mockNext: ReturnType<typeof vi.fn>;
+  /**
+   * Esercita il middleware attraverso una procedura tRPC reale.
+   *
+   * `requirePermission` ritorna un MiddlewareBuilder di tRPC, non una funzione
+   * invocabile: chiamarlo direttamente lega il test a un dettaglio interno della
+   * libreria (ed è ciò che li ha rotti all'upgrade di tRPC). Passando da
+   * `.use()` + `createCaller` si testa esattamente il percorso di produzione.
+   */
+  const callProbe = (
+    permission: Parameters<typeof requirePermission>[0],
+    ctx: Context
+  ) => {
+    const probeRouter = router({
+      probe: publicProcedure
+        .use(requirePermission(permission))
+        .query(() => 'success'),
+    });
 
-  beforeEach(() => {
-    mockNext = vi.fn().mockResolvedValue('success');
-  });
+    return probeRouter.createCaller(ctx).probe();
+  };
 
   it('should allow access for admin with any permission', async () => {
     const ctx = createMockContext('admin');
-    const middleware = requirePermission('brands:create');
 
-    await expect(middleware({ ctx, next: mockNext })).resolves.toBe('success');
-    expect(mockNext).toHaveBeenCalledOnce();
+    await expect(callProbe('brands:create', ctx)).resolves.toBe('success');
   });
 
   it('should allow access for editor with resource permission', async () => {
     const ctx = createMockContext('editor');
-    const middleware = requirePermission('brands:create');
 
-    await expect(middleware({ ctx, next: mockNext })).resolves.toBe('success');
-    expect(mockNext).toHaveBeenCalledOnce();
+    await expect(callProbe('brands:create', ctx)).resolves.toBe('success');
   });
 
   it('should deny access for viewer without permission', async () => {
     const ctx = createMockContext('viewer');
-    const middleware = requirePermission('brands:create');
 
-    await expect(middleware({ ctx, next: mockNext })).rejects.toThrow(
-      TRPCError
-    );
-    const error = await middleware({ ctx, next: mockNext }).catch(e => e);
+    await expect(callProbe('brands:create', ctx)).rejects.toThrow(TRPCError);
+    const error = await callProbe('brands:create', ctx).catch(e => e);
     expect(error.code).toBe('FORBIDDEN');
-    expect(mockNext).not.toHaveBeenCalled();
   });
 
   it('should deny access for unauthenticated user', async () => {
     const ctx = createMockContext('admin');
     ctx.session = null;
-    const middleware = requirePermission('brands:create');
 
-    await expect(middleware({ ctx, next: mockNext })).rejects.toThrow(
-      TRPCError
-    );
-    const error = await middleware({ ctx, next: mockNext }).catch(e => e);
+    await expect(callProbe('brands:create', ctx)).rejects.toThrow(TRPCError);
+    const error = await callProbe('brands:create', ctx).catch(e => e);
     expect(error.code).toBe('UNAUTHORIZED');
-    expect(mockNext).not.toHaveBeenCalled();
   });
 
   it('should allow access with multiple permissions (OR logic)', async () => {
     const ctx = createMockContext('editor');
-    const middleware = requirePermission(['brands:create', 'users:delete']);
 
-    await expect(middleware({ ctx, next: mockNext })).resolves.toBe('success');
-    expect(mockNext).toHaveBeenCalledOnce();
+    await expect(
+      callProbe(['brands:create', 'users:delete'], ctx)
+    ).resolves.toBe('success');
   });
 
   it('should deny access when user has none of the required permissions', async () => {
     const ctx = createMockContext('viewer');
-    const middleware = requirePermission(['brands:create', 'users:delete']);
 
-    await expect(middleware({ ctx, next: mockNext })).rejects.toThrow(
-      TRPCError
-    );
-    const error = await middleware({ ctx, next: mockNext }).catch(e => e);
+    await expect(
+      callProbe(['brands:create', 'users:delete'], ctx)
+    ).rejects.toThrow(TRPCError);
+    const error = await callProbe(
+      ['brands:create', 'users:delete'],
+      ctx
+    ).catch(e => e);
     expect(error.code).toBe('FORBIDDEN');
-    expect(mockNext).not.toHaveBeenCalled();
   });
 
   it('should cache permission checks', async () => {
     const ctx = createMockContext('editor');
-    const middleware = requirePermission('brands:create');
 
-    // Prima chiamata
-    await middleware({ ctx, next: mockNext });
-    expect(ctx._permissionsCache?.has('editor:brands:create')).toBe(true);
-    expect(ctx._permissionsCache?.get('editor:brands:create')).toBe(true);
+    const key = cacheKey('editor', 'brands:create');
 
-    // Seconda chiamata dovrebbe usare cache
-    const mockNext2 = vi.fn().mockResolvedValue('success2');
-    await middleware({ ctx, next: mockNext2 });
-    expect(mockNext2).toHaveBeenCalledOnce();
+    await callProbe('brands:create', ctx);
+    expect(ctx._permissionsCache?.has(key)).toBe(true);
+    expect(ctx._permissionsCache?.get(key)).toBe(true);
+
+    // Seconda chiamata: serve dalla cache, stesso esito
+    await expect(callProbe('brands:create', ctx)).resolves.toBe('success');
   });
 });
 
@@ -252,7 +260,9 @@ describe('can helper', () => {
 
     // Prima chiamata
     expect(can(ctx, 'brands:create')).toBe(true);
-    expect(ctx._permissionsCache?.has('editor:brands:create')).toBe(true);
+    expect(ctx._permissionsCache?.has(cacheKey('editor', 'brands:create'))).toBe(
+      true
+    );
 
     // Seconda chiamata dovrebbe usare cache
     expect(can(ctx, 'brands:create')).toBe(true);
@@ -274,7 +284,10 @@ describe('ROLE_PERMISSIONS configuration', () => {
     expect(editorPermissions).toContain('config:update');
     expect(editorPermissions).toContain('audit:read');
     expect(editorPermissions).toContain('dashboard:read');
-    expect(editorPermissions).toContain('settings:read');
+    // La sezione settings è admin-only per design: `SECTION_ACCESS_DEFAULTS.editor.settings`
+    // è false e nessun grant `settings:*` è previsto per editor. Asserzione negativa
+    // per bloccare il vincolo invece di lasciarlo semplicemente non testato.
+    expect(editorPermissions).not.toContain('settings:read');
   });
 
   it('should have correct permissions for viewer', () => {

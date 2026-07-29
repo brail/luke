@@ -1,212 +1,41 @@
 /**
- * Test unitari per Brand Router
- * Verifica CRUD operations e integrità referenziale
+ * Test del Brand Router.
+ *
+ * Esercita il router **reale** (`brandRouter`). La versione precedente ne
+ * reimplementava una copia locale (`testBrandRouter`) per aggirare il rate limit:
+ * una copia però non è il codice di produzione, e infatti era rimasta indietro su
+ * `logoUrl`→`logoKey`, sulle precondizioni di `hardDelete` e su
+ * `UserPreference.lastBrandId` (oggi dentro il blob JSON `data`). Un test che
+ * verifica una copia non dice nulla su ciò che gira davvero.
+ *
+ * Il rate limit si neutralizza azzerando lo store fra i test, non duplicando
+ * il router.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { TRPCError } from '@trpc/server';
+import { describe, it, expect, beforeEach } from 'vitest';
 
-// import { brandRouter } from '../src/routers/brand'; // Non utilizzato, usa testBrandRouter locale
+import { rateLimitStore } from '../src/lib/ratelimit';
+import { brandRouter } from '../src/routers/brand';
+
+import { resetTestData } from './helpers/database';
 import { createTestContext } from './helpers/testContext';
-import { router, publicProcedure } from '../src/lib/trpc';
-import { requirePermission } from '../src/lib/permissions';
-import {
-  BrandInputSchema,
-  BrandIdSchema,
-  BrandListInputSchema,
-  BrandUpdateInputSchema,
-  normalizeCode,
-} from '@luke/core';
-
-// Creo un router di test senza rate limiting per testare le nuove permissions
-const testBrandRouter = router({
-  list: publicProcedure
-    .use(requirePermission('brands:read'))
-    .input(BrandListInputSchema.optional())
-    .query(async ({ ctx, input }) => {
-      const cursor = input?.cursor;
-      const limit = input?.limit ?? 50;
-
-      const items = await ctx.prisma.brand.findMany({
-        where: buildWhereClause(input || {}),
-        take: limit + 1,
-        cursor: cursor ? { id: cursor } : undefined,
-        orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
-        select: {
-          id: true,
-          code: true,
-          name: true,
-          logoUrl: true,
-          isActive: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      });
-
-      const hasMore = items.length > limit;
-      const results = hasMore ? items.slice(0, limit) : items;
-      const nextCursor = hasMore ? results[results.length - 1].id : null;
-
-      return {
-        items: results,
-        nextCursor,
-        hasMore: !!nextCursor,
-      };
-    }),
-
-  create: publicProcedure
-    .use(requirePermission('brands:create'))
-    .input(BrandInputSchema)
-    .mutation(async ({ input, ctx }) => {
-      const normalizedCode = normalizeCode(input.code);
-
-      return ctx.prisma.$transaction(async tx => {
-        const existingBrand = await tx.brand.findUnique({
-          where: { code: normalizedCode },
-        });
-
-        if (existingBrand) {
-          throw new TRPCError({
-            code: 'CONFLICT',
-            message: 'Codice brand già esistente',
-          });
-        }
-
-        const created = await tx.brand.create({
-          data: { ...input, code: normalizedCode },
-        });
-
-        return {
-          id: created.id,
-          code: created.code,
-          name: created.name,
-          logoUrl: created.logoUrl,
-          isActive: created.isActive,
-          createdAt: created.createdAt,
-          updatedAt: created.updatedAt,
-        };
-      });
-    }),
-
-  update: publicProcedure
-    .use(requirePermission('brands:update'))
-    .input(BrandUpdateInputSchema)
-    .mutation(async ({ input, ctx }) => {
-      return ctx.prisma.$transaction(async tx => {
-        const existingBrand = await tx.brand.findUnique({
-          where: { id: input.id },
-        });
-
-        if (!existingBrand) {
-          throw new TRPCError({
-            code: 'NOT_FOUND',
-            message: 'Brand non trovato',
-          });
-        }
-
-        if (input.data.code && input.data.code !== existingBrand.code) {
-          const normalizedCode = normalizeCode(input.data.code);
-          const conflictingBrand = await tx.brand.findFirst({
-            where: {
-              code: normalizedCode,
-              id: { not: input.id },
-            },
-          });
-
-          if (conflictingBrand) {
-            throw new TRPCError({
-              code: 'CONFLICT',
-              message: 'Codice brand già esistente',
-            });
-          }
-
-          input.data.code = normalizedCode;
-        }
-
-        const updated = await tx.brand.update({
-          where: { id: input.id },
-          data: {
-            ...input.data,
-            updatedAt: new Date(),
-          },
-        });
-
-        return {
-          id: updated.id,
-          code: updated.code,
-          name: updated.name,
-          logoUrl: updated.logoUrl,
-          isActive: updated.isActive,
-          createdAt: updated.createdAt,
-          updatedAt: updated.updatedAt,
-        };
-      });
-    }),
-
-  hardDelete: publicProcedure
-    .use(requirePermission('brands:delete'))
-    .input(BrandIdSchema)
-    .mutation(async ({ input, ctx }) => {
-      return ctx.prisma.$transaction(async tx => {
-        const brand = await tx.brand.findUnique({
-          where: { id: input.id },
-        });
-
-        if (!brand) {
-          throw new TRPCError({
-            code: 'NOT_FOUND',
-            message: 'Brand non trovato',
-          });
-        }
-
-        const referencedInPreferences = await tx.userPreference.findFirst({
-          where: { lastBrandId: input.id },
-          select: { userId: true },
-        });
-
-        if (referencedInPreferences) {
-          throw new TRPCError({
-            code: 'PRECONDITION_FAILED',
-            message:
-              'Impossibile eliminare: brand in uso nelle preferenze utente',
-          });
-        }
-
-        await tx.brand.delete({
-          where: { id: input.id },
-        });
-
-        return { success: true, message: 'Brand eliminato definitivamente' };
-      });
-    }),
-});
-
-// Helper function per buildWhereClause
-function buildWhereClause(filters: {
-  isActive?: boolean;
-  search?: string;
-}): any {
-  const where: any = {};
-
-  if (typeof filters.isActive === 'boolean') {
-    where.isActive = filters.isActive;
-  }
-
-  if (filters.search && filters.search.trim()) {
-    where.OR = [
-      { code: { contains: filters.search } },
-      { name: { contains: filters.search } },
-    ];
-  }
-
-  return where;
-}
 
 describe('Brand Router', () => {
   let testContext: any;
   let testBrand: any;
 
   beforeEach(async () => {
+    // Il router reale è rate-limited: senza azzerare lo store i test si
+    // bloccherebbero a vicenda dopo poche mutation.
+    rateLimitStore.clear();
+
+    // Troncamento con CASCADE prima di costruire il context: i test creano anche
+    // season, collection layout e nav brand, e un delete selettivo su `brand`
+    // sbatte contro le foreign key lasciando il database sporco per il test dopo.
+    // Va fatto PRIMA di `createTestContext`, che inserisce l'utente di sessione.
+    await resetTestData();
+
     testContext = await createTestContext();
 
     // Crea un brand di test
@@ -219,58 +48,53 @@ describe('Brand Router', () => {
     });
   });
 
-  afterEach(async () => {
-    // Cleanup: elimina tutti i brand e user preferences
-    await testContext.prisma.userPreference.deleteMany();
-    await testContext.prisma.brand.deleteMany();
-    await testContext.prisma.user.deleteMany();
-  });
-
   describe('hardDelete', () => {
-    it('should block hardDelete if brand is referenced in UserPreference', async () => {
-      // Setup: crea user e preference che referenzia il brand
-      const testUser = await testContext.prisma.user.create({
-        data: {
-          email: 'test-harddelete@example.com',
-          username: 'testuser-harddelete',
-          firstName: 'Test',
-          lastName: 'User',
-          role: 'admin',
-        },
+    // Le precondizioni di hardDelete sono cambiate: non è più il riferimento in
+    // `UserPreference` a bloccare (quel campo vive ora nel blob JSON `data`, non
+    // più come colonna `lastBrandId`), ma il collegamento a NAV e l'uso del brand
+    // in collection layout o set di pricing.
+    it('should block hardDelete if brand is used by a collection layout', async () => {
+      const season = await testContext.prisma.season.create({
+        data: { code: `HD${Date.now() % 100000}`, name: 'HardDelete Season', year: 2099, isActive: true },
+      });
+      await testContext.prisma.collectionLayout.create({
+        data: { brandId: testBrand.id, seasonId: season.id },
       });
 
-      await testContext.prisma.userPreference.create({
-        data: {
-          userId: testUser.id,
-          lastBrandId: testBrand.id,
-        },
-      });
-
-      // Test: hardDelete dovrebbe fallire
-      const caller = testBrandRouter.createCaller(testContext);
-
-      await expect(caller.hardDelete({ id: testBrand.id })).rejects.toThrow(
-        TRPCError
-      );
+      const caller = brandRouter.createCaller(testContext);
 
       await expect(
         caller.hardDelete({ id: testBrand.id })
-      ).rejects.toMatchObject({
-        code: 'PRECONDITION_FAILED',
-        message: 'Impossibile eliminare: brand in uso nelle preferenze utente',
+      ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+    });
+
+    it('should block hardDelete if brand is linked to NAV', async () => {
+      const navBrand = await testContext.prisma.navBrand.create({
+        data: {
+          navCode: `NAV${Date.now() % 100000}`,
+          description: 'Nav Linked',
+          syncedAt: new Date(),
+        },
       });
+      await testContext.prisma.brand.update({
+        where: { id: testBrand.id },
+        data: { navBrandId: navBrand.navCode },
+      });
+
+      const caller = brandRouter.createCaller(testContext);
+
+      await expect(
+        caller.hardDelete({ id: testBrand.id })
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
     });
 
     it('should allow hardDelete if brand is not referenced', async () => {
       // Test: hardDelete dovrebbe riuscire
-      const caller = testBrandRouter.createCaller(testContext);
+      const caller = brandRouter.createCaller(testContext);
 
       const result = await caller.hardDelete({ id: testBrand.id });
 
-      expect(result).toEqual({
-        success: true,
-        message: 'Brand eliminato definitivamente',
-      });
+      expect(result).toEqual({ success: true });
 
       // Verifica che il brand sia stato eliminato
       const deletedBrand = await testContext.prisma.brand.findUnique({
@@ -281,7 +105,7 @@ describe('Brand Router', () => {
     });
 
     it('should throw NOT_FOUND for non-existent brand', async () => {
-      const caller = testBrandRouter.createCaller(testContext);
+      const caller = brandRouter.createCaller(testContext);
       const nonExistentId = '00000000-0000-0000-0000-000000000000';
 
       await expect(
@@ -295,7 +119,7 @@ describe('Brand Router', () => {
 
   describe('create', () => {
     it('should create brand with valid data and normalize code', async () => {
-      const caller = testBrandRouter.createCaller(testContext);
+      const caller = brandRouter.createCaller(testContext);
 
       const brandData = {
         code: 'new-brand', // Codice con minuscole e trattini
@@ -314,7 +138,7 @@ describe('Brand Router', () => {
     });
 
     it('should reject duplicate brand code', async () => {
-      const caller = testBrandRouter.createCaller(testContext);
+      const caller = brandRouter.createCaller(testContext);
 
       const brandData = {
         code: 'TEST_BRAND', // Stesso codice del brand esistente
@@ -329,7 +153,7 @@ describe('Brand Router', () => {
     });
 
     it('should normalize code and reject if normalized code conflicts', async () => {
-      const caller = testBrandRouter.createCaller(testContext);
+      const caller = brandRouter.createCaller(testContext);
 
       const brandData = {
         code: 'test_brand', // Underscore che viene mantenuto dalla normalizzazione
@@ -344,7 +168,7 @@ describe('Brand Router', () => {
     });
 
     it('should validate brand code format', async () => {
-      const caller = testBrandRouter.createCaller(testContext);
+      const caller = brandRouter.createCaller(testContext);
 
       const invalidBrandData = {
         code: 'invalid-code!', // Caratteri non validi
@@ -358,7 +182,7 @@ describe('Brand Router', () => {
 
   describe('update', () => {
     it('should update brand with valid data', async () => {
-      const caller = testBrandRouter.createCaller(testContext);
+      const caller = brandRouter.createCaller(testContext);
 
       const updateData = {
         id: testBrand.id,
@@ -379,7 +203,7 @@ describe('Brand Router', () => {
     });
 
     it('should normalize code during update', async () => {
-      const caller = testBrandRouter.createCaller(testContext);
+      const caller = brandRouter.createCaller(testContext);
 
       const updateData = {
         id: testBrand.id,
@@ -409,7 +233,7 @@ describe('Brand Router', () => {
       // Verifica che il secondo brand sia stato creato correttamente
       expect(secondBrand.code).toBe('SECOND_BRAND');
 
-      const caller = testBrandRouter.createCaller(testContext);
+      const caller = brandRouter.createCaller(testContext);
 
       const updateData = {
         id: testBrand.id,
@@ -425,7 +249,7 @@ describe('Brand Router', () => {
     });
 
     it('should throw NOT_FOUND for non-existent brand', async () => {
-      const caller = testBrandRouter.createCaller(testContext);
+      const caller = brandRouter.createCaller(testContext);
       const nonExistentId = '00000000-0000-0000-0000-000000000000';
 
       const updateData = {
@@ -444,7 +268,7 @@ describe('Brand Router', () => {
 
   describe('list', () => {
     it('should list all brands with cursor pagination', async () => {
-      const caller = testBrandRouter.createCaller(testContext);
+      const caller = brandRouter.createCaller(testContext);
 
       const result = await caller.list();
 
@@ -475,7 +299,7 @@ describe('Brand Router', () => {
         brands.push(brand);
       }
 
-      const caller = testBrandRouter.createCaller(testContext);
+      const caller = brandRouter.createCaller(testContext);
 
       // Prima pagina
       const firstPage = await caller.list({ limit: 2 });
@@ -504,7 +328,7 @@ describe('Brand Router', () => {
         },
       });
 
-      const caller = testBrandRouter.createCaller(testContext);
+      const caller = brandRouter.createCaller(testContext);
 
       const result = await caller.list({ search: 'NIKE' });
 
@@ -522,7 +346,7 @@ describe('Brand Router', () => {
         },
       });
 
-      const caller = testBrandRouter.createCaller(testContext);
+      const caller = brandRouter.createCaller(testContext);
 
       const activeBrands = await caller.list({ isActive: true });
       const inactiveBrands = await caller.list({ isActive: false });
@@ -532,7 +356,7 @@ describe('Brand Router', () => {
     });
 
     it('should handle empty search results', async () => {
-      const caller = testBrandRouter.createCaller(testContext);
+      const caller = brandRouter.createCaller(testContext);
 
       const result = await caller.list({ search: 'NONEXISTENT' });
 
@@ -541,67 +365,72 @@ describe('Brand Router', () => {
       expect(result.nextCursor).toBeNull();
     });
 
-    it('should handle limit edge cases', async () => {
-      const caller = testBrandRouter.createCaller(testContext);
+    it('should reject limits outside the 1-100 range', async () => {
+      const caller = brandRouter.createCaller(testContext);
 
-      // Test limit 0
-      const resultZero = await caller.list({ limit: 0 });
-      expect(resultZero.items).toHaveLength(0);
+      // `BrandListInputSchema` vincola limit a [1, 100]: valori fuori range sono
+      // rifiutati dalla validazione, non silenziosamente normalizzati.
+      await expect(caller.list({ limit: 0 })).rejects.toThrow();
+      await expect(caller.list({ limit: 1000 })).rejects.toThrow();
+    });
 
-      // Test limit molto alto
-      const resultHigh = await caller.list({ limit: 1000 });
-      expect(resultHigh.items).toHaveLength(1);
-      expect(resultHigh.hasMore).toBe(false);
+    it('should accept the maximum allowed limit', async () => {
+      const caller = brandRouter.createCaller(testContext);
+
+      const result = await caller.list({ limit: 100 });
+      expect(result.items).toHaveLength(1);
+      expect(result.hasMore).toBe(false);
     });
   });
 
   describe('normalizeCode edge cases', () => {
     it('should handle special characters in code normalization', async () => {
-      const caller = testBrandRouter.createCaller(testContext);
+      const caller = brandRouter.createCaller(testContext);
 
-      const testCases = [
-        { input: 'test@brand#1', expected: 'TEST@BRAND#1' },
-        { input: 'brand-with-dashes', expected: 'BRAND-WITH-DASHES' },
-        { input: 'brand_with_underscores', expected: 'BRAND_WITH_UNDERSCORES' },
-        { input: 'brand.with.dots', expected: 'BRAND.WITH.DOTS' },
-        { input: 'brand with spaces', expected: 'BRAND WITH SPACES' },
+      // `BrandInputSchema` ammette solo `[A-Za-z0-9_-]`. La normalizzazione porta
+      // in maiuscolo, non ripulisce: i caratteri fuori charset vanno rifiutati.
+      // Massimo 20 caratteri: le fixture restano corte apposta.
+      const accepted = [
+        { input: 'brand-dashes', expected: 'BRAND-DASHES' },
+        { input: 'brand_under', expected: 'BRAND_UNDER' },
         { input: 'BRAND123', expected: 'BRAND123' },
       ];
 
-      for (const testCase of testCases) {
-        const brandData = {
+      for (const testCase of accepted) {
+        const result = await caller.create({
           code: testCase.input,
           name: `Test Brand ${testCase.input}`,
           isActive: true,
-        };
-
-        const result = await caller.create(brandData);
+        });
         expect(result.code).toBe(testCase.expected);
 
-        // Cleanup per il prossimo test
-        await testContext.prisma.brand.delete({
-          where: { id: result.id },
-        });
+        // Cleanup per il prossimo caso
+        await testContext.prisma.brand.delete({ where: { id: result.id } });
+      }
+
+      const rejected = ['test@brand#1', 'brand.with.dots', 'brand with spaces'];
+
+      for (const code of rejected) {
+        await expect(
+          caller.create({ code, name: `Test Brand ${code}`, isActive: true })
+        ).rejects.toThrow();
       }
     });
 
-    it('should handle unicode characters in code', async () => {
-      const caller = testBrandRouter.createCaller(testContext);
+    it('should reject non-ASCII characters in code', async () => {
+      const caller = brandRouter.createCaller(testContext);
 
-      const brandData = {
-        code: 'café-brand',
-        name: 'Café Brand',
-        isActive: true,
-      };
-
-      const result = await caller.create(brandData);
-      expect(result.code).toBe('CAFÉ-BRAND');
+      // `é` è fuori dal charset `[A-Za-z0-9_-]`. Il codice brand finisce in NAV
+      // come nvarchar(20): ammettere accenti qui creerebbe drift col gestionale.
+      await expect(
+        caller.create({ code: 'café-brand', name: 'Café Brand', isActive: true })
+      ).rejects.toThrow();
     });
   });
 
   describe('concurrency tests', () => {
     it('should handle concurrent brand creation with same code', async () => {
-      const caller = testBrandRouter.createCaller(testContext);
+      const caller = brandRouter.createCaller(testContext);
 
       const brandData = {
         code: 'CONCURRENT_TEST',
@@ -616,16 +445,19 @@ describe('Brand Router', () => {
 
       const results = await Promise.all(promises);
 
-      // Solo uno dovrebbe riuscire, gli altri dovrebbero fallire con CONFLICT
-      const successes = results.filter(r => !r.code);
-      const conflicts = results.filter(r => r.code === 'CONFLICT');
+      // Discriminare per `instanceof TRPCError`, non per la presenza di `.code`:
+      // anche un brand creato con successo ha un campo `code` (il codice brand).
+      const successes = results.filter(r => !(r instanceof TRPCError));
+      const conflicts = results.filter(
+        r => r instanceof TRPCError && r.code === 'CONFLICT'
+      );
 
       expect(successes).toHaveLength(1);
       expect(conflicts).toHaveLength(2);
     });
 
     it('should handle concurrent updates to same brand', async () => {
-      const caller = testBrandRouter.createCaller(testContext);
+      const caller = brandRouter.createCaller(testContext);
 
       // Crea un secondo brand per testare update concorrente
       const secondBrand = await testContext.prisma.brand.create({
@@ -648,14 +480,14 @@ describe('Brand Router', () => {
       const results = await Promise.all(updatePromises);
 
       // Tutti dovrebbero riuscire (update non ha conflitti di codice)
-      const successes = results.filter(r => !r.code);
+      const successes = results.filter(r => !(r instanceof TRPCError));
       expect(successes).toHaveLength(3);
     });
   });
 
   describe('soft delete vs hard delete', () => {
     it('should implement soft delete correctly', async () => {
-      const caller = testBrandRouter.createCaller(testContext);
+      const caller = brandRouter.createCaller(testContext);
 
       // Crea un brand per soft delete
       const brandToSoftDelete = await testContext.prisma.brand.create({
@@ -694,7 +526,7 @@ describe('Brand Router', () => {
     });
 
     it('should handle hard delete with proper cleanup', async () => {
-      const caller = testBrandRouter.createCaller(testContext);
+      const caller = brandRouter.createCaller(testContext);
 
       // Crea un brand per hard delete
       const brandToHardDelete = await testContext.prisma.brand.create({
@@ -708,10 +540,7 @@ describe('Brand Router', () => {
       // Hard delete
       const result = await caller.hardDelete({ id: brandToHardDelete.id });
 
-      expect(result).toEqual({
-        success: true,
-        message: 'Brand eliminato definitivamente',
-      });
+      expect(result).toEqual({ success: true });
 
       // Verifica che il brand sia completamente rimosso dal DB
       const deletedBrand = await testContext.prisma.brand.findUnique({
@@ -723,22 +552,29 @@ describe('Brand Router', () => {
   });
 
   describe('edge cases and error handling', () => {
-    it('should handle very long brand names', async () => {
-      const caller = testBrandRouter.createCaller(testContext);
+    it('should reject brand names over the 128 character limit', async () => {
+      const caller = brandRouter.createCaller(testContext);
 
-      const longName = 'A'.repeat(500); // Nome molto lungo
-      const brandData = {
-        code: 'LONG_NAME_TEST',
-        name: longName,
+      // 128 è il massimo: al limite passa, oltre viene rifiutato.
+      const atLimit = 'A'.repeat(128);
+      const result = await caller.create({
+        code: 'LONG_NAME_OK',
+        name: atLimit,
         isActive: true,
-      };
+      });
+      expect(result.name).toBe(atLimit);
 
-      const result = await caller.create(brandData);
-      expect(result.name).toBe(longName);
+      await expect(
+        caller.create({
+          code: 'LONG_NAME_KO',
+          name: 'A'.repeat(129),
+          isActive: true,
+        })
+      ).rejects.toThrow();
     });
 
     it('should handle empty string inputs gracefully', async () => {
-      const caller = testBrandRouter.createCaller(testContext);
+      const caller = brandRouter.createCaller(testContext);
 
       // Test con nome vuoto
       await expect(
@@ -760,7 +596,7 @@ describe('Brand Router', () => {
     });
 
     it('should handle null and undefined values', async () => {
-      const caller = testBrandRouter.createCaller(testContext);
+      const caller = brandRouter.createCaller(testContext);
 
       // Test con valori null
       await expect(
@@ -838,21 +674,21 @@ describe('Brand Router', () => {
 
     describe('list operation', () => {
       it('should allow admin to list brands', async () => {
-        const caller = testBrandRouter.createCaller(adminContext);
+        const caller = brandRouter.createCaller(adminContext);
         const result = await caller.list();
         expect(result.items).toBeDefined();
         expect(Array.isArray(result.items)).toBe(true);
       });
 
       it('should allow editor to list brands', async () => {
-        const caller = testBrandRouter.createCaller(editorContext);
+        const caller = brandRouter.createCaller(editorContext);
         const result = await caller.list();
         expect(result.items).toBeDefined();
         expect(Array.isArray(result.items)).toBe(true);
       });
 
       it('should allow viewer to list brands', async () => {
-        const caller = testBrandRouter.createCaller(viewerContext);
+        const caller = brandRouter.createCaller(viewerContext);
         const result = await caller.list();
         expect(result.items).toBeDefined();
         expect(Array.isArray(result.items)).toBe(true);
@@ -861,7 +697,7 @@ describe('Brand Router', () => {
 
     describe('create operation', () => {
       it('should allow admin to create brands', async () => {
-        const caller = testBrandRouter.createCaller(adminContext);
+        const caller = brandRouter.createCaller(adminContext);
         const result = await caller.create({
           code: 'ADMIN_BRAND',
           name: 'Admin Brand',
@@ -872,7 +708,7 @@ describe('Brand Router', () => {
       });
 
       it('should allow editor to create brands', async () => {
-        const caller = testBrandRouter.createCaller(editorContext);
+        const caller = brandRouter.createCaller(editorContext);
         const result = await caller.create({
           code: 'EDITOR_BRAND',
           name: 'Editor Brand',
@@ -883,7 +719,7 @@ describe('Brand Router', () => {
       });
 
       it('should deny viewer from creating brands', async () => {
-        const caller = testBrandRouter.createCaller(viewerContext);
+        const caller = brandRouter.createCaller(viewerContext);
         await expect(
           caller.create({
             code: 'VIEWER_BRAND',
@@ -904,7 +740,7 @@ describe('Brand Router', () => {
 
     describe('update operation', () => {
       it('should allow admin to update brands', async () => {
-        const caller = testBrandRouter.createCaller(adminContext);
+        const caller = brandRouter.createCaller(adminContext);
         const result = await caller.update({
           id: testBrand.id,
           data: {
@@ -915,7 +751,7 @@ describe('Brand Router', () => {
       });
 
       it('should allow editor to update brands', async () => {
-        const caller = testBrandRouter.createCaller(editorContext);
+        const caller = brandRouter.createCaller(editorContext);
         const result = await caller.update({
           id: testBrand.id,
           data: {
@@ -926,7 +762,7 @@ describe('Brand Router', () => {
       });
 
       it('should deny viewer from updating brands', async () => {
-        const caller = testBrandRouter.createCaller(viewerContext);
+        const caller = brandRouter.createCaller(viewerContext);
         await expect(
           caller.update({
             id: testBrand.id,
@@ -949,21 +785,19 @@ describe('Brand Router', () => {
 
     describe('hardDelete operation', () => {
       it('should allow admin to hard delete brands', async () => {
-        const caller = testBrandRouter.createCaller(adminContext);
+        const caller = brandRouter.createCaller(adminContext);
         const result = await caller.hardDelete({ id: testBrand.id });
-        expect(result.success).toBe(true);
-        expect(result.message).toBe('Brand eliminato definitivamente');
+        expect(result).toEqual({ success: true });
       });
 
       it('should allow editor to hard delete brands', async () => {
-        const caller = testBrandRouter.createCaller(editorContext);
+        const caller = brandRouter.createCaller(editorContext);
         const result = await caller.hardDelete({ id: testBrand.id });
-        expect(result.success).toBe(true);
-        expect(result.message).toBe('Brand eliminato definitivamente');
+        expect(result).toEqual({ success: true });
       });
 
       it('should deny viewer from hard deleting brands', async () => {
-        const caller = testBrandRouter.createCaller(viewerContext);
+        const caller = brandRouter.createCaller(viewerContext);
         await expect(caller.hardDelete({ id: testBrand.id })).rejects.toThrow(
           TRPCError
         );
@@ -981,7 +815,7 @@ describe('Brand Router', () => {
           session: null,
         };
 
-        const caller = testBrandRouter.createCaller(unauthenticatedContext);
+        const caller = brandRouter.createCaller(unauthenticatedContext);
 
         await expect(caller.list()).rejects.toThrow(TRPCError);
         const listError = await caller.list().catch(e => e);
