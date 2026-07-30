@@ -26,7 +26,7 @@
     "check:drift": "tsx tools/scripts/check-skill-integrity.ts && tsx tools/scripts/check-docs-integrity.ts",
     "codemod:eliminate-urls": "tsx tools/codemods/eliminate-hardcoded-urls.ts",
     "codemod:check-urls": "tsx tools/codemods/eliminate-hardcoded-urls.ts --dry-run",
-    "release:prepare": "git-cliff --bump -o CHANGELOG.md && echo '\\n→ CHANGELOG aggiornato. Ora: bump dei package.json alla nuova versione, commit \"chore: bump version to X.Y.Z\", poi git tag vX.Y.Z. Il pre-push verifica CHANGELOG e allineamento versioni.'",
+    "release:prepare": "bash scripts/release-prepare.sh",
     "changelog": "git-cliff -o CHANGELOG.md",
     "changelog:bump": "git-cliff --bump -o CHANGELOG.md",
     "changelog:tag": "git-cliff -o CHANGELOG.md",

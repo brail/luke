@@ -57,29 +57,65 @@ const PACKAGES = discoverPackages();
 
 const checkOnly = process.argv.includes('--check');
 
-try {
-  // Leggi il tag git più vicino
-  let gitTag;
-  try {
-    gitTag = execSync('git describe --tags --abbrev=0', {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'], // Ignora stderr
-    }).trim();
-  } catch {
-    // Se non c'è tag, usa il nome del branch o un default
-    try {
-      const branch = execSync('git rev-parse --abbrev-ref HEAD', {
-        encoding: 'utf-8',
-      }).trim();
-      gitTag = `v0.0.0-${branch}`;
-    } catch {
-      gitTag = 'v0.0.0-dev';
-    }
-  }
+/**
+ * Versione da imporre, per il bump di release.
+ *
+ * Serve perché la modalità normale legge il tag **esistente**: al momento del
+ * bump il tag nuovo non c'è ancora, quindi senza `--set` questo script non può
+ * portare i package.json alla versione che stai per rilasciare — li lascerebbe
+ * a quella precedente, e il guard in `.husky/pre-push` bloccherebbe il tag.
+ *
+ * Usage: node scripts/sync-version.js --set 1.11.0
+ */
+const setIndex = process.argv.indexOf('--set');
+const explicitVersion =
+  setIndex !== -1 ? process.argv[setIndex + 1]?.replace(/^v/, '') : undefined;
 
-  // Estrai la versione (rimuovi il prefisso 'v')
-  const version = gitTag.replace(/^v/, '');
-  console.log(`📌 Versione dal tag: ${gitTag} → ${version}`);
+if (setIndex !== -1 && !explicitVersion) {
+  console.error('❌ `--set` richiede una versione. Es: --set 1.11.0');
+  process.exit(1);
+}
+if (explicitVersion && checkOnly) {
+  console.error('❌ `--set` e `--check` sono incompatibili.');
+  process.exit(1);
+}
+
+try {
+  let version;
+
+  if (explicitVersion) {
+    if (!/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(explicitVersion)) {
+      console.error(
+        `❌ "${explicitVersion}" non è una versione semver valida (X.Y.Z[-pre]).`
+      );
+      process.exit(1);
+    }
+    version = explicitVersion;
+    console.log(`📌 Versione richiesta: ${version}`);
+  } else {
+    // Leggi il tag git più vicino
+    let gitTag;
+    try {
+      gitTag = execSync('git describe --tags --abbrev=0', {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'], // Ignora stderr
+      }).trim();
+    } catch {
+      // Se non c'è tag, usa il nome del branch o un default
+      try {
+        const branch = execSync('git rev-parse --abbrev-ref HEAD', {
+          encoding: 'utf-8',
+        }).trim();
+        gitTag = `v0.0.0-${branch}`;
+      } catch {
+        gitTag = 'v0.0.0-dev';
+      }
+    }
+
+    // Estrai la versione (rimuovi il prefisso 'v')
+    version = gitTag.replace(/^v/, '');
+    console.log(`📌 Versione dal tag: ${gitTag} → ${version}`);
+  }
 
   let hasChanges = false;
 
