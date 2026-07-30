@@ -316,11 +316,11 @@ describe('brand scope — risorse indirette', () => {
         collectionLayoutId: outRes.layoutId,
         revisionId: outRes.revisionId,
       })],
+    // `collectionLayoutId` non è più un input: se ricomparisse, questa riga non
+    // compilerebbe. È il test che conta per il cross-layout — il runtime non può
+    // più esprimere l'incoerenza.
     ['revision.export.xlsx', () =>
-      as().collectionLayoutRevision.export.xlsx({
-        revisionId: outRes.revisionId,
-        collectionLayoutId: outRes.layoutId,
-      })],
+      as().collectionLayoutRevision.export.xlsx({ revisionId: outRes.revisionId })],
     ['phaseHistory.listForRow', () =>
       as().phaseHistory.listForRow({ rowId: outRes.rowId })],
     ['phaseHistory.layoutStats', () =>

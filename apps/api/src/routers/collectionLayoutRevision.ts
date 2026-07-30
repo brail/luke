@@ -143,18 +143,21 @@ export const collectionLayoutRevisionRouter = router({
   export: router({
     xlsx: protectedProcedure
       .use(requirePermission('collection_layout:read'))
-      .input(z.object({
-        revisionId: z.string().uuid(),
-        collectionLayoutId: z.string().uuid(),
-      }))
+      // `collectionLayoutId` non è più un input: lo porta la revisione. Erano due
+      // id indipendenti e nessuno verificava che il secondo fosse davvero il
+      // layout del primo, quindi si poteva esportare una revisione montandola su
+      // un altro layout. Il brand scope chiude il caso cross-brand, non quello
+      // cross-layout dentro lo stesso brand — qui l'incoerenza smette proprio di
+      // essere esprimibile.
+      .input(z.object({ revisionId: z.string().uuid() }))
       .mutation(async ({ input, ctx }) => {
-        await resolveRevisionBrandAccess(ctx, input.revisionId);
+        const { collectionLayoutId } = await resolveRevisionBrandAccess(ctx, input.revisionId);
 
         const revision = await ctx.prisma.collectionLayoutRevision.findUniqueOrThrow({
           where: { id: input.revisionId },
           select: { revisionNumber: true, revisionTypeValue: true, notes: true, collectionLayout: { select: { brand: { select: { code: true } }, season: { select: { code: true } } } } },
         });
-        const buf = await buildRevisionXlsx(input.revisionId, input.collectionLayoutId, revision, ctx.prisma, ctx.logger);
+        const buf = await buildRevisionXlsx(input.revisionId, collectionLayoutId, revision, ctx.prisma, ctx.logger);
         const { brand, season } = revision.collectionLayout;
         return {
           data: buf.toString('base64'),
@@ -164,12 +167,10 @@ export const collectionLayoutRevisionRouter = router({
 
     pdf: protectedProcedure
       .use(requirePermission('collection_layout:read'))
-      .input(z.object({
-        revisionId: z.string().uuid(),
-        collectionLayoutId: z.string().uuid(),
-      }))
+      // Come sopra: il layout lo porta la revisione.
+      .input(z.object({ revisionId: z.string().uuid() }))
       .mutation(async ({ input, ctx }) => {
-        await resolveRevisionBrandAccess(ctx, input.revisionId);
+        const { collectionLayoutId } = await resolveRevisionBrandAccess(ctx, input.revisionId);
 
         const revision = await ctx.prisma.collectionLayoutRevision.findUniqueOrThrow({
           where: { id: input.revisionId },
@@ -182,7 +183,7 @@ export const collectionLayoutRevisionRouter = router({
         const fullName = exportUser
           ? [exportUser.firstName, exportUser.lastName].filter(Boolean).join(' ') || exportUser.username
           : ctx.session.user.email;
-        const buf = await buildRevisionPdf(input.revisionId, input.collectionLayoutId, fullName, revision, ctx.prisma, ctx.logger);
+        const buf = await buildRevisionPdf(input.revisionId, collectionLayoutId, fullName, revision, ctx.prisma, ctx.logger);
         const { brand, season } = revision.collectionLayout;
         return {
           data: buf.toString('base64'),

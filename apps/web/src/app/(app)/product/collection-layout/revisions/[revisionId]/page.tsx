@@ -200,10 +200,10 @@ export default function RevisionDetailPage() {
         onDeleteGroup={() => {}}
         onUpdateSettings={() => {}}
         onExportXlsx={() =>
-          exportXlsxMutation.mutate({ revisionId, collectionLayoutId })
+          exportXlsxMutation.mutate({ revisionId })
         }
         onExportPdf={() =>
-          exportPdfMutation.mutate({ revisionId, collectionLayoutId })
+          exportPdfMutation.mutate({ revisionId })
         }
         isExportingXlsx={exportXlsxMutation.isPending}
         isExportingPdf={exportPdfMutation.isPending}
