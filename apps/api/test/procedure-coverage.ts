@@ -141,8 +141,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   pricing: {
     reason:
-      'nessun test sul router. `calculateForward` è coperta a livello di service da bootstrap.seed, ma parameter set, copia da stagione precedente ed export no — ed è logica che tocca i prezzi',
-    uncovered: 9,
+      'export.pdf è rotto da una regressione pdfmake 0.2→0.3 (vedi pricing.integration.spec.ts): invocarlo produce una unhandled rejection che inquinerebbe il file. Il resto del namespace è coperto',
+    uncovered: ['pricing.export.pdf'],
   },
   notifications: {
     reason: 'nessun test scritto, incluse le preferenze e il ticket SSE',
