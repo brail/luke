@@ -6,67 +6,11 @@ import {
   isEventDeleteLocked as isEventDeleteLockedCore,
   type CalendarEventInput,
   type CloneSeasonCalendarInput,
-  type Role,
 } from '@luke/core';
-
-import { getUserAllowedBrandIds } from './context.service.js';
 
 import type { CalendarDaysRelevance, Prisma, PrismaClient } from '@prisma/client';
 
 const MS_PER_DAY = 86_400_000;
-
-// ─── Brand access helper ──────────────────────────────────────────────────────
-
-/**
- * Throws FORBIDDEN if the user does not have access to the given brand.
- * Admins (allowed === null) always pass.
- */
-export async function assertBrandAccess(
-  userId: string,
-  brandId: string,
-  prisma: PrismaClient,
-  userRole?: Role
-): Promise<void> {
-  const allowed = await getUserAllowedBrandIds(userId, prisma, userRole);
-  if (allowed !== null && !allowed.includes(brandId)) {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'Accesso al brand negato' });
-  }
-}
-
-/**
- * Resolves a PlanningGroup and asserts the user has brand access to it.
- *
- * @throws {TRPCError} NOT_FOUND if the group does not exist.
- * @throws {TRPCError} FORBIDDEN if the user lacks brand access.
- */
-export async function resolvePlanningGroupWithBrandAccess(
-  planningGroupId: string,
-  userId: string,
-  prisma: PrismaClient
-) {
-  const group = await prisma.planningGroup.findUnique({
-    where: { id: planningGroupId },
-    select: { calendarId: true, anchorDate: true, calendar: { select: { brandId: true, seasonId: true } } },
-  });
-  if (!group) throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo di pianificazione non trovato' });
-  await assertBrandAccess(userId, group.calendar.brandId, prisma);
-  return group;
-}
-
-/**
- * Filters a list of brand IDs to those the user is allowed to access.
- * Returns the original list unchanged for admins (no restrictions).
- */
-export async function filterAllowedBrandIds(
-  userId: string,
-  requestedBrandIds: string[],
-  prisma: PrismaClient,
-  userRole?: Role
-): Promise<string[]> {
-  const allowed = await getUserAllowedBrandIds(userId, prisma, userRole);
-  if (allowed === null) return requestedBrandIds;
-  return requestedBrandIds.filter(id => allowed.includes(id));
-}
 
 // ─── Calendar get/create ──────────────────────────────────────────────────────
 

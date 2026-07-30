@@ -21,4 +21,10 @@ export interface Context {
   logger: FastifyBaseLogger;
   /** Per-request permission check cache — populated lazily by requirePermission(). */
   _permissionsCache?: Map<string, boolean>;
+  /**
+   * Per-request cache of the user's allowed brand IDs — populated lazily by the
+   * guards in `services/brandScope.service.ts`. Holds the promise, not the
+   * value, so concurrent guards share one `companyTeamMembership` query.
+   */
+  _allowedBrandIdsPromise?: Promise<string[] | null>;
 }

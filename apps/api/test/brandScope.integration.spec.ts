@@ -143,3 +143,36 @@ describe('brand scope — collectionLayout e dashboard', () => {
     );
   });
 });
+
+describe('brand scope — admin senza team', () => {
+  /**
+   * Un admin che non appartiene ad alcun team non deve essere vincolato.
+   *
+   * Prima dell'unificazione lo era: `assertBrandAccess` esisteva in due varianti,
+   * e quella di `seasonCalendar.service.ts` aveva `userRole` **opzionale** con
+   * tutti e 15 i chiamanti che lo omettevano. Senza quel parametro
+   * `getUserAllowedBrandIds` non prendeva mai l'early return per gli admin,
+   * quindi un admin senza team riceveva `[]` → FORBIDDEN su mezzo calendario
+   * stagionale. La toppa era un `hasPermission({ role }, '*:*')` scritto a mano
+   * nell'unico punto in cui qualcuno se n'era accorto.
+   */
+  it('seasonCalendar.getOrCreate risolve per un admin fuori da ogni team', async () => {
+    await expect(
+      createCallerWithSession(adminSession).seasonCalendar.getOrCreate({
+        brandId: outOfScopeBrandId,
+        seasonId,
+      })
+    ).resolves.toBeDefined();
+  });
+
+  it('un editor senza scope sul brand resta bloccato', async () => {
+    await expectUnauthorized(
+      () =>
+        createCallerWithSession(scopedSession).seasonCalendar.getOrCreate({
+          brandId: outOfScopeBrandId,
+          seasonId,
+        }),
+      'FORBIDDEN'
+    );
+  });
+});

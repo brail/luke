@@ -20,7 +20,9 @@ import { withRateLimit } from '../lib/ratelimit.js';
 import { router, protectedProcedure } from '../lib/trpc.js';
 import {
   assertBrandAccess,
-  resolvePlanningGroupWithBrandAccess,
+  resolvePlanningGroupBrandAccess,
+} from '../services/brandScope.service.js';
+import {
   getOrCreateCalendar,
   createPlanningGroup,
   listPlanningGroups,
@@ -41,7 +43,7 @@ export const planningGroupRouter = router({
     .use(requirePermission('season_calendar:read'))
     .input(z.object({ brandId: z.string().uuid(), seasonId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
-      await assertBrandAccess(ctx.session.user.id, input.brandId, ctx.prisma);
+      await assertBrandAccess(ctx, input.brandId);
       const calendar = await getOrCreateCalendar(input.brandId, input.seasonId, ctx.prisma);
       return listPlanningGroups(calendar.id, ctx.prisma);
     }),
@@ -63,7 +65,7 @@ export const planningGroupRouter = router({
         select: { brandId: true },
       });
       if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
-      await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
+      await assertBrandAccess(ctx, calendar.brandId);
 
       const result = await createPlanningGroup(input.calendarId, input.name, ctx.prisma);
       await logAudit(ctx, { action: 'PLANNING_GROUP_CREATE', targetType: 'PlanningGroup', targetId: result.id, result: 'SUCCESS', metadata: { name: result.name } });
@@ -82,7 +84,7 @@ export const planningGroupRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ id: z.string().uuid() }).and(PlanningGroupInputSchema))
     .mutation(async ({ input, ctx }) => {
-      await resolvePlanningGroupWithBrandAccess(input.id, ctx.session.user.id, ctx.prisma);
+      await resolvePlanningGroupBrandAccess(ctx, input.id);
 
       const result = await renamePlanningGroup(input.id, input.name, ctx.prisma);
       await logAudit(ctx, { action: 'PLANNING_GROUP_RENAME', targetType: 'PlanningGroup', targetId: input.id, result: 'SUCCESS', metadata: { name: input.name } });
@@ -102,7 +104,7 @@ export const planningGroupRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      await resolvePlanningGroupWithBrandAccess(input.id, ctx.session.user.id, ctx.prisma);
+      await resolvePlanningGroupBrandAccess(ctx, input.id);
 
       await deletePlanningGroup(input.id, ctx.prisma);
       await logAudit(ctx, { action: 'PLANNING_GROUP_DELETE', targetType: 'PlanningGroup', targetId: input.id, result: 'SUCCESS', metadata: {} });

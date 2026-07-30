@@ -16,7 +16,7 @@ import fp from 'fastify-plugin';
 
 
 import { generateIcal } from '@luke/calendar';
-import { isDevelopment, type Role } from '@luke/core';
+import { isDevelopment } from '@luke/core';
 
 import { authenticateRequest } from '../lib/auth';
 // Unico ingresso al motore PDF: è l'unico punto in cui `setUrlAccessPolicy` e
@@ -27,7 +27,8 @@ import { authenticateRequest } from '../lib/auth';
 // Promise orfana rigettava con un TypeError non gestito, che i guard di
 // `server.ts` trasformano in `process.exit(1)`.
 import { createPdfBuffer } from '../lib/export/pdf';
-import { filterAllowedBrandIds, listMilestonesDb } from '../services/seasonCalendar.service';
+import { filterAllowedBrandIds } from '../services/brandScope.service';
+import { listMilestonesDb } from '../services/seasonCalendar.service';
 
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
@@ -529,7 +530,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
     }
 
     const requestedBrandIds = brandIdsCsv.split(',').map(s => s.trim()).filter(Boolean);
-    const allowedBrandIds = await filterAllowedBrandIds(session.user.id, requestedBrandIds, prisma, session.user.role as Role);
+    const allowedBrandIds = await filterAllowedBrandIds({ prisma, session }, requestedBrandIds);
     if (allowedBrandIds.length === 0) {
       reply.code(403).send({ error: 'No accessible brands' });
       return null;

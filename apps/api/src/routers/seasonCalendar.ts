@@ -30,7 +30,6 @@ import {
   ApplyTemplateInputSchema,
   MilestoneTemplateItemBaseSchema,
   SEASON_CALENDAR_STATUS,
-  hasPermission,
   partialWithoutDefaults,
   type Role,
 } from '@luke/core';
@@ -42,6 +41,11 @@ import { requirePermission } from '../lib/permissions.js';
 import { withRateLimit } from '../lib/ratelimit.js';
 import { sseStore } from '../lib/sseStore.js';
 import { router, protectedProcedure } from '../lib/trpc.js';
+import {
+  assertBrandAccess,
+  filterAllowedBrandIds,
+  resolvePlanningGroupBrandAccess,
+} from '../services/brandScope.service.js';
 import { executeEffect } from '../services/calendar/effects/executor.js';
 import { rollbackEffect } from '../services/calendar/effects/rollback.js';
 import { assertUnlocked } from '../services/editLock.service.js';
@@ -53,9 +57,6 @@ import {
 } from '../services/googleCalendarSync.service.js';
 import { resolveHolidayOverlapsForGroup } from '../services/phaseAlert.service.js';
 import {
-  assertBrandAccess,
-  resolvePlanningGroupWithBrandAccess,
-  filterAllowedBrandIds,
   getOrCreateCalendar,
   updateCalendarStatus,
   freezePlanningGroup,
@@ -112,7 +113,7 @@ export const seasonCalendarRouter = router({
       seasonId: z.string().uuid(),
     }))
     .query(async ({ input, ctx }) => {
-      await assertBrandAccess(ctx.session.user.id, input.brandId, ctx.prisma);
+      await assertBrandAccess(ctx, input.brandId);
       return getOrCreateCalendar(input.brandId, input.seasonId, ctx.prisma);
     }),
 
@@ -138,7 +139,10 @@ export const seasonCalendarRouter = router({
           select: { brandId: true },
         });
         if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
-        await assertBrandAccess(ctx.session.user.id, calendar.brandId, txClient);
+        // Fuori dalla transaction di proposito: le membership non sono scritte da
+        // qui, e leggerle sul client pooled è ciò che rende utilizzabile la
+        // cache per-richiesta dei brand accessibili.
+        await assertBrandAccess(ctx, calendar.brandId);
         return updateCalendarStatus(input.calendarId, input.status, txClient);
       });
       await logAudit(ctx, { action: 'SEASON_CALENDAR_STATUS_UPDATE', targetType: 'SeasonCalendar', targetId: input.calendarId, result: 'SUCCESS', metadata: { status: input.status } });
@@ -158,7 +162,7 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ planningGroupId: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      const group = await resolvePlanningGroupWithBrandAccess(input.planningGroupId, ctx.session.user.id, ctx.prisma);
+      const group = await resolvePlanningGroupBrandAccess(ctx, input.planningGroupId);
       await assertUnlocked('SEASON_CALENDAR', group.calendarId, ctx.session.user.id, ctx.prisma);
       const result = await freezePlanningGroup(input.planningGroupId, ctx.prisma);
       await logAudit(ctx, { action: 'PLANNING_GROUP_FROZEN', targetType: 'PlanningGroup', targetId: input.planningGroupId, result: 'SUCCESS', metadata: {} });
@@ -179,7 +183,7 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ planningGroupId: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      const group = await resolvePlanningGroupWithBrandAccess(input.planningGroupId, ctx.session.user.id, ctx.prisma);
+      const group = await resolvePlanningGroupBrandAccess(ctx, input.planningGroupId);
       const result = await unfreezePlanningGroup(input.planningGroupId, ctx.prisma);
       await logAudit(ctx, { action: 'PLANNING_GROUP_UNFROZEN', targetType: 'PlanningGroup', targetId: input.planningGroupId, result: 'SUCCESS', metadata: {} });
       sseStore.pushToAll({ type: 'calendar-updated', seasonId: group.calendar.seasonId });
@@ -200,7 +204,7 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ planningGroupId: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      const group = await resolvePlanningGroupWithBrandAccess(input.planningGroupId, ctx.session.user.id, ctx.prisma);
+      const group = await resolvePlanningGroupBrandAccess(ctx, input.planningGroupId);
       await assertUnlocked('SEASON_CALENDAR', group.calendarId, ctx.session.user.id, ctx.prisma);
       const result = await amendPlanningGroupFreeze(input.planningGroupId, ctx.prisma);
       await logAudit(ctx, { action: 'PLANNING_GROUP_FREEZE_AMENDED', targetType: 'PlanningGroup', targetId: input.planningGroupId, result: 'SUCCESS', metadata: { amendedCount: result.amendedCount } });
@@ -221,7 +225,7 @@ export const seasonCalendarRouter = router({
     .use(requirePermission('season_calendar:read'))
     .input(z.object({ planningGroupId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
-      await resolvePlanningGroupWithBrandAccess(input.planningGroupId, ctx.session.user.id, ctx.prisma);
+      await resolvePlanningGroupBrandAccess(ctx, input.planningGroupId);
       return resolveMissingPhasesForGroup(input.planningGroupId, ctx.prisma);
     }),
 
@@ -239,7 +243,7 @@ export const seasonCalendarRouter = router({
     .use(requirePermission('season_calendar:read'))
     .input(z.object({ planningGroupId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
-      await resolvePlanningGroupWithBrandAccess(input.planningGroupId, ctx.session.user.id, ctx.prisma);
+      await resolvePlanningGroupBrandAccess(ctx, input.planningGroupId);
       return resolveHolidayOverlapsForGroup(input.planningGroupId, ctx.prisma);
     }),
 
@@ -262,9 +266,7 @@ export const seasonCalendarRouter = router({
       functionId: z.string().uuid().optional(),
     }))
     .query(async ({ input, ctx }) => {
-      const allowedBrandIds = hasPermission({ role: ctx.session.user.role as Role }, '*:*')
-        ? input.brandIds
-        : await filterAllowedBrandIds(ctx.session.user.id, input.brandIds, ctx.prisma);
+      const allowedBrandIds = await filterAllowedBrandIds(ctx, input.brandIds);
       if (allowedBrandIds.length === 0) return [];
       return listMilestonesDb(input.seasonId, allowedBrandIds, ctx.session.user.id, ctx.prisma, input.functionId);
     }),
@@ -283,7 +285,7 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(CalendarEventBaseSchema)
     .mutation(async ({ input, ctx }) => {
-      const group = await resolvePlanningGroupWithBrandAccess(input.planningGroupId, ctx.session.user.id, ctx.prisma);
+      const group = await resolvePlanningGroupBrandAccess(ctx, input.planningGroupId);
       await assertUnlocked('SEASON_CALENDAR', group.calendarId, ctx.session.user.id, ctx.prisma);
 
       const result = await createMilestone(input, group.calendarId, ctx.prisma);
@@ -324,7 +326,7 @@ export const seasonCalendarRouter = router({
         throw new TRPCError({ code: 'CONFLICT', message: 'Evento annullato: è di sola lettura. Un admin deve ripristinarlo prima di modificarlo.' });
       }
       await Promise.all([
-        assertBrandAccess(ctx.session.user.id, event.calendar.brandId, ctx.prisma),
+        assertBrandAccess(ctx, event.calendar.brandId),
         assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma),
       ]);
 
@@ -414,7 +416,7 @@ export const seasonCalendarRouter = router({
       if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
       if (event.cancelledAt) throw new TRPCError({ code: 'CONFLICT', message: 'Evento annullato: non può essere spostato' });
       await Promise.all([
-        assertBrandAccess(ctx.session.user.id, event.calendar.brandId, ctx.prisma),
+        assertBrandAccess(ctx, event.calendar.brandId),
         assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma),
       ]);
 
@@ -462,7 +464,7 @@ export const seasonCalendarRouter = router({
         throw new TRPCError({ code: 'CONFLICT', message: 'Evento annullato: è di sola lettura. Un admin deve ripristinarlo prima di eliminarlo.' });
       }
       await Promise.all([
-        assertBrandAccess(ctx.session.user.id, event.calendar.brandId, ctx.prisma),
+        assertBrandAccess(ctx, event.calendar.brandId),
         assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma),
       ]);
 
@@ -517,7 +519,7 @@ export const seasonCalendarRouter = router({
       const uniqueBrandIds = [...new Set(events.map(e => e.calendar.brandId).filter((id): id is string => id != null))];
       const calendarIdsToLockCheck = [...new Set(events.map(e => e.calendarId))];
       await Promise.all([
-        ...uniqueBrandIds.map(brandId => assertBrandAccess(ctx.session.user.id, brandId, ctx.prisma)),
+        ...uniqueBrandIds.map(brandId => assertBrandAccess(ctx, brandId)),
         ...calendarIdsToLockCheck.map(id => assertUnlocked('SEASON_CALENDAR', id, ctx.session.user.id, ctx.prisma)),
       ]);
 
@@ -598,7 +600,7 @@ export const seasonCalendarRouter = router({
       if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
       if (event.cancelledAt) throw new TRPCError({ code: 'CONFLICT', message: 'Evento già annullato' });
       await Promise.all([
-        assertBrandAccess(ctx.session.user.id, event.calendar.brandId, ctx.prisma),
+        assertBrandAccess(ctx, event.calendar.brandId),
         assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma),
       ]);
 
@@ -663,7 +665,7 @@ export const seasonCalendarRouter = router({
       if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
       if (!event.cancelledAt) throw new TRPCError({ code: 'CONFLICT', message: 'Evento non è annullato' });
       await Promise.all([
-        assertBrandAccess(ctx.session.user.id, event.calendar.brandId, ctx.prisma),
+        assertBrandAccess(ctx, event.calendar.brandId),
         assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma),
       ]);
 
@@ -766,7 +768,7 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(ApplyTemplateInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const group = await resolvePlanningGroupWithBrandAccess(input.planningGroupId, ctx.session.user.id, ctx.prisma);
+      const group = await resolvePlanningGroupBrandAccess(ctx, input.planningGroupId);
 
       const anchor = input.anchorDate
         ? new Date(input.anchorDate)
@@ -870,8 +872,8 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(CloneSeasonCalendarInputSchema)
     .mutation(async ({ input, ctx }) => {
-      await assertBrandAccess(ctx.session.user.id, input.sourceBrandId, ctx.prisma);
-      await assertBrandAccess(ctx.session.user.id, input.targetBrandId, ctx.prisma);
+      await assertBrandAccess(ctx, input.sourceBrandId);
+      await assertBrandAccess(ctx, input.targetBrandId);
 
       const result = await cloneFromBrandSeason(input, ctx.prisma);
       await logAudit(ctx, { action: 'SEASON_CALENDAR_CLONE', targetType: 'SeasonCalendar', targetId: result.calendarId, result: 'SUCCESS', metadata: { sourceBrandId: input.sourceBrandId, sourceSeasonId: input.sourceSeasonId, sourcePlanningGroupIds: input.sourcePlanningGroupIds } });
@@ -905,7 +907,7 @@ export const seasonCalendarRouter = router({
         select: { brandId: true },
       });
       if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
-      await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
+      await assertBrandAccess(ctx, calendar.brandId);
       return getSyncStatus(input.calendarId, ctx.prisma);
     }),
 
@@ -926,7 +928,7 @@ export const seasonCalendarRouter = router({
         select: { brandId: true },
       });
       if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
-      await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
+      await assertBrandAccess(ctx, calendar.brandId);
       return listGoogleCalendarBindings(input.calendarId, ctx.prisma, ctx.session.user.id, ctx.session.user.role as Role);
     }),
 
@@ -947,7 +949,7 @@ export const seasonCalendarRouter = router({
         select: { brandId: true },
       });
       if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
-      await assertBrandAccess(ctx.session.user.id, calendar.brandId, ctx.prisma);
+      await assertBrandAccess(ctx, calendar.brandId);
       const syncResult = await reconcileCalendar(input.calendarId, ctx.prisma, ctx.logger);
       await logAudit(ctx, { action: 'SEASON_CALENDAR_SYNC_TRIGGERED', targetType: 'SeasonCalendar', targetId: input.calendarId, result: 'SUCCESS', metadata: syncResult });
       return { triggered: true, ...syncResult };
