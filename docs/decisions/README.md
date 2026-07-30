@@ -13,6 +13,7 @@
 | [008](008-appconfig-env-policy.md) | AppConfig KV System e Env Policy | Accepted |
 | [009](009-tokenversion-session-invalidation.md) | TokenVersion Multi-Layer Session Invalidation | Accepted |
 | [010](010-section-access-precedence.md) | Section Access a 4 Layer di Precedenza | Accepted |
+| [011](011-single-instance-scaling-constraint.md) | Vincolo Single-Instance e Stato Process-Local | Accepted |
 
-*Ultimo aggiornamento: 2026-07-01*
+*Ultimo aggiornamento: 2026-07-31*
 <!-- luke-docs:end:adr-index -->
