@@ -139,11 +139,6 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
       'nessun test scritto: piano, righe, specsheet, componenti e immagini sono tutti scoperti',
     uncovered: 14,
   },
-  pricing: {
-    reason:
-      'export.pdf è rotto da una regressione pdfmake 0.2→0.3 (vedi pricing.integration.spec.ts): invocarlo produce una unhandled rejection che inquinerebbe il file. Il resto del namespace è coperto',
-    uncovered: ['pricing.export.pdf'],
-  },
   notifications: {
     reason: 'nessun test scritto, incluse le preferenze e il ticket SSE',
     uncovered: 10,

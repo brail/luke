@@ -559,7 +559,7 @@ describe('pricing — validazione input', () => {
 });
 
 describe('pricing — export', () => {
-  it('xlsx produce un file per il brand+stagione richiesti', async () => {
+  it('xlsx e pdf producono un file per il brand+stagione richiesti', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
     const admin = callerAs('admin');
 
@@ -569,44 +569,32 @@ describe('pricing — export', () => {
       data: validInput('Standard'),
     });
 
-    const result = await admin.export.xlsx({ brandId, seasonId });
+    for (const format of ['xlsx', 'pdf'] as const) {
+      const result = await admin.export[format]({ brandId, seasonId });
 
-    expect(result.filename).toMatch(/\.xlsx$/i);
-    // base64 non vuoto: un export che ritorna una stringa vuota è un file
-    // corrotto che si scopre solo aprendolo.
-    expect(result.data.length).toBeGreaterThan(0);
+      expect(result.filename).toMatch(new RegExp(`\\.${format}$`, 'i'));
+      // base64 non vuoto: un export che ritorna una stringa vuota è un file
+      // corrotto che si scopre solo aprendolo.
+      expect(result.data.length).toBeGreaterThan(0);
+    }
   });
 
-  /**
-   * REGRESSIONE APERTA — `export.pdf` è rotto su questa linea di release.
-   *
-   * Il commit `a864236` ("chore(deps): phase 1 — safe bumps") ha portato pdfmake
-   * da **0.2.23 a 0.3.11**. Da 0.2 a 0.3 è un cambio breaking, e il call site in
-   * `lib/export/pdf.ts` non è stato migrato. Due rotture, non una:
-   *
-   * 1. Il costruttore è `(fontDescriptors, virtualfs, urlResolver,
-   *    localAccessPolicy)`, e `resolveUrls()` dereferenzia `this.urlResolver`
-   *    per ogni font. `new PdfPrinter(getPdfFonts())` lo lascia `undefined`:
-   *      TypeError: Cannot read properties of undefined (reading 'resolve')
-   *        at PdfPrinter.resolveUrls (pdfmake/js/Printer.js:126)
-   * 2. `createPdfKitDocument` è diventata **async**. `pdf.ts:256` la tratta come
-   *    stream sincrono (`doc.on('data', …)`), che su una Promise non esiste.
-   *
-   * Riprodotto in Node puro, fuori da vitest: non è un limite dell'ambiente di
-   * test. L'errore esce come **unhandled rejection** e la promise di
-   * `createPdfBuffer` non si risolve mai — per questo il caso è `todo` e non
-   * `fails`: eseguirlo inquinerebbe l'intero file con un errore non gestito.
-   *
-   * Portata: **tutti e quattro** gli export PDF dell'app — `pricing`,
-   * `collectionLayout`, `collectionLayoutRevision`, `rowPdf` — condividono
-   * `createPdfBuffer`.
-   *
-   * Non è un difetto storico: `v1.9.1` e precedenti hanno pdfmake 0.2.23 e
-   * funzionano. La regressione vive solo in `v1.10.0-rc.1`…`rc.11`, quindi
-   * partirebbe con `v1.10.0`.
-   *
-   * Quando sarà corretto: rimuovere `.todo` e asserire filename `.pdf` + base64
-   * non vuoto, come per xlsx.
-   */
-  it.todo('pdf produce un file — regressione pdfmake 0.3, vedi commento');
+  it('il pdf è un vero PDF, non una stringa qualunque', async () => {
+    const { brandId, seasonId } = await createBrandAndSeason();
+    const admin = callerAs('admin');
+
+    await admin.parameterSets.create({
+      brandId,
+      seasonId,
+      data: validInput('Standard'),
+    });
+
+    const { data } = await admin.export.pdf({ brandId, seasonId });
+    const header = Buffer.from(data, 'base64').subarray(0, 5).toString();
+
+    // Asserire solo "base64 non vuoto" non avrebbe intercettato la regressione
+    // pdfmake 0.2→0.3: serve guardare dentro il file. `%PDF-` è la firma.
+    expect(header).toBe('%PDF-');
+  });
+
 });

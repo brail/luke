@@ -5,6 +5,7 @@ import {
   type CompanyExportSettings,
 } from '@luke/core';
 
+
 import { readFileBuffer } from '../../storage/index.js';
 
 import type { PrismaClient } from '@prisma/client';
@@ -41,27 +42,74 @@ export const LUKE_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0
   <circle cx="250.00" cy="578.34" r="14.49"/>
 </svg>`;
 
-let cachedFonts: TFontDictionary | null = null;
+/**
+ * Singleton pdfmake, ottenuto con `require` e non con `import * as`.
+ *
+ * `import * as` produce un namespace object **sigillato**: `setFonts()` assegna
+ * `this.fonts` e fallisce con `Cannot redefine property: fonts`. Serve l'oggetto
+ * CJS reale, che è mutabile. Il cast su `typeof import(...)` tiene comunque le
+ * typings vere, quindi la superficie usata resta controllata da `tsc`.
+ */
+const pdfMake = require('pdfmake') as typeof import('pdfmake');
+
+let pdfMakeConfigured = false;
 
 /**
- * Returns the pdfmake font dictionary loaded from the bundled VFS.
- * The result is cached after the first call.
+ * Configura il singleton pdfmake: font nel virtual file system e policy di
+ * accesso. Idempotente, eseguita al primo export.
+ *
+ * ## Perché i font passano dal VFS e non come Buffer
+ *
+ * Fino a pdfmake 0.2 il descrittore accettava un `Buffer` per ogni variante.
+ * In 0.3 ogni valore passa da `URLResolver.resolve()`, che ci fa `.toLowerCase()`:
+ * un Buffer lo fa esplodere con `Cannot read properties of undefined`. I font
+ * vanno scritti nel VFS e referenziati per nome.
+ *
+ * ## Le policy sono chiuse di proposito
+ *
+ * `createPdf` avverte se non sono impostate, e il default sarebbe permissivo:
+ * una definizione di documento potrebbe far scaricare a pdfmake una URL esterna
+ * o leggere dal filesystem locale. Le nostre definizioni sono costruite
+ * server-side e le immagini arrivano come **data URI** (`logoDataUri`), che sono
+ * inline e non toccano né rete né disco — verificato: i loghi continuano a
+ * comparire con entrambe le policy a `false`.
  */
-export function getPdfFonts(): TFontDictionary {
-  if (!cachedFonts) {
-    // pdfmake/build/vfs_fonts exports the VFS object directly (not pdfMake.vfs)
-     
+function configurePdfMake(): typeof pdfMake {
+  if (!pdfMakeConfigured) {
     const vfs = require('pdfmake/build/vfs_fonts') as Record<string, string>;
-    cachedFonts = {
-      Roboto: {
-        normal:      Buffer.from(vfs['Roboto-Regular.ttf']!,       'base64'),
-        bold:        Buffer.from(vfs['Roboto-Medium.ttf']!,        'base64'),
-        italics:     Buffer.from(vfs['Roboto-Italic.ttf']!,        'base64'),
-        bolditalics: Buffer.from(vfs['Roboto-MediumItalic.ttf']!,  'base64'),
-      },
+
+    // `virtualfs` non è nelle typings di @types/pdfmake@0.3.3, che dichiarano
+    // invece `addVirtualFileSystem()` e `addFontContainer()` — entrambe assenti
+    // da pdfmake 0.3.11 (verificato a runtime). Le typings sono avanti rispetto
+    // alla libreria, quindi il VFS diretto è l'unica via funzionante. Il cast è
+    // ristretto al solo metodo usato: se un upgrade lo rimuove, il fallimento è
+    // immediato invece che silenzioso.
+    const { virtualfs } = pdfMake as unknown as {
+      virtualfs: {
+        writeFileSync(filename: string, content: string, encoding: string): void;
+      };
     };
+
+    for (const [filename, base64] of Object.entries(vfs)) {
+      virtualfs.writeFileSync(filename, base64, 'base64');
+    }
+
+    pdfMake.setFonts({
+      Roboto: {
+        normal: 'Roboto-Regular.ttf',
+        bold: 'Roboto-Medium.ttf',
+        italics: 'Roboto-Italic.ttf',
+        bolditalics: 'Roboto-MediumItalic.ttf',
+      },
+    });
+
+    pdfMake.setUrlAccessPolicy(() => false);
+    pdfMake.setLocalAccessPolicy(() => false);
+
+    pdfMakeConfigured = true;
   }
-  return cachedFonts;
+
+  return pdfMake;
 }
 
 /**
@@ -244,22 +292,12 @@ export async function fetchCompanyExportContext(
  * @returns Buffer with the complete PDF content.
  */
 export async function createPdfBuffer(def: TDocumentDefinitions): Promise<Buffer> {
-   
-  const PdfPrinter = require('pdfmake/js/Printer').default as new (fonts: TFontDictionary) => {
-    createPdfKitDocument(
-      def: TDocumentDefinitions,
-      options?: Record<string, unknown>,
-    ): NodeJS.EventEmitter & { end(): void };
-  };
-
-  const printer = new PdfPrinter(getPdfFonts());
-  const doc = printer.createPdfKitDocument(def);
-
-  return new Promise<Buffer>((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
-    doc.end();
-  });
+  // API pubblica di pdfmake, non `js/Printer`. La versione precedente importava
+  // la classe interna con `require` e un cast scritto a mano — ed è il cast che
+  // ha permesso al bump 0.2→0.3 (commit a864236, "safe bumps") di passare il
+  // typecheck: il tipo dichiarato descriveva un'API che non esisteva più.
+  // Costruttore e `createPdfKitDocument` erano entrambi cambiati, e ogni export
+  // PDF dell'app è rimasto rotto fino a qui. Con le typings reali, il prossimo
+  // breaking change lo prende `tsc`.
+  return configurePdfMake().createPdf(def).getBuffer();
 }
