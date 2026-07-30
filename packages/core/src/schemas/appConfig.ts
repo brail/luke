@@ -55,6 +55,8 @@ export const RateLimitConfigSchema = z.object({
   companyStructureMutations: RateLimitPolicySchema.optional(),
   /** Policy per trigger sync NAV (fornitori, ecc.) */
   navSyncTrigger: RateLimitPolicySchema.optional(),
+  /** Policy per generazione export (PDF/XLSX): operazione CPU e memory bound */
+  exportGeneration: RateLimitPolicySchema.optional(),
 });
 
 /**

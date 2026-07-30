@@ -74,6 +74,14 @@ export const RATE_LIMIT_CONFIG = {
     windowMs: 600_000, // 10 minuti — 1 sync per finestra, previene connection pool exhaustion
     keyBy: 'userId' as const,
   },
+  exportGeneration: {
+    // Generare un PDF è l'operazione più costosa dell'API: pdfmake tiene l'intero
+    // documento in memoria e l'export carica anche i logo come Buffer. Senza
+    // limite, un singolo account in loop satura l'event loop del processo.
+    max: 10,
+    windowMs: 60_000, // 1 minuto
+    keyBy: 'userId' as const,
+  },
 } as const;
 
 /**

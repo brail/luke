@@ -6,6 +6,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { rateLimitStore, RATE_LIMIT_CONFIG } from '../src/lib/ratelimit';
+import { RATE_LIMIT_POLICY_DEFAULTS } from '../src/lib/rateLimitPolicy';
 
 describe('Rate-Limit Store', () => {
   beforeEach(() => {
@@ -162,5 +163,18 @@ describe('Rate-Limit Store', () => {
       expect(stats.totalKeys).toBe(1);
       expect(stats.maxSize).toBe(1000);
     });
+  });
+});
+
+describe('Sincronia delle mappe di rate limit', () => {
+  it('ogni rotta in RATE_LIMIT_CONFIG ha un default in RATE_LIMIT_POLICY_DEFAULTS', () => {
+    // `resolveRateLimitPolicy` lancia su una rotta assente dai default: una
+    // chiave aggiunta a una mappa sola non è un errore di compilazione, è un
+    // crash alla prima richiesta che la usa. È già successo (v1.9.1).
+    const missing = Object.keys(RATE_LIMIT_CONFIG).filter(
+      route => !(route in RATE_LIMIT_POLICY_DEFAULTS)
+    );
+
+    expect(missing).toEqual([]);
   });
 });

@@ -16,8 +16,13 @@ const logger = pino({ level: 'info' });
 /**
  * Conservative built-in defaults for backwards compatibility.
  * Development environments use relaxed limits (100× the production values).
+ *
+ * Esportata perché la sincronia con `RATE_LIMIT_CONFIG` (`lib/ratelimit.ts`) è
+ * un invariante verificabile: `resolveRateLimitPolicy` lancia a runtime su una
+ * rotta assente da qui, quindi una chiave aggiunta a una sola delle due mappe
+ * diventa un crash in produzione invece di un errore di compilazione.
  */
-const DEFAULTS: Record<string, RateLimitPolicy> = {
+export const RATE_LIMIT_POLICY_DEFAULTS: Record<string, RateLimitPolicy> = {
   login: { max: 5, timeWindow: '1m', keyBy: 'ip' },
   passwordChange: { max: 3, timeWindow: '15m', keyBy: 'userId' },
   passwordReset: { max: 3, timeWindow: '15m', keyBy: 'ip' },
@@ -61,6 +66,11 @@ const DEFAULTS: Record<string, RateLimitPolicy> = {
     timeWindow: '10m',
     keyBy: 'userId',
   },
+  exportGeneration: {
+    max: isDevelopment() ? 100 : 10,
+    timeWindow: '1m',
+    keyBy: 'userId',
+  },
 };
 
 function parseTimeWindow(window: string): number {
@@ -98,12 +108,12 @@ function parseTimeWindow(window: string): number {
  * (`LUKE_RATE_LIMIT_<ROUTE>_MAX/WINDOW/KEY_BY`) → built-in defaults.
  * Invalid or malformed config at any tier falls through to the next tier.
  *
- * @param routeName - Route identifier; must be present in the DEFAULTS map.
+ * @param routeName - Route identifier; must be present in the RATE_LIMIT_POLICY_DEFAULTS map.
  * @param prisma - Prisma client used to read AppConfig.
  * @returns Resolved policy with `max`, `windowMs`, and `keyBy`.
  */
 export async function resolveRateLimitPolicy(
-  routeName: keyof typeof DEFAULTS,
+  routeName: keyof typeof RATE_LIMIT_POLICY_DEFAULTS,
   prisma: PrismaClient
 ): Promise<{ max: number; windowMs: number; keyBy: 'ip' | 'userId' }> {
   // 1) Tentativo AppConfig (chiave singola 'rateLimit' con JSON object)
@@ -138,7 +148,7 @@ export async function resolveRateLimitPolicy(
   const keyByEnv = process.env[`LUKE_RATE_LIMIT_${envKey}_KEY_BY`];
 
   if (maxEnv || windowEnv || keyByEnv) {
-    const def = DEFAULTS[routeName];
+    const def = RATE_LIMIT_POLICY_DEFAULTS[routeName];
     try {
       return {
         max: maxEnv ? parseInt(maxEnv, 10) : def.max,
@@ -154,7 +164,7 @@ export async function resolveRateLimitPolicy(
   }
 
   // 3) Default sicuri
-  const def = DEFAULTS[routeName];
+  const def = RATE_LIMIT_POLICY_DEFAULTS[routeName];
   return {
     max: def.max,
     windowMs: parseTimeWindow(def.timeWindow),

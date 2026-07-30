@@ -30,6 +30,24 @@ export const CompanyProfileInputSchema = z.object({
   website: z.string().url().optional(),
   address: CompanyAddressSchema.optional(),
   exportSettings: CompanyExportSettingsSchema.optional(),
-  logoKey: z.string().nullable().optional(),
+  /**
+   * Storage key del logo, dentro il bucket `company-assets`.
+   *
+   * Vincolata perché finisce direttamente in `readFileBuffer(prisma,
+   * 'company-assets', logoKey)` a ogni export PDF: senza formato era una stringa
+   * arbitraria scelta dal client che raggiungeva una lettura su storage. Il
+   * traversal è già fermato da `validatePathSafety` nel provider locale, ma
+   * quella è una difesa due livelli più in là.
+   *
+   * Il percorso corretto resterebbe quello di `brand.ts`, che non si fida mai
+   * dell'input e deriva la key da un `FileObject` verificato.
+   */
+  logoKey: z
+    .string()
+    .max(255)
+    .regex(/^[a-zA-Z0-9._\-/]+$/, 'Storage key non valida')
+    .refine(k => !k.includes('..'), 'Storage key non valida')
+    .nullable()
+    .optional(),
 });
 export type CompanyProfileInput = z.infer<typeof CompanyProfileInputSchema>;
