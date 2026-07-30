@@ -694,10 +694,12 @@ export async function reorderRows(
   }
   await assertUnlocked('COLLECTION_LAYOUT', group.collectionLayoutId, userId, prisma);
 
+  // `updateMany` con il `groupId` nel where: vedi `reorderQuotations`. Un id che
+  // non appartiene al gruppo non viene toccato invece di essere riordinato.
   await prisma.$transaction(
     orderedIds.map((rowId, index) =>
-      prisma.collectionLayoutRow.update({
-        where: { id: rowId },
+      prisma.collectionLayoutRow.updateMany({
+        where: { id: rowId, groupId },
         data: { order: index },
       })
     )

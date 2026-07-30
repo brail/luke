@@ -163,10 +163,15 @@ export async function reorderQuotations(
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Riga non trovata' });
   }
 
+  // `updateMany` con il `rowId` nel where, non `update` per id: la versione
+  // precedente riordinava qualunque id le passassi, quindi
+  // `reorder({ rowId: <mio>, orderedIds: [<quotazione altrui>] })` mutava il
+  // record estraneo. Il guard di brand scope non lo ferma — `rowId` è legittimo,
+  // è il resto della lista a non esserlo.
   await prisma.$transaction(
     orderedIds.map((id, index) =>
-      prisma.collectionRowQuotation.update({
-        where: { id },
+      prisma.collectionRowQuotation.updateMany({
+        where: { id, rowId },
         data: { order: index },
       })
     )

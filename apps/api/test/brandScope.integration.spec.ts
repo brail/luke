@@ -387,3 +387,52 @@ describe('brand scope — copyFromSeason', () => {
     );
   });
 });
+
+describe('reorder — gli id devono appartenere al parent', () => {
+  /**
+   * Classe diversa dal brand scope, trovata di fianco. `reorder` prendeva la
+   * lista di id e faceva `update({ where: { id } })` su ognuno, senza filtrare
+   * sul parent: bastava un `rowId` legittimo per riordinare le quotazioni di una
+   * riga altrui. Il guard di brand non lo intercetta, perché il `rowId` passato
+   * è davvero tuo.
+   */
+  it('una quotazione di un\'altra riga non viene toccata', async () => {
+    const asAdmin = createCallerWithSession(adminSession);
+
+    // Due righe distinte, ciascuna con la sua quotazione.
+    const mine = await asAdmin.collectionLayout.rows.create({
+      groupId: outRes.groupId,
+      gender: 'UOMO',
+      line: 'Mia',
+      status: COLLECTION_STATUS[0],
+      productCategory: 'TEST',
+      skuForecast: null,
+      qtyForecast: null,
+    });
+    const mineQuotation = await asAdmin.collectionLayout.quotations.create({
+      rowId: mine.id,
+    });
+    const foreignQuotation = await asAdmin.collectionLayout.quotations.create({
+      rowId: outRes.rowId,
+    });
+
+    const before = await prisma.collectionRowQuotation.findUnique({
+      where: { id: foreignQuotation.id },
+      select: { order: true, rowId: true },
+    });
+
+    // Riordino "la mia" riga, ma infilo nella lista la quotazione altrui in
+    // posizione 0 — che è ciò che ne cambierebbe l'ordine.
+    await asAdmin.collectionLayout.quotations.reorder({
+      rowId: mine.id,
+      orderedIds: [foreignQuotation.id, mineQuotation.id],
+    });
+
+    const after = await prisma.collectionRowQuotation.findUnique({
+      where: { id: foreignQuotation.id },
+      select: { order: true, rowId: true },
+    });
+
+    expect(after).toEqual(before);
+  });
+});
