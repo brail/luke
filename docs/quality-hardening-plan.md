@@ -405,17 +405,17 @@ connected" senza mai esercitare retry o circuit breaker. Riscritta su `ldapts`, 
 **spostata nel tier unit** — non tocca il database, non aveva motivo di stare fra
 le suite di integrazione.
 
-**Difetto trovato (aperto, richiede decisione)** — `bind()` converte
-`InvalidCredentialsError` in `TRPCError UNAUTHORIZED`, ma `isNonRetryableError`
-controlla `instanceof InvalidCredentialsError` e il messaggio contro pattern di
-"invalid filter": il TRPCError non matcha nessuno dei due. Risultato: **una
-password sbagliata viene ritentata `maxRetries + 1` volte**, quindi ogni login
-errato colpisce Active Directory 3 volte. Con una lockout policy a 3-5 tentativi,
-un solo typo può bloccare l'account.
+**Difetto trovato** 🟢 — `bind()` converte `InvalidCredentialsError` in
+`TRPCError UNAUTHORIZED`, ma `isNonRetryableError` controllava
+`instanceof InvalidCredentialsError` e il messaggio contro pattern di "invalid
+filter": il TRPCError non matcciava nessuno dei due. Risultato: **una password
+sbagliata veniva ritentata `maxRetries + 1` volte**, quindi ogni login errato
+colpiva Active Directory 3 volte. Con una lockout policy a 3-5 tentativi, un solo
+typo poteva bloccare l'account.
 
-Non corretto in questa sessione: tocca il percorso auth, che per CLAUDE.md richiede
-approvazione esplicita. Il test fotografa il comportamento attuale con un commento
-che lo marca come difetto — va portato a 1 chiamata quando viene sistemato.
+Corretto dopo approvazione esplicita (tocca il percorso auth, che per CLAUDE.md la
+richiede): `isNonRetryableError` riconosce ora `TRPCError` con codice
+`UNAUTHORIZED`, `FORBIDDEN` o `BAD_REQUEST`. Il test è passato da 3 chiamate a 1.
 
 ### Ultimo giro — quattro difetti di prodotto trovati dai test riparati
 
