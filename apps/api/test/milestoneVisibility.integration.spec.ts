@@ -6,11 +6,9 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { appRouter } from '../src/routers/index';
 import { getVisibleMilestoneIdsForUser } from '../src/services/milestoneVisibility.service';
 
-import { setupTestDb } from './helpers/database';
-import { createSilentLogger } from './helpers/logger';
+import { createTestContext, setupTestDb } from './helpers';
 
 import type { UserSession } from '../src/lib/auth';
-import type { Context } from '../src/lib/trpc';
 import type { PrismaClient } from '@prisma/client';
 
 let prisma: PrismaClient;
@@ -32,16 +30,6 @@ function makeSession(userId: string, role: 'admin' | 'editor' | 'viewer'): UserS
   };
 }
 
-function createContext(session: UserSession): Context {
-  return {
-    prisma,
-    session,
-    logger: createSilentLogger(),
-    req: { headers: {}, ip: '127.0.0.1', log: createSilentLogger() } as any,
-    res: {} as any,
-    traceId: randomUUID(),
-  };
-}
 
 async function createUser(role: 'admin' | 'editor' | 'viewer') {
   const uid = randomUUID().substring(0, 8);
@@ -148,7 +136,7 @@ describe('getVisibleMilestoneIdsForUser', () => {
 
 describe('admin vede tutte le milestone via router', () => {
   it('admin senza team membership vede tutte le milestone del calendario', async () => {
-    const caller = appRouter.createCaller(createContext(makeSession(adminUserId, 'admin')));
+    const caller = appRouter.createCaller(createTestContext(makeSession(adminUserId, 'admin')));
     const milestones = await caller.seasonCalendar.listMilestones({ seasonId, brandIds: [brandId] });
     const ids = milestones.map((m: any) => m.id);
     expect(ids).toContain(milestoneSalesId);

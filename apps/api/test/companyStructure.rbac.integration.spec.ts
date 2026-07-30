@@ -5,14 +5,12 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 import { appRouter } from '../src/routers/index';
 
-import { setupTestDb } from './helpers/database';
-import { createSilentLogger } from './helpers/logger';
+import { createTestContext, setupTestDb } from './helpers';
 
 
 
 
 import type { UserSession } from '../src/lib/auth';
-import type { Context } from '../src/lib/trpc';
 import type { PrismaClient } from '@prisma/client';
 
 
@@ -28,16 +26,6 @@ let testFunctionId: string;
 let testTeamId: string;
 let testMemberId: string;
 
-function createContext(session: UserSession): Context {
-  return {
-    prisma,
-    session,
-    logger: createSilentLogger(),
-    req: { headers: {}, ip: '127.0.0.1', log: createSilentLogger() } as any,
-    res: {} as any,
-    traceId: randomUUID(),
-  };
-}
 
 async function makeUser(role: 'admin' | 'editor' | 'viewer') {
   const uid = randomUUID().substring(0, 8);
@@ -87,108 +75,108 @@ function expectForbidden(promise: Promise<unknown>) {
 
 describe('RBAC — company.profile', () => {
   it('admin: get OK', async () => {
-    const caller = appRouter.createCaller(createContext(users.admin.session));
+    const caller = appRouter.createCaller(createTestContext(users.admin.session));
     await expect(caller.company.profile.get()).resolves.toBeDefined();
   });
 
   it('editor: get OK', async () => {
-    const caller = appRouter.createCaller(createContext(users.editor.session));
+    const caller = appRouter.createCaller(createTestContext(users.editor.session));
     await expect(caller.company.profile.get()).resolves.toBeDefined();
   });
 
   it('viewer: get OK', async () => {
-    const caller = appRouter.createCaller(createContext(users.viewer.session));
+    const caller = appRouter.createCaller(createTestContext(users.viewer.session));
     await expect(caller.company.profile.get()).resolves.toBeDefined();
   });
 
   it('editor: update → FORBIDDEN', async () => {
-    const caller = appRouter.createCaller(createContext(users.editor.session));
+    const caller = appRouter.createCaller(createTestContext(users.editor.session));
     await expectForbidden(caller.company.profile.update({ legalName: 'X', displayName: 'X' }));
   });
 
   it('viewer: update → FORBIDDEN', async () => {
-    const caller = appRouter.createCaller(createContext(users.viewer.session));
+    const caller = appRouter.createCaller(createTestContext(users.viewer.session));
     await expectForbidden(caller.company.profile.update({ legalName: 'X', displayName: 'X' }));
   });
 });
 
 describe('RBAC — company.function', () => {
   it('admin: list OK', async () => {
-    const caller = appRouter.createCaller(createContext(users.admin.session));
+    const caller = appRouter.createCaller(createTestContext(users.admin.session));
     await expect(caller.company.function.list()).resolves.toBeInstanceOf(Array);
   });
 
   it('editor: list OK', async () => {
-    const caller = appRouter.createCaller(createContext(users.editor.session));
+    const caller = appRouter.createCaller(createTestContext(users.editor.session));
     await expect(caller.company.function.list()).resolves.toBeInstanceOf(Array);
   });
 
   it('viewer: list OK', async () => {
-    const caller = appRouter.createCaller(createContext(users.viewer.session));
+    const caller = appRouter.createCaller(createTestContext(users.viewer.session));
     await expect(caller.company.function.list()).resolves.toBeInstanceOf(Array);
   });
 
   it('editor: create → FORBIDDEN', async () => {
-    const caller = appRouter.createCaller(createContext(users.editor.session));
+    const caller = appRouter.createCaller(createTestContext(users.editor.session));
     await expectForbidden(caller.company.function.create({ slug: 'xtest', name: 'X' }));
   });
 
   it('viewer: create → FORBIDDEN', async () => {
-    const caller = appRouter.createCaller(createContext(users.viewer.session));
+    const caller = appRouter.createCaller(createTestContext(users.viewer.session));
     await expectForbidden(caller.company.function.create({ slug: 'xtestv', name: 'X' }));
   });
 
   it('editor: update → FORBIDDEN', async () => {
-    const caller = appRouter.createCaller(createContext(users.editor.session));
+    const caller = appRouter.createCaller(createTestContext(users.editor.session));
     await expectForbidden(caller.company.function.update({ id: testFunctionId, name: 'Y' }));
   });
 
   // `deactivate` è stato rinominato `delete` quando il soft-delete è diventato la
   // semantica unica di cancellazione: la procedura vecchia non esiste più.
   it('editor: delete (soft) → FORBIDDEN', async () => {
-    const caller = appRouter.createCaller(createContext(users.editor.session));
+    const caller = appRouter.createCaller(createTestContext(users.editor.session));
     await expectForbidden(caller.company.function.delete({ id: testFunctionId }));
   });
 });
 
 describe('RBAC — company.team', () => {
   it('admin: listByFunction OK', async () => {
-    const caller = appRouter.createCaller(createContext(users.admin.session));
+    const caller = appRouter.createCaller(createTestContext(users.admin.session));
     await expect(caller.company.team.listByFunction({ functionId: testFunctionId })).resolves.toBeInstanceOf(Array);
   });
 
   it('editor: listByFunction OK', async () => {
-    const caller = appRouter.createCaller(createContext(users.editor.session));
+    const caller = appRouter.createCaller(createTestContext(users.editor.session));
     await expect(caller.company.team.listByFunction({ functionId: testFunctionId })).resolves.toBeInstanceOf(Array);
   });
 
   it('viewer: listByFunction OK', async () => {
-    const caller = appRouter.createCaller(createContext(users.viewer.session));
+    const caller = appRouter.createCaller(createTestContext(users.viewer.session));
     await expect(caller.company.team.listByFunction({ functionId: testFunctionId })).resolves.toBeInstanceOf(Array);
   });
 
   it('editor: create → FORBIDDEN', async () => {
-    const caller = appRouter.createCaller(createContext(users.editor.session));
+    const caller = appRouter.createCaller(createTestContext(users.editor.session));
     await expectForbidden(caller.company.team.create({ functionId: testFunctionId, name: 'X' }));
   });
 
   it('viewer: create → FORBIDDEN', async () => {
-    const caller = appRouter.createCaller(createContext(users.viewer.session));
+    const caller = appRouter.createCaller(createTestContext(users.viewer.session));
     await expectForbidden(caller.company.team.create({ functionId: testFunctionId, name: 'X' }));
   });
 
   it('editor: delete → FORBIDDEN', async () => {
-    const caller = appRouter.createCaller(createContext(users.editor.session));
+    const caller = appRouter.createCaller(createTestContext(users.editor.session));
     await expectForbidden(caller.company.team.delete({ id: testTeamId }));
   });
 
   it('editor: addMembers → FORBIDDEN', async () => {
-    const caller = appRouter.createCaller(createContext(users.editor.session));
+    const caller = appRouter.createCaller(createTestContext(users.editor.session));
     await expectForbidden(caller.company.team.addMembers({ teamId: testTeamId, userIds: [testMemberId] }));
   });
 
   it('editor: removeMembers → FORBIDDEN', async () => {
-    const caller = appRouter.createCaller(createContext(users.editor.session));
+    const caller = appRouter.createCaller(createTestContext(users.editor.session));
     await expectForbidden(caller.company.team.removeMembers({ teamId: testTeamId, userIds: [testMemberId] }));
   });
 });

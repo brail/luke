@@ -20,29 +20,17 @@ import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { rateLimitStore } from '../src/lib/ratelimit';
 import { appRouter } from '../src/routers/index';
 
-import { setupTestDb } from './helpers/database';
-import { createSilentLogger } from './helpers/logger';
+import { createTestContext, setupTestDb } from './helpers';
 
 import type { UserSession } from '../src/lib/auth';
-import type { Context } from '../src/lib/trpc';
 import type { PrismaClient } from '@prisma/client';
 
 let prisma: PrismaClient;
 const sessions: Record<'admin' | 'editor' | 'viewer', UserSession> = {} as never;
 
-function createContext(session: UserSession): Context {
-  return {
-    prisma,
-    session,
-    logger: createSilentLogger(),
-    req: { headers: {}, ip: '127.0.0.1', log: createSilentLogger() } as any,
-    res: {} as any,
-    traceId: randomUUID(),
-  };
-}
 
 function callerAs(role: 'admin' | 'editor' | 'viewer') {
-  return appRouter.createCaller(createContext(sessions[role])).pricing;
+  return appRouter.createCaller(createTestContext(sessions[role])).pricing;
 }
 
 /** Input valido minimo, con i valori realistici del seed. */
@@ -170,7 +158,7 @@ describe('pricing — matrice dei permessi', () => {
   it('un anonimo non raggiunge nulla', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
     const anon = appRouter.createCaller({
-      ...createContext(sessions.admin),
+      ...createTestContext(sessions.admin),
       session: null,
     }).pricing;
 
