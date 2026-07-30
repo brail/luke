@@ -273,3 +273,66 @@ Ci sono volute **tre CI rosse**, e ogni ricaduta ha aggiunto un dettaglio.
 Corollario: prima di dichiarare verde un controllo nuovo, chiedersi *quali file
 sto leggendo che un clone pulito non avrebbe* — e poi provarlo su un clone pulito,
 invece di rispondere a memoria.
+
+---
+
+### Una regola di lint nuova va sondata su un file-esca, non sul repo
+
+Scritta `brand-scope-required.yml`, girata su `apps/api/src`, zero finding,
+dichiarata fatta. Sbagliato tre volte di fila, e ogni volta lo zero sembrava la
+prova che funzionasse.
+
+1. *YAML non valido.* Il pattern conteneva `{ ..., brandId: $Z, ... }` non
+   quotato, e i due punti rompono lo scalare. Semgrep rispondeva
+   `invalid configuration file found` su stderr ed usciva **0**: il comando
+   sembrava passato e la regola non stava girando affatto.
+2. *`pattern-not` che non esclude.* Con `<... assertBrandAccess(...) ...>` semgrep
+   segnalava anche le procedure correttamente guardate. `metavariable-pattern`
+   non cambiava nulla. Ha funzionato `pattern-not-regex`, testuale sulla regione
+   matchata.
+3. *Alternativa letterale al posto della famiglia.* `assertBrandAccess` come
+   stringa esatta continuava a segnalare chi era guardato da
+   `resolveRowBrandAccess`. Serviva `BrandAccess`.
+
+I punti 2 e 3 sono la variante peggiore: **falsi positivi su una regola
+bloccante**. Una regola che segnala il codice corretto viene disattivata entro
+una settimana, quindi è peggio di non averla.
+
+**Regola**: prima di considerarla scritta, una regola semgrep va provata su un
+file-esca che contiene *entrambi* i casi — quello vulnerabile e quello già
+corretto — e deve dare esattamente 1 finding e 0. Zero finding sul repo reale non
+distingue "nessuna violazione" da "la regola non gira".
+
+```bash
+mkdir -p /tmp/probe/apps/api/src/routers && $EDITOR /tmp/probe/.../bad.ts
+cd /tmp/probe && semgrep --config <regola> .    # atteso: 1 finding, sul caso rotto
+```
+
+Corollario che ha ripagato subito: appena la regola ha iniziato a funzionare
+davvero ha trovato cinque procedure in `merchandisingPlan.ts` e `phaseAlert.ts`
+che né l'audit né il piano avevano enumerato.
+
+---
+
+### `vi.mock` non sempre intercetta: asserire sull'effetto, non sullo spy
+
+Nel test del logo aziendale, `vi.mock('../src/storage', ...)` non arrivava
+all'import di `deleteObjectByKey` fatto da `routers/company.ts` — né con quello
+specifier né con `'../src/storage/index.js'`. Il router chiamava la funzione
+reale, il `catch` best-effort se la mangiava, e lo spy restava a zero chiamate.
+Diagnosticato solo mettendo `(fn as any)._isMockFunction` dentro un throw
+temporaneo.
+
+**Regola**: quando un mock di modulo non intercetta, prima di combattere la
+risoluzione conviene chiedersi se l'effetto è osservabile altrove.
+`deleteObjectByKey` cancella anche la riga `FileObject`, quindi
+
+```ts
+expect(await prisma.fileObject.findUnique({ where: { id } })).toBeNull();
+```
+
+è più corta della lotta col mock **e** più forte: prova che sia girata la
+funzione vera, non che sia stato chiamato uno stub.
+
+Vale solo quando l'effetto è reale e osservabile. Se il collaboratore è davvero
+esterno (rete, SMTP), il mock resta l'unica via e va fatto funzionare.
