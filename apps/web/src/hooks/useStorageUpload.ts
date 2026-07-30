@@ -9,7 +9,14 @@ import { trpc } from '../lib/trpc';
 
 export interface StorageUploadResult {
   publicUrl: string;
-  fileId: string;
+  /**
+   * Id del `FileObject` da passare alla mutation che collega il file all'entità.
+   *
+   * Si chiamava `fileId`, mentre gli endpoint di upload dedicati (brand temp,
+   * collection row) ritornavano `fileObjectId`: tre nomi per la stessa cosa. Ora
+   * uno solo.
+   */
+  fileObjectId: string;
   key?: string;
 }
 
@@ -54,7 +61,7 @@ export function useStorageUpload(options: UseStorageUploadOptions = {}): UseStor
         originalName: file.name,
       });
 
-      if (req.method === 'presigned' && req.presignedUrl && req.key) {
+      if (req.method === 'presigned' && req.presignedUrl && req.key && req.uploadToken) {
         // MinIO path: PUT directly to presigned URL
         setProgress(20);
         const putRes = await fetch(req.presignedUrl, {
@@ -68,16 +75,21 @@ export function useStorageUpload(options: UseStorageUploadOptions = {}): UseStor
         }
 
         setProgress(80);
+        // Bucket e key non si rimandano: li porta il token, che il server ha
+        // firmato quando ha allocato la slot.
         const confirmed = await confirmUpload.mutateAsync({
-          bucket,
-          key: req.key,
+          uploadToken: req.uploadToken,
           contentType: file.type || 'application/octet-stream',
           size: file.size,
           originalName: file.name,
         });
 
         setProgress(100);
-        return { publicUrl: confirmed.publicUrl, fileId: confirmed.fileId, key: confirmed.key };
+        return {
+          publicUrl: confirmed.publicUrl,
+          fileObjectId: confirmed.fileObjectId,
+          key: confirmed.key,
+        };
       }
 
       // Local proxy path: POST multipart to entity-specific endpoint
@@ -111,7 +123,11 @@ export function useStorageUpload(options: UseStorageUploadOptions = {}): UseStor
 
       const data = await proxyRes.json();
       setProgress(100);
-      return { publicUrl: data.publicUrl, fileId: data.fileId ?? '', key: data.key };
+      return {
+        publicUrl: data.publicUrl,
+        fileObjectId: data.fileObjectId,
+        key: data.key,
+      };
     } finally {
       setIsUploading(false);
     }

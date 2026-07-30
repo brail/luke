@@ -19,7 +19,7 @@ import { withSectionAccess } from '../lib/sectionAccessMiddleware';
 import { getStorageBaseUrl, resolvePublicUrl } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
 import { getObjectMetadata, listObjects, deleteObject, resetStorageProvider, getStorageProvider, loadMinioProvider } from '../storage';
-import { signDownloadToken } from '../utils/downloadToken';
+import { signDownloadToken, signUploadToken, verifyUploadToken } from '../utils/downloadToken';
 
 /**
  * Schema per list files
@@ -59,13 +59,11 @@ const RequestUploadSchema = z.object({
   contentType: z.string().min(1),
   size: z.number().int().positive(),
   originalName: z.string().min(1).max(255),
-  /** Pre-allocated key (for presigned path, so client knows the URL before upload) */
-  key: z.string().optional(),
 });
 
 const ConfirmUploadSchema = z.object({
-  bucket: z.enum(APP_STORAGE_BUCKETS),
-  key: z.string().min(1),
+  /** Token firmato da `requestUpload`: porta bucket, key e utente. */
+  uploadToken: z.string().min(1),
   contentType: z.string().min(1),
   size: z.number().int().positive(),
   originalName: z.string().min(1).max(255),
@@ -252,7 +250,10 @@ export const storageRouter = router({
         const ext = input.contentType === 'image/png' ? '.png'
                   : input.contentType === 'image/webp' ? '.webp'
                   : '.jpg';
-        const key = input.key ?? `${year}/${month}/${day}/${randomUUID()}${ext}`;
+        // La key la sceglie il server. Prima era `input.key ?? <generata>`, cioè
+        // il client poteva preallocarla — e `confirmUpload` la riprendeva
+        // dall'input senza verificarla.
+        const key = `${year}/${month}/${day}/${randomUUID()}${ext}`;
 
         const { url, expiresAt } = await provider.getPresignedPutUrl({
           bucket: input.bucket as StorageBucket,
@@ -266,12 +267,21 @@ export const storageRouter = router({
           presignedUrl: url,
           key,
           expiresAt: expiresAt.toISOString(),
+          // Lega la slot a bucket+key+utente. TTL allineato alla presigned URL:
+          // un upload lento non deve sopravvivere alla URL ma morire in conferma.
+          uploadToken: signUploadToken({
+            bucket: input.bucket as StorageBucket,
+            key,
+            userId: ctx.session.user.id,
+            ttlMs: Math.max(expiresAt.getTime() - Date.now(), 0),
+          }),
         };
       }
 
       // Local storage: caller should use entity-specific upload endpoint
       return {
         method: 'proxy' as const,
+        uploadToken: null,
         presignedUrl: null,
         key: null,
         expiresAt: null,
@@ -288,26 +298,52 @@ export const storageRouter = router({
   confirmUpload: protectedProcedure
     .input(ConfirmUploadSchema)
     .mutation(async ({ input, ctx }) => {
-      const publicUrl = await resolvePublicUrl(ctx.prisma, input.bucket as StorageBucket, input.key);
+      // Bucket e key arrivano dal token firmato, non dall'input. Prima erano
+      // campi liberi: con la key di un blob caricato da un altro ci si faceva
+      // creare un `FileObject` con `createdBy` proprio, e da lì il predicato di
+      // `confirmPendingFile` lo lasciava collegare come file proprio.
+      let slot;
+      try {
+        slot = verifyUploadToken(input.uploadToken);
+      } catch {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Slot di upload non valida o scaduta, ricarica il file',
+        });
+      }
+
+      if (slot.userId !== ctx.session.user.id) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Slot di upload assegnata a un altro utente',
+        });
+      }
+
+      const publicUrl = await resolvePublicUrl(ctx.prisma, slot.bucket, slot.key);
 
       const fileObject = await ctx.prisma.fileObject.create({
         data: {
           id: randomUUID(),
-          bucket: input.bucket,
-          key: input.key,
+          bucket: slot.bucket,
+          key: slot.key,
           originalName: input.originalName,
           size: input.size,
           contentType: input.contentType,
           checksumSha256: input.checksumSha256 ?? '',
           createdBy: ctx.session.user.id,
-          confirmedAt: new Date(),
+          // Pending, non confermato: conferma il **trasferimento**, non il
+          // collegamento a un'entità. Chi lo collega chiama `confirmPendingFile`,
+          // che pretende `confirmedAt === null`. Effetto collaterale gradito: un
+          // upload abbandonato finisce sotto il reaper orario invece di restare
+          // per sempre.
+          confirmedAt: null,
         },
       });
 
       return {
-        fileId: fileObject.id,
+        fileObjectId: fileObject.id,
         publicUrl,
-        key: input.key,
+        key: slot.key,
       };
     }),
 

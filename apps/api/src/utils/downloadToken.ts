@@ -205,6 +205,62 @@ export function verifyDownloadToken(token: string): DownloadTokenPayload {
 }
 
 /**
+ * Payload del token upload — lega una slot di upload a bucket, key **e utente**.
+ *
+ * `confirmUpload` accettava bucket e key direttamente dall'input, senza mai
+ * confrontarli con ciò che lo storage contiene davvero. Il bucket era vincolato
+ * dall'enum, la key no: bastava chiamarlo con la key di un blob caricato da un
+ * altro per farsi creare un `FileObject` con `createdBy` proprio. Da lì il
+ * predicato di `confirmPendingFile` (`createdBy === userId`) passa, e il file
+ * altrui si collega come proprio logo — il predicato verifica la proprietà della
+ * *riga*, ed è `confirmUpload` a decidere chi possiede la riga.
+ *
+ * Legare la key alla slot che il server ha allocato chiude il buco senza alcun
+ * round-trip verso lo storage, che non avrebbe comunque un `head`/`exists`
+ * (`IStorageProvider` espone solo put/get/delete/list).
+ */
+export interface UploadTokenPayload extends BaseTokenPayload {
+  bucket: StorageBucket;
+  key: string;
+  /** L'utente a cui la slot è stata assegnata: solo lui può confermarla. */
+  userId: string;
+}
+
+/**
+ * Firma la slot allocata da `requestUpload`.
+ *
+ * @param ttlMs - Allineare alla scadenza della presigned URL, non lasciare il
+ *   default: un upload lento su rete scadente supererebbe i 5 minuti e
+ *   fallirebbe in conferma, con il blob già caricato.
+ */
+export function signUploadToken(params: {
+  bucket: StorageBucket;
+  key: string;
+  userId: string;
+  ttlMs?: number;
+}): string {
+  const exp = Date.now() + (params.ttlMs ?? DOWNLOAD_TOKEN_TTL_MS);
+  return signTokenPayload<UploadTokenPayload>({
+    bucket: params.bucket,
+    key: params.key,
+    userId: params.userId,
+    exp,
+  });
+}
+
+/**
+ * Verifica un token di upload.
+ *
+ * Il chiamante deve confrontare `userId` con la sessione: la firma prova che il
+ * server ha allocato quella slot, non che sia chi la sta usando.
+ *
+ * @throws Error se il token è invalido, incompleto o scaduto.
+ */
+export function verifyUploadToken(token: string): UploadTokenPayload {
+  return verifyTokenPayload<UploadTokenPayload>(token, ['bucket', 'key', 'userId']);
+}
+
+/**
  * Payload del token export — stessa firma HMAC stateless di `DownloadTokenPayload`, ma include
  * anche l'header dell'envelope `.lukebak` (già cifrato per passphrase, mai il segreto in chiaro)
  * così la route di streaming non deve rileggere il DB per ricostruirlo.
