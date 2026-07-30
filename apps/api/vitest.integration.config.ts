@@ -16,7 +16,11 @@ export default defineConfig({
     environment: 'node',
     include: ['test/**/*.integration.spec.ts'],
     exclude: ['**/node_modules/**', 'dist/**'],
-    setupFiles: ['./test/setup.ts'],
+    setupFiles: ['./test/setup.ts', './test/setup.procedureUsage.ts'],
+    // Gate di copertura delle procedure tRPC: vive qui e non come step di CI
+    // perché uno step si può dimenticare di aggiungere. Vedi
+    // `test/globalSetup.procedureCoverage.ts`.
+    globalSetup: ['./test/globalSetup.procedureCoverage.ts'],
     fileParallelism: false,
     testTimeout: 30000,
     hookTimeout: 60000,
