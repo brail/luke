@@ -166,3 +166,69 @@ in 5.0.8) l'override ha continuato a forzare la versione vulnerabile, e
 **Regola**: un override che pinna una versione **esatta** è debito a scadenza. Se
 si pinna, pinnare un range (`'>=x.y.z'`) e rivedere gli override ad ogni finding
 di `pnpm security:deps`.
+
+### Le negazioni in `.gitignore` non rientrano sotto una directory esclusa
+
+`.gitignore` conteneva `.claude/`. Aggiungere `!.claude/skills/**` sotto quella
+riga **non** avrebbe funzionato: un pattern che esclude una directory fa sì che
+git non la percorra affatto, e nessuna negazione al suo interno può più
+riammettere nulla. Il fix sarebbe stato scritto, committato, e silenziosamente
+inerte — con le skill ancora fuori da git.
+
+La forma corretta esclude il **contenuto** un livello sotto, perché `*` non
+matcha `/`:
+
+```gitignore
+.claude/*
+!.claude/skills/
+!.claude/hooks/
+!.claude/settings.json
+.claude/settings.local.json
+```
+
+**Regole**:
+
+1. Per riammettere qualcosa dentro una directory ignorata, escludere `dir/*`,
+   mai `dir/`.
+2. Verificare sempre con l'**exit code**, non con l'output: `git check-ignore -v`
+   stampa la regola anche quando è una negazione (prefissata `!`), quindi
+   "ha stampato qualcosa" non significa "è ignorato". Usare
+   `git check-ignore -q <file>` — 0 = ignorato, 1 = tracciabile.
+3. Controprova finale: `git add -An <dir>` elenca esattamente ciò che entrerebbe.
+
+### Una skill con `agent: Explore` non può invocare subagenti
+
+`luke-audit`, `luke-bugs` e `luke-security` dichiaravano `agent: Explore` e
+contenevano "Run 3 agents in parallel" con tre brief dettagliati. L'agente
+Explore ha tutti i tool **tranne** Agent: il fan-out non è mai avvenuto, e
+degradava in silenzio a un passaggio singolo. Nessun errore, nessun segnale —
+solo report prodotti in un modo diverso da quello dichiarato, per mesi.
+
+Il fix non è passare a `agent: general-purpose`: quelle skill sono read-only, e
+oggi il vincolo è garantito dal tipo di agente, che non ha tool di scrittura.
+Sbloccare i subagenti avrebbe consegnato loro Write ed Edit, degradando un
+invariante strutturale a un'istruzione in prosa.
+
+**Regole**:
+
+1. Prima di scrivere istruzioni di orchestrazione in una skill, verificare che
+   il tipo di agente dichiarato abbia il tool Agent.
+2. Verificato da `tools/scripts/check-skill-integrity.ts`, bloccante in CI.
+3. Vale in generale: un'istruzione che il runtime non può eseguire non fallisce,
+   viene ignorata. È la forma più silenziosa di controllo inerte.
+
+### Un test che parte da un sotto-router salta la composizione
+
+`brand.integration.spec.ts` usava `brandRouter.createCaller(ctx)`. Ma
+`router({ brand: brandRouter })` **non conserva** `brandRouter`:
+`createRouterFactory` ne ricostruisce un aggregato, e il sotto-router importato
+mantiene una propria mappa `_def.procedures` separata. Il test esercitava quindi
+un percorso che la produzione non prende mai — la produzione entra sempre da
+`appRouter`.
+
+Trovato dal gate di copertura procedure, che misura le invocazioni su
+`appRouter`: il router meglio testato del repo risultava 7/7 non invocato.
+
+**Regola**: nei test tRPC, costruire il caller da `appRouter` e scendere al
+namespace (`appRouter.createCaller(ctx).brand`), mai dal sotto-router importato.
+La forma dei call site resta identica.

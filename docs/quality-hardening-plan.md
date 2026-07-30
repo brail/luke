@@ -670,7 +670,145 @@ invece di lasciar arrivare l'errore travestito da login fallito.
 
 ---
 
-## 6. Principio di fondo
+## 6. Secondo giro (2026-07-30) — il tooling controllato con lo stesso metro
+
+L'assessment del primo giro guardava il codice. Questo guarda **gli strumenti che
+lo controllano**, con lo stesso criterio: non "il controllo esiste" ma "il
+controllo fallisce quando deve". Ne sono usciti sei residui della stessa classe.
+
+### `.claude/` non era versionato 🟢
+
+Il tooling che fa rispettare `CLAUDE.md` — 8 skill, l'hook git, i settings
+condivisi — viveva su una sola macchina, non revisionabile e senza backup.
+Ora tracciato (13 file).
+
+Il fix ovvio sarebbe stato inerte: `.gitignore` conteneva `.claude/`, e **una
+directory esclusa non viene percorsa da git**, quindi nessun `!.claude/skills/**`
+sotto di essa può riammettere alcunché. Serve escludere il contenuto un livello
+sotto (`.claude/*`), perché `*` non matcha `/`. Vedi `lessons.md`.
+
+### Il fan-out a 3 agenti non è mai girato 🟢
+
+`luke-audit`, `luke-bugs` e `luke-security` dichiarano `agent: Explore` e
+contenevano "Run 3 agents in parallel". **Explore non ha il tool Agent**: ogni
+report `luke-*` mai letto è stato prodotto da un passaggio singolo e sequenziale.
+Un fan-out dichiarato e mai avvenuto, dentro le skill il cui scopo è trovare
+esattamente questo.
+
+Rimosso, non riparato: passare a `general-purpose` per sbloccare i subagenti
+avrebbe consegnato Write ed Edit a delle skill read-only, degradando un
+invariante strutturale (il tipo di agente) a un'istruzione in prosa. Regola e
+motivazione in `.claude/skills/luke-shared/audit-protocol.md` §6, verificata in CI.
+
+### `luke-test` insegnava una struttura eliminata 🟢
+
+Istruiva ad aggiungere ogni nuova spec a `test/integration-specs.ts` (file
+cancellato in questo stesso piano) e a usare `hasTestDatabase()` (rimossa proprio
+perché il pattern che abilitava faceva riportare verde il job con zero test).
+
+La riscrittura non aggiorna l'inventario degli helper: lo **cancella**. Era
+driftato perché duplicava la codebase, e il rimedio a una duplicazione non è una
+duplicazione più fresca — ora punta al barrel, che non può marcire.
+
+### Due `createTestContext` incompatibili 🟢
+
+`test/helpers.ts` ne esportava uno sincrono che prende una `UserSession` e non
+tocca il database; `test/helpers/testContext.ts` uno asincrono che prende un
+`Role`, crea un utente vero e tronca i dati. Stesso nome, semantiche opposte,
+scelta per import — 4 spec usavano l'uno, 3 l'altro, e uno dei call site era un
+import dinamico invisibile al grep.
+
+L'async è ora `createContextForRole`. Ma il fix durevole è il barrel: `helpers.ts`
+ri-esporta esplicitamente i moduli `helpers/`, così due omonimi diventano
+**TS2323 in compilazione**. Verificato reintroducendo la collisione.
+
+### Gate di copertura delle procedure tRPC 🟢
+
+35 file router su 46 non erano raggiunti da alcun test, e niente segnalava
+l'arrivo del 36°.
+
+Misura reale, non dichiarata: un `Proxy` su ogni voce di
+`appRouter._def.procedures` registra le invocazioni effettive; solo lo *scoperto*
+è dichiarato, in `test/procedure-coverage.ts`, per namespace e con un conteggio
+che il gate verifica. Una lista di procedure "coperte" scritta a mano sarebbe
+stata un'affermazione che nessuno verifica — il difetto di questo piano
+reintrodotto dal suo stesso fix.
+
+**Stato misurato: 28 procedure invocate su 309, il 9%.** Il numero è in chiaro
+nel file: è la misura, non un traguardo.
+
+Il gate vive dentro `pnpm test:integration` (un `globalSetup`, non uno step CI
+che si può dimenticare) e l'escape per le run parziali è **derivato** dal
+confronto fra spec eseguite e spec su disco, non da una variabile d'ambiente da
+impostare e dimenticare accesa.
+
+Ha trovato due difetti al primo colpo:
+
+- `brand.integration.spec.ts` usava `brandRouter.createCaller`, ma
+  `router({ brand: brandRouter })` non conserva il sotto-router — il test
+  esercitava un percorso che la produzione non prende. Riscritto su
+  `appRouter.createCaller(ctx).brand`: 7/7 non invocate → 3.
+- La prima stesura del `globalSetup` importava `appRouter` per transitività e
+  lasciava il processo appeso ("close timed out"). Moduli separati.
+
+### Skill e docs: i fatti che affermano ora sono bloccanti 🟢
+
+`pnpm check:drift`, nel job `checks`:
+
+- `check-skill-integrity.ts` — path e simboli citati dalle skill devono
+  esistere; una skill `agent: Explore` non può contenere istruzioni di fan-out.
+- `check-docs-integrity.ts` — marker `luke-docs:start/end` appaiati, link
+  relativi che risolvono. Sostituisce la Phase 3 di `luke-docs`: era parsing
+  affidato a un LLM, livello 4 dove ne basta uno di livello 2.
+
+Entrambi hanno una guardia zero-discovery che lancia se l'euristica smette di
+matchare — la lezione della lista di tabelle memoizzata vuota, applicata a una
+regex.
+
+### `pnpm test:integration` non partiva in locale, e non era scritto da nessuna parte 🟢
+
+`TEST_DATABASE_URL` non è impostata da nulla in locale: in CI arriva dall'env del
+job, e `pnpm test:db:up` avvia solo il container. Il comando falliva quindi
+sempre, con l'header di `docker-compose.test.yml` che suggeriva il contrario
+(«`pnpm test:db:up` avvia · `pnpm test:integration` esegue le suite»).
+
+Il **fallimento è corretto** e va tenuto — una suite che salta quando manca il
+database è come si ottiene un job verde con zero test eseguiti. Mancava il
+comando per evitarlo:
+
+```bash
+pnpm test:db:up
+TEST_DATABASE_URL="postgresql://luke:luke_test@localhost:5434/luke_test" \
+  pnpm test:integration
+```
+
+Documentato in `docker-compose.test.yml` (con i valori, che vengono da lì) e in
+`.claude/skills/luke-test/SKILL.md`. `turbo.json` dichiara già
+`env: ["TEST_DATABASE_URL"]` sul task, quindi la variabile attraversa turbo:
+verificato, 187/187 dalla root.
+
+### Metodo
+
+Nessun gate di questo giro è stato considerato fatto prima di **averlo visto
+fallire**: conteggio alterato, run parziale in CI, procedura nuova non
+dichiarata, path inesistente in una skill, fan-out reintrodotto, link rotto,
+marker sbilanciato, e la collisione di nomi rimessa apposta. Sette controprove,
+tutte rosse quando dovevano.
+
+### Resta fuori, per scelta
+
+- **Smoke Playwright in CI** — non gira in nessun workflow. Deciso di lasciarlo
+  come gate pre-release manuale.
+- **Regola eslint sugli import profondi in `test/`** — prevista dal piano, non
+  applicata: ci sono 21 import `./helpers/*` in 14 spec, e vietarli avrebbe
+  significato riscriverli tutti per un guadagno marginale. È il **barrel** a
+  produrre l'errore di compilazione, non il path di import delle spec.
+- **Estrazione del catalogo env** da `server.ts` — tocca il path di boot e
+  un'esclusione semgrep ERROR-tier, per un valore basso.
+
+---
+
+## 7. Principio di fondo
 
 L'analisi statica dice *com'è scritto* il codice. I test dicono *cosa fa*. Le skill
 LLM trovano ciò che nessuna regola sa ancora esprimere — e il loro output migliore

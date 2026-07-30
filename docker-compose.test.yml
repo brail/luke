@@ -1,8 +1,22 @@
 # PostgreSQL effimero per i test di integrazione.
 #
 #   pnpm test:db:up      avvia (porta 5434, non collide con dev:5432 né migrate:5433)
-#   pnpm test:integration esegue le suite
 #   pnpm test:db:down    ferma e cancella il volume
+#
+# Avviare il container NON basta: le suite leggono `TEST_DATABASE_URL`, che
+# nessuno imposta in locale (in CI arriva dall'env del job). Va esportata a mano,
+# e i valori sono quelli di questo file:
+#
+#   TEST_DATABASE_URL="postgresql://luke:luke_test@localhost:5434/luke_test" \
+#     pnpm test:integration
+#
+# Senza, la suite **fallisce** invece di saltare — è voluto: un job verde con
+# zero test eseguiti è peggio di un job rosso (vedi `apps/api/test/helpers/database.ts`).
+# Il fallimento è quindi corretto, ma il comando per evitarlo non era scritto da
+# nessuna parte: questo blocco esiste per quello.
+#
+# `turbo.json` dichiara `env: ["TEST_DATABASE_URL"]` sul task, quindi la
+# variabile attraversa turbo e il comando funziona anche dalla root.
 #
 # Nessun volume persistente: i dati sono usa-e-getta per costruzione.
 services:
