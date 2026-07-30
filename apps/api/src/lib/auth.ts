@@ -105,6 +105,26 @@ export function createUserSession(token: string): UserSession | null {
 }
 
 /**
+ * Chiave per il rate limiter: l'id utente se il bearer è valido, altrimenti l'IP.
+ *
+ * **Non è un controllo di autenticazione.** È solo la chiave del bucket: un token
+ * scaduto, assente o manomesso ricade sull'IP, e a rifiutare la richiesta ci
+ * pensa l'handler. Verificare la firma qui costa un HMAC e nessuna query.
+ *
+ * Serve perché le quattro rotte di upload avevano un `keyGenerator` che leggeva
+ * `req.session?.user?.id` — che **nessuno assegna mai**: il limiter è un hook
+ * `onRequest`, l'auth avviene dentro l'handler. Il ramo sinistro era morto in
+ * tutte e quattro, quindi il limite era per IP: un ufficio dietro NAT condivideva
+ * 30 upload al minuto fra tutti, e chi ruota indirizzi li moltiplicava.
+ */
+export function rateLimitKeyFromRequest(request: FastifyRequest): string {
+  const token = extractTokenFromRequest(request);
+  if (!token) return request.ip;
+
+  return verifyToken(token)?.userId ?? request.ip;
+}
+
+/**
  * Fastify hook that authenticates an incoming request.
  * Extracts the Bearer token, verifies the signature **and the revocation state**,
  * and returns the session. Clears the legacy session cookie if the token is invalid.

@@ -18,7 +18,7 @@ import fp from 'fastify-plugin';
 import { generateIcal } from '@luke/calendar';
 import { isDevelopment } from '@luke/core';
 
-import { authenticateRequest } from '../lib/auth';
+import { authenticateRequest, rateLimitKeyFromRequest } from '../lib/auth';
 // Unico ingresso al motore PDF: è l'unico punto in cui `setUrlAccessPolicy` e
 // `setLocalAccessPolicy` sono chiuse. Qui vivevano quattro `new PdfPrinter(...)`
 // costruiti a mano, che non ereditavano nessuna policy — e che dal bump pdfmake
@@ -510,8 +510,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
       rateLimit: {
         max: isDevelopment() ? 100 : 10,
         timeWindow: '1 minute',
-        keyGenerator: (req: FastifyRequest) =>
-          (req as any).session?.user?.id || req.ip,
+        keyGenerator: rateLimitKeyFromRequest,
       },
     },
   };

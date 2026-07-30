@@ -18,7 +18,7 @@ import rateLimit from '@fastify/rate-limit';
 
 import { isDevelopment } from '@luke/core';
 
-import { requireSessionWithPermission } from '../lib/auth';
+import { rateLimitKeyFromRequest, requireSessionWithPermission } from '../lib/auth';
 import {
   uploadBrandLogo,
   uploadTempBrandLogo,
@@ -75,11 +75,7 @@ export default async function brandLogoRoutes(
   await app.register(rateLimit, {
     max: isDevelopment() ? 100 : 30, // 30 req/min in prod per utente
     timeWindow: '1 minute',
-    keyGenerator: (req: any) => {
-      // Se autenticato, usa user ID; altrimenti usa IP
-      // Accedi a session tramite il custom decorator o il context
-      return (req as any).session?.user?.id || req.ip;
-    },
+    keyGenerator: rateLimitKeyFromRequest,
   });
 
   app.post<{

@@ -14,7 +14,7 @@ import rateLimit from '@fastify/rate-limit';
 
 import { isDevelopment } from '@luke/core';
 
-import { requireSessionWithPermission } from '../lib/auth';
+import { rateLimitKeyFromRequest, requireSessionWithPermission } from '../lib/auth';
 import { uploadSpecsheetImage } from '../services/specsheetImage.service';
 
 import type { PrismaClient } from '@prisma/client';
@@ -27,7 +27,7 @@ export default async function specsheetImageRoutes(
   await app.register(rateLimit, {
     max: isDevelopment() ? 100 : 30,
     timeWindow: '1 minute',
-    keyGenerator: (req: any) => (req as any).session?.user?.id || req.ip,
+    keyGenerator: rateLimitKeyFromRequest,
   });
 
   app.post<{ Params: { specsheetId: string } }>(

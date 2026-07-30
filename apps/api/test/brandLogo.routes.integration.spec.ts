@@ -353,7 +353,11 @@ describe('Brand Logo Upload Integration', () => {
       expect(rejected.headers['x-ratelimit-remaining']).toBe('0');
     });
 
-    it('il budget è per IP, e le due rotte lo condividono', async () => {
+    it('il budget cade sull’IP quando il bearer non è un JWT valido, e le due rotte lo condividono', async () => {
+      // `authToken` è la stringa 'mock-jwt-token', non un JWT: `keyGenerator`
+      // non riesce a verificarla e ricade su `req.ip`. Con un bearer vero la
+      // chiave sarebbe l'id utente — è il fallback che questo test fissa, non il
+      // comportamento normale.
       const limit = Number((await consumeQuota('10.0.0.1')).headers['x-ratelimit-limit']);
       for (let i = 1; i < limit; i++) await consumeQuota('10.0.0.1');
 

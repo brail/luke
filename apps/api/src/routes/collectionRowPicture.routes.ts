@@ -14,7 +14,7 @@ import rateLimit from '@fastify/rate-limit';
 
 import { isDevelopment } from '@luke/core';
 
-import { requireSessionWithPermission } from '../lib/auth';
+import { rateLimitKeyFromRequest, requireSessionWithPermission } from '../lib/auth';
 import { uploadCollectionRowPicture, uploadTempCollectionRowPicture } from '../services/collectionRowPicture.service';
 
 import type { PrismaClient } from '@prisma/client';
@@ -28,9 +28,7 @@ export default async function collectionRowPictureRoutes(
   await app.register(rateLimit, {
     max: isDevelopment() ? 100 : 30,
     timeWindow: '1 minute',
-    keyGenerator: (req: any) => {
-      return (req as any).session?.user?.id || req.ip;
-    },
+    keyGenerator: rateLimitKeyFromRequest,
   });
 
   // Temp endpoint — no row ID required (create mode)
