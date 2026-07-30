@@ -26,6 +26,7 @@ import {
 
 import { logAudit } from '../lib/auditLog';
 import { exportTimestamp } from '../lib/export/xlsx-streaming';
+import { confirmPendingFile } from '../lib/pendingFile';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { makeUrlResolver } from '../lib/storageUrl';
@@ -178,21 +179,12 @@ const rowsRouter = router({
       const result = await ctx.prisma.$transaction(async tx => {
         let confirmedPictureKey: string | undefined;
         if (pendingPictureFileObjectId) {
-          const pendingFile = await tx.fileObject.findUnique({
-            where: { id: pendingPictureFileObjectId },
-            select: { key: true, confirmedAt: true, createdBy: true, bucket: true },
-          });
-          if (
-            pendingFile?.confirmedAt === null &&
-            pendingFile.createdBy === ctx.session!.user.id &&
-            pendingFile.bucket === 'collection-row-pictures'
-          ) {
-            await tx.fileObject.update({
-              where: { id: pendingPictureFileObjectId },
-              data: { confirmedAt: new Date() },
-            });
-            confirmedPictureKey = pendingFile.key;
-          }
+          confirmedPictureKey =
+            (await confirmPendingFile(tx, {
+              fileObjectId: pendingPictureFileObjectId,
+              bucket: 'collection-row-pictures',
+              userId: ctx.session!.user.id,
+            })) ?? undefined;
         }
         return createRow(
           { ...rowInput, ...(confirmedPictureKey ? { pictureKey: confirmedPictureKey } : {}) },
@@ -225,10 +217,11 @@ const rowsRouter = router({
         let confirmedPictureKey: string | undefined;
 
         if (pendingPictureFileObjectId) {
-          const [pendingFile, existingRow] = await Promise.all([
-            tx.fileObject.findUnique({
-              where: { id: pendingPictureFileObjectId },
-              select: { key: true, confirmedAt: true, createdBy: true, bucket: true },
+          const [confirmedKey, existingRow] = await Promise.all([
+            confirmPendingFile(tx, {
+              fileObjectId: pendingPictureFileObjectId,
+              bucket: 'collection-row-pictures',
+              userId: ctx.session!.user.id,
             }),
             tx.collectionLayoutRow.findUnique({
               where: { id: input.rowId },
@@ -236,16 +229,8 @@ const rowsRouter = router({
             }),
           ]);
 
-          if (
-            pendingFile?.confirmedAt === null &&
-            pendingFile.createdBy === ctx.session!.user.id &&
-            pendingFile.bucket === 'collection-row-pictures'
-          ) {
-            await tx.fileObject.update({
-              where: { id: pendingPictureFileObjectId },
-              data: { confirmedAt: new Date() },
-            });
-            confirmedPictureKey = pendingFile.key;
+          if (confirmedKey) {
+            confirmedPictureKey = confirmedKey;
             oldPictureKey = existingRow?.pictureKey ?? null;
           }
         }

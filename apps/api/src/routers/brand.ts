@@ -16,6 +16,7 @@ import {
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
+import { confirmPendingFile } from '../lib/pendingFile';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { makeUrlResolver } from '../lib/storageUrl';
@@ -142,22 +143,15 @@ export const brandRouter = router({
         // Confirms pending logo and links it to the brand atomically.
         // findUnique (not findFirst) since id is the PK — findFirst is unnecessary overhead.
         if (fileObjectId) {
-          const pendingFile = await tx.fileObject.findUnique({
-            where: { id: fileObjectId },
-            select: { key: true, confirmedAt: true, createdBy: true, bucket: true },
+          const confirmedKey = await confirmPendingFile(tx, {
+            fileObjectId,
+            bucket: 'brand-logos',
+            userId: ctx.session!.user.id,
           });
-          if (
-            pendingFile?.confirmedAt === null &&
-            pendingFile.createdBy === ctx.session!.user.id &&
-            pendingFile.bucket === 'brand-logos'
-          ) {
-            await tx.fileObject.update({
-              where: { id: fileObjectId },
-              data: { confirmedAt: new Date() },
-            });
+          if (confirmedKey) {
             return tx.brand.update({
               where: { id: brand.id },
-              data: { logoKey: pendingFile.key },
+              data: { logoKey: confirmedKey },
               select: BRAND_SELECT,
             });
           }
@@ -253,17 +247,13 @@ export const brandRouter = router({
         let confirmedLogoKey: string | undefined;
 
         if (fileObjectId) {
-          const pendingFile = await tx.fileObject.findUnique({
-            where: { id: fileObjectId },
-            select: { key: true, confirmedAt: true, createdBy: true, bucket: true },
+          const confirmedKey = await confirmPendingFile(tx, {
+            fileObjectId,
+            bucket: 'brand-logos',
+            userId: ctx.session!.user.id,
           });
-          if (
-            pendingFile?.confirmedAt === null &&
-            pendingFile.createdBy === ctx.session!.user.id &&
-            pendingFile.bucket === 'brand-logos'
-          ) {
-            await tx.fileObject.update({ where: { id: fileObjectId }, data: { confirmedAt: new Date() } });
-            confirmedLogoKey = pendingFile.key;
+          if (confirmedKey) {
+            confirmedLogoKey = confirmedKey;
             oldLogoKey = existingBrand.logoKey;
           }
         }
