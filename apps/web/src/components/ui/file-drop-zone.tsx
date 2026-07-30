@@ -1,6 +1,6 @@
 'use client';
 
-import { type ChangeEvent, type DragEvent, type KeyboardEvent, type ReactNode, useCallback, useRef, useState } from 'react';
+import { type ChangeEvent, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode, useCallback, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { cn } from '../../lib/utils';
@@ -61,19 +61,32 @@ export function FileDropZone({
     e.stopPropagation();
   };
 
+  const submitFile = (file: File | null | undefined) => {
+    if (file && validate(file)) onFile(file);
+  };
+
   const handleDrop = (e: DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     dragCounter.current = 0;
     setIsDragOver(false);
     if (disabled) return;
-    const file = e.dataTransfer.files[0];
-    if (file && validate(file)) onFile(file);
+    submitFile(e.dataTransfer.files[0]);
+  };
+
+  const handlePaste = (e: ClipboardEvent) => {
+    if (disabled) return;
+    for (const item of e.clipboardData.items) {
+      if (item.kind === 'file') {
+        e.preventDefault();
+        submitFile(item.getAsFile());
+        break;
+      }
+    }
   };
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && validate(file)) onFile(file);
+    submitFile(e.target.files?.[0]);
     e.target.value = '';
   };
 
@@ -92,6 +105,7 @@ export function FileDropZone({
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
+      onPaste={handlePaste}
       onClick={openPicker}
       role="button"
       tabIndex={disabled ? -1 : 0}
