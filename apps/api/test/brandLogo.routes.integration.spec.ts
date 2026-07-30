@@ -14,7 +14,7 @@ import brandLogoRoutes from '../src/routes/brandLogo.routes';
 
 import { resetTestData } from './helpers/database';
 import { createValidPngBuffer } from './helpers/storageTestHelper';
-import { createTestContext } from './helpers/testContext';
+import { createContextForRole } from './helpers/testContext';
 
 // Mock del storage module
 vi.mock('../src/storage', () => ({
@@ -67,7 +67,7 @@ describe('Brand Logo Upload Integration', () => {
     // rendendo il risultato dipendente dall'ordine di esecuzione.
     await resetTestData();
 
-    testContext = await createTestContext();
+    testContext = await createContextForRole();
 
     // Crea un brand di test
     testBrand = await testContext.prisma.brand.create({

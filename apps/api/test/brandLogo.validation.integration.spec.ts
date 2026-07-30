@@ -9,14 +9,14 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import { uploadBrandLogo } from '../src/services/brandLogo.service';
 
-import { createTestContext } from './helpers/testContext';
+import { createContextForRole } from './helpers/testContext';
 
 describe('Brand Logo Upload', () => {
   let testContext: any;
   let testBrand: any;
 
   beforeEach(async () => {
-    testContext = await createTestContext();
+    testContext = await createContextForRole();
 
     // Crea un brand di test
     testBrand = await testContext.prisma.brand.create({

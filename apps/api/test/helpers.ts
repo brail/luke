@@ -351,3 +351,41 @@ export const RBAC_TEST_CONFIG = {
   ],
   publicEndpoints: ['auth.login', 'integrations.test'],
 } as const;
+
+/**
+ * Re-export dei moduli sotto `helpers/`, che rendono questo file il barrel unico
+ * della superficie di test.
+ *
+ * **Sono load-bearing anche se nessuna spec importa da qui.** Non servono la
+ * comodità: servono a far collidere i nomi. Due helper omonimi in file diversi
+ * diventano qui un errore di compilazione, invece di due import che sembrano
+ * intercambiabili e non lo sono. È già successo — `createTestContext` esisteva
+ * sincrono in questo file (prende una `UserSession`, non tocca il database) e
+ * asincrono in `helpers/testContext.ts` (crea un utente vero e tronca i dati),
+ * e la scelta fra i due dipendeva da quale path avevi importato.
+ *
+ * Espliciti e non `export *`: le collisioni di `export *` cadono sotto TS2308,
+ * che ha casi limite di risoluzione dell'ambiguità; una re-export esplicita
+ * duplicata è un errore netto e immediato.
+ *
+ * Aggiungendo un export a un modulo `helpers/`, aggiungilo anche qui — è ciò
+ * che tiene attivo il controllo.
+ */
+export { createContextForRole } from './helpers/testContext';
+export { createSilentLogger } from './helpers/logger';
+export {
+  getTestDatabaseUrl,
+  createTestPrismaClient,
+  getTestPrismaClient,
+  ensureTestSchema,
+  resetTestData,
+  disconnectTestDb,
+} from './helpers/database';
+export {
+  MockStorageProvider,
+  createTestContextWithMockStorage,
+  createTestFile,
+  createValidPngBuffer,
+  createValidJpegBuffer,
+  createInvalidImageBuffer,
+} from './helpers/storageTestHelper';

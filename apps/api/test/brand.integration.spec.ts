@@ -25,7 +25,7 @@ import { rateLimitStore } from '../src/lib/ratelimit';
 import { appRouter } from '../src/routers/index';
 
 import { resetTestData } from './helpers/database';
-import { createTestContext } from './helpers/testContext';
+import { createContextForRole } from './helpers/testContext';
 
 describe('Brand Router', () => {
   let testContext: any;
@@ -39,10 +39,10 @@ describe('Brand Router', () => {
     // Troncamento con CASCADE prima di costruire il context: i test creano anche
     // season, collection layout e nav brand, e un delete selettivo su `brand`
     // sbatte contro le foreign key lasciando il database sporco per il test dopo.
-    // Va fatto PRIMA di `createTestContext`, che inserisce l'utente di sessione.
+    // Va fatto PRIMA di `createContextForRole`, che inserisce l'utente di sessione.
     await resetTestData();
 
-    testContext = await createTestContext();
+    testContext = await createContextForRole();
 
     // Crea un brand di test
     testBrand = await testContext.prisma.brand.create({

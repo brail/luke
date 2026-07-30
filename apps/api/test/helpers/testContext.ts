@@ -29,9 +29,16 @@ import type { Context } from '../../src/lib/trpc';
  * successive. Su un database già popolato il difetto non si vedeva; è emerso
  * solo in CI, sul primo database davvero vuoto.
  *
+ * Il nome dice il parametro di proposito. Si chiamava `createTestContext`, come
+ * l'helper **sincrono** in `test/helpers.ts` che prende una `UserSession` e non
+ * tocca il database: due funzioni omonime con semantiche incompatibili, scelte
+ * per import. Con nomi distinti ogni confusione diventa un errore di
+ * compilazione — import sbagliato, argomento sbagliato, o `await` mancante
+ * (un `Promise<Context>` non ha `.prisma`).
+ *
  * @param role - Ruolo dell'utente di sessione. Default `admin`.
  */
-export async function createTestContext(
+export async function createContextForRole(
   role: Role = 'admin'
 ): Promise<Context> {
   // Client condiviso del file di test, non uno nuovo: ogni client apre un pool

@@ -123,8 +123,8 @@ export class MockStorageProvider {
 export async function createTestContextWithMockStorage(): Promise<
   Context & { mockStorage: MockStorageProvider }
 > {
-  const { createTestContext } = await import('./testContext');
-  const context = await createTestContext();
+  const { createContextForRole } = await import('./testContext');
+  const context = await createContextForRole();
 
   const mockStorage = new MockStorageProvider();
 
