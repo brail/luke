@@ -317,24 +317,37 @@ export function CollectionRowDrawer({
     setQuotations(prev => prev.map(q => q.id === id ? { ...q, [field]: value } : q));
   };
 
+  const quotationUpdatePayload = (q: QuotationState) => ({
+    quotationId: q.id,
+    data: {
+      pricingParameterSetId: q.pricingParameterSetId,
+      retailPrice: q.retailPrice ?? undefined,
+      supplierQuotation: q.supplierQuotation ?? undefined,
+      notes: q.notes,
+      sku: q.sku,
+    },
+  });
+
   const handleBlurQuotation = (id: string, overrides?: Partial<QuotationState>) => {
     const q = quotations.find(q => q.id === id);
     if (!q) return;
     const merged = overrides ? { ...q, ...overrides } : q;
-    updateQuotationMutation.mutate({
-      quotationId: merged.id,
-      data: {
-        pricingParameterSetId: merged.pricingParameterSetId,
-        retailPrice: merged.retailPrice ?? undefined,
-        supplierQuotation: merged.supplierQuotation ?? undefined,
-        notes: merged.notes,
-        sku: merged.sku,
-      },
-    });
+    updateQuotationMutation.mutate(quotationUpdatePayload(merged));
   };
 
   const handleDeleteQuotation = (id: string) => {
     deleteQuotationMutation.mutate({ quotationId: id });
+  };
+
+  const submitRow = form.handleSubmit(data => {
+    if (missingForecastLabels(data).length > 0) { setPendingData(data); return; }
+    onSubmit(data);
+  });
+
+  const handleEnterQuotation = (id: string) => {
+    const q = quotations.find(q => q.id === id);
+    if (!q?.pricingParameterSetId) { submitRow(); return; }
+    updateQuotationMutation.mutate(quotationUpdatePayload(q), { onSuccess: () => submitRow() });
   };
 
   const missingLabels = pendingData ? missingForecastLabels(pendingData) : [];
@@ -354,10 +367,7 @@ export function CollectionRowDrawer({
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(data => {
-            if (missingForecastLabels(data).length > 0) { setPendingData(data); return; }
-            onSubmit(data);
-          })} className="flex flex-col flex-1 min-h-0">
+          <form onSubmit={submitRow} className="flex flex-col flex-1 min-h-0">
             {/* Scrollable body */}
             <div className="flex-1 min-h-0 overflow-y-auto">
               {/* Planning band — full width above the identity grid */}
@@ -425,6 +435,7 @@ export function CollectionRowDrawer({
                   onAddQuotation={handleAddQuotation}
                   onUpdateField={handleUpdateQuotationField}
                   onBlurQuotation={handleBlurQuotation}
+                  onEnterQuotation={handleEnterQuotation}
                   onDeleteQuotation={handleDeleteQuotation}
                   isAddingQuotation={createQuotationMutation.isPending}
                 />

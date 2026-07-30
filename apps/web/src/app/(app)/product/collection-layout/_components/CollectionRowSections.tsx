@@ -737,6 +737,7 @@ interface PricingFooterSectionProps {
   onAddQuotation: () => void;
   onUpdateField: (id: string, field: keyof Pick<QuotationState, 'pricingParameterSetId' | 'retailPrice' | 'supplierQuotation' | 'notes' | 'sku'>, value: string | number | null) => void;
   onBlurQuotation: (id: string, overrides?: Partial<QuotationState>) => void;
+  onEnterQuotation: (id: string) => void;
   onDeleteQuotation: (id: string) => void;
   isAddingQuotation?: boolean;
 }
@@ -754,6 +755,7 @@ interface PricingFooterSectionProps {
  * @param onAddQuotation - Called to append a new empty quotation row.
  * @param onUpdateField - Called on every field change in a quotation row.
  * @param onBlurQuotation - Called on blur to persist a quotation via tRPC.
+ * @param onEnterQuotation - Called on Enter to persist a quotation then submit the row.
  * @param onDeleteQuotation - Called to remove a quotation row.
  */
 export function PricingFooterSection({
@@ -766,9 +768,14 @@ export function PricingFooterSection({
   onAddQuotation,
   onUpdateField,
   onBlurQuotation,
+  onEnterQuotation,
   onDeleteQuotation,
   isAddingQuotation,
 }: PricingFooterSectionProps) {
+  const handleQuotationEnter = (id: string) => (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') { e.preventDefault(); onEnterQuotation(id); }
+  };
+
   return (
     <div className="space-y-4">
       <SectionHeader title="Pricing" />
@@ -918,6 +925,7 @@ export function PricingFooterSection({
                               value={q.retailPrice ?? ''}
                               onChange={e => onUpdateField(q.id, 'retailPrice', parsePositiveFloat(e.target.value))}
                               onBlur={() => q.pricingParameterSetId && onBlurQuotation(q.id)}
+                              onKeyDown={handleQuotationEnter(q.id)}
                               disabled={!canUpdate || !q.pricingParameterSetId}
                             />
                           </div>
@@ -940,6 +948,7 @@ export function PricingFooterSection({
                               value={q.supplierQuotation ?? ''}
                               onChange={e => onUpdateField(q.id, 'supplierQuotation', parsePositiveFloat(e.target.value))}
                               onBlur={() => q.pricingParameterSetId && onBlurQuotation(q.id)}
+                              onKeyDown={handleQuotationEnter(q.id)}
                               disabled={!canUpdate || !q.pricingParameterSetId}
                             />
                           </div>
@@ -993,6 +1002,7 @@ export function PricingFooterSection({
                             value={q.notes ?? ''}
                             onChange={e => onUpdateField(q.id, 'notes', e.target.value || null)}
                             onBlur={() => q.pricingParameterSetId && onBlurQuotation(q.id)}
+                            onKeyDown={handleQuotationEnter(q.id)}
                             disabled={!canUpdate || !q.pricingParameterSetId}
                           />
                         </td>
@@ -1008,6 +1018,7 @@ export function PricingFooterSection({
                             value={q.sku ?? ''}
                             onChange={e => onUpdateField(q.id, 'sku', parsePositiveInt(e.target.value))}
                             onBlur={() => q.pricingParameterSetId && onBlurQuotation(q.id)}
+                            onKeyDown={handleQuotationEnter(q.id)}
                             disabled={!canUpdate || !q.pricingParameterSetId}
                           />
                         </td>
