@@ -4,7 +4,6 @@
  */
 
 import multipart from '@fastify/multipart';
-import rateLimit from '@fastify/rate-limit';
 import { FastifyInstance } from 'fastify';
 import request from 'supertest';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -18,7 +17,11 @@ import { createContextForRole } from './helpers/testContext';
 // Mock del storage module
 vi.mock('../src/storage', () => ({
   putObject: vi.fn(),
-  deleteObject: vi.fn(),
+  // `deleteObjectByKey`, non `deleteObject`: è quello che importa
+  // `brandLogo.service.ts`. Con il nome sbagliato la factory non lo definiva, e
+  // dal secondo upload in poi il ramo di cleanup del logo precedente lanciava
+  // dentro il `setImmediate` — dove il `catch` del service se lo mangiava.
+  deleteObjectByKey: vi.fn(),
   getStorageProvider: vi.fn(),
 }));
 
@@ -80,7 +83,7 @@ describe('Brand Logo Upload Integration', () => {
     authToken = 'mock-jwt-token';
 
     // Mock delle funzioni storage
-    const { putObject, deleteObject, getStorageProvider } = await import(
+    const { putObject, deleteObjectByKey, getStorageProvider } = await import(
       '../src/storage'
     );
     // Stub parziali: coprono solo la superficie usata dal service, quindi i cast
@@ -95,7 +98,7 @@ describe('Brand Logo Upload Integration', () => {
       createdAt: new Date(),
     } as unknown as Awaited<ReturnType<typeof putObject>>);
 
-    vi.mocked(deleteObject).mockResolvedValue(undefined);
+    vi.mocked(deleteObjectByKey).mockResolvedValue(undefined);
     vi.mocked(getStorageProvider).mockResolvedValue({
       get: vi.fn(),
       delete: vi.fn(),
@@ -113,12 +116,12 @@ describe('Brand Logo Upload Integration', () => {
       },
     });
 
-    // Registra plugin rate limit
-    await app.register(rateLimit, {
-      max: 100, // Più permissivo per test
-      timeWindow: '1 minute',
-      keyGenerator: (req: any) => req.ip,
-    });
+    // Nessuna registrazione di `@fastify/rate-limit` qui: il limiter sotto test è
+    // quello che `brandLogoRoutes` registra da sé (`brandLogo.routes.ts:75`). Il
+    // plugin usa un `Symbol` per registrazione, quindi due registrazioni non si
+    // deduplicano: quella che stava qui era un secondo store indipendente da 100
+    // che non entrava mai in gioco e faceva sembrare il limite più largo di
+    // quello reale.
 
     // Registra le route di upload. Import statico, non `require`: il modulo è
     // ESM sotto vitest e `require` fallisce con "Cannot find module".
@@ -298,25 +301,75 @@ describe('Brand Logo Upload Integration', () => {
     });
   });
 
+  /**
+   * Il rate limit si esaurisce senza toccare il database.
+   *
+   * La versione precedente faceva 40 upload veri via supertest ed era flaky:
+   * `app.ready()` non mette in ascolto, quindi supertest apriva e chiudeva un
+   * listener effimero **per richiesta** — 40 cicli listen/connect/close che sotto
+   * carico finivano in ETIMEDOUT a livello di socket. Il costo non era il rate
+   * limit (il limiter è un hook `onRequest`, quindi un 429 non parsa il multipart
+   * e non tocca Postgres) ma i 30 upload riusciti, ~6 round-trip ciascuno.
+   *
+   * Qui si usa `app.inject()` — niente socket, stesso ciclo di vita Fastify,
+   * quindi il limiter scatta comunque — e richieste **senza body**: il limiter
+   * conta all'arrivo, poi `req.file()` lancia e l'handler risponde 400. Zero
+   * query. La URL deve restare quella vera: il limiter è agganciato via `onRoute`,
+   * quindi una URL inesistente non consumerebbe quota.
+   */
   describe('Rate limiting', () => {
-    it('should enforce rate limiting', async () => {
-      const pngBuffer = createValidPngBuffer();
+    /** POST senza body sulla rotta sotto test: consuma quota, non tocca il DB. */
+    const consumeQuota = (ip = '127.0.0.1') =>
+      app.inject({
+        method: 'POST',
+        url: `/upload/brand-logo/${testBrand.id}`,
+        headers: { authorization: `Bearer ${authToken}` },
+        remoteAddress: ip,
+      });
 
-      // 150 upload concorrenti saturavano il server di test e supertest falliva
-      // con ECONNRESET prima ancora di vedere un 429. Il limite configurato è 30
-      // req/min: 40 richieste bastano a superarlo, in sequenza per non
-      // trasformare il test in uno stress test del socket.
-      const statuses: number[] = [];
-      for (let i = 0; i < 40; i++) {
-        const res = await request(app.server)
-          .post(`/upload/brand-logo/${testBrand.id}`)
-          .set('Authorization', `Bearer ${authToken}`)
-          .attach('file', pngBuffer, 'test.png');
-        statuses.push(res.status);
+    it('espone il budget residuo già alla prima richiesta', async () => {
+      const res = await consumeQuota();
+
+      // 30, non i 100 di sviluppo: `test/setup.ts` imposta NODE_ENV=test, quindi
+      // `isDevelopment()` è falso in `brandLogo.routes.ts:76`.
+      expect(res.headers['x-ratelimit-limit']).toBe('30');
+      expect(res.headers['x-ratelimit-remaining']).toBe('29');
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('la richiesta oltre il budget è 429', async () => {
+      const first = await consumeQuota();
+      const limit = Number(first.headers['x-ratelimit-limit']);
+
+      // Le restanti fino a esaurire il budget: tutte 400, nessuna 429.
+      const consumed = [first.statusCode];
+      for (let i = 1; i < limit; i++) {
+        consumed.push((await consumeQuota()).statusCode);
       }
+      expect(consumed.every(s => s === 400)).toBe(true);
 
-      // Alcune richieste dovrebbero essere rate limited
-      expect(statuses.filter(s => s === 429).length).toBeGreaterThan(0);
+      const rejected = await consumeQuota();
+      expect(rejected.statusCode).toBe(429);
+      expect(rejected.headers['x-ratelimit-remaining']).toBe('0');
+    });
+
+    it('il budget è per IP, e le due rotte lo condividono', async () => {
+      const limit = Number((await consumeQuota('10.0.0.1')).headers['x-ratelimit-limit']);
+      for (let i = 1; i < limit; i++) await consumeQuota('10.0.0.1');
+
+      // Stesso scope del plugin ⇒ stesso store: è l'incapsulamento che il commento
+      // in `brandLogo.routes.ts:62` esiste per proteggere.
+      const other = await app.inject({
+        method: 'POST',
+        url: '/upload/brand-logo/temp',
+        headers: { authorization: `Bearer ${authToken}` },
+        remoteAddress: '10.0.0.1',
+      });
+      expect(other.statusCode).toBe(429);
+
+      // Un IP diverso ha il suo budget: arriva al 400 dell'handler, non al 429.
+      const elsewhere = await consumeQuota('10.0.0.2');
+      expect(elsewhere.statusCode).toBe(400);
     });
   });
 

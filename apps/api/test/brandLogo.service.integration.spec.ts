@@ -25,7 +25,7 @@ import {
 // Mock del storage module
 vi.mock('../src/storage', () => ({
   putObject: vi.fn(),
-  deleteObject: vi.fn(),
+  deleteObjectByKey: vi.fn(),
   getStorageProvider: vi.fn(),
 }));
 
@@ -38,7 +38,7 @@ describe('Brand Logo Upload Service', () => {
     mockStorage = testContext.mockStorage;
 
     // Mock delle funzioni storage
-    const { putObject, deleteObject, getStorageProvider } = await import(
+    const { putObject, deleteObjectByKey, getStorageProvider } = await import(
       '../src/storage'
     );
 
@@ -59,16 +59,12 @@ describe('Brand Logo Upload Service', () => {
       };
     }) as unknown as typeof putObject);
 
-    vi.mocked(deleteObject).mockImplementation((async (
+    vi.mocked(deleteObjectByKey).mockImplementation((async (
       _ctx: unknown,
-      key: string
+      params: { bucket: string; key: string }
     ) => {
-      // Estrai bucket e key dal parametro
-      const parts = key.split('/');
-      const bucket = parts[0] || 'brand-logos';
-      const keyPath = parts.slice(1).join('/');
-      await mockStorage.delete({ bucket, key: keyPath });
-    }) as unknown as typeof deleteObject);
+      await mockStorage.delete(params);
+    }) as unknown as typeof deleteObjectByKey);
 
     vi.mocked(getStorageProvider).mockResolvedValue({
       get: async (params: { bucket: string; key: string }) => {
