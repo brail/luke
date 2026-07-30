@@ -14,14 +14,46 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-// Pacchetti nel monorepo che devono essere sincronizzati
-const PACKAGES = [
-  'apps/api/package.json',
-  'apps/web/package.json',
-  'packages/core/package.json',
-  'packages/nav/package.json',
-  'packages/eslint-plugin-luke/package.json',
-];
+/**
+ * Package.json da sincronizzare, **derivati dal workspace** e non elencati.
+ *
+ * Un elenco scritto a mano ha un fallimento asimmetrico: una voce di troppo si
+ * nota subito (file non trovato), una voce *mancante* no. `packages/calendar` è
+ * nato senza essere aggiunto qui ed è rimasto a `1.10.0-dev.0` mentre
+ * `--check` riportava OK: il controllo era verde su un monorepo disallineato.
+ *
+ * Derivare l'elenco significa che un package nuovo è coperto dal momento in cui
+ * esiste, senza che nessuno debba ricordarsene.
+ */
+function discoverPackages() {
+  const root = path.join(__dirname, '..');
+  const found = ['package.json']; // la root fa parte del monorepo
+
+  for (const group of ['apps', 'packages']) {
+    const dir = path.join(root, group);
+    if (!fs.existsSync(dir)) continue;
+
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const rel = `${group}/${entry.name}/package.json`;
+      if (fs.existsSync(path.join(root, rel))) found.push(rel);
+    }
+  }
+
+  // Guardia zero-discovery: se la struttura cambia e il glob non trova più
+  // nulla, questo script diventerebbe un no-op silenzioso — e con lui il gate
+  // di allineamento in `.husky/pre-push`.
+  if (found.length < 2) {
+    throw new Error(
+      `Trovato solo ${found.length} package.json sotto apps/ e packages/. ` +
+        'La struttura del monorepo è cambiata: aggiorna discoverPackages().'
+    );
+  }
+
+  return found.sort();
+}
+
+const PACKAGES = discoverPackages();
 
 const checkOnly = process.argv.includes('--check');
 

@@ -46,17 +46,14 @@ Regola di scelta: **serve una tabella Prisma reale?**
 Comandi:
 
 ```bash
-pnpm test                     # unit
-
-pnpm test:db:up               # integration: il container NON basta
-TEST_DATABASE_URL="postgresql://luke:luke_test@localhost:5434/luke_test" \
-  pnpm test:integration       # la variabile va esportata a mano (in CI la dà il job)
-
+pnpm test                          # unit
+pnpm test:integration:local        # integration: avvia il container e passa TEST_DATABASE_URL
 pnpm --filter @luke/web test:e2e   # smoke, con lo stack applicativo in piedi
 ```
 
-Senza `TEST_DATABASE_URL` la suite **fallisce**, non salta: è voluto. Valori e
-motivazione in `docker-compose.test.yml`.
+Senza `TEST_DATABASE_URL` la suite **fallisce**, non salta: è voluto — un job
+verde con zero test eseguiti è peggio di un job rosso. Valori e forma esplicita
+in `docker-compose.test.yml`.
 
 **Copertura delle procedure**: la suite di integrazione ha un gate che verifica
 quali procedure tRPC vengono *invocate davvero* (`test/procedure-coverage.ts`).

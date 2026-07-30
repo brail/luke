@@ -12,6 +12,19 @@ while read local_ref local_sha remote_ref remote_sha; do
         echo ""
         exit 1
       fi
+
+      # Le versioni nei package.json devono combaciare col tag: è ciò che finisce
+      # nell'immagine e in `/about`. `eslint-plugin-luke` è rimasto a
+      # `1.10.0-dev.0` per diverse release senza che nulla protestasse, e
+      # `calendar` è nato già fuori sync.
+      if ! pnpm sync-version:check > /dev/null 2>&1; then
+        echo ""
+        echo "❌ package.json non allineati al tag $tag."
+        echo "   Dettaglio: pnpm sync-version:check"
+        echo "   Correggi:  pnpm sync-version"
+        echo ""
+        exit 1
+      fi
       ;;
   esac
 done
@@ -24,6 +37,16 @@ if ! pnpm test; then
   echo ""
   echo "❌ Test falliti — push bloccato."
   echo "   Per saltare (solo se sai perché): git push --no-verify"
+  echo ""
+  exit 1
+fi
+
+# Drift di skill e documentazione: ~2s, nessuna infrastruttura. Sta qui e non in
+# pre-commit per la stessa ragione degli unit test — là serve latenza bassa.
+echo "📐 Drift skill/docs..."
+if ! pnpm check:drift; then
+  echo ""
+  echo "❌ Drift rilevato — push bloccato."
   echo ""
   exit 1
 fi
