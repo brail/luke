@@ -23,10 +23,16 @@ export const BrandInputSchema = z.object({
     .max(128, 'Max 128 caratteri')
     .trim(),
 
-  /** Storage key del logo (opzionale, nullable) */
-  logoKey: z
-    .union([z.string(), z.null(), z.undefined()])
-    .optional(),
+  /**
+   * Rimozione del logo. `null` è l'unico valore accettato, e significa "togli".
+   *
+   * Era una stringa libera senza regex né lunghezza, che sopravviveva al
+   * destructure e finiva in `tx.brand.create` — la stessa storage key scelta dal
+   * client che è stata chiusa per il profilo aziendale. Il dialog brand la manda
+   * già solo per cancellare; per *impostare* un logo passa `fileObjectId`, e la
+   * rotta di upload dedicata scrive la key lato server senza passare da qui.
+   */
+  logoKey: z.null().optional(),
 
   /** ID FileObject pending per logo durante creazione brand (opzionale) */
   fileObjectId: z.string().uuid('ID file non valido').optional(),

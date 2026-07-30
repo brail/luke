@@ -400,24 +400,31 @@ describe('Brand Logo Upload Service', () => {
       expect(confirmed?.confirmedAt).not.toBeNull();
     });
 
-    it('ignores a fileObjectId that does not exist', async () => {
+    it('rejects a fileObjectId that does not exist', async () => {
       const caller = appRouter.createCaller(testContext).brand;
 
-      // Un id inesistente non deve far fallire l'update né sporcare logoKey:
-      // il logo è opzionale, e un riferimento morto non è motivo per rifiutare
-      // il salvataggio degli altri campi.
-      await caller.update({
-        id: testBrand.id,
-        data: {
-          name: 'Brand senza logo',
-          fileObjectId: '00000000-0000-0000-0000-000000000000',
-        },
-      });
+      // Decisione ribaltata. Prima passava in silenzio, con la motivazione che
+      // "il logo è opzionale e un riferimento morto non è motivo per rifiutare
+      // il salvataggio degli altri campi". Il caso realistico però non è un id
+      // inventato: è il reaper orario che ha spazzato il `FileObject` pending
+      // mentre l'utente era distratto. Il no-op salvava il brand senza logo
+      // mostrando "aggiornato" — perdita di dati con un toast di successo.
+      await expect(
+        caller.update({
+          id: testBrand.id,
+          data: {
+            name: 'Brand senza logo',
+            fileObjectId: '00000000-0000-0000-0000-000000000000',
+          },
+        })
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
 
+      // E il rifiuto è totale: la transazione non deve lasciare a metà gli altri
+      // campi.
       const updatedBrand = await testContext.prisma.brand.findUnique({
         where: { id: testBrand.id },
       });
-      expect(updatedBrand?.name).toBe('Brand senza logo');
+      expect(updatedBrand?.name).not.toBe('Brand senza logo');
       expect(updatedBrand?.logoKey).toBeNull();
     });
   });

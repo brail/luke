@@ -148,13 +148,22 @@ export const brandRouter = router({
             bucket: 'brand-logos',
             userId: ctx.session!.user.id,
           });
-          if (confirmedKey) {
-            return tx.brand.update({
-              where: { id: brand.id },
-              data: { logoKey: confirmedKey },
-              select: BRAND_SELECT,
+          // Un id morto è un errore, non un no-op. Il trigger realistico non è un
+          // id malevolo: è il reaper orario che ha spazzato il pending mentre
+          // l'utente era distratto. Senza questo, il brand si salva senza logo e
+          // la UI dice "creato" — perdita di dati con un toast di successo.
+          if (!confirmedKey) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Il file caricato non è più disponibile, ricaricalo',
             });
           }
+
+          return tx.brand.update({
+            where: { id: brand.id },
+            data: { logoKey: confirmedKey },
+            select: BRAND_SELECT,
+          });
         }
 
         return brand;
@@ -252,10 +261,15 @@ export const brandRouter = router({
             bucket: 'brand-logos',
             userId: ctx.session!.user.id,
           });
-          if (confirmedKey) {
-            confirmedLogoKey = confirmedKey;
-            oldLogoKey = existingBrand.logoKey;
+          if (!confirmedKey) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Il file caricato non è più disponibile, ricaricalo',
+            });
           }
+
+          confirmedLogoKey = confirmedKey;
+          oldLogoKey = existingBrand.logoKey;
         }
 
         return tx.brand.update({
