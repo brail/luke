@@ -25,6 +25,10 @@ import { exportTimestamp } from '../lib/export/xlsx-streaming';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
+import {
+  resolveLayoutBrandAccess,
+  resolveRevisionBrandAccess,
+} from '../services/brandScope.service';
 import { buildRevisionXlsx, buildRevisionPdf } from '../services/collectionLayout.export.revision.service';
 import {
   createRevision,
@@ -50,6 +54,8 @@ export const collectionLayoutRevisionRouter = router({
     .use(withRateLimit('configMutations'))
     .input(CreateRevisionInputSchema)
     .mutation(async ({ input, ctx }) => {
+      await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
+
       if (input.cause === 'MILESTONE') {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -96,6 +102,7 @@ export const collectionLayoutRevisionRouter = router({
     .use(requirePermission('collection_layout:view_revisions'))
     .input(GetRevisionsListInputSchema)
     .query(async ({ input, ctx }) => {
+      await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
       return listRevisions(input.collectionLayoutId, ctx.prisma);
     }),
 
@@ -110,6 +117,7 @@ export const collectionLayoutRevisionRouter = router({
     .use(requirePermission('collection_layout:view_revisions'))
     .input(GetRevisionDetailInputSchema)
     .query(async ({ input, ctx }) => {
+      await resolveRevisionBrandAccess(ctx, input.revisionId);
       return getRevisionDetail(input.revisionId, ctx.prisma);
     }),
 
@@ -124,6 +132,7 @@ export const collectionLayoutRevisionRouter = router({
     .use(requirePermission('collection_layout:view_revisions'))
     .input(GetLayoutAsOfRevisionInputSchema)
     .query(async ({ input, ctx }) => {
+      await resolveRevisionBrandAccess(ctx, input.revisionId);
       return getLayoutAsOfRevision(
         input.collectionLayoutId,
         input.revisionId,
@@ -139,6 +148,8 @@ export const collectionLayoutRevisionRouter = router({
         collectionLayoutId: z.string().uuid(),
       }))
       .mutation(async ({ input, ctx }) => {
+        await resolveRevisionBrandAccess(ctx, input.revisionId);
+
         const revision = await ctx.prisma.collectionLayoutRevision.findUniqueOrThrow({
           where: { id: input.revisionId },
           select: { revisionNumber: true, revisionTypeValue: true, notes: true, collectionLayout: { select: { brand: { select: { code: true } }, season: { select: { code: true } } } } },
@@ -158,6 +169,8 @@ export const collectionLayoutRevisionRouter = router({
         collectionLayoutId: z.string().uuid(),
       }))
       .mutation(async ({ input, ctx }) => {
+        await resolveRevisionBrandAccess(ctx, input.revisionId);
+
         const revision = await ctx.prisma.collectionLayoutRevision.findUniqueOrThrow({
           where: { id: input.revisionId },
           select: { revisionNumber: true, revisionTypeValue: true, notes: true, collectionLayout: { select: { brand: { select: { code: true } }, season: { select: { code: true } } } } },

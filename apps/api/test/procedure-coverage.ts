@@ -131,8 +131,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   // ── Domini applicativi senza alcun test: da scrivere ──────────────────────
   collectionLayout: {
     reason:
-      'solo `get`, dalla spec sul brand scope. È il secondo dominio per dimensione (gruppi, righe, quotazioni, export) e merita una suite propria, non un’aggiunta in coda a un’altra',
-    uncovered: 20,
+      'la spec sul brand scope invoca quasi tutto il dominio per verificare i guard, quindi la copertura di *accesso* è alta; restano scoperti gli export e `copyFromSeason`, che vanno testati per quello che producono, non per chi li può chiamare',
+    uncovered: 4,
   },
   merchandisingPlan: {
     reason:
@@ -168,8 +168,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   collectionLayoutRevision: {
     reason:
-      'nessun test scritto sul registro revisioni ISO-9001, snapshot ed export inclusi',
-    uncovered: 6,
+      'list, getDetail, getLayoutAsOf ed export.xlsx invocate dalla spec sul brand scope; restano `create` (snapshot vero) ed export.pdf',
+    uncovered: 2,
   },
   sectionAccess: {
     reason:
@@ -193,10 +193,6 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   editLock: {
     reason: 'nessun test scritto sul lock di sessione del wizard di pianificazione',
     uncovered: 3,
-  },
-  phaseHistory: {
-    reason: 'nessun test scritto sullo storico delle transizioni di fase',
-    uncovered: 2,
   },
   catalog: {
     reason:

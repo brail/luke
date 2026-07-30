@@ -17,6 +17,8 @@ import { randomUUID } from 'crypto';
 
 import { describe, it, expect, beforeAll } from 'vitest';
 
+import { COLLECTION_STATUS } from '@luke/core';
+
 import {
   createCallerWithSession,
   createTestUser,
@@ -37,6 +39,25 @@ let adminSession: UserSession;
 let inScopeBrandId: string;
 let outOfScopeBrandId: string;
 let seasonId: string;
+
+/**
+ * Risorse del brand **fuori scope**: sono i bersagli della tabella FORBIDDEN.
+ *
+ * Costruite passando dal router come admin invece che con Prisma diretto: le
+ * righe richiedono un planning group, che richiede un calendario, e `createRow`
+ * sa già risolvere quello di default. Meno fixture e, soprattutto, il percorso
+ * reale.
+ */
+const outRes = {
+  layoutId: '',
+  groupId: '',
+  rowId: '',
+  quotationId: '',
+  revisionId: '',
+};
+
+/** Le stesse risorse sul brand in scope, per i casi positivi. */
+const inRes = { layoutId: '', rowId: '' };
 
 beforeAll(async () => {
   prisma = await setupTestDb();
@@ -79,6 +100,57 @@ beforeAll(async () => {
       data: { teamId: team.id, brandId: inScopeBrandId },
     }),
   ]);
+
+  const asAdmin = createCallerWithSession(adminSession);
+
+  const buildLayout = async (brandId: string) => {
+    const layout = await asAdmin.collectionLayout.getOrCreate({
+      brandId,
+      seasonId,
+      availableGenders: ['UOMO'],
+    });
+    const group = await asAdmin.collectionLayout.groups.create({
+      collectionLayoutId: layout.id,
+      data: { name: 'Gruppo', order: 0 },
+    });
+    const row = await asAdmin.collectionLayout.rows.create({
+      groupId: group.id,
+      gender: 'UOMO',
+      line: 'Linea',
+      status: COLLECTION_STATUS[0],
+      productCategory: 'TEST',
+      skuForecast: null,
+      qtyForecast: null,
+    });
+    return { layoutId: layout.id, groupId: group.id, rowId: row.id };
+  };
+
+  const built = await buildLayout(outOfScopeBrandId);
+  outRes.layoutId = built.layoutId;
+  outRes.groupId = built.groupId;
+  outRes.rowId = built.rowId;
+
+  const quotation = await asAdmin.collectionLayout.quotations.create({
+    rowId: outRes.rowId,
+  });
+  outRes.quotationId = quotation.id;
+
+  // La revisione a mano: `create` valida `revisionTypeValue` contro un catalogo
+  // che questa spec non ha motivo di seminare.
+  const revision = await prisma.collectionLayoutRevision.create({
+    data: {
+      collectionLayoutId: outRes.layoutId,
+      revisionNumber: 1,
+      revisionTypeValue: 'TEST',
+      cause: 'MANUAL',
+      createdByUserId: admin.user.id,
+    },
+  });
+  outRes.revisionId = revision.id;
+
+  const inBuilt = await buildLayout(inScopeBrandId);
+  inRes.layoutId = inBuilt.layoutId;
+  inRes.rowId = inBuilt.rowId;
 });
 
 describe('brand scope — pricing', () => {
@@ -171,6 +243,145 @@ describe('brand scope — admin senza team', () => {
         createCallerWithSession(scopedSession).seasonCalendar.getOrCreate({
           brandId: outOfScopeBrandId,
           seasonId,
+        }),
+      'FORBIDDEN'
+    );
+  });
+});
+
+describe('brand scope — risorse indirette', () => {
+  /**
+   * Le procedure che non nominano un brand nell'input, ma lo raggiungono
+   * risolvendo il record: layout → gruppo → riga → quotazione, più le revisioni
+   * e lo storico fasi. Sono invisibili a un controllo che guardi solo `brandId`,
+   * ed erano tutte scoperte.
+   *
+   * Una procedura per `it` e non raggruppate: `configMutations` è 20/min per
+   * utente, e `test/setup.ts` azzera lo store fra un test e l'altro. Raggruppate
+   * finirebbero per far scattare il limite, producendo un TOO_MANY_REQUESTS
+   * travestito da fallimento del guard.
+   */
+  const denied: [string, () => Promise<unknown>][] = [
+    ['groups.create', () =>
+      as().collectionLayout.groups.create({
+        collectionLayoutId: outRes.layoutId,
+        data: { name: 'X', order: 0 },
+      })],
+    ['groups.update', () =>
+      as().collectionLayout.groups.update({ groupId: outRes.groupId, data: { name: 'X' } })],
+    ['groups.delete', () =>
+      as().collectionLayout.groups.delete({ groupId: outRes.groupId })],
+    ['rows.create', () =>
+      as().collectionLayout.rows.create({
+        groupId: outRes.groupId,
+        gender: 'UOMO',
+        line: 'X',
+        status: COLLECTION_STATUS[0],
+        productCategory: 'TEST',
+        skuForecast: null,
+        qtyForecast: null,
+      })],
+    ['rows.update', () =>
+      as().collectionLayout.rows.update({ rowId: outRes.rowId, data: { line: 'X' } })],
+    ['rows.delete', () =>
+      as().collectionLayout.rows.delete({ rowId: outRes.rowId })],
+    ['rows.duplicate', () =>
+      as().collectionLayout.rows.duplicate({ rowId: outRes.rowId })],
+    ['rows.reorder', () =>
+      as().collectionLayout.rows.reorder({ groupId: outRes.groupId, orderedIds: [outRes.rowId] })],
+    ['rows.bulkAssignPlanningGroup', () =>
+      as().collectionLayout.rows.bulkAssignPlanningGroup({
+        rowIds: [outRes.rowId],
+        planningGroupId: randomUUID(),
+      })],
+    ['quotations.create', () =>
+      as().collectionLayout.quotations.create({ rowId: outRes.rowId })],
+    ['quotations.update', () =>
+      as().collectionLayout.quotations.update({ quotationId: outRes.quotationId, data: {} })],
+    ['quotations.delete', () =>
+      as().collectionLayout.quotations.delete({ quotationId: outRes.quotationId })],
+    ['quotations.reorder', () =>
+      as().collectionLayout.quotations.reorder({
+        rowId: outRes.rowId,
+        orderedIds: [outRes.quotationId],
+      })],
+    ['updateSettings', () =>
+      as().collectionLayout.updateSettings({ collectionLayoutId: outRes.layoutId })],
+    ['revision.list', () =>
+      as().collectionLayoutRevision.list({ collectionLayoutId: outRes.layoutId })],
+    ['revision.getDetail', () =>
+      as().collectionLayoutRevision.getDetail({ revisionId: outRes.revisionId })],
+    ['revision.getLayoutAsOf', () =>
+      as().collectionLayoutRevision.getLayoutAsOf({
+        collectionLayoutId: outRes.layoutId,
+        revisionId: outRes.revisionId,
+      })],
+    ['revision.export.xlsx', () =>
+      as().collectionLayoutRevision.export.xlsx({
+        revisionId: outRes.revisionId,
+        collectionLayoutId: outRes.layoutId,
+      })],
+    ['phaseHistory.listForRow', () =>
+      as().phaseHistory.listForRow({ rowId: outRes.rowId })],
+    ['phaseHistory.layoutStats', () =>
+      as().phaseHistory.layoutStats({ collectionLayoutId: outRes.layoutId })],
+  ];
+
+  const as = () => createCallerWithSession(scopedSession);
+
+  it.each(denied)('%s su una risorsa fuori scope → FORBIDDEN', async (_label, invoke) => {
+    await expectUnauthorized(invoke, 'FORBIDDEN');
+  });
+
+  it('un id inesistente è NOT_FOUND, non FORBIDDEN', async () => {
+    // L'ordine conta: un id che non esiste non è un problema di permessi, e
+    // rispondere FORBIDDEN direbbe all'attaccante che qualcosa esiste.
+    await expect(
+      as().collectionLayout.groups.delete({ groupId: randomUUID() })
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('la stessa procedura sul brand in scope non è bloccata', async () => {
+    await expect(
+      as().phaseHistory.layoutStats({ collectionLayoutId: inRes.layoutId })
+    ).resolves.toBeInstanceOf(Array);
+  });
+
+  it('anche sulle risorse indirette in scope', async () => {
+    await expect(
+      as().phaseHistory.listForRow({ rowId: inRes.rowId })
+    ).resolves.toBeInstanceOf(Array);
+  });
+});
+
+describe('brand scope — copyFromSeason', () => {
+  /**
+   * Servono **entrambi** i guard, e una tabella con un solo verso non se ne
+   * accorge: con il solo controllo sulla sorgente si scrive in un brand non
+   * proprio; con il solo controllo sulla destinazione si legge la collezione di
+   * un brand altrui clonandola in uno proprio.
+   */
+  it('sorgente fuori scope → FORBIDDEN', async () => {
+    await expectUnauthorized(
+      () =>
+        createCallerWithSession(scopedSession).collectionLayout.copyFromSeason({
+          fromBrandId: outOfScopeBrandId,
+          fromSeasonId: seasonId,
+          toBrandId: inScopeBrandId,
+          toSeasonId: seasonId,
+        }),
+      'FORBIDDEN'
+    );
+  });
+
+  it('destinazione fuori scope → FORBIDDEN', async () => {
+    await expectUnauthorized(
+      () =>
+        createCallerWithSession(scopedSession).collectionLayout.copyFromSeason({
+          fromBrandId: inScopeBrandId,
+          fromSeasonId: seasonId,
+          toBrandId: outOfScopeBrandId,
+          toSeasonId: seasonId,
         }),
       'FORBIDDEN'
     );

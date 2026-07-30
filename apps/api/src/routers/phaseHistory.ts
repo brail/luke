@@ -7,6 +7,10 @@ import { z } from 'zod';
 
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
+import {
+  resolveLayoutBrandAccess,
+  resolveRowBrandAccess,
+} from '../services/brandScope.service';
 
 export const phaseHistoryRouter = router({
   /**
@@ -20,6 +24,8 @@ export const phaseHistoryRouter = router({
     .use(requirePermission('collection_layout:read'))
     .input(z.object({ rowId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
+      await resolveRowBrandAccess(ctx, input.rowId);
+
       return ctx.prisma.collectionRowPhaseHistory.findMany({
         where: { rowId: input.rowId },
         include: { phase: { select: { id: true, value: true, label: true, code: true, order: true } } },
@@ -45,6 +51,8 @@ export const phaseHistoryRouter = router({
     .use(requirePermission('collection_layout:read'))
     .input(z.object({ collectionLayoutId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
+      await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
+
       const entries = await ctx.prisma.collectionRowPhaseHistory.findMany({
         where: { row: { collectionLayoutId: input.collectionLayoutId } },
         select: {

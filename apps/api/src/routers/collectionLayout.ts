@@ -30,6 +30,15 @@ import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
+import {
+  assertBrandAccess,
+  assertBrandAccessAll,
+  resolveGroupBrandAccess,
+  resolveLayoutBrandAccess,
+  resolveQuotationBrandAccess,
+  resolveRowBrandAccess,
+  resolveRowsBrandAccess,
+} from '../services/brandScope.service';
 import { buildCollectionLayoutPdf } from '../services/collectionLayout.export.pdf.service';
 import {
   buildCollectionRowPdf,
@@ -57,7 +66,6 @@ import {
   deleteQuotation,
   reorderQuotations,
 } from '../services/collectionRow.quotation.service';
-import { assertBrandAccess } from '../services/context.service';
 import { assertUnlocked } from '../services/editLock.service';
 import { deleteObjectByKey } from '../storage';
 
@@ -69,6 +77,7 @@ const quotationsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(CollectionRowQuotationInputSchema)
     .mutation(async ({ input, ctx }) => {
+      await resolveRowBrandAccess(ctx, input.rowId);
       const result = await createQuotation(input, ctx.prisma);
       await logAudit(ctx, { action: 'COLLECTION_QUOTATION_CREATE', targetType: 'CollectionRowQuotation', targetId: result.id, result: 'SUCCESS', metadata: { rowId: input.rowId } });
       return result;
@@ -79,6 +88,7 @@ const quotationsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ quotationId: z.string().uuid(), data: CollectionRowQuotationUpdateSchema }))
     .mutation(async ({ input, ctx }) => {
+      await resolveQuotationBrandAccess(ctx, input.quotationId);
       const result = await updateQuotation(input.quotationId, input.data, ctx.prisma);
       await logAudit(ctx, { action: 'COLLECTION_QUOTATION_UPDATE', targetType: 'CollectionRowQuotation', targetId: input.quotationId, result: 'SUCCESS', metadata: {} });
       return result;
@@ -89,6 +99,7 @@ const quotationsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ quotationId: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
+      await resolveQuotationBrandAccess(ctx, input.quotationId);
       await deleteQuotation(input.quotationId, ctx.prisma);
       await logAudit(ctx, { action: 'COLLECTION_QUOTATION_DELETE', targetType: 'CollectionRowQuotation', targetId: input.quotationId, result: 'SUCCESS', metadata: {} });
       return { success: true };
@@ -99,6 +110,7 @@ const quotationsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ rowId: z.string().uuid(), orderedIds: z.array(z.string().uuid()) }))
     .mutation(async ({ input, ctx }) => {
+      await resolveRowBrandAccess(ctx, input.rowId);
       await reorderQuotations(input.rowId, input.orderedIds, ctx.prisma);
       await logAudit(ctx, { action: 'COLLECTION_QUOTATION_REORDER', targetType: 'CollectionLayoutRow', targetId: input.rowId, result: 'SUCCESS', metadata: { count: input.orderedIds.length } });
       return { success: true };
@@ -116,6 +128,7 @@ const groupsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
       await assertUnlocked('COLLECTION_LAYOUT', input.collectionLayoutId, ctx.session!.user.id, ctx.prisma);
       const result = await createGroup(input.collectionLayoutId, input.data, ctx.prisma);
       await logAudit(ctx, { action: 'COLLECTION_GROUP_CREATE', targetType: 'CollectionGroup', targetId: result.id, result: 'SUCCESS', metadata: { collectionLayoutId: input.collectionLayoutId } });
@@ -132,6 +145,7 @@ const groupsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await resolveGroupBrandAccess(ctx, input.groupId);
       const result = await updateGroup(input.groupId, input.data, ctx.prisma, ctx.session!.user.id);
       await logAudit(ctx, { action: 'COLLECTION_GROUP_UPDATE', targetType: 'CollectionGroup', targetId: input.groupId, result: 'SUCCESS', metadata: {} });
       return result;
@@ -142,6 +156,7 @@ const groupsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ groupId: z.string() }))
     .mutation(async ({ input, ctx }) => {
+      await resolveGroupBrandAccess(ctx, input.groupId);
       await deleteGroup(input.groupId, ctx.prisma, ctx.session!.user.id);
       await logAudit(ctx, { action: 'COLLECTION_GROUP_DELETE', targetType: 'CollectionGroup', targetId: input.groupId, result: 'SUCCESS', metadata: {} });
       return { success: true };
@@ -155,6 +170,10 @@ const rowsRouter = router({
     .input(CollectionLayoutRowInputSchema)
     .mutation(async ({ input, ctx }) => {
       const { pendingPictureFileObjectId, ...rowInput } = input;
+
+      // Prima di aprire la transaction: la lookup di membership non deve
+      // consumare il budget dei 15s, e un rifiuto non deve costare un rollback.
+      await resolveGroupBrandAccess(ctx, rowInput.groupId);
 
       const result = await ctx.prisma.$transaction(async tx => {
         let confirmedPictureKey: string | undefined;
@@ -198,6 +217,9 @@ const rowsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { pendingPictureFileObjectId, ...rowData } = input.data;
       let oldPictureKey: string | null = null;
+
+      // Fuori dalla transaction, come in `create`.
+      await resolveRowBrandAccess(ctx, input.rowId);
 
       const result = await ctx.prisma.$transaction(async tx => {
         let confirmedPictureKey: string | undefined;
@@ -253,6 +275,7 @@ const rowsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ rowId: z.string() }))
     .mutation(async ({ input, ctx }) => {
+      await resolveRowBrandAccess(ctx, input.rowId);
       await deleteRow(input.rowId, ctx.prisma, ctx.session!.user.id);
       await logAudit(ctx, { action: 'COLLECTION_ROW_DELETE', targetType: 'CollectionLayoutRow', targetId: input.rowId, result: 'SUCCESS', metadata: {} });
       return { success: true };
@@ -263,6 +286,7 @@ const rowsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ rowId: z.string() }))
     .mutation(async ({ input, ctx }) => {
+      await resolveRowBrandAccess(ctx, input.rowId);
       const result = await duplicateRow(input.rowId, ctx.prisma, ctx.session!.user.id);
       await logAudit(ctx, { action: 'COLLECTION_ROW_DUPLICATE', targetType: 'CollectionLayoutRow', targetId: result.id, result: 'SUCCESS', metadata: { sourceRowId: input.rowId } });
       return result;
@@ -278,6 +302,7 @@ const rowsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await resolveGroupBrandAccess(ctx, input.groupId);
       await reorderRows(input.groupId, input.orderedIds, ctx.prisma, ctx.session!.user.id);
       await logAudit(ctx, { action: 'COLLECTION_ROW_REORDER', targetType: 'CollectionGroup', targetId: input.groupId, result: 'SUCCESS', metadata: { count: input.orderedIds.length } });
       return { success: true };
@@ -288,17 +313,9 @@ const rowsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(CollectionLayoutBulkAssignPlanningGroupInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const rows = await ctx.prisma.collectionLayoutRow.findMany({
-        where: { id: { in: input.rowIds } },
-        select: { collectionLayoutId: true },
-      });
-      if (rows.length === 0) throw new TRPCError({ code: 'NOT_FOUND', message: 'Nessuna riga trovata' });
-      const layoutIds = [...new Set(rows.map(r => r.collectionLayoutId))];
-      if (layoutIds.length > 1) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Le righe devono appartenere allo stesso layout' });
-      }
+      const collectionLayoutId = await resolveRowsBrandAccess(ctx, input.rowIds);
 
-      const result = await bulkAssignRowsPlanningGroup(input.rowIds, layoutIds[0]!, input.planningGroupId, ctx.prisma, ctx.session!.user.id);
+      const result = await bulkAssignRowsPlanningGroup(input.rowIds, collectionLayoutId, input.planningGroupId, ctx.prisma, ctx.session!.user.id);
       await logAudit(ctx, {
         action: 'COLLECTION_ROW_BULK_ASSIGN_PLANNING_GROUP',
         targetType: 'CollectionLayoutRow',
@@ -600,6 +617,11 @@ export const collectionLayoutRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      // Entrambi i brand, non uno solo: sulla sola sorgente permetterebbe di
+      // scrivere in un brand non tuo, sulla sola destinazione è esfiltrazione —
+      // leggi la collezione di un brand altrui clonandola in uno tuo.
+      await assertBrandAccessAll(ctx, [input.fromBrandId, input.toBrandId]);
+
       const result = await copyFromSeason(
         input.fromBrandId,
         input.fromSeasonId,
@@ -630,6 +652,7 @@ export const collectionLayoutRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const { collectionLayoutId, ...settings } = input;
+      await resolveLayoutBrandAccess(ctx, collectionLayoutId);
       await updateLayoutSettings(collectionLayoutId, settings, ctx.prisma);
       await logAudit(ctx, { action: 'COLLECTION_LAYOUT_UPDATE_SETTINGS', targetType: 'CollectionLayout', targetId: collectionLayoutId, result: 'SUCCESS', metadata: {} });
       return { success: true };
