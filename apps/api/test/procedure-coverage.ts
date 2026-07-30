@@ -58,8 +58,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   // ── Parzialmente invocati: la suite li tocca, ma di striscio ──────────────
   auth: {
     reason:
-      'solo `login`, invocata di rimbalzo dalle spec su rate limit e idempotenza; il resto è flussi email e reset password, che richiedono SMTP e token reali',
-    uncovered: 11,
+      'login e refreshToken coperte (rate limit, idempotenza, retrocessione di ruolo); il resto è flussi email e reset password, che richiedono SMTP e token reali',
+    uncovered: 10,
   },
   brand: {
     reason:
@@ -131,8 +131,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   // ── Domini applicativi senza alcun test: da scrivere ──────────────────────
   collectionLayout: {
     reason:
-      'nessun test scritto. È il secondo dominio per dimensione (gruppi, righe, quotazioni, export) e merita una suite propria, non un’aggiunta in coda a un’altra',
-    uncovered: 21,
+      'solo `get`, dalla spec sul brand scope. È il secondo dominio per dimensione (gruppi, righe, quotazioni, export) e merita una suite propria, non un’aggiunta in coda a un’altra',
+    uncovered: 20,
   },
   merchandisingPlan: {
     reason:
@@ -144,8 +144,9 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
     uncovered: 10,
   },
   dashboard: {
-    reason: 'nessun test scritto: config, task, KPI, cambi e vendite settimanali',
-    uncovered: 9,
+    reason:
+      'solo `getSeasonProgress`, dalla spec sul brand scope; restano config, task, KPI, cambi e vendite settimanali',
+    uncovered: 8,
   },
   vendors: {
     reason:

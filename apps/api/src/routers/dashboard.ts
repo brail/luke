@@ -13,6 +13,7 @@ import {
 
 import { logAudit } from '../lib/auditLog';
 import { protectedProcedure, router } from '../lib/trpc';
+import { assertBrandAccess } from '../services/context.service';
 
 
 const DEFAULT_WIDGETS: WidgetConfigItem[] = [
@@ -231,6 +232,8 @@ export const dashboardRouter = router({
   getWeeklySales: protectedProcedure
     .input(z.object({ brandId: z.string(), seasonId: z.string() }))
     .query(async ({ ctx, input }) => {
+    await assertBrandAccess(ctx, input.brandId);
+
     const [brand, season] = await Promise.all([
       ctx.prisma.brand.findUnique({ where: { id: input.brandId }, select: { code: true } }),
       ctx.prisma.season.findUnique({ where: { id: input.seasonId }, select: { code: true } }),
@@ -277,6 +280,8 @@ export const dashboardRouter = router({
   getSeasonProgress: protectedProcedure
     .input(z.object({ brandId: z.string(), seasonId: z.string() }))
     .query(async ({ ctx, input }) => {
+    await assertBrandAccess(ctx, input.brandId);
+
     const layout = await ctx.prisma.collectionLayout.findFirst({
       where: { brandId: input.brandId, seasonId: input.seasonId },
       include: {

@@ -28,6 +28,7 @@ import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
+import { assertBrandAccess } from '../services/context.service';
 
 export const merchandisingPlanRouter = router({
   /**
@@ -46,6 +47,8 @@ export const merchandisingPlanRouter = router({
       })
     )
     .query(async ({ input, ctx }) => {
+      await assertBrandAccess(ctx, input.brandId);
+
       return ctx.prisma.merchandisingPlan.upsert({
         where: { brandId_seasonId: { brandId: input.brandId, seasonId: input.seasonId } },
         create: { brandId: input.brandId, seasonId: input.seasonId },

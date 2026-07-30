@@ -57,6 +57,7 @@ import {
   deleteQuotation,
   reorderQuotations,
 } from '../services/collectionRow.quotation.service';
+import { assertBrandAccess } from '../services/context.service';
 import { assertUnlocked } from '../services/editLock.service';
 import { deleteObjectByKey } from '../storage';
 
@@ -373,6 +374,7 @@ const ROW_EXPORT_INCLUDE = {
 const exportRouter = router({
   rowXlsx: protectedProcedure
     .use(requirePermission('collection_layout:read'))
+    .use(withRateLimit('exportGeneration'))
     .input(z.object({ rowId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const row = await ctx.prisma.collectionLayoutRow.findUnique({
@@ -380,6 +382,7 @@ const exportRouter = router({
         include: ROW_EXPORT_INCLUDE,
       });
       if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Riga non trovata' });
+      await assertBrandAccess(ctx, (row as any).collectionLayout.brandId);
 
       const { collectionLayout, ...rowData } = row as any;
       const buffer = await buildCollectionRowXlsx(
@@ -402,6 +405,7 @@ const exportRouter = router({
 
   rowPdf: protectedProcedure
     .use(requirePermission('collection_layout:read'))
+    .use(withRateLimit('exportGeneration'))
     .input(z.object({ rowId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const row = await ctx.prisma.collectionLayoutRow.findUnique({
@@ -409,6 +413,7 @@ const exportRouter = router({
         include: ROW_EXPORT_INCLUDE,
       });
       if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Riga non trovata' });
+      await assertBrandAccess(ctx, (row as any).collectionLayout.brandId);
 
       const exportUser = await ctx.prisma.user.findUnique({
         where: { id: ctx.session.user.id },
@@ -441,6 +446,7 @@ const exportRouter = router({
 
   xlsx: protectedProcedure
     .use(requirePermission('collection_layout:read'))
+    .use(withRateLimit('exportGeneration'))
     .input(z.object({
       collectionLayoutId: z.string().uuid(),
       rowIds: z.array(z.string().uuid()).optional(),
@@ -451,6 +457,7 @@ const exportRouter = router({
         include: EXPORT_INCLUDE,
       });
       if (!layout) throw new TRPCError({ code: 'NOT_FOUND', message: 'Layout non trovato' });
+      await assertBrandAccess(ctx, layout.brandId);
 
       let exportLayout = layout;
       if (input.rowIds && input.rowIds.length > 0) {
@@ -479,6 +486,7 @@ const exportRouter = router({
 
   pdf: protectedProcedure
     .use(requirePermission('collection_layout:read'))
+    .use(withRateLimit('exportGeneration'))
     .input(z.object({
       collectionLayoutId: z.string().uuid(),
       rowIds: z.array(z.string().uuid()).optional(),
@@ -489,6 +497,7 @@ const exportRouter = router({
         include: EXPORT_INCLUDE,
       });
       if (!layout) throw new TRPCError({ code: 'NOT_FOUND', message: 'Layout non trovato' });
+      await assertBrandAccess(ctx, layout.brandId);
 
       let exportLayout = layout;
       if (input.rowIds && input.rowIds.length > 0) {
@@ -542,6 +551,7 @@ export const collectionLayoutRouter = router({
       })
     )
     .query(async ({ input, ctx }) => {
+      await assertBrandAccess(ctx, input.brandId);
       const layout = await getLayout(input.brandId, input.seasonId, ctx.prisma);
       return layout ? resolveLayoutUrls(layout, ctx.prisma) : null;
     }),
@@ -564,6 +574,7 @@ export const collectionLayoutRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await assertBrandAccess(ctx, input.brandId);
       const result = await getOrCreateLayout(input.brandId, input.seasonId, ctx.prisma, input.availableGenders);
       await logAudit(ctx, { action: 'COLLECTION_LAYOUT_GET_OR_CREATE', targetType: 'CollectionLayout', targetId: result.id, result: 'SUCCESS', metadata: { brandId: input.brandId, seasonId: input.seasonId } });
       return resolveLayoutUrls(result, ctx.prisma);

@@ -15,12 +15,14 @@
 
 import { randomUUID } from 'crypto';
 
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 
-import { rateLimitStore } from '../src/lib/ratelimit';
-import { appRouter } from '../src/routers/index';
-
-import { createTestContext, setupTestDb } from './helpers';
+import {
+  createAnonymousCaller,
+  createCallerWithSession,
+  createTestUser,
+  setupTestDb,
+} from './helpers';
 
 import type { UserSession } from '../src/lib/auth';
 import type { PrismaClient } from '@prisma/client';
@@ -28,9 +30,12 @@ import type { PrismaClient } from '@prisma/client';
 let prisma: PrismaClient;
 const sessions: Record<'admin' | 'editor' | 'viewer', UserSession> = {} as never;
 
+/** Team di cui editor e viewer sono membri; gli si agganciano i brand scope. */
+let scopeTeamId: string;
+
 
 function callerAs(role: 'admin' | 'editor' | 'viewer') {
-  return appRouter.createCaller(createTestContext(sessions[role])).pricing;
+  return createCallerWithSession(sessions[role]).pricing;
 }
 
 /** Input valido minimo, con i valori realistici del seed. */
@@ -59,7 +64,24 @@ async function createBrandAndSeason(year = 2030) {
   const season = await prisma.season.create({
     data: { code: `P${uid}`, name: `Season ${uid}`, year, isActive: true },
   });
+  await grantBrandScope(brand.id);
   return { brandId: brand.id, seasonId: season.id };
+}
+
+/**
+ * Dà a editor e viewer accesso al brand appena creato.
+ *
+ * L'accesso ai brand è **opt-in stretto**: `getUserAllowedBrandIds` torna `null`
+ * (nessun vincolo) solo per gli admin, e per tutti gli altri esattamente l'unione
+ * dei `brandScopes` dei team attivi. Un editor senza team non vede alcun brand.
+ * Prima dei guard di brand scope questi test passavano perché nessuna procedura
+ * di pricing controllava lo scope — cioè per il difetto che i guard chiudono.
+ * La copertura del caso negativo sta in `brandScope.integration.spec.ts`.
+ */
+async function grantBrandScope(brandId: string) {
+  await prisma.companyTeamBrandScope.create({
+    data: { teamId: scopeTeamId, brandId },
+  });
 }
 
 beforeAll(async () => {
@@ -67,34 +89,30 @@ beforeAll(async () => {
   // stabile, nessuna suite può assumere che un'altra abbia creato le tabelle.
   prisma = await setupTestDb();
 
-  for (const role of ['admin', 'editor', 'viewer'] as const) {
-    const uid = randomUUID().substring(0, 8);
-    const user = await prisma.user.create({
-      data: {
-        email: `pricing-${role}-${uid}@test.com`,
-        username: `pricing-${role}-${uid}`,
-        firstName: 'Pricing',
-        lastName: role,
-        role,
-        isActive: true,
-      },
-    });
-    sessions[role] = {
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        role,
-        tokenVersion: 0,
-      },
-    };
-  }
-});
+  const roles = ['admin', 'editor', 'viewer'] as const;
+  const created = await Promise.all(roles.map(role => createTestUser(role)));
+  roles.forEach((role, i) => {
+    sessions[role] = created[i].session;
+  });
 
-beforeEach(() => {
-  // `create` e `update` sono rate-limited: senza azzerare lo store i test si
-  // bloccherebbero a vicenda dopo poche mutation.
-  rateLimitStore.clear();
+  const uid = randomUUID().substring(0, 6);
+  const fn = await prisma.companyFunction.create({
+    data: { slug: `pricing_fn_${uid}`, name: `Pricing Fn ${uid}`, order: 93, isActive: true },
+  });
+  const team = await prisma.companyTeam.create({
+    data: { functionId: fn.id, name: `Pricing Team ${uid}`, isActive: true },
+  });
+  scopeTeamId = team.id;
+
+  await Promise.all(
+    created
+      .filter((_, i) => roles[i] !== 'admin')
+      .map(u =>
+        prisma.companyTeamMembership.create({
+          data: { teamId: team.id, userId: u.user.id },
+        })
+      )
+  );
 });
 
 describe('pricing — matrice dei permessi', () => {
@@ -157,10 +175,7 @@ describe('pricing — matrice dei permessi', () => {
 
   it('un anonimo non raggiunge nulla', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
-    const anon = appRouter.createCaller({
-      ...createTestContext(sessions.admin),
-      session: null,
-    }).pricing;
+    const anon = (await createAnonymousCaller()).pricing;
 
     await expect(
       anon.parameterSets.list({ brandId, seasonId })

@@ -64,6 +64,42 @@ export async function getUserAllowedBrandIds(
 }
 
 /**
+ * Throws FORBIDDEN if the session user may not access `brandId`.
+ *
+ * `requirePermission` risponde a "questo ruolo può leggere i prezzi?", non a
+ * "questo utente può leggere i prezzi **di questo brand**?". Le due domande sono
+ * state confuse in più router: un editor con `pricing:read` fuori dallo scope del
+ * team esportava la griglia di un brand altrui passandone l'UUID.
+ *
+ * Non è per gli admin: `getUserAllowedBrandIds` restituisce `null` per loro e la
+ * funzione esce prima di qualunque query.
+ *
+ * @param brandId - Brand da verificare. Per le risorse identificate da un altro
+ *   id (un layout, una riga), passare il `brandId` risolto dal record, mai un
+ *   campo di input.
+ */
+export async function assertBrandAccess(
+  ctx: {
+    prisma: PrismaClient;
+    session: { user: { id: string; role: string } };
+  },
+  brandId: string
+): Promise<void> {
+  const allowed = await getUserAllowedBrandIds(
+    ctx.session.user.id,
+    ctx.prisma,
+    ctx.session.user.role as Role
+  );
+
+  if (allowed !== null && !allowed.includes(brandId)) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'Accesso al brand non consentito',
+    });
+  }
+}
+
+/**
  * Returns the set of CompanyFunction IDs the user may access via team membership.
  * Admins receive null (unrestricted). Users in no team receive an empty array (no access).
  *

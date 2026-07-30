@@ -19,6 +19,7 @@ import { exportTimestamp } from '../lib/export/xlsx-streaming';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
+import { assertBrandAccess } from '../services/context.service';
 import { buildPricingGridPdf, buildPricingGridXlsx } from '../services/pricing.export.service';
 import {
   calculateForward,
@@ -42,8 +43,10 @@ const exportRouter = router({
    */
   xlsx: protectedProcedure
     .use(requirePermission('pricing:read'))
+    .use(withRateLimit('exportGeneration'))
     .input(z.object({ brandId: z.string().uuid(), seasonId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
+      await assertBrandAccess(ctx, input.brandId);
       const [sets, brand, season] = await Promise.all([
         ctx.prisma.pricingParameterSet.findMany({
           where: { brandId: input.brandId, seasonId: input.seasonId },
@@ -76,8 +79,10 @@ const exportRouter = router({
    */
   pdf: protectedProcedure
     .use(requirePermission('pricing:read'))
+    .use(withRateLimit('exportGeneration'))
     .input(z.object({ brandId: z.string().uuid(), seasonId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
+      await assertBrandAccess(ctx, input.brandId);
       const [sets, brand, season, exportUser] = await Promise.all([
         ctx.prisma.pricingParameterSet.findMany({
           where: { brandId: input.brandId, seasonId: input.seasonId },
@@ -126,6 +131,7 @@ const parameterSetsRouter = router({
       })
     )
     .query(async ({ input, ctx }) => {
+      await assertBrandAccess(ctx, input.brandId);
       return getParameterSets(input.brandId, input.seasonId, ctx.prisma);
     }),
 
@@ -147,6 +153,7 @@ const parameterSetsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await assertBrandAccess(ctx, input.brandId);
       const result = await createParameterSet(
         input.brandId,
         input.seasonId,
@@ -175,6 +182,7 @@ const parameterSetsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await assertBrandAccess(ctx, input.brandId);
       const result = await updateParameterSet(
         input.data.id,
         input.brandId,
@@ -203,6 +211,7 @@ const parameterSetsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await assertBrandAccess(ctx, input.brandId);
       await removeParameterSet(
         input.id,
         input.brandId,
@@ -230,6 +239,7 @@ const parameterSetsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await assertBrandAccess(ctx, input.brandId);
       const result = await setAsDefault(input.id, input.brandId, input.seasonId, ctx.prisma);
       await logAudit(ctx, { action: 'PRICING_PARAMETER_SET_SET_DEFAULT', targetType: 'PricingParameterSet', targetId: input.id, result: 'SUCCESS', metadata: { brandId: input.brandId, seasonId: input.seasonId } });
       return result;
@@ -251,6 +261,7 @@ const parameterSetsRouter = router({
       })
     )
     .query(async ({ input, ctx }) => {
+      await assertBrandAccess(ctx, input.brandId);
       return getPreviousSeasonSets(input.brandId, input.seasonId, ctx.prisma);
     }),
 });
@@ -270,6 +281,8 @@ export const pricingRouter = router({
     .use(requirePermission('pricing:read'))
     .input(PricingCalculateInputSchema)
     .mutation(async ({ input, ctx }) => {
+      await assertBrandAccess(ctx, input.brandId);
+
       // Carica i parametri del set selezionato
       const paramSet = await ctx.prisma.pricingParameterSet.findUnique({
         where: { id: input.parameterSetId },
