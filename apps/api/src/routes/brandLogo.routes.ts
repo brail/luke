@@ -85,7 +85,7 @@ export default async function brandLogoRoutes(
   app.post<{
     Params: { brandId: string };
   }>('/upload/brand-logo/:brandId', async (req, reply) => {
-    const session = await requireSessionWithPermission(req, reply, 'brands:update');
+    const session = await requireSessionWithPermission(req, reply, 'brands:update', options.prisma);
     if (!session) return;
 
     const ctx = {
@@ -157,7 +157,7 @@ export default async function brandLogoRoutes(
   app.post<{
     Body: { tempId: string };
   }>('/upload/brand-logo/temp', async (req, reply) => {
-    const session = await requireSessionWithPermission(req, reply, 'brands:create');
+    const session = await requireSessionWithPermission(req, reply, 'brands:create', options.prisma);
     if (!session) return;
 
     const ctx = {

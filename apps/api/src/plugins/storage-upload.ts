@@ -103,7 +103,7 @@ export async function storagePlugin(
     Params: { uploadId: string };
   }>('/storage/upload/:uploadId', async (request, reply) => {
     // Autenticazione richiesta
-    const session = await auth(request, reply);
+    const session = await auth(request, reply, prisma);
     if (!session) {
       reply.code(401).send({
         error: 'Unauthorized',
@@ -228,7 +228,7 @@ export async function storagePlugin(
 
       // Crea context minimale (no session required, token autorizza)
       // Ma per audit log serve session se disponibile
-      const session = await auth(request, reply);
+      const session = await auth(request, reply, prisma);
 
       // Recupera metadati da DB tramite bucket+key
       const fileObject = await prisma.fileObject.findFirst({

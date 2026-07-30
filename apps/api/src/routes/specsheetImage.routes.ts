@@ -33,7 +33,7 @@ export default async function specsheetImageRoutes(
   app.post<{ Params: { specsheetId: string } }>(
     '/upload/specsheet-image/:specsheetId',
     async (req, reply) => {
-      const session = await requireSessionWithPermission(req, reply, 'merchandising_plan:update');
+      const session = await requireSessionWithPermission(req, reply, 'merchandising_plan:update', options.prisma);
       if (!session) return;
 
       const ctx = {

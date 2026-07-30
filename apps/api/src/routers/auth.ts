@@ -122,14 +122,36 @@ export const authRouter = router({
    * @output {{ token: string, tokenVersion: number }}
    */
   refreshToken: protectedProcedure.mutation(async ({ ctx }) => {
+    // Ruolo e tokenVersion si rileggono dal database, non dal claim in sessione.
+    // Rifirmare a partire dal claim rendeva il refresh un riciclo di autorità: un
+    // utente retrocesso rinnovava all'infinito un token che diceva ancora
+    // `role: "admin"`, perché la fonte del nuovo token era il vecchio token.
+    const fresh = await ctx.prisma.user.findUnique({
+      where: { id: ctx.session.user.id },
+      select: {
+        email: true,
+        username: true,
+        role: true,
+        tokenVersion: true,
+        isActive: true,
+      },
+    });
+
+    if (!fresh || !fresh.isActive) {
+      throw new TRPCError({
+        code: 'UNAUTHORIZED',
+        message: 'Sessione non più valida',
+      });
+    }
+
     const token = createToken({
       id: ctx.session.user.id,
-      email: ctx.session.user.email,
-      username: ctx.session.user.username,
-      role: ctx.session.user.role,
-      tokenVersion: ctx.session.user.tokenVersion,
+      email: fresh.email,
+      username: fresh.username,
+      role: fresh.role,
+      tokenVersion: fresh.tokenVersion,
     });
-    return { token, tokenVersion: ctx.session.user.tokenVersion ?? 0 };
+    return { token, tokenVersion: fresh.tokenVersion };
   }),
 
   /**

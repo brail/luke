@@ -7,7 +7,9 @@
 import { hasPermission, type Permission, type Role } from '@luke/core';
 
 import { signJWT, verifyJWT, type JWTPayload } from './jwt';
+import { verifyTokenVersion } from './tokenVersionCache';
 
+import type { PrismaClient } from '@prisma/client';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 export type { JWTPayload } from './jwt';
@@ -104,14 +106,22 @@ export function createUserSession(token: string): UserSession | null {
 
 /**
  * Fastify hook that authenticates an incoming request.
- * Extracts the Bearer token, verifies it, and returns the session.
- * Clears the legacy session cookie if the token is invalid.
+ * Extracts the Bearer token, verifies the signature **and the revocation state**,
+ * and returns the session. Clears the legacy session cookie if the token is invalid.
  *
- * @returns Authenticated session, or `null` if the request is unauthenticated.
+ * La verifica di revoca sta qui e non un livello più su di proposito: prima
+ * viveva solo nel middleware tRPC, quindi ogni route Fastify non-tRPC accettava
+ * token revocati e utenti disattivati. Costruire una sessione senza passare da
+ * questo controllo ora non è più possibile — è una proprietà della funzione, non
+ * una cosa da ricordarsi a ogni nuova route.
+ *
+ * @returns Authenticated session, or `null` if the request is unauthenticated,
+ *   the token is revoked, or the account is disabled.
  */
 export async function authenticateRequest(
   request: FastifyRequest,
-  reply: FastifyReply
+  reply: FastifyReply,
+  prisma: PrismaClient
 ): Promise<UserSession | null> {
   const token = extractTokenFromRequest(request);
 
@@ -123,6 +133,15 @@ export async function authenticateRequest(
   if (!session) {
     // Token non valido, rimuovi il cookie se presente
     (reply as any).clearCookie('luke_session');
+    return null;
+  }
+
+  const stillValid = await verifyTokenVersion(
+    session.user.id,
+    session.user.tokenVersion,
+    prisma
+  );
+  if (!stillValid) {
     return null;
   }
 
@@ -140,9 +159,10 @@ export async function authenticateRequest(
 export async function requireSessionWithPermission(
   request: FastifyRequest,
   reply: FastifyReply,
-  permission: Permission
+  permission: Permission,
+  prisma: PrismaClient
 ): Promise<UserSession | null> {
-  const session = await authenticateRequest(request, reply);
+  const session = await authenticateRequest(request, reply, prisma);
   if (!session) {
     reply.code(401).send({ error: 'Unauthorized' });
     return null;

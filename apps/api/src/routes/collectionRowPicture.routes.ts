@@ -36,7 +36,7 @@ export default async function collectionRowPictureRoutes(
   // Temp endpoint — no row ID required (create mode)
   // Registered before /:rowId so the literal "temp" path takes precedence.
   app.post('/upload/collection-row-picture/temp', async (req, reply) => {
-    const session = await requireSessionWithPermission(req, reply, 'collection_layout:update');
+    const session = await requireSessionWithPermission(req, reply, 'collection_layout:update', options.prisma);
     if (!session) return;
 
     const ctx = {
@@ -84,7 +84,7 @@ export default async function collectionRowPictureRoutes(
   app.post<{
     Params: { rowId: string };
   }>('/upload/collection-row-picture/:rowId', async (req, reply) => {
-    const session = await requireSessionWithPermission(req, reply, 'collection_layout:update');
+    const session = await requireSessionWithPermission(req, reply, 'collection_layout:update', options.prisma);
     if (!session) return;
 
     const ctx = {

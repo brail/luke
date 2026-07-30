@@ -18,6 +18,7 @@ import { createNotification } from '../lib/notifications';
 import { requirePermission } from '../lib/permissions';
 import { getOnlineUserIds, updatePresence } from '../lib/presenceStore';
 import { withRateLimit } from '../lib/ratelimit';
+import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
 import { router, protectedProcedure } from '../lib/trpc';
 import { deleteUserHandler, getLockedFields, UserIdSchema } from '../services/users.service';
 
@@ -407,13 +408,29 @@ export const usersCoreRouter = router({
         }
       }
 
+      // Un cambio di ruolo o una disattivazione devono invalidare i token già
+      // emessi. Senza il bump, `verifyTokenVersion` continua a passare e
+      // `requirePermission` legge il ruolo dal claim JWT, mai dal database: la
+      // retrocessione non aveva alcun effetto fino alla scadenza del token — e
+      // `auth.refreshToken`, che rifirmava a partire dallo stesso claim, la
+      // rimandava indefinitamente. Un admin declassato restava admin per sempre.
+      const revokesSessions =
+        (updateData.role !== undefined && updateData.role !== existingUser.role) ||
+        (updateData.isActive !== undefined &&
+          updateData.isActive !== existingUser.isActive);
+
       const updatedUser = await ctx.prisma.user.update({
         where: { id },
         data: {
           ...updateData,
           updatedAt: new Date(),
+          ...(revokesSessions ? { tokenVersion: { increment: 1 } } : {}),
         },
       });
+
+      if (revokesSessions) {
+        invalidateTokenVersionCache(id);
+      }
 
       if (updateData.role && updateData.role !== existingUser.role) {
         invalidateRbacCache();

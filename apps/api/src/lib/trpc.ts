@@ -11,72 +11,15 @@ import { TRPCError } from '@trpc/server';
 import { hasPermission, type Role } from '@luke/core';
 
 import { authenticateRequest } from './auth';
-import { getTokenVersionCacheTTL } from './configManager';
 import { assertNotBlockedByMaintenance } from './maintenanceMode';
 import { t } from './t';
-import { tokenVersionCache } from './tokenVersionCache';
+import { verifyTokenVersion } from './tokenVersionCache';
 
 import type { Context } from './context';
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 export { invalidateTokenVersionCache } from './tokenVersionCache';
-
-// Cache per TTL dinamico da AppConfig
-let cachedTTLValue: number | null = null;
-let cachedTTLTimestamp: number = 0;
-const TTL_REFRESH_INTERVAL = 5 * 60 * 1000; // Refresh config ogni 5min
-
-async function getCacheTTL(prisma: PrismaClient): Promise<number> {
-  const now = Date.now();
-
-  if (
-    cachedTTLValue === null ||
-    now - cachedTTLTimestamp > TTL_REFRESH_INTERVAL
-  ) {
-    cachedTTLValue = await getTokenVersionCacheTTL(prisma);
-    cachedTTLTimestamp = now;
-  }
-
-  return cachedTTLValue;
-}
-
-async function verifyTokenVersion(
-  userId: string,
-  tokenVersion: number | undefined,
-  prisma: PrismaClient
-): Promise<boolean> {
-  // OPZIONE 1b: Rifiuta JWT senza tokenVersion
-  if (tokenVersion === undefined || tokenVersion === null) {
-    return false;
-  }
-
-  const cached = tokenVersionCache.get(userId);
-  const now = Date.now();
-  const cacheTTL = await getCacheTTL(prisma);
-
-  if (cached && now - cached.timestamp < cacheTTL) {
-    return cached.version === tokenVersion;
-  }
-
-  // Query DB per tokenVersion corrente
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { tokenVersion: true, isActive: true },
-  });
-
-  if (!user || !user.isActive) {
-    return false;
-  }
-
-  // Aggiorna cache
-  tokenVersionCache.set(userId, {
-    version: user.tokenVersion,
-    timestamp: now,
-  });
-
-  return user.tokenVersion === tokenVersion;
-}
 
 /**
  * Creates a tRPC context for an incoming Fastify request.
@@ -92,7 +35,7 @@ export async function createContext({
   res: FastifyReply;
 }): Promise<Context> {
   // Autentica la richiesta e ottieni la sessione
-  const session = await authenticateRequest(req, res);
+  const session = await authenticateRequest(req, res, prisma);
 
   // Estrai o genera traceId
   const traceId = (req.headers['x-luke-trace-id'] as string) || randomUUID();
@@ -161,7 +104,10 @@ export const authMiddleware = t.middleware(async ({ ctx, next }) => {
     });
   }
 
-  // Verifica tokenVersion con cache
+  // Ridondante per le richieste HTTP reali — `authenticateRequest` rifiuta già i
+  // token revocati — ma non per i context costruiti a mano (test, job interni),
+  // che non passano da lì. Il controllo resta perché l'invariante deve valere per
+  // ogni context, non solo per quelli nati da una richiesta.
   const isTokenVersionValid = await verifyTokenVersion(
     ctx.session.user.id,
     ctx.session.user.tokenVersion,

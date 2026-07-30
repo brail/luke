@@ -19,7 +19,7 @@ import type { FastifyInstance } from 'fastify';
 export default fp(
   async (app: FastifyInstance, options: { prisma: PrismaClient }) => {
     app.post('/upload/company-logo', async (req, reply) => {
-      const session = await requireSessionWithPermission(req, reply, 'company_profile:update');
+      const session = await requireSessionWithPermission(req, reply, 'company_profile:update', options.prisma);
       if (!session) return;
 
       const ctx = {
