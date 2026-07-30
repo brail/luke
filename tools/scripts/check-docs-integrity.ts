@@ -26,6 +26,8 @@ import { execFileSync } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import { dirname, join, relative, resolve } from 'path';
 
+import { isGitIgnored } from './lib/gitPaths';
+
 const REPO_ROOT = join(__dirname, '..', '..');
 
 /**
@@ -141,7 +143,15 @@ function checkLinks(
       if (!pathPart) continue;
 
       checked++;
-      if (!existsSync(resolve(baseDir, pathPart))) {
+      const absolute = resolve(baseDir, pathPart);
+
+      // `docs/merchandising-reference/` e `docs/access-porting/` sono
+      // gitignored: i link a quelle directory risolvono sul disco di chi lavora
+      // e non in un checkout pulito. La stessa regola che sceglie *quali file*
+      // leggere (`git ls-files`) vale sui *target*, altrimenti è applicata a
+      // metà — ed è così che questo controllo è passato in locale ed è fallito
+      // in CI. Vedi `lib/gitPaths.ts`.
+      if (!existsSync(absolute) && !isGitIgnored(absolute)) {
         problems.push({
           file: relPath,
           line: index + 1,

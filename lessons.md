@@ -244,8 +244,32 @@ il mondo sbagliato.
 **Regola**: uno script di verifica deve pronunciarsi solo su ciò che il repo
 contiene. Se un path è escluso da git, la sua esistenza non è un fatto
 verificabile: `git check-ignore -q -- <path>` (exit 0 = ignorato) e si salta.
-Stessa scelta in `check-docs-integrity.ts`, che prende i file da `git ls-files`
-invece di camminare il filesystem.
+
+Ci sono volute **tre CI rosse**, e ogni ricaduta ha aggiunto un dettaglio.
+
+1. *Applicare la regola a metà.* `check-docs-integrity.ts` la usava per scegliere
+   quali file leggere (`git ls-files`), `check-skill-integrity.ts` non la usava
+   affatto. Sistemato il secondo, il primo continuava a verificare i **target dei
+   link** ignorati. Una regola condivisa fra due script va messa in un posto solo
+   — ora `tools/scripts/lib/gitPaths.ts`.
+2. *Lo slash finale.* Un pattern directory-only (`docs/access-porting/`) matcha
+   solo se git può stabilire che il path è una directory. Quando il path **non
+   esiste** — cioè il caso che qui interessa — non può, e serve passarglielo con
+   lo slash. `path.resolve()` lo strippa:
+
+   ```
+   docs/access-porting    → exit 1, non matcha
+   docs/access-porting/   → exit 0, matcha
+   ```
+
+3. *Verificare dove non può fallire non è verificare.* Le prime due correzioni
+   sono state dichiarate verdi girando sul disco di sviluppo, che ha i file
+   gitignored. Riprodurre il checkout pulito è una riga:
+
+   ```bash
+   git worktree add --detach /tmp/clean HEAD   # per costruzione, niente file ignorati
+   ```
 
 Corollario: prima di dichiarare verde un controllo nuovo, chiedersi *quali file
-sto leggendo che un clone pulito non avrebbe*.
+sto leggendo che un clone pulito non avrebbe* — e poi provarlo su un clone pulito,
+invece di rispondere a memoria.
