@@ -22,6 +22,7 @@
     "sync-version": "node scripts/sync-version.js",
     "sync-version:check": "node scripts/sync-version.js --check",
     "db:seed": "pnpm --filter @luke/api db:seed",
+    "check:drift": "tsx tools/scripts/check-skill-integrity.ts && tsx tools/scripts/check-docs-integrity.ts",
     "codemod:eliminate-urls": "tsx tools/codemods/eliminate-hardcoded-urls.ts",
     "codemod:check-urls": "tsx tools/codemods/eliminate-hardcoded-urls.ts --dry-run",
     "changelog": "git-cliff -o CHANGELOG.md",

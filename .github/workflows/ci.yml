@@ -34,6 +34,13 @@ jobs:
       - name: TypeCheck (test)
         run: pnpm typecheck:test
 
+      # Skill e documentazione affermano fatti sulla codebase (path, simboli,
+      # link) che possono driftare in silenzio: `luke-test` ha istruito per mesi
+      # ad aggiungere le spec a un file eliminato. Qui quei fatti diventano
+      # bloccanti.
+      - name: Docs & skills drift
+        run: pnpm check:drift
+
       - name: Unit tests
         run: pnpm test
 
