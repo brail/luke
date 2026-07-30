@@ -335,8 +335,9 @@ ancora vivi, con `Cannot use a pool after calling end on the pool` a cascata.
 Nuovo modello: un client per file di test (vitest isola i moduli per file), schema
 applicato **solo se assente**, isolamento fra test via `TRUNCATE ... RESTART
 IDENTITY CASCADE`, e un'unica disconnessione in `afterAll` globale
-(`test/setup.ts`). `teardownTestDb()` resta come no-op perché invocata da molte
-spec. Effetto collaterale gradito: la suite di integrazione passa da ~57s a ~27s.
+(`test/setup.ts`). Effetto collaterale gradito: la suite di integrazione passa da
+~57s a ~27s. `teardownTestDb()` è sopravvissuto per un po' come no-op invocato da
+dieci spec, ed è stato poi rimosso insieme ai suoi chiamanti.
 
 **Altri drift risolti nello stesso passaggio**:
 

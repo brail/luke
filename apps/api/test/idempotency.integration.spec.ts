@@ -5,13 +5,12 @@
 
 import { randomUUID } from 'crypto';
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 
 import { idempotencyStore } from '../src/lib/idempotency';
 
 import {
   setupTestDb,
-  teardownTestDb,
   createTestUser,
   TEST_USER_PASSWORD,
   createCallerWithIdempotency,
@@ -25,13 +24,6 @@ describe('Idempotency Integration', () => {
 
   beforeEach(async () => {
     testPrisma = await setupTestDb();
-    // Pulisci store idempotency prima di ogni test
-    idempotencyStore.clear();
-  });
-
-  afterEach(async () => {
-    idempotencyStore.clear();
-    await teardownTestDb();
   });
 
   describe('users.create idempotency', () => {

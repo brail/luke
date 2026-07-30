@@ -7,8 +7,7 @@ import { Readable } from 'stream';
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-import { rateLimitStore } from '../src/lib/ratelimit';
-import { brandRouter } from '../src/routers/brand';
+import { appRouter } from '../src/routers/index';
 import {
   uploadBrandLogo,
   uploadTempBrandLogo,
@@ -82,11 +81,10 @@ describe('Brand Logo Upload Service', () => {
     } as unknown as Awaited<ReturnType<typeof getStorageProvider>>);
   });
 
-  afterEach(async () => {
-    // Cleanup: elimina tutti i brand e file test creati
-    await testContext.prisma.userPreference.deleteMany();
-    await testContext.prisma.brand.deleteMany();
-    await testContext.prisma.user.deleteMany();
+  afterEach(() => {
+    // Il database lo tronca `createTestContextWithMockStorage` al test dopo, e
+    // con CASCADE: la catena di `deleteMany` che stava qui ometteva `fileObject`
+    // e si sarebbe rotta al primo `onDelete: Restrict` nuovo.
     mockStorage.clear();
     vi.clearAllMocks();
   });
@@ -353,7 +351,11 @@ describe('Brand Logo Upload Service', () => {
     });
   });
 
-  describe('conferma logo pending via brandRouter.update', () => {
+  // Si passa da `appRouter`, mai da `brandRouter`: `router({ brand: brandRouter })`
+  // non conserva il sotto-router, ne ricostruisce un aggregato. Chiamarlo diretto
+  // salta la composizione che la produzione attraversa ed è invisibile al gate di
+  // copertura, che misura le invocazioni su `appRouter`.
+  describe('conferma logo pending via brand.update', () => {
     let testBrand: any;
 
     beforeEach(async () => {
@@ -385,8 +387,7 @@ describe('Brand Logo Upload Service', () => {
         },
       });
 
-      rateLimitStore.clear();
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
       await caller.update({
         id: testBrand.id,
         data: { name: 'Brand con logo', fileObjectId: pending.id },
@@ -404,8 +405,7 @@ describe('Brand Logo Upload Service', () => {
     });
 
     it('ignores a fileObjectId that does not exist', async () => {
-      rateLimitStore.clear();
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       // Un id inesistente non deve far fallire l'update né sporcare logoKey:
       // il logo è opzionale, e un riferimento morto non è motivo per rifiutare

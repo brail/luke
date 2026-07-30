@@ -86,9 +86,10 @@ Le tre regole che dal codice **non** si desumono:
    sulla disponibilità del database è vietato: fa riportare verde il job con zero
    test eseguiti, che è peggio di un job rosso. È il motivo per cui
    `hasTestDatabase()` è stata rimossa invece che riparata. <!-- skill-check-ignore -->
-3. **`teardownTestDb()` è un no-op**, tenuto solo perché invocato da molte spec in
-   `afterEach`. La disconnessione avviene una volta per file, nel setup globale.
-   Non aggiungerne chiamate nuove.
+3. **Nessun hook di teardown del database.** La disconnessione avviene una volta
+   per file, nel setup globale (`test/setup.ts`), e l'isolamento è per
+   troncamento. `teardownTestDb()` era il no-op che sopravviveva ai propri <!-- skill-check-ignore -->
+   chiamanti: è stato rimosso insieme a loro. Non reintrodurlo.
 
 ---
 

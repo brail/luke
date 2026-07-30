@@ -12,7 +12,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import brandLogoRoutes from '../src/routes/brandLogo.routes';
 
-import { resetTestData } from './helpers/database';
 import { createValidPngBuffer } from './helpers/storageTestHelper';
 import { createContextForRole } from './helpers/testContext';
 
@@ -64,9 +63,8 @@ describe('Brand Logo Upload Integration', () => {
   beforeEach(async () => {
     // Il codice brand è fisso: senza troncare i dati, un `TEST_BRAND` lasciato da
     // un altro file di test fa fallire la create e con essa l'intera suite —
-    // rendendo il risultato dipendente dall'ordine di esecuzione.
-    await resetTestData();
-
+    // rendendo il risultato dipendente dall'ordine di esecuzione. Il troncamento
+    // lo fa `createContextForRole`, prima di inserire l'utente di sessione.
     testContext = await createContextForRole();
 
     // Crea un brand di test
@@ -133,10 +131,8 @@ describe('Brand Logo Upload Integration', () => {
   });
 
   afterEach(async () => {
-    // Cleanup
-    await testContext.prisma.userPreference.deleteMany();
-    await testContext.prisma.brand.deleteMany();
-    await testContext.prisma.user.deleteMany();
+    // Solo ciò che il troncamento non copre: il server Fastify e i mock. I dati
+    // li azzera `createContextForRole` nel `beforeEach` del test successivo.
     await app.close();
     vi.clearAllMocks();
   });

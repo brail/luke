@@ -1,12 +1,15 @@
 
 import { randomUUID } from 'crypto';
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 
-import { appRouter } from '../src/routers/index';
 import { getVisibleMilestoneIdsForUser } from '../src/services/milestoneVisibility.service';
 
-import { createTestContext, setupTestDb } from './helpers';
+import {
+  createCallerWithSession,
+  createTestUser,
+  setupTestDb,
+} from './helpers';
 
 import type { UserSession } from '../src/lib/auth';
 import type { PrismaClient } from '@prisma/client';
@@ -17,26 +20,12 @@ let salesFunctionId: string;
 let productFunctionId: string;
 let salesTeamId: string;
 let salesUserId: string;
-let adminUserId: string;
+let adminSession: UserSession;
 let milestoneSalesId: string;
 let milestoneProductId: string;
 let calendarId: string;
 let brandId: string;
 let seasonId: string;
-
-function makeSession(userId: string, role: 'admin' | 'editor' | 'viewer'): UserSession {
-  return {
-    user: { id: userId, email: `${role}-${userId.substring(0, 4)}@test.com`, username: `${role}-${userId.substring(0, 4)}`, role, tokenVersion: 0 },
-  };
-}
-
-
-async function createUser(role: 'admin' | 'editor' | 'viewer') {
-  const uid = randomUUID().substring(0, 8);
-  return prisma.user.create({
-    data: { email: `vis-${role}-${uid}@test.com`, username: `vis-${role}-${uid}`, firstName: role, lastName: 'Vis', role, isActive: true },
-  });
-}
 
 beforeAll(async () => {
   // `setupTestDb()` garantisce lo schema e tronca: l'ordine dei file non è
@@ -63,12 +52,12 @@ beforeAll(async () => {
 
   // Users
   const [salesUser, , adminUser] = await Promise.all([
-    createUser('viewer'),
-    createUser('viewer'),
-    createUser('admin'),
+    createTestUser('viewer'),
+    createTestUser('viewer'),
+    createTestUser('admin'),
   ]);
-  salesUserId = salesUser.id;
-  adminUserId = adminUser.id;
+  salesUserId = salesUser.user.id;
+  adminSession = adminUser.session;
 
   // Memberships
   const [, brand, season] = await Promise.all([
@@ -109,9 +98,6 @@ beforeAll(async () => {
   ]);
 });
 
-afterAll(async () => {
-});
-
 describe('getVisibleMilestoneIdsForUser', () => {
   it('utente Sales vede milestone Sales', async () => {
     const visible = await getVisibleMilestoneIdsForUser(salesUserId, [milestoneSalesId, milestoneProductId], prisma);
@@ -136,7 +122,7 @@ describe('getVisibleMilestoneIdsForUser', () => {
 
 describe('admin vede tutte le milestone via router', () => {
   it('admin senza team membership vede tutte le milestone del calendario', async () => {
-    const caller = appRouter.createCaller(createTestContext(makeSession(adminUserId, 'admin')));
+    const caller = createCallerWithSession(adminSession);
     const milestones = await caller.seasonCalendar.listMilestones({ seasonId, brandIds: [brandId] });
     const ids = milestones.map((m: any) => m.id);
     expect(ids).toContain(milestoneSalesId);

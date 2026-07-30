@@ -68,35 +68,3 @@ export function buildHelmetConfig(env: string): HelmetConfig {
     dnsPrefetchControl: { allow: false }, // X-DNS-Prefetch-Control: off
   };
 }
-
-/**
- * Reference map of security headers applied per environment.
- * Intended for documentation and test assertions; actual headers are set by Helmet.
- */
-export const SECURITY_HEADERS = {
-  development: {
-    'X-Content-Type-Options': 'nosniff',
-    'Referrer-Policy': 'no-referrer',
-    'X-DNS-Prefetch-Control': 'off',
-    'X-Frame-Options': 'DENY',
-    // CSP e HSTS disabilitati in dev
-  },
-  test: {
-    'X-Content-Type-Options': 'nosniff',
-    'Referrer-Policy': 'no-referrer',
-    'X-DNS-Prefetch-Control': 'off',
-    'X-Frame-Options': 'DENY',
-    'Content-Security-Policy':
-      "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
-    // HSTS disabilitato in test
-  },
-  production: {
-    'X-Content-Type-Options': 'nosniff',
-    'Referrer-Policy': 'no-referrer',
-    'X-DNS-Prefetch-Control': 'off',
-    'X-Frame-Options': 'DENY',
-    'Content-Security-Policy':
-      "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
-    'Strict-Transport-Security': 'max-age=15552000; includeSubDomains',
-  },
-} as const;

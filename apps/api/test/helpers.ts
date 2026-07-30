@@ -14,10 +14,7 @@ import { hashPassword } from '../src/lib/password';
 import { type Context } from '../src/lib/trpc';
 import { appRouter } from '../src/routers/index';
 
-import {
-  setupTestDb as setupSharedTestDb,
-  teardownTestDb as teardownSharedTestDb,
-} from './helpers/database';
+import { setupTestDb as setupSharedTestDb } from './helpers/database';
 import { createSilentLogger } from './helpers/logger';
 
 import type { UserSession } from '../src/lib/auth';
@@ -37,21 +34,28 @@ export async function setupTestDb(): Promise<PrismaClient> {
 }
 
 /**
- * No-op, non chiude nulla — vedi `helpers/database.ts`. La connessione si chiude
- * una volta sola per file, da `disconnectTestDb()` nel setup globale di vitest.
- * Resta solo perché invocata da molte spec in `afterAll`.
- */
-export async function teardownTestDb(): Promise<void> {
-  await teardownSharedTestDb();
-}
-
-/**
  * Password degli utenti di test. Serve ai test che esercitano `me.changePassword`:
  * senza credenziale locale il router risponde FORBIDDEN ("cambio password non
  * consentito per provider esterni") invece di UNAUTHORIZED, e il test finisce per
  * misurare il ramo sbagliato.
  */
 export const TEST_USER_PASSWORD = 'TestPassw0rd!23';
+
+/**
+ * Hash della password di test, calcolato una sola volta per file.
+ *
+ * `ARGON2_OPTIONS` è tarato per la produzione (64 MB, 3 iterazioni): ~90ms per
+ * hash. La password è una costante, quindi rifare l'hash a ogni `createTestUser`
+ * significava ~3s per run di integrazione per produrre decine di volte lo stesso
+ * risultato. Memoizza la promise, non la stringa: chiamate concorrenti
+ * condividono lo stesso calcolo invece di avviarne uno a testa.
+ */
+let testPasswordHash: Promise<string> | null = null;
+
+function getTestPasswordHash(): Promise<string> {
+  testPasswordHash ??= hashPassword(TEST_USER_PASSWORD);
+  return testPasswordHash;
+}
 
 /**
  * Crea un utente di test con ruolo specificato, completo di identità locale e
@@ -92,7 +96,7 @@ export async function createTestUser(
   await testPrisma.localCredential.create({
     data: {
       identityId: identity.id,
-      passwordHash: await hashPassword(TEST_USER_PASSWORD),
+      passwordHash: await getTestPasswordHash(),
     },
   });
 
@@ -181,24 +185,6 @@ export async function createCallerWithIdempotency(
 }
 
 /**
- * Crea un mock request con header specifico
- */
-export function mockReqWithHeader(
-  headerName: string,
-  value: string,
-  ip: string = '127.0.0.1'
-) {
-  return {
-    ip,
-    headers: {
-      [headerName]: value,
-      'x-luke-trace-id': randomUUID(),
-    },
-    log: createSilentLogger(),
-  };
-}
-
-/**
  * Crea un caller tRPC con IP specifico (per test rate-limit)
  */
 export async function createCallerWithIP(
@@ -256,22 +242,6 @@ export async function expectToThrow<T>(
 }
 
 /**
- * Helper per verificare che un'operazione sia autorizzata
- */
-export async function expectAuthorized<T>(
-  operation: () => Promise<T>
-): Promise<T> {
-  try {
-    return await operation();
-  } catch (error: any) {
-    if (error.code === 'UNAUTHORIZED' || error.code === 'FORBIDDEN') {
-      throw new Error(`Operation was not authorized: ${error.message}`);
-    }
-    throw error;
-  }
-}
-
-/**
  * Helper per verificare che un'operazione sia negata
  */
 export async function expectUnauthorized(
@@ -324,33 +294,6 @@ export async function buildTestServer() {
   await fastify.ready();
   return fastify;
 }
-
-/**
- * Configurazione di test per RBAC
- */
-export const RBAC_TEST_CONFIG = {
-  roles: ['admin', 'editor', 'viewer'] as const,
-  adminOnlyMutations: [
-    'users.create',
-    'users.update',
-    'users.delete',
-    'users.hardDelete',
-    'users.revokeUserSessions',
-    'config.set',
-    'config.update',
-    'config.delete',
-    'integrations.storage.saveConfig',
-    'integrations.mail.saveConfig',
-    'integrations.auth.saveLdapConfig',
-  ],
-  adminOrEditorQueries: ['users.list'],
-  protectedMutations: [
-    'me.updateProfile',
-    'me.changePassword',
-    'me.revokeAllSessions',
-  ],
-  publicEndpoints: ['auth.login', 'integrations.test'],
-} as const;
 
 /**
  * Re-export dei moduli sotto `helpers/`, che rendono questo file il barrel unico

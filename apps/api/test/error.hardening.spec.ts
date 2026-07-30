@@ -1,5 +1,5 @@
 import Fastify from 'fastify';
-import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 import { setGlobalErrorHandler } from '../src/lib/error';
 
@@ -27,34 +27,5 @@ describe('API Hardening - error handler e process guards', () => {
     expect(typeof body.traceId === 'string' || body.traceId === undefined).toBe(
       true
     );
-  });
-
-  it('gestisce unhandledRejection con chiusura ordinata', async () => {
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(
-      // @ts-expect-error process.exit return type is `never`; mock returns undefined for test isolation
-      () => undefined
-    );
-
-    // Simula handler: registriamo listener temporaneo
-    const fastify = Fastify({ logger: false });
-    const closeSpy = vi.spyOn(fastify, 'close').mockResolvedValue(undefined);
-
-    // Implementazione minimale del guard
-    const onFatal = async () => {
-      try {
-        await fastify.close();
-      } finally {
-        process.exit(1);
-      }
-    };
-
-    // Non emettere davvero l'evento di processo: invoca direttamente il guard
-    await onFatal();
-
-    expect(closeSpy).toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith(1);
-
-    exitSpy.mockRestore();
-    closeSpy.mockRestore();
   });
 });

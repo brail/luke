@@ -655,15 +655,12 @@ pnpm lint
 
 # Validazione boundary client/server
 npx tsx tools/scripts/validate-client-server-boundaries.ts
-
-# Report import non utilizzati
-npx tsx tools/scripts/detect-unused-imports.ts
 ```
 
 #### Regole Import Applicate
 
 - **Ordinamento**: `builtin` → `external` → `internal` → `parent` → `sibling` → `index` → `type`
-- **Rimozione automatica**: Import non utilizzati e variabili non utilizzate
+- **Rimozione automatica**: `eslint --fix` (`@typescript-eslint/no-unused-vars`)
 - **Boundary client/server**: Validazione import `@luke/core/server` e moduli `node:`
 - **Formattazione**: Prettier per consistenza
 

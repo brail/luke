@@ -15,9 +15,8 @@
  */
 
 import { execFileSync } from 'child_process';
-import { join } from 'path';
 
-const REPO_ROOT = join(__dirname, '..', '..', '..');
+import { REPO_ROOT } from './report';
 
 function checkIgnore(path: string): boolean {
   try {

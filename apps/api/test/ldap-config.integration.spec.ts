@@ -1,9 +1,9 @@
 import { PrismaClient } from '@prisma/client';
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 
 import { getLdapConfig } from '../src/lib/configManager';
 
-import { setupTestDb, teardownTestDb } from './helpers/database';
+import { setupTestDb } from './helpers/database';
 
 describe('LDAP Config Management', () => {
   let prisma: PrismaClient;
@@ -12,20 +12,13 @@ describe('LDAP Config Management', () => {
     prisma = await setupTestDb();
   });
 
-  afterAll(async () => {
-    await teardownTestDb();
+  beforeEach(async () => {
+    // Il prefisso è `auth.`, non `auth.ldap.`: quello stretto lasciava dietro
+    // `auth.strategy`, e il test sul default passava solo se girava per primo.
+    await prisma.appConfig.deleteMany({ where: { key: { startsWith: 'auth.' } } });
   });
 
   it('restituisce configurazione di default quando non esistono configurazioni LDAP', async () => {
-    // Pulisci tutte le configurazioni LDAP
-    await prisma.appConfig.deleteMany({
-      where: {
-        key: {
-          startsWith: 'auth.ldap.',
-        },
-      },
-    });
-
     const config = await getLdapConfig(prisma);
 
     expect(config).toEqual({
@@ -43,41 +36,15 @@ describe('LDAP Config Management', () => {
   });
 
   it('restituisce configurazione parziale quando esistono solo alcune configurazioni', async () => {
-    // Pulisci prima tutte le configurazioni LDAP
-    await prisma.appConfig.deleteMany({
-      where: {
-        key: {
-          startsWith: 'auth.ldap.',
-        },
-      },
+    // `createMany`, non `upsert`: il `beforeEach` ha già ripulito il prefisso,
+    // quindi non c'è nulla da aggiornare.
+    await prisma.appConfig.createMany({
+      data: [
+        { key: 'auth.ldap.enabled', value: 'true', isEncrypted: false },
+        { key: 'auth.ldap.url', value: 'ldap://example.com', isEncrypted: false },
+        { key: 'auth.strategy', value: 'ldap-first', isEncrypted: false },
+      ],
     });
-
-    // Crea solo alcune configurazioni LDAP usando upsert
-    await Promise.all([
-      prisma.appConfig.upsert({
-        where: { key: 'auth.ldap.enabled' },
-        update: { value: 'true', isEncrypted: false },
-        create: { key: 'auth.ldap.enabled', value: 'true', isEncrypted: false },
-      }),
-      prisma.appConfig.upsert({
-        where: { key: 'auth.ldap.url' },
-        update: { value: 'ldap://example.com', isEncrypted: false },
-        create: {
-          key: 'auth.ldap.url',
-          value: 'ldap://example.com',
-          isEncrypted: false,
-        },
-      }),
-      prisma.appConfig.upsert({
-        where: { key: 'auth.strategy' },
-        update: { value: 'ldap-first', isEncrypted: false },
-        create: {
-          key: 'auth.strategy',
-          value: 'ldap-first',
-          isEncrypted: false,
-        },
-      }),
-    ]);
 
     const config = await getLdapConfig(prisma);
 
@@ -91,53 +58,20 @@ describe('LDAP Config Management', () => {
     expect(config.groupSearchBase).toBe(''); // Valore di default
     expect(config.groupSearchFilter).toBe(''); // Valore di default
     expect(config.roleMapping).toEqual({}); // Valore di default
-
-    // Pulisci
-    await prisma.appConfig.deleteMany({
-      where: {
-        key: {
-          startsWith: 'auth.ldap.',
-        },
-      },
-    });
   });
 
   it('gestisce correttamente configurazioni non cifrate', async () => {
-    // Pulisci prima tutte le configurazioni LDAP
-    await prisma.appConfig.deleteMany({
-      where: {
-        key: {
-          startsWith: 'auth.ldap.',
-        },
-      },
-    });
-
-    // Crea configurazioni con valori non cifrati usando upsert
-    await Promise.all([
-      prisma.appConfig.upsert({
-        where: { key: 'auth.ldap.enabled' },
-        update: { value: 'true', isEncrypted: false },
-        create: { key: 'auth.ldap.enabled', value: 'true', isEncrypted: false },
-      }),
-      prisma.appConfig.upsert({
-        where: { key: 'auth.ldap.bindDN' },
-        update: { value: 'cn=admin,dc=example,dc=com', isEncrypted: false },
-        create: {
+    await prisma.appConfig.createMany({
+      data: [
+        { key: 'auth.ldap.enabled', value: 'true', isEncrypted: false },
+        {
           key: 'auth.ldap.bindDN',
           value: 'cn=admin,dc=example,dc=com',
           isEncrypted: false,
         },
-      }),
-      prisma.appConfig.upsert({
-        where: { key: 'auth.ldap.bindPassword' },
-        update: { value: 'secret123', isEncrypted: false },
-        create: {
-          key: 'auth.ldap.bindPassword',
-          value: 'secret123',
-          isEncrypted: false,
-        },
-      }),
-    ]);
+        { key: 'auth.ldap.bindPassword', value: 'secret123', isEncrypted: false },
+      ],
+    });
 
     const config = await getLdapConfig(prisma);
 
@@ -145,14 +79,5 @@ describe('LDAP Config Management', () => {
     expect(config.bindDN).toBe('cn=admin,dc=example,dc=com');
     expect(config.bindPassword).toBe('secret123');
     expect(config.url).toBe(''); // Valore di default
-
-    // Pulisci
-    await prisma.appConfig.deleteMany({
-      where: {
-        key: {
-          startsWith: 'auth.ldap.',
-        },
-      },
-    });
   });
 });

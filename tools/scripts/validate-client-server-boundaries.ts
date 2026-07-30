@@ -5,7 +5,7 @@
  * Verifica che i file client non importino @luke/core/server o moduli node:
  */
 
-import { readFileSync, readdirSync, statSync } from 'fs';
+import { readFileSync, readdirSync, writeFileSync } from 'fs';
 import { join, extname } from 'path';
 
 interface Violation {
@@ -74,31 +74,19 @@ function scanFile(filePath: string): Violation[] {
 }
 
 function scanDirectory(dirPath: string): Violation[] {
-  const violations: Violation[] = [];
-
-  try {
-    const entries = readdirSync(dirPath);
-
-    for (const entry of entries) {
-      const fullPath = join(dirPath, entry);
-      const stat = statSync(fullPath);
-
-      if (stat.isDirectory()) {
-        violations.push(...scanDirectory(fullPath));
-      } else if (
-        stat.isFile() &&
-        (extname(fullPath) === '.ts' || extname(fullPath) === '.tsx')
-      ) {
-        if (isClientFile(fullPath)) {
-          violations.push(...scanFile(fullPath));
-        }
-      }
-    }
-  } catch (error) {
-    console.error(`❌ Errore scandendo directory ${dirPath}:`, error);
-  }
-
-  return violations;
+  // `withFileTypes` porta il tipo con sé dalla stessa lettura di directory: la
+  // versione precedente faceva `readdirSync` + una `statSync` per ogni voce,
+  // ~380 syscall evitabili sotto `apps/web/src`. Stessa forma già usata da
+  // `check-skill-integrity.ts`.
+  return readdirSync(dirPath, { recursive: true, withFileTypes: true })
+    .filter(
+      entry =>
+        entry.isFile() &&
+        (extname(entry.name) === '.ts' || extname(entry.name) === '.tsx')
+    )
+    .map(entry => join(entry.parentPath ?? dirPath, entry.name))
+    .filter(isClientFile)
+    .flatMap(scanFile);
 }
 
 function main() {
@@ -162,7 +150,7 @@ function main() {
     process.cwd(),
     'tools/reports/client-server-boundary-violations.json'
   );
-  require('fs').writeFileSync(reportPath, JSON.stringify(report, null, 2));
+  writeFileSync(reportPath, JSON.stringify(report, null, 2));
   console.log(`\n📄 Report salvato in ${reportPath}`);
 
   process.exit(1);

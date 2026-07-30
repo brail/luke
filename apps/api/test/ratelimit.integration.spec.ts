@@ -3,13 +3,12 @@
  * Verifica rate-limiting end-to-end con chiamate tRPC reali
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 
 import { rateLimitStore } from '../src/lib/ratelimit';
 
 import {
   setupTestDb,
-  teardownTestDb,
   createCallerWithIP,
   createCallerAs,
   expectToThrow,
@@ -19,14 +18,8 @@ import {
 
 describe('Rate-Limit Integration', () => {
   beforeEach(async () => {
+    // Lo store rate-limit lo azzera `test/setup.ts` prima di ogni test.
     await setupTestDb();
-    // Pulisci store rate-limit prima di ogni test
-    rateLimitStore.clear();
-  });
-
-  afterEach(async () => {
-    rateLimitStore.clear();
-    await teardownTestDb();
   });
 
   describe('auth.login rate limiting', () => {
@@ -248,8 +241,6 @@ describe('Rate-Limit Integration', () => {
       process.env.LUKE_RATE_LIMIT_PASSWORDCHANGE_MAX = '2';
       process.env.LUKE_RATE_LIMIT_PASSWORDCHANGE_WINDOW = '5m';
       process.env.LUKE_RATE_LIMIT_PASSWORDCHANGE_KEY_BY = 'ip';
-
-      await createCallerWithIP('192.168.1.100', null);
 
       // Crea un utente per testare cambio password
       const adminCaller = await createCallerAs('admin');

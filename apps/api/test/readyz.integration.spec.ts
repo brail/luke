@@ -9,7 +9,6 @@ import {
   it,
   expect,
   beforeEach,
-  afterEach,
   vi,
   type MockedFunction,
 } from 'vitest';
@@ -22,9 +21,7 @@ import {
 } from '../src/observability/readiness';
 
 
-import { setupTestDb, teardownTestDb } from './helpers';
-import { getTestPrismaClient } from './helpers/database';
-import { createSilentLogger } from './helpers/logger';
+import { setupTestDb } from './helpers';
 
 // Mock della configurazione LDAP
 vi.mock('../src/lib/configManager', () => ({
@@ -47,8 +44,9 @@ vi.mock('@luke/core/server', () => ({
   validateMasterKey: vi.fn(),
 }));
 
-// Mock di process.exit per testare fail-fast
-const mockExit = vi.spyOn(process, 'exit').mockImplementation(() => {
+// `process.exit` resta stubbato: un fail-fast che sfuggisse durante questi test
+// abbatterebbe il worker vitest invece di far fallire il test.
+vi.spyOn(process, 'exit').mockImplementation(() => {
   throw new Error('process.exit called');
 });
 
@@ -67,10 +65,6 @@ describe('Bootstrap Fail-Fast Behavior', () => {
 
     // Reset mocks
     vi.clearAllMocks();
-  });
-
-  afterEach(async () => {
-    await teardownTestDb();
   });
 
   describe('checkBootstrapDependencies', () => {
@@ -164,10 +158,6 @@ describe('/readyz Endpoint Behavior', () => {
     vi.clearAllMocks();
   });
 
-  afterEach(async () => {
-    await teardownTestDb();
-  });
-
   describe('runReadinessChecks', () => {
     it('dovrebbe restituire allOk=true quando tutti i check passano', async () => {
       // Mock tutti i check come OK
@@ -232,94 +222,5 @@ describe('/readyz Endpoint Behavior', () => {
       expect(result.allOk).toBe(false);
       expect(result.checks.database).toContain('failed: Unexpected error');
     });
-  });
-});
-
-describe('Integration: Server Bootstrap Fail-Fast', () => {
-  it('dovrebbe chiamare process.exit(1) quando bootstrap fallisce', async () => {
-    // Mock tutte le dipendenze come fallite
-    (
-      validateMasterKey as MockedFunction<typeof validateMasterKey>
-    ).mockReturnValue(false);
-
-    // Simula il comportamento del server.ts
-    const start = async () => {
-      try {
-        const prisma = getTestPrismaClient();
-        const mockLogger = createSilentLogger();
-
-        await checkBootstrapDependencies(prisma, mockLogger);
-      } catch (error: any) {
-        console.error('Errore avvio server:', error);
-        process.exit(1);
-      }
-    };
-
-    // Dovrebbe chiamare process.exit(1)
-    await expect(start()).rejects.toThrow('process.exit called');
-    expect(mockExit).toHaveBeenCalledWith(1);
-  });
-});
-
-describe('Integration: /readyz HTTP Response', () => {
-  let prisma: PrismaClient;
-
-  beforeEach(async () => {
-    prisma = await setupTestDb();
-    vi.clearAllMocks();
-  });
-
-  afterEach(async () => {
-    await teardownTestDb();
-  });
-
-  it('dovrebbe restituire status 200 quando tutti i check passano', async () => {
-    // Mock tutti i check come OK
-    (
-      validateMasterKey as MockedFunction<typeof validateMasterKey>
-    ).mockReturnValue(true);
-    (deriveSecret as MockedFunction<typeof deriveSecret>).mockReturnValue(
-      'mock-secret'
-    );
-
-    const result = await runReadinessChecks(prisma);
-
-    // Simula la logica dell'endpoint /readyz
-    const statusCode = result.allOk ? 200 : 503;
-    const response = {
-      status: result.allOk ? 'ready' : 'unready',
-      timestamp: result.timestamp,
-      checks: result.checks,
-    };
-
-    expect(statusCode).toBe(200);
-    expect(response.status).toBe('ready');
-    expect(response.checks.database).toBe('ok');
-    expect(response.checks.secrets).toBe('ok');
-  });
-
-  it('dovrebbe restituire status 503 quando almeno un check fallisce', async () => {
-    // Mock secrets fallisce
-    (deriveSecret as MockedFunction<typeof deriveSecret>).mockImplementation(
-      () => {
-        throw new Error('Secret derivation failed');
-      }
-    );
-
-    const result = await runReadinessChecks(prisma);
-
-    // Simula la logica dell'endpoint /readyz
-    const statusCode = result.allOk ? 200 : 503;
-    const response = {
-      status: result.allOk ? 'ready' : 'unready',
-      timestamp: result.timestamp,
-      checks: result.checks,
-    };
-
-    expect(statusCode).toBe(503);
-    expect(response.status).toBe('unready');
-    expect(response.checks.secrets).toContain(
-      'failed: Secret derivation failed'
-    );
   });
 });

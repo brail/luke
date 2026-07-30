@@ -132,7 +132,15 @@ export function isRedactedValue(v: unknown): boolean {
   return typeof v === 'string' && (v.startsWith('[REDACTED') || v === '***REDACTED***');
 }
 
-function sanitizeMetadata(obj: any, depth = 0): any {
+/**
+ * Redazione ricorsiva dei metadati: whitelist prima, blacklist poi.
+ *
+ * Esportata per i test. `auditlog.redaction.spec.ts` ne teneva una copia
+ * incollata, che era già driftata in modo invertito — controllava la blacklist
+ * per prima e aveva 24 chiavi al posto di 79 — quindi l'intera suite di
+ * redazione asseriva un comportamento che la produzione non ha.
+ */
+export function sanitizeMetadata(obj: any, depth = 0): any {
   // Limite ricorsione (DoS protection)
   if (depth > 5) return '[REDACTED:MAX_DEPTH]';
 

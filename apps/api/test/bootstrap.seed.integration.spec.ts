@@ -11,22 +11,18 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 
 import { seedAdminUser, seedAppConfigs, seedContextData } from '../prisma/seed';
 import { calculateForward } from '../src/services/pricing.service';
 
-import { setupTestDb, teardownTestDb } from './helpers/database';
+import { setupTestDb } from './helpers/database';
 
 describe('Bootstrap & Seed', () => {
   let prisma: PrismaClient;
 
   beforeAll(async () => {
     prisma = await setupTestDb();
-  });
-
-  afterAll(async () => {
-    await teardownTestDb();
   });
 
   beforeEach(async () => {

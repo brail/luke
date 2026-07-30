@@ -4,17 +4,17 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 
 import { appRouter } from '../src/routers';
 
 import {
   setupTestDb,
-  teardownTestDb,
   createTestUser,
   TEST_USER_PASSWORD,
   createTestContext,
   createCallerAs,
+  createCallerWithSession,
 } from './helpers';
 
 
@@ -25,15 +25,10 @@ describe('AuditLog Integration', () => {
     testPrisma = await setupTestDb();
   });
 
-  afterEach(async () => {
-    await teardownTestDb();
-  });
-
   describe('USER_CREATE', () => {
     it('dovrebbe loggare entry coerente per creazione utente', async () => {
       const { user: admin, session } = await createTestUser('admin');
-      const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+      const caller = createCallerWithSession(session);
 
       const newUser = await caller.users.create({
         username: 'testuser',
@@ -73,8 +68,7 @@ describe('AuditLog Integration', () => {
       const { user: admin, session } = await createTestUser('admin');
       const { user: targetUser } = await createTestUser('viewer');
 
-      const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+      const caller = createCallerWithSession(session);
 
       await caller.users.update({
         id: targetUser.id,
@@ -105,8 +99,7 @@ describe('AuditLog Integration', () => {
       const { user: admin, session } = await createTestUser('admin');
       const { user: targetUser } = await createTestUser('viewer');
 
-      const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+      const caller = createCallerWithSession(session);
 
       await caller.users.softDelete({ id: targetUser.id });
 
@@ -132,8 +125,7 @@ describe('AuditLog Integration', () => {
       const { user: admin, session } = await createTestUser('admin');
       const { user: targetUser } = await createTestUser('viewer');
 
-      const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+      const caller = createCallerWithSession(session);
 
       await caller.users.hardDelete({ id: targetUser.id });
 
@@ -164,8 +156,7 @@ describe('AuditLog Integration', () => {
       // seconda viola il vincolo unique su identityId.
       const { user: user, session } = await createTestUser('viewer');
 
-      const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+      const caller = createCallerWithSession(session);
 
       await caller.me.changePassword({
         currentPassword: TEST_USER_PASSWORD,
@@ -231,8 +222,7 @@ describe('AuditLog Integration', () => {
   describe('CONFIG_UPSERT', () => {
     it('dovrebbe loggare entry per configurazione con redazione segreti', async () => {
       const { user: admin, session } = await createTestUser('admin');
-      const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+      const caller = createCallerWithSession(session);
 
       await caller.config.set({
         key: 'app.test.secret',
@@ -265,8 +255,7 @@ describe('AuditLog Integration', () => {
   describe('Ordering e timestamp', () => {
     it('dovrebbe ordinare per createdAt DESC', async () => {
       const { session } = await createTestUser('admin');
-      const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+      const caller = createCallerWithSession(session);
 
       // Crea 3 azioni sequenziali
       const user1 = await caller.users.create({
@@ -305,8 +294,7 @@ describe('AuditLog Integration', () => {
   describe('Metadata redaction', () => {
     it('dovrebbe redattare campi sensibili nei metadata', async () => {
       const { session } = await createTestUser('admin');
-      const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+      const caller = createCallerWithSession(session);
 
       // Crea utente con dati sensibili
       await caller.users.create({
@@ -340,8 +328,7 @@ describe('AuditLog Integration', () => {
     it('dovrebbe loggare targetId corretto per hard delete', async () => {
       const { session } = await createTestUser('admin');
       const { user: targetUser } = await createTestUser('viewer');
-      const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+      const caller = createCallerWithSession(session);
 
       await caller.users.hardDelete({ id: targetUser.id });
 
@@ -365,8 +352,7 @@ describe('AuditLog Integration', () => {
   describe('CONFIG_VIEW_VALUE con targetId', () => {
     it('dovrebbe loggare targetId per visualizzazione valore raw', async () => {
       const { session } = await createTestUser('admin');
-      const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+      const caller = createCallerWithSession(session);
 
       // Prima crea una config
       await caller.config.set({
@@ -396,8 +382,7 @@ describe('AuditLog Integration', () => {
   describe('CONFIG_UPSERT per LDAP', () => {
     it('dovrebbe loggare evento aggregato per salvataggio LDAP', async () => {
       const { user: admin, session } = await createTestUser('admin');
-      const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+      const caller = createCallerWithSession(session);
 
       await caller.integrations.auth.saveLdapConfig({
         enabled: true,

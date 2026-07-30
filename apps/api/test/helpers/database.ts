@@ -38,6 +38,15 @@ let sharedClient: PrismaClient | null = null;
 let truncatableTables: string[] | null = null;
 
 /**
+ * Schema già verificato per il file di test corrente.
+ *
+ * Impostato solo dopo che lo schema esiste davvero, mai in anticipo: la risposta
+ * non può cambiare entro un file, e la sonda su `information_schema` è un
+ * round-trip per ogni `setupTestDb`/`createContextForRole`.
+ */
+let schemaEnsured = false;
+
+/**
  * Restituisce l'URL del database di test, o `null` se non configurato.
  *
  * Non usa mai `DATABASE_URL` come fallback: qui si eseguono operazioni distruttive,
@@ -102,6 +111,8 @@ export function getTestPrismaClient(): PrismaClient {
 export async function ensureTestSchema(
   prisma: PrismaClient = getTestPrismaClient()
 ): Promise<void> {
+  if (schemaEnsured) return;
+
   const [{ present }] = await prisma.$queryRaw<{ present: boolean }[]>`
     SELECT EXISTS (
       SELECT 1 FROM information_schema.tables
@@ -109,14 +120,16 @@ export async function ensureTestSchema(
     ) AS present
   `;
 
-  if (present) return;
+  if (!present) {
+    // L'URL arriva da prisma.config.ts, che legge DATABASE_URL dall'env.
+    execSync('pnpm exec prisma migrate deploy', {
+      cwd: API_ROOT,
+      stdio: 'pipe',
+      env: { ...process.env, DATABASE_URL: requireTestDatabaseUrl() },
+    });
+  }
 
-  // L'URL arriva da prisma.config.ts, che legge DATABASE_URL dall'env.
-  execSync('pnpm exec prisma migrate deploy', {
-    cwd: API_ROOT,
-    stdio: 'pipe',
-    env: { ...process.env, DATABASE_URL: requireTestDatabaseUrl() },
-  });
+  schemaEnsured = true;
 }
 
 /**
@@ -179,17 +192,6 @@ export async function setupTestDb(): Promise<PrismaClient> {
   return prisma;
 }
 
-/**
- * No-op storico, mantenuto perché invocato da molte spec in `afterEach`.
- *
- * Disconnettere qui è esattamente il bug che questo file risolve: la chiusura
- * avviene una volta sola per file, in `disconnectTestDb()`, chiamata dal setup
- * globale di vitest.
- */
-export async function teardownTestDb(): Promise<void> {
-  // intenzionalmente vuoto — vedi `disconnectTestDb`
-}
-
 /** Chiude il client condiviso. Chiamata una sola volta a fine file di test. */
 export async function disconnectTestDb(): Promise<void> {
   if (!sharedClient) return;
@@ -197,4 +199,5 @@ export async function disconnectTestDb(): Promise<void> {
   await sharedClient.$disconnect();
   sharedClient = null;
   truncatableTables = null;
+  schemaEnsured = false;
 }

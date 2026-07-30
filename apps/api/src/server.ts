@@ -33,6 +33,7 @@ import { registerCalendarNotificationBuffer } from './lib/calendarNotificationBu
 import { getConfig, validateCriticalConfig } from './lib/configManager';
 import { buildCorsAllowedOrigins } from './lib/cors';
 import { setGlobalErrorHandler } from './lib/error';
+import { buildHelmetConfig } from './lib/helmet';
 import { idempotencyStore } from './lib/idempotency';
 import { registerKimoSyncScheduler } from './lib/kimoSyncScheduler';
 import { registerMaintenanceModeScheduler } from './lib/maintenanceModeScheduler';
@@ -138,33 +139,20 @@ async function registerSecurityPlugins(): Promise<string[]> {
     }),
   });
 
-  // Helmet per security headers con CSP minimale per API JSON-only
-  await fastify.register(helmet, {
-    contentSecurityPolicy: isDevelopment()
-      ? false // Disabilita CSP in dev per evitare problemi
-      : {
-          directives: {
-            defaultSrc: ["'none'"],
-            frameAncestors: ["'none'"],
-            baseUri: ["'none'"],
-          },
-        },
-    hsts: isDevelopment()
-      ? false // Disabilita HSTS in dev
-      : {
-          maxAge: 15552000, // 180 giorni
-          includeSubDomains: true,
-          preload: false, // Non forzare preload
-        },
-    // Header aggiuntivi per sicurezza
-    noSniff: true, // X-Content-Type-Options: nosniff
-    referrerPolicy: { policy: 'no-referrer' }, // Referrer-Policy: no-referrer
-    frameguard: { action: 'deny' }, // X-Frame-Options: DENY
-    dnsPrefetchControl: false, // X-DNS-Prefetch-Control: off
-  });
+  const envName = isDevelopment() ? 'development' : isProduction() ? 'production' : 'test';
+
+  // Helmet per security headers con CSP minimale per API JSON-only.
+  //
+  // La configurazione arriva da `lib/helmet.ts`, che si dichiara centralizzata:
+  // qui ne viveva una copia inline, e le due erano già divergenti. La copia
+  // passava `dnsPrefetchControl: false`, che in helmet **disattiva il
+  // middleware** invece di impostare l'header — quindi il server non mandava
+  // affatto `X-DNS-Prefetch-Control`, mentre `security.headers.spec.ts` lo
+  // asseriva a `off` contro `buildHelmetConfig` e passava. Un test verde su un
+  // header inesistente.
+  await fastify.register(helmet, buildHelmetConfig(envName));
 
   // CORS ibrido con priorità AppConfig → ENV → default
-  const envName = isDevelopment() ? 'development' : isProduction() ? 'production' : 'test';
   const corsConfig = buildCorsAllowedOrigins(envName);
 
   // Log informativo CORS (non stampare lista completa in prod)

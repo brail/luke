@@ -4,80 +4,28 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 
 import { signJWT } from '../src/lib/jwt';
-import { hashPassword } from '../src/lib/password';
 import { invalidateTokenVersionCache } from '../src/lib/trpc';
-import { appRouter } from '../src/routers/index';
 
-import { setupTestDb, teardownTestDb, createTestContext } from './helpers';
+import {
+  createCallerWithSession,
+  createTestUser,
+  setupTestDb,
+  TEST_USER_PASSWORD,
+} from './helpers';
 
 let prisma: PrismaClient;
 
 beforeAll(async () => {
+  // Lo schema lo garantisce `setupTestDb()` applicando le migration Prisma.
+  // Qui c'erano cinque `CREATE TABLE IF NOT EXISTS` scritti a mano, reduci
+  // dell'epoca SQLite (`DATETIME`, booleani `INTEGER`) su un database Postgres:
+  // inerti perché le tabelle esistevano già, e con colonne che non
+  // corrispondevano più al modello (`audit_logs` dichiarava `userId`,
+  // `resource`, `ipAddress`, `timestamp`).
   prisma = await setupTestDb();
-
-  // Crea le tabelle nel database di test usando Prisma direttamente
-  await prisma.$executeRaw`CREATE TABLE IF NOT EXISTS "users" (
-    "id" TEXT PRIMARY KEY NOT NULL,
-    "email" TEXT NOT NULL UNIQUE,
-    "username" TEXT NOT NULL UNIQUE,
-    "firstName" TEXT NOT NULL DEFAULT '',
-    "lastName" TEXT NOT NULL DEFAULT '',
-    "role" TEXT NOT NULL,
-    "isActive" INTEGER NOT NULL DEFAULT 1,
-    "locale" TEXT NOT NULL DEFAULT 'it-IT',
-    "timezone" TEXT NOT NULL DEFAULT 'Europe/Rome',
-    "tokenVersion" INTEGER NOT NULL DEFAULT 0,
-    "lastLoginAt" DATETIME,
-    "loginCount" INTEGER NOT NULL DEFAULT 0,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-  )`;
-
-  await prisma.$executeRaw`CREATE TABLE IF NOT EXISTS "identities" (
-    "id" TEXT PRIMARY KEY NOT NULL,
-    "userId" TEXT NOT NULL,
-    "provider" TEXT NOT NULL,
-    "providerId" TEXT NOT NULL,
-    "metadata" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE("provider", "providerId"),
-    FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE
-  )`;
-
-  await prisma.$executeRaw`CREATE TABLE IF NOT EXISTS "local_credentials" (
-    "id" TEXT PRIMARY KEY NOT NULL,
-    "identityId" TEXT NOT NULL UNIQUE,
-    "passwordHash" TEXT NOT NULL,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY ("identityId") REFERENCES "identities"("id") ON DELETE CASCADE
-  )`;
-
-  await prisma.$executeRaw`CREATE TABLE IF NOT EXISTS "app_configs" (
-    "id" TEXT PRIMARY KEY NOT NULL,
-    "key" TEXT NOT NULL UNIQUE,
-    "value" TEXT NOT NULL,
-    "isEncrypted" INTEGER NOT NULL DEFAULT 0,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-  )`;
-
-  await prisma.$executeRaw`CREATE TABLE IF NOT EXISTS "audit_logs" (
-    "id" TEXT PRIMARY KEY NOT NULL,
-    "userId" TEXT,
-    "targetUserId" TEXT,
-    "action" TEXT NOT NULL,
-    "resource" TEXT NOT NULL,
-    "metadata" TEXT,
-    "traceId" TEXT,
-    "ipAddress" TEXT,
-    "timestamp" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE SET NULL
-  )`;
 
   // Seed config per cache TTL
   await prisma.appConfig.create({
@@ -89,71 +37,22 @@ beforeAll(async () => {
   });
 });
 
-afterAll(async () => {
-  await teardownTestDb();
-});
-
 describe('Session Hardening — tokenVersion', () => {
   it('Login → Call OK → ChangePassword → Call UNAUTHORIZED', async () => {
-    // 1. Crea utente LOCAL con tokenVersion=0
-    const passwordHash = await hashPassword('TestPass123!');
+    // 1. Utente LOCAL con tokenVersion=0, identità e credenziale: `me.changePassword`
+    // senza credenziale locale risponde FORBIDDEN invece di UNAUTHORIZED, cioè
+    // misura il ramo sbagliato. È esattamente ciò che `createTestUser` garantisce.
+    const { user, session } = await createTestUser('viewer');
 
-    const user = await prisma.user.create({
-      data: {
-        email: 'test@hardening.local',
-        username: 'testuser',
-        role: 'viewer',
-        isActive: true,
-        tokenVersion: 0,
-      },
-    });
-
-    const identity = await prisma.identity.create({
-      data: {
-        userId: user.id,
-        provider: 'LOCAL',
-        providerId: 'testuser',
-      },
-    });
-
-    await prisma.localCredential.create({
-      data: {
-        identityId: identity.id,
-        passwordHash,
-      },
-    });
-
-    // 2. Login simulato (genera token JWT con tokenVersion=0)
-    signJWT(
-      {
-        userId: user.id,
-        email: user.email,
-        username: user.username,
-        role: user.role,
-        tokenVersion: 0,
-      },
-      { expiresIn: '8h' }
-    );
-
-    const session = {
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        role: user.role,
-        tokenVersion: 0,
-      },
-    };
-
-    // 3. Call protetta → OK
-    const ctx1 = createTestContext(session);
-    const caller1 = appRouter.createCaller(ctx1);
+    // 2. Call protetta → OK. La sessione parte da tokenVersion=0, che è quello
+    // che `protectedProcedure` confronta con la riga utente.
+    const caller1 = createCallerWithSession(session);
     const profile1 = await caller1.me.get();
     expect(profile1.id).toBe(user.id);
 
-    // 4. ChangePassword → tokenVersion++
+    // 3. ChangePassword → tokenVersion++
     await caller1.me.changePassword({
-      currentPassword: 'TestPass123!',
+      currentPassword: TEST_USER_PASSWORD,
       newPassword: 'NewPass456!Longer',
       confirmNewPassword: 'NewPass456!Longer',
     });
@@ -161,65 +60,24 @@ describe('Session Hardening — tokenVersion', () => {
     // Invalida cache manualmente (simula propagazione)
     invalidateTokenVersionCache(user.id);
 
-    // 5. Verifica DB: tokenVersion=1
+    // 4. Verifica DB: tokenVersion=1
     const updatedUser = await prisma.user.findUnique({
       where: { id: user.id },
       select: { tokenVersion: true },
     });
     expect(updatedUser?.tokenVersion).toBe(1);
 
-    // 6. Call protetta con VECCHIO token (tokenVersion=0) → UNAUTHORIZED
-    const ctx2 = createTestContext(session); // Session ancora con tokenVersion=0
-    const caller2 = appRouter.createCaller(ctx2);
-
-    await expect(caller2.me.get()).rejects.toMatchObject({
+    // 5. Call protetta con VECCHIO token (session ancora a tokenVersion=0)
+    await expect(createCallerWithSession(session).me.get()).rejects.toMatchObject({
       code: 'UNAUTHORIZED',
     });
   });
 
   it('RevokeAllSessions → Vecchio token rifiutato', async () => {
-    const passwordHash = await hashPassword('TestPass789!');
-
-    const user = await prisma.user.create({
-      data: {
-        email: 'test2@hardening.local',
-        username: 'testuser2',
-        role: 'viewer',
-        isActive: true,
-        tokenVersion: 0,
-      },
-    });
-
-    const identity = await prisma.identity.create({
-      data: {
-        userId: user.id,
-        provider: 'LOCAL',
-        providerId: 'testuser2',
-      },
-    });
-
-    await prisma.localCredential.create({
-      data: {
-        identityId: identity.id,
-        passwordHash,
-      },
-    });
-
-    const session = {
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        role: user.role,
-        tokenVersion: 0,
-      },
-    };
-
-    const ctx1 = createTestContext(session);
-    const caller1 = appRouter.createCaller(ctx1);
+    const { user, session } = await createTestUser('viewer');
 
     // Revoca tutte le sessioni
-    await caller1.me.revokeAllSessions();
+    await createCallerWithSession(session).me.revokeAllSessions();
 
     invalidateTokenVersionCache(user.id);
 
@@ -231,55 +89,27 @@ describe('Session Hardening — tokenVersion', () => {
     expect(updatedUser?.tokenVersion).toBe(1);
 
     // Vecchio token rifiutato
-    const ctx2 = createTestContext(session);
-    const caller2 = appRouter.createCaller(ctx2);
-
-    await expect(caller2.me.get()).rejects.toMatchObject({
+    await expect(createCallerWithSession(session).me.get()).rejects.toMatchObject({
       code: 'UNAUTHORIZED',
     });
   });
 
   it('JWT senza tokenVersion → UNAUTHORIZED', async () => {
-    const user = await prisma.user.create({
-      data: {
-        email: 'test3@hardening.local',
-        username: 'testuser3',
-        role: 'viewer',
-        isActive: true,
-        tokenVersion: 0,
-      },
-    });
+    const { session } = await createTestUser('viewer');
 
     // Session SENZA tokenVersion (simula JWT vecchio)
-    const session = {
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        role: user.role,
-        tokenVersion: undefined, // MANCA tokenVersion
-      },
+    const staleSession = {
+      user: { ...session.user, tokenVersion: undefined },
     };
 
-    const ctx = createTestContext(session);
-    const caller = appRouter.createCaller(ctx);
-
     // Deve rifiutare
-    await expect(caller.me.get()).rejects.toMatchObject({
-      code: 'UNAUTHORIZED',
-    });
+    await expect(
+      createCallerWithSession(staleSession).me.get()
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
   });
 
   it('Token scaduto (exp manomesso) → UNAUTHORIZED', async () => {
-    const user = await prisma.user.create({
-      data: {
-        email: 'test4@hardening.local',
-        username: 'testuser4',
-        role: 'viewer',
-        isActive: true,
-        tokenVersion: 0,
-      },
-    });
+    const { user } = await createTestUser('viewer');
 
     // Genera token con exp passato (-1h)
     const expiredToken = signJWT(
@@ -300,32 +130,18 @@ describe('Session Hardening — tokenVersion', () => {
   });
 
   it('Utente isActive=false → UNAUTHORIZED', async () => {
-    const user = await prisma.user.create({
-      data: {
-        email: 'test5@hardening.local',
-        username: 'testuser5',
-        role: 'viewer',
-        isActive: false, // Utente disabilitato
-        tokenVersion: 0,
-      },
+    const { user, session } = await createTestUser('viewer');
+
+    // La sessione resta valida: è la riga utente a diventare inattiva, ed è
+    // quella che `protectedProcedure` deve rileggere.
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { isActive: false },
     });
-
-    const session = {
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        role: user.role,
-        tokenVersion: 0,
-      },
-    };
-
-    const ctx = createTestContext(session);
-    const caller = appRouter.createCaller(ctx);
 
     // Deve rifiutare utente disabilitato
-    await expect(caller.me.get()).rejects.toMatchObject({
-      code: 'UNAUTHORIZED',
-    });
+    await expect(
+      createCallerWithSession(session).me.get()
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
   });
 });

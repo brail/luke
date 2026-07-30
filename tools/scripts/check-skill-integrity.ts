@@ -28,8 +28,8 @@ import { existsSync, readdirSync, readFileSync } from 'fs';
 import { dirname, join, relative } from 'path';
 
 import { isGitIgnored } from './lib/gitPaths';
+import { formatProblems, REPO_ROOT, type Problem } from './lib/report';
 
-const REPO_ROOT = join(__dirname, '..', '..');
 const SKILLS_DIR = join(REPO_ROOT, '.claude', 'skills');
 const IGNORE_MARKER = '<!-- skill-check-ignore -->';
 
@@ -60,12 +60,6 @@ const FILE_EXTENSIONS = [
   '.prisma',
   '.sh',
 ];
-
-interface Problem {
-  file: string;
-  line: number;
-  message: string;
-}
 
 /** Tutti i file markdown delle skill. */
 function skillFiles(): string[] {
@@ -107,12 +101,21 @@ function isSymbolRef(token: string): boolean {
  */
 const PATH_ROOTS = [
   '',
-  'apps/api',
-  'apps/web',
+  // Le radici dei package non si elencano a mano: la lista precedente ometteva
+  // `packages/eslint-plugin-luke`, quindi ogni path citato rispetto a quel
+  // package veniva riportato come rotto — un falso positivo in un controllo che
+  // blocca la CI, cioè la pressione esatta che fa proliferare i marker di
+  // ignore. Come per `trackedMarkdown()`, il mondo lo dichiara git.
+  ...execFileSync('git', ['ls-files', '*/package.json'], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+  })
+    .split('\n')
+    .filter(Boolean)
+    .map(p => dirname(p)),
+  // Non è la radice di un package, ma è un frame che le skill usano davvero
+  // (`lib/debug.ts` è relativo a qui).
   'apps/web/src',
-  'packages/core',
-  'packages/nav',
-  'packages/calendar',
 ];
 
 function pathResolves(token: string, skillDir: string): boolean {
@@ -134,18 +137,48 @@ function pathResolves(token: string, skillDir: string): boolean {
  * l'affermazione della skill su di essa è vera). Ciò che va intercettato è il
  * riferimento a qualcosa che non esiste più.
  */
+let declaredSymbols: Set<string> | null = null;
+
 function symbolExists(name: string): boolean {
-  const pattern = `(function|const|class|type|interface) ${name}\\b`;
-  try {
-    execFileSync(
+  // Una passata sola sul corpus, non una per simbolo. La versione precedente
+  // lanciava un `grep -q` ricorsivo su apps/ e packages/ per ogni token citato,
+  // duplicati inclusi: ~5s degli ~5,7s totali dello script, e il costo cresceva
+  // linearmente con le skill. Estrarre tutte le dichiarazioni in un colpo costa
+  // ~70ms e riduce i controlli successivi a lookup su Set.
+  if (!declaredSymbols) {
+    const output = execFileSync(
       'grep',
-      ['-rEq', '--include=*.ts', '--include=*.tsx', pattern, 'apps', 'packages'],
-      { cwd: REPO_ROOT, stdio: 'ignore' }
+      [
+        '-rhoE',
+        '--include=*.ts',
+        '--include=*.tsx',
+        '(function|const|class|type|interface) [a-zA-Z_$][a-zA-Z0-9_$]*',
+        'apps',
+        'packages',
+      ],
+      { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
     );
-    return true;
-  } catch {
-    return false;
+
+    declaredSymbols = new Set(
+      output
+        .split('\n')
+        .filter(Boolean)
+        .map(match => match.slice(match.indexOf(' ') + 1))
+    );
+
+    // Stessa guardia zero-discovery del resto del file: un corpus vuoto vuol
+    // dire che il grep non matcha più, non che i simboli non esistono. Senza
+    // questa riga ogni riferimento risulterebbe rotto in blocco.
+    if (declaredSymbols.size === 0) {
+      throw new Error(
+        '[skill-integrity] nessuna dichiarazione estratta da apps/ e packages/. ' +
+          'Il pattern non matcha più nulla: proseguire segnalerebbe come rotto ' +
+          'ogni simbolo citato dalle skill.'
+      );
+    }
   }
+
+  return declaredSymbols.has(name);
 }
 
 function main(): void {
@@ -232,11 +265,9 @@ function main(): void {
   }
 
   if (problems.length > 0) {
-    const detail = problems
-      .map(p => `  ${p.file}:${p.line} — ${p.message}`)
-      .join('\n');
     throw new Error(
-      `[skill-integrity] ${problems.length} riferimenti rotti nelle skill:\n${detail}\n\n` +
+      `[skill-integrity] ${problems.length} riferimenti rotti nelle skill:\n` +
+        `${formatProblems(problems)}\n\n` +
         `Ripara la skill, oppure marca la riga con ${IGNORE_MARKER} se il ` +
         'riferimento a qualcosa di rimosso è deliberato.'
     );

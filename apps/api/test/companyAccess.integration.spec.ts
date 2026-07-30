@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 
 import { getUserAllowedBrandIds } from '../src/services/context.service';
 
@@ -58,9 +58,6 @@ beforeAll(async () => {
     data: { slug: `access_fn_${randomUUID().substring(0, 6)}`, name: 'Access Test Fn', order: 99, isActive: true },
   });
   functionId = fn.id;
-});
-
-afterAll(async () => {
 });
 
 /**

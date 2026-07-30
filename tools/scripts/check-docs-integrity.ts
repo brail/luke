@@ -27,8 +27,7 @@ import { existsSync, readFileSync } from 'fs';
 import { dirname, join, relative, resolve } from 'path';
 
 import { isGitIgnored } from './lib/gitPaths';
-
-const REPO_ROOT = join(__dirname, '..', '..');
+import { formatProblems, REPO_ROOT, type Problem } from './lib/report';
 
 /**
  * I markdown **tracciati da git**.
@@ -64,12 +63,6 @@ function trackedMarkdown(): string[] {
  * nome serve ad appaiare i blocchi, non solo a contarli.
  */
 const MARKER_RE = /<!--\s*luke-docs:(start|end):([\w-]+)\s*-->/g;
-
-interface Problem {
-  file: string;
-  line: number;
-  message: string;
-}
 
 /** Marker appaiati, non annidati, non orfani. */
 function checkMarkers(
@@ -204,11 +197,8 @@ function main(): void {
   }
 
   if (problems.length > 0) {
-    const detail = problems
-      .map(p => `  ${p.file}:${p.line} — ${p.message}`)
-      .join('\n');
     throw new Error(
-      `[docs-integrity] ${problems.length} problemi:\n${detail}\n\n` +
+      `[docs-integrity] ${problems.length} problemi:\n${formatProblems(problems)}\n\n` +
         'Ripara il link o cancellalo. Non aggiungere eccezioni.'
     );
   }

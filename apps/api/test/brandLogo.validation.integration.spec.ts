@@ -1,14 +1,22 @@
 /**
  * Test di integrazione per Brand Logo Upload
  * Verifica validazioni file, magic bytes e cleanup
+ *
+ * I buffer arrivano da `helpers/storageTestHelper`, come nelle altre due spec
+ * sul logo: qui erano scritti a mano un byte per riga, e la stessa firma PNG da
+ * 32 byte compariva due volte nello stesso file.
  */
 
-import { Readable } from 'stream';
-
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 
 import { uploadBrandLogo } from '../src/services/brandLogo.service';
 
+import {
+  createInvalidImageBuffer,
+  createTestFile,
+  createValidJpegBuffer,
+  createValidPngBuffer,
+} from './helpers/storageTestHelper';
 import { createContextForRole } from './helpers/testContext';
 
 describe('Brand Logo Upload', () => {
@@ -16,6 +24,8 @@ describe('Brand Logo Upload', () => {
   let testBrand: any;
 
   beforeEach(async () => {
+    // `createContextForRole` tronca prima di inserire l'utente di sessione:
+    // niente cleanup manuale a valle, che per giunta ometteva `fileObject`.
     testContext = await createContextForRole();
 
     // Crea un brand di test
@@ -28,28 +38,20 @@ describe('Brand Logo Upload', () => {
     });
   });
 
-  afterEach(async () => {
-    // Cleanup: elimina tutti i brand e file objects
-    await testContext.prisma.fileObject.deleteMany();
-    await testContext.prisma.brand.deleteMany();
-    await testContext.prisma.user.deleteMany();
-  });
+  /** Carica `content` come logo del brand di test. */
+  function upload(filename: string, mimetype: string, content: Buffer) {
+    return uploadBrandLogo(testContext, {
+      brandId: testBrand.id,
+      file: createTestFile(filename, mimetype, content.length, content),
+    });
+  }
 
   describe('file validation', () => {
     it('should reject non-image MIME types', async () => {
-      const pdfBuffer = Buffer.from('%PDF-1.4 fake pdf content');
-      const pdfStream = Readable.from(pdfBuffer);
+      const pdf = Buffer.from('%PDF-1.4 fake pdf content');
 
       await expect(
-        uploadBrandLogo(testContext, {
-          brandId: testBrand.id,
-          file: {
-            filename: 'document.pdf',
-            mimetype: 'application/pdf',
-            stream: pdfStream,
-            size: pdfBuffer.length,
-          },
-        })
+        upload('document.pdf', 'application/pdf', pdf)
       ).rejects.toMatchObject({
         code: 'BAD_REQUEST',
         message: expect.stringContaining('Tipo file non supportato'),
@@ -57,20 +59,10 @@ describe('Brand Logo Upload', () => {
     });
 
     it('should reject files > 2MB', async () => {
-      // Crea un buffer di 3MB
-      const largeBuffer = Buffer.alloc(3 * 1024 * 1024, 'x');
-      const largeStream = Readable.from(largeBuffer);
+      const large = Buffer.alloc(3 * 1024 * 1024, 'x');
 
       await expect(
-        uploadBrandLogo(testContext, {
-          brandId: testBrand.id,
-          file: {
-            filename: 'large.jpg',
-            mimetype: 'image/jpeg',
-            stream: largeStream,
-            size: largeBuffer.length,
-          },
-        })
+        upload('large.jpg', 'image/jpeg', large)
       ).rejects.toMatchObject({
         code: 'BAD_REQUEST',
         message: expect.stringContaining('File troppo grande'),
@@ -78,19 +70,8 @@ describe('Brand Logo Upload', () => {
     });
 
     it('should reject files with invalid extensions', async () => {
-      const jpegBuffer = Buffer.from([0xff, 0xd8, 0xff, 0xe0]); // Valid JPEG magic bytes
-      const jpegStream = Readable.from(jpegBuffer);
-
       await expect(
-        uploadBrandLogo(testContext, {
-          brandId: testBrand.id,
-          file: {
-            filename: 'image.txt', // Estensione non valida
-            mimetype: 'image/jpeg',
-            stream: jpegStream,
-            size: jpegBuffer.length,
-          },
-        })
+        upload('image.txt', 'image/jpeg', createValidJpegBuffer())
       ).rejects.toMatchObject({
         code: 'BAD_REQUEST',
         message: expect.stringContaining('Estensione file non valida'),
@@ -100,20 +81,18 @@ describe('Brand Logo Upload', () => {
 
   describe('magic bytes validation', () => {
     it('should reject files with wrong magic bytes', async () => {
-      // Buffer con magic bytes PNG ma MIME type JPEG
-      const fakeBuffer = Buffer.from([0x89, 0x50, 0x4e, 0x47]); // PNG magic bytes
-      const fakeStream = Readable.from(fakeBuffer);
-
+      // Magic bytes PNG dichiarati come JPEG
       await expect(
-        uploadBrandLogo(testContext, {
-          brandId: testBrand.id,
-          file: {
-            filename: 'fake.jpg',
-            mimetype: 'image/jpeg',
-            stream: fakeStream,
-            size: fakeBuffer.length,
-          },
-        })
+        upload('fake.jpg', 'image/jpeg', createValidPngBuffer())
+      ).rejects.toMatchObject({
+        code: 'BAD_REQUEST',
+        message: 'File corrotto o tipo non valido',
+      });
+    });
+
+    it('should reject content that is not an image at all', async () => {
+      await expect(
+        upload('fake.png', 'image/png', createInvalidImageBuffer())
       ).rejects.toMatchObject({
         code: 'BAD_REQUEST',
         message: 'File corrotto o tipo non valido',
@@ -121,195 +100,50 @@ describe('Brand Logo Upload', () => {
     });
 
     it('should accept valid PNG files', async () => {
-      // Buffer PNG valido
-      const pngBuffer = Buffer.from([
-        0x89,
-        0x50,
-        0x4e,
-        0x47,
-        0x0d,
-        0x0a,
-        0x1a,
-        0x0a, // PNG signature
-        0x00,
-        0x00,
-        0x00,
-        0x0d, // IHDR chunk length
-        0x49,
-        0x48,
-        0x44,
-        0x52, // IHDR
-        0x00,
-        0x00,
-        0x00,
-        0x01, // width
-        0x00,
-        0x00,
-        0x00,
-        0x01, // height
-        0x08,
-        0x02,
-        0x00,
-        0x00,
-        0x00, // bit depth, color type, etc.
-        0x90,
-        0x77,
-        0x53,
-        0xde, // CRC
-      ]);
-      const pngStream = Readable.from(pngBuffer);
+      const result = await upload('test.png', 'image/png', createValidPngBuffer());
 
-      const result = await uploadBrandLogo(testContext, {
-        brandId: testBrand.id,
-        file: {
-          filename: 'test.png',
-          mimetype: 'image/png',
-          stream: pngStream,
-          size: pngBuffer.length,
-        },
-      });
-
-      expect(result).toHaveProperty('publicUrl');
       expect(result.publicUrl).toMatch(/^\/api\/uploads\/brand-logos\//);
     });
 
     it('should accept valid JPEG files', async () => {
-      // Buffer JPEG valido (minimo)
-      const jpegBuffer = Buffer.from([
-        0xff,
-        0xd8,
-        0xff,
-        0xe0, // JPEG signature
-        0x00,
-        0x10, // length
-        0x4a,
-        0x46,
-        0x49,
-        0x46,
-        0x00,
-        0x01, // JFIF
-        0x01,
-        0x01,
-        0x00,
-        0x00,
-        0x01,
-        0x00,
-        0x01,
-        0x00,
-        0x00,
-        0xff,
-        0xd9, // EOI marker
-      ]);
-      const jpegStream = Readable.from(jpegBuffer);
+      const result = await upload(
+        'test.jpg',
+        'image/jpeg',
+        createValidJpegBuffer()
+      );
 
-      const result = await uploadBrandLogo(testContext, {
-        brandId: testBrand.id,
-        file: {
-          filename: 'test.jpg',
-          mimetype: 'image/jpeg',
-          stream: jpegStream,
-          size: jpegBuffer.length,
-        },
-      });
-
-      expect(result).toHaveProperty('publicUrl');
       expect(result.publicUrl).toMatch(/^\/api\/uploads\/brand-logos\//);
     });
   });
 
   describe('cleanup functionality', () => {
     it('should cleanup old logo on new upload', async () => {
-      // Prima upload
-      const firstBuffer = Buffer.from([0x89, 0x50, 0x4e, 0x47]); // PNG magic bytes
-      const firstStream = Readable.from(firstBuffer);
-
-      const firstResult = await uploadBrandLogo(testContext, {
-        brandId: testBrand.id,
-        file: {
-          filename: 'first.png',
-          mimetype: 'image/png',
-          stream: firstStream,
-          size: firstBuffer.length,
-        },
-      });
+      const first = await upload('first.png', 'image/png', createValidPngBuffer());
 
       // Verifica che il primo logo sia stato salvato
       const brandAfterFirst = await testContext.prisma.brand.findUnique({
         where: { id: testBrand.id },
       });
-      expect(brandAfterFirst?.logoKey).toBe(firstResult.key);
+      expect(brandAfterFirst?.logoKey).toBe(first.key);
 
-      // Secondo upload
-      const secondBuffer = Buffer.from([0xff, 0xd8, 0xff, 0xe0]); // JPEG magic bytes
-      const secondStream = Readable.from(secondBuffer);
-
-      const secondResult = await uploadBrandLogo(testContext, {
-        brandId: testBrand.id,
-        file: {
-          filename: 'second.jpg',
-          mimetype: 'image/jpeg',
-          stream: secondStream,
-          size: secondBuffer.length,
-        },
-      });
+      const second = await upload(
+        'second.jpg',
+        'image/jpeg',
+        createValidJpegBuffer()
+      );
 
       // Verifica che il secondo logo abbia sostituito il primo
       const brandAfterSecond = await testContext.prisma.brand.findUnique({
         where: { id: testBrand.id },
       });
-      expect(brandAfterSecond?.logoKey).toBe(secondResult.key);
-      expect(brandAfterSecond?.logoKey).not.toBe(firstResult.key);
+      expect(brandAfterSecond?.logoKey).toBe(second.key);
+      expect(brandAfterSecond?.logoKey).not.toBe(first.key);
     });
   });
 
   describe('transaction atomicity', () => {
     it('should update brand logoKey atomically', async () => {
-      const pngBuffer = Buffer.from([
-        0x89,
-        0x50,
-        0x4e,
-        0x47,
-        0x0d,
-        0x0a,
-        0x1a,
-        0x0a, // PNG signature
-        0x00,
-        0x00,
-        0x00,
-        0x0d, // IHDR chunk length
-        0x49,
-        0x48,
-        0x44,
-        0x52, // IHDR
-        0x00,
-        0x00,
-        0x00,
-        0x01, // width
-        0x00,
-        0x00,
-        0x00,
-        0x01, // height
-        0x08,
-        0x02,
-        0x00,
-        0x00,
-        0x00, // bit depth, color type, etc.
-        0x90,
-        0x77,
-        0x53,
-        0xde, // CRC
-      ]);
-      const pngStream = Readable.from(pngBuffer);
-
-      const result = await uploadBrandLogo(testContext, {
-        brandId: testBrand.id,
-        file: {
-          filename: 'test.png',
-          mimetype: 'image/png',
-          stream: pngStream,
-          size: pngBuffer.length,
-        },
-      });
+      const result = await upload('test.png', 'image/png', createValidPngBuffer());
 
       // Verifica che il brand sia stato aggiornato con la nuova logoKey
       const updatedBrand = await testContext.prisma.brand.findUnique({

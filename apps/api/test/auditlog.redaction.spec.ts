@@ -1,80 +1,17 @@
 /**
  * Test Unitari per Redazione Metadata
  * Verifica che sanitizeMetadata() redatti correttamente i dati sensibili
+ *
+ * Esercita la funzione **di produzione**, importata da `src/lib/auditLog`. Qui
+ * ne viveva una copia incollata "per test isolati": era driftata in modo
+ * invertito (blacklist prima della whitelist, 24 chiavi sicure invece di 79),
+ * quindi ogni test verde certificava il comportamento della copia e nulla della
+ * redazione che gira davvero — su una superficie di compliance.
  */
 
 import { describe, it, expect } from 'vitest';
 
-// Importa la funzione di redazione (dobbiamo esportarla per i test)
-// Per ora testiamo la logica direttamente
-
-/**
- * Chiavi sicure per metadata (whitelist approach)
- */
-const SAFE_KEYS = new Set([
-  'username',
-  'email',
-  'role',
-  'action',
-  'timestamp',
-  'provider',
-  'success',
-  'reason',
-  'key',
-  'isEncrypted',
-  'locale',
-  'timezone',
-  'firstName',
-  'lastName',
-  'isActive',
-  'strategy',
-  'userAgent',
-  'createdAt',
-  'updatedAt',
-  'lastLoginAt',
-  'loginCount',
-  'id',
-  'count',
-]);
-
-/**
- * Redazione ricorsiva dei metadati con whitelist + blacklist
- * Copia della funzione da auditLog.ts per test isolati
- */
-function sanitizeMetadata(obj: any, depth = 0): any {
-  // Limite ricorsione (DoS protection)
-  if (depth > 5) return '[REDACTED:MAX_DEPTH]';
-
-  if (Array.isArray(obj)) {
-    return obj.map(item => sanitizeMetadata(item, depth + 1));
-  }
-
-  if (obj && typeof obj === 'object') {
-    const sanitized: Record<string, any> = {};
-    for (const [key, value] of Object.entries(obj)) {
-      // Blacklist esplicita per pattern sensibili
-      if (/password|token|secret|key|auth|credential|bind/i.test(key)) {
-        sanitized[key] = '***REDACTED***';
-      } else if (SAFE_KEYS.has(key)) {
-        sanitized[key] = sanitizeMetadata(value, depth + 1);
-      } else {
-        // Default: redatta chiavi non whitelisted
-        if (typeof value === 'string') {
-          sanitized[key] = '[REDACTED]';
-        } else if (Array.isArray(value)) {
-          sanitized[key] = sanitizeMetadata(value, depth + 1);
-        } else if (value && typeof value === 'object') {
-          sanitized[key] = sanitizeMetadata(value, depth + 1);
-        } else {
-          sanitized[key] = '[REDACTED]';
-        }
-      }
-    }
-    return sanitized;
-  }
-
-  return obj; // Primitives safe
-}
+import { sanitizeMetadata } from '../src/lib/auditLog';
 
 describe('sanitizeMetadata', () => {
   describe('Campi sensibili (blacklist)', () => {
