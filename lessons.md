@@ -232,3 +232,20 @@ Trovato dal gate di copertura procedure, che misura le invocazioni su
 **Regola**: nei test tRPC, costruire il caller da `appRouter` e scendere al
 namespace (`appRouter.createCaller(ctx).brand`), mai dal sotto-router importato.
 La forma dei call site resta identica.
+
+### Un checker che legge stato locale passa in locale e fallisce in CI
+
+`check-skill-integrity.ts` verificava l'esistenza dei path citati dalle skill.
+`luke-docs` cita `.planning/ROADMAP.md`, che `.gitignore` esclude: esiste sul
+disco di chi lavora, non in un checkout pulito. Verde in locale, rosso al primo
+push — dentro lo script scritto proprio per intercettare controlli che leggono
+il mondo sbagliato.
+
+**Regola**: uno script di verifica deve pronunciarsi solo su ciò che il repo
+contiene. Se un path è escluso da git, la sua esistenza non è un fatto
+verificabile: `git check-ignore -q -- <path>` (exit 0 = ignorato) e si salta.
+Stessa scelta in `check-docs-integrity.ts`, che prende i file da `git ls-files`
+invece di camminare il filesystem.
+
+Corollario: prima di dichiarare verde un controllo nuovo, chiedersi *quali file
+sto leggendo che un clone pulito non avrebbe*.

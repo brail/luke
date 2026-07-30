@@ -113,9 +113,35 @@ const PATH_ROOTS = [
   'packages/calendar',
 ];
 
+/**
+ * Il path è escluso da git, quindi la sua esistenza non è un fatto del repo.
+ *
+ * `.planning/ROADMAP.md`, citato da `luke-docs`, è un input legittimo ma
+ * `.gitignore` lo esclude: esiste sul disco di chi lavora, non in un checkout
+ * pulito. Verificarlo faceva passare il controllo in locale e fallire in CI —
+ * cioè leggeva stato locale, che è la classe di difetto che questo script
+ * esiste per trovare. Stessa regola già applicata in
+ * `check-docs-integrity.ts`, che prende i file da `git ls-files`.
+ */
+function isGitIgnored(token: string): boolean {
+  try {
+    execFileSync('git', ['check-ignore', '-q', '--', token], {
+      cwd: REPO_ROOT,
+      stdio: 'ignore',
+    });
+    return true;
+  } catch {
+    return false; // exit 1 = non ignorato
+  }
+}
+
 function pathResolves(token: string, skillDir: string): boolean {
   if (existsSync(join(skillDir, token))) return true;
-  return PATH_ROOTS.some(root => existsSync(join(REPO_ROOT, root, token)));
+  if (PATH_ROOTS.some(root => existsSync(join(REPO_ROOT, root, token)))) {
+    return true;
+  }
+  // Non trovato: se git lo esclude, il repo non può pronunciarsi.
+  return isGitIgnored(token);
 }
 
 /**
