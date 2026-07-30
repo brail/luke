@@ -1,12 +1,18 @@
 /**
  * Test del Brand Router.
  *
- * Esercita il router **reale** (`brandRouter`). La versione precedente ne
- * reimplementava una copia locale (`testBrandRouter`) per aggirare il rate limit:
- * una copia però non è il codice di produzione, e infatti era rimasta indietro su
- * `logoUrl`→`logoKey`, sulle precondizioni di `hardDelete` e su
- * `UserPreference.lastBrandId` (oggi dentro il blob JSON `data`). Un test che
- * verifica una copia non dice nulla su ciò che gira davvero.
+ * Esercita il percorso **reale**: `appRouter.createCaller(ctx).brand`. La
+ * versione precedente ne reimplementava una copia locale (`testBrandRouter`) per
+ * aggirare il rate limit: una copia però non è il codice di produzione, e infatti
+ * era rimasta indietro su `logoUrl`→`logoKey`, sulle precondizioni di
+ * `hardDelete` e su `UserPreference.lastBrandId` (oggi dentro il blob JSON
+ * `data`). Un test che verifica una copia non dice nulla su ciò che gira davvero.
+ *
+ * Lo stesso argomento vale un gradino più su, ed è il motivo per cui qui non si
+ * usa `brandRouter.createCaller`: `router({ brand: brandRouter })` non conserva
+ * il router originale, ne ricostruisce un aggregato. Chiamare il sotto-router
+ * salta quindi la composizione che la produzione attraversa davvero — ed è
+ * invisibile al gate di copertura, che misura le invocazioni su `appRouter`.
  *
  * Il rate limit si neutralizza azzerando lo store fra i test, non duplicando
  * il router.
@@ -16,7 +22,7 @@ import { TRPCError } from '@trpc/server';
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { rateLimitStore } from '../src/lib/ratelimit';
-import { brandRouter } from '../src/routers/brand';
+import { appRouter } from '../src/routers/index';
 
 import { resetTestData } from './helpers/database';
 import { createTestContext } from './helpers/testContext';
@@ -61,7 +67,7 @@ describe('Brand Router', () => {
         data: { brandId: testBrand.id, seasonId: season.id },
       });
 
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       await expect(
         caller.hardDelete({ id: testBrand.id })
@@ -81,7 +87,7 @@ describe('Brand Router', () => {
         data: { navBrandId: navBrand.navCode },
       });
 
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       await expect(
         caller.hardDelete({ id: testBrand.id })
@@ -90,7 +96,7 @@ describe('Brand Router', () => {
 
     it('should allow hardDelete if brand is not referenced', async () => {
       // Test: hardDelete dovrebbe riuscire
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       const result = await caller.hardDelete({ id: testBrand.id });
 
@@ -105,7 +111,7 @@ describe('Brand Router', () => {
     });
 
     it('should throw NOT_FOUND for non-existent brand', async () => {
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
       const nonExistentId = '00000000-0000-0000-0000-000000000000';
 
       await expect(
@@ -119,7 +125,7 @@ describe('Brand Router', () => {
 
   describe('create', () => {
     it('should create brand with valid data and normalize code', async () => {
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       const brandData = {
         code: 'new-brand', // Codice con minuscole e trattini
@@ -138,7 +144,7 @@ describe('Brand Router', () => {
     });
 
     it('should reject duplicate brand code', async () => {
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       const brandData = {
         code: 'TEST_BRAND', // Stesso codice del brand esistente
@@ -153,7 +159,7 @@ describe('Brand Router', () => {
     });
 
     it('should normalize code and reject if normalized code conflicts', async () => {
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       const brandData = {
         code: 'test_brand', // Underscore che viene mantenuto dalla normalizzazione
@@ -168,7 +174,7 @@ describe('Brand Router', () => {
     });
 
     it('should validate brand code format', async () => {
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       const invalidBrandData = {
         code: 'invalid-code!', // Caratteri non validi
@@ -182,7 +188,7 @@ describe('Brand Router', () => {
 
   describe('update', () => {
     it('should update brand with valid data', async () => {
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       const updateData = {
         id: testBrand.id,
@@ -203,7 +209,7 @@ describe('Brand Router', () => {
     });
 
     it('should normalize code during update', async () => {
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       const updateData = {
         id: testBrand.id,
@@ -233,7 +239,7 @@ describe('Brand Router', () => {
       // Verifica che il secondo brand sia stato creato correttamente
       expect(secondBrand.code).toBe('SECOND_BRAND');
 
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       const updateData = {
         id: testBrand.id,
@@ -249,7 +255,7 @@ describe('Brand Router', () => {
     });
 
     it('should throw NOT_FOUND for non-existent brand', async () => {
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
       const nonExistentId = '00000000-0000-0000-0000-000000000000';
 
       const updateData = {
@@ -268,7 +274,7 @@ describe('Brand Router', () => {
 
   describe('list', () => {
     it('should list all brands with cursor pagination', async () => {
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       const result = await caller.list();
 
@@ -299,7 +305,7 @@ describe('Brand Router', () => {
         brands.push(brand);
       }
 
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       // Prima pagina
       const firstPage = await caller.list({ limit: 2 });
@@ -328,7 +334,7 @@ describe('Brand Router', () => {
         },
       });
 
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       const result = await caller.list({ search: 'NIKE' });
 
@@ -346,7 +352,7 @@ describe('Brand Router', () => {
         },
       });
 
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       const activeBrands = await caller.list({ isActive: true });
       const inactiveBrands = await caller.list({ isActive: false });
@@ -356,7 +362,7 @@ describe('Brand Router', () => {
     });
 
     it('should handle empty search results', async () => {
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       const result = await caller.list({ search: 'NONEXISTENT' });
 
@@ -366,7 +372,7 @@ describe('Brand Router', () => {
     });
 
     it('should reject limits outside the 1-100 range', async () => {
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       // `BrandListInputSchema` vincola limit a [1, 100]: valori fuori range sono
       // rifiutati dalla validazione, non silenziosamente normalizzati.
@@ -375,7 +381,7 @@ describe('Brand Router', () => {
     });
 
     it('should accept the maximum allowed limit', async () => {
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       const result = await caller.list({ limit: 100 });
       expect(result.items).toHaveLength(1);
@@ -385,7 +391,7 @@ describe('Brand Router', () => {
 
   describe('normalizeCode edge cases', () => {
     it('should handle special characters in code normalization', async () => {
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       // `BrandInputSchema` ammette solo `[A-Za-z0-9_-]`. La normalizzazione porta
       // in maiuscolo, non ripulisce: i caratteri fuori charset vanno rifiutati.
@@ -418,7 +424,7 @@ describe('Brand Router', () => {
     });
 
     it('should reject non-ASCII characters in code', async () => {
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       // `é` è fuori dal charset `[A-Za-z0-9_-]`. Il codice brand finisce in NAV
       // come nvarchar(20): ammettere accenti qui creerebbe drift col gestionale.
@@ -430,7 +436,7 @@ describe('Brand Router', () => {
 
   describe('concurrency tests', () => {
     it('should handle concurrent brand creation with same code', async () => {
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       const brandData = {
         code: 'CONCURRENT_TEST',
@@ -457,7 +463,7 @@ describe('Brand Router', () => {
     });
 
     it('should handle concurrent updates to same brand', async () => {
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       // Crea un secondo brand per testare update concorrente
       const secondBrand = await testContext.prisma.brand.create({
@@ -487,7 +493,7 @@ describe('Brand Router', () => {
 
   describe('soft delete vs hard delete', () => {
     it('should implement soft delete correctly', async () => {
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       // Crea un brand per soft delete
       const brandToSoftDelete = await testContext.prisma.brand.create({
@@ -526,7 +532,7 @@ describe('Brand Router', () => {
     });
 
     it('should handle hard delete with proper cleanup', async () => {
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       // Crea un brand per hard delete
       const brandToHardDelete = await testContext.prisma.brand.create({
@@ -553,7 +559,7 @@ describe('Brand Router', () => {
 
   describe('edge cases and error handling', () => {
     it('should reject brand names over the 128 character limit', async () => {
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       // 128 è il massimo: al limite passa, oltre viene rifiutato.
       const atLimit = 'A'.repeat(128);
@@ -574,7 +580,7 @@ describe('Brand Router', () => {
     });
 
     it('should handle empty string inputs gracefully', async () => {
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       // Test con nome vuoto
       await expect(
@@ -596,7 +602,7 @@ describe('Brand Router', () => {
     });
 
     it('should handle null and undefined values', async () => {
-      const caller = brandRouter.createCaller(testContext);
+      const caller = appRouter.createCaller(testContext).brand;
 
       // Test con valori null
       await expect(
@@ -674,21 +680,21 @@ describe('Brand Router', () => {
 
     describe('list operation', () => {
       it('should allow admin to list brands', async () => {
-        const caller = brandRouter.createCaller(adminContext);
+        const caller = appRouter.createCaller(adminContext).brand;
         const result = await caller.list();
         expect(result.items).toBeDefined();
         expect(Array.isArray(result.items)).toBe(true);
       });
 
       it('should allow editor to list brands', async () => {
-        const caller = brandRouter.createCaller(editorContext);
+        const caller = appRouter.createCaller(editorContext).brand;
         const result = await caller.list();
         expect(result.items).toBeDefined();
         expect(Array.isArray(result.items)).toBe(true);
       });
 
       it('should allow viewer to list brands', async () => {
-        const caller = brandRouter.createCaller(viewerContext);
+        const caller = appRouter.createCaller(viewerContext).brand;
         const result = await caller.list();
         expect(result.items).toBeDefined();
         expect(Array.isArray(result.items)).toBe(true);
@@ -697,7 +703,7 @@ describe('Brand Router', () => {
 
     describe('create operation', () => {
       it('should allow admin to create brands', async () => {
-        const caller = brandRouter.createCaller(adminContext);
+        const caller = appRouter.createCaller(adminContext).brand;
         const result = await caller.create({
           code: 'ADMIN_BRAND',
           name: 'Admin Brand',
@@ -708,7 +714,7 @@ describe('Brand Router', () => {
       });
 
       it('should allow editor to create brands', async () => {
-        const caller = brandRouter.createCaller(editorContext);
+        const caller = appRouter.createCaller(editorContext).brand;
         const result = await caller.create({
           code: 'EDITOR_BRAND',
           name: 'Editor Brand',
@@ -719,7 +725,7 @@ describe('Brand Router', () => {
       });
 
       it('should deny viewer from creating brands', async () => {
-        const caller = brandRouter.createCaller(viewerContext);
+        const caller = appRouter.createCaller(viewerContext).brand;
         await expect(
           caller.create({
             code: 'VIEWER_BRAND',
@@ -740,7 +746,7 @@ describe('Brand Router', () => {
 
     describe('update operation', () => {
       it('should allow admin to update brands', async () => {
-        const caller = brandRouter.createCaller(adminContext);
+        const caller = appRouter.createCaller(adminContext).brand;
         const result = await caller.update({
           id: testBrand.id,
           data: {
@@ -751,7 +757,7 @@ describe('Brand Router', () => {
       });
 
       it('should allow editor to update brands', async () => {
-        const caller = brandRouter.createCaller(editorContext);
+        const caller = appRouter.createCaller(editorContext).brand;
         const result = await caller.update({
           id: testBrand.id,
           data: {
@@ -762,7 +768,7 @@ describe('Brand Router', () => {
       });
 
       it('should deny viewer from updating brands', async () => {
-        const caller = brandRouter.createCaller(viewerContext);
+        const caller = appRouter.createCaller(viewerContext).brand;
         await expect(
           caller.update({
             id: testBrand.id,
@@ -785,19 +791,19 @@ describe('Brand Router', () => {
 
     describe('hardDelete operation', () => {
       it('should allow admin to hard delete brands', async () => {
-        const caller = brandRouter.createCaller(adminContext);
+        const caller = appRouter.createCaller(adminContext).brand;
         const result = await caller.hardDelete({ id: testBrand.id });
         expect(result).toEqual({ success: true });
       });
 
       it('should allow editor to hard delete brands', async () => {
-        const caller = brandRouter.createCaller(editorContext);
+        const caller = appRouter.createCaller(editorContext).brand;
         const result = await caller.hardDelete({ id: testBrand.id });
         expect(result).toEqual({ success: true });
       });
 
       it('should deny viewer from hard deleting brands', async () => {
-        const caller = brandRouter.createCaller(viewerContext);
+        const caller = appRouter.createCaller(viewerContext).brand;
         await expect(caller.hardDelete({ id: testBrand.id })).rejects.toThrow(
           TRPCError
         );
@@ -815,7 +821,7 @@ describe('Brand Router', () => {
           session: null,
         };
 
-        const caller = brandRouter.createCaller(unauthenticatedContext);
+        const caller = appRouter.createCaller(unauthenticatedContext).brand;
 
         await expect(caller.list()).rejects.toThrow(TRPCError);
         const listError = await caller.list().catch(e => e);
