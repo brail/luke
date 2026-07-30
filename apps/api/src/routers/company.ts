@@ -23,9 +23,11 @@ import {
 
 import { logAudit } from '../lib/auditLog.js';
 import { createNotification } from '../lib/notifications.js';
+import { confirmPendingFile } from '../lib/pendingFile.js';
 import { requirePermission } from '../lib/permissions.js';
 import { withRateLimit } from '../lib/ratelimit.js';
 import { router, protectedProcedure } from '../lib/trpc.js';
+import { deleteObjectByKey } from '../storage';
 
 import type { PrismaClient } from '@prisma/client';
 
@@ -64,18 +66,74 @@ const companyProfileRouter = router({
     .use(withRateLimit('companyStructureMutations'))
     .input(CompanyProfileInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const countryCode = (input.address as { countryCode?: string } | undefined)?.countryCode ?? undefined;
-      const profile = await ctx.prisma.companyProfile.upsert({
-        where: { id: SINGLETON_ID },
-        create: { id: SINGLETON_ID, ...input, countryCode: countryCode ?? null },
-        update: { ...input, ...(countryCode !== undefined ? { countryCode } : {}) },
-      });
+      // Niente `...input` nell'upsert: era così che `logoKey` passava dal client
+      // al database senza che nessuno lo guardasse.
+      const { fileObjectId, logoKey, ...rest } = input;
+      const countryCode = (rest.address as { countryCode?: string } | undefined)?.countryCode ?? undefined;
+
+      let oldLogoKey: string | null = null;
+
+      const profile = await ctx.prisma.$transaction(async tx => {
+        const existing = await tx.companyProfile.findUnique({
+          where: { id: SINGLETON_ID },
+          select: { logoKey: true },
+        });
+
+        let logoData: { logoKey: string | null } | Record<string, never> = {};
+
+        if (fileObjectId) {
+          const confirmedKey = await confirmPendingFile(tx, {
+            fileObjectId,
+            bucket: 'company-assets',
+            userId: ctx.session.user.id,
+          });
+
+          // BAD_REQUEST e non un no-op silenzioso: il caso realistico non è un id
+          // malevolo, è il reaper. Carichi il logo, ti distrai settanta minuti,
+          // salvi — il `FileObject` pending è stato spazzato, il predicato manca,
+          // e senza questo errore il profilo si salverebbe senza logo mostrando
+          // "Profilo aggiornato".
+          if (!confirmedKey) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Il file caricato non è più disponibile, ricaricalo',
+            });
+          }
+
+          logoData = { logoKey: confirmedKey };
+          oldLogoKey = existing?.logoKey ?? null;
+        } else if (logoKey === null) {
+          logoData = { logoKey: null };
+          oldLogoKey = existing?.logoKey ?? null;
+        }
+
+        return tx.companyProfile.upsert({
+          where: { id: SINGLETON_ID },
+          create: { id: SINGLETON_ID, ...rest, ...logoData, countryCode: countryCode ?? null },
+          update: { ...rest, ...logoData, ...(countryCode !== undefined ? { countryCode } : {}) },
+        });
+      }, { timeout: 15000 });
+
+      // Dopo il commit, mai dentro: un rollback lascerebbe il blob cancellato.
+      // Finora nessuno cancellava i logo sostituiti, che restavano in
+      // `company-assets` per sempre.
+      if (oldLogoKey && oldLogoKey !== profile.logoKey) {
+        const staleKey = oldLogoKey;
+        setImmediate(async () => {
+          try {
+            await deleteObjectByKey(ctx, { bucket: 'company-assets', key: staleKey });
+          } catch (err) {
+            ctx.logger?.warn({ err }, 'Failed to cleanup old company logo');
+          }
+        });
+      }
 
       await logAudit(ctx, {
         action: 'COMPANY_PROFILE_UPDATED',
         targetType: 'CompanyProfile',
         targetId: SINGLETON_ID,
         result: 'SUCCESS',
+        metadata: { logoChanged: Boolean(fileObjectId) || logoKey === null },
       });
 
       return profile;

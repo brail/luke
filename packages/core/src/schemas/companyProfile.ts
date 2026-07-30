@@ -31,23 +31,26 @@ export const CompanyProfileInputSchema = z.object({
   address: CompanyAddressSchema.optional(),
   exportSettings: CompanyExportSettingsSchema.optional(),
   /**
-   * Storage key del logo, dentro il bucket `company-assets`.
+   * Rimozione del logo. `null` è l'unico valore accettato, e significa "togli".
    *
-   * Vincolata perché finisce direttamente in `readFileBuffer(prisma,
-   * 'company-assets', logoKey)` a ogni export PDF: senza formato era una stringa
-   * arbitraria scelta dal client che raggiungeva una lettura su storage. Il
-   * traversal è già fermato da `validatePathSafety` nel provider locale, ma
-   * quella è una difesa due livelli più in là.
+   * Era una storage key scelta dal client, che finiva dritta in
+   * `readFileBuffer(prisma, 'company-assets', logoKey)` a ogni export PDF. Prima
+   * senza formato, poi vincolata a una regex — ma una regex è una feritoia più
+   * stretta, non un muro. Ora il client non può più nominare una key: per
+   * *impostare* un logo passa un `fileObjectId`, e la key la deriva il server da
+   * un `FileObject` verificato.
    *
-   * Il percorso corretto resterebbe quello di `brand.ts`, che non si fida mai
-   * dell'input e deriva la key da un `FileObject` verificato.
+   * `z.null()` e non la rimozione del campo perché il canale di cancellazione
+   * deve sopravvivere, ed è già così che il frontend lo esprime.
    */
-  logoKey: z
-    .string()
-    .max(255)
-    .regex(/^[a-zA-Z0-9._\-/]+$/, 'Storage key non valida')
-    .refine(k => !k.includes('..'), 'Storage key non valida')
-    .nullable()
-    .optional(),
+  logoKey: z.null().optional(),
+
+  /**
+   * `FileObject` pending da collegare come logo, ottenuto dall'upload.
+   *
+   * Stesso pattern di `brand.ts`: il server verifica che sia pending, tuo e nel
+   * bucket giusto, poi ne scrive la key.
+   */
+  fileObjectId: z.string().uuid().optional(),
 });
 export type CompanyProfileInput = z.infer<typeof CompanyProfileInputSchema>;

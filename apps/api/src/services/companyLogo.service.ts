@@ -31,7 +31,7 @@ export async function uploadCompanyLogo(
       size: number;
     };
   }
-): Promise<{ publicUrl: string; bucket: string; key: string }> {
+): Promise<{ publicUrl: string; bucket: string; key: string; fileObjectId: string }> {
   const sanitizedFilename = validateImageFile(params.file, IMAGE_CONFIG);
 
   const buffer = await streamToBuffer(params.file.stream);
@@ -46,6 +46,9 @@ export async function uploadCompanyLogo(
     contentType: params.file.mimetype,
     size: params.file.size,
     stream: Readable.from(buffer),
+    // Pending: il file esiste, ma non appartiene ancora al profilo. Lo collega
+    // `company.profile.update` passando il `fileObjectId`, mai la key.
+    pending: true,
   });
 
   try {
@@ -61,5 +64,12 @@ export async function uploadCompanyLogo(
   }
 
   const publicUrl = await resolvePublicUrl(ctx.prisma, 'company-assets', fileObject.key);
-  return { publicUrl, bucket: 'company-assets', key: fileObject.key };
+  // `fileObjectId` è il campo che conta: la `key` resta solo perché `publicUrl`
+  // la espone comunque, ma nulla a valle deve fidarsene.
+  return {
+    publicUrl,
+    bucket: 'company-assets',
+    key: fileObject.key,
+    fileObjectId: fileObject.id,
+  };
 }

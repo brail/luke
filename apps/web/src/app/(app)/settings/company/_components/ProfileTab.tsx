@@ -74,11 +74,21 @@ export function ProfileTab() {
   const [accentColorHex, setAccentColorHex] = useState('#000000');
   const [locale, setLocale] = useState<'it-IT' | 'en-US'>('it-IT');
   const [dateFormat, setDateFormat] = useState<'DD/MM/YYYY' | 'YYYY-MM-DD'>('DD/MM/YYYY');
-  const [logoKey, setLogoKey] = useState<string | null>(null);
+  /** Logo attualmente salvato sul server. Sola lettura: non lo si manda indietro. */
+  const [savedLogoKey, setSavedLogoKey] = useState<string | null>(null);
+  /** File caricato ma non ancora collegato: è questo che si manda al salvataggio. */
+  const [pendingFileObjectId, setPendingFileObjectId] = useState<string | null>(null);
+  /** Anteprima del pending, prima che una key esista. */
+  const [pendingLogoUrl, setPendingLogoUrl] = useState<string | null>(null);
+  /** L'utente ha premuto "rimuovi": va mandato `logoKey: null`. */
+  const [logoCleared, setLogoCleared] = useState(false);
   const [dirty, setDirty] = useState(false);
 
   const colorInputRef = useRef<HTMLInputElement>(null);
-  const logoPreviewUrl = logoKey ? buildCompanyLogoUrl(logoKey) : null;
+  // Il pending vince: finché non si salva non esiste ancora una storage key.
+  const logoPreviewUrl = logoCleared
+    ? null
+    : (pendingLogoUrl ?? (savedLogoKey ? buildCompanyLogoUrl(savedLogoKey) : null));
 
   const { upload, isUploading, progress: uploadProgress } = useStorageUpload({
     fallbackProxyUrl: buildCompanyLogoUploadUrl(),
@@ -104,7 +114,10 @@ export function ProfileTab() {
     setAccentColorHex(es['accentColorHex'] ?? '#000000');
     setLocale((es['locale'] as 'it-IT' | 'en-US') ?? 'it-IT');
     setDateFormat((es['dateFormat'] as 'DD/MM/YYYY' | 'YYYY-MM-DD') ?? 'DD/MM/YYYY');
-    setLogoKey((p.logoKey as string | null | undefined) ?? null);
+    setSavedLogoKey((p.logoKey as string | null | undefined) ?? null);
+    setPendingFileObjectId(null);
+    setPendingLogoUrl(null);
+    setLogoCleared(false);
     setDirty(false);
   };
 
@@ -119,8 +132,11 @@ export function ProfileTab() {
 
   const handleLogoUpload = async (file: File) => {
     try {
+      // Si tiene l'id, non la key: la key la deriva il server dal FileObject.
       const result = await upload(file, 'company-assets');
-      setLogoKey(result.key ?? null);
+      setPendingFileObjectId(result.fileObjectId);
+      setPendingLogoUrl(result.publicUrl);
+      setLogoCleared(false);
       setDirty(true);
       toast.success('Logo caricato — clicca Salva per confermare');
     } catch (err) {
@@ -129,7 +145,9 @@ export function ProfileTab() {
   };
 
   const handleLogoRemove = () => {
-    setLogoKey(null);
+    setPendingFileObjectId(null);
+    setPendingLogoUrl(null);
+    setLogoCleared(true);
     setDirty(true);
   };
 
@@ -154,7 +172,9 @@ export function ProfileTab() {
           province: addrProvince.trim() || undefined,
           countryCode: addrCountryCode || undefined,
         },
-        logoKey,
+        // `logoKey` solo per cancellare; per impostarlo si manda l'id del file.
+        ...(logoCleared ? { logoKey: null } : {}),
+        ...(pendingFileObjectId ? { fileObjectId: pendingFileObjectId } : {}),
         exportSettings: {
           footerText: footerText.trim() || undefined,
           accentColorHex,

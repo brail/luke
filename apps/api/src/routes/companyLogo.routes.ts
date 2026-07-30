@@ -4,9 +4,13 @@
  * Endpoint: POST /upload/company-logo
  *
  * Requires authentication and the `company_profile:update` permission.
- * Delegates to the company logo service, which validates MIME type, enforces
- * the file size limit, stores the file, and updates the CompanyProfile record.
+ * Delegates to the company logo service, which validates MIME type, enforces the
+ * file size limit and stores the file as **pending**. It does not touch the
+ * CompanyProfile: il collegamento avviene in `company.profile.update`, passando
+ * il `fileObjectId` che questa rotta ritorna.
  */
+
+import { Readable } from 'stream';
 
 import fp from 'fastify-plugin';
 
@@ -47,7 +51,7 @@ export default fp(
           file: {
             filename: data.filename,
             mimetype: data.mimetype,
-            stream: require('stream').Readable.from(buffer),
+            stream: Readable.from(buffer),
             size: buffer.length,
           },
         });
