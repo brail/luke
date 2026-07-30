@@ -16,17 +16,23 @@ import fp from 'fastify-plugin';
 
 
 import { generateIcal } from '@luke/calendar';
-import type { Role } from '@luke/core';
+import { isDevelopment, type Role } from '@luke/core';
 
 import { authenticateRequest } from '../lib/auth';
+// Unico ingresso al motore PDF: è l'unico punto in cui `setUrlAccessPolicy` e
+// `setLocalAccessPolicy` sono chiuse. Qui vivevano quattro `new PdfPrinter(...)`
+// costruiti a mano, che non ereditavano nessuna policy — e che dal bump pdfmake
+// 0.2→0.3 erano comunque rotti: in 0.3 `createPdfKitDocument` restituisce una
+// Promise, non uno stream, quindi `doc.on(...)` lanciava (500 al chiamante) e la
+// Promise orfana rigettava con un TypeError non gestito, che i guard di
+// `server.ts` trasformano in `process.exit(1)`.
+import { createPdfBuffer } from '../lib/export/pdf';
 import { filterAllowedBrandIds, listMilestonesDb } from '../services/seasonCalendar.service';
 
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import type { TDocumentDefinitions, TableCell, Content } from 'pdfmake/interfaces';
 
- 
-const PdfPrinter = require('pdfmake/js/Printer').default;
 
 // ─── Shared types ────────────────────────────────────────────────────────────
 
@@ -42,16 +48,6 @@ interface ExportMilestone {
   publishExternally: boolean;
   brandCode: string;
 }
-
-// pdfmake built-in PDF fonts — no font files needed
-const PDF_FONTS = {
-  Helvetica: {
-    normal: 'Helvetica',
-    bold: 'Helvetica-Bold',
-    italics: 'Helvetica-Oblique',
-    bolditalics: 'Helvetica-BoldOblique',
-  },
-};
 
 // ─── Data fetch ───────────────────────────────────────────────────────────────
 
@@ -147,7 +143,7 @@ function generatePdf(milestones: ExportMilestone[], seasonLabel: string): Promis
     pageSize: 'A4',
     pageOrientation: 'landscape',
     pageMargins: [30, 50, 30, 40],
-    defaultStyle: { font: 'Helvetica', fontSize: 9 },
+    defaultStyle: { font: 'Roboto', fontSize: 9 },
     header: {
       columns: [
         { text: `Calendario Stagionale — ${seasonLabel}`, bold: true, fontSize: 13, margin: [30, 15, 0, 0] },
@@ -183,19 +179,7 @@ function generatePdf(milestones: ExportMilestone[], seasonLabel: string): Promis
     ],
   };
 
-  return new Promise((resolve, reject) => {
-    try {
-      const printer = new PdfPrinter(PDF_FONTS);
-      const doc = printer.createPdfKitDocument(docDef);
-      const chunks: Buffer[] = [];
-      doc.on('data', (c: Buffer) => chunks.push(c));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
-      doc.end();
-    } catch (err) {
-      reject(err);
-    }
-  });
+  return createPdfBuffer(docDef);
 }
 
 // ─── PDF helpers ─────────────────────────────────────────────────────────────
@@ -299,7 +283,7 @@ function generatePdfWeek(milestones: ExportMilestone[], seasonLabel: string, vie
     pageSize: 'A4',
     pageOrientation: 'landscape',
     pageMargins: [30, 55, 30, 40],
-    defaultStyle: { font: 'Helvetica', fontSize: 8 },
+    defaultStyle: { font: 'Roboto', fontSize: 8 },
     header: makePdfHeader(`Calendario Stagionale — ${seasonLabel}`, weekLabel),
     footer: (p: number, t: number): Content => ({ text: `${p} / ${t}`, alignment: 'center', color: '#94a3b8', fontSize: 8, margin: [0, 10, 0, 0] }),
     content: [{
@@ -308,17 +292,7 @@ function generatePdfWeek(milestones: ExportMilestone[], seasonLabel: string, vie
     }],
   };
 
-  return new Promise((resolve, reject) => {
-    try {
-      const printer = new PdfPrinter(PDF_FONTS);
-      const doc = printer.createPdfKitDocument(docDef);
-      const chunks: Buffer[] = [];
-      doc.on('data', (c: Buffer) => chunks.push(c));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
-      doc.end();
-    } catch (err) { reject(err); }
-  });
+  return createPdfBuffer(docDef);
 }
 
 // ─── PDF month view ───────────────────────────────────────────────────────────
@@ -377,7 +351,7 @@ function generatePdfMonth(milestones: ExportMilestone[], seasonLabel: string, vi
     pageSize: 'A4',
     pageOrientation: 'landscape',
     pageMargins: [30, 55, 30, 40],
-    defaultStyle: { font: 'Helvetica', fontSize: 8 },
+    defaultStyle: { font: 'Roboto', fontSize: 8 },
     header: makePdfHeader(`Calendario Stagionale — ${seasonLabel}`, monthLabel),
     footer: (p: number, t: number): Content => ({ text: `${p} / ${t}`, alignment: 'center', color: '#94a3b8', fontSize: 8, margin: [0, 10, 0, 0] }),
     content: [{
@@ -386,17 +360,7 @@ function generatePdfMonth(milestones: ExportMilestone[], seasonLabel: string, vi
     }],
   };
 
-  return new Promise((resolve, reject) => {
-    try {
-      const printer = new PdfPrinter(PDF_FONTS);
-      const doc = printer.createPdfKitDocument(docDef);
-      const chunks: Buffer[] = [];
-      doc.on('data', (c: Buffer) => chunks.push(c));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
-      doc.end();
-    } catch (err) { reject(err); }
-  });
+  return createPdfBuffer(docDef);
 }
 
 // ─── PDF gantt view ───────────────────────────────────────────────────────────
@@ -457,7 +421,7 @@ function generatePdfGantt(milestones: ExportMilestone[], seasonLabel: string): P
     pageSize: 'A4',
     pageOrientation: 'landscape',
     pageMargins: [30, 55, 30, 40],
-    defaultStyle: { font: 'Helvetica', fontSize: 8 },
+    defaultStyle: { font: 'Roboto', fontSize: 8 },
     header: makePdfHeader(`Calendario Stagionale — ${seasonLabel}`, 'Vista Gantt'),
     footer: (p: number, t: number): Content => ({ text: `${p} / ${t}`, alignment: 'center', color: '#94a3b8', fontSize: 8, margin: [0, 10, 0, 0] }),
     content: [{
@@ -466,17 +430,7 @@ function generatePdfGantt(milestones: ExportMilestone[], seasonLabel: string): P
     }],
   };
 
-  return new Promise((resolve, reject) => {
-    try {
-      const printer = new PdfPrinter(PDF_FONTS);
-      const doc = printer.createPdfKitDocument(docDef);
-      const chunks: Buffer[] = [];
-      doc.on('data', (c: Buffer) => chunks.push(c));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
-      doc.end();
-    } catch (err) { reject(err); }
-  });
+  return createPdfBuffer(docDef);
 }
 
 // ─── XLSX generation (ExcelJS) ────────────────────────────────────────────────
@@ -539,8 +493,30 @@ async function generateXlsx(milestones: ExportMilestone[], seasonLabel: string):
 export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }) => {
   const prisma = options.prisma;
 
+  /**
+   * Limite per-rotta sul limiter globale registrato in `server.ts`.
+   *
+   * Non si registra `@fastify/rate-limit` qui: questo plugin è wrappato in
+   * `fp()`, quindi un `app.register(rateLimit, ...)` finirebbe nello scope root e
+   * diventerebbe il limite globale del server — lo stesso incidente documentato
+   * in `brandLogo.routes.ts`. L'opzione per-rotta stringe soltanto queste tre.
+   *
+   * Il default globale (100 req/min per IP) è troppo generoso per la generazione
+   * di un PDF, che tiene l'intero documento in memoria.
+   */
+  const exportRateLimit = {
+    config: {
+      rateLimit: {
+        max: isDevelopment() ? 100 : 10,
+        timeWindow: '1 minute',
+        keyGenerator: (req: FastifyRequest) =>
+          (req as any).session?.user?.id || req.ip,
+      },
+    },
+  };
+
   async function resolveParams(req: FastifyRequest, reply: FastifyReply) {
-    const session = await authenticateRequest(req, reply);
+    const session = await authenticateRequest(req, reply, prisma);
     if (!session) {
       reply.code(401).send({ error: 'Unauthorized' });
       return null;
@@ -575,7 +551,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
     return { session, seasonId, allowedBrandIds, functionId, seasonLabel, view: parsedView, viewDate: parsedViewDate };
   }
 
-  app.get('/season-calendar/export/ical', async (req, reply) => {
+  app.get('/season-calendar/export/ical', exportRateLimit, async (req, reply) => {
     const ctx = await resolveParams(req, reply);
     if (!ctx) return;
 
@@ -598,7 +574,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
       .send(icalString);
   });
 
-  app.get('/season-calendar/export/pdf', async (req, reply) => {
+  app.get('/season-calendar/export/pdf', exportRateLimit, async (req, reply) => {
     const ctx = await resolveParams(req, reply);
     if (!ctx) return;
 
@@ -623,7 +599,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
       .send(pdfBuffer);
   });
 
-  app.get('/season-calendar/export/xlsx', async (req, reply) => {
+  app.get('/season-calendar/export/xlsx', exportRateLimit, async (req, reply) => {
     const ctx = await resolveParams(req, reply);
     if (!ctx) return;
 
