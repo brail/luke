@@ -22,6 +22,7 @@ import { getConfig } from './configManager';
 import { sendBulkEmail, sendEmail } from './mailer';
 import { guardMaintenance } from './maintenanceMode';
 import { getVisibleUserIdsForMilestones } from './notifications';
+import { withSchedulerLock } from './schedulerLock';
 
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
@@ -402,7 +403,10 @@ async function runDigest(
   if (state.lastDigestDate === today) return;
   if (now.getHours() !== DIGEST_HOUR) return;
   state.lastDigestDate = today;
-  return runDigestCore(prisma, log);
+  // Locked around runDigestCore, not this whole function: the two guards above are cheap
+  // in-memory checks that reject 23 of 24 hourly ticks — taking the cross-instance lock before
+  // them would spend two DB round trips on every no-op tick for nothing.
+  await withSchedulerLock(prisma, 'calendar-digest', () => runDigestCore(prisma, log))();
 }
 
 // ─── Manual trigger ──────────────────────────────────────────────────────────

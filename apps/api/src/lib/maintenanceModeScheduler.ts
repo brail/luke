@@ -21,6 +21,7 @@ import { getMaintenanceUrgencyTier } from '@luke/core';
 
 import { forceLogoutNonAdmins, getMaintenanceState, markActivated, recordWarningsSent } from './maintenanceMode';
 import { notifyAllUsers } from './notifications';
+import { withSchedulerLock } from './schedulerLock';
 
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
@@ -40,36 +41,46 @@ async function runTick(prisma: PrismaClient, log: FastifyInstance['log']): Promi
   const state = await getMaintenanceState(prisma);
   if (state.status !== 'SCHEDULED' || !state.scheduledAt) return IDLE_DELAY_MS;
 
-  const minutesRemaining = (new Date(state.scheduledAt).getTime() - Date.now()) / 60_000;
+  // Locked around the SCHEDULED-branch body, not this whole function: `state.status !==
+  // 'SCHEDULED'` is the common case (idle heartbeat, no countdown active) and needs no
+  // cross-instance coordination — taking the lock before this check would spend two DB round
+  // trips on every idle tick for nothing.
+  const delay = await withSchedulerLock(prisma, 'maintenance-mode', async () => {
+    const minutesRemaining = (new Date(state.scheduledAt!).getTime() - Date.now()) / 60_000;
 
-  if (minutesRemaining <= 0) {
-    log.info('Maintenance mode scheduler: countdown esaurito, attivazione automatica');
-    await markActivated(prisma, state);
-    if (state.forceLogout) await forceLogoutNonAdmins(prisma);
-    return IDLE_DELAY_MS;
-  }
+    if (minutesRemaining <= 0) {
+      log.info('Maintenance mode scheduler: countdown esaurito, attivazione automatica');
+      await markActivated(prisma, state);
+      if (state.forceLogout) await forceLogoutNonAdmins(prisma);
+      return IDLE_DELAY_MS;
+    }
 
-  const crossed = state.warningLeadMinutes.filter(
-    threshold => minutesRemaining <= threshold && !state.warningsSent.includes(threshold)
-  );
-  if (crossed.length > 0) {
-    // Più soglie possono attraversarsi nello stesso tick (es. dopo un downtime dello scheduler) —
-    // un'unica notifica con quella più urgente (la più vicina), non una raffica che rifarebbe la
-    // stessa query utenti + broadcast SSE una volta per soglia per lo stesso evento concettuale.
-    const mostUrgent = Math.min(...crossed);
-    await notifyAllUsers(prisma, {
-      category: 'SYSTEM',
-      title: 'Manutenzione programmata in arrivo',
-      message: state.message
-        ? `${state.message} (tra circa ${mostUrgent} minut${mostUrgent === 1 ? 'o' : 'i'})`
-        : `Il sistema entrerà in manutenzione tra circa ${mostUrgent} minut${mostUrgent === 1 ? 'o' : 'i'}. Salva il lavoro in corso.`,
-      data: { type: 'maintenance_mode_warning', minutesRemaining: mostUrgent },
-    }).catch(err => log.error({ err, crossed }, 'Maintenance mode scheduler: notifica soglia fallita'));
+    const crossed = state.warningLeadMinutes.filter(
+      threshold => minutesRemaining <= threshold && !state.warningsSent.includes(threshold)
+    );
+    if (crossed.length > 0) {
+      // Più soglie possono attraversarsi nello stesso tick (es. dopo un downtime dello scheduler) —
+      // un'unica notifica con quella più urgente (la più vicina), non una raffica che rifarebbe la
+      // stessa query utenti + broadcast SSE una volta per soglia per lo stesso evento concettuale.
+      const mostUrgent = Math.min(...crossed);
+      await notifyAllUsers(prisma, {
+        category: 'SYSTEM',
+        title: 'Manutenzione programmata in arrivo',
+        message: state.message
+          ? `${state.message} (tra circa ${mostUrgent} minut${mostUrgent === 1 ? 'o' : 'i'})`
+          : `Il sistema entrerà in manutenzione tra circa ${mostUrgent} minut${mostUrgent === 1 ? 'o' : 'i'}. Salva il lavoro in corso.`,
+        data: { type: 'maintenance_mode_warning', minutesRemaining: mostUrgent },
+      }).catch(err => log.error({ err, crossed }, 'Maintenance mode scheduler: notifica soglia fallita'));
 
-    await recordWarningsSent(prisma, state, crossed);
-  }
+      await recordWarningsSent(prisma, state, crossed);
+    }
 
-  return TIER_DELAY_MS[getMaintenanceUrgencyTier(minutesRemaining)];
+    return TIER_DELAY_MS[getMaintenanceUrgencyTier(minutesRemaining)];
+  })();
+
+  // undefined = another instance holds the lock this tick (already handling the same
+  // transition) — fall back to the idle delay and just recheck later.
+  return delay ?? IDLE_DELAY_MS;
 }
 
 /**

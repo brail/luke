@@ -24,6 +24,7 @@ import { getStorageProvider } from '../storage';
 import { createPendingBackupRecord, deleteBackupBlob, runBackupJob } from './backup/dumpPipeline';
 import { getBackupScheduleSettings } from './configManager';
 import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
+import { withSchedulerLock } from './schedulerLock';
 
 import type { BackupScope, BackupStatus, PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
@@ -162,8 +163,9 @@ export function registerBackupScheduler(fastify: FastifyInstance, prisma: Prisma
   let timer: ReturnType<typeof setInterval> | null = null;
   const state = { lastRunDate: null as string | null };
 
+  const lockedTick = withSchedulerLock(prisma, 'backup', () => runTick(prisma, fastify.log, state));
   const run = () =>
-    runTick(prisma, fastify.log, state).catch(err =>
+    lockedTick().catch(err =>
       fastify.log.error({ err }, 'Backup scheduler: errore non gestito')
     );
 

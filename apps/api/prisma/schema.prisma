@@ -2146,6 +2146,22 @@ model EditLock {
   @@map("edit_locks")
 }
 
+/// Leader lock for tick-based schedulers (backup, NAV sync, calendar digest, ...) — prevents two
+/// API instances from running the same scheduled job concurrently if ever scaled horizontally.
+/// See withSchedulerLock() in apps/api/src/lib/schedulerLock.ts. Unlike EditLock, acquisition is
+/// a conditional upsert (INSERT ... ON CONFLICT DO UPDATE ... WHERE), not a plain insert-or-fail —
+/// expiresAt is a crash-safety ceiling only, since the normal path releases explicitly right after
+/// the tick finishes.
+model SchedulerLock {
+  /// Scheduler name (e.g. 'backup', 'nav-sync') — one row per named lock.
+  name      String   @id
+  /// Random per-process id of the instance currently holding this lock (informational + safe release).
+  heldBy    String
+  expiresAt DateTime
+
+  @@map("scheduler_locks")
+}
+
 /// Country entity used as the scope for public holiday definitions and vendor closure periods.
 model HolidayCountry {
   /// ISO 3166-1 alpha-2 country code (PK).

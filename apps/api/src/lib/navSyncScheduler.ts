@@ -21,6 +21,7 @@ import { closePool, runNavSync } from '@luke/nav';
 import { getConfig } from './configManager';
 import { guardMaintenance } from './maintenanceMode';
 import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
+import { withSchedulerLock } from './schedulerLock';
 
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
@@ -28,7 +29,7 @@ import type { FastifyInstance } from 'fastify';
 const TICK_INTERVAL_MS = 60 * 1000; // 1 minuto
 
 const ENTITIES = ['vendor', 'brand', 'season'] as const;
-type Entity = (typeof ENTITIES)[number];
+export type Entity = (typeof ENTITIES)[number];
 
 // Timestamp (ms) dell'ultima esecuzione completata per entità
 const lastRunAt: Partial<Record<Entity, number>> = {};
@@ -147,7 +148,10 @@ export function registerNavSyncScheduler(
 
       if (now - last >= intervalMs) {
         lastRunAt[entity] = now;
-        void syncEntity(entity);
+        // Locked around syncEntity (not the outer tick): syncEntity is fire-and-forget from here,
+        // so the tick itself returns almost instantly — the lock must span the actual sync work,
+        // which withSchedulerLock's try/finally does regardless of when its caller stops awaiting it.
+        void withSchedulerLock(prisma, `nav-sync:${entity}`, () => syncEntity(entity))();
       }
     }
   };

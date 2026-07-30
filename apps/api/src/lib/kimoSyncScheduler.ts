@@ -14,6 +14,7 @@ import { getNavDbConfig, getPool, syncKimoNow, type KimoSyncResult } from '@luke
 import { getConfig } from './configManager';
 import { guardMaintenance } from './maintenanceMode';
 import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
+import { withSchedulerLock } from './schedulerLock';
 import { sseStore } from './sseStore';
 
 import type { PrismaClient } from '@prisma/client';
@@ -108,7 +109,9 @@ export function registerKimoSyncScheduler(
     const elapsed = _lastRunAt ? Date.now() - _lastRunAt.getTime() : Infinity;
     if (elapsed < intervalMs) return;
 
-    void _runSync();
+    // Locked around _runSync (not the outer tick): _runSync is fire-and-forget from here, so
+    // the tick itself returns almost instantly — the lock must span the actual sync work.
+    void withSchedulerLock(prisma, 'kimo-sync', _runSync)();
   };
 
   const guardedTick = guardMaintenance(prisma, tick);
