@@ -12,13 +12,22 @@ rules:
       (layout, riga) passare il brandId risolto dal record, mai un campo di input.
     patterns:
       - pattern-either:
-          - pattern: '$P. ... .input(z.object({ ..., brandId: $Z, ... })). ... .query($H)'
-          - pattern: '$P. ... .input(z.object({ ..., brandId: $Z, ... })). ... .mutation($H)'
+          - pattern: '$P. ... .input(z.object({ ..., $KEY: $Z, ... })). ... .query($H)'
+          - pattern: '$P. ... .input(z.object({ ..., $KEY: $Z, ... })). ... .mutation($H)'
+      # Metavariabile e non la chiave letterale `brandId`: `copyFromSeason` prende
+      # `fromBrandId`/`toBrandId` e `cloneFromBrandSeason` `sourceBrandId`/
+      # `targetBrandId`, e con la chiave fissa erano invisibili — proprio le due
+      # procedure che clonano fra brand, cioè quelle dove sbagliare costa di più.
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: '^\w*[Bb]randId$'
       # Testuale sulla regione matchata, non `pattern-not` strutturale: con
       # `<... f(...) ...>` semgrep continuava a segnalare anche le procedure
       # correttamente guardate, e una regola bloccante che produce falsi positivi
       # finisce disattivata — che è peggio di non averla.
-      - pattern-not-regex: '(assertBrandAccess|getUserAllowedBrandIds|filterAllowedBrandIds)'
+      # `BrandAccess` copre tutta la famiglia: con `assertBrandAccess` letterale una
+      # procedura guardata da `resolveRowBrandAccess` veniva comunque segnalata.
+      - pattern-not-regex: '(BrandAccess|getUserAllowedBrandIds|filterAllowedBrandIds)'
     paths:
       include:
         - 'apps/api/src/routers/**'

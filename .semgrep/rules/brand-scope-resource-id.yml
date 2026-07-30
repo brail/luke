@@ -1,0 +1,27 @@
+rules:
+  - id: luke-brand-scope-resource-id
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      Procedura tRPC che indirizza una risorsa brand-scoped per id, senza guard.
+      Queste non nominano un brand nell'input: lo raggiungono risolvendo il
+      record, quindi `luke-brand-scope-required` non le vede. Erano tutte
+      scoperte — layout, gruppi, righe, quotazioni, revisioni, storico fasi.
+      Usare i resolver di `services/brandScope.service.ts`
+      (`resolveLayoutBrandAccess`, `resolveRowBrandAccess`, …): prendono il
+      brandId dal record risolto, mai da un campo di input, e lanciano NOT_FOUND
+      prima di FORBIDDEN.
+    patterns:
+      - pattern-either:
+          - pattern: '$P. ... .input(z.object({ ..., $KEY: $Z, ... })). ... .query($H)'
+          - pattern: '$P. ... .input(z.object({ ..., $KEY: $Z, ... })). ... .mutation($H)'
+      # Elenco esplicito, non `.*Id$`: una versione larga scatta su
+      # `users.getById`, `season.delete` e mezzo repo, e una regola bloccante che
+      # segnala il codice corretto viene disattivata entro una settimana.
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: '^(collectionLayoutId|groupId|rowId|quotationId|revisionId|planningGroupId|calendarId)$'
+      - pattern-not-regex: '(BrandAccess|getUserAllowedBrandIds|filterAllowedBrandIds)'
+    paths:
+      include:
+        - 'apps/api/src/routers/**'

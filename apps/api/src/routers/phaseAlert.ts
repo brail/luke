@@ -12,6 +12,10 @@ import { saveConfig } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 import {
+  resolveLayoutBrandAccess,
+  resolveRowBrandAccess,
+} from '../services/brandScope.service';
+import {
   computeBottleneckByEvent,
   computeCriticality,
   computeCriticalityForLayout,
@@ -31,6 +35,7 @@ export const phaseAlertRouter = router({
     .use(requirePermission('collection_alert:read'))
     .input(z.object({ rowId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
+      await resolveRowBrandAccess(ctx, input.rowId);
       return computeCriticality(input.rowId, new Date(), ctx.prisma);
     }),
 
@@ -47,6 +52,7 @@ export const phaseAlertRouter = router({
     .use(requirePermission('collection_alert:read'))
     .input(z.object({ collectionLayoutId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
+      await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
       return computeCriticalityForLayout(input.collectionLayoutId, new Date(), ctx.prisma);
     }),
 
@@ -119,6 +125,7 @@ export const phaseAlertRouter = router({
     .use(requirePermission('collection_alert:read'))
     .input(z.object({ collectionLayoutId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
+      await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
       return computeBottleneckByEvent(input.collectionLayoutId, new Date(), ctx.prisma);
     }),
 });

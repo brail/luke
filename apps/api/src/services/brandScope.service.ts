@@ -301,6 +301,29 @@ export async function resolveRevisionBrandAccess(
   return revision;
 }
 
+/**
+ * Riga di piano merchandising, per `rowId`.
+ *
+ * Catena distinta da quella del collection layout: `MerchandisingPlanRow.planId`
+ * → `MerchandisingPlan.brandId`. Gli id sono uuid indistinguibili a occhio, e i
+ * due `rowId` vivono in router diversi.
+ */
+export async function resolveMerchPlanRowBrandAccess(
+  ctx: BrandScopeCtx,
+  rowId: string
+) {
+  const row = await ctx.prisma.merchandisingPlanRow.findUnique({
+    where: { id: rowId },
+    select: { id: true, planId: true, plan: { select: { brandId: true } } },
+  });
+  if (!row) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Riga non trovata' });
+  }
+
+  await assertBrandAccess(ctx, row.plan.brandId);
+  return row;
+}
+
 /** Planning group, per `planningGroupId`. */
 export async function resolvePlanningGroupBrandAccess(
   ctx: BrandScopeCtx,

@@ -28,7 +28,10 @@ import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
-import { assertBrandAccess } from '../services/context.service';
+import {
+  assertBrandAccess,
+  resolveMerchPlanRowBrandAccess,
+} from '../services/brandScope.service';
 
 export const merchandisingPlanRouter = router({
   /**
@@ -284,6 +287,8 @@ export const merchandisingPlanRouter = router({
     .use(requirePermission('merchandising_plan:read'))
     .input(z.object({ rowId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
+      await resolveMerchPlanRowBrandAccess(ctx, input.rowId);
+
       const specsheet = await ctx.prisma.merchandisingSpecsheet.findUnique({
         where: { rowId: input.rowId },
         include: {
@@ -519,6 +524,8 @@ export const merchandisingPlanRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await resolveMerchPlanRowBrandAccess(ctx, input.rowId);
+
       const existingRow = await ctx.prisma.merchandisingPlanRow.findUnique({
         where: { id: input.rowId },
         select: { assignedUserId: true, articleCode: true },
