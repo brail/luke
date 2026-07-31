@@ -159,8 +159,9 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
     uncovered: 7,
   },
   phase: {
-    reason: 'nessun test scritto sul catalogo fasi unificato',
-    uncovered: 7,
+    reason:
+      'list, listAll, create, update e reorder coperte da phase.integration.spec.ts (derivazione di code da order, RBAC admin-only); restano remove e restore, invariate rispetto al pattern soft-delete già in uso altrove',
+    uncovered: 2,
   },
   collectionCatalog: {
     reason: 'nessun test scritto sulle liste di opzioni configurabili',

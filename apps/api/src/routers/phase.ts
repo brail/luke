@@ -16,6 +16,11 @@ import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
 
+/** Derives the display code from position: order 0 → "01", order 1 → "02", ... */
+function codeForOrder(order: number): string {
+  return String(order + 1).padStart(2, '0');
+}
+
 export const phaseRouter = router({
   /**
    * Lists active phases, used to populate frontend selects.
@@ -50,7 +55,7 @@ export const phaseRouter = router({
    * Creates a new phase.
    *
    * @auth {phase_catalog:update}
-   * @input {PhaseInputSchema} — value (unique), label, optional code and order.
+   * @input {PhaseInputSchema} — value (unique), label, optional order. `code` is derived from order, not client-settable.
    * @output {Phase} — the newly created phase.
    */
   create: protectedProcedure
@@ -71,13 +76,14 @@ export const phaseRouter = router({
       const maxOrder = await ctx.prisma.phase.aggregate({
         _max: { order: true },
       });
+      const order = input.order ?? (maxOrder._max.order ?? -1) + 1;
 
       const result = await ctx.prisma.phase.create({
         data: {
           value: input.value,
           label: input.label,
-          code: input.code ?? null,
-          order: input.order ?? (maxOrder._max.order ?? -1) + 1,
+          code: codeForOrder(order),
+          order,
         },
       });
 
@@ -93,7 +99,7 @@ export const phaseRouter = router({
     }),
 
   /**
-   * Updates mutable fields of a phase (label, code, order).
+   * Updates mutable fields of a phase (label, order). `code` is re-derived from order automatically.
    *
    * @auth {phase_catalog:update}
    * @input {{ id: string, data: Partial<PhaseInputBaseSchema without value> }}
@@ -114,9 +120,11 @@ export const phaseRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Fase non trovata' });
       }
 
+      const order = input.data.order ?? item.order;
+
       const result = await ctx.prisma.phase.update({
         where: { id: input.id },
-        data: input.data,
+        data: { ...input.data, code: codeForOrder(order) },
       });
 
       await logAudit(ctx, {
@@ -212,7 +220,7 @@ export const phaseRouter = router({
         input.orderedIds.map((id, index) =>
           ctx.prisma.phase.update({
             where: { id },
-            data: { order: index },
+            data: { order: index, code: codeForOrder(index) },
           })
         )
       );

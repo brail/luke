@@ -257,6 +257,15 @@ export default function PhaseCatalogPage() {
       {itemDialog && (
         <PhaseItemDialog
           state={itemDialog}
+          previewCode={
+            // In edit il server tiene già `code` allineato a `order`: nessun
+            // fallback di calcolo serve. In create l'elemento non esiste
+            // ancora, quindi la posizione finale (in coda alla lista) va
+            // anticipata lato client.
+            itemDialog.mode === 'create'
+              ? String(sortedItems.length + 1).padStart(2, '0')
+              : itemDialog.item.code
+          }
           onClose={() => setItemDialog(null)}
           onSubmit={(data) => {
             if (itemDialog.mode === 'create') {
@@ -287,15 +296,17 @@ export default function PhaseCatalogPage() {
 
 // ─── Item Dialog ──────────────────────────────────────────────────────────────
 
-type DialogSubmitData = { value: string; label: string; code?: string | null };
+type DialogSubmitData = { value: string; label: string };
 
 function PhaseItemDialog({
   state,
+  previewCode,
   onClose,
   onSubmit,
   isLoading,
 }: {
   state: ItemDialogState;
+  previewCode: string | null;
   onClose: () => void;
   onSubmit: (data: DialogSubmitData) => void;
   isLoading: boolean;
@@ -304,7 +315,6 @@ function PhaseItemDialog({
 
   const [value, setValue] = useState(initial?.value ?? '');
   const [label, setLabel] = useState(initial?.label ?? '');
-  const [code, setCode] = useState(initial?.code ?? '');
 
   const canSubmit = value.trim().length > 0 && label.trim().length > 0;
 
@@ -312,7 +322,6 @@ function PhaseItemDialog({
     onSubmit({
       value: value.trim(),
       label: label.trim(),
-      code: code.trim() || null,
     });
   };
 
@@ -350,15 +359,10 @@ function PhaseItemDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="phase-code">Codice (es. 01)</Label>
-            <Input
-              id="phase-code"
-              value={code}
-              onChange={e => setCode(e.target.value)}
-              placeholder="es. 01"
-              maxLength={10}
-            />
-            <p className="text-xs text-muted-foreground">Mostrato come "{code || '01'} — {label || 'Label'}"</p>
+            <Label>Codice</Label>
+            <p className="text-sm text-muted-foreground">
+              Derivato automaticamente dalla posizione: "{previewCode} — {label || 'Label'}"
+            </p>
           </div>
         </div>
 

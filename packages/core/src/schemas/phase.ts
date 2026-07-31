@@ -8,7 +8,6 @@ import { z } from 'zod';
 export const PhaseInputBaseSchema = z.object({
   value: z.string().min(1).max(100),
   label: z.string().min(1).max(200),
-  code: z.string().max(10).optional().nullable(),
   order: z.number().int().min(0).optional(),
 });
 
