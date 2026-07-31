@@ -361,20 +361,31 @@ export async function flushAllCalendarNotifications(prisma: PrismaClient, log: L
 
 // ─── Dedup helper for periodic scheduler notifications ────────────────────────
 
-const dedupLastSentAt = new Map<string, number>();
-
-export const SYSTEM_FAILURE_DEDUP_MS = 2 * 60 * 60 * 1000;
+export const SYSTEM_FAILURE_DEDUP_MS = 6 * 60 * 60 * 1000;
 
 /**
  * Runs `send()` only if `windowMs` has elapsed since the last successful send for `key`.
- * The dedup timestamp is updated only after `send()` resolves without throwing, so a failed
- * send is retried on the next call instead of being silently suppressed for the full window.
+ * The dedup ledger is persisted in `NotificationDedupKey` (not in-memory) so it survives
+ * process restarts — otherwise every redeploy/restart would reset the window and re-fire
+ * recurring notifications (e.g. sync failures, overdue milestones) regardless of how
+ * recently one was already sent. The timestamp is updated only after `send()` resolves
+ * without throwing, so a failed send is retried on the next call instead of being silently
+ * suppressed for the full window.
  */
-export async function notifyDeduped(key: string, windowMs: number, send: () => Promise<void>): Promise<void> {
-  const last = dedupLastSentAt.get(key) ?? 0;
-  if (Date.now() - last < windowMs) return;
+export async function notifyDeduped(
+  prisma: PrismaClient,
+  key: string,
+  windowMs: number,
+  send: () => Promise<void>
+): Promise<void> {
+  const existing = await prisma.notificationDedupKey.findUnique({ where: { key } });
+  if (existing && Date.now() - existing.lastSentAt.getTime() < windowMs) return;
   await send();
-  dedupLastSentAt.set(key, Date.now());
+  await prisma.notificationDedupKey.upsert({
+    where: { key },
+    create: { key, lastSentAt: new Date() },
+    update: { lastSentAt: new Date() },
+  });
 }
 
 /**

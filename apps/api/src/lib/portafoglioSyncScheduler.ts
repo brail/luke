@@ -55,7 +55,7 @@ async function _runSync(): Promise<PortafoglioSyncResult | null> {
     return result;
   } catch (err) {
     log.error({ err }, 'Portafoglio sync scheduler: sync fallito');
-    await notifyDeduped('portafoglio-sync:failure', SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(prisma, {
+    await notifyDeduped(prisma, 'portafoglio-sync:failure', SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(prisma, {
       category: 'SYSTEM',
       title: 'Portafoglio sync fallito',
       message: (err as Error).message ?? 'Errore sconosciuto',

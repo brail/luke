@@ -1,7 +1,7 @@
 import { computeCriticalityForLayout, resolveAlertThresholds } from '../services/phaseAlert.service';
 
 import { guardMaintenance } from './maintenanceMode';
-import { createNotification, getVisibleUserIdsForMilestone, getVisibleUserIdsForMilestones } from './notifications';
+import { createNotification, getVisibleUserIdsForMilestone, getVisibleUserIdsForMilestones, notifyDeduped } from './notifications';
 import { withSchedulerLock } from './schedulerLock';
 
 import type { PrismaClient } from '@prisma/client';
@@ -9,9 +9,10 @@ import type { FastifyInstance } from 'fastify';
 
 const TICK_INTERVAL_MS = 60 * 60 * 1000;
 
-// Dedup per-tick: cleared when day rolls over
-const sentToday = new Set<string>();
-let _currentDay = new Date().toISOString().slice(0, 10);
+// At most one notification per user+entity+type per ~day. DB-backed via notifyDeduped (see
+// notifications.ts) so the dedup ledger survives process restarts — kept just under 24h to
+// avoid missing a day while minimizing drift across repeated sends.
+const MILESTONE_DEDUP_MS = 23 * 60 * 60 * 1000;
 
 type DeadlineType = 'upcoming' | 'overdue';
 
@@ -19,23 +20,19 @@ async function notifyMilestone(
   prisma: PrismaClient,
   m: { id: string; title: string },
   type: DeadlineType,
-  today: string,
   message: string,
 ): Promise<void> {
   const userIds = await getVisibleUserIdsForMilestone(m.id, prisma);
-  await Promise.all(userIds.map(async userId => {
-    const key = `${userId}:${m.id}:${type}:${today}`;
-    if (sentToday.has(key)) return;
-    sentToday.add(key);
-    await createNotification(prisma, {
+  await Promise.all(userIds.map(userId =>
+    notifyDeduped(prisma, `milestone:${userId}:${m.id}:${type}`, MILESTONE_DEDUP_MS, () => createNotification(prisma, {
       userId,
       category: 'CALENDAR',
       title: type === 'upcoming' ? 'Milestone in scadenza' : 'Milestone scaduta',
       message,
       link: '/calendar',
       data: { milestoneId: m.id, type: `deadline_${type}` },
-    });
-  }));
+    }))
+  ));
 }
 
 /**
@@ -44,7 +41,7 @@ async function notifyMilestone(
  * engine as the Controllo dashboards, no new calculation). Recipients are the event's visible
  * users, same resolution as milestone deadline notifications.
  */
-async function checkRowPhaseOverdue(prisma: PrismaClient, today: string): Promise<void> {
+async function checkRowPhaseOverdue(prisma: PrismaClient): Promise<void> {
   const layouts = await prisma.collectionLayout.findMany({ select: { id: true } });
   const thresholds = await resolveAlertThresholds(prisma);
 
@@ -72,11 +69,8 @@ async function checkRowPhaseOverdue(prisma: PrismaClient, today: string): Promis
     overdueRows.map(async r => {
       const userIds = visibilityMap.get(r.eventId) ?? [];
       const line = lineByRowId.get(r.rowId) ?? r.rowId;
-      await Promise.all(userIds.map(async userId => {
-        const key = `${userId}:${r.rowId}:phase_overdue:${today}`;
-        if (sentToday.has(key)) return;
-        sentToday.add(key);
-        await createNotification(prisma, {
+      await Promise.all(userIds.map(userId =>
+        notifyDeduped(prisma, `milestone:${userId}:${r.rowId}:phase_overdue`, MILESTONE_DEDUP_MS, () => createNotification(prisma, {
           userId,
           category: 'CALENDAR',
           title: 'Fase scaduta',
@@ -88,20 +82,14 @@ async function checkRowPhaseOverdue(prisma: PrismaClient, today: string): Promis
           // user preference (no URL-param override exists for it today).
           link: `/product/collection-layout?rowId=${encodeURIComponent(r.rowId)}`,
           data: { rowId: r.rowId, eventId: r.eventId, type: 'phase_overdue' },
-        });
-      }));
+        }))
+      ));
     })
   );
 }
 
 async function checkDeadlines(prisma: PrismaClient): Promise<void> {
   const now = new Date();
-  const today = now.toISOString().slice(0, 10);
-
-  if (today !== _currentDay) {
-    sentToday.clear();
-    _currentDay = today;
-  }
 
   const in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
   const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
@@ -120,12 +108,12 @@ async function checkDeadlines(prisma: PrismaClient): Promise<void> {
   await Promise.all([
     ...upcoming.map(m => {
       const hoursLeft = Math.round((m.startAt.getTime() - now.getTime()) / 3_600_000);
-      return notifyMilestone(prisma, m, 'upcoming', today, `"${m.title}" scade ${hoursLeft <= 24 ? 'domani' : 'tra 2 giorni'}`);
+      return notifyMilestone(prisma, m, 'upcoming', `"${m.title}" scade ${hoursLeft <= 24 ? 'domani' : 'tra 2 giorni'}`);
     }),
     ...overdue.map(m =>
-      notifyMilestone(prisma, m, 'overdue', today, `"${m.title}" è scaduta senza essere completata`)
+      notifyMilestone(prisma, m, 'overdue', `"${m.title}" è scaduta senza essere completata`)
     ),
-    checkRowPhaseOverdue(prisma, today),
+    checkRowPhaseOverdue(prisma),
   ]);
 }
 

@@ -107,7 +107,7 @@ export function registerNavSyncScheduler(
       }
     } catch (err) {
       fastify.log.error({ err, entity }, 'NAV sync scheduler: sync fallito');
-      await notifyDeduped(`nav-sync:failure:${entity}`, SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(prisma, {
+      await notifyDeduped(prisma, `nav-sync:failure:${entity}`, SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(prisma, {
         category: 'SYSTEM',
         title: `NAV sync ${entity} fallito`,
         message: (err as Error).message ?? 'Errore sconosciuto',

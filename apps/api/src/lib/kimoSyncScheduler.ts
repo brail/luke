@@ -50,7 +50,7 @@ async function _runSync(): Promise<KimoSyncResult | null> {
     return result;
   } catch (err) {
     log.error({ err }, 'Kimo sync scheduler: sync fallito');
-    await notifyDeduped('kimo-sync:failure', SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(prisma, {
+    await notifyDeduped(prisma, 'kimo-sync:failure', SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(prisma, {
       category: 'SYSTEM',
       title: 'KIMO sync fallito',
       message: (err as Error).message ?? 'Errore sconosciuto',

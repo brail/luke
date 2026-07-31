@@ -2046,6 +2046,16 @@ model NotificationPreference {
   @@map("notification_preferences")
 }
 
+/// DB-backed dedup ledger for recurring scheduler notifications (sync failures, milestone deadlines).
+/// Replaces in-memory dedup state, which does not survive process restarts.
+model NotificationDedupKey {
+  /// Opaque dedup key, e.g. "nav-sync:failure:vendor" or "milestone:userId:milestoneId:overdue:2026-07-31".
+  key        String   @id
+  lastSentAt DateTime
+
+  @@map("notification_dedup_keys")
+}
+
 /// State side-effect definition on a MilestoneTemplateItem. Applied to generated CalendarEventStateEffect records when a template is instantiated.
 model MilestoneTemplateStateEffect {
   id                   String          @id @default(uuid())

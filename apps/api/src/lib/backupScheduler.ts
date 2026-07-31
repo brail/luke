@@ -56,7 +56,7 @@ async function runScheduledBackup(
   });
   if (result?.status === 'COMPLETED' || !notifyOnFailure) return;
 
-  await notifyDeduped('backup-schedule:failure', SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(prisma, {
+  await notifyDeduped(prisma, 'backup-schedule:failure', SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(prisma, {
     category: 'SYSTEM',
     title: 'Backup pianificato fallito',
     message: result?.errorMessage ?? 'Errore sconosciuto',
