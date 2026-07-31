@@ -466,6 +466,7 @@ export async function updateParameterSet(
     where: { id },
     data: {
       name: input.name,
+      countryCode: input.countryCode,
       purchaseCurrency: input.purchaseCurrency,
       sellingCurrency: input.sellingCurrency,
       qualityControlPercent: input.qualityControlPercent,
