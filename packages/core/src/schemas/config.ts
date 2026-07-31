@@ -133,6 +133,12 @@ export const AppConfigRegistry = {
   'backup.target.bucket':           z.string().min(1),
   'backup.notifyOnFailure':         z.coerce.boolean(),
 
+  // ── Retention sweep (audit log + notifiche) ──────────────────────────────
+  'auditLog.retentionDays':             z.coerce.number().int().min(1),
+  'auditLog.criticalRetentionDays':     z.coerce.number().int().min(1),
+  'notification.retentionDays':         z.coerce.number().int().min(1),
+  'notification.dedupRetentionDays':    z.coerce.number().int().min(1),
+
   // ── Maintenance Mode (schedulable, system-wide) ───────────────────────────
   // Single JSON blob, not one key per field: nothing outside maintenanceMode.ts (apps/api)
   // ever reads an individual sub-field, so one row keeps writes atomic for free instead of

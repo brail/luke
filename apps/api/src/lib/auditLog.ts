@@ -27,8 +27,10 @@ export interface AuditParams {
   metadata?: Record<string, any>;
 }
 
-// Actions where audit failure must surface — losing these silently is a compliance/security risk
-const CRITICAL_AUDIT_ACTIONS = new Set([
+// Actions where audit failure must surface — losing these silently is a compliance/security risk.
+// Also the retention-sweep floor (retentionScheduler.ts): rows with these actions get the longer
+// `auditLog.criticalRetentionDays` window instead of `auditLog.retentionDays`.
+export const CRITICAL_AUDIT_ACTIONS = new Set([
   'AUTH_LOGIN_FAILED',
   'PASSWORD_RESET_REQUESTED',
   'PASSWORD_CHANGED',

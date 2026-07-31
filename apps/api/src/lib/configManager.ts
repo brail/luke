@@ -531,6 +531,53 @@ export function getBackupRetentionMinCount(prisma: PrismaClient): Promise<number
   });
 }
 
+/**
+ * Reads how many days a non-critical audit log row stays before it's eligible for retention sweep.
+ *
+ * @returns Retention window in days. Defaults to 365; invalid values fall back to the default.
+ */
+export function getAuditLogRetentionDays(prisma: PrismaClient): Promise<number> {
+  return getBoundedNumericConfig(prisma, 'auditLog.retentionDays', {
+    defaultValue: 365, min: 1, max: 3650,
+  });
+}
+
+/**
+ * Reads the retention floor (in days) for audit log rows whose `action` is in
+ * `CRITICAL_AUDIT_ACTIONS` — kept far longer than ordinary rows for compliance.
+ *
+ * @returns Retention window in days. Defaults to 3650 (10 years); invalid values fall back to the default.
+ */
+export function getAuditLogCriticalRetentionDays(prisma: PrismaClient): Promise<number> {
+  return getBoundedNumericConfig(prisma, 'auditLog.criticalRetentionDays', {
+    defaultValue: 3650, min: 1, max: 36500,
+  });
+}
+
+/**
+ * Reads how many days a read notification stays before it's eligible for retention sweep.
+ * Unread notifications are never swept, regardless of age.
+ *
+ * @returns Retention window in days. Defaults to 90; invalid values fall back to the default.
+ */
+export function getNotificationRetentionDays(prisma: PrismaClient): Promise<number> {
+  return getBoundedNumericConfig(prisma, 'notification.retentionDays', {
+    defaultValue: 90, min: 1, max: 3650,
+  });
+}
+
+/**
+ * Reads how many days a `NotificationDedupKey` row stays before it's eligible for retention
+ * sweep. Well above the longest dedup window in use (23h) — purely a safety margin.
+ *
+ * @returns Retention window in days. Defaults to 30; invalid values fall back to the default.
+ */
+export function getNotificationDedupRetentionDays(prisma: PrismaClient): Promise<number> {
+  return getBoundedNumericConfig(prisma, 'notification.dedupRetentionDays', {
+    defaultValue: 30, min: 1, max: 3650,
+  });
+}
+
 /** Automatic-backup schedule + retention settings, resolved from AppConfig with the scheduler's own defaults. */
 export interface BackupScheduleSettings {
   enabled: boolean;

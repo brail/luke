@@ -44,7 +44,8 @@ export type SchedulerName =
   | 'maintenance-mode'
   | 'milestone-deadline'
   | `nav-sync:${Entity}`
-  | 'portafoglio-sync';
+  | 'portafoglio-sync'
+  | 'retention-sweep';
 
 async function tryAcquire(prisma: PrismaClient, name: SchedulerName): Promise<boolean> {
   const rows = await prisma.$queryRaw<{ name: string }[]>(Prisma.sql`

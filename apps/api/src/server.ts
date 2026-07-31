@@ -41,6 +41,7 @@ import { registerMilestoneDeadlineScheduler } from './lib/milestoneDeadlineSched
 import { registerNavSyncScheduler } from './lib/navSyncScheduler';
 import { registerPortafoglioSyncScheduler } from './lib/portafoglioSyncScheduler';
 import { rateLimitStore } from './lib/ratelimit';
+import { registerRetentionScheduler } from './lib/retentionScheduler';
 import { createContext } from './lib/trpc';
 import {
   pinoTraceMiddleware,
@@ -653,6 +654,9 @@ const start = async () => {
 
     // Registra flush periodico del buffer di aggregazione notifiche calendario (tick ogni 30s)
     registerCalendarNotificationBuffer(fastify, prisma);
+
+    // Registra retention sweep audit log + notifiche + dedup key (tick ogni 24h)
+    registerRetentionScheduler(fastify, prisma);
 
     // Configura graceful shutdown
     setupGracefulShutdown();

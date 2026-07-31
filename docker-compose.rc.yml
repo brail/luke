@@ -35,6 +35,11 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   # ── Fastify API (RC) ─────────────────────────────────────────────────────────
   api-rc:
@@ -56,6 +61,11 @@ services:
       timeout: 5s
       retries: 5
       start_period: 60s
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   # ── Next.js web (RC) — esposta su porta 3010 ─────────────────────────────────
   web-rc:
@@ -72,6 +82,11 @@ services:
       NEXTAUTH_URL: http://${RC_PUBLIC_HOSTNAME}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET_RC}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   # ── MinIO object storage (RC) ────────────────────────────────────────────────
   minio-rc:
@@ -89,6 +104,11 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   minio-rc-init:
     image: minio/mc:latest
@@ -120,6 +140,11 @@ services:
         mc ilm rule add --expire-days 1 local/temp-merchandising-specsheet-images
       "
     restart: on-failure
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 volumes:
   postgres_rc_data:
