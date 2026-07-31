@@ -39,7 +39,7 @@ const fetchEffectiveAccess = cache(async (accessToken: string): Promise<Record<s
 /**
  * Asserts that the currently authenticated user has access to the given section.
  * Redirects to `/login` (clearing the session) if unauthenticated or the token is
- * stale/revoked, or to `/app/dashboard` if access is genuinely denied.
+ * stale/revoked, or to `/dashboard` if access is genuinely denied.
  * Must be called from a server component or async layout.
  *
  * @param section - The section key to check (e.g. `'settings.ldap'`).
@@ -52,6 +52,6 @@ export async function assertSectionAccess(section: Section) {
   const effectiveAccess = await fetchEffectiveAccess(session.accessToken);
 
   if (!effectiveAccess?.[section]) {
-    redirect('/app/dashboard' as Route);
+    redirect('/dashboard' as Route);
   }
 }
