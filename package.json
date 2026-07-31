@@ -27,6 +27,7 @@
     "codemod:eliminate-urls": "tsx tools/codemods/eliminate-hardcoded-urls.ts",
     "codemod:check-urls": "tsx tools/codemods/eliminate-hardcoded-urls.ts --dry-run",
     "release:prepare": "bash scripts/release-prepare.sh",
+    "rc:clone": "tsx scripts/rc-prod-clone.ts",
     "changelog": "git-cliff -o CHANGELOG.md",
     "changelog:bump": "git-cliff --bump -o CHANGELOG.md",
     "changelog:tag": "git-cliff -o CHANGELOG.md",
@@ -38,6 +39,8 @@
   },
   "devDependencies": {
     "@commitlint/cli": "^21.1.0",
+    "@luke/api": "workspace:*",
+    "@trpc/client": "^11.18.0",
     "globals": "^16.4.0",
     "@commitlint/config-conventional": "^21.1.0",
     "@eslint/js": "^9.38.0",

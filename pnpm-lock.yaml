@@ -30,6 +30,12 @@ importers:
       '@eslint/js':
         specifier: ^9.38.0
         version: 9.39.4
+      '@luke/api':
+        specifier: workspace:*
+        version: link:apps/api
+      '@trpc/client':
+        specifier: ^11.18.0
+        version: 11.18.0(@trpc/server@11.18.0(typescript@6.0.3))(typescript@6.0.3)
       '@types/node':
         specifier: ^24.7.2
         version: 24.13.2
