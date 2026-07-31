@@ -374,6 +374,27 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       value: 'false',
       encrypt: false,
     },
+    // Retention sweep (audit log + notifiche) — vedi retentionScheduler.ts
+    {
+      key: 'auditLog.retentionDays',
+      value: '365',
+      encrypt: false,
+    },
+    {
+      key: 'auditLog.criticalRetentionDays',
+      value: '3650', // 10 anni, per le azioni in CRITICAL_AUDIT_ACTIONS
+      encrypt: false,
+    },
+    {
+      key: 'notification.retentionDays',
+      value: '90',
+      encrypt: false,
+    },
+    {
+      key: 'notification.dedupRetentionDays',
+      value: '30',
+      encrypt: false,
+    },
   ];
 
   let configsCreated = 0;
