@@ -66,7 +66,7 @@ export function ContextSelector() {
         onValueChange={handleBrandChange}
         disabled={isPending}
       >
-        <SelectTrigger className="w-52">
+        <SelectTrigger className="w-52 shrink-0 [&>span]:line-clamp-none">
           <SelectValue placeholder="Brand">
             {brand && (
               <div className="flex items-center gap-2">
@@ -94,7 +94,7 @@ export function ContextSelector() {
         onValueChange={handleSeasonChange}
         disabled={isPending}
       >
-        <SelectTrigger className="w-64">
+        <SelectTrigger className="w-64 shrink-0 [&>span]:line-clamp-none">
           <SelectValue placeholder="Season">
             {season && (
               <div className="flex items-center gap-2">
