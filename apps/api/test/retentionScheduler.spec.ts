@@ -146,7 +146,7 @@ describe('retentionScheduler', () => {
       if (where.action?.in) return criticalIds.map(id => ({ id }));
       return [];
     });
-    vi.mocked(archiveAuditLogRows).mockImplementation(async (_p, _prisma, ids, _tickId, tier) => {
+    vi.mocked(archiveAuditLogRows).mockImplementation(async (_p, _prisma, _ids, _tickId, tier) => {
       if (tier === 'critical') throw new Error('upload storage fallito');
       return { key: 'ok-key' };
     });

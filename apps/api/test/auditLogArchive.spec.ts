@@ -104,7 +104,10 @@ describe('archiveAuditLogRows', () => {
     const spyingProvider: Partial<IStorageProvider> = {
       put: async params => {
         putParams = params as unknown as Record<string, unknown>;
-        return mockStorage.put(params as any);
+        // Consuma lo stream (altrimenti il gzip a monte non chiude mai) senza bisogno di
+        // decomprimerlo: il contenuto è già coperto dal test precedente.
+        for await (const _chunk of params.stream) { /* drain */ }
+        return { key: params.key ?? 'unused', checksumSha256: 'unused', size: 0 };
       },
     };
 
