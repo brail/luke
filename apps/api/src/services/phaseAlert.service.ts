@@ -32,7 +32,7 @@ const logger = pino({ level: 'info' });
 
 type CalendarEventWithContext = Prisma.CalendarEventGetPayload<{
   include: {
-    phase: { select: { order: true; value: true } };
+    phase: { select: { order: true; value: true; isActive: true } };
   };
 }>;
 
@@ -79,7 +79,7 @@ export async function getCalendarEventsForLayout(
     // and variance paths so the exclusion is centralized (not duplicated per caller).
     where: { calendarId: calendar.id, cancelledAt: null },
     include: {
-      phase: { select: { order: true, value: true } },
+      phase: { select: { order: true, value: true, isActive: true } },
     },
     // Fetched pre-sorted by startAt: Array.prototype.sort is stable, so events sharing the
     // same Phase.order below keep this chronological order as a secondary sort key.
@@ -337,6 +337,30 @@ export function getActivePhaseFromEvents(rowEvents: CalendarEventWithContext[], 
   return event ? { status: 'active', event } : { status: 'completed' };
 }
 
+/**
+ * Resolves the phase after the active one — the next milestone the row will be measured against
+ * once it clears the active phase's deadline. Pure — no I/O — operates on the same row-scoped,
+ * phase.order-sorted array `getActivePhaseFromEvents` consumes.
+ *
+ * Skips events tied to a deactivated Phase (`phase.isActive === false`) — deactivating a phase
+ * hides it from `phase.list` (the catalog the frontend resolves labels from), but doesn't retroactively
+ * touch existing calendar events still referencing it. Surfacing one as "next phase" would show an
+ * unresolvable label with no way for the user to act on it — closer to "nothing to show" than a
+ * real next milestone.
+ *
+ * `null` when there's no active phase to look past, the active phase is the last one applicable to
+ * this row, or every later event is tied to a deactivated phase.
+ */
+export function getNextPhaseFromEvents(rowEvents: CalendarEventWithContext[], active: ActivePhaseResult): CalendarEventWithContext | null {
+  if (active.status !== 'active') return null;
+  const activeOrder = active.event.phase?.order;
+  if (activeOrder === undefined) return null;
+  const activeIndex = rowEvents.findIndex(e => e.id === active.event.id);
+  if (activeIndex === -1) return null;
+  const next = rowEvents.slice(activeIndex + 1).find(e => e.phase && e.phase.order > activeOrder && e.phase.isActive);
+  return next ?? null;
+}
+
 /** DB-fetching counterpart of `getActivePhaseFromEvents` for single-row callers. */
 export async function getActivePhaseForRow(rowId: string, prisma: PrismaClient): Promise<ActivePhaseResult> {
   const row = await prisma.collectionLayoutRow.findUnique({
@@ -362,10 +386,32 @@ function deadlineFromActivePhase(active: ActivePhaseResult) {
 }
 
 /**
+ * Resolves the display fields for the row's next phase, at the same point in time / working-days
+ * context as the active phase's own countdown. Pure — no I/O. Split out of `criticalityFromActivePhase`
+ * so that function can take an early return instead of nesting this behind a ternary.
+ */
+function nextPhaseInfo(nextEvent: CalendarEventWithContext, now: Date, vendorCountryCode: string | null, workingDaysCtx: WorkingDaysContext) {
+  const { days, daysMode, relevantCountryCodes } = resolveDaysCount(
+    now, eventDeadline(nextEvent), nextEvent.calendarDaysRelevance, vendorCountryCode, workingDaysCtx
+  );
+  return {
+    phaseId: nextEvent.phaseId,
+    eventTitle: nextEvent.title,
+    deadline: eventDeadline(nextEvent),
+    daysUntil: days,
+    daysMode,
+    relevantCountryCodes,
+  };
+}
+
+/**
  * Computes the criticality band for an active-phase result at a given point in time, against the
  * given thresholds. Pure — no I/O — so batch callers can reuse one `thresholds`/`workingDaysCtx`
  * fetch across rows.
  *
+ * @param nextEvent - The row's next applicable event past `active`, already resolved by the caller
+ *   via `getNextPhaseFromEvents` — every caller needs it anyway (to decide whether `workingDaysCtx`
+ *   must be fetched), so it's passed in here instead of being recomputed from `rowEvents`.
  * @param vendorCountryCode - The row's vendor country, if any (used only when the active event's
  *   `calendarDaysRelevance` is `VENDOR` or `BOTH`).
  * @param workingDaysCtx - Pre-fetched company country + holidays, from `buildWorkingDaysContext`.
@@ -373,6 +419,7 @@ function deadlineFromActivePhase(active: ActivePhaseResult) {
 function criticalityFromActivePhase(
   rowId: string,
   active: ActivePhaseResult,
+  nextEvent: CalendarEventWithContext | null,
   thresholds: CollectionAlertThresholds,
   now: Date,
   vendorCountryCode: string | null,
@@ -399,6 +446,7 @@ function criticalityFromActivePhase(
     daysMode,
     relevantCountryCodes,
     band,
+    nextPhase: nextEvent ? nextPhaseInfo(nextEvent, now, vendorCountryCode, workingDaysCtx) : null,
   };
 }
 
@@ -410,6 +458,13 @@ function criticalityFromActivePhase(
 export async function computeDeadline(rowId: string, prisma: PrismaClient) {
   const active = await getActivePhaseForRow(rowId, prisma);
   return deadlineFromActivePhase(active);
+}
+
+/** Whether the active or next event opted into working-days counting — gates the (expensive)
+ * company/vendor holiday fetch. Shared by `computeCriticality` (single row) and
+ * `computeCriticalityForLayout` (batch, via `.some()`). */
+function needsWorkingDaysContext(active: ActivePhaseResult, nextEvent: CalendarEventWithContext | null): boolean {
+  return Boolean((active.status === 'active' && active.event.calendarDaysRelevance) || nextEvent?.calendarDaysRelevance);
 }
 
 /**
@@ -433,14 +488,15 @@ export async function computeCriticality(rowId: string, now: Date, prisma: Prism
   const events = await getApplicableEventsForRow(rowId, prisma);
   const active = getActivePhaseFromEvents(events, row.phase?.order ?? null);
   const vendorCountryCode = row.vendor?.countryCode ?? null;
+  const nextEvent = getNextPhaseFromEvents(events, active);
 
-  // Only fetch company country + holidays when the active event actually opted in — the common
-  // case today (calendarDaysRelevance is null by default) skips both queries entirely.
-  const workingDaysCtx = active.status === 'active' && active.event.calendarDaysRelevance
+  // Only fetch company country + holidays when the active or next event actually opted in — the
+  // common case today (calendarDaysRelevance is null by default) skips both queries entirely.
+  const workingDaysCtx = needsWorkingDaysContext(active, nextEvent)
     ? await buildWorkingDaysContext(prisma, [vendorCountryCode])
     : EMPTY_WORKING_DAYS_CONTEXT;
 
-  return criticalityFromActivePhase(rowId, active, thresholds, now, vendorCountryCode, workingDaysCtx);
+  return criticalityFromActivePhase(rowId, active, nextEvent, thresholds, now, vendorCountryCode, workingDaysCtx);
 }
 
 /**
@@ -472,23 +528,24 @@ export async function computeCriticalityForLayout(
     thresholds ? Promise.resolve(thresholds) : resolveAlertThresholds(prisma),
   ]);
 
-  const rowActives = rows.map(row => ({
-    row,
-    active: getActivePhaseFromEvents(filterApplicableEvents(events, row.planningGroupId), row.phase?.order ?? null),
-  }));
+  const rowActives = rows.map(row => {
+    const rowEvents = filterApplicableEvents(events, row.planningGroupId);
+    const active = getActivePhaseFromEvents(rowEvents, row.phase?.order ?? null);
+    return { row, active, nextEvent: getNextPhaseFromEvents(rowEvents, active) };
+  });
 
   // One working-days context for the whole batch (company country + every distinct vendor country
   // among these rows), instead of one per row — same batching principle as events/thresholds above.
-  // Only fetched if at least one row's active event actually opted in (common case: none do).
-  const needsWorkingDays = rowActives.some(({ active }) => active.status === 'active' && active.event.calendarDaysRelevance);
+  // Only fetched if at least one row's active or next event actually opted in (common case: none do).
+  const needsWorkingDays = rowActives.some(({ active, nextEvent }) => needsWorkingDaysContext(active, nextEvent));
   const workingDaysCtx = needsWorkingDays
     ? await buildWorkingDaysContext(prisma, rows.map(r => r.vendor?.countryCode ?? null))
     : EMPTY_WORKING_DAYS_CONTEXT;
 
   return rowActives
-    .map(({ row, active }) => {
+    .map(({ row, active, nextEvent }) => {
       const criticality = criticalityFromActivePhase(
-        row.id, active, resolvedThresholds, now, row.vendor?.countryCode ?? null, workingDaysCtx
+        row.id, active, nextEvent, resolvedThresholds, now, row.vendor?.countryCode ?? null, workingDaysCtx
       );
       return criticality ? { ...criticality, productCategory: row.productCategory } : null;
     })
