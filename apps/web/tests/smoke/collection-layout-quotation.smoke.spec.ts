@@ -6,13 +6,22 @@ import {
 } from '../support/smoke';
 
 /**
- * Regressione: Invio su un campo quotazione (retail/FOB/note/SKU) sottomette
- * il `<form>` esterno della riga — il campo quotazione salva solo su blur, e
- * l'Invio non genera un blur prima del submit. Risultato pre-fix: il modal si
- * chiude, il prezzo digitato sparisce, riaprendo la riga non c'è.
+ * Regressione storica: Invio su un campo quotazione (retail/FOB/note/SKU) sottomette
+ * il `<form>` esterno della riga — il campo quotazione salvava solo su blur, e
+ * l'Invio non generava un blur prima del submit. Risultato pre-fix: il modal si
+ * chiudeva, il prezzo digitato spariva, riaprendo la riga non c'era.
  *
- * Il fix fa sì che l'Invio salvi prima la quotazione via mutation e solo dopo
- * sottometta/chiuda la riga — stessa UX di prima, senza perdere il dato.
+ * Il meccanismo è cambiato da allora: le quotazioni non hanno più una mutation
+ * propria per add/blur/delete — sono bufferizzate in stato locale nel drawer e
+ * committate in un'unica richiesta solo al Salva (`collectionLayout.rows.update`,
+ * che sincronizza fase/gruppo/quotazioni nella stessa transazione della riga —
+ * vedi `CollectionRowDrawer.tsx`/`syncRowQuotations`). L'Invio ora chiama
+ * `submitRow()` direttamente: non c'è più una mutation separata da far correre
+ * prima del submit, quindi la classe di bug originale (blur mai scattato prima
+ * del submit) non può più ripresentarsi per costruzione. Il test resta valido
+ * come regressione sul buffer: verifica che un prezzo digitato ed Enter-sottomesso
+ * sopravviva al giro form-locale → payload → mutation → refetch, non solo che
+ * il modal si chiuda.
  *
  * Nessun tier unit esiste per i componenti web (solo Playwright smoke): è
  * un'interazione DOM/tastiera su un form annidato, non verificabile senza un
@@ -80,14 +89,16 @@ test.describe('smoke: collection layout — Invio su campo quotazione', () => {
       await retailInput.fill(RETAIL_VALUE);
       await retailInput.press('Enter');
 
-      // Comportamento atteso: la riga si sottomette e il modal si chiude, come
-      // faceva prima del fix — ma stavolta il prezzo è stato persistito prima.
+      // Comportamento atteso: la riga si sottomette e il modal si chiude — il
+      // prezzo è nel payload della stessa mutation di update, non serve più un
+      // giro separato prima del submit.
       await expect(dialog).toHaveCount(0);
       await expect(page.getByText('Riga aggiornata')).toBeVisible();
       await expectNoErrorBoundary(page);
 
-      // Riapri la riga: se il bug fosse ancora presente, il campo retail
-      // sarebbe vuoto qui perché la mutation di update non è mai partita.
+      // Riapri la riga: se il buffer locale non finisse nel payload di submit,
+      // il campo retail sarebbe vuoto qui perché la quotazione non sarebbe mai
+      // stata inviata al server.
       await row.click();
       const reopened = page.getByRole('dialog');
       await expect(reopened).toBeVisible();
