@@ -4,7 +4,7 @@ import { Image, Plus, Trash2, X } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
-import { calcMaxSupplierCost, type CollectionLayoutRowInput } from '@luke/core';
+import { calcMaxSupplierCost, formatPhaseLabel, type CollectionLayoutRowInput } from '@luke/core';
 
 import { NumberInput } from '../../../../../components/NumberInput';
 import { PhaseSelect } from '../../../../../components/PhaseSelect';
@@ -32,7 +32,7 @@ import { trpc } from '../../../../../lib/trpc';
 import { cn } from '../../../../../lib/utils';
 import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
 
-import { CriticalityBadge } from './CriticalityBadge';
+import { CriticalitySituation } from './CriticalityBadge';
 import { VendorCombobox } from './VendorCombobox';
 
 import type { PricingParameterSet } from '../../_shared/pricingCalc';
@@ -63,6 +63,9 @@ export type QuotationState = {
   supplierQuotation: number | null;
   notes: string | null;
   sku: number | null;
+  /** True for a quotation added client-side this session (not yet in DB) — decides create vs
+   * update at submit, in place of cross-checking `id` against a separately-tracked DB id set. */
+  isNew: boolean;
 };
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
@@ -394,6 +397,8 @@ interface PlanningSectionProps {
   planningGroups: PlanningGroupOption[];
   mode: 'create' | 'edit';
   onRequestChangePlanningGroup?: () => void;
+  /** Edit mode only — opens the "Cambia fase" confirmation dialog instead of editing inline. */
+  onRequestChangePhase?: () => void;
   /** Present only in edit mode — enables the criticality/variance badges next to the phase field. */
   rowId?: string;
 }
@@ -410,37 +415,19 @@ export function PlanningSection({
   planningGroups,
   mode,
   onRequestChangePlanningGroup,
+  onRequestChangePhase,
   rowId,
 }: PlanningSectionProps) {
-  const { phases } = usePhaseCatalog();
-
   return (
     <div className="space-y-4">
       <SectionHeader title="Pianificazione" />
       <div className="grid grid-cols-2 gap-4">
-        {/* fase */}
-        <FormField
+        <PhaseSelectField
           control={control}
-          name="phaseId"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel className={cn(PLANNING_FIELD_LABEL, 'gap-1.5')}>
-                Fase
-                {rowId && <CriticalityBadge rowId={rowId} className="text-xs" />}
-              </FormLabel>
-              <FormControl>
-                <PhaseSelect
-                  size="xs"
-                  value={field.value ?? '_none'}
-                  onValueChange={v => field.onChange(v === '_none' ? null : v)}
-                  phases={phases}
-                  disabled={!canUpdate}
-                  noneLabel="—"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+          canUpdate={canUpdate}
+          mode={mode}
+          onRequestChange={onRequestChangePhase}
+          rowId={rowId}
         />
 
         {/* gruppo di pianificazione */}
@@ -453,6 +440,75 @@ export function PlanningSection({
         />
       </div>
     </div>
+  );
+}
+
+// ─── Section: Fase ────────────────────────────────────────────────────────────
+
+interface PhaseSelectFieldProps {
+  control: Control<CollectionLayoutRowInput>;
+  canUpdate: boolean;
+  /** "create": plain selector (no calendar/alert history depends on the row yet). "edit": read-only
+   * display + explicit "Cambia fase" action, so changing it (which the buffered-save drawer treats
+   * as a confirmed, audited event with an optional note) is never a side effect of an unrelated
+   * field save — same reasoning as `PlanningGroupSelectField`, whose `mode` split this mirrors. */
+  mode: 'create' | 'edit';
+  onRequestChange?: () => void;
+  /** Present only in edit mode — enables the "Situazione" criticality block under the field. */
+  rowId?: string;
+}
+
+function PhaseSelectField({ control, canUpdate, mode, onRequestChange, rowId }: PhaseSelectFieldProps) {
+  const { phases, phaseById } = usePhaseCatalog();
+
+  return (
+    <FormField
+      control={control}
+      name="phaseId"
+      render={({ field }) => {
+        if (mode === 'edit') {
+          const current = phaseById.get(field.value ?? '');
+          return (
+            <FormItem>
+              {/* Sits at the same row as the "Gruppo di pianificazione" FormLabel next to it — this
+                  field has no text label of its own (the value line below reads "Fase corrente: …"
+                  instead), so the criticality badge fills that slot instead of an empty spacer,
+                  keeping the two-column row aligned. */}
+              <div className={cn(PLANNING_FIELD_LABEL, 'h-auto min-h-6')}>
+                {rowId && <CriticalitySituation rowId={rowId} phaseById={phaseById} />}
+              </div>
+              <div className="flex h-7 items-center justify-between gap-2 rounded-md border pl-3 pr-1">
+                <span className="truncate text-xs">
+                  <span className="text-muted-foreground">Fase corrente:</span>{' '}
+                  {current ? formatPhaseLabel(current.code, current.label) : '—'}
+                </span>
+                <Button type="button" variant="outline" size="sm" className="h-5 px-2 text-xs" disabled={!canUpdate} onClick={onRequestChange}>
+                  Cambia fase
+                </Button>
+              </div>
+              <FormMessage />
+            </FormItem>
+          );
+        }
+
+        return (
+          <FormItem>
+            <FormLabel className={PLANNING_FIELD_LABEL}>Fase</FormLabel>
+            <FormControl>
+              <PhaseSelect
+                size="xs"
+                value={field.value ?? '_none'}
+                onValueChange={v => field.onChange(v === '_none' ? null : v)}
+                phases={phases}
+                disabled={!canUpdate}
+                noneLabel="—"
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        );
+      }}
+    />
   );
 }
 
@@ -736,10 +792,8 @@ interface PricingFooterSectionProps {
   enabledParameterSetIds: string[];
   onAddQuotation: () => void;
   onUpdateField: (id: string, field: keyof Pick<QuotationState, 'pricingParameterSetId' | 'retailPrice' | 'supplierQuotation' | 'notes' | 'sku'>, value: string | number | null) => void;
-  onBlurQuotation: (id: string, overrides?: Partial<QuotationState>) => void;
-  onEnterQuotation: (id: string) => void;
+  onEnterQuotation: () => void;
   onDeleteQuotation: (id: string) => void;
-  isAddingQuotation?: boolean;
 }
 
 /**
@@ -754,8 +808,8 @@ interface PricingFooterSectionProps {
  * @param enabledParameterSetIds - IDs of parameter sets enabled for the vendor.
  * @param onAddQuotation - Called to append a new empty quotation row.
  * @param onUpdateField - Called on every field change in a quotation row.
- * @param onBlurQuotation - Called on blur to persist a quotation via tRPC.
- * @param onEnterQuotation - Called on Enter to persist a quotation then submit the row.
+ * @param onEnterQuotation - Called on Enter to submit the row (quotation edits are already
+ *   buffered in state by `onUpdateField` — nothing left to persist before submitting).
  * @param onDeleteQuotation - Called to remove a quotation row.
  */
 export function PricingFooterSection({
@@ -767,13 +821,11 @@ export function PricingFooterSection({
   enabledParameterSetIds,
   onAddQuotation,
   onUpdateField,
-  onBlurQuotation,
   onEnterQuotation,
   onDeleteQuotation,
-  isAddingQuotation,
 }: PricingFooterSectionProps) {
-  const handleQuotationEnter = (id: string) => (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') { e.preventDefault(); onEnterQuotation(id); }
+  const handleQuotationEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') { e.preventDefault(); onEnterQuotation(); }
   };
 
   return (
@@ -881,11 +933,7 @@ export function PricingFooterSection({
                         <td className="px-3 py-1.5">
                           <Select
                             value={q.pricingParameterSetId ?? '_none'}
-                            onValueChange={v => {
-                              const val = v === '_none' ? null : v;
-                              onUpdateField(q.id, 'pricingParameterSetId', val);
-                              if (val !== null) onBlurQuotation(q.id, { pricingParameterSetId: val });
-                            }}
+                            onValueChange={v => onUpdateField(q.id, 'pricingParameterSetId', v === '_none' ? null : v)}
                             disabled={!canUpdate}
                           >
                             <SelectTrigger size="xs" className={cn('w-full', !q.pricingParameterSetId && 'border-destructive/60 text-muted-foreground')}>
@@ -924,8 +972,7 @@ export function PricingFooterSection({
                               min={0}
                               value={q.retailPrice ?? ''}
                               onChange={e => onUpdateField(q.id, 'retailPrice', parsePositiveFloat(e.target.value))}
-                              onBlur={() => q.pricingParameterSetId && onBlurQuotation(q.id)}
-                              onKeyDown={handleQuotationEnter(q.id)}
+                              onKeyDown={handleQuotationEnter}
                               disabled={!canUpdate || !q.pricingParameterSetId}
                             />
                           </div>
@@ -947,8 +994,7 @@ export function PricingFooterSection({
                               min={0}
                               value={q.supplierQuotation ?? ''}
                               onChange={e => onUpdateField(q.id, 'supplierQuotation', parsePositiveFloat(e.target.value))}
-                              onBlur={() => q.pricingParameterSetId && onBlurQuotation(q.id)}
-                              onKeyDown={handleQuotationEnter(q.id)}
+                              onKeyDown={handleQuotationEnter}
                               disabled={!canUpdate || !q.pricingParameterSetId}
                             />
                           </div>
@@ -1001,8 +1047,7 @@ export function PricingFooterSection({
                             placeholder="Note…"
                             value={q.notes ?? ''}
                             onChange={e => onUpdateField(q.id, 'notes', e.target.value || null)}
-                            onBlur={() => q.pricingParameterSetId && onBlurQuotation(q.id)}
-                            onKeyDown={handleQuotationEnter(q.id)}
+                            onKeyDown={handleQuotationEnter}
                             disabled={!canUpdate || !q.pricingParameterSetId}
                           />
                         </td>
@@ -1017,8 +1062,7 @@ export function PricingFooterSection({
                             step={1}
                             value={q.sku ?? ''}
                             onChange={e => onUpdateField(q.id, 'sku', parsePositiveInt(e.target.value))}
-                            onBlur={() => q.pricingParameterSetId && onBlurQuotation(q.id)}
-                            onKeyDown={handleQuotationEnter(q.id)}
+                            onKeyDown={handleQuotationEnter}
                             disabled={!canUpdate || !q.pricingParameterSetId}
                           />
                         </td>
@@ -1051,10 +1095,9 @@ export function PricingFooterSection({
               variant="outline"
               size="sm"
               onClick={onAddQuotation}
-              disabled={isAddingQuotation}
             >
               <Plus className="mr-1 h-3 w-3" />
-              {isAddingQuotation ? 'Aggiunta…' : 'Aggiungi quotazione'}
+              Aggiungi quotazione
             </Button>
           )}
         </div>

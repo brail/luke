@@ -30,6 +30,10 @@ interface Props {
  *
  * Invalidates the layout and phase-alert criticality caches on success — moving a row's group
  * changes which calendar events apply to it, so the criticality badges must refresh too.
+ *
+ * For the single-row buffered flow in the row drawer (commit only on the drawer's own Save, no
+ * immediate mutation), see `ChangePlanningGroupDialog` instead — a separate component rather than
+ * a mode flag here, mirroring `ChangePhaseDialog`'s standalone shape.
  */
 export function AssignPlanningGroupDialog({ open, onClose, onAssigned, brandId, seasonId, collectionLayoutId, rowIds }: Props) {
   const [planningGroupId, setPlanningGroupId] = useState('');
@@ -43,7 +47,11 @@ export function AssignPlanningGroupDialog({ open, onClose, onAssigned, brandId, 
 
   const assignMutation = trpc.collectionLayout.rows.bulkAssignPlanningGroup.useMutation({
     onSuccess: data => {
-      toast.success(`${data.count} righe assegnate al gruppo`);
+      if (data.count === 0) {
+        toast.info('Le righe selezionate erano già in questo gruppo — nessuna modifica necessaria');
+      } else {
+        toast.success(`${data.count} riga${data.count === 1 ? '' : 'e'} assegnat${data.count === 1 ? 'a' : 'e'} al gruppo`);
+      }
       void utils.collectionLayout.get.invalidate({ brandId, seasonId });
       void utils.phaseAlert.criticalityForLayout.invalidate({ collectionLayoutId });
       rowIds.forEach(rowId => void utils.phaseAlert.criticalityForRow.invalidate({ rowId }));

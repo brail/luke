@@ -144,19 +144,21 @@ export default function CollectionLayoutPage() {
   });
 
   const createRowMutation = trpc.collectionLayout.rows.create.useMutation({
-    onSuccess: () => {
+    onSuccess: result => {
       toast.success('Riga creata');
       setRowDrawer(null);
       invalidateLayout();
+      utils.auditLog.getLastChange.invalidate({ targetType: 'CollectionLayoutRow', targetId: result.id });
     },
     onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
   });
 
   const updateRowMutation = trpc.collectionLayout.rows.update.useMutation({
-    onSuccess: () => {
+    onSuccess: result => {
       toast.success('Riga aggiornata');
       setRowDrawer(null);
       invalidateLayout();
+      utils.auditLog.getLastChange.invalidate({ targetType: 'CollectionLayoutRow', targetId: result.id });
     },
     onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
   });

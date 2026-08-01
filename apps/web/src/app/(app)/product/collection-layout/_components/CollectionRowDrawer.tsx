@@ -28,7 +28,8 @@ import { triggerDownload } from '../../../../../lib/download';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
-import { AssignPlanningGroupDialog } from './AssignPlanningGroupDialog';
+import { ChangePhaseDialog } from './ChangePhaseDialog';
+import { ChangePlanningGroupDialog } from './ChangePlanningGroupDialog';
 import {
   ForecastSection,
   IdentificationSection,
@@ -61,7 +62,6 @@ interface CollectionRowDrawerProps {
   seasonId: string;
   onSubmit: (data: CollectionLayoutRowInput) => void;
   onPictureUploaded?: () => void;
-  onQuotationChange?: () => void;
   isLoading?: boolean;
   canUpdate?: boolean;
 }
@@ -116,6 +116,7 @@ function rowToQuotationState(q: CollectionRow['quotations'][number]): QuotationS
     supplierQuotation: q.supplierQuotation ?? null,
     notes: q.notes ?? null,
     sku: q.sku ?? null,
+    isNew: false,
   };
 }
 
@@ -135,7 +136,6 @@ function rowToQuotationState(q: CollectionRow['quotations'][number]): QuotationS
  * @param parameterSets - Available pricing parameter sets for quotations.
  * @param availableGenders - Genders enabled for this layout (e.g. ['MAN','WOMAN']).
  * @param onPictureUploaded - Called after a picture is confirmed server-side.
- * @param onQuotationChange - Called after a quotation is added/removed/changed.
  */
 export function CollectionRowDrawer({
   open,
@@ -150,19 +150,20 @@ export function CollectionRowDrawer({
   seasonId,
   onSubmit,
   onPictureUploaded,
-  onQuotationChange,
   isLoading = false,
   canUpdate = true,
 }: CollectionRowDrawerProps) {
   const [previewPictureUrl, setPreviewPictureUrl] = useState<string | null>(null);
   const [isUploadingPicture, setIsUploadingPicture] = useState(false);
   const [quotations, setQuotations] = useState<QuotationState[]>([]);
+  const [phaseChangeNote, setPhaseChangeNote] = useState('');
   const [pendingData, setPendingData] = useState<CollectionLayoutRowInput | null>(null);
   const [changeGroupOpen, setChangeGroupOpen] = useState(false);
+  const [changePhaseOpen, setChangePhaseOpen] = useState(false);
   const { data: session } = useSession();
 
   const { data: vendorsList } = trpc.vendors.list.useQuery(undefined, { staleTime: 5 * 60 * 1000 });
-  const { data: planningGroups = [] } = trpc.planningGroup.list.useQuery(
+  const { data: planningGroups = [], isLoading: planningGroupsLoading } = trpc.planningGroup.list.useQuery(
     { brandId, seasonId },
     { enabled: open }
   );
@@ -174,12 +175,14 @@ export function CollectionRowDrawer({
   });
 
   const currentVendorId = form.watch('vendorId');
+  const currentPhaseId = form.watch('phaseId');
   const enabledParameterSetIds = useMemo(
     () => vendorsList?.items.find(v => v.id === currentVendorId)?.enabledParameterSets.map(p => p.id) ?? [],
     [currentVendorId, vendorsList?.items]
   );
 
   useEffect(() => {
+    setPhaseChangeNote('');
     if (!open) {
       setPreviewPictureUrl(null);
       return;
@@ -266,27 +269,6 @@ export function CollectionRowDrawer({
     setPreviewPictureUrl(null);
   };
 
-  // ─── Quotation mutations ─────────────────────────────────────────
-  const createQuotationMutation = trpc.collectionLayout.quotations.create.useMutation({
-    onSuccess: newQ => {
-      setQuotations(prev => [...prev, rowToQuotationState(newQ as unknown as CollectionRow['quotations'][number])]);
-      onQuotationChange?.();
-    },
-    onError: e => toast.error(getTrpcErrorMessage(e)),
-  });
-
-  const updateQuotationMutation = trpc.collectionLayout.quotations.update.useMutation({
-    onError: e => toast.error(getTrpcErrorMessage(e)),
-  });
-
-  const deleteQuotationMutation = trpc.collectionLayout.quotations.delete.useMutation({
-    onSuccess: (_, vars) => {
-      setQuotations(prev => prev.filter(q => q.id !== vars.quotationId));
-      onQuotationChange?.();
-    },
-    onError: e => toast.error(getTrpcErrorMessage(e)),
-  });
-
   // ─── Row export mutations ────────────────────────────────────────
   const exportRowXlsxMutation = trpc.collectionLayout.export.rowXlsx.useMutation({
     onSuccess: result =>
@@ -303,10 +285,24 @@ export function CollectionRowDrawer({
     onError: e => toast.error(getTrpcErrorMessage(e, { default: "Errore durante l'esportazione PDF" })),
   });
 
-  // ─── Quotation handlers ──────────────────────────────────────────
+  // ─── Quotation handlers — tutti locali, nessuna mutation di rete: bufferizzano su `quotations`,
+  // il commit reale avviene al Salva (submitRow → onSubmit → collectionLayout.rows.update/create,
+  // che sincronizza le quotazioni nella stessa transazione della riga) ─────────────────
   const handleAddQuotation = () => {
     if (!row?.id) return;
-    createQuotationMutation.mutate({ rowId: row.id });
+    setQuotations(prev => [...prev, {
+      // crypto.randomUUID() requires a secure context (HTTPS or localhost) — falls back
+      // to a non-crypto random id over plain HTTP (e.g. an internal http:// hostname).
+      id: crypto.randomUUID?.() || Math.random().toString(36).substring(2) + Date.now().toString(36),
+      rowId: row.id,
+      order: prev.length,
+      pricingParameterSetId: null,
+      retailPrice: null,
+      supplierQuotation: null,
+      notes: null,
+      sku: null,
+      isNew: true,
+    }]);
   };
 
   const handleUpdateQuotationField = (
@@ -317,38 +313,26 @@ export function CollectionRowDrawer({
     setQuotations(prev => prev.map(q => q.id === id ? { ...q, [field]: value } : q));
   };
 
-  const quotationUpdatePayload = (q: QuotationState) => ({
-    quotationId: q.id,
-    data: {
-      pricingParameterSetId: q.pricingParameterSetId,
-      retailPrice: q.retailPrice ?? undefined,
-      supplierQuotation: q.supplierQuotation ?? undefined,
-      notes: q.notes,
-      sku: q.sku,
-    },
-  });
-
-  const handleBlurQuotation = (id: string, overrides?: Partial<QuotationState>) => {
-    const q = quotations.find(q => q.id === id);
-    if (!q) return;
-    const merged = overrides ? { ...q, ...overrides } : q;
-    updateQuotationMutation.mutate(quotationUpdatePayload(merged));
-  };
-
   const handleDeleteQuotation = (id: string) => {
-    deleteQuotationMutation.mutate({ quotationId: id });
+    setQuotations(prev => prev.filter(q => q.id !== id));
   };
 
   const submitRow = form.handleSubmit(data => {
-    if (missingForecastLabels(data).length > 0) { setPendingData(data); return; }
-    onSubmit(data);
+    const payload: CollectionLayoutRowInput = {
+      ...data,
+      quotations: quotations.map(q => ({
+        id: q.isNew ? undefined : q.id,
+        pricingParameterSetId: q.pricingParameterSetId,
+        retailPrice: q.retailPrice ?? undefined,
+        supplierQuotation: q.supplierQuotation ?? undefined,
+        notes: q.notes,
+        sku: q.sku,
+      })),
+      phaseChangeNote: phaseChangeNote || undefined,
+    };
+    if (missingForecastLabels(payload).length > 0) { setPendingData(payload); return; }
+    onSubmit(payload);
   });
-
-  const handleEnterQuotation = (id: string) => {
-    const q = quotations.find(q => q.id === id);
-    if (!q?.pricingParameterSetId) { submitRow(); return; }
-    updateQuotationMutation.mutate(quotationUpdatePayload(q), { onSuccess: () => submitRow() });
-  };
 
   const missingLabels = pendingData ? missingForecastLabels(pendingData) : [];
 
@@ -378,6 +362,7 @@ export function CollectionRowDrawer({
                   planningGroups={planningGroups}
                   mode={mode}
                   onRequestChangePlanningGroup={() => setChangeGroupOpen(true)}
+                  onRequestChangePhase={() => setChangePhaseOpen(true)}
                   rowId={mode === 'edit' ? row?.id : undefined}
                 />
               </div>
@@ -434,10 +419,8 @@ export function CollectionRowDrawer({
                   enabledParameterSetIds={enabledParameterSetIds}
                   onAddQuotation={handleAddQuotation}
                   onUpdateField={handleUpdateQuotationField}
-                  onBlurQuotation={handleBlurQuotation}
-                  onEnterQuotation={handleEnterQuotation}
+                  onEnterQuotation={submitRow}
                   onDeleteQuotation={handleDeleteQuotation}
-                  isAddingQuotation={createQuotationMutation.isPending}
                 />
               </div>
             </div>
@@ -511,17 +494,28 @@ export function CollectionRowDrawer({
     />
 
     {mode === 'edit' && row && (
-      <AssignPlanningGroupDialog
+      <ChangePlanningGroupDialog
         open={changeGroupOpen}
         onClose={() => setChangeGroupOpen(false)}
-        onAssigned={newPlanningGroupId => {
+        onChanged={newPlanningGroupId => {
           setChangeGroupOpen(false);
-          form.setValue('planningGroupId', newPlanningGroupId, { shouldDirty: false });
+          form.setValue('planningGroupId', newPlanningGroupId, { shouldDirty: true });
         }}
-        brandId={brandId}
-        seasonId={seasonId}
-        collectionLayoutId={row.collectionLayoutId}
-        rowIds={[row.id]}
+        planningGroups={planningGroups}
+        isLoading={planningGroupsLoading}
+      />
+    )}
+
+    {mode === 'edit' && row && (
+      <ChangePhaseDialog
+        open={changePhaseOpen}
+        onClose={() => setChangePhaseOpen(false)}
+        onChanged={(newPhaseId, note) => {
+          setChangePhaseOpen(false);
+          form.setValue('phaseId', newPhaseId, { shouldDirty: true });
+          if (note) setPhaseChangeNote(note);
+        }}
+        currentPhaseId={currentPhaseId ?? null}
       />
     )}
     </>
