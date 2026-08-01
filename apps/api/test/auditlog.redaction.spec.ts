@@ -113,6 +113,23 @@ describe('sanitizeMetadata', () => {
 
       expect(sanitized).toEqual(input);
     });
+
+    it('dovrebbe preservare i campi del diff fase/gruppo di pianificazione (cambio fase riga collezione)', () => {
+      // Aggiunti per il consolidamento dell'audit log del drawer riga collezione
+      // (fase/gruppo bufferizzati, committati in un'unica COLLECTION_ROW_UPDATE):
+      // senza whitelist questi finivano '[REDACTED]', vanificando il metadata.
+      const input = {
+        oldPhaseId: 'phase-1',
+        newPhaseId: 'phase-2',
+        phaseChangeNote: 'Motivazione del cambio',
+        oldPlanningGroupId: 'group-1',
+        newPlanningGroupId: 'group-2',
+      };
+
+      const sanitized = sanitizeMetadata(input);
+
+      expect(sanitized).toEqual(input);
+    });
   });
 
   describe('Oggetti nested', () => {
