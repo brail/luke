@@ -188,7 +188,7 @@ export async function resolveGroupBrandAccess(
     select: {
       id: true,
       collectionLayoutId: true,
-      collectionLayout: { select: { brandId: true } },
+      collectionLayout: { select: { brandId: true, seasonId: true } },
     },
   });
   if (!group) {
@@ -207,7 +207,7 @@ export async function resolveRowBrandAccess(ctx: BrandScopeCtx, rowId: string) {
       id: true,
       collectionLayoutId: true,
       groupId: true,
-      collectionLayout: { select: { brandId: true } },
+      collectionLayout: { select: { brandId: true, seasonId: true } },
     },
   });
   if (!row) {

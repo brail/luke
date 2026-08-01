@@ -66,10 +66,13 @@ import {
   updateQuotation,
   deleteQuotation,
   reorderQuotations,
+  syncRowQuotations,
 } from '../services/collectionRow.quotation.service';
 import { assertUnlocked } from '../services/editLock.service';
 import { deleteObjectByKey } from '../storage';
 
+import type { Context } from '../lib/trpc';
+import type { QuotationSyncResult } from '../services/collectionRow.quotation.service';
 import type { PrismaClient } from '@prisma/client';
 
 const quotationsRouter = router({
@@ -164,19 +167,42 @@ const groupsRouter = router({
     }),
 });
 
+/**
+ * Per-quotation audit entries for a `syncRowQuotations` result — same action codes and metadata
+ * shape as the standalone `quotations.create/update/delete` endpoints, batched here since the
+ * buffered row save fires them all after one Save instead of one per blur/click. Returns unfired
+ * promises to spread into the caller's own `Promise.all` alongside its row-level `logAudit`
+ * (`rows.create`/`update`) — not awaited here, so the two stay one atomic batch of independent
+ * audit inserts instead of two sequential rounds.
+ */
+function quotationSyncAuditPromises(ctx: Context, rowId: string, sync: QuotationSyncResult) {
+  return [
+    ...sync.created.map(q =>
+      logAudit(ctx, { action: 'COLLECTION_QUOTATION_CREATE', targetType: 'CollectionRowQuotation', targetId: q.id, result: 'SUCCESS', metadata: { rowId } })
+    ),
+    ...sync.updated.map(q =>
+      logAudit(ctx, { action: 'COLLECTION_QUOTATION_UPDATE', targetType: 'CollectionRowQuotation', targetId: q.id, result: 'SUCCESS', metadata: {} })
+    ),
+    ...sync.deletedIds.map(id =>
+      logAudit(ctx, { action: 'COLLECTION_QUOTATION_DELETE', targetType: 'CollectionRowQuotation', targetId: id, result: 'SUCCESS', metadata: {} })
+    ),
+  ];
+}
+
 const rowsRouter = router({
   create: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
     .input(CollectionLayoutRowInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const { pendingPictureFileObjectId, ...rowInput } = input;
+      const { pendingPictureFileObjectId, quotations, phaseChangeNote: _phaseChangeNote, ...rowInput } = input;
 
       // Prima di aprire la transaction: la lookup di membership non deve
       // consumare il budget dei 15s, e un rifiuto non deve costare un rollback.
-      await resolveGroupBrandAccess(ctx, rowInput.groupId);
+      const group = await resolveGroupBrandAccess(ctx, rowInput.groupId);
+      const layoutScope = { brandId: group.collectionLayout.brandId, seasonId: group.collectionLayout.seasonId };
 
-      const result = await ctx.prisma.$transaction(async tx => {
+      const { result, quotationsSync } = await ctx.prisma.$transaction(async tx => {
         let confirmedPictureKey: string | undefined;
         if (pendingPictureFileObjectId) {
           confirmedPictureKey =
@@ -186,14 +212,22 @@ const rowsRouter = router({
               userId: ctx.session!.user.id,
             })) ?? undefined;
         }
-        return createRow(
+        const row = await createRow(
           { ...rowInput, ...(confirmedPictureKey ? { pictureKey: confirmedPictureKey } : {}) },
           tx as any,
           ctx.session!.user.id
         );
+        const sync = await syncRowQuotations(row.id, quotations ?? [], layoutScope, tx as any);
+        return { result: row, quotationsSync: sync };
       }, { timeout: 15000 });
 
-      await logAudit(ctx, { action: 'COLLECTION_ROW_CREATE', targetType: 'CollectionLayoutRow', targetId: result.id, result: 'SUCCESS', metadata: { groupId: result.groupId } });
+      // Un INSERT indipendente per riga di audit (riga + ciascuna quotazione), non annidati nella
+      // transaction di riga (già chiusa) — nessuna dipendenza fra loro, un solo Promise.all invece
+      // di due giri sequenziali.
+      await Promise.all([
+        logAudit(ctx, { action: 'COLLECTION_ROW_CREATE', targetType: 'CollectionLayoutRow', targetId: result.id, result: 'SUCCESS', metadata: { groupId: result.groupId } }),
+        ...quotationSyncAuditPromises(ctx, result.id, quotationsSync),
+      ]);
       return result;
     }),
 
@@ -207,40 +241,52 @@ const rowsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const { pendingPictureFileObjectId, ...rowData } = input.data;
+      const { pendingPictureFileObjectId, quotations, phaseChangeNote, ...rowData } = input.data;
       let oldPictureKey: string | null = null;
 
       // Fuori dalla transaction, come in `create`.
-      await resolveRowBrandAccess(ctx, input.rowId);
+      const rowAccess = await resolveRowBrandAccess(ctx, input.rowId);
+      const layoutScope = { brandId: rowAccess.collectionLayout.brandId, seasonId: rowAccess.collectionLayout.seasonId };
 
-      const result = await ctx.prisma.$transaction(async tx => {
+      const { result, before, quotationsSync } = await ctx.prisma.$transaction(async tx => {
+        // Indipendenti (la conferma non legge `beforeRow`, l'uso di `beforeRow.pictureKey` sotto
+        // avviene solo dopo che entrambe sono risolte) — in parallelo invece che in sequenza.
+        const [beforeRow, confirmedKey] = await Promise.all([
+          // Incondizionato (non solo quando c'è una foto pending): serve sempre per il diff
+          // fase/gruppo usato nell'audit log consolidato sotto, e come `existingRow` per `updateRow`
+          // (un solo fetch della riga invece di uno per ogni funzione che ne ha bisogno).
+          tx.collectionLayoutRow.findUniqueOrThrow({
+            where: { id: input.rowId },
+            select: { pictureKey: true, phaseId: true, planningGroupId: true, collectionLayoutId: true, groupId: true },
+          }),
+          pendingPictureFileObjectId
+            ? confirmPendingFile(tx, {
+                fileObjectId: pendingPictureFileObjectId,
+                bucket: 'collection-row-pictures',
+                userId: ctx.session!.user.id,
+              })
+            : Promise.resolve(undefined),
+        ]);
+
         let confirmedPictureKey: string | undefined;
-
-        if (pendingPictureFileObjectId) {
-          const [confirmedKey, existingRow] = await Promise.all([
-            confirmPendingFile(tx, {
-              fileObjectId: pendingPictureFileObjectId,
-              bucket: 'collection-row-pictures',
-              userId: ctx.session!.user.id,
-            }),
-            tx.collectionLayoutRow.findUnique({
-              where: { id: input.rowId },
-              select: { pictureKey: true },
-            }),
-          ]);
-
-          if (confirmedKey) {
-            confirmedPictureKey = confirmedKey;
-            oldPictureKey = existingRow?.pictureKey ?? null;
-          }
+        if (confirmedKey) {
+          confirmedPictureKey = confirmedKey;
+          oldPictureKey = beforeRow.pictureKey ?? null;
         }
 
-        return updateRow(
+        const row = await updateRow(
           input.rowId,
           { ...rowData, ...(confirmedPictureKey ? { pictureKey: confirmedPictureKey } : {}) },
+          beforeRow,
           tx as any,
           ctx.session!.user.id
         );
+
+        const sync = quotations !== undefined
+          ? await syncRowQuotations(input.rowId, quotations, layoutScope, tx as any)
+          : { created: [], updated: [], deletedIds: [] };
+
+        return { result: row, before: beforeRow, quotationsSync: sync };
       }, { timeout: 15000 });
 
       if (oldPictureKey) {
@@ -251,7 +297,24 @@ const rowsRouter = router({
         }
       }
 
-      await logAudit(ctx, { action: 'COLLECTION_ROW_UPDATE', targetType: 'CollectionLayoutRow', targetId: input.rowId, result: 'SUCCESS', metadata: rowData.phaseId !== undefined ? { phaseId: rowData.phaseId } : {} });
+      const phaseChanged = rowData.phaseId !== undefined && rowData.phaseId !== (before.phaseId ?? null);
+      const planningGroupChanged = rowData.planningGroupId !== undefined && rowData.planningGroupId !== before.planningGroupId;
+
+      // Un INSERT indipendente per riga di audit (riga + ciascuna quotazione toccata) — nessuna
+      // dipendenza fra loro, un solo Promise.all invece di due giri sequenziali.
+      await Promise.all([
+        logAudit(ctx, {
+          action: 'COLLECTION_ROW_UPDATE',
+          targetType: 'CollectionLayoutRow',
+          targetId: input.rowId,
+          result: 'SUCCESS',
+          metadata: {
+            ...(phaseChanged ? { oldPhaseId: before.phaseId, newPhaseId: rowData.phaseId, ...(phaseChangeNote ? { phaseChangeNote } : {}) } : {}),
+            ...(planningGroupChanged ? { oldPlanningGroupId: before.planningGroupId, newPlanningGroupId: rowData.planningGroupId } : {}),
+          },
+        }),
+        ...quotationSyncAuditPromises(ctx, input.rowId, quotationsSync),
+      ]);
       return result;
     }),
 

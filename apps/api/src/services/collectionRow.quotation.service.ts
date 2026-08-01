@@ -6,11 +6,13 @@
 import { TRPCError } from '@trpc/server';
 
 import type {
+  CollectionRowQuotationDraft,
   CollectionRowQuotationInput,
   CollectionRowQuotationUpdate,
 } from '@luke/core';
 
 import type {
+  Prisma,
   PrismaClient,
   CollectionRowQuotation,
   PricingParameterSet,
@@ -23,6 +25,35 @@ export type QuotationWithParamSet = CollectionRowQuotation & {
 const QUOTATION_INCLUDE = {
   pricingParameterSet: true,
 } as const;
+
+/**
+ * Ensures every referenced pricing parameter set belongs to the row's brand+season — shared by
+ * `createQuotation`, `updateQuotation`, and `syncRowQuotations`, which all enforce the same rule.
+ * No-op if `paramSetIds` is empty.
+ *
+ * @throws {TRPCError} BAD_REQUEST if any id doesn't belong to `layout`'s brand/season (including a
+ *   non-existent id).
+ */
+async function assertParamSetsInScope(
+  paramSetIds: string[],
+  layout: { brandId: string; seasonId: string },
+  prisma: PrismaClient | Prisma.TransactionClient
+): Promise<void> {
+  if (paramSetIds.length === 0) return;
+  const paramSets = await prisma.pricingParameterSet.findMany({
+    where: { id: { in: paramSetIds } },
+    select: { id: true, brandId: true, seasonId: true },
+  });
+  const validIds = new Set(
+    paramSets.filter(ps => ps.brandId === layout.brandId && ps.seasonId === layout.seasonId).map(ps => ps.id)
+  );
+  if (paramSetIds.some(id => !validIds.has(id))) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'Il set di parametri non appartiene al brand/stagione corrente',
+    });
+  }
+}
 
 /**
  * Creates a new quotation on a collection row. Validates that the referenced pricing
@@ -45,17 +76,8 @@ export async function createQuotation(
   }
 
   if (input.pricingParameterSetId) {
-    const paramSet = await prisma.pricingParameterSet.findUnique({
-      where: { id: input.pricingParameterSetId },
-      select: { brandId: true, seasonId: true },
-    });
     const layout = (row as any).collectionLayout as { brandId: string; seasonId: string };
-    if (!paramSet || paramSet.brandId !== layout.brandId || paramSet.seasonId !== layout.seasonId) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Il set di parametri non appartiene al brand/stagione corrente',
-      });
-    }
+    await assertParamSetsInScope([input.pricingParameterSetId], layout, prisma);
   }
 
   const existingCount = await prisma.collectionRowQuotation.count({
@@ -98,16 +120,7 @@ export async function updateQuotation(
 
   if (input.pricingParameterSetId) {
     const layout = (quotation.row as any).collectionLayout as { brandId: string; seasonId: string };
-    const paramSet = await prisma.pricingParameterSet.findUnique({
-      where: { id: input.pricingParameterSetId },
-      select: { brandId: true, seasonId: true },
-    });
-    if (!paramSet || paramSet.brandId !== layout.brandId || paramSet.seasonId !== layout.seasonId) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Il set di parametri non appartiene al brand/stagione corrente',
-      });
-    }
+    await assertParamSetsInScope([input.pricingParameterSetId], layout, prisma);
   }
 
   return prisma.collectionRowQuotation.update({
@@ -176,4 +189,91 @@ export async function reorderQuotations(
       })
     )
   );
+}
+
+/** Result of `syncRowQuotations` — the router needs the actual touched records/ids (not just
+ * counts) to log one audit entry per quotation, same as the standalone create/update/delete
+ * endpoints did before the row-drawer's buffered-save refactor. */
+export interface QuotationSyncResult {
+  created: QuotationWithParamSet[];
+  updated: QuotationWithParamSet[];
+  deletedIds: string[];
+}
+
+/**
+ * Reconciles a row's quotations against a client-submitted desired list, in one pass: any DB
+ * quotation whose id isn't in `drafts` is deleted, any draft without an `id` is created, any draft
+ * with an `id` matching an existing quotation is updated. Used by the row drawer's buffered save
+ * (`rowsRouter.create`/`update`) instead of the standalone `quotations.create/update/delete`
+ * mutations, which committed on every blur/click regardless of whether the row itself was saved.
+ *
+ * No internal `$transaction` — the caller already holds one open (row create/update transaction)
+ * and passes its `tx` here; opening a nested transaction isn't supported/needed.
+ *
+ * @param layoutScope - Brand/season of the row's layout, resolved by the caller (already needed
+ *   there for the brand-access guard) instead of a redundant row `findUnique` here.
+ * @throws {TRPCError} BAD_REQUEST if a draft's `id` doesn't belong to this row (stale/foreign id —
+ *   silently treating it as "new" would orphan the original and create a duplicate instead of
+ *   surfacing the conflict), or if a `pricingParameterSetId` doesn't belong to the row's brand/season.
+ */
+export async function syncRowQuotations(
+  rowId: string,
+  drafts: CollectionRowQuotationDraft[],
+  layoutScope: { brandId: string; seasonId: string },
+  prisma: PrismaClient | Prisma.TransactionClient
+): Promise<QuotationSyncResult> {
+  const existing = await prisma.collectionRowQuotation.findMany({
+    where: { rowId },
+    select: { id: true },
+  });
+  const existingIds = new Set(existing.map(e => e.id));
+
+  for (const draft of drafts) {
+    if (draft.id && !existingIds.has(draft.id)) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Quotazione non trovata per questa riga' });
+    }
+  }
+
+  const paramSetIds = [...new Set(drafts.map(d => d.pricingParameterSetId).filter((id): id is string => !!id))];
+  await assertParamSetsInScope(paramSetIds, layoutScope, prisma);
+
+  const submittedIds = new Set(drafts.filter(d => d.id).map(d => d.id!));
+  const deletedIds = [...existingIds].filter(id => !submittedIds.has(id));
+
+  // deleteMany e i write per-draft toccano insiemi di righe disgiunti (`deletedIds` è il complemento
+  // di `submittedIds`) — in parallelo invece che in sequenza, stesso principio già applicato ai lock
+  // in editLock.service.ts (Promise.all su tx).
+  const [, writes] = await Promise.all([
+    deletedIds.length > 0
+      ? prisma.collectionRowQuotation.deleteMany({ where: { id: { in: deletedIds }, rowId } })
+      : Promise.resolve(undefined),
+    Promise.all(
+      drafts.map(async (draft, index) => {
+        const data = {
+          order: index,
+          pricingParameterSetId: draft.pricingParameterSetId ?? null,
+          retailPrice: draft.retailPrice ?? null,
+          supplierQuotation: draft.supplierQuotation ?? null,
+          notes: draft.notes ?? null,
+          sku: draft.sku ?? null,
+        };
+        return draft.id
+          ? { kind: 'updated' as const, quotation: (await prisma.collectionRowQuotation.update({
+              where: { id: draft.id },
+              data,
+              include: QUOTATION_INCLUDE,
+            })) as QuotationWithParamSet }
+          : { kind: 'created' as const, quotation: (await prisma.collectionRowQuotation.create({
+              data: { rowId, ...data },
+              include: QUOTATION_INCLUDE,
+            })) as QuotationWithParamSet };
+      })
+    ),
+  ]);
+
+  return {
+    created: writes.filter(w => w.kind === 'created').map(w => w.quotation),
+    updated: writes.filter(w => w.kind === 'updated').map(w => w.quotation),
+    deletedIds,
+  };
 }

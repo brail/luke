@@ -443,30 +443,24 @@ export async function createRow(
  * Updates fields on a collection row. Validates gender against the layout's filter
  * and, if moving to a different group, ensures the destination belongs to the same layout.
  *
- * @throws {TRPCError} NOT_FOUND if the row or destination group does not exist.
+ * @param existingRow - Caller-fetched row state, reused instead of a redundant internal
+ *   `findUnique` — the row-drawer save path (only caller) already fetches this for its own
+ *   before/after audit diff.
+ * @throws {TRPCError} NOT_FOUND if the destination group does not exist.
  * @throws {TRPCError} BAD_REQUEST if the gender or cross-layout move is invalid.
  */
 export async function updateRow(
   rowId: string,
   input: Partial<CollectionLayoutRowInput>,
+  existingRow: Pick<CollectionLayoutRow, 'collectionLayoutId' | 'groupId' | 'phaseId' | 'planningGroupId'>,
   prisma: PrismaClient,
   userId: string
 ): Promise<RowWithVendor> {
-  const row = await prisma.collectionLayoutRow.findUnique({
-    where: { id: rowId },
-  });
-
-  if (!row) {
-    throw new TRPCError({
-      code: 'NOT_FOUND',
-      message: 'Riga non trovata',
-    });
-  }
-  await assertUnlocked('COLLECTION_LAYOUT', row.collectionLayoutId, userId, prisma);
+  await assertUnlocked('COLLECTION_LAYOUT', existingRow.collectionLayoutId, userId, prisma);
 
   if (input.gender) {
     const layout = await prisma.collectionLayout.findUnique({
-      where: { id: row.collectionLayoutId },
+      where: { id: existingRow.collectionLayoutId },
       select: { availableGenders: true },
     });
     const availableGenders = (layout as any)?.availableGenders as string[] | undefined;
@@ -479,12 +473,12 @@ export async function updateRow(
   }
 
   // Se si sposta il gruppo di pianificazione, verificare che appartenga allo stesso layout
-  if (input.planningGroupId && input.planningGroupId !== row.planningGroupId) {
-    await assertPlanningGroupInLayoutScope(row.collectionLayoutId, input.planningGroupId, prisma);
+  if (input.planningGroupId && input.planningGroupId !== existingRow.planningGroupId) {
+    await assertPlanningGroupInLayoutScope(existingRow.collectionLayoutId, input.planningGroupId, prisma);
   }
 
   // Se si sposta il gruppo, verificare che il nuovo gruppo esista
-  if (input.groupId && input.groupId !== row.groupId) {
+  if (input.groupId && input.groupId !== existingRow.groupId) {
     const newGroup = await prisma.collectionGroup.findUnique({
       where: { id: input.groupId },
     });
@@ -494,7 +488,7 @@ export async function updateRow(
         message: 'Gruppo destinazione non trovato',
       });
     }
-    if (newGroup.collectionLayoutId !== row.collectionLayoutId) {
+    if (newGroup.collectionLayoutId !== existingRow.collectionLayoutId) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
         message: 'Impossibile spostare una riga in un gruppo di un layout diverso',
@@ -510,7 +504,7 @@ export async function updateRow(
 
   // Phase history hook: record every transition, never a separate job — avoids drift between
   // the row's live phaseId and its history.
-  if (input.phaseId != null && input.phaseId !== row.phaseId) {
+  if (input.phaseId != null && input.phaseId !== existingRow.phaseId) {
     await prisma.collectionRowPhaseHistory.create({
       data: {
         rowId,
@@ -541,7 +535,7 @@ export async function bulkAssignRowsPlanningGroup(
   await assertPlanningGroupInLayoutScope(layoutId, planningGroupId, prisma);
 
   const { count } = await prisma.collectionLayoutRow.updateMany({
-    where: { id: { in: rowIds } },
+    where: { id: { in: rowIds }, planningGroupId: { not: planningGroupId } },
     data: { planningGroupId },
   });
 
