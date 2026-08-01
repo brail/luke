@@ -1,26 +1,5 @@
 import { z } from 'zod';
 
-// ─── State effect / anchor types ──────────────────────────────────────────────
-
-/**
- * Allowed state-effect types triggered when a calendar milestone is completed.
- * Used to automatically lock or unlock a collection layout.
- */
-export const STATE_EFFECT_TYPE = [
-  'LOCK_COLLECTION_LAYOUT',
-  'UNLOCK_COLLECTION_LAYOUT',
-] as const;
-export type StateEffectType = (typeof STATE_EFFECT_TYPE)[number];
-
-/** Input schema for a state effect to be triggered by a calendar event (e.g. lock a collection layout). */
-export const CalendarEventStateEffectInputSchema = z.object({
-  effectType:           z.enum(STATE_EFFECT_TYPE),
-  targetEntityType:     z.literal('COLLECTION_LAYOUT'),
-  targetEntityId:       z.string().uuid(),
-  requiresConfirmation: z.boolean(),
-});
-export type CalendarEventStateEffectInput = z.infer<typeof CalendarEventStateEffectInputSchema>;
-
 /** Input schema for a vendor closure or open-day period within a season, used in working-day calculations. */
 export const VendorClosurePeriodInputSchema = z.object({
   vendorId:        z.string().uuid(),

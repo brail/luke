@@ -82,9 +82,9 @@ model User {
   /// Company team memberships.
   teamMemberships                   CompanyTeamMembership[]
   /// Calendar events made visible to this user by a grantor.
-  calendarEventVisibilitiesReceived CalendarEventUserVisibility[]  @relation("CalendarEventUserVisibilityRecipient")
+  calendarEventVisibilitiesReceived CalendarEventUserVisibility[] @relation("CalendarEventUserVisibilityRecipient")
   /// Calendar event visibility records granted by this user to others.
-  calendarEventVisibilitiesGranted  CalendarEventUserVisibility[]  @relation("CalendarEventUserVisibilityGrantor")
+  calendarEventVisibilitiesGranted  CalendarEventUserVisibility[] @relation("CalendarEventUserVisibilityGrantor")
   /// In-app notifications for this user.
   notifications                     Notification[]
   /// Per-category notification preferences.
@@ -93,18 +93,14 @@ model User {
   collectionLayoutRevisions         CollectionLayoutRevision[]
   /// Row phase history entries recorded by this user.
   recordedRowPhaseHistory           CollectionRowPhaseHistory[]
-  /// State effect executions applied by this user.
-  appliedEffects                    CalendarEventEffectExecution[] @relation("EffectApplier")
-  /// State effect executions rolled back by this user.
-  rolledBackEffects                 CalendarEventEffectExecution[] @relation("EffectRollbacker")
   /// Calendar events this user cancelled (with a reason).
-  cancelledCalendarEvents           CalendarEvent[]                @relation("CalendarEventCancelledBy")
+  cancelledCalendarEvents           CalendarEvent[]               @relation("CalendarEventCancelledBy")
   /// Vendor closure periods confirmed by this user.
-  confirmedVendorClosures           VendorClosurePeriod[]          @relation("ClosureConfirmer")
+  confirmedVendorClosures           VendorClosurePeriod[]         @relation("ClosureConfirmer")
   /// Edit locks currently held by this user (planning wizard sessions).
   editLocks                         EditLock[]
   /// Manual backups triggered by this user.
-  backupRecords                      BackupRecord[]
+  backupRecords                     BackupRecord[]
 
   @@map("users")
 }
@@ -437,16 +433,10 @@ model CollectionLayout {
   hiddenColumns    Json? // String[] — colonne nascoste, null = tutte visibili
   /// Genders available for rows in this layout (e.g. ["MAN","WOMAN"]).
   availableGenders String[]                   @default(["MAN", "WOMAN"])
-  /// FK to CalendarEvent that triggered a lock. Null when not locked.
-  lockedByEventId  String?
-  /// Timestamp when the layout was locked. Null when not locked.
-  lockedAt         DateTime?
   /// The brand this layout belongs to.
   brand            Brand                      @relation(fields: [brandId], references: [id], onDelete: Restrict)
   /// The season this layout belongs to.
   season           Season                     @relation(fields: [seasonId], references: [id], onDelete: Restrict)
-  /// The calendar event that locked this layout, if any.
-  lockedByEvent    CalendarEvent?             @relation(fields: [lockedByEventId], references: [id], onDelete: SetNull)
   /// Ordered groups (e.g. Uomo, Donna) within this layout.
   groups           CollectionGroup[]
   /// All rows across all groups in this layout.
@@ -458,7 +448,6 @@ model CollectionLayout {
 
   @@unique([brandId, seasonId])
   @@index([brandId, seasonId])
-  @@index([lockedByEventId])
   @@map("collection_layouts")
 }
 
@@ -741,23 +730,23 @@ model CollectionRowPhaseHistory {
 
 /// Configurable catalog items for collection layout dropdowns. Types: strategy, lineStatus, styleStatus, revisionType, pricePositioning.
 model CollectionCatalogItem {
-  id                 String   @id @default(uuid())
+  id                String   @id @default(uuid())
   /// Discriminator: "strategy" | "lineStatus" | "styleStatus" | "revisionType" | "pricePositioning".
-  type               String // "strategy" | "lineStatus" | "styleStatus" | "revisionType" | "pricePositioning"
+  type              String // "strategy" | "lineStatus" | "styleStatus" | "revisionType" | "pricePositioning"
   /// Immutable machine key (e.g. "CORE", "NEW"). Used as stored value in row fields.
-  value              String
+  value             String
   /// Human-readable display label (editable).
-  label              String
+  label             String
   /// Unused since the progress domain moved to the Phase catalog. No remaining type writes this field.
-  code               String?
+  code              String?
   /// ISO 9001 categories associated with this item. Populated only for type=revisionType.
-  iso9001Categories  String[] @default([]) // categorie ISO 9001 — popolato solo per type=revisionType
+  iso9001Categories String[] @default([]) // categorie ISO 9001 — popolato solo per type=revisionType
   /// Display order within the type group.
-  order              Int      @default(0)
+  order             Int      @default(0)
   /// Soft-delete flag. Inactive items are hidden from pickers.
-  isActive           Boolean  @default(true)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@unique([type, value])
   @@index([type, isActive])
@@ -794,6 +783,11 @@ model CollectionLayoutRevision {
   rowRevisions CollectionLayoutRowRevision[]
 
   @@unique([collectionLayoutId, revisionNumber])
+  /// One automatic revision per (event, revision type): the dedup check in
+  /// collectionLayoutAutoRevision.service.ts is a read, so two concurrent triggers could otherwise
+  /// both pass it. Manual revisions are unaffected — milestoneId is null there, and Postgres treats
+  /// NULLs as distinct in a unique index.
+  @@unique([milestoneId, revisionTypeValue])
   @@index([collectionLayoutId, createdAt])
   @@index([milestoneId])
   @@map("collection_layout_revisions")
@@ -1684,12 +1678,6 @@ enum CalendarDaysRelevance {
   BOTH
 }
 
-/// Type of state side-effect a calendar event can trigger on an entity: LOCK_COLLECTION_LAYOUT | UNLOCK_COLLECTION_LAYOUT.
-enum StateEffectType {
-  LOCK_COLLECTION_LAYOUT
-  UNLOCK_COLLECTION_LAYOUT
-}
-
 /// Vendor period type: CLOSURE (vendor unavailable) | OPEN (override — vendor is open despite a holiday).
 enum VendorOverrideType {
   CLOSURE
@@ -1796,15 +1784,15 @@ model CalendarEvent {
   updatedAt             DateTime               @updatedAt
 
   /// The season calendar this event belongs to.
-  calendar         SeasonCalendar                 @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  calendar         SeasonCalendar                @relation(fields: [calendarId], references: [id], onDelete: Cascade)
   /// The planning group this event applies to — determines which rows see it.
-  planningGroup    PlanningGroup                  @relation(fields: [planningGroupId], references: [id], onDelete: Restrict)
+  planningGroup    PlanningGroup                 @relation(fields: [planningGroupId], references: [id], onDelete: Restrict)
   /// The milestone template item that generated this event, if any.
-  templateItem     MilestoneTemplateItem?         @relation(fields: [templateItemId], references: [id], onDelete: SetNull)
+  templateItem     MilestoneTemplateItem?        @relation(fields: [templateItemId], references: [id], onDelete: SetNull)
   /// The phase this event represents, if any.
-  phase            Phase?                         @relation(fields: [phaseId], references: [id], onDelete: SetNull)
+  phase            Phase?                        @relation(fields: [phaseId], references: [id], onDelete: SetNull)
   /// The user who cancelled this event, if any.
-  cancelledBy      User?                          @relation("CalendarEventCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
+  cancelledBy      User?                         @relation("CalendarEventCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
   /// Function-level visibility grants for this event.
   visibilities     CalendarEventVisibility[]
   /// Personal notes written by individual users on this event.
@@ -1813,12 +1801,6 @@ model CalendarEvent {
   eventMappings    GoogleEventMapping[]
   /// Per-user visibility grants for this event.
   userVisibilities CalendarEventUserVisibility[]
-  /// State side-effects (e.g. lock/unlock collection layout) triggered by this event.
-  stateEffects     CalendarEventStateEffect[]
-  /// Execution records for state effects of this event.
-  effectExecutions CalendarEventEffectExecution[]
-  /// Collection layouts locked by this event.
-  lockedLayouts    CollectionLayout[]
 
   @@index([calendarId, startAt])
   @@index([planningGroupId])
@@ -1901,15 +1883,13 @@ model MilestoneTemplateItem {
   updatedAt             DateTime               @updatedAt
 
   /// The template this item belongs to.
-  template      MilestoneTemplate                 @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  template     MilestoneTemplate                 @relation(fields: [templateId], references: [id], onDelete: Cascade)
   /// The phase this template item represents, if any.
-  phase         Phase?                            @relation(fields: [phaseId], references: [id], onDelete: SetNull)
+  phase        Phase?                            @relation(fields: [phaseId], references: [id], onDelete: SetNull)
   /// Calendar events generated from this template item.
-  events        CalendarEvent[]
+  events       CalendarEvent[]
   /// Function visibility grants for this template item.
-  visibilities  MilestoneTemplateItemVisibility[]
-  /// State effects to apply when a generated event is completed.
-  stateEffects  MilestoneTemplateStateEffect[]
+  visibilities MilestoneTemplateItemVisibility[]
 
   @@index([templateId])
   @@index([phaseId])
@@ -1986,13 +1966,13 @@ model Phase {
   updatedAt DateTime @updatedAt
 
   /// Rows currently in this phase.
-  collectionLayoutRows       CollectionLayoutRow[]
+  collectionLayoutRows   CollectionLayoutRow[]
   /// Calendar events tagged with this phase.
-  calendarEvents             CalendarEvent[]
+  calendarEvents         CalendarEvent[]
   /// Milestone template items tagged with this phase.
-  milestoneTemplateItems     MilestoneTemplateItem[]
+  milestoneTemplateItems MilestoneTemplateItem[]
   /// Row history entries recording a transition into this phase.
-  rowPhaseHistory            CollectionRowPhaseHistory[]
+  rowPhaseHistory        CollectionRowPhaseHistory[]
 
   @@index([isActive])
   @@map("phases")
@@ -2000,19 +1980,19 @@ model Phase {
 
 /// In-app notification delivered to a user. Rendered in the notification bell and optionally linked to a resource.
 model Notification {
-  id        String               @id @default(uuid())
+  id         String               @id @default(uuid())
   /// FK to User (recipient). Cascade delete.
-  userId    String
+  userId     String
   /// The user this notification is for.
-  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// Category: SYSTEM | CALENDAR | USER_ACTION | WORKFLOW.
-  category  NotificationCategory
-  title     String
-  message   String
+  category   NotificationCategory
+  title      String
+  message    String
   /// Optional deep-link URL to the relevant resource.
-  link      String?
+  link       String?
   /// Optional structured payload for custom rendering.
-  data      Json?
+  data       Json?
   /// False until the user opens/acknowledges the notification.
   isRead     Boolean              @default(false)
   readAt     DateTime?
@@ -2056,80 +2036,6 @@ model NotificationDedupKey {
   @@map("notification_dedup_keys")
 }
 
-/// State side-effect definition on a MilestoneTemplateItem. Applied to generated CalendarEventStateEffect records when a template is instantiated.
-model MilestoneTemplateStateEffect {
-  id                   String          @id @default(uuid())
-  /// FK to MilestoneTemplateItem. Cascade delete.
-  templateItemId       String
-  /// Type of state change: LOCK_COLLECTION_LAYOUT | UNLOCK_COLLECTION_LAYOUT.
-  effectType           StateEffectType
-  /// Entity type the effect targets (e.g. "collection_layout").
-  targetEntityType     String
-  /// If true, the user must confirm before the effect is applied.
-  requiresConfirmation Boolean         @default(true)
-
-  /// The template item that owns this state effect definition.
-  templateItem MilestoneTemplateItem @relation(fields: [templateItemId], references: [id], onDelete: Cascade)
-
-  @@index([templateItemId])
-  @@map("milestone_template_state_effects")
-}
-
-/// Live state side-effect attached to a CalendarEvent targeting a specific entity instance. Tracks executions and rollbacks.
-model CalendarEventStateEffect {
-  id                   String          @id @default(uuid())
-  /// FK to CalendarEvent. Cascade delete.
-  eventId              String
-  /// Type of state change: LOCK_COLLECTION_LAYOUT | UNLOCK_COLLECTION_LAYOUT.
-  effectType           StateEffectType
-  /// Entity type the effect targets (e.g. "collection_layout").
-  targetEntityType     String
-  /// ID of the specific entity instance to apply the effect to.
-  targetEntityId       String
-  /// If true, the user must confirm before the effect is applied.
-  requiresConfirmation Boolean
-
-  /// The calendar event that owns this state effect.
-  event      CalendarEvent                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  /// Execution records tracking when this effect was applied and rolled back.
-  executions CalendarEventEffectExecution[]
-
-  @@index([eventId])
-  @@index([targetEntityType, targetEntityId])
-  @@map("calendar_event_state_effects")
-}
-
-/// Execution record for a CalendarEventStateEffect. Stores the pre-application state snapshot to enable rollback.
-model CalendarEventEffectExecution {
-  id                    String    @id @default(uuid())
-  /// FK to CalendarEventStateEffect. Cascade delete.
-  effectId              String
-  /// FK to CalendarEvent. Cascade delete.
-  eventId               String
-  appliedAt             DateTime  @default(now())
-  /// FK to User who applied the effect. Restrict delete.
-  appliedByUserId       String
-  /// JSON snapshot of the entity state before the effect was applied (used for rollback).
-  previousStateSnapshot Json
-  /// Timestamp when the effect was rolled back. Null if still active.
-  rolledBackAt          DateTime?
-  /// FK to User who rolled back the effect. SetNull if user is deleted.
-  rolledBackByUserId    String?
-
-  /// The state effect this execution belongs to.
-  effect       CalendarEventStateEffect @relation(fields: [effectId], references: [id], onDelete: Cascade)
-  /// The calendar event associated with this execution.
-  event        CalendarEvent            @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  /// The user who applied the effect.
-  appliedBy    User                     @relation("EffectApplier", fields: [appliedByUserId], references: [id], onDelete: Restrict)
-  /// The user who rolled back the effect, if any.
-  rolledBackBy User?                    @relation("EffectRollbacker", fields: [rolledBackByUserId], references: [id], onDelete: SetNull)
-
-  @@index([eventId])
-  @@index([effectId])
-  @@map("calendar_event_effect_executions")
-}
-
 /// Entity type an EditLock can target.
 enum LockEntityType {
   SEASON_CALENDAR
@@ -2137,8 +2043,7 @@ enum LockEntityType {
 }
 
 /// Session-scoped edit lock preventing concurrent editing of a SeasonCalendar or CollectionLayout
-/// while a user has the planning wizard open. Distinct from CalendarEventStateEffect (a domain-level
-/// lock triggered by milestone events) — this is a UI-session lock, released on completion/unmount
+/// while a user has the planning wizard open: a UI-session lock, released on completion/unmount
 /// or expired via a fixed TTL (no renewal/heartbeat).
 model EditLock {
   id             String         @id @default(uuid())
@@ -2291,13 +2196,13 @@ enum BackupStatus {
 /// integrity metadata below so a backup remains decryptable/restorable even if this row (and the
 /// whole database) is lost — the row exists purely for a convenient admin-facing catalog UI.
 model BackupRecord {
-  id     String @id @default(uuid())
+  id       String @id @default(uuid())
   /// Storage key of the encrypted blob within the "backups" bucket.
   filename String
 
   scope   BackupScope
   trigger BackupTrigger
-  status  BackupStatus @default(PENDING)
+  status  BackupStatus  @default(PENDING)
 
   /// Optional free-text label set by the admin at creation time (e.g. "prima di migrazione X").
   label String?
@@ -2310,16 +2215,16 @@ model BackupRecord {
   fileCount          Int?
 
   /// AES-256-GCM initialization vector (hex) used to encrypt this backup's data-encryption-key-wrapped stream.
-  ivHex        String?
+  ivHex         String?
   /// AES-256-GCM authentication tag (hex), known only once the stream has been fully written.
-  authTagHex   String?
+  authTagHex    String?
   /// Per-backup random data-encryption-key (DEK), itself encrypted ("wrapped") with the server master key.
   wrappedDekHex String?
   /// Symmetric algorithm used. Always "aes-256-gcm" today; kept explicit for future rotation.
-  algorithm    String  @default("aes-256-gcm")
+  algorithm     String  @default("aes-256-gcm")
 
   /// Application version (APP_VERSION) that produced this backup.
-  appVersion         String?
+  appVersion          String?
   /// Name of the latest Prisma migration applied at backup time — used to warn on cross-schema restores.
   schemaMigrationName String?
 
@@ -2329,7 +2234,7 @@ model BackupRecord {
   /// FK to User who triggered a MANUAL backup. Null for SCHEDULED/PRE_RESTORE_SAFETY or if the user was deleted.
   createdById String?
   /// The user who triggered this backup, if manual.
-  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
   /// FK to the original BackupRecord this one was derived from by the migration bridge — set only
   /// for PRE_MIGRATION_SAFETY/MIGRATED, null otherwise. SetNull: deleting the source only loses the

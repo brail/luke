@@ -176,45 +176,43 @@ export type CollectionRowQuotationDraft = z.infer<
   typeof CollectionRowQuotationDraftSchema
 >;
 
-/** Base fields for a catalog item before refinement constraints are applied. */
-export const CollectionCatalogItemInputBaseSchema = z.object({
+/**
+ * Input schema for a catalog item. `iso9001Categories` is optional on every type: the ISO 9001
+ * register is no longer enforced, so a catalog item is usable without one.
+ */
+export const CollectionCatalogItemInputSchema = z.object({
   type: z.enum(COLLECTION_CATALOG_TYPES),
   value: z.string().min(1).max(100),
   label: z.string().min(1).max(200),
   order: z.number().int().min(0).optional(),
   iso9001Categories: z.array(z.enum(ISO9001_CATEGORIES)).optional().nullable(),
 });
-
-/**
- * Full input schema for a catalog item with cross-field constraint:
- * `revisionType` items require at least one `iso9001Categories` entry.
- */
-export const CollectionCatalogItemInputSchema =
-  CollectionCatalogItemInputBaseSchema.refine(
-    data => data.type !== 'revisionType' || (data.iso9001Categories && data.iso9001Categories.length > 0),
-    { message: 'iso9001Categories obbligatorio per type=revisionType', path: ['iso9001Categories'] }
-  );
 export type CollectionCatalogItemInput = z.infer<
   typeof CollectionCatalogItemInputSchema
 >;
 
 // ─── Revision schemas ─────────────────────────────────────────────────────────
 
-/** Input schema for creating a new collection layout revision snapshot. */
-export const CreateRevisionInputSchema = z.object({
+/**
+ * What a user may ask for when creating a revision by hand. `cause` and `milestoneId` are
+ * deliberately absent: the manual endpoint cannot express an automatic revision, so nothing has to
+ * guard against one being forged. The automatic triggers bypass this schema and call the service
+ * directly.
+ */
+export const CreateRevisionRequestSchema = z.object({
   collectionLayoutId: z.string().uuid(),
   revisionTypeValue: z.string().min(1),
-  cause: z.enum(REVISION_CAUSES).default('MANUAL'),
-  milestoneId: z.string().uuid().optional().nullable(),
   notes: z.string().max(1000).optional().nullable(),
-}).refine(
-  data => data.cause !== 'MILESTONE' || !!data.milestoneId,
-  { message: 'milestoneId richiesto se cause=MILESTONE', path: ['milestoneId'] }
-).refine(
-  data => data.cause !== 'MANUAL' || !data.milestoneId,
-  { message: 'milestoneId non ammesso se cause=MANUAL', path: ['milestoneId'] }
-);
-export type CreateRevisionInput = z.infer<typeof CreateRevisionInputSchema>;
+});
+export type CreateRevisionRequest = z.infer<typeof CreateRevisionRequestSchema>;
+
+/**
+ * Service-level input for `createRevision`. The cause/milestone pairing is a union rather than a
+ * runtime refinement: a MILESTONE revision without its event, or a MANUAL one carrying an event,
+ * does not typecheck in the first place.
+ */
+export type CreateRevisionInput = CreateRevisionRequest &
+  ({ cause: 'MANUAL'; milestoneId?: null } | { cause: 'MILESTONE'; milestoneId: string });
 
 export const GetRevisionsListInputSchema = z.object({
   collectionLayoutId: z.string().uuid(),

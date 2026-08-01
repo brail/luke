@@ -89,7 +89,7 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   seasonCalendar: {
     reason:
       'listMilestones dalla spec sulla visibilità e getOrCreate da quella sul brand scope; è il dominio più grande dell’app e la copertura va costruita per milestone, non in un colpo',
-    uncovered: 31,
+    uncovered: 29,
   },
   integrations: {
     reason:
@@ -169,8 +169,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   collectionLayoutRevision: {
     reason:
-      'list, getDetail, getLayoutAsOf ed export.xlsx invocate dalla spec sul brand scope; restano `create` (snapshot vero) ed export.pdf',
-    uncovered: 2,
+      'list, getDetail, getLayoutAsOf ed export.xlsx invocate dalla spec sul brand scope, `create` da quella sul guard dei tipi automatici; resta export.pdf',
+    uncovered: 1,
   },
   sectionAccess: {
     reason:

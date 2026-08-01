@@ -21,6 +21,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   COLLECTION_LAYOUT_UPDATE_SETTINGS: 'Impostazioni collection layout modificate',
   COLLECTION_LAYOUT_COPY_FROM_SEASON: 'Collection layout copiato da altra stagione',
   COLLECTION_LAYOUT_REVISION_CREATE: 'Revisione collection layout creata',
+  COLLECTION_LAYOUT_REVISION_AUTO_CREATE: 'Revisione collection layout automatica (milestone)',
 
   // Planning group / calendar
   PLANNING_GROUP_FROZEN: 'Pianificazione congelata',

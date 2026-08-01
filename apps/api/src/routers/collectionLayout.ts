@@ -61,6 +61,7 @@ import {
   updateLayoutSettings,
   bulkAssignRowsPlanningGroup,
 } from '../services/collectionLayout.service';
+import { createRevisionsForCompletedPhase } from '../services/collectionLayoutAutoRevision.service';
 import {
   createQuotation,
   updateQuotation,
@@ -302,7 +303,17 @@ const rowsRouter = router({
 
       // Un INSERT indipendente per riga di audit (riga + ciascuna quotazione toccata) — nessuna
       // dipendenza fra loro, un solo Promise.all invece di due giri sequenziali.
+      //
+      // Insieme a loro lo snapshot automatico del layout: questa transizione può essere quella che
+      // completa la fase di un evento per l'intero gruppo di pianificazione. Sta fuori dalla
+      // `$transaction` sopra perché `createRevision` apre una transaction propria, non annidabile in
+      // quella del salvataggio, e non condivide dati con gli audit — quindi le sue query girano
+      // sovrapposte a loro invece di allungare la mutation in serie. Non lancia mai (vedi il
+      // service): una revisione fallita non deve far fallire il salvataggio.
       await Promise.all([
+        ...(phaseChanged && rowData.phaseId != null
+          ? [createRevisionsForCompletedPhase(ctx.prisma, before.collectionLayoutId, result.planningGroupId, ctx.logger)]
+          : []),
         logAudit(ctx, {
           action: 'COLLECTION_ROW_UPDATE',
           targetType: 'CollectionLayoutRow',

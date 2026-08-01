@@ -536,7 +536,6 @@ export async function applyTemplate(
         items: {
           include: {
             visibilities: true,
-            stateEffects: true,
           },
         },
       },
@@ -579,9 +578,6 @@ export async function applyTemplate(
       }));
     });
     await tx.calendarEventVisibility.createMany({ data: visibilityData });
-
-    // Materialize template state effects (only if targetEntityId can be inferred — skip otherwise)
-    // V2: skip effects without targetEntityId (must be configured by user after apply)
 
     // Record the anchor date used, so a later re-apply/admin view can default to it.
     await tx.planningGroup.update({ where: { id: planningGroupId }, data: { anchorDate } });

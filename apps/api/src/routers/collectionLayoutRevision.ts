@@ -9,16 +9,14 @@
  *  - collectionLayoutRevision.export.xlsx / pdf — export a revision
  */
 
-import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import {
-  CreateRevisionInputSchema,
+  CreateRevisionRequestSchema,
   GetRevisionsListInputSchema,
   GetRevisionDetailInputSchema,
   GetLayoutAsOfRevisionInputSchema,
 } from '@luke/core';
-
 
 import { logAudit } from '../lib/auditLog';
 import { exportTimestamp } from '../lib/export/xlsx-streaming';
@@ -42,32 +40,26 @@ export const collectionLayoutRevisionRouter = router({
   /**
    * Creates a new numbered revision snapshot of the current collection layout.
    *
-   * MILESTONE cause is rejected — those revisions are created automatically by the system
-   * when a calendar event is completed. Row photos are copied to the immutable bucket.
+   * Always a MANUAL revision: the input schema has no `cause`/`milestoneId`, so this endpoint
+   * structurally cannot produce one of the automatic snapshots that the calendar triggers file
+   * through the service. Row photos are copied to the immutable bucket.
    *
    * @auth collection_layout:revise
-   * @input CreateRevisionInputSchema
+   * @input CreateRevisionRequestSchema
    * @output The created CollectionLayoutRevision record
    */
   create: protectedProcedure
     .use(requirePermission('collection_layout:revise'))
     .use(withRateLimit('configMutations'))
-    .input(CreateRevisionInputSchema)
+    .input(CreateRevisionRequestSchema)
     .mutation(async ({ input, ctx }) => {
       await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
-
-      if (input.cause === 'MILESTONE') {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Le revisioni MILESTONE sono create automaticamente dal sistema al completamento di un evento calendario',
-        });
-      }
 
       const copyPhoto = (sourceKey: string) =>
         copyToImmutableBucket(ctx.prisma, sourceKey, ctx.logger);
 
       const revision = await createRevision(
-        input,
+        { ...input, cause: 'MANUAL' },
         ctx.session.user.id,
         copyPhoto,
         ctx.prisma,
@@ -82,8 +74,6 @@ export const collectionLayoutRevisionRouter = router({
           collectionLayoutId: input.collectionLayoutId,
           revisionNumber: revision.revisionNumber,
           revisionTypeValue: input.revisionTypeValue,
-          cause: input.cause,
-          milestoneId: input.milestoneId ?? undefined,
           rowsIncluded: revision.groups.flatMap(g => g.rows).length,
         },
       });

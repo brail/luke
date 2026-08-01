@@ -11,7 +11,6 @@ import { z } from 'zod';
 import {
   COLLECTION_CATALOG_TYPES,
   CollectionCatalogItemInputSchema,
-  CollectionCatalogItemInputBaseSchema,
   partialWithoutDefaults,
 } from '@luke/core';
 
@@ -110,7 +109,7 @@ export const collectionCatalogRouter = router({
    * Updates mutable fields of a collection catalog item (label, order, code, iso9001Categories, etc.).
    *
    * @auth {collection_layout:update}
-   * @input {{ id: string, data: Partial<CollectionCatalogItemInputBaseSchema without type> }}
+   * @input {{ id: string, data: Partial<CollectionCatalogItemInputSchema without type> }}
    * @output {CollectionCatalogItem} — the updated item.
    */
   update: protectedProcedure
@@ -119,7 +118,7 @@ export const collectionCatalogRouter = router({
     .input(
       z.object({
         id: z.string().uuid(),
-        data: partialWithoutDefaults(CollectionCatalogItemInputBaseSchema.omit({ type: true })),
+        data: partialWithoutDefaults(CollectionCatalogItemInputSchema.omit({ type: true })),
       })
     )
     .mutation(async ({ input, ctx }) => {

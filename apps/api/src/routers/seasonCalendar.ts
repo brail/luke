@@ -12,7 +12,6 @@
  *  - Clone: cloneFromBrandSeason
  *  - Google Calendar sync: getSyncStatus, triggerSync, listGoogleCalendarBindings
  *  - User visibility: grantUserVisibility, revokeUserVisibility
- *  - State effects: executeStateEffect, rollbackStateEffect
  *
  * PlanningGroup CRUD (create/list/rename/delete) lives in `planningGroup.ts`.
  * Brand access is enforced per-operation via `assertBrandAccess`.
@@ -46,8 +45,6 @@ import {
   filterAllowedBrandIds,
   resolvePlanningGroupBrandAccess,
 } from '../services/brandScope.service.js';
-import { executeEffect } from '../services/calendar/effects/executor.js';
-import { rollbackEffect } from '../services/calendar/effects/rollback.js';
 import { assertUnlocked } from '../services/editLock.service.js';
 import {
   syncOneMilestone,
@@ -609,22 +606,6 @@ export const seasonCalendarRouter = router({
         data: { cancelledAt: new Date(), cancelReason: input.reason, cancelledByUserId: ctx.session.user.id },
       });
 
-      // Release any still-active state effects (e.g. layout locks): a cancelled event must not keep
-      // holding a lock. Confirmation-required executions are rolled back too — the event is retired.
-      const rolledBack: string[] = [];
-      const executions = await ctx.prisma.calendarEventEffectExecution.findMany({
-        where: { eventId: input.id, rolledBackAt: null },
-        select: { id: true },
-      });
-      await Promise.all(executions.map(async exec => {
-        try {
-          await rollbackEffect(ctx.prisma, exec.id, ctx.session.user.id);
-          rolledBack.push(exec.id);
-        } catch (err) {
-          ctx.logger.error(err, `cancel rollback failed: ${exec.id}`);
-        }
-      }));
-
       await logAudit(ctx, { action: 'CALENDAR_EVENT_CANCEL', targetType: 'CalendarEvent', targetId: input.id, result: 'SUCCESS', metadata: { title: event.title, calendarId: event.calendarId, reason: input.reason } });
       sseStore.pushToAll({ type: 'calendar-updated', seasonId: event.calendar.seasonId });
       syncOneMilestone(input.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on cancel'));
@@ -638,7 +619,7 @@ export const seasonCalendarRouter = router({
         eventKey: 'CALENDAR_CANCEL',
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on cancel'));
 
-      return { event: result, rolledBack };
+      return { event: result };
     }),
 
   /**
@@ -1010,28 +991,6 @@ export const seasonCalendarRouter = router({
       );
 
       return { ok: true };
-    }),
-
-  // ─── State effects (manual) ─────────────────────────────────────────────────
-
-  executeStateEffect: protectedProcedure
-    .use(requirePermission('collection_layout:update'))
-    .use(withRateLimit('configMutations'))
-    .input(z.object({ effectId: z.string().uuid() }))
-    .mutation(async ({ input, ctx }) => {
-      const execution = await executeEffect(ctx.prisma, input.effectId, ctx.session.user.id);
-      await logAudit(ctx, { action: 'CALENDAR_STATE_EFFECT_EXECUTE', targetType: 'CalendarEventEffectExecution', targetId: execution.id, result: 'SUCCESS', metadata: { effectId: input.effectId } });
-      return execution;
-    }),
-
-  rollbackStateEffect: protectedProcedure
-    .use(requirePermission('collection_layout:update'))
-    .use(withRateLimit('configMutations'))
-    .input(z.object({ executionId: z.string().uuid() }))
-    .mutation(async ({ input, ctx }) => {
-      await rollbackEffect(ctx.prisma, input.executionId, ctx.session.user.id);
-      await logAudit(ctx, { action: 'CALENDAR_STATE_EFFECT_ROLLBACK', targetType: 'CalendarEventEffectExecution', targetId: input.executionId, result: 'SUCCESS', metadata: {} });
-      return { success: true };
     }),
 
   /**

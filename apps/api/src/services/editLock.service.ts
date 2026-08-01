@@ -1,7 +1,6 @@
 /**
- * Session-scoped edit lock for the planning wizard. Distinct from `CalendarEventStateEffect`
- * (a domain-level lock triggered by milestone events) — this is a UI-session lock held by a
- * single user while the wizard is open, released on completion/unmount or on TTL expiry.
+ * Session-scoped edit lock for the planning wizard: a UI-session lock held by a single user
+ * while the wizard is open, released on completion/unmount or on TTL expiry.
  * The frontend heartbeats via `renewLocks` well before the TTL elapses, so expiry only hits
  * a session that's genuinely gone idle/offline.
  */

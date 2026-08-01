@@ -1,3 +1,4 @@
+import { createRevisionsForReachedEvents } from '../services/collectionLayoutAutoRevision.service';
 import { computeCriticalityForLayout, resolveAlertThresholds } from '../services/phaseAlert.service';
 
 import { guardMaintenance } from './maintenanceMode';
@@ -88,7 +89,7 @@ async function checkRowPhaseOverdue(prisma: PrismaClient): Promise<void> {
   );
 }
 
-async function checkDeadlines(prisma: PrismaClient): Promise<void> {
+async function checkDeadlines(prisma: PrismaClient, logger: FastifyInstance['log']): Promise<void> {
   const now = new Date();
 
   const in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
@@ -114,6 +115,8 @@ async function checkDeadlines(prisma: PrismaClient): Promise<void> {
       notifyMilestone(prisma, m, 'overdue', `"${m.title}" è scaduta senza essere completata`)
     ),
     checkRowPhaseOverdue(prisma),
+    // Auto-revision of the collection layout for every phase-linked event whose deadline just passed.
+    createRevisionsForReachedEvents(prisma, now, logger),
   ]);
 }
 
@@ -129,7 +132,7 @@ export function registerMilestoneDeadlineScheduler(
 ): void {
   let timer: ReturnType<typeof setInterval> | null = null;
 
-  const guardedCheck = guardMaintenance(prisma, withSchedulerLock(prisma, 'milestone-deadline', () => checkDeadlines(prisma)));
+  const guardedCheck = guardMaintenance(prisma, withSchedulerLock(prisma, 'milestone-deadline', () => checkDeadlines(prisma, fastify.log)));
   const run = () =>
     guardedCheck().catch(err =>
       fastify.log.error({ err }, 'Milestone deadline check failed')

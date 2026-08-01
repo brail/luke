@@ -85,7 +85,6 @@ export function CreateRevisionDialog({
     createMutation.mutate({
       collectionLayoutId: layout.id,
       revisionTypeValue,
-      cause: 'MANUAL',
       notes: notes.trim() || null,
     });
   };
