@@ -17,6 +17,11 @@ disable-model-invocation: true
 You are running an incremental fix-verify loop on the Luke codebase.
 At each iteration: find → propose → confirm → fix → verify → repeat.
 
+**Read `.claude/skills/luke-shared/audit-protocol.md` first** and apply the
+sections its applicability table assigns to `/luke-fix`: §1 scoping and §7
+concurrent sessions. You modify application code, not test files, so §7.2 and
+§7.4 are the ones that bite.
+
 ## Configuration
 
 Parse $ARGUMENTS to determine which audit to use:
@@ -89,13 +94,18 @@ Do not apply any change without explicit confirmation.
 
 **Y (Apply)**:
 
-- Apply the fix to the file
+- If the file is in another live session's ledger (§7.2), **do not apply**:
+  mark the finding `skipped — file owned by another session`, say so, and move
+  to the next finding. The loop continues.
+- Apply the fix to the file, then append its path to your ledger (§7.1)
 - Run the minimal verification for this finding type:
   - TypeScript error? → `pnpm --filter <app> typecheck` on the affected file
   - Prisma schema? → check schema syntax only, do not run migration
   - React hook? → no automated check, note it for manual testing
   - ESLint violation? → `pnpm --filter <app> lint <file>`
-- If verification fails: show the error, revert the change, mark finding as "attempted/failed", move to next
+- If verification fails: show the error, revert the change — **by undoing your own
+  Edit, never with `git checkout`/`git restore` on the file** (§7.4) — mark finding
+  as "attempted/failed", move to next
 - If verification passes: mark finding as "fixed", continue to Step 5
 
 **S (Skip)**:
@@ -165,6 +175,8 @@ Suggested next step:
 - NEVER apply a fix without explicit user confirmation (Y, E)
 - NEVER batch-apply multiple fixes without re-running the audit in between
 - NEVER run `git commit` — that is the user's decision
+- NEVER revert with `git checkout`/`git restore` on a file: it discards the other
+  session's uncommitted work and the user's, not just yours (§7.4)
 - NEVER process MEDIUM or LOW findings automatically — present them in the
   completion summary only
 - If the same file is fixed 3+ times in one session, warn:

@@ -1,9 +1,29 @@
 # Luke Audit Protocol — shared rules
 
-Protocollo comune a `/luke-audit`, `/luke-bugs`, `/luke-security`, `/luke-full`.
-Ogni skill lo legge prima di iniziare. Qui vivono le regole di **scoping**,
-**baseline**, **escalation a regola** e **uso di lessons.md**; i controlli specifici
-restano nel file della singola skill.
+Protocollo comune a tutte le skill `luke-*`: `/luke-audit`, `/luke-bugs`,
+`/luke-security`, `/luke-full`, `/luke-test`, `/luke-fix`, `/luke-docs`.
+Ogni skill lo legge prima di iniziare; i controlli specifici restano nel file
+della singola skill.
+
+## Applicabilità
+
+Non tutte le sezioni valgono per tutte le skill: §2, §3 e §5 presuppongono che la
+skill produca *finding*, e `/luke-test`, `/luke-fix`, `/luke-docs` non ne producono.
+
+Questa tabella è l'unico posto dove l'applicabilità è scritta. Prima viveva nella
+riga con cui ogni skill puntava qui, e ogni skill ne aveva inventata una versione
+diversa: quattro dicevano «applicalo» senza qualificare, `/luke-test` citava la
+sola §1, `/luke-fix` e `/luke-docs` non puntavano affatto — pur scrivendo file.
+
+| § | Regola | Si applica a |
+|---|---|---|
+| 1 | Scoping sul diff | tutte |
+| 2 | Baseline | audit, bugs, security, full |
+| 3 | Escalation a regola deterministica | audit, bugs, security, full |
+| 4 | `lessons.md` come input di check | audit, bugs, security, full |
+| 5 | Onestà dello score | audit, bugs, security, full |
+| 6 | Niente fan-out | chi dichiara `agent: Explore` |
+| 7 | Sessioni concorrenti | tutte — §7.2 solo per chi scrive file (test, fix, docs) |
 
 ---
 
@@ -174,3 +194,74 @@ contesto forkato — tre lavori diversi, non tre fette della stessa checklist.
 scope `--full` il contesto può esaurirsi. Lo scope di default è il diff, perciò
 morde solo su `--full` esplicito. Se succede, la risposta è `/luke-full`, non
 resuscitare il fan-out.
+
+---
+
+## 7. Sessioni concorrenti
+
+Due sessioni Claude Code sullo stesso repo condividono working tree, database di
+test e cache: sono processi diversi sulle stesse risorse, senza alcun arbitro.
+
+Il sintomo osservato è una skill che **si ferma** trovando file che non ha scritto
+lei, li tratta come anomalia e interrompe il lavoro. Sono file di un'altra sessione
+viva. La risposta giusta non è fermarsi: è riconoscerli, non toccarli, e proseguire.
+
+### 7.1 Identità e censimento
+
+`$CLAUDE_CODE_SESSION_ID` è l'identità della sessione. Resta la stessa nei
+subagenti (`/luke-full` che invoca le tre skill di audit condivide la propria), e
+quindi anche fra skill successive dello stesso turno di lavoro.
+
+Ogni sessione ha già una scratchpad dir che porta quel nome; le sessioni sorelle
+sono directory adiacenti. Nessun registro nuovo da inventare:
+
+```bash
+SESSIONS_ROOT=$(dirname "$(find /private/tmp/claude-* -maxdepth 2 -type d \
+  -name "$CLAUDE_CODE_SESSION_ID" 2>/dev/null | head -1)")
+LEDGER="$SESSIONS_ROOT/$CLAUDE_CODE_SESSION_ID/scratchpad/luke-written.txt"
+
+# File scritti da sessioni ancora vive (ledger toccato negli ultimi 30 minuti)
+find "$SESSIONS_ROOT" -maxdepth 3 -name luke-written.txt -mmin -30 \
+  -not -path "*/$CLAUDE_CODE_SESSION_ID/*" -exec cat {} +
+```
+
+La liveness è l'mtime del ledger, non un heartbeat né un PID: la skill può girare
+in un subagente con PID proprio, e un protocollo di heartbeat sarebbe infrastruttura
+nuova per un fatto che il filesystem già registra.
+
+**Un ledger vecchio non vincola nessuno.** È deliberato: i file scritti da una
+sessione di ieri devono restare modificabili oggi, altrimenti la seconda run di
+`/luke-test` sugli stessi test si rifiuterebbe di aggiornarli.
+
+### 7.2 Ledger e proprietà dei file — solo per le skill che scrivono
+
+1. Appendi a `$LEDGER` il path di **ogni** file che scrivi, uno per riga, subito
+   dopo averlo scritto.
+2. All'avvio calcola il set dei file di sessioni vive diverse dalla tua.
+3. Un file in quel set **non si riscrive**: leggilo pure come contesto, evita di
+   duplicarne il contenuto, ed elencalo in output come `di altra sessione, non
+   toccato`. **Non è un errore e non interrompe il lavoro.**
+4. Un file nel ledger della **tua** sessione è tuo, anche se scritto da una skill
+   precedente: modificalo normalmente.
+
+Il set è vuoto quando giri da solo, e ogni percorso resta identico a oggi.
+
+### 7.3 Risorse condivise non partizionabili
+
+Il database di test è uno solo: porta fissa `5434`, nome fisso, e l'isolamento fra
+test è un `TRUNCATE` di tutte le tabelle. Due run di integrazione in parallelo si
+cancellano le fixture a vicenda, e il fallimento sembra un bug del prodotto.
+`fileParallelism: false` serializza dentro un processo vitest, non fra processi.
+
+- Prima di lanciare i test di integrazione: se `pgrep -f vitest` trova una run
+  altrui, aspetta o salta il passo — e dillo nell'output.
+- Mai `pnpm test:db:down`: cancella il volume sotto la run di un'altra sessione.
+
+### 7.4 Revert — mai con git
+
+Ripristinare un file dopo una modifica fallita si fa **annullando la propria
+Edit**, mai con `git checkout` o `git restore` sul file.
+
+Il comando git non distingue la tua modifica dal resto: butta via anche il lavoro
+non committato dell'altra sessione e quello dell'utente. È distruttivo già in
+sessione singola; la concorrenza lo rende solo più probabile.

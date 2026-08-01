@@ -28,6 +28,10 @@ Nessuna modalità in $ARGUMENTS → esegui `readme` → `inline` → `adr` in se
 **Prima di eseguire una modalità, leggi il suo file in `references/`** — contiene
 template, logica di merge e checklist qualità obbligatorie.
 
+**Leggi anche `.claude/skills/luke-shared/audit-protocol.md`** e applica le sezioni
+che la sua tabella di applicabilità assegna a `/luke-docs`: §1 scoping e §7 sessioni
+concorrenti — scrivi file, quindi §7.2 ti riguarda.
+
 ---
 
 ## Regole obbligatorie (precedono tutto il resto)

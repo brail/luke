@@ -17,8 +17,10 @@ Se durante il lavoro emerge che il codice sotto test ha un bug, **non correggerl
 segnalalo e scrivi il test che lo espone, marcandolo `.fails` o `.todo` con un
 commento che spiega perché. La decisione se cambiare il comportamento è dell'utente.
 
-**Leggi per primo `.claude/skills/luke-shared/audit-protocol.md` §1** per risolvere
-lo scope. Default: diff vs merge-base.
+**Leggi per primo `.claude/skills/luke-shared/audit-protocol.md`** e applica le
+sezioni che la sua tabella di applicabilità assegna a `/luke-test`: §1 scoping
+(default: diff vs merge-base) e §7 sessioni concorrenti — sei una skill che
+scrive file, quindi §7.2 ti riguarda.
 
 ---
 
@@ -185,3 +187,5 @@ Zod, tipo, regola in CLAUDE.md, comportamento richiesto), non dal corpo della fu
    dillo e mostra la voce cambiata.
 4. Cosa **non** hai coperto e perché — un elenco onesto vale più di una copertura
    gonfiata.
+5. I file di test di altre sessioni vive che hai lasciato stare (§7.2), se ce ne
+   sono. Riga vuota se il set era vuoto: non è una sezione da riempire.
