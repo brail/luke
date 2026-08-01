@@ -29,11 +29,11 @@ scrive file, quindi §7.2 ti riguarda.
 Il progetto ha tre tier. Sbagliare tier è l'errore più costoso: un test unit che
 tocca il database finisce nel progetto sbagliato e fallisce in CI.
 
-| Tier | Membership | Config |
-|---|---|---|
-| **Unit** | tutto ciò che **non** matcha `*.integration.spec.ts` | `apps/api/vitest.config.ts` |
-| **Integration** | `apps/api/test/**/*.integration.spec.ts` | `apps/api/vitest.integration.config.ts` |
-| **Smoke E2E** | `apps/web/tests/smoke/*.smoke.spec.ts` | `apps/web/playwright.config.ts` |
+| Tier            | Membership                                           | Config                                  |
+| --------------- | ---------------------------------------------------- | --------------------------------------- |
+| **Unit**        | tutto ciò che **non** matcha `*.integration.spec.ts` | `apps/api/vitest.config.ts`             |
+| **Integration** | `apps/api/test/**/*.integration.spec.ts`             | `apps/api/vitest.integration.config.ts` |
+| **Smoke E2E**   | `apps/web/tests/smoke/*.smoke.spec.ts`               | `apps/web/playwright.config.ts`         |
 
 La membership è **il nome del file**, non un elenco. C'era una lista a mano
 (`test/integration-specs.ts`), eliminata: un elenco ha un fallimento asimmetrico, <!-- skill-check-ignore -->
@@ -58,7 +58,7 @@ verde con zero test eseguiti è peggio di un job rosso. Valori e forma esplicita
 in `docker-compose.test.yml`.
 
 **Copertura delle procedure**: la suite di integrazione ha un gate che verifica
-quali procedure tRPC vengono *invocate davvero* (`test/procedure-coverage.ts`).
+quali procedure tRPC vengono _invocate davvero_ (`test/procedure-coverage.ts`).
 Se aggiungi una procedura senza test, `pnpm test:integration` fallisce e ti
 stampa la voce da incollare. Non aggirarlo dichiarandola scoperta senza motivo:
 il gate rifiuta i motivi segnaposto.
@@ -67,7 +67,7 @@ il gate rifiuta i motivi segnaposto.
 
 ## 2. Helper esistenti — usa questi, non reinventarli
 
-**`apps/api/test/helpers.ts` è il barrel unico: la sua lista di export *è* l'API
+**`apps/api/test/helpers.ts` è il barrel unico: la sua lista di export _è_ l'API
 di test. Leggila lì.**
 
 Questa sezione elencava le firme una per una ed è driftata: citava
@@ -110,8 +110,9 @@ expect(auditPerms.length).toBe(2);
 
 // ✓ deriva dalla fonte di verità
 for (const [resource, actions] of Object.entries(VALID_RESOURCE_ACTIONS)) {
-  expect(permissions.filter(p => p.startsWith(`${resource}:`)).length)
-    .toBe(actions.length + 1);
+  expect(permissions.filter(p => p.startsWith(`${resource}:`)).length).toBe(
+    actions.length + 1
+  );
 }
 ```
 
@@ -123,7 +124,9 @@ reale — è il percorso di produzione e sopravvive agli upgrade di tRPC.
 
 ```ts
 const probeRouter = router({
-  probe: publicProcedure.use(requirePermission('brands:create')).query(() => 'ok'),
+  probe: publicProcedure
+    .use(requirePermission('brands:create'))
+    .query(() => 'ok'),
 });
 await expect(probeRouter.createCaller(ctx).probe()).resolves.toBe('ok');
 ```
@@ -166,15 +169,15 @@ Zod, tipo, regola in CLAUDE.md, comportamento richiesto), non dal corpo della fu
 
 ## 4. Cosa testare per tipo di modifica
 
-| Cambiamento | Test minimo richiesto |
-|---|---|
-| Nuova procedura tRPC | Permesso concesso/negato per admin, editor, viewer, anonimo |
-| Nuovo campo su schema Zod | Input valido accettato, input invalido rifiutato con il messaggio giusto |
+| Cambiamento                 | Test minimo richiesto                                                                            |
+| --------------------------- | ------------------------------------------------------------------------------------------------ |
+| Nuova procedura tRPC        | Permesso concesso/negato per admin, editor, viewer, anonimo                                      |
+| Nuovo campo su schema Zod   | Input valido accettato, input invalido rifiutato con il messaggio giusto                         |
 | Nuova regola RBAC / sezione | Le tre fonti (`sectionEnum`, `SECTION_TO_PERMISSION`, `SECTION_ACCESS_DEFAULTS`) restano in sync |
-| Mutation | `withAuditLog`/`logAudit` produce la riga di audit attesa |
-| Write multi-tabella | Il rollback della transaction lascia lo stato consistente |
-| Nuova route rate-limited | Presente in `RATE_LIMIT_CONFIG`, `DEFAULTS` e `RateLimitConfigSchema` (vedi `lessons.md`) |
-| Bug fix | Il test fallisce sul codice pre-fix — verificalo davvero, non assumerlo |
+| Mutation                    | `withAuditLog`/`logAudit` produce la riga di audit attesa                                        |
+| Write multi-tabella         | Il rollback della transaction lascia lo stato consistente                                        |
+| Nuova route rate-limited    | Presente in `RATE_LIMIT_CONFIG`, `DEFAULTS` e `RateLimitConfigSchema` (vedi `lessons.md`)        |
+| Bug fix                     | Il test fallisce sul codice pre-fix — verificalo davvero, non assumerlo                          |
 
 ---
 

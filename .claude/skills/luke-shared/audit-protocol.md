@@ -8,22 +8,22 @@ della singola skill.
 ## Applicabilità
 
 Non tutte le sezioni valgono per tutte le skill: §2, §3 e §5 presuppongono che la
-skill produca *finding*, e `/luke-test`, `/luke-fix`, `/luke-docs` non ne producono.
+skill produca _finding_, e `/luke-test`, `/luke-fix`, `/luke-docs` non ne producono.
 
 Questa tabella è l'unico posto dove l'applicabilità è scritta. Prima viveva nella
 riga con cui ogni skill puntava qui, e ogni skill ne aveva inventata una versione
 diversa: quattro dicevano «applicalo» senza qualificare, `/luke-test` citava la
 sola §1, `/luke-fix` e `/luke-docs` non puntavano affatto — pur scrivendo file.
 
-| § | Regola | Si applica a |
-|---|---|---|
-| 1 | Scoping sul diff | tutte |
-| 2 | Baseline | audit, bugs, security, full |
-| 3 | Escalation a regola deterministica | audit, bugs, security, full |
-| 4 | `lessons.md` come input di check | audit, bugs, security, full |
-| 5 | Onestà dello score | audit, bugs, security, full |
-| 6 | Niente fan-out | chi dichiara `agent: Explore` |
-| 7 | Sessioni concorrenti | tutte — §7.2 solo per chi scrive file (test, fix, docs) |
+| §   | Regola                             | Si applica a                                            |
+| --- | ---------------------------------- | ------------------------------------------------------- |
+| 1   | Scoping sul diff                   | tutte                                                   |
+| 2   | Baseline                           | audit, bugs, security, full                             |
+| 3   | Escalation a regola deterministica | audit, bugs, security, full                             |
+| 4   | `lessons.md` come input di check   | audit, bugs, security, full                             |
+| 5   | Onestà dello score                 | audit, bugs, security, full                             |
+| 6   | Niente fan-out                     | chi dichiara `agent: Explore`                           |
+| 7   | Sessioni concorrenti               | tutte — §7.2 solo per chi scrive file (test, fix, docs) |
 
 ---
 
@@ -34,13 +34,13 @@ si lancia raramente. L'obiettivo è l'opposto: costo basso, uso ad ogni sessione
 
 Interpreta `$ARGUMENTS` così:
 
-| Forma | Comportamento |
-|---|---|
-| *(vuoto)* | **Default**: file cambiati rispetto al merge-base col branch di sviluppo |
-| `--since <ref>` | File cambiati rispetto a `<ref>` |
-| `--full` | Intero monorepo (esplicito) |
-| `<path>` | Solo quel path, ricorsivo |
-| `<path> --since <ref>` | Intersezione dei due |
+| Forma                  | Comportamento                                                            |
+| ---------------------- | ------------------------------------------------------------------------ |
+| _(vuoto)_              | **Default**: file cambiati rispetto al merge-base col branch di sviluppo |
+| `--since <ref>`        | File cambiati rispetto a `<ref>`                                         |
+| `--full`               | Intero monorepo (esplicito)                                              |
+| `<path>`               | Solo quel path, ricorsivo                                                |
+| `<path> --since <ref>` | Intersezione dei due                                                     |
 
 Per ricavare il set di default:
 
@@ -58,7 +58,7 @@ sullo scan completo senza chiederlo.
 
 **Contesto oltre il diff**: leggi comunque i file di verità (`CLAUDE.md`,
 `lessons.md`, schemi in `packages/core/src/schemas/`) e i file direttamente
-importati da quelli cambiati. Il diff limita *cosa segnali*, non *cosa leggi*.
+importati da quelli cambiati. Il diff limita _cosa segnali_, non _cosa leggi_.
 
 ---
 
@@ -240,7 +240,7 @@ sessione di ieri devono restare modificabili oggi, altrimenti la seconda run di
 2. All'avvio calcola il set dei file di sessioni vive diverse dalla tua.
 3. Un file in quel set **non si riscrive**: leggilo pure come contesto, evita di
    duplicarne il contenuto, ed elencalo in output come `di altra sessione, non
-   toccato`. **Non è un errore e non interrompe il lavoro.**
+toccato`. **Non è un errore e non interrompe il lavoro.**
 4. Un file nel ledger della **tua** sessione è tuo, anche se scritto da una skill
    precedente: modificalo normalmente.
 

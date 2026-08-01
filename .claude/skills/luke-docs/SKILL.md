@@ -8,7 +8,7 @@ description: >
   maintains the index). Use when asked to generate, update, or normalize
   documentation. Modes: /luke-docs readme | inline | adr | (all in sequence).
   Supports --since <git-ref> and --dry-run.
-argument-hint: "[readme|inline|adr] [--since <git-ref>] [--dry-run]"
+argument-hint: '[readme|inline|adr] [--since <git-ref>] [--dry-run]'
 context: fork
 agent: general-purpose
 ---
@@ -17,11 +17,11 @@ agent: general-purpose
 
 Tre modalità:
 
-| Modalità | Cosa fa | Riferimento dettagli |
-|----------|---------|---------------------|
-| `readme` | Crea/aggiorna i `README.md` a ogni livello (root, `apps/*`, `packages/*`, `docs/`) | `references/readme-templates.md` |
-| `inline` | Normalizza i commenti nel sorgente: JSDoc su export TS, commenti tRPC, field docs Prisma (`///`) | `references/inline-rules.md` |
-| `adr`    | Valida gli ADR in `docs/decisions/` contro la codebase, aggiorna gli Status, mantiene l'indice | `references/adr-rules.md` |
+| Modalità | Cosa fa                                                                                          | Riferimento dettagli             |
+| -------- | ------------------------------------------------------------------------------------------------ | -------------------------------- |
+| `readme` | Crea/aggiorna i `README.md` a ogni livello (root, `apps/*`, `packages/*`, `docs/`)               | `references/readme-templates.md` |
+| `inline` | Normalizza i commenti nel sorgente: JSDoc su export TS, commenti tRPC, field docs Prisma (`///`) | `references/inline-rules.md`     |
+| `adr`    | Valida gli ADR in `docs/decisions/` contro la codebase, aggiorna gli Status, mantiene l'indice   | `references/adr-rules.md`        |
 
 Nessuna modalità in $ARGUMENTS → esegui `readme` → `inline` → `adr` in sequenza, report combinato.
 
@@ -54,10 +54,10 @@ concorrenti — scrivi file, quindi §7.2 ti riguarda.
 
 ## Lingua
 
-| Contesto | Lingua |
-|---------|--------|
-| Commenti inline (JSDoc, tRPC `/** */`, Prisma `///`) | **Inglese** |
-| README.md (tutti i livelli) e ADR | **Italiano** |
+| Contesto                                             | Lingua       |
+| ---------------------------------------------------- | ------------ |
+| Commenti inline (JSDoc, tRPC `/** */`, Prisma `///`) | **Inglese**  |
+| README.md (tutti i livelli) e ADR                    | **Italiano** |
 
 Termini di dominio canonici italiani (es. "stagione", "campionario", "reso") restano as-is
 anche nei commenti inglesi.

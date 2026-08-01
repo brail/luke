@@ -8,7 +8,7 @@ description: >
   Use after vibe coding sessions to systematically fix audit findings.
   Optional: specify which audit to run — /luke-fix audit | bugs | security | full
   Default: runs /luke-audit (architectural compliance).
-argument-hint: "[audit|bugs|security|full] [path]"
+argument-hint: '[audit|bugs|security|full] [path]'
 disable-model-invocation: true
 ---
 
