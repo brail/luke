@@ -126,6 +126,10 @@ export const CollectionLayoutRowInputSchema = z.object({
   toolingNotes: z.string().optional().nullable(),
   // Optional — pricing
   toolingQuotation: z.number().positive().optional().nullable(),
+  // Optional — sotto-flussi bufferizzati nel drawer, committati atomicamente col salvataggio riga
+  quotations: z.array(z.lazy(() => CollectionRowQuotationDraftSchema)).optional(),
+  // Transiente, mai persistito su colonna — solo per arricchire l'audit log quando phaseId cambia davvero
+  phaseChangeNote: z.string().max(500).optional().nullable(),
 });
 export type CollectionLayoutRowInput = z.infer<
   typeof CollectionLayoutRowInputSchema
@@ -159,6 +163,17 @@ export const CollectionRowQuotationUpdateSchema = partialWithoutDefaults(
 );
 export type CollectionRowQuotationUpdate = z.infer<
   typeof CollectionRowQuotationUpdateSchema
+>;
+
+/** Bozza quotazione bufferizzata client-side nel drawer riga: `id` presente = riga esistente da
+ *  aggiornare, assente = nuova da creare. `order` omesso: il server lo ricalcola dalla posizione
+ *  nell'array inviato al salvataggio (non ha senso lasciarlo al client con inserimenti/cancellazioni
+ *  intrecciati). */
+export const CollectionRowQuotationDraftSchema = CollectionRowQuotationInputSchema
+  .omit({ rowId: true, order: true })
+  .extend({ id: z.string().uuid().optional() });
+export type CollectionRowQuotationDraft = z.infer<
+  typeof CollectionRowQuotationDraftSchema
 >;
 
 /** Base fields for a catalog item before refinement constraints are applied. */
