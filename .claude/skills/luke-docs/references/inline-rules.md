@@ -7,12 +7,12 @@ Termini di dominio canonici italiani (es. "stagione", "campionario", "reso") res
 
 **Prima di scrivere qualsiasi commento, leggi quello esistente (se presente):**
 
-| Situazione | Comportamento |
-|-----------|--------------|
-| Commento accurato e completo | Lascia invariato — non toccare |
-| Commento accurato ma incompleto | Integra il contenuto mancante, preserva il testo esistente |
-| Commento driftato dalla firma reale | Riscrivi, segnala nel report come "aggiornato" |
-| Commento assente | Crea da zero |
+| Situazione                          | Comportamento                                              |
+| ----------------------------------- | ---------------------------------------------------------- |
+| Commento accurato e completo        | Lascia invariato — non toccare                             |
+| Commento accurato ma incompleto     | Integra il contenuto mancante, preserva il testo esistente |
+| Commento driftato dalla firma reale | Riscrivi, segnala nel report come "aggiornato"             |
+| Commento assente                    | Crea da zero                                               |
 
 ---
 
@@ -50,7 +50,7 @@ Template per **costante / enum esportata**:
 /**
  * {Valori ammessi per {campo}. Usato in {contesto}.}
  */
-export const MY_ENUM = ['A', 'B', 'C'] as const
+export const MY_ENUM = ['A', 'B', 'C'] as const;
 ```
 
 **Regole JSDoc:**
@@ -111,7 +111,7 @@ model CollectionLayout {
 - `// TODO:`, `// FIXME:`, `// HACK:` — preserva invariati
 - Blocchi di codice commentato — NON rimuovere; aggiungi `// luke-docs:flag stale-commented-code` sopra per revisione manuale
 - Qualsiasi commento in `.planning/`, `CLAUDE.md`, `lessons.md`
-- Commenti che spiegano il **perché** di una decisione (rationale architetturale) — hanno più valore dei commenti che spiegano il *cosa*
+- Commenti che spiegano il **perché** di una decisione (rationale architetturale) — hanno più valore dei commenti che spiegano il _cosa_
 - Import commentati usati come riferimento rapido durante lo sviluppo (ma flaggali)
 
 ---
