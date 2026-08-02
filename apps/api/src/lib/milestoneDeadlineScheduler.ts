@@ -41,6 +41,9 @@ async function notifyMilestone(
  * calendar deadline (`daysToDeadline < 0`, per `computeCriticalityForLayout` — same criticality
  * engine as the Controllo dashboards, no new calculation). Recipients are the event's visible
  * users, same resolution as milestone deadline notifications.
+ *
+ * Rows marked as concluded are skipped (`state === 'active'` guard): they carry a frozen outcome
+ * instead of a countdown, and nagging about a deadline on work someone already closed is noise.
  */
 async function checkRowPhaseOverdue(prisma: PrismaClient): Promise<void> {
   const layouts = await prisma.collectionLayout.findMany({ select: { id: true } });
@@ -52,7 +55,9 @@ async function checkRowPhaseOverdue(prisma: PrismaClient): Promise<void> {
     )
   )
     .flat()
-    .filter(r => r.daysToDeadline < 0);
+    // Type predicate, not a plain boolean: the criticality result is a union and only the 'active'
+    // arm carries `eventId`/`eventTitle`, which the notification below needs.
+    .filter((r): r is Extract<typeof r, { state: 'active' }> => r.state === 'active' && r.daysToDeadline < 0);
   if (overdueRows.length === 0) return;
 
   const rowIds = overdueRows.map(r => r.rowId);

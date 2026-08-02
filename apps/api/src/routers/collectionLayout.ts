@@ -55,6 +55,7 @@ import {
   deleteGroup,
   createRow,
   updateRow,
+  setRowCompleted,
   deleteRow,
   duplicateRow,
   reorderRows,
@@ -70,6 +71,7 @@ import {
   syncRowQuotations,
 } from '../services/collectionRow.quotation.service';
 import { assertUnlocked } from '../services/editLock.service';
+import { resolveMissingPhasesForRow } from '../services/phaseAlert.service';
 import { deleteObjectByKey } from '../storage';
 
 import type { Context } from '../lib/trpc';
@@ -258,7 +260,7 @@ const rowsRouter = router({
           // (un solo fetch della riga invece di uno per ogni funzione che ne ha bisogno).
           tx.collectionLayoutRow.findUniqueOrThrow({
             where: { id: input.rowId },
-            select: { pictureKey: true, phaseId: true, planningGroupId: true, collectionLayoutId: true, groupId: true },
+            select: { pictureKey: true, phaseId: true, planningGroupId: true, collectionLayoutId: true, groupId: true, completedAt: true },
           }),
           pendingPictureFileObjectId
             ? confirmPendingFile(tx, {
@@ -338,6 +340,66 @@ const rowsRouter = router({
       await deleteRow(input.rowId, ctx.prisma, ctx.session!.user.id);
       await logAudit(ctx, { action: 'COLLECTION_ROW_DELETE', targetType: 'CollectionLayoutRow', targetId: input.rowId, result: 'SUCCESS', metadata: {} });
       return { success: true };
+    }),
+
+  /**
+   * Marca la riga come conclusa (o la riapre). Stato esplicito, non deducibile dal calendario:
+   * una riga ferma sull'ultima fase l'ha *raggiunta*, non completata — vedi
+   * `getActivePhaseFromEvents`. Da conclusa la riga esce dal countdown di fase e mostra l'esito
+   * congelato (`completionOutcome`), e lo scheduler smette di notificarne il ritardo.
+   *
+   * Riaprire azzera `completedAt`; un cambio fase non lo tocca mai (scelta esplicita: riaprire è
+   * un'azione dichiarata, non un effetto collaterale di uno spostamento fatto per sbaglio).
+   *
+   * Motivazione obbligatoria in entrambi i versi: la conclusione è l'unico momento in cui l'esito
+   * viene fissato, e senza un perché l'audit log direbbe solo che è successo.
+   *
+   * Se la riga non ha attraversato tutte le fasi pianificate serve `force: true` — l'elenco è
+   * ricalcolato qui, mai accettato dal client. Non è un divieto (basterebbe saltare all'ultima fase
+   * per aggirarlo) ma una registrazione: `completionForced` e `skippedPhases` nell'audit rendono
+   * distinguibili, a consuntivo, le righe chiuse pulitamente da quelle forzate.
+   */
+  setCompleted: protectedProcedure
+    .use(requirePermission('collection_layout:update'))
+    .use(withRateLimit('configMutations'))
+    .input(
+      z.object({
+        rowId: z.string(),
+        completed: z.boolean(),
+        note: z.string().min(1, 'Motivazione obbligatoria').max(500),
+        force: z.boolean().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      await resolveRowBrandAccess(ctx, input.rowId);
+
+      // Solo in conclusione: riaprire non salta nulla, riporta la riga in lavorazione.
+      const missingPhases = input.completed
+        ? await resolveMissingPhasesForRow(input.rowId, ctx.prisma)
+        : [];
+      if (missingPhases.length > 0 && input.force !== true) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: `A questa riga mancano queste fasi prima di poter considerare concluso lo sviluppo: ${missingPhases.map(p => p.label).join(', ')}. Conferma la forzatura per procedere.`,
+        });
+      }
+
+      const row = await setRowCompleted(input.rowId, input.completed, ctx.prisma);
+
+      await logAudit(ctx, {
+        action: input.completed ? 'COLLECTION_ROW_COMPLETE' : 'COLLECTION_ROW_REOPEN',
+        targetType: 'CollectionLayoutRow',
+        targetId: input.rowId,
+        result: 'SUCCESS',
+        metadata: {
+          completedAt: row.completedAt?.toISOString() ?? null,
+          completionNote: input.note,
+          ...(missingPhases.length > 0
+            ? { completionForced: true, skippedPhases: missingPhases.map(p => p.value) }
+            : {}),
+        },
+      });
+      return row;
     }),
 
   duplicate: protectedProcedure

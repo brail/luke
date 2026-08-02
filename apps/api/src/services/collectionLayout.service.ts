@@ -449,14 +449,38 @@ export async function createRow(
  * @throws {TRPCError} NOT_FOUND if the destination group does not exist.
  * @throws {TRPCError} BAD_REQUEST if the gender or cross-layout move is invalid.
  */
+/**
+ * L'errore che congela una riga conclusa. Una riga conclusa mostra un esito misurato contro la sua
+ * fase e le milestone del suo gruppo di pianificazione: spostare l'una o l'altro senza riaprirla
+ * cambierebbe quell'esito a posteriori. Gli altri campi restano modificabili — la conclusione
+ * riguarda l'avanzamento, non l'anagrafica.
+ *
+ * Unico messaggio per i due percorsi di scrittura (riga singola e assegnazione bulk), così non
+ * possono divergere raccontando all'utente due regole diverse per lo stesso vincolo.
+ */
+function completedRowConflict(count: number): TRPCError {
+  return new TRPCError({
+    code: 'CONFLICT',
+    message: count === 1
+      ? 'Riga conclusa: riaprila prima di cambiare fase o gruppo di pianificazione.'
+      : `${count} righe della selezione sono concluse: riaprile prima di cambiarne il gruppo di pianificazione.`,
+  });
+}
+
 export async function updateRow(
   rowId: string,
   input: Partial<CollectionLayoutRowInput>,
-  existingRow: Pick<CollectionLayoutRow, 'collectionLayoutId' | 'groupId' | 'phaseId' | 'planningGroupId'>,
+  existingRow: Pick<CollectionLayoutRow, 'collectionLayoutId' | 'groupId' | 'phaseId' | 'planningGroupId' | 'completedAt'>,
   prisma: PrismaClient,
   userId: string
 ): Promise<RowWithVendor> {
   await assertUnlocked('COLLECTION_LAYOUT', existingRow.collectionLayoutId, userId, prisma);
+
+  const movesPhase = input.phaseId !== undefined && input.phaseId !== existingRow.phaseId;
+  const movesPlanningGroup = input.planningGroupId !== undefined && input.planningGroupId !== existingRow.planningGroupId;
+  if (existingRow.completedAt !== null && (movesPhase || movesPlanningGroup)) {
+    throw completedRowConflict(1);
+  }
 
   if (input.gender) {
     const layout = await prisma.collectionLayout.findUnique({
@@ -534,12 +558,48 @@ export async function bulkAssignRowsPlanningGroup(
   await assertUnlocked('COLLECTION_LAYOUT', layoutId, userId, prisma);
   await assertPlanningGroupInLayoutScope(layoutId, planningGroupId, prisma);
 
+  // Stesso vincolo di `updateRow`, applicato prima dell'updateMany. Non si filtrano le righe
+  // concluse dalla selezione: un'azione bulk che ne ignora una parte senza dirlo è peggio di un
+  // errore, perché il conteggio restituito sembrerebbe un successo parziale voluto.
+  const completedCount = await prisma.collectionLayoutRow.count({
+    where: { id: { in: rowIds }, completedAt: { not: null } },
+  });
+  if (completedCount > 0) throw completedRowConflict(completedCount);
+
   const { count } = await prisma.collectionLayoutRow.updateMany({
     where: { id: { in: rowIds }, planningGroupId: { not: planningGroupId } },
     data: { planningGroupId },
   });
 
   return { success: true, count };
+}
+
+/**
+ * Marca la riga come conclusa, o la riapre. Sta qui e non nel router perché è l'unico altro punto
+ * che scrive su una riga: tenerla accanto a `updateRow` mette l'invariante "riga conclusa" e chi la
+ * fa rispettare dallo stesso lato del confine.
+ *
+ * Concludendo, `completedAt: null` nel `where` rende l'operazione idempotente: una seconda chiamata
+ * non riscrive la data della prima conclusione, che è il dato su cui si misura l'esito. Riaprire
+ * azzera sempre.
+ *
+ * @returns Lo stato risultante della riga — `completedAt` è ciò che il chiamante registra in audit.
+ */
+export async function setRowCompleted(
+  rowId: string,
+  completed: boolean,
+  prisma: PrismaClient
+): Promise<{ id: string; completedAt: Date | null }> {
+  return prisma.$transaction(async tx => {
+    await tx.collectionLayoutRow.updateMany({
+      where: { id: rowId, ...(completed ? { completedAt: null } : {}) },
+      data: { completedAt: completed ? new Date() : null },
+    });
+    return tx.collectionLayoutRow.findUniqueOrThrow({
+      where: { id: rowId },
+      select: { id: true, completedAt: true },
+    });
+  });
 }
 
 /**

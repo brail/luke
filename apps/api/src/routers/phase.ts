@@ -21,18 +21,55 @@ function codeForOrder(order: number): string {
   return String(order + 1).padStart(2, '0');
 }
 
+/** Riga aperta, ridotta al contesto che serve nel messaggio d'errore del guard. */
+/** Righe aperte su una fase, già aggregate per layout: `{ codice brand/stagione → conteggio }`. */
+type OpenRowsByScope = { scope: string; count: number }[];
+
+/**
+ * Messaggio del guard di `remove`: dice quante righe restano aperte e **dove** (brand/stagione),
+ * più quante milestone insistono ancora sulla fase. Un "fase in uso" senza coordinate lascerebbe
+ * l'admin a cercarle a mano fra tutti i layout.
+ */
+function describePhaseInUse(openRows: OpenRowsByScope, plannedEvents: number): string {
+  const parts: string[] = [];
+
+  const openCount = openRows.reduce((sum, r) => sum + r.count, 0);
+  if (openCount > 0) {
+    const breakdown = [...openRows]
+      .sort((a, b) => a.scope.localeCompare(b.scope))
+      .map(({ scope, count }) => `${scope}: ${count}`)
+      .join(', ');
+    parts.push(`${openCount} righe ancora aperte (${breakdown})`);
+  }
+
+  if (plannedEvents > 0) {
+    parts.push(`${plannedEvents} milestone di calendario`);
+  }
+
+  return `Fase ancora in uso: ${parts.join(' e ')}. Concludi o sposta le righe, e cancella le milestone, prima di ritirarla.`;
+}
+
 export const phaseRouter = router({
   /**
    * Lists active phases, used to populate frontend selects.
    *
+   * `includeInactive` serve a risolvere le **etichette** dello storico, non a popolare i picker: una
+   * fase ritirata resta referenziata dalle righe che l'hanno attraversata, e senza di essa il drawer
+   * mostrerebbe `Fase corrente: —` su un dato che invece c'è. Chi lo usa deve continuare a filtrare
+   * su `isActive` per le opzioni selezionabili (vedi `usePhaseCatalog`).
+   *
+   * Distinto da `listAll`, che serve alla gestione del catalogo e richiede il permesso di scrittura.
+   *
    * @auth {phase_catalog:read}
-   * @output {Phase[]} — active phases sorted by order.
+   * @input {{ includeInactive?: boolean }} — opzionale, default: solo attive.
+   * @output {Phase[]} — sorted by order.
    */
   list: protectedProcedure
     .use(requirePermission('phase_catalog:read'))
-    .query(async ({ ctx }) => {
+    .input(z.object({ includeInactive: z.boolean().optional() }).optional())
+    .query(async ({ input, ctx }) => {
       return ctx.prisma.phase.findMany({
-        where: { isActive: true },
+        where: input?.includeInactive ? {} : { isActive: true },
         orderBy: { order: 'asc' },
       });
     }),
@@ -141,9 +178,20 @@ export const phaseRouter = router({
   /**
    * Soft-deletes a phase (isActive=false).
    *
+   * Rifiuta finché la fase è ancora in uso, perché disattivarla non è un'operazione neutra per il
+   * motore di alert: una fase ritirata smette di essere misurata, quindi le righe ferme lì
+   * uscirebbero in silenzio da badge, dashboard e notifiche di ritardo, e le milestone rimaste su
+   * quella fase resterebbero nei calendari a spostare quale sia la scadenza attiva. "In uso"
+   * significa due cose, entrambe bloccanti:
+   *   - righe di collection layout ancora **aperte** (`completedAt` null) su quella fase. Le righe
+   *     concluse non contano: hanno già smesso di essere misurate, ed è ciò che rende ritirabile
+   *     una fase che andava bene le stagioni scorse senza dover archiviare le stagioni.
+   *   - eventi di calendario non cancellati che la referenziano.
+   *
    * @auth {phase_catalog:update}
    * @input {{ id: string }} — UUID of the phase to deactivate.
    * @output {{ success: true }}
+   * @throws CONFLICT — con conteggi e ripartizione per brand/stagione, così l'admin sa dove agire.
    */
   remove: protectedProcedure
     .use(requirePermission('phase_catalog:update'))
@@ -153,6 +201,39 @@ export const phaseRouter = router({
       const item = await ctx.prisma.phase.findUnique({ where: { id: input.id } });
       if (!item) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Fase non trovata' });
+      }
+
+      // Letture indipendenti: il conteggio degli eventi non dipende dalle righe trovate.
+      // Le righe si contano aggregate per layout invece di caricarle: una fase del catalogo è
+      // referenziata da ogni brand × stagione, quindi materializzarle tutte per comporre una
+      // stringa significherebbe leggere migliaia di righe a ogni tentativo di ritiro.
+      const [rowsPerLayout, plannedEvents] = await Promise.all([
+        ctx.prisma.collectionLayoutRow.groupBy({
+          by: ['collectionLayoutId'],
+          where: { phaseId: input.id, completedAt: null },
+          _count: { _all: true },
+        }),
+        ctx.prisma.calendarEvent.count({ where: { phaseId: input.id, cancelledAt: null } }),
+      ]);
+
+      if (rowsPerLayout.length > 0 || plannedEvents > 0) {
+        // Solo i layout coinvolti, non tutti: serve a tradurre gli id in codici brand/stagione.
+        const layouts = await ctx.prisma.collectionLayout.findMany({
+          where: { id: { in: rowsPerLayout.map(r => r.collectionLayoutId) } },
+          select: { id: true, brand: { select: { code: true } }, season: { select: { code: true } } },
+        });
+        const scopeById = new Map(layouts.map(l => [l.id, `${l.brand.code}/${l.season.code}`]));
+
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: describePhaseInUse(
+            rowsPerLayout.map(r => ({
+              scope: scopeById.get(r.collectionLayoutId) ?? r.collectionLayoutId,
+              count: r._count._all,
+            })),
+            plannedEvents
+          ),
+        });
       }
 
       await ctx.prisma.phase.update({

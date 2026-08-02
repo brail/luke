@@ -223,6 +223,9 @@ export default function RevisionDetailPage() {
           seasonId={season?.id ?? ''}
           canUpdate={false}
           onSubmit={() => {}}
+          // Snapshot storico in sola lettura: `canUpdate={false}` disabilita il controllo di
+          // conclusione, quindi non c'è nulla da ricaricare.
+          onCompletionChanged={() => {}}
         />
       )}
     </div>

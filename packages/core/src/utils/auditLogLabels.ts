@@ -12,6 +12,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   COLLECTION_ROW_DELETE: 'Riga collezione eliminata',
   COLLECTION_ROW_DUPLICATE: 'Riga collezione duplicata',
   COLLECTION_ROW_REORDER: 'Righe collezione riordinate',
+  COLLECTION_ROW_COMPLETE: 'Riga collezione conclusa',
+  COLLECTION_ROW_REOPEN: 'Riga collezione riaperta',
   COLLECTION_GROUP_CREATE: 'Gruppo collezione creato',
   COLLECTION_GROUP_UPDATE: 'Gruppo collezione modificato',
   COLLECTION_GROUP_DELETE: 'Gruppo collezione eliminato',

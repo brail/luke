@@ -56,7 +56,7 @@ import { cn } from '../../../../../lib/utils';
 import { computeRowMargin, computeWeightedMargin, resolveVendorName } from '../../_shared/pricingCalc';
 import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
 
-import { CriticalityBandBadge, formatCriticalityTooltip } from './CriticalityBadge';
+import { CriticalityBandBadge, formatCompletionTooltip, formatCriticalityTooltip } from './CriticalityBadge';
 
 import type { PricingParameterSet } from '../../_shared/pricingCalc';
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
@@ -895,7 +895,9 @@ export function CollectionGroupSection({
                               return (
                                 <CriticalityBandBadge
                                   band={criticality.band}
-                                  tooltip={formatCriticalityTooltip(criticality)}
+                                  tooltip={criticality.state === 'completed'
+                                    ? formatCompletionTooltip(criticality)
+                                    : formatCriticalityTooltip(criticality)}
                                   className="text-[10px] px-1.5 py-0"
                                 />
                               );
@@ -995,10 +997,14 @@ export function CollectionGroupSection({
                           ) : (
                             <TooltipProvider>
                               <Tooltip>
+                                {/* Trigger sullo span: un bottone disabilitato non emette gli
+                                    eventi che aprono il tooltip (vedi `PermissionButton`). */}
                                 <TooltipTrigger asChild>
-                                  <Button variant="ghost" size="sm" disabled className="opacity-50 cursor-not-allowed">
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
+                                  <span className="inline-flex" tabIndex={0}>
+                                    <Button variant="ghost" size="sm" disabled className="opacity-50 cursor-not-allowed">
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </span>
                                 </TooltipTrigger>
                                 <TooltipContent>Non hai i permessi per eliminare righe</TooltipContent>
                               </Tooltip>

@@ -664,6 +664,13 @@ model CollectionLayoutRow {
   /// Timestamp of the last revision snapshot that included this row.
   lastRevisedAt DateTime? // updated when row is included in a revision
 
+  /// When the row was explicitly marked as concluded. Null = still in progress.
+  /// The alert engine cannot infer this from the calendar (a row sitting on the last phase has
+  /// reached it, not completed it), so completion is an explicit user action. Once set, the row
+  /// stops being measured against phase deadlines and shows its frozen outcome instead; only an
+  /// explicit reopen clears it — never a phase change.
+  completedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

@@ -7,6 +7,7 @@ import type { RouterOutputs } from '@luke/api';
 import { calcMaxSupplierCost, formatPhaseLabel, type CollectionLayoutRowInput } from '@luke/core';
 
 import { NumberInput } from '../../../../../components/NumberInput';
+import { PermissionButton } from '../../../../../components/PermissionButton';
 import { PhaseSelect } from '../../../../../components/PhaseSelect';
 import { formatPlanningGroupLabel, PlanningGroupSelect } from '../../../../../components/PlanningGroupSelect';
 import { Badge } from '../../../../../components/ui/badge';
@@ -33,6 +34,7 @@ import { cn } from '../../../../../lib/utils';
 import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
 
 import { CriticalitySituation } from './CriticalityBadge';
+import { RowCompletionToggle } from './RowCompletionToggle';
 import { VendorCombobox } from './VendorCombobox';
 
 import type { PricingParameterSet } from '../../_shared/pricingCalc';
@@ -401,6 +403,10 @@ interface PlanningSectionProps {
   onRequestChangePhase?: () => void;
   /** Present only in edit mode — enables the criticality/variance badges next to the phase field. */
   rowId?: string;
+  /** Valorizzato = riga conclusa: fase e gruppo si bloccano finché non viene riaperta. */
+  completedAt?: Date | string | null;
+  /** Obbligatoria: il toggle compare solo in edit mode, dove il drawer la passa sempre. */
+  onCompletionChanged: () => void;
 }
 
 /**
@@ -408,6 +414,10 @@ interface PlanningSectionProps {
  * and phase, with the criticality and scheduling-variance badges those two
  * fields drive. Kept apart from the identity fields so process/status reads at
  * a glance.
+ *
+ * Ospita anche il controllo di conclusione: è lo stato che blocca proprio i due campi qui sotto,
+ * quindi sta accanto a loro invece che nell'header del drawer (dove collideva con la X di chiusura,
+ * ed era l'unico `DialogHeader` dell'app con un'azione allineata a destra).
  */
 export function PlanningSection({
   control,
@@ -417,10 +427,24 @@ export function PlanningSection({
   onRequestChangePlanningGroup,
   onRequestChangePhase,
   rowId,
+  completedAt,
+  onCompletionChanged,
 }: PlanningSectionProps) {
+  const isCompleted = completedAt != null;
+
   return (
     <div className="space-y-4">
-      <SectionHeader title="Pianificazione" />
+      <div className="flex items-center justify-between gap-4">
+        <SectionHeader title="Pianificazione" />
+        {mode === 'edit' && rowId && (
+          <RowCompletionToggle
+            rowId={rowId}
+            completedAt={completedAt ?? null}
+            canUpdate={canUpdate}
+            onChanged={onCompletionChanged}
+          />
+        )}
+      </div>
       <div className="grid grid-cols-2 gap-4">
         <PhaseSelectField
           control={control}
@@ -428,6 +452,7 @@ export function PlanningSection({
           mode={mode}
           onRequestChange={onRequestChangePhase}
           rowId={rowId}
+          isCompleted={isCompleted}
         />
 
         {/* gruppo di pianificazione */}
@@ -437,9 +462,46 @@ export function PlanningSection({
           planningGroups={planningGroups}
           mode={mode}
           onRequestChange={onRequestChangePlanningGroup}
+          isCompleted={isCompleted}
         />
       </div>
     </div>
+  );
+}
+
+/**
+ * Bottone di modifica di un campo che una riga conclusa congela. `PermissionButton` gestisce il
+ * gate generico "disabilitato + tooltip che spiega perché": qui la ragione è di stato, non di
+ * permesso, e il suo prop `tooltip` è una stringa libera che lo dice ("riaprila per…").
+ * `disabled` resta separato per il caso senza permesso di scrittura, dove il blocco per stato non
+ * c'entra e non va spiegato.
+ */
+function LockableChangeButton({
+  label,
+  lockedReason,
+  isLocked,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  lockedReason: string;
+  isLocked: boolean;
+  disabled: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <PermissionButton
+      type="button"
+      variant="outline"
+      size="sm"
+      className="h-5 px-2 text-xs"
+      hasPermission={!isLocked}
+      tooltip={lockedReason}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {label}
+    </PermissionButton>
   );
 }
 
@@ -456,9 +518,11 @@ interface PhaseSelectFieldProps {
   onRequestChange?: () => void;
   /** Present only in edit mode — enables the "Situazione" criticality block under the field. */
   rowId?: string;
+  /** Riga conclusa: il cambio fase è bloccato finché non viene riaperta (stesso guard lato server). */
+  isCompleted?: boolean;
 }
 
-function PhaseSelectField({ control, canUpdate, mode, onRequestChange, rowId }: PhaseSelectFieldProps) {
+function PhaseSelectField({ control, canUpdate, mode, onRequestChange, rowId, isCompleted = false }: PhaseSelectFieldProps) {
   const { phases, phaseById } = usePhaseCatalog();
 
   return (
@@ -482,9 +546,13 @@ function PhaseSelectField({ control, canUpdate, mode, onRequestChange, rowId }: 
                   <span className="text-muted-foreground">Fase corrente:</span>{' '}
                   {current ? formatPhaseLabel(current.code, current.label) : '—'}
                 </span>
-                <Button type="button" variant="outline" size="sm" className="h-5 px-2 text-xs" disabled={!canUpdate} onClick={onRequestChange}>
-                  Cambia fase
-                </Button>
+                <LockableChangeButton
+                  label="Cambia fase"
+                  lockedReason="Riga conclusa: riaprila per cambiare fase"
+                  isLocked={isCompleted}
+                  disabled={!canUpdate}
+                  onClick={onRequestChange}
+                />
               </div>
               <FormMessage />
             </FormItem>
@@ -666,6 +734,8 @@ interface PlanningGroupSelectFieldProps {
    * side effect of an unrelated field save. */
   mode: 'create' | 'edit';
   onRequestChange?: () => void;
+  /** Riga conclusa: il cambio gruppo è bloccato finché non viene riaperta (stesso guard lato server). */
+  isCompleted?: boolean;
 }
 
 export function PlanningGroupSelectField({
@@ -674,6 +744,7 @@ export function PlanningGroupSelectField({
   planningGroups,
   mode,
   onRequestChange,
+  isCompleted = false,
 }: PlanningGroupSelectFieldProps) {
   return (
     <FormField
@@ -689,9 +760,13 @@ export function PlanningGroupSelectField({
                 <span className="truncate text-xs">
                   {current ? formatPlanningGroupLabel(current) : '—'}
                 </span>
-                <Button type="button" variant="outline" size="sm" className="h-5 px-2 text-xs" disabled={!canUpdate} onClick={onRequestChange}>
-                  Cambia gruppo
-                </Button>
+                <LockableChangeButton
+                  label="Cambia gruppo"
+                  lockedReason="Riga conclusa: riaprila per cambiare gruppo di pianificazione"
+                  isLocked={isCompleted}
+                  disabled={!canUpdate}
+                  onClick={onRequestChange}
+                />
               </div>
               <FormMessage />
             </FormItem>

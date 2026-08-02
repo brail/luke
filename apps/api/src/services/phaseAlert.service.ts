@@ -17,6 +17,7 @@ import {
   eventDeadline,
   CollectionAlertThresholdsSchema,
   type AlertBand,
+  type AlertBandEmphasis,
   type CalendarDaysRelevance,
   type CollectionAlertThresholds,
   type WorkingDayHoliday,
@@ -32,7 +33,9 @@ const logger = pino({ level: 'info' });
 
 type CalendarEventWithContext = Prisma.CalendarEventGetPayload<{
   include: {
-    phase: { select: { order: true; value: true; isActive: true } };
+    // `label` serve solo a `getMissingPhasesForCompletion`, che deve nominare le fasi saltate
+    // all'utente: una colonna in più su una query già fatta, invece di una seconda lettura.
+    phase: { select: { order: true; value: true; label: true; isActive: true } };
   };
 }>;
 
@@ -42,12 +45,16 @@ const DEFAULT_ALERT_THRESHOLDS: CollectionAlertThresholds = {
     // -Infinity fails z.number().int() and doesn't round-trip through JSON; a large negative
     // sentinel acts as "no lower bound" instead.
     bands: [
-      { minDaysToDeadline: -9999, maxDaysToDeadline: 0, color: '#B91C1C', label: 'In ritardo' },
-      { minDaysToDeadline: 0, maxDaysToDeadline: 7, color: '#D97706', label: 'Urgente' },
-      { minDaysToDeadline: 7, maxDaysToDeadline: 21, color: '#CA8A04', label: 'Attenzione' },
-      { minDaysToDeadline: 21, maxDaysToDeadline: null, color: '#15803D', label: 'In linea' },
+      // Emphasis climbs with severity so the built-in set already demonstrates the three visual
+      // weights an admin can assign per band.
+      { minDaysToDeadline: -9999, maxDaysToDeadline: 0, color: '#B91C1C', label: 'In ritardo', emphasis: 'solid' },
+      { minDaysToDeadline: 0, maxDaysToDeadline: 7, color: '#D97706', label: 'Urgente', emphasis: 'soft' },
+      { minDaysToDeadline: 7, maxDaysToDeadline: 21, color: '#CA8A04', label: 'Attenzione', emphasis: 'outline' },
+      { minDaysToDeadline: 21, maxDaysToDeadline: null, color: '#15803D', label: 'In linea', emphasis: 'outline' },
     ],
   },
+  completedBand: { color: '#15803D', label: 'Concluso', emphasis: 'solid' },
+  completedLateBand: { color: '#B91C1C', label: 'Concluso in ritardo', emphasis: 'solid' },
 };
 
 /**
@@ -79,7 +86,7 @@ export async function getCalendarEventsForLayout(
     // and variance paths so the exclusion is centralized (not duplicated per caller).
     where: { calendarId: calendar.id, cancelledAt: null },
     include: {
-      phase: { select: { order: true, value: true, isActive: true } },
+      phase: { select: { order: true, value: true, label: true, isActive: true } },
     },
     // Fetched pre-sorted by startAt: Array.prototype.sort is stable, so events sharing the
     // same Phase.order below keep this chronological order as a secondary sort key.
@@ -329,11 +336,19 @@ export type ActivePhaseResult =
  *
  * A row with no phase yet (`currentOrder === null`) is treated as before the first phase — the
  * first applicable event becomes active, matching "riga non ancora arrivata alla prima fase".
+ *
+ * Events tied to a deactivated phase are skipped: `isActive: false` is a soft delete, and a retired
+ * phase is out of the process — it must stop producing deadlines, not just disappear from pickers.
+ * Same rule as `getNextPhaseFromEvents` and `getCompletionDeadlineEvent`, which already filtered it.
+ * Consequence, deliberate: when no event on an active phase remains at or past the row's own phase,
+ * the status is `completed`, `criticalityFromActivePhase` returns `null`, and the row leaves badge,
+ * banner, heatmap, bottleneck and overdue notifications. Safe because `phase.remove` refuses to
+ * retire a phase while open rows or live milestones still reference it.
  */
 export function getActivePhaseFromEvents(rowEvents: CalendarEventWithContext[], currentOrder: number | null): ActivePhaseResult {
   if (rowEvents.length === 0) return { status: 'no-calendar' };
   const order = currentOrder ?? -Infinity;
-  const event = rowEvents.find(e => e.phase && e.phase.order >= order);
+  const event = rowEvents.find(e => e.phase?.isActive && e.phase.order >= order);
   return event ? { status: 'active', event } : { status: 'completed' };
 }
 
@@ -359,6 +374,72 @@ export function getNextPhaseFromEvents(rowEvents: CalendarEventWithContext[], ac
   if (activeIndex === -1) return null;
   const next = rowEvents.slice(activeIndex + 1).find(e => e.phase && e.phase.order > activeOrder && e.phase.isActive);
   return next ?? null;
+}
+
+/**
+ * The event a concluded row is measured against: the last applicable event tied to an *active*
+ * phase. Deactivated phases are out of the process — `getNextPhaseFromEvents` already skips them —
+ * so scoring a conclusion against a milestone of a retired phase would measure the row against work
+ * that is no longer planned. Pure — no I/O — and relies on `filterApplicableEvents` having sorted
+ * by `phase.order` (phase-less events land last, and are excluded here anyway).
+ *
+ * `null` when the row's planning group has no event tied to an active phase: nothing to compare a
+ * completion date against, so the outcome carries no delta.
+ */
+export function getCompletionDeadlineEvent(rowEvents: CalendarEventWithContext[]): CalendarEventWithContext | null {
+  const withActivePhase = rowEvents.filter(e => e.phase?.isActive);
+  return withActivePhase.length > 0 ? withActivePhase[withActivePhase.length - 1] : null;
+}
+
+/**
+ * Le fasi che la riga non ha ancora attraversato prima di potersi dire conclusa: quelle degli eventi
+ * applicabili al suo gruppo di pianificazione, su fase attiva, con `order` maggiore di quello della
+ * fase corrente. Stesso insieme che `getCompletionDeadlineEvent` percorre per scegliere la scadenza
+ * dell'esito, così la regola resta una sola. Pure — no I/O.
+ *
+ * Concludere una riga che ne salta qualcuna non è vietato — sarebbe aggirabile in due click, e
+ * produrrebbe un consuntivo tutto verde — ma va confermato esplicitamente e registrato: questo
+ * elenco alimenta sia l'avviso nella UI sia `skippedPhases` nell'audit log.
+ *
+ * Vuoto quando la riga è già all'ultima milestone, o quando il gruppo non ha eventi di fase: senza
+ * un termine di paragone non c'è nulla da segnalare. Riga senza fase (`currentOrder === null`) →
+ * mancano tutte.
+ *
+ * @returns Fasi distinte, in ordine di percorrenza (più eventi sulla stessa fase contano una volta).
+ */
+export function getMissingPhasesForCompletion(
+  rowEvents: CalendarEventWithContext[],
+  currentOrder: number | null
+): { value: string; label: string }[] {
+  const order = currentOrder ?? -Infinity;
+  const byValue = new Map<string, { value: string; label: string }>();
+
+  for (const event of rowEvents) {
+    if (!event.phase?.isActive || event.phase.order <= order) continue;
+    if (!byValue.has(event.phase.value)) {
+      byValue.set(event.phase.value, { value: event.phase.value, label: event.phase.label });
+    }
+  }
+
+  return Array.from(byValue.values());
+}
+
+/**
+ * DB-fetching counterpart di `getMissingPhasesForCompletion`. Condiviso fra l'anteprima che la UI
+ * mostra prima di concludere e il guard della mutation, così i due non possono divergere: l'elenco
+ * che l'utente conferma è lo stesso che il server pretende di forzare e registra nell'audit.
+ *
+ * @returns Vuoto se la riga non esiste — chi chiama sta già gestendo il NOT_FOUND per altra via.
+ */
+export async function resolveMissingPhasesForRow(rowId: string, prisma: PrismaClient) {
+  const row = await prisma.collectionLayoutRow.findUnique({
+    where: { id: rowId },
+    select: { phase: { select: { order: true } } },
+  });
+  if (!row) return [];
+
+  const events = await getApplicableEventsForRow(rowId, prisma);
+  return getMissingPhasesForCompletion(events, row.phase?.order ?? null);
 }
 
 /** DB-fetching counterpart of `getActivePhaseFromEvents` for single-row callers. */
@@ -436,6 +517,7 @@ function criticalityFromActivePhase(
     ?? bands[bands.length - 1];
 
   return {
+    state: 'active' as const,
     rowId,
     eventId: deadlineInfo.event.id,
     eventTitle: deadlineInfo.event.title,
@@ -460,16 +542,50 @@ export async function computeDeadline(rowId: string, prisma: PrismaClient) {
   return deadlineFromActivePhase(active);
 }
 
-/** Whether the active or next event opted into working-days counting — gates the (expensive)
- * company/vendor holiday fetch. Shared by `computeCriticality` (single row) and
- * `computeCriticalityForLayout` (batch, via `.some()`). */
-function needsWorkingDaysContext(active: ActivePhaseResult, nextEvent: CalendarEventWithContext | null): boolean {
-  return Boolean((active.status === 'active' && active.event.calendarDaysRelevance) || nextEvent?.calendarDaysRelevance);
+/**
+ * Frozen outcome for a row the user explicitly marked as concluded: how its completion date landed
+ * against the last planned milestone (`getCompletionDeadlineEvent`). Positive `daysVsDeadline` means
+ * concluded ahead of the deadline, negative means after it — same sign convention as the live
+ * `daysToDeadline`, and counted with the same calendar/working-days rules so the two are comparable.
+ *
+ * Pure — no I/O. No countdown: a concluded row has stopped moving, so the only thing left to say is
+ * whether it made it. Recomputed from `completedAt` on every read rather than persisted, matching
+ * `deadlineFromActivePhase`'s decision to always measure against the event's live date — rescheduling
+ * a milestone after the fact re-scores the outcome instead of leaving it pinned to a dead date.
+ */
+export function completionOutcome(
+  rowId: string,
+  completedAt: Date,
+  completionEvent: CalendarEventWithContext | null,
+  thresholds: CollectionAlertThresholds,
+  vendorCountryCode: string | null,
+  workingDaysCtx: WorkingDaysContext
+) {
+  const deadline = completionEvent ? eventDeadline(completionEvent) : null;
+  // Nessuna milestone di riferimento: resta la data di conclusione, senza delta inventato.
+  const counted = completionEvent && deadline
+    ? resolveDaysCount(completedAt, deadline, completionEvent.calendarDaysRelevance, vendorCountryCode, workingDaysCtx)
+    : { days: null, daysMode: 'calendar' as const, relevantCountryCodes: [] as string[] };
+
+  return {
+    state: 'completed' as const,
+    rowId,
+    completedAt,
+    eventId: completionEvent?.id ?? null,
+    eventTitle: completionEvent?.title ?? null,
+    deadline,
+    daysVsDeadline: counted.days,
+    daysMode: counted.daysMode,
+    relevantCountryCodes: counted.relevantCountryCodes,
+    // Senza scadenza contro cui misurarsi la conclusione non può essere in ritardo.
+    band: counted.days === null || counted.days >= 0 ? thresholds.completedBand : thresholds.completedLateBand,
+  };
 }
 
 /**
  * Computes the criticality band for a single row at a given point in time, against the configured
- * (or default) alert thresholds. `null` means no alert applies — the row has no active phase.
+ * (or default) alert thresholds. `null` means no alert applies — the row has no active phase and
+ * has not been marked as concluded.
  *
  * Does its own row query (phase + vendor country in one shot) rather than delegating to
  * `getActivePhaseForRow` — that helper only selects `phase`, and a second `findUnique` just to
@@ -479,22 +595,33 @@ export async function computeCriticality(rowId: string, now: Date, prisma: Prism
   const [row, thresholds] = await Promise.all([
     prisma.collectionLayoutRow.findUnique({
       where: { id: rowId },
-      select: { phase: { select: { order: true } }, vendor: { select: { countryCode: true } } },
+      select: { completedAt: true, phase: { select: { order: true } }, vendor: { select: { countryCode: true } } },
     }),
     resolveAlertThresholds(prisma),
   ]);
   if (!row) return null;
 
   const events = await getApplicableEventsForRow(rowId, prisma);
-  const active = getActivePhaseFromEvents(events, row.phase?.order ?? null);
   const vendorCountryCode = row.vendor?.countryCode ?? null;
-  const nextEvent = getNextPhaseFromEvents(events, active);
 
-  // Only fetch company country + holidays when the active or next event actually opted in — the
-  // common case today (calendarDaysRelevance is null by default) skips both queries entirely.
-  const workingDaysCtx = needsWorkingDaysContext(active, nextEvent)
-    ? await buildWorkingDaysContext(prisma, [vendorCountryCode])
-    : EMPTY_WORKING_DAYS_CONTEXT;
+  // Only fetch company country + holidays when the events involved actually opted in — the common
+  // case today (calendarDaysRelevance is null by default) skips both queries entirely.
+  const workingDaysContextFor = (...relevant: (CalendarEventWithContext | null)[]) =>
+    relevant.some(e => e?.calendarDaysRelevance)
+      ? buildWorkingDaysContext(prisma, [vendorCountryCode])
+      : Promise.resolve(EMPTY_WORKING_DAYS_CONTEXT);
+
+  // A concluded row has stopped moving: il suo esito congelato sostituisce il countdown qualunque
+  // fase abbia raggiunto, quindi la fase attiva non viene nemmeno risolta.
+  if (row.completedAt) {
+    const completionEvent = getCompletionDeadlineEvent(events);
+    const workingDaysCtx = await workingDaysContextFor(completionEvent);
+    return completionOutcome(rowId, row.completedAt, completionEvent, thresholds, vendorCountryCode, workingDaysCtx);
+  }
+
+  const active = getActivePhaseFromEvents(events, row.phase?.order ?? null);
+  const nextEvent = getNextPhaseFromEvents(events, active);
+  const workingDaysCtx = await workingDaysContextFor(active.status === 'active' ? active.event : null, nextEvent);
 
   return criticalityFromActivePhase(rowId, active, nextEvent, thresholds, now, vendorCountryCode, workingDaysCtx);
 }
@@ -507,19 +634,24 @@ export async function computeCriticality(rowId: string, now: Date, prisma: Prism
  * @param thresholds - Pass an already-resolved value when calling this for multiple layouts in the
  *   same request (e.g. `computeSaturationHeatmap`) — thresholds aren't layout-scoped, so refetching
  *   per layout would be redundant. Defaults to resolving them internally for single-layout callers.
- * @returns One entry per row that has an active phase; rows with no active phase are omitted.
+ * @returns One entry per row that has an active phase or has been marked as concluded; rows with
+ *   neither are omitted.
  */
 export async function computeCriticalityForLayout(
   collectionLayoutId: string,
   now: Date,
   prisma: PrismaClient,
-  thresholds?: CollectionAlertThresholds
+  thresholds?: CollectionAlertThresholds,
+  options?: { activeOnly?: boolean }
 ) {
   const [rows, events, resolvedThresholds] = await Promise.all([
     prisma.collectionLayoutRow.findMany({
-      where: { collectionLayoutId },
+      // `activeOnly` esclude le righe concluse già in query, per i consumatori che le scarterebbero
+      // comunque (l'indice di strozzatura): a fine stagione sono la maggioranza del layout, e
+      // calcolarne l'esito per poi buttarlo è il lavoro più grosso che questo percorso può evitare.
+      where: { collectionLayoutId, ...(options?.activeOnly ? { completedAt: null } : {}) },
       select: {
-        id: true, planningGroupId: true, productCategory: true,
+        id: true, planningGroupId: true, productCategory: true, completedAt: true,
         phase: { select: { order: true } },
         vendor: { select: { countryCode: true } },
       },
@@ -528,26 +660,53 @@ export async function computeCriticalityForLayout(
     thresholds ? Promise.resolve(thresholds) : resolveAlertThresholds(prisma),
   ]);
 
-  const rowActives = rows.map(row => {
-    const rowEvents = filterApplicableEvents(events, row.planningGroupId);
+  // Gli eventi applicabili dipendono solo dal gruppo di pianificazione, non dalla riga: filtrarli e
+  // riordinarli per ognuna delle centinaia di righe di un layout è lavoro moltiplicato per nulla —
+  // e la heatmap lo moltiplica di nuovo per ogni brand della stagione.
+  const eventsByPlanningGroup = new Map<string, CalendarEventWithContext[]>();
+  const applicableEvents = (planningGroupId: string) => {
+    let cached = eventsByPlanningGroup.get(planningGroupId);
+    if (!cached) {
+      cached = filterApplicableEvents(events, planningGroupId);
+      eventsByPlanningGroup.set(planningGroupId, cached);
+    }
+    return cached;
+  };
+
+  // Una riga conclusa non viene più misurata contro la fase attiva, quindi non la si risolve
+  // nemmeno: su un layout con molte righe chiuse è metà del lavoro per riga in meno.
+  const resolved = rows.map(row => {
+    const rowEvents = applicableEvents(row.planningGroupId);
+    if (row.completedAt) {
+      return { row, completedAt: row.completedAt, completionEvent: getCompletionDeadlineEvent(rowEvents) } as const;
+    }
     const active = getActivePhaseFromEvents(rowEvents, row.phase?.order ?? null);
-    return { row, active, nextEvent: getNextPhaseFromEvents(rowEvents, active) };
+    return { row, completedAt: null, active, nextEvent: getNextPhaseFromEvents(rowEvents, active) } as const;
   });
 
   // One working-days context for the whole batch (company country + every distinct vendor country
   // among these rows), instead of one per row — same batching principle as events/thresholds above.
-  // Only fetched if at least one row's active or next event actually opted in (common case: none do).
-  const needsWorkingDays = rowActives.some(({ active, nextEvent }) => needsWorkingDaysContext(active, nextEvent));
+  // Only fetched if at least one row's events actually opted in (common case: none do).
+  const needsWorkingDays = resolved.some(entry =>
+    entry.completedAt
+      ? Boolean(entry.completionEvent?.calendarDaysRelevance)
+      : Boolean(
+          (entry.active.status === 'active' && entry.active.event.calendarDaysRelevance)
+          || entry.nextEvent?.calendarDaysRelevance
+        )
+  );
   const workingDaysCtx = needsWorkingDays
     ? await buildWorkingDaysContext(prisma, rows.map(r => r.vendor?.countryCode ?? null))
     : EMPTY_WORKING_DAYS_CONTEXT;
 
-  return rowActives
-    .map(({ row, active, nextEvent }) => {
-      const criticality = criticalityFromActivePhase(
-        row.id, active, nextEvent, resolvedThresholds, now, row.vendor?.countryCode ?? null, workingDaysCtx
-      );
-      return criticality ? { ...criticality, productCategory: row.productCategory } : null;
+  return resolved
+    .map(entry => {
+      const vendorCountryCode = entry.row.vendor?.countryCode ?? null;
+      // See `computeCriticality`: completion replaces the countdown, whatever phase the row is on.
+      const criticality = entry.completedAt
+        ? completionOutcome(entry.row.id, entry.completedAt, entry.completionEvent, resolvedThresholds, vendorCountryCode, workingDaysCtx)
+        : criticalityFromActivePhase(entry.row.id, entry.active, entry.nextEvent, resolvedThresholds, now, vendorCountryCode, workingDaysCtx);
+      return criticality ? { ...criticality, productCategory: entry.row.productCategory } : null;
     })
     .filter((r): r is NonNullable<typeof r> => r !== null);
 }
@@ -575,7 +734,7 @@ export async function computeSaturationHeatmap(
     layouts.map(layout => computeCriticalityForLayout(layout.id, now, prisma, thresholds).then(rows => ({ layout, rows })))
   );
 
-  const cellCounts = new Map<string, { brandId: string; productCategory: string; label: string; color: string; count: number }>();
+  const cellCounts = new Map<string, { brandId: string; productCategory: string; label: string; color: string; emphasis: AlertBandEmphasis; count: number }>();
 
   for (const { layout, rows } of perLayoutRows) {
     for (const row of rows) {
@@ -589,6 +748,7 @@ export async function computeSaturationHeatmap(
           productCategory: row.productCategory,
           label: row.band.label,
           color: row.band.color,
+          emphasis: row.band.emphasis,
           count: 1,
         });
       }
@@ -601,13 +761,19 @@ export async function computeSaturationHeatmap(
 /**
  * Bottleneck index (Fase 6.2): for a single layout, counts rows per criticality band grouped by
  * their active event — identifies which specific milestone is holding up the most rows.
+ *
+ * Concluded rows are excluded: no event is holding them, so counting them here would inflate the
+ * milestone they happened to stop on. They still appear in the saturation heatmap, which measures
+ * where the collection stands rather than what is blocking it.
  */
 export async function computeBottleneckByEvent(collectionLayoutId: string, now: Date, prisma: PrismaClient) {
-  const rows = await computeCriticalityForLayout(collectionLayoutId, now, prisma);
+  // `activeOnly` scarta le righe concluse in query invece che dopo averne calcolato l'esito.
+  const rows = (await computeCriticalityForLayout(collectionLayoutId, now, prisma, undefined, { activeOnly: true }))
+    .filter(r => r.state === 'active');
 
   const byEvent = new Map<string, {
     eventId: string; eventTitle: string; eventStartAt: Date;
-    bands: Map<string, { label: string; color: string; count: number }>;
+    bands: Map<string, { label: string; color: string; emphasis: AlertBandEmphasis; count: number }>;
   }>();
 
   for (const row of rows) {
@@ -620,7 +786,7 @@ export async function computeBottleneckByEvent(collectionLayoutId: string, now: 
     if (bandEntry) {
       bandEntry.count++;
     } else {
-      eventEntry.bands.set(row.band.label, { label: row.band.label, color: row.band.color, count: 1 });
+      eventEntry.bands.set(row.band.label, { label: row.band.label, color: row.band.color, emphasis: row.band.emphasis, count: 1 });
     }
   }
 

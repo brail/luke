@@ -62,6 +62,9 @@ interface CollectionRowDrawerProps {
   seasonId: string;
   onSubmit: (data: CollectionLayoutRowInput) => void;
   onPictureUploaded?: () => void;
+  /** Called after the row is concluded or reopened — that write lands immediately, outside the
+   * drawer's buffered save, so the layout and alert queries need refetching right away. */
+  onCompletionChanged: () => void;
   isLoading?: boolean;
   canUpdate?: boolean;
 }
@@ -136,6 +139,7 @@ function rowToQuotationState(q: CollectionRow['quotations'][number]): QuotationS
  * @param parameterSets - Available pricing parameter sets for quotations.
  * @param availableGenders - Genders enabled for this layout (e.g. ['MAN','WOMAN']).
  * @param onPictureUploaded - Called after a picture is confirmed server-side.
+ * @param onCompletionChanged - Called after the row is concluded or reopened.
  */
 export function CollectionRowDrawer({
   open,
@@ -150,6 +154,7 @@ export function CollectionRowDrawer({
   seasonId,
   onSubmit,
   onPictureUploaded,
+  onCompletionChanged,
   isLoading = false,
   canUpdate = true,
 }: CollectionRowDrawerProps) {
@@ -364,6 +369,8 @@ export function CollectionRowDrawer({
                   onRequestChangePlanningGroup={() => setChangeGroupOpen(true)}
                   onRequestChangePhase={() => setChangePhaseOpen(true)}
                   rowId={mode === 'edit' ? row?.id : undefined}
+                  completedAt={row?.completedAt ?? null}
+                  onCompletionChanged={onCompletionChanged}
                 />
               </div>
 

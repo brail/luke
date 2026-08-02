@@ -160,8 +160,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   phase: {
     reason:
-      'list, listAll, create, update e reorder coperte da phase.integration.spec.ts (derivazione di code da order, RBAC admin-only); restano remove e restore, invariate rispetto al pattern soft-delete già in uso altrove',
-    uncovered: 2,
+      'list, listAll, create, update, reorder e remove coperte da phase.integration.spec.ts (derivazione di code da order, RBAC admin-only, guard sulle fasi ancora in uso); resta restore, invariata rispetto al pattern soft-delete già in uso altrove',
+    uncovered: 1,
   },
   collectionCatalog: {
     reason: 'nessun test scritto sulle liste di opzioni configurabili',
@@ -179,8 +179,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   phaseAlert: {
     reason:
-      'nessun test scritto sul motore di allerta (criticità, soglie, heatmap, colli di bottiglia)',
-    uncovered: 6,
+      'criticalityForRow e bottleneckByEvent sono invocate da collectionRowCompletion.integration.spec.ts (esito di una riga conclusa, ed esclusione delle concluse dall\'indice di strozzatura); restano scoperte le due letture aggregate e la coppia get/update delle soglie',
+    uncovered: 4,
   },
   planningGroup: {
     reason: 'nessun test scritto, benché sia lo scope di eventi e righe layout',

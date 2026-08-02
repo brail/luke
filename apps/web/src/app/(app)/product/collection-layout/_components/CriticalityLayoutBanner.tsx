@@ -2,8 +2,11 @@
 
 import { useMemo } from 'react';
 
+import type { AlertBandEmphasis } from '@luke/core';
+
 import { Badge } from '../../../../../components/ui/badge';
 import { Card, CardContent } from '../../../../../components/ui/card';
+import { bandBadgeStyle } from '../../../../../lib/alertBandStyle';
 import { trpc } from '../../../../../lib/trpc';
 
 interface Props {
@@ -28,11 +31,11 @@ export function CriticalityLayoutBanner({ collectionLayoutId }: Props) {
   // Matches the memoized-grouping pattern CollectionGroupSection uses for its own rowId lookup
   // Map (same query, different aggregation) — avoids rebuilding this on every unrelated re-render.
   const counts = useMemo(() => {
-    const map = new Map<string, { label: string; color: string; count: number }>();
+    const map = new Map<string, { label: string; color: string; emphasis: AlertBandEmphasis; count: number }>();
     for (const row of data ?? []) {
       const existing = map.get(row.band.label);
       if (existing) existing.count++;
-      else map.set(row.band.label, { label: row.band.label, color: row.band.color, count: 1 });
+      else map.set(row.band.label, { label: row.band.label, color: row.band.color, emphasis: row.band.emphasis, count: 1 });
     }
     return map;
   }, [data]);
@@ -43,8 +46,8 @@ export function CriticalityLayoutBanner({ collectionLayoutId }: Props) {
     <Card>
       <CardContent className="py-3 flex items-center gap-3 flex-wrap">
         <span className="text-sm font-medium text-muted-foreground">Criticità collezione:</span>
-        {Array.from(counts.values()).map(({ label, color, count }) => (
-          <Badge key={label} variant="outline" style={{ color, borderColor: color }}>
+        {Array.from(counts.values()).map(({ label, color, emphasis, count }) => (
+          <Badge key={label} variant="outline" style={bandBadgeStyle({ color, emphasis })}>
             {count} {label}
           </Badge>
         ))}

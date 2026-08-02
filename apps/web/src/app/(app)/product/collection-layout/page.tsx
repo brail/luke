@@ -87,9 +87,12 @@ export default function CollectionLayoutPage() {
     group?: CollectionGroupData;
   } | null>(null);
 
+  // Tiene l'id, non la riga: lo snapshot in state resterebbe indietro rispetto alla query live
+  // (la conclusione della riga scrive e invalida mentre il drawer è aperto), e la riga si
+  // ri-risolve comunque a ogni render — vedi `editingRow`.
   const [rowDrawer, setRowDrawer] = useState<{
     mode: 'create' | 'edit';
-    row?: CollectionRowData;
+    rowId?: string;
     defaultGroupId?: string;
   } | null>(null);
 
@@ -215,17 +218,24 @@ export default function CollectionLayoutPage() {
   const handleRowSubmit = (data: CollectionLayoutRowInput) => {
     if (rowDrawer?.mode === 'create') {
       createRowMutation.mutate(data);
-    } else if (rowDrawer?.mode === 'edit' && rowDrawer.row) {
-      updateRowMutation.mutate({ rowId: rowDrawer.row.id, data });
+    } else if (rowDrawer?.mode === 'edit' && rowDrawer.rowId) {
+      updateRowMutation.mutate({ rowId: rowDrawer.rowId, data });
     }
   };
 
-  // Usa sempre i dati freschi dalla query live per evitare snapshot stale nel drawer
-  const openEditRow = (row: CollectionRowData) => {
-    const fresh =
-      layout?.groups.flatMap(g => g.rows).find(r => r.id === row.id) ?? row;
-    setRowDrawer({ mode: 'edit', row: fresh });
-  };
+  const openEditRow = (row: CollectionRowData) => setRowDrawer({ mode: 'edit', rowId: row.id });
+
+  /** Riga in modifica, risolta a ogni render dalla query live invece che da uno snapshot in state:
+   * la conclusione della riga scrive subito e invalida il layout mentre il drawer è aperto.
+   * Deliberatamente non memoizzata — una dependency array dovrebbe includere `layout` intero
+   * (troppo profondo per TS, vedi TS2589 nel deep-link sotto), e una chiave più stretta come
+   * `layout.updatedAt` non cambierebbe alla modifica di una riga, restituendo un dato vecchio.
+   * La scansione è lineare su qualche centinaio di righe, in una pagina che ne renderizza altrettante. */
+  const editingRow: CollectionRowData | undefined = rowDrawer?.rowId
+    ? (layout?.groups as { rows: CollectionRowData[] }[] | undefined)
+        ?.flatMap(g => g.rows)
+        .find(r => r.id === rowDrawer.rowId)
+    : undefined;
 
   // Deep-link from the "Fase scaduta" notification (?rowId=...): opens that row's edit drawer
   // once the layout has loaded, then strips the param so closing the drawer or refreshing doesn't
@@ -430,7 +440,7 @@ export default function CollectionLayoutPage() {
             if (!open) setRowDrawer(null);
           }}
           mode={rowDrawer?.mode ?? 'create'}
-          row={rowDrawer?.row}
+          row={editingRow}
           defaultGroupId={rowDrawer?.defaultGroupId}
           groups={layout.groups}
           parameterSets={parameterSets}
@@ -439,6 +449,7 @@ export default function CollectionLayoutPage() {
           seasonId={season?.id ?? ''}
           onSubmit={handleRowSubmit}
           onPictureUploaded={() => invalidateLayout()}
+          onCompletionChanged={() => invalidateLayout()}
           isLoading={isMutating}
           canUpdate={canUpdate}
         />

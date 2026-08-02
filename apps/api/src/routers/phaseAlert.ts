@@ -21,6 +21,7 @@ import {
   computeCriticalityForLayout,
   computeSaturationHeatmap,
   resolveAlertThresholds,
+  resolveMissingPhasesForRow,
 } from '../services/phaseAlert.service';
 
 export const phaseAlertRouter = router({
@@ -37,6 +38,27 @@ export const phaseAlertRouter = router({
     .query(async ({ input, ctx }) => {
       await resolveRowBrandAccess(ctx, input.rowId);
       return computeCriticality(input.rowId, new Date(), ctx.prisma);
+    }),
+
+  /**
+   * Fasi che la riga non ha attraversato, da mostrare prima di concluderla. Vuoto quando la riga è
+   * già all'ultima milestone pianificata per il suo gruppo: in quel caso concludere non salta nulla.
+   *
+   * Anteprima, non guard: la stessa lista viene ricalcolata da `collectionLayout.rows.setCompleted`,
+   * che è il punto in cui la forzatura viene pretesa e registrata. Serve alla UI per dire *quali*
+   * fasi mancano prima che l'utente confermi, invece di scoprirlo da un errore.
+   *
+   * @auth {collection_layout:update} — non `collection_alert:read`: interessa solo a chi può
+   *   concludere, e allinearla al permesso della mutation evita che i due possano divergere.
+   * @input {{ rowId: string }}
+   * @output {{ missingPhases: { value: string, label: string }[] }}
+   */
+  completionPreview: protectedProcedure
+    .use(requirePermission('collection_layout:update'))
+    .input(z.object({ rowId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      await resolveRowBrandAccess(ctx, input.rowId);
+      return { missingPhases: await resolveMissingPhasesForRow(input.rowId, ctx.prisma) };
     }),
 
   /**

@@ -3,10 +3,14 @@
 import { AlertTriangle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
+import { formatDate } from '@luke/core';
+
 import { PageHeader } from '../../../../components/PageHeader';
+import { Badge } from '../../../../components/ui/badge';
 import { Card, CardContent } from '../../../../components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../components/ui/tabs';
 import { useAppContext } from '../../../../contexts/AppContextProvider';
+import { bandBadgeStyle } from '../../../../lib/alertBandStyle';
 import { trpc } from '../../../../lib/trpc';
 import { cn } from '../../../../lib/utils';
 import { assignBrandColors, resolveBrandColor } from '../../calendar/utils';
@@ -199,14 +203,11 @@ function SaturationTab() {
                         <td key={cat} className="px-3 py-2">
                           <div className="flex flex-wrap gap-1">
                             {cellData.map(c => (
-                              <span
-                                key={c.label}
-                                className="px-1.5 py-0.5 rounded text-xs font-medium"
-                                style={{ backgroundColor: `${c.color}20`, color: c.color }}
-                                title={c.label}
-                              >
+                              // Band color and emphasis come from AppConfig (admin-configured hex),
+                              // not from design tokens — no static class can express them.
+                              <Badge key={c.label} variant="outline" style={bandBadgeStyle(c)} title={c.label}>
                                 {c.count}
-                              </span>
+                              </Badge>
                             ))}
                           </div>
                         </td>
@@ -260,7 +261,7 @@ function BottleneckTab() {
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-medium">{event.eventTitle}</span>
                     <span className="text-xs text-muted-foreground tabular-nums">
-                      {new Date(event.eventStartAt).toLocaleDateString('it-IT')} · {total} righe
+                      {formatDate(new Date(event.eventStartAt))} · {total} righe
                     </span>
                   </div>
                   <div className="flex h-3 w-full rounded overflow-hidden bg-muted">
@@ -274,9 +275,9 @@ function BottleneckTab() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {event.bands.map(b => (
-                      <span key={b.label} className="text-xs" style={{ color: b.color }}>
+                      <Badge key={b.label} variant="outline" style={bandBadgeStyle(b)}>
                         {b.label}: {b.count}
-                      </span>
+                      </Badge>
                     ))}
                   </div>
                 </div>
@@ -303,6 +304,14 @@ function StagnationTab() {
     { enabled: !!layout?.id }
   );
 
+  // Chiude il quadro che la tabella per fase non può chiudere: l'ultima fase non ha una
+  // transizione successiva che la termini, quindi il tempo totale fino alla conclusione
+  // esiste solo per le righe marcate come concluse.
+  const { data: leadTime } = trpc.phaseHistory.completionLeadTime.useQuery(
+    { collectionLayoutId: layout?.id ?? '' },
+    { enabled: !!layout?.id }
+  );
+
   const sorted = [...stats].sort((a, b) => b.avgDays - a.avgDays);
   const maxAvg = Math.max(1, ...stats.map(s => s.avgDays));
 
@@ -313,6 +322,16 @@ function StagnationTab() {
   return (
     <Card>
       <CardContent className="p-0">
+        {leadTime && leadTime.sampleCount > 0 && (
+          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 border-b px-3 py-2 text-sm">
+            <span className="font-medium">Tempo totale al completamento</span>
+            <span className="text-muted-foreground">
+              media <span className="tabular-nums text-foreground">{leadTime.avgDays}</span> gg ·
+              mediana <span className="tabular-nums text-foreground">{leadTime.medianDays}</span> gg ·
+              su <span className="tabular-nums text-foreground">{leadTime.sampleCount}</span> righe concluse
+            </span>
+          </div>
+        )}
         <QueryBoundary
           isError={isError}
           isLoading={isLoading}

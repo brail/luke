@@ -22,6 +22,8 @@ interface FakePrismaOpts {
   layoutBrandId?: string;
   layoutSeasonId?: string;
   updatedCount?: number;
+  /** Quante righe della selezione risultano già concluse — il guard le rifiuta in blocco. */
+  completedCount?: number;
 }
 
 function buildFakePrisma(opts: FakePrismaOpts = {}) {
@@ -54,6 +56,7 @@ function buildFakePrisma(opts: FakePrismaOpts = {}) {
       ),
     },
     collectionLayoutRow: {
+      count: vi.fn(async () => opts.completedCount ?? 0),
       updateMany: vi.fn(async (args: any) => {
         updateManyCalls.push(args);
         return { count: opts.updatedCount ?? args.where.id.in.length };
@@ -115,6 +118,18 @@ describe('bulkAssignRowsPlanningGroup', () => {
     await expectToThrow(
       bulkAssignRowsPlanningGroup(['row-1'], LAYOUT_ID, TARGET_GROUP_ID, prisma, USER_ID),
       { code: 'BAD_REQUEST' }
+    );
+    expect(updateManyCalls).toHaveLength(0);
+  });
+
+  it('rifiuta l\'intera selezione se contiene righe concluse (CONFLICT), senza scriverne nessuna', async () => {
+    // Scartare in silenzio le concluse restituirebbe un conteggio parziale indistinguibile da un
+    // successo voluto: l'utente crederebbe di aver spostato tutte le righe selezionate.
+    const { prisma, updateManyCalls } = buildFakePrisma({ completedCount: 1 });
+
+    await expectToThrow(
+      bulkAssignRowsPlanningGroup(['row-1', 'row-2'], LAYOUT_ID, TARGET_GROUP_ID, prisma, USER_ID),
+      { code: 'CONFLICT' }
     );
     expect(updateManyCalls).toHaveLength(0);
   });

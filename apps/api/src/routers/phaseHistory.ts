@@ -12,6 +12,31 @@ import {
   resolveRowBrandAccess,
 } from '../services/brandScope.service';
 
+/** Millisecondi in un giorno: le durate qui restano frazionarie (media a un decimale), quindi
+ * non passano da `daysBetween`, che arrotonda a giorni interi UTC. */
+const MS_PER_DAY = 86_400_000;
+
+/**
+ * Media, mediana e numerosità di un insieme di durate in giorni — il contratto statistico
+ * condiviso dalle due letture aggregate di questo router (per fase e fino alla conclusione),
+ * così arrotondamento e regola della mediana pari non possono divergere fra le due.
+ *
+ * @returns Media e mediana `null` su campione vuoto: nessun dato non è zero giorni.
+ */
+function summarizeDays(days: number[]): { avgDays: number | null; medianDays: number | null; sampleCount: number } {
+  if (days.length === 0) return { avgDays: null, medianDays: null, sampleCount: 0 };
+
+  const sorted = [...days].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+
+  return {
+    avgDays: Math.round((days.reduce((s, d) => s + d, 0) / days.length) * 10) / 10,
+    medianDays: Math.round(median * 10) / 10,
+    sampleCount: days.length,
+  };
+}
+
 export const phaseHistoryRouter = router({
   /**
    * Lists the full phase transition history for a single row, oldest first.
@@ -72,7 +97,7 @@ export const phaseHistoryRouter = router({
         const current = entries[k];
         const next = entries[k + 1];
         if (next && next.rowId === current.rowId) {
-          const days = (next.reachedAt.getTime() - current.reachedAt.getTime()) / 86_400_000;
+          const days = (next.reachedAt.getTime() - current.reachedAt.getTime()) / MS_PER_DAY;
           const bucket = durationsByPhase.get(current.phaseId) ?? { label: current.phase.label, days: [] };
           bucket.days.push(days);
           durationsByPhase.set(current.phaseId, bucket);
@@ -80,18 +105,56 @@ export const phaseHistoryRouter = router({
       }
 
       return Array.from(durationsByPhase.entries()).map(([phaseId, { label, days }]) => {
-        const sorted = [...days].sort((a, b) => a - b);
-        const mid = Math.floor(sorted.length / 2);
-        const median = sorted.length % 2 === 0
-          ? (sorted[mid - 1] + sorted[mid]) / 2
-          : sorted[mid];
-        return {
-          phaseId,
-          phaseLabel: label,
-          avgDays: Math.round((days.reduce((s, d) => s + d, 0) / days.length) * 10) / 10,
-          medianDays: Math.round(median * 10) / 10,
-          sampleCount: days.length,
-        };
+        // `durationsByPhase` non ha mai bucket vuoti (una fase entra solo quando ha una durata),
+        // quindi qui media e mediana non sono mai null.
+        const { avgDays, medianDays, sampleCount } = summarizeDays(days);
+        return { phaseId, phaseLabel: label, avgDays: avgDays!, medianDays: medianDays!, sampleCount };
       });
+    }),
+
+  /**
+   * Total lead time (in days) of the concluded rows in a layout: from a row's first recorded phase
+   * transition to the moment it was marked as concluded. Complements `layoutStats`, which measures
+   * how long rows sit inside each phase but can never measure the end — the last phase has no
+   * following transition to close it. Rows still in progress, or concluded without any recorded
+   * transition to start counting from, are excluded.
+   *
+   * @auth {collection_layout:read} — same permission (and same latent divergence) as `layoutStats`.
+   * @input {{ collectionLayoutId: string }}
+   * @output {{ avgDays: number | null, medianDays: number | null, sampleCount: number }} — nulls
+   *   when no concluded row has a usable baseline.
+   */
+  completionLeadTime: protectedProcedure
+    .use(requirePermission('collection_layout:read'))
+    .input(z.object({ collectionLayoutId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
+
+      // Le due letture filtrano sullo stesso insieme di righe (il groupBy passa dalla relazione
+      // invece che da un `IN` sugli id appena letti), quindi sono indipendenti e girano insieme.
+      // `completedAt` è filtrato ma deliberatamente non indicizzato: non compare mai senza
+      // `collectionLayoutId`, che lo è, e le righe di un layout sono poche — un indice costerebbe
+      // solo in scrittura.
+      const rowScope = { collectionLayoutId: input.collectionLayoutId, completedAt: { not: null } } as const;
+      const [rows, firstTransitions] = await Promise.all([
+        ctx.prisma.collectionLayoutRow.findMany({
+          where: rowScope,
+          select: { id: true, completedAt: true },
+        }),
+        ctx.prisma.collectionRowPhaseHistory.groupBy({
+          by: ['rowId'],
+          where: { row: rowScope },
+          _min: { reachedAt: true },
+        }),
+      ]);
+      const startByRowId = new Map(firstTransitions.map(t => [t.rowId, t._min.reachedAt]));
+
+      const days = rows.flatMap(row => {
+        const start = startByRowId.get(row.id);
+        if (!start || !row.completedAt) return [];
+        return [(row.completedAt.getTime() - start.getTime()) / MS_PER_DAY];
+      });
+
+      return summarizeDays(days);
     }),
 });

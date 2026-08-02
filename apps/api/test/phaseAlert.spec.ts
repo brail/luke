@@ -15,6 +15,9 @@ import { describe, it, expect } from 'vitest';
 import {
   getActivePhaseFromEvents,
   getNextPhaseFromEvents,
+  getCompletionDeadlineEvent,
+  getMissingPhasesForCompletion,
+  completionOutcome,
   filterApplicableEvents,
   type ActivePhaseResult,
 } from '../src/services/phaseAlert.service';
@@ -27,6 +30,8 @@ function fakeEvent(opts: {
   planningGroupId?: string;
   phaseOrder: number | null;
   phaseIsActive?: boolean;
+  /** Scadenza dell'evento (`endAt ?? startAt`), per i test sull'esito al completamento. */
+  deadline?: Date;
 }): RowEvent {
   const now = new Date();
   return {
@@ -40,7 +45,7 @@ function fakeEvent(opts: {
     cancelledByUserId: null,
     title: `Event ${opts.id}`,
     description: null,
-    startAt: now,
+    startAt: opts.deadline ?? now,
     endAt: null,
     baselineStartAt: null,
     baselineEndAt: null,
@@ -52,6 +57,7 @@ function fakeEvent(opts: {
     phase: opts.phaseOrder === null ? null : {
       order: opts.phaseOrder,
       value: `PHASE_${opts.phaseOrder}`,
+      label: `Fase ${opts.phaseOrder}`,
       isActive: opts.phaseIsActive ?? true,
     },
   } as unknown as RowEvent;
@@ -79,6 +85,58 @@ describe('getActivePhaseFromEvents', () => {
     const atOrder1 = fakeEvent({ id: 'e2', phaseOrder: 1 });
     const events = [fakeEvent({ id: 'e1', phaseOrder: 0 }), atOrder1, fakeEvent({ id: 'e3', phaseOrder: 2 })];
     expect(getActivePhaseFromEvents(events, 1)).toEqual({ status: 'active', event: atOrder1 });
+  });
+
+  it('salta gli eventi su fase disattivata e misura contro la prima fase attiva successiva', () => {
+    // `isActive: false` è un soft delete: una fase ritirata esce dal processo e non deve più
+    // produrre scadenze, com'era già per `getNextPhaseFromEvents`.
+    const retired = fakeEvent({ id: 'e1', phaseOrder: 1, phaseIsActive: false });
+    const live = fakeEvent({ id: 'e2', phaseOrder: 2 });
+    expect(getActivePhaseFromEvents([retired, live], 1)).toEqual({ status: 'active', event: live });
+  });
+
+  it('solo eventi su fasi disattivate → completed, quindi nessun alert', () => {
+    const events = [
+      fakeEvent({ id: 'e1', phaseOrder: 1, phaseIsActive: false }),
+      fakeEvent({ id: 'e2', phaseOrder: 2, phaseIsActive: false }),
+    ];
+    expect(getActivePhaseFromEvents(events, 0)).toEqual({ status: 'completed' });
+  });
+});
+
+describe('getMissingPhasesForCompletion', () => {
+  it('riga all\'ultima milestone → nessuna fase mancante', () => {
+    const events = [fakeEvent({ id: 'e1', phaseOrder: 0 }), fakeEvent({ id: 'e2', phaseOrder: 1 })];
+    expect(getMissingPhasesForCompletion(events, 1)).toEqual([]);
+  });
+
+  it('riga indietro di una fase → elenca solo quella', () => {
+    const events = [fakeEvent({ id: 'e1', phaseOrder: 0 }), fakeEvent({ id: 'e2', phaseOrder: 1 })];
+    expect(getMissingPhasesForCompletion(events, 0)).toEqual([{ value: 'PHASE_1', label: 'Fase 1' }]);
+  });
+
+  it('le fasi disattivate nell\'intervallo non contano come mancanti', () => {
+    // Non sono più parte del processo: chiederle prima di concludere sarebbe rumore.
+    const events = [
+      fakeEvent({ id: 'e1', phaseOrder: 0 }),
+      fakeEvent({ id: 'e2', phaseOrder: 1, phaseIsActive: false }),
+      fakeEvent({ id: 'e3', phaseOrder: 2 }),
+    ];
+    expect(getMissingPhasesForCompletion(events, 0)).toEqual([{ value: 'PHASE_2', label: 'Fase 2' }]);
+  });
+
+  it('più eventi sulla stessa fase contano una volta sola', () => {
+    const events = [fakeEvent({ id: 'e1', phaseOrder: 1 }), fakeEvent({ id: 'e1b', phaseOrder: 1 })];
+    expect(getMissingPhasesForCompletion(events, 0)).toEqual([{ value: 'PHASE_1', label: 'Fase 1' }]);
+  });
+
+  it('gruppo senza eventi di fase → nessun termine di paragone, nessun avviso', () => {
+    expect(getMissingPhasesForCompletion([fakeEvent({ id: 'po', phaseOrder: null })], 0)).toEqual([]);
+  });
+
+  it('riga senza fase → mancano tutte', () => {
+    const events = [fakeEvent({ id: 'e1', phaseOrder: 0 }), fakeEvent({ id: 'e2', phaseOrder: 1 })];
+    expect(getMissingPhasesForCompletion(events, null).map(p => p.value)).toEqual(['PHASE_0', 'PHASE_1']);
   });
 });
 
@@ -135,6 +193,76 @@ describe('getNextPhaseFromEvents', () => {
     // "Attivo" costruito a parte, con id che non compare in `events`.
     const foreignActive = { status: 'active' as const, event: fakeEvent({ id: 'not-in-array', phaseOrder: 1 }) };
     expect(getNextPhaseFromEvents(events, foreignActive)).toBeNull();
+  });
+});
+
+describe('getCompletionDeadlineEvent', () => {
+  it('nessun evento → null', () => {
+    expect(getCompletionDeadlineEvent([])).toBeNull();
+  });
+
+  it('solo eventi senza fase → null (fuori dal meccanismo delle fasi)', () => {
+    const phaseless = fakeEvent({ id: 'po-cutoff', phaseOrder: null });
+    expect(getCompletionDeadlineEvent([phaseless])).toBeNull();
+  });
+
+  it('solo eventi su fasi disattivate → null (non c\'è più nulla di pianificato da misurare)', () => {
+    const retired = fakeEvent({ id: 'e1', phaseOrder: 3, phaseIsActive: false });
+    expect(getCompletionDeadlineEvent([retired])).toBeNull();
+  });
+
+  it('salta le fasi disattivate che seguono l\'ultima attiva', () => {
+    // Il caso reale: calendario con milestone su fasi ritirate dopo l'ultima fase ancora in uso.
+    // La scadenza di completamento deve restare l'ultima *attiva*, non la più lontana in assoluto.
+    const events = [
+      fakeEvent({ id: 'gate-1', phaseOrder: 0 }),
+      fakeEvent({ id: 'gate-3', phaseOrder: 2 }),
+      fakeEvent({ id: 'linesheet', phaseOrder: 3, phaseIsActive: false }),
+      fakeEvent({ id: 'pre-opening', phaseOrder: 4, phaseIsActive: false }),
+    ];
+    expect(getCompletionDeadlineEvent(events)?.id).toBe('gate-3');
+  });
+});
+
+describe('completionOutcome', () => {
+  const thresholds = {
+    default: { bands: [{ minDaysToDeadline: -9999, maxDaysToDeadline: null, color: '#000', label: 'B', emphasis: 'outline' as const }] },
+    completedBand: { color: '#15803D', label: 'Concluso', emphasis: 'solid' as const },
+    completedLateBand: { color: '#B91C1C', label: 'Concluso in ritardo', emphasis: 'solid' as const },
+  };
+  const ctx = { companyCountryCode: null, holidays: [] };
+  const deadline = new Date('2026-08-31T00:00:00Z');
+
+  it('senza milestone di riferimento → banda "in tempo" e nessun delta inventato', () => {
+    const result = completionOutcome('row-1', new Date('2026-09-10T00:00:00Z'), null, thresholds, null, ctx);
+    expect(result).toMatchObject({
+      state: 'completed',
+      daysVsDeadline: null,
+      deadline: null,
+      eventId: null,
+      band: thresholds.completedBand,
+    });
+  });
+
+  it('conclusa prima della scadenza → delta positivo (anticipo) e banda "in tempo"', () => {
+    const event = fakeEvent({ id: 'gate-3', phaseOrder: 2, deadline });
+    const result = completionOutcome('row-1', new Date('2026-08-12T00:00:00Z'), event, thresholds, null, ctx);
+    expect(result.daysVsDeadline).toBe(19);
+    expect(result.band).toEqual(thresholds.completedBand);
+  });
+
+  it('conclusa dopo la scadenza → delta negativo (ritardo) e banda "in ritardo"', () => {
+    const event = fakeEvent({ id: 'gate-3', phaseOrder: 2, deadline });
+    const result = completionOutcome('row-1', new Date('2026-09-10T00:00:00Z'), event, thresholds, null, ctx);
+    expect(result.daysVsDeadline).toBe(-10);
+    expect(result.band).toEqual(thresholds.completedLateBand);
+  });
+
+  it('conclusa nel giorno stesso della scadenza conta come in tempo', () => {
+    const event = fakeEvent({ id: 'gate-3', phaseOrder: 2, deadline });
+    const result = completionOutcome('row-1', deadline, event, thresholds, null, ctx);
+    expect(result.daysVsDeadline).toBe(0);
+    expect(result.band).toEqual(thresholds.completedBand);
   });
 });
 

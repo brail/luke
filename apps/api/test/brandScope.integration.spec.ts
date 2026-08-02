@@ -289,6 +289,8 @@ describe('brand scope — risorse indirette', () => {
       as().collectionLayout.rows.duplicate({ rowId: outRes.rowId })],
     ['rows.reorder', () =>
       as().collectionLayout.rows.reorder({ groupId: outRes.groupId, orderedIds: [outRes.rowId] })],
+    ['rows.setCompleted', () =>
+      as().collectionLayout.rows.setCompleted({ rowId: outRes.rowId, completed: true, note: 'motivazione di test' })],
     ['rows.bulkAssignPlanningGroup', () =>
       as().collectionLayout.rows.bulkAssignPlanningGroup({
         rowIds: [outRes.rowId],
@@ -325,6 +327,8 @@ describe('brand scope — risorse indirette', () => {
       as().phaseHistory.listForRow({ rowId: outRes.rowId })],
     ['phaseHistory.layoutStats', () =>
       as().phaseHistory.layoutStats({ collectionLayoutId: outRes.layoutId })],
+    ['phaseHistory.completionLeadTime', () =>
+      as().phaseHistory.completionLeadTime({ collectionLayoutId: outRes.layoutId })],
   ];
 
   const as = () => createCallerWithSession(scopedSession);

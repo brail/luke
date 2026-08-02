@@ -79,6 +79,16 @@ export const LdapResilienceSchema = z.object({
 });
 
 /**
+ * Visual weight of a band's badge, independent from its color — colors alone run out of
+ * distinguishable steps once more than ~4 bands are configured, so emphasis is the second axis
+ * an admin can use to rank severity (e.g. solid red "In ritardo grave" vs outline red "In ritardo").
+ * - `outline`: transparent background, colored border and text
+ * - `soft`: tinted background, colored border and text
+ * - `solid`: fully filled background, contrast-picked text
+ */
+export const AlertBandEmphasisSchema = z.enum(['outline', 'soft', 'solid']);
+
+/**
  * A single criticality band: rows whose days-to-deadline fall in
  * [minDaysToDeadline, maxDaysToDeadline) are shown with this color/label.
  * `maxDaysToDeadline: null` means "no upper bound" (furthest-out band).
@@ -88,11 +98,24 @@ export const AlertBandSchema = z.object({
   maxDaysToDeadline: z.number().int().nullable(),
   color: z.string().min(1),
   label: z.string().min(1),
+  /** Defaulted so blobs written before emphasis existed keep parsing (and keep rendering as before). */
+  emphasis: AlertBandEmphasisSchema.default('outline'),
 });
 
 /** Ordered list of criticality bands for one scope (default or a specific Phase override). */
 export const AlertBandSetSchema = z.object({
   bands: z.array(AlertBandSchema).min(1),
+});
+
+/**
+ * Badge for a row that has been explicitly marked as concluded. Not part of `AlertBandSetSchema`'s
+ * ordered list: completion is a state, not a day range — there is nothing to match against.
+ * Solid by default so a concluded row reads as a finished outcome rather than one more countdown.
+ */
+export const AlertOutcomeBandSchema = z.object({
+  color: z.string().min(1),
+  label: z.string().min(1),
+  emphasis: AlertBandEmphasisSchema.default('solid'),
 });
 
 /**
@@ -106,9 +129,16 @@ export const CollectionAlertThresholdsSchema = z.object({
    * differs per environment/seed and would silently stop matching if this config were copied
    * across environments. */
   perPhaseOverride: z.record(z.string(), AlertBandSetSchema).optional(),
+  /** Concluded on or before the last planned milestone's deadline. */
+  completedBand: AlertOutcomeBandSchema.default({ color: '#15803D', label: 'Concluso', emphasis: 'solid' }),
+  /** Concluded after it. Defaulted (rather than optional) so the two outcomes are always
+   * distinguishable, even in a config blob written before completion tracking existed. */
+  completedLateBand: AlertOutcomeBandSchema.default({ color: '#B91C1C', label: 'Concluso in ritardo', emphasis: 'solid' }),
 });
 
+export type AlertBandEmphasis = z.infer<typeof AlertBandEmphasisSchema>;
 export type AlertBand = z.infer<typeof AlertBandSchema>;
+export type AlertOutcomeBand = z.infer<typeof AlertOutcomeBandSchema>;
 export type AlertBandSet = z.infer<typeof AlertBandSetSchema>;
 export type CollectionAlertThresholds = z.infer<typeof CollectionAlertThresholdsSchema>;
 
