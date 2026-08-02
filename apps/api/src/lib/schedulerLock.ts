@@ -13,8 +13,9 @@
  * per CLAUDE.md's ORM policy exception for query shapes Prisma can't express.
  *
  * `expiresAt` is a crash-safety ceiling only: the normal path releases the lock explicitly in a
- * `finally` right after the tick completes, so a slow tick never blocks the next one — the TTL
- * only matters if a process dies mid-tick without running that `finally` (OOM, kill -9).
+ * `finally` right after the tick completes (deleting the row, see `release`), so a slow tick never
+ * blocks the next one — the TTL only matters if a process dies mid-tick without running that
+ * `finally` (OOM, kill -9).
  */
 
 import { randomUUID } from 'crypto';
@@ -60,10 +61,15 @@ async function tryAcquire(prisma: PrismaClient, name: SchedulerName): Promise<bo
 }
 
 async function release(prisma: PrismaClient, name: SchedulerName): Promise<void> {
+  // Cancella la riga invece di scaderla. Scrivere `expiresAt = now()` sembrava equivalente ma non
+  // lo è: la colonna è `TIMESTAMP(3)`, quindi Postgres arrotonda al millisecondo — anche per
+  // eccesso — mentre la riacquisizione richiede `expiresAt < now()`. Un tick che riparte entro
+  // mezzo millisecondo dal rilascio trovava il lock ancora tenuto e veniva saltato in silenzio.
+  //
   // Only release if still ours — if our TTL already lapsed and another instance re-acquired it
   // in the meantime, this must not clobber their fresh lock.
   await prisma.$executeRaw(Prisma.sql`
-    UPDATE scheduler_locks SET "expiresAt" = now()
+    DELETE FROM scheduler_locks
     WHERE name = ${name} AND "heldBy" = ${INSTANCE_ID}
   `);
 }
