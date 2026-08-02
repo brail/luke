@@ -7,25 +7,27 @@ poi la applica al DB dev (porta 5432) con `db push`.
 ## Workflow obbligatorio
 
 ```bash
-# 1. Postgres temporaneo su porta 5433
-docker run --rm -d --name luke-pg-migrate -p 5433:5432 \
-  -e POSTGRES_DB=luke -e POSTGRES_USER=luke -e POSTGRES_PASSWORD=luke \
-  postgres:16-alpine
-sleep 4 && docker exec luke-pg-migrate pg_isready -U luke -d luke
-
-# 2. Genera migration
-cd apps/api
-DATABASE_URL="postgresql://luke:luke@localhost:5433/luke" \
-  pnpm exec prisma migrate dev --name <nome_descrittivo> --skip-seed
-
-# 3. Stop container
-docker stop luke-pg-migrate
-
-# 4. Applica al DB dev (porta 5432)
-cd apps/api && npx prisma db push
-
-# 5. Committa il file migration insieme alle modifiche allo schema
+pnpm --filter @luke/api db:migrate:new <nome_descrittivo>
+git add apps/api/prisma/migrations apps/api/prisma/schema.prisma
 ```
+
+Lo script (`apps/api/scripts/new-migration.sh`) fa i quattro passi che prima erano da eseguire a
+mano: avvia il Postgres usa-e-getta sulla 5433, attende che risponda, genera la migration contro
+quello, lo ferma anche se qualcosa fallisce a metà, e allinea il DB di sviluppo con `db push`.
+Il file prodotto in `prisma/migrations/` va committato insieme a `schema.prisma`.
+
+**Perché un DB temporaneo e non quello di sviluppo**: il DB dev è allineato con `db push`, quindi
+il suo `_prisma_migrations` non riflette lo storico versionato. `migrate dev` lo leggerebbe come
+drift e proporrebbe di resettarlo, cancellando i dati.
+
+### Note su Prisma 7 (valgono per qualunque comando `prisma` a mano)
+
+- **`--skip-seed` non esiste più**, né su `migrate dev` né su `migrate reset`.
+- **Il CLI non carica più `.env` da solo.** Un `npx prisma db push` nudo fallisce con
+  `The datasource.url property is required in your Prisma config file` — messaggio fuorviante,
+  perché `prisma.config.ts` la `datasource.url` ce l'ha: la legge da `process.env.DATABASE_URL`,
+  che però non è popolata. Caricare l'env prima (`set -a && . ./.env && set +a`, come fanno gli
+  script `db:*` in `apps/api/package.json`) oppure passare `--url` esplicita.
 
 ## Produzione
 

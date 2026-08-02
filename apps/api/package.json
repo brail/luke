@@ -18,13 +18,15 @@
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "prisma:generate": "prisma generate",
-    "prisma:push": "prisma db push",
+    "prisma:push": "set -a && . ./.env && set +a && prisma db push",
     "prisma:studio": "prisma studio",
-    "db:reset": "prisma migrate reset --force --skip-seed",
+    "db:migrate:new": "bash scripts/new-migration.sh",
+    "db:reset": "set -a && . ./.env && set +a && prisma migrate reset --force",
     "db:seed": "tsx prisma/seed.ts",
     "db:bootstrap": "tsx scripts/dev-bootstrap.ts",
     "db:nav-reset": "tsx scripts/nav-reset.ts",
     "db:harden-google-acl": "tsx --env-file=.env scripts/harden-google-calendar-acl.ts",
+    "db:complete-stranded-rows": "tsx --env-file=.env scripts/complete-stranded-rows.ts",
     "db:fix-allday-dates": "TZ=Europe/Rome tsx --env-file=.env scripts/fix-allday-event-dates.ts"
   },
   "prisma": {

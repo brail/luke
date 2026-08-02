@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint src/ tests/",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "test:e2e": "playwright test --project=smoke",
     "test:e2e:ui": "playwright test --project=smoke --ui",
     "test:e2e:debug": "playwright test --project=smoke --debug",
@@ -69,6 +70,7 @@
     "eslint-config-next": "^16.2.9",
     "postcss": "^8.5.24",
     "tailwindcss": "^4.3.1",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
   }
 }
