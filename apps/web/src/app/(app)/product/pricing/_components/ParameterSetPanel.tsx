@@ -239,15 +239,19 @@ export function ParameterSetPanel({
                     ) : (
                       <TooltipProvider>
                         <Tooltip>
+                          {/* Il trigger è lo span: un bottone disabilitato non emette gli eventi
+                              che aprono il tooltip (vedi `PermissionButton`). */}
                           <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              className="opacity-50 cursor-not-allowed"
-                              disabled
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                            <span className="inline-flex" tabIndex={0}>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                className="opacity-50 cursor-not-allowed"
+                                disabled
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </span>
                           </TooltipTrigger>
                           <TooltipContent>
                             Non hai i permessi per eliminare le varianti

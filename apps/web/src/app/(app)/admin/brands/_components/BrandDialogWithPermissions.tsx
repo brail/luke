@@ -92,7 +92,13 @@ function DisabledFieldWrapper({
   return (
     <TooltipProvider>
       <Tooltip>
-        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        {/* Il trigger è il `div`, non il campo: un input disabilitato non emette `pointerenter`
+            né `focus`, quindi con `asChild` direttamente sul campo il tooltip non si aprirebbe mai
+            — stesso difetto corretto in `PermissionButton`. `tabIndex` lo rende raggiungibile da
+            tastiera, dove un campo disabilitato non arriva. */}
+        <TooltipTrigger asChild>
+          <div tabIndex={0}>{children}</div>
+        </TooltipTrigger>
         <TooltipContent>{tooltip}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
