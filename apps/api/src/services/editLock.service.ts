@@ -120,7 +120,7 @@ export async function assertUnlocked(
   entityType: LockEntityType,
   entityId: string,
   userId: string,
-  prisma: PrismaClient
+  prisma: PrismaClient | Prisma.TransactionClient
 ) {
   const lock = await prisma.editLock.findUnique({
     where: { entityType_entityId: { entityType, entityId } },

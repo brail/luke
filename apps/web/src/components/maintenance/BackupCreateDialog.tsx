@@ -49,7 +49,7 @@ export function BackupCreateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px]">
+      <DialogContent className="sm:max-w-[480px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
         <DialogHeader>
           <DialogTitle>Crea backup</DialogTitle>
           <DialogDescription>

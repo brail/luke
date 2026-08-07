@@ -87,7 +87,7 @@ export function ConfirmDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="sm:max-w-[425px]">
+      <AlertDialogContent className="sm:max-w-[425px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
         <AlertDialogHeader>
           <div className="flex items-center gap-3">
             {getIcon()}

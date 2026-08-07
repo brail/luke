@@ -48,8 +48,8 @@ export async function testNavConnection(config: NavDbConfig): Promise<{
       ok: true,
       message: `Connesso a ${config.host}:${config.port} — database "${config.database}" accessibile`,
     });
-  } catch (err: any) {
-    const msg: string = err.message ?? String(err);
+  } catch (err: unknown) {
+    const msg: string = err instanceof Error ? err.message : String(err);
     const hint = msg.includes('Login failed')
       ? 'Credenziali non valide.'
       : msg.includes('Cannot open database')
@@ -69,11 +69,11 @@ export async function testNavConnection(config: NavDbConfig): Promise<{
       ok: true,
       message: 'Database risponde correttamente',
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     steps.push({
       name: 'Query SQL',
       ok: false,
-      message: `Errore query: ${err.message}`,
+      message: `Errore query: ${err instanceof Error ? err.message : String(err)}`,
     });
     await testPool.close().catch(() => {});
     return { success: false, steps };
@@ -106,11 +106,11 @@ export async function testNavConnection(config: NavDbConfig): Promise<{
       ok: true,
       message: `Company "${config.company}" verificata (tabella: ${res.recordset[0].TABLE_NAME})`,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     steps.push({
       name: 'Verifica Company',
       ok: false,
-      message: `Errore verifica company: ${err.message ?? String(err)}`,
+      message: `Errore verifica company: ${err instanceof Error ? err.message : String(err)}`,
     });
     await testPool.close().catch(() => {});
     return { success: false, steps };

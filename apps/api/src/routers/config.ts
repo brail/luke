@@ -426,6 +426,7 @@ export const configRouter = router({
             throw new TRPCError({
               code: 'INTERNAL_SERVER_ERROR',
               message: `Impossibile decifrare configurazione: ${input.key}`,
+              cause: error,
             });
           }
         } else {

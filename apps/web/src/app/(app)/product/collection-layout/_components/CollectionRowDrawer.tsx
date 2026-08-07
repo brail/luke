@@ -345,6 +345,7 @@ export function CollectionRowDrawer({
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
+        // vh: no Tailwind scale equivalent for viewport-relative height
         className="max-w-7xl w-full p-0 gap-0 flex flex-col max-h-[90vh]"
       >
         {/* Fixed header */}

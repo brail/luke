@@ -71,7 +71,7 @@ export function AssignPlanningGroupDialog({ open, onClose, onAssigned, brandId, 
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-      <DialogContent className="sm:max-w-[420px]">
+      <DialogContent className="sm:max-w-[420px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
         <DialogHeader>
           <DialogTitle>Assegna a gruppo di pianificazione</DialogTitle>
         </DialogHeader>

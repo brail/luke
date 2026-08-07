@@ -65,11 +65,11 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
 
   // Mutation per creare una nuova configurazione
   const setMutation = trpc.config.set.useMutation({
-    onSuccess: (data: any) => {
+    onSuccess: data => {
       toast.success(data.message || 'Configurazione salvata con successo');
       invalidateQueries();
     },
-    onError: (error: any) => {
+    onError: error => {
       debugError('Errore salvataggio configurazione:', error);
       toast.error(
         `Errore: ${error.message || 'Impossibile salvare la configurazione'}`
@@ -79,11 +79,11 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
 
   // Mutation per aggiornare una configurazione esistente
   const updateMutation = trpc.config.update.useMutation({
-    onSuccess: (data: any) => {
+    onSuccess: data => {
       toast.success(data.message || 'Configurazione aggiornata con successo');
       invalidateQueries();
     },
-    onError: (error: any) => {
+    onError: error => {
       debugError('Errore aggiornamento configurazione:', error);
       toast.error(
         `Errore: ${error.message || 'Impossibile aggiornare la configurazione'}`
@@ -93,15 +93,15 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
 
   // Mutation per eliminare una configurazione
   const deleteMutation = trpc.config['delete'].useMutation({
-    onSuccess: (data: any) => {
+    onSuccess: data => {
       toast.success(data.message || 'Configurazione eliminata con successo');
       invalidateQueries();
     },
-    onError: (error: any) => {
+    onError: error => {
       debugError('Errore eliminazione configurazione:', error);
 
       // Gestione specifica per chiavi critiche
-      if (error.code === 'CONFLICT') {
+      if (error.data?.code === 'CONFLICT') {
         toast.error(
           'Impossibile eliminare: questa chiave è critica per il sistema'
         );
@@ -115,7 +115,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
 
   // Mutation per import batch
   const importMutation = trpc.config.importJson.useMutation({
-    onSuccess: (data: any) => {
+    onSuccess: data => {
       const { successCount, errorCount } = data;
 
       if (successCount > 0) {
@@ -128,7 +128,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
 
       invalidateQueries();
     },
-    onError: (error: any) => {
+    onError: error => {
       debugError('Errore import configurazioni:', error);
       toast.error(
         `Errore: ${error.message || 'Impossibile importare le configurazioni'}`
@@ -138,10 +138,10 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
 
   // Mutation per export
   const exportMutation = trpc.config.exportJson.useMutation({
-    onSuccess: (data: any) => {
+    onSuccess: data => {
       toast.success(`Esportate ${data.count} configurazioni`);
     },
-    onError: (error: any) => {
+    onError: error => {
       debugError('Errore export configurazioni:', error);
       toast.error(
         `Errore: ${error.message || 'Impossibile esportare le configurazioni'}`

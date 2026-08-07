@@ -247,9 +247,16 @@ export async function cleanupMilestoneEvents(
 
   const mappings = await prisma.googleEventMapping.findMany({ where: { eventId: milestoneId } });
 
-  await Promise.allSettled(
+  const results = await Promise.allSettled(
     mappings.map(m => deleteEvent(m.googleCalendarId, m.googleEventId))
   );
+  const failed = results.filter(r => r.status === 'rejected').length;
+  if (failed > 0) {
+    logger.warn(
+      { milestoneId, failed, total: mappings.length },
+      'Alcuni eventi Google Calendar non sono stati eliminati — la mappatura locale viene comunque rimossa'
+    );
+  }
 
   await prisma.googleEventMapping.deleteMany({ where: { eventId: milestoneId } });
   logger.info({ milestoneId, count: mappings.length }, 'Google Calendar events cleaned up');

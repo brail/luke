@@ -10,6 +10,8 @@ import pino from 'pino';
 
 import { idempotencyStore } from './idempotency';
 
+import type { FastifyRequest } from 'fastify';
+
 const logger = pino({ level: 'info' });
 
 /**
@@ -21,6 +23,11 @@ const logger = pino({ level: 'info' });
  * @returns Raw tRPC middleware (use directly with `.use()` on a procedure).
  */
 export function withIdempotency() {
+  // Non t.middleware(...)-wrapped: questo middleware short-circuita ritornando
+  // una risposta cached invece di passare sempre da next(), incompatibile con
+  // il tipo MiddlewareResult più stretto che t.middleware richiede — provato
+  // empiricamente: con un tipo preciso invece di `any`, `.use()` rifiuta la
+  // funzione su tutti i router che la usano (stesso errore ovunque).
   return async ({ ctx, next, path, type, input }: any) => {
     // Solo per mutation (query non hanno bisogno di idempotency)
     if (type !== 'mutation') {
@@ -103,7 +110,7 @@ export function withIdempotency() {
 /**
  * Returns `true` if the request carries an `Idempotency-Key` header.
  */
-export function hasIdempotencyKey(ctx: { req: any }): boolean {
+export function hasIdempotencyKey(ctx: { req: FastifyRequest }): boolean {
   return !!ctx.req.headers['idempotency-key'];
 }
 
@@ -112,8 +119,9 @@ export function hasIdempotencyKey(ctx: { req: any }): boolean {
  *
  * @returns The key string, or `null` if the header is absent.
  */
-export function getIdempotencyKey(ctx: { req: any }): string | null {
-  return ctx.req.headers['idempotency-key'] || null;
+export function getIdempotencyKey(ctx: { req: FastifyRequest }): string | null {
+  const header = ctx.req.headers['idempotency-key'];
+  return (Array.isArray(header) ? header[0] : header) || null;
 }
 
 /**

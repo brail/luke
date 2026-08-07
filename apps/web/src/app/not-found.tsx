@@ -29,6 +29,7 @@ export default function NotFound() {
             <Link href="/dashboard" aria-label="Torna alla Dashboard">
               <Button>Torna alla Dashboard</Button>
             </Link>
+            {/* `as any`: `/support` isn't an implemented route yet — placeholder link, not a typedRoutes lag */}
             <Link href={'/support' as any} aria-label="Apri supporto">
               <Button variant="outline">Supporto</Button>
             </Link>

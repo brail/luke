@@ -349,6 +349,7 @@ export const authRouter = router({
           code: 'INTERNAL_SERVER_ERROR',
           message:
             error instanceof Error ? error.message : 'Errore invio email',
+          cause: error,
         });
       }
     }),

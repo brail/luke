@@ -10,7 +10,7 @@ import { AppContextDefaultsSchema, type AppContextDefaults, type Role } from '@l
 
 import { makeUrlResolver } from '../lib/storageUrl';
 
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 
 /**
  * I guard di brand scope vivono in `brandScope.service.ts` (hanno bisogno della
@@ -24,6 +24,13 @@ export {
 } from './brandScope.service';
 
 const logger = pino({ level: 'info' });
+
+/** Shape of `UserPreference.data` (Json column) — see schema.prisma doc comment on the model. */
+interface UserPreferenceData {
+  lastBrandId?: string;
+  lastSeasonId?: string;
+  menuStates?: Record<string, boolean>;
+}
 
 /**
  * Resolved brand and season for the current user session.
@@ -136,7 +143,7 @@ export async function resolveContext(
     });
   }
 
-  const prefsBrandId = (prefs?.data as any)?.lastBrandId as string | undefined;
+  const prefsBrandId = (prefs?.data as UserPreferenceData | null)?.lastBrandId;
 
   if (!seasons.length) {
     throw new TRPCError({
@@ -171,7 +178,7 @@ export async function resolveContext(
   const brand =
     pick(brands, prefsBrandId) ?? appDefBrand ?? brands[0];
   const season =
-    pick(seasons, (prefs?.data as any)?.lastSeasonId as string | undefined) ?? appDefSeason ?? seasons[0];
+    pick(seasons, (prefs?.data as UserPreferenceData | null)?.lastSeasonId) ?? appDefSeason ?? seasons[0];
 
   const resolveContext_ = brand.logoKey ? await makeUrlResolver(prisma) : null;
   return {
@@ -211,7 +218,7 @@ export async function setContext(
 
   // Merge dei dati: preserva menuStates, aggiorna brand/season
   const mergedData = {
-    ...((currentPrefs?.data as any) ?? {}),
+    ...((currentPrefs?.data as UserPreferenceData | null) ?? {}),
     lastBrandId: brand.id,
     lastSeasonId: season.id,
   };
@@ -282,7 +289,7 @@ export async function getMenuCollapsibleStates(
   }
 
   try {
-    const menuStates = (prefs.data as any)?.menuStates ?? {};
+    const menuStates = (prefs.data as UserPreferenceData)?.menuStates ?? {};
     return JSON.parse(JSON.stringify(menuStates)) as Record<string, boolean>;
   } catch (error) {
     logger.warn({ err: error }, 'Errore parsing menuCollapsibleStates');
@@ -306,7 +313,9 @@ export async function getUserPreferenceValue<T>(
     select: { data: true },
   });
 
-  const value = (prefs?.data as any)?.[key];
+  // Chiave arbitraria fornita dal chiamante — non riconducibile alle 3 note
+  // di UserPreferenceData, quindi Record<string, unknown> qui, non quel tipo.
+  const value = (prefs?.data as Record<string, unknown> | null)?.[key];
   return value === undefined ? defaultValue : (value as T);
 }
 
@@ -325,10 +334,12 @@ export async function setUserPreferenceValue<T>(
     select: { data: true },
   });
 
+  // Il valore è generico (T) ma sempre JSON-serializzabile per contratto della
+  // funzione (persiste in una colonna Json) — TS non può provarlo dallo spread.
   const mergedData = {
-    ...((currentPrefs?.data as any) ?? {}),
+    ...((currentPrefs?.data as Record<string, unknown> | null) ?? {}),
     [key]: value,
-  };
+  } as Prisma.InputJsonValue;
 
   await prisma.userPreference.upsert({
     where: { userId },
@@ -359,7 +370,7 @@ export async function setMenuCollapsibleStates(
 
   // Merge dei dati: preserva brand/season, aggiorna menuStates
   const mergedData = {
-    ...((currentPrefs?.data as any) ?? {}),
+    ...((currentPrefs?.data as UserPreferenceData | null) ?? {}),
     menuStates: menuStates,
   };
 
@@ -376,7 +387,7 @@ export async function setMenuCollapsibleStates(
   });
 
   try {
-    const saved = (updated.data as any)?.menuStates ?? {};
+    const saved = (updated.data as UserPreferenceData)?.menuStates ?? {};
     return JSON.parse(JSON.stringify(saved)) as Record<string, boolean>;
   } catch (error) {
     logger.warn({ err: error }, 'Errore parsing menuCollapsibleStates after set');

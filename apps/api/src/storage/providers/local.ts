@@ -33,6 +33,17 @@ import { isPathSafe } from '@luke/core';
 
 const logger = pino({ level: 'info' });
 
+/**
+ * `NodeJS.ReadableStream` doesn't declare `.destroy()` (it's specific to the
+ * more concrete `stream.Readable`) — narrows structurally instead of casting.
+ */
+function tryDestroyStream(stream: NodeJS.ReadableStream): void {
+  const maybeDestroyable = stream as unknown as { destroy?: unknown };
+  if (typeof maybeDestroyable.destroy === 'function') {
+    (maybeDestroyable.destroy as () => void)();
+  }
+}
+
 /** Local filesystem storage provider. Implements IStorageProvider over a configurable base directory. */
 export class LocalFsProvider implements IStorageProvider {
   readonly capabilities: IStorageCapabilities = {
@@ -204,9 +215,7 @@ export class LocalFsProvider implements IStorageProvider {
         // Verifica limite dimensione (se applicabile)
         if (maxSize !== null && bytesWritten > maxSize) {
           // Chiudi gli stream
-          if (typeof (stream as any).destroy === 'function') {
-            (stream as any).destroy();
-          }
+          tryDestroyStream(stream);
           writeStream.destroy();
           reject(new Error(`File troppo grande (max ${maxSize} bytes)`));
         }
@@ -218,9 +227,7 @@ export class LocalFsProvider implements IStorageProvider {
       });
 
       writeStream.on('error', error => {
-        if (typeof (stream as any).destroy === 'function') {
-          (stream as any).destroy();
-        }
+        tryDestroyStream(stream);
         reject(error);
       });
 

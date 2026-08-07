@@ -17,12 +17,22 @@ import type { StorageBucket } from '@luke/core';
 import { APP_STORAGE_BUCKETS, hasPermission } from '@luke/core';
 
 import { authenticateRequest as auth } from '../lib/auth';
+import { getTraceId } from '../lib/error';
 import { putObject, getObject, getStorageProvider } from '../storage';
 import { verifyDownloadToken } from '../utils/downloadToken';
 import { streamRawResponse } from '../utils/streamResponse';
 
 import type { Context } from '../lib/trpc';
 import type { FastifyInstance } from 'fastify';
+
+/** Safely extracts the string `.value` from a parsed @fastify/multipart form field. */
+function getMultipartFieldValue(field: unknown): string | undefined {
+  if (field && typeof field === 'object' && !Array.isArray(field) && 'value' in field) {
+    const value = (field as { value: unknown }).value;
+    return typeof value === 'string' ? value : undefined;
+  }
+  return undefined;
+}
 
 /**
  * Registers the storage upload/download routes on the Fastify instance.
@@ -125,9 +135,9 @@ export async function storagePlugin(
       }
 
       // Estrai metadati dal form
-      const bucket = (data.fields.bucket as any)?.value || 'uploads';
+      const bucket = getMultipartFieldValue(data.fields.bucket) || 'uploads';
       const originalName =
-        (data.fields.originalName as any)?.value || data.filename || 'unnamed';
+        getMultipartFieldValue(data.fields.originalName) || data.filename || 'unnamed';
 
       // Valida bucket
       if (!['uploads', 'exports', 'assets'].includes(bucket)) {
@@ -164,7 +174,7 @@ export async function storagePlugin(
       const ctx: Context = {
         session,
         prisma,
-        traceId: (request as any).traceId || 'unknown',
+        traceId: getTraceId(request) || 'unknown',
         req: request,
         res: reply,
         logger: request.log,
@@ -250,7 +260,7 @@ export async function storagePlugin(
       const ctx: Context = {
         session,
         prisma,
-        traceId: (request as any).traceId || 'unknown',
+        traceId: getTraceId(request) || 'unknown',
         req: request,
         res: reply,
         logger: request.log,

@@ -11,10 +11,12 @@
  */
 
 import rateLimit from '@fastify/rate-limit';
+import { TRPCError } from '@trpc/server';
 
 import { isDevelopment } from '@luke/core';
 
 import { rateLimitKeyFromRequest, requireSessionWithPermission } from '../lib/auth';
+import { getTraceId, toErrorMessage } from '../lib/error';
 import { uploadCollectionRowPicture, uploadTempCollectionRowPicture } from '../services/collectionRowPicture.service';
 
 import type { PrismaClient } from '@prisma/client';
@@ -40,7 +42,7 @@ export default async function collectionRowPictureRoutes(
     const ctx = {
       session,
       prisma: options.prisma,
-      traceId: (req as any).traceId || 'unknown',
+      traceId: getTraceId(req) || 'unknown',
       req,
       res: reply,
       logger: req.log,
@@ -68,10 +70,10 @@ export default async function collectionRowPictureRoutes(
       });
 
       return reply.code(200).send(result);
-    } catch (error: any) {
-      req.log.error({ error: error.message }, 'Temp collection row picture upload error');
+    } catch (error: unknown) {
+      req.log.error({ error: toErrorMessage(error) }, 'Temp collection row picture upload error');
 
-      if (error.code === 'BAD_REQUEST') {
+      if (error instanceof TRPCError && error.code === 'BAD_REQUEST') {
         return reply.code(400).send({ error: error.code, message: error.message });
       }
 
@@ -88,7 +90,7 @@ export default async function collectionRowPictureRoutes(
     const ctx = {
       session,
       prisma: options.prisma,
-      traceId: (req as any).traceId || 'unknown',
+      traceId: getTraceId(req) || 'unknown',
       req,
       res: reply,
       logger: req.log,
@@ -117,13 +119,13 @@ export default async function collectionRowPictureRoutes(
       });
 
       return reply.code(200).send(result);
-    } catch (error: any) {
+    } catch (error: unknown) {
       req.log.error(
-        { error: error.message, rowId: req.params.rowId },
+        { error: toErrorMessage(error), rowId: req.params.rowId },
         'Collection row picture upload error'
       );
 
-      if (error.code === 'BAD_REQUEST' || error.code === 'NOT_FOUND') {
+      if (error instanceof TRPCError && (error.code === 'BAD_REQUEST' || error.code === 'NOT_FOUND')) {
         return reply.code(error.code === 'NOT_FOUND' ? 404 : 400).send({
           error: error.code,
           message: error.message,

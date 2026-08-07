@@ -195,6 +195,7 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
               {months.map((seg, i) => (
                 <div key={i} className={cn('absolute flex items-center px-2', i % 2 === 0 ? 'bg-muted/10' : 'bg-muted/25', i > 0 && 'border-l-2 border-l-border/60')}
                   style={{ left: seg.startDay * dayW, width: seg.width, top: 0, height: MONTH_ROW_H }}>
+                  {/* 11px: below Tailwind's text-xs (12px) floor; dense gantt month label */}
                   <span className="text-[11px] font-semibold text-foreground/60 whitespace-nowrap">{seg.label}</span>
                 </div>
               ))}
@@ -209,6 +210,7 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
                       isToday && '!bg-blue-50 dark:!bg-blue-950/40')}
                       style={{ width: dayW, height: DAY_ROW_H }}>
                       <span className={cn('tabular-nums select-none leading-none',
+                        // 8px/11px: below Tailwind's text-xs (12px) floor; density scales with day-column width
                         dayW >= DAY_W_LARGE ? 'text-[11px]' : 'text-[8px]',
                         isToday ? 'text-blue-500 font-bold' : 'text-muted-foreground/60',
                         d.isMonthStart && !isToday && 'font-semibold text-foreground/50')}>
@@ -229,7 +231,7 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
             {holidayOffsets.map(({ x }, hi) => (
               <div key={hi} className="absolute inset-y-0 bg-rose-200/40 dark:bg-rose-950/20" style={{ left: x, width: dayW }} />
             ))}
-            {monthBoundaries.map((x, mi) => <div key={mi} className="absolute inset-y-0 w-[2px] bg-border/60" style={{ left: x }} />)}
+            {monthBoundaries.map((x, mi) => <div key={mi} className="absolute inset-y-0 w-0.5 bg-border/60" style={{ left: x }} />)}
             {showToday && <div className="absolute inset-y-0 bg-blue-400/10 dark:bg-blue-500/10" style={{ left: todayOffset * dayW, width: dayW }} />}
           </div>
 
@@ -253,6 +255,7 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
                   style={{ width: LABEL_W, height: ROW_H }}
                 >
                   {m.brandId && <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: barColor }} />}
+                  {/* 10px: below Tailwind's text-xs (12px) floor; dense gantt badge */}
                   {badge && <span className="text-[10px] font-semibold text-muted-foreground shrink-0">{badge}</span>}
                   <span className="truncate text-sm font-medium flex-1 min-w-0" title={m.planningGroupName ? groupTooltip(m.planningGroupName, m.title) : undefined}>{m.title}</span>
                   {onNoteClick && (
@@ -296,11 +299,13 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
                       }}
                       title={groupTooltip(m.planningGroupName, m.title, ` — ${m.visibleFunctionNames}`)}
                     >
+                      {/* leading-[22px] matches ROW_H so the title vertically centers in the gantt bar; no scale equivalent */}
                       <span className="px-1.5 leading-[22px] block select-none pointer-events-none" style={{ overflow: 'hidden', width: previewWidth }}>
                         {previewWidth > 56 && m.title}
                       </span>
                       {isDragging && label && (
                         <div className="absolute left-0 pointer-events-none z-30" style={{ bottom: 26 }}>
+                          {/* 10px: below Tailwind's text-xs (12px) floor; dense gantt tooltip */}
                           <span className="text-[10px] bg-popover text-popover-foreground border rounded px-1.5 py-0.5 shadow-md whitespace-nowrap font-medium">{label}</span>
                         </div>
                       )}

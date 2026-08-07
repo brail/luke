@@ -89,7 +89,7 @@ export const storageRouter = router({
           success: true,
           message: `Configurazione ${provider.toUpperCase()} salvata con successo`,
         };
-      } catch (error: any) {
+      } catch (error: unknown) {
         const standardError = IntegrationErrorHandler.handleConfigError(
           `storage.${input.provider}`,
           error

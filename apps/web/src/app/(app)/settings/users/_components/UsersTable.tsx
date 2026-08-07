@@ -19,6 +19,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '../../../../../components/ui/tooltip';
+import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
 import { SortableHeader } from './SortableHeader';
 import {
@@ -73,7 +74,7 @@ export function UsersTable({
         <div className="text-destructive mb-2">
           Errore nel caricamento utenti
         </div>
-        <p className="text-sm text-muted-foreground mb-4">{error.message}</p>
+        <p className="text-sm text-muted-foreground mb-4">{getTrpcErrorMessage(error)}</p>
         <Button variant="outline" onClick={() => window.location.reload()}>
           Riprova
         </Button>

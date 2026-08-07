@@ -103,13 +103,17 @@ export function ProfileTab() {
     setPhone((p.phone as string) ?? '');
     setEmail((p.email as string) ?? '');
     setWebsite((p.website as string) ?? '');
+    // `address`/`exportSettings` are Prisma Json? columns; their recursive JsonValue type combined
+    // with the deep RouterOutputs chain hits the same TS2589 (excessive instantiation) wall as
+    // collection-layout/page.tsx — only a plain expression-level `as any` on the property access
+    // avoids it (going through `unknown` still forces TS to resolve the source type first).
     const addr: Record<string, string> = (p as any).address ?? {};
     setAddrStreet(addr['street'] ?? '');
     setAddrCity(addr['city'] ?? '');
     setAddrZip(addr['zip'] ?? '');
     setAddrProvince(addr['province'] ?? '');
-    setAddrCountryCode(addr['countryCode'] ?? (p as any).countryCode ?? '');
-    const es: Record<string, string> = (p as any).exportSettings ?? {}; // tRPC infers exportSettings as unknown Json
+    setAddrCountryCode(addr['countryCode'] ?? p.countryCode ?? '');
+    const es: Record<string, string> = (p as any).exportSettings ?? {}; // same TS2589 as `addr` above
     setFooterText(es['footerText'] ?? '');
     setAccentColorHex(es['accentColorHex'] ?? '#000000');
     setLocale((es['locale'] as 'it-IT' | 'en-US') ?? 'it-IT');

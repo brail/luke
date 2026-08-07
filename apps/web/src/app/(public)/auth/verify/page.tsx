@@ -15,6 +15,7 @@ import {
   CardTitle,
 } from '../../../../components/ui/card';
 import { trpc } from '../../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 /**
  * Componente interno con useSearchParams
@@ -45,10 +46,10 @@ function VerifyEmailContent() {
     verifyEmailMutation.mutateAsync({ token }).then(result => {
       setStatus('success');
       setMessage(result.message || 'Email verificata con successo!');
-    }).catch((err: any) => {
+    }).catch((err: unknown) => {
       setStatus('error');
       setMessage(
-        err?.message ||
+        getTrpcErrorMessage(err) ||
           'Errore durante la verifica. Il token potrebbe essere scaduto o non valido.'
       );
     });

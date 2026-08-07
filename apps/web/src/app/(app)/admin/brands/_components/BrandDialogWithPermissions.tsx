@@ -8,6 +8,7 @@ import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
+import type { RouterOutputs } from '@luke/api';
 import { BrandInputSchema, type BrandInput, normalizeCode } from '@luke/core';
 import { buildTempBrandLogoUploadUrl } from '@luke/core';
 
@@ -62,10 +63,12 @@ const BrandFormSchema = BrandInputSchema.extend({
 
 type BrandFormData = z.infer<typeof BrandFormSchema>;
 
+type BrandItem = RouterOutputs['brand']['list']['items'][number];
+
 interface BrandDialogWithPermissionsProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  brand?: any;
+  brand?: BrandItem | null;
   onSubmit: (data: BrandInput) => Promise<void>;
   isLoading: boolean;
 }
@@ -339,7 +342,7 @@ export function BrandDialogWithPermissions({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
         <DialogHeader>
           <DialogTitle>{dialogTitle}</DialogTitle>
           <DialogDescription>{dialogDescription}</DialogDescription>

@@ -270,10 +270,9 @@ export function storageConfigToUrlConfig(
   config: LocalStorageConfig,
   frontendBaseUrl?: string
 ): UrlConfig {
-  // LocalStorageConfig union is wider than UrlConfig; cast needed to access shared optional fields
   return {
-    publicBaseUrl: (config as any).publicBaseUrl,
-    enableProxy: (config as any).enableProxy ?? true,
+    publicBaseUrl: config.publicBaseUrl,
+    enableProxy: config.enableProxy ?? true,
     frontendBaseUrl,
   };
 }

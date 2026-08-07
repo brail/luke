@@ -50,7 +50,7 @@ export function RowCompletionDialog({ open, mode, missingPhases, onClose, onConf
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) close(); }}>
-      <DialogContent className="sm:max-w-[440px]">
+      <DialogContent className="sm:max-w-[440px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>

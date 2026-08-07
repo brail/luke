@@ -40,7 +40,7 @@ import { ConfigKeyBadge } from './ConfigKeyBadge';
 
 
 
-interface Config {
+export interface Config {
   key: string;
   value?: string;
   valuePreview: string | null;
@@ -127,7 +127,7 @@ export function ConfigTable({
                 {getSortIcon('updatedAt')}
               </div>
             </TableHead>
-            <TableHead className="w-[50px]">Azioni</TableHead>
+            <TableHead className="w-[50px]">Azioni</TableHead> {/* 50px: fits the actions dropdown trigger; no exact scale match */}
           </TableRow>
         </TableHeader>
         <TableBody>

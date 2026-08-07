@@ -29,7 +29,7 @@ interface ConfigEditDialogProps {
   onOpenChange: () => void;
   config?: {
     key: string;
-    value: string;
+    value?: string;
     valuePreview?: string | null;
     isEncrypted: boolean;
   } | null;

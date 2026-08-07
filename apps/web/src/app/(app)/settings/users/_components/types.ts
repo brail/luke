@@ -97,7 +97,7 @@ export interface TableProps {
   users: UserListItem[];
   currentUserId: string;
   isLoading?: boolean;
-  error?: any;
+  error?: unknown;
 }
 
 /**

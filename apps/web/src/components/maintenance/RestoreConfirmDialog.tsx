@@ -281,6 +281,7 @@ export function RestoreConfirmDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
+      {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
       <DialogContent className="sm:max-w-[520px]">{body}</DialogContent>
     </Dialog>
   );

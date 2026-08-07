@@ -20,7 +20,10 @@ const MS_PER_DAY = 86_400_000;
  * either the plain PrismaClient or an interactive transaction client, so callers already inside a
  * transaction (e.g. `collectionLayout.rows.create`) can use it without nesting `$transaction` calls.
  */
-async function ensureDefaultPlanningGroup(calendarId: string, prisma: PrismaClient): Promise<string> {
+async function ensureDefaultPlanningGroup(
+  calendarId: string,
+  prisma: PrismaClient | Prisma.TransactionClient
+): Promise<string> {
   const existing = await prisma.planningGroup.findFirst({
     where: { calendarId, isDefault: true },
   });
@@ -43,7 +46,7 @@ function calendarUpsertArgs(brandId: string, seasonId: string) {
 export async function resolveDefaultPlanningGroupId(
   brandId: string,
   seasonId: string,
-  prisma: PrismaClient
+  prisma: PrismaClient | Prisma.TransactionClient
 ): Promise<string> {
   const calendar = await prisma.seasonCalendar.upsert(calendarUpsertArgs(brandId, seasonId));
   return ensureDefaultPlanningGroup(calendar.id, prisma);

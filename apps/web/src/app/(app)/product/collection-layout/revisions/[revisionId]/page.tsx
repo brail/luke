@@ -17,7 +17,7 @@ import { usePermission } from '../../../../../../hooks/usePermission';
 import { triggerDownload } from '../../../../../../lib/download';
 import { trpc } from '../../../../../../lib/trpc';
 import { CollectionLayoutTable } from '../../_components/CollectionLayoutTable';
-import { CollectionRowDrawer } from '../../_components/CollectionRowDrawer';
+import { CollectionRowDrawer, type CollectionRow } from '../../_components/CollectionRowDrawer';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -92,8 +92,7 @@ export default function RevisionDetailPage() {
   const { brand, season } = useAppContext();
   const canViewRevisions = can('collection_layout:view_revisions');
 
-   
-  const [viewRow, setViewRow] = useState<any | null>(null);
+  const [viewRow, setViewRow] = useState<CollectionRow | null>(null);
 
   // Step 1: fetch metadata + collectionLayoutId
   const { data: meta, isLoading: metaLoading } = trpc.collectionLayoutRevision.getDetail.useQuery(
@@ -186,11 +185,14 @@ export default function RevisionDetailPage() {
       </Card>
 
       {/* Full read-only table — reconstructed state across all revisions */}
+      {/* TS2589: CollectionLayoutTable's `layout`/`parameterSets` props resolve through the same
+          excessively-deep RouterOutputs-derived types as collection-layout/page.tsx (see comment
+          there) — `as any` is the only cast form that avoids the instantiation-depth error. */}
       <CollectionLayoutTable
         layout={mappedLayout as any}
         canUpdate={false}
         readOnly={true}
-        parameterSets={parameterSets as any}
+        parameterSets={parameterSets as any} /* same TS2589 as `layout` above */
         onAddGroup={() => {}}
         onAddRow={() => {}}
         onEditRow={row => setViewRow(row)}
@@ -215,7 +217,7 @@ export default function RevisionDetailPage() {
           open={!!viewRow}
           onOpenChange={open => { if (!open) setViewRow(null); }}
           mode="edit"
-          row={viewRow as any}
+          row={viewRow as any} /* same TS2589 as CollectionLayoutTable above */
           groups={mappedLayout.groups as any}
           parameterSets={parameterSets as any}
           availableGenders={['MAN', 'WOMAN']}

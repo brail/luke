@@ -42,6 +42,7 @@ export default [
       'prefer-const': 'error',
       'no-var': 'error',
       '@luke/no-bare-zod-partial': 'error',
+      '@luke/no-uncommented-any': 'error',
       'no-unused-vars': 'off', // Disabled in favor of @typescript-eslint/no-unused-vars
       '@typescript-eslint/no-unused-vars': [
         'error',
@@ -103,6 +104,23 @@ export default [
     // The one legitimate .partial() call — implements partialWithoutDefaults() itself.
     files: ['packages/core/src/utils/zod.ts'],
     rules: { '@luke/no-bare-zod-partial': 'off' },
+  },
+  {
+    // Test files: casting mocks (`mockPrisma.x.y as any`) is the standard vitest idiom here —
+    // out of scope for the production-code `any` triage this rule backstops.
+    files: [
+      '**/__tests__/**/*.{ts,tsx}',
+      '**/*.test.{ts,tsx}',
+      '**/*.spec.{ts,tsx}',
+      'apps/api/test/**/*.{ts,tsx}',
+    ],
+    rules: { '@luke/no-uncommented-any': 'off' },
+  },
+  {
+    // Tailwind arbitrary-value backstop — only apps/web has Tailwind classes.
+    // components/ui/** (shadcn CLI-generated) is excluded inside the rule itself.
+    files: ['apps/web/src/**/*.{ts,tsx}'],
+    rules: { '@luke/no-uncommented-tailwind-arbitrary': 'error' },
   },
   {
     ignores: [

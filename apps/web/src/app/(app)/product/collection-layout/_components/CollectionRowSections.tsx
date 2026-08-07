@@ -1041,7 +1041,7 @@ export function PricingFooterSection({
                             )}
                             <NumberInput
                               inputSize="sm"
-                              className={cn('w-[88px]', sellSym && 'pl-5')}
+                              className={cn('w-[88px]', sellSym && 'pl-5')} // 88px: price input width tuned for currency values; no exact scale match
                               placeholder="0.00"
                               step={0.01}
                               min={0}
@@ -1063,7 +1063,7 @@ export function PricingFooterSection({
                             )}
                             <NumberInput
                               inputSize="sm"
-                              className={cn('w-[88px]', buySym && 'pl-5')}
+                              className={cn('w-[88px]', buySym && 'pl-5')} // 88px: price input width tuned for currency values; no exact scale match
                               placeholder="0.00"
                               step={0.01}
                               min={0}

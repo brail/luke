@@ -15,5 +15,5 @@ import type { Context } from './context';
  * Import this — not from `trpc.ts` — when creating standalone middleware.
  */
 export const t = initTRPC.context<Context>().create({
-  errorFormatter: trpcErrorFormatter as any,
+  errorFormatter: trpcErrorFormatter,
 });

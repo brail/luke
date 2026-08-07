@@ -17,6 +17,7 @@ import {
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
 import { trpc } from '../../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 /**
  * Componente interno con useSearchParams
@@ -58,9 +59,9 @@ function ResetPasswordContent() {
           "Se l'email esiste, riceverai un link per reimpostare la password."
       );
       setEmail(''); // Clear form
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(
-        err?.message ||
+        getTrpcErrorMessage(err) ||
           'Errore durante la richiesta di reset. Riprova più tardi.'
       );
     } finally {
@@ -105,9 +106,9 @@ function ResetPasswordContent() {
       setTimeout(() => {
         router.push('/login');
       }, 2000);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(
-        err?.message ||
+        getTrpcErrorMessage(err) ||
           'Errore durante il reset della password. Il token potrebbe essere scaduto.'
       );
     } finally {

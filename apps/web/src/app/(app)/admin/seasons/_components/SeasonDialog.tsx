@@ -33,7 +33,7 @@ const SeasonFormSchema = SeasonInputSchema.extend({
   navSeasonId: z.string().nullable().optional(),
 });
 
-type SeasonFormData = z.infer<typeof SeasonFormSchema>;
+export type SeasonFormData = z.infer<typeof SeasonFormSchema>;
 
 export interface SeasonItem {
   id: string;

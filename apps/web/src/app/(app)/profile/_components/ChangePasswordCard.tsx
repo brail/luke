@@ -237,6 +237,7 @@ export function ChangePasswordCard({
           <Button
             type="submit"
             disabled={isSubmitting}
+            // 140px: keeps button width stable while its label changes during submit; no exact scale match
             className="min-w-[140px]"
           >
             {isSubmitting ? (

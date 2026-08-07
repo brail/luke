@@ -9,6 +9,7 @@ import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
 import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 const EXPORT_TYPES = [
   { value: 'users', label: 'Utenti' },
@@ -34,22 +35,22 @@ export default function MaintenanceImportExportPage() {
 
   const importMutation = trpc.integrations.importExport.startImport.useMutation(
     {
-      onSuccess: (data: any) => {
+      onSuccess: data => {
         setImportResult(data);
       },
-      onError: (error: any) => {
-        setImportResult({ success: false, message: error.message });
+      onError: error => {
+        setImportResult({ success: false, message: getTrpcErrorMessage(error) });
       },
     }
   );
 
   const exportMutation = trpc.integrations.importExport.startExport.useMutation(
     {
-      onSuccess: (data: any) => {
+      onSuccess: data => {
         setExportResult(data);
       },
-      onError: (error: any) => {
-        setExportResult({ success: false, message: error.message });
+      onError: error => {
+        setExportResult({ success: false, message: getTrpcErrorMessage(error) });
       },
     }
   );
@@ -135,10 +136,10 @@ export default function MaintenanceImportExportPage() {
           <select
             id="export-type"
             value={exportType}
-            onChange={(e: any) => setExportType(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setExportType(e.target.value)}
             className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            {EXPORT_TYPES.map((type: any) => (
+            {EXPORT_TYPES.map(type => (
               <option key={type.value} value={type.value}>
                 {type.label}
               </option>

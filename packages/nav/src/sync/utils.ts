@@ -90,9 +90,7 @@ export function buildWhereClause(predicates: string[]): string {
  */
 export function createSyncRequest(pool: mssql.ConnectionPool, timeoutMs = 60_000): mssql.Request {
   const request = pool.request();
-  // mssql type definitions don't expose `timeout` but it's a valid runtime property
-
-  (request as any).timeout = timeoutMs;
+  (request as any).timeout = timeoutMs; // mssql type definitions don't expose `timeout`, but it's a valid runtime property
   return request;
 }
 

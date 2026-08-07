@@ -289,7 +289,7 @@ export async function buildCollectionLayoutXlsx(
       if (imageBuf) {
         const ext = detectExtension(row.pictureKey!);
          
-        const imageId = wb.addImage({ buffer: imageBuf as any, extension: ext });
+        const imageId = wb.addImage({ buffer: imageBuf as unknown as NonNullable<ExcelJS.Image['buffer']>, extension: ext }); // exceljs bundles its own stale non-generic Buffer type, structurally incompatible with @types/node's current Buffer<ArrayBufferLike>
         const dims = getImageDimensions(imageBuf, row.pictureKey!);
         const fit = dims
           ? fitInBox(dims.width, dims.height, FOTO_COL_WIDTH_PX, FOTO_ROW_HEIGHT_PX, 4)

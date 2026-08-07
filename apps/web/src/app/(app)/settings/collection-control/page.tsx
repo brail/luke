@@ -56,13 +56,15 @@ const EMPHASIS_OPTIONS: { value: AlertBandEmphasis; label: string }[] = [
 
 /** Larghezze delle colonne condivise dalle due tabelle (bande a range ed esiti), così le due
  * sezioni della pagina si leggono come un'unica griglia invece che come due form scollegati. */
+// Column widths are hand-tuned to align two separate tables (Bande/Fasi) into one visual grid —
+// none map to the Tailwind spacing scale by design; `preview` happens to coincide with `w-40`.
 const COL = {
-  days: 'w-[104px]',
-  label: 'min-w-[180px]',
-  color: 'w-[164px]',
-  emphasis: 'w-[148px]',
-  preview: 'w-[160px]',
-  actions: 'w-[116px]',
+  days: 'w-[104px]', // see grid comment above
+  label: 'min-w-[180px]', // see grid comment above
+  color: 'w-[164px]', // see grid comment above
+  emphasis: 'w-[148px]', // see grid comment above
+  preview: 'w-40',
+  actions: 'w-[116px]', // see grid comment above
 };
 
 /** Swatch + hex della stessa banda: due input sullo stesso valore, sempre affiancati. */
@@ -184,6 +186,15 @@ function BandSetEditor({
   onChange: (bands: AlertBand[]) => void;
   disabled: boolean;
 }) {
+  // Il prop `bands` cambia solo per eco dei nostri stessi `onChange` — ogni
+  // istanza è dedicata alle bande di default o a una singola fase (key-ata
+  // a monte con `key={phaseValue}`), mai scambiata con un set diverso a
+  // runtime — quindi un id generato una sola volta all'avvio non va mai
+  // risincronizzato dall'esterno. Serve solo per la key React: con `index`,
+  // `moveBand`/`removeBand` fanno saltare focus e stato locale (es. select
+  // aperta) sulla riga sbagliata dopo un riordino o una rimozione.
+  const [ids, setIds] = useState(() => bands.map(() => crypto.randomUUID()));
+
   const updateBand = (index: number, patch: Partial<AlertBand>) => {
     onChange(bands.map((b, i) => (i === index ? { ...b, ...patch } : b)));
   };
@@ -194,10 +205,20 @@ function BandSetEditor({
     const next = [...bands];
     [next[index], next[target]] = [next[target], next[index]];
     onChange(next);
+
+    const nextIds = [...ids];
+    [nextIds[index], nextIds[target]] = [nextIds[target], nextIds[index]];
+    setIds(nextIds);
   };
 
   const removeBand = (index: number) => {
     onChange(bands.filter((_, i) => i !== index));
+    setIds(ids.filter((_, i) => i !== index));
+  };
+
+  const addBand = () => {
+    onChange([...bands, { ...EMPTY_BAND }]);
+    setIds([...ids, crypto.randomUUID()]);
   };
 
   return (
@@ -221,7 +242,7 @@ function BandSetEditor({
           </TableHeader>
           <TableBody>
             {bands.map((band, index) => (
-              <TableRow key={index} className="hover:bg-transparent">
+              <TableRow key={ids[index] ?? index} className="hover:bg-transparent">
                 <TableCell className="py-2">
                   <Input
                     type="number"
@@ -303,7 +324,7 @@ function BandSetEditor({
         variant="outline"
         size="sm"
         disabled={disabled}
-        onClick={() => onChange([...bands, { ...EMPTY_BAND }])}
+        onClick={addBand}
       >
         <Plus size={14} className="mr-1" />
         Aggiungi banda
@@ -346,6 +367,7 @@ function OutcomeBandsTable({
 
   return (
     <div className="rounded-md border border-border">
+      {/* min-width forces horizontal scroll on narrow viewports instead of squeezing inputs unusably */}
       <Table className="min-w-[760px]">
         <TableHeader>
           <TableRow className="hover:bg-transparent">

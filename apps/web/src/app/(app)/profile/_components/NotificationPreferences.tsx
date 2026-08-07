@@ -136,7 +136,7 @@ export function NotificationPreferences() {
                   checked={pref.enabled}
                   disabled={updateMutation.isPending}
                   onCheckedChange={enabled => {
-                    updateMutation.mutate({ category: pref.category as any, enabled });
+                    updateMutation.mutate({ category: pref.category, enabled });
                   }}
                 />
               </div>

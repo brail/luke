@@ -16,6 +16,7 @@ import {
   TableRow,
 } from '../../../../../components/ui/table';
 import { usePermission } from '../../../../../hooks/usePermission';
+import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
 export interface Brand {
   id: string;
@@ -32,7 +33,7 @@ export interface Brand {
 interface BrandTableWithPermissionsProps {
   brands: Brand[];
   isLoading: boolean;
-  error?: any;
+  error?: unknown;
   onEdit: (brand: Brand) => void;
   onDelete: (brand: Brand) => void;
   onRestore: (brand: Brand) => void;
@@ -73,7 +74,7 @@ export function BrandTableWithPermissions({
     return (
       <div className="text-center py-8">
         <p className="text-destructive mb-4">
-          Errore caricamento brand: {error.message}
+          Errore caricamento brand: {getTrpcErrorMessage(error)}
         </p>
         {onRetry && (
           <Button onClick={onRetry} variant="outline">

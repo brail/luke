@@ -40,6 +40,7 @@ export default function GlobalError({
               actionSlot={
                 <div className="flex gap-3">
                   <RetryButton onRetry={reset} autoFocus />
+                  {/* `as any`: `/support` isn't an implemented route yet — placeholder link, not a typedRoutes lag */}
                   <Link href={'/support' as any} aria-label="Apri supporto">
                     <Button variant="outline">Report issue</Button>
                   </Link>

@@ -203,14 +203,14 @@ export function buildPdfFooter(
   if (company?.footerText) infoLines.push(company.footerText);
   if (extraLine)           infoLines.push(extraLine);
 
-  // pdfmake column objects support a `width` key that the Content type doesn't declare — cast needed
-
-   
-  const columns: any[] = [];
+  // pdfmake accetta `width` su ogni voce dentro un blocco `columns: [...]` a
+  // runtime, ma i singoli membri dell'union `Content` non lo dichiarano
+  // (proprietà valida solo a livello del contenitore colonna) — cast mirato
+  // sulle tre voci che lo usano, non sull'intero array.
+  const columns: Content[] = [];
 
   if (company?.logoDataUri) {
-     
-    columns.push({ image: company.logoDataUri, fit: [48, 48], width: 'auto', margin: [0, 2, 8, 0] } as any);
+    columns.push({ image: company.logoDataUri, fit: [48, 48], width: 'auto', margin: [0, 2, 8, 0] } as unknown as Content);
   }
 
   columns.push({
@@ -225,7 +225,7 @@ export function buildPdfFooter(
     alignment: 'right',
     width: 40,
     margin: [0, 2, 0, 0],
-  });
+  } as unknown as Content);
 
   return {
     margin: [20, 6, 20, 0] as [number, number, number, number],

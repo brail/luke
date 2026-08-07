@@ -33,6 +33,7 @@ import {
 } from '../../../../components/ui/tabs';
 import { useToast } from '../../../../hooks/use-toast';
 import { trpc } from '../../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -98,7 +99,7 @@ function PortafoglioSyncTab() {
       toast.success('Pianificazione salvata');
       void filterQuery.refetch();
     },
-    onError: (err: any) => toast.error('Errore salvataggio pianificazione', { description: err.message }),
+    onError: err => toast.error('Errore salvataggio pianificazione', { description: getTrpcErrorMessage(err) }),
   });
 
   const syncMutation = trpc.sales.statistics.portafoglio.triggerSync.useMutation({
@@ -108,7 +109,7 @@ function PortafoglioSyncTab() {
       const totalRows = result.stats.reduce((s, x) => s + x.rowsUpserted, 0);
       toast.success(`Sync completato — ${totalRows.toLocaleString('it-IT')} righe in ${secs} s`);
     },
-    onError: (err: any) => toast.error('Errore sync portafoglio', { description: err.message }),
+    onError: err => toast.error('Errore sync portafoglio', { description: getTrpcErrorMessage(err) }),
   });
 
   const isSyncing = syncMutation.isPending || (syncState?.isRunning ?? false);
@@ -263,7 +264,7 @@ function KimoSyncTab() {
       toast.success('Pianificazione salvata');
       void filterQuery.refetch();
     },
-    onError: (err: any) => toast.error('Errore salvataggio pianificazione', { description: err.message }),
+    onError: err => toast.error('Errore salvataggio pianificazione', { description: getTrpcErrorMessage(err) }),
   });
 
   const syncMutation = trpc.sales.statistics.kimo.triggerSync.useMutation({
@@ -273,7 +274,7 @@ function KimoSyncTab() {
       const totalRows = result.stats.reduce((s, x) => s + x.rowsUpserted, 0);
       toast.success(`Sync completato — ${totalRows.toLocaleString('it-IT')} righe in ${secs} s`);
     },
-    onError: (err: any) => toast.error('Errore sync KIMO', { description: err.message }),
+    onError: err => toast.error('Errore sync KIMO', { description: getTrpcErrorMessage(err) }),
   });
 
   const isSyncing = syncMutation.isPending || (syncState?.isRunning ?? false);
@@ -457,7 +458,7 @@ function NavSyncTab({
       toast.success('Filtro salvato');
       void filterQuery.refetch();
     },
-    onError: (err: any) => toast.error('Errore salvataggio filtro', { description: err.message }),
+    onError: err => toast.error('Errore salvataggio filtro', { description: getTrpcErrorMessage(err) }),
   });
 
   const saveSyncScheduleMutation = trpc.integrations.nav.sync.saveSyncSchedule.useMutation({
@@ -465,11 +466,11 @@ function NavSyncTab({
       toast.success('Pianificazione salvata');
       void filterQuery.refetch();
     },
-    onError: (err: any) => toast.error('Errore salvataggio pianificazione', { description: err.message }),
+    onError: err => toast.error('Errore salvataggio pianificazione', { description: getTrpcErrorMessage(err) }),
   });
 
   const runSyncMutation = trpc.integrations.nav.sync.run.useMutation({
-    onError: (err: any) => toast.error('Sync fallito', { description: err.message }),
+    onError: err => toast.error('Sync fallito', { description: getTrpcErrorMessage(err) }),
   });
 
   // ── Local state ────────────────────────────────────────────────────────────

@@ -129,7 +129,7 @@ export function VendorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[680px] max-h-[90vh] flex flex-col">
+      <DialogContent className="sm:max-w-[680px] max-h-[90vh] flex flex-col"> {/* px/vh: dialog width tuned to content, vh cap has no Tailwind scale equivalent */}
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {!canEdit && (

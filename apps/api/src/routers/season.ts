@@ -138,7 +138,7 @@ export const seasonRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Stagione non trovata' });
       }
 
-      const updateData: any = { ...input.data }; // Allows conditional code normalization before update
+      const updateData = { ...input.data };
       if (input.data.code) {
         updateData.code = normalizeCode(input.data.code);
       }

@@ -4,6 +4,7 @@
  * Errors are surfaced as TRPCError with codes NOT_FOUND, CONFLICT, or BAD_REQUEST.
  */
 
+import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 
 import type {
@@ -48,7 +49,7 @@ export type RowWithVendor = CollectionLayoutRow & {
 async function assertPlanningGroupInLayoutScope(
   layoutId: string,
   planningGroupId: string,
-  prisma: PrismaClient
+  prisma: PrismaClient | Prisma.TransactionClient
 ): Promise<void> {
   const [layout, planningGroup] = await Promise.all([
     prisma.collectionLayout.findUniqueOrThrow({
@@ -203,7 +204,7 @@ export async function copyFromSeason(
       data: {
         brandId: toBrandId,
         seasonId: toSeasonId,
-        availableGenders: (source as any).availableGenders,
+        availableGenders: source.availableGenders,
       },
     });
 
@@ -374,7 +375,7 @@ export async function deleteGroup(
  */
 export async function createRow(
   input: CollectionLayoutRowInput,
-  prisma: PrismaClient,
+  prisma: PrismaClient | Prisma.TransactionClient,
   userId: string
 ): Promise<RowWithVendor> {
   const group = await prisma.collectionGroup.findUnique({
@@ -391,7 +392,7 @@ export async function createRow(
   await assertUnlocked('COLLECTION_LAYOUT', group.collectionLayoutId, userId, prisma);
 
   // Validate gender against layout availableGenders
-  const availableGenders = (group.collectionLayout as any).availableGenders as string[];
+  const availableGenders = group.collectionLayout.availableGenders;
   if (availableGenders.length > 0 && !availableGenders.includes(input.gender)) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
@@ -471,7 +472,7 @@ export async function updateRow(
   rowId: string,
   input: Partial<CollectionLayoutRowInput>,
   existingRow: Pick<CollectionLayoutRow, 'collectionLayoutId' | 'groupId' | 'phaseId' | 'planningGroupId' | 'completedAt'>,
-  prisma: PrismaClient,
+  prisma: PrismaClient | Prisma.TransactionClient,
   userId: string
 ): Promise<RowWithVendor> {
   await assertUnlocked('COLLECTION_LAYOUT', existingRow.collectionLayoutId, userId, prisma);
@@ -487,7 +488,7 @@ export async function updateRow(
       where: { id: existingRow.collectionLayoutId },
       select: { availableGenders: true },
     });
-    const availableGenders = (layout as any)?.availableGenders as string[] | undefined;
+    const availableGenders = layout?.availableGenders;
     if (availableGenders && availableGenders.length > 0 && !availableGenders.includes(input.gender)) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
@@ -522,7 +523,10 @@ export async function updateRow(
 
   const updated = await prisma.collectionLayoutRow.update({
     where: { id: rowId },
-    data: input as any,
+    // Unchecked: il dominio tratta le FK (groupId, vendorId, ecc.) come scalari
+    // diretti, non come relation-connect — Prisma richiede il tipo esplicito per
+    // scegliere quel ramo dell'union invece dell'altro.
+    data: input as Prisma.CollectionLayoutRowUncheckedUpdateInput,
     include: ROW_VENDOR_INCLUDE,
   }) as RowWithVendor;
 
@@ -666,7 +670,7 @@ export async function duplicateRow(
       data: { order: { increment: 1 } },
     });
 
-    const { id: _id, createdAt: _ca, updatedAt: _ua, pictureKey: _pic, quotations, ...rowData } = row as any;
+    const { id: _id, createdAt: _ca, updatedAt: _ua, pictureKey: _pic, quotations, ...rowData } = row;
 
     const newRow = await tx.collectionLayoutRow.create({
       data: {
@@ -717,7 +721,8 @@ export async function updateLayoutSettings(
     data: {
       ...('skuBudget' in input && { skuBudget: input.skuBudget }),
       ...('hiddenColumns' in input && {
-        hiddenColumns: input.hiddenColumns as any,
+        // Colonna Json?: Prisma richiede Prisma.JsonNull esplicito, non `null` diretto
+        hiddenColumns: input.hiddenColumns === null ? Prisma.JsonNull : input.hiddenColumns,
       }),
       ...(input.availableGenders && { availableGenders: input.availableGenders }),
     },

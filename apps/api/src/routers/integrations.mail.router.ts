@@ -166,7 +166,7 @@ export const mailRouter = router({
           message: 'Email di test inviata con successo',
           sentTo: recipient,
         };
-      } catch (error: any) {
+      } catch (error: unknown) {
         const standardError = IntegrationErrorHandler.handleSMTPError(error);
         throw toTRPCError(standardError);
       }

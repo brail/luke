@@ -6,6 +6,8 @@ import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
+import { APP_STORAGE_BUCKETS } from '@luke/core';
+
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
 import { Badge } from '../../../../components/ui/badge';
@@ -36,17 +38,23 @@ const onNumberChange = (onChange: (v: number) => void) =>
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const ALL_BUCKETS = [
-  { value: 'uploads',                              description: 'File caricati dagli utenti' },
-  { value: 'exports',                              description: 'File esportati dal sistema' },
-  { value: 'assets',                               description: 'Asset statici e risorse' },
-  { value: 'brand-logos',                          description: 'Logo brand' },
-  { value: 'collection-row-pictures',              description: 'Foto righe collection layout' },
-  { value: 'collection-row-pictures-revisions',    description: 'Foto righe CL — bucket immutabile per registro qualità' },
-  { value: 'merchandising-specsheet-images',       description: 'Immagini specsheet merchandising' },
-] as const;
+const BUCKET_DESCRIPTIONS: Record<(typeof APP_STORAGE_BUCKETS)[number], string> = {
+  uploads: 'File caricati dagli utenti',
+  exports: 'File esportati dal sistema',
+  assets: 'Asset statici e risorse',
+  'brand-logos': 'Logo brand',
+  'collection-row-pictures': 'Foto righe collection layout',
+  'collection-row-pictures-revisions': 'Foto righe CL — bucket immutabile per registro qualità',
+  'merchandising-specsheet-images': 'Immagini specsheet merchandising',
+  'company-assets': 'Logo e asset del profilo aziendale',
+};
 
-type BucketValue = typeof ALL_BUCKETS[number]['value'];
+const ALL_BUCKETS = APP_STORAGE_BUCKETS.map(value => ({
+  value,
+  description: BUCKET_DESCRIPTIONS[value],
+}));
+
+type BucketValue = (typeof APP_STORAGE_BUCKETS)[number];
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -60,7 +68,7 @@ const localSchema = z.object({
       'Path deve iniziare con / oppure ~/'
     ),
   maxFileSizeMB: z.number().int().min(1).max(1000),
-  buckets: z.array(z.string()).min(1, 'Almeno un bucket richiesto'),
+  buckets: z.array(z.enum(APP_STORAGE_BUCKETS)).min(1, 'Almeno un bucket richiesto'),
   enableProxy: z.boolean(),
 });
 
@@ -164,7 +172,7 @@ export default function StoragePage() {
       />
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(data => saveConfig(data as any))} className="space-y-6">
+        <form onSubmit={form.handleSubmit(data => saveConfig(data))} className="space-y-6">
 
           {/* ── Provider selector ─────────────────────────────────────────── */}
           <SectionCard title="Provider Storage" description="Seleziona il backend di storage da utilizzare">

@@ -18,7 +18,7 @@ import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 import { SeasonDialog } from './_components/SeasonDialog';
 import { SeasonTable } from './_components/SeasonTable';
 
-import type { SeasonItem } from './_components/SeasonDialog';
+import type { SeasonFormData, SeasonItem } from './_components/SeasonDialog';
 
 export default function SeasonsPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -42,7 +42,7 @@ export default function SeasonsPage() {
 
   const seasons = seasonsData.items as SeasonItem[];
 
-  const getErrorMessage = (error: any) =>
+  const getErrorMessage = (error: unknown) =>
     getTrpcErrorMessage(error, {
       CONFLICT: 'Stagione con questo codice già esistente',
       NOT_FOUND: 'Stagione non trovata',
@@ -124,7 +124,7 @@ export default function SeasonsPage() {
     setDeletingSeason(season);
   };
 
-  const handleFormSubmit = async (data: any) => {
+  const handleFormSubmit = async (data: SeasonFormData) => {
     if (editingSeason) {
       await updateMutation.mutateAsync({ id: editingSeason.id, data });
     } else {

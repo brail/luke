@@ -73,6 +73,8 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
     onBulkDelete?.(ids);
   };
 
+  // Fixed-width columns (checkbox, badge, dates, title, function, cancelled, note) sized to their
+  // content; custom track sizes aren't expressible via grid-cols-N.
   const colClass = canUpdate
     ? 'grid-cols-[32px_32px_120px_1fr_120px_120px_28px]'
     : 'grid-cols-[32px_120px_1fr_120px_120px_28px]';
@@ -131,10 +133,12 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
                       <Checkbox checked={isSelected} onCheckedChange={() => toggleOne(m.id)} aria-label={`Seleziona ${m.title}`} />
                     </span>
                   )}
+                  {/* 10px: below Tailwind's text-xs (12px) floor; dense timeline week label */}
                   <span className="text-[10px] text-muted-foreground/60 tabular-nums font-mono text-center">W{getIsoWeek(d)}</span>
                   <span className="text-muted-foreground tabular-nums">{d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })}</span>
                   <span className="flex items-center gap-2 min-w-0">
                     {m.brandId && <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: resolveBrandColor(m.brandId, brandColorMap) }} />}
+                    {/* 10px: below Tailwind's text-xs (12px) floor; dense timeline badge */}
                     {badge && (
                       <span className="text-[10px] font-semibold text-muted-foreground shrink-0">{badge}</span>
                     )}

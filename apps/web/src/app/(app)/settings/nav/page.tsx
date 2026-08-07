@@ -27,6 +27,7 @@ import { Switch } from '../../../../components/ui/switch';
 import { useToast } from '../../../../hooks/use-toast';
 import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 export default function NavSettingsPage() {
   const toast = useToast();
@@ -58,7 +59,7 @@ export default function NavSettingsPage() {
   useEffect(() => {
     if (existingConfigs) {
       const configs = existingConfigs.items;
-      const find = (key: string) => configs.find((c: any) => c.key === key);
+      const find = (key: string) => configs.find(c => c.key === key);
 
       const host = find('integrations.nav.host');
       const port = find('integrations.nav.port');
@@ -85,7 +86,7 @@ export default function NavSettingsPage() {
   }, [existingConfigs, form]);
 
   const saveConfigMutation = trpc.integrations.nav.saveConfig.useMutation({
-    onSuccess: (data: any) => {
+    onSuccess: data => {
       setHasPassword(true);
       setTestStatus('idle');
       setTestMessage('');
@@ -98,21 +99,22 @@ export default function NavSettingsPage() {
         toast.success('Configurazione NAV salvata con successo');
       }
     },
-    onError: (error: any) => {
-      toast.error('Errore durante il salvataggio', { description: error.message });
+    onError: error => {
+      toast.error('Errore durante il salvataggio', { description: getTrpcErrorMessage(error) });
     },
   });
 
   const testConnectionMutation = trpc.integrations.nav.testConnection.useMutation({
-    onSuccess: (data: any) => {
+    onSuccess: data => {
       setTestStatus('success');
       setTestMessage(data.message);
       toast.success('Connessione riuscita');
     },
-    onError: (error: any) => {
+    onError: error => {
       setTestStatus('error');
-      setTestMessage(error.message);
-      toast.error('Test fallito', { description: error.message });
+      const message = getTrpcErrorMessage(error);
+      setTestMessage(message);
+      toast.error('Test fallito', { description: message });
     },
   });
 

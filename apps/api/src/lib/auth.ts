@@ -152,7 +152,7 @@ export async function authenticateRequest(
   const session = createUserSession(token);
   if (!session) {
     // Token non valido, rimuovi il cookie se presente
-    (reply as any).clearCookie('luke_session');
+    reply.clearCookie('luke_session');
     return null;
   }
 

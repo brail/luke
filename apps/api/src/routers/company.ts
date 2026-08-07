@@ -644,7 +644,7 @@ const companyTeamRouter = router({
     }),
 
   listAllBrands: protectedProcedure
-    .use(requirePermission('company_team:update'))
+    .use(requirePermission('brands:read'))
     .query(async ({ ctx }) => {
       return ctx.prisma.brand.findMany({
         where: { isActive: true },

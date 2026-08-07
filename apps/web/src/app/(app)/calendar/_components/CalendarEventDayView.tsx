@@ -195,6 +195,7 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
               className="absolute flex border-t border-border/20"
               style={{ top: (h - GRID_START) * ROW_H, left: 0, right: 0, height: ROW_H }}
             >
+              {/* 11px: below Tailwind's text-xs (12px) floor; dense hour-grid label */}
               <div className="shrink-0 flex items-start justify-end pt-1 pr-2 text-[11px] text-muted-foreground/50 tabular-nums select-none" style={{ width: LABEL_W }}>
                 {String(h).padStart(2, '0')}:00
               </div>
@@ -213,6 +214,7 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
 
           {showNow && (
             <div className="absolute pointer-events-none z-20 flex items-center" style={{ top: nowTop, left: 0, right: 0 }}>
+              {/* 11px: below Tailwind's text-xs (12px) floor; dense now-line label */}
               <div className="text-[11px] text-blue-500 tabular-nums font-medium select-none" style={{ width: LABEL_W, textAlign: 'right', paddingRight: 8 }}>
                 {String(Math.floor(nowMinutes / 60)).padStart(2, '0')}:{String(nowMinutes % 60).padStart(2, '0')}
               </div>
@@ -260,6 +262,7 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
                     {badge && <span className="opacity-80 mr-1 shrink-0">{badge}</span>}
                     <span className="truncate min-w-0">{m.title}</span>
                   </span>
+                  {/* 11px: below Tailwind's text-xs (12px) floor; dense event chip */}
                   {height >= ROW_H * 0.8 && (
                     <span className="text-[11px] text-muted-foreground tabular-nums">
                       {timeLabel(previewStart)}{m.endAt ? ` – ${timeLabel(previewEnd)}` : ''}

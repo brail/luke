@@ -45,7 +45,7 @@ export function ChangePhaseDialog({ open, onClose, onChanged, currentPhaseId }: 
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) { onClose(); setPhaseId(currentPhaseId ?? NO_PHASE_VALUE); setNote(''); } }}>
-      <DialogContent className="sm:max-w-[440px]">
+      <DialogContent className="sm:max-w-[440px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
         <DialogHeader>
           <DialogTitle>Cambia fase</DialogTitle>
         </DialogHeader>

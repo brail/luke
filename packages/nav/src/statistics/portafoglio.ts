@@ -10,6 +10,7 @@
 import pino from 'pino';
 
 import { sanitizeCompany } from '../config.js';
+import { createSyncRequest } from '../sync/utils.js';
 
 import type * as mssql from 'mssql';
 
@@ -802,7 +803,9 @@ export async function queryPortafoglioOrdini(
     'NAV portafoglio query start',
   );
 
-  const request = pool.request();
+  // Multi-join più pesante del pacchetto — merita lo stesso timeout dei
+  // moduli di sync, non il default del driver.
+  const request = createSyncRequest(pool);
 
   // Parameters — brand and season are always required (from context)
   request.input('SeasonCode', params.seasonCode);

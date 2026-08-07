@@ -30,7 +30,7 @@ export function useHolidays(countryCodes: string[]): HolidayMap {
   return useMemo(() => {
     const map = new Map<string, HolidayEntry[]>();
     for (const h of data) {
-      const entry: HolidayEntry = { countryCode: h.countryCode, name: h.name, nameEn: (h as any).nameEn ?? null };
+      const entry: HolidayEntry = { countryCode: h.countryCode, name: h.name, nameEn: h.nameEn ?? null };
       for (const iso of expandDateRangeToIsoDates(new Date(h.startDate), new Date(h.endDate))) {
         const existing = map.get(iso);
         if (existing) existing.push(entry);

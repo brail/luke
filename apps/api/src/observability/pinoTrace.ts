@@ -14,7 +14,7 @@ import { randomUUID } from 'crypto';
 import { trace } from '@opentelemetry/api';
 import serializers from 'pino-std-serializers';
 
-import type { FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyRequest, FastifyReply, FastifyBaseLogger } from 'fastify';
 
 /** Patterns used to identify sensitive field names that should be redacted in logs. */
 const sensitivePatterns = [
@@ -35,7 +35,7 @@ const sensitivePatterns = [
  * Recursively redacts values whose key matches any sensitive pattern.
  * Arrays are traversed element by element; nested objects are walked recursively.
  */
-function redactSensitiveFields(obj: any): any {
+function redactSensitiveFields(obj: unknown): unknown {
   if (obj === null || obj === undefined) return obj;
 
   if (Array.isArray(obj)) {
@@ -43,7 +43,7 @@ function redactSensitiveFields(obj: any): any {
   }
 
   if (typeof obj === 'object') {
-    const redacted = { ...obj };
+    const redacted: Record<string, unknown> = { ...(obj as Record<string, unknown>) };
 
     for (const key of Object.keys(redacted)) {
       // Controlla se la chiave contiene pattern sensibili
@@ -75,12 +75,12 @@ export const pinoSerializers = {
   err: serializers.err,
 
   // Custom: redact sensitive fields con pattern wildcard
-  config: (value: any) => redactSensitiveFields(value),
+  config: (value: unknown) => redactSensitiveFields(value),
 
   // Redact PII in user objects
-  user: (value: any) => {
+  user: (value: unknown) => {
     if (typeof value === 'object' && value !== null) {
-      const redacted = { ...value };
+      const redacted: Record<string, unknown> = { ...(value as Record<string, unknown>) };
       // Mantieni solo ID e ruolo, redigi email/username
       if (redacted.email) redacted.email = '[REDACTED]';
       if (redacted.username) redacted.username = '[REDACTED]';
@@ -92,7 +92,7 @@ export const pinoSerializers = {
   },
 
   // Redaction generica per qualsiasi oggetto
-  sensitive: (value: any) => redactSensitiveFields(value),
+  sensitive: (value: unknown) => redactSensitiveFields(value),
 };
 
 /**
@@ -133,8 +133,8 @@ export function pinoTraceMiddleware(
  * is not directly available.
  */
 export function createTraceLogger(
-  baseLogger: any,
-  additionalFields: Record<string, any> = {}
+  baseLogger: FastifyBaseLogger,
+  additionalFields: Record<string, unknown> = {}
 ) {
   const span = trace.getActiveSpan();
   const spanContext = span?.spanContext();

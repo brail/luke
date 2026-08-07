@@ -76,7 +76,7 @@ export async function createQuotation(
   }
 
   if (input.pricingParameterSetId) {
-    const layout = (row as any).collectionLayout as { brandId: string; seasonId: string };
+    const layout = row.collectionLayout;
     await assertParamSetsInScope([input.pricingParameterSetId], layout, prisma);
   }
 
@@ -119,7 +119,7 @@ export async function updateQuotation(
   }
 
   if (input.pricingParameterSetId) {
-    const layout = (quotation.row as any).collectionLayout as { brandId: string; seasonId: string };
+    const layout = quotation.row.collectionLayout;
     await assertParamSetsInScope([input.pricingParameterSetId], layout, prisma);
   }
 

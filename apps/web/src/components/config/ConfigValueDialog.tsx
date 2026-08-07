@@ -48,7 +48,7 @@ export function ConfigValueDialog({
 
   return (
     <Dialog open={true} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[80vh] w-full p-0 gap-0 flex flex-col">
+      <DialogContent className="max-w-4xl max-h-[80vh] w-full p-0 gap-0 flex flex-col"> {/* vh: no Tailwind scale equivalent for viewport-relative height */}
         <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle>
             Valore Configurazione

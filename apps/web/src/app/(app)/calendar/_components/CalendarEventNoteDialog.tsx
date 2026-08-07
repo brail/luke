@@ -77,7 +77,7 @@ export function CalendarEventNoteDialog({ open, onClose, eventId, eventTitle, in
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) { save(); onClose(); } }}>
-      <DialogContent className="sm:max-w-[400px]">
+      <DialogContent className="sm:max-w-[400px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
         <DialogHeader>
           <DialogTitle className="text-base font-semibold leading-snug truncate">
             {eventTitle}
@@ -87,6 +87,7 @@ export function CalendarEventNoteDialog({ open, onClose, eventId, eventTitle, in
         <div className="space-y-2 py-1">
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Note personali</span>
+            {/* 11px: below Tailwind's text-xs (12px) floor; dense note-status UI */}
             <span className="text-[11px] tabular-nums">
               {status === 'dirty' && <span className="text-amber-500">● non salvato</span>}
               {status === 'saving' && <span className="text-muted-foreground animate-pulse">salvataggio…</span>}
@@ -108,6 +109,7 @@ export function CalendarEventNoteDialog({ open, onClose, eventId, eventTitle, in
             rows={5}
             autoFocus
           />
+          {/* 11px: below Tailwind's text-xs (12px) floor; dense note-status UI */}
           <p className="text-[11px] text-muted-foreground/50">Salvato automaticamente · ⌘↵ per salvare subito</p>
         </div>
 

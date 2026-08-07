@@ -93,7 +93,7 @@ export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGro
     <>
       <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
         <DialogContent
-          className="sm:max-w-[600px]"
+          className="sm:max-w-[600px]" // px: dialog width tuned to this wizard's content; no exact Tailwind max-w scale match
           onInteractOutside={e => e.preventDefault()}
           onEscapeKeyDown={e => e.preventDefault()}
         >

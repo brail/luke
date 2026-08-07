@@ -1,6 +1,8 @@
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 
+import { getTrpcErrorMessage } from './trpcErrorMessages';
+
 /** Options for `useStandardMutation`. */
 type Options<TInput, TResult> = {
   /** The async mutation function to execute (e.g. `trpc.entity.create.mutateAsync`). */
@@ -15,11 +17,14 @@ type Options<TInput, TResult> = {
   /** Error toast message shown automatically when the mutation rejects. */
   onErrorMessage?: string;
 
+  /** Per-error-code overrides forwarded to `getTrpcErrorMessage` (see its docs for the `true` sentinel). */
+  entityMessages?: Record<string, string | true>;
+
   /** Additional success callback invoked after the toast and cache invalidation. */
   onSuccess?: (result: TResult) => void;
 
   /** Additional error callback invoked after the error toast. */
-  onError?: (error: any) => void;
+  onError?: (error: unknown) => void;
 };
 
 /**
@@ -78,10 +83,10 @@ export function useStandardMutation<TInput, TResult>(
         if (opts.onSuccess) opts.onSuccess(res);
 
         return res;
-      } catch (e: any) {
+      } catch (e: unknown) {
         // Show error toast with optional description
         if (opts.onErrorMessage) {
-          toast.error(opts.onErrorMessage, { description: e?.message });
+          toast.error(opts.onErrorMessage, { description: getTrpcErrorMessage(e, opts.entityMessages) });
         }
 
         // Custom error callback

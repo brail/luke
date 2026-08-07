@@ -24,7 +24,7 @@ export interface AuditParams {
   /** Outcome of the operation. Defaults to 'SUCCESS'. */
   result?: 'SUCCESS' | 'FAILURE';
   /** Arbitrary metadata. Keys not on the allowlist are automatically redacted. */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 // Actions where audit failure must surface — losing these silently is a compliance/security risk.
@@ -34,6 +34,7 @@ export const CRITICAL_AUDIT_ACTIONS = new Set([
   'AUTH_LOGIN_FAILED',
   'PASSWORD_RESET_REQUESTED',
   'PASSWORD_CHANGED',
+  'USER_PASSWORD_RESET_BY_ADMIN',
   'EMAIL_CHANGED',
   'CONFIG_UPSERT',
   'CONFIG_DELETE',
@@ -152,7 +153,7 @@ export function isRedactedValue(v: unknown): boolean {
  * per prima e aveva 24 chiavi al posto di 79 — quindi l'intera suite di
  * redazione asseriva un comportamento che la produzione non ha.
  */
-export function sanitizeMetadata(obj: any, depth = 0): any {
+export function sanitizeMetadata(obj: unknown, depth = 0): unknown {
   // Limite ricorsione (DoS protection)
   if (depth > 5) return '[REDACTED:MAX_DEPTH]';
 
@@ -161,7 +162,7 @@ export function sanitizeMetadata(obj: any, depth = 0): any {
   }
 
   if (obj && typeof obj === 'object') {
-    const sanitized: Record<string, any> = {};
+    const sanitized: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj)) {
       // Prima controlla whitelist, poi blacklist
       if (SAFE_KEYS.has(key)) {
@@ -215,7 +216,7 @@ export async function logAudit(
         targetType: params.targetType,
         targetId: params.targetId || null,
         result: params.result || 'SUCCESS',
-        metadata: sanitizedMetadata,
+        metadata: sanitizedMetadata as Prisma.InputJsonValue | undefined, // sanitizeMetadata only ever returns JSON-safe primitives/objects/arrays
         traceId: ctx.traceId,
         ip: ctx.req.ip || null,
       },

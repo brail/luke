@@ -15,6 +15,7 @@ import {
   TableRow,
 } from '../../../../../components/ui/table';
 import { usePermission } from '../../../../../hooks/usePermission';
+import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
 export interface VendorItem {
   id: string;
@@ -36,7 +37,7 @@ export interface VendorItem {
 interface VendorTableProps {
   vendors: VendorItem[];
   isLoading: boolean;
-  error?: any;
+  error?: unknown;
   onEdit: (vendor: VendorItem) => void;
   onDelete: (vendor: VendorItem) => void;
   onRestore: (vendor: VendorItem) => void;
@@ -75,7 +76,7 @@ export function VendorTable({
   if (error) {
     return (
       <div className="text-center py-8">
-        <p className="text-destructive mb-4">Errore caricamento fornitori: {error.message}</p>
+        <p className="text-destructive mb-4">Errore caricamento fornitori: {getTrpcErrorMessage(error)}</p>
         {onRetry && <Button onClick={onRetry} variant="outline">Riprova</Button>}
       </div>
     );

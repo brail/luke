@@ -11,7 +11,7 @@ import {
 import { useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
-import type { PricingParameterSetInput } from '@luke/core';
+import type { PricingCurrency, PricingParameterSetInput } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
 import { LastModifiedBy } from '../../../../../components/LastModifiedBy';
@@ -325,7 +325,13 @@ export function ParameterSetPanel({
             if (!open) setEditingSet(null);
           }}
           mode="edit"
-          initialData={editingSet}
+          initialData={{
+            ...editingSet,
+            // Set esistente, già validato alla creazione — la colonna DB
+            // resta `String` generico, TS non lo sa.
+            purchaseCurrency: editingSet.purchaseCurrency as PricingCurrency,
+            sellingCurrency: editingSet.sellingCurrency as PricingCurrency,
+          }}
           onSubmit={(data, makeDefault) => {
             onUpdateSet(editingSet.id, data);
             if (makeDefault && !editingSet.isDefault) onSetDefault(editingSet.id);

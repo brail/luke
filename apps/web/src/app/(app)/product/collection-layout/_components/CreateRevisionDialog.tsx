@@ -109,7 +109,7 @@ export function CreateRevisionDialog({
               <SelectTrigger>
                 <SelectValue placeholder="Seleziona tipo revisione" />
               </SelectTrigger>
-              <SelectContent className="w-[--radix-select-trigger-width]">
+              <SelectContent className="w-[--radix-select-trigger-width]"> {/* matches trigger width via Radix-injected CSS var; no Tailwind equivalent */}
                 {revisionTypeItems.map(item => (
                   <SelectItem key={item.value} value={item.value}>
                     <div className="flex flex-col gap-0.5">

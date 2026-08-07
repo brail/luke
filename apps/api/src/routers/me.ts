@@ -382,14 +382,24 @@ export const meRouter = router({
         take: input?.limit || 10,
       });
 
-      return logs.map(log => ({
-        id: log.id,
-        timestamp: log.createdAt,
-        success: log.action === 'AUTH_LOGIN',
-        ipAddress: log.ip,
-        // Estrai location da metadata se disponibile
-        location: (log.metadata as any)?.location || 'Unknown',
-      }));
+      return logs.map(log => {
+        const metadata = log.metadata;
+        const location =
+          metadata &&
+          typeof metadata === 'object' &&
+          !Array.isArray(metadata) &&
+          typeof (metadata as Record<string, unknown>).location === 'string'
+            ? ((metadata as Record<string, unknown>).location as string)
+            : 'Unknown';
+
+        return {
+          id: log.id,
+          timestamp: log.createdAt,
+          success: log.action === 'AUTH_LOGIN',
+          ipAddress: log.ip,
+          location,
+        };
+      });
     }),
 
   /**

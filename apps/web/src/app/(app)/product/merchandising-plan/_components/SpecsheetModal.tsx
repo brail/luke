@@ -206,8 +206,8 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
       utils.merchandisingPlan.getSpecsheet.invalidate({ rowId: row.id });
       onSaved();
       toast.success('Immagine caricata');
-    } catch (err: any) {
-      toast.error(err.message ?? 'Errore upload immagine');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Errore upload immagine');
     } finally {
       setUploadingImage(false);
     }
@@ -229,7 +229,7 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col overflow-hidden p-0">
+      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col overflow-hidden p-0"> {/* vh: no Tailwind scale equivalent for viewport-relative height */}
         {/* Header fisso */}
         <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
           <DialogTitle className="text-base">
@@ -415,7 +415,7 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
                                       </td>
                                       <td className="px-1 py-0.5">
                                         <Input
-                                          className="h-6 text-xs px-1 min-w-[120px]"
+                                          className="h-6 text-xs px-1 min-w-[120px]" // 120px: readable minimum width for a free-text specsheet component name; no exact scale match
                                           value={c.component}
                                           onChange={e =>
                                             updateComponent(c.originalIndex, 'component', e.target.value)

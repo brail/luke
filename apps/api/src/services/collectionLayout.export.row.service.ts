@@ -339,7 +339,7 @@ export async function buildCollectionRowXlsx(
       imgH = Math.round(dims.height * scale);
     }
      
-    const imageId = wb.addImage({ buffer: rowImageBuf as any, extension: ext });
+    const imageId = wb.addImage({ buffer: rowImageBuf as unknown as NonNullable<ExcelJS.Image['buffer']>, extension: ext }); // exceljs bundles its own stale non-generic Buffer type, structurally incompatible with @types/node's current Buffer<ArrayBufferLike>
     infoSheet.addImage(imageId, { tl: { col: 2, row: 0 }, ext: { width: imgW, height: imgH } });
     // Set row heights so the image region is visible (distribute imgH across rows 1-N)
     const rowsNeeded = Math.ceil(imgH / 20);

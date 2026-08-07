@@ -291,31 +291,23 @@ export const holidaysRouter = router({
         where: { countryCode: { in: input.countryCodes } },
       });
 
-      let created = 0;
-      for (const h of holidays) {
-        const exists = await ctx.prisma.vendorClosurePeriod.findFirst({
-          where: {
-            vendorId: input.vendorId,
-            seasonId: input.seasonId,
-            sourceHolidayId: h.id,
-          },
-        });
-        if (exists) continue;
-
-        await ctx.prisma.vendorClosurePeriod.create({
-          data: {
-            vendorId: input.vendorId,
-            seasonId: input.seasonId,
-            countryCode: h.countryCode,
-            name: h.name,
-            startDate: h.startDate,
-            endDate: h.endDate,
-            type: 'CLOSURE',
-            sourceHolidayId: h.id,
-          },
-        });
-        created++;
-      }
+      // @@unique([vendorId, seasonId, sourceHolidayId]) rende questo idempotente
+      // sotto doppio submit — skipDuplicates sostituisce il precedente
+      // findFirst+create per-holiday, che lasciava una finestra di race fra le
+      // due query.
+      const { count: created } = await ctx.prisma.vendorClosurePeriod.createMany({
+        data: holidays.map(h => ({
+          vendorId: input.vendorId,
+          seasonId: input.seasonId,
+          countryCode: h.countryCode,
+          name: h.name,
+          startDate: h.startDate,
+          endDate: h.endDate,
+          type: 'CLOSURE' as const,
+          sourceHolidayId: h.id,
+        })),
+        skipDuplicates: true,
+      });
 
       return { created };
     }),

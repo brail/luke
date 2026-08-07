@@ -296,7 +296,7 @@ export function CalendarEventDialog({
     const baselineDrift = describeBaselineDrift(event);
     return (
       <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-        <DialogContent className="sm:max-w-[480px]">
+        <DialogContent className="sm:max-w-[480px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
           <DialogHeader>
             <DialogTitle className="leading-snug">{event.title}</DialogTitle>
             <LastModifiedBy targetType="CalendarEvent" targetId={event.id} />
@@ -372,7 +372,7 @@ export function CalendarEventDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-        <DialogContent className="sm:max-w-[680px] max-h-[90vh] p-0 gap-0 flex flex-col">
+        <DialogContent className="sm:max-w-[680px] max-h-[90vh] p-0 gap-0 flex flex-col"> {/* px/vh: dialog width tuned to content, vh cap has no Tailwind scale equivalent */}
           <DialogHeader className="px-6 py-4 border-b shrink-0">
             <DialogTitle className="flex items-center gap-2">
               {isEdit ? 'Modifica evento' : 'Nuovo evento'}
@@ -533,7 +533,7 @@ export function CalendarEventDialog({
 
       {isEdit && (
         <Dialog open={cancelOpen} onOpenChange={v => { if (!v) { setCancelOpen(false); setCancelReason(''); } }}>
-          <DialogContent className="sm:max-w-[440px]">
+          <DialogContent className="sm:max-w-[440px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
             <DialogHeader>
               <DialogTitle>Annulla evento</DialogTitle>
             </DialogHeader>
@@ -563,7 +563,7 @@ export function CalendarEventDialog({
 
       {isEdit && (
         <Dialog open={rescheduleOpen} onOpenChange={v => { if (!v) { setRescheduleOpen(false); setRescheduleReason(''); } }}>
-          <DialogContent className="sm:max-w-[440px]">
+          <DialogContent className="sm:max-w-[440px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
             <DialogHeader>
               <DialogTitle>Sposta evento (motivato)</DialogTitle>
             </DialogHeader>

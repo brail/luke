@@ -19,7 +19,7 @@ interface IdempotencyEntry {
   /** Hash della richiesta originale */
   requestHash: string;
   /** Risposta cached */
-  response: any;
+  response: unknown;
   /** Timestamp di creazione */
   timestamp: number;
   /** TTL in millisecondi */
@@ -33,7 +33,7 @@ interface IdempotencyResult {
   /** true se trovato un match, false altrimenti */
   hit: boolean;
   /** Risposta cached (solo se hit=true) */
-  response?: any;
+  response?: unknown;
   /** Timestamp della richiesta originale */
   originalTimestamp?: number;
   /** true se c'è conflitto (stessa key, body diverso) */
@@ -132,7 +132,7 @@ class IdempotencyStore {
     method: string,
     path: string,
     body: string,
-    response: any,
+    response: unknown,
     ttlMs?: number
   ): void {
     const requestHash = this.generateRequestHash(method, path, body);

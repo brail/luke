@@ -32,9 +32,9 @@ export interface IPrismaConfigClient {
     findUnique(args: {
       where: { key: string };
     }): Promise<{ value: string; isEncrypted?: boolean } | null>;
-    [key: string]: any;
+    [key: string]: any; // altri metodi Prisma (upsert, ecc.) non tipizzati qui — vedi nota sopra su circular dep
   };
-  [key: string]: any;
+  [key: string]: any; // permette a un PrismaClient completo di soddisfare l'interfaccia senza importarne i tipi
 }
 
 /**

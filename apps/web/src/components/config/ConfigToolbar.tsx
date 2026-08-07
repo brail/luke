@@ -35,7 +35,7 @@ export function ConfigToolbar({
 }: ConfigToolbarProps) {
   return (
     <div className="flex flex-col sm:flex-row gap-3">
-      {/* Input Ricerca */}
+      {/* Input Ricerca — 200px: minimum readable width for the search field; no exact scale match */}
       <div className="relative flex-1 min-w-[200px]">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
         <Input
@@ -68,6 +68,7 @@ export function ConfigToolbar({
           }
         }}
       >
+        {/* 140px: fits the longest option label ("Cifrati"/"Normali") without wrapping; no exact scale match */}
         <SelectTrigger className="w-[140px]">
           <SelectValue />
         </SelectTrigger>
@@ -85,6 +86,7 @@ export function ConfigToolbar({
           onFilterCategoryChange(value === 'all' ? undefined : value)
         }
       >
+        {/* 140px: matches the type filter's width for a visually aligned toolbar; no exact scale match */}
         <SelectTrigger className="w-[140px]">
           <SelectValue />
         </SelectTrigger>

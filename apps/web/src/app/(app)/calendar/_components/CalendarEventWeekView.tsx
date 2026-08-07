@@ -38,7 +38,7 @@ function WeekDayRow({ dayIso, isToday, isWeekend, isDragging, holidays, onDayCli
   const isHoliday = !!holidays?.length;
   return (
     <div ref={setNodeRef} onClick={onDayClick} className={cn(
-      'flex-1 p-1.5 flex flex-wrap gap-1 content-start min-h-[52px]',
+      'flex-1 p-1.5 flex flex-wrap gap-1 content-start min-h-[52px]', // 52px: minimum row height tuned for a single event chip; no exact Tailwind scale match
       isWeekend && 'bg-muted/20',
       isHoliday && 'bg-rose-50 dark:bg-rose-950/20',
       isToday && 'bg-blue-50/50 dark:bg-blue-950/20',
@@ -117,6 +117,7 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
                 <div className={cn('w-20 shrink-0 px-2 py-1.5 flex flex-col items-end justify-start border-r', isWeekend && 'bg-muted/20')}>
                   <span className="text-xs text-muted-foreground">{DAY_LABELS_IT[i]}</span>
                   <div className="flex items-center gap-0.5">
+                    {/* 8px: below Tailwind's text-xs (12px) floor; dense holiday-code badge */}
                     {holidayDates?.get(day.toISOString().slice(0, 10))?.map((h, hi) => (
                       <span key={hi} className="text-[8px] font-mono font-semibold text-rose-500 leading-none" title={h.nameEn ?? h.name}>{h.countryCode}</span>
                     ))}

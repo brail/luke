@@ -11,6 +11,7 @@ import { ldapConfigSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import { getLdapConfig, encryptValue } from '../lib/configManager';
+import { toErrorCode, toErrorMessage } from '../lib/error';
 import { SecureLogger } from '../lib/errorHandler';
 import { escapeLdapFilter } from '../lib/ldapAuth';
 import { requirePermission } from '../lib/permissions';
@@ -137,7 +138,7 @@ export const ldapRouter = router({
           success: true,
           message: 'Configurazione LDAP salvata con successo',
         };
-      } catch (error: any) {
+      } catch (error: unknown) {
         // Log audit FAILURE
         await logAudit(ctx, {
           action: 'CONFIG_UPSERT',
@@ -145,8 +146,8 @@ export const ldapRouter = router({
           targetId: 'auth.ldap',
           result: 'FAILURE',
           metadata: {
-            errorCode: error.code || 'UNKNOWN',
-            errorMessage: error.message?.substring(0, 100),
+            errorCode: toErrorCode(error),
+            errorMessage: toErrorMessage(error).substring(0, 100),
           },
         });
 
@@ -155,12 +156,13 @@ export const ldapRouter = router({
         }
 
         ctx.logger.error(
-          { error: error.message },
+          { error: toErrorMessage(error) },
           'Error saving LDAP config'
         );
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Errore durante salvataggio configurazione LDAP',
+          cause: error,
         });
       }
     }),
@@ -194,14 +196,15 @@ export const ldapRouter = router({
           roleMapping: roleMappingJson,
           strategy: config.strategy,
         };
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const message = toErrorMessage(error);
         ctx.logger.error(
-          { error: error.message },
+          { error: message },
           'Error getting LDAP config'
         );
 
         // Se è un errore di configurazioni mancanti, restituisci configurazione di default
-        if (error.message.includes('Configurazioni LDAP mancanti')) {
+        if (message.includes('Configurazioni LDAP mancanti')) {
           return {
             enabled: false,
             url: '',
@@ -219,6 +222,7 @@ export const ldapRouter = router({
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Errore durante recupero configurazione LDAP',
+          cause: error,
         });
       }
     }),
@@ -266,14 +270,15 @@ export const ldapRouter = router({
         try {
           await client.bind(config.bindDN, config.bindPassword);
           ctx.logger.info('LDAP connection test successful');
-        } catch (err: any) {
+        } catch (err: unknown) {
           ctx.logger.error(
-            { error: err.message },
+            { error: toErrorMessage(err) },
             'LDAP connection test failed'
           );
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
             message: 'Connessione LDAP fallita. Controllare i log per i dettagli.',
+            cause: err,
           });
         }
 
@@ -281,18 +286,19 @@ export const ldapRouter = router({
           success: true,
           message: 'Connessione LDAP riuscita',
         };
-      } catch (error: any) {
+      } catch (error: unknown) {
         if (error instanceof TRPCError) {
           throw error;
         }
 
         ctx.logger.error(
-          { error: error.message },
+          { error: toErrorMessage(error) },
           'LDAP connection test error'
         );
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Errore durante test connessione LDAP',
+          cause: error,
         });
       } finally {
         // Chiudi connessione
@@ -315,13 +321,14 @@ export const ldapRouter = router({
   /**
    * Tests the LDAP user search using the configured searchFilter with the given username.
    *
-   * @auth {config:read}
+   * @auth {config:update}
    * @input {{ username: string }} — username to search for (LDAP-escaped to prevent injection).
    * @output {{ success: true, message: string, results: Array<{ dn, attributes }> }}
    */
   testLdapSearch: protectedProcedure
-    .use(requirePermission('config:read'))
-    .input(z.object({ username: z.string() }))
+    .use(requirePermission('config:update'))
+    .use(withRateLimit('ldapTest'))
+    .input(z.object({ username: z.string().min(1).max(256) }))
     .mutation(async ({ input, ctx }) => {
       let client: Client | null = null;
 
@@ -344,10 +351,11 @@ export const ldapRouter = router({
         // Bind amministrativo
         try {
           await client.bind(config.bindDN, config.bindPassword);
-        } catch (err: any) {
+        } catch (err: unknown) {
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
-            message: `Bind LDAP fallito: ${err.message}`,
+            message: `Bind LDAP fallito: ${toErrorMessage(err)}`,
+            cause: err,
           });
         }
 
@@ -380,10 +388,11 @@ export const ldapRouter = router({
             ],
           });
           searchEntries = result.searchEntries;
-        } catch (err: any) {
+        } catch (err: unknown) {
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
-            message: `Ricerca LDAP fallita: ${err.message}`,
+            message: `Ricerca LDAP fallita: ${toErrorMessage(err)}`,
+            cause: err,
           });
         }
 
@@ -404,15 +413,16 @@ export const ldapRouter = router({
           message: `Ricerca completata. Trovati ${results.length} risultati.`,
           results,
         };
-      } catch (error: any) {
+      } catch (error: unknown) {
         if (error instanceof TRPCError) {
           throw error;
         }
 
-        ctx.logger.error({ error: error.message }, 'LDAP search test error');
+        ctx.logger.error({ error: toErrorMessage(error) }, 'LDAP search test error');
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Errore durante test ricerca LDAP',
+          cause: error,
         });
       } finally {
         if (client) {

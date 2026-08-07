@@ -195,7 +195,7 @@ export function MerchandisingPlanTable({
                       )}
                     </TableCell>
                     <TableCell className="font-mono text-xs">{row.articleCode}</TableCell>
-                    <TableCell className="max-w-[200px] truncate">{row.styleDescription}</TableCell>
+                    <TableCell className="max-w-[200px] truncate">{row.styleDescription}</TableCell> {/* 200px: caps description column so the table doesn't stretch; no exact scale match */}
                     <TableCell>{row.productCategory}</TableCell>
                     <TableCell>
                       <span className="font-mono text-xs">{row.colorCode}</span>

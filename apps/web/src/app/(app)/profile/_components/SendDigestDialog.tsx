@@ -37,7 +37,7 @@ export function SendDigestDialog({ open, onClose }: { open: boolean; onClose: ()
 
   return (
     <Dialog open={open} onOpenChange={open => !open && onClose()}>
-      <DialogContent className="sm:max-w-[380px]">
+      <DialogContent className="sm:max-w-[380px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
         <DialogHeader>
           <DialogTitle>Invia Recap</DialogTitle>
         </DialogHeader>

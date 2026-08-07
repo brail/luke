@@ -11,6 +11,7 @@ import { Client } from 'ldapts';
 import { deriveSecret, validateMasterKey } from '@luke/core/server';
 
 import { getLdapConfig } from '../lib/configManager';
+import { toErrorMessage } from '../lib/error';
 
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyLoggerInstance } from 'fastify';
@@ -34,8 +35,8 @@ export async function checkDatabase(
     // Raw SQL exemption (CLAUDE.md Stack Constraints): health-probe query.
     await prisma.$queryRaw`SELECT 1`;
     return { ok: true };
-  } catch (error: any) {
-    return { ok: false, message: error.message };
+  } catch (error: unknown) {
+    return { ok: false, message: toErrorMessage(error) };
   }
 }
 
@@ -82,8 +83,8 @@ export async function checkLdap(
     try {
       await client.bind(config.bindDN, config.bindPassword);
       return { ok: true };
-    } catch (err: any) {
-      return { ok: false, message: `LDAP bind failed: ${err.message}` };
+    } catch (err: unknown) {
+      return { ok: false, message: `LDAP bind failed: ${toErrorMessage(err)}` };
     } finally {
       try {
         await client.unbind();
@@ -91,8 +92,8 @@ export async function checkLdap(
         // ignore
       }
     }
-  } catch (error: any) {
-    return { ok: false, message: error.message };
+  } catch (error: unknown) {
+    return { ok: false, message: toErrorMessage(error) };
   }
 }
 
@@ -175,17 +176,17 @@ export async function checkBootstrapDependencies(
     try {
       deriveSecret('api.jwt');
       logger.info('Segreti JWT derivati con successo');
-    } catch (error: any) {
+    } catch (error: unknown) {
       const secretError = new Error(
-        `Impossibile derivare segreti JWT: ${error.message}`
+        `Impossibile derivare segreti JWT: ${toErrorMessage(error)}`
       );
       logger.error(secretError.message);
       throw secretError;
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Re-throw con messaggio dettagliato per debugging
     const bootstrapError = new Error(
-      `Bootstrap dependency check failed: ${error.message}`
+      `Bootstrap dependency check failed: ${toErrorMessage(error)}`
     );
     logger.error(
       { error: bootstrapError },

@@ -15,10 +15,12 @@
 import { Readable } from 'stream';
 
 import rateLimit from '@fastify/rate-limit';
+import { TRPCError } from '@trpc/server';
 
 import { isDevelopment } from '@luke/core';
 
 import { rateLimitKeyFromRequest, requireSessionWithPermission } from '../lib/auth';
+import { getTraceId, toErrorMessage } from '../lib/error';
 import {
   uploadBrandLogo,
   uploadTempBrandLogo,
@@ -26,7 +28,6 @@ import {
 
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
-
 
 /**
  * Codici d'errore di `@fastify/multipart` imputabili al client: body non
@@ -87,7 +88,7 @@ export default async function brandLogoRoutes(
     const ctx = {
       session,
       prisma: options.prisma,
-      traceId: (req as any).traceId || 'unknown',
+      traceId: getTraceId(req) || 'unknown',
       req,
       res: reply,
       logger: req.log,
@@ -122,13 +123,13 @@ export default async function brandLogoRoutes(
       });
 
       return reply.code(200).send(result);
-    } catch (error: any) {
+    } catch (error: unknown) {
       req.log.error(
-        { error: error.message, brandId: req.params.brandId },
+        { error: toErrorMessage(error), brandId: req.params.brandId },
         'Brand logo upload error'
       );
 
-      if (error.code === 'BAD_REQUEST' || error.code === 'NOT_FOUND') {
+      if (error instanceof TRPCError && (error.code === 'BAD_REQUEST' || error.code === 'NOT_FOUND')) {
         return reply.code(error.code === 'NOT_FOUND' ? 404 : 400).send({
           error: error.code,
           message: error.message,
@@ -138,7 +139,7 @@ export default async function brandLogoRoutes(
       if (isClientMultipartError(error)) {
         return reply.code(400).send({
           error: 'Bad Request',
-          message: error.message,
+          message: toErrorMessage(error),
         });
       }
 
@@ -159,7 +160,7 @@ export default async function brandLogoRoutes(
     const ctx = {
       session,
       prisma: options.prisma,
-      traceId: (req as any).traceId || 'unknown',
+      traceId: getTraceId(req) || 'unknown',
       req,
       res: reply,
       logger: req.log,
@@ -200,13 +201,17 @@ export default async function brandLogoRoutes(
       });
 
       return reply.code(200).send(result);
-    } catch (error: any) {
+    } catch (error: unknown) {
+      // req.body è tipato { tempId: string } dal generic della route, ma con
+      // multipart via req.parts() il body non passa dal parser JSON: a runtime
+      // può restare undefined nonostante il tipo dichiarato.
+      const tempId = (req.body as { tempId?: string } | undefined)?.tempId;
       req.log.error(
-        { error: error.message, tempId: (req.body as any)?.tempId },
+        { error: toErrorMessage(error), tempId },
         'Temp brand logo upload error'
       );
 
-      if (error.code === 'BAD_REQUEST' || error.code === 'NOT_FOUND') {
+      if (error instanceof TRPCError && (error.code === 'BAD_REQUEST' || error.code === 'NOT_FOUND')) {
         return reply.code(error.code === 'NOT_FOUND' ? 404 : 400).send({
           error: error.code,
           message: error.message,
@@ -216,7 +221,7 @@ export default async function brandLogoRoutes(
       if (isClientMultipartError(error)) {
         return reply.code(400).send({
           error: 'Bad Request',
-          message: error.message,
+          message: toErrorMessage(error),
         });
       }
 

@@ -69,10 +69,12 @@ type CollectionRowData = CollectionGroupData['rows'][number];
 
 // ─── Row photo with fallback ──────────────────────────────────────────────────
 
+// 88x110px: fixed row-photo thumbnail size (and its placeholder/empty-state below), reused as-is
+// wherever a collection row's photo is shown so the table layout never shifts; no scale equivalent.
 function RowPhoto({ src, alt }: { src: string; alt: string }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);
-  if (failed) return (
+  if (failed) return ( // 88x110px: see comment on RowPhoto above
     <div className="h-[88px] w-[110px] rounded border border-dashed flex items-center justify-center bg-muted/30">
       <ImageIcon className="h-4 w-4 text-muted-foreground" />
     </div>
@@ -81,7 +83,7 @@ function RowPhoto({ src, alt }: { src: string; alt: string }) {
     <img
       src={src}
       alt={alt}
-      className="h-[88px] w-[110px] rounded object-contain border bg-muted/5"
+      className="h-[88px] w-[110px] rounded object-contain border bg-muted/5" // 88x110px: see comment on RowPhoto above
       onError={() => setFailed(true)}
     />
   );
@@ -827,7 +829,7 @@ export function CollectionGroupSection({
                           {row.pictureUrl ? (
                             <RowPhoto src={row.pictureUrl} alt={row.line} />
                           ) : (
-                            <div className="h-[88px] w-[110px] rounded border border-dashed flex items-center justify-center bg-muted/30">
+                            <div className="h-[88px] w-[110px] rounded border border-dashed flex items-center justify-center bg-muted/30"> {/* 88x110px: matches RowPhoto's placeholder size, see comment there */}
                               <ImageIcon className="h-4 w-4 text-muted-foreground" />
                             </div>
                           )}
@@ -841,7 +843,7 @@ export function CollectionGroupSection({
                         <TableCell className="text-sm text-muted-foreground">{row.gender}</TableCell>
                       )}
                       {show('supplier') && (
-                        <TableCell className="w-36 max-w-[9rem] text-sm text-muted-foreground">
+                        <TableCell className="w-36 text-sm text-muted-foreground">
                           <span className="block truncate">
                             {resolveVendorName(row.vendor, '—')}
                           </span>
@@ -898,7 +900,7 @@ export function CollectionGroupSection({
                                   tooltip={criticality.state === 'completed'
                                     ? formatCompletionTooltip(criticality)
                                     : formatCriticalityTooltip(criticality)}
-                                  className="text-[10px] px-1.5 py-0"
+                                  className="text-[10px] px-1.5 py-0" // below Tailwind's text-xs (12px) floor; dense criticality badge
                                 />
                               );
                             })()}

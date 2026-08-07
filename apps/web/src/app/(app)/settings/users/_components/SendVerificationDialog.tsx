@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from '../../../../../components/ui/dialog';
 import { trpc } from '../../../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
 interface Props {
   userId: string | null;
@@ -33,8 +34,8 @@ export function SendVerificationDialog({ userId, open, onOpenChange }: Props) {
       await sendVerifyMutation.mutateAsync({ userId });
       toast.success('Email di verifica inviata');
       onOpenChange(false);
-    } catch (err: any) {
-      toast.error(err?.message || 'Impossibile inviare email. Verifica SMTP.');
+    } catch (err: unknown) {
+      toast.error(getTrpcErrorMessage(err) || 'Impossibile inviare email. Verifica SMTP.');
     }
   };
 

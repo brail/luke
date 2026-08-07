@@ -23,6 +23,8 @@ import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
 
+import type { Prisma } from '@prisma/client';
+
 const VENDOR_SELECT = {
   id: true,
   name: true,
@@ -55,7 +57,7 @@ export const vendorsRouter = router({
       const cursor = input?.cursor;
       const limit = input?.limit ?? 100;
 
-      const where: any = {};
+      const where: Prisma.VendorWhereInput = {};
       if (typeof input?.isActive === 'boolean') where.isActive = input.isActive;
       else where.isActive = true;
       if (input?.search) {

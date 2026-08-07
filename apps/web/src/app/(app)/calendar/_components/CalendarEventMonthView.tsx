@@ -42,7 +42,7 @@ function MonthDayCell({ dayIso, isToday, isDragging, isCurrentMonth, holidays, o
   const isHoliday = !!holidays?.length;
   return (
     <div ref={setNodeRef} onClick={onDayClick} className={cn(
-      'flex-1 min-w-0 min-h-[90px] p-1 flex flex-col border-r last:border-r-0',
+      'flex-1 min-w-0 min-h-[90px] p-1 flex flex-col border-r last:border-r-0', // 90px: minimum cell height tuned to fit ~2-3 event chips; no exact Tailwind scale match
       !isCurrentMonth && 'bg-muted/30',
       isHoliday && 'bg-rose-50 dark:bg-rose-950/20',
       isToday && 'bg-blue-50/50 dark:bg-blue-950/20',
@@ -120,6 +120,7 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
               <div key={rowIdx} className="flex border-b last:border-b-0">
                 <div className="w-7 shrink-0 flex items-center justify-center border-r border-border/40 bg-muted/10">
                   <span
+                    // 11px: below Tailwind's text-xs (12px) floor; dense week-number label
                     className={cn('text-[11px] font-medium text-muted-foreground/40 select-none', onWeekNumberClick && 'cursor-pointer hover:text-muted-foreground')}
                     onClick={onWeekNumberClick ? () => onWeekNumberClick(weekDays[0]!.toISOString()) : undefined}
                   >
@@ -145,6 +146,7 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
                         >
                           {day.getDate()}
                         </span>
+                        {/* 8px: below Tailwind's text-xs (12px) floor; dense holiday-code badge */}
                         {holidayDates?.get(day.toISOString().slice(0, 10))?.map((h, hi) => (
                           <span key={hi} className="text-[8px] font-mono font-semibold text-rose-500 leading-none" title={h.nameEn ?? h.name}>{h.countryCode}</span>
                         ))}
@@ -179,6 +181,7 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
                                   <button
                                     type="button"
                                     onClick={(e) => { e.stopPropagation(); onEventClick(m.id); }}
+                                    // 11px: below Tailwind's text-xs (12px) floor; dense month-view event chip
                                     className={cn('w-full flex items-center text-left rounded px-1 py-0.5 text-[11px] text-white leading-tight',
                                       'hover:brightness-110 transition-all',
                                       cancelledClass(!!m.cancelledAt),
@@ -216,12 +219,14 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
                               <button
                                 type="button"
                                 onClick={e => e.stopPropagation()}
+                                // 10px: below Tailwind's text-xs (12px) floor; dense "+N altri" overflow button
                                 className="text-[10px] text-muted-foreground px-1 py-0.5 hover:text-foreground hover:bg-muted/50 rounded transition-colors w-full text-left"
                               >
                                 +{overflow} altri
                               </button>
                             </PopoverTrigger>
                             <PopoverContent className="w-56 p-2" onClick={e => e.stopPropagation()}>
+                              {/* 11px: below Tailwind's text-xs (12px) floor; dense popover date header */}
                               <div className="text-[11px] font-medium text-muted-foreground mb-2">
                                 {day.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })}
                               </div>
@@ -234,6 +239,7 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
                                       key={ev.id}
                                       type="button"
                                       onClick={() => onEventClick(ev.id)}
+                                      // 11px: below Tailwind's text-xs (12px) floor; dense overflow-popover event chip
                                       className={cn('w-full flex items-center text-left rounded px-1.5 py-0.5 text-[11px] text-white leading-tight hover:brightness-110 transition-all', cancelledClass(!!ev.cancelledAt))}
                                       style={{ background: evColor }}
                                       title={groupTooltip(ev.planningGroupName, ev.title)}

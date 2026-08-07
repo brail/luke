@@ -20,8 +20,8 @@ export const PricingParameterSetInputSchema = z.object({
       /^[A-Z]{2}$/,
       'Inserire un codice paese ISO 3166-1 alpha-2 valido (es. IT, CN, TR)'
     ),
-  purchaseCurrency: z.string().min(1, 'La valuta di acquisto è obbligatoria'),
-  sellingCurrency: z.string().min(1, 'La valuta di vendita è obbligatoria'),
+  purchaseCurrency: z.enum(PRICING_CURRENCIES, { error: 'Valuta di acquisto non valida' }),
+  sellingCurrency: z.enum(PRICING_CURRENCIES, { error: 'Valuta di vendita non valida' }),
   qualityControlPercent: z
     .number({ error: 'Campo obbligatorio' })
     .min(0, 'Il controllo qualità non può essere negativo')

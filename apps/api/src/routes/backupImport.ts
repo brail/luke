@@ -23,6 +23,15 @@ import type { Context } from '../lib/trpc';
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
+/** Safely extracts the string `.value` from a parsed @fastify/multipart form field. */
+function getMultipartFieldValue(field: unknown): string | undefined {
+  if (field && typeof field === 'object' && !Array.isArray(field) && 'value' in field) {
+    const value = (field as { value: unknown }).value;
+    return typeof value === 'string' ? value : undefined;
+  }
+  return undefined;
+}
+
 export async function registerBackupImportRoute(
   fastify: FastifyInstance,
   prisma: PrismaClient
@@ -38,8 +47,8 @@ export async function registerBackupImportRoute(
     }
 
     const parsedFields = BackupImportFieldsSchema.safeParse({
-      passphrase: (data.fields.passphrase as any)?.value,
-      label: (data.fields.label as any)?.value || undefined,
+      passphrase: getMultipartFieldValue(data.fields.passphrase),
+      label: getMultipartFieldValue(data.fields.label) || undefined,
     });
     if (!parsedFields.success) {
       reply.code(400).send({

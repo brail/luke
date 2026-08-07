@@ -15,13 +15,14 @@ import {
   TableRow,
 } from '../../../../../components/ui/table';
 import { usePermission } from '../../../../../hooks/usePermission';
+import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
 import type { SeasonItem } from './SeasonDialog';
 
 interface SeasonTableProps {
   seasons: SeasonItem[];
   isLoading: boolean;
-  error?: any;
+  error?: unknown;
   onEdit: (season: SeasonItem) => void;
   onDelete: (season: SeasonItem) => void;
   onRestore: (season: SeasonItem) => void;
@@ -61,7 +62,7 @@ export function SeasonTable({
     return (
       <div className="text-center py-8">
         <p className="text-destructive mb-4">
-          Errore caricamento stagioni: {error.message}
+          Errore caricamento stagioni: {getTrpcErrorMessage(error)}
         </p>
         {onRetry && (
           <Button onClick={onRetry} variant="outline">

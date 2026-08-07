@@ -133,7 +133,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-lg max-h-[90vh] p-0 gap-0 flex flex-col">
+      <DialogContent className="max-w-lg max-h-[90vh] p-0 gap-0 flex flex-col"> {/* vh: no Tailwind scale equivalent for viewport-relative height */}
         <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle>{isEdit ? 'Modifica item' : 'Nuovo item'}</DialogTitle>
         </DialogHeader>

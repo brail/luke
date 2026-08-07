@@ -274,7 +274,7 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     },
     {
       key: 'storage.local.buckets',
-      value: '["uploads","exports","assets","brand-logos","collection-row-pictures","collection-row-pictures-revisions","merchandising-specsheet-images"]',
+      value: '["uploads","exports","assets","brand-logos","collection-row-pictures","collection-row-pictures-revisions","merchandising-specsheet-images","company-assets"]',
       encrypt: false,
     },
     {

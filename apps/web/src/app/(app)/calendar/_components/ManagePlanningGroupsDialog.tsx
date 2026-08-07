@@ -96,7 +96,7 @@ export function ManagePlanningGroupsDialog({ open, onClose, calendarId, brandId,
   return (
     <>
       <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-        <DialogContent className="sm:max-w-[640px]">
+        <DialogContent className="sm:max-w-[640px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
           <DialogHeader>
             <DialogTitle>Gruppi di pianificazione</DialogTitle>
           </DialogHeader>
@@ -145,6 +145,7 @@ export function ManagePlanningGroupsDialog({ open, onClose, calendarId, brandId,
                           {g.freezeState === 'frozen' && (
                             <div className="space-y-0.5">
                               <Badge variant="outline" className="text-xs">Congelato</Badge>
+                              {/* 11px: below Tailwind's text-xs (12px) floor; dense freeze-status caption */}
                               <LastModifiedBy targetType="PlanningGroup" targetId={g.id} className="text-[11px] text-muted-foreground" />
                             </div>
                           )}
@@ -162,6 +163,7 @@ export function ManagePlanningGroupsDialog({ open, onClose, calendarId, brandId,
                                   tooltip="Non hai i permessi per estendere il freeze"
                                   size="sm"
                                   variant="outline"
+                                  // 11px: below Tailwind's text-xs (12px) floor; compact inline action button
                                   className="h-6 text-[11px] px-2"
                                   onClick={() => amendMutation.mutate({ planningGroupId: g.id })}
                                 >

@@ -54,6 +54,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   USER_DELETE: 'Utente eliminato',
   USER_APPROVED: 'Utente approvato',
   USER_REVOKE_SESSIONS: 'Sessioni utente revocate',
+  USER_PASSWORD_RESET_BY_ADMIN: 'Password utente reimpostata da admin',
 
   // Config / backup / maintenance
   CONFIG_UPSERT: 'Configurazione aggiornata',

@@ -103,16 +103,19 @@ export function ConfigImportDialog({
     reader.onload = async e => {
       try {
         const content = e.target?.result as string;
-        const data = JSON.parse(content);
+        const data = JSON.parse(content) as { configs?: unknown[] };
 
         if (!data.configs || !Array.isArray(data.configs)) {
           throw new Error('Formato file non valido: manca array "configs"');
         }
 
+        // Shape asserted here; validateConfig() below re-validates each field and marks invalid entries accordingly
+        const configs = data.configs as ImportConfig[];
+
         // Check existence of valid keys
-        const validKeys = data.configs
-          .filter((c: any) => validateConfig(c).valid)
-          .map((c: any) => c.key);
+        const validKeys = configs
+          .filter(c => validateConfig(c).valid)
+          .map(c => c.key);
 
         const existingKeys = new Set<string>();
         if (validKeys.length > 0) {
@@ -131,7 +134,7 @@ export function ConfigImportDialog({
 
         // Valida e determina status per ogni configurazione
         const previewData: ImportPreview[] = await Promise.all(
-          data.configs.map(async (config: any) => {
+          configs.map(async config => {
             const validation = validateConfig(config);
             if (!validation.valid) {
               return {
@@ -267,7 +270,7 @@ export function ConfigImportDialog({
 
   return (
     <Dialog open={true} onOpenChange={handleClose}>
-      <DialogContent className="max-w-4xl max-h-[80vh] p-0 gap-0 flex flex-col">
+      <DialogContent className="max-w-4xl max-h-[80vh] p-0 gap-0 flex flex-col"> {/* vh: no Tailwind scale equivalent for viewport-relative height */}
         <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle>Importa Configurazioni</DialogTitle>
           <DialogDescription>

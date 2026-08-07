@@ -82,7 +82,7 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
     useStandardMutation({
       mutateFn: changeEmailMutation.mutateAsync,
       invalidate: refresh.me,
-      onSuccess: (data: any) => {
+      onSuccess: data => {
         toast.success(data.message);
         setNewEmail('');
         // Ricarica pagina per aggiornare sessione
@@ -288,6 +288,7 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
         <Button
           type="submit"
           disabled={!isDirty || isSubmitting}
+          // 120px: keeps button width stable while its label changes during submit; no exact scale match
           className="min-w-[120px]"
         >
           {isSubmitting ? (

@@ -434,6 +434,7 @@ export const storageRouter = router({
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: `Errore caricamento config MinIO: ${err instanceof Error ? err.message : String(err)}`,
+          cause: err,
         });
       }
 
@@ -444,6 +445,7 @@ export const storageRouter = router({
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: `Connessione a MinIO fallita: ${err instanceof Error ? err.message : String(err)}`,
+          cause: err,
         });
       }
 

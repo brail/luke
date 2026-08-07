@@ -143,7 +143,7 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
     <>
       <Dialog open={open} onOpenChange={v => { if (!v) requestClose(); }}>
         <DialogContent
-          className="sm:max-w-[720px]"
+          className="sm:max-w-[720px]" // px: dialog width tuned to this wizard's content; no exact Tailwind max-w scale match
           onInteractOutside={e => e.preventDefault()}
           onEscapeKeyDown={e => e.preventDefault()}
         >

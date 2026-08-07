@@ -136,6 +136,7 @@ export default function LoginPage() {
           <div className="mt-4">
             <BackendStatus />
           </div>
+          {/* 10px: below Tailwind's text-xs (12px) floor; unobtrusive footer version tag */}
           <AppVersionLabel className="mt-3 text-center text-[10px] text-muted-foreground/50 select-none" />
         </CardContent>
       </Card>

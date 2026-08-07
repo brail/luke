@@ -98,6 +98,7 @@ export function EventTimelineDrag({ anchorDate, value, onChange, holidayDates, c
               key={iso}
               onClick={() => onChange(d)}
               className={cn(
+                // 10px: below Tailwind's text-xs (12px) floor; dense day-picker cell
                 'flex flex-col items-center justify-center text-[10px] border-r last:border-r-0 cursor-pointer shrink-0',
                 dayBlocked ? 'bg-amber-100 hover:bg-amber-200' : 'hover:bg-muted/50'
               )}

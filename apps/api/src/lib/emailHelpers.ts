@@ -11,6 +11,8 @@ import { logAudit } from './auditLog';
 import { getConfig } from './configManager';
 import { sendEmailVerificationEmail } from './mailer';
 
+import type { Context } from './context';
+
 /**
  * Options for sending a verification email to a user.
  */
@@ -41,7 +43,7 @@ export interface SendVerificationEmailOptions {
 export async function sendVerificationEmail(
   prisma: PrismaClient,
   options: SendVerificationEmailOptions,
-  ctx?: { req: any; logger: any }
+  ctx?: Pick<Context, 'req' | 'logger'>
 ): Promise<{ success: boolean; message: string }> {
   const { userId, reason = 'user_requested', actorId } = options;
 
@@ -84,13 +86,19 @@ export async function sendVerificationEmail(
     await sendEmailVerificationEmail(prisma, user.email, token, baseUrl);
 
     // Audit log SUCCESS (senza PII)
+    // logAudit richiede un Context completo; qui ne costruiamo uno parziale —
+    // alcuni chiamanti (es. ldapAuth.ts durante il provisioning automatico)
+    // non hanno una request HTTP reale e non passano `ctx` affatto. Se `req`
+    // resta undefined, logAudit lancia leggendo ctx.req.ip/ctx.req.log — il
+    // chiamante lo cattura già con .catch(). Comportamento preesistente, non
+    // modificato da questo cast.
     await logAudit(
       {
         prisma,
         session: actorId ? { user: { id: actorId } } : undefined,
         req: ctx?.req,
         logger: ctx?.logger,
-      } as any,
+      } as unknown as Context,
       {
         action: 'EMAIL_VERIFICATION_SENT',
         targetType: 'Auth',
@@ -106,13 +114,19 @@ export async function sendVerificationEmail(
     };
   } catch (error) {
     // Audit log FAILURE (senza PII)
+    // logAudit richiede un Context completo; qui ne costruiamo uno parziale —
+    // alcuni chiamanti (es. ldapAuth.ts durante il provisioning automatico)
+    // non hanno una request HTTP reale e non passano `ctx` affatto. Se `req`
+    // resta undefined, logAudit lancia leggendo ctx.req.ip/ctx.req.log — il
+    // chiamante lo cattura già con .catch(). Comportamento preesistente, non
+    // modificato da questo cast.
     await logAudit(
       {
         prisma,
         session: actorId ? { user: { id: actorId } } : undefined,
         req: ctx?.req,
         logger: ctx?.logger,
-      } as any,
+      } as unknown as Context,
       {
         action: 'EMAIL_VERIFICATION_SENT',
         targetType: 'Auth',

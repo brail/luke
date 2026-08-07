@@ -53,6 +53,7 @@ export function NotificationDropdown() {
       <PopoverTrigger asChild>
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-5 w-5" />
+          {/* 9px: below Tailwind's text-xs (12px) floor; unread-count bubble must stay tiny */}
           {unreadCount > 0 && (
             <span className="absolute top-0.5 right-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold leading-none text-destructive-foreground">
               {unreadCount > 99 ? '99+' : unreadCount}
@@ -66,6 +67,7 @@ export function NotificationDropdown() {
         <div className="flex items-center justify-between px-4 py-3 border-b">
           <div className="flex flex-col">
             <span className="font-semibold text-sm">Notifiche</span>
+            {/* 11px: below Tailwind's text-xs (12px) floor; dense header sub-caption */}
             {countsLabel && (
               <span className="text-[11px] text-muted-foreground">{countsLabel}</span>
             )}
@@ -95,7 +97,7 @@ export function NotificationDropdown() {
           </div>
         </div>
 
-        {/* Lista */}
+        {/* Lista — 360px: fits ~6 notification rows before scrolling; no exact Tailwind scale match */}
         <div className="max-h-[360px] overflow-y-auto">
           {notifications.length === 0 ? (
             <div className="py-10 text-center text-sm text-muted-foreground">

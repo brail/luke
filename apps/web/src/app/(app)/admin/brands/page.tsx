@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
+import type { BrandInput } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { CreateActionButton } from '../../../../components/CreateActionButton';
@@ -48,7 +49,7 @@ export default function BrandsPage() {
 
   const invalidateContext = useInvalidateContext();
 
-  const getErrorMessage = (error: any) =>
+  const getErrorMessage = (error: unknown) =>
     getTrpcErrorMessage(error, { CONFLICT: 'Nome o codice brand già in uso' });
 
   const createMutation = trpc.brand.create.useMutation({
@@ -144,7 +145,7 @@ export default function BrandsPage() {
     setEditingBrand(null);
   };
 
-  const handleFormSubmit = async (data: any) => {
+  const handleFormSubmit = async (data: BrandInput) => {
     if (editingBrand) {
       await updateMutation.mutateAsync({ id: editingBrand.id, data });
     } else {

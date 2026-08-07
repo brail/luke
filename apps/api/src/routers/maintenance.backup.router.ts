@@ -425,7 +425,7 @@ export const backupRouter = router({
           result: 'FAILURE',
           metadata: { ...baseMeta, errorCode: message.slice(0, 200) },
         });
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Restore fallito: ${message}` });
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Restore fallito: ${message}`, cause: err });
       }
 
       await logAudit(ctx, {

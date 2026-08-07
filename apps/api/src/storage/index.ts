@@ -29,7 +29,7 @@ import { LocalFsProvider } from './providers/local';
 import { MinioProvider } from './providers/minio';
 
 import type { Context } from '../lib/trpc';
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 
 /** Singleton instance of the active storage provider. */
 let providerInstance: IStorageProvider | null = null;
@@ -50,8 +50,13 @@ async function loadLocalProvider(prisma: PrismaClient): Promise<LocalFsProvider>
 
   const bucketsStr =
     (await getConfig(prisma, 'storage.local.buckets', false)) ||
-    '["uploads","exports","assets","brand-logos","collection-row-pictures","merchandising-specsheet-images"]';
-  const buckets = JSON.parse(bucketsStr);
+    '["uploads","exports","assets","brand-logos","collection-row-pictures","collection-row-pictures-revisions","merchandising-specsheet-images","company-assets"]';
+  let buckets: unknown;
+  try {
+    buckets = JSON.parse(bucketsStr);
+  } catch {
+    throw new Error(`storage.local.buckets non è JSON valido: ${bucketsStr}`);
+  }
 
   const publicBaseUrl = await getConfig(prisma, 'storage.local.publicBaseUrl', false);
   const enableProxyStr = await getConfig(prisma, 'storage.local.enableProxy', false);
@@ -134,7 +139,14 @@ export async function getStorageProvider(
 
       providerInstance = provider;
       return provider;
-    })();
+    })().catch(err => {
+      // Un errore transitorio (JSON malformato, volume non montato al boot)
+      // non deve rompere lo storage per il resto del ciclo di vita del
+      // processo: senza reset, ogni chiamata successiva riusa questa stessa
+      // promise già rifiutata anche dopo che la causa è stata corretta.
+      providerInitPromise = null;
+      throw err;
+    });
   }
 
   return providerInitPromise;
@@ -434,7 +446,7 @@ export async function listObjects(
   const limit = params.limit || 50;
 
   // Query con paginazione cursor-based
-  const where: any = {};
+  const where: Prisma.FileObjectWhereInput = {};
   if (params.bucket) {
     where.bucket = params.bucket;
   }

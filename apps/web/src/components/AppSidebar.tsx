@@ -143,6 +143,7 @@ export default function AppSidebar() {
           </div>
           <SidebarTrigger />
         </div>
+        {/* 10px: below Tailwind's text-xs (12px) floor; unobtrusive footer version tag */}
         <AppVersionLabel className="px-3 pb-1 text-[10px] text-muted-foreground/50 select-none" />
       </SidebarHeader>
       <SidebarContent>
@@ -365,6 +366,7 @@ export default function AppSidebar() {
                   <DropdownMenuGroup>
                     {menuAccess.settingsItems.company && (
                       <DropdownMenuItem asChild>
+                        {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime */}
                         <Link href={"/settings/company" as any} className="flex items-center gap-2">
                           <Building2 size={16} />
                           <span>Azienda</span>
@@ -542,6 +544,7 @@ export default function AppSidebar() {
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
+              {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime */}
               <Link href={"/about" as any}>
                 <Info className="mr-2 h-4 w-4" />
                 <span>Info su Luke</span>

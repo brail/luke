@@ -153,6 +153,7 @@ export async function authenticateViaLdap(
     throw new TRPCError({
       code: 'INTERNAL_SERVER_ERROR',
       message: 'Errore durante autenticazione LDAP',
+      cause: error,
     });
   } finally {
     // Chiudi connessione LDAP
@@ -280,7 +281,7 @@ async function searchUserGroups(
 function determineUserRole(
   userGroups: string[],
   roleMapping: Record<string, string>,
-  log?: any
+  log?: pino.Logger
 ): 'admin' | 'editor' | 'viewer' {
   // Cerca il mapping più specifico
   for (const groupDN of userGroups) {
@@ -309,7 +310,7 @@ async function createOrUpdateUser(
   prisma: PrismaClient,
   username: string,
   role: 'admin' | 'editor' | 'viewer',
-  userAttributes: any
+  userAttributes: Record<string, string[]>
 ): Promise<User> {
   // Estrai email dagli attributi LDAP
   const ldapEmail = userAttributes.mail?.[0] || `${username}@ldap.local`;

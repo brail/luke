@@ -68,7 +68,7 @@ export function UserActionsMenu({
   const { mutate: forceVerify } = useStandardMutation({
     mutateFn: forceVerifyMutation.mutateAsync,
     invalidate: refresh.users,
-    onSuccess: (data: any) => toast.success(data.message),
+    onSuccess: data => toast.success(data.message),
     onErrorMessage: 'Errore',
   });
 

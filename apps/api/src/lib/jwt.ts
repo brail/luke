@@ -143,13 +143,16 @@ export function extractJWTMetadata(token: string): {
       return null;
     }
 
-    const payload = decoded.payload as any;
+    const payload = decoded.payload;
+    if (typeof payload === 'string') {
+      return null;
+    }
 
     return {
-      userId: payload.userId,
-      role: payload.role,
-      exp: payload.exp,
-      iat: payload.iat,
+      userId: typeof payload.userId === 'string' ? payload.userId : undefined,
+      role: typeof payload.role === 'string' ? payload.role : undefined,
+      exp: typeof payload.exp === 'number' ? payload.exp : undefined,
+      iat: typeof payload.iat === 'number' ? payload.iat : undefined,
     };
   } catch {
     return null;

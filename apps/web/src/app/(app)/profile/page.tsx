@@ -40,6 +40,7 @@ import { UserAvatar } from '../../../components/UserAvatar';
 import { useFormatDate } from '../../../hooks/use-format-date';
 import { useCopyToClipboard } from '../../../hooks/useCopyToClipboard';
 import { trpc } from '../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../lib/trpcErrorMessages';
 
 import { ChangePasswordCard } from './_components/ChangePasswordCard';
 import { GreetingPreference } from './_components/GreetingPreference';
@@ -262,8 +263,8 @@ export default function ProfilePage() {
                           email: user.email,
                         });
                         toast.success('Email di verifica inviata');
-                      } catch (err: any) {
-                        toast.error(err?.message || 'Errore invio email');
+                      } catch (err: unknown) {
+                        toast.error(getTrpcErrorMessage(err));
                       }
                     }}
                     disabled={requestVerifyMutation.isPending}

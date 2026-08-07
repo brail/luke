@@ -38,6 +38,7 @@ export function NotificationRow({ notification: n, onMarkAsRead }: NotificationR
           <div className="flex items-center gap-1.5 mb-0.5">
             <span
               className={cn(
+                // 10px: below Tailwind's text-xs (12px) floor; dense category chip
                 'text-[10px] font-medium px-1.5 py-0.5 rounded',
                 NOTIFICATION_CATEGORY_META[n.category]?.style ?? 'bg-muted text-muted-foreground'
               )}
@@ -50,6 +51,7 @@ export function NotificationRow({ notification: n, onMarkAsRead }: NotificationR
           </div>
           <p className="text-sm font-medium leading-tight truncate">{n.title}</p>
           <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
+          {/* 10px: below Tailwind's text-xs (12px) floor; dense timestamp caption */}
           <p className="text-[10px] text-muted-foreground mt-1">
             {formatNotificationRelativeTime(new Date(n.createdAt))}
           </p>

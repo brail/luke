@@ -284,7 +284,7 @@ export function EmptyCollectionLayoutState({
                 <p className="text-sm text-muted-foreground text-center py-6">Caricamento righe...</p>
               ) : (
                 <div className="space-y-4 max-h-96 overflow-y-auto pr-1">
-                  {/* Header colonne */}
+                  {/* Header colonne — custom track sizes (label + 2 action columns) not expressible via grid-cols-N */}
                   <div className="grid grid-cols-[1fr_auto_auto] gap-2 items-center px-1">
                     <span />
                     <span className="text-xs font-medium text-muted-foreground text-center w-16">Includi</span>
@@ -303,6 +303,7 @@ export function EmptyCollectionLayoutState({
                           <div
                             key={row.id}
                             className={cn(
+                              // custom track sizes matching the header row above; not expressible via grid-cols-N
                               'grid grid-cols-[1fr_auto_auto] gap-2 items-center rounded-md border px-3 py-2 text-sm transition-colors',
                               sel.included ? 'border-primary/30 bg-primary/5' : 'border-border bg-muted/20'
                             )}

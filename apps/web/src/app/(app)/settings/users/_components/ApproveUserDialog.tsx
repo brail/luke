@@ -129,7 +129,7 @@ export function ApproveUserDialog({
         if (!o && !isSaving) onOpenChange(false);
       }}
     >
-      <DialogContent className="sm:max-w-[560px] max-h-[85vh] p-0 gap-0 flex flex-col">
+      <DialogContent className="sm:max-w-[560px] max-h-[85vh] p-0 gap-0 flex flex-col"> {/* px/vh: dialog width tuned to content, vh cap has no Tailwind scale equivalent */}
         <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <ShieldCheck className="h-4 w-4" />

@@ -71,7 +71,13 @@ type UserFormData = CreateUserData | EditUserData;
 
 interface UserFormProps {
   mode: 'create' | 'edit';
-  initialData?: Partial<UserFormData> & { provider?: string };
+  // firstName/lastName accept `null` here (not just `undefined`) because initialData is prefilled
+  // from a DB-backed user record where those columns are nullable; the submitted UserFormData stays plain string.
+  initialData?: Partial<Omit<UserFormData, 'firstName' | 'lastName'>> & {
+    firstName?: string | null;
+    lastName?: string | null;
+    provider?: string;
+  };
   onSubmit: (data: UserFormData) => void;
   onCancel: () => void;
   isLoading?: boolean;
@@ -84,6 +90,8 @@ interface UserFormProps {
     | 'password'
   )[];
   isSelfEdit?: boolean;
+  /** Whether the current user may reset this user's password in edit mode (requires `*:*`). */
+  canResetPassword?: boolean;
 }
 
 /**
@@ -95,6 +103,7 @@ interface UserFormProps {
  *
  * @param syncedFields - Field names managed by an external provider; rendered disabled and omitted from `onSubmit`.
  * @param isSelfEdit - Prevents the current user from modifying their own role or active status.
+ * @param canResetPassword - When false in edit mode, disables the password field (only `*:*` may reset another user's password).
  */
 export function UserForm({
   mode,
@@ -104,6 +113,7 @@ export function UserForm({
   isLoading = false,
   syncedFields = [],
   isSelfEdit = false,
+  canResetPassword = true,
 }: UserFormProps) {
   // Determina se l'utente è LDAP
   const isLdapUser = initialData?.provider === 'LDAP';
@@ -400,7 +410,10 @@ export function UserForm({
                     : 'Lascia vuoto per non modificare la password'
                 }
                 className={errors.password ? 'border-destructive' : ''}
-                disabled={syncedFields?.includes('password')}
+                disabled={
+                  syncedFields?.includes('password') ||
+                  (mode === 'edit' && !canResetPassword)
+                }
               />
               {errors.password && (
                 <p className="text-sm text-destructive">{errors.password}</p>
@@ -410,11 +423,20 @@ export function UserForm({
                   Campo sincronizzato esternamente
                 </p>
               )}
-              {mode === 'edit' && !syncedFields?.includes('password') && (
-                <p className="text-xs text-muted-foreground">
-                  Lascia vuoto se non vuoi modificare la password attuale
-                </p>
-              )}
+              {mode === 'edit' &&
+                !syncedFields?.includes('password') &&
+                !canResetPassword && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Solo un amministratore può reimpostare la password di un utente
+                  </p>
+                )}
+              {mode === 'edit' &&
+                !syncedFields?.includes('password') &&
+                canResetPassword && (
+                  <p className="text-xs text-muted-foreground">
+                    Lascia vuoto se non vuoi modificare la password attuale
+                  </p>
+                )}
 
               {/* Indicatori validazione password */}
               <PasswordValidationIndicators

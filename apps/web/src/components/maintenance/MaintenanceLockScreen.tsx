@@ -15,6 +15,7 @@ interface MaintenanceLockScreenProps {
  */
 export function MaintenanceLockScreen({ message }: MaintenanceLockScreenProps) {
   return (
+    // z-[100]: must outrank every shadcn dialog/popover/overlay (default z-50) so the lock screen can't be dismissed underneath one
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/95 backdrop-blur-sm">
       <div className="mx-4 flex max-w-md flex-col items-center gap-4 text-center">
         <Logo size="xl" className="text-primary" />

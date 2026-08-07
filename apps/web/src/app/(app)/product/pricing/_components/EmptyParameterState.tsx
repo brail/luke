@@ -4,7 +4,7 @@ import { Copy, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import type { PricingParameterSetInput } from '@luke/core';
+import type { PricingCurrency, PricingParameterSetInput } from '@luke/core';
 
 import { PermissionButton } from '../../../../../components/PermissionButton';
 import { Button } from '../../../../../components/ui/button';
@@ -65,8 +65,11 @@ export function EmptyParameterState({
       onCreateSet({
         name: s.name,
         countryCode: s.countryCode,
-        purchaseCurrency: s.purchaseCurrency,
-        sellingCurrency: s.sellingCurrency,
+        // I set della stagione precedente sono già passati per PricingParameterSetInputSchema
+        // alla creazione — la valuta è garantita valida a runtime, TS non lo sa perché la
+        // colonna DB resta `String` generico.
+        purchaseCurrency: s.purchaseCurrency as PricingCurrency,
+        sellingCurrency: s.sellingCurrency as PricingCurrency,
         qualityControlPercent: s.qualityControlPercent,
         transportInsuranceCost: s.transportInsuranceCost,
         duty: s.duty,

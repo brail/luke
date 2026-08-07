@@ -4,7 +4,17 @@
  */
 
 import { logAudit } from './auditLog';
+import { toErrorCode, toErrorMessage } from './error';
 import { t } from './trpc';
+
+/** Best-effort extraction of a string `id` field from a value of unknown shape. */
+function extractId(value: unknown): string | undefined {
+  if (value && typeof value === 'object' && 'id' in value) {
+    const id = (value as { id: unknown }).id;
+    if (typeof id === 'string') return id;
+  }
+  return undefined;
+}
 
 /**
  * Creates a tRPC middleware that automatically logs audit events for mutations.
@@ -27,11 +37,11 @@ export function withAuditLog(action: string, targetType: string) {
       const result = await next();
 
       // SUCCESS: estrai targetId se presente nel result o input
-      const targetId =
-        (result as any)?.data?.id ||
-        (result as any)?.id ||
-        (input as any)?.id ||
-        undefined;
+      const resultData =
+        result && typeof result === 'object' && 'data' in result
+          ? (result as { data: unknown }).data
+          : undefined;
+      const targetId = extractId(resultData) || extractId(result) || extractId(input);
 
       // Estrai metadata safe da input/result
       const safeMetadata = extractSafeMetadata(input, result);
@@ -45,9 +55,9 @@ export function withAuditLog(action: string, targetType: string) {
       });
 
       return result;
-    } catch (error) {
+    } catch (error: unknown) {
       // FAILURE: logga errore senza PII
-      const targetId = (input as any)?.id || undefined;
+      const targetId = extractId(input);
 
       await logAudit(ctx, {
         action,
@@ -55,8 +65,8 @@ export function withAuditLog(action: string, targetType: string) {
         targetId,
         result: 'FAILURE',
         metadata: {
-          errorCode: (error as any).code || 'UNKNOWN',
-          errorMessage: (error as any).message?.substring(0, 100), // Truncate
+          errorCode: toErrorCode(error),
+          errorMessage: toErrorMessage(error).substring(0, 100), // Truncate
         },
       });
 
@@ -69,11 +79,12 @@ export function withAuditLog(action: string, targetType: string) {
  * Estrae metadata sicuri da input e result
  * Evita di loggare dati sensibili
  */
-function extractSafeMetadata(input: any, result: any): Record<string, any> {
-  const metadata: Record<string, any> = {};
+function extractSafeMetadata(input: unknown, result: unknown): Record<string, unknown> {
+  const metadata: Record<string, unknown> = {};
 
   // Da input: solo campi sicuri
   if (input && typeof input === 'object') {
+    const inputRecord = input as Record<string, unknown>;
     const safeInputFields = [
       'username',
       'email',
@@ -86,14 +97,15 @@ function extractSafeMetadata(input: any, result: any): Record<string, any> {
       'lastName',
     ];
     for (const field of safeInputFields) {
-      if (input[field] !== undefined) {
-        metadata[`input_${field}`] = input[field];
+      if (inputRecord[field] !== undefined) {
+        metadata[`input_${field}`] = inputRecord[field];
       }
     }
   }
 
   // Da result: solo campi sicuri
   if (result && typeof result === 'object') {
+    const resultRecord = result as Record<string, unknown>;
     const safeResultFields = [
       'id',
       'username',
@@ -104,8 +116,8 @@ function extractSafeMetadata(input: any, result: any): Record<string, any> {
       'updatedAt',
     ];
     for (const field of safeResultFields) {
-      if (result[field] !== undefined) {
-        metadata[`result_${field}`] = result[field];
+      if (resultRecord[field] !== undefined) {
+        metadata[`result_${field}`] = resultRecord[field];
       }
     }
   }

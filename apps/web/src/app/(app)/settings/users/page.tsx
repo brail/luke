@@ -14,7 +14,7 @@ import {
   TabsList,
   TabsTrigger,
 } from '../../../../components/ui/tabs';
-import { UserDialog } from '../../../../components/UserDialog';
+import { UserDialog, type UserDialogSubmitData } from '../../../../components/UserDialog';
 import { usePermission } from '../../../../hooks/usePermission';
 import { debugLog } from '../../../../lib/debug';
 import { useRefresh } from '../../../../lib/refresh';
@@ -24,7 +24,7 @@ import { useStandardMutation } from '../../../../lib/useStandardMutation';
 import { ApproveUserDialog } from './_components/ApproveUserDialog';
 import { PendingUsersTab } from './_components/PendingUsersTab';
 import { SendVerificationDialog } from './_components/SendVerificationDialog';
-import { SortColumn, SortOrder, type UserForApproval } from './_components/types';
+import { SortColumn, SortOrder, type UserForApproval, type UserListItem } from './_components/types';
 import { UserAccessDialog } from './_components/UserAccessDialog';
 import { UsersTable } from './_components/UsersTable';
 import { UsersToolbar } from './_components/UsersToolbar';
@@ -41,7 +41,7 @@ export default function UsersPage() {
   // Stato per dialog e paginazione
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
-  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [selectedUser, setSelectedUser] = useState<UserListItem | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('');
@@ -53,7 +53,7 @@ export default function UsersPage() {
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{
     type: 'delete' | 'disable' | 'hardDelete' | 'revokeSessions';
-    user: any;
+    user: UserListItem;
     handler: () => void;
   } | null>(null);
 
@@ -69,7 +69,7 @@ export default function UsersPage() {
     useState<UserForApproval | null>(null);
 
   // Stato per dialog gestione accesso
-  const [accessDialogUser, setAccessDialogUser] = useState<any>(null);
+  const [accessDialogUser, setAccessDialogUser] = useState<UserListItem | null>(null);
 
   const refresh = useRefresh();
 
@@ -108,7 +108,7 @@ export default function UsersPage() {
       invalidate: refresh.users,
       onSuccessMessage: 'Utente creato con successo',
       onErrorMessage: 'Errore nella creazione',
-      onSuccess: (data: any) => {
+      onSuccess: data => {
         setDialogOpen(false);
         setPendingAccessUser({
           id: data.id,
@@ -127,6 +127,7 @@ export default function UsersPage() {
       invalidate: refresh.users,
       onSuccessMessage: 'Utente aggiornato con successo',
       onErrorMessage: "Errore nell'aggiornamento",
+      entityMessages: { FORBIDDEN: true },
       onSuccess: () => setDialogOpen(false),
     }
   );
@@ -137,6 +138,7 @@ export default function UsersPage() {
       invalidate: refresh.users,
       onSuccessMessage: 'Utente disattivato con successo',
       onErrorMessage: 'Errore nella disattivazione',
+      entityMessages: { FORBIDDEN: true },
     }
   );
 
@@ -146,13 +148,14 @@ export default function UsersPage() {
       invalidate: refresh.users,
       onSuccessMessage: 'Utente eliminato definitivamente',
       onErrorMessage: "Errore nell'eliminazione",
+      entityMessages: { FORBIDDEN: true },
     });
 
   const { mutate: revokeUserSessions, isPending: isRevokingSessions } =
     useStandardMutation({
       mutateFn: revokeUserSessionsMutation.mutateAsync,
       invalidate: refresh.users,
-      onSuccess: (data: any) => toast.success(data.message),
+      onSuccess: data => toast.success(data.message),
       onErrorMessage: 'Errore nella revoca sessioni',
     });
 
@@ -165,7 +168,7 @@ export default function UsersPage() {
     setDialogOpen(true);
   };
 
-  const handleEditUser = (user: any) => {
+  const handleEditUser = (user: UserListItem) => {
     setDialogMode('edit');
     setSelectedUser(user);
     // Determina campi sincronizzati in base al provider
@@ -186,7 +189,7 @@ export default function UsersPage() {
     setDialogOpen(true);
   };
 
-  const handleDeleteUser = (user: any) => {
+  const handleDeleteUser = (user: UserListItem) => {
     // Debug: verifica i valori
     debugLog('handleDeleteUser - user.id:', user.id);
     debugLog('handleDeleteUser - session.user.id:', session?.user?.id);
@@ -200,7 +203,7 @@ export default function UsersPage() {
     setConfirmDialogOpen(true);
   };
 
-  const handleHardDeleteUser = (user: any) => {
+  const handleHardDeleteUser = (user: UserListItem) => {
     setConfirmAction({
       type: 'hardDelete',
       user,
@@ -215,7 +218,7 @@ export default function UsersPage() {
     }
   };
 
-  const handleRevokeUserSessions = (user: any) => {
+  const handleRevokeUserSessions = (user: UserListItem) => {
     // Protezione: impedisci auto-revoca
     if (user.id === session?.user?.id) {
       toast.error(
@@ -246,13 +249,16 @@ export default function UsersPage() {
     setCurrentPage(1);
   };
 
-  const handleFormSubmit = (data: any) => {
+  const handleFormSubmit = (data: UserDialogSubmitData) => {
     if (dialogMode === 'create') {
-      createUser(data);
+      // CreateUserSchema (UserForm) requires password (min 12 chars) in create mode; the shared
+      // UserDialogSubmitData type just doesn't encode that per-mode distinction.
+      createUser({ ...data, password: data.password ?? '' });
     } else {
+      if (!selectedUser) return;
       // Filtra i campi per self-edit
-      const isSelfEdit = selectedUser?.id === session?.user?.id;
-      const updateData: any = { id: selectedUser.id };
+      const isSelfEdit = selectedUser.id === session?.user?.id;
+      const updateData: Parameters<typeof updateUserMutation.mutateAsync>[0] = { id: selectedUser.id };
 
       // Aggiungi solo i campi modificati
       if (data.email !== selectedUser.email) updateData.email = data.email;
@@ -265,7 +271,8 @@ export default function UsersPage() {
       if (data.isActive !== selectedUser.isActive)
         updateData.isActive = data.isActive;
 
-      // Password solo se non vuota
+      // Reset password: solo se l'admin ha effettivamente digitato un valore — `UserForm`
+      // già rimuove `password` dal payload quando lasciato vuoto in edit mode.
       if (data.password && data.password.trim() !== '') {
         updateData.password = data.password;
       }
@@ -372,11 +379,12 @@ export default function UsersPage() {
           open={dialogOpen}
           onOpenChange={setDialogOpen}
           mode={dialogMode}
-          user={selectedUser}
+          user={selectedUser ?? undefined}
           onSubmit={handleFormSubmit}
           isLoading={isCreatingUser || isUpdatingUser}
           syncedFields={syncedFields}
           isSelfEdit={selectedUser?.id === session?.user?.id}
+          canResetPassword={can('*:*')}
         />
 
         {/* Confirm Dialog */}

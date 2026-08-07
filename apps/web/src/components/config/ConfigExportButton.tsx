@@ -34,7 +34,7 @@ export function ConfigExportButton({ className, disabled }: ConfigExportButtonPr
 
       // Prepara i dati per l'export
       const exportData = {
-        configs: result.configs.map((config: any) => ({
+        configs: result.configs.map(config => ({
           key: config.key,
           value: config.value,
           encrypt: config.isEncrypted,

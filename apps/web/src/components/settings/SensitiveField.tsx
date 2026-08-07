@@ -12,13 +12,23 @@ import {
 } from '../ui/form';
 import { Input } from '../ui/input';
 
+import type { Noop, RefCallBack } from 'react-hook-form';
+
 interface SensitiveFieldProps {
   label: React.ReactNode;
   description?: string;
   hasValue?: boolean;
   placeholder?: string;
   disabled?: boolean;
-  field: any;
+  /** react-hook-form `field` object; typed structurally since the caller's field schema varies per form. */
+  field: {
+    name: string;
+    value: string | undefined;
+    onChange: (...event: unknown[]) => void;
+    onBlur: Noop;
+    ref: RefCallBack;
+    disabled?: boolean;
+  };
 }
 
 /**

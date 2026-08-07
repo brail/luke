@@ -39,7 +39,7 @@ export function GoogleCalendarSubscribeDialog({ open, onClose, calendarId }: Pro
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-      <DialogContent className="sm:max-w-[480px]">
+      <DialogContent className="sm:max-w-[480px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
         <DialogHeader>
           <DialogTitle>Iscriviti ai calendari Google</DialogTitle>
           <DialogDescription>

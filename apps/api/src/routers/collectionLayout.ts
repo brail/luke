@@ -217,10 +217,10 @@ const rowsRouter = router({
         }
         const row = await createRow(
           { ...rowInput, ...(confirmedPictureKey ? { pictureKey: confirmedPictureKey } : {}) },
-          tx as any,
+          tx,
           ctx.session!.user.id
         );
-        const sync = await syncRowQuotations(row.id, quotations ?? [], layoutScope, tx as any);
+        const sync = await syncRowQuotations(row.id, quotations ?? [], layoutScope, tx);
         return { result: row, quotationsSync: sync };
       }, { timeout: 15000 });
 
@@ -281,12 +281,12 @@ const rowsRouter = router({
           input.rowId,
           { ...rowData, ...(confirmedPictureKey ? { pictureKey: confirmedPictureKey } : {}) },
           beforeRow,
-          tx as any,
+          tx,
           ctx.session!.user.id
         );
 
         const sync = quotations !== undefined
-          ? await syncRowQuotations(input.rowId, quotations, layoutScope, tx as any)
+          ? await syncRowQuotations(input.rowId, quotations, layoutScope, tx)
           : { created: [], updated: [], deletedIds: [] };
 
         return { result: row, before: beforeRow, quotationsSync: sync };
@@ -471,7 +471,7 @@ async function resolveLayoutUrls<T extends {
         pictureUrl: r.pictureKey ? resolve('collection-row-pictures', r.pictureKey) : null,
       })),
     })),
-  } as any;
+  } as T & { brand: { logoUrl: string | null } }; // spread di un T generico con override annidato: TS non verifica la forma esatta
 }
 
 const EXPORT_INCLUDE = {
@@ -520,9 +520,9 @@ const exportRouter = router({
         include: ROW_EXPORT_INCLUDE,
       });
       if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Riga non trovata' });
-      await assertBrandAccess(ctx, (row as any).collectionLayout.brandId);
+      await assertBrandAccess(ctx, row.collectionLayout.brandId);
 
-      const { collectionLayout, ...rowData } = row as any;
+      const { collectionLayout, ...rowData } = row;
       const buffer = await buildCollectionRowXlsx(
         { brand: collectionLayout.brand, season: collectionLayout.season, row: rowData },
         ctx.prisma,
@@ -551,7 +551,7 @@ const exportRouter = router({
         include: ROW_EXPORT_INCLUDE,
       });
       if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Riga non trovata' });
-      await assertBrandAccess(ctx, (row as any).collectionLayout.brandId);
+      await assertBrandAccess(ctx, row.collectionLayout.brandId);
 
       const exportUser = await ctx.prisma.user.findUnique({
         where: { id: ctx.session.user.id },
@@ -561,7 +561,7 @@ const exportRouter = router({
         ? [exportUser.firstName, exportUser.lastName].filter(Boolean).join(' ') || exportUser.username
         : ctx.session.user.username;
 
-      const { collectionLayout, ...rowData } = row as any;
+      const { collectionLayout, ...rowData } = row;
       const buffer = await buildCollectionRowPdf(
         { brand: collectionLayout.brand, season: collectionLayout.season, row: rowData },
         ctx.prisma,
