@@ -11,7 +11,11 @@ import type { IPrismaConfigClient } from '../runtime/env';
 /** Extends `IPrismaConfigClient` with write capabilities needed for upsert operations. */
 export interface IPrismaConfigClientWithWrite extends IPrismaConfigClient {
   appConfig: IPrismaConfigClient['appConfig'] & {
-    upsert(args: any): Promise<any>;
+    upsert(args: {
+      where: { key: string };
+      update: { value: string; isEncrypted?: boolean; updatedAt?: Date };
+      create: { key: string; value: string; isEncrypted?: boolean };
+    }): Promise<unknown>;
   };
 }
 
@@ -37,13 +41,19 @@ export function invalidateRbacCache(): void {
  * Retrieves the full RBAC configuration from AppConfig, using a 60-second in-memory cache.
  *
  * @param prisma - Prisma client instance
+ * @param opts.bypassCache - Skip the cache and read fresh from the DB. Required
+ *   for last-admin/kill-switch guards evaluated inside a transaction: the
+ *   advisory lock they hold serializes concurrent writers but does not force
+ *   a cache miss, so a plain cached read can still evaluate the invariant
+ *   against a value stale by up to the cache TTL.
  * @returns RBAC configuration including section defaults and disabled sections
  */
 export async function getRbacConfig(
-  prisma: IPrismaConfigClient
+  prisma: IPrismaConfigClient,
+  opts: { bypassCache?: boolean } = {}
 ): Promise<RbacConfig> {
   const cached = cache.get('rbac');
-  if (cached && Date.now() - cached.ts < TTL) {
+  if (!opts.bypassCache && cached && Date.now() - cached.ts < TTL) {
     return cached.data;
   }
 
@@ -96,12 +106,17 @@ export async function getSectionsDisabled(
 }
 
 /**
- * Persists per-role section-access defaults to AppConfig and invalidates the RBAC cache.
- *
- * @param prisma - Prisma client with write capabilities
- * @param sectionAccessDefaults - Map of role → section → `'enabled' | 'disabled' | 'auto'`
+ * Persists per-role section-access defaults to AppConfig. Write-only —
+ * deliberately does NOT invalidate the cache or check any invariant. The
+ * only legitimate caller is `sectionAccessRouter.setRoleDefaults`, which
+ * wraps this in its own `$transaction` with `acquireLastAdminLock` +
+ * `countAdminsWithSettingsAccess` before calling it, and invalidates the
+ * cache itself after the transaction commits. There is no safe
+ * non-transactional variant: an unguarded convenience wrapper existed here
+ * before and, being unused, was one accidental call away from silently
+ * reintroducing a full admin lockout of Settings.
  */
-export async function setRbacSectionDefaults(
+export async function setRbacSectionDefaultsTx(
   prisma: IPrismaConfigClientWithWrite,
   sectionAccessDefaults: Record<string, Partial<Record<string, string>>>
 ): Promise<void> {
@@ -118,6 +133,4 @@ export async function setRbacSectionDefaults(
       isEncrypted: false,
     },
   });
-
-  invalidateRbacCache();
 }

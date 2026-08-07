@@ -7,8 +7,10 @@ import { effectiveSectionAccess, sectionEnum, Roles } from '@luke/core';
 import type { Section, Role } from '@luke/core';
 import { getRbacConfig } from '@luke/core/server';
 
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import type { FastifyBaseLogger } from 'fastify';
+
+type PrismaLike = PrismaClient | Prisma.TransactionClient;
 
 const ALL_SECTIONS = sectionEnum.options;
 
@@ -94,24 +96,22 @@ export async function getOverride(
  * @returns The upserted record, or null when the override was removed.
  */
 export async function setOverride(
-  prisma: PrismaClient,
+  prisma: PrismaLike,
   userId: string,
   section: Section,
   enabled: boolean | null,
   logger?: FastifyBaseLogger
 ) {
   if (enabled === null) {
-    // Rimuovi override
-    await prisma.userSectionAccess
-      .deleteMany({
-        where: {
-          userId,
-          section,
-        },
-      })
-      .catch(e => {
-        logger?.error({ err: e, userId, section }, 'Failed to delete sectionAccess override');
-      });
+    // Rimuovi override — un fallimento qui deve propagare: il chiamante
+    // (dentro $transaction) deve poter fare rollback invece di committare
+    // uno stato che dice "rimosso" e non lo è.
+    try {
+      await prisma.userSectionAccess.deleteMany({ where: { userId, section } });
+    } catch (e) {
+      logger?.error({ err: e, userId, section }, 'Failed to delete sectionAccess override');
+      throw e;
+    }
     return null;
   }
 
@@ -136,40 +136,71 @@ export async function listOverridesForUser(
 }
 
 /**
- * Counts active admin users who have effective access to the `settings` section.
- * Used for last-admin safety checks before revoking settings access.
+ * Counts active admins who have effective access to the `settings` section
+ * under the given `sectionAccessDefaults`/`disabledSections` — same 4-layer
+ * evaluation as `effectiveSectionAccess`, not just "has role admin". Pass the
+ * currently committed config to check the status quo (used by `set`), or a
+ * proposed config to check a hypothetical change before committing it (used
+ * by `setRoleDefaults`).
  */
 export async function countAdminsWithSettingsAccess(
-  prisma: PrismaClient
+  prisma: PrismaLike,
+  sectionAccessDefaults: Record<string, Partial<Record<Section, 'auto' | 'enabled' | 'disabled'>>>,
+  disabledSections: string[]
 ): Promise<number> {
-  // Conta admin che:
-  // 1. Hanno ruolo admin E
-  // 2. NON hanno override disabled su 'settings'
-  const adminCount = await prisma.user.count({
-    where: {
-      role: 'admin',
-      isActive: true,
-      OR: [
-        // Nessun override (usa ruolo)
-        {
-          sectionAccess: {
-            none: {
-              section: 'settings',
-            },
-          },
-        },
-        // Override enabled
-        {
-          sectionAccess: {
-            some: {
-              section: 'settings',
-              enabled: true,
-            },
-          },
-        },
-      ],
+  const admins = await prisma.user.findMany({
+    where: { role: 'admin', isActive: true },
+    select: {
+      sectionAccess: {
+        where: { section: 'settings' },
+        select: { enabled: true },
+      },
     },
   });
 
-  return adminCount;
+  return admins.filter(admin =>
+    effectiveSectionAccess({
+      role: 'admin',
+      sectionAccessDefaults,
+      userOverride: admin.sectionAccess[0] ?? null,
+      section: 'settings',
+      disabledSections,
+    })
+  ).length;
+}
+
+/**
+ * Same evaluation as `countAdminsWithSettingsAccess`, but substitutes
+ * `userId`'s settings override with a hypothetical value first — for
+ * guarding a specific user's transition (set/remove an override), where
+ * counting current state and comparing to a threshold breaks for
+ * `enabled: null` (removal) and for changes that increase access.
+ */
+export async function countAdminsWithSettingsAccessAfterChange(
+  prisma: PrismaLike,
+  userId: string,
+  hypotheticalEnabled: boolean | null,
+  sectionAccessDefaults: Record<string, Partial<Record<Section, 'auto' | 'enabled' | 'disabled'>>>,
+  disabledSections: string[]
+): Promise<number> {
+  const admins = await prisma.user.findMany({
+    where: { role: 'admin', isActive: true },
+    select: {
+      id: true,
+      sectionAccess: { where: { section: 'settings' }, select: { enabled: true } },
+    },
+  });
+
+  return admins.filter(admin => {
+    const enabled =
+      admin.id === userId ? hypotheticalEnabled : (admin.sectionAccess[0]?.enabled ?? null);
+
+    return effectiveSectionAccess({
+      role: 'admin',
+      sectionAccessDefaults,
+      userOverride: enabled === null ? null : { enabled },
+      section: 'settings',
+      disabledSections,
+    });
+  }).length;
 }

@@ -7,6 +7,12 @@ import { z } from 'zod';
 
 import { hasPermission, type LockedFields, type Role } from '@luke/core';
 
+import { assertNotLastAdminWithSettingsAccess } from '../lib/lastAdminGuard';
+import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
+
+import type { Context } from '../lib/trpc';
+import type { Prisma } from '@prisma/client';
+
 /** UUID schema for a user ID — shared across sub-routers. */
 export const UserIdSchema = z.object({
   id: z.string().uuid('ID utente non valido'),
@@ -41,7 +47,7 @@ export async function deleteUserHandler({
   ctx,
 }: {
   input: z.infer<typeof UserIdSchema>;
-  ctx: any;
+  ctx: Context & { session: NonNullable<Context['session']> };
 }) {
   const user = await ctx.prisma.user.findUnique({
     where: { id: input.id },
@@ -62,31 +68,30 @@ export async function deleteUserHandler({
     });
   }
 
-  // Protezione: impedisci eliminazione dell'ultimo admin
-  if (hasPermission({ role: user.role as Role }, '*:*')) {
-    const adminCount = await ctx.prisma.user.count({
-      where: {
-        role: 'admin',
-        isActive: true,
+  // Soft delete: imposta isActive = false
+  const deletedUser = await ctx.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const current = await tx.user.findUnique({
+      where: { id: input.id },
+      select: { role: true },
+    });
+    if (current && hasPermission({ role: current.role as Role }, '*:*')) {
+      await assertNotLastAdminWithSettingsAccess(
+        tx,
+        input.id,
+        "Non puoi eliminare l'ultimo amministratore del sistema"
+      );
+    }
+
+    return tx.user.update({
+      where: { id: input.id },
+      data: {
+        isActive: false,
+        updatedAt: new Date(),
       },
     });
-
-    if (adminCount <= 1) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: "Non puoi eliminare l'ultimo amministratore del sistema",
-      });
-    }
-  }
-
-  // Soft delete: imposta isActive = false
-  const deletedUser = await ctx.prisma.user.update({
-    where: { id: input.id },
-    data: {
-      isActive: false,
-      updatedAt: new Date(),
-    },
   });
+
+  invalidateTokenVersionCache(input.id);
 
   // Audit logging gestito automaticamente dal middleware withAuditLog
 

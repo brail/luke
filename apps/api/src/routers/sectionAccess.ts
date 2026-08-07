@@ -8,15 +8,17 @@ import { z } from 'zod';
 
 import { sectionEnum, Roles } from '@luke/core';
 import type { Section } from '@luke/core';
-import { setRbacSectionDefaults } from '@luke/core/server';
+import { getRbacConfig, invalidateRbacCache, setRbacSectionDefaultsTx } from '@luke/core/server';
 
 import { logAudit } from '../lib/auditLog';
+import { acquireLastAdminLock } from '../lib/lastAdminGuard';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure, adminProcedure } from '../lib/trpc';
 import {
   setOverride,
   listOverridesForUser,
   countAdminsWithSettingsAccess,
+  countAdminsWithSettingsAccessAfterChange,
   getSectionDefaults,
   computeEffectiveForUser,
 } from '../services/sectionAccess.service';
@@ -106,15 +108,47 @@ export const sectionAccessRouter = router({
     .input(setRoleDefaultsInput)
     .use(withRateLimit('sectionAccessSet'))
     .mutation(async ({ input, ctx }) => {
-      await setRbacSectionDefaults(ctx.prisma, input.sectionAccessDefaults);
+      await ctx.prisma.$transaction(async tx => {
+        // Safety check: impedisci una config che tolga l'accesso ai settings
+        // a TUTTI gli admin — a differenza di `set` (che tocca un utente alla
+        // volta), qui la scrittura è sui default di ruolo: senza guard, un
+        // singolo admin può auto-bloccare l'intero sistema fuori da Settings,
+        // l'unico posto raggiungibile per annullare la modifica.
+        await acquireLastAdminLock(tx);
+        const { disabledSections } = await getRbacConfig(tx, { bypassCache: true });
+        const survivingAdmins = await countAdminsWithSettingsAccess(
+          tx,
+          input.sectionAccessDefaults,
+          disabledSections
+        );
 
-      await logAudit(ctx, {
-        action: 'CONFIG_UPSERT',
-        targetType: 'Config',
-        targetId: 'rbac.sectionAccessDefaults',
-        result: 'SUCCESS',
-        metadata: { sectionAccessDefaults: input.sectionAccessDefaults },
+        if (survivingAdmins === 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              "Questa configurazione toglierebbe l'accesso ai settings a tutti gli amministratori.",
+          });
+        }
+
+        await setRbacSectionDefaultsTx(tx, input.sectionAccessDefaults);
       });
+
+      invalidateRbacCache(); // solo dopo il commit — come in users.core.router.ts
+
+      // La mutation RBAC è già committata: un fallimento dell'audit log
+      // (azione CRITICAL_AUDIT_ACTIONS, che normalmente rilancia) non deve
+      // travestirsi da fallimento della mutation stessa.
+      try {
+        await logAudit(ctx, {
+          action: 'CONFIG_UPSERT',
+          targetType: 'Config',
+          targetId: 'rbac.sectionAccessDefaults',
+          result: 'SUCCESS',
+          metadata: { sectionAccessDefaults: input.sectionAccessDefaults },
+        });
+      } catch (err) {
+        ctx.logger.error({ err }, 'Audit log fallito dopo commit RBAC riuscito');
+      }
 
       return { success: true };
     }),
@@ -132,31 +166,64 @@ export const sectionAccessRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { userId, section, enabled } = input;
 
-      // Safety check: impedisci di rimuovere accesso settings all'ultimo admin
-      if (section === 'settings' && enabled === false) {
-        const adminCount = await countAdminsWithSettingsAccess(ctx.prisma);
-        if (adminCount <= 1) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message:
-              "Non puoi rimuovere l'accesso ai settings all'ultimo amministratore.",
+      const result = await ctx.prisma.$transaction(async tx => {
+        // Safety check: impedisci di rimuovere accesso settings all'ultimo
+        // admin — solo se il target è admin: revocare un override di un
+        // viewer/editor non tocca minimamente l'invariante. Lock acquisito
+        // prima della lettura del ruolo, come ogni altro punto che valuta
+        // questo invariante — serializza correttamente contro un'altra
+        // operazione che tiene lo stesso lock (altra `set`, `hardDelete`,
+        // demozione, `setRoleDefaults`). Non copre una PROMOZIONE
+        // concorrente dello stesso `userId` (viewer/editor → admin): quel
+        // percorso non acquisisce questo lock, quindi resta una finestra
+        // stretta e nota, non chiusa da questo riordino.
+        if (section === 'settings' && enabled !== true) {
+          await acquireLastAdminLock(tx);
+          const target = await tx.user.findUnique({
+            where: { id: userId },
+            select: { role: true },
           });
+
+          if (target?.role === 'admin') {
+            const { sectionAccessDefaults, disabledSections } = await getRbacConfig(tx, {
+              bypassCache: true,
+            });
+            const survivingAdmins = await countAdminsWithSettingsAccessAfterChange(
+              tx,
+              userId,
+              enabled,
+              sectionAccessDefaults,
+              disabledSections
+            );
+            if (survivingAdmins === 0) {
+              throw new TRPCError({
+                code: 'BAD_REQUEST',
+                message:
+                  "Questa modifica toglierebbe l'accesso ai settings a tutti gli amministratori.",
+              });
+            }
+          }
         }
-      }
 
-      const result = await setOverride(ctx.prisma, userId, section, enabled, ctx.logger);
-
-      // Log audit
-      await logAudit(ctx, {
-        action: 'SECTION_ACCESS_UPDATED',
-        targetType: 'UserSectionAccess',
-        targetId: result?.id,
-        metadata: {
-          targetUserId: userId,
-          section,
-          enabled,
-        },
+        return setOverride(tx, userId, section, enabled, ctx.logger);
       });
+
+      // La mutation è già committata: un fallimento dell'audit log non deve
+      // travestirsi da fallimento della mutation stessa.
+      try {
+        await logAudit(ctx, {
+          action: 'SECTION_ACCESS_UPDATED',
+          targetType: 'UserSectionAccess',
+          targetId: result?.id,
+          metadata: {
+            targetUserId: userId,
+            section,
+            enabled,
+          },
+        });
+      } catch (err) {
+        ctx.logger.error({ err }, 'Audit log fallito dopo commit sectionAccess.set riuscito');
+      }
 
       return result;
     }),

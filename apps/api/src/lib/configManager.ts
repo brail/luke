@@ -6,6 +6,7 @@
 
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 
+import { TRPCError } from '@trpc/server';
 import pino from 'pino';
 import { z } from 'zod';
 
@@ -18,9 +19,11 @@ import {
   type LdapResilienceConfig,
   Roles,
 } from '@luke/core';
-import { getMasterKey } from '@luke/core/server';
+import { getMasterKey, invalidateRbacCache } from '@luke/core/server';
 
-import type { BackupScope, PrismaClient } from '@prisma/client';
+import { acquireLastAdminLock } from './lastAdminGuard';
+
+import type { BackupScope, Prisma, PrismaClient } from '@prisma/client';
 
 const logger = pino({ level: 'info' });
 
@@ -119,6 +122,61 @@ export function decryptValue(encrypted: string): string {
  * // Store encrypted value
  * await saveConfig(prisma, "auth.ldap.bindPassword", "secret123", true);
  */
+
+/**
+ * Keys read by `getRbacConfig`'s cache — any write here must invalidate it,
+ * or the RBAC-aware last-admin guards (`lastAdminGuard.ts`,
+ * `sectionAccess.ts`) can evaluate against a stale kill-switch/defaults value
+ * for up to the cache TTL.
+ */
+const RBAC_CACHE_KEYS = /^(rbac\.|app\.sections\.disabled$)/;
+
+/**
+ * `app.sections.disabled` is the RBAC kill switch: it beats every other
+ * access layer, including the admin `*:*` fallback (see
+ * `effectiveSectionAccess`). Disabling `'settings'` while an admin exists
+ * would lock everyone — admins included — out of the only in-app place to
+ * undo it. Guarded here, the single chokepoint every write to this key goes
+ * through (generic `config.set`/`config.update`, gated only by the
+ * editor-shared `config:update` permission — no admin check upstream).
+ */
+async function saveSectionsDisabledGuarded(
+  prisma: PrismaClient,
+  rawValue: string,
+  finalValue: string,
+  encrypt: boolean
+): Promise<void> {
+  await prisma.$transaction(async tx => {
+    let disabled: string[];
+    try {
+      disabled = z.array(z.string()).parse(JSON.parse(rawValue));
+    } catch {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'app.sections.disabled deve essere un array JSON di stringhe',
+      });
+    }
+
+    if (disabled.includes('settings')) {
+      await acquireLastAdminLock(tx);
+      const adminCount = await tx.user.count({ where: { role: 'admin', isActive: true } });
+      if (adminCount > 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message:
+            "Questa configurazione disabiliterebbe Settings per tutti, admin inclusi — nessun modo di annullarla dall'app.",
+        });
+      }
+    }
+
+    await tx.appConfig.upsert({
+      where: { key: 'app.sections.disabled' },
+      update: { value: finalValue, isEncrypted: encrypt, updatedAt: new Date() },
+      create: { key: 'app.sections.disabled', value: finalValue, isEncrypted: encrypt },
+    });
+  });
+}
+
 export async function saveConfig(
   prisma: PrismaClient,
   key: string,
@@ -127,19 +185,27 @@ export async function saveConfig(
 ): Promise<void> {
   const finalValue = encrypt ? encryptValue(value) : value;
 
-  await prisma.appConfig.upsert({
-    where: { key },
-    update: {
-      value: finalValue,
-      isEncrypted: encrypt,
-      updatedAt: new Date(),
-    },
-    create: {
-      key,
-      value: finalValue,
-      isEncrypted: encrypt,
-    },
-  });
+  if (key === 'app.sections.disabled') {
+    await saveSectionsDisabledGuarded(prisma, value, finalValue, encrypt);
+  } else {
+    await prisma.appConfig.upsert({
+      where: { key },
+      update: {
+        value: finalValue,
+        isEncrypted: encrypt,
+        updatedAt: new Date(),
+      },
+      create: {
+        key,
+        value: finalValue,
+        isEncrypted: encrypt,
+      },
+    });
+  }
+
+  if (RBAC_CACHE_KEYS.test(key)) {
+    invalidateRbacCache();
+  }
 }
 
 /**
@@ -338,7 +404,7 @@ export async function listConfigsPaged(
   } = params;
 
   // Costruisci where clause per filtri
-  const where: any = {};
+  const where: Prisma.AppConfigWhereInput = {};
 
   // Gestisci filtri per key
   if (q && category) {
@@ -362,7 +428,7 @@ export async function listConfigsPaged(
   // Calcola skip per paginazione
   const skip = (page - 1) * pageSize;
 
-  const countWhere: any = {};
+  const countWhere: Prisma.AppConfigWhereInput = {};
 
   if (q && category) {
     countWhere.AND = [
@@ -424,6 +490,10 @@ export async function deleteConfig(
   await prisma.appConfig.delete({
     where: { key },
   });
+
+  if (RBAC_CACHE_KEYS.test(key)) {
+    invalidateRbacCache();
+  }
 }
 
 /**
@@ -600,7 +670,11 @@ function parseConfigOrDefault<K extends AppConfigKey>(
   if (raw === null) return fallback;
   try {
     return parseConfigValue(key, raw);
-  } catch {
+  } catch (error) {
+    logger.warn(
+      { key, error: error instanceof Error ? error.message : 'Unknown error' },
+      'Valore AppConfig non valido, uso fallback'
+    );
     return fallback;
   }
 }

@@ -126,15 +126,16 @@ describe('Section Access Overrides', () => {
         '../src/services/sectionAccess.service'
       );
 
-      // Il test esercita solo la logica del service: il conteggio arriva da un
-      // mock, quindi non serve (né si apre) alcuna connessione reale.
+      // Il test esercita solo la logica del service: admin e override
+      // arrivano da un mock, quindi non serve (né si apre) alcuna connessione
+      // reale. Nessun override → risolve via fallback RBAC (admin = *:*).
       const mockPrisma = {
         user: {
-          count: async () => 1, // Simula solo 1 admin
+          findMany: async () => [{ sectionAccess: [] }], // 1 admin, nessun override
         },
       } as any;
 
-      const count = await countAdminsWithSettingsAccess(mockPrisma);
+      const count = await countAdminsWithSettingsAccess(mockPrisma, {}, []);
       expect(count).toBe(1);
     });
   });

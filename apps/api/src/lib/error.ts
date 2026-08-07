@@ -3,6 +3,7 @@
  * Registers Fastify's global error handler and exposes the tRPC error formatter.
  */
 
+import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 
 import { isProduction } from '@luke/core';
@@ -23,6 +24,13 @@ const isProd = isProduction();
 /** Extracts a readable message from any caught value. */
 export function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** Extracts a stable error code for audit logging: tRPC code, Prisma error code, or 'UNKNOWN'. */
+export function toErrorCode(err: unknown): string {
+  if (err instanceof TRPCError) return err.code;
+  if (err instanceof Prisma.PrismaClientKnownRequestError) return err.code;
+  return 'UNKNOWN';
 }
 
 /**

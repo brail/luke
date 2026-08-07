@@ -52,6 +52,7 @@ export const UpdateUserInputSchema = z.object({
   lastName: z.string().optional().or(z.literal('')),
   role: z.enum(['admin', 'editor', 'viewer']).optional(),
   isActive: z.boolean().optional(),
+  password: z.string().min(12, 'Password deve essere di almeno 12 caratteri').optional(),
 });
 
 export type User = z.infer<typeof UserSchema>;
