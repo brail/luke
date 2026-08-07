@@ -43,8 +43,10 @@ function validInput(name: string) {
   return {
     name,
     countryCode: 'CN',
-    purchaseCurrency: 'CNY',
-    sellingCurrency: 'EUR',
+    // `as const`: lo schema accetta l'unione di PRICING_CURRENCIES,
+    // non una stringa qualunque.
+    purchaseCurrency: 'CNY' as const,
+    sellingCurrency: 'EUR' as const,
     qualityControlPercent: 2,
     transportInsuranceCost: 3,
     duty: 8,

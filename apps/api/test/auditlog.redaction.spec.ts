@@ -13,6 +13,48 @@ import { describe, it, expect } from 'vitest';
 
 import { sanitizeMetadata } from '../src/lib/auditLog';
 
+/**
+ * Restringe il risultato di `sanitizeMetadata`, che è `unknown` per costruzione:
+ * la funzione può restituire un oggetto, un array o la stringa
+ * `'[REDACTED:MAX_DEPTH]'`, e il tipo lo dice onestamente.
+ *
+ * Il controllo è a runtime e non un cast: se un giorno la funzione smettesse di
+ * restituire un oggetto, un cast lascerebbe passare le asserzioni su proprietà
+ * `undefined` — cioè test verdi su una redazione che non avviene più. Qui invece
+ * fallisce, e dice cosa ha ricevuto.
+ */
+function asRecord(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(
+      `Atteso un oggetto da sanitizeMetadata, ricevuto ${
+        Array.isArray(value) ? 'array' : typeof value
+      }`
+    );
+  }
+  return value as Record<string, unknown>;
+}
+
+/**
+ * Legge un percorso annidato su un risultato `unknown`, restringendo a ogni
+ * livello. I segmenti numerici indicizzano gli array: `'users.0.password'`.
+ *
+ * Evita di annidare `asRecord()` una volta per segmento, che renderebbe le
+ * asserzioni illeggibili proprio dove il test è più interessante — la redazione
+ * in profondità.
+ */
+function at(value: unknown, path: string): unknown {
+  return path.split('.').reduce<unknown>((acc, key) => {
+    if (Array.isArray(acc)) {
+      const index = Number(key);
+      if (!Number.isInteger(index)) {
+        throw new Error(`Segmento "${key}" non è un indice valido per un array`);
+      }
+      return acc[index];
+    }
+    return asRecord(acc)[key];
+  }, value);
+}
+
 describe('sanitizeMetadata', () => {
   describe('Campi sensibili (blacklist)', () => {
     it('dovrebbe redattare password e varianti', () => {
@@ -25,7 +67,7 @@ describe('sanitizeMetadata', () => {
         newPassword: 'new123',
       };
 
-      const sanitized = sanitizeMetadata(input);
+      const sanitized = asRecord(sanitizeMetadata(input));
 
       expect(sanitized.username).toBe('test');
       expect(sanitized.password).toBe('***REDACTED***');
@@ -45,7 +87,7 @@ describe('sanitizeMetadata', () => {
         bearerToken: 'jkl012',
       };
 
-      const sanitized = sanitizeMetadata(input);
+      const sanitized = asRecord(sanitizeMetadata(input));
 
       expect(sanitized.username).toBe('test');
       expect(sanitized.token).toBe('***REDACTED***');
@@ -64,7 +106,7 @@ describe('sanitizeMetadata', () => {
         jwtSecret: 'jwt123',
       };
 
-      const sanitized = sanitizeMetadata(input);
+      const sanitized = asRecord(sanitizeMetadata(input));
 
       expect(sanitized.username).toBe('test');
       expect(sanitized.secret).toBe('***REDACTED***');
@@ -83,7 +125,7 @@ describe('sanitizeMetadata', () => {
         bindPassword: 'bind123',
       };
 
-      const sanitized = sanitizeMetadata(input);
+      const sanitized = asRecord(sanitizeMetadata(input));
 
       expect(sanitized.username).toBe('test');
       expect(sanitized.credentials).toBe('***REDACTED***');
@@ -109,7 +151,7 @@ describe('sanitizeMetadata', () => {
         updatedAt: '2023-01-01T00:00:00Z',
       };
 
-      const sanitized = sanitizeMetadata(input);
+      const sanitized = asRecord(sanitizeMetadata(input));
 
       expect(sanitized).toEqual(input);
     });
@@ -126,7 +168,7 @@ describe('sanitizeMetadata', () => {
         newPlanningGroupId: 'group-2',
       };
 
-      const sanitized = sanitizeMetadata(input);
+      const sanitized = asRecord(sanitizeMetadata(input));
 
       expect(sanitized).toEqual(input);
     });
@@ -150,15 +192,15 @@ describe('sanitizeMetadata', () => {
         },
       };
 
-      const sanitized = sanitizeMetadata(input);
+      const sanitized = asRecord(sanitizeMetadata(input));
 
       expect(sanitized.username).toBe('test');
-      expect(sanitized.user.email).toBe('test@test.com');
-      expect(sanitized.user.password).toBe('***REDACTED***');
-      expect(sanitized.user.profile.firstName).toBe('Test');
-      expect(sanitized.user.profile.apiKey).toBe('***REDACTED***');
+      expect(at(sanitized, 'user.email')).toBe('test@test.com');
+      expect(at(sanitized, 'user.password')).toBe('***REDACTED***');
+      expect(at(sanitized, 'user.profile.firstName')).toBe('Test');
+      expect(at(sanitized, 'user.profile.apiKey')).toBe('***REDACTED***');
       // credentials contiene token/secret quindi viene redatto completamente
-      expect(sanitized.user.profile.credentials).toBe('***REDACTED***');
+      expect(at(sanitized, 'user.profile.credentials')).toBe('***REDACTED***');
     });
 
     it('dovrebbe gestire array di oggetti', () => {
@@ -170,13 +212,13 @@ describe('sanitizeMetadata', () => {
         tokens: ['token1', 'token2'],
       };
 
-      const sanitized = sanitizeMetadata(input);
+      const sanitized = asRecord(sanitizeMetadata(input));
 
       expect(sanitized.users).toHaveLength(2);
-      expect(sanitized.users[0].username).toBe('user1');
-      expect(sanitized.users[0].password).toBe('***REDACTED***');
-      expect(sanitized.users[1].username).toBe('user2');
-      expect(sanitized.users[1].password).toBe('***REDACTED***');
+      expect(at(sanitized, 'users.0.username')).toBe('user1');
+      expect(at(sanitized, 'users.0.password')).toBe('***REDACTED***');
+      expect(at(sanitized, 'users.1.username')).toBe('user2');
+      expect(at(sanitized, 'users.1.password')).toBe('***REDACTED***');
       // tokens contiene 'token' quindi viene redatto completamente
       expect(sanitized.tokens).toBe('***REDACTED***');
     });
@@ -191,7 +233,7 @@ describe('sanitizeMetadata', () => {
         email: 'test@test.com',
       };
 
-      const sanitized = sanitizeMetadata(input);
+      const sanitized = asRecord(sanitizeMetadata(input));
 
       expect(sanitized.username).toBe('test');
       expect(sanitized.email).toBe('test@test.com');
@@ -206,7 +248,7 @@ describe('sanitizeMetadata', () => {
         email: 'test@test.com',
       };
 
-      const sanitized = sanitizeMetadata(input);
+      const sanitized = asRecord(sanitizeMetadata(input));
 
       expect(sanitized.username).toBe('');
       expect(sanitized.password).toBe('***REDACTED***');
@@ -221,7 +263,7 @@ describe('sanitizeMetadata', () => {
         password: 'secret',
       };
 
-      const sanitized = sanitizeMetadata(input);
+      const sanitized = asRecord(sanitizeMetadata(input));
 
       // id, isActive, count sono ora in whitelist
       expect(sanitized.id).toBe(123);
@@ -239,7 +281,7 @@ describe('sanitizeMetadata', () => {
         deepObj = { nested: deepObj };
       }
 
-      const sanitized = sanitizeMetadata(deepObj);
+      const sanitized = asRecord(sanitizeMetadata(deepObj));
 
       // Dovrebbe avere MAX_DEPTH da qualche parte nella struttura
       const sanitizedStr = JSON.stringify(sanitized);
@@ -268,7 +310,7 @@ describe('sanitizeMetadata', () => {
         ],
       };
 
-      const sanitized = sanitizeMetadata(input);
+      const sanitized = asRecord(sanitizeMetadata(input));
 
       // Dovrebbe redattare senza crashare
       expect(sanitized).toBeDefined();
@@ -291,7 +333,7 @@ describe('sanitizeMetadata', () => {
         secret: 'secret3',
       };
 
-      const sanitized = sanitizeMetadata(input);
+      const sanitized = asRecord(sanitizeMetadata(input));
 
       expect(sanitized.PASSWORD).toBe('***REDACTED***');
       expect(sanitized.Password).toBe('***REDACTED***');
@@ -317,7 +359,7 @@ describe('sanitizeMetadata', () => {
         sessionData: 'value4',
       };
 
-      const sanitized = sanitizeMetadata(input);
+      const sanitized = asRecord(sanitizeMetadata(input));
 
       expect(sanitized.username).toBe('test');
       expect(sanitized.email).toBe('test@test.com');
