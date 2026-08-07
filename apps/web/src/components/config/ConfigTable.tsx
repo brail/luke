@@ -127,7 +127,8 @@ export function ConfigTable({
                 {getSortIcon('updatedAt')}
               </div>
             </TableHead>
-            <TableHead className="w-[50px]">Azioni</TableHead> {/* 50px: fits the actions dropdown trigger; no exact scale match */}
+            {/* 50px: fits the actions dropdown trigger; no exact scale match */}
+            <TableHead className="w-[50px]">Azioni</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
