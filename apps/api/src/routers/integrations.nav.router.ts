@@ -12,6 +12,7 @@ import { createSyncRequest, getNavDbConfig, getPool, closePool, runNavSync, test
 
 import { logAudit } from '../lib/auditLog';
 import { saveConfig, getConfig } from '../lib/configManager';
+import { toErrorMessage } from '../lib/error';
 import {
   ErrorCode,
   createStandardError,
@@ -49,8 +50,8 @@ const navSyncRouter = router({
             FROM ${tableName}
             ORDER BY [Code]
           `);
-        } catch (e: any) {
-          const err = createStandardError(ErrorCode.CONNECTION_ERROR, `Errore query NAV: ${e.message}`);
+        } catch (e: unknown) {
+          const err = createStandardError(ErrorCode.CONNECTION_ERROR, `Errore query NAV: ${toErrorMessage(e)}`);
           throw toTRPCError(err);
         }
         return result.recordset.map(row => ({
@@ -77,8 +78,8 @@ const navSyncRouter = router({
             FROM ${tableName}
             ORDER BY [Code]
           `);
-        } catch (e: any) {
-          const err = createStandardError(ErrorCode.CONNECTION_ERROR, `Errore query NAV: ${e.message}`);
+        } catch (e: unknown) {
+          const err = createStandardError(ErrorCode.CONNECTION_ERROR, `Errore query NAV: ${toErrorMessage(e)}`);
           throw toTRPCError(err);
         }
         return result.recordset.map(row => ({
@@ -109,8 +110,8 @@ const navSyncRouter = router({
           FROM ${tableName}
           ORDER BY [Name]
         `);
-      } catch (e: any) {
-        const err = createStandardError(ErrorCode.CONNECTION_ERROR, `Errore query NAV: ${e.message}`);
+      } catch (e: unknown) {
+        const err = createStandardError(ErrorCode.CONNECTION_ERROR, `Errore query NAV: ${toErrorMessage(e)}`);
         throw toTRPCError(err);
       }
 
@@ -124,21 +125,47 @@ const navSyncRouter = router({
     }),
 
   /**
-   * Returns the auto-sync schedule status (enabled, intervalMinutes) for all NAV sync entities.
+   * Returns the auto-sync schedule status (enabled, intervalMinutes) and the outcome
+   * of the most recent scheduled sync attempt for all NAV sync entities.
    *
    * @auth {config:read}
    * @input {none}
-   * @output {Record<string, { autoSyncEnabled: boolean, intervalMinutes: number }>}
+   * @output {Record<string, { autoSyncEnabled: boolean, intervalMinutes: number, lastSyncStatus: string | null, lastSyncError: string | null, lastSyncAt: Date | null }>}
    */
   getStatus: protectedProcedure
     .use(requirePermission('config:read'))
     .query(async ({ ctx }) => {
       const filters = await ctx.prisma.navSyncFilter.findMany({
-        select: { entity: true, autoSyncEnabled: true, intervalMinutes: true },
+        select: {
+          entity: true,
+          autoSyncEnabled: true,
+          intervalMinutes: true,
+          lastSyncStatus: true,
+          lastSyncError: true,
+          lastSyncAt: true,
+        },
       });
       return Object.fromEntries(
-        filters.map(f => [f.entity, { autoSyncEnabled: f.autoSyncEnabled, intervalMinutes: f.intervalMinutes }])
-      ) as Record<string, { autoSyncEnabled: boolean; intervalMinutes: number }>;
+        filters.map(f => [
+          f.entity,
+          {
+            autoSyncEnabled: f.autoSyncEnabled,
+            intervalMinutes: f.intervalMinutes,
+            lastSyncStatus: f.lastSyncStatus,
+            lastSyncError: f.lastSyncError,
+            lastSyncAt: f.lastSyncAt,
+          },
+        ])
+      ) as Record<
+        string,
+        {
+          autoSyncEnabled: boolean;
+          intervalMinutes: number;
+          lastSyncStatus: string | null;
+          lastSyncError: string | null;
+          lastSyncAt: Date | null;
+        }
+      >;
     }),
 
   /**
@@ -291,12 +318,12 @@ const navVendorsRouter = router({
   /**
    * Lists vendors synced from NAV in the local PG replica (not a live NAV query).
    *
-   * @auth {collection_layout:update}
+   * @auth {vendors:read}
    * @input {none}
    * @output {Array<{ navNo, name, searchName }>} — sorted by searchName ascending.
    */
   list: protectedProcedure
-    .use(requirePermission('collection_layout:update'))
+    .use(requirePermission('vendors:read'))
     .query(async ({ ctx }) => {
       return ctx.prisma.navVendor.findMany({
         select: { navNo: true, name: true, searchName: true },

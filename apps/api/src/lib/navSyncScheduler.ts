@@ -19,6 +19,7 @@
 import { closePool, runNavSync } from '@luke/nav';
 
 import { getConfig } from './configManager';
+import { toErrorMessage } from './error';
 import { guardMaintenance } from './maintenanceMode';
 import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
 import { withSchedulerLock } from './schedulerLock';
@@ -105,12 +106,29 @@ export function registerNavSyncScheduler(
           fastify.log.info({ entity: r.entity, upserted: r.upserted, durationMs }, 'NAV sync scheduler: entità completata');
         }
       }
+
+      await prisma.navSyncFilter
+        .update({
+          where: { entity },
+          data: { lastSyncStatus: 'SUCCESS', lastSyncError: null, lastSyncAt: new Date() },
+        })
+        .catch(e => fastify.log.error({ err: e, entity }, 'Failed to persist NAV sync status'));
     } catch (err) {
       fastify.log.error({ err, entity }, 'NAV sync scheduler: sync fallito');
+      await prisma.navSyncFilter
+        .update({
+          where: { entity },
+          data: {
+            lastSyncStatus: 'FAILURE',
+            lastSyncError: toErrorMessage(err).slice(0, 500),
+            lastSyncAt: new Date(),
+          },
+        })
+        .catch(e => fastify.log.error({ err: e, entity }, 'Failed to persist NAV sync failure status'));
       await notifyDeduped(prisma, `nav-sync:failure:${entity}`, SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(prisma, {
         category: 'SYSTEM',
         title: `NAV sync ${entity} fallito`,
-        message: (err as Error).message ?? 'Errore sconosciuto',
+        message: toErrorMessage(err),
         data: { entity, type: 'nav_sync_failure' },
       })).catch(e => fastify.log.error({ err: e }, 'Failed to notify admins of sync failure'));
     } finally {

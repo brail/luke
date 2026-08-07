@@ -328,6 +328,7 @@ model Season {
   /// Vendor closure periods associated with this season.
   vendorClosures       VendorClosurePeriod[]
 
+  @@index([isActive, name])
   @@map("seasons")
 }
 
@@ -489,6 +490,12 @@ model NavSyncFilter {
   /// Frequenza di sync automatico in minuti (usata solo se autoSyncEnabled=true)
   intervalMinutes Int      @default(30)
   updatedAt       DateTime @updatedAt
+  /// Esito dell'ultimo tentativo di sync schedulato: "SUCCESS" | "FAILURE". Null se mai eseguito.
+  lastSyncStatus  String?
+  /// Messaggio d'errore dell'ultimo tentativo fallito. Null in caso di successo o se mai eseguito.
+  lastSyncError   String?
+  /// Timestamp dell'ultimo tentativo di sync (successo o fallimento).
+  lastSyncAt      DateTime?
 
   @@unique([entity])
   @@index([entity, active])
@@ -2167,6 +2174,7 @@ model VendorClosurePeriod {
   /// The user who confirmed this period.
   confirmedBy   User?           @relation("ClosureConfirmer", fields: [confirmedByUserId], references: [id], onDelete: SetNull)
 
+  @@unique([vendorId, seasonId, sourceHolidayId])
   @@index([vendorId, seasonId])
   @@index([seasonId, startDate, endDate])
   @@map("vendor_closure_periods")
