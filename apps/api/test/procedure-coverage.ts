@@ -172,11 +172,6 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
       'list, getDetail, getLayoutAsOf ed export.xlsx invocate dalla spec sul brand scope, `create` da quella sul guard dei tipi automatici; resta export.pdf',
     uncovered: 1,
   },
-  sectionAccess: {
-    reason:
-      'nessun test sul router. La logica sottostante (`effectiveSectionAccess`) è coperta in packages/core e in sectionAccess.spec.ts, le procedure di override no',
-    uncovered: 6,
-  },
   phaseAlert: {
     reason:
       'criticalityForRow e bottleneckByEvent sono invocate da collectionRowCompletion.integration.spec.ts (esito di una riga conclusa, ed esclusione delle concluse dall\'indice di strozzatura); restano scoperte le due letture aggregate e la coppia get/update delle soglie',
