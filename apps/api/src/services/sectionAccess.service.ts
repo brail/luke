@@ -136,71 +136,143 @@ export async function listOverridesForUser(
 }
 
 /**
- * Counts active admins who have effective access to the `settings` section
- * under the given `sectionAccessDefaults`/`disabledSections` — same 4-layer
- * evaluation as `effectiveSectionAccess`, not just "has role admin". Pass the
- * currently committed config to check the status quo (used by `set`), or a
- * proposed config to check a hypothetical change before committing it (used
- * by `setRoleDefaults`).
+ * Sezioni senza le quali un amministratore non può più riportare in vita
+ * l'amministrazione del sistema.
+ *
+ * `settings` da sola non basta, ed è il buco che la prima versione di questo
+ * guard lasciava aperto: la voce di menu Utenti è gated su
+ * `settings && settings['settings.users']` (`apps/web/src/hooks/useMenuAccess.ts`),
+ * e `settings.users` mappa su `users:read`. Un admin che conserva `settings` ma
+ * perde `settings.users` non può più creare né promuovere nessuno — lo stesso
+ * lockout, da un'altra porta. Trovato provando a mano su RC.
+ *
+ * La superficie di recupero è quindi una **congiunzione**: conta come via
+ * d'uscita solo chi le ha tutte effettive.
  */
-export async function countAdminsWithSettingsAccess(
+export const ADMIN_RECOVERY_SECTIONS = [
+  'settings',
+  'settings.users',
+] as const satisfies readonly Section[];
+
+/**
+ * `true` se togliere questa sezione può chiudere fuori l'amministrazione.
+ *
+ * Predicato invece di `ADMIN_RECOVERY_SECTIONS.includes(section)` al call site:
+ * la tupla è `as const` per conservare i letterali in `every()`, e su una tupla
+ * `includes` accetta solo i propri membri — un `Section` qualunque non compila.
+ * Il widening sta qui, in un posto solo.
+ */
+export function isAdminRecoverySection(section: Section): boolean {
+  return (ADMIN_RECOVERY_SECTIONS as readonly Section[]).includes(section);
+}
+
+type SectionAccessDefaults = Record<
+  string,
+  Partial<Record<Section, 'auto' | 'enabled' | 'disabled'>>
+>;
+
+/** Override di un utente per sezione, nella forma che `effectiveSectionAccess` accetta. */
+type OverrideBySection = Map<string, { enabled: boolean }>;
+
+function hasEveryRecoverySection(
+  overrides: OverrideBySection,
+  sectionAccessDefaults: SectionAccessDefaults,
+  disabledSections: string[]
+): boolean {
+  return ADMIN_RECOVERY_SECTIONS.every(section =>
+    effectiveSectionAccess({
+      role: 'admin',
+      sectionAccessDefaults,
+      userOverride: overrides.get(section) ?? null,
+      section,
+      disabledSections,
+    })
+  );
+}
+
+/**
+ * Counts active admins who can still recover the system under the given
+ * `sectionAccessDefaults`/`disabledSections` — same 4-layer evaluation as
+ * `effectiveSectionAccess`, not just "has role admin", and across every
+ * section in `ADMIN_RECOVERY_SECTIONS`.
+ *
+ * Pass the currently committed config to check the status quo (used by `set`),
+ * or a proposed config to check a hypothetical change before committing it
+ * (used by `setRoleDefaults`).
+ */
+export async function countRecoveryCapableAdmins(
   prisma: PrismaLike,
-  sectionAccessDefaults: Record<string, Partial<Record<Section, 'auto' | 'enabled' | 'disabled'>>>,
+  sectionAccessDefaults: SectionAccessDefaults,
   disabledSections: string[]
 ): Promise<number> {
   const admins = await prisma.user.findMany({
     where: { role: 'admin', isActive: true },
     select: {
       sectionAccess: {
-        where: { section: 'settings' },
-        select: { enabled: true },
+        where: { section: { in: [...ADMIN_RECOVERY_SECTIONS] } },
+        select: { section: true, enabled: true },
       },
     },
   });
 
   return admins.filter(admin =>
-    effectiveSectionAccess({
-      role: 'admin',
+    hasEveryRecoverySection(
+      new Map(admin.sectionAccess.map(a => [a.section, { enabled: a.enabled }])),
       sectionAccessDefaults,
-      userOverride: admin.sectionAccess[0] ?? null,
-      section: 'settings',
-      disabledSections,
-    })
+      disabledSections
+    )
   ).length;
 }
 
 /**
- * Same evaluation as `countAdminsWithSettingsAccess`, but substitutes
- * `userId`'s settings override with a hypothetical value first — for
- * guarding a specific user's transition (set/remove an override), where
- * counting current state and comparing to a threshold breaks for
- * `enabled: null` (removal) and for changes that increase access.
+ * Same evaluation as `countRecoveryCapableAdmins`, but substitutes a
+ * hypothetical override for `userId` first — for guarding a specific user's
+ * transition, where counting current state and comparing to a threshold breaks
+ * for `enabled: null` (removal) and for changes that increase access.
+ *
+ * @param changedSection - La sezione che sta cambiando, oppure `null` quando
+ *   l'utente perde ogni accesso in blocco (demozione, disattivazione,
+ *   eliminazione): in quel caso non conta come via d'uscita, qualunque sia il
+ *   suo stato per sezione.
  */
-export async function countAdminsWithSettingsAccessAfterChange(
+export async function countRecoveryCapableAdminsAfterChange(
   prisma: PrismaLike,
   userId: string,
+  changedSection: Section | null,
   hypotheticalEnabled: boolean | null,
-  sectionAccessDefaults: Record<string, Partial<Record<Section, 'auto' | 'enabled' | 'disabled'>>>,
+  sectionAccessDefaults: SectionAccessDefaults,
   disabledSections: string[]
 ): Promise<number> {
   const admins = await prisma.user.findMany({
     where: { role: 'admin', isActive: true },
     select: {
       id: true,
-      sectionAccess: { where: { section: 'settings' }, select: { enabled: true } },
+      sectionAccess: {
+        where: { section: { in: [...ADMIN_RECOVERY_SECTIONS] } },
+        select: { section: true, enabled: true },
+      },
     },
   });
 
   return admins.filter(admin => {
-    const enabled =
-      admin.id === userId ? hypotheticalEnabled : (admin.sectionAccess[0]?.enabled ?? null);
+    if (admin.id === userId && changedSection === null) return false;
 
-    return effectiveSectionAccess({
-      role: 'admin',
+    const overrides: OverrideBySection = new Map(
+      admin.sectionAccess.map(a => [a.section, { enabled: a.enabled }])
+    );
+
+    if (admin.id === userId && changedSection !== null) {
+      if (hypotheticalEnabled === null) {
+        overrides.delete(changedSection);
+      } else {
+        overrides.set(changedSection, { enabled: hypotheticalEnabled });
+      }
+    }
+
+    return hasEveryRecoverySection(
+      overrides,
       sectionAccessDefaults,
-      userOverride: enabled === null ? null : { enabled },
-      section: 'settings',
-      disabledSections,
-    });
+      disabledSections
+    );
   }).length;
 }

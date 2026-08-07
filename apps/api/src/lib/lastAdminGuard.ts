@@ -2,7 +2,7 @@ import { TRPCError } from '@trpc/server';
 
 import { getRbacConfig } from '@luke/core/server';
 
-import { countAdminsWithSettingsAccessAfterChange } from '../services/sectionAccess.service';
+import { countRecoveryCapableAdminsAfterChange } from '../services/sectionAccess.service';
 
 import type { Prisma } from '@prisma/client';
 
@@ -36,12 +36,12 @@ export async function assertNotLastAdmin(
 }
 
 /**
- * Same as `assertNotLastAdmin`, but also checks effective `settings` section
- * access (kill switch + role defaults + personal overrides), not just role
- * count. Demoting/deactivating/deleting `userId` must never leave zero
- * admins able to reach Settings — the only in-app place to undo an RBAC
- * misconfiguration (see `sectionAccess.ts`'s `set`/`setRoleDefaults` guards,
- * which check the same invariant from the other direction).
+ * Same as `assertNotLastAdmin`, but also checks effective access to every
+ * section in `ADMIN_RECOVERY_SECTIONS` (kill switch + role defaults + personal
+ * overrides), not just role count. Demoting/deactivating/deleting `userId` must
+ * never leave zero admins able to administer users — l'unico percorso in-app per
+ * annullare una misconfigurazione RBAC (vedi i guard `set`/`setRoleDefaults` in
+ * `sectionAccess.ts`, che controllano lo stesso invariante dall'altro lato).
  */
 export async function assertNotLastAdminWithSettingsAccess(
   tx: Prisma.TransactionClient,
@@ -53,10 +53,13 @@ export async function assertNotLastAdminWithSettingsAccess(
   const { sectionAccessDefaults, disabledSections } = await getRbacConfig(tx, {
     bypassCache: true,
   });
-  const survivingAdmins = await countAdminsWithSettingsAccessAfterChange(
+  const survivingAdmins = await countRecoveryCapableAdminsAfterChange(
     tx,
     userId,
-    false, // demoting/deactivating/deleting this user removes their access outright
+    // `null`: demoting/deactivating/deleting removes every section at once, non
+    // una sezione specifica.
+    null,
+    null,
     sectionAccessDefaults,
     disabledSections
   );

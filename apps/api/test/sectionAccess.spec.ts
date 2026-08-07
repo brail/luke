@@ -121,8 +121,8 @@ describe('Section Access Overrides', () => {
   });
 
   describe('Last-admin safety check', () => {
-    it('should prevent removing settings access from last admin', async () => {
-      const { countAdminsWithSettingsAccess } = await import(
+    it('conta un admin senza override come via di recupero', async () => {
+      const { countRecoveryCapableAdmins } = await import(
         '../src/services/sectionAccess.service'
       );
 
@@ -135,8 +135,29 @@ describe('Section Access Overrides', () => {
         },
       } as any;
 
-      const count = await countAdminsWithSettingsAccess(mockPrisma, {}, []);
+      const count = await countRecoveryCapableAdmins(mockPrisma, {}, []);
       expect(count).toBe(1);
+    });
+
+    it('non conta un admin a cui manca una sola sezione di recupero', async () => {
+      const { countRecoveryCapableAdmins, ADMIN_RECOVERY_SECTIONS } =
+        await import('../src/services/sectionAccess.service');
+
+      // La superficie di recupero è una congiunzione: basta perderne una.
+      // Il caso reale che ha motivato il fix è `settings.users` — chi la perde
+      // non può più creare né promuovere, pur conservando `settings`.
+      for (const missing of ADMIN_RECOVERY_SECTIONS) {
+        const mockPrisma = {
+          user: {
+            findMany: async () => [
+              { sectionAccess: [{ section: missing, enabled: false }] },
+            ],
+          },
+        } as any;
+
+        const count = await countRecoveryCapableAdmins(mockPrisma, {}, []);
+        expect(count, `senza ${missing}`).toBe(0);
+      }
     });
   });
 

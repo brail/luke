@@ -59,6 +59,48 @@ describe('lastAdminGuard — enforcement reale', () => {
     expect(refreshed.isActive).toBe(false);
   });
 
+  /**
+   * Regressione: la prima versione del guard controllava solo la sezione
+   * `settings`, e togliere `settings.users` all'ultimo admin passava senza
+   * ostacoli. La voce di menu Utenti è gated su
+   * `settings && settings['settings.users']` (`useMenuAccess.ts`) e quella
+   * sezione mappa su `users:read`: chi la perde non può più creare né
+   * promuovere nessuno, quindi è lo stesso lockout di `settings`, da un'altra
+   * porta. Trovato provando a mano su RC, non da un test.
+   */
+  describe('sezioni di recupero', () => {
+    it.each(['settings', 'settings.users'] as const)(
+      "togliere '%s' all'unico admin è rifiutato",
+      async section => {
+        const { user: admin, session } = await createTestUser('admin');
+
+        await expect(
+          createCallerWithSession(session).sectionAccess.set({
+            userId: admin.id,
+            section,
+            enabled: false,
+          })
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+      }
+    );
+
+    it.each(['settings', 'settings.users'] as const)(
+      "togliere '%s' a un admin è consentito se ne resta un altro",
+      async section => {
+        const { user: target, session } = await createTestUser('admin');
+        await createTestUser('admin'); // la via d'uscita
+
+        await expect(
+          createCallerWithSession(session).sectionAccess.set({
+            userId: target.id,
+            section,
+            enabled: false,
+          })
+        ).resolves.toBeDefined();
+      }
+    );
+  });
+
   it(
     'acquireLastAdminLock serializza due transazioni concorrenti sulla stessa chiave ' +
       '(pg_advisory_xact_lock, non un mutex applicativo — sopravvive a più repliche API)',

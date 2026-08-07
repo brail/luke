@@ -17,8 +17,9 @@ import { router, protectedProcedure, adminProcedure } from '../lib/trpc';
 import {
   setOverride,
   listOverridesForUser,
-  countAdminsWithSettingsAccess,
-  countAdminsWithSettingsAccessAfterChange,
+  isAdminRecoverySection,
+  countRecoveryCapableAdmins,
+  countRecoveryCapableAdminsAfterChange,
   getSectionDefaults,
   computeEffectiveForUser,
 } from '../services/sectionAccess.service';
@@ -116,7 +117,7 @@ export const sectionAccessRouter = router({
         // l'unico posto raggiungibile per annullare la modifica.
         await acquireLastAdminLock(tx);
         const { disabledSections } = await getRbacConfig(tx, { bypassCache: true });
-        const survivingAdmins = await countAdminsWithSettingsAccess(
+        const survivingAdmins = await countRecoveryCapableAdmins(
           tx,
           input.sectionAccessDefaults,
           disabledSections
@@ -177,7 +178,10 @@ export const sectionAccessRouter = router({
         // concorrente dello stesso `userId` (viewer/editor → admin): quel
         // percorso non acquisisce questo lock, quindi resta una finestra
         // stretta e nota, non chiusa da questo riordino.
-        if (section === 'settings' && enabled !== true) {
+        // Ogni sezione di recupero, non solo `settings`: togliere
+        // `settings.users` all'ultimo admin lo chiude fuori
+        // dall'amministrazione utenti esattamente come togliergli `settings`.
+        if (isAdminRecoverySection(section) && enabled !== true) {
           await acquireLastAdminLock(tx);
           const target = await tx.user.findUnique({
             where: { id: userId },
@@ -188,9 +192,10 @@ export const sectionAccessRouter = router({
             const { sectionAccessDefaults, disabledSections } = await getRbacConfig(tx, {
               bypassCache: true,
             });
-            const survivingAdmins = await countAdminsWithSettingsAccessAfterChange(
+            const survivingAdmins = await countRecoveryCapableAdminsAfterChange(
               tx,
               userId,
+              section,
               enabled,
               sectionAccessDefaults,
               disabledSections
@@ -199,7 +204,7 @@ export const sectionAccessRouter = router({
               throw new TRPCError({
                 code: 'BAD_REQUEST',
                 message:
-                  "Questa modifica toglierebbe l'accesso ai settings a tutti gli amministratori.",
+                  "Questa modifica toglierebbe a tutti gli amministratori l'accesso necessario ad amministrare gli utenti.",
               });
             }
           }
