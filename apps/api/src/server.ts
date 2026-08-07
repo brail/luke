@@ -75,7 +75,7 @@ const loggerConfig = {
         },
       }
     : undefined,
-} as any;
+};
 
 /** Fastify instance shared across all route registrations in this module. */
 const fastify = Fastify({
@@ -83,6 +83,20 @@ const fastify = Fastify({
   requestTimeout: 360_000, // 6 min — allineato a proxyTimeout Next.js e pool NAV (300 s + margine)
   connectionTimeout: 0,    // disabilitato — requestTimeout gestisce il limite totale
   routerOptions: { maxParamLength: 5000 }, // tRPC batch requests contain multiple procedure names in the URL param
+  // apps/api non è mai raggiungibile direttamente da Internet (nessuna porta pubblicata
+  // in docker-compose.prod.yml/rc.yml): l'unico ingresso è il container apps/web, sia
+  // via i rewrite di next.config.js sia via la fetch server-to-server di NextAuth
+  // (apps/web/src/auth.ts). Fidarsi di X-Forwarded-For qui è quindi sicuro e necessario
+  // perché req.ip risolva l'IP client reale invece dell'indirizzo interno del container web
+  // (root cause del bucket di rate-limit condiviso su /trpc/auth.login).
+  // `1` (non `true`): trust esattamente un hop (il container apps/web, unico mittente
+  // possibile). `true` fida di una catena illimitata e risolve req.ip alla entry più a
+  // sinistra — cioè il valore che un client può auto-dichiarare — rendendo ogni bucket
+  // rate-limit keyBy:'ip' aggirabile spedendo un X-Forwarded-For falso (CRITICAL, audit
+  // 2026-08-07). Con `1`, apps/api fida solo del socket diretto (sempre apps/web) e legge
+  // l'entry immediatamente precedente — quella che NPM stesso ha accodato via
+  // $proxy_add_x_forwarded_for, mai quella auto-dichiarata dal client.
+  trustProxy: 1,
 });
 
 // Registra handler/onError globali per logging e risposta sicura
@@ -219,10 +233,17 @@ async function registerTRPCPlugin() {
         createContext({ prisma, req, res }),
       onError: ({ path, error, ctx }: any) => { // fastify-trpc-plugin OnErrorFn type not exported
         const traceId = ctx?.traceId;
+        const cause = error.cause; // `error` è già `any` (vedi commento sopra) — cast ridondante
         fastify.log.error(
           {
             path,
-            err: { message: error.message, code: (error as any).code },
+            err: { message: error.message, code: error.code },
+            // `cause` è impostato deliberatamente su molti `INTERNAL_SERVER_ERROR`
+            // (vedi apps/api/src/lib/ratelimit.ts e altri) proprio perché altrimenti
+            // sparisce qui: senza questo campo, la causa reale non arriva mai ai log.
+            ...(cause !== undefined
+              ? { cause: cause instanceof Error ? cause.message : String(cause) }
+              : {}),
             traceId,
           },
           'tRPC error'
@@ -487,8 +508,8 @@ function setupGracefulShutdown() {
 
       fastify.log.info('Shutdown completato');
       process.exit(0);
-    } catch (error: any) {
-      fastify.log.error('Errore durante shutdown:', error);
+    } catch (error: unknown) {
+      fastify.log.error({ err: error }, 'Errore durante shutdown');
       process.exit(1);
     }
   };
@@ -675,7 +696,7 @@ const start = async () => {
     if (isDevelopment()) {
       fastify.log.info(`Prisma Studio: pnpm --filter @luke/api prisma:studio`);
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     fastify.log.error({ err }, 'Errore avvio server');
     process.exit(1);
   }

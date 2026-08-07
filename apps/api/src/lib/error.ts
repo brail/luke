@@ -7,6 +7,10 @@ import { TRPCError } from '@trpc/server';
 
 import { isProduction } from '@luke/core';
 
+import { isRateLimitExceededCause } from './rateLimitError';
+
+import type { Context } from './context';
+import type { TRPCDefaultErrorShape, TRPCErrorFormatter } from '@trpc/server';
 import type {
   FastifyInstance,
   FastifyError,
@@ -27,12 +31,14 @@ export function toErrorMessage(err: unknown): string {
  */
 export function getTraceId(req: FastifyRequest): string | undefined {
   const header = req.headers['x-luke-trace-id'];
-  return (Array.isArray(header) ? header[0] : header) || (req as any).id;
+  return (Array.isArray(header) ? header[0] : header) || req.id;
 }
 
-function redactError(err: any): any {
+function redactError(err: unknown): unknown {
   if (!err || typeof err !== 'object') return err;
-  const clone: any = { ...err };
+  // Il check sopra garantisce un oggetto non-null: sicuro trattarlo come
+  // record per la redazione delle chiavi sensibili.
+  const clone: Record<string, unknown> = { ...(err as Record<string, unknown>) };
   const redactKeys = [
     'stack',
     'password',
@@ -49,7 +55,7 @@ function redactError(err: any): any {
   return clone;
 }
 
-function mapHttpStatus(err: any): number {
+function mapHttpStatus(err: unknown): number {
   if (err instanceof TRPCError) {
     switch (err.code) {
       case 'BAD_REQUEST':
@@ -66,13 +72,16 @@ function mapHttpStatus(err: any): number {
         return 500;
     }
   }
-  const status = (err?.statusCode as number) || 500;
-  if (status >= 400 && status <= 599) return status;
+  const statusCode =
+    err && typeof err === 'object' && 'statusCode' in err && typeof err.statusCode === 'number'
+      ? err.statusCode
+      : 500;
+  if (statusCode >= 400 && statusCode <= 599) return statusCode;
   return 500;
 }
 
-function safeMessage(err: any): string {
-  if (!isProd) return err?.message || 'Errore interno';
+function safeMessage(err: unknown): string {
+  if (!isProd) return err instanceof Error ? err.message : 'Errore interno';
   // In produzione non esporre messaggi di back-end
   if (err instanceof TRPCError) {
     // Mantieni messaggi user-facing per errori noti
@@ -91,15 +100,15 @@ function safeMessage(err: any): string {
   return 'Internal server error';
 }
 
-function toResponseBody(err: any, traceId?: string) {
-  const base = {
+function toResponseBody(err: unknown, traceId?: string) {
+  const base: Record<string, unknown> = {
     error: true,
     message: safeMessage(err),
     code: err instanceof TRPCError ? err.code : 'INTERNAL_SERVER_ERROR',
     traceId,
-  } as Record<string, any>;
+  };
   if (!isProd) {
-    base.stack = err?.stack;
+    base.stack = err instanceof Error ? err.stack : undefined;
   }
   return base;
 }
@@ -140,12 +149,30 @@ export function setGlobalErrorHandler(app: FastifyInstance): void {
 }
 
 /**
- * tRPC error formatter compatible with `initTRPC.create({ errorFormatter })`.
- * Replaces internal error messages with a generic string in production.
+ * Error shape returned to tRPC clients: `TRPCDefaultErrorShape` plus an optional
+ * `retryAfterSeconds` on `data`, populated for `TOO_MANY_REQUESTS` errors so clients can
+ * render an accurate `Retry-After` without recomputing the rate-limit window themselves.
  */
-export const trpcErrorFormatter = ({ shape }: any) => {
+export interface LukeErrorShape extends TRPCDefaultErrorShape {
+  data: TRPCDefaultErrorShape['data'] & { retryAfterSeconds?: number };
+}
+
+/**
+ * tRPC error formatter compatible with `initTRPC.create({ errorFormatter })`.
+ * Replaces internal error messages with a generic string in production, and surfaces
+ * `retryAfterSeconds` for rate-limit errors (see `rateLimitError.ts`).
+ */
+export const trpcErrorFormatter: TRPCErrorFormatter<Context, LukeErrorShape> = ({ shape, error }) => {
+  const retryAfterSeconds = isRateLimitExceededCause(error.cause)
+    ? error.cause.retryAfterSeconds
+    : undefined;
+
   return {
     ...shape,
     message: isProd ? 'Internal server error' : shape.message,
+    data: {
+      ...shape.data,
+      ...(retryAfterSeconds !== undefined && { retryAfterSeconds }),
+    },
   };
 };

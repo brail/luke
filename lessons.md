@@ -92,6 +92,28 @@ Il rate limit vive in due mappe separate che devono restare in sync:
 
 Regressione reale: `navSyncTrigger` mancante da `DEFAULTS` → sync fornitori NAV in crash in produzione (hotfix v1.9.1).
 
+### Bucket `keyBy: 'ip'` su una chiamata server-to-server è silenziosamente inutile
+
+**Problema**: pentest Strix su RC segnala `/api/auth/callback/credentials` senza throttling osservabile (18 tentativi, tutti `200 OK`, nessun `429`).
+
+**Root cause**: `auth.login` aveva già `withRateLimit('login')` (5/60s, `keyBy: 'ip'`), ma `apps/web/src/auth.ts` chiama `auth.login` **server-to-server** (fetch diretta a `INTERNAL_API_URL`, non passa dal reverse proxy). Senza inoltrare esplicitamente l'IP del client originale, `ctx.req.ip` su apps/api risolve sempre allo stesso indirizzo interno (il container web) per **qualunque** utente — un bucket condiviso da tutta l'app invece che per-attaccante. In più, NextAuth v5 risponde sempre `200` quando `authorize()` ritorna `null`, quindi anche un limiter che scatta è invisibile dall'esterno: l'osservazione del pentest non prova che manchi la protezione, prova solo che il segnale non attraversa quel confine.
+
+**Regola**: un bucket `keyBy: 'ip'` aggiunto su un endpoint raggiungibile anche via una chiamata server-to-server (non solo browser→proxy→api) va sempre accompagnato da (1) inoltro esplicito dell'IP reale su quella chiamata interna e (2) un test che dimostri il comportamento *per-attaccante* — non basta il test sul formato della config. Vedi `apps/api/test/ratelimit.integration.spec.ts`, describe `blocks valid credentials too`, e CLAUDE.md → Development Patterns #12/#13.
+
+### Endpoint di login: bucket IP da solo non ferma il password-spray
+
+Un bucket `keyBy: 'ip'` ferma un attaccante che martella un IP, ma non uno spray distribuito su molti IP contro un singolo account. Login (e ogni endpoint credential-verification) deve avere **sempre** un secondo bucket `keyBy` sull'identità (username/account) oltre a quello IP. Pattern: `login` + `loginByUsername` in `apps/api/src/lib/ratelimit.ts` — il secondo bucket è verificato direttamente in `authenticateUser()` (`auth.service.ts`), non tramite `withRateLimit()`, perché la chiave (username) vive nell'input della procedura, non in `ctx`.
+
+## Pentest / Sicurezza esterna
+
+### Scan Strix (o altri) vanno puntati SOLO su hostname reali deployati
+
+**Problema**: uno scan Strix contro `http://host.docker.internal:3000` ha segnalato "development mode information disclosure" (stack trace, path assoluti, `next-devtools` esposti).
+
+**Root cause**: lo scanner girava dentro un container Docker sulla stessa macchina dello sviluppatore; `host.docker.internal` è l'alias Docker Desktop che risolve all'host — ha semplicemente raggiunto il `pnpm dev` locale (`next dev`, dev mode per design), non un ambiente reale. Verificato: Dockerfile/tutti i `docker-compose*.yml`/CI buildano sempre `next build` + `next start` con `NODE_ENV=production`; nessun path di deploy reale può servire dev mode.
+
+**Regola**: uno scan di sicurezza va **sempre** puntato su un hostname realmente deployato (`rc.luke.febos.local`, dominio prod), mai su `localhost`/`host.docker.internal`. Un "development mode disclosure" contro uno di questi due è un falso positivo per costruzione, non un finding da triagare.
+
 ## Test di integrazione
 
 ### L'ordine dei file di test non è alfabetico né stabile

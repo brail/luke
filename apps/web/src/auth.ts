@@ -6,6 +6,7 @@ import { getNextAuthSecret } from '@luke/core/server';
 
 import { checkTokenVersion, populateSession, SESSION_MAX_AGE, SESSION_UPDATE_AGE } from './auth.shared';
 import { debugError, debugLog } from './lib/debug';
+import { markLoginThrottled } from './lib/loginThrottleContext';
 
 import type { NextAuthConfig } from 'next-auth';
 
@@ -36,16 +37,37 @@ const tokenVersionCache = new Map<string, number>(); // userId → validatedAt (
 const TOKEN_VERSION_CACHE_TTL = 30_000;
 
 /**
+ * Extracts the real client IP from the incoming request's `X-Forwarded-For` header. NPM
+ * (Nginx Proxy Manager) sits in front of apps/web in every deployed environment (see
+ * `trustHost` comment below) and uses `$proxy_add_x_forwarded_for`, which APPENDS its own
+ * resolved peer address rather than replacing an existing header — so the real client IP is
+ * the LAST entry, not the first. Taking the first entry (`[0]`) would return whatever value
+ * an attacker chooses to send in their own `X-Forwarded-For` header, defeating IP-based
+ * rate limiting (CRITICAL, audit 2026-08-07). `undefined` if absent (e.g. local `pnpm dev`
+ * without a reverse proxy).
+ */
+function extractClientIp(request: Request): string | undefined {
+  const forwardedFor = request.headers.get('x-forwarded-for');
+  return forwardedFor?.split(',').pop()?.trim() || undefined;
+}
+
+/**
  * Calls the `auth.login` tRPC endpoint and returns the raw API response data,
  * or a `{ pendingApproval, needsEmail }` object for accounts awaiting approval.
  * Returns `null` on any error or non-OK response.
+ *
+ * `clientIp`, when present, is forwarded as `X-Forwarded-For` on this server-to-server call.
+ * Without it, apps/api sees every login attempt (from every real user) as coming from this
+ * same internal call — collapsing the per-IP rate-limit bucket into one shared by the whole
+ * app instead of one per attacker (root cause of the Strix RC brute-force finding).
  */
-async function callTRPCAuth(username: string, password: string) {
+async function callTRPCAuth(username: string, password: string, clientIp?: string) {
   try {
     const response = await fetch(buildTrpcUrl('auth.login'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...(clientIp ? { 'X-Forwarded-For': clientIp } : {}),
       },
       body: JSON.stringify({
         username,
@@ -59,6 +81,16 @@ async function callTRPCAuth(username: string, password: string) {
       const message: string = errorData?.error?.message || '';
       if (message.startsWith('ACCOUNT_PENDING_APPROVAL')) {
         return { pendingApproval: true, needsEmail: message.includes('NEEDS_EMAIL') };
+      }
+      // Segnala il rate-limit al wrapper della route ([...nextauth]/route.ts) tramite
+      // AsyncLocalStorage: NextAuth risponde comunque 200 qui sotto (return null →
+      // CredentialsSignin generico), il 429 reale viene costruito fuori da questa call stack.
+      if (errorData?.error?.data?.code === 'TOO_MANY_REQUESTS') {
+        const retryAfterSeconds =
+          typeof errorData.error.data.retryAfterSeconds === 'number'
+            ? errorData.error.data.retryAfterSeconds
+            : 60;
+        markLoginThrottled(retryAfterSeconds);
       }
       return null;
     }
@@ -86,7 +118,7 @@ export const config = {
         username: { label: 'Username', type: 'text' },
         password: { label: 'Password', type: 'password' },
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         if (!credentials?.username || !credentials?.password) {
           return null;
         }
@@ -95,7 +127,8 @@ export const config = {
           // Chiama l'API tRPC per l'autenticazione
           const authResult = await callTRPCAuth(
             credentials.username as string,
-            credentials.password as string
+            credentials.password as string,
+            extractClientIp(request)
           );
 
           // Utente LDAP in attesa di approvazione: Auth.js non permette di

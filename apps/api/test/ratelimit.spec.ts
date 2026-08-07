@@ -5,6 +5,8 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+import { RateLimitConfigSchema } from '@luke/core';
+
 import { rateLimitStore, RATE_LIMIT_CONFIG } from '../src/lib/ratelimit';
 import { RATE_LIMIT_POLICY_DEFAULTS } from '../src/lib/rateLimitPolicy';
 
@@ -65,6 +67,19 @@ describe('Rate-Limit Store', () => {
       expect(rateLimitStore.isLimited(routeName, key, config)).toBe(false);
 
       vi.useRealTimers();
+    });
+
+    it('should block loginByUsername after 10 attempts regardless of key format', () => {
+      const routeName = 'loginByUsername';
+      const key = 'spray-target-user'; // chiave = username normalizzato, non un IP
+      const config = RATE_LIMIT_CONFIG[routeName];
+
+      for (let i = 0; i < config.max; i++) {
+        expect(rateLimitStore.isLimited(routeName, key, config)).toBe(false);
+        rateLimitStore.record(routeName, key, config);
+      }
+
+      expect(rateLimitStore.isLimited(routeName, key, config)).toBe(true);
     });
 
     it('should reset passwordChange after 15min window', () => {
@@ -131,6 +146,10 @@ describe('Rate-Limit Store', () => {
       expect(RATE_LIMIT_CONFIG.login.windowMs).toBe(60_000);
       expect(RATE_LIMIT_CONFIG.login.keyBy).toBe('ip');
 
+      expect(RATE_LIMIT_CONFIG.loginByUsername.max).toBe(10);
+      expect(RATE_LIMIT_CONFIG.loginByUsername.windowMs).toBe(900_000);
+      expect(RATE_LIMIT_CONFIG.loginByUsername.keyBy).toBe('username');
+
       expect(RATE_LIMIT_CONFIG.passwordChange.max).toBe(3);
       expect(RATE_LIMIT_CONFIG.passwordChange.windowMs).toBe(900_000);
       expect(RATE_LIMIT_CONFIG.passwordChange.keyBy).toBe('userId');
@@ -173,6 +192,17 @@ describe('Sincronia delle mappe di rate limit', () => {
     // crash alla prima richiesta che la usa. È già successo (v1.9.1).
     const missing = Object.keys(RATE_LIMIT_CONFIG).filter(
       route => !(route in RATE_LIMIT_POLICY_DEFAULTS)
+    );
+
+    expect(missing).toEqual([]);
+  });
+
+  it('ogni rotta in RATE_LIMIT_CONFIG ha un campo in RateLimitConfigSchema', () => {
+    // Se manca qui, un override AppConfig per quella rotta viene scartato in
+    // silenzio da safeParse (non-strict) — nessun errore, nessun log.
+    const schemaKeys = Object.keys(RateLimitConfigSchema.shape);
+    const missing = Object.keys(RATE_LIMIT_CONFIG).filter(
+      route => !schemaKeys.includes(route)
     );
 
     expect(missing).toEqual([]);

@@ -88,6 +88,25 @@ Dopo modifiche a router tRPC in `apps/api`: `cd apps/api && npx tsc -b`
     refetch automatico al cambio contesto.
     Pattern di riferimento: `pricing.parameterSets.list`, `collectionLayout.get`,
     `sales.statistics.portafoglio.getFilters`
+12. **Endpoint auth-adjacent → rate limit doppio (IP + account)** — login e ogni
+    endpoint che verifica credenziali/token deve avere sia un bucket `keyBy: 'ip'`
+    sia uno `keyBy` sull'identità (username/account): il primo da solo non ferma
+    un password-spray distribuito su molti IP contro un singolo account.
+    Pattern di riferimento: `auth.login` (`login` + `loginByUsername` in
+    `apps/api/src/lib/ratelimit.ts`)
+13. **Chiamate server-to-server web→api: inoltrare sempre l'IP client reale** —
+    qualunque fetch fatta da `apps/web` verso `apps/api` per conto di una request
+    utente (non solo NextAuth `authorize()`) deve propagare l'IP reale
+    (`X-Forwarded-For`), altrimenti un bucket rate-limit `keyBy: 'ip'` su apps/api
+    collassa silenziosamente su un'unica chiave condivisa da tutti gli utenti
+    (l'indirizzo del container web) invece che per-attaccante. Fastify si fida di
+    quell'header solo perché apps/api non è mai raggiungibile direttamente da
+    Internet (nessuna porta pubblicata) — non generalizzare `trustProxy: true` a
+    un servizio pubblicamente esposto senza rivalutare il rischio di spoofing.
+    Un bucket `keyBy: 'ip'` aggiunto su un percorso server-to-server va sempre
+    accompagnato da un test che dimostri il comportamento per-attaccante, non solo
+    per-formato-config (vedi `apps/api/test/ratelimit.integration.spec.ts`,
+    describe `blocks valid credentials too`).
 
 ### Soft delete pattern
 
@@ -300,6 +319,19 @@ tag `vX.Y.Z` → build Docker → `ghcr.io` → Portainer pull & redeploy.
 aggiornare `target-branch` in `.github/dependabot.yml` (blocchi `github-actions` e
 `docker`) e la lista `branches` in `.github/workflows/ci.yml` (`push` e `pull_request`)
 — altrimenti lint/typecheck CI smette di girare sul nuovo branch senza segnalarlo.
+
+## Security Testing / Pentest
+
+- **Target sempre un hostname reale deployato** (`rc.luke.febos.local`, dominio
+  prod) — **mai** `localhost`/`host.docker.internal` verso un `pnpm dev` locale.
+  `next dev` espone per design stack trace, path assoluti e `next-devtools` a
+  utenti non autenticati: è comportamento atteso, non una vulnerabilità. Uno
+  scanner (Strix o altro) lanciato dentro un container Docker sulla stessa
+  macchina di sviluppo raggiunge il `pnpm dev` locale via l'alias
+  `host.docker.internal` e produce un falso positivo "development mode
+  disclosure" che spreca tempo di triage. RC e prod girano sempre `next build` +
+  `next start` dietro reverse proxy (vedi Dockerfile/docker-compose.*.yml) — solo
+  quegli host sono scope valido per un assessment.
 
 ## Commit Conventions
 

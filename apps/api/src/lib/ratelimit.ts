@@ -8,8 +8,11 @@
 import { TRPCError } from '@trpc/server';
 import pino from 'pino';
 
+import { buildRateLimitExceededError } from './rateLimitError';
 import { resolveRateLimitPolicy } from './rateLimitPolicy';
 import { t } from './t';
+
+import type { FastifyRequest } from 'fastify';
 
 // Logger interno per rate-limit
 const logger = pino({ level: 'info' });
@@ -23,6 +26,16 @@ export const RATE_LIMIT_CONFIG = {
     max: 5, // 5 tentativi
     windowMs: 60_000, // 1 minuto
     keyBy: 'ip' as const,
+  },
+  // Bucket separato, chiave username (non IP): ferma il password-spray distribuito su
+  // più IP contro un singolo account, che il bucket 'login' (keyBy: 'ip') non copre.
+  // Applicato direttamente in authenticateUser() con lo username normalizzato come
+  // chiave esplicita — non passa da withRateLimit()/extractRateLimitKey (che non
+  // deriva 'username' da ctx, essendo login un endpoint pubblico non autenticato).
+  loginByUsername: {
+    max: 10, // 10 tentativi
+    windowMs: 900_000, // 15 minuti
+    keyBy: 'username' as const,
   },
   passwordChange: {
     max: 3, // 3 tentativi
@@ -290,21 +303,38 @@ export const rateLimitStore = new RateLimitStore();
  * @throws {Error} If `keyBy` is `'userId'` but the session is missing.
  */
 export function extractRateLimitKey(
-  ctx: { req: any; session?: { user: { id: string } } | null },
+  ctx: { req: FastifyRequest; session?: { user: { id: string } } | null },
   keyBy: 'ip' | 'userId'
 ): string {
   if (keyBy === 'ip') {
     return ctx.req.ip || 'unknown';
   }
 
-  if (keyBy === 'userId') {
-    if (!ctx.session?.user?.id) {
-      throw new Error('User ID required for userId-based rate limiting');
-    }
-    return ctx.session.user.id;
+  if (!ctx.session?.user?.id) {
+    throw new Error('User ID required for userId-based rate limiting');
   }
+  return ctx.session.user.id;
+}
 
-  throw new Error(`Invalid keyBy: ${keyBy}`);
+/**
+ * Checks a key against `rateLimitStore` and either records the hit or throws
+ * `TOO_MANY_REQUESTS`. Shared by `withRateLimit()` (ctx-derived key) and by call sites that
+ * already have an explicit key, e.g. `loginByUsername` in `authenticateUser()`
+ * (`apps/api/src/services/auth.service.ts`) — username lives in the procedure input, not
+ * `ctx`, so it can't go through `extractRateLimitKey()`.
+ *
+ * @throws {TRPCError} `TOO_MANY_REQUESTS` if the key has exceeded `config.max`.
+ */
+export function enforceRateLimit(
+  routeName: string,
+  key: string,
+  config: { max: number; windowMs: number }
+): void {
+  if (rateLimitStore.isLimited(routeName, key, config)) {
+    throw buildRateLimitExceededError(routeName, config);
+  }
+  // Record BEFORE the caller proceeds so concurrent requests see the updated count.
+  rateLimitStore.record(routeName, key, config);
 }
 
 /**
@@ -318,46 +348,38 @@ export function extractRateLimitKey(
 export function withRateLimit(routeName: keyof typeof RATE_LIMIT_CONFIG) {
   return t.middleware(async ({ ctx, next }) => {
     try {
-      // Risolvi policy dinamicamente
       const config = await resolveRateLimitPolicy(
         routeName as keyof typeof RATE_LIMIT_CONFIG,
         ctx.prisma
       );
 
-      // Estrai chiave per rate-limit
-      const key = extractRateLimitKey(ctx, config.keyBy);
-
-      // Verifica se è limitata
-      if (rateLimitStore.isLimited(routeName, key, config)) {
-        const windowMs = config.windowMs;
-        const windowMinutes = Math.ceil(windowMs / 60_000);
-
-        throw new TRPCError({
-          code: 'TOO_MANY_REQUESTS',
-          message: `Rate limit exceeded for ${routeName}. Max ${config.max} requests per ${windowMinutes} minute(s).`,
-        });
+      if (config.keyBy === 'username') {
+        // Nessuna rotta wired su withRateLimit() usa oggi keyBy 'username' (solo
+        // loginByUsername, controllato direttamente in authenticateUser()) — se mai
+        // capitasse (es. AppConfig override malformato su un'altra rotta), fallisce
+        // rumorosamente invece di derivare silenziosamente una chiave sbagliata.
+        throw new Error(
+          `withRateLimit('${routeName}'): keyBy 'username' non è supportato da questo middleware — la chiave va passata esplicitamente dal chiamante`
+        );
       }
 
-      // Record BEFORE awaiting next() so concurrent requests see updated count
-      rateLimitStore.record(routeName, key, config);
-
-      // Esegui la procedura
-      const result = await next();
-
-      return result;
+      const key = extractRateLimitKey(ctx, config.keyBy);
+      enforceRateLimit(routeName, key, config);
     } catch (error) {
-      // Se è già un TRPCError, rilancialo
       if (error instanceof TRPCError) {
         throw error;
       }
 
-      // Per altri errori, logga e rilancia come errore generico
       logger.error({ err: error }, `Rate limit error for ${routeName}`);
       throw new TRPCError({
         code: 'INTERNAL_SERVER_ERROR',
         message: 'Rate limit check failed',
+        cause: error,
       });
     }
+
+    // next() runs outside the rate-limit try/catch — procedure errors propagate untouched
+    return next();
   });
 }
 

@@ -11,6 +11,7 @@ import {
   setupTestDb,
   createCallerWithIP,
   createCallerAs,
+  createTestUser,
   expectToThrow,
   TEST_USER_PASSWORD,
 } from './helpers';
@@ -64,6 +65,84 @@ describe('Rate-Limit Integration', () => {
         caller2.auth.login({ username: 'test', password: 'wrong' }),
         { code: 'UNAUTHORIZED' } // Non TOO_MANY_REQUESTS
       );
+    });
+  });
+
+  describe('auth.login rate limiting blocks valid credentials too (proof of enforcement)', () => {
+    it('dovrebbe bloccare anche un tentativo con credenziali valide dopo aver esaurito il bucket IP', async () => {
+      // Prova end-to-end che il blocco IP-based non sia solo "risposta generica indistinguibile
+      // da password sbagliata" (il gap di validazione segnalato dal pentest Strix, che dall'esterno
+      // non poteva verificare se il limiter scattasse davvero): un tentativo con credenziali VERE
+      // deve comunque fallire con TOO_MANY_REQUESTS una volta esaurito il bucket.
+      const { user } = await createTestUser('viewer');
+      const caller = await createCallerWithIP('192.168.1.150', null);
+
+      for (let i = 0; i < 5; i++) {
+        await expectToThrow(
+          caller.auth.login({ username: 'not-the-real-user', password: 'wrong' }),
+          { code: 'UNAUTHORIZED' }
+        );
+      }
+
+      await expectToThrow(
+        caller.auth.login({ username: user.username, password: TEST_USER_PASSWORD }),
+        { code: 'TOO_MANY_REQUESTS' }
+      );
+    });
+  });
+
+  describe('auth.login rate limiting per username (anti password-spray)', () => {
+    it('dovrebbe bloccare dopo 10 tentativi sullo stesso username da IP diversi', async () => {
+      // Il bucket 'login' (keyBy: 'ip') non ferma uno spray distribuito su molti IP contro
+      // un solo account: ogni IP qui sotto è sotto la soglia IP (5/60s), eppure il bucket
+      // 'loginByUsername' deve comunque scattare all'11° tentativo sullo stesso username.
+      const targetUsername = 'spray-target-user';
+
+      for (let i = 0; i < 10; i++) {
+        const caller = await createCallerWithIP(`10.0.0.${i + 1}`, null);
+        await expectToThrow(
+          caller.auth.login({ username: targetUsername, password: 'wrong' }),
+          { code: 'UNAUTHORIZED' }
+        );
+      }
+
+      const caller11 = await createCallerWithIP('10.0.0.11', null);
+      await expectToThrow(
+        caller11.auth.login({ username: targetUsername, password: 'wrong' }),
+        { code: 'TOO_MANY_REQUESTS' }
+      );
+    });
+
+    it('non deve essere aggirabile cambiando maiuscole/minuscole dello username', async () => {
+      const targetUsername = 'CaseSprayTarget';
+
+      for (let i = 0; i < 10; i++) {
+        const caller = await createCallerWithIP(`10.0.1.${i + 1}`, null);
+        const usernameVariant =
+          i % 2 === 0 ? targetUsername.toLowerCase() : targetUsername.toUpperCase();
+        await expectToThrow(
+          caller.auth.login({ username: usernameVariant, password: 'wrong' }),
+          { code: 'UNAUTHORIZED' }
+        );
+      }
+
+      const caller11 = await createCallerWithIP('10.0.1.11', null);
+      await expectToThrow(
+        caller11.auth.login({ username: targetUsername, password: 'wrong' }),
+        { code: 'TOO_MANY_REQUESTS' }
+      );
+    });
+
+    it('non deve bloccare username diversi tra loro', async () => {
+      // IP distinto per tentativo: isola la dimensione username, altrimenti il bucket
+      // 'login' (keyBy: 'ip', max 5/60s) scatterebbe prima e confonderebbe il test.
+      for (let i = 0; i < 10; i++) {
+        const caller = await createCallerWithIP(`10.0.2.${i + 1}`, null);
+        await expectToThrow(
+          caller.auth.login({ username: `distinct-user-${i}`, password: 'wrong' }),
+          { code: 'UNAUTHORIZED' }
+        );
+      }
     });
   });
 
@@ -204,8 +283,10 @@ describe('Rate-Limit Integration', () => {
       }
 
       const stats = rateLimitStore.getStats();
-      expect(stats.routes).toBe(1); // login route
-      expect(stats.totalKeys).toBe(1); // 1 IP
+      // 'login' (chiave IP) + 'loginByUsername' (chiave username): authenticateUser()
+      // controlla entrambi i bucket a ogni tentativo, vedi Fix RC brute-force.
+      expect(stats.routes).toBe(2);
+      expect(stats.totalKeys).toBe(2); // 1 IP + 1 username
       expect(stats.maxSize).toBe(1000);
     });
   });

@@ -18,6 +18,8 @@ import {
 } from '../lib/mailer';
 import { assertNotBlockedByMaintenance, isMaintenanceActive } from '../lib/maintenanceMode';
 import { validatePassword } from '../lib/password';
+import { enforceRateLimit } from '../lib/ratelimit';
+import { resolveRateLimitPolicy } from '../lib/rateLimitPolicy';
 
 import type { Context } from '../lib/trpc';
 import type { PrismaClient, User } from '@prisma/client';
@@ -81,9 +83,31 @@ export async function authenticateUser(
 ) {
   const { username, password } = input;
 
-  // Recupera la strategia di autenticazione
-  const strategy =
-    (await getConfig(ctx.prisma, 'auth.strategy', false)) || 'local-first';
+  // Bucket separato dal rate-limit per-IP di `withRateLimit('login')` (router auth.ts):
+  // ferma il password-spray distribuito su più IP contro un singolo account. Chiave
+  // normalizzata (case-insensitive) solo per il conteggio — la lookup credenziali sotto
+  // resta invariata. Nessuna dipendenza dati fra questa policy e la strategia di auth
+  // sotto: risolte in parallelo invece che in sequenza.
+  const usernameRateLimitKey = username.trim().toLowerCase();
+  const [usernameRateLimitPolicy, authStrategyConfig] = await Promise.all([
+    resolveRateLimitPolicy('loginByUsername', ctx.prisma),
+    getConfig(ctx.prisma, 'auth.strategy', false),
+  ]);
+
+  try {
+    // Controllato prima di toccare DB/LDAP per non sprecare quel lavoro durante uno spray.
+    enforceRateLimit('loginByUsername', usernameRateLimitKey, usernameRateLimitPolicy);
+  } catch (error) {
+    await logAudit(ctx, {
+      action: 'AUTH_LOGIN_FAILED',
+      targetType: 'Auth',
+      result: 'FAILURE',
+      metadata: { username, reason: 'rate_limited_username' },
+    });
+    throw error;
+  }
+
+  const strategy = authStrategyConfig || 'local-first';
 
   ctx.logger.info({ strategy, username }, `Authentication strategy selected`);
 
@@ -717,6 +741,7 @@ export async function requestEmailVerification(ctx: Context, email: string) {
     throw new TRPCError({
       code: 'INTERNAL_SERVER_ERROR',
       message: 'Impossibile inviare email.',
+      cause: error,
     });
   }
 }

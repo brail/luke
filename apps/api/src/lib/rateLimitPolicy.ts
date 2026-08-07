@@ -24,6 +24,7 @@ const logger = pino({ level: 'info' });
  */
 export const RATE_LIMIT_POLICY_DEFAULTS: Record<string, RateLimitPolicy> = {
   login: { max: 5, timeWindow: '1m', keyBy: 'ip' },
+  loginByUsername: { max: 10, timeWindow: '15m', keyBy: 'username' },
   passwordChange: { max: 3, timeWindow: '15m', keyBy: 'userId' },
   passwordReset: { max: 3, timeWindow: '15m', keyBy: 'ip' },
   configMutations: {
@@ -73,6 +74,35 @@ export const RATE_LIMIT_POLICY_DEFAULTS: Record<string, RateLimitPolicy> = {
   },
 };
 
+/**
+ * Cache in-memory, per-processo, sul valore grezzo di AppConfig `rateLimit`. `auth.login`
+ * risolve due bucket nello stesso tentativo (`login` via `withRateLimit`, `loginByUsername`
+ * in `authenticateUser()`) — senza questa cache ogni tentativo di login fa DUE query
+ * identiche sulla stessa riga. TTL breve: un cambio di config via admin UI impiega al
+ * massimo questo tempo a propagarsi, accettabile per un numero di rate-limit (non è un dato
+ * di sicurezza binario come un permesso).
+ */
+const RATE_LIMIT_CONFIG_CACHE_TTL_MS = 2000;
+let cachedConfigValue: { value: string | null; expiresAt: number } | null = null;
+
+async function fetchRateLimitConfigValue(
+  prisma: PrismaClient
+): Promise<string | null> {
+  const now = Date.now();
+  if (cachedConfigValue && cachedConfigValue.expiresAt > now) {
+    return cachedConfigValue.value;
+  }
+
+  const value = await getConfig(prisma, 'rateLimit', false);
+  cachedConfigValue = { value, expiresAt: now + RATE_LIMIT_CONFIG_CACHE_TTL_MS };
+  return value;
+}
+
+/** Forces the next `resolveRateLimitPolicy` call to re-read AppConfig. Test-only. */
+export function clearRateLimitConfigCache(): void {
+  cachedConfigValue = null;
+}
+
 function parseTimeWindow(window: string): number {
   const match = window.match(/^(\d+)(s|m|h)$/);
   if (!match) {
@@ -115,10 +145,10 @@ function parseTimeWindow(window: string): number {
 export async function resolveRateLimitPolicy(
   routeName: keyof typeof RATE_LIMIT_POLICY_DEFAULTS,
   prisma: PrismaClient
-): Promise<{ max: number; windowMs: number; keyBy: 'ip' | 'userId' }> {
+): Promise<{ max: number; windowMs: number; keyBy: 'ip' | 'userId' | 'username' }> {
   // 1) Tentativo AppConfig (chiave singola 'rateLimit' con JSON object)
   try {
-    const configValue = await getConfig(prisma, 'rateLimit', false);
+    const configValue = await fetchRateLimitConfigValue(prisma);
     if (configValue) {
       const parsed = JSON.parse(configValue);
       const validated = RateLimitConfigSchema.safeParse(parsed);
@@ -155,7 +185,7 @@ export async function resolveRateLimitPolicy(
         windowMs: windowEnv
           ? parseTimeWindow(windowEnv)
           : parseTimeWindow(def.timeWindow),
-        keyBy: (keyByEnv as 'ip' | 'userId') || def.keyBy,
+        keyBy: (keyByEnv as 'ip' | 'userId' | 'username') || def.keyBy,
       };
     } catch (error) {
       logger.warn({ err: error, routeName }, 'Invalid ENV rate limit config');

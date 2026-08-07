@@ -33,7 +33,7 @@ export const RateLimitPolicySchema = z.object({
   /** Finestra temporale (es. '1m', '15m', '2h') */
   timeWindow: z.string().min(2),
   /** Tipo di chiave per il rate limiting */
-  keyBy: z.enum(['ip', 'userId']).default('ip'),
+  keyBy: z.enum(['ip', 'userId', 'username']).default('ip'),
 });
 
 /**
@@ -43,6 +43,8 @@ export const RateLimitPolicySchema = z.object({
 export const RateLimitConfigSchema = z.object({
   /** Policy per endpoint di login */
   login: RateLimitPolicySchema.optional(),
+  /** Policy per endpoint di login, chiave username (anti password-spray distribuito su più IP) */
+  loginByUsername: RateLimitPolicySchema.optional(),
   /** Policy per cambio password */
   passwordChange: RateLimitPolicySchema.optional(),
   /** Policy per reset password */
@@ -51,6 +53,14 @@ export const RateLimitConfigSchema = z.object({
   configMutations: RateLimitPolicySchema.optional(),
   /** Policy per mutazioni di utenti */
   userMutations: RateLimitPolicySchema.optional(),
+  /** Policy per override sezioni accesso (sectionAccess.set) */
+  sectionAccessSet: RateLimitPolicySchema.optional(),
+  /** Policy per mutazioni brand */
+  brandMutations: RateLimitPolicySchema.optional(),
+  /** Policy per invio email pending user */
+  pendingEmail: RateLimitPolicySchema.optional(),
+  /** Policy per test bind/search LDAP */
+  ldapTest: RateLimitPolicySchema.optional(),
   /** Policy per mutazioni struttura company (funzioni, team, membri) */
   companyStructureMutations: RateLimitPolicySchema.optional(),
   /** Policy per trigger sync NAV (fornitori, ecc.) */
