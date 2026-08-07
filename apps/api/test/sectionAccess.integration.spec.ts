@@ -152,44 +152,60 @@ describe('sectionAccess — override per utente', () => {
 });
 
 describe('sectionAccess — getEffectiveForMe applica i quattro livelli', () => {
-  it('senza config in AppConfig decide il fallback RBAC, non SECTION_ACCESS_DEFAULTS', async () => {
-    const { session } = await createTestUser('viewer');
+  it('senza config in AppConfig vale SECTION_ACCESS_DEFAULTS, non il fallback RBAC', async () => {
+    // Il 2° livello leggeva solo AppConfig, e `rbac.sectionAccessDefaults` non
+    // è mai seedata: assente la chiave ogni sezione risolveva `'auto'` e
+    // decideva il fallback sui permessi, quindi la tabella statica non
+    // partecipava alla valutazione. Erano 32 divergenze — un viewer vedeva
+    // `settings.ldap`, `admin.brands`, `sales`. Ora la tabella è la base.
+    for (const role of ['admin', 'editor', 'viewer'] as const) {
+      const { session } = await createTestUser(role);
+      const effective = await callerFor(session).getEffectiveForMe();
 
-    // Fatto contro-intuitivo, verificato: il 2° livello legge
-    // `rbac.sectionAccessDefaults` da AppConfig, che **non è seedata**. Assente
-    // quella chiave, ogni sezione risolve `'auto'` e decide il fallback sui
-    // permessi. `SECTION_ACCESS_DEFAULTS` — la tabella statica che CLAUDE.md
-    // tratta da fonte di verità — non entra mai nella valutazione.
-    //
-    // Un viewer ha `users:read`, e `settings.users` mappa lì: la sezione
-    // risulta visibile benché la tabella statica la dia `false`. Il test lo
-    // fissa perché è il comportamento reale, non perché sia quello voluto —
-    // vedi la nota nel report della sessione.
-    const effective = await callerFor(session).getEffectiveForMe();
-    expect(effective['settings.users']).toBe(true);
+      for (const [section, allowed] of Object.entries(
+        SECTION_ACCESS_DEFAULTS[role]
+      )) {
+        expect(effective[section as Section], `${role}/${section}`).toBe(
+          allowed
+        );
+      }
+    }
   });
 
-  it('un override personale nega una sezione che il fallback concederebbe', async () => {
+  it('una riga malformata in AppConfig non apre le sezioni', async () => {
+    await prisma.appConfig.create({
+      data: { key: 'rbac.sectionAccessDefaults', value: '{ questo non è JSON' },
+    });
+    const { session } = await createTestUser('viewer');
+
+    // Il `catch` degradava a mappa vuota, cioè al fallback sui permessi: un
+    // controllo di visibilità che fallisce in **apertura**. Si resta sulla
+    // base statica.
+    const effective = await callerFor(session).getEffectiveForMe();
+    expect(effective['settings.ldap']).toBe(false);
+  });
+
+  it('un override personale concede una sezione che i default negano', async () => {
     const { session: adminSession } = await createTestUser('admin');
     const { user: viewer, session: viewerSession } =
       await createTestUser('viewer');
 
     expect(
       (await callerFor(viewerSession).getEffectiveForMe())['settings.users']
-    ).toBe(true);
+    ).toBe(false);
 
     await callerFor(adminSession).set({
       userId: viewer.id,
       section: 'settings.users',
-      enabled: false,
+      enabled: true,
     });
 
-    // Livello 1 batte livello 3: se qui non cambiasse, l'override sarebbe
-    // scritto ma non lo leggerebbe nessuno — la UI continuerebbe a mostrare
-    // una sezione revocata.
+    // Livello 1 batte livello 2: se qui non cambiasse, l'override sarebbe
+    // scritto ma non lo leggerebbe nessuno — la UI continuerebbe a nascondere
+    // una sezione appena concessa.
     expect(
       (await callerFor(viewerSession).getEffectiveForMe())['settings.users']
-    ).toBe(false);
+    ).toBe(true);
   });
 });
 
