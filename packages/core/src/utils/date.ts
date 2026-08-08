@@ -1,14 +1,14 @@
 /**
- * Utility per la gestione delle date
- * Fornisce funzioni per formattazione e parsing delle date
+ * Utility for date management
+ * Provides functions for date formatting and parsing
  */
 
 /**
- * Formatta una data secondo le convenzioni locali
+ * Formats a date according to local conventions
  *
- * @param date - La data da formattare
- * @param locale - Il locale per la formattazione (default: 'it-IT')
- * @returns Stringa formattata della data
+ * @param date - The date to format
+ * @param locale - The locale for formatting (default: 'it-IT')
+ * @returns Formatted date string
  *
  * @example
  * ```typescript
@@ -26,16 +26,16 @@ export function formatDate(date: Date, locale: string = 'it-IT'): string {
 
     return formatter.format(date);
   } catch {
-    // Fallback a formato ISO se il locale non è valido
+    // Fallback to ISO format if locale is invalid
     return date.toLocaleDateString('it-IT');
   }
 }
 
 /**
- * Converte una stringa in un oggetto Date
+ * Converts a string to a Date object
  *
- * @param input - Stringa da convertire in data
- * @returns Oggetto Date o null se il parsing fallisce
+ * @param input - String to convert to date
+ * @returns Date object or null if parsing fails
  *
  * @example
  * ```typescript
@@ -50,10 +50,10 @@ export function parseDate(input: string): Date | null {
   }
 
   try {
-    // Prova prima il parsing diretto
+    // Try direct parsing first
     const date = new Date(input);
 
-    // Verifica che la data sia valida
+    // Verify that the date is valid
     if (isNaN(date.getTime())) {
       return null;
     }
@@ -65,11 +65,11 @@ export function parseDate(input: string): Date | null {
 }
 
 /**
- * Formatta una data con ora secondo le convenzioni locali
+ * Formats a date with time according to local conventions
  *
- * @param date - La data da formattare
- * @param locale - Il locale per la formattazione (default: 'it-IT')
- * @returns Stringa formattata della data con ora
+ * @param date - The date to format
+ * @param locale - The locale for formatting (default: 'it-IT')
+ * @returns Formatted date and time string
  *
  * @example
  * ```typescript
@@ -88,29 +88,29 @@ export function formatDateTime(date: Date, locale: string = 'it-IT'): string {
 
     return formatter.format(date);
   } catch {
-    // Fallback a formato ISO se il locale non è valido
+    // Fallback to ISO format if locale is invalid
     return date.toLocaleString('it-IT');
   }
 }
 
 /**
- * Verifica se una data è valida
+ * Checks if a date is valid
  *
- * @param date - La data da verificare
- * @returns true se la data è valida, false altrimenti
+ * @param date - The date to check
+ * @returns true if the date is valid, false otherwise
  */
 export function isValidDate(date: Date): boolean {
   return date instanceof Date && !isNaN(date.getTime());
 }
 
 /**
- * Formatta una data con timezone specifico
+ * Formats a date with a specific timezone
  *
- * @param date - La data da formattare (Date o string ISO)
- * @param timezone - Il timezone IANA (es: 'Europe/Rome', 'America/New_York')
- * @param options - Opzioni di formattazione Intl.DateTimeFormat
- * @param locale - Il locale per la formattazione (default: 'it-IT')
- * @returns Stringa formattata della data nel timezone specificato
+ * @param date - The date to format (Date or ISO string)
+ * @param timezone - The IANA timezone (e.g: 'Europe/Rome', 'America/New_York')
+ * @param options - Intl.DateTimeFormat formatting options
+ * @param locale - The locale for formatting (default: 'it-IT')
+ * @returns Formatted date string in the specified timezone
  *
  * @example
  * ```typescript
@@ -131,7 +131,7 @@ export function formatDateWithTimezone(
     const dateObj = typeof date === 'string' ? new Date(date) : date;
 
     if (!isValidDate(dateObj)) {
-      return 'Data non valida';
+      return 'Invalid date';
     }
 
     return new Intl.DateTimeFormat(locale, {
@@ -139,19 +139,19 @@ export function formatDateWithTimezone(
       timeZone: timezone,
     }).format(dateObj);
   } catch {
-    // Fallback se timezone non valido
+    // Fallback if timezone is invalid
     const dateObj = typeof date === 'string' ? new Date(date) : date;
     return new Intl.DateTimeFormat(locale, options).format(dateObj);
   }
 }
 
 /**
- * Formatta data breve con timezone (es: "15/01/2024")
+ * Formats short date with timezone (e.g: "15/01/2024")
  *
- * @param date - La data da formattare
- * @param timezone - Il timezone IANA
- * @param locale - Il locale per la formattazione (default: 'it-IT')
- * @returns Stringa formattata
+ * @param date - The date to format
+ * @param timezone - The IANA timezone
+ * @param locale - The locale for formatting (default: 'it-IT')
+ * @returns Formatted string
  */
 export function formatShortDate(
   date: Date | string,
@@ -171,12 +171,12 @@ export function formatShortDate(
 }
 
 /**
- * Formatta data e ora con timezone (es: "15/01/2024, 14:30")
+ * Formats date and time with timezone (e.g: "15/01/2024, 14:30")
  *
- * @param date - La data da formattare
- * @param timezone - Il timezone IANA
- * @param locale - Il locale per la formattazione (default: 'it-IT')
- * @returns Stringa formattata
+ * @param date - The date to format
+ * @param timezone - The IANA timezone
+ * @param locale - The locale for formatting (default: 'it-IT')
+ * @returns Formatted string
  */
 export function formatDateTimeWithTimezone(
   date: Date | string,
@@ -198,12 +198,12 @@ export function formatDateTimeWithTimezone(
 }
 
 /**
- * Formatta data compatta (es: "15 gen 2024")
+ * Formats compact date (e.g: "15 Jan 2024")
  *
- * @param date - La data da formattare
- * @param timezone - Il timezone IANA
- * @param locale - Il locale per la formattazione (default: 'it-IT')
- * @returns Stringa formattata
+ * @param date - The date to format
+ * @param timezone - The IANA timezone
+ * @param locale - The locale for formatting (default: 'it-IT')
+ * @returns Formatted string
  */
 export function formatCompactDate(
   date: Date | string,
@@ -223,12 +223,12 @@ export function formatCompactDate(
 }
 
 /**
- * Formatta solo ora (es: "14:30")
+ * Formats time only (e.g: "14:30")
  *
- * @param date - La data da formattare
- * @param timezone - Il timezone IANA
- * @param locale - Il locale per la formattazione (default: 'it-IT')
- * @returns Stringa formattata
+ * @param date - The date to format
+ * @param timezone - The IANA timezone
+ * @param locale - The locale for formatting (default: 'it-IT')
+ * @returns Formatted string
  */
 export function formatTime(
   date: Date | string,

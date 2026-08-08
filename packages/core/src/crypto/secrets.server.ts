@@ -1,25 +1,25 @@
 /**
- * @luke/core/crypto - Gestione sicura dei segreti (SERVER-ONLY)
+ * @luke/core/crypto - Secure secret management (SERVER-ONLY)
  *
- * Questo modulo fornisce:
- * - Accesso alla master key per cifratura
- * - Derivazione di segreti specifici tramite HKDF-SHA256
- * - Gestione NextAuth secret derivato deterministicamente
+ * This module provides:
+ * - Access to the master key for encryption
+ * - Derivation of purpose-specific secrets via HKDF-SHA256
+ * - Management of deterministically derived NextAuth secret
  *
- * ⚠️ IMPORTANTE: Questo modulo può essere importato solo server-side
+ * ⚠️ IMPORTANT: This module can only be imported server-side
  *
  * @version 0.1.0
  * @author Luke Team
  */
 
-// Runtime check: fail se eseguito nel browser
+// Runtime check: fail if executed in the browser
 import { hkdfSync, randomBytes } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 
 if (typeof window !== 'undefined') {
-  throw new Error('secrets.server.ts può essere importato solo server-side');
+  throw new Error('secrets.server.ts can only be imported server-side');
 }
 
 const MASTER_KEY_PATH = join(homedir(), '.luke', 'secret.key');
@@ -41,12 +41,12 @@ export function getMasterKey(): Buffer {
   const keyDir = join(homedir(), '.luke');
 
   if (!existsSync(MASTER_KEY_PATH)) {
-    // Crea directory se non esiste
+    // Create directory if it does not exist
     if (!existsSync(keyDir)) {
       mkdirSync(keyDir, { mode: 0o700 });
     }
 
-    // Genera nuova master key
+    // Generate new master key
     const masterKey = randomBytes(KEY_LENGTH);
     writeFileSync(MASTER_KEY_PATH, masterKey, { mode: 0o600 });
   }
@@ -55,7 +55,7 @@ export function getMasterKey(): Buffer {
 
   if (keyBuffer.length !== KEY_LENGTH) {
     throw new Error(
-      `Master key deve essere di ${KEY_LENGTH} bytes, trovati ${keyBuffer.length}`
+      `Master key must be ${KEY_LENGTH} bytes, found ${keyBuffer.length}`
     );
   }
 
@@ -82,7 +82,7 @@ export function deriveSecret(purpose: string): string {
       HKDF_LENGTH
     );
 
-    // Converti ArrayBuffer in Buffer e poi in base64url (URL-safe base64)
+    // Convert ArrayBuffer to Buffer and then to base64url (URL-safe base64)
     const buffer = Buffer.from(derivedKey);
     return buffer
       .toString('base64')
@@ -90,7 +90,7 @@ export function deriveSecret(purpose: string): string {
       .replace(/\//g, '_')
       .replace(/=/g, '');
   } catch {
-    throw new Error(`Impossibile derivare segreto per scopo: ${purpose}`);
+    throw new Error(`Unable to derive secret for purpose: ${purpose}`);
   }
 }
 
@@ -106,7 +106,7 @@ export function getNextAuthSecret(): string {
   try {
     return deriveSecret(HKDF_INFO_NEXTAUTH);
   } catch {
-    throw new Error('Impossibile derivare NextAuth secret dalla master key');
+    throw new Error('Unable to derive NextAuth secret from master key');
   }
 }
 
@@ -122,7 +122,7 @@ export function getApiJwtSecret(): string {
   try {
     return deriveSecret(HKDF_INFO_API_JWT);
   } catch {
-    throw new Error('Impossibile derivare API JWT secret dalla master key');
+    throw new Error('Unable to derive API JWT secret from master key');
   }
 }
 
@@ -140,5 +140,5 @@ export function validateMasterKey(): boolean {
   }
 }
 
-// Export costanti per uso esterno (eliminare magic strings)
+// Export constants for external use (eliminate magic strings)
 export { HKDF_INFO_NEXTAUTH, HKDF_INFO_API_JWT, HKDF_INFO_COOKIE };

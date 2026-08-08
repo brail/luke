@@ -1,11 +1,11 @@
 /**
- * @luke/core - Pacchetto core del sistema Luke
+ * @luke/core - Core package of the Luke system
  *
- * Questo pacchetto fornisce:
- * - Schemi Zod per validazione dati (User, AppConfig)
- * - Sistema RBAC per gestione ruoli e permissions
- * - Utility per date e gestione denaro
- * - Funzioni di pricing e calcolo margini
+ * This package provides:
+ * - Zod schemas for data validation (User, AppConfig)
+ * - RBAC system for role and permissions management
+ * - Utility functions for dates and money management
+ * - Pricing functions and margin calculation
  *
  * @version 0.1.0
  * @author Luke Team

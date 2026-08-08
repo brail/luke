@@ -1,13 +1,13 @@
 import { z } from 'zod';
 
 /**
- * Valute supportate dal sistema di pricing
+ * Currencies supported by the pricing system
  */
 export const PRICING_CURRENCIES = ['USD', 'EUR', 'GBP', 'CHF', 'CNY'] as const;
 export type PricingCurrency = (typeof PRICING_CURRENCIES)[number];
 
 /**
- * Schema per la creazione/modifica di un set di parametri
+ * Schema for creating/updating a parameter set
  */
 export const PricingParameterSetInputSchema = z.object({
   name: z
@@ -56,7 +56,7 @@ export type PricingParameterSetInput = z.infer<
 >;
 
 /**
- * Schema per l'aggiornamento (include l'id)
+ * Schema for updating (includes the id)
  */
 export const PricingParameterSetUpdateSchema =
   PricingParameterSetInputSchema.extend({
@@ -68,13 +68,13 @@ export type PricingParameterSetUpdate = z.infer<
 >;
 
 /**
- * Modalità di calcolo disponibili
+ * Available calculation modes
  */
 export const PricingModeSchema = z.enum(['forward', 'inverse', 'margin']);
 export type PricingMode = z.infer<typeof PricingModeSchema>;
 
 /**
- * Schema per la richiesta di calcolo
+ * Schema for calculation request
  */
 export const PricingCalculateInputSchema = z
   .object({

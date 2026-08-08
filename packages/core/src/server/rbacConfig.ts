@@ -10,19 +10,19 @@ import { SECTION_ACCESS_DEFAULTS } from '../schemas/rbac';
 import type { IPrismaConfigClient } from '../runtime/env';
 
 /**
- * Base statica dei default di sezione, nel vocabolario che
- * `effectiveSectionAccess` si aspetta al 2° livello.
+ * Static base of section defaults, in the vocabulary that
+ * `effectiveSectionAccess` expects at the 2nd level.
  *
- * Esiste perché quel livello leggeva **solo** AppConfig, e
- * `rbac.sectionAccessDefaults` non è mai seedata: assente la chiave, ogni
- * sezione risolveva `'auto'` e decideva il fallback sui permessi, quindi
- * `SECTION_ACCESS_DEFAULTS` — descritta in CLAUDE.md come fonte di verità
- * version-controlled — non partecipava alla valutazione. Misurate 32 divergenze
- * fra la tabella e il comportamento reale: un viewer vedeva `settings.ldap`,
- * `admin.brands`, `sales` e altre sezioni che la tabella dà per negate.
+ * Exists because that level read **only** AppConfig, and
+ * `rbac.sectionAccessDefaults` is never seeded: absent the key, every
+ * section resolved to `'auto'` and fell back to permissions, so
+ * `SECTION_ACCESS_DEFAULTS` — described in CLAUDE.md as version-controlled source of truth
+ * — did not participate in evaluation. Measured 32 divergences
+ * between the table and actual behavior: a viewer saw `settings.ldap`,
+ * `admin.brands`, `sales` and other sections that the table denied.
  *
- * Ora la tabella è la **base** e AppConfig l'**override**, che è esattamente
- * come CLAUDE.md descrive il sistema.
+ * Now the table is the **base** and AppConfig the **override**, which is exactly
+ * how CLAUDE.md describes the system.
  */
 const STATIC_SECTION_DEFAULTS: Record<string, Record<string, string>> =
   Object.fromEntries(
@@ -57,7 +57,7 @@ interface RbacConfig {
 
 /** In-memory TTL cache for RBAC configuration. Invalidated by `invalidateRbacCache()`. */
 const cache = new Map<string, { data: RbacConfig; ts: number }>();
-const TTL = 60_000; // 60 secondi
+const TTL = 60_000; // 60 seconds
 
 /**
  * Clears the in-memory RBAC cache, forcing the next call to `getRbacConfig` to re-read from the database.
@@ -87,16 +87,16 @@ export async function getRbacConfig(
     return cached.data;
   }
 
-  // Leggi entrambe le chiavi in parallelo
+  // Read both keys in parallel
   const [sectionDefaultsRow, disabledRow] = await Promise.all([
     prisma.appConfig.findUnique({ where: { key: 'rbac.sectionAccessDefaults' } }),
     prisma.appConfig.findUnique({ where: { key: 'app.sections.disabled' } }),
   ]);
 
-  // Base statica, sovrascritta per ruolo da quanto c'è in AppConfig. Il merge è
-  // per ruolo e non per sezione: `setRoleDefaults` scrive sempre la mappa
-  // completa (`z.record(sectionEnum, …)` è esaustivo), quindi un ruolo presente
-  // in AppConfig è già esaustivo di suo.
+  // Static base, overridden per-role by what is in AppConfig. The merge is
+  // per-role not per-section: `setRoleDefaults` always writes the full map
+  // (`z.record(sectionEnum, …)` is exhaustive), so a role present
+  // in AppConfig is already exhaustive by itself.
   let sectionAccessDefaults: Record<string, Record<string, string>> = {
     ...STATIC_SECTION_DEFAULTS,
   };
@@ -109,10 +109,10 @@ export async function getRbacConfig(
       >;
       sectionAccessDefaults = { ...sectionAccessDefaults, ...stored };
     } catch {
-      // Riga malformata: si resta sulla base statica, **non** su `{}`.
-      // Degradare a mappa vuota qui significava aprire ogni sezione a ogni
-      // ruolo che avesse il permesso corrispondente — un controllo di
-      // visibilità che fallisce in apertura invece che in chiusura.
+      // Malformed row: fall back to static base, **not** to `{}`.
+      // Degrading to empty map here would open every section to every
+      // role that had the corresponding permission — a visibility check
+      // that fails in opening instead of closing.
     }
   }
 
@@ -121,7 +121,7 @@ export async function getRbacConfig(
     try {
       disabledSections = z.array(z.string()).parse(JSON.parse(disabledRow.value));
     } catch {
-      // parsing error — usa default vuoto
+      // parsing error — use empty default
     }
   }
 

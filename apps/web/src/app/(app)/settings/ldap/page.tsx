@@ -69,7 +69,7 @@ export default function LdapSettingsPage() {
     },
   });
 
-  // Stato per i flag di presenza dei campi sensibili
+  // State for flags indicating presence of sensitive fields
   const [hasBindDN, setHasBindDN] = React.useState(false);
   const [hasBindPassword, setHasBindPassword] = React.useState(false);
   const [testConnectionStatus, setTestConnectionStatus] = React.useState<
@@ -89,7 +89,7 @@ export default function LdapSettingsPage() {
     error: configError,
   } = trpc.integrations.auth.getLdapConfig.useQuery(undefined);
 
-  // Aggiorna form quando arriva la configurazione esistente
+  // Update form when existing configuration arrives
   useEffect(() => {
     if (existingConfig) {
       form.reset({

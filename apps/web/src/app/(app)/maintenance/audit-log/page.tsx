@@ -75,9 +75,9 @@ export default function AuditLogPage() {
     setPage(1);
   }
 
-  // "Azione"/"Entità" sono campi di testo libero: senza debounce ogni battitura cambierebbe la
-  // query key e riavvierebbe la findMany+count lato server. I due Select/date invece committano
-  // subito, non serve debounce su una selezione discreta.
+  // "Action"/"Entity" are free-text fields: without debounce each keystroke would change the
+  // query key and restart the server-side findMany+count. The two Select/date fields commit
+  // immediately, no debounce needed for discrete selection.
   const [actionInput, setActionInput] = useState('');
   const [targetTypeInput, setTargetTypeInput] = useState('');
 

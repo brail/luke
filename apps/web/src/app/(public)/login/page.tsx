@@ -46,8 +46,8 @@ export default function LoginPage() {
       });
 
       if (result?.error) {
-        // Auth.js v5 appiattisce sempre gli errori di authorize() in "CredentialsSignin".
-        // Dopo un fallimento, verifica se l'utente è in attesa di approvazione LDAP.
+        // Auth.js v5 always flattens authorize() errors to "CredentialsSignin".
+        // After failure, check if user is awaiting LDAP approval.
         if (result.error === 'CredentialsSignin') {
           const pending = await utils.auth.getPendingStatus.fetch({ username });
           if (pending.isPending) {
@@ -58,7 +58,7 @@ export default function LoginPage() {
           }
         }
 
-        // Gestione specifica per email non verificata
+        // Specific handling for unverified email
         if (result.error.includes('Email non verificata')) {
           setError(
             'Email non verificata. Controlla la tua casella di posta per il link di verifica.'
@@ -67,7 +67,7 @@ export default function LoginPage() {
           setError('Credenziali non valide');
         }
       } else {
-        // Redirect a dashboard dopo login riuscito
+        // Redirect to dashboard after successful login
         router.push('/dashboard');
       }
     } catch {

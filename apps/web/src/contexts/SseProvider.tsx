@@ -70,8 +70,8 @@ export function SseProvider({ children }: { children: React.ReactNode }) {
           }
         };
 
-        // Ticket è monouso: il reconnect automatico del browser fallirebbe con 401.
-        // Ottieni un nuovo ticket e riconnetti dopo un backoff.
+        // Ticket is single-use: automatic browser reconnect would fail with 401.
+        // Get a new ticket and reconnect after backoff.
         es.onerror = () => {
           es.close();
           esRef.current = null;

@@ -1,8 +1,8 @@
 /**
- * @luke/core/storage - Contratti per URL generation e gestione storage
+ * @luke/core/storage - Contracts for URL generation and storage management
  *
- * Funzioni condivise per generazione URL pubblici, parsing e utilities
- * per mantenere coerenza tra frontend e backend.
+ * Shared functions for public URL generation, parsing and utilities
+ * to maintain consistency between frontend and backend.
  *
  * @version 0.1.0
  * @author Luke Team
@@ -27,24 +27,24 @@ function isValidBucket(value: string): value is StorageBucket {
 }
 
 /**
- * Configurazione per URL generation
+ * Configuration for URL generation
  */
 export interface UrlConfig {
-  /** URL base del backend (es. http://localhost:3001) */
+  /** Backend base URL (e.g. http://localhost:3001) */
   publicBaseUrl?: string;
-  /** Se abilitare proxy Next.js per file serving */
+  /** Whether to enable Next.js proxy for file serving */
   enableProxy?: boolean;
-  /** URL base del frontend per proxy (es. http://localhost:3000) */
+  /** Frontend base URL for proxy (e.g. http://localhost:3000) */
   frontendBaseUrl?: string;
 }
 
 /**
- * Genera URL pubblico per un file nello storage
+ * Generates a public URL for a file in storage
  *
- * @param bucket - Bucket del file
- * @param key - Chiave del file
- * @param config - Configurazione URL
- * @returns URL pubblico per accesso al file
+ * @param bucket - File bucket
+ * @param key - File key
+ * @param config - URL configuration
+ * @returns Public URL for file access
  *
  * @example
  * // Proxy enabled (DEV)
@@ -66,14 +66,14 @@ export function getPublicUrl(
 ): string {
   const { enableProxy = true, publicBaseUrl } = config;
 
-  // Sanitizza key per sicurezza
+  // Sanitize key for security
   const sanitizedKey = sanitizeKey(key);
 
   if (enableProxy) {
-    // Usa proxy Next.js (DEV o quando configurato)
+    // Use Next.js proxy (DEV or when configured)
     return `/api/uploads/${bucket}/${sanitizedKey}`;
   } else {
-    // Usa backend diretto (PROD)
+    // Use direct backend (PROD)
     if (!publicBaseUrl) {
       throw new Error('publicBaseUrl required when proxy is disabled');
     }
@@ -82,11 +82,11 @@ export function getPublicUrl(
 }
 
 /**
- * Genera URL per proxy (sempre relativo al frontend)
+ * Generates proxy URL (always relative to frontend)
  *
- * @param bucket - Bucket del file
- * @param key - Chiave del file
- * @returns URL proxy relativo
+ * @param bucket - File bucket
+ * @param key - File key
+ * @returns Relative proxy URL
  */
 export function getProxyUrl(bucket: StorageBucket, key: string): string {
   const sanitizedKey = sanitizeKey(key);
@@ -94,11 +94,11 @@ export function getProxyUrl(bucket: StorageBucket, key: string): string {
 }
 
 /**
- * Costruisce endpoint per upload backend
+ * Constructs backend upload endpoint
  *
- * @param entity - Tipo di entità (es. 'brand-logo')
- * @param id - ID dell'entità (opzionale per upload temporanei)
- * @returns Endpoint completo per upload
+ * @param entity - Entity type (e.g. 'brand-logo')
+ * @param id - Entity ID (optional for temporary uploads)
+ * @returns Complete upload endpoint
  *
  * @example
  * buildUploadEndpoint('brand-logo', 'brand-123')
@@ -120,10 +120,10 @@ export function buildUploadEndpoint(entity: string, id?: string): string {
 }
 
 /**
- * Estrae chiave da URL pubblico
+ * Extracts key from public URL
  *
- * @param url - URL pubblico del file
- * @returns Chiave del file o null se URL non valido
+ * @param url - Public URL of the file
+ * @returns File key or null if URL is invalid
  *
  * @example
  * extractKeyFromUrl('/api/uploads/brand-logos/2025/01/15/uuid.png')
@@ -139,13 +139,13 @@ export function extractKeyFromUrl(url: string): string | null {
   }
 
   try {
-    // Pattern per URL proxy: /api/uploads/{bucket}/{key}
+    // Pattern for proxy URL: /api/uploads/{bucket}/{key}
     const proxyMatch = url.match(/\/api\/uploads\/[^/]+\/(.+)$/);
     if (proxyMatch) {
       return decodeURIComponent(proxyMatch[1]);
     }
 
-    // Pattern per URL diretto: {base}/uploads/{bucket}/{key}
+    // Pattern for direct URL: {base}/uploads/{bucket}/{key}
     const directMatch = url.match(/\/uploads\/[^/]+\/(.+)$/);
     if (directMatch) {
       return decodeURIComponent(directMatch[1]);
@@ -158,10 +158,10 @@ export function extractKeyFromUrl(url: string): string | null {
 }
 
 /**
- * Estrae bucket da URL pubblico
+ * Extracts bucket from public URL
  *
- * @param url - URL pubblico del file
- * @returns Bucket del file o null se URL non valido
+ * @param url - Public URL of the file
+ * @returns File bucket or null if URL is invalid
  */
 export function extractBucketFromUrl(url: string): StorageBucket | null {
   if (!url || typeof url !== 'string') {
@@ -169,7 +169,7 @@ export function extractBucketFromUrl(url: string): StorageBucket | null {
   }
 
   try {
-    // Pattern per URL proxy: /api/uploads/{bucket}/{key}
+    // Pattern for proxy URL: /api/uploads/{bucket}/{key}
     const proxyMatch = url.match(/\/api\/uploads\/([^/]+)\//);
     if (proxyMatch) {
       const candidate = proxyMatch[1];
@@ -177,7 +177,7 @@ export function extractBucketFromUrl(url: string): StorageBucket | null {
       return candidate;
     }
 
-    // Pattern per URL diretto: {base}/uploads/{bucket}/{key}
+    // Pattern for direct URL: {base}/uploads/{bucket}/{key}
     const directMatch = url.match(/\/uploads\/([^/]+)\//);
     if (directMatch) {
       const candidate = directMatch[1];
@@ -192,32 +192,32 @@ export function extractBucketFromUrl(url: string): StorageBucket | null {
 }
 
 /**
- * Valida se un URL è un URL pubblico valido per storage
+ * Validates if a URL is a valid public storage URL
  *
- * @param url - URL da validare
- * @returns true se URL è valido per storage
+ * @param url - URL to validate
+ * @returns true if URL is valid for storage
  */
 export function isValidStorageUrl(url: string): boolean {
   return extractKeyFromUrl(url) !== null;
 }
 
 /**
- * Sanitizza chiave file per sicurezza
+ * Sanitizes file key for security
  *
- * @param key - Chiave da sanitizzare
- * @returns Chiave sanitizzata
+ * @param key - Key to sanitize
+ * @returns Sanitized key
  */
 function sanitizeKey(key: string): string {
   if (!key || typeof key !== 'string') {
     throw new Error('Invalid key: must be non-empty string');
   }
 
-  // Rimuovi caratteri pericolosi e path traversal
+  // Remove dangerous characters and path traversal
   const sanitized = key
-    .replace(/[^a-zA-Z0-9._/-]/g, '') // Solo caratteri sicuri
-    .replace(/\.\./g, '') // Rimuovi ..
-    .replace(/\/+/g, '/') // Normalizza separatori
-    .replace(/^\/+|\/+$/g, ''); // Rimuovi slash iniziali/finali
+    .replace(/[^a-zA-Z0-9._/-]/g, '') // Only safe characters
+    .replace(/\.\./g, '') // Remove ..
+    .replace(/\/+/g, '/') // Normalize separators
+    .replace(/^\/+|\/+$/g, ''); // Remove leading/trailing slashes
 
   if (!sanitized) {
     throw new Error('Key sanitization resulted in empty string');
@@ -227,10 +227,10 @@ function sanitizeKey(key: string): string {
 }
 
 /**
- * Sanitizza nome entità per endpoint
+ * Sanitizes entity name for endpoint
  *
- * @param entity - Nome entità da sanitizzare
- * @returns Nome sanitizzato
+ * @param entity - Entity name to sanitize
+ * @returns Sanitized name
  */
 function sanitizeEntityName(entity: string): string {
   if (!entity || typeof entity !== 'string') {
@@ -238,16 +238,16 @@ function sanitizeEntityName(entity: string): string {
   }
 
   return entity
-    .replace(/[^a-zA-Z0-9-]/g, '-') // Solo caratteri sicuri per URL
-    .replace(/-+/g, '-') // Normalizza trattini
-    .replace(/^-+|-+$/g, ''); // Rimuovi trattini iniziali/finali
+    .replace(/[^a-zA-Z0-9-]/g, '-') // Only safe characters for URL
+    .replace(/-+/g, '-') // Normalize dashes
+    .replace(/^-+|-+$/g, ''); // Remove leading/trailing dashes
 }
 
 /**
- * Sanitizza ID per endpoint
+ * Sanitizes ID for endpoint
  *
- * @param id - ID da sanitizzare
- * @returns ID sanitizzato
+ * @param id - ID to sanitize
+ * @returns Sanitized ID
  */
 function sanitizeId(id: string): string {
   if (!id || typeof id !== 'string') {
@@ -255,16 +255,16 @@ function sanitizeId(id: string): string {
   }
 
   return id
-    .replace(/[^a-zA-Z0-9_-]/g, '') // Solo caratteri sicuri
-    .substring(0, 100); // Limita lunghezza
+    .replace(/[^a-zA-Z0-9_-]/g, '') // Only safe characters
+    .substring(0, 100); // Limit length
 }
 
 /**
- * Converte configurazione LocalStorageConfig a UrlConfig
+ * Converts LocalStorageConfig to UrlConfig
  *
- * @param config - Configurazione storage locale
- * @param frontendBaseUrl - URL base frontend (opzionale)
- * @returns Configurazione URL
+ * @param config - Local storage configuration
+ * @param frontendBaseUrl - Frontend base URL (optional)
+ * @returns URL configuration
  */
 export function storageConfigToUrlConfig(
   config: LocalStorageConfig,

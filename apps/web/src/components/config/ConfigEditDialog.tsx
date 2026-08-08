@@ -67,14 +67,14 @@ export function ConfigEditDialog({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const isEdit = !!config;
 
-  // Reset form quando cambia la configurazione selezionata
+  // Reset form when selected configuration changes
   useEffect(() => {
     if (config) {
-      // Modalità edit: popola form con dati esistenti
+      // Edit mode: populate form with existing data
       setFormData({
         key: config.key,
-        // Per valori cifrati, non pre-popolare il campo valore
-        // Per valori non cifrati, usa valuePreview se disponibile, altrimenti value
+        // For encrypted values, don't pre-populate value field
+        // For unencrypted values, use valuePreview if available, otherwise value
         value: config.isEncrypted
           ? ''
           : config.valuePreview || config.value || '',
@@ -82,7 +82,7 @@ export function ConfigEditDialog({
         category: getCategoryFromKey(config.key),
       });
     } else {
-      // Modalità create: form vuoto
+      // Create mode: empty form
       setFormData({
         key: '',
         value: '',
@@ -133,7 +133,7 @@ export function ConfigEditDialog({
   const handleInputChange = (field: string, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
 
-    // Clear error quando l'utente inizia a digitare
+    // Clear error when user starts typing
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }

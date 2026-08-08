@@ -17,11 +17,11 @@ export function useSessionInvalidation() {
   const eventSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
-    // Solo se autenticato
+    // Only if authenticated
     if (status === 'authenticated' && session?.user?.id) {
-      debugLog('Avvio ascolto notifiche invalidazione sessione');
+      debugLog('Start listening for session invalidation notifications');
 
-      // Server-Sent Events per notifiche real-time
+      // Server-Sent Events for real-time notifications
       const eventSource = new EventSource(
         `/api/session-events?userId=${session.user.id}`
       );
@@ -32,33 +32,33 @@ export function useSessionInvalidation() {
           const data = JSON.parse(event.data);
 
           if (data.type === 'SESSION_INVALIDATED') {
-            debugLog('Sessione invalidata da admin, redirect a login');
+            debugLog('Session invalidated by admin, redirecting to login');
             eventSource.close();
             router.push('/login');
           }
         } catch (error) {
-          debugError('Errore parsing notifica sessione:', error);
+          debugError('Error parsing session notification:', error);
         }
       };
 
       eventSource.onerror = error => {
-        debugError('Errore SSE:', error);
-        // In caso di errore, fallback alla verifica periodica
+        debugError('SSE error:', error);
+        // On error, fallback to periodic verification
         eventSource.close();
       };
     }
 
-    // Cleanup quando il componente si smonta o la sessione cambia
+    // Cleanup when component unmounts or session changes
     return () => {
       if (eventSourceRef.current) {
-        debugLog('Stop ascolto notifiche invalidazione sessione');
+        debugLog('Stop listening for session invalidation notifications');
         eventSourceRef.current.close();
         eventSourceRef.current = null;
       }
     };
   }, [status, session?.user?.id, router]);
 
-  // Cleanup quando la sessione cambia
+  // Cleanup when session changes
   useEffect(() => {
     if (status === 'unauthenticated') {
       if (eventSourceRef.current) {

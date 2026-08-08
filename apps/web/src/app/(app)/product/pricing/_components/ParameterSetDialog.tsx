@@ -76,7 +76,7 @@ export function ParameterSetDialog({
     },
   });
 
-  // Reset del form e dello stato makeDefault quando il dialog si apre
+  // Reset form and makeDefault state when dialog opens
   useEffect(() => {
     if (open) {
       setMakeDefault(initialData?.isDefault ?? false);

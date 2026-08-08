@@ -19,17 +19,17 @@ export interface TableSyncStats {
 
 const PG_BATCH = 500;
 
-/** Righe per SELECT su SQL Server per ciclo (chunking). */
+/** Rows per SELECT on SQL Server per cycle (chunking). */
 export const SS_CHUNK = 3_000;
 
 /**
- * Bulk upsert generico via raw SQL.
- * I column names sono controllati internamente (non input utente): $executeRawUnsafe è sicuro.
- * Le colonne PK non vengono incluse nel DO UPDATE SET.
+ * Generic bulk upsert via raw SQL.
+ * Column names are validated internally (not user input): $executeRawUnsafe is safe.
+ * PK columns are not included in DO UPDATE SET.
  *
- * @param bigintCols - Colonne che PG si aspetta come BIGINT: mssql le restituisce
- *   come stringa/numero JS, qui vengono convertite a BigInt. Dichiarate dal caller
- *   perché dipendono dalla tabella (es. kimo: entryNo/headerEntryNo).
+ * @param bigintCols - Columns that PostgreSQL expects as BIGINT: mssql returns them
+ *   as string/JS number, here they are converted to BigInt. Declared by caller
+ *   because they depend on the table (e.g. kimo: entryNo/headerEntryNo).
  */
 export async function bulkUpsert(
   prisma: PrismaClient,

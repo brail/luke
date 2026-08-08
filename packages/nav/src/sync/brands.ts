@@ -55,7 +55,7 @@ export async function syncBrands(
   const rows = result.recordset;
 
   if (rows.length === 0) {
-    logger.info({ entity, filterMode, upserted: 0 }, 'NAV sync: nessun record da aggiornare');
+    logger.info({ entity, filterMode, upserted: 0 }, 'NAV sync: no records to update');
     return { entity, upserted: 0, skipped: false, filterMode };
   }
 
@@ -67,7 +67,7 @@ export async function syncBrands(
     const description = row['Description'] ?? '';
 
     try {
-      // Atomico: replica NAV + anagrafica locale in un'unica transaction.
+      // Atomic: NAV replica + local master data in a single transaction.
       await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         await tx.navBrand.upsert({
           where: { navCode },
@@ -75,19 +75,19 @@ export async function syncBrands(
           update: { description, syncedAt },
         });
 
-        // Guard: se esiste già un brand locale con lo stesso code ma senza collegamento NAV,
-        // non auto-creare — l'utente deve collegarlo manualmente.
+        // Guard: if a local brand already exists with the same code but no NAV link,
+        // do not auto-create — the user must link it manually.
         const localConflict = await tx.brand.findFirst({
           where: { code: navCode, navBrandId: null },
           select: { id: true },
         });
         if (localConflict) {
-          logger.warn({ entity, navCode }, 'NAV sync: brand locale con stesso code senza NAV link — skip auto-create');
+          logger.warn({ entity, navCode }, 'NAV sync: local brand with same code without NAV link — skip auto-create');
           return;
         }
 
-        // Upsert brand locale: crea se non esiste, aggiorna solo name.
-        // MAI toccare isActive né logoUrl né altri campi arricchiti.
+        // Upsert local brand: create if not exist, update only name.
+        // NEVER touch isActive or logoUrl or other enriched fields.
         await tx.brand.upsert({
           where: { navBrandId: navCode },
           create: { code: navCode, name: description, navBrandId: navCode, isActive: true },

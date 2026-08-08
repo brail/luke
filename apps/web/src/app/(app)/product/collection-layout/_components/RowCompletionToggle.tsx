@@ -86,8 +86,8 @@ export function RowCompletionToggle({ rowId, completedAt, canUpdate, onChanged }
             rowId,
             completed: !isCompleted,
             note,
-            // L'elenco vero lo ricalcola il server: qui `force` dichiara solo che l'avviso è stato
-            // visto e accettato.
+            // The real list is recalculated by the server: here `force` only declares the warning was
+            // viewed and accepted.
             ...(missingPhases.length > 0 ? { force: true } : {}),
           })
         }

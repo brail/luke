@@ -78,7 +78,7 @@ export function formatValue(
   if (isEncrypted) return '••••••';
   if (!value) return '';
 
-  // Per JSON, usa un limite più alto per mostrare più contenuto
+  // For JSON, use a higher limit to show more content
   const isJson = value.startsWith('{') && value.includes('"');
   const actualTruncate = isJson ? Math.max(truncate, 100) : truncate;
 
@@ -95,10 +95,10 @@ export function formatJsonCompact(jsonString: string): string {
   try {
     const parsed = JSON.parse(jsonString);
     const compact = JSON.stringify(parsed, null, 0);
-    // Aggiungi spazi dopo virgole e due punti per facilitare il wrapping
-    return compact.replace(/,/g, ', ').replace(/:/g, ': ').replace(/\s+/g, ' '); // Normalizza spazi multipli
+    // Add spaces after commas and colons to facilitate wrapping
+    return compact.replace(/,/g, ', ').replace(/:/g, ': ').replace(/\s+/g, ' '); // Normalize multiple spaces
   } catch {
-    return jsonString; // Se non è JSON valido, ritorna originale
+    return jsonString; // If not valid JSON, return original
   }
 }
 
@@ -111,7 +111,7 @@ export function formatJsonExpanded(jsonString: string): string {
     const parsed = JSON.parse(jsonString);
     return JSON.stringify(parsed, null, 2); // Con indentazione
   } catch {
-    return jsonString; // Se non è JSON valido, ritorna originale
+    return jsonString; // If not valid JSON, return original
   }
 }
 

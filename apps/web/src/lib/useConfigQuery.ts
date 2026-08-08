@@ -163,7 +163,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
   const saveConfig = useCallback(
     async (formData: ConfigFormData) => {
       try {
-        // Prova prima con update (per configurazioni esistenti)
+        // Try update first (for existing configs)
         return await updateMutation.mutateAsync(formData);
       } catch (_error) {
         // Se update fallisce, usa set (per nuove configurazioni)

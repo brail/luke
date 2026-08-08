@@ -1,5 +1,5 @@
 /**
- * Human-readable Italian labels for `AuditLog.action` codes (SCREAMING_SNAKE_CASE).
+ * Human-readable labels for `AuditLog.action` codes (SCREAMING_SNAKE_CASE) in Italian.
  * Shared between the API's CSV export and the web audit log viewer/widget so both render
  * the exact same wording. Deliberately not exhaustive — grows incrementally as new areas
  * are covered; `getAuditActionLabel` falls back to a humanized version of the raw code.
@@ -73,7 +73,7 @@ function humanizeActionCode(action: string): string {
   return `${first.charAt(0).toUpperCase()}${first.slice(1)} ${rest.join(' ')}`.trim();
 }
 
-/** Returns the Italian label for an audit action code, falling back to a humanized version if unmapped. */
+/** Returns the label for an audit action code, falling back to a humanized version if unmapped. */
 export function getAuditActionLabel(action: string): string {
   return AUDIT_ACTION_LABELS[action] ?? humanizeActionCode(action);
 }

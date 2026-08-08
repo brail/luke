@@ -26,7 +26,7 @@ export async function testNavConnection(config: NavDbConfig): Promise<{
   const steps: NavConnectionStep[] = [];
   let testPool: mssql.ConnectionPool | null = null;
 
-  // Step 1: connessione + autenticazione SQL Server
+  // Step 1: connection + SQL Server authentication
   try {
     testPool = await new mssql.ConnectionPool({
       server: config.host,
@@ -61,27 +61,27 @@ export async function testNavConnection(config: NavDbConfig): Promise<{
     return { success: false, steps };
   }
 
-  // Step 2: query base
+  // Step 2: basic query
   try {
     await testPool.request().query('SELECT 1 AS ping');
     steps.push({
-      name: 'Query SQL',
+      name: 'SQL Query',
       ok: true,
-      message: 'Database risponde correttamente',
+      message: 'Database is responding correctly',
     });
   } catch (err: unknown) {
     steps.push({
-      name: 'Query SQL',
+      name: 'SQL Query',
       ok: false,
-      message: `Errore query: ${err instanceof Error ? err.message : String(err)}`,
+      message: `Query error: ${err instanceof Error ? err.message : String(err)}`,
     });
     await testPool.close().catch(() => {});
     return { success: false, steps };
   }
 
-  // Step 3: verifica che esista almeno una tabella con prefisso [COMPANY$]
-  // Non si presuppone una tabella specifica: NAV può avere tabelle custom
-  // e il prefisso company è l'unico identificatore affidabile.
+  // Step 3: verify that at least one table exists with prefix [COMPANY$]
+  // We don't assume a specific table: NAV can have custom tables
+  // and the company prefix is the only reliable identifier.
   try {
     const res = await testPool.request().input('prefix', `${config.company}$%`)
       .query<{ TABLE_NAME: string }>(`
@@ -93,24 +93,24 @@ export async function testNavConnection(config: NavDbConfig): Promise<{
 
     if (res.recordset.length === 0) {
       steps.push({
-        name: 'Verifica Company',
+        name: 'Company Verification',
         ok: false,
-        message: `Nessuna tabella con prefisso "${config.company}$" trovata. Verificare il nome della Company.`,
+        message: `No table found with prefix "${config.company}$". Please verify the Company name.`,
       });
       await testPool.close().catch(() => {});
       return { success: false, steps };
     }
 
     steps.push({
-      name: 'Verifica Company',
+      name: 'Company Verification',
       ok: true,
-      message: `Company "${config.company}" verificata (tabella: ${res.recordset[0].TABLE_NAME})`,
+      message: `Company "${config.company}" verified (table: ${res.recordset[0].TABLE_NAME})`,
     });
   } catch (err: unknown) {
     steps.push({
-      name: 'Verifica Company',
+      name: 'Company Verification',
       ok: false,
-      message: `Errore verifica company: ${err instanceof Error ? err.message : String(err)}`,
+      message: `Company verification error: ${err instanceof Error ? err.message : String(err)}`,
     });
     await testPool.close().catch(() => {});
     return { success: false, steps };
@@ -123,8 +123,8 @@ export async function testNavConnection(config: NavDbConfig): Promise<{
 let pool: mssql.ConnectionPool | null = null;
 let currentConfig: NavDbConfig | null = null;
 /**
- * In-flight connect promise condivisa tra chiamate concorrenti.
- * Evita che due caller simultanei creino due pool distinti.
+ * In-flight connect promise shared across concurrent calls.
+ * Prevents two simultaneous callers from creating two separate pools.
  */
 let connectingPromise: Promise<mssql.ConnectionPool> | null = null;
 
@@ -151,7 +151,7 @@ function configChanged(a: NavDbConfig, b: NavDbConfig): boolean {
 export async function getPool(
   config: NavDbConfig
 ): Promise<mssql.ConnectionPool> {
-  // Se la config è cambiata (inclusa la password), chiudi il pool esistente
+  // If config has changed (including password), close existing pool
   if (pool && currentConfig && configChanged(config, currentConfig)) {
     connectingPromise = null;
     await pool.close();
@@ -159,10 +159,10 @@ export async function getPool(
     currentConfig = null;
   }
 
-  // Pool già connesso: restituiscilo subito
+  // Pool already connected: return it immediately
   if (pool?.connected) return pool;
 
-  // Connect in corso: restituisci la stessa Promise per evitare pool duplicati
+  // Connect in progress: return the same Promise to avoid duplicate pools
   if (connectingPromise) return connectingPromise;
 
   connectingPromise = new mssql.ConnectionPool({
@@ -176,7 +176,7 @@ export async function getPool(
       trustServerCertificate: true,
       readOnlyIntent: config.readOnly,
     },
-    requestTimeout: 300_000, // 5 min — query portafoglio ordini può impiegare 3–4 minuti
+    requestTimeout: 300_000, // 5 min — portfolio order query can take 3–4 minutes
     pool: {
       max: 5,
       min: 0,

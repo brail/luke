@@ -102,7 +102,7 @@ function ResetPasswordContent() {
           'Password reimpostata con successo! Reindirizzamento...'
       );
 
-      // Redirect to login dopo 2 secondi
+      // Redirect to login after 2 seconds
       setTimeout(() => {
         router.push('/login');
       }, 2000);

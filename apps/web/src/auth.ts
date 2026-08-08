@@ -83,8 +83,8 @@ async function callTRPCAuth(username: string, password: string, clientIp?: strin
         return { pendingApproval: true, needsEmail: message.includes('NEEDS_EMAIL') };
       }
       // Segnala il rate-limit al wrapper della route ([...nextauth]/route.ts) tramite
-      // AsyncLocalStorage: NextAuth risponde comunque 200 qui sotto (return null →
-      // CredentialsSignin generico), il 429 reale viene costruito fuori da questa call stack.
+      // AsyncLocalStorage: NextAuth responds with 200 anyway below (return null →
+      // generic CredentialsSignin), the real 429 is constructed outside this call stack.
       if (errorData?.error?.data?.code === 'TOO_MANY_REQUESTS') {
         const retryAfterSeconds =
           typeof errorData.error.data.retryAfterSeconds === 'number'
@@ -124,16 +124,16 @@ export const config = {
         }
 
         try {
-          // Chiama l'API tRPC per l'autenticazione
+          // Call tRPC API for authentication
           const authResult = await callTRPCAuth(
             credentials.username as string,
             credentials.password as string,
             extractClientIp(request)
           );
 
-          // Utente LDAP in attesa di approvazione: Auth.js non permette di
-          // propagare errori custom da authorize(), ritorniamo null.
-          // Il login page rileva il pending con una chiamata separata.
+          // LDAP user awaiting approval: Auth.js does not allow propagating
+          // custom errors from authorize(), so we return null.
+          // The login page detects pending with a separate call.
           if (!authResult?.user) {
             return null;
           }
@@ -151,7 +151,7 @@ export const config = {
             accessToken: authResult.token,
           };
         } catch (error) {
-          debugError('Errore autenticazione:', error);
+          debugError('Authentication error:', error);
           return null;
         }
       },
@@ -167,11 +167,11 @@ export const config = {
       name: 'next-auth.session-token',
       options: {
         httpOnly: true,
-        // COOKIE_SECURE=false in .env quando si usa HTTP (NPM senza SSL)
+        // COOKIE_SECURE=false in .env when using HTTP (NPM without SSL)
         secure:
           process.env.NODE_ENV === 'production' &&
           process.env.COOKIE_SECURE !== 'false',
-        sameSite: 'lax', // 'strict' se stesso dominio senza cross-origin
+        sameSite: 'lax', // 'strict' for same domain without cross-origin
         path: '/',
         // domain: '.example.com' se Web e API su sottodomini diversi
       },
@@ -179,17 +179,17 @@ export const config = {
   },
   callbacks: {
     async redirect({ url, baseUrl }) {
-      // Se l'URL è relativo, usa baseUrl
+      // If URL is relative, use baseUrl
       if (url.startsWith('/')) return `${baseUrl}${url}`;
-      // Se l'URL è dello stesso dominio, permetti
+      // If URL is from the same domain, allow it
       else if (new URL(url).origin === baseUrl) return url;
-      // Altrimenti redirect a dashboard
+      // Otherwise redirect to dashboard
       return `${baseUrl}/dashboard`;
     },
     async jwt({ token, user, trigger }) {
-      // Passa i dati utente al token JWT
+      // Pass user data to JWT token
       if (user) {
-        // Primo login: salva tutti i dati nel token
+        // First login: save all data in token
         const lukeUser = user as unknown as LukeAuthUser;
         token.role = lukeUser.role;
         token.accessToken = lukeUser.accessToken;
@@ -198,19 +198,19 @@ export const config = {
         token.locale = lukeUser.locale;
         token.timezone = lukeUser.timezone;
         token.tokenVersion = lukeUser.tokenVersion;
-        // Aggiungi claim nbf (not-before) per prevenire uso anticipato
+        // Add nbf (not-before) claim to prevent premature use
         token.nbf = Math.floor(Date.now() / 1000);
-        // Aggiungi claim aud/iss per validazione cross-service
+        // Add aud/iss claims for cross-service validation
         token.aud = 'luke.web';
         token.iss = 'urn:luke';
       } else if (token.sub && trigger !== 'update') {
         if (checkTokenVersion(token) === null) return null;
 
-        // Refresh token: ri-conia l'accessToken API chiamando auth.refreshToken
-        // (con TTL cache). protectedProcedure valida Bearer scaduto e tokenVersion
-        // revocato → UNAUTHORIZED → logout. In caso positivo aggiorna l'accessToken
-        // embedded, così una sessione NextAuth ancora valida non invia mai un JWT
-        // API scaduto (root cause dell'errore `jwt expired`).
+        // Refresh token: re-mint the API accessToken by calling auth.refreshToken
+        // (with TTL cache). protectedProcedure validates expired Bearer and revoked tokenVersion
+        // → UNAUTHORIZED → logout. If successful, updates the embedded accessToken,
+        // so a still-valid NextAuth session never sends an expired JWT
+        // (root cause of the `jwt expired` error).
         const cached = tokenVersionCache.get(token.sub);
         if (!cached || Date.now() - cached >= TOKEN_VERSION_CACHE_TTL) {
           try {
@@ -223,16 +223,16 @@ export const config = {
               body: JSON.stringify({}),
             });
 
-            // Controlla il codice semantico tRPC nel body — più robusto dello status HTTP
+            // Check the semantic tRPC code in the body — more robust than HTTP status
             const body = await response.json().catch(() => null);
             if (body?.error?.data?.code === 'UNAUTHORIZED') {
-              debugLog('TokenVersion invalido o token scaduto durante refresh JWT, forzo logout');
+              debugLog('Invalid tokenVersion or expired token during JWT refresh, forcing logout');
               tokenVersionCache.delete(token.sub);
-              return null; // Forza re-login
+              return null; // Force re-login
             }
             const freshToken = body?.result?.data?.token as string | undefined;
             if (!response.ok || !freshToken) {
-              debugError('Errore transitorio refresh token (ignorato):', response.status);
+              debugError('Transient token refresh error (ignored):', response.status);
             } else {
               token.accessToken = freshToken;
               tokenVersionCache.set(token.sub, Date.now());
@@ -240,13 +240,13 @@ export const config = {
           } catch (error) {
             const isNetworkError = error instanceof TypeError && error.message === 'fetch failed';
             if (!isNetworkError) {
-              debugError('Errore verifica tokenVersion durante refresh JWT:', error);
+              debugError('Error checking tokenVersion during JWT refresh:', error);
             }
-            // In caso di errore di rete, mantieni il token ma logga l'errore
+            // On network error, keep the token but log the error
           }
         }
 
-        debugLog('JWT refresh per utente:', token.sub);
+        debugLog('JWT refresh for user:', token.sub);
       }
       return token;
     },
@@ -263,9 +263,9 @@ export const config = {
   // and relies on NEXTAUTH_URL being set correctly instead.
   trustHost: true,
   // NEXTAUTH_SECRET (env) ha precedenza su getNextAuthSecret() (file system).
-  // In prod: l'env var è iniettata dal Docker compose; il fallback al file system è vietato
-  // perché il web container non monta il volume ~/.luke/secret.key (API-only).
-  // In dev: fallback al file system via getNextAuthSecret() per setup iniziale.
+  // In prod: env var is injected by Docker Compose; fallback to file system is forbidden
+  // because the web container does not mount the ~/.luke/secret.key volume (API-only).
+  // In dev: fallback to file system via getNextAuthSecret() for initial setup.
   secret: resolveNextAuthSecret(),
 } satisfies NextAuthConfig;
 

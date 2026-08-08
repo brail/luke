@@ -87,9 +87,9 @@ export default function CollectionLayoutPage() {
     group?: CollectionGroupData;
   } | null>(null);
 
-  // Tiene l'id, non la riga: lo snapshot in state resterebbe indietro rispetto alla query live
-  // (la conclusione della riga scrive e invalida mentre il drawer è aperto), e la riga si
-  // ri-risolve comunque a ogni render — vedi `editingRow`.
+  // Holds the id, not the row: the state snapshot would lag behind the live query
+  // (row completion writes and invalidates while drawer is open), and the row
+  // re-resolves anyway every render — see `editingRow`.
   const [rowDrawer, setRowDrawer] = useState<{
     mode: 'create' | 'edit';
     rowId?: string;

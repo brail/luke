@@ -9,14 +9,14 @@ import { partialWithoutDefaults } from '../utils/zod';
 
 /** Input schema for creating a brand. Code must be alphanumeric with `_` and `-`, max 20 chars. */
 export const BrandInputSchema = z.object({
-  /** Codice univoco del brand (max 20 caratteri) */
+  /** Unique brand code (max 20 characters) */
   code: z
     .string()
     .min(1, 'Codice obbligatorio')
     .max(20, 'Max 20 caratteri')
     .regex(/^[A-Za-z0-9_-]+$/, 'Solo lettere, numeri, _ e -'),
 
-  /** Nome del brand (max 128 caratteri) */
+  /** Brand name (max 128 characters) */
   name: z
     .string()
     .min(1, 'Nome obbligatorio')
@@ -24,80 +24,80 @@ export const BrandInputSchema = z.object({
     .trim(),
 
   /**
-   * Rimozione del logo. `null` è l'unico valore accettato, e significa "togli".
+   * Logo removal. `null` is the only accepted value, and means "remove".
    *
-   * Era una stringa libera senza regex né lunghezza, che sopravviveva al
-   * destructure e finiva in `tx.brand.create` — la stessa storage key scelta dal
-   * client che è stata chiusa per il profilo aziendale. Il dialog brand la manda
-   * già solo per cancellare; per *impostare* un logo passa `fileObjectId`, e la
-   * rotta di upload dedicata scrive la key lato server senza passare da qui.
+   * Was a free string without regex or length, which survived the
+   * destructure and ended up in `tx.brand.create` — the same storage key selected by
+   * the client that was closed for the company profile. The brand dialog only sends it
+   * to delete; to *set* a logo it passes `fileObjectId`, and the
+   * dedicated upload route writes the key server-side without passing through here.
    */
   logoKey: z.null().optional(),
 
-  /** ID FileObject pending per logo durante creazione brand (opzionale) */
+  /** Pending FileObject ID for logo during brand creation (optional) */
   fileObjectId: z.string().uuid('ID file non valido').optional(),
 
-  /** Codice NAV collegato (opzionale) */
+  /** Associated NAV code (optional) */
   navBrandId: z.string().max(20).optional().nullable(),
 
-  /** Stato attivo del brand (default: true) */
+  /** Active status of the brand (default: true) */
   isActive: z.boolean().default(true),
 });
 
 /** Schema for identifying a single brand by UUID. */
 export const BrandIdSchema = z.object({
-  /** UUID del brand */
+  /** UUID of the brand */
   id: z.string().uuid('ID brand non valido'),
 });
 
 /** Full brand record as returned by the API (includes all fields). */
 export const BrandSchema = z.object({
-  /** UUID del brand */
+  /** UUID of the brand */
   id: z.string().uuid(),
 
-  /** Codice univoco del brand */
+  /** Unique brand code */
   code: z.string(),
 
-  /** Nome del brand */
+  /** Brand name */
   name: z.string(),
 
-  /** URL del logo (nullable) */
+  /** Logo URL (nullable) */
   logoUrl: z.string().nullable(),
 
-  /** Codice NAV collegato (nullable) */
+  /** Associated NAV code (nullable) */
   navBrandId: z.string().nullable(),
 
-  /** Stato attivo del brand */
+  /** Active status of the brand */
   isActive: z.boolean(),
 
-  /** Data di creazione */
+  /** Creation date */
   createdAt: z.date(),
 
-  /** Data di ultimo aggiornamento */
+  /** Last update date */
   updatedAt: z.date(),
 });
 
 /** Input schema for listing brands with optional search, active filter, and cursor pagination. */
 export const BrandListInputSchema = z.object({
-  /** Filtro per brand attivi/disattivi */
+  /** Filter for active/inactive brands */
   isActive: z.boolean().optional(),
 
-  /** Termine di ricerca per nome o codice */
+  /** Search term for name or code */
   search: z.string().optional(),
 
-  /** Cursor per paginazione (UUID del brand) */
+  /** Cursor for pagination (brand UUID) */
   cursor: z.string().uuid().optional(),
 
-  /** Limite risultati per pagina (1-100, default 50) */
+  /** Result limit per page (1-100, default 50) */
   limit: z.number().min(1).max(100).default(50),
 });
 
 /** Input schema for partially updating a brand. Relaxes code/name regex to allow NAV codes with spaces. */
 export const BrandUpdateInputSchema = z.object({
-  /** UUID del brand da aggiornare */
+  /** UUID of the brand to update */
   id: z.string().uuid('ID brand non valido'),
 
-  /** Dati parziali per l'aggiornamento — code/name senza regex: i codici NAV possono contenere spazi */
+  /** Partial data for update — code/name without regex: NAV codes can contain spaces */
   data: partialWithoutDefaults(
     BrandInputSchema
       .omit({ code: true, name: true })
@@ -116,18 +116,18 @@ export type BrandUpdateInput = z.infer<typeof BrandUpdateInputSchema>;
 
 /** Input schema for validating a brand logo file upload request. */
 export const BrandLogoUploadSchema = z.object({
-  /** UUID del brand */
+  /** UUID of the brand */
   brandId: z.string().uuid('Brand ID deve essere un UUID valido'),
 
-  /** Informazioni del file */
+  /** File information */
   file: z.object({
-    /** Nome originale del file */
+    /** Original file name */
     filename: z.string().min(1, 'Nome file obbligatorio'),
 
-    /** MIME type del file */
+    /** MIME type of the file */
     mimetype: z.string().min(1, 'MIME type obbligatorio'),
 
-    /** Dimensione del file in bytes */
+    /** File size in bytes */
     size: z.number().int().positive('Dimensione file deve essere positiva'),
   }),
 });

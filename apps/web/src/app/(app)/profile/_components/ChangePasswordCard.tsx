@@ -69,7 +69,7 @@ export function ChangePasswordCard({
       if (onSuccess) {
         onSuccess();
       }
-      // Forza logout dopo cambio password per invalidare tutte le sessioni
+      // Force logout after password change to invalidate all sessions
       setTimeout(() => {
         signOut({ callbackUrl: '/login' });
       }, 1000);

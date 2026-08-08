@@ -115,7 +115,7 @@ export function UserForm({
   isSelfEdit = false,
   canResetPassword = true,
 }: UserFormProps) {
-  // Determina se l'utente è LDAP
+  // Determine if user is LDAP
   const isLdapUser = initialData?.provider === 'LDAP';
   const [formData, setFormData] = useState<UserFormData>({
     email: initialData?.email || '',
@@ -136,16 +136,16 @@ export function UserForm({
   ) => {
     setFormData(prev => ({ ...prev, [field]: value }));
 
-    // Rimuovi errore quando l'utente inizia a digitare
+    // Clear error when user starts typing
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
 
-    // Validazione in tempo reale per password (semplificata)
+    // Real-time password validation (simplified)
     if (field === 'password') {
       const passwordValue = value as string;
-      // La validazione avanzata è gestita dal componente PasswordValidationIndicators
-      // Qui gestiamo solo la validazione di base per il form
+      // Advanced validation is handled by PasswordValidationIndicators component
+      // Here we only handle basic validation for the form
       if (
         passwordValue &&
         passwordValue.length > 0 &&
@@ -160,25 +160,25 @@ export function UserForm({
       }
     }
 
-    // Validazione in tempo reale per conferma password
+    // Real-time confirmation password validation
     if (field === 'confirmPassword') {
       const confirmPasswordValue = value as string;
       const passwordValue = formData.password;
 
       if (mode === 'edit') {
-        // In edit mode, se password è vuota, confirmPassword deve essere vuota
+        // In edit mode, if password is empty, confirmPassword must be empty
         if (!passwordValue || passwordValue.trim() === '') {
           if (confirmPasswordValue && confirmPasswordValue.trim() !== '') {
             setErrors(prev => ({
               ...prev,
               confirmPassword:
-                'Conferma password non necessaria se password è vuota',
+                'Confirm password not needed if password is empty',
             }));
           } else {
             setErrors(prev => ({ ...prev, confirmPassword: '' }));
           }
         } else {
-          // Se password è presente, deve coincidere
+          // If password is present, must match
           if (confirmPasswordValue && confirmPasswordValue !== passwordValue) {
             setErrors(prev => ({
               ...prev,
@@ -192,7 +192,7 @@ export function UserForm({
           }
         }
       } else {
-        // Modalità create: password deve coincidere
+        // Create mode: password must match
         if (confirmPasswordValue && confirmPasswordValue !== passwordValue) {
           setErrors(prev => ({
             ...prev,
@@ -211,7 +211,7 @@ export function UserForm({
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    // Usa lo schema corretto in base alla modalità
+    // Use correct schema based on mode
     const schema = mode === 'create' ? CreateUserSchema : EditUserSchema;
     const result = schema.safeParse(formData);
 
@@ -226,17 +226,17 @@ export function UserForm({
       return;
     }
 
-    // Rimuovi confirmPassword dai dati prima di inviare
+    // Remove confirmPassword from data before sending
     const { confirmPassword: _confirmPassword, ...dataToSubmit } = result.data;
 
-    // Per edit mode, se password è vuota, rimuovila dai dati
+    // In edit mode, if password is empty, remove it from data
     if (
       mode === 'edit' &&
       (!formData.password || formData.password.trim() === '')
     ) {
       const { password: _password, ...dataWithoutPassword } = dataToSubmit;
 
-      // Rimuovi i campi sincronizzati dai dati da inviare
+      // Remove synced fields from data to send
       const filteredData = { ...dataWithoutPassword };
       syncedFields?.forEach(field => {
         delete filteredData[field as keyof typeof filteredData];
@@ -244,7 +244,7 @@ export function UserForm({
 
       onSubmit(filteredData as UserFormData);
     } else {
-      // Rimuovi i campi sincronizzati dai dati da inviare
+      // Remove synced fields from data to send
       const filteredData = { ...dataToSubmit };
       syncedFields?.forEach(field => {
         delete filteredData[field as keyof typeof filteredData];

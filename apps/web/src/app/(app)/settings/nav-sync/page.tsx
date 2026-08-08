@@ -76,7 +76,7 @@ function PortafoglioSyncTab() {
 
   const { data: syncState, refetch: refetchSyncState } =
     trpc.sales.statistics.portafoglio.getSyncState.useQuery(undefined, {
-      refetchInterval: 30_000, // SSE push gestisce real-time, questo è solo fallback
+      refetchInterval: 30_000, // SSE push handles real-time, this is just fallback
     });
 
   const filterQuery = trpc.integrations.nav.sync.getFilter.useQuery(
@@ -241,7 +241,7 @@ function KimoSyncTab() {
 
   const { data: syncState, refetch: refetchSyncState } =
     trpc.sales.statistics.kimo.getSyncState.useQuery(undefined, {
-      refetchInterval: 30_000, // SSE push gestisce real-time, questo è solo fallback
+      refetchInterval: 30_000, // SSE push handles real-time, this is just fallback
     });
 
   const filterQuery = trpc.integrations.nav.sync.getFilter.useQuery(
@@ -444,9 +444,9 @@ function NavSyncTab({
     { refetchOnWindowFocus: false },
   );
 
-  // ── Preview: lazy — mai auto-eseguita ─────────────────────────────────────
-  // Viene caricata solo se l'utente preme "Carica anteprima"
-  // ed è visibile solo quando mode è whitelist o exclude.
+  // ── Preview: lazy — never auto-executed ───────────────────────────────────
+  // Loads only when user presses "Load preview"
+  // and is visible only when mode is whitelist or exclude.
   const previewQuery = trpc.integrations.nav.sync.preview.useQuery(
     { entity },
     { enabled: false, retry: 1 },
@@ -502,7 +502,7 @@ function NavSyncTab({
     }
   }, [filterQuery.isSuccess, filterQuery.data]);
 
-  // Resetta la preview quando il mode cambia
+  // Reset preview when mode changes
   useEffect(() => {
     setTextFilter('');
     setCurrentPage(1);
@@ -511,7 +511,7 @@ function NavSyncTab({
 
   const isNotConfigured = filterQuery.isSuccess && !filterQuery.data;
 
-  // Resetta la pagina quando cambia il filtro testuale
+  // Reset page when text filter changes
   useEffect(() => {
     setCurrentPage(1);
   }, [textFilter]);

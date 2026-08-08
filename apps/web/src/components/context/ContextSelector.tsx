@@ -44,7 +44,7 @@ export function ContextSelector() {
     );
   }
 
-  // Handler per cambio Brand: mantieni stagione se ancora accessibile, altrimenti prima disponibile
+  // Handler for brand change: keep season if still accessible, otherwise first available
   const handleBrandChange = (brandId: string) => {
     if (season) {
       setContext({ brandId, seasonId: season.id });

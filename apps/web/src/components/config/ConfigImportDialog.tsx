@@ -223,7 +223,7 @@ export function ConfigImportDialog({
     } finally {
       if (progressInterval !== null) clearInterval(progressInterval);
       setImporting(false);
-      // Mantieni progress a 100% per un momento prima di resettare
+      // Keep progress at 100% for a moment before resetting
       setTimeout(() => setProgress(0), 1000);
     }
   };

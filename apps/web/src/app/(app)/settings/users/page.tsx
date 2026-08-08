@@ -173,7 +173,7 @@ export default function UsersPage() {
     setSelectedUser(user);
     // Determina campi sincronizzati in base al provider
     // Per provider esterni (LDAP, OIDC): blocca username, firstName, lastName e password
-    // email e ruolo sono modificabili anche per utenti esterni
+    // email and role are editable even for external users
     const synced: (
       | 'email'
       | 'username'
@@ -227,7 +227,7 @@ export default function UsersPage() {
       return;
     }
 
-    // Conferma prima di procedere
+    // Confirm before proceeding
     setConfirmAction({
       type: 'revokeSessions',
       user,
@@ -238,14 +238,14 @@ export default function UsersPage() {
 
   const handleSort = (column: SortColumn) => {
     if (sortBy === column) {
-      // Se è la stessa colonna, inverte l'ordinamento
+      // If same column, toggle sort order
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
-      // Se è una nuova colonna, imposta come ascendente
+      // If new column, set as ascending
       setSortBy(column);
       setSortOrder('asc');
     }
-    // Reset alla prima pagina quando si cambia ordinamento
+    // Reset to first page when changing sort
     setCurrentPage(1);
   };
 
@@ -271,13 +271,13 @@ export default function UsersPage() {
       if (data.isActive !== selectedUser.isActive)
         updateData.isActive = data.isActive;
 
-      // Reset password: solo se l'admin ha effettivamente digitato un valore — `UserForm`
-      // già rimuove `password` dal payload quando lasciato vuoto in edit mode.
+      // Reset password: only if admin actually typed a value — `UserForm`
+      // already removes `password` from payload when left empty in edit mode.
       if (data.password && data.password.trim() !== '') {
         updateData.password = data.password;
       }
 
-      // Ruolo solo se non è self-edit
+      // Role only if not self-edit
       if (!isSelfEdit && data.role !== selectedUser.role) {
         updateData.role = data.role;
       }
@@ -288,12 +288,12 @@ export default function UsersPage() {
 
   const handleSearch = (value: string) => {
     setSearchTerm(value);
-    setCurrentPage(1); // Reset alla prima pagina
+    setCurrentPage(1); // Reset to first page
   };
 
   const handleRoleFilter = (value: string) => {
     setRoleFilter(value);
-    setCurrentPage(1); // Reset alla prima pagina
+    setCurrentPage(1); // Reset to first page
   };
 
   const users = usersData?.users || [];

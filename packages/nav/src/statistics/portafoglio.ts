@@ -1,10 +1,10 @@
 /**
  * Portafoglio Ordini / Analisi Venduto — NAV query module
  *
- * Replica in T-SQL la catena di query Access:
+ * Replicates in T-SQL the chain of Access queries:
  *   def01-ANALISIVENDUTO-PIVOT → ... → qSoloVendNoFiltr-STEP0
  *
- * Genera il set di dati completo per il download Excel del portafoglio ordini.
+ * Generates the complete dataset for Excel download of order portfolio.
  */
 
 import pino from 'pino';
@@ -21,13 +21,13 @@ import type * as mssql from 'mssql';
  * Season and trademark are mandatory; agent and customer are optional.
  */
 export interface PortafoglioParams {
-  /** Codice stagione NAV (es. 'E26'). Obbligatorio — viene dal contesto. */
+  /** NAV season code (e.g. 'E26'). Mandatory — comes from context. */
   seasonCode: string;
-  /** Codice marchio NAV (Shortcut Dimension 2, es. 'CPH'). Obbligatorio — viene dal contesto. */
+  /** NAV trademark code (Shortcut Dimension 2, e.g. 'CPH'). Mandatory — comes from context. */
   trademarkCode: string;
-  /** Codice agente (Salesperson Code). Opzionale. */
+  /** Salesperson code (Salesperson Code). Optional. */
   salespersonCode?: string;
-  /** Codice cliente Sell-to (Customer No_). Opzionale. */
+  /** Sell-to customer code (Customer No_). Optional. */
   customerCode?: string;
 }
 
@@ -41,8 +41,8 @@ export type PortafoglioRow = Record<string, unknown>;
 // ─── Query builder ────────────────────────────────────────────────────────────
 
 /**
- * Costruisce il nome completo della tabella NAV con company prefix.
- * Usa sanitizeCompany già chiamato per evitare ricalcoli.
+ * Constructs the full NAV table name with company prefix.
+ * Uses already-sanitized company to avoid recalculation.
  */
 function tableRef(sanitizedCompany: string, tableName: string): string {
   return `[${sanitizedCompany}$${tableName}]`;
@@ -803,8 +803,8 @@ export async function queryPortafoglioOrdini(
     'NAV portafoglio query start',
   );
 
-  // Multi-join più pesante del pacchetto — merita lo stesso timeout dei
-  // moduli di sync, non il default del driver.
+  // Heaviest multi-join in the package — deserves the same timeout as
+  // sync modules, not the driver default.
   const request = createSyncRequest(pool);
 
   // Parameters — brand and season are always required (from context)

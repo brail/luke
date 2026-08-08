@@ -83,9 +83,9 @@ function ColorField({
         type="color"
         aria-label="Colore"
         className="h-9 w-9 shrink-0 p-1"
-        // Il campo nativo accetta solo #RRGGBB: un valore incollato a metà digitazione lo
-        // farebbe tornare a nero, quindi finché non è valido mostra il grigio di default.
-        // Stesso predicato con cui `bandBadgeStyle` decide se sa rendere il colore.
+        // Native field accepts only #RRGGBB: a value pasted mid-typing would turn black,
+        // so while invalid it shows the default gray.
+        // Same predicate `bandBadgeStyle` uses to decide if it can render the color.
         value={isHexColor(value) ? value : '#6B7280'}
         disabled={disabled}
         onChange={e => onChange(e.target.value)}
@@ -186,13 +186,13 @@ function BandSetEditor({
   onChange: (bands: AlertBand[]) => void;
   disabled: boolean;
 }) {
-  // Il prop `bands` cambia solo per eco dei nostri stessi `onChange` — ogni
-  // istanza è dedicata alle bande di default o a una singola fase (key-ata
-  // a monte con `key={phaseValue}`), mai scambiata con un set diverso a
-  // runtime — quindi un id generato una sola volta all'avvio non va mai
-  // risincronizzato dall'esterno. Serve solo per la key React: con `index`,
-  // `moveBand`/`removeBand` fanno saltare focus e stato locale (es. select
-  // aperta) sulla riga sbagliata dopo un riordino o una rimozione.
+  // The `bands` prop only changes as echo of our own `onChange` — each
+  // instance is dedicated to default bands or a single phase (keyed
+  // upstream with `key={phaseValue}`), never swapped with a different set at
+  // runtime — so an id generated once on startup never needs
+  // external re-syncing. It exists only for the React key: with `index`,
+  // `moveBand`/`removeBand` would jump focus and local state (e.g. open select)
+  // to the wrong row after reordering or removal.
   const [ids, setIds] = useState(() => bands.map(() => crypto.randomUUID()));
 
   const updateBand = (index: number, patch: Partial<AlertBand>) => {
@@ -224,8 +224,8 @@ function BandSetEditor({
   return (
     <div className="space-y-3">
       <div className="rounded-md border border-border">
-        {/* `Table` porta con sé il wrapper `overflow-auto`: la larghezza minima fa scorrere la
-            tabella su viewport strette invece di schiacciare gli input fino a renderli inusabili. */}
+        {/* `Table` brings its own `overflow-auto` wrapper: min-width makes the table
+            scroll on narrow viewports instead of squeezing inputs to unusability. */}
         <Table className="min-w-[880px]">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
@@ -259,9 +259,9 @@ function BandSetEditor({
                   <Input
                     type="number"
                     aria-label="A giorni"
-                    // Il vuoto è un valore ammesso (nessun limite superiore), non un campo da
-                    // compilare: il placeholder lo dice dove serve, invece che nell'intestazione.
-                    placeholder="illimitato"
+                    // Empty is an allowed value (no upper limit), not a field to fill:
+                    // the placeholder tells you where needed, not in the header.
+                    placeholder="unlimited"
                     className="h-9"
                     value={band.maxDaysToDeadline ?? ''}
                     disabled={disabled}

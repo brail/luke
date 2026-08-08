@@ -17,7 +17,7 @@ export interface SyncResult {
   filterMode: string;
 }
 
-/** Quanti upsert Prisma eseguire in parallelo per batch. */
+/** How many Prisma upserts to execute in parallel per batch. */
 const UPSERT_BATCH_SIZE = 100;
 
 /**
@@ -56,10 +56,10 @@ export async function syncVendors(
 
   const { filterMode, filterPredicates, bindParams } = filterResult;
 
-  // Watermark per sync differenziale — usata solo in mode=all/exclude.
-  // In modalità whitelist si fa sempre full sync dei vendor selezionati:
-  // la lista è piccola e un vendor precedentemente sincronizzato (watermark > 0)
-  // verrebbe altrimenti escluso anche se fa parte della nuova selezione.
+  // Watermark for differential sync — used only in mode=all/exclude.
+  // In whitelist mode always full sync of selected vendors:
+  // the list is small and a previously-synced vendor (watermark > 0)
+  // would otherwise be excluded even if it's part of the new selection.
   const useWatermark = filter?.mode !== 'whitelist';
   let lastModified: Date | null = null;
   if (useWatermark) {
@@ -67,11 +67,11 @@ export async function syncVendors(
     lastModified = agg._max.navLastModified;
   }
 
-  // Combina watermark + predicati filtro entità
+  // Combine watermark + entity filter predicates
   const whereParts: string[] = [];
   if (lastModified) {
-    // SQL Server esclude i NULL dai confronti >, quindi l'OR IS NULL è necessario
-    // per non perdere vendor senza data di modifica dopo il primo sync.
+    // SQL Server excludes NULLs from > comparisons, so OR IS NULL is necessary
+    // to not lose vendors without modification date after first sync.
     whereParts.push('([Last Date Modified] > @lastModified OR [Last Date Modified] IS NULL)');
   }
   whereParts.push(...filterPredicates);
@@ -162,9 +162,9 @@ export async function syncVendors(
           update: data,
         });
 
-        // Upsert anagrafica interna Vendor: crea se non esiste, aggiorna name e countryCode.
-        // Non toccare isActive né campi arricchiti — un vendor soft-deleted
-        // non viene riattivato dal sync.
+        // Upsert local Vendor master: create if not exist, update name and countryCode.
+        // NEVER touch isActive or enriched fields — a soft-deleted vendor
+        // is not reactivated by sync.
         await tx.vendor.upsert({
           where: { navVendorId: navNo },
           create: { name, countryCode, navVendorId: navNo, isActive: true },

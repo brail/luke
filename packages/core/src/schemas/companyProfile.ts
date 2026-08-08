@@ -31,25 +31,24 @@ export const CompanyProfileInputSchema = z.object({
   address: CompanyAddressSchema.optional(),
   exportSettings: CompanyExportSettingsSchema.optional(),
   /**
-   * Rimozione del logo. `null` è l'unico valore accettato, e significa "togli".
+   * Logo removal. `null` is the only accepted value, and means "remove".
    *
-   * Era una storage key scelta dal client, che finiva dritta in
-   * `readFileBuffer(prisma, 'company-assets', logoKey)` a ogni export PDF. Prima
-   * senza formato, poi vincolata a una regex — ma una regex è una feritoia più
-   * stretta, non un muro. Ora il client non può più nominare una key: per
-   * *impostare* un logo passa un `fileObjectId`, e la key la deriva il server da
-   * un `FileObject` verificato.
+   * Was a storage key chosen by the client, which went straight into
+   * `readFileBuffer(prisma, 'company-assets', logoKey)` on every PDF export. First
+   * unformatted, then constrained to a regex — but a regex is a narrower gap, not a wall. Now
+   * the client can no longer name a key: to *set* a logo it passes a `fileObjectId`, and
+   * the server derives the key from a verified `FileObject`.
    *
-   * `z.null()` e non la rimozione del campo perché il canale di cancellazione
-   * deve sopravvivere, ed è già così che il frontend lo esprime.
+   * `z.null()` and not field removal because the deletion channel
+   * must survive, and this is already how the frontend expresses it.
    */
   logoKey: z.null().optional(),
 
   /**
-   * `FileObject` pending da collegare come logo, ottenuto dall'upload.
+   * `FileObject` pending to be attached as logo, obtained from upload.
    *
-   * Stesso pattern di `brand.ts`: il server verifica che sia pending, tuo e nel
-   * bucket giusto, poi ne scrive la key.
+   * Same pattern as `brand.ts`: the server verifies it is pending, yours and in the
+   * correct bucket, then writes its key.
    */
   fileObjectId: z.string().uuid().optional(),
 });

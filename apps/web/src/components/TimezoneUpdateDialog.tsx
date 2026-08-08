@@ -52,7 +52,7 @@ export function TimezoneUpdateDialog() {
     });
 
   useEffect(() => {
-    // Reset flag quando la sessione cambia (login/logout)
+    // Reset flag when session changes (login/logout)
     if (status === 'unauthenticated') {
       setHasShownForSession(false);
       setDetectedTimezone(null);
@@ -71,7 +71,7 @@ export function TimezoneUpdateDialog() {
         if (browserTz && userTz && browserTz !== userTz && session?.user) {
           setDetectedTimezone(browserTz);
           setHasShownForSession(true);
-          // Mostra dialog solo dopo 2 secondi per evitare flash al caricamento
+          // Show dialog only after 2 seconds to avoid flash on load
           setTimeout(() => setOpen(true), 2000);
         }
       } catch (error) {

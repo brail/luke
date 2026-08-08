@@ -258,10 +258,10 @@ export default function PhaseCatalogPage() {
         <PhaseItemDialog
           state={itemDialog}
           previewCode={
-            // In edit il server tiene già `code` allineato a `order`: nessun
-            // fallback di calcolo serve. In create l'elemento non esiste
-            // ancora, quindi la posizione finale (in coda alla lista) va
-            // anticipata lato client.
+            // In edit the server already has `code` aligned with `order`: no
+            // calculation fallback is needed. In create the element doesn't exist
+            // yet, so the final position (at end of list) must be
+            // anticipated client-side.
             itemDialog.mode === 'create'
               ? String(sortedItems.length + 1).padStart(2, '0')
               : itemDialog.item.code

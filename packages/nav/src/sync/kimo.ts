@@ -28,7 +28,7 @@ export interface KimoSyncResult {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** Le tabelle kimo hanno PK BIGINT oltre al rowversion. */
+/** Kimo tables have BIGINT PK plus rowversion. */
 const KIMO_BIGINT_COLS = ['navRowversion', 'entryNo', 'headerEntryNo'] as const;
 
 // ─── Per-table sync functions ─────────────────────────────────────────────────
@@ -116,7 +116,7 @@ export async function syncKimoNow(
   const stats: TableSyncStats[] = [];
 
   try {
-    // Header prima (le lines dipendono dagli header per integrità logica)
+    // Header first (lines depend on headers for logical integrity)
     stats.push(await syncKimoSalesHeader(pool, co, prisma, log));
 
     // Lines

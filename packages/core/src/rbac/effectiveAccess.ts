@@ -40,21 +40,21 @@ export function effectiveSectionAccess({
   section,
   disabledSections,
 }: EffectiveAccessParams): boolean {
-  // 0) Kill switch globale - precedenza massima
+  // 0) Global kill switch - maximum precedence
   if (disabledSections?.includes(section)) return false;
 
-  // 1) Override utente - precedenza alta
+  // 1) User override - high precedence
   if (userOverride?.enabled === false) return false;
   if (userOverride?.enabled === true) return true;
 
-  // 2) Default di ruolo da AppConfig
+  // 2) Role default from AppConfig
   const roleDefaults = sectionAccessDefaults[role] || {};
   const defaultForSection = roleDefaults[section] ?? 'auto';
 
   if (defaultForSection === 'disabled') return false;
   if (defaultForSection === 'enabled') return true;
 
-  // 3) Fallback RBAC ruolo — usa il nuovo sistema Resource:Action
+  // 3) RBAC role fallback — uses the new Resource:Action system
   const permission = SECTION_TO_PERMISSION[section];
   if (!permission) return false;
   return hasPermission({ role: role as Role }, permission as Permission);

@@ -91,7 +91,7 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
 
   const [uploadingImage, setUploadingImage] = useState(false);
 
-  // Sincronizza lo stato locale quando i dati arrivano
+  // Sync local state when data arrives
   useEffect(() => {
     if (specsheet) {
       setMadeIn(specsheet.madeIn ?? '');

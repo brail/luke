@@ -57,7 +57,7 @@ export async function syncSeasons(
   const rows = result.recordset;
 
   if (rows.length === 0) {
-    logger.info({ entity, filterMode, upserted: 0 }, 'NAV sync: nessun record da aggiornare');
+    logger.info({ entity, filterMode, upserted: 0 }, 'NAV sync: no records to update');
     return { entity, upserted: 0, skipped: false, filterMode };
   }
 
@@ -71,7 +71,7 @@ export async function syncSeasons(
     const endingDate = row['Ending Date'] ?? null;
 
     try {
-      // Atomico: replica NAV + anagrafica locale in un'unica transaction.
+      // Atomic: NAV replica + local master data in a single transaction.
       await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         await tx.navSeason.upsert({
           where: { navCode },
@@ -79,19 +79,19 @@ export async function syncSeasons(
           update: { description, startingDate, endingDate, syncedAt },
         });
 
-        // Guard: se esiste già una season locale con lo stesso code ma senza collegamento NAV,
-        // non auto-creare — l'utente deve collegarla manualmente.
+        // Guard: if a local season already exists with the same code but no NAV link,
+        // do not auto-create — the user must link it manually.
         const localConflict = await tx.season.findFirst({
           where: { code: navCode, navSeasonId: null },
           select: { id: true },
         });
         if (localConflict) {
-          logger.warn({ entity, navCode }, 'NAV sync: season locale con stesso code senza NAV link — skip auto-create');
+          logger.warn({ entity, navCode }, 'NAV sync: local season with same code without NAV link — skip auto-create');
           return;
         }
 
-        // Upsert season locale: crea se non esiste, aggiorna solo name.
-        // MAI toccare isActive né altri campi arricchiti.
+        // Upsert local season: create if not exist, update only name.
+        // NEVER touch isActive or other enriched fields.
         await tx.season.upsert({
           where: { navSeasonId: navCode },
           create: { code: navCode, name: description, navSeasonId: navCode, isActive: true },

@@ -4,19 +4,19 @@ import { z } from 'zod';
  * Shape of a single AppConfig record as persisted in the database (generic KV entry).
  */
 export const AppConfigSchema = z.object({
-  /** Chiave identificativa della configurazione */
+  /** Configuration identifier key */
   key: z.string().min(1),
 
-  /** Valore della configurazione (oggetto serializzabile generico) */
+  /** Configuration value (generic serializable object) */
   value: z.unknown(),
 
-  /** Versione della configurazione per gestire aggiornamenti */
+  /** Configuration version for managing updates */
   version: z.number().int().positive(),
 
-  /** Data di creazione della configurazione */
+  /** Configuration creation date */
   createdAt: z.date(),
 
-  /** Data dell'ultimo aggiornamento */
+  /** Last update date */
   updatedAt: z.date(),
 });
 
@@ -28,11 +28,11 @@ export type AppConfig = z.infer<typeof AppConfigSchema>;
  * `keyBy` controls whether the limit is per IP address or per authenticated user.
  */
 export const RateLimitPolicySchema = z.object({
-  /** Numero massimo di richieste consentite */
+  /** Maximum number of allowed requests */
   max: z.number().int().positive(),
-  /** Finestra temporale (es. '1m', '15m', '2h') */
+  /** Time window (e.g. '1m', '15m', '2h') */
   timeWindow: z.string().min(2),
-  /** Tipo di chiave per il rate limiting */
+  /** Key type for rate limiting */
   keyBy: z.enum(['ip', 'userId', 'username']).default('ip'),
 });
 
@@ -41,31 +41,31 @@ export const RateLimitPolicySchema = z.object({
  * Stored as a JSON blob under the `rateLimit` AppConfig key.
  */
 export const RateLimitConfigSchema = z.object({
-  /** Policy per endpoint di login */
+  /** Policy for login endpoint */
   login: RateLimitPolicySchema.optional(),
-  /** Policy per endpoint di login, chiave username (anti password-spray distribuito su più IP) */
+  /** Policy for login endpoint, username key (anti password-spray distributed across multiple IPs) */
   loginByUsername: RateLimitPolicySchema.optional(),
-  /** Policy per cambio password */
+  /** Policy for password change */
   passwordChange: RateLimitPolicySchema.optional(),
-  /** Policy per reset password */
+  /** Policy for password reset */
   passwordReset: RateLimitPolicySchema.optional(),
-  /** Policy per mutazioni di configurazione */
+  /** Policy for configuration mutations */
   configMutations: RateLimitPolicySchema.optional(),
-  /** Policy per mutazioni di utenti */
+  /** Policy for user mutations */
   userMutations: RateLimitPolicySchema.optional(),
-  /** Policy per override sezioni accesso (sectionAccess.set) */
+  /** Policy for section access override (sectionAccess.set) */
   sectionAccessSet: RateLimitPolicySchema.optional(),
-  /** Policy per mutazioni brand */
+  /** Policy for brand mutations */
   brandMutations: RateLimitPolicySchema.optional(),
-  /** Policy per invio email pending user */
+  /** Policy for pending user email sending */
   pendingEmail: RateLimitPolicySchema.optional(),
-  /** Policy per test bind/search LDAP */
+  /** Policy for LDAP bind/search test */
   ldapTest: RateLimitPolicySchema.optional(),
-  /** Policy per mutazioni struttura company (funzioni, team, membri) */
+  /** Policy for company structure mutations (functions, teams, members) */
   companyStructureMutations: RateLimitPolicySchema.optional(),
-  /** Policy per trigger sync NAV (fornitori, ecc.) */
+  /** Policy for triggering NAV sync (suppliers, etc.) */
   navSyncTrigger: RateLimitPolicySchema.optional(),
-  /** Policy per generazione export (PDF/XLSX): operazione CPU e memory bound */
+  /** Policy for export generation (PDF/XLSX): CPU and memory bound operation */
   exportGeneration: RateLimitPolicySchema.optional(),
 });
 
@@ -74,17 +74,17 @@ export const RateLimitConfigSchema = z.object({
  * All values correspond to individual AppConfig keys under `auth.ldap.resilience.*`.
  */
 export const LdapResilienceSchema = z.object({
-  /** Timeout per operazione LDAP in millisecondi */
+  /** Timeout for LDAP operation in milliseconds */
   timeoutMs: z.number().int().positive().default(3000),
-  /** Numero massimo di retry per operazioni fallite */
+  /** Maximum number of retries for failed operations */
   maxRetries: z.number().int().min(0).default(2),
-  /** Delay base per exponential backoff in millisecondi */
+  /** Base delay for exponential backoff in milliseconds */
   baseDelayMs: z.number().int().min(10).default(200),
-  /** Soglia di failure per aprire il circuit breaker */
+  /** Failure threshold to open circuit breaker */
   breakerFailureThreshold: z.number().int().min(1).default(5),
-  /** Cooldown del circuit breaker in millisecondi */
+  /** Circuit breaker cooldown in milliseconds */
   breakerCooldownMs: z.number().int().min(500).default(10000),
-  /** Numero massimo di tentativi in stato half-open */
+  /** Maximum number of attempts in half-open state */
   halfOpenMaxAttempts: z.number().int().min(1).default(1),
 });
 

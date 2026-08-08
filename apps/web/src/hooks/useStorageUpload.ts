@@ -87,8 +87,8 @@ export function useStorageUpload(options: UseStorageUploadOptions = {}): UseStor
         }
 
         setProgress(80);
-        // Bucket e key non si rimandano: li porta il token, che il server ha
-        // firmato quando ha allocato la slot.
+        // Bucket and key are not sent back: the token carries them, which the server
+        // signed when it allocated the slot.
         const confirmed = await confirmUpload.mutateAsync({
           uploadToken: req.uploadToken,
           contentType: file.type || 'application/octet-stream',

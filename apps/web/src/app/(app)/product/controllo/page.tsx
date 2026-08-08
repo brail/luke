@@ -304,9 +304,9 @@ function StagnationTab() {
     { enabled: !!layout?.id }
   );
 
-  // Chiude il quadro che la tabella per fase non può chiudere: l'ultima fase non ha una
-  // transizione successiva che la termini, quindi il tempo totale fino alla conclusione
-  // esiste solo per le righe marcate come concluse.
+  // Closes the picture that the phase table cannot close: the final phase has no
+  // subsequent transition to end it, so total time to completion
+  // exists only for rows marked as completed.
   const { data: leadTime } = trpc.phaseHistory.completionLeadTime.useQuery(
     { collectionLayoutId: layout?.id ?? '' },
     { enabled: !!layout?.id }

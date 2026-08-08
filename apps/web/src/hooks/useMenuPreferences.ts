@@ -127,7 +127,7 @@ export function useMenuPreferences() {
     };
   }, [flushToDb]);
 
-  // Flush prima di unload (chiusura tab/browser)
+  // Flush before unload (closing tab/browser)
   useEffect(() => {
     const handleBeforeUnload = () => {
       flushToDb();

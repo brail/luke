@@ -52,7 +52,7 @@ import { trpc } from '../../../../../lib/trpc';
 import { cn } from '../../../../../lib/utils';
 
 // Schema per form con isActive obbligatorio (per React Hook Form)
-// logoUrl accetta qualsiasi stringa (anche percorsi relativi in DEV) o null/undefined
+// logoUrl accepts any string (including relative paths in DEV) or null/undefined
 const BrandFormSchema = BrandInputSchema.extend({
   isActive: z.boolean(),
   logoUrl: z.union([z.string(), z.null(), z.undefined()]).optional(),
@@ -95,10 +95,10 @@ function DisabledFieldWrapper({
   return (
     <TooltipProvider>
       <Tooltip>
-        {/* Il trigger è il `div`, non il campo: un input disabilitato non emette `pointerenter`
-            né `focus`, quindi con `asChild` direttamente sul campo il tooltip non si aprirebbe mai
-            — stesso difetto corretto in `PermissionButton`. `tabIndex` lo rende raggiungibile da
-            tastiera, dove un campo disabilitato non arriva. */}
+        {/* The trigger is the `div`, not the field: a disabled input doesn't emit `pointerenter`
+            or `focus`, so with `asChild` directly on the field the tooltip would never open
+            — same fix applied in `PermissionButton`. `tabIndex` makes it keyboard-reachable,
+            where a disabled field cannot be reached. */}
         <TooltipTrigger asChild>
           <div tabIndex={0}>{children}</div>
         </TooltipTrigger>
@@ -183,7 +183,7 @@ export function BrandDialogWithPermissions({
     },
   });
 
-  // Reset form quando brand cambia
+  // Reset form when brand changes
   React.useEffect(() => {
     if (brand) {
       form.reset({
@@ -221,7 +221,7 @@ export function BrandDialogWithPermissions({
     form,
   ]);
 
-  // Auto-focus su campo code quando dialog si apre
+  // Auto-focus code field when dialog opens
   React.useEffect(() => {
     if (open && brandPerms.canEdit()) {
       const timer = setTimeout(() => {
@@ -232,7 +232,7 @@ export function BrandDialogWithPermissions({
       }, 100);
       return () => clearTimeout(timer);
     } else if (!open) {
-      // Reset form quando dialog si chiude
+      // Reset form when dialog closes
       form.reset();
       setLogoUrl(null);
       setPendingFileObjectId(null);
@@ -336,7 +336,7 @@ export function BrandDialogWithPermissions({
   };
 
   const isFormDisabled = !brandPerms.canEdit();
-  // Campi che provengono da NAV sono read-only se il brand è già collegato
+  // Fields from NAV are read-only if brand is already linked
   const isNavLinked = !!brand?.navBrandId;
   const isNavFieldReadOnly = isNavLinked || isFormDisabled;
 
@@ -353,7 +353,7 @@ export function BrandDialogWithPermissions({
             onSubmit={form.handleSubmit(handleSubmit)}
             className="space-y-6"
           >
-            {/* Campo nascosto per logoUrl */}
+            {/* Hidden field for logoUrl */}
             <FormField
               control={form.control}
               name="logoUrl"
@@ -441,7 +441,7 @@ export function BrandDialogWithPermissions({
               </DisabledFieldWrapper>
             </div>
 
-            {/* Codice */}
+            {/* Code */}
             <FormField
               control={form.control}
               name="code"
@@ -480,7 +480,7 @@ export function BrandDialogWithPermissions({
               )}
             />
 
-            {/* Nome */}
+            {/* Name */}
             <FormField
               control={form.control}
               name="name"
@@ -509,7 +509,7 @@ export function BrandDialogWithPermissions({
               )}
             />
 
-            {/* Codice NAV */}
+            {/* NAV Code */}
             {isNavLinked ? (
               <div className="space-y-2">
                 <label className="text-sm font-medium flex items-center gap-2">
@@ -557,7 +557,7 @@ export function BrandDialogWithPermissions({
               />
             )}
 
-            {/* Stato Attivo */}
+            {/* Active Status */}
             <FormField
               control={form.control}
               name="isActive"

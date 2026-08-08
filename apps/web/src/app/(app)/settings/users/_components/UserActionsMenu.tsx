@@ -80,7 +80,7 @@ export function UserActionsMenu({
   };
 
   const handleDisable = () => {
-    // Doppia protezione: controlla anche qui prima di procedere
+    // Double protection: check here too before proceeding
     if (isSelfAction) {
       toast.error('Non puoi disattivare il tuo stesso account');
       return;
@@ -100,7 +100,7 @@ export function UserActionsMenu({
   };
 
   const handleHardDelete = () => {
-    // Doppia protezione: controlla anche qui prima di procedere
+    // Double protection: check here too before proceeding
     if (isSelfAction) {
       toast.error('Non puoi eliminare il tuo stesso account');
       return;

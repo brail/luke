@@ -1,23 +1,23 @@
 /**
- * @luke/core/utils - Utility per sanitizzazione input
+ * @luke/core/utils - Input sanitization utilities
  *
- * Funzioni per validare e ripulire input utente in modo sicuro
+ * Functions to validate and safely clean user input
  *
  * @version 0.1.0
  * @author Luke Team
  */
 
 /**
- * Sanitizza un nome file rimuovendo caratteri pericolosi
+ * Sanitizes a file name by removing dangerous characters
  *
- * Rimuove:
+ * Removes:
  * - Path traversal: `..`, `/`, `\`
  * - Control characters (0x00-0x1F)
- * - Caratteri speciali filesystem: `<`, `>`, `:`, `"`, `|`, `?`, `*`
- * - Spazi multipli e trailing/leading whitespace
+ * - Filesystem special characters: `<`, `>`, `:`, `"`, `|`, `?`, `*`
+ * - Multiple spaces and trailing/leading whitespace
  *
- * @param name - Nome file da sanitizzare
- * @returns Nome file sicuro
+ * @param name - File name to sanitize
+ * @returns Safe file name
  *
  * @example
  * sanitizeFileName("../../etc/passwd") // "etc-passwd"
@@ -31,36 +31,36 @@ export function sanitizeFileName(name: string): string {
 
   let sanitized = name;
 
-  // Rimuovi path traversal
+  // Remove path traversal
   sanitized = sanitized.replace(/\.\./g, '');
 
-  // Rimuovi slash (Unix e Windows)
+  // Remove slashes (Unix and Windows)
   sanitized = sanitized.replace(/[/\\]/g, '-');
 
-  // Rimuovi control characters (0x00-0x1F, 0x7F)
+  // Remove control characters (0x00-0x1F, 0x7F)
   // eslint-disable-next-line no-control-regex
   sanitized = sanitized.replace(/[\x00-\x1F\x7F]/g, '');
 
-  // Rimuovi caratteri speciali filesystem
+  // Remove filesystem special characters
   sanitized = sanitized.replace(/[<>:"|?*]/g, '-');
 
-  // Riduce spazi multipli a singolo spazio
+  // Reduce multiple spaces to single space
   sanitized = sanitized.replace(/\s+/g, ' ');
 
-  // Rimuovi whitespace leading/trailing
+  // Remove leading/trailing whitespace
   sanitized = sanitized.trim();
 
-  // Sostituisci spazi rimanenti con dash
+  // Replace remaining spaces with dash
   sanitized = sanitized.replace(/\s/g, '-');
 
-  // Se il risultato è vuoto o solo dash, usa fallback
+  // If the result is empty or only dashes, use fallback
   if (!sanitized || /^[-]+$/.test(sanitized)) {
     return 'unnamed';
   }
 
-  // Limita lunghezza a 255 caratteri (limite filesystem comune)
+  // Limit length to 255 characters (common filesystem limit)
   if (sanitized.length > 255) {
-    // Mantieni estensione se possibile
+    // Keep extension if possible
     const lastDot = sanitized.lastIndexOf('.');
     if (lastDot > 0 && lastDot > sanitized.length - 10) {
       const ext = sanitized.slice(lastDot);
@@ -75,10 +75,10 @@ export function sanitizeFileName(name: string): string {
 }
 
 /**
- * Valida che una stringa sia un path safe (niente traversal)
+ * Validates that a string is a safe path (no traversal)
  *
- * @param pathSegment - Segmento di path da validare
- * @returns true se il path è sicuro
+ * @param pathSegment - Path segment to validate
+ * @returns true if the path is safe
  *
  * @example
  * isPathSafe("uploads/2025/10/file.pdf") // true
@@ -90,22 +90,22 @@ export function isPathSafe(pathSegment: string): boolean {
     return false;
   }
 
-  // Niente path traversal
+  // No path traversal
   if (pathSegment.includes('..')) {
     return false;
   }
 
-  // Niente absolute paths
+  // No absolute paths
   if (pathSegment.startsWith('/') || pathSegment.startsWith('\\')) {
     return false;
   }
 
-  // Niente Windows drive letters
+  // No Windows drive letters
   if (/^[a-zA-Z]:/.test(pathSegment)) {
     return false;
   }
 
-  // Niente null bytes
+  // No null bytes
   if (pathSegment.includes('\0')) {
     return false;
   }

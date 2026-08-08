@@ -52,8 +52,8 @@ describe('bandBadgeStyle', () => {
   });
 
   it('outline è il default quando la banda non dichiara emphasis', () => {
-    // Le configurazioni salvate prima che il campo esistesse arrivano senza: devono rendere come
-    // rendevano allora, non sparire né riempirsi.
+    // Configs saved before the field existed arrive without it: they must render as
+    // they did then, not disappear or fill.
     expect(bandBadgeStyle({ color: '#B91C1C' })).toMatchObject({ backgroundColor: 'transparent' });
   });
 
@@ -73,8 +73,8 @@ describe('bandBadgeStyle', () => {
   });
 
   it('soft su un colore non-hex degrada a outline invece di produrre un badge invisibile', () => {
-    // `soft` ha bisogno dei canali per costruire l'alpha: senza, meglio nessuna enfasi che un
-    // riempimento sbagliato.
+    // `soft` needs channels to build alpha: without them, better no emphasis than
+    // wrong fill.
     expect(bandBadgeStyle({ color: 'rosso', emphasis: 'soft' })).toEqual({
       backgroundColor: 'transparent',
       borderColor: 'rosso',
