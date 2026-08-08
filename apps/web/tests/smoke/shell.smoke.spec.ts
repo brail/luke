@@ -46,7 +46,7 @@ const UNCOVERED_ROUTES: Record<string, string> = {
   '/maintenance/import-export': 'operazioni distruttive, non adatte a uno smoke',
   '/maintenance/mode': 'attiva la manutenzione: bloccherebbe il resto della suite',
   '/product/collection-layout/revisions': 'richiede revisioni preesistenti',
-  '/product/controllo': 'richiede dati di collezione seedati',
+  '/product/control': 'richiede dati di collezione seedati',
   '/product/merchandising-plan': 'richiede dati di collezione seedati',
   '/sales/statistics': 'richiede dati NAV sincronizzati',
   '/settings/collection-control': 'config, nessuna query pesante',

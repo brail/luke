@@ -27,7 +27,8 @@
     "db:nav-reset": "tsx scripts/nav-reset.ts",
     "db:harden-google-acl": "tsx --env-file=.env scripts/harden-google-calendar-acl.ts",
     "db:complete-stranded-rows": "tsx --env-file=.env scripts/complete-stranded-rows.ts",
-    "db:fix-allday-dates": "TZ=Europe/Rome tsx --env-file=.env scripts/fix-allday-event-dates.ts"
+    "db:fix-allday-dates": "TZ=Europe/Rome tsx --env-file=.env scripts/fix-allday-event-dates.ts",
+    "db:migrate-rbac-section-key": "tsx --env-file=.env scripts/migrate-rbac-controllo-to-control.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

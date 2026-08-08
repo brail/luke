@@ -4,7 +4,7 @@ import { useAppContext } from '../../../../../contexts/AppContextProvider';
 import { trpc } from '../../../../../lib/trpc';
 
 /** Resolves the active brand/season's Collection Layout — shared by every tab/view in Controllo. */
-export function useControlloLayout() {
+export function useControlLayout() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
   const enabled = !!brand?.id && !!season?.id;
 

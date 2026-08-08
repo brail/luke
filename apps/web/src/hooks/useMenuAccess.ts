@@ -57,7 +57,7 @@ export function useMenuAccess() {
     // Prodotto: sub-items
     const productItems = {
       merchandisingPlan: s.product && s['product.merchandising_plan'],
-      controllo: s.product && s['product.controllo'],
+      control: s.product && s['product.control'],
     };
 
     const showCalendar = s['planning'];

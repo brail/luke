@@ -143,7 +143,7 @@ export const SECTION_LABELS: Record<Section, string> = {
   'product.pricing': '↳ Pricing',
   'product.collection_layout': '↳ Collection Layout',
   'product.merchandising_plan': '↳ Merchandising Plan',
-  'product.controllo': '↳ Controllo Collezione',
+  'product.control': '↳ Controllo Collezione',
   admin: 'Amministrazione',
   'admin.brands': '↳ Brand',
   'admin.seasons': '↳ Stagioni',

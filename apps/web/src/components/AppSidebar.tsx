@@ -262,13 +262,13 @@ export default function AppSidebar() {
                         </SidebarMenuSubButton>
                       </SidebarMenuSubItem>
                     )}
-                    {menuAccess.productItems?.controllo && (
+                    {menuAccess.productItems?.control && (
                       <SidebarMenuSubItem>
                         <SidebarMenuSubButton
                           asChild
-                          isActive={isActive('/product/controllo')}
+                          isActive={isActive('/product/control')}
                         >
-                          <Link href="/product/controllo">
+                          <Link href="/product/control">
                             <Gauge size={16} />
                             <span>Controllo</span>
                           </Link>

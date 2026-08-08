@@ -17,7 +17,7 @@ import { assignBrandColors, resolveBrandColor } from '../../calendar/utils';
 
 import { CollectionStatistics } from './_components/CollectionStatistics';
 import { EmptyContextCard } from './_components/EmptyContextCard';
-import { useControlloLayout } from './_hooks/useControlloLayout';
+import { useControlLayout } from './_hooks/useControlLayout';
 
 import type { ReactNode } from 'react';
 
@@ -230,7 +230,7 @@ function SaturationTab() {
  * e la stagione correnti — identifica quale milestone specifica sta trattenendo più righe.
  */
 function BottleneckTab() {
-  const { layout, enabled, contextLoading } = useControlloLayout();
+  const { layout, enabled, contextLoading } = useControlLayout();
 
   const { data: events = [], isLoading, isError } = trpc.phaseAlert.bottleneckByEvent.useQuery(
     { collectionLayoutId: layout?.id ?? '' },
@@ -297,7 +297,7 @@ function BottleneckTab() {
  * di criticità assoluta.
  */
 function StagnationTab() {
-  const { layout, enabled, contextLoading } = useControlloLayout();
+  const { layout, enabled, contextLoading } = useControlLayout();
 
   const { data: stats = [], isLoading, isError } = trpc.phaseHistory.layoutStats.useQuery(
     { collectionLayoutId: layout?.id ?? '' },

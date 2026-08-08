@@ -6,7 +6,7 @@ import type { RouterOutputs } from '@luke/api';
 
 import { useAppContext } from '../../../../../contexts/AppContextProvider';
 import { trpc } from '../../../../../lib/trpc';
-import { useControlloLayout } from '../_hooks/useControlloLayout';
+import { useControlLayout } from '../_hooks/useControlLayout';
 
 import { DataQualityScoreboard } from './DataQualityScoreboard';
 import { EmptyContextCard } from './EmptyContextCard';
@@ -35,7 +35,7 @@ export interface CollectionStatsCardProps {
  */
 export function CollectionStatistics() {
   const { brand, season } = useAppContext();
-  const { layout, enabled, contextLoading } = useControlloLayout();
+  const { layout, enabled, contextLoading } = useControlLayout();
 
   const { data: parameterSets = [] } = trpc.pricing.parameterSets.list.useQuery(
     { brandId: brand?.id ?? '', seasonId: season?.id ?? '' },

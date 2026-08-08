@@ -65,7 +65,7 @@ export const phaseHistoryRouter = router({
    *
    * @auth {collection_layout:read} — intentionally not `collection_alert:read`, same as when this
    *   endpoint was added in Phase 4. The Phase 6.3 stagnation dashboard page sits behind the
-   *   `product.controllo` section (gated by `collection_alert:read`), so a role could see the page
+   *   `product.control` section (gated by `collection_alert:read`), so a role could see the page
    *   shell without this query succeeding (or vice versa) if the two permissions are ever granted
    *   differently via the AppConfig runtime override. Today both are granted identically to every
    *   role's defaults, so this is a latent, not active, divergence.
