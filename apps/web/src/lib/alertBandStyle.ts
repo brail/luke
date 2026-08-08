@@ -12,9 +12,9 @@ export interface BandVisual {
 
 const HEX6 = /^#([0-9A-Fa-f]{6})$/;
 
-/** Il colore è in una forma che questa feature sa rendere. Esportata perché l'editor delle bande
- * deve usare lo stesso predicato con cui `bandBadgeStyle` decide di degradare a `outline`:
- * altrimenti lo swatch accetterebbe un valore che il badge poi non sa colorare. */
+/** The color is in a shape this feature knows how to render. Exported because the band editor
+ * must use the same predicate `bandBadgeStyle` uses to decide when to degrade to `outline` —
+ * otherwise the swatch would accept a value the badge then can't color. */
 export function isHexColor(color: string): boolean {
   return HEX6.test(color);
 }

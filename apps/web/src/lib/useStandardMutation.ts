@@ -28,10 +28,10 @@ type Options<TInput, TResult> = {
 };
 
 /**
- * Hook per mutation standardizzate con pattern DRY
+ * Standardized mutation hook implementing the DRY pattern.
  *
- * Elimina duplicazioni di `onSuccess`/`onError`/`toast`/`invalidate` fornendo
- * un wrapper uniforme per tutte le mutation dell'applicazione.
+ * Eliminates `onSuccess`/`onError`/`toast`/`invalidate` duplication by providing
+ * a uniform wrapper for every mutation in the application.
  *
  * @example
  * ```typescript
@@ -44,11 +44,11 @@ type Options<TInput, TResult> = {
  *   onErrorMessage: 'Errore durante l\'aggiornamento',
  * });
  *
- * // Uso
+ * // Usage
  * await mutate({ firstName: 'Mario', lastName: 'Rossi' });
  * ```
  *
- * @example Con callback personalizzate
+ * @example With custom callbacks
  * ```typescript
  * const { mutate, isPending } = useStandardMutation({
  *   mutateFn: trpc.users.create.mutateAsync,

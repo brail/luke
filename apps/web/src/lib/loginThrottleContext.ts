@@ -3,19 +3,21 @@
  * (`../auth.ts`), which NextAuth invokes internally with no way to return a value the
  * wrapper can read. `AsyncLocalStorage` propagates state through that nested async call
  * without a second network round-trip and without a shared mutable global that would leak
- * across concurrent requests — see `docs/` (o il piano di remediation Strix RC) per il
- * perché: la route deve rispondere 429 quando `auth.login` rifiuta per rate-limit, ma
- * NextAuth risponde sempre 200 su `authorize() → null`, quindi il segnale va fatto uscire
- * dalla call stack in un altro modo.
+ * across concurrent requests — see `docs/` (or the Strix RC remediation plan) for why:
+ * the route must respond 429 when `auth.login` rejects for rate-limiting, but NextAuth
+ * always responds 200 on `authorize() → null`, so the signal has to leave the call stack
+ * some other way.
  */
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 
+/** Per-request state threaded through `loginThrottleContext`. */
 export interface LoginThrottleState {
   /** Presence (not just truthiness) is the "was rate-limited" signal — see `isLimited` below. */
   retryAfterSeconds?: number;
 }
 
+/** The `AsyncLocalStorage` instance itself — see the module doc above for why it exists. */
 export const loginThrottleContext = new AsyncLocalStorage<LoginThrottleState>();
 
 /**

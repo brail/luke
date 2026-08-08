@@ -13,6 +13,8 @@ interface UseNotificationCenterParams {
 /**
  * Infinite-scroll feed for the full Notification Center page, built on the same
  * `notifications.list` cursor pagination already used by the bell dropdown preview.
+ *
+ * @returns `{ notifications, hasNextPage, isFetchingNextPage, isLoading, fetchNextPage, refetch }`.
  */
 export function useNotificationCenter({ unreadOnly, includeArchived, category }: UseNotificationCenterParams) {
   const utils = trpc.useUtils();

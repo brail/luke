@@ -18,7 +18,12 @@ CLAUDE.md, sezione Development Patterns, regola 14.
 
 ---
 
-## JSDoc su export TypeScript (`packages/`)
+## JSDoc su export TypeScript (`packages/**/src`, `apps/web/src/lib`, `apps/web/src/hooks`)
+
+Stesso template per i tre target. `apps/web/src/lib` e `apps/web/src/hooks`
+aggiunti 2026-08-08 — prima il modo `inline` copriva solo `packages/`.
+Non estendere a `apps/web/src/components` o `apps/web/src/app` (troppo volume,
+JSX poco portato a JSDoc di firma) senza una decisione esplicita separata.
 
 Template per **funzione esportata**:
 

@@ -1,10 +1,3 @@
-/**
- * Periodically verifies the current session's validity by checking the user's
- * `tokenVersion` via `trpc.me.get`. Triggers an immediate check on mount,
- * then re-runs every 10 s, on tab visibility change, and on window focus.
- * Redirects to `/login` when the session is detected as invalid (UNAUTHORIZED).
- */
-
 import { TRPCClientError } from '@trpc/client';
 import { signOut, useSession } from 'next-auth/react';
 import { useCallback, useEffect, useRef } from 'react';
@@ -12,6 +5,12 @@ import { useCallback, useEffect, useRef } from 'react';
 import { debugError, debugLog } from '../lib/debug';
 import { trpc } from '../lib/trpc';
 
+/**
+ * Periodically verifies the current session's validity by checking the user's
+ * `tokenVersion` via `trpc.me.get`. Triggers an immediate check on mount,
+ * then re-runs every 10 s, on tab visibility change, and on window focus.
+ * Redirects to `/login` when the session is detected as invalid (UNAUTHORIZED).
+ */
 export function useSessionVerification() {
   const { data: session, status } = useSession();
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);

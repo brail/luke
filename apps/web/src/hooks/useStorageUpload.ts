@@ -7,14 +7,15 @@ import { type APP_STORAGE_BUCKETS } from '@luke/core';
 
 import { trpc } from '../lib/trpc';
 
+/** Result of a completed upload: the public URL plus the id needed to link the file to an entity. */
 export interface StorageUploadResult {
   publicUrl: string;
   /**
-   * Id del `FileObject` da passare alla mutation che collega il file all'entità.
+   * Id of the `FileObject` to pass to the mutation that links the file to the entity.
    *
-   * Si chiamava `fileId`, mentre gli endpoint di upload dedicati (brand temp,
-   * collection row) ritornavano `fileObjectId`: tre nomi per la stessa cosa. Ora
-   * uno solo.
+   * Used to be called `fileId`, while the dedicated upload endpoints (brand temp,
+   * collection row) returned `fileObjectId`: three names for the same thing. Now
+   * there's just one.
    */
   fileObjectId: string;
   key?: string;
@@ -23,6 +24,7 @@ export interface StorageUploadResult {
 /** Upload-facing buckets only — excludes internal/private buckets like "backups". */
 export type UploadableBucket = (typeof APP_STORAGE_BUCKETS)[number];
 
+/** Options accepted by `useStorageUpload`. */
 export interface UseStorageUploadOptions {
   /**
    * Fallback URL to use when storage is in proxy (local) mode.
@@ -34,12 +36,22 @@ export interface UseStorageUploadOptions {
   extraFields?: Record<string, string>;
 }
 
+/** Return value of `useStorageUpload`: the upload function plus its in-flight state. */
 export interface UseStorageUploadReturn {
   upload: (file: File, bucket: UploadableBucket) => Promise<StorageUploadResult>;
   isUploading: boolean;
   progress: number;
 }
 
+/**
+ * Uploads a file to storage, picking the transport based on what
+ * `storage.requestUpload` responds with: a direct presigned PUT (MinIO) when
+ * `req.method === 'presigned'`, otherwise a multipart POST to `fallbackProxyUrl`
+ * (local proxy mode).
+ *
+ * @throws {Error} When the proxy path is required but no `fallbackProxyUrl` was
+ *   provided, or when the upload request itself fails.
+ */
 export function useStorageUpload(options: UseStorageUploadOptions = {}): UseStorageUploadReturn {
   const { fallbackProxyUrl, extraFields } = options;
   const [isUploading, setIsUploading] = useState(false);

@@ -1,12 +1,12 @@
 /**
- * Chiave localStorage che marca il saluto giornaliero come già visto.
+ * localStorage key that marks the daily greeting as already seen.
  *
- * Vive in un modulo senza dipendenze — niente `'use client'`, niente tRPC — così
- * può essere importata sia dall'hook che dal processo Playwright, che deve
- * sopprimere il modale prima che intercetti i click. Duplicarne il formato da
- * qualche altra parte significherebbe che al primo cambio (prefisso, fuso,
- * versione) la soppressione smette di funzionare in silenzio e ogni smoke
- * fallisce su un click bloccato da un `Dialog` a schermo intero.
+ * Lives in a dependency-free module — no `'use client'`, no tRPC — so it can
+ * be imported both by the hook and by the Playwright process, which needs to
+ * suppress the modal before it intercepts clicks. Duplicating this format
+ * elsewhere would mean that on the first change (prefix, timezone, version)
+ * the suppression silently stops working, and every smoke test fails on a
+ * click blocked by a full-screen `Dialog`.
  */
 export function dailyGreetingSeenKey(date: Date = new Date()): string {
   const yyyy = date.getFullYear();

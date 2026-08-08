@@ -25,6 +25,10 @@ export const NOTIFICATION_CATEGORY_META: Record<string, { style: string; label: 
   },
 };
 
+/**
+ * Formats the time elapsed since `date` as a short Italian relative-time string
+ * (`"ora"`, `"N min fa"`, `"N ore fa"`, `"N giorni fa"`) for display in the UI.
+ */
 export function formatNotificationRelativeTime(date: Date): string {
   const diff = Date.now() - new Date(date).getTime();
   const mins = Math.floor(diff / 60_000);
