@@ -16,12 +16,14 @@ Gruppo autenticato `(app)/`:
 - `/admin/vendors` — Gestione fornitori
 - `/admin/calendar-configuration` — Configurazione calendario milestones stagionale
 - `/admin/collection-layout-configuration` — Configurazione colonne del layout collezione
+- `/admin/phase-catalog` — Catalogo Phase unificato (ordinamento fasi produzione/calendario)
 - `/calendar` — Calendario milestones e scadenze stagionali (con sync Google Calendar)
 - `/product/collection-layout` — Piano campionario (layout a righe e gruppi, revisioni, quote)
 - `/product/collection-layout/revisions` — Storico revisioni del piano campionario (snapshot immutabili per controllo qualità ISO 9001)
+- `/product/controllo` — Cruscotto qualità dati e margini (data quality, breakdown margine, crosstab posizionamento)
 - `/product/merchandising-plan` — Piano merchandising con specsheet e immagini
 - `/product/pricing` — Motore di calcolo prezzi (forward / inverse / margin)
-- `/sales/statistics` — Statistiche portafoglio ordini (replica NAV in tempo reale)
+- `/sales/statistics` — Statistiche portafoglio ordini e report KIMO (replica NAV in tempo reale)
 - `/settings/users` — Gestione utenti e ruoli
 - `/settings/mail` — Configurazione SMTP con test email
 - `/settings/ldap` — Autenticazione LDAP enterprise con test connessione
@@ -30,9 +32,15 @@ Gruppo autenticato `(app)/`:
 - `/settings/nav-sync` — Controllo e log sincronizzazione NAV
 - `/settings/google` — Integrazione Google Calendar (flusso OAuth 2.0)
 - `/settings/company` — Profilo azienda
+- `/settings/collection-control` — Soglie di alert per la criticità del piano campionario
+- `/maintenance` — Indice sezione manutenzione
 - `/maintenance/config` — Gestione chiavi AppConfig (configurazione runtime centralizzata)
+- `/maintenance/audit-log` — Consultazione ed export dell'audit trail
+- `/maintenance/backup` — Backup e restore del database applicativo
+- `/maintenance/mode` — Modalità manutenzione (lock scrittura, banner utenti)
 - `/maintenance/import-export` — Import/export dati
 - `/profile` — Profilo e preferenze utente
+- `/notifications` — Centro notifiche utente
 
 Gruppo pubblico `(public)/`:
 

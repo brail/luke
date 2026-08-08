@@ -2,7 +2,7 @@
 
 ## Status
 
-Potentially stale — review needed
+Superseded by [006 — Resource/Action Permissions System](006-resource-action-permissions.md)
 
 ## Context
 

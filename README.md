@@ -3,7 +3,7 @@
 <!-- luke-docs:start:overview -->
 Luke è la piattaforma gestionale interna per la filiera moda wholesale. Gestisce il ciclo completo della stagione — dal piano campionario al pricing, dal merchandising alle statistiche portafoglio ordini — con integrazione nativa Microsoft Dynamics NAV come ERP di riferimento e supporto ai processi ISO 9001:2015 per il controllo qualità delle revisioni campionario.
 
-Sviluppato come monorepo pnpm + Turborepo con cinque workspace: frontend Next.js, backend Fastify + tRPC, package condivisi per schemi/RBAC, sync layer NAV e integrazione Google Calendar.
+Sviluppato come monorepo pnpm + Turborepo con sei workspace: frontend Next.js, backend Fastify + tRPC, package condivisi per schemi/RBAC, sync layer NAV, integrazione Google Calendar e un plugin ESLint interno per le regole di codifica specifiche di Luke.
 <!-- luke-docs:end:overview -->
 
 ## Indice
@@ -37,6 +37,7 @@ Sviluppato come monorepo pnpm + Turborepo con cinque workspace: frontend Next.js
 | `packages/core` | Package | Schemi Zod, RBAC, AppConfigRegistry, utility storage e crypto server-only |
 | `packages/nav` | Package | Sync layer unidirezionale Microsoft Dynamics NAV → PostgreSQL (mssql) |
 | `packages/calendar` | Package | Integrazione Google Calendar, feed iCal, solver dipendenze milestone |
+| `packages/eslint-plugin-luke` | Package | Regole ESLint interne (es. `no-uncommented-any`, `no-uncommented-tailwind-arbitrary`) |
 <!-- luke-docs:end:structure -->
 
 ## Quick Start
@@ -109,6 +110,9 @@ pnpm dev
 | `pnpm changelog:bump` | Genera `CHANGELOG.md` con bump automatico della versione |
 | `pnpm sync-version` | Allinea le versioni di tutti i `package.json` del monorepo |
 | `pnpm deps:latest` | Aggiorna tutte le dipendenze all'ultima versione |
+| `pnpm test` | Esegue i test di tutti i workspace (via Turbo) |
+| `pnpm check:drift` | Verifica integrità marker `luke-docs` e riferimenti nelle skill (bloccante in CI) |
+| `pnpm security` | Esegue la suite SAST (semgrep) + secrets (gitleaks) + dipendenze (osv-scanner) |
 
 Workspace specifici: `pnpm --filter @luke/web dev` · `pnpm --filter @luke/api dev` · `pnpm --filter @luke/core build`
 <!-- luke-docs:end:scripts -->

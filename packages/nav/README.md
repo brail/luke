@@ -1,7 +1,7 @@
 # @luke/nav
 
 <!-- luke-docs:start:overview -->
-Sync layer unidirezionale da Microsoft Dynamics NAV (SQL Server) verso il database PostgreSQL di Luke. Gestisce la replica differenziale di vendor, brand, stagioni e dati portafoglio ordini senza mai scrivere su NAV.
+Sync layer unidirezionale da Microsoft Dynamics NAV (SQL Server) verso il database PostgreSQL di Luke. Gestisce la replica differenziale di vendor, brand, stagioni e dati portafoglio ordini/KIMO senza mai scrivere su NAV.
 <!-- luke-docs:end:overview -->
 
 ## Utilizzato da
@@ -20,16 +20,24 @@ Sync layer unidirezionale da Microsoft Dynamics NAV (SQL Server) verso il databa
 | `getPool` / `closePool` | funzione | Gestisce il pool di connessioni MSSQL (singleton) |
 | `testNavConnection` | funzione | Verifica la connessione NAV step-by-step (usata nel test connessione UI) |
 | `runNavSync` | funzione | Esegue il ciclo di sync completo (vendors + brands + seasons) |
+| `createSyncRequest` | funzione | Costruisce il filtro/batch request condiviso dai sync module |
 | `syncVendors` | funzione | Sync differenziale vendor (watermark-based) |
 | `syncBrands` | funzione | Sync completo brand da NAV |
 | `syncSeasons` | funzione | Sync completo stagioni da NAV |
-| `queryPortafoglioOrdini` | funzione | Query replica NAV per statistiche portafoglio ordini |
+| `syncPortafoglioNow` | funzione | Trigger manuale del sync della replica portafoglio ordini (`nav_pf_*`) |
+| `syncKimoNow` | funzione | Trigger manuale del sync della replica KIMO (`nav_kimo_*`, report Vendite+Bidone) |
+| `queryPortafoglioOrdini` | funzione | Query diretta NAV (mssql) per statistiche portafoglio ordini |
+| `queryPortafoglioFromPg` | funzione | Query della replica `nav_pf_*` in PostgreSQL per statistiche portafoglio ordini |
+| `queryKimoFromPg` | funzione | Query della replica `nav_kimo_*` in PostgreSQL per il report KIMO |
 | `NavSyncReport` | tipo | Report esito sync: entità processate, errori, timestamp |
 | `SyncResult` | tipo | Esito di un singolo ciclo sync per un'entità |
+| `PortafoglioSyncResult` / `KimoSyncResult` | tipo | Esito del sync manuale portafoglio / KIMO |
+| `TableSyncStats` | tipo | Statistiche di upsert per singola tabella replica |
 | `NavDbConfig` | tipo | Configurazione connessione SQL Server |
 | `GetConfigFn` | tipo | Firma della funzione di iniezione config (evita accoppiamento circolare con `apps/api`) |
 | `NavConnectionStep` | tipo | Step del test connessione con esito e messaggio |
 | `PortafoglioParams` / `PortafoglioRow` | tipo | Parametri e riga risultato query portafoglio ordini |
+| `KimoParams` / `KimoRow` | tipo | Parametri e riga risultato query report KIMO |
 <!-- luke-docs:end:exports -->
 
 ## Concetti chiave
@@ -40,7 +48,7 @@ Sync layer unidirezionale da Microsoft Dynamics NAV (SQL Server) verso il databa
 - **Soft delete protetto**: il sync non riattiva mai entità con `isActive=false`. La disattivazione è un'azione manuale dell'amministratore; NAV non ne è a conoscenza.
 - **Table name parametrico**: i nomi delle tabelle SQL Server seguono il pattern `[${sanitizeCompany(config.company)}$TableName]` — mai hardcodati, mai parametrizzabili via SQL injection.
 - **Batch + transaction**: ogni upsert usa `processInBatches` (batch 100) e wrappa replica NAV + upsert locale in `prisma.$transaction()`. Un errore su una singola entità non blocca le altre.
-- **`queryPortafoglioOrdini`** legge esclusivamente dalla replica `nav_pf_*` in PostgreSQL — non effettua mai query dirette al DB NAV in produzione per le statistiche.
+- **Due percorsi per le statistiche**: `queryPortafoglioOrdini` interroga NAV direttamente via mssql (usata per l'export Excel completo, on-demand); `queryPortafoglioFromPg` / `queryKimoFromPg` leggono invece dalle repliche locali `nav_pf_*` / `nav_kimo_*` in PostgreSQL — stessa shape di output, per non accoppiare la dashboard statistiche alla disponibilità di NAV.
 <!-- luke-docs:end:concepts -->
 
 ## Esempio d'uso

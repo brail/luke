@@ -11,6 +11,9 @@
 | [nav-integration.md](nav-integration.md) | Architettura integrazione Microsoft Dynamics NAV — pattern entità duale, sync differenziale, tabelle replica |
 | [google-calendar-setup.md](google-calendar-setup.md) | Setup integrazione Google Calendar — configurazione OAuth, provisioning calendario stagione, sync milestone |
 | [genoma-collezione-pianificazione.md](genoma-collezione-pianificazione.md) | Recepimento in Luke dell'algoritmo "Genoma della Collezione" — alert e monitoraggio avanzamento campionario |
+| [genoma-collezione-simplify-skipped.md](genoma-collezione-simplify-skipped.md) | Findings delle review `/simplify` non applicati durante l'implementazione del Genoma della Collezione, con motivazione dello skip |
+| [prisma-migration-workflow.md](prisma-migration-workflow.md) | Workflow per generare una migration Prisma versionata (Postgres temporaneo porta 5433 → `db push` su 5432) |
+| [rc-prod-clone.md](rc-prod-clone.md) | Procedura per clonare i dati di PROD su RC prima di promuovere una release stabile |
 
 ## Decisioni Architetturali (ADR)
 
@@ -28,6 +31,9 @@ Le decisioni architetturali rilevanti sono documentate in [`decisions/`](decisio
 | [008](decisions/008-appconfig-env-policy.md) | AppConfig KV System e Env Policy |
 | [009](decisions/009-tokenversion-session-invalidation.md) | TokenVersion Multi-Layer Session Invalidation |
 | [010](decisions/010-section-access-precedence.md) | Section Access a 4 Layer di Precedenza |
+| [011](decisions/011-single-instance-scaling-constraint.md) | Vincolo di scalabilità a istanza singola |
+
+Indice con Status aggiornato: [decisions/README.md](decisions/README.md).
 
 ## Analisi & Report
 
@@ -35,6 +41,14 @@ Le decisioni architetturali rilevanti sono documentate in [`decisions/`](decisio
 |------|-------------|
 | [audit-report-brand-management.md](audit-report-brand-management.md) | Report audit architetturale — gestione Brand |
 | [luke-taric-classifier.md](luke-taric-classifier.md) | Integrazione classificatore TARIC — categorizzazione doganale articoli |
+| [quality-hardening-plan.md](quality-hardening-plan.md) | Piano di consolidamento dei controlli qualità — dall'analisi statica alla verifica comportamentale |
+
+## Task e note tecniche
+
+| File | Descrizione |
+|------|-------------|
+| [TASK_calendar_ux_deferred_items.md](TASK_calendar_ux_deferred_items.md) | Backlog differito della UX review calendario/collection-layout (2026-07-10) |
+| [TASK_working_days_calendar_relevance.md](TASK_working_days_calendar_relevance.md) | Design doc storico: giorni lavorativi paese-aware per la criticità calendario (implementato 2026-07-10) |
 
 ## Directory operative
 
@@ -44,5 +58,5 @@ Le decisioni architetturali rilevanti sono documentate in [`decisions/`](decisio
 | [access-porting/](access-porting/) | Documentazione porting da Microsoft Access — reverse engineering e analisi query |
 | [archive/](archive/) | Feature rimosse archiviate — es. what-if calendar solver (rimosso 2026-07) |
 
-*Ultimo aggiornamento: 2026-07-01*
+*Ultimo aggiornamento: 2026-08-08*
 <!-- luke-docs:end:index -->
