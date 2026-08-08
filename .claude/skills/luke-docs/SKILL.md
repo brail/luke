@@ -59,8 +59,9 @@ concorrenti — scrivi file, quindi §7.2 ti riguarda.
 | Commenti inline (JSDoc, tRPC `/** */`, Prisma `///`) | **Inglese**  |
 | README.md (tutti i livelli) e ADR                    | **Italiano** |
 
-Termini di dominio canonici italiani (es. "stagione", "campionario", "reso") restano as-is
-anche nei commenti inglesi.
+Nessuna eccezione per termini di dominio italiani (es. "stagione"→season,
+"campionario"→collection/catalog, "reso"→return): tradurre sempre, anche nei
+commenti inline. Vedi CLAUDE.md, sezione Development Patterns, regola 14.
 
 ---
 

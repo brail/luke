@@ -1,7 +1,9 @@
 # luke-docs — Regole commenti inline (modalità `inline`)
 
 Lingua: **inglese** per tutti i commenti inline (JSDoc, tRPC, Prisma `///`).
-Termini di dominio canonici italiani (es. "stagione", "campionario", "reso") restano as-is.
+Nessuna eccezione per termini di dominio italiani (es. "stagione"→season,
+"campionario"→collection/catalog, "reso"→return): tradurre sempre. Vedi
+CLAUDE.md, sezione Development Patterns, regola 14.
 
 ## Logica di merge (vale per tutte le fasi)
 
