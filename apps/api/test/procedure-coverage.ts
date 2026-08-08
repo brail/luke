@@ -1,27 +1,27 @@
 /**
- * Dichiarazione delle procedure tRPC **non invocate** dalla suite di
- * integrazione, e il gate che la verifica.
+ * Declaration of the tRPC procedures **not invoked** by the integration
+ * suite, and the gate that verifies it.
  *
- * Leggi `helpers/procedureUsage.ts` per il perché l'insieme "invocato" è
- * misurato invece che dichiarato, e per i due limiti dichiarati della misura.
+ * See `helpers/procedureUsage.ts` for why the "invoked" set is measured
+ * instead of declared, and for the two stated limits of the measurement.
  *
- * ## Granularità
+ * ## Granularity
  *
- * Per namespace, non per procedura. Ce ne sono 309 su 34 namespace: una mappa
- * per-procedura sarebbe ~280 righe il primo giorno, quasi tutte "non ancora
- * coperto" — un file che nessuno legge, cioè cerimonia.
+ * Per namespace, not per procedure. There are 309 across 34 namespaces: a
+ * per-procedure map would be ~280 lines on day one, almost all "not yet
+ * covered" — a file nobody reads, i.e. ceremony.
  *
- * ## Il conteggio non è una promessa, è verificato
+ * ## The count is not a promise, it's verified
  *
- * Il gate calcola quante procedure del namespace non sono state invocate davvero
- * e lo confronta con `uncovered`. Una procedura nuova senza test alza il numero
- * reale e il confronto fallisce; un test nuovo lo abbassa e fallisce di nuovo,
- * obbligando a decrementarlo. In entrambi i casi la decisione va presa quando si
- * ha il contesto per prenderla, non sei mesi dopo.
+ * The gate computes how many procedures in the namespace were actually not
+ * invoked and compares it against `uncovered`. A new procedure without tests
+ * raises the real number and the comparison fails; a new test lowers it and
+ * fails again, forcing a decrement. In both cases the decision has to be made
+ * while there's still context for it, not six months later.
  *
- * Punto cieco accettato: uno scambio (una procedura tolta, una aggiunta) lascia
- * il conteggio stabile. La via d'uscita è per-namespace — `uncovered` accetta
- * anche l'elenco esplicito dei path dove serve precisione.
+ * Accepted blind spot: a swap (one procedure removed, one added) leaves the
+ * count stable. The escape hatch is per-namespace — `uncovered` also accepts
+ * an explicit list of paths where precision is needed.
  */
 
 import {
@@ -30,32 +30,34 @@ import {
 } from './helpers/procedureCoverageShared';
 
 export interface UncoveredDeclaration {
-  /** Perché non è coperto. Una frase vera, non un segnaposto. */
+  /** Why it isn't covered. A true sentence, not a placeholder. */
   reason: string;
-  /** Quante procedure restano non invocate, o l'elenco esplicito dei path. */
+  /** How many procedures remain uninvoked, or the explicit list of paths. */
   uncovered: number | string[];
 }
 
-/** Lunghezza minima di un motivo perché sia plausibilmente una frase. */
+/** Minimum length for a reason to plausibly be a sentence. */
 const MIN_REASON_LENGTH = 15;
 
-/** Motivi che non sono motivi. */
+/** Reasons that aren't reasons. */
 const PLACEHOLDER_REASONS = [/^todo\b/i, /^da fare\b/i, /^-+$/, /^n\/?a$/i];
 
 /**
- * Namespace le cui procedure non sono raggiunte dalla suite di integrazione.
+ * Namespaces whose procedures aren't reached by the integration suite.
  *
- * Stato al 2026-07-30: **28 procedure invocate su 309**, il 9%. Il numero è
- * volutamente in chiaro qui: è la misura, non un obiettivo raggiunto. La suite
- * nasce concentrata su auth, RBAC, audit, idempotenza e rate limit — cioè sui
- * meccanismi trasversali — e i domini applicativi sono quasi tutti scoperti.
+ * State as of 2026-07-30: **28 procedures invoked out of 309**, 9%. The
+ * number is deliberately spelled out here: it's the measurement, not a goal
+ * reached. The suite started out focused on auth, RBAC, audit, idempotency
+ * and rate limiting — i.e. the cross-cutting mechanisms — and the
+ * application domains are almost all uncovered.
  *
- * I motivi sono scritti a mano, non generati. Dove il motivo è "nessuno l'ha
- * ancora testato" va detto così: mascherarlo dietro una formula tecnica
- * renderebbe il file una rassicurazione invece di un inventario.
+ * The reasons are written by hand, not generated. Where the reason is
+ * "nobody has tested this yet" it should be stated as such: masking it
+ * behind a technical formula would turn the file into reassurance instead
+ * of an inventory.
  */
 export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
-  // ── Parzialmente invocati: la suite li tocca, ma di striscio ──────────────
+  // ── Partially invoked: the suite touches them, but glancingly ─────────────
   auth: {
     reason:
       'login e refreshToken coperte (rate limit, idempotenza, retrocessione di ruolo); il resto è flussi email e reset password, che richiedono SMTP e token reali',
@@ -97,7 +99,7 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
     uncovered: 27,
   },
 
-  // ── Dipendono da un sistema esterno o da dati che la suite non ha ─────────
+  // ── Depend on an external system or on data the suite doesn't have ────────
   sales: {
     reason:
       'legge la replica PostgreSQL di NAV: senza dati sincronizzati le query non hanno nulla su cui girare',
@@ -128,7 +130,7 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
     uncovered: 2,
   },
 
-  // ── Domini applicativi senza alcun test: da scrivere ──────────────────────
+  // ── Application domains with no tests at all: to be written ───────────────
   collectionLayout: {
     reason:
       'la spec sul brand scope invoca quasi tutto il dominio per verificare i guard, quindi la copertura di *accesso* è alta; restano scoperti gli export e `copyFromSeason`, che vanno testati per quello che producono, non per chi li può chiamare',
@@ -217,10 +219,11 @@ interface CoverageResult {
 }
 
 /**
- * Riconcilia gli artefatti dei worker in un unico risultato.
+ * Reconciles the worker artifacts into a single result.
  *
- * Ogni artefatto porta il proprio `discovered`: se due spec non concordano su
- * cosa contenga il router, qualcosa è andato storto e va detto, non mediato.
+ * Each artifact carries its own `discovered`: if two specs disagree on what
+ * the router contains, something went wrong and it must be reported, not
+ * averaged away.
  */
 export function mergeArtifacts(artifacts: UsageArtifact[]): CoverageResult {
   if (artifacts.length === 0) {
@@ -252,7 +255,7 @@ export function mergeArtifacts(artifacts: UsageArtifact[]): CoverageResult {
   return { discovered: reference.discovered, invoked };
 }
 
-/** Righe pronte da incollare in `UNCOVERED_NAMESPACES`. */
+/** Lines ready to paste into `UNCOVERED_NAMESPACES`. */
 function pasteBlock(entries: [string, string[]][]): string {
   return entries
     .map(
@@ -263,7 +266,7 @@ function pasteBlock(entries: [string, string[]][]): string {
 }
 
 /**
- * Applica il gate. Lancia con un messaggio che contiene già la correzione.
+ * Applies the gate. Throws with a message that already contains the fix.
  */
 export function assertProcedureCoverage(
   artifacts: UsageArtifact[],
@@ -271,7 +274,7 @@ export function assertProcedureCoverage(
 ): void {
   const { discovered, invoked } = mergeArtifacts(artifacts);
 
-  // namespace → procedure non invocate
+  // namespace → uninvoked procedures
   const uncoveredByNs = new Map<string, string[]>();
   const allNamespaces = new Set<string>();
   for (const path of discovered) {
@@ -286,7 +289,7 @@ export function assertProcedureCoverage(
 
   const problems: string[] = [];
 
-  // 1. Namespace con procedure non invocate e nessuna dichiarazione.
+  // 1. Namespaces with uninvoked procedures and no declaration.
   const undeclared = [...uncoveredByNs.entries()]
     .filter(([ns]) => !(ns in declarations))
     .sort(([a], [b]) => a.localeCompare(b));
@@ -306,7 +309,7 @@ export function assertProcedureCoverage(
   for (const [ns, declaration] of Object.entries(declarations).sort()) {
     const uncovered = uncoveredByNs.get(ns) ?? [];
 
-    // 2. Dichiarazione per un namespace che non esiste più.
+    // 2. Declaration for a namespace that no longer exists.
     if (!allNamespaces.has(ns)) {
       problems.push(
         `"${ns}" non è più un namespace del router: la voce è stale e finge ` +
@@ -315,8 +318,8 @@ export function assertProcedureCoverage(
       continue;
     }
 
-    // 3. Namespace ormai interamente invocato: la copertura non si guadagna
-    //    senza cancellare la dichiarazione.
+    // 3. Namespace now fully invoked: coverage isn't earned by leaving the
+    //    declaration in place.
     if (uncovered.length === 0) {
       problems.push(
         `"${ns}" è ora interamente invocato dalla suite. Rimuovi la voce da ` +
@@ -325,7 +328,7 @@ export function assertProcedureCoverage(
       continue;
     }
 
-    // 4. Motivo assente o segnaposto.
+    // 4. Missing or placeholder reason.
     const reason = declaration.reason?.trim() ?? '';
     if (
       reason.length < MIN_REASON_LENGTH ||
@@ -338,7 +341,7 @@ export function assertProcedureCoverage(
       );
     }
 
-    // 5. Il conteggio (o l'elenco) dichiarato deve combaciare con la misura.
+    // 5. The declared count (or list) must match the measurement.
     if (Array.isArray(declaration.uncovered)) {
       const declared = [...declaration.uncovered].sort();
       const actual = [...uncovered].sort();

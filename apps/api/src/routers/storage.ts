@@ -1,7 +1,7 @@
 /**
- * Router tRPC per Storage
+ * tRPC router for Storage
  *
- * Procedure per gestione file storage con RBAC e AuditLog
+ * Procedures for storage file management with RBAC and AuditLog
  */
 
 import { randomUUID } from 'crypto';
@@ -22,7 +22,7 @@ import { getObjectMetadata, listObjects, deleteObject, resetStorageProvider, get
 import { signDownloadToken, signUploadToken, verifyUploadToken } from '../utils/downloadToken';
 
 /**
- * Schema per list files
+ * Schema for list files
  */
 const ListFilesSchema = z.object({
   bucket: z.string().optional(),
@@ -31,21 +31,21 @@ const ListFilesSchema = z.object({
 });
 
 /**
- * Schema per delete file
+ * Schema for delete file
  */
 const DeleteFileSchema = z.object({
   id: z.string().uuid(),
 });
 
 /**
- * Schema per get download link
+ * Schema for get download link
  */
 const GetDownloadLinkSchema = z.object({
   id: z.string().uuid(),
 });
 
 /**
- * Schema per create upload
+ * Schema for create upload
  */
 const CreateUploadSchema = z.object({
   bucket: z.enum(APP_STORAGE_BUCKETS),
@@ -62,7 +62,7 @@ const RequestUploadSchema = z.object({
 });
 
 const ConfirmUploadSchema = z.object({
-  /** Token firmato da `requestUpload`: porta bucket, key e utente. */
+  /** Token signed by `requestUpload`: carries bucket, key and user. */
   uploadToken: z.string().min(1),
   contentType: z.string().min(1),
   size: z.number().int().positive(),
@@ -93,7 +93,7 @@ const SaveStorageConfigSchema = z.discriminatedUnion('type', [
 ]);
 
 /**
- * Router Storage
+ * Storage Router
  */
 export const storageRouter = router({
   /**
@@ -107,7 +107,7 @@ export const storageRouter = router({
     .use(requirePermission('config:read'))
     .input(ListFilesSchema)
     .query(async ({ input, ctx }) => {
-      // Valida bucket se specificato
+      // Validate bucket if specified
       if (input.bucket && !isValidBucket(input.bucket)) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -156,7 +156,7 @@ export const storageRouter = router({
         });
       }
 
-      // Verifica ownership o admin/editor
+      // Verify ownership or admin/editor
       const isOwner = metadata.createdBy === ctx.session.user.id;
       const isAdminOrEditor = ['admin', 'editor'].includes(
         ctx.session.user.role
@@ -201,7 +201,7 @@ export const storageRouter = router({
         });
       }
 
-      // Verifica ownership o admin/editor
+      // Verify ownership or admin/editor
       const isOwner = metadata.createdBy === ctx.session.user.id;
       const isAdminOrEditor = ['admin', 'editor'].includes(
         ctx.session.user.role
@@ -214,19 +214,19 @@ export const storageRouter = router({
         });
       }
 
-      // Genera token firmato (TTL 5 minuti)
+      // Generate signed token (TTL 5 minutes)
       const token = signDownloadToken({
         bucket: metadata.bucket,
         key: metadata.key,
       });
 
-      // Costruisci URL usando la stessa base configurata per lo storage proxy
+      // Build URL using the same base configured for the storage proxy
       const baseUrl = await getStorageBaseUrl(ctx.prisma);
       const downloadUrl = `${baseUrl}/storage/download?token=${token}`;
 
       return {
         url: downloadUrl,
-        expiresIn: 300, // 5 minuti in secondi
+        expiresIn: 300, // 5 minutes in seconds
       };
     }),
 
@@ -250,9 +250,9 @@ export const storageRouter = router({
         const ext = input.contentType === 'image/png' ? '.png'
                   : input.contentType === 'image/webp' ? '.webp'
                   : '.jpg';
-        // La key la sceglie il server. Prima era `input.key ?? <generata>`, cioè
-        // il client poteva preallocarla — e `confirmUpload` la riprendeva
-        // dall'input senza verificarla.
+        // The server chooses the key. It used to be `input.key ?? <generated>`, i.e.
+        // the client could preallocate it — and `confirmUpload` picked it back up
+        // from the input without verifying it.
         const key = `${year}/${month}/${day}/${randomUUID()}${ext}`;
 
         const { url, expiresAt } = await provider.getPresignedPutUrl({
@@ -267,8 +267,8 @@ export const storageRouter = router({
           presignedUrl: url,
           key,
           expiresAt: expiresAt.toISOString(),
-          // Lega la slot a bucket+key+utente. TTL allineato alla presigned URL:
-          // un upload lento non deve sopravvivere alla URL ma morire in conferma.
+          // Binds the slot to bucket+key+user. TTL aligned with the presigned URL:
+          // a slow upload shouldn't outlive the URL but should die at confirmation.
           uploadToken: signUploadToken({
             bucket: input.bucket as StorageBucket,
             key,
@@ -298,10 +298,10 @@ export const storageRouter = router({
   confirmUpload: protectedProcedure
     .input(ConfirmUploadSchema)
     .mutation(async ({ input, ctx }) => {
-      // Bucket e key arrivano dal token firmato, non dall'input. Prima erano
-      // campi liberi: con la key di un blob caricato da un altro ci si faceva
-      // creare un `FileObject` con `createdBy` proprio, e da lì il predicato di
-      // `confirmPendingFile` lo lasciava collegare come file proprio.
+      // Bucket and key come from the signed token, not from the input. They used to be
+      // free-form fields: with the key of a blob uploaded by someone else, you could get
+      // a `FileObject` created with your own `createdBy`, and from there the
+      // `confirmPendingFile` predicate would let you link it as your own file.
       let slot;
       try {
         slot = verifyUploadToken(input.uploadToken);
@@ -331,11 +331,11 @@ export const storageRouter = router({
           contentType: input.contentType,
           checksumSha256: input.checksumSha256 ?? '',
           createdBy: ctx.session.user.id,
-          // Pending, non confermato: conferma il **trasferimento**, non il
-          // collegamento a un'entità. Chi lo collega chiama `confirmPendingFile`,
-          // che pretende `confirmedAt === null`. Effetto collaterale gradito: un
-          // upload abbandonato finisce sotto il reaper orario invece di restare
-          // per sempre.
+          // Pending, not confirmed: this confirms the **transfer**, not the
+          // linking to an entity. Whoever links it calls `confirmPendingFile`,
+          // which requires `confirmedAt === null`. Welcome side effect: an
+          // abandoned upload ends up under the hourly reaper instead of staying
+          // forever.
           confirmedAt: null,
         },
       });
@@ -391,7 +391,7 @@ export const storageRouter = router({
     .use(requirePermission('config:update'))
     .input(DeleteFileSchema)
     .mutation(async ({ input, ctx }) => {
-      // Verifica esistenza
+      // Verify existence
       const metadata = await getObjectMetadata(ctx.prisma, input.id);
       if (!metadata) {
         throw new TRPCError({
@@ -400,7 +400,7 @@ export const storageRouter = router({
         });
       }
 
-      // Cancella file e metadati
+      // Delete file and metadata
       await deleteObject(ctx, input.id);
 
       return {
@@ -438,7 +438,7 @@ export const storageRouter = router({
         });
       }
 
-      // Verifica connettività listando un bucket
+      // Verify connectivity by listing a bucket
       try {
         await provider.list({ bucket: 'uploads', limit: 1 });
       } catch (err: unknown) {
@@ -449,7 +449,7 @@ export const storageRouter = router({
         });
       }
 
-      // Genera URL presigned di prova per mostrare il base URL che riceverà il browser
+      // Generate a test presigned URL to show the base URL the browser will receive
       const presignResult = await provider.getPresignedPutUrl!({
         bucket: 'uploads',
         key: '_test/probe.jpg',

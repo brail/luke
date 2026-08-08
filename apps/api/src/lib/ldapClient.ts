@@ -38,7 +38,7 @@ class CircuitBreaker {
   ) {}
 
   /**
-   * Esegue operazione tramite circuit breaker
+   * Executes an operation through the circuit breaker
    */
   async execute<T>(operation: () => Promise<T>): Promise<T> {
     if (this.state === CircuitBreakerState.OPEN) {
@@ -248,7 +248,7 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Retry con exponential backoff e jitter
+   * Retry with exponential backoff and jitter
    */
   private async retryWithBackoff<T>(operation: () => Promise<T>): Promise<T> {
     let lastError: Error | null = null;
@@ -263,7 +263,7 @@ export class ResilientLdapClient {
       } catch (error) {
         lastError = error instanceof Error ? error : new Error('Unknown error');
 
-        // Non retry per errori di autenticazione o validazione
+        // Don't retry authentication or validation errors
         if (this.isNonRetryableError(error)) {
           throw error;
         }
@@ -299,7 +299,7 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Calcola delay per exponential backoff con jitter
+   * Calculate delay for exponential backoff with jitter
    */
   private calculateBackoffDelay(attempt: number): number {
     const exponentialDelay = calcBackoffDelay(attempt, this.resilienceConfig.baseDelayMs, 5000);
@@ -315,14 +315,14 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Verifica se l'errore è di credenziali invalide (non retryable)
+   * Checks whether the error is invalid credentials (non-retryable)
    */
   private isInvalidCredentialsError(error: unknown): boolean {
     return error instanceof InvalidCredentialsError;
   }
 
   /**
-   * Verifica se l'errore è di rete (retryable)
+   * Checks whether the error is a network error (retryable)
    */
   private isNetworkError(error: unknown): boolean {
     if (error instanceof Error) {
@@ -341,7 +341,7 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Verifica se l'errore è di filtro invalido (non retryable)
+   * Checks whether the error is an invalid filter (non-retryable)
    */
   private isInvalidFilterError(error: unknown): boolean {
     if (error instanceof Error) {
@@ -356,17 +356,17 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Verifica se l'errore non è retryable.
+   * Checks whether the error is not retryable.
    *
-   * Include i `TRPCError` già mappati da `bind()` e `search()`: quei metodi
-   * traducono l'errore della libreria PRIMA che il retry lo veda, quindi
-   * controllare solo l'errore originale non basta. In particolare una password
-   * sbagliata diventa `UNAUTHORIZED`, e senza questo controllo veniva ritentata
-   * `maxRetries + 1` volte — cioè ogni login errato colpiva Active Directory tre
-   * volte, avvicinando il lockout dell'account a ogni typo.
+   * Includes the `TRPCError`s already mapped by `bind()` and `search()`: those
+   * methods translate the library's error BEFORE the retry logic sees it, so
+   * checking only the original error isn't enough. In particular, a wrong
+   * password becomes `UNAUTHORIZED`, and without this check it used to be
+   * retried `maxRetries + 1` times — meaning every failed login hit Active
+   * Directory three times, bringing the account closer to lockout with every typo.
    *
-   * `BAD_GATEWAY` resta volutamente fuori: è la mappatura degli errori di rete
-   * in `search()`, transitori e quindi legittimamente ritentabili.
+   * `BAD_GATEWAY` is deliberately left out: it's the mapping of network errors
+   * in `search()`, which are transient and therefore legitimately retryable.
    */
   private isNonRetryableError(error: unknown): boolean {
     if (error instanceof TRPCError) {

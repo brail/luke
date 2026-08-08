@@ -1,10 +1,10 @@
 /**
- * Test unitari per `syncRowQuotations` (collectionRow.quotation.service.ts) — riconciliazione
- * bufferizzata create/update/delete usata dal salvataggio riga nel drawer. Prisma è mockato con
- * i soli metodi che la funzione tocca (findMany, deleteMany, update, create) — vedi
- * `.claude/skills/luke-test/SKILL.md` §2. L'esistenza della riga e il suo brand/season scope sono
- * responsabilità del chiamante (`resolveRowBrandAccess`/`resolveGroupBrandAccess` nel router), non
- * più di questa funzione — vedi `layoutScope` passato esplicitamente.
+ * Unit tests for `syncRowQuotations` (collectionRow.quotation.service.ts) — the buffered
+ * create/update/delete reconciliation used by the row save in the drawer. Prisma is mocked with
+ * only the methods the function touches (findMany, deleteMany, update, create) — see
+ * `.claude/skills/luke-test/SKILL.md` §2. The row's existence and its brand/season scope are the
+ * caller's responsibility (`resolveRowBrandAccess`/`resolveGroupBrandAccess` in the router), no
+ * longer this function's — see `layoutScope` passed explicitly.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -53,7 +53,7 @@ function buildFakePrisma(opts: FakePrismaOpts = {}) {
     },
   };
 
-  // Cast: sottoinsieme di PrismaClient usato da syncRowQuotations, non l'intero client.
+  // Cast: subset of PrismaClient used by syncRowQuotations, not the entire client.
   return { prisma: fake as unknown as Parameters<typeof syncRowQuotations>[3], calls };
 }
 

@@ -1,14 +1,14 @@
 /**
- * Invarianti del router `sectionAccess`.
+ * Invariants of the `sectionAccess` router.
  *
- * Le sei procedure non avevano alcun test: `sectionAccess.spec.ts` esercita
- * `effectiveSectionAccess` e i contatori con un Prisma finto, il router no.
+ * The six procedures had no tests: `sectionAccess.spec.ts` exercises
+ * `effectiveSectionAccess` and the counters with a fake Prisma, the router doesn't.
  *
- * `setRoleDefaults` in particolare **non è raggiungibile dalla UI** — zero
- * chiamanti in `apps/web`, in nessuno script, da nessuna parte. È superficie
- * tRPC che può azzerare gli amministratori del sistema e che nulla ha mai
- * eseguito: se un giorno qualcuno ci costruisce sopra una schermata, il guard
- * dietro sarebbe al primo collaudo in produzione. Da qui questa suite.
+ * `setRoleDefaults` in particular **is not reachable from the UI** — zero
+ * callers in `apps/web`, in no script, nowhere. It's tRPC surface that can
+ * lock out the system's administrators and that nothing has ever
+ * executed: if someday someone builds a screen on top of it, the guard
+ * behind it would face its first trial in production. Hence this suite.
  */
 
 import { randomUUID } from 'crypto';
@@ -34,12 +34,12 @@ type Mode = 'enabled' | 'disabled' | 'auto';
 type Defaults = Record<Role, Record<Section, Mode>>;
 
 /**
- * Default di ruolo completi, derivati da `SECTION_ACCESS_DEFAULTS`.
+ * Complete role defaults, derived from `SECTION_ACCESS_DEFAULTS`.
  *
- * `setRoleDefaultsInput` usa `z.record(sectionEnum, ...)`, che in Zod 4 è
- * **esaustivo**: ogni ruolo elencato deve portare tutte le sezioni. Costruirli a
- * mano con due voci sembra funzionare finché non si legge lo schema — e un
- * chiamante reale dovrà fare esattamente questo.
+ * `setRoleDefaultsInput` uses `z.record(sectionEnum, ...)`, which in Zod 4 is
+ * **exhaustive**: every listed role must carry all sections. Building them by
+ * hand with two entries seems to work until you read the schema — and a
+ * real caller will have to do exactly this.
  */
 function defaultsFor(
   overrides: Partial<Record<Role, Partial<Record<Section, Mode>>>> = {}
@@ -62,14 +62,14 @@ function defaultsFor(
   return base;
 }
 
-/** Default che lasciano l'admin pienamente operativo. */
+/** Defaults that leave the admin fully operational. */
 function healthyDefaults(): Defaults {
   return defaultsFor();
 }
 
-// `beforeEach` e non `beforeAll`: gli admin creati da un test restano nel
-// database condiviso del file e si sommerebbero al conteggio globale del
-// successivo — i guard qui contano gli admin *del mondo*, non del test.
+// `beforeEach` and not `beforeAll`: the admins created by one test remain in
+// the file's shared database and would add up to the next test's global
+// count — the guards here count the admins *in the world*, not in the test.
 beforeEach(async () => {
   prisma = await setupTestDb();
 });
@@ -133,9 +133,9 @@ describe('sectionAccess — override per utente', () => {
       enabled: null,
     });
 
-    // Il contratto dice `null` quando l'override è stato rimosso: distinguere
-    // "nessun override" da "override a false" è tutta la differenza fra
-    // ereditare il default di ruolo e negare esplicitamente.
+    // The contract says `null` when the override has been removed: distinguishing
+    // "no override" from "override set to false" is the whole difference between
+    // inheriting the role default and explicitly denying.
     expect(removed).toBeNull();
     await expect(caller.getByUser({ userId: target.id })).resolves.toEqual([]);
   });
@@ -153,11 +153,11 @@ describe('sectionAccess — override per utente', () => {
 
 describe('sectionAccess — getEffectiveForMe applica i quattro livelli', () => {
   it('senza config in AppConfig vale SECTION_ACCESS_DEFAULTS, non il fallback RBAC', async () => {
-    // Il 2° livello leggeva solo AppConfig, e `rbac.sectionAccessDefaults` non
-    // è mai seedata: assente la chiave ogni sezione risolveva `'auto'` e
-    // decideva il fallback sui permessi, quindi la tabella statica non
-    // partecipava alla valutazione. Erano 32 divergenze — un viewer vedeva
-    // `settings.ldap`, `admin.brands`, `sales`. Ora la tabella è la base.
+    // Level 2 used to read only AppConfig, and `rbac.sectionAccessDefaults` is
+    // never seeded: with the key absent, every section resolved to `'auto'` and
+    // deferred to the permissions fallback, so the static table didn't
+    // participate in the evaluation. There were 32 divergences — a viewer could see
+    // `settings.ldap`, `admin.brands`, `sales`. Now the table is the base.
     for (const role of ['admin', 'editor', 'viewer'] as const) {
       const { session } = await createTestUser(role);
       const effective = await callerFor(session).getEffectiveForMe();
@@ -178,9 +178,9 @@ describe('sectionAccess — getEffectiveForMe applica i quattro livelli', () => 
     });
     const { session } = await createTestUser('viewer');
 
-    // Il `catch` degradava a mappa vuota, cioè al fallback sui permessi: un
-    // controllo di visibilità che fallisce in **apertura**. Si resta sulla
-    // base statica.
+    // The `catch` used to degrade to an empty map, i.e. to the permissions fallback: a
+    // visibility check that fails **open**. We stay on the
+    // static base instead.
     const effective = await callerFor(session).getEffectiveForMe();
     expect(effective['settings.ldap']).toBe(false);
   });
@@ -200,9 +200,9 @@ describe('sectionAccess — getEffectiveForMe applica i quattro livelli', () => 
       enabled: true,
     });
 
-    // Livello 1 batte livello 2: se qui non cambiasse, l'override sarebbe
-    // scritto ma non lo leggerebbe nessuno — la UI continuerebbe a nascondere
-    // una sezione appena concessa.
+    // Level 1 beats level 2: if this didn't change here, the override would be
+    // written but nobody would read it — the UI would keep hiding
+    // a section that was just granted.
     expect(
       (await callerFor(viewerSession).getEffectiveForMe())['settings.users']
     ).toBe(true);
@@ -213,10 +213,10 @@ describe('sectionAccess — guard sull’ultimo amministratore', () => {
   it('setRoleDefaults rifiuta una config che chiude fuori tutti gli admin', async () => {
     const { session } = await createTestUser('admin');
 
-    // `settings.users` a `disabled` per il ruolo admin: nessuno potrebbe più
-    // creare né promuovere, quindi nessuno potrebbe annullare la modifica.
-    // È il percorso che il guard copre e che la UI non espone — nessuno lo
-    // aveva mai eseguito.
+    // `settings.users` set to `disabled` for the admin role: nobody could
+    // create or promote anymore, so nobody could undo the change.
+    // This is the path the guard covers and that the UI doesn't expose — nobody
+    // had ever run it.
     await expect(
       callerFor(session).setRoleDefaults({
         sectionAccessDefaults: defaultsFor({
@@ -257,10 +257,10 @@ describe('sectionAccess — guard sull’ultimo amministratore', () => {
       sectionAccessDefaults: defaultsFor({ viewer: { product: 'disabled' } }),
     });
 
-    // `invalidateRbacCache()` è una regola esplicita di CLAUDE.md dopo ogni
-    // write su chiavi RBAC. Senza, la lettura successiva servirebbe il valore
-    // vecchio finché la cache non scade — e il difetto si vedrebbe solo in
-    // produzione, come una modifica che "non prende".
+    // `invalidateRbacCache()` is an explicit CLAUDE.md rule after every
+    // write to RBAC keys. Without it, the subsequent read would serve the
+    // old value until the cache expires — and the defect would only show up in
+    // production, as a change that "doesn't take".
     const after = await callerFor(viewerSession).getEffectiveForMe();
     expect(after.product).toBe(false);
   });
@@ -270,13 +270,13 @@ describe('sectionAccess — è l’unica via di scrittura per rbac.*', () => {
   it('config.set rifiuta il prefisso rbac', async () => {
     const { session } = await createTestUser('admin');
 
-    // Il docstring di `setRoleDefaults` dichiara di essere l'unico percorso di
-    // scrittura raggiungibile per `rbac.sectionAccessDefaults`. Se `config.set`
-    // accettasse quel prefisso, il guard sull'ultimo admin sarebbe aggirabile
-    // scrivendo la stessa chiave dalla porta accanto.
-    // Rifiutato dallo schema di input prima ancora del controllo sul prefisso:
-    // il codice d'errore è di validazione, non FORBIDDEN. Quel che conta è che
-    // la scrittura non passi da qui.
+    // The `setRoleDefaults` docstring declares itself the only reachable write
+    // path for `rbac.sectionAccessDefaults`. If `config.set`
+    // accepted that prefix, the last-admin guard could be bypassed by
+    // writing the same key through the door next door.
+    // Rejected by the input schema before the prefix check even runs:
+    // the error code is a validation one, not FORBIDDEN. What matters is that
+    // the write doesn't go through here.
     await expect(
       createCallerWithSession(session).config.set({
         key: 'rbac.sectionAccessDefaults',
@@ -333,8 +333,8 @@ describe('sectionAccess — validazione input', () => {
     await expect(
       callerFor(session).set({
         userId: target.id,
-        // Sezione inventata: `sectionEnum` è la fonte di verità, e accettarla
-        // scriverebbe un override che nessuna valutazione leggerà mai.
+        // Made-up section: `sectionEnum` is the source of truth, and accepting it
+        // would write an override that no evaluation will ever read.
         section: 'settings.inesistente' as never,
         enabled: true,
       })

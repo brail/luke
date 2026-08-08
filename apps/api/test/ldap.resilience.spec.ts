@@ -1,12 +1,12 @@
 /**
- * Resilienza del client LDAP: retry, circuit breaker, mappatura errori.
+ * LDAP client resilience: retry, circuit breaker, error mapping.
  *
- * La versione precedente mockava **`ldapjs`** con API a callback, ma il client è
- * passato a **`ldapts`** (API a promise): i mock puntavano a una libreria non più
- * usata e nessun test chiamava `connect()`, quindi ogni operazione moriva su
- * "LDAP client not connected" senza mai esercitare la logica di resilienza.
+ * The previous version mocked **`ldapjs`** with a callback API, but the client
+ * moved to **`ldapts`** (promise API): the mocks pointed at a library no longer
+ * used and no test called `connect()`, so every operation died on
+ * "LDAP client not connected" without ever exercising the resilience logic.
  *
- * Nessun accesso al database: questa è una suite unit, non di integrazione.
+ * No database access: this is a unit suite, not an integration one.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -31,9 +31,9 @@ const { mockClient, MockInvalidCredentialsError, ClientConstructor } =
       unbind: vi.fn(),
     };
 
-    // `function`, non arrow: viene invocata con `new` e le arrow non sono
-    // costruibili. Restituisce sempre la stessa istanza, così i test possono
-    // configurarne il comportamento prima di chiamare connect().
+    // `function`, not arrow: it's invoked with `new` and arrows aren't
+    // constructible. Always returns the same instance, so tests can
+    // configure its behavior before calling connect().
     const ClientConstructor = vi.fn(function () {
       return mockClient;
     });
@@ -59,7 +59,7 @@ const ldapConfig = {
   strategy: 'local-first' as const,
 };
 
-/** Backoff minimo: i delay reali renderebbero la suite lenta senza aggiungere valore. */
+/** Minimal backoff: real delays would make the suite slow without adding value. */
 const resilienceConfig = {
   timeoutMs: 3000,
   maxRetries: 2,
@@ -69,9 +69,9 @@ const resilienceConfig = {
   halfOpenMaxAttempts: 1,
 };
 
-// `as any`: ResilientLdapClient tipizza il logger come pino `Logger`, che ha
-// `msgPrefix`; l'helper produce un `FastifyBaseLogger`. I metodi usati sono
-// gli stessi, la differenza è solo nominale.
+// `as any`: ResilientLdapClient types the logger as pino's `Logger`, which has
+// `msgPrefix`; the helper produces a `FastifyBaseLogger`. The methods used are
+// the same, the difference is only nominal.
 const silentLogger = createSilentLogger() as any;
 
 async function connectedClient(
@@ -98,9 +98,9 @@ describe('LDAP Resilience', () => {
     it('propaga i timeout configurati al client ldapts', async () => {
       await connectedClient();
 
-      // Il timeout non è implementato nel wrapper: è delegato alla libreria via
-      // costruttore. Verificare che i valori arrivino è l'unica asserzione
-      // sensata senza aprire un socket reale.
+      // The timeout isn't implemented in the wrapper: it's delegated to the library via
+      // the constructor. Verifying that the values arrive is the only sensible
+      // assertion without opening a real socket.
       expect(ClientConstructor).toHaveBeenCalledWith({
         url: 'ldap://test.com',
         timeout: 3000,
@@ -119,10 +119,10 @@ describe('LDAP Resilience', () => {
       expect(error).toBeInstanceOf(TRPCError);
       expect(error.code).toBe('UNAUTHORIZED');
 
-      // Una password sbagliata non è un guasto transitorio. Ritentare colpirebbe
-      // Active Directory tre volte per ogni typo, avvicinando il lockout
-      // dell'account: `isNonRetryableError` deve riconoscere anche il TRPCError
-      // in cui `bind()` ha già tradotto l'errore della libreria.
+      // A wrong password is not a transient failure. Retrying would hit
+      // Active Directory three times per typo, pushing the account closer
+      // to lockout: `isNonRetryableError` must also recognize the TRPCError
+      // into which `bind()` has already translated the library error.
       expect(mockClient.bind).toHaveBeenCalledTimes(1);
     });
 
@@ -134,7 +134,7 @@ describe('LDAP Resilience', () => {
 
       expect(error).toBeInstanceOf(TRPCError);
       expect(error.code).toBe('SERVICE_UNAVAILABLE');
-      // Tentativo iniziale + maxRetries
+      // Initial attempt + maxRetries
       expect(mockClient.bind).toHaveBeenCalledTimes(
         resilienceConfig.maxRetries + 1
       );
@@ -189,7 +189,7 @@ describe('LDAP Resilience', () => {
       expect(error).toBeInstanceOf(TRPCError);
       expect(error.code).toBe('SERVICE_UNAVAILABLE');
       expect(error.message).toBe('LDAP service temporarily unavailable');
-      // Il punto del breaker: a circuito aperto non si tocca il server.
+      // The whole point of the breaker: with an open circuit, the server isn't touched.
       expect(mockClient.bind).toHaveBeenCalledTimes(callsBeforeOpen);
     });
 
@@ -201,7 +201,7 @@ describe('LDAP Resilience', () => {
         await client.bind('cn=user', 'secret').catch(() => {});
       }
 
-      // Cooldown scaduto → il breaker concede un tentativo di prova
+      // Cooldown expired → the breaker grants a trial attempt
       await new Promise(r =>
         setTimeout(r, resilienceConfig.breakerCooldownMs + 20)
       );
@@ -211,7 +211,7 @@ describe('LDAP Resilience', () => {
 
       await expect(client.bind('cn=user', 'secret')).resolves.toBeUndefined();
 
-      // Richiuso: le chiamate successive passano senza essere rifiutate
+      // Closed again: subsequent calls go through without being rejected
       await expect(client.bind('cn=user', 'secret')).resolves.toBeUndefined();
       expect(mockClient.bind).toHaveBeenCalledTimes(2);
     });
@@ -228,7 +228,7 @@ describe('LDAP Resilience', () => {
         setTimeout(r, resilienceConfig.breakerCooldownMs + 20)
       );
 
-      // Il tentativo di prova fallisce → si torna OPEN immediatamente
+      // The trial attempt fails → immediately goes back to OPEN
       await client.bind('cn=user', 'secret').catch(() => {});
 
       const callsAfterProbe = mockClient.bind.mock.calls.length;
@@ -244,8 +244,8 @@ describe('LDAP Resilience', () => {
       const client = await connectedClient({ maxRetries: 0 });
       mockClient.bind.mockRejectedValue(new Error('boom inatteso'));
 
-      // Un throw sincrono o una rejection non catturata farebbe cadere il
-      // processo Fastify: ogni percorso d'errore deve restare una rejection.
+      // A synchronous throw or an uncaught rejection would crash the
+      // Fastify process: every error path must remain a rejection.
       await expect(client.bind('cn=user', 'secret')).rejects.toBeInstanceOf(
         Error
       );

@@ -47,7 +47,7 @@ export async function sendVerificationEmail(
 ): Promise<{ success: boolean; message: string }> {
   const { userId, reason = 'user_requested', actorId } = options;
 
-  // Trova utente
+  // Find user
   const user = await prisma.user.findUnique({
     where: { id: userId, isActive: true },
     select: { id: true, email: true, emailVerifiedAt: true },
@@ -57,41 +57,41 @@ export async function sendVerificationEmail(
     throw new Error('Utente non trovato');
   }
 
-  // Skip se già verificata (tranne cambio email)
+  // Skip if already verified (except on email change)
   if (user.emailVerifiedAt && reason !== 'email_changed') {
     return { success: true, message: 'Email già verificata.' };
   }
 
-  // Genera token (32 byte = 64 char hex)
+  // Generate token (32 bytes = 64 hex chars)
   const token = randomBytes(32).toString('hex');
   const tokenHash = createHash('sha256').update(token).digest('hex');
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
 
-  // Invalida token VERIFY precedenti per questo utente prima di crearne uno nuovo
+  // Invalidate any previous VERIFY tokens for this user before creating a new one
   await prisma.userToken.deleteMany({
     where: { userId: user.id, type: 'VERIFY' },
   });
 
-  // Salva token in DB
+  // Save token to DB
   await prisma.userToken.create({
     data: { userId: user.id, type: 'VERIFY', tokenHash, expiresAt },
   });
 
-  // Recupera baseUrl da config
+  // Retrieve baseUrl from config
   const baseUrl =
     (await getConfig(prisma, 'app.baseUrl', false)) || 'http://localhost:3000';
 
-  // Invia email (con retry interno automatico)
+  // Send email (with automatic internal retry)
   try {
     await sendEmailVerificationEmail(prisma, user.email, token, baseUrl);
 
-    // Audit log SUCCESS (senza PII)
-    // logAudit richiede un Context completo; qui ne costruiamo uno parziale —
-    // alcuni chiamanti (es. ldapAuth.ts durante il provisioning automatico)
-    // non hanno una request HTTP reale e non passano `ctx` affatto. Se `req`
-    // resta undefined, logAudit lancia leggendo ctx.req.ip/ctx.req.log — il
-    // chiamante lo cattura già con .catch(). Comportamento preesistente, non
-    // modificato da questo cast.
+    // Audit log SUCCESS (no PII)
+    // logAudit requires a full Context; here we build a partial one —
+    // some callers (e.g. ldapAuth.ts during automatic provisioning)
+    // don't have a real HTTP request and don't pass `ctx` at all. If `req`
+    // remains undefined, logAudit throws when reading ctx.req.ip/ctx.req.log —
+    // the caller already catches it with .catch(). Pre-existing behavior, not
+    // changed by this cast.
     await logAudit(
       {
         prisma,
@@ -113,13 +113,13 @@ export async function sendVerificationEmail(
       message: 'Email di verifica inviata con successo.',
     };
   } catch (error) {
-    // Audit log FAILURE (senza PII)
-    // logAudit richiede un Context completo; qui ne costruiamo uno parziale —
-    // alcuni chiamanti (es. ldapAuth.ts durante il provisioning automatico)
-    // non hanno una request HTTP reale e non passano `ctx` affatto. Se `req`
-    // resta undefined, logAudit lancia leggendo ctx.req.ip/ctx.req.log — il
-    // chiamante lo cattura già con .catch(). Comportamento preesistente, non
-    // modificato da questo cast.
+    // Audit log FAILURE (no PII)
+    // logAudit requires a full Context; here we build a partial one —
+    // some callers (e.g. ldapAuth.ts during automatic provisioning)
+    // don't have a real HTTP request and don't pass `ctx` at all. If `req`
+    // remains undefined, logAudit throws when reading ctx.req.ip/ctx.req.log —
+    // the caller already catches it with .catch(). Pre-existing behavior, not
+    // changed by this cast.
     await logAudit(
       {
         prisma,

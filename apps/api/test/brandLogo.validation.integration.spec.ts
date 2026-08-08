@@ -1,10 +1,10 @@
 /**
- * Test di integrazione per Brand Logo Upload
- * Verifica validazioni file, magic bytes e cleanup
+ * Integration test for Brand Logo Upload
+ * Verifies file validation, magic bytes, and cleanup
  *
- * I buffer arrivano da `helpers/storageTestHelper`, come nelle altre due spec
- * sul logo: qui erano scritti a mano un byte per riga, e la stessa firma PNG da
- * 32 byte compariva due volte nello stesso file.
+ * Buffers come from `helpers/storageTestHelper`, like the other two specs
+ * on logo: here they were written by hand one byte per row, and the same PNG signature
+ * of 32 bytes appeared twice in the same file.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -24,11 +24,11 @@ describe('Brand Logo Upload', () => {
   let testBrand: any;
 
   beforeEach(async () => {
-    // `createContextForRole` tronca prima di inserire l'utente di sessione:
-    // niente cleanup manuale a valle, che per giunta ometteva `fileObject`.
+    // `createContextForRole` truncates before inserting the session user:
+    // no manual cleanup downstream, which incidentally omitted `fileObject`.
     testContext = await createContextForRole();
 
-    // Crea un brand di test
+    // Creates a test brand
     testBrand = await testContext.prisma.brand.create({
       data: {
         code: 'TEST_BRAND',
@@ -38,7 +38,7 @@ describe('Brand Logo Upload', () => {
     });
   });
 
-  /** Carica `content` come logo del brand di test. */
+  /** Uploads `content` as the test brand logo. */
   function upload(filename: string, mimetype: string, content: Buffer) {
     return uploadBrandLogo(testContext, {
       brandId: testBrand.id,
@@ -81,7 +81,7 @@ describe('Brand Logo Upload', () => {
 
   describe('magic bytes validation', () => {
     it('should reject files with wrong magic bytes', async () => {
-      // Magic bytes PNG dichiarati come JPEG
+      // PNG magic bytes declared as JPEG
       await expect(
         upload('fake.jpg', 'image/jpeg', createValidPngBuffer())
       ).rejects.toMatchObject({
@@ -120,7 +120,7 @@ describe('Brand Logo Upload', () => {
     it('should cleanup old logo on new upload', async () => {
       const first = await upload('first.png', 'image/png', createValidPngBuffer());
 
-      // Verifica che il primo logo sia stato salvato
+      // Verifies the first logo was saved
       const brandAfterFirst = await testContext.prisma.brand.findUnique({
         where: { id: testBrand.id },
       });
@@ -132,7 +132,7 @@ describe('Brand Logo Upload', () => {
         createValidJpegBuffer()
       );
 
-      // Verifica che il secondo logo abbia sostituito il primo
+      // Verifies the second logo replaced the first
       const brandAfterSecond = await testContext.prisma.brand.findUnique({
         where: { id: testBrand.id },
       });
@@ -145,7 +145,7 @@ describe('Brand Logo Upload', () => {
     it('should update brand logoKey atomically', async () => {
       const result = await upload('test.png', 'image/png', createValidPngBuffer());
 
-      // Verifica che il brand sia stato aggiornato con la nuova logoKey
+      // Verifies the brand was updated with the new logoKey
       const updatedBrand = await testContext.prisma.brand.findUnique({
         where: { id: testBrand.id },
       });

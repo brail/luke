@@ -1,6 +1,6 @@
 /**
- * Router tRPC per il motore di alert (Fase 5). Calcolo on-demand, nessun risultato persistito.
- * Query aggregate per layout/brand usate dalla dashboard di saturazione (Fase 6.1/6.2).
+ * tRPC router for the alert engine (Phase 5). On-demand computation, no persisted results.
+ * Aggregate queries per layout/brand used by the saturation dashboard (Phase 6.1/6.2).
  */
 
 import { z } from 'zod';
@@ -41,15 +41,15 @@ export const phaseAlertRouter = router({
     }),
 
   /**
-   * Fasi che la riga non ha attraversato, da mostrare prima di concluderla. Vuoto quando la riga è
-   * già all'ultima milestone pianificata per il suo gruppo: in quel caso concludere non salta nulla.
+   * Phases the row hasn't passed through, to show before concluding it. Empty when the row is
+   * already at the last milestone planned for its group: in that case concluding skips nothing.
    *
-   * Anteprima, non guard: la stessa lista viene ricalcolata da `collectionLayout.rows.setCompleted`,
-   * che è il punto in cui la forzatura viene pretesa e registrata. Serve alla UI per dire *quali*
-   * fasi mancano prima che l'utente confermi, invece di scoprirlo da un errore.
+   * Preview, not a guard: the same list is recomputed by `collectionLayout.rows.setCompleted`,
+   * which is the point where forcing is required and recorded. It serves the UI to say *which*
+   * phases are missing before the user confirms, instead of finding out from an error.
    *
-   * @auth {collection_layout:update} — non `collection_alert:read`: interessa solo a chi può
-   *   concludere, e allinearla al permesso della mutation evita che i due possano divergere.
+   * @auth {collection_layout:update} — not `collection_alert:read`: this only matters to whoever
+   *   can conclude, and aligning it with the mutation's permission keeps the two from diverging.
    * @input {{ rowId: string }}
    * @output {{ missingPhases: { value: string, label: string }[] }}
    */
@@ -63,7 +63,7 @@ export const phaseAlertRouter = router({
 
   /**
    * Criticality band for every row in a layout — the building block for the saturation heatmap
-   * (Fase 6.1) and the bottleneck index (Fase 6.2).
+   * (Phase 6.1) and the bottleneck index (Phase 6.2).
    *
    * @auth {collection_alert:read}
    * @input {{ collectionLayoutId: string }}
@@ -122,7 +122,7 @@ export const phaseAlertRouter = router({
     }),
 
   /**
-   * Saturation heatmap (Fase 6.1): row counts per criticality band, grouped by brand and
+   * Saturation heatmap (Phase 6.1): row counts per criticality band, grouped by brand and
    * product category, across every brand's layout for the given season.
    *
    * @auth {collection_alert:read}
@@ -137,7 +137,7 @@ export const phaseAlertRouter = router({
     }),
 
   /**
-   * Bottleneck index (Fase 6.2): row counts per criticality band, grouped by active event —
+   * Bottleneck index (Phase 6.2): row counts per criticality band, grouped by active event —
    * identifies which milestone is holding up the most rows in a layout.
    *
    * @auth {collection_alert:read}

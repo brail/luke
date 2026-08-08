@@ -28,8 +28,8 @@ function csvEscape(value: string): string {
 
 /** Streams the CSV in batches rather than loading the whole audit trail into memory at once. */
 async function* generateAuditLogCsv(prisma: PrismaClient, filters: Parameters<typeof buildAuditLogWhere>[0]) {
-  // BOM iniziale (escape esplicito, non carattere letterale, per non far scattare no-irregular-whitespace):
-  // fa riconoscere UTF-8 a Excel, altrimenti rompe i caratteri accentati.
+  // Leading BOM (explicit escape, not a literal character, so it doesn't trip no-irregular-whitespace):
+  // makes Excel recognize UTF-8, otherwise it mangles accented characters.
   const BOM = '\uFEFF';
   yield `${BOM}${['Data/Ora', 'Autore', 'Email', 'Azione', 'Entità', 'ID Entità', 'Esito', 'IP'].join(',')}\n`;
 

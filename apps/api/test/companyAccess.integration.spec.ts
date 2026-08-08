@@ -42,9 +42,9 @@ async function createTeam(opts: { isActive?: boolean } = {}) {
 }
 
 beforeAll(async () => {
-  // `setupTestDb()` garantisce lo schema e tronca: l'ordine dei file non è
-  // alfabetico né stabile, quindi nessuna suite può assumere che un'altra
-  // abbia già creato le tabelle.
+  // `setupTestDb()` guarantees the schema and truncates: file order isn't
+  // alphabetical or stable, so no suite can assume that another suite
+  // has already created the tables.
   prisma = await setupTestDb();
 
   const [brandA, brandB] = await Promise.all([
@@ -61,14 +61,14 @@ beforeAll(async () => {
 });
 
 /**
- * Policy vigente (commit 28b1873, "opt-in brand access via team scopes"):
- * l'accesso ai brand è **opt-in stretto**. `null` significa "nessun vincolo" ed è
- * riservato al ruolo admin; per tutti gli altri l'accesso è esattamente l'unione
- * dei brandScopes dei team attivi di cui l'utente è membro. Nessun team, o team
- * senza scope, significa nessun brand — non "tutti".
+ * Current policy (commit 28b1873, "opt-in brand access via team scopes"):
+ * brand access is **strict opt-in**. `null` means "no constraint" and is
+ * reserved for the admin role; for everyone else access is exactly the union
+ * of the brandScopes of the active teams the user belongs to. No team, or a team
+ * with no scope, means no brands — not "all".
  *
- * La versione precedente di questi test asseriva la policy opposta (unione più
- * permissiva, `null` = tutti i brand) ed è rimasta indietro alla migrazione.
+ * The previous version of these tests asserted the opposite policy (a more
+ * permissive union, `null` = all brands) and had fallen behind the migration.
  */
 describe('getUserAllowedBrandIds', () => {
   it('utente senza team → []', async () => {
@@ -129,8 +129,8 @@ describe('getUserAllowedBrandIds', () => {
       prisma.companyTeamMembership.create({ data: { teamId: teamUnscoped.id, userId } }),
     ]);
 
-    // Sotto la vecchia policy il team senza scope avrebbe promosso l'utente a
-    // "tutti i brand". Con l'opt-in non aggiunge nulla: resta il solo brandA.
+    // Under the old policy the team with no scope would have promoted the user to
+    // "all brands". With opt-in it adds nothing: only brandA remains.
     const result = await getUserAllowedBrandIds(userId, prisma);
     expect(result).toEqual([brandAId]);
   });

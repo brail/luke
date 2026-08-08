@@ -257,8 +257,8 @@ const rowsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { pendingPictureFileObjectId, quotations, phaseChangeNote: _phaseChangeNote, ...rowInput } = input;
 
-      // Prima di aprire la transaction: la lookup di membership non deve
-      // consumare il budget dei 15s, e un rifiuto non deve costare un rollback.
+      // Before opening the transaction: the membership lookup shouldn't
+      // consume the 15s budget, and a rejection shouldn't cost a rollback.
       const group = await resolveGroupBrandAccess(ctx, rowInput.groupId);
       const layoutScope = { brandId: group.collectionLayout.brandId, seasonId: group.collectionLayout.seasonId };
 
@@ -281,9 +281,9 @@ const rowsRouter = router({
         return { result: row, quotationsSync: sync };
       }, { timeout: 15000 });
 
-      // Un INSERT indipendente per riga di audit (riga + ciascuna quotazione), non annidati nella
-      // transaction di riga (già chiusa) — nessuna dipendenza fra loro, un solo Promise.all invece
-      // di due giri sequenziali.
+      // An independent INSERT per audit row (row + each quotation), not nested inside the
+      // row transaction (already closed) — no dependency between them, a single Promise.all instead
+      // of two sequential passes.
       await Promise.all([
         logAudit(ctx, { action: 'COLLECTION_ROW_CREATE', targetType: 'CollectionLayoutRow', targetId: result.id, result: 'SUCCESS', metadata: { groupId: result.groupId } }),
         ...quotationSyncAuditPromises(ctx, result.id, quotationsSync),
@@ -311,17 +311,17 @@ const rowsRouter = router({
       const { pendingPictureFileObjectId, quotations, phaseChangeNote, ...rowData } = input.data;
       let oldPictureKey: string | null = null;
 
-      // Fuori dalla transaction, come in `create`.
+      // Outside the transaction, as in `create`.
       const rowAccess = await resolveRowBrandAccess(ctx, input.rowId);
       const layoutScope = { brandId: rowAccess.collectionLayout.brandId, seasonId: rowAccess.collectionLayout.seasonId };
 
       const { result, before, quotationsSync } = await ctx.prisma.$transaction(async tx => {
-        // Indipendenti (la conferma non legge `beforeRow`, l'uso di `beforeRow.pictureKey` sotto
-        // avviene solo dopo che entrambe sono risolte) — in parallelo invece che in sequenza.
+        // Independent (the confirmation doesn't read `beforeRow`, the use of `beforeRow.pictureKey` below
+        // happens only after both are resolved) — run in parallel instead of sequentially.
         const [beforeRow, confirmedKey] = await Promise.all([
-          // Incondizionato (non solo quando c'è una foto pending): serve sempre per il diff
-          // fase/gruppo usato nell'audit log consolidato sotto, e come `existingRow` per `updateRow`
-          // (un solo fetch della riga invece di uno per ogni funzione che ne ha bisogno).
+          // Unconditional (not only when there's a pending photo): always needed for the
+          // phase/group diff used in the consolidated audit log below, and as `existingRow` for `updateRow`
+          // (a single row fetch instead of one per function that needs it).
           tx.collectionLayoutRow.findUniqueOrThrow({
             where: { id: input.rowId },
             select: { pictureKey: true, phaseId: true, planningGroupId: true, collectionLayoutId: true, groupId: true, completedAt: true },
@@ -367,15 +367,15 @@ const rowsRouter = router({
       const phaseChanged = rowData.phaseId !== undefined && rowData.phaseId !== (before.phaseId ?? null);
       const planningGroupChanged = rowData.planningGroupId !== undefined && rowData.planningGroupId !== before.planningGroupId;
 
-      // Un INSERT indipendente per riga di audit (riga + ciascuna quotazione toccata) — nessuna
-      // dipendenza fra loro, un solo Promise.all invece di due giri sequenziali.
+      // An independent INSERT per audit row (row + each quotation touched) — no
+      // dependency between them, a single Promise.all instead of two sequential passes.
       //
-      // Insieme a loro lo snapshot automatico del layout: questa transizione può essere quella che
-      // completa la fase di un evento per l'intero gruppo di pianificazione. Sta fuori dalla
-      // `$transaction` sopra perché `createRevision` apre una transaction propria, non annidabile in
-      // quella del salvataggio, e non condivide dati con gli audit — quindi le sue query girano
-      // sovrapposte a loro invece di allungare la mutation in serie. Non lancia mai (vedi il
-      // service): una revisione fallita non deve far fallire il salvataggio.
+      // Alongside them, the automatic layout snapshot: this transition may be the one that
+      // completes an event's phase for the entire planning group. It sits outside the
+      // `$transaction` above because `createRevision` opens its own transaction, which can't be
+      // nested in the save's transaction, and shares no data with the audits — so its queries run
+      // overlapping with them instead of lengthening the mutation in series. It never throws (see the
+      // service): a failed revision must not make the save fail.
       await Promise.all([
         ...(phaseChanged && rowData.phaseId != null
           ? [createRevisionsForCompletedPhase(ctx.prisma, before.collectionLayoutId, result.planningGroupId, ctx.logger)]
@@ -414,21 +414,21 @@ const rowsRouter = router({
     }),
 
   /**
-   * Marca la riga come conclusa (o la riapre). Stato esplicito, non deducibile dal calendario:
-   * una riga ferma sull'ultima fase l'ha *raggiunta*, non completata — vedi
-   * `getActivePhaseFromEvents`. Da conclusa la riga esce dal countdown di fase e mostra l'esito
-   * congelato (`completionOutcome`), e lo scheduler smette di notificarne il ritardo.
+   * Marks the row as concluded (or reopens it). Explicit state, not derivable from the calendar:
+   * a row sitting on the last phase has *reached* it, not completed it — see
+   * `getActivePhaseFromEvents`. Once concluded, the row exits the phase countdown and shows the
+   * frozen outcome (`completionOutcome`), and the scheduler stops flagging it as overdue.
    *
-   * Riaprire azzera `completedAt`; un cambio fase non lo tocca mai (scelta esplicita: riaprire è
-   * un'azione dichiarata, non un effetto collaterale di uno spostamento fatto per sbaglio).
+   * Reopening clears `completedAt`; a phase change never touches it (a deliberate choice: reopening
+   * is a declared action, not a side effect of a move made by mistake).
    *
-   * Motivazione obbligatoria in entrambi i versi: la conclusione è l'unico momento in cui l'esito
-   * viene fissato, e senza un perché l'audit log direbbe solo che è successo.
+   * A rationale is mandatory in both directions: conclusion is the only moment the outcome
+   * gets fixed, and without a "why" the audit log would only say it happened.
    *
-   * Se la riga non ha attraversato tutte le fasi pianificate serve `force: true` — l'elenco è
-   * ricalcolato qui, mai accettato dal client. Non è un divieto (basterebbe saltare all'ultima fase
-   * per aggirarlo) ma una registrazione: `completionForced` e `skippedPhases` nell'audit rendono
-   * distinguibili, a consuntivo, le righe chiuse pulitamente da quelle forzate.
+   * If the row hasn't passed through every planned phase, `force: true` is required — the list is
+   * recomputed here, never accepted from the client. It's not a prohibition (skipping to the last
+   * phase would bypass it anyway) but a record: `completionForced` and `skippedPhases` in the audit
+   * make it possible, in hindsight, to tell cleanly closed rows apart from forced ones.
    *
    * @auth collection_layout:update
    * @input { rowId: string, completed: boolean, note: string (mandatory rationale, 1-500 chars), force?: boolean }
@@ -448,7 +448,7 @@ const rowsRouter = router({
     .mutation(async ({ input, ctx }) => {
       await resolveRowBrandAccess(ctx, input.rowId);
 
-      // Solo in conclusione: riaprire non salta nulla, riporta la riga in lavorazione.
+      // Only when concluding: reopening skips nothing, it just puts the row back in progress.
       const missingPhases = input.completed
         ? await resolveMissingPhasesForRow(input.rowId, ctx.prisma)
         : [];
@@ -862,9 +862,9 @@ export const collectionLayoutRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      // Entrambi i brand, non uno solo: sulla sola sorgente permetterebbe di
-      // scrivere in un brand non tuo, sulla sola destinazione è esfiltrazione —
-      // leggi la collezione di un brand altrui clonandola in uno tuo.
+      // Both brands, not just one: checking only the source would allow writing
+      // to a brand that isn't yours; checking only the destination is exfiltration —
+      // read another brand's collection by cloning it into your own.
       await assertBrandAccessAll(ctx, [input.fromBrandId, input.toBrandId]);
 
       const result = await copyFromSeason(

@@ -43,47 +43,48 @@ export const LUKE_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0
 </svg>`;
 
 /**
- * Singleton pdfmake, ottenuto con `require` e non con `import * as`.
+ * pdfmake singleton, obtained with `require` and not with `import * as`.
  *
- * `import * as` produce un namespace object **sigillato**: `setFonts()` assegna
- * `this.fonts` e fallisce con `Cannot redefine property: fonts`. Serve l'oggetto
- * CJS reale, che è mutabile. Il cast su `typeof import(...)` tiene comunque le
- * typings vere, quindi la superficie usata resta controllata da `tsc`.
+ * `import * as` produces a **sealed** namespace object: `setFonts()` assigns
+ * `this.fonts` and fails with `Cannot redefine property: fonts`. We need the
+ * real CJS object, which is mutable. The cast to `typeof import(...)` still
+ * keeps the real typings, so the surface used stays checked by `tsc`.
  */
 const pdfMake = require('pdfmake') as typeof import('pdfmake');
 
 let pdfMakeConfigured = false;
 
 /**
- * Configura il singleton pdfmake: font nel virtual file system e policy di
- * accesso. Idempotente, eseguita al primo export.
+ * Configures the pdfmake singleton: fonts in the virtual file system and
+ * access policy. Idempotent, run on the first export.
  *
- * ## Perché i font passano dal VFS e non come Buffer
+ * ## Why fonts go through the VFS and not as a Buffer
  *
- * Fino a pdfmake 0.2 il descrittore accettava un `Buffer` per ogni variante.
- * In 0.3 ogni valore passa da `URLResolver.resolve()`, che ci fa `.toLowerCase()`:
- * un Buffer lo fa esplodere con `Cannot read properties of undefined`. I font
- * vanno scritti nel VFS e referenziati per nome.
+ * Up to pdfmake 0.2 the descriptor accepted a `Buffer` for each variant.
+ * In 0.3 every value passes through `URLResolver.resolve()`, which calls
+ * `.toLowerCase()` on it: a Buffer makes it blow up with
+ * `Cannot read properties of undefined`. Fonts must be written to the VFS and
+ * referenced by name.
  *
- * ## Le policy sono chiuse di proposito
+ * ## The policies are closed on purpose
  *
- * `createPdf` avverte se non sono impostate, e il default sarebbe permissivo:
- * una definizione di documento potrebbe far scaricare a pdfmake una URL esterna
- * o leggere dal filesystem locale. Le nostre definizioni sono costruite
- * server-side e le immagini arrivano come **data URI** (`logoDataUri`), che sono
- * inline e non toccano né rete né disco — verificato: i loghi continuano a
- * comparire con entrambe le policy a `false`.
+ * `createPdf` warns if they aren't set, and the default would be permissive:
+ * a document definition could make pdfmake download an external URL or read
+ * from the local filesystem. Our definitions are built server-side and images
+ * arrive as **data URIs** (`logoDataUri`), which are inline and touch neither
+ * network nor disk — verified: logos still show up with both policies set to
+ * `false`.
  */
 function configurePdfMake(): typeof pdfMake {
   if (!pdfMakeConfigured) {
     const vfs = require('pdfmake/build/vfs_fonts') as Record<string, string>;
 
-    // `virtualfs` non è nelle typings di @types/pdfmake@0.3.3, che dichiarano
-    // invece `addVirtualFileSystem()` e `addFontContainer()` — entrambe assenti
-    // da pdfmake 0.3.11 (verificato a runtime). Le typings sono avanti rispetto
-    // alla libreria, quindi il VFS diretto è l'unica via funzionante. Il cast è
-    // ristretto al solo metodo usato: se un upgrade lo rimuove, il fallimento è
-    // immediato invece che silenzioso.
+    // `virtualfs` isn't in the @types/pdfmake@0.3.3 typings, which instead declare
+    // `addVirtualFileSystem()` and `addFontContainer()` — both absent from
+    // pdfmake 0.3.11 (verified at runtime). The typings are ahead of the
+    // library, so direct VFS access is the only working path. The cast is
+    // restricted to just the method used: if an upgrade removes it, the
+    // failure is immediate rather than silent.
     const { virtualfs } = pdfMake as unknown as {
       virtualfs: {
         writeFileSync(filename: string, content: string, encoding: string): void;
@@ -203,10 +204,10 @@ export function buildPdfFooter(
   if (company?.footerText) infoLines.push(company.footerText);
   if (extraLine)           infoLines.push(extraLine);
 
-  // pdfmake accetta `width` su ogni voce dentro un blocco `columns: [...]` a
-  // runtime, ma i singoli membri dell'union `Content` non lo dichiarano
-  // (proprietà valida solo a livello del contenitore colonna) — cast mirato
-  // sulle tre voci che lo usano, non sull'intero array.
+  // pdfmake accepts `width` on every entry inside a `columns: [...]` block at
+  // runtime, but the individual members of the `Content` union don't declare
+  // it (property valid only at the column-container level) — targeted cast
+  // on the three entries that use it, not on the whole array.
   const columns: Content[] = [];
 
   if (company?.logoDataUri) {
@@ -292,12 +293,12 @@ export async function fetchCompanyExportContext(
  * @returns Buffer with the complete PDF content.
  */
 export async function createPdfBuffer(def: TDocumentDefinitions): Promise<Buffer> {
-  // API pubblica di pdfmake, non `js/Printer`. La versione precedente importava
-  // la classe interna con `require` e un cast scritto a mano — ed è il cast che
-  // ha permesso al bump 0.2→0.3 (commit a864236, "safe bumps") di passare il
-  // typecheck: il tipo dichiarato descriveva un'API che non esisteva più.
-  // Costruttore e `createPdfKitDocument` erano entrambi cambiati, e ogni export
-  // PDF dell'app è rimasto rotto fino a qui. Con le typings reali, il prossimo
-  // breaking change lo prende `tsc`.
+  // pdfmake's public API, not `js/Printer`. The previous version imported
+  // the internal class with `require` and a hand-written cast — and it's that
+  // cast that let the 0.2→0.3 bump (commit a864236, "safe bumps") pass the
+  // typecheck: the declared type described an API that no longer existed.
+  // Both the constructor and `createPdfKitDocument` had changed, and every
+  // PDF export in the app stayed broken until now. With the real typings,
+  // the next breaking change gets caught by `tsc`.
   return configurePdfMake().createPdf(def).getBuffer();
 }

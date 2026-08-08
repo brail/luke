@@ -1,5 +1,5 @@
 /**
- * Core CRUD procedures per utenti
+ * Core CRUD procedures for users
  * list, getById, create, update, softDelete, hardDelete
  */
 
@@ -111,10 +111,10 @@ export const usersCoreRouter = router({
       let total: number;
 
       if (sortBy === 'provider') {
-        // Il provider non è una colonna ordinabile in DB (deriva dalla prima
-        // identity collegata): serve l'intero result set per ordinare
-        // correttamente, non solo la pagina — altrimenti l'ordinamento vale
-        // solo dentro la pagina già estratta, non a livello globale.
+        // Provider isn't a sortable DB column (it's derived from the first
+        // linked identity): sorting correctly needs the entire result set,
+        // not just the page — otherwise the ordering only holds within the
+        // already-extracted page, not globally.
         const all = await ctx.prisma.user.findMany({ where, select: selectFields });
         all.sort((a, b) => {
           const providerA = a.identities?.[0]?.provider || 'LOCAL';
@@ -161,7 +161,7 @@ export const usersCoreRouter = router({
     .use(requirePermission('users:read'))
     .input(UserIdSchema)
     .query(async ({ input, ctx }) => {
-      // RBAC: solo self-profile o admin
+      // RBAC: self-profile or admin only
       if (
         input.id !== ctx.session.user.id &&
         !hasPermission({ role: ctx.session.user.role as Role }, '*:*')
@@ -218,7 +218,7 @@ export const usersCoreRouter = router({
     .use(withIdempotency())
     .use(withAuditLog('USER_CREATE', 'User'))
     .mutation(async ({ input, ctx }) => {
-      // Verifica che email e username non esistano già
+      // Verify that email and username don't already exist
       const existingUser = await ctx.prisma.user.findFirst({
         where: {
           OR: [{ email: input.email }, { username: input.username }],
@@ -235,7 +235,7 @@ export const usersCoreRouter = router({
         });
       }
 
-      // Hash della password con argon2id
+      // Hash the password with argon2id
       const passwordHash = await argon2.hash(input.password, {
         type: argon2.argon2id,
         timeCost: 3,
@@ -243,11 +243,11 @@ export const usersCoreRouter = router({
         parallelism: 1,
       });
 
-      // Crea utente, identità e credenziale in una transazione
+      // Create user, identity, and credential in a transaction
       let result;
       try {
         result = await ctx.prisma.$transaction(async tx => {
-          // Crea utente
+          // Create user
           const user = await tx.user.create({
             data: {
               email: input.email,
@@ -260,7 +260,7 @@ export const usersCoreRouter = router({
             },
           });
 
-          // Crea identità locale
+          // Create local identity
           const identity = await tx.identity.create({
             data: {
               userId: user.id,
@@ -269,7 +269,7 @@ export const usersCoreRouter = router({
             },
           });
 
-          // Crea credenziale locale
+          // Create local credential
           await tx.localCredential.create({
             data: {
               identityId: identity.id,
@@ -280,11 +280,11 @@ export const usersCoreRouter = router({
           return user;
         });
       } catch (err) {
-        // Il check di unicità sopra ha una finestra di race: una seconda
-        // richiesta concorrente con la stessa email/username può arrivare
-        // qui prima che questa transazione committi. Il vincolo DB tiene
-        // comunque — qui traduciamo il P2002 nello stesso CONFLICT del
-        // percorso non-race, invece di lasciarlo emergere come 500 generico.
+        // The uniqueness check above has a race window: a second concurrent
+        // request with the same email/username can arrive here before this
+        // transaction commits. The DB constraint still holds — here we
+        // translate the P2002 into the same CONFLICT as the non-race path,
+        // instead of letting it surface as a generic 500.
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
           throw new TRPCError({
             code: 'CONFLICT',
@@ -295,9 +295,9 @@ export const usersCoreRouter = router({
         throw err;
       }
 
-      // Audit logging gestito automaticamente dal middleware withAuditLog
+      // Audit logging handled automatically by the withAuditLog middleware
 
-      // Invio email gestito via UI dialog post-creazione
+      // Email sending handled via a post-creation UI dialog
       return {
         id: result.id,
         email: result.email,
@@ -325,12 +325,12 @@ export const usersCoreRouter = router({
     .use(withIdempotency())
     .use(withAuditLog('USER_UPDATE', 'User'))
     .mutation(async ({ input, ctx }) => {
-      // `password` è destructurato separatamente da `updateData`: `User` in Prisma non ha
-      // una colonna `password` (vive in `LocalCredential.passwordHash` via `Identity`),
-      // lasciarlo dentro `updateData` romperebbe `Prisma.UserUpdateInput` a compile time.
+      // `password` is destructured separately from `updateData`: Prisma's `User` has no
+      // `password` column (it lives in `LocalCredential.passwordHash` via `Identity`),
+      // leaving it inside `updateData` would break `Prisma.UserUpdateInput` at compile time.
       const { id, password, ...updateData } = input;
 
-      // Verifica che l'utente esista con identities
+      // Verify the user exists, with identities
       const existingUser = await ctx.prisma.user.findUnique({
         where: { id },
         include: {
@@ -366,7 +366,7 @@ export const usersCoreRouter = router({
         });
       }
 
-      // Protezione: impedisci auto-disabilitazione
+      // Protection: prevent self-deactivation
       if (
         updateData.isActive === false &&
         existingUser.id === ctx.session.user.id
@@ -377,7 +377,7 @@ export const usersCoreRouter = router({
         });
       }
 
-      // Protezione: impedisci auto-modifica del ruolo
+      // Protection: prevent self role-modification
       if (updateData.role && existingUser.id === ctx.session.user.id) {
         throw new TRPCError({
           code: 'FORBIDDEN',
@@ -385,10 +385,10 @@ export const usersCoreRouter = router({
         });
       }
 
-      // Protezione: reset password riservato ad admin (`*:*`) — `users:update` (il permesso
-      // di questa intera procedura) è concesso anche a `editor`; senza questo guard un
-      // editor potrebbe impossessarsi di qualunque account, incluso un admin, resettandone
-      // la password e autenticandosi come lui.
+      // Protection: password reset restricted to admin (`*:*`) — `users:update` (the
+      // permission for this entire procedure) is also granted to `editor`; without this
+      // guard an editor could take over any account, including an admin's, by resetting
+      // its password and authenticating as it.
       if (
         password !== undefined &&
         !hasPermission({ role: ctx.session.user.role as Role }, '*:*')
@@ -399,10 +399,10 @@ export const usersCoreRouter = router({
         });
       }
 
-      // Protezione: impedisci reset della propria password da questo endpoint — un admin
-      // che vuole cambiare la propria password usa `me.changePassword` (richiede la password
-      // corrente, proprietà di sicurezza che questo path admin-to-admin non ha e non deve
-      // bypassare).
+      // Protection: prevent resetting one's own password from this endpoint — an admin
+      // who wants to change their own password uses `me.changePassword` (which requires
+      // the current password, a security property this admin-to-admin path doesn't have
+      // and must not bypass).
       if (password !== undefined && existingUser.id === ctx.session.user.id) {
         throw new TRPCError({
           code: 'FORBIDDEN',
@@ -410,7 +410,7 @@ export const usersCoreRouter = router({
         });
       }
 
-      // Se si sta aggiornando email o username, verifica che non esistano già
+      // If updating email or username, verify they don't already exist
       if (updateData.email || updateData.username) {
         const conflictingUser = await ctx.prisma.user.findFirst({
           where: {
@@ -444,21 +444,22 @@ export const usersCoreRouter = router({
         }
       }
 
-      // Hash fuori dalla transazione (argon2 è CPU-bound, non deve tenere aperta
-      // una transazione DB). `password` qui è già garantito `undefined` o valido
-      // (Zod ha già applicato `.min(12)` a monte, in fase di parsing dell'input).
+      // Hash outside the transaction (argon2 is CPU-bound, it must not hold a
+      // DB transaction open). `password` here is already guaranteed to be
+      // `undefined` or valid (Zod already applied `.min(12)` upstream, during
+      // input parsing).
       const passwordHash =
         password !== undefined ? await hashPassword(password) : undefined;
 
-      // Un cambio di ruolo o una disattivazione devono invalidare i token già
-      // emessi. Senza il bump, `verifyTokenVersion` continua a passare e
-      // `requirePermission` legge il ruolo dal claim JWT, mai dal database: la
-      // retrocessione non aveva alcun effetto fino alla scadenza del token — e
-      // `auth.refreshToken`, che rifirmava a partire dallo stesso claim, la
-      // rimandava indefinitamente. Un admin declassato restava admin per sempre.
-      // Letto dentro la transazione (non da `existingUser`, calcolato prima):
-      // una promozione/demozione concorrente sullo stesso utente non deve poter
-      // far saltare né questo bump né la guardia ultimo-admin sotto.
+      // A role change or a deactivation must invalidate already-issued tokens.
+      // Without the bump, `verifyTokenVersion` keeps passing and
+      // `requirePermission` reads the role from the JWT claim, never from the
+      // database: the demotion had no effect until the token expired — and
+      // `auth.refreshToken`, which re-signed from that same claim, kept
+      // postponing it indefinitely. A demoted admin stayed admin forever.
+      // Read inside the transaction (not from `existingUser`, computed earlier):
+      // a concurrent promotion/demotion on the same user must not be able to
+      // skip either this bump or the last-admin guard below.
       let txResult;
       try {
         txResult = await ctx.prisma.$transaction(async tx => {
@@ -497,9 +498,9 @@ export const usersCoreRouter = router({
             );
           }
 
-          // Guard sopra + `getLockedFields` garantiscono, se arriviamo qui con
-          // `passwordHash` impostato, che il provider sia LOCAL — `identities[0]` è
-          // quindi la credenziale LOCAL da aggiornare.
+          // The guard above + `getLockedFields` guarantee that, if we get here with
+          // `passwordHash` set, the provider is LOCAL — `identities[0]` is therefore
+          // the LOCAL credential to update.
           if (passwordHash !== undefined) {
             await tx.localCredential.update({
               where: { identityId: existingUser.identities[0].id },
@@ -519,10 +520,10 @@ export const usersCoreRouter = router({
           return { updated, revokesSessions, current };
         });
       } catch (err) {
-        // Stessa finestra di race del check sopra: una seconda richiesta con
-        // la stessa email/username può committare fra il findFirst e questo
-        // update. Il vincolo DB tiene comunque — traduciamo il P2002 nello
-        // stesso CONFLICT del percorso non-race.
+        // Same race window as the check above: a second request with the
+        // same email/username can commit between the findFirst and this
+        // update. The DB constraint still holds — we translate the P2002
+        // into the same CONFLICT as the non-race path.
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
           throw new TRPCError({
             code: 'CONFLICT',
@@ -538,8 +539,8 @@ export const usersCoreRouter = router({
         invalidateTokenVersionCache(id);
       }
 
-      // La mutation è già committata: un fallimento della notifica non deve
-      // travestirsi da fallimento dell'update stesso.
+      // The mutation is already committed: a notification failure must not
+      // masquerade as a failure of the update itself.
       if (updateData.role && updateData.role !== current?.role) {
         invalidateRbacCache();
         try {
@@ -570,10 +571,11 @@ export const usersCoreRouter = router({
       }
 
       if (passwordHash !== undefined) {
-        // Voce di audit dedicata (in aggiunta al generico USER_UPDATE del middleware
-        // `withAuditLog`) — `USER_PASSWORD_RESET_BY_ADMIN` è in `CRITICAL_AUDIT_ACTIONS`,
-        // quindi `logAudit` qui rilancia se il write fallisce invece di ingoiarlo, stesso
-        // pattern di `PASSWORD_CHANGED` in `auth.service.ts`.
+        // Dedicated audit entry (in addition to the generic USER_UPDATE from the
+        // `withAuditLog` middleware) — `USER_PASSWORD_RESET_BY_ADMIN` is in
+        // `CRITICAL_AUDIT_ACTIONS`, so `logAudit` here rethrows if the write fails
+        // instead of swallowing it, same pattern as `PASSWORD_CHANGED` in
+        // `auth.service.ts`.
         await logAudit(ctx, {
           action: 'USER_PASSWORD_RESET_BY_ADMIN',
           targetType: 'User',
@@ -593,7 +595,7 @@ export const usersCoreRouter = router({
         }
       }
 
-      // Audit logging gestito automaticamente dal middleware withAuditLog
+      // Audit logging handled automatically by the withAuditLog middleware
 
       return {
         id: updatedUser.id,
@@ -657,7 +659,7 @@ export const usersCoreRouter = router({
         });
       }
 
-      // Protezione: impedisci auto-eliminazione definitiva
+      // Protection: prevent permanent self-deletion
       if (user.id === ctx.session.user.id) {
         throw new TRPCError({
           code: 'FORBIDDEN',
@@ -665,7 +667,7 @@ export const usersCoreRouter = router({
         });
       }
 
-      // Hard delete: elimina utente e tutte le relazioni (cascade)
+      // Hard delete: deletes user and all relations (cascade)
       try {
         const deletedSnapshot = await ctx.prisma.$transaction(async tx => {
           const current = await tx.user.findUnique({
@@ -689,12 +691,12 @@ export const usersCoreRouter = router({
 
         invalidateTokenVersionCache(input.id);
 
-        // Log SUCCESS dopo delete riuscita — snapshot letto dentro la
-        // transazione (non quello pre-transazione fuori): riflette lo stato
-        // realmente cancellato anche se un'update concorrente sullo stesso
-        // utente è avvenuta nel frattempo. Fallback allo snapshot esterno
-        // solo nell'improbabile caso in cui `current` sia null (l'utente
-        // sarebbe comunque già sparito, e la delete sopra avrebbe lanciato).
+        // Log SUCCESS after a successful delete — snapshot read inside the
+        // transaction (not the outer pre-transaction one): reflects the
+        // actually-deleted state even if a concurrent update on the same
+        // user happened in the meantime. Falls back to the outer snapshot
+        // only in the unlikely case that `current` is null (the user would
+        // already be gone anyway, and the delete above would have thrown).
         await logAudit(ctx, {
           action: 'USER_HARD_DELETE',
           targetType: 'User',

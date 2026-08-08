@@ -1,13 +1,13 @@
 /**
- * Router tRPC per la sezione Vendite
+ * tRPC router for the Sales section
  *
- * Espone:
- *  - sales.statistics.portafoglio.getFilters  — filtri disponibili (agenti dal contesto)
- *  - sales.statistics.portafoglio.download    — genera xlsx portafoglio ordini
- *  - sales.statistics.kimo.getFilters         — filtri disponibili per Kimo+Bidone
- *  - sales.statistics.kimo.getSyncState       — stato sync tabelle nav_kimo_*
- *  - sales.statistics.kimo.triggerSync        — trigger manuale sync KIMO
- *  - sales.statistics.kimo.download           — genera xlsx Vendite+Bidone KIMO
+ * Exposes:
+ *  - sales.statistics.portafoglio.getFilters  — available filters (agents from context)
+ *  - sales.statistics.portafoglio.download    — generates order portfolio xlsx
+ *  - sales.statistics.kimo.getFilters         — available filters for Kimo+Basket
+ *  - sales.statistics.kimo.getSyncState       — sync state of nav_kimo_* tables
+ *  - sales.statistics.kimo.triggerSync        — manual trigger for KIMO sync
+ *  - sales.statistics.kimo.download           — generates Sales+Basket KIMO xlsx
  */
 
 import { TRPCError } from '@trpc/server';
@@ -88,7 +88,7 @@ const portafoglioRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand o stagione non trovati' });
       }
 
-      // Prova prima con i dati replicati in PG
+      // Tries first with data replicated in PG
       const headerRows = await ctx.prisma.navPfSalesHeader.findMany({
         where: {
           sellingSeasonCode: season.code,
@@ -115,7 +115,7 @@ const portafoglioRouter = router({
         };
       }
 
-      // Fallback: NAV diretto se la replica non ha ancora dati
+      // Fallback: direct NAV if replica has no data yet
       try {
         const navConfig = await getNavDbConfig(ctx.prisma, getConfig);
         const pool = await getPool(navConfig);
@@ -239,7 +239,7 @@ const portafoglioRouter = router({
         'sales.statistics.portafoglio.download start',
       );
 
-      // Controlla se i dati PG sono disponibili per questa stagione/brand
+      // Checks if PG data is available for this season/brand
       const pgCount = await ctx.prisma.navPfSalesHeader.count({
         where: {
           sellingSeasonCode: season.code,
@@ -253,7 +253,7 @@ const portafoglioRouter = router({
       let dataSource: 'pg' | 'nav';
 
       if (pgHasData) {
-        // Query su dati replicati in PostgreSQL (veloce, indici ottimizzati)
+        // Query on data replicated in PostgreSQL (fast, optimized indexes)
         dataSource = 'pg';
         rows = await queryPortafoglioFromPg(ctx.prisma, {
           seasonCode: season.code,
@@ -262,7 +262,7 @@ const portafoglioRouter = router({
           customerCode: input.customerCode,
         });
       } else {
-        // Fallback: query diretta NAV (lenta, nessuna replica disponibile)
+        // Fallback: direct NAV query (slow, no replica available)
         ctx.logger.warn(
           { brandCode: brand.code, seasonCode: season.code },
           'Portafoglio PG replica vuota — fallback NAV diretto',
@@ -281,7 +281,7 @@ const portafoglioRouter = router({
       const queryDurationMs = Date.now() - queryStart;
       ctx.logger.info({ dataSource, rowCount: rows.length, queryDurationMs }, 'portafoglio download query done');
 
-      // Build xlsx
+      // Builds xlsx
       const sheetName = `${season.code}_${brand.code}`;
       const dbUser = await ctx.prisma.user.findUnique({
         where: { id: ctx.session.user.id },
@@ -341,7 +341,7 @@ const kimoRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand o stagione non trovati' });
       }
 
-      // Agenti dalle SO (step0) e dai BASKET (step1) — query indipendenti, in parallelo
+      // Agents from SO (step0) and BASKET (step1) — independent queries, in parallel
       const [soHeaderRows, basketHeaderRows] = await Promise.all([
         ctx.prisma.navPfSalesHeader.findMany({
           where: {
@@ -369,7 +369,7 @@ const kimoRouter = router({
         .map(r => r.salespersonCodeNav)
         .filter((c): c is string => c !== null);
 
-      // Unione deduplicata
+      // Deduplicated union
       const allCodes = [...new Set([...spSoCodes, ...spBaCodes])];
       const nameMap = await resolveSalespersonNames(ctx.prisma, allCodes);
       const salespersons = allCodes

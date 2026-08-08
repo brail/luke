@@ -1,20 +1,20 @@
 /**
  * complete-stranded-rows.ts
  *
- * Chiude le righe di collection layout rimaste **aperte su una fase disattivata**: dati anteriori
- * al motore di fasi/alert, che oggi non sono misurati da nessuno (nessuna milestone applicabile
- * oltre la loro fase) ma continuano a risultare "in lavorazione". Restano anche l'unico ostacolo
- * al guard di `phase.remove`, che rifiuta di ritirare una fase con righe aperte sopra.
+ * Closes collection layout rows left **open on a deactivated phase**: data predating
+ * the phase/alert engine, which today isn't measured by anything (no applicable milestone
+ * past their phase) but still shows up as "in progress". They're also the one remaining obstacle
+ * to `phase.remove`'s guard, which refuses to retire a phase with open rows still on it.
  *
- * `completedAt` non viene messo a "adesso": queste righe hanno smesso di muoversi tempo fa. Usa
- * l'ultima transizione di fase registrata (`CollectionRowPhaseHistory.reachedAt`), che è il momento
- * in cui la riga è entrata nella fase dove si è fermata; in mancanza di storico ripiega su
- * `updatedAt`. Così anche il tempo totale al completamento resta un numero sensato invece di
- * inglobare mesi di inattività.
+ * `completedAt` isn't set to "now": these rows stopped moving a while ago. It uses
+ * the last recorded phase transition (`CollectionRowPhaseHistory.reachedAt`), which is the moment
+ * the row entered the phase it got stuck on; absent any history, it falls back to
+ * `updatedAt`. This way the total time to completion also stays a sensible number instead of
+ * absorbing months of inactivity.
  *
- * Idempotente: le righe già concluse non vengono toccate (il filtro è `completedAt: null`).
+ * Idempotent: already-completed rows aren't touched (the filter is `completedAt: null`).
  *
- * Uso:
+ * Usage:
  *   pnpm --filter @luke/api db:complete-stranded-rows [--dry-run]
  */
 

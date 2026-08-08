@@ -1,6 +1,6 @@
 /**
- * Router principale tRPC
- * Combina tutti i router dell'applicazione
+ * Main tRPC router
+ * Combines all application routers
  */
 
 import { router } from '../lib/trpc';
@@ -41,8 +41,8 @@ import { usersRouter } from './users';
 import { vendorsRouter } from './vendors';
 
 /**
- * Router principale dell'applicazione
- * Combina tutti i router disponibili
+ * Main application router
+ * Combines all available routers
  */
 export const appRouter = router({
   auditLog: auditLogRouter,
@@ -82,7 +82,7 @@ export const appRouter = router({
 });
 
 /**
- * Tipo del router principale per type-safety
- * Esportato per essere utilizzato dal client tRPC
+ * Type of the main router for type-safety
+ * Exported to be used by the tRPC client
  */
 export type AppRouter = typeof appRouter;

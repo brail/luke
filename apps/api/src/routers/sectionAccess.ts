@@ -1,6 +1,6 @@
 /**
- * Router tRPC per gestione override di accesso alle sezioni
- * Procedure per amministratori per gestire accessi utente
+ * tRPC router for managing section access overrides
+ * Procedures for administrators to manage user access
  */
 
 import { TRPCError } from '@trpc/server';
@@ -111,11 +111,11 @@ export const sectionAccessRouter = router({
     .use(withRateLimit('sectionAccessSet'))
     .mutation(async ({ input, ctx }) => {
       await ctx.prisma.$transaction(async tx => {
-        // Safety check: impedisci una config che tolga l'accesso ai settings
-        // a TUTTI gli admin — a differenza di `set` (che tocca un utente alla
-        // volta), qui la scrittura è sui default di ruolo: senza guard, un
-        // singolo admin può auto-bloccare l'intero sistema fuori da Settings,
-        // l'unico posto raggiungibile per annullare la modifica.
+        // Safety check: prevent a config that removes settings access from
+        // ALL admins — unlike `set` (which touches one user at a
+        // time), here the write is on the role defaults: without a guard, a
+        // single admin could lock the entire system out of Settings,
+        // the only place reachable to undo the change.
         await acquireLastAdminLock(tx);
         const { disabledSections } = await getRbacConfig(tx, { bypassCache: true });
         const survivingAdmins = await countRecoveryCapableAdmins(
@@ -135,11 +135,11 @@ export const sectionAccessRouter = router({
         await setRbacSectionDefaultsTx(tx, input.sectionAccessDefaults);
       });
 
-      invalidateRbacCache(); // solo dopo il commit — come in users.core.router.ts
+      invalidateRbacCache(); // only after the commit — same as in users.core.router.ts
 
-      // La mutation RBAC è già committata: un fallimento dell'audit log
-      // (azione CRITICAL_AUDIT_ACTIONS, che normalmente rilancia) non deve
-      // travestirsi da fallimento della mutation stessa.
+      // The RBAC mutation is already committed: an audit-log failure
+      // (a CRITICAL_AUDIT_ACTIONS action, which normally rethrows) must not
+      // masquerade as a failure of the mutation itself.
       try {
         await logAudit(ctx, {
           action: 'CONFIG_UPSERT',
@@ -169,19 +169,19 @@ export const sectionAccessRouter = router({
       const { userId, section, enabled } = input;
 
       const result = await ctx.prisma.$transaction(async tx => {
-        // Safety check: impedisci di rimuovere accesso settings all'ultimo
-        // admin — solo se il target è admin: revocare un override di un
-        // viewer/editor non tocca minimamente l'invariante. Lock acquisito
-        // prima della lettura del ruolo, come ogni altro punto che valuta
-        // questo invariante — serializza correttamente contro un'altra
-        // operazione che tiene lo stesso lock (altra `set`, `hardDelete`,
-        // demozione, `setRoleDefaults`). Non copre una PROMOZIONE
-        // concorrente dello stesso `userId` (viewer/editor → admin): quel
-        // percorso non acquisisce questo lock, quindi resta una finestra
-        // stretta e nota, non chiusa da questo riordino.
-        // Ogni sezione di recupero, non solo `settings`: togliere
-        // `settings.users` all'ultimo admin lo chiude fuori
-        // dall'amministrazione utenti esattamente come togliergli `settings`.
+        // Safety check: prevent removing settings access from the last
+        // admin — only if the target is an admin: revoking an override for a
+        // viewer/editor doesn't touch the invariant at all. Lock acquired
+        // before reading the role, like every other point that evaluates
+        // this invariant — correctly serializes against another
+        // operation holding the same lock (another `set`, `hardDelete`,
+        // demotion, `setRoleDefaults`). Does not cover a concurrent
+        // PROMOTION of the same `userId` (viewer/editor → admin): that
+        // path doesn't acquire this lock, so a narrow, known window
+        // remains, not closed by this reordering.
+        // Every recovery section, not just `settings`: removing
+        // `settings.users` from the last admin locks them out of
+        // user administration exactly as removing `settings` would.
         if (isAdminRecoverySection(section) && enabled !== true) {
           await acquireLastAdminLock(tx);
           const target = await tx.user.findUnique({
@@ -214,8 +214,8 @@ export const sectionAccessRouter = router({
         return setOverride(tx, userId, section, enabled, ctx.logger);
       });
 
-      // La mutation è già committata: un fallimento dell'audit log non deve
-      // travestirsi da fallimento della mutation stessa.
+      // The mutation is already committed: an audit-log failure must not
+      // masquerade as a failure of the mutation itself.
       try {
         await logAudit(ctx, {
           action: 'SECTION_ACCESS_UPDATED',

@@ -1,6 +1,6 @@
 /**
- * Router tRPC per gestione Brand
- * Implementa CRUD completo per Brand con audit logging
+ * tRPC router for Brand management
+ * Implements full CRUD for Brand with audit logging
  */
 
 import { TRPCError } from '@trpc/server';
@@ -122,7 +122,7 @@ export const brandRouter = router({
           });
         }
 
-        // Valida unicità navBrandId se fornito — dentro la transaction per evitare TOCTOU
+        // Validates navBrandId uniqueness if provided — inside the transaction to avoid TOCTOU
         if (brandData.navBrandId) {
           const conflict = await tx.brand.findUnique({
             where: { navBrandId: brandData.navBrandId },
@@ -148,10 +148,10 @@ export const brandRouter = router({
             bucket: 'brand-logos',
             userId: ctx.session!.user.id,
           });
-          // Un id morto è un errore, non un no-op. Il trigger realistico non è un
-          // id malevolo: è il reaper orario che ha spazzato il pending mentre
-          // l'utente era distratto. Senza questo, il brand si salva senza logo e
-          // la UI dice "creato" — perdita di dati con un toast di successo.
+          // A dead id is an error, not a no-op. The realistic trigger isn't a
+          // malicious id: it's the hourly reaper that swept up the pending file
+          // while the user was distracted. Without this, the brand saves without
+          // a logo and the UI says "created" — data loss with a success toast.
           if (!confirmedKey) {
             throw new TRPCError({
               code: 'BAD_REQUEST',
@@ -168,12 +168,12 @@ export const brandRouter = router({
 
         return brand;
       }, { timeout: 15000 })
-        // Il check-then-act sopra è in transaction, ma PostgreSQL gira in READ
-        // COMMITTED: due create concorrenti sullo stesso codice non si vedono a
-        // vicenda e arrivano entrambe all'insert. Il vincolo unique impedisce il
-        // duplicato — senza questa traduzione però il perdente riceveva un errore
-        // Prisma grezzo (500) invece del CONFLICT che riceve chi perde la corsa
-        // per via del controllo esplicito. Stesso pattern del P2025 in company.ts.
+        // The check-then-act above is inside a transaction, but PostgreSQL runs in
+        // READ COMMITTED: two concurrent creates with the same code don't see each
+        // other and both reach the insert. The unique constraint prevents the
+        // duplicate — but without this translation the loser would get a raw
+        // Prisma error (500) instead of the CONFLICT it gets via the explicit
+        // check when it loses the race. Same pattern as the P2025 in company.ts.
         .catch((e: unknown) => {
           if ((e as { code?: string })?.code === 'P2002') {
             throw new TRPCError({
@@ -230,9 +230,9 @@ export const brandRouter = router({
           input.data.code = normalizedCode;
         }
 
-        // Valida unicità navBrandId se modificato
+        // Validates navBrandId uniqueness if changed
         if (input.data.navBrandId !== undefined && input.data.navBrandId !== existingBrand.navBrandId) {
-          // Blocca qualsiasi cambio al collegamento NAV se già valorizzato — usare endpoint unlink
+          // Blocks any change to the NAV link if already set — use the unlink endpoint
           if (existingBrand.navBrandId !== null) {
             throw new TRPCError({
               code: 'BAD_REQUEST',

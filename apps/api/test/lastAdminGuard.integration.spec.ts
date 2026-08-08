@@ -1,12 +1,12 @@
 /**
- * `lastAdminGuard` — enforcement reale attraverso gli endpoint tRPC, non contro
- * un mock. `sectionAccess.spec.ts` esercita solo `countAdminsWithSettingsAccess`
- * con un `PrismaClient` finto: nessun test tocca `assertNotLastAdminWithSettingsAccess`,
- * `acquireLastAdminLock`, o la transazione reale di `users.update`/`softDelete`/
- * `hardDelete`. Questa suite copre entrambe le cose, inclusa la race che
- * `pg_advisory_xact_lock` esiste per chiudere: due mutation concorrenti che,
- * lette in isolamento, vedrebbero entrambe "2 admin" e passerebbero entrambe,
- * portando il sistema a zero admin.
+ * `lastAdminGuard` — real enforcement through the tRPC endpoints, not against
+ * a mock. `sectionAccess.spec.ts` only exercises `countAdminsWithSettingsAccess`
+ * with a fake `PrismaClient`: no test touches `assertNotLastAdminWithSettingsAccess`,
+ * `acquireLastAdminLock`, or the real transaction of `users.update`/`softDelete`/
+ * `hardDelete`. This suite covers both, including the race that
+ * `pg_advisory_xact_lock` exists to close: two concurrent mutations that,
+ * read in isolation, would both see "2 admins" and would both pass,
+ * driving the system to zero admins.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -27,10 +27,10 @@ function callerFor(session: UserSession) {
 const LAST_ADMIN_MESSAGE =
   "Non puoi rimuovere i privilegi amministrativi dall'ultimo amministratore del sistema";
 
-// `beforeEach`, non `beforeAll`: gli admin creati da un test restano attivi nel
-// DB condiviso del file (nessun truncate fra test) e si sommerebbero al conteggio
-// globale del test successivo — il test di concorrenza sotto assume esattamente
-// due admin attivi al mondo, non "due più quelli lasciati dai test precedenti".
+// `beforeEach`, not `beforeAll`: the admins created by one test remain active in
+// the file's shared DB (no truncate between tests) and would add up to the next
+// test's global count — the concurrency test below assumes exactly
+// two active admins in the world, not "two plus whatever previous tests left behind".
 beforeEach(async () => {
   prisma = await setupTestDb();
 });
@@ -51,7 +51,7 @@ describe('lastAdminGuard — enforcement reale', () => {
   it('editor con users:update PUÒ disattivare un admin se ne resta almeno un altro attivo', async () => {
     const { session: editorSession } = await createTestUser('editor');
     const { user: admin1 } = await createTestUser('admin');
-    await createTestUser('admin'); // secondo admin: mantiene il sistema sopra la soglia
+    await createTestUser('admin'); // second admin: keeps the system above the threshold
 
     await callerFor(editorSession).update({ id: admin1.id, isActive: false });
 
@@ -60,13 +60,13 @@ describe('lastAdminGuard — enforcement reale', () => {
   });
 
   /**
-   * Regressione: la prima versione del guard controllava solo la sezione
-   * `settings`, e togliere `settings.users` all'ultimo admin passava senza
-   * ostacoli. La voce di menu Utenti è gated su
-   * `settings && settings['settings.users']` (`useMenuAccess.ts`) e quella
-   * sezione mappa su `users:read`: chi la perde non può più creare né
-   * promuovere nessuno, quindi è lo stesso lockout di `settings`, da un'altra
-   * porta. Trovato provando a mano su RC, non da un test.
+   * Regression: the first version of the guard only checked the `settings`
+   * section, and removing `settings.users` from the last admin passed without
+   * any obstacle. The Users menu entry is gated on
+   * `settings && settings['settings.users']` (`useMenuAccess.ts`) and that
+   * section maps to `users:read`: whoever loses it can no longer create or
+   * promote anyone, so it's the same lockout as `settings`, through another
+   * door. Found by testing manually on RC, not by a test.
    */
   describe('sezioni di recupero', () => {
     it.each(['settings', 'settings.users'] as const)(
@@ -88,7 +88,7 @@ describe('lastAdminGuard — enforcement reale', () => {
       "togliere '%s' a un admin è consentito se ne resta un altro",
       async section => {
         const { user: target, session } = await createTestUser('admin');
-        await createTestUser('admin'); // la via d'uscita
+        await createTestUser('admin'); // the way out
 
         await expect(
           createCallerWithSession(session).sectionAccess.set({
@@ -105,17 +105,17 @@ describe('lastAdminGuard — enforcement reale', () => {
     'acquireLastAdminLock serializza due transazioni concorrenti sulla stessa chiave ' +
       '(pg_advisory_xact_lock, non un mutex applicativo — sopravvive a più repliche API)',
     async () => {
-      // Prova diretta di mutua esclusione sulla primitiva reale usata da tutti e tre
-      // gli endpoint (`users.update`/`softDelete`/`hardDelete`, vedi grep in
-      // `src/routers/users.core.router.ts` e `src/services/users.service.ts`).
-      // Un test end-to-end con due `users.update` concorrenti è stato scartato dopo
-      // verifica empirica: senza forzare la finestra di sovrapposizione, le due
-      // transazioni non si accavallano mai abbastanza da eseguire entrambe la SELECT
-      // prima che la prima faccia COMMIT — il test passava identico anche con
-      // `acquireLastAdminLock` temporaneamente disattivato (falso positivo). `pg_sleep`
-      // dentro la transazione che tiene il lock forza deterministicamente la
-      // sovrapposizione, a differenza di un semplice `Promise.allSettled` su due
-      // chiamate reali.
+      // Direct test of mutual exclusion on the real primitive used by all three
+      // endpoints (`users.update`/`softDelete`/`hardDelete`, see grep in
+      // `src/routers/users.core.router.ts` and `src/services/users.service.ts`).
+      // An end-to-end test with two concurrent `users.update` calls was dropped after
+      // empirical verification: without forcing the overlap window, the two
+      // transactions never overlap enough for both to run the SELECT
+      // before the first one COMMITs — the test passed identically even with
+      // `acquireLastAdminLock` temporarily disabled (false positive). `pg_sleep`
+      // inside the transaction holding the lock deterministically forces the
+      // overlap, unlike a plain `Promise.allSettled` over two
+      // real calls.
       const order: string[] = [];
 
       const txA = prisma.$transaction(async tx => {
@@ -125,9 +125,9 @@ describe('lastAdminGuard — enforcement reale', () => {
         order.push('A-releasing');
       });
 
-      // Garantisce che A abbia già acquisito il lock prima che B tenti — altrimenti
-      // l'ordine di arrivo delle due transazioni sulla stessa chiave non è garantito
-      // e il test diventerebbe intermittente.
+      // Ensures A has already acquired the lock before B tries — otherwise
+      // the arrival order of the two transactions on the same key isn't guaranteed
+      // and the test would become flaky.
       await new Promise(resolve => setTimeout(resolve, 100));
 
       const txB = prisma.$transaction(async tx => {
@@ -137,9 +137,9 @@ describe('lastAdminGuard — enforcement reale', () => {
 
       await Promise.all([txA, txB]);
 
-      // B non può acquisire il lock finché la transazione di A non termina (l'advisory
-      // lock è xact-scoped: si rilascia solo a COMMIT/ROLLBACK) — se il lock non
-      // serializzasse, B potrebbe intercalarsi prima di 'A-releasing'.
+      // B cannot acquire the lock until A's transaction ends (the advisory
+      // lock is xact-scoped: it's released only on COMMIT/ROLLBACK) — if the lock
+      // didn't serialize, B could interleave before 'A-releasing'.
       expect(order).toEqual(['A-acquired', 'A-releasing', 'B-acquired']);
     }
   );

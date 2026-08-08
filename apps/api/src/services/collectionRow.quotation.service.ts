@@ -176,11 +176,11 @@ export async function reorderQuotations(
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Riga non trovata' });
   }
 
-  // `updateMany` con il `rowId` nel where, non `update` per id: la versione
-  // precedente riordinava qualunque id le passassi, quindi
-  // `reorder({ rowId: <mio>, orderedIds: [<quotazione altrui>] })` mutava il
-  // record estraneo. Il guard di brand scope non lo ferma — `rowId` è legittimo,
-  // è il resto della lista a non esserlo.
+  // `updateMany` with `rowId` in the where, not `update` by id: the previous
+  // version reordered whatever id you passed it, so
+  // `reorder({ rowId: <mine>, orderedIds: [<someone else's quotation>] })` mutated
+  // the foreign record. The brand-scope guard doesn't stop it — `rowId` is legitimate,
+  // it's the rest of the list that isn't.
   await prisma.$transaction(
     orderedIds.map((id, index) =>
       prisma.collectionRowQuotation.updateMany({
@@ -240,9 +240,9 @@ export async function syncRowQuotations(
   const submittedIds = new Set(drafts.filter(d => d.id).map(d => d.id!));
   const deletedIds = [...existingIds].filter(id => !submittedIds.has(id));
 
-  // deleteMany e i write per-draft toccano insiemi di righe disgiunti (`deletedIds` è il complemento
-  // di `submittedIds`) — in parallelo invece che in sequenza, stesso principio già applicato ai lock
-  // in editLock.service.ts (Promise.all su tx).
+  // deleteMany and the per-draft writes touch disjoint sets of rows (`deletedIds` is the complement
+  // of `submittedIds`) — run in parallel instead of in sequence, same principle already applied to
+  // the locks in editLock.service.ts (Promise.all on tx).
   const [, writes] = await Promise.all([
     deletedIds.length > 0
       ? prisma.collectionRowQuotation.deleteMany({ where: { id: { in: deletedIds }, rowId } })

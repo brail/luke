@@ -1,6 +1,6 @@
 /**
- * Storage sub-router per integrazioni
- * Gestisce configurazione e test connessione per SMB e Google Drive
+ * Storage sub-router for integrations
+ * Handles configuration and connection testing for SMB and Google Drive
  */
 
 import { z } from 'zod';
@@ -14,7 +14,7 @@ import {
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 
-// Schema per configurazione SMB
+// Schema for SMB configuration
 const smbConfigSchema = z.object({
   host: z.string().min(1, 'Host è obbligatorio'),
   path: z.string().min(1, 'Path è obbligatorio'),
@@ -22,7 +22,7 @@ const smbConfigSchema = z.object({
   password: z.string().optional(),
 });
 
-// Schema per configurazione Google Drive OAuth
+// Schema for Google Drive OAuth configuration
 const driveConfigSchema = z.object({
   clientId: z.string().min(1, 'Client ID è obbligatorio'),
   clientSecret: z.string().min(1, 'Client Secret è obbligatorio'),
@@ -55,13 +55,13 @@ export const storageRouter = router({
         const configKey = `storage.${provider}`;
         const logger = new SecureLogger(ctx.logger);
 
-        // Cifra le credenziali sensibili
+        // Encrypts the sensitive credentials
         let configToSave = { ...config };
 
         if (provider === 'smb' && 'password' in config && config.password) {
           configToSave = {
             ...configToSave,
-            password: '[REDACTED]', // Per i log
+            password: '[REDACTED]', // For logs
           };
         }
 
@@ -72,11 +72,11 @@ export const storageRouter = router({
         ) {
           configToSave = {
             ...configToSave,
-            clientSecret: '[REDACTED]', // Per i log
+            clientSecret: '[REDACTED]', // For logs
           };
         }
 
-        // Salva la configurazione cifrata
+        // Saves the encrypted configuration
         const configValue = JSON.stringify(config);
         await saveConfig(ctx.prisma, configKey, configValue, true);
 
@@ -115,8 +115,8 @@ export const storageRouter = router({
     .query(async ({ input, ctx }) => {
       const { provider } = input;
 
-      // Per ora restituisce un placeholder
-      // In futuro qui si implementerà la logica di test reale
+      // For now returns a placeholder
+      // The real test logic will be implemented here in the future
       ctx.logger.info({ provider }, 'Test connessione storage (placeholder)');
 
       return {

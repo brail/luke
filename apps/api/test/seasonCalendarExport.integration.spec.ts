@@ -1,14 +1,14 @@
 /**
- * Export del calendario stagionale.
+ * Season calendar export.
  *
- * Le quattro viste PDF passavano da un `new PdfPrinter(...)` costruito a mano,
- * che non ereditava le access policy chiuse in `lib/export/pdf.ts` — e che dal
- * bump pdfmake 0.2→0.3 era comunque rotto: in 0.3 `createPdfKitDocument`
- * restituisce una Promise, non uno stream, quindi `doc.on(...)` lanciava (500 al
- * chiamante) e la Promise orfana rigettava con un TypeError non gestito, che i
- * guard di `server.ts` trasformano in `process.exit(1)`. Nessun test copriva la
- * rotta, quindi il guasto è passato inosservato: da qui la copertura per tutte e
- * quattro le viste, non solo per il default.
+ * The four PDF views used to go through a hand-built `new PdfPrinter(...)`,
+ * which didn't inherit the access policies locked down in `lib/export/pdf.ts`
+ * — and which, since the pdfmake 0.2→0.3 bump, was broken anyway: in 0.3
+ * `createPdfKitDocument` returns a Promise, not a stream, so `doc.on(...)`
+ * threw (500 to the caller) and the orphaned Promise rejected with an
+ * unhandled TypeError, which the guards in `server.ts` turn into
+ * `process.exit(1)`. No test covered the route, so the breakage went
+ * unnoticed: hence the coverage for all four views, not just the default one.
  */
 
 import { randomUUID } from 'crypto';
@@ -34,8 +34,8 @@ beforeAll(async () => {
 
   const uid = randomUUID().substring(0, 6).toUpperCase();
 
-  // Admin: `getUserAllowedBrandIds` restituisce `null`, così la rotta non filtra
-  // via il brand e i generatori ricevono davvero delle milestone.
+  // Admin: `getUserAllowedBrandIds` returns `null`, so the route doesn't filter
+  // by brand and the generators actually receive milestones.
   const { user } = await createTestUser('admin');
   authHeader = `Bearer ${createToken({
     id: user.id,
@@ -93,8 +93,8 @@ describe('GET /season-calendar/export/pdf', () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.headers['content-type']).toContain('application/pdf');
-      // Il magic number, non la sola lunghezza: un body di errore serializzato
-      // sarebbe comunque non vuoto.
+      // The magic number, not just the length: a serialized error body
+      // would still be non-empty.
       expect(res.rawPayload.subarray(0, 5).toString()).toBe('%PDF-');
     }
   );

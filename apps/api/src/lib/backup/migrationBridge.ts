@@ -175,9 +175,9 @@ export async function runMigrationBridgeJob(params: RunMigrationBridgeJobParams)
   const { prisma, migratedBackupId, sourceBackup, pendingMigrations, currentSchemaMigrationName, createdById, logger } = params;
 
   if (pendingMigrations.length === 0) {
-    // Difensivo: non dovrebbe accadere (nomi migration = timestamp univoci, OLDER implica sempre
-    // almeno un elemento nello slice) — rete di sicurezza contro un futuro refactor che rompa
-    // silenziosamente questa invariante.
+    // Defensive: shouldn't happen (migration names = unique timestamps, OLDER always implies
+    // at least one element in the slice) — a safety net against a future refactor silently
+    // breaking this invariant.
     logger.error({ migratedBackupId }, 'Migration bridge: pendingMigrations vuoto, abort');
     await prisma.backupRecord.update({
       where: { id: migratedBackupId },
@@ -196,9 +196,9 @@ export async function runMigrationBridgeJob(params: RunMigrationBridgeJobParams)
     await prisma.backupRecord.update({ where: { id: migratedBackupId }, data: { status: 'RUNNING' } });
 
     logger.info({ migratedBackupId, sourceBackupId: sourceBackup.id }, 'Migration bridge: preparo DB temporaneo e stage backup');
-    // Il DB temporaneo (drop-then-create idempotente — self-heal da un run precedente crashato) e
-    // lo staging del backup vecchio (download+decifratura) toccano risorse indipendenti — nessuno
-    // dei due dipende dall'altro, solo il pg_restore successivo ha bisogno di entrambi.
+    // The temp DB (idempotent drop-then-create — self-heals from a previously crashed run) and
+    // staging the old backup (download+decrypt) touch independent resources — neither depends
+    // on the other, only the subsequent pg_restore needs both.
     await Promise.all([
       (async () => {
         await dropTempDatabase(mainDb, tempDbName, logger);
@@ -244,7 +244,7 @@ export async function runMigrationBridgeJob(params: RunMigrationBridgeJobParams)
       prisma, backupId: migratedBackupId, scope: 'DB', logger,
       sourceConnection: tempDb, schemaMigrationNameOverride: currentSchemaMigrationName,
     });
-    // runBackupJob gestisce da solo COMPLETED/FAILED su questo record.
+    // runBackupJob handles COMPLETED/FAILED on this record by itself.
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     logger.error({ migratedBackupId, err: message }, 'Migration bridge: fallito');

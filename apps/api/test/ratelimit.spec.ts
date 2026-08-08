@@ -1,6 +1,6 @@
 /**
- * Test per Rate-Limit Store
- * Verifica funzionalità di rate limiting per-rotta
+ * Tests for Rate-Limit Store
+ * Verifies per-route rate limiting functionality
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -25,7 +25,7 @@ describe('Rate-Limit Store', () => {
       const key = '192.168.1.1';
       const config = RATE_LIMIT_CONFIG[routeName];
 
-      // Prime 4 richieste dovrebbero essere permesse
+      // First 4 requests should be allowed
       for (let i = 0; i < 4; i++) {
         expect(rateLimitStore.isLimited(routeName, key, config)).toBe(false);
         rateLimitStore.record(routeName, key, config);
@@ -37,13 +37,13 @@ describe('Rate-Limit Store', () => {
       const key = '192.168.1.1';
       const config = RATE_LIMIT_CONFIG[routeName];
 
-      // Raggiungi il limite
+      // Reach the limit
       for (let i = 0; i < config.max; i++) {
         expect(rateLimitStore.isLimited(routeName, key, config)).toBe(false);
         rateLimitStore.record(routeName, key, config);
       }
 
-      // La prossima richiesta dovrebbe essere bloccata
+      // The next request should be blocked
       expect(rateLimitStore.isLimited(routeName, key, config)).toBe(true);
     });
 
@@ -54,16 +54,16 @@ describe('Rate-Limit Store', () => {
       const key = '192.168.1.1';
       const config = RATE_LIMIT_CONFIG[routeName];
 
-      // Raggiungi limite
+      // Reach the limit
       for (let i = 0; i < config.max; i++) {
         rateLimitStore.record(routeName, key, config);
       }
       expect(rateLimitStore.isLimited(routeName, key, config)).toBe(true);
 
-      // Avanza il tempo di 61 secondi (oltre il window di 60s)
+      // Advance time by 61 seconds (past the 60s window)
       vi.advanceTimersByTime(61_000);
 
-      // Dovrebbe essere di nuovo permesso
+      // Should be allowed again
       expect(rateLimitStore.isLimited(routeName, key, config)).toBe(false);
 
       vi.useRealTimers();
@@ -71,7 +71,7 @@ describe('Rate-Limit Store', () => {
 
     it('should block loginByUsername after 10 attempts regardless of key format', () => {
       const routeName = 'loginByUsername';
-      const key = 'spray-target-user'; // chiave = username normalizzato, non un IP
+      const key = 'spray-target-user'; // key = normalized username, not an IP
       const config = RATE_LIMIT_CONFIG[routeName];
 
       for (let i = 0; i < config.max; i++) {
@@ -89,17 +89,17 @@ describe('Rate-Limit Store', () => {
       const key = 'user-123';
       const config = RATE_LIMIT_CONFIG[routeName];
 
-      // Raggiungi limite (3 req)
+      // Reach the limit (3 req)
       for (let i = 0; i < config.max; i++) {
         rateLimitStore.record(routeName, key, config);
       }
       expect(rateLimitStore.isLimited(routeName, key, config)).toBe(true);
 
-      // Avanza 14min → ancora bloccato
+      // Advance 14min → still blocked
       vi.advanceTimersByTime(14 * 60 * 1000);
       expect(rateLimitStore.isLimited(routeName, key, config)).toBe(true);
 
-      // Avanza 2min (totale 16min) → sbloccato
+      // Advance 2min (16min total) → unblocked
       vi.advanceTimersByTime(2 * 60 * 1000);
       expect(rateLimitStore.isLimited(routeName, key, config)).toBe(false);
 
@@ -114,7 +114,7 @@ describe('Rate-Limit Store', () => {
       const key2 = '192.168.1.2';
       const config = RATE_LIMIT_CONFIG[routeName];
 
-      // Raggiungi limite per key1
+      // Reach the limit for key1
       for (let i = 0; i < config.max; i++) {
         rateLimitStore.record(routeName, key1, config);
       }
@@ -130,7 +130,7 @@ describe('Rate-Limit Store', () => {
       const config1 = RATE_LIMIT_CONFIG[routeName1];
       const config2 = RATE_LIMIT_CONFIG[routeName2];
 
-      // Raggiungi limite per route1
+      // Reach the limit for route1
       for (let i = 0; i < config1.max; i++) {
         rateLimitStore.record(routeName1, key, config1);
       }
@@ -174,7 +174,7 @@ describe('Rate-Limit Store', () => {
       expect(initialStats.routes).toBe(0);
       expect(initialStats.totalKeys).toBe(0);
 
-      // Aggiungi alcune richieste
+      // Add a few requests
       rateLimitStore.record(routeName, key, config);
 
       const stats = rateLimitStore.getStats();
@@ -187,9 +187,9 @@ describe('Rate-Limit Store', () => {
 
 describe('Sincronia delle mappe di rate limit', () => {
   it('ogni rotta in RATE_LIMIT_CONFIG ha un default in RATE_LIMIT_POLICY_DEFAULTS', () => {
-    // `resolveRateLimitPolicy` lancia su una rotta assente dai default: una
-    // chiave aggiunta a una mappa sola non è un errore di compilazione, è un
-    // crash alla prima richiesta che la usa. È già successo (v1.9.1).
+    // `resolveRateLimitPolicy` throws on a route missing from the defaults: a
+    // key added to only one map isn't a compile error, it's a crash on the
+    // first request that uses it. This has already happened (v1.9.1).
     const missing = Object.keys(RATE_LIMIT_CONFIG).filter(
       route => !(route in RATE_LIMIT_POLICY_DEFAULTS)
     );
@@ -198,8 +198,8 @@ describe('Sincronia delle mappe di rate limit', () => {
   });
 
   it('ogni rotta in RATE_LIMIT_CONFIG ha un campo in RateLimitConfigSchema', () => {
-    // Se manca qui, un override AppConfig per quella rotta viene scartato in
-    // silenzio da safeParse (non-strict) — nessun errore, nessun log.
+    // If missing here, an AppConfig override for that route gets silently
+    // discarded by safeParse (non-strict) — no error, no log.
     const schemaKeys = Object.keys(RateLimitConfigSchema.shape);
     const missing = Object.keys(RATE_LIMIT_CONFIG).filter(
       route => !schemaKeys.includes(route)

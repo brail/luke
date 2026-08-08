@@ -1,11 +1,11 @@
 /**
- * Router tRPC per il sistema di backup/restore full-system (disaster recovery).
+ * tRPC router for the full-system backup/restore system (disaster recovery).
  *
- * `create` avvia il job in background (fire-and-forget: `runBackupJob` non lancia mai,
- * cattura ogni errore nel record stesso) — il frontend fa polling di `getById`/`list` per lo stato.
- * `restore` invece è sincrona: crea prima uno snapshot di sicurezza pre-restore (obbligatorio,
- * non disattivabile — se fallisce il restore viene abortito senza toccare nulla), poi esegue
- * `runRestoreJob` (che lancia in caso di errore, a differenza del job di backup).
+ * `create` starts the job in the background (fire-and-forget: `runBackupJob` never throws,
+ * it captures every error in the record itself) — the frontend polls `getById`/`list` for status.
+ * `restore` is synchronous instead: it first creates a pre-restore safety snapshot (mandatory,
+ * cannot be disabled — if it fails the restore is aborted without touching anything), then runs
+ * `runRestoreJob` (which throws on error, unlike the backup job).
  */
 
 import { TRPCError } from '@trpc/server';
@@ -228,7 +228,7 @@ export const backupRouter = router({
         label: input.label,
       });
 
-      // Fire-and-forget: runBackupJob non lancia mai, cattura ogni errore nel record stesso.
+      // Fire-and-forget: runBackupJob never throws, it captures every error in the record itself.
       void runBackupJob({
         prisma: ctx.prisma,
         backupId: record.id,
@@ -271,7 +271,7 @@ export const backupRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Metadati crittografici del backup mancanti' });
       }
 
-      // Ri-valida sempre server-side, mai fidarsi della classificazione mostrata al client.
+      // Always re-validates server-side, never trust the classification shown to the client.
       const compat = await classifySchemaCompatibility(ctx.prisma, target.schemaMigrationName);
       if (compat.classification !== 'OLDER' || !target.schemaMigrationName || !compat.currentSchemaMigrationName) {
         throw new TRPCError({
@@ -287,7 +287,7 @@ export const backupRouter = router({
         sourceBackupId: target.id,
       });
 
-      // Fire-and-forget: runMigrationBridgeJob non lancia mai, cattura ogni errore nel record stesso.
+      // Fire-and-forget: runMigrationBridgeJob never throws, it captures every error in the record itself.
       void runMigrationBridgeJob({
         prisma: ctx.prisma,
         migratedBackupId: migrated.id,
@@ -368,11 +368,11 @@ export const backupRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Metadati crittografici del backup mancanti' });
       }
 
-      // Un backup con schema diverso da quello corrente può lasciare il DB in stato incoerente dopo
-      // pg_restore --clean (colonne mancanti/impreviste, enum sconosciuti). SAME procede come
-      // sempre; OLDER va prima portato a schema corrente col migration bridge; NEWER_OR_UNKNOWN è
-      // un blocco hard senza bypass (le migration sono solo forward, andare indietro significa
-      // inventare dati cancellati legittimamente).
+      // A backup with a schema different from the current one can leave the DB in an inconsistent
+      // state after pg_restore --clean (missing/unexpected columns, unknown enums). SAME proceeds as
+      // usual; OLDER must first be brought to the current schema via the migration bridge;
+      // NEWER_OR_UNKNOWN is a hard block with no bypass (migrations are forward-only, going backward
+      // would mean inventing legitimately deleted data).
       const compat = await classifySchemaCompatibility(ctx.prisma, target.schemaMigrationName);
       if (compat.classification !== 'SAME') {
         const message = compat.classification === 'NEWER_OR_UNKNOWN'
@@ -381,7 +381,7 @@ export const backupRouter = router({
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message });
       }
 
-      // Snapshot di sicurezza obbligatorio: se fallisce, il restore non parte — nulla è stato toccato.
+      // Mandatory safety snapshot: if it fails, the restore doesn't start — nothing has been touched.
       const safety = await createPendingBackupRecord(ctx.prisma, {
         scope: 'DB',
         trigger: 'PRE_RESTORE_SAFETY',
@@ -401,10 +401,10 @@ export const backupRouter = router({
 
       const baseMeta = { preserveAuditLog: input.preserveAuditLog, restoreFiles: input.restoreFiles };
 
-      // Blocca tutto il traffico non-admin (letture incluse) e invalida le loro sessioni prima
-      // di toccare il DB — un restore è già un'azione deliberata, quindi attivazione immediata,
-      // non pianificata. Resta ACTIVE anche a restore concluso: un admin deve terminarla
-      // esplicitamente dopo aver verificato che tutto funzioni.
+      // Blocks all non-admin traffic (reads included) and invalidates their sessions before
+      // touching the DB — a restore is already a deliberate action, so activation is immediate,
+      // not scheduled. Stays ACTIVE even after the restore completes: an admin must end it
+      // explicitly after verifying that everything works.
       await writeMaintenanceState(ctx.prisma, {
         status: 'ACTIVE',
         scheduledAt: null,

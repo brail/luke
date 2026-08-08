@@ -15,10 +15,10 @@ export const tokenVersionCache = new Map<
   { version: number; isActive: boolean; timestamp: number }
 >();
 
-// Cache per TTL dinamico da AppConfig
+// Cache for dynamic TTL from AppConfig
 let cachedTTLValue: number | null = null;
 let cachedTTLTimestamp = 0;
-const TTL_REFRESH_INTERVAL = 5 * 60 * 1000; // Refresh config ogni 5min
+const TTL_REFRESH_INTERVAL = 5 * 60 * 1000; // Refresh config every 5min
 
 async function getCacheTTL(prisma: PrismaClient): Promise<number> {
   const now = Date.now();
@@ -35,27 +35,28 @@ async function getCacheTTL(prisma: PrismaClient): Promise<number> {
 }
 
 /**
- * `true` se il token è ancora valido: `tokenVersion` allineato alla riga utente e
- * utente attivo.
+ * `true` if the token is still valid: `tokenVersion` matches the user row and
+ * the user is active.
  *
- * Vive qui, e non dentro `trpc.ts`, perché deve poter essere chiamata da
- * `authenticateRequest` — cioè dal punto in cui la sessione viene *costruita*.
- * Finché la verifica stava solo nel middleware tRPC, ogni route Fastify non-tRPC
- * (upload logo, export calendario, **restore di backup**) otteneva una sessione
- * valida da un token revocato: `createUserSession` la deriva dai soli claim del
- * JWT, e nessuno confrontava `tokenVersion` con il database. Revoca sessioni e
- * disattivazione account erano aggirabili per tutta la vita del JWT (7 giorni).
+ * Lives here, and not inside `trpc.ts`, because it needs to be callable from
+ * `authenticateRequest` — i.e. from the point where the session is *built*.
+ * As long as the check lived only in the tRPC middleware, every non-tRPC Fastify
+ * route (logo upload, calendar export, **backup restore**) obtained a valid
+ * session from a revoked token: `createUserSession` derives it purely from the
+ * JWT claims, and nothing compared `tokenVersion` against the database. Session
+ * revocation and account deactivation could be bypassed for the entire JWT
+ * lifetime (7 days).
  *
- * `isActive` è in cache accanto alla versione: senza, un utente disattivato
- * restava operativo fino alla scadenza del TTL, perché il ramo cache usciva
- * prima di rileggere la riga.
+ * `isActive` is cached alongside the version: without it, a deactivated user
+ * stayed operational until the TTL expired, because the cache branch returned
+ * before re-reading the row.
  */
 export async function verifyTokenVersion(
   userId: string,
   tokenVersion: number | undefined,
   prisma: PrismaClient
 ): Promise<boolean> {
-  // Rifiuta i JWT emessi prima dell'introduzione di tokenVersion
+  // Reject JWTs issued before tokenVersion was introduced
   if (tokenVersion === undefined || tokenVersion === null) {
     return false;
   }

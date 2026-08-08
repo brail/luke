@@ -291,10 +291,10 @@ export const holidaysRouter = router({
         where: { countryCode: { in: input.countryCodes } },
       });
 
-      // @@unique([vendorId, seasonId, sourceHolidayId]) rende questo idempotente
-      // sotto doppio submit — skipDuplicates sostituisce il precedente
-      // findFirst+create per-holiday, che lasciava una finestra di race fra le
-      // due query.
+      // @@unique([vendorId, seasonId, sourceHolidayId]) makes this idempotent
+      // under double submit — skipDuplicates replaces the previous
+      // per-holiday findFirst+create, which left a race window between the
+      // two queries.
       const { count: created } = await ctx.prisma.vendorClosurePeriod.createMany({
         data: holidays.map(h => ({
           vendorId: input.vendorId,

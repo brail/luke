@@ -17,10 +17,10 @@ const logger = pino({ level: 'info' });
  * Conservative built-in defaults for backwards compatibility.
  * Development environments use relaxed limits (100× the production values).
  *
- * Esportata perché la sincronia con `RATE_LIMIT_CONFIG` (`lib/ratelimit.ts`) è
- * un invariante verificabile: `resolveRateLimitPolicy` lancia a runtime su una
- * rotta assente da qui, quindi una chiave aggiunta a una sola delle due mappe
- * diventa un crash in produzione invece di un errore di compilazione.
+ * Exported because staying in sync with `RATE_LIMIT_CONFIG` (`lib/ratelimit.ts`) is
+ * a checkable invariant: `resolveRateLimitPolicy` throws at runtime on a route
+ * missing from here, so a key added to only one of the two maps
+ * becomes a production crash instead of a compile-time error.
  */
 export const RATE_LIMIT_POLICY_DEFAULTS: Record<string, RateLimitPolicy> = {
   login: { max: 5, timeWindow: '1m', keyBy: 'ip' },
@@ -63,7 +63,7 @@ export const RATE_LIMIT_POLICY_DEFAULTS: Record<string, RateLimitPolicy> = {
     keyBy: 'userId',
   },
   navSyncTrigger: {
-    max: 1, // 1 sync per finestra, previene connection pool exhaustion
+    max: 1, // 1 sync per window, prevents connection pool exhaustion
     timeWindow: '10m',
     keyBy: 'userId',
   },
@@ -75,12 +75,12 @@ export const RATE_LIMIT_POLICY_DEFAULTS: Record<string, RateLimitPolicy> = {
 };
 
 /**
- * Cache in-memory, per-processo, sul valore grezzo di AppConfig `rateLimit`. `auth.login`
- * risolve due bucket nello stesso tentativo (`login` via `withRateLimit`, `loginByUsername`
- * in `authenticateUser()`) — senza questa cache ogni tentativo di login fa DUE query
- * identiche sulla stessa riga. TTL breve: un cambio di config via admin UI impiega al
- * massimo questo tempo a propagarsi, accettabile per un numero di rate-limit (non è un dato
- * di sicurezza binario come un permesso).
+ * In-memory, per-process cache of the raw AppConfig `rateLimit` value. `auth.login`
+ * resolves two buckets in the same attempt (`login` via `withRateLimit`, `loginByUsername`
+ * in `authenticateUser()`) — without this cache every login attempt makes TWO
+ * identical queries on the same row. Short TTL: a config change via the admin UI takes at
+ * most this long to propagate, acceptable for a rate-limit number (unlike a binary
+ * security value such as a permission).
  */
 const RATE_LIMIT_CONFIG_CACHE_TTL_MS = 2000;
 let cachedConfigValue: { value: string | null; expiresAt: number } | null = null;
@@ -146,7 +146,7 @@ export async function resolveRateLimitPolicy(
   routeName: keyof typeof RATE_LIMIT_POLICY_DEFAULTS,
   prisma: PrismaClient
 ): Promise<{ max: number; windowMs: number; keyBy: 'ip' | 'userId' | 'username' }> {
-  // 1) Tentativo AppConfig (chiave singola 'rateLimit' con JSON object)
+  // 1) AppConfig attempt (single 'rateLimit' key with JSON object)
   try {
     const configValue = await fetchRateLimitConfigValue(prisma);
     if (configValue) {
@@ -167,11 +167,11 @@ export async function resolveRateLimitPolicy(
       }
     }
   } catch (error) {
-    // Log errore ma continua con fallback
+    // Log the error but continue with fallback
     logger.warn({ err: error }, 'Failed to parse AppConfig rateLimit');
   }
 
-  // 2) Fallback ENV (es. LUKE_RATE_LIMIT_LOGIN_MAX, LUKE_RATE_LIMIT_LOGIN_WINDOW, LUKE_RATE_LIMIT_LOGIN_KEY_BY)
+  // 2) ENV fallback (e.g. LUKE_RATE_LIMIT_LOGIN_MAX, LUKE_RATE_LIMIT_LOGIN_WINDOW, LUKE_RATE_LIMIT_LOGIN_KEY_BY)
   const envKey = routeName.toUpperCase();
   const maxEnv = process.env[`LUKE_RATE_LIMIT_${envKey}_MAX`];
   const windowEnv = process.env[`LUKE_RATE_LIMIT_${envKey}_WINDOW`];
@@ -189,11 +189,11 @@ export async function resolveRateLimitPolicy(
       };
     } catch (error) {
       logger.warn({ err: error, routeName }, 'Invalid ENV rate limit config');
-      // Fallback ai default se ENV è malformato
+      // Fall back to defaults if ENV is malformed
     }
   }
 
-  // 3) Default sicuri
+  // 3) Safe defaults
   const def = RATE_LIMIT_POLICY_DEFAULTS[routeName];
   return {
     max: def.max,

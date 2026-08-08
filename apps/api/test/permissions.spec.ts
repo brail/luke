@@ -1,6 +1,6 @@
 /**
- * Test unit per sistema permissions Resource:Action
- * Verifica hasPermission, expandRole e middleware requirePermission
+ * Unit tests for the Resource:Action permissions system
+ * Verifies hasPermission, expandRole and the requirePermission middleware
  */
 
 import { TRPCError } from '@trpc/server';
@@ -21,15 +21,15 @@ import { createSilentLogger } from './helpers/logger';
 
 import type { Context } from '../src/lib/trpc';
 
-// Mock context per test
+// Mock context for tests
 const createMockContext = (
   userRole: Role,
   userId = 'test-user-id'
 ): Context => ({
   prisma: {} as any,
   session: {
-    // La sessione porta solo i campi necessari all'autorizzazione: il resto del
-    // profilo non fa parte di `UserSession` e non va rimesso qui.
+    // The session carries only the fields needed for authorization: the rest of the
+    // profile isn't part of `UserSession` and shouldn't be put back here.
     user: {
       id: userId,
       role: userRole,
@@ -41,17 +41,17 @@ const createMockContext = (
   req: {} as any,
   res: {} as any,
   traceId: 'test-trace-id',
-  // Logger funzionante, non `{}`: il deny path fa `ctx.logger?.warn(...)`, e
-  // l'optional chaining protegge dal logger assente, non dal metodo mancante.
-  // Con un mock vuoto il TypeError mascherava il FORBIDDEN in INTERNAL_SERVER_ERROR.
+  // Working logger, not `{}`: the deny path calls `ctx.logger?.warn(...)`, and
+  // optional chaining protects against a missing logger, not a missing method.
+  // With an empty mock, the TypeError masked the FORBIDDEN as INTERNAL_SERVER_ERROR.
   logger: createSilentLogger() as any,
   _permissionsCache: new Map(),
 });
 
 /**
- * Chiave della cache permessi: `role:userId:permission`.
- * Lo userId è parte della chiave per costruzione — senza, due utenti con lo stesso
- * ruolo condividerebbero le decisioni di accesso nello stesso context.
+ * Permission cache key: `role:userId:permission`.
+ * userId is part of the key by design — without it, two users with the same
+ * role would share access decisions within the same context.
  */
 const cacheKey = (role: Role, permission: Permission, userId = 'test-user-id') =>
   `${role}:${userId}:${permission}`;
@@ -146,12 +146,12 @@ describe('expandRole', () => {
 
 describe('requirePermission middleware', () => {
   /**
-   * Esercita il middleware attraverso una procedura tRPC reale.
+   * Exercises the middleware through a real tRPC procedure.
    *
-   * `requirePermission` ritorna un MiddlewareBuilder di tRPC, non una funzione
-   * invocabile: chiamarlo direttamente lega il test a un dettaglio interno della
-   * libreria (ed è ciò che li ha rotti all'upgrade di tRPC). Passando da
-   * `.use()` + `createCaller` si testa esattamente il percorso di produzione.
+   * `requirePermission` returns a tRPC MiddlewareBuilder, not a callable
+   * function: calling it directly ties the test to an internal library
+   * detail (and that's what broke them on the tRPC upgrade). Going through
+   * `.use()` + `createCaller` tests exactly the production path.
    */
   const callProbe = (
     permission: Parameters<typeof requirePermission>[0],
@@ -225,7 +225,7 @@ describe('requirePermission middleware', () => {
     expect(ctx._permissionsCache?.has(key)).toBe(true);
     expect(ctx._permissionsCache?.get(key)).toBe(true);
 
-    // Seconda chiamata: serve dalla cache, stesso esito
+    // Second call: served from cache, same outcome
     await expect(callProbe('brands:create', ctx)).resolves.toBe('success');
   });
 });
@@ -258,13 +258,13 @@ describe('can helper', () => {
   it('should cache permission checks', () => {
     const ctx = createMockContext('editor');
 
-    // Prima chiamata
+    // First call
     expect(can(ctx, 'brands:create')).toBe(true);
     expect(ctx._permissionsCache?.has(cacheKey('editor', 'brands:create'))).toBe(
       true
     );
 
-    // Seconda chiamata dovrebbe usare cache
+    // Second call should use the cache
     expect(can(ctx, 'brands:create')).toBe(true);
   });
 });
@@ -284,9 +284,9 @@ describe('ROLE_PERMISSIONS configuration', () => {
     expect(editorPermissions).toContain('config:update');
     expect(editorPermissions).toContain('audit:read');
     expect(editorPermissions).toContain('dashboard:read');
-    // La sezione settings è admin-only per design: `SECTION_ACCESS_DEFAULTS.editor.settings`
-    // è false e nessun grant `settings:*` è previsto per editor. Asserzione negativa
-    // per bloccare il vincolo invece di lasciarlo semplicemente non testato.
+    // The settings section is admin-only by design: `SECTION_ACCESS_DEFAULTS.editor.settings`
+    // is false and no `settings:*` grant is expected for editor. Negative assertion
+    // to lock in the constraint instead of just leaving it untested.
     expect(editorPermissions).not.toContain('settings:read');
   });
 

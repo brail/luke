@@ -1,13 +1,13 @@
 /**
- * Test per validare l'idempotenza e funzionalità del seed
+ * Test to validate the idempotency and functionality of the seed
  *
- * Verifica:
- * - seedAdminUser crea admin se non esiste
- * - seedAdminUser è idempotente (nessuna duplicazione)
- * - seedAppConfigs crea configurazioni base
- * - seedAppConfigs è idempotente (nessuna duplicazione)
- * - Nessuna configurazione LDAP nel seed
- * - seedContextData crea brand, stagione e set parametri pricing utilizzabile
+ * Verifies:
+ * - seedAdminUser creates admin if it doesn't exist
+ * - seedAdminUser is idempotent (no duplication)
+ * - seedAppConfigs creates base configurations
+ * - seedAppConfigs is idempotent (no duplication)
+ * - No LDAP configuration in the seed
+ * - seedContextData creates a usable brand, season, and pricing parameter set
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -26,7 +26,7 @@ describe('Bootstrap & Seed', () => {
   });
 
   beforeEach(async () => {
-    // Pulisci il database prima di ogni test
+    // Clean the database before each test
     await prisma.localCredential.deleteMany();
     await prisma.identity.deleteMany();
     await prisma.user.deleteMany();
@@ -57,22 +57,22 @@ describe('Bootstrap & Seed', () => {
   });
 
   it('seedAdminUser è idempotente', async () => {
-    // Prima esecuzione
+    // First run
     await seedAdminUser(prisma);
     const count1 = await prisma.user.count();
     const admin1 = await prisma.user.findFirst({
       where: { username: 'admin' },
     });
 
-    // Seconda esecuzione
+    // Second run
     await seedAdminUser(prisma);
     const count2 = await prisma.user.count();
     const admin2 = await prisma.user.findFirst({
       where: { username: 'admin' },
     });
 
-    expect(count2).toBe(count1); // Nessuna duplicazione
-    expect(admin1?.id).toBe(admin2?.id); // Stesso utente
+    expect(count2).toBe(count1); // No duplication
+    expect(admin1?.id).toBe(admin2?.id); // Same user
   });
 
   it('seedAppConfigs crea configurazioni base', async () => {
@@ -96,15 +96,15 @@ describe('Bootstrap & Seed', () => {
   });
 
   it('seedAppConfigs è idempotente', async () => {
-    // Prima esecuzione
+    // First run
     await seedAppConfigs(prisma);
     const count1 = await prisma.appConfig.count();
 
-    // Seconda esecuzione
+    // Second run
     await seedAppConfigs(prisma);
     const count2 = await prisma.appConfig.count();
 
-    expect(count2).toBe(count1); // Nessuna duplicazione
+    expect(count2).toBe(count1); // No duplication
   });
 
   it('nessuna configurazione LDAP nel seed', async () => {
@@ -135,7 +135,7 @@ describe('Bootstrap & Seed', () => {
 
     expect(configs).toHaveLength(criticalKeys.length);
 
-    // Verifica valori specifici
+    // Verify specific values
     const appName = configs.find(c => c.key === 'app.name');
     const authStrategy = configs.find(c => c.key === 'auth.strategy');
     const locale = configs.find(c => c.key === 'app.locale');
@@ -165,9 +165,9 @@ describe('Bootstrap & Seed', () => {
   });
 
   /**
-   * `seedContextData` non era coperta da nulla, e il seed si è già rotto una
-   * volta in silenzio (un campo `isMain` rimasto dopo la sua rimozione dallo
-   * schema): l'installazione da zero falliva senza che alcun test lo dicesse.
+   * `seedContextData` wasn't covered by anything, and the seed had already broken
+   * once silently (an `isMain` field left behind after its removal from the
+   * schema): a fresh install failed with no test to say so.
    */
   describe('seedContextData', () => {
     beforeEach(async () => {
@@ -184,9 +184,9 @@ describe('Bootstrap & Seed', () => {
       expect(brand?.isActive).toBe(true);
       expect(season?.isActive).toBe(true);
 
-      // Il set parametri è la precondizione della calcolatrice: senza, la
-      // pagina Costi e Prezzi mostra l'empty state e lo smoke E2E salta il
-      // calcolo invece di verificarlo.
+      // The parameter set is the precondition for the calculator: without it, the
+      // Costi e Prezzi page shows the empty state and the E2E smoke test skips the
+      // calculation instead of verifying it.
       const sets = await prisma.pricingParameterSet.findMany();
       expect(sets).toHaveLength(1);
       expect(sets[0]).toMatchObject({
@@ -211,11 +211,11 @@ describe('Bootstrap & Seed', () => {
 
       const result = calculateForward(100, set);
 
-      // Non asserisce il numero esatto — sarebbe un test tautologico sulla
-      // formula. Asserisce le due proprietà che rendono il seed *utilizzabile*:
-      // il retail supera il costo d'acquisto, e il margine centra il target
-      // dichiarato. Un set con valori incoerenti passerebbe comunque i due test
-      // sopra e romperebbe solo lo smoke, a valle.
+      // Doesn't assert the exact number — that would be a tautological test of the
+      // formula. Asserts the two properties that make the seed *usable*: retail
+      // exceeds the purchase cost, and the margin hits the declared target. A set
+      // with inconsistent values would still pass the two tests above and would
+      // only break the smoke test, downstream.
       expect(result.retailPrice).toBeGreaterThan(100);
       expect(result.companyMargin * 100).toBeCloseTo(set.optimalMargin, 1);
     });

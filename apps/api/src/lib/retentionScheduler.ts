@@ -118,8 +118,8 @@ async function sweepDedupKeys(prisma: PrismaClient, log: FastifyInstance['log'],
 async function runTick(prisma: PrismaClient, log: FastifyInstance['log']): Promise<void> {
   const tickId = randomUUID();
 
-  // Le 4 finestre di retention sono indipendenti fra loro (stesso pattern di
-  // `getBackupScheduleSettings`) — un solo giro di round trip invece di uno per sweep.
+  // The 4 retention windows are independent of each other (same pattern as
+  // `getBackupScheduleSettings`) — a single round trip instead of one per sweep.
   const [retentionDays, criticalRetentionDays, notificationRetentionDays, dedupRetentionDays] = await Promise.all([
     getAuditLogRetentionDays(prisma),
     getAuditLogCriticalRetentionDays(prisma),
@@ -127,9 +127,9 @@ async function runTick(prisma: PrismaClient, log: FastifyInstance['log']): Promi
     getNotificationDedupRetentionDays(prisma),
   ]);
 
-  // Le tre tabelle sono disgiunte e ognuna isola già i propri errori (sweepAuditLog per tier,
-  // le altre due tramite `allSettled` qui) — nessuna ragione di pagarne la latenza in sequenza,
-  // né di far saltare gli sweep successivi se uno dei tre fallisce.
+  // The three tables are disjoint and each already isolates its own errors (sweepAuditLog per
+  // tier, the other two via `allSettled` here) — no reason to pay their latency in sequence,
+  // nor to skip the remaining sweeps if one of the three fails.
   const results = await Promise.allSettled([
     sweepAuditLog(prisma, log, tickId, retentionDays, criticalRetentionDays),
     sweepNotifications(prisma, log, notificationRetentionDays),

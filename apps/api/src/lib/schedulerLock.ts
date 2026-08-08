@@ -61,10 +61,10 @@ async function tryAcquire(prisma: PrismaClient, name: SchedulerName): Promise<bo
 }
 
 async function release(prisma: PrismaClient, name: SchedulerName): Promise<void> {
-  // Cancella la riga invece di scaderla. Scrivere `expiresAt = now()` sembrava equivalente ma non
-  // lo è: la colonna è `TIMESTAMP(3)`, quindi Postgres arrotonda al millisecondo — anche per
-  // eccesso — mentre la riacquisizione richiede `expiresAt < now()`. Un tick che riparte entro
-  // mezzo millisecondo dal rilascio trovava il lock ancora tenuto e veniva saltato in silenzio.
+  // Deletes the row instead of expiring it. Writing `expiresAt = now()` seemed equivalent but
+  // isn't: the column is `TIMESTAMP(3)`, so Postgres rounds to the millisecond — including
+  // rounding up — while reacquisition requires `expiresAt < now()`. A tick restarting within
+  // half a millisecond of the release would find the lock still held and get silently skipped.
   //
   // Only release if still ours — if our TTL already lapsed and another instance re-acquired it
   // in the meantime, this must not clobber their fresh lock.

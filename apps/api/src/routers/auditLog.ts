@@ -1,7 +1,7 @@
 /**
- * Router tRPC per la consultazione dell'audit trail: lookup generico "ultima modifica"
- * per singola entità (widget su collection layout row, planning group, calendar event,
- * pricing parameter set) e la pagina admin di consultazione/export completa.
+ * tRPC router for browsing the audit trail: generic "last change" lookup for a
+ * single entity (widget on collection layout row, planning group, calendar event,
+ * pricing parameter set) and the full admin browse/export page.
  */
 
 import {
@@ -19,9 +19,9 @@ import { router, protectedProcedure } from '../lib/trpc';
 import { signAuditLogExportToken } from '../utils/downloadToken';
 
 /**
- * Permission richiesta per leggere "ultima modifica" di ciascuna entità supportata —
- * rispecchia il permesso di lettura dell'entità stessa, così il widget non espone mai
- * più di quanto l'utente veda già aprendo l'entità.
+ * Permission required to read the "last change" of each supported entity —
+ * mirrors the read permission of the entity itself, so the widget never exposes
+ * more than the user already sees when opening the entity.
  */
 const LAST_CHANGE_TARGET_PERMISSIONS: Record<AuditLogLastChangeTargetType, Permission> = {
   CollectionLayoutRow: 'collection_layout:read',
@@ -59,10 +59,10 @@ export interface AuditLogListOutput {
 
 export const auditLogRouter = router({
   /**
-   * Ultimo evento audit (qualsiasi azione, non solo UPDATE) per una singola entità —
-   * alimenta il widget "ultima modifica" sulle viste di dettaglio.
+   * Latest audit event (any action, not just UPDATE) for a single entity —
+   * feeds the "last change" widget on detail views.
    *
-   * @auth {permesso di lettura dell'entità target, vedi LAST_CHANGE_TARGET_PERMISSIONS}
+   * @auth {read permission of the target entity, see LAST_CHANGE_TARGET_PERMISSIONS}
    * @input {AuditLogGetLastChangeInputSchema} — targetType and targetId of the entity to look up.
    * @output {{ action: string, createdAt: Date, actorName: string | null } | null} — most recent
    *   successful audit event for the target, or null if none exists.
@@ -90,7 +90,7 @@ export const auditLogRouter = router({
     }),
 
   /**
-   * Elenco paginato dell'audit trail completo, filtrabile per autore/azione/entità/esito/data.
+   * Paginated list of the full audit trail, filterable by actor/action/entity/result/date.
    *
    * @auth {audit:read_all}
    * @input {AuditLogListInputSchema} — filters (actor, action, targetType, result, date range)
@@ -135,8 +135,9 @@ export const auditLogRouter = router({
     }),
 
   /**
-   * Firma un token temporaneo (5 minuti) per scaricare l'export CSV dell'audit trail filtrato
-   * come `list` — la route raw `/maintenance/audit-log/export` lo verifica e streamma il CSV.
+   * Signs a short-lived (5-minute) token to download the CSV export of the audit trail,
+   * filtered the same way as `list` — the raw `/maintenance/audit-log/export` route verifies
+   * it and streams the CSV.
    *
    * @auth {audit:read_all}
    * @input {AuditLogFiltersSchema} — same filters accepted by `list`.

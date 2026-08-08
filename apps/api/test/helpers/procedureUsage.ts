@@ -1,49 +1,55 @@
 /**
- * Registra quali procedure tRPC la suite di integrazione **invoca davvero**.
+ * Records which tRPC procedures the integration suite **actually invokes**.
  *
- * ## Perché misurare invece di dichiarare
+ * ## Why measure instead of declare
  *
- * Lo smoke E2E ha una guardia analoga sulle rotte (`shell.smoke.spec.ts`), ma là
- * la lista "coperte" si autodimostra: ogni voce *genera* un test, non puoi
- * elencarne una senza pagarla. Una lista di procedure coperte scritta a mano non
- * genera nulla: è l'affermazione che da qualche parte esiste un test per
- * `brand.list`, verificata da nessuno. Aggiungi la voce, cancella il test, e il
- * gate resta verde per sempre — cioè esattamente il difetto che questo progetto
- * ha passato una sessione intera a eliminare, reintrodotto dal suo stesso fix.
+ * The E2E smoke test has an analogous guard on routes
+ * (`shell.smoke.spec.ts`), but there the "covered" list proves itself: every
+ * entry *generates* a test, you can't list one without paying for it. A
+ * hand-written list of covered procedures generates nothing: it's the claim
+ * that a test for `brand.list` exists somewhere, verified by no one. Add the
+ * entry, delete the test, and the gate stays green forever — exactly the
+ * defect this project spent an entire session eliminating, reintroduced by
+ * its own fix.
  *
- * Qui l'insieme "coperto" è **osservato**. Solo lo scoperto è dichiarato, e una
- * dichiarazione di assenza è autolimitante: al peggio sotto-dichiara.
+ * Here the "covered" set is **observed**. Only the uncovered part is
+ * declared, and a declaration of absence is self-limiting: at worst it
+ * under-declares.
  *
- * ## Cosa questo NON misura
+ * ## What this does NOT measure
  *
- * 1. **Raggiungibilità, non qualità delle asserzioni.** `auth.login` è invocata
- *    dalle spec sul rate limit, che sul login non asserisce nulla: risulterà
- *    invocata. Per questo i messaggi dicono sempre *invocata*, mai *coperta* —
- *    un gate che si autoincensa è peggio di nessun gate.
- * 2. Le procedure raggiungibili solo dalla produzione. È corretto così.
- * 3. **Le invocazioni su un sotto-router.** `router({ brand: brandRouter })` non
- *    conserva `brandRouter`: `createRouterFactory` ne ricostruisce un aggregato,
- *    quindi il sotto-router importato ha una propria mappa `_def.procedures` che
- *    non viene patchata. Una spec che fa `brandRouter.createCaller(ctx)` risulta
- *    perciò non aver invocato nulla.
+ * 1. **Reachability, not assertion quality.** `auth.login` is invoked by the
+ *    rate-limit specs, which assert nothing about login itself: it will
+ *    show up as invoked. That's why the messages always say *invoked*,
+ *    never *covered* — a gate that congratulates itself is worse than no
+ *    gate at all.
+ * 2. Procedures reachable only from production. That's correct as is.
+ * 3. **Invocations on a sub-router.** `router({ brand: brandRouter })`
+ *    doesn't preserve `brandRouter`: `createRouterFactory` rebuilds an
+ *    aggregate from it, so the imported sub-router has its own
+ *    `_def.procedures` map that doesn't get patched. A spec that does
+ *    `brandRouter.createCaller(ctx)` will therefore show up as having
+ *    invoked nothing.
  *
- *    Non è un buco da tappare: è il gate che segnala una scorciatoia. La
- *    produzione entra sempre da `appRouter`, e un test che parte dal sotto-router
- *    salta la composizione. La correzione sta nella spec —
- *    `appRouter.createCaller(ctx).brand` — non qui. È già successo con
- *    `brand.integration.spec.ts`, che il primo run del gate ha scoperto così.
+ *    This isn't a hole to plug: it's the gate flagging a shortcut.
+ *    Production always enters through `appRouter`, and a test that starts
+ *    from the sub-router skips the composition. The fix belongs in the
+ *    spec — `appRouter.createCaller(ctx).brand` — not here. This already
+ *    happened with `brand.integration.spec.ts`, which the gate's first run
+ *    caught this way.
  *
- * ## Meccanica
+ * ## Mechanics
  *
- * Ogni voce di `appRouter._def.procedures` viene sostituita con un `Proxy`.
- * È il punto di strozzatura unico: sia `createCaller` (via `getProcedureAtPath`)
- * sia l'adapter HTTP risolvono da quella mappa, quindi nessun codice di
- * produzione va toccato e un futuro test tRPC via HTTP viene coperto gratis.
+ * Every entry of `appRouter._def.procedures` gets replaced with a `Proxy`.
+ * This is the single choke point: both `createCaller` (via
+ * `getProcedureAtPath`) and the HTTP adapter resolve from that map, so no
+ * production code needs to be touched and a future tRPC-over-HTTP test gets
+ * covered for free.
  *
- * Un `Proxy` con la sola trap `apply` inoltra ogni altro accesso all'originale:
- * `callProcedure` legge `proc._def.type` **prima** di invocare, e continua a
- * vederlo. Un wrapper a funzione avrebbe richiesto di ricopiare le proprietà a
- * mano.
+ * A `Proxy` with only the `apply` trap forwards every other access to the
+ * original: `callProcedure` reads `proc._def.type` **before** invoking, and
+ * still sees it. A function wrapper would have required copying the
+ * properties by hand.
  */
 
 import { createHash } from 'crypto';
@@ -61,8 +67,8 @@ import { discoverProcedures } from './procedureRegistry';
 type ProcedureFn = (...args: unknown[]) => unknown;
 
 /**
- * Installa il recorder per il file di spec corrente e ne scrive l'artefatto in
- * `afterAll`. Idempotente per file: vitest isola il registry dei moduli.
+ * Installs the recorder for the current spec file and writes its artifact in
+ * `afterAll`. Idempotent per file: vitest isolates the module registry.
  */
 export function installProcedureRecorder(): void {
   const discovered = discoverProcedures();
@@ -85,10 +91,10 @@ export function installProcedureRecorder(): void {
   afterAll(() => {
     const specFile = expect.getState().testPath;
 
-    // Senza il nome della spec il teardown non può distinguere una run completa
-    // da una parziale, e il gate si disattiverebbe da solo in silenzio. Meglio
-    // rumoroso: un fallback su un nome sintetico è come questo controllo
-    // morirebbe senza che nessuno se ne accorga.
+    // Without the spec name the teardown can't tell a complete run from a
+    // partial one, and the gate would silently disable itself. Better noisy:
+    // a fallback to a synthetic name is exactly how this check would die
+    // without anyone noticing.
     if (!specFile) {
       throw new Error(
         '[procedure-coverage] `expect.getState().testPath` non disponibile: ' +
@@ -102,8 +108,9 @@ export function installProcedureRecorder(): void {
       discovered,
       invoked: [...invoked].sort(),
     };
-    // Nome derivato dall'hash del path: evita collisioni fra spec omonime in
-    // directory diverse senza dover sanificare separatori di percorso.
+    // Name derived from the hash of the path: avoids collisions between
+    // same-named specs in different directories without having to sanitize
+    // path separators.
     const name = createHash('sha1').update(specFile).digest('hex');
     writeFileSync(join(USAGE_DIR, `${name}.json`), JSON.stringify(artifact));
   });

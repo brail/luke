@@ -1,10 +1,10 @@
 /**
- * Router tRPC per la modalità manutenzione standalone (INACTIVE -> SCHEDULED -> ACTIVE -> INACTIVE).
+ * tRPC router for standalone maintenance mode (INACTIVE -> SCHEDULED -> ACTIVE -> INACTIVE).
  *
- * `getStatus` è pubblica di proposito: deve essere leggibile anche pre-login (schermata di
- * login, banner "manutenzione in corso") — nessun dato sensibile nello stato, solo status/orario/messaggio.
- * Tutte le altre mutation sono `adminProcedure` (permesso `maintenance:update`, stesso schema
- * degli altri endpoint di dominio `maintenance`).
+ * `getStatus` is public by design: it must be readable even pre-login (login screen,
+ * "maintenance in progress" banner) — no sensitive data in the state, only status/time/message.
+ * All other mutations are `adminProcedure` (permission `maintenance:update`, same schema
+ * as the other `maintenance` domain endpoints).
  */
 
 import { TRPCError } from '@trpc/server';
@@ -78,13 +78,13 @@ export const maintenanceModeRouter = router({
   schedule: adminProcedure
     .input(MaintenanceModeScheduleInputSchema)
     .mutation(async ({ ctx, input }) => {
-      // Una soglia più lontana del tempo totale a disposizione non può mai scattare come
-      // "preavviso" reale — es. pianificando tra 5 minuti, la soglia "15 minuti prima" cade
-      // già nel passato e scatterebbe subito, in blocco con le altre. Si scartano quelle
-      // irraggiungibili invece di lasciarle sparare tutte insieme al primo tick.
-      // Arrotondato per eccesso: la latenza tra client e server non deve far scartare per un
-      // pelo una soglia che l'admin intendeva chiaramente includere (es. "tra 5 minuti" con
-      // soglia "5" non deve saltare solo perché sono passati 300ms nel frattempo).
+      // A threshold farther out than the total time available can never fire as a real
+      // "advance warning" — e.g. scheduling for 5 minutes from now, the "15 minutes before"
+      // threshold is already in the past and would fire immediately, lumped in with the others.
+      // Unreachable ones are discarded instead of letting them all fire together on the first tick.
+      // Rounded up: latency between client and server shouldn't cause a threshold the admin
+      // clearly intended to include to be dropped by a hair (e.g. "in 5 minutes" with
+      // threshold "5" shouldn't be skipped just because 300ms have passed in the meantime).
       const totalLeadMinutes = Math.ceil((new Date(input.scheduledAt).getTime() - Date.now()) / 60_000);
       const warningLeadMinutes = input.warningLeadMinutes.filter(t => t <= totalLeadMinutes);
 
@@ -100,14 +100,14 @@ export const maintenanceModeRouter = router({
         notifyByEmail: input.notifyByEmail,
       });
 
-      // Un'unica query utenti, riusata sia per la notifica in-app che per l'eventuale email
-      // (prima erano due fetch identici su `isActive:true`, uno dentro `notifyAllUsers`, uno
-      // dentro il fan-out email).
+      // A single user query, reused for both the in-app notification and the optional email
+      // (previously there were two identical fetches on `isActive:true`, one inside `notifyAllUsers`, one
+      // inside the email fan-out).
       const users = await ctx.prisma.user.findMany({ where: { isActive: true }, select: { id: true, email: true } });
 
-      // Avviso immediato a tutti, indipendentemente dalla scala di soglie configurata (che
-      // parte solo quando il countdown le attraversa) — chi pianifica con largo anticipo vuole
-      // che gli utenti lo sappiano subito, non solo 15/5/1 minuto prima.
+      // Immediate notice to everyone, regardless of the configured threshold ladder (which
+      // only fires as the countdown crosses each one) — someone scheduling well in advance wants
+      // users to know right away, not just 15/5/1 minute before.
       void bulkNotify(ctx.prisma, users.map(u => u.id), {
         category: 'SYSTEM',
         title: 'Manutenzione programmata',

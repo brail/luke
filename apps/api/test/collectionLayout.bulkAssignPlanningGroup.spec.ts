@@ -1,7 +1,7 @@
 /**
- * Test unitari per `bulkAssignRowsPlanningGroup` (collectionLayout.service.ts) — Prisma mockato
- * con i soli metodi toccati (editLock/collectionLayout/planningGroup per i guard, updateMany per
- * la mutation vera e propria).
+ * Unit tests for `bulkAssignRowsPlanningGroup` (collectionLayout.service.ts) — Prisma mocked
+ * with only the methods touched (editLock/collectionLayout/planningGroup for the guards,
+ * updateMany for the actual mutation).
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -22,7 +22,7 @@ interface FakePrismaOpts {
   layoutBrandId?: string;
   layoutSeasonId?: string;
   updatedCount?: number;
-  /** Quante righe della selezione risultano già concluse — il guard le rifiuta in blocco. */
+  /** How many rows in the selection are already completed — the guard rejects the whole batch. */
   completedCount?: number;
 }
 
@@ -64,7 +64,7 @@ function buildFakePrisma(opts: FakePrismaOpts = {}) {
     },
   };
 
-  // Cast: sottoinsieme di PrismaClient usato dalla funzione sotto test, non l'intero client.
+  // Cast: subset of PrismaClient used by the function under test, not the entire client.
   return { prisma: fake as unknown as Parameters<typeof bulkAssignRowsPlanningGroup>[3], updateManyCalls };
 }
 
@@ -85,7 +85,7 @@ describe('bulkAssignRowsPlanningGroup', () => {
 
   it('il count ritornato riflette le righe realmente modificate, non quelle selezionate', async () => {
     const { prisma } = buildFakePrisma({ updatedCount: 1 });
-    const rowIds = ['row-1', 'row-2', 'row-3']; // 3 selezionate, solo 1 realmente fuori dal gruppo target
+    const rowIds = ['row-1', 'row-2', 'row-3']; // 3 selected, only 1 actually outside the target group
 
     const result = await bulkAssignRowsPlanningGroup(rowIds, LAYOUT_ID, TARGET_GROUP_ID, prisma, USER_ID);
 
@@ -123,8 +123,8 @@ describe('bulkAssignRowsPlanningGroup', () => {
   });
 
   it('rifiuta l\'intera selezione se contiene righe concluse (CONFLICT), senza scriverne nessuna', async () => {
-    // Scartare in silenzio le concluse restituirebbe un conteggio parziale indistinguibile da un
-    // successo voluto: l'utente crederebbe di aver spostato tutte le righe selezionate.
+    // Silently discarding the completed ones would return a partial count indistinguishable from
+    // an intended success: the user would believe they'd moved all the selected rows.
     const { prisma, updateManyCalls } = buildFakePrisma({ completedCount: 1 });
 
     await expectToThrow(

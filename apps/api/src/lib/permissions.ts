@@ -47,31 +47,31 @@ function normalizeDeclaration(
 }
 
 /**
- * Factory per middleware che richiede una o più permissions
- * Supporta sia role-based che user-granted permissions
+ * Factory for middleware that requires one or more permissions
+ * Supports both role-based and user-granted permissions
  *
- * @param permission - Permission singola, array di permissions, PermissionDeclaration, o una
- *   funzione `(input) => Permission` per i casi in cui la permission dipende dall'input parsato
- *   (in quel caso `.use(requirePermission(...))` va messo dopo `.input(...)` nella chain, e va
- *   passato esplicitamente il tipo generico `TInput` — es. `requirePermission<MyInput>(...)`).
- * @returns Middleware tRPC che verifica le permissions
+ * @param permission - A single permission, an array of permissions, a PermissionDeclaration, or a
+ *   `(input) => Permission` function for cases where the permission depends on the parsed input
+ *   (in that case `.use(requirePermission(...))` must be placed after `.input(...)` in the chain, and
+ *   the generic type `TInput` must be passed explicitly — e.g. `requirePermission<MyInput>(...)`).
+ * @returns tRPC middleware that checks the permissions
  *
  * @example
  * ```typescript
- * // Permission singola
+ * // Single permission
  * requirePermission('brands:create')
  *
  * // Multiple permissions (OR logic)
  * requirePermission(['brands:create', 'brands:update'])
  *
- * // Con PermissionDeclaration
+ * // With PermissionDeclaration
  * requirePermission({
  *   required: 'brands:delete',
  *   description: 'Delete brand',
  *   context: { checkOwnership: true }
  * })
  *
- * // Dipendente dall'input (richiede .use() dopo .input())
+ * // Input-dependent (requires .use() after .input())
  * requirePermission<{ entityType: 'X' | 'Y' }>((input) => input.entityType === 'X' ? 'x:update' : 'y:update')
  * ```
  */
@@ -89,7 +89,7 @@ export function requirePermission<TInput = never>(
       ? declaration.required
       : [declaration.required];
 
-    // Verifica autenticazione
+    // Check authentication
     if (!ctx.session?.user) {
       throw new TRPCError({
         code: 'UNAUTHORIZED',
@@ -99,19 +99,19 @@ export function requirePermission<TInput = never>(
 
     const user = ctx.session.user;
 
-    // Inizializza cache se non esiste
+    // Initialize cache if it doesn't exist
     if (!ctx._permissionsCache) {
       ctx._permissionsCache = new Map();
     }
 
-    // Verifica se l'utente ha almeno una delle permissions richieste (OR logic)
+    // Check whether the user has at least one of the required permissions (OR logic)
     let hasAnyPermission = false;
     const deniedPermissions: Permission[] = [];
 
     for (const perm of permissionArray) {
       const cacheKey = `${user.role}:${user.id}:${perm}`;
 
-      // Controlla cache prima
+      // Check cache first
       if (ctx._permissionsCache.has(cacheKey)) {
         const cached = ctx._permissionsCache.get(cacheKey)!;
         if (cached) {
@@ -124,7 +124,7 @@ export function requirePermission<TInput = never>(
 
       const allowed = hasPermission({ role: user.role as Role }, perm);
 
-      // Cache risultato
+      // Cache the result
       ctx._permissionsCache.set(cacheKey, allowed);
 
       if (allowed) {
@@ -136,7 +136,7 @@ export function requirePermission<TInput = never>(
     }
 
     if (!hasAnyPermission) {
-      // Log strutturato per audit (senza PII)
+      // Structured log for audit (no PII)
       const logData = {
         traceId: ctx.traceId,
         userId: user.id,
@@ -183,25 +183,25 @@ export function can(
 
   const user = ctx.session.user;
 
-  // Inizializza cache se non esiste
+  // Initialize cache if it doesn't exist
   if (!ctx._permissionsCache) {
     ctx._permissionsCache = new Map();
   }
 
   const cacheKey = `${user.role}:${user.id}:${permission}`;
 
-  // Controlla cache
+  // Check cache
   if (ctx._permissionsCache.has(cacheKey)) {
     return ctx._permissionsCache.get(cacheKey)!;
   }
 
-  // Verifica permission
+  // Check permission
   const allowed = hasPermission(
     { role: user.role as Role },
     permission
   );
 
-  // Cache risultato
+  // Cache the result
   ctx._permissionsCache.set(cacheKey, allowed);
 
   return allowed;

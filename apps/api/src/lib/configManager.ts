@@ -45,11 +45,11 @@ export interface LdapConfig {
   strategy: 'local-first' | 'ldap-first' | 'local-only' | 'ldap-only';
 }
 
-// Esportate per riuso da altri moduli AES-256-GCM (es. apps/api/src/lib/backup/crypto.ts)
-// che devono restare sugli stessi parametri della master-key crypto.
+// Exported for reuse by other AES-256-GCM modules (e.g. apps/api/src/lib/backup/crypto.ts)
+// that must stay on the same master-key crypto parameters.
 export const ALGORITHM = 'aes-256-gcm';
 export const IV_LENGTH = 16; // 128 bits
-export const AUTH_TAG_LENGTH = 16; // 128 bits — esplicito per semgrep gcm-no-tag-length
+export const AUTH_TAG_LENGTH = 16; // 128 bits — explicit for the semgrep gcm-no-tag-length rule
 
 /**
  * Encrypts a plaintext value using AES-256-GCM and the current master key.
@@ -69,7 +69,7 @@ export function encryptValue(plaintext: string): string {
 
   const authTag = cipher.getAuthTag();
 
-  // Formato: iv:authTag:ciphertext (tutto in hex)
+  // Format: iv:authTag:ciphertext (all in hex)
   return `${iv.toString('hex')}:${authTag.toString('hex')}:${ciphertext}`;
 }
 
@@ -403,12 +403,12 @@ export async function listConfigsPaged(
     pageSize = 20,
   } = params;
 
-  // Costruisci where clause per filtri
+  // Build the where clause for filters
   const where: Prisma.AppConfigWhereInput = {};
 
-  // Gestisci filtri per key
+  // Handle key filters
   if (q && category) {
-    // Se abbiamo sia ricerca che categoria, combina i filtri
+    // If we have both search and category, combine the filters
     where.AND = [
       { key: { contains: q, mode: 'insensitive' } },
       { key: { startsWith: `${category}.` } },
@@ -425,7 +425,7 @@ export async function listConfigsPaged(
     where.isEncrypted = isEncrypted;
   }
 
-  // Calcola skip per paginazione
+  // Compute skip for pagination
   const skip = (page - 1) * pageSize;
 
   const countWhere: Prisma.AppConfigWhereInput = {};
@@ -445,7 +445,7 @@ export async function listConfigsPaged(
     countWhere.isEncrypted = isEncrypted;
   }
 
-  // Esegui query parallele per items e total
+  // Run the items and total queries in parallel
   const [itemsRaw, total] = await Promise.all([
     prisma.appConfig.findMany({
       where,
@@ -462,7 +462,7 @@ export async function listConfigsPaged(
     prisma.appConfig.count({ where: countWhere }),
   ]);
 
-  // Processa i risultati
+  // Process the results
   const items = itemsRaw.map(item => ({
     key: item.key,
     category: item.key.split('.')[0] || 'misc',
@@ -766,10 +766,10 @@ export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
     },
   });
 
-  // Crea mappa per accesso rapido
+  // Build a map for quick access
   const configMap = new Map(configs.map(c => [c.key, c]));
 
-  // Se non ci sono configurazioni LDAP, restituisci configurazione di default
+  // If there's no LDAP configuration, return the default configuration
   if (configs.length === 0) {
     return {
       enabled: false,
@@ -785,14 +785,14 @@ export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
     };
   }
 
-  // Helper per recuperare valore con fallback
+  // Helper to retrieve a value with fallback
   const getConfigValue = (key: string, defaultValue: string = ''): string => {
     const config = configMap.get(key);
     if (!config) return defaultValue;
     return config.isEncrypted ? decryptValue(config.value) : config.value;
   };
 
-  // Recupera e decifra i valori con fallback per chiavi mancanti
+  // Retrieve and decrypt values, falling back for missing keys
   const enabled = configMap.get('auth.ldap.enabled')?.value === 'true';
   const url = getConfigValue('auth.ldap.url');
   const bindDN = getConfigValue('auth.ldap.bindDN');

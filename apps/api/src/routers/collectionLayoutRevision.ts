@@ -140,12 +140,12 @@ export const collectionLayoutRevisionRouter = router({
      */
     xlsx: protectedProcedure
       .use(requirePermission('collection_layout:read'))
-      // `collectionLayoutId` non è più un input: lo porta la revisione. Erano due
-      // id indipendenti e nessuno verificava che il secondo fosse davvero il
-      // layout del primo, quindi si poteva esportare una revisione montandola su
-      // un altro layout. Il brand scope chiude il caso cross-brand, non quello
-      // cross-layout dentro lo stesso brand — qui l'incoerenza smette proprio di
-      // essere esprimibile.
+      // `collectionLayoutId` is no longer an input: the revision carries it. There used to be two
+      // independent ids and nothing verified that the second was really the
+      // first one's layout, so you could export a revision by mounting it on
+      // another layout. The brand scope closes the cross-brand case, not the
+      // cross-layout one within the same brand — here that inconsistency simply stops
+      // being expressible.
       .input(z.object({ revisionId: z.string().uuid() }))
       .mutation(async ({ input, ctx }) => {
         const { collectionLayoutId } = await resolveRevisionBrandAccess(ctx, input.revisionId);
@@ -171,7 +171,7 @@ export const collectionLayoutRevisionRouter = router({
      */
     pdf: protectedProcedure
       .use(requirePermission('collection_layout:read'))
-      // Come sopra: il layout lo porta la revisione.
+      // As above: the revision carries the layout.
       .input(z.object({ revisionId: z.string().uuid() }))
       .mutation(async ({ input, ctx }) => {
         const { collectionLayoutId } = await resolveRevisionBrandAccess(ctx, input.revisionId);

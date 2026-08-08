@@ -9,20 +9,20 @@ import { createHash } from 'crypto';
 
 import pino from 'pino';
 
-// Logger interno per idempotency
+// Internal idempotency logger
 const logger = pino({ level: 'info' });
 
 /**
  * Internal cache entry for a single idempotency key.
  */
 interface IdempotencyEntry {
-  /** Hash della richiesta originale */
+  /** Hash of the original request */
   requestHash: string;
-  /** Risposta cached */
+  /** Cached response */
   response: unknown;
-  /** Timestamp di creazione */
+  /** Creation timestamp */
   timestamp: number;
-  /** TTL in millisecondi */
+  /** TTL in milliseconds */
   ttl: number;
 }
 
@@ -30,13 +30,13 @@ interface IdempotencyEntry {
  * Outcome of an idempotency cache lookup.
  */
 interface IdempotencyResult {
-  /** true se trovato un match, false altrimenti */
+  /** true if a match was found, false otherwise */
   hit: boolean;
-  /** Risposta cached (solo se hit=true) */
+  /** Cached response (only if hit=true) */
   response?: unknown;
-  /** Timestamp della richiesta originale */
+  /** Timestamp of the original request */
   originalTimestamp?: number;
-  /** true se c'è conflitto (stessa key, body diverso) */
+  /** true if there's a conflict (same key, different body) */
   conflict?: boolean;
 }
 
@@ -53,17 +53,17 @@ class IdempotencyStore {
     this.maxSize = maxSize;
     this.defaultTtlMs = defaultTtlMs;
 
-    // Avvia cleanup periodico ogni minuto
+    // Start periodic cleanup every minute
     this.startCleanup();
   }
 
   /**
-   * Genera hash per una richiesta
+   * Generates a hash for a request
    *
    * @param method - HTTP method
    * @param path - Request path
-   * @param body - Request body (serializzato)
-   * @returns Hash SHA256 della richiesta
+   * @param body - Request body (serialized)
+   * @returns SHA256 hash of the request
    */
   private generateRequestHash(
     method: string,
@@ -75,13 +75,13 @@ class IdempotencyStore {
   }
 
   /**
-   * Verifica se esiste una richiesta idempotente
+   * Checks whether an idempotent request exists
    *
-   * @param key - Idempotency key dal client
+   * @param key - Idempotency key from the client
    * @param method - HTTP method
    * @param path - Request path
    * @param body - Request body
-   * @returns Risultato del check
+   * @returns Check result
    */
   check(
     key: string,
@@ -96,17 +96,17 @@ class IdempotencyStore {
       return { hit: false };
     }
 
-    // Verifica TTL
+    // Check TTL
     const now = Date.now();
     if (now > entry.timestamp + entry.ttl) {
       this.cache.delete(key);
       return { hit: false };
     }
 
-    // Verifica che l'hash della richiesta corrisponda
+    // Check that the request hash matches
     if (entry.requestHash !== requestHash) {
-      // Hash diverso = richiesta diversa con stessa key
-      // Ritorna conflitto invece di rimuovere entry
+      // Different hash = different request with the same key
+      // Return a conflict instead of removing the entry
       return { hit: false, conflict: true };
     }
 
@@ -118,14 +118,14 @@ class IdempotencyStore {
   }
 
   /**
-   * Memorizza una risposta per una richiesta idempotente
+   * Stores a response for an idempotent request
    *
-   * @param key - Idempotency key dal client
+   * @param key - Idempotency key from the client
    * @param method - HTTP method
    * @param path - Request path
    * @param body - Request body
-   * @param response - Risposta da memorizzare
-   * @param ttlMs - TTL personalizzato (opzionale)
+   * @param response - Response to store
+   * @param ttlMs - Custom TTL (optional)
    */
   store(
     key: string,
@@ -139,7 +139,7 @@ class IdempotencyStore {
     const now = Date.now();
     const ttl = ttlMs || this.defaultTtlMs;
 
-    // Se la cache è piena, rimuovi l'entry più vecchia (LRU)
+    // If the cache is full, remove the oldest entry (LRU)
     if (this.cache.size >= this.maxSize) {
       const oldestKey = this.cache.keys().next().value;
       if (oldestKey) {
@@ -156,7 +156,7 @@ class IdempotencyStore {
   }
 
   /**
-   * Rimuove entry scadute dalla cache
+   * Removes expired entries from the cache
    */
   private cleanup(): void {
     const now = Date.now();
@@ -176,17 +176,17 @@ class IdempotencyStore {
   }
 
   /**
-   * Avvia il cleanup periodico
+   * Starts the periodic cleanup
    */
   private startCleanup(): void {
-    // Cleanup ogni minuto
+    // Cleanup every minute
     this.cleanupInterval = setInterval(() => {
       this.cleanup();
     }, 60 * 1000);
   }
 
   /**
-   * Ferma il cleanup periodico
+   * Stops the periodic cleanup
    */
   stop(): void {
     if (this.cleanupInterval) {
@@ -196,14 +196,14 @@ class IdempotencyStore {
   }
 
   /**
-   * Pulisce completamente la cache
+   * Completely clears the cache
    */
   clear(): void {
     this.cache.clear();
   }
 
   /**
-   * Ottiene statistiche della cache
+   * Gets cache statistics
    */
   getStats(): {
     size: number;

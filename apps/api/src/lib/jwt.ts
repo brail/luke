@@ -9,7 +9,7 @@ import pino from 'pino';
 
 import { getApiJwtSecret } from '@luke/core/server';
 
-// Logger interno per JWT
+// Internal logger for JWT
 const logger = pino({ level: 'info' });
 
 /**
@@ -37,11 +37,11 @@ export interface JWTSignOptions {
 }
 
 /**
- * Configurazione JWT standardizzata
+ * Standardised JWT configuration
  */
 const JWT_CONFIG = {
   algorithm: 'HS256' as const,
-  clockTolerance: 5, // ±5 secondi — sufficiente per skew NTP, riduce finestra replay
+  clockTolerance: 5, // ±5 seconds — sufficient for NTP skew, reduces replay window
   issuer: 'urn:luke',
   audience: 'luke.api',
   defaultExpiresIn: '7d',
@@ -52,11 +52,11 @@ function getJWTSecret(): string {
 }
 
 /**
- * Crea un JWT token con configurazione standardizzata
+ * Creates a JWT token with standardised configuration
  *
- * @param payload - Payload base (userId, email, username, role)
- * @param options - Opzioni aggiuntive per expiresIn e notBefore
- * @returns JWT token firmato
+ * @param payload - Base payload (userId, email, username, role)
+ * @param options - Additional options for expiresIn and notBefore
+ * @returns Signed JWT token
  */
 export function signJWT(
   payload: Pick<
@@ -87,10 +87,10 @@ export function signJWT(
 }
 
 /**
- * Verifica e decodifica un JWT token
+ * Verifies and decodes a JWT token
  *
- * @param token - JWT token da verificare
- * @returns Payload decodificato o null se invalido
+ * @param token - JWT token to verify
+ * @returns Decoded payload or null if invalid
  */
 export function verifyJWT(token: string): JWTPayload | null {
   try {
@@ -103,12 +103,12 @@ export function verifyJWT(token: string): JWTPayload | null {
 
     return decoded;
   } catch (error) {
-    // Log solo metadata, mai il token completo
+    // Log metadata only, never the full token
     logger.error(
       {
         error: error instanceof Error ? error.message : 'Unknown error',
         tokenLength: token.length,
-        tokenPrefix: token.substring(0, 10) + '...', // Ridotto da 20 a 10 char per sicurezza
+        tokenPrefix: token.substring(0, 10) + '...', // Reduced from 20 to 10 chars for security
       },
       'JWT verification failed'
     );
@@ -136,7 +136,7 @@ export function extractJWTMetadata(token: string): {
   iat?: number;
 } | null {
   try {
-    // Decodifica senza verifica (header + payload)
+    // Decodes without verification (header + payload)
     const decoded = jwt.decode(token, { complete: true });
 
     if (!decoded || typeof decoded === 'string') {
@@ -165,5 +165,5 @@ export function extractJWTMetadata(token: string): {
  */
 export const JWT_CONFIG_EXPORT = {
   ...JWT_CONFIG,
-  // Non esportare mai il secret
+  // Never export the secret
 } as const;

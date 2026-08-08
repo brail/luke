@@ -103,9 +103,9 @@ export async function setOverride(
   logger?: FastifyBaseLogger
 ) {
   if (enabled === null) {
-    // Rimuovi override — un fallimento qui deve propagare: il chiamante
-    // (dentro $transaction) deve poter fare rollback invece di committare
-    // uno stato che dice "rimosso" e non lo è.
+    // Remove override — a failure here must propagate: the caller
+    // (inside $transaction) must be able to roll back instead of committing
+    // a state that says "removed" when it isn't.
     try {
       await prisma.userSectionAccess.deleteMany({ where: { userId, section } });
     } catch (e) {
@@ -136,18 +136,18 @@ export async function listOverridesForUser(
 }
 
 /**
- * Sezioni senza le quali un amministratore non può più riportare in vita
- * l'amministrazione del sistema.
+ * Sections without which an administrator can no longer bring system
+ * administration back to life.
  *
- * `settings` da sola non basta, ed è il buco che la prima versione di questo
- * guard lasciava aperto: la voce di menu Utenti è gated su
+ * `settings` alone isn't enough, and that's the hole the first version of this
+ * guard left open: the Users menu entry is gated on
  * `settings && settings['settings.users']` (`apps/web/src/hooks/useMenuAccess.ts`),
- * e `settings.users` mappa su `users:read`. Un admin che conserva `settings` ma
- * perde `settings.users` non può più creare né promuovere nessuno — lo stesso
- * lockout, da un'altra porta. Trovato provando a mano su RC.
+ * and `settings.users` maps to `users:read`. An admin who keeps `settings` but
+ * loses `settings.users` can no longer create or promote anyone — the same
+ * lockout, through a different door. Found by testing by hand on RC.
  *
- * La superficie di recupero è quindi una **congiunzione**: conta come via
- * d'uscita solo chi le ha tutte effettive.
+ * The recovery surface is therefore a **conjunction**: only whoever has all of
+ * them effectively enabled counts as a way out.
  */
 export const ADMIN_RECOVERY_SECTIONS = [
   'settings',
@@ -155,12 +155,12 @@ export const ADMIN_RECOVERY_SECTIONS = [
 ] as const satisfies readonly Section[];
 
 /**
- * `true` se togliere questa sezione può chiudere fuori l'amministrazione.
+ * `true` if removing this section could lock administration out.
  *
- * Predicato invece di `ADMIN_RECOVERY_SECTIONS.includes(section)` al call site:
- * la tupla è `as const` per conservare i letterali in `every()`, e su una tupla
- * `includes` accetta solo i propri membri — un `Section` qualunque non compila.
- * Il widening sta qui, in un posto solo.
+ * A predicate instead of `ADMIN_RECOVERY_SECTIONS.includes(section)` at the
+ * call site: the tuple is `as const` to preserve the literals in `every()`,
+ * and on a tuple `includes` only accepts its own members — an arbitrary
+ * `Section` doesn't compile. The widening lives here, in one place only.
  */
 export function isAdminRecoverySection(section: Section): boolean {
   return (ADMIN_RECOVERY_SECTIONS as readonly Section[]).includes(section);
@@ -171,7 +171,7 @@ type SectionAccessDefaults = Record<
   Partial<Record<Section, 'auto' | 'enabled' | 'disabled'>>
 >;
 
-/** Override di un utente per sezione, nella forma che `effectiveSectionAccess` accetta. */
+/** A user's per-section override, in the shape `effectiveSectionAccess` accepts. */
 type OverrideBySection = Map<string, { enabled: boolean }>;
 
 function hasEveryRecoverySection(
@@ -230,10 +230,9 @@ export async function countRecoveryCapableAdmins(
  * transition, where counting current state and comparing to a threshold breaks
  * for `enabled: null` (removal) and for changes that increase access.
  *
- * @param changedSection - La sezione che sta cambiando, oppure `null` quando
- *   l'utente perde ogni accesso in blocco (demozione, disattivazione,
- *   eliminazione): in quel caso non conta come via d'uscita, qualunque sia il
- *   suo stato per sezione.
+ * @param changedSection - The section being changed, or `null` when the user
+ *   loses all access at once (demotion, deactivation, deletion): in that case
+ *   it doesn't count as a way out, whatever its per-section status is.
  */
 export async function countRecoveryCapableAdminsAfterChange(
   prisma: PrismaLike,

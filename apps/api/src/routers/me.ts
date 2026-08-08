@@ -1,6 +1,6 @@
 /**
- * Router tRPC per operazioni sul profilo utente corrente
- * Gestisce lettura e aggiornamento del profilo personale
+ * tRPC router for current user profile operations
+ * Handles reading and updating personal profile
  */
 
 import { TRPCError } from '@trpc/server';
@@ -69,10 +69,10 @@ export const meRouter = router({
       });
     }
 
-    // Determina il provider principale (primo identity)
+    // Determines the main provider (first identity)
     const provider = user.identities[0]?.provider || 'LOCAL';
 
-    // Calcola percentuale completamento profilo
+    // Calculates profile completion percentage
     const profileCompletion = calculateProfileCompletion({
       firstName: user.firstName,
       lastName: user.lastName,
@@ -92,7 +92,7 @@ export const meRouter = router({
       provider,
       profileCompletion,
       dailyGreetingEnabled,
-      // Rimuovi identities dall'output (non necessario nel frontend)
+      // Remove identities from output (not needed in frontend)
       identities: undefined,
     };
   }),
@@ -107,7 +107,7 @@ export const meRouter = router({
   updateProfile: protectedProcedure
     .input(UserProfileSchema)
     .mutation(async ({ ctx, input }) => {
-      // Verifica il provider dell'utente
+      // Check the user's provider
       const userWithProvider = await ctx.prisma.user.findUnique({
         where: { id: ctx.session.user.id },
         select: {
@@ -130,9 +130,9 @@ export const meRouter = router({
 
       const provider = userWithProvider.identities[0]?.provider || 'LOCAL';
 
-      // Per provider esterni (LDAP/OIDC), blocca la modifica di campi sincronizzati
+      // For external providers (LDAP/OIDC), block changes to synced fields
       if (provider !== 'LOCAL') {
-        // Verifica se l'utente sta tentando di modificare campi sincronizzati
+        // Check whether the user is trying to change synced fields
         const currentUser = await ctx.prisma.user.findUnique({
           where: { id: ctx.session.user.id },
           select: {
@@ -157,7 +157,7 @@ export const meRouter = router({
         }
       }
 
-      // Aggiorna i campi consentiti
+      // Update the allowed fields
       const emailChanged = input.email !== userWithProvider.email;
       const updated = await ctx.prisma.user.update({
         where: { id: ctx.session.user.id },
@@ -264,7 +264,7 @@ export const meRouter = router({
     .input(ChangePasswordSchema)
     .use(withIdempotency())
     .mutation(async ({ ctx, input }) => {
-      // Verifica che l'utente abbia provider LOCAL
+      // Check that the user has a LOCAL provider
       const userWithProvider = await ctx.prisma.user.findUnique({
         where: { id: ctx.session.user.id },
         select: {
@@ -301,7 +301,7 @@ export const meRouter = router({
         });
       }
 
-      // Verifica la password corrente
+      // Verify the current password
       const isCurrentPasswordValid = await verifyPassword(
         input.currentPassword,
         localIdentity.localCredential.passwordHash
@@ -314,7 +314,7 @@ export const meRouter = router({
         });
       }
 
-      // Verifica che la nuova password non sia uguale alla password attuale
+      // Verify the new password isn't the same as the current one
       const isSamePassword = await verifyPassword(
         input.newPassword,
         localIdentity.localCredential.passwordHash
@@ -328,28 +328,28 @@ export const meRouter = router({
         });
       }
 
-      // Genera hash per la nuova password
+      // Generate hash for the new password
       const newPasswordHash = await hashPassword(input.newPassword);
 
-      // Aggiorna la password e incrementa tokenVersion in transazione
+      // Update the password and bump tokenVersion in a transaction
       await ctx.prisma.$transaction(async trx => {
-        // Aggiorna password hash
+        // Update the password hash
         await trx.localCredential.update({
           where: { identityId: localIdentity.id },
           data: { passwordHash: newPasswordHash },
         });
 
-        // Incrementa tokenVersion per invalidare tutte le sessioni precedenti
+        // Bump tokenVersion to invalidate all previous sessions
         await trx.user.update({
           where: { id: ctx.session.user.id },
           data: { tokenVersion: { increment: 1 } },
         });
       });
 
-      // Invalida la cache tokenVersion per questo utente
+      // Invalidate the tokenVersion cache for this user
       invalidateTokenVersionCache(ctx.session.user.id);
 
-      // Log audit per il cambio password
+      // Audit log for the password change
       await logAudit(ctx, {
         action: 'USER_PASSWORD_CHANGE',
         targetType: 'User',
@@ -410,13 +410,13 @@ export const meRouter = router({
    * @output {{ success: true }}
    */
   revokeAllSessions: protectedProcedure.mutation(async ({ ctx }) => {
-    // Incrementa tokenVersion per invalidare tutte le sessioni
+    // Bump tokenVersion to invalidate all sessions
     await ctx.prisma.user.update({
       where: { id: ctx.session.user.id },
       data: { tokenVersion: { increment: 1 } },
     });
 
-    // Invalida la cache tokenVersion per questo utente
+    // Invalidate the tokenVersion cache for this user
     invalidateTokenVersionCache(ctx.session.user.id);
 
     // Log audit
@@ -524,7 +524,7 @@ export const meRouter = router({
 });
 
 /**
- * Calcola la percentuale di completamento del profilo utente
+ * Calculates the user profile's completion percentage
  */
 function calculateProfileCompletion(profile: {
   firstName: string;

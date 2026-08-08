@@ -1,6 +1,6 @@
 /**
- * Router tRPC per autenticazione
- * Gestisce login, logout e verifica sessione
+ * tRPC router for authentication
+ * Handles login, logout, and session verification
  */
 
 import { TRPCError } from '@trpc/server';
@@ -37,8 +37,8 @@ import {
 } from '../services/auth.service';
 
 /**
- * Maschera un indirizzo email per esposizione da endpoint pubblico non autenticato
- * (es. `a***@luke.com`), mantenendo dominio visibile per riconoscibilità.
+ * Masks an email address for exposure from an unauthenticated public endpoint
+ * (e.g. `a***@luke.com`), keeping the domain visible for recognizability.
  */
 function maskEmail(email: string): string {
   const [local, domain] = email.split('@');
@@ -47,7 +47,7 @@ function maskEmail(email: string): string {
 }
 
 /**
- * Schema per login
+ * Login schema
  */
 const LoginSchema = z.object({
   username: z.string().min(1, 'Username richiesto'),
@@ -55,7 +55,7 @@ const LoginSchema = z.object({
 });
 
 /**
- * Router per autenticazione
+ * Authentication router
  */
 export const authRouter = router({
   /**
@@ -81,7 +81,7 @@ export const authRouter = router({
    * @output {{ success: true, message: string }}
    */
   logout: protectedProcedure.mutation(async ({ ctx: _ctx }) => {
-    // Cookie API rimosso: Web gestisce logout tramite NextAuth signOut()
+    // Cookie API removed: Web handles logout via NextAuth signOut()
     return { success: true, message: 'Logout effettuato con successo' };
   }),
 
@@ -104,7 +104,7 @@ export const authRouter = router({
    * @output {{ user: SessionUser }} — user object from the current session.
    */
   me: protectedProcedure.query(async ({ ctx }) => {
-    // La sessione è già verificata dal middleware
+    // The session is already verified by the middleware
     return {
       user: ctx.session.user,
     };
@@ -112,20 +112,20 @@ export const authRouter = router({
 
   /**
    * Re-mints a fresh API access token for the current session.
-   * `protectedProcedure` già valida il Bearer (scaduto → UNAUTHORIZED) e il
-   * `tokenVersion` (revocato → UNAUTHORIZED): il web callback lo usa per
-   * rinnovare l'accessToken embedded prima che scada, evitando che una sessione
-   * NextAuth ancora valida invii un JWT API scaduto (`jwt expired`).
+   * `protectedProcedure` already validates the Bearer (expired → UNAUTHORIZED) and the
+   * `tokenVersion` (revoked → UNAUTHORIZED): the web callback uses it to
+   * renew the embedded accessToken before it expires, preventing a still-valid
+   * NextAuth session from sending an expired API JWT (`jwt expired`).
    *
    * @auth {authenticated}
    * @input {none}
    * @output {{ token: string, tokenVersion: number }}
    */
   refreshToken: protectedProcedure.mutation(async ({ ctx }) => {
-    // Ruolo e tokenVersion si rileggono dal database, non dal claim in sessione.
-    // Rifirmare a partire dal claim rendeva il refresh un riciclo di autorità: un
-    // utente retrocesso rinnovava all'infinito un token che diceva ancora
-    // `role: "admin"`, perché la fonte del nuovo token era il vecchio token.
+    // Role and tokenVersion are re-read from the database, not from the session claim.
+    // Re-signing from the claim turned refresh into an authority recycle: a
+    // demoted user would endlessly renew a token that still said
+    // `role: "admin"`, because the source of the new token was the old token.
     const fresh = await ctx.prisma.user.findUnique({
       where: { id: ctx.session.user.id },
       select: {
@@ -179,7 +179,7 @@ export const authRouter = router({
     .use(withRateLimit('passwordReset'))
     .input(ConfirmPasswordResetSchema)
     .mutation(async ({ input, ctx }) => {
-      // confirmPasswordReset accetta { token, newPassword } e il ctx
+      // confirmPasswordReset accepts { token, newPassword } and ctx
       return await confirmPasswordReset(ctx, input);
     }),
 
@@ -191,7 +191,7 @@ export const authRouter = router({
    * @output {Success confirmation.}
    */
   requestEmailVerification: publicProcedure
-    .use(withRateLimit('passwordReset')) // Usa stessa policy
+    .use(withRateLimit('passwordReset')) // Uses the same policy
     .input(RequestEmailVerificationSchema)
     .mutation(async ({ input, ctx }) => {
       return await requestEmailVerification(ctx, input.email);
@@ -261,7 +261,7 @@ export const authRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { username, email } = input;
 
-      // Trova utente LDAP in attesa di approvazione
+      // Find LDAP user pending approval
       const user = await ctx.prisma.user.findFirst({
         where: {
           username,
@@ -274,11 +274,11 @@ export const authRouter = router({
       });
 
       if (!user || user.identities.length === 0) {
-        // Risposta generica per evitare enumerazione
+        // Generic response to prevent enumeration
         return { success: true };
       }
 
-      // Verifica unicità email (esclude l'utente stesso)
+      // Check email uniqueness (excludes the user itself)
       const existing = await ctx.prisma.user.findFirst({
         where: { email, id: { not: user.id } },
       });
@@ -303,7 +303,7 @@ export const authRouter = router({
         metadata: { username },
       });
 
-      // Invia email di verifica all'indirizzo appena fornito
+      // Send verification email to the address just provided
       try {
         await sendVerificationEmail(
           ctx.prisma,
@@ -311,7 +311,7 @@ export const authRouter = router({
           ctx
         );
       } catch {
-        // Non bloccare la risposta se SMTP non è configurato
+        // Don't block the response if SMTP isn't configured
         ctx.logger.warn({ username }, 'Failed to send verification email for pending user');
       }
 

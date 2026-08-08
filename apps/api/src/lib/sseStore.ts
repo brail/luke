@@ -83,12 +83,12 @@ function createTicket(ticketId: string, userId: string): void {
 function consumeTicket(ticketId: string): string | null {
   const ticket = tickets.get(ticketId);
   if (!ticket) return null;
-  tickets.delete(ticketId); // monouso
+  tickets.delete(ticketId); // single-use
   if (Date.now() > ticket.expiresAt) return null;
   return ticket.userId;
 }
 
-// Pulizia ticket scaduti ogni 5 minuti
+// Cleans up expired tickets every 5 minutes
 setInterval(() => {
   const now = Date.now();
   for (const [id, ticket] of tickets) {

@@ -28,9 +28,9 @@ let brandId: string;
 let seasonId: string;
 
 beforeAll(async () => {
-  // `setupTestDb()` garantisce lo schema e tronca: l'ordine dei file non è
-  // alfabetico né stabile, quindi nessuna suite può assumere che un'altra
-  // abbia già creato le tabelle.
+  // `setupTestDb()` guarantees the schema and truncates: file order isn't
+  // alphabetical or stable, so no suite can assume another one has already
+  // created the tables.
   prisma = await setupTestDb();
 
   const uid = randomUUID().substring(0, 6);
@@ -70,11 +70,11 @@ beforeAll(async () => {
   const calendar = await prisma.seasonCalendar.create({ data: { brandId, seasonId } });
   calendarId = calendar.id;
 
-  // Eventi di calendario.
-  // `CalendarMilestone` è stato rinominato `CalendarEvent` (commit fbaa00f), e con
-  // esso `MilestoneVisibility`→`CalendarEventVisibility` e
-  // `MilestoneUserVisibility`→`CalendarEventUserVisibility`. L'appartenenza non è
-  // più `ownerFunctionId` ma `planningGroupId`, obbligatorio.
+  // Calendar events.
+  // `CalendarMilestone` was renamed to `CalendarEvent` (commit fbaa00f), and with
+  // it `MilestoneVisibility`→`CalendarEventVisibility` and
+  // `MilestoneUserVisibility`→`CalendarEventUserVisibility`. Membership is no
+  // longer `ownerFunctionId` but `planningGroupId`, mandatory.
   const group = await prisma.planningGroup.create({
     data: { calendarId, name: `Vis Group ${uid}` },
   });

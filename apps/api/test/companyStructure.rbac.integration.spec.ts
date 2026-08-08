@@ -1,8 +1,8 @@
 /**
- * RBAC su `company.*`: chi può leggere e chi può mutare.
+ * RBAC on `company.*`: who can read and who can mutate.
  *
- * I casi sono tabelle, non blocchi `it` copiati: la matrice ruolo × procedura è
- * la cosa che cresce, e scritta a mano cresceva a due righe identiche per volta.
+ * The cases are tables, not copy-pasted `it` blocks: the role × procedure matrix
+ * is what grows, and written by hand it grew two identical lines at a time.
  */
 
 import { randomUUID } from 'crypto';
@@ -29,20 +29,20 @@ let testFunctionId: string;
 let testTeamId: string;
 let testMemberId: string;
 
-/** Caller su `appRouter`, ristretto al namespace sotto test. */
+/** Caller on `appRouter`, restricted to the namespace under test. */
 function companyAs(role: Role) {
   return createCallerWithSession(sessions[role]).company;
 }
 
-/** Ruolo, etichetta per il nome del test, e invocazione da negare. */
+/** Role, label for the test name, and invocation to deny. */
 type DeniedCase = [Role, string, (role: Role) => Promise<unknown>];
 
 const ALL_ROLES: Role[] = ['admin', 'editor', 'viewer'];
 
 beforeAll(async () => {
-  // `setupTestDb()` garantisce lo schema e tronca: l'ordine dei file non è
-  // alfabetico né stabile, quindi nessuna suite può assumere che un'altra
-  // abbia già creato le tabelle.
+  // `setupTestDb()` guarantees the schema and truncates: file order isn't
+  // alphabetical or stable, so no suite can assume that another suite
+  // has already created the tables.
   prisma = await setupTestDb();
 
   const [admin, editor, viewer] = await Promise.all(
@@ -68,7 +68,7 @@ beforeAll(async () => {
   });
   testTeamId = team.id;
 
-  // Un utente da usare come membro nei test addMembers/removeMembers
+  // A user to use as a member in the addMembers/removeMembers tests
   const member = await prisma.user.create({
     data: {
       email: `rbac-member-${uid}@test.com`,
@@ -102,12 +102,12 @@ describe('RBAC — company.function', () => {
     await expect(companyAs(role).function.list()).resolves.toBeInstanceOf(Array);
   });
 
-  // `deactivate` è stato rinominato `delete` quando il soft-delete è diventato la
-  // semantica unica di cancellazione: la procedura vecchia non esiste più.
+  // `deactivate` was renamed `delete` when soft-delete became the
+  // sole deletion semantics: the old procedure no longer exists.
   const denied: DeniedCase[] = [
-    // Lo slug dipende dal ruolo: se la guardia regredisse, due create riuscite
-    // andrebbero in conflitto sull'unique e il fallimento parlerebbe di slug,
-    // non di RBAC.
+    // The slug depends on the role: if the guard regressed, two successful creates
+    // would conflict on the unique constraint and the failure would point to slug,
+    // not RBAC.
     ['editor', 'create', r => companyAs(r).function.create({ slug: `xtest${r}`, name: 'X' })],
     ['viewer', 'create', r => companyAs(r).function.create({ slug: `xtest${r}`, name: 'X' })],
     ['editor', 'update', r => companyAs(r).function.update({ id: testFunctionId, name: 'Y' })],

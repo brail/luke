@@ -1,7 +1,7 @@
 /**
- * NAV sub-router per integrazioni
- * Gestisce configurazione, test connessione e sincronizzazione
- * Microsoft Dynamics NAV (SQL Server)
+ * NAV sub-router for integrations
+ * Handles configuration, connection testing, and synchronization
+ * for Microsoft Dynamics NAV (SQL Server)
  */
 
 import { z } from 'zod';
@@ -412,10 +412,10 @@ export const navRouter = router({
     .use(requirePermission('config:update'))
     .input(navConfigSchema)
     .mutation(async ({ input, ctx }) => {
-      // Password aggiornata solo se il campo non è vuoto (form non tocca il campo → stringa vuota)
+      // Password updated only if the field isn't empty (form doesn't touch the field → empty string)
       const passwordUpdated = !!input.password && input.password.length > 0;
 
-      // Legge i valori correnti per rilevare cambi di connessione
+      // Reads the current values to detect connection changes
       const [prevHost, prevPort, prevDatabase, prevUser, prevCompany] = await Promise.all([
         getConfig(ctx.prisma, 'integrations.nav.host', false),
         getConfig(ctx.prisma, 'integrations.nav.port', false),
@@ -432,7 +432,7 @@ export const navRouter = router({
         prevCompany !== input.company ||
         passwordUpdated;
 
-      // Se la connessione è cambiata, azzera il pool mssql (credenziali vecchie non più valide)
+      // If the connection changed, resets the mssql pool (old credentials no longer valid)
       if (connectionChanged) {
         await pauseNavScheduler();
         try {
@@ -483,7 +483,7 @@ export const navRouter = router({
   testConnection: protectedProcedure
     .use(requirePermission('config:read'))
     .mutation(async ({ ctx }) => {
-      // Legge tutta la config salvata (inclusa password decifrata)
+      // Reads the entire saved config (including decrypted password)
       let config;
       try {
         config = await getNavDbConfig(ctx.prisma, getConfig);

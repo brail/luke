@@ -45,9 +45,9 @@ export async function storagePlugin(
 
   /**
    * GET /uploads/:bucket/*
-   * Proxy autenticato per asset storage — funziona sia con provider locale che MinIO.
-   * L'autenticazione avviene nel Next.js route handler; questa route è internal-only.
-   * Sostituisce il vecchio fastify-static: funziona per qualsiasi provider (local/MinIO).
+   * Authenticated proxy for storage assets — works with both the local provider and MinIO.
+   * Authentication happens in the Next.js route handler; this route is internal-only.
+   * Replaces the old fastify-static: works for any provider (local/MinIO).
    */
   fastify.get<{
     Params: { bucket: string; '*': string };
@@ -59,18 +59,18 @@ export async function storagePlugin(
       return;
     }
 
-    // Allowlist, non denylist: solo i bucket applicativi pubblici passano da questo proxy
-    // generico (nessuna allowlist/RBAC per-bucket qui sotto, a differenza della route POST
-    // /storage/upload/:uploadId più in basso). Bucket interni/sensibili come "backups" restano
-    // esclusi di default — un nuovo bucket privato futuro non richiede di ricordarsi di
-    // aggiungere un carve-out qui. "backups" passa esclusivamente dalla route dedicata
-    // admin-only di maintenance.backup.
+    // Allowlist, not denylist: only public application buckets pass through this generic
+    // proxy (no per-bucket allowlist/RBAC below, unlike the POST /storage/upload/:uploadId
+    // route further down). Internal/sensitive buckets like "backups" stay excluded by
+    // default — a future private bucket doesn't require remembering to add a carve-out
+    // here. "backups" is served exclusively through the dedicated admin-only
+    // maintenance.backup route.
     if (!(APP_STORAGE_BUCKETS as readonly string[]).includes(bucket)) {
       reply.code(403).send({ error: 'Forbidden' });
       return;
     }
 
-    // Blocca path traversal: nessun segmento deve essere '..' o contenere caratteri pericolosi
+    // Block path traversal: no segment may be '..' or contain dangerous characters
     const segments = key.split('/');
     if (segments.some(s => s === '..' || s === '.' || s === '')) {
       reply.code(400).send({ error: 'Bad Request' });
@@ -102,17 +102,17 @@ export async function storagePlugin(
     }
   });
 
-  // Note: @fastify/multipart è già registrato globalmente in server.ts
-  // Non registrare di nuovo qui per evitare conflitti
+  // Note: @fastify/multipart is already registered globally in server.ts
+  // Don't register it again here to avoid conflicts
 
   /**
    * POST /storage/upload/:uploadId
-   * Upload file con multipart/form-data
+   * File upload via multipart/form-data
    */
   fastify.post<{
     Params: { uploadId: string };
   }>('/storage/upload/:uploadId', async (request, reply) => {
-    // Autenticazione richiesta
+    // Authentication required
     const session = await auth(request, reply, prisma);
     if (!session) {
       reply.code(401).send({
@@ -123,7 +123,7 @@ export async function storagePlugin(
     }
 
     try {
-      // Ottieni file da multipart
+      // Get file from multipart
       const data = await request.file();
 
       if (!data) {
@@ -134,12 +134,12 @@ export async function storagePlugin(
         return;
       }
 
-      // Estrai metadati dal form
+      // Extract metadata from the form
       const bucket = getMultipartFieldValue(data.fields.bucket) || 'uploads';
       const originalName =
         getMultipartFieldValue(data.fields.originalName) || data.filename || 'unnamed';
 
-      // Valida bucket
+      // Validate bucket
       if (!['uploads', 'exports', 'assets'].includes(bucket)) {
         reply.code(400).send({
           error: 'Bad Request',
@@ -148,10 +148,10 @@ export async function storagePlugin(
         return;
       }
 
-      // Enforce bucket-level RBAC tramite sistema permessi unificato:
-      // - uploads: qualsiasi utente autenticato (nessun permesso aggiuntivo)
-      // - exports: config:read (editor e admin)
-      // - assets:  config:update (solo admin)
+      // Enforce bucket-level RBAC via the unified permission system:
+      // - uploads: any authenticated user (no additional permission)
+      // - exports: config:read (editor and admin)
+      // - assets:  config:update (admin only)
       const bucketPermission: Record<string, Parameters<typeof hasPermission>[1] | null> = {
         uploads: null,
         exports: 'config:read',
@@ -167,10 +167,10 @@ export async function storagePlugin(
         return;
       }
 
-      // Determina content type
+      // Determine content type
       const contentType = data.mimetype || 'application/octet-stream';
 
-      // Crea context per service layer
+      // Create context for the service layer
       const ctx: Context = {
         session,
         prisma,
@@ -180,12 +180,12 @@ export async function storagePlugin(
         logger: request.log,
       };
 
-      // Upload file tramite service layer
+      // Upload file via the service layer
       const fileObject = await putObject(ctx, {
         bucket: bucket as StorageBucket,
         originalName,
         contentType,
-        size: 0, // Size viene calcolato dallo stream
+        size: 0, // Size is calculated from the stream
         stream: data.file,
       });
 
@@ -217,7 +217,7 @@ export async function storagePlugin(
 
   /**
    * GET /storage/download?token=...
-   * Download file con token firmato
+   * File download via signed token
    */
   fastify.get<{
     Querystring: { token: string };
@@ -233,14 +233,14 @@ export async function storagePlugin(
     }
 
     try {
-      // Verifica token HMAC
+      // Verify HMAC token
       const payload = verifyDownloadToken(token);
 
-      // Crea context minimale (no session required, token autorizza)
-      // Ma per audit log serve session se disponibile
+      // Create a minimal context (no session required, the token authorizes)
+      // But the audit log needs a session if one is available
       const session = await auth(request, reply, prisma);
 
-      // Recupera metadati da DB tramite bucket+key
+      // Retrieve metadata from the DB via bucket+key
       const fileObject = await prisma.fileObject.findFirst({
         where: {
           bucket: payload.bucket,
@@ -256,7 +256,7 @@ export async function storagePlugin(
         return;
       }
 
-      // Crea context per service layer
+      // Create context for the service layer
       const ctx: Context = {
         session,
         prisma,
@@ -266,7 +266,7 @@ export async function storagePlugin(
         logger: request.log,
       };
 
-      // Download file tramite service layer
+      // Download file via the service layer
       const { stream, metadata } = await getObject(ctx, fileObject.id);
 
       streamRawResponse(
@@ -275,9 +275,9 @@ export async function storagePlugin(
         {
           'Content-Type': metadata.contentType,
           'Content-Length': metadata.size,
-          // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Content-Disposition:attachment forza il download e impedisce il render inline; Content-Type è quello salvato in metadata, non sniffato dal client
+          // nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Content-Disposition:attachment forces download and prevents inline rendering; Content-Type is the one saved in metadata, not sniffed from the client
           'Content-Disposition': `attachment; filename="${encodeURIComponent(metadata.originalName)}"`,
-          'Cache-Control': 'private, max-age=300', // 5 minuti
+          'Cache-Control': 'private, max-age=300', // 5 minutes
         },
         err => fastify.log.error({ err, fileObjectId: fileObject.id }, 'Storage download stream failed')
       );

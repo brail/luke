@@ -1,6 +1,6 @@
 /**
- * Router tRPC per endpoint pubblici
- * Accessibile senza autenticazione per informazioni dell'app
+ * tRPC router for public endpoints
+ * Accessible without authentication for app information
  */
 
 import { isDevelopment } from '@luke/core';

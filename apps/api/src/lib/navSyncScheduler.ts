@@ -1,18 +1,18 @@
 /**
- * Scheduler per la sincronizzazione periodica NAV → DB locale.
+ * Scheduler for periodic NAV → local DB synchronization.
  *
- * Avvio: hook onReady di Fastify (dopo che il server è in ascolto).
- * Arresto: hook onClose di Fastify (ferma il timer e chiude il pool mssql).
+ * Start: Fastify `onReady` hook (after the server is listening).
+ * Stop: Fastify `onClose` hook (stops the timer and closes the mssql pool).
  *
  * Design:
- * - Tick globale ogni minuto.
- * - Ad ogni tick, per ogni entità (vendor, brand, season): se autoSyncEnabled=true
- *   e sono trascorsi almeno intervalMinutes dall'ultima esecuzione, avvia il sync.
- * - Il filtro viene riletto dal DB ad ogni tick: le modifiche all'intervallo o
- *   all'abilitazione sono operative al tick successivo (entro 1 minuto), senza restart.
+ * - Global tick every minute.
+ * - On each tick, for every entity (vendor, brand, season): if autoSyncEnabled=true
+ *   and at least intervalMinutes have passed since the last run, start the sync.
+ * - The filter is re-read from the DB on every tick: changes to the interval or
+ *   the enable flag take effect on the next tick (within 1 minute), with no restart.
  *
- * Un errore di sync non causa il crash del server: viene loggato e il ciclo
- * successivo parte normalmente.
+ * A sync error doesn't crash the server: it's logged and the next cycle starts
+ * normally.
  */
 
 
@@ -27,21 +27,21 @@ import { withSchedulerLock } from './schedulerLock';
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
-const TICK_INTERVAL_MS = 60 * 1000; // 1 minuto
+const TICK_INTERVAL_MS = 60 * 1000; // 1 minute
 
 const ENTITIES = ['vendor', 'brand', 'season'] as const;
 export type Entity = (typeof ENTITIES)[number];
 
-// Timestamp (ms) dell'ultima esecuzione completata per entità
+// Timestamp (ms) of the last completed run per entity
 const lastRunAt: Partial<Record<Entity, number>> = {};
 
-// Flag per entità: evita sync concorrenti
+// Per-entity flag: avoids concurrent syncs
 const isRunning: Partial<Record<Entity, boolean>> = {};
 
 /**
- * Attende che il sync in corso finisca (se attivo) e blocca le nuove esecuzioni.
- * Usato da saveConfig prima di closePool() per evitare pool null a metà operazione.
- * Chiamare resumeNavScheduler() dopo per riaprire il semaforo.
+ * Waits for the in-progress sync (if any) to finish and blocks new runs from starting.
+ * Used by saveConfig before closePool() to avoid a null pool mid-operation.
+ * Call resumeNavScheduler() afterwards to reopen the semaphore.
  */
 let _pauseResolve: (() => void) | null = null;
 let _isPaused = false;
@@ -53,12 +53,12 @@ let _isPaused = false;
  */
 export async function pauseNavScheduler(): Promise<void> {
   _isPaused = true;
-  // Aspetta che tutte le entità in corso finiscano
+  // Wait for all in-progress entities to finish
   const running = ENTITIES.filter(e => isRunning[e]);
   if (running.length === 0) return;
   return new Promise(resolve => {
     _pauseResolve = resolve;
-    // Il resolve viene chiamato in _checkAllDone() quando tutte le entità completano
+    // resolve is called in _checkAllDone() when all entities complete
   });
 }
 
@@ -140,7 +140,7 @@ export function registerNavSyncScheduler(
   const tick = async () => {
     if (_isPaused) return;
 
-    // Pre-check: se NAV non è ancora configurato, evita errori rumorosi ad ogni boot
+    // Pre-check: if NAV isn't configured yet, avoid noisy errors on every boot
     const host = await getConfig(prisma, 'integrations.nav.host', false);
     if (!host) {
       fastify.log.debug('NAV sync scheduler: host non configurato, tick saltato');
@@ -179,7 +179,7 @@ export function registerNavSyncScheduler(
   fastify.addHook('onReady', async () => {
     fastify.log.info('NAV sync scheduler: avviato (tick ogni 60s, intervalli per-entità)');
 
-    // Prima esecuzione subito dopo il ready
+    // First run right after ready
     void guardedTick();
 
     timer = setInterval(() => void guardedTick(), TICK_INTERVAL_MS);

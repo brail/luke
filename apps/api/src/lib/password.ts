@@ -6,17 +6,17 @@
 import argon2 from 'argon2';
 
 /**
- * Configurazione Argon2 per hash password
- * Usa argon2id per sicurezza ottimale
+ * Argon2 configuration for password hashing
+ * Uses argon2id for optimal security
  *
- * Esportata per riuso da altri moduli Argon2id (es. `lib/backup/crypto.ts`, che deriva una
- * chiave da passphrase con lo stesso tuning invece di un hash di verifica) che devono restare
- * allineati su questi parametri.
+ * Exported for reuse by other Argon2id modules (e.g. `lib/backup/crypto.ts`, which derives a
+ * key from passphrase with the same tuning instead of a verification hash) that must remain
+ * aligned on these parameters.
  */
 export const ARGON2_OPTIONS: argon2.Options = {
   type: argon2.argon2id,
   memoryCost: 2 ** 16, // 64 MB
-  timeCost: 3, // 3 iterazioni
+  timeCost: 3, // 3 iterations
   parallelism: 1, // 1 thread
   hashLength: 32, // 32 bytes
 };
@@ -49,7 +49,7 @@ export async function verifyPassword(
   try {
     return await argon2.verify(hash, password);
   } catch {
-    // In caso di errore (hash malformato, ecc.), considera la password non valida
+    // On error (malformed hash, etc.), consider the password invalid
     return false;
   }
 }
@@ -85,27 +85,27 @@ export function validatePassword(
 ): PasswordValidationResult {
   const errors: string[] = [];
 
-  // Verifica lunghezza minima
+  // Checks minimum length
   if (password.length < policy.minLength) {
     errors.push(`Lunghezza minima: ${policy.minLength} caratteri`);
   }
 
-  // Verifica maiuscola
+  // Checks for uppercase letter
   if (policy.requireUppercase && !/[A-Z]/.test(password)) {
     errors.push('Richiesta almeno una lettera maiuscola');
   }
 
-  // Verifica minuscola
+  // Checks for lowercase letter
   if (policy.requireLowercase && !/[a-z]/.test(password)) {
     errors.push('Richiesta almeno una lettera minuscola');
   }
 
-  // Verifica cifra
+  // Checks for digit
   if (policy.requireDigit && !/[0-9]/.test(password)) {
     errors.push('Richiesta almeno una cifra');
   }
 
-  // Verifica carattere speciale
+  // Checks for special character
   if (
     policy.requireSpecialChar &&
     !/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password)

@@ -1,13 +1,13 @@
 /**
- * Test unitari per le revisioni automatiche del collection layout
- * (`collectionLayoutAutoRevision.service.ts`): quali eventi fanno scattare uno snapshot,
- * la deduplica per (evento, tipo revisione), il commento della revisione e il fatto che
- * un fallimento non propaghi mai sul salvataggio della riga.
+ * Unit tests for the collection layout's automatic revisions
+ * (`collectionLayoutAutoRevision.service.ts`): which events trigger a snapshot,
+ * dedup by (event, revision type), the revision comment, and the fact that
+ * a failure never propagates to the row save.
  *
- * Mockato: `collectionLayoutRevision.service` — lo snapshot vero (transazione, copia foto,
- * numerazione) è comportamento suo, già coperto altrove; qui si testa solo *quando* e *con
- * quali argomenti* viene invocato. Prisma è un fake in-memory: le query sono l'input del
- * test, non ciò che si verifica.
+ * Mocked: `collectionLayoutRevision.service` — the actual snapshot (transaction, photo
+ * copy, numbering) is its own behavior, already covered elsewhere; here we only test
+ * *when* and *with which arguments* it's invoked. Prisma is an in-memory fake: the
+ * queries are the input of the test, not what's being verified.
  */
 
 import { Prisma } from '@prisma/client';
@@ -48,7 +48,7 @@ function buildFakePrisma(opts: FakePrismaOpts = {}) {
 
 const fakeLogger = { warn: vi.fn(), info: vi.fn() };
 
-/** Evento con fase, già scaduto, appartenente al gruppo di pianificazione indicato. */
+/** Event with a phase, already overdue, belonging to the given planning group. */
 function reachedEvent(id: string, title: string, groupName: string) {
   return {
     id,
@@ -60,7 +60,7 @@ function reachedEvent(id: string, title: string, groupName: string) {
 
 const LAYOUT = { id: 'layout-1', brandId: 'brand-1', seasonId: 'season-1' };
 
-/** Violazione dell'indice unique `(milestoneId, revisionTypeValue)` — trigger concorrente arrivato prima. */
+/** Violation of the unique index `(milestoneId, revisionTypeValue)` — a concurrent trigger got there first. */
 function duplicateRevisionError() {
   return new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
     code: 'P2002',
@@ -143,7 +143,7 @@ describe('createRevisionsForReachedEvents', () => {
     const where = prisma.calendarEvent.findMany.mock.calls[0][0].where;
     expect(where.cancelledAt).toBeNull();
     expect(where.phaseId).toEqual({ not: null });
-    // endAt quando valorizzato, altrimenti startAt — due rami mutuamente esclusivi
+    // endAt when set, otherwise startAt — two mutually exclusive branches
     expect(where.OR).toHaveLength(2);
     for (const branch of where.OR) {
       const range = branch.endAt ?? branch.startAt;
@@ -172,7 +172,7 @@ describe('createRevisionsForReachedEvents', () => {
     vi.mocked(createRevision).mockRejectedValue(duplicateRevisionError());
 
     expect(await createRevisionsForReachedEvents(prisma, NOW, fakeLogger)).toBe(0);
-    // Corsa persa = revisione già esistente, non un errore da segnalare
+    // Lost race = revision already exists, not an error to report
     expect(fakeLogger.warn).not.toHaveBeenCalled();
     expect(prisma.auditLog.create).not.toHaveBeenCalled();
   });

@@ -1,10 +1,10 @@
 /**
- * Chiave del rate limiter.
+ * Rate limiter key.
  *
- * Le quattro rotte di upload avevano un `keyGenerator` che leggeva
- * `req.session?.user?.id`, ma nessuno assegna mai `req.session`: il limiter è un
- * hook `onRequest`, l'auth avviene dentro l'handler. Il ramo era morto in tutte e
- * quattro e il limite finiva per essere per IP.
+ * The four upload routes had a `keyGenerator` that read
+ * `req.session?.user?.id`, but nothing ever assigns `req.session`: the limiter is an
+ * `onRequest` hook, auth happens inside the handler. The branch was dead in all
+ * four and the limit ended up being per-IP.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -14,7 +14,7 @@ import { signJWT } from '../src/lib/jwt';
 
 import type { FastifyRequest } from 'fastify';
 
-/** Il minimo che il generatore legge davvero. */
+/** The minimum that the generator actually reads. */
 function req(authorization?: string): FastifyRequest {
   return {
     ip: '203.0.113.7',
@@ -36,8 +36,8 @@ describe('rateLimitKeyFromRequest', () => {
   });
 
   it('un bearer scaduto ricade sull’IP', () => {
-    // Non è un controllo di autenticazione: a rifiutare la richiesta è
-    // l'handler, il limiter deve solo scegliere un bucket.
+    // This is not an authentication check: it's the handler that rejects
+    // the request, the limiter only needs to pick a bucket.
     const expired = signJWT(
       {
         userId: 'user-42',

@@ -1,6 +1,6 @@
 /**
- * Client per Quotable API — aforismi random usati nel daily greeting.
- * Fetch sempre live, mai cachato: nessuna persistenza server-side del risultato.
+ * Client for Quotable API — random quotes used in daily greeting.
+ * Always live fetch, never cached: no server-side result persistence.
  */
 
 import pino from 'pino';

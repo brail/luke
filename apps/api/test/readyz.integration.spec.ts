@@ -1,6 +1,6 @@
 /**
- * Test per Readiness & Fail-Fast Behavior
- * Verifica comportamento bootstrap fail-fast e endpoint /readyz
+ * Test for Readiness & Fail-Fast Behavior
+ * Verifies bootstrap fail-fast behavior and /readyz endpoint
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -23,7 +23,7 @@ import {
 
 import { setupTestDb } from './helpers';
 
-// Mock della configurazione LDAP
+// Mock of LDAP configuration
 vi.mock('../src/lib/configManager', () => ({
   getLdapConfig: vi.fn().mockResolvedValue({
     enabled: false,
@@ -38,14 +38,14 @@ vi.mock('../src/lib/configManager', () => ({
   }),
 }));
 
-// Mock delle funzioni core
+// Mock of core functions
 vi.mock('@luke/core/server', () => ({
   deriveSecret: vi.fn(),
   validateMasterKey: vi.fn(),
 }));
 
-// `process.exit` resta stubbato: un fail-fast che sfuggisse durante questi test
-// abbatterebbe il worker vitest invece di far fallire il test.
+// `process.exit` stays stubbed: a fail-fast that escaped during these tests
+// would crash the vitest worker instead of failing the test.
 vi.spyOn(process, 'exit').mockImplementation(() => {
   throw new Error('process.exit called');
 });
@@ -69,7 +69,7 @@ describe('Bootstrap Fail-Fast Behavior', () => {
 
   describe('checkBootstrapDependencies', () => {
     it('dovrebbe completare con successo quando tutte le dipendenze sono OK', async () => {
-      // Mock tutte le dipendenze come OK
+      // Mock all dependencies as OK
       (
         validateMasterKey as MockedFunction<typeof validateMasterKey>
       ).mockReturnValue(true);
@@ -77,12 +77,12 @@ describe('Bootstrap Fail-Fast Behavior', () => {
         'mock-secret'
       );
 
-      // Non dovrebbe lanciare errori
+      // Should not throw errors
       await expect(
         checkBootstrapDependencies(prisma, mockLogger)
       ).resolves.not.toThrow();
 
-      // Verifica che i log siano stati chiamati
+      // Verifies that logs were called
       expect(mockLogger.info).toHaveBeenCalledWith(
         'Connessione database stabilita'
       );
@@ -92,7 +92,7 @@ describe('Bootstrap Fail-Fast Behavior', () => {
     });
 
     it('dovrebbe fallire quando validateMasterKey restituisce false', async () => {
-      // Mock master key non disponibile
+      // Mock master key not available
       (
         validateMasterKey as MockedFunction<typeof validateMasterKey>
       ).mockReturnValue(false);
@@ -107,7 +107,7 @@ describe('Bootstrap Fail-Fast Behavior', () => {
     });
 
     it('dovrebbe fallire quando deriveSecret lancia errore', async () => {
-      // Mock master key OK ma secret derivation fallisce
+      // Mock master key OK but secret derivation fails
       (
         validateMasterKey as MockedFunction<typeof validateMasterKey>
       ).mockReturnValue(true);
@@ -129,7 +129,7 @@ describe('Bootstrap Fail-Fast Behavior', () => {
     });
 
     it('dovrebbe fallire quando la connessione DB fallisce', async () => {
-      // Mock DB disconnesso
+      // Mock DB disconnected
       const mockPrisma = {
         $connect: vi
           .fn()
@@ -160,7 +160,7 @@ describe('/readyz Endpoint Behavior', () => {
 
   describe('runReadinessChecks', () => {
     it('dovrebbe restituire allOk=true quando tutti i check passano', async () => {
-      // Mock tutti i check come OK
+      // Mock all checks as OK
       (
         validateMasterKey as MockedFunction<typeof validateMasterKey>
       ).mockReturnValue(true);
@@ -178,7 +178,7 @@ describe('/readyz Endpoint Behavior', () => {
     });
 
     it('dovrebbe restituire allOk=false quando il database fallisce', async () => {
-      // Mock DB disconnesso
+      // Mock DB disconnected
       const mockPrisma = {
         $queryRaw: vi
           .fn()
@@ -194,7 +194,7 @@ describe('/readyz Endpoint Behavior', () => {
     });
 
     it('dovrebbe restituire allOk=false quando secrets fallisce', async () => {
-      // Mock secrets fallisce
+      // Mock secrets fails
       (deriveSecret as MockedFunction<typeof deriveSecret>).mockImplementation(
         () => {
           throw new Error('Secret derivation failed');
@@ -210,7 +210,7 @@ describe('/readyz Endpoint Behavior', () => {
     });
 
     it('dovrebbe gestire errori in check paralleli', async () => {
-      // Mock un check che lancia un'eccezione non gestita
+      // Mock a check that throws an unhandled exception
       const mockPrisma = {
         $queryRaw: vi.fn().mockImplementation(() => {
           throw new Error('Unexpected error');

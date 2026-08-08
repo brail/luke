@@ -34,10 +34,10 @@ export async function createContext({
   req: FastifyRequest;
   res: FastifyReply;
 }): Promise<Context> {
-  // Autentica la richiesta e ottieni la sessione
+  // Authenticate the request and get the session
   const session = await authenticateRequest(req, res, prisma);
 
-  // Estrai o genera traceId
+  // Extract or generate traceId
   const traceId = (req.headers['x-luke-trace-id'] as string) || randomUUID();
 
   return {
@@ -104,10 +104,10 @@ export const authMiddleware = t.middleware(async ({ ctx, next }) => {
     });
   }
 
-  // Ridondante per le richieste HTTP reali — `authenticateRequest` rifiuta già i
-  // token revocati — ma non per i context costruiti a mano (test, job interni),
-  // che non passano da lì. Il controllo resta perché l'invariante deve valere per
-  // ogni context, non solo per quelli nati da una richiesta.
+  // Redundant for real HTTP requests — `authenticateRequest` already rejects
+  // revoked tokens — but not for hand-built contexts (tests, internal jobs),
+  // which don't go through it. The check stays because the invariant must hold
+  // for every context, not just ones born from a request.
   const isTokenVersionValid = await verifyTokenVersion(
     ctx.session.user.id,
     ctx.session.user.tokenVersion,
@@ -124,7 +124,7 @@ export const authMiddleware = t.middleware(async ({ ctx, next }) => {
   return next({
     ctx: {
       ...ctx,
-      session: ctx.session, // Type-safe: session non è più null
+      session: ctx.session, // Type-safe: session is no longer null
     },
   });
 });
@@ -148,7 +148,7 @@ export const maintenanceGuard = t.middleware(async ({ ctx, next }) => {
   return next({
     ctx: {
       ...ctx,
-      session: ctx.session, // Type-safe: session non è più null
+      session: ctx.session, // Type-safe: session is no longer null
     },
   });
 });
@@ -175,7 +175,7 @@ export const adminMiddleware = t.middleware(async ({ ctx, next }) => {
   return next({
     ctx: {
       ...ctx,
-      session: ctx.session, // Type-safe: session non è più null
+      session: ctx.session, // Type-safe: session is no longer null
     },
   });
 });

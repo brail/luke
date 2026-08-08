@@ -30,7 +30,7 @@ export type { PortafoglioSyncResult };
 
 // ─── Module-level state ───────────────────────────────────────────────────────
 
-const TICK_INTERVAL_MS = 60 * 1000; // controlla ogni minuto
+const TICK_INTERVAL_MS = 60 * 1000; // checks every minute
 
 let _isRunning = false;
 let _lastRunAt: Date | null = null;
@@ -100,11 +100,11 @@ export function registerPortafoglioSyncScheduler(
   const tick = async () => {
     if (_isRunning) return;
 
-    // Controlla che NAV sia configurato prima di tentare la connessione
+    // Verifies NAV is configured before attempting connection
     const host = await getConfig(prisma, 'integrations.nav.host', false);
     if (!host) return;
 
-    // Legge la configurazione di pianificazione dal DB a ogni tick
+    // Reads scheduling configuration from DB on every tick
     const config = await prisma.navSyncFilter.findUnique({
       where: { entity: 'portafoglio' },
       select: { autoSyncEnabled: true, intervalMinutes: true },
@@ -127,7 +127,7 @@ export function registerPortafoglioSyncScheduler(
     _logger = fastify.log as unknown as Logger;
     fastify.log.info('Portafoglio sync scheduler: avviato (tick ogni minuto, intervallo configurabile)');
 
-    // Prima esecuzione subito dopo il ready (rispettando la config DB)
+    // First execution immediately after ready (respecting DB config)
     void guardedTick();
 
     timer = setInterval(() => void guardedTick(), TICK_INTERVAL_MS);

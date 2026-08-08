@@ -1,30 +1,30 @@
 /**
- * Inventario delle procedure tRPC montate su `appRouter`.
+ * Inventory of the tRPC procedures mounted on `appRouter`.
  *
- * ## Perché `_def.procedures` e non una scansione dei file
+ * ## Why `_def.procedures` and not a file scan
  *
- * `src/routers/` non mappa 1:1 sui namespace: `integrations.ldap.router.ts` è
- * montato su `integrations.auth`, e `users.core.router.ts` / `users.admin.router.ts`
- * sono uniti con `mergeRouters`, quindi le loro procedure vivono direttamente su
- * `users.*`. Una scansione del filesystem sbaglierebbe entrambi i casi. Il router
- * costruito è l'unica fonte che li ha già risolti.
+ * `src/routers/` doesn't map 1:1 onto namespaces: `integrations.ldap.router.ts`
+ * is mounted on `integrations.auth`, and `users.core.router.ts` /
+ * `users.admin.router.ts` are merged with `mergeRouters`, so their procedures
+ * live directly on `users.*`. A filesystem scan would get both cases wrong.
+ * The constructed router is the only source that has already resolved them.
  *
- * ## Forma della mappa
+ * ## Shape of the map
  *
- * `_def.procedures` è **piatta**, con chiavi dotted a qualunque profondità: in
- * `createRouterFactory` la costruzione è
- * `procedures[[...path, key].join('.')] = item`. Il tipo dichiara `TRecord` (lo
- * stesso di `_def.record`, che invece è annidata) e questo la fa sembrare
- * annidata: non lo è. Verificato su @trpc/server 11.18.0.
+ * `_def.procedures` is **flat**, with dotted keys at any depth: in
+ * `createRouterFactory` the construction is
+ * `procedures[[...path, key].join('.')] = item`. The type declares `TRecord`
+ * (the same as `_def.record`, which is nested instead) and this makes it
+ * look nested: it isn't. Verified on @trpc/server 11.18.0.
  *
- * ## Territorio instabile, quindi guardie esplicite
+ * ## Unstable territory, hence explicit guards
  *
- * `_def` sta sotto `unstable-core-do-not-import`: un upgrade di tRPC può
- * cambiarne la forma. Ogni assunzione qui sotto è verificata e fallisce forte.
- * Una discovery vuota che passasse in silenzio renderebbe il gate di copertura
- * un no-op verde per sempre — è già successo in questo progetto con la lista di
- * tabelle memoizzata vuota in `helpers/database.ts`, che disattivò l'isolamento
- * fra test senza che nulla lo segnalasse.
+ * `_def` lives under `unstable-core-do-not-import`: a tRPC upgrade can change
+ * its shape. Every assumption below is verified and fails hard. An empty
+ * discovery that passed silently would turn the coverage gate into a
+ * permanently green no-op — it already happened in this project with the
+ * empty memoized table list in `helpers/database.ts`, which disabled
+ * isolation between tests without anything flagging it.
  */
 
 import { appRouter } from '../../src/routers/index';
@@ -35,14 +35,14 @@ interface RouterInternals {
 }
 
 /**
- * Path dotted di ogni procedura montata, ordinati.
+ * Dotted paths of every mounted procedure, sorted.
  *
- * @throws se la forma di `_def` non è più quella attesa — mai un elenco vuoto
- *   restituito in silenzio.
+ * @throws if the shape of `_def` is no longer the expected one — never an
+ *   empty list returned silently.
  */
 export function discoverProcedures(): string[] {
-  // Cast necessario: `_def` è tipizzato come `RouterDef` con `procedures: TRecord`,
-  // un tipo ricorsivo che non descrive la mappa piatta effettiva a runtime.
+  // Cast needed: `_def` is typed as `RouterDef` with `procedures: TRecord`, a
+  // recursive type that doesn't describe the actual flat map at runtime.
   const def = appRouter._def as unknown as RouterInternals;
   const entries = Object.entries(def.procedures ?? {});
 
@@ -64,10 +64,10 @@ export function discoverProcedures(): string[] {
     );
   }
 
-  // Controllo incrociato fra le due strutture che tRPC costruisce nello stesso
-  // passaggio ma per strade diverse. Estende la guardia oltre il caso "zero":
-  // intercetta anche un cambio di forma parziale, dove `procedures` resta
-  // popolata ma perde dei rami.
+  // Cross-check between the two structures that tRPC builds in the same
+  // pass but through different paths. Extends the guard beyond the "zero"
+  // case: it also catches a partial shape change, where `procedures` stays
+  // populated but loses some branches.
   const namespaces = new Set(entries.map(([path]) => path.split('.')[0]));
   const missing = Object.keys(def.record ?? {}).filter(
     key => !namespaces.has(key)

@@ -66,8 +66,8 @@ const companyProfileRouter = router({
     .use(withRateLimit('companyStructureMutations'))
     .input(CompanyProfileInputSchema)
     .mutation(async ({ ctx, input }) => {
-      // Niente `...input` nell'upsert: era così che `logoKey` passava dal client
-      // al database senza che nessuno lo guardasse.
+      // No `...input` in the upsert: that's how `logoKey` used to pass from the client
+      // to the database without anyone checking it.
       const { fileObjectId, logoKey, ...rest } = input;
       const countryCode = (rest.address as { countryCode?: string } | undefined)?.countryCode ?? undefined;
 
@@ -88,11 +88,11 @@ const companyProfileRouter = router({
             userId: ctx.session.user.id,
           });
 
-          // BAD_REQUEST e non un no-op silenzioso: il caso realistico non è un id
-          // malevolo, è il reaper. Carichi il logo, ti distrai settanta minuti,
-          // salvi — il `FileObject` pending è stato spazzato, il predicato manca,
-          // e senza questo errore il profilo si salverebbe senza logo mostrando
-          // "Profilo aggiornato".
+          // BAD_REQUEST and not a silent no-op: the realistic case isn't a
+          // malicious id, it's the reaper. You upload the logo, get distracted for seventy
+          // minutes, save — the pending `FileObject` has been swept, the predicate fails,
+          // and without this error the profile would save without a logo while showing
+          // "Profile updated".
           if (!confirmedKey) {
             throw new TRPCError({
               code: 'BAD_REQUEST',
@@ -114,9 +114,9 @@ const companyProfileRouter = router({
         });
       }, { timeout: 15000 });
 
-      // Dopo il commit, mai dentro: un rollback lascerebbe il blob cancellato.
-      // Finora nessuno cancellava i logo sostituiti, che restavano in
-      // `company-assets` per sempre.
+      // After the commit, never inside: a rollback would leave the blob deleted.
+      // Until now nothing deleted replaced logos, which stayed in
+      // `company-assets` forever.
       if (oldLogoKey && oldLogoKey !== profile.logoKey) {
         const staleKey = oldLogoKey;
         setImmediate(async () => {

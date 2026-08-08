@@ -80,26 +80,26 @@ const loggerConfig = {
 /** Fastify instance shared across all route registrations in this module. */
 const fastify = Fastify({
   logger: loggerConfig,
-  requestTimeout: 360_000, // 6 min — allineato a proxyTimeout Next.js e pool NAV (300 s + margine)
-  connectionTimeout: 0,    // disabilitato — requestTimeout gestisce il limite totale
+  requestTimeout: 360_000, // 6 min — aligned with Next.js proxyTimeout and the NAV pool (300 s + margin)
+  connectionTimeout: 0,    // disabled — requestTimeout handles the total limit
   routerOptions: { maxParamLength: 5000 }, // tRPC batch requests contain multiple procedure names in the URL param
-  // apps/api non è mai raggiungibile direttamente da Internet (nessuna porta pubblicata
-  // in docker-compose.prod.yml/rc.yml): l'unico ingresso è il container apps/web, sia
-  // via i rewrite di next.config.js sia via la fetch server-to-server di NextAuth
-  // (apps/web/src/auth.ts). Fidarsi di X-Forwarded-For qui è quindi sicuro e necessario
-  // perché req.ip risolva l'IP client reale invece dell'indirizzo interno del container web
-  // (root cause del bucket di rate-limit condiviso su /trpc/auth.login).
-  // `1` (non `true`): trust esattamente un hop (il container apps/web, unico mittente
-  // possibile). `true` fida di una catena illimitata e risolve req.ip alla entry più a
-  // sinistra — cioè il valore che un client può auto-dichiarare — rendendo ogni bucket
-  // rate-limit keyBy:'ip' aggirabile spedendo un X-Forwarded-For falso (CRITICAL, audit
-  // 2026-08-07). Con `1`, apps/api fida solo del socket diretto (sempre apps/web) e legge
-  // l'entry immediatamente precedente — quella che NPM stesso ha accodato via
-  // $proxy_add_x_forwarded_for, mai quella auto-dichiarata dal client.
+  // apps/api is never directly reachable from the Internet (no port published
+  // in docker-compose.prod.yml/rc.yml): the only entry point is the apps/web container,
+  // either via next.config.js rewrites or via NextAuth's server-to-server fetch
+  // (apps/web/src/auth.ts). Trusting X-Forwarded-For here is therefore safe and necessary
+  // so that req.ip resolves to the real client IP instead of the web container's internal
+  // address (root cause of the shared rate-limit bucket on /trpc/auth.login).
+  // `1` (not `true`): trust exactly one hop (the apps/web container, the only possible
+  // sender). `true` trusts an unlimited chain and resolves req.ip to the leftmost
+  // entry — i.e. the value a client can self-declare — making every
+  // keyBy:'ip' rate-limit bucket bypassable by sending a fake X-Forwarded-For (CRITICAL,
+  // audit 2026-08-07). With `1`, apps/api trusts only the direct socket (always apps/web)
+  // and reads the entry immediately before it — the one NPM itself appended via
+  // $proxy_add_x_forwarded_for, never the one self-declared by the client.
   trustProxy: 1,
 });
 
-// Registra handler/onError globali per logging e risposta sicura
+// Register global handler/onError for logging and a safe response
 setGlobalErrorHandler(fastify);
 
 /**
@@ -132,13 +132,13 @@ const prisma = new PrismaClient({
  * and the Pino trace-correlation hook.
  */
 async function registerSecurityPlugins(): Promise<string[]> {
-  // Cookie plugin per gestione sessioni
-  // Secret derivato via HKDF-SHA256 dalla master key (dominio: cookie.secret)
+  // Cookie plugin for session management
+  // Secret derived via HKDF-SHA256 from the master key (domain: cookie.secret)
   await fastify.register(cookie, {
     secret: deriveSecret(HKDF_INFO_COOKIE),
   });
 
-  // Rate limiting globale (permissivo)
+  // Global rate limiting (permissive)
   await fastify.register(rateLimit, {
     max: isDevelopment() ? 2000 : 100,
     timeWindow: '1 minute',
@@ -156,21 +156,21 @@ async function registerSecurityPlugins(): Promise<string[]> {
 
   const envName = isDevelopment() ? 'development' : isProduction() ? 'production' : 'test';
 
-  // Helmet per security headers con CSP minimale per API JSON-only.
+  // Helmet for security headers with a minimal CSP for a JSON-only API.
   //
-  // La configurazione arriva da `lib/helmet.ts`, che si dichiara centralizzata:
-  // qui ne viveva una copia inline, e le due erano già divergenti. La copia
-  // passava `dnsPrefetchControl: false`, che in helmet **disattiva il
-  // middleware** invece di impostare l'header — quindi il server non mandava
-  // affatto `X-DNS-Prefetch-Control`, mentre `security.headers.spec.ts` lo
-  // asseriva a `off` contro `buildHelmetConfig` e passava. Un test verde su un
-  // header inesistente.
+  // The configuration comes from `lib/helmet.ts`, which declares itself centralized:
+  // an inline copy used to live here, and the two had already diverged. The copy
+  // passed `dnsPrefetchControl: false`, which in helmet **disables the
+  // middleware** instead of setting the header — so the server wasn't sending
+  // `X-DNS-Prefetch-Control` at all, while `security.headers.spec.ts` asserted it
+  // as `off` against `buildHelmetConfig` and passed. A green test for a
+  // nonexistent header.
   await fastify.register(helmet, buildHelmetConfig(envName));
 
-  // CORS ibrido con priorità AppConfig → ENV → default
+  // Hybrid CORS with priority AppConfig → ENV → default
   const corsConfig = buildCorsAllowedOrigins(envName);
 
-  // Log informativo CORS (non stampare lista completa in prod)
+  // Informational CORS log (don't print the full list in prod)
   if (
     corsConfig.source === 'default-prod-deny' &&
     corsConfig.origins.length === 0
@@ -182,7 +182,7 @@ async function registerSecurityPlugins(): Promise<string[]> {
     );
   }
 
-  // Registra CORS solo se ci sono origini configurate o siamo in dev
+  // Register CORS only if there are configured origins or we're in dev
   if (corsConfig.origins.length > 0 || isDevelopment()) {
     await fastify.register(cors, {
       origin: isDevelopment() ? true : corsConfig.origins,
@@ -202,12 +202,12 @@ async function registerSecurityPlugins(): Promise<string[]> {
     });
   }
 
-  // Middleware per correlazione trace ID con log Pino
+  // Middleware for trace ID correlation with Pino logs
   fastify.addHook('onRequest', pinoTraceMiddleware);
 
-  // Rate limiting ora gestito via tRPC middleware per-rotta
+  // Rate limiting now handled via per-route tRPC middleware
 
-  // Idempotency è gestito a livello tRPC middleware per procedure specifiche
+  // Idempotency is handled at the tRPC middleware level for specific procedures
 
   return corsConfig.origins;
 }
@@ -233,14 +233,15 @@ async function registerTRPCPlugin() {
         createContext({ prisma, req, res }),
       onError: ({ path, error, ctx }: any) => { // fastify-trpc-plugin OnErrorFn type not exported
         const traceId = ctx?.traceId;
-        const cause = error.cause; // `error` è già `any` (vedi commento sopra) — cast ridondante
+        const cause = error.cause; // `error` is already `any` (see comment above) — redundant cast
         fastify.log.error(
           {
             path,
             err: { message: error.message, code: error.code },
-            // `cause` è impostato deliberatamente su molti `INTERNAL_SERVER_ERROR`
-            // (vedi apps/api/src/lib/ratelimit.ts e altri) proprio perché altrimenti
-            // sparisce qui: senza questo campo, la causa reale non arriva mai ai log.
+            // `cause` is deliberately set on many `INTERNAL_SERVER_ERROR`s
+            // (see apps/api/src/lib/ratelimit.ts and others) precisely because
+            // otherwise it disappears here: without this field, the real cause
+            // never reaches the logs.
             ...(cause !== undefined
               ? { cause: cause instanceof Error ? cause.message : String(cause) }
               : {}),
@@ -250,7 +251,7 @@ async function registerTRPCPlugin() {
         );
       },
     },
-    // Gestisci richieste OPTIONS per CORS
+    // Handle OPTIONS requests for CORS
     useWSS: false,
   });
 }
@@ -309,29 +310,29 @@ async function registerSeasonCalendarExportRoutes() {
  *  - GET /         — root discovery endpoint listing available endpoints
  */
 async function registerHealthRoute() {
-  // Liveness: processo attivo (sempre 200 se process vivo)
+  // Liveness: process alive (always 200 if the process is alive)
   fastify.get('/livez', async (_request, _reply) => {
     return { status: 'ok' };
   });
 
-  // Readiness: sistema pronto per servire richieste
+  // Readiness: system ready to serve requests
   fastify.get('/readyz', async (_request, reply) => {
     const result = await runReadinessChecks(prisma);
 
     if (!result.allOk) {
       reply.status(503);
-      // Log interno senza esporre in risposta HTTP
+      // Internal log without exposing it in the HTTP response
       fastify.log.warn({ checks: result.checks }, 'Readiness check failed');
     }
 
     return {
       status: result.allOk ? 'ready' : 'unready',
       timestamp: result.timestamp,
-      checks: result.checks, // OK esporre status per debug K8s
+      checks: result.checks, // OK to expose status for K8s debugging
     };
   });
 
-  // Route legacy per retrocompatibilità
+  // Legacy route for backward compatibility
   fastify.get('/healthz', async (_request, _reply) => {
     return {
       status: 'ok',
@@ -349,7 +350,7 @@ async function registerHealthRoute() {
     };
   });
 
-  // Route root per compatibilità
+  // Root route for compatibility
   fastify.get('/', async (_request, _reply) => {
     return {
       message: 'Luke API is running!',
@@ -378,13 +379,13 @@ async function registerHealthRoute() {
  * Runs immediately on startup, then every 30 minutes. The interval is cleared on server close.
  */
 function setupTempFileCleanup() {
-  const cleanupInterval = 30 * 60 * 1000; // 30 minuti
+  const cleanupInterval = 30 * 60 * 1000; // 30 minutes
 
   const cleanupTempFiles = async () => {
     try {
       const provider = await getStorageProvider(prisma);
 
-      // Trova file temporanei più vecchi di 1 ora
+      // Find temp files older than 1 hour
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
       const tempFiles = await prisma.fileObject.findMany({
         where: {
@@ -429,8 +430,8 @@ function setupTempFileCleanup() {
         );
       }
 
-      // Pulizia file orfani nelle directory .tmp (upload falliti/interrotti)
-      // Rimuove file più vecchi di 2 ore che non sono stati promossi al path finale
+      // Cleanup of orphan files in .tmp directories (failed/interrupted uploads)
+      // Removes files older than 2 hours that weren't promoted to their final path
       try {
         const basePath =
           (await getConfig(prisma, 'storage.local.basePath', false)) ||
@@ -451,7 +452,7 @@ function setupTempFileCleanup() {
                 fastify.log.debug({ filePath }, 'Removed orphan .tmp file');
               }
             } catch {
-              // File già rimosso o non accessibile — ignora
+              // File already removed or inaccessible — ignore
             }
           }
         }
@@ -463,7 +464,7 @@ function setupTempFileCleanup() {
     }
   };
 
-  // Avvia cleanup immediato e poi ogni 30 minuti
+  // Run cleanup immediately, then every 30 minutes
   setImmediate(cleanupTempFiles);
   const cleanupTimer = setInterval(cleanupTempFiles, cleanupInterval);
 
@@ -502,7 +503,7 @@ function setupGracefulShutdown() {
       rateLimitStore.stop();
       idempotencyStore.stop();
 
-      // Chiudi server HTTP
+      // Close HTTP server
       await closeWithTimeout(5_000);
       fastify.log.info('Server HTTP chiuso');
 
@@ -514,11 +515,11 @@ function setupGracefulShutdown() {
     }
   };
 
-  // Gestisci segnali di terminazione
+  // Handle termination signals
   process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
   process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-  // Gestisci errori non catturati
+  // Handle uncaught errors
   const onFatal = async (reason: any, type: string) => { // process events can propagate any thrown value, not just Error
     try {
       fastify.log.fatal({ reason }, `${type}: shutting down`);
@@ -542,24 +543,24 @@ function setupGracefulShutdown() {
 /**
  * POLICY: Bootstrap env guard (API server)
  *
- * Solo variabili di infrastruttura sono ammesse in process.env.
- * Qualsiasi configurazione applicativa (credenziali, segreti, endpoint esterni)
- * deve vivere in AppConfig (database). Se viene rilevata una variabile vietata:
- *   - in produzione: il server termina con exit(1)
- *   - in sviluppo: viene emesso un warning esplicito
+ * Only infrastructure variables are allowed in process.env.
+ * Any application configuration (credentials, secrets, external endpoints)
+ * must live in AppConfig (database). If a forbidden variable is detected:
+ *   - in production: the server exits with exit(1)
+ *   - in development: an explicit warning is emitted
  *
- * Variabili ammesse (API):
- *   DATABASE_URL              — Prisma, necessario prima del boot DB
- *   PORT, HOST                — bind server
- *   NODE_ENV, npm_package_version — runtime standard
- *   LUKE_CORS_ALLOWED_ORIGINS — override CORS di deploy (non segreto)
+ * Allowed variables (API):
+ *   DATABASE_URL              — Prisma, needed before DB boot
+ *   PORT, HOST                — server bind
+ *   NODE_ENV, npm_package_version — standard runtime
+ *   LUKE_CORS_ALLOWED_ORIGINS — deploy CORS override (not a secret)
  *   OTEL_*, LOG_LEVEL         — observability infra
  *
- * Eccezioni web container (non toccate da questo guard):
- *   NEXTAUTH_SECRET, NEXTAUTH_URL — vincolo framework NextAuth
- *   INTERNAL_API_URL              — Next.js rewrites, risolto a build-time
- *   NEXT_PUBLIC_*                 — baked nel bundle client, impossibile da DB
- *   COOKIE_SECURE                 — setting deploy HTTP vs HTTPS
+ * Web container exceptions (not touched by this guard):
+ *   NEXTAUTH_SECRET, NEXTAUTH_URL — NextAuth framework constraint
+ *   INTERNAL_API_URL              — Next.js rewrites, resolved at build time
+ *   NEXT_PUBLIC_*                 — baked into the client bundle, impossible from DB
+ *   COOKIE_SECURE                 — HTTP vs HTTPS deploy setting
  */
 const FORBIDDEN_ENV_PATTERNS: RegExp[] = [
   /^SMTP_/i,
@@ -607,14 +608,14 @@ function assertEnvPolicy(): void {
  */
 const start = async () => {
   try {
-    // Verifica policy env var PRIMA di tutto il resto
+    // Verify env var policy BEFORE everything else
     assertEnvPolicy();
 
-    // Test connessione database
+    // Test database connection
     await prisma.$connect();
     fastify.log.info('Connessione database stabilita');
 
-    // Valida chiavi critiche in AppConfig
+    // Validate critical keys in AppConfig
     await validateCriticalConfig(prisma);
 
     // Test master key availability
@@ -632,10 +633,10 @@ const start = async () => {
       process.exit(1);
     }
 
-    // Registra plugin e route nell'ordine corretto
-    const corsAllowedOrigins = await registerSecurityPlugins(); // CORS deve essere registrato prima di tRPC
+    // Register plugins and routes in the correct order
+    const corsAllowedOrigins = await registerSecurityPlugins(); // CORS must be registered before tRPC
     await registerTRPCPlugin();
-    await registerMultipart(); // Multipart globale (richiesto da tutti i route di upload)
+    await registerMultipart(); // Global multipart (required by all upload routes)
     await registerStoragePlugin(); // Storage upload/download routes
     await registerBackupDownloadRoute(fastify, prisma); // Backup blob download (admin-only, streamed)
     await registerBackupExportDownloadRoute(fastify, prisma); // Passphrase-protected portable export download (streamed)
@@ -649,40 +650,40 @@ const start = async () => {
     await registerSseRoute(fastify, corsAllowedOrigins); // SSE real-time push
     await registerHealthRoute();
 
-    // Configura cleanup file temporanei
+    // Configure temp file cleanup
     setupTempFileCleanup();
 
-    // Registra scheduler sync NAV (onReady + onClose)
+    // Register NAV sync scheduler (onReady + onClose)
     registerNavSyncScheduler(fastify, prisma);
 
-    // Registra scheduler sync portafoglio NAV → PG (onReady + onClose)
+    // Register NAV portfolio sync scheduler → PG (onReady + onClose)
     registerPortafoglioSyncScheduler(fastify, prisma);
 
-    // Registra scheduler sync tabelle KIMO-FASHION NAV → PG (onReady + onClose)
+    // Register KIMO-FASHION table sync scheduler NAV → PG (onReady + onClose)
     registerKimoSyncScheduler(fastify, prisma);
 
-    // Registra scheduler notifiche deadline milestone (tick ogni ora)
+    // Register milestone deadline notification scheduler (tick every hour)
     registerMilestoneDeadlineScheduler(fastify, prisma);
 
-    // Registra scheduler digest email calendario (esecuzione giornaliera alle 07:00)
+    // Register calendar email digest scheduler (daily run at 07:00)
     registerCalendarDigestScheduler(fastify, prisma);
 
-    // Registra scheduler backup automatici + retention pruning (tick ogni ora)
+    // Register automatic backup scheduler + retention pruning (tick every hour)
     registerBackupScheduler(fastify, prisma);
 
-    // Registra scheduler modalità manutenzione: warning ladder + attivazione automatica (tick ogni 60s)
+    // Register maintenance mode scheduler: warning ladder + automatic activation (tick every 60s)
     registerMaintenanceModeScheduler(fastify, prisma);
 
-    // Registra flush periodico del buffer di aggregazione notifiche calendario (tick ogni 30s)
+    // Register periodic flush of the calendar notification aggregation buffer (tick every 30s)
     registerCalendarNotificationBuffer(fastify, prisma);
 
-    // Registra retention sweep audit log + notifiche + dedup key (tick ogni 24h)
+    // Register retention sweep for audit log + notifications + dedup keys (tick every 24h)
     registerRetentionScheduler(fastify, prisma);
 
-    // Configura graceful shutdown
+    // Configure graceful shutdown
     setupGracefulShutdown();
 
-    // Avvia server
+    // Start server
     const port = parseInt(process.env.PORT || '3001', 10);
     const host = process.env.HOST || '0.0.0.0';
 
@@ -702,5 +703,5 @@ const start = async () => {
   }
 };
 
-// Avvia il server
+// Start the server
 start();

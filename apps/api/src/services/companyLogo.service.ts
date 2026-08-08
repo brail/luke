@@ -46,8 +46,8 @@ export async function uploadCompanyLogo(
     contentType: params.file.mimetype,
     size: params.file.size,
     stream: Readable.from(buffer),
-    // Pending: il file esiste, ma non appartiene ancora al profilo. Lo collega
-    // `company.profile.update` passando il `fileObjectId`, mai la key.
+    // Pending: the file exists, but doesn't belong to the profile yet. It gets linked
+    // by `company.profile.update` passing the `fileObjectId`, never the key.
     pending: true,
   });
 
@@ -64,8 +64,8 @@ export async function uploadCompanyLogo(
   }
 
   const publicUrl = await resolvePublicUrl(ctx.prisma, 'company-assets', fileObject.key);
-  // `fileObjectId` è il campo che conta: la `key` resta solo perché `publicUrl`
-  // la espone comunque, ma nulla a valle deve fidarsene.
+  // `fileObjectId` is the field that matters: `key` is kept only because `publicUrl`
+  // exposes it anyway, but nothing downstream should rely on it.
   return {
     publicUrl,
     bucket: 'company-assets',

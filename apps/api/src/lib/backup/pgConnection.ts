@@ -16,9 +16,9 @@ export interface PgConnectionParts {
 }
 
 export function parseDatabaseUrl(): PgConnectionParts {
-  // DATABASE_URL è bootstrap infrastrutturale (stessa var già letta direttamente in server.ts per
-  // il client Prisma), qui serve solo per costruire gli argomenti CLI di pg_dump/pg_restore verso
-  // lo stesso database — non un segreto applicativo da instradare via AppConfig.
+  // DATABASE_URL is infrastructure bootstrap (the same var already read directly in server.ts for
+  // the Prisma client); here it's only used to build the pg_dump/pg_restore CLI arguments against
+  // the same database — not an application secret that needs to be routed through AppConfig.
   // nosemgrep: luke-no-direct-env
   const raw = process.env.DATABASE_URL;
   if (!raw) throw new Error('DATABASE_URL non impostata');

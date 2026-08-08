@@ -1,12 +1,12 @@
 /**
- * Cache del blob AppConfig `rateLimit` in `resolveRateLimitPolicy` (rateLimitPolicy.ts).
- * `auth.login` risolve due bucket nello stesso tentativo (`login` via `withRateLimit`,
- * `loginByUsername` in `authenticateUser()`) — senza questa cache, ogni tentativo di login
- * fa due query identiche sulla stessa riga AppConfig.
+ * Cache of the AppConfig `rateLimit` blob in `resolveRateLimitPolicy` (rateLimitPolicy.ts).
+ * `auth.login` resolves two buckets in the same attempt (`login` via `withRateLimit`,
+ * `loginByUsername` in `authenticateUser()`) — without this cache, every login attempt
+ * makes two identical queries against the same AppConfig row.
  *
- * `vi.mock` (non `vi.spyOn` su un import con named export) perché uno spy sull'oggetto
- * modulo non sempre intercetta la binding usata da `rateLimitPolicy.ts` — vedi lessons.md
- * → "vi.mock non sempre intercetta: asserire sull'effetto, non sullo spy".
+ * `vi.mock` (not `vi.spyOn` on an import with a named export) because a spy on the
+ * module object doesn't always intercept the binding used by `rateLimitPolicy.ts` — see lessons.md
+ * → "vi.mock doesn't always intercept: assert on the effect, not on the spy".
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -20,7 +20,7 @@ vi.mock('../src/lib/configManager', () => ({
   getConfig: vi.fn(),
 }));
 
-// getConfig è mockato sopra: prisma non viene mai letto per davvero in questi test.
+// getConfig is mocked above: prisma is never actually read in these tests.
 const fakePrisma = {} as unknown as PrismaClient;
 
 describe('resolveRateLimitPolicy — cache del blob AppConfig rateLimit', () => {
@@ -56,7 +56,7 @@ describe('resolveRateLimitPolicy — cache del blob AppConfig rateLimit', () => 
     );
 
     const first = await resolveRateLimitPolicy('login', fakePrisma);
-    // Anche se la riga AppConfig "cambiasse" nel frattempo, entro il TTL viene ignorato.
+    // Even if the AppConfig row "changed" in the meantime, within the TTL it's ignored.
     vi.mocked(getConfig).mockResolvedValue(
       JSON.stringify({ login: { max: 99, timeWindow: '30s', keyBy: 'ip' } })
     );

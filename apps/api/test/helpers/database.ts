@@ -1,23 +1,23 @@
 /**
- * Helper per il database di test (PostgreSQL).
+ * Helper for the test database (PostgreSQL).
  *
- * I test di integrazione girano su un database dedicato, mai su quello di sviluppo
- * né su quello di produzione. L'URL arriva da `TEST_DATABASE_URL`; in mancanza le
- * suite **falliscono**, non si saltano: un job che riporta verde con zero test
- * eseguiti è peggio di un job rosso.
+ * Integration tests run on a dedicated database, never on the dev one or the
+ * production one. The URL comes from `TEST_DATABASE_URL`; if it's missing the
+ * suites **fail**, they don't skip: a job that reports green with zero tests
+ * run is worse than a red job.
  *
- * ## Ciclo di vita
+ * ## Lifecycle
  *
- * Un solo client Prisma per file di test, creato pigramente e chiuso una volta sola
- * a fine file (vitest isola i moduli per file, quindi lo stato qui sotto è
- * per-file). L'isolamento fra test avviene per **troncamento dei dati**, non
- * riconnettendo il client.
+ * A single Prisma client per test file, created lazily and closed exactly
+ * once at the end of the file (vitest isolates modules per file, so the
+ * state below is per-file). Isolation between tests happens via **data
+ * truncation**, not by reconnecting the client.
  *
- * La versione precedente eseguiva `migrate deploy` ad ogni `beforeEach` e chiamava
- * `$disconnect()` ad ogni `afterEach` su un client condiviso a livello di modulo:
- * il pool veniva chiuso mentre altri riferimenti erano ancora vivi, con
- * `Cannot use a pool after calling end on the pool` a cascata sulle suite
- * successive. Il problema non erano le singole spec, era questo file.
+ * The previous version ran `migrate deploy` on every `beforeEach` and called
+ * `$disconnect()` on every `afterEach` on a module-level shared client: the
+ * pool got closed while other references were still alive, cascading
+ * `Cannot use a pool after calling end on the pool` across the following
+ * suites. The problem wasn't the individual specs, it was this file.
  */
 
 import { execSync } from 'child_process';
@@ -26,38 +26,38 @@ import { join } from 'path';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
-/** Marcatore obbligatorio nel nome del database: impedisce di puntare a dev o produzione. */
+/** Required marker in the database name: guards against pointing at dev or production. */
 const REQUIRED_DB_NAME_MARKER = 'test';
 
 const API_ROOT = join(__dirname, '../../');
 
-/** Client condiviso dal file di test corrente. */
+/** Client shared by the current test file. */
 let sharedClient: PrismaClient | null = null;
 
-/** Elenco delle tabelle da troncare, risolto una volta e riusato. */
+/** List of tables to truncate, resolved once and reused. */
 let truncatableTables: string[] | null = null;
 
 /**
- * Schema già verificato per il file di test corrente.
+ * Schema already verified for the current test file.
  *
- * Impostato solo dopo che lo schema esiste davvero, mai in anticipo: la risposta
- * non può cambiare entro un file, e la sonda su `information_schema` è un
- * round-trip per ogni `setupTestDb`/`createContextForRole`.
+ * Set only after the schema actually exists, never ahead of time: the answer
+ * can't change within a file, and the `information_schema` probe is a
+ * round-trip on every `setupTestDb`/`createContextForRole`.
  */
 let schemaEnsured = false;
 
 /**
- * Restituisce l'URL del database di test, o `null` se non configurato.
+ * Returns the test database URL, or `null` if not configured.
  *
- * Non usa mai `DATABASE_URL` come fallback: qui si eseguono operazioni distruttive,
- * e un fallback silenzioso sul DB di sviluppo lo azzererebbe.
+ * Never falls back to `DATABASE_URL`: destructive operations run here, and a
+ * silent fallback to the dev DB would wipe it.
  */
 export function getTestDatabaseUrl(): string | null {
   const url = process.env.TEST_DATABASE_URL;
   if (!url) return null;
 
-  // Il nome del database deve contenere "test": guardia contro un URL incollato
-  // per sbaglio da un ambiente reale.
+  // The database name must contain "test": a guard against a URL pasted in
+  // by mistake from a real environment.
   const dbName = new URL(url).pathname.replace(/^\//, '');
   if (!dbName.includes(REQUIRED_DB_NAME_MARKER)) {
     throw new Error(
@@ -69,7 +69,7 @@ export function getTestDatabaseUrl(): string | null {
   return url;
 }
 
-/** URL di test, o eccezione con istruzioni se manca. */
+/** Test URL, or an exception with instructions if missing. */
 function requireTestDatabaseUrl(): string {
   const url = getTestDatabaseUrl();
   if (!url) {
@@ -81,32 +81,32 @@ function requireTestDatabaseUrl(): string {
 }
 
 /**
- * Crea un nuovo client Prisma legato al database di test.
+ * Creates a new Prisma client bound to the test database.
  *
- * Preferire `getTestPrismaClient()`: ogni client apre un pool proprio, e più pool
- * sullo stesso file di test si esauriscono a vicenda.
+ * Prefer `getTestPrismaClient()`: each client opens its own pool, and
+ * multiple pools on the same test file exhaust each other.
  */
 export function createTestPrismaClient(): PrismaClient {
   const url = requireTestDatabaseUrl();
 
-  // Prisma 7 ha rimosso sia `datasources` sia `datasourceUrl` dal costruttore:
-  // l'unico modo per puntare a un database specifico è il driver adapter, lo
-  // stesso che usa `server.ts` in produzione.
+  // Prisma 7 removed both `datasources` and `datasourceUrl` from the
+  // constructor: the only way to point at a specific database is the driver
+  // adapter, the same one `server.ts` uses in production.
   return new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) });
 }
 
-/** Client condiviso del file di test corrente, creato al primo accesso. */
+/** Client shared by the current test file, created on first access. */
 export function getTestPrismaClient(): PrismaClient {
   sharedClient ??= createTestPrismaClient();
   return sharedClient;
 }
 
 /**
- * Applica le migrazioni se lo schema non è ancora presente.
+ * Applies migrations if the schema isn't present yet.
  *
- * `migrate deploy` è idempotente ma costa ~1s di processo esterno: eseguirlo ad
- * ogni test rendeva le suite di integrazione inutilizzabili. Qui si paga solo
- * quando il database è davvero vuoto.
+ * `migrate deploy` is idempotent but costs ~1s of external process: running
+ * it on every test made the integration suites unusable. Here the cost is
+ * paid only when the database is truly empty.
  */
 export async function ensureTestSchema(
   prisma: PrismaClient = getTestPrismaClient()
@@ -121,7 +121,7 @@ export async function ensureTestSchema(
   `;
 
   if (!present) {
-    // L'URL arriva da prisma.config.ts, che legge DATABASE_URL dall'env.
+    // The URL comes from prisma.config.ts, which reads DATABASE_URL from the env.
     execSync('pnpm exec prisma migrate deploy', {
       cwd: API_ROOT,
       stdio: 'pipe',
@@ -133,18 +133,18 @@ export async function ensureTestSchema(
 }
 
 /**
- * Svuota tutte le tabelle applicative, lasciando intatto lo schema.
+ * Empties all application tables, leaving the schema intact.
  *
- * È il meccanismo di isolamento fra test: molto più rapido di ricreare lo schema,
- * e soprattutto non tocca la connessione.
+ * This is the isolation mechanism between tests: much faster than recreating
+ * the schema, and above all it doesn't touch the connection.
  *
- * Garantisce lo schema prima di leggere l'elenco tabelle, e **non memoizza un
- * elenco vuoto**. La versione precedente faceva entrambe le cose al contrario:
- * su un database ancora senza schema la query tornava zero righe, che venivano
- * memoizzate, e da lì in poi la funzione era un no-op silenzioso per tutto il
- * file — i test continuavano a girare senza alcun isolamento e collidevano sui
- * dati a codice fisso. Non si vedeva su un database già popolato: è emerso solo
- * in CI, sul primo database davvero vuoto.
+ * Ensures the schema before reading the table list, and **never memoizes an
+ * empty list**. The previous version did both the wrong way around: on a
+ * database that still had no schema, the query returned zero rows, which
+ * got memoized, and from then on the function was a silent no-op for the
+ * rest of the file — tests kept running with no isolation at all and
+ * collided on hardcoded data. It wasn't visible on an already-populated
+ * database: it only surfaced in CI, on the first truly empty database.
  */
 export async function resetTestData(
   prisma: PrismaClient = getTestPrismaClient()
@@ -167,9 +167,9 @@ export async function resetTestData(
     );
   }
 
-  // `$executeRawUnsafe` è inevitabile: i nomi di tabella sono identificatori, non
-  // parametri, e non sono esprimibili con Prisma.sql. Le stringhe arrivano da
-  // pg_tables del database di test, non da input utente.
+  // `$executeRawUnsafe` is unavoidable: table names are identifiers, not
+  // parameters, and can't be expressed with Prisma.sql. The strings come
+  // from pg_tables of the test database, not from user input.
   const list = truncatableTables.map(t => `"public"."${t}"`).join(', ');
   await prisma.$executeRawUnsafe(
     `TRUNCATE TABLE ${list} RESTART IDENTITY CASCADE`
@@ -177,10 +177,10 @@ export async function resetTestData(
 }
 
 /**
- * Prepara il database per un test e restituisce il client condiviso.
+ * Prepares the database for a test and returns the shared client.
  *
- * Idempotente e sicuro da chiamare in `beforeEach`: applica lo schema solo se
- * manca, poi tronca i dati. Non apre né chiude connessioni.
+ * Idempotent and safe to call in `beforeEach`: applies the schema only if
+ * it's missing, then truncates the data. Doesn't open or close connections.
  */
 export async function setupTestDb(): Promise<PrismaClient> {
   requireTestDatabaseUrl();
@@ -192,7 +192,7 @@ export async function setupTestDb(): Promise<PrismaClient> {
   return prisma;
 }
 
-/** Chiude il client condiviso. Chiamata una sola volta a fine file di test. */
+/** Closes the shared client. Called exactly once at the end of the test file. */
 export async function disconnectTestDb(): Promise<void> {
   if (!sharedClient) return;
 

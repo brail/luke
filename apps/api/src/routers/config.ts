@@ -1,6 +1,6 @@
 /**
- * Router tRPC per gestione configurazioni
- * Implementa CRUD per AppConfig con supporto per valori cifrati
+ * tRPC router for configuration management
+ * Implements CRUD for AppConfig with support for encrypted values
  */
 
 import { TRPCError } from '@trpc/server';
@@ -24,30 +24,30 @@ import {
 } from '../lib/trpc';
 
 /**
- * Chiavi critiche che non possono essere eliminate
- * Queste chiavi sono essenziali per il funzionamento e la sicurezza del sistema
+ * Critical keys that cannot be deleted
+ * These keys are essential to the system's operation and security
  */
 const CRITICAL_KEYS = new Set([
-  // Autenticazione e autorizzazione
+  // Authentication and authorization
   'auth.strategy',
-  'auth.nextAuthSecret', // Legacy, ancora presente nel seed
+  'auth.nextAuthSecret', // Legacy, still present in the seed
   'auth.ldap.url',
   'auth.ldap.searchBase',
   'auth.ldap.searchFilter',
 
-  // Rimuovere chiavi inesistenti (derivate via HKDF, non in DB):
+  // Remove non-existent keys (derived via HKDF, not in DB):
   // 'nextauth.secret', // NON esiste nel DB, derivato via HKDF
   // 'jwt.secret', // NON esiste nel DB, derivato via HKDF
   // 'security.encryption.key', // NON esiste, master key in ~/.luke/secret.key
 
-  // Mail e Storage (on-demand, non critiche per boot)
+  // Mail and Storage (on-demand, not critical for boot)
   // 'mail.smtp', // On-demand, creato dall'admin
   // 'storage.smb', // On-demand, creato dall'admin
   // 'storage.drive', // On-demand, creato dall'admin
 ]);
 
 /**
- * Prefissi ammessi per le chiavi di configurazione
+ * Allowed prefixes for configuration keys
  */
 const ALLOWED_PREFIXES = new Set([
   'app',
@@ -59,7 +59,7 @@ const ALLOWED_PREFIXES = new Set([
 ]);
 
 /**
- * Genera regex dinamica per validazione formato chiavi
+ * Generates a dynamic regex for validating key format
  */
 function getKeyRegex(): RegExp {
   const categories = Array.from(ALLOWED_PREFIXES).join('|');
@@ -67,19 +67,19 @@ function getKeyRegex(): RegExp {
 }
 
 /**
- * Regex per validazione formato chiavi
+ * Regex for validating key format
  */
 const KEY_REGEX = getKeyRegex();
 
 /**
- * Verifica se una chiave è critica
+ * Checks whether a key is critical
  */
 function isCriticalKey(key: string): boolean {
   return CRITICAL_KEYS.has(key);
 }
 
 /**
- * Valida il formato e il prefisso di una chiave
+ * Validates the format and prefix of a key
  */
 function validateKey(key: string): void {
   if (!KEY_REGEX.test(key)) {
@@ -99,7 +99,7 @@ function validateKey(key: string): void {
 }
 
 /**
- * Redige un valore per l'audit log
+ * Redacts a value for the audit log
  */
 function redact(value: string | null, max: number = 32): string | null {
   if (value == null) return null;
@@ -108,7 +108,7 @@ function redact(value: string | null, max: number = 32): string | null {
 }
 
 /**
- * Schema per ottenere una configurazione
+ * Schema for retrieving a configuration
  */
 const GetConfigSchema = z.object({
   key: z.string().min(1, 'Chiave configurazione non può essere vuota'),
@@ -116,7 +116,7 @@ const GetConfigSchema = z.object({
 });
 
 /**
- * Schema per impostare una configurazione
+ * Schema for setting a configuration
  */
 const SetConfigSchema = z.object({
   key: z
@@ -129,114 +129,114 @@ const SetConfigSchema = z.object({
 });
 
 /**
- * Schema per eliminare una configurazione
+ * Schema for deleting a configuration
  */
 const DeleteConfigSchema = z.object({
   key: z.string().min(1, 'Chiave configurazione non può essere vuota'),
 });
 
 /**
- * Schema per listare configurazioni con paginazione e filtri
+ * Schema for listing configurations with pagination and filters
  *
  * @example
- * // Lista base con paginazione
+ * // Basic paginated list
  * { page: 1, pageSize: 20 }
  *
  * @example
- * // Ricerca per chiave con filtri
+ * // Search by key with filters
  * { q: "ldap", category: "auth", isEncrypted: true, sortBy: "updatedAt", sortDir: "desc" }
  */
 const ListConfigsSchema = z.object({
-  /** Ricerca per chiave (case-insensitive) */
+  /** Search by key (case-insensitive) */
   q: z.string().trim().optional(),
-  /** Filtra per categoria dedotta dal prefisso della chiave */
+  /** Filter by category derived from the key prefix */
   category: z.string().trim().optional(),
-  /** Filtra per tipo di cifratura (true=cifrato, false=plaintext) */
+  /** Filter by encryption type (true=encrypted, false=plaintext) */
   isEncrypted: z.boolean().optional(),
-  /** Campo per ordinamento */
+  /** Sort field */
   sortBy: z.enum(['key', 'updatedAt']).default('key'),
-  /** Direzione ordinamento */
+  /** Sort direction */
   sortDir: z.enum(['asc', 'desc']).default('asc'),
-  /** Numero pagina (1-based) */
+  /** Page number (1-based) */
   page: z.number().int().min(1).default(1),
-  /** Dimensione pagina (5-100) */
+  /** Page size (5-100) */
   pageSize: z.number().int().min(5).max(100).default(20),
 });
 
 /**
- * Schema per visualizzare valore configurazione con modalità sicura
+ * Schema for viewing a configuration value in a safe mode
  *
  * @example
- * // Modalità masked (qualsiasi utente autenticato)
+ * // Masked mode (any authenticated user)
  * { key: "auth.ldap.password", mode: "masked" }
  *
  * @example
- * // Modalità raw (solo admin, genera audit log)
+ * // Raw mode (admin only, generates an audit log)
  * { key: "auth.ldap.password", mode: "raw" }
  */
 const ViewValueSchema = z.object({
-  /** Chiave della configurazione da visualizzare */
+  /** Key of the configuration to view */
   key: z.string().min(1),
   /**
-   * Modalità di visualizzazione:
-   * - 'masked': valori cifrati mostrano [ENCRYPTED], disponibile per tutti gli utenti autenticati
-   * - 'raw': decritta i valori cifrati, richiede ruolo admin e genera audit log obbligatorio
+   * Display mode:
+   * - 'masked': encrypted values show [ENCRYPTED], available to all authenticated users
+   * - 'raw': decrypts encrypted values, requires admin role and generates a mandatory audit log
    */
   mode: z.enum(['masked', 'raw']).default('masked'),
 });
 
 /**
- * Schema per export JSON sicuro
+ * Schema for safe JSON export
  *
  * @example
- * // Export solo metadata (senza valori)
+ * // Metadata-only export (no values)
  * { includeValues: false }
  *
  * @example
- * // Export con valori (segreti cifrati mostrano [ENCRYPTED])
+ * // Export with values (encrypted secrets show [ENCRYPTED])
  * { includeValues: true }
  */
 const ExportJsonSchema = z.object({
   /**
-   * Se includere i valori nelle configurazioni:
-   * - false: solo metadata (chiave, categoria, isEncrypted, updatedAt)
-   * - true: include valori, ma i segreti cifrati mostrano sempre [ENCRYPTED] per sicurezza
+   * Whether to include values in the configurations:
+   * - false: metadata only (key, category, isEncrypted, updatedAt)
+   * - true: includes values, but encrypted secrets always show [ENCRYPTED] for security
    */
   includeValues: z.boolean().optional().default(false),
 });
 
 /**
- * Schema per import JSON con validazione
+ * Schema for JSON import with validation
  *
  * @example
  * {
  *   "items": [
  *     {"key": "app.name", "value": "Luke", "encrypt": false},
  *     {"key": "auth.ldap.password", "value": "secret", "encrypt": true},
- *     {"key": "auth.ldap.url", "value": null, "encrypt": true} // value: null viene saltato
+ *     {"key": "auth.ldap.url", "value": null, "encrypt": true} // value: null is skipped
  *   ]
  * }
  */
 const ImportJsonSchema = z.object({
-  /** Array di configurazioni da importare */
+  /** Array of configurations to import */
   items: z.array(
     z.object({
-      /** Chiave della configurazione (deve rispettare formato e prefissi ammessi) */
+      /** Key of the configuration (must respect the allowed format and prefixes) */
       key: z.string().min(1),
-      /** Valore della configurazione (null = salta questo item) */
+      /** Value of the configuration (null = skip this item) */
       value: z.string().nullable(),
-      /** Se cifrare il valore (true = cifra, false/null = plaintext) */
+      /** Whether to encrypt the value (true = encrypt, false/null = plaintext) */
       encrypt: z.boolean().optional().nullable(),
     })
   ),
 });
 
 /**
- * Router per gestione configurazioni
+ * Router for configuration management
  */
 /**
- * Helper per upsert di una configurazione
- * Gestisce validazione, salvataggio e audit log
+ * Helper for upserting a configuration
+ * Handles validation, saving, and audit logging
  */
 async function upsertConfig(
   ctx: Context,
@@ -245,10 +245,10 @@ async function upsertConfig(
   encrypt: boolean,
   options: { strictUpdate?: boolean; source?: string } = {}
 ) {
-  // Valida la chiave
+  // Validates the key
   validateKey(key);
 
-  // Validazione speciale per password policy (sicurezza)
+  // Special validation for password policy (security)
   if (key === 'security.password.minLength') {
     const minLength = parseInt(value, 10);
     if (isNaN(minLength) || minLength < 8) {
@@ -265,7 +265,7 @@ async function upsertConfig(
     }
   }
 
-  // Se strictUpdate=true, verifica che la configurazione esista
+  // If strictUpdate=true, verifies that the configuration exists
   if (options.strictUpdate) {
     const existingConfig = await ctx.prisma.appConfig.findUnique({
       where: { key },
@@ -281,7 +281,7 @@ async function upsertConfig(
 
   await saveConfig(ctx.prisma, key, value, encrypt);
 
-  // Log audit
+  // Audit log
   await logAudit(ctx, {
     action: 'CONFIG_UPSERT',
     targetType: 'Config',
@@ -339,7 +339,7 @@ export const configRouter = router({
     .use(requirePermission('config:read'))
     .input(GetConfigSchema)
     .query(async ({ input, ctx }) => {
-    // Se decrypt=true, verifica che l'utente sia admin
+    // If decrypt=true, verifies that the user is admin
     if (input.decrypt && ctx.session?.user?.role !== 'admin') {
       throw new TRPCError({
         code: 'FORBIDDEN',
@@ -384,7 +384,7 @@ export const configRouter = router({
     .use(requirePermission('config:read'))
     .input(ViewValueSchema)
     .query(async ({ input, ctx }) => {
-      // Se mode=raw, verifica che l'utente sia admin
+      // If mode=raw, verifies that the user is admin
       if (input.mode === 'raw' && ctx.session?.user?.role !== 'admin') {
         throw new TRPCError({
           code: 'FORBIDDEN',
@@ -407,10 +407,10 @@ export const configRouter = router({
       let value: string;
 
       if (input.mode === 'masked') {
-        // Modalità masked: se cifrato mostra placeholder, altrimenti valore completo
+        // Masked mode: shows a placeholder if encrypted, otherwise the full value
         value = config.isEncrypted ? '[ENCRYPTED]' : config.value;
       } else {
-        // Modalità raw: decritta se cifrato, altrimenti valore normale
+        // Raw mode: decrypts if encrypted, otherwise the normal value
         if (config.isEncrypted) {
           try {
             const { decryptValue } = await import('../lib/configManager.js');
@@ -433,7 +433,7 @@ export const configRouter = router({
           value = config.value;
         }
 
-        // Log audit per visualizzazione raw
+        // Audit log for raw viewing
         await logAudit(ctx, {
           action: 'CONFIG_VIEW_VALUE',
           targetType: 'Config',
@@ -479,7 +479,7 @@ export const configRouter = router({
     .use(withRateLimit('configMutations'))
     .input(DeleteConfigSchema)
     .mutation(async ({ input, ctx }) => {
-      // Verifica che la configurazione esista
+      // Verifies that the configuration exists
       const existingConfig = await ctx.prisma.appConfig.findUnique({
         where: { key: input.key },
       });
@@ -491,7 +491,7 @@ export const configRouter = router({
         });
       }
 
-      // Protezione chiavi critiche
+      // Critical key protection
       if (isCriticalKey(input.key)) {
         throw new TRPCError({
           code: 'CONFLICT',
@@ -501,7 +501,7 @@ export const configRouter = router({
 
       await deleteConfig(ctx.prisma, input.key);
 
-      // Log audit
+      // Audit log
       await logAudit(ctx, {
         action: 'CONFIG_DELETE',
         targetType: 'Config',
@@ -685,13 +685,13 @@ export const configRouter = router({
         isEncrypted: config.isEncrypted,
         value: input.includeValues
           ? config.isEncrypted
-            ? '[ENCRYPTED]' // Mai decrittare segreti nell'export
+            ? '[ENCRYPTED]' // Never decrypt secrets in the export
             : config.value
           : null,
         updatedAt: config.updatedAt.toISOString(),
       }));
 
-      // Log audit aggregato
+      // Aggregated audit log
       await logAudit(ctx, {
         action: 'CONFIG_EXPORT',
         targetType: 'Config',
@@ -729,12 +729,12 @@ export const configRouter = router({
 
       for (const item of input.items) {
         try {
-          // Se value è null, salta questo item
+          // If value is null, skip this item
           if (item.value === null) {
             continue;
           }
 
-          // Determina se cifrare (default false se non specificato)
+          // Determines whether to encrypt (default false if unspecified)
           const shouldEncrypt = item.encrypt === true;
 
           await upsertConfig(ctx, item.key, item.value, shouldEncrypt, {

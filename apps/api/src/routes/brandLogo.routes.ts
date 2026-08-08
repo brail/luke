@@ -30,12 +30,12 @@ import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 /**
- * Codici d'errore di `@fastify/multipart` imputabili al client: body non
- * multipart, troppi file/parti/campi, file oltre il limite, protocollo violato.
+ * `@fastify/multipart` error codes attributable to the client: non-multipart
+ * body, too many files/parts/fields, file over the limit, protocol violation.
  *
- * Senza questa distinzione finivano tutti nel 500 generico, presentando una
- * richiesta malformata come un guasto del server — e nascondendo al client la
- * ragione vera del rifiuto.
+ * Without this distinction they all ended up in the generic 500, presenting a
+ * malformed request as a server fault — and hiding the real reason for the
+ * rejection from the client.
  */
 const CLIENT_MULTIPART_ERROR_CODES = new Set([
   'FST_INVALID_MULTIPART_CONTENT_TYPE',
@@ -52,29 +52,29 @@ function isClientMultipartError(error: unknown): boolean {
     return true;
   }
 
-  // busboy (il parser sotto @fastify/multipart) segnala i body malformati —
-  // "Multipart: Boundary not found" e simili — con un Error privo di `code`.
-  // Resta un errore del client: senza questo controllo un body corrotto
-  // risultava indistinguibile da un guasto interno.
+  // busboy (the parser underneath @fastify/multipart) reports malformed bodies —
+  // "Multipart: Boundary not found" and similar — with an Error that has no `code`.
+  // It's still a client error: without this check a corrupted body was
+  // indistinguishable from an internal fault.
   const message = (error as { message?: unknown })?.message;
   return typeof message === 'string' && message.startsWith('Multipart: ');
 }
 
 /**
- * Volutamente NON wrappato in `fastify-plugin`: l'incapsulamento è ciò che tiene
- * il rate limiter qui sotto confinato a queste due rotte. Con `fp()` il limiter
- * finiva nello scope root e diventava il limite globale del server — 30 req/min
- * per utente su ogni rotta in produzione, batch tRPC inclusi, al posto dei 100
- * per IP configurati in `server.ts`. Stesso motivo per cui `specsheetImage` e
- * `collectionRowPicture` sono funzioni async semplici.
+ * Deliberately NOT wrapped in `fastify-plugin`: encapsulation is what keeps
+ * the rate limiter below confined to these two routes. With `fp()` the limiter
+ * ended up in the root scope and became the server's global limit — 30 req/min
+ * per user on every route in production, tRPC batches included, instead of the
+ * 100 per IP configured in `server.ts`. Same reason `specsheetImage` and
+ * `collectionRowPicture` are plain async functions.
  */
 export default async function brandLogoRoutes(
   app: FastifyInstance,
   options: { prisma: PrismaClient }
 ) {
-  // Rate limiting per utente autenticato (con fallback a IP se non autenticato)
+  // Rate limiting per authenticated user (falls back to IP if not authenticated)
   await app.register(rateLimit, {
-    max: isDevelopment() ? 100 : 30, // 30 req/min in prod per utente
+    max: isDevelopment() ? 100 : 30, // 30 req/min in prod per user
     timeWindow: '1 minute',
     keyGenerator: rateLimitKeyFromRequest,
   });
@@ -95,7 +95,7 @@ export default async function brandLogoRoutes(
     };
 
     try {
-      // Ricevi file multipart
+      // Receive multipart file
       const data = await req.file();
       if (!data) {
         return reply.code(400).send({
@@ -104,14 +104,14 @@ export default async function brandLogoRoutes(
         });
       }
 
-      // Consuma correttamente lo stream multipart
+      // Properly consume the multipart stream
       const chunks: Buffer[] = [];
       for await (const chunk of data.file) {
         chunks.push(chunk as Buffer);
       }
       const buffer = Buffer.concat(chunks);
 
-      // Upload tramite service
+      // Upload via the service
       const result = await uploadBrandLogo(ctx, {
         brandId: req.params.brandId,
         file: {
@@ -150,7 +150,7 @@ export default async function brandLogoRoutes(
     }
   });
 
-  // Endpoint per upload temporaneo durante creazione brand
+  // Endpoint for temporary upload during brand creation
   app.post<{
     Body: { tempId: string };
   }>('/upload/brand-logo/temp', async (req, reply) => {
@@ -190,7 +190,7 @@ export default async function brandLogoRoutes(
         });
       }
 
-      // Upload pending tramite service
+      // Pending upload via the service
       const result = await uploadTempBrandLogo(ctx, {
         file: {
           filename,
@@ -202,9 +202,9 @@ export default async function brandLogoRoutes(
 
       return reply.code(200).send(result);
     } catch (error: unknown) {
-      // req.body è tipato { tempId: string } dal generic della route, ma con
-      // multipart via req.parts() il body non passa dal parser JSON: a runtime
-      // può restare undefined nonostante il tipo dichiarato.
+      // req.body is typed { tempId: string } by the route's generic, but with
+      // multipart via req.parts() the body doesn't go through the JSON parser:
+      // at runtime it can remain undefined despite the declared type.
       const tempId = (req.body as { tempId?: string } | undefined)?.tempId;
       req.log.error(
         { error: toErrorMessage(error), tempId },

@@ -140,10 +140,10 @@ export async function getStorageProvider(
       providerInstance = provider;
       return provider;
     })().catch(err => {
-      // Un errore transitorio (JSON malformato, volume non montato al boot)
-      // non deve rompere lo storage per il resto del ciclo di vita del
-      // processo: senza reset, ogni chiamata successiva riusa questa stessa
-      // promise già rifiutata anche dopo che la causa è stata corretta.
+      // A transient error (malformed JSON, volume not mounted at boot)
+      // must not break storage for the rest of the process's lifecycle:
+      // without a reset, every subsequent call would reuse this same
+      // already-rejected promise even after the cause has been fixed.
       providerInitPromise = null;
       throw err;
     });
@@ -183,10 +183,10 @@ export async function putObject(
 ): Promise<StoredObjectMeta> {
   const provider = await getStorageProvider(ctx.prisma);
 
-  // Sanitizza nome file
+  // Sanitize file name
   const sanitizedName = sanitizeFileName(params.originalName);
 
-  // Upload tramite provider
+  // Upload via the provider
   const { key, checksumSha256, size } = await provider.put({
     bucket: params.bucket,
     originalName: sanitizedName,
@@ -195,7 +195,7 @@ export async function putObject(
     stream: params.stream,
   });
 
-  // Salva metadati in DB
+  // Save metadata to DB
   const fileObject = await ctx.prisma.fileObject.create({
     data: {
       id: randomUUID(),
@@ -283,13 +283,13 @@ export async function getObject(
 }> {
   const provider = await getStorageProvider(ctx.prisma);
 
-  // Recupera metadati
+  // Retrieve metadata
   const metadata = await getObjectMetadata(ctx.prisma, id);
   if (!metadata) {
     throw new Error('File non trovato');
   }
 
-  // Download tramite provider
+  // Download via the provider
   const { stream } = await provider.get({
     bucket: metadata.bucket,
     key: metadata.key,
@@ -321,19 +321,19 @@ export async function getObject(
 export async function deleteObject(ctx: Context, id: string): Promise<void> {
   const provider = await getStorageProvider(ctx.prisma);
 
-  // Recupera metadati
+  // Retrieve metadata
   const metadata = await getObjectMetadata(ctx.prisma, id);
   if (!metadata) {
     throw new Error('File non trovato');
   }
 
-  // Cancella da provider
+  // Delete from provider
   await provider.delete({
     bucket: metadata.bucket,
     key: metadata.key,
   });
 
-  // Cancella metadati da DB
+  // Delete metadata from DB
   await ctx.prisma.fileObject.delete({
     where: { id },
   });
@@ -366,7 +366,7 @@ export async function deleteObjectByKey(
 ): Promise<void> {
   const provider = await getStorageProvider(ctx.prisma);
 
-  // Cancella da provider (best-effort: non bloccare se il file fisico non esiste)
+  // Delete from provider (best-effort: don't block if the physical file doesn't exist)
   try {
     await provider.delete({ bucket: params.bucket, key: params.key });
   } catch (err) {
@@ -376,7 +376,7 @@ export async function deleteObjectByKey(
     );
   }
 
-  // Cancella metadati da DB se esistono
+  // Delete metadata from DB if it exists
   const fileObject = await ctx.prisma.fileObject.findFirst({
     where: { bucket: params.bucket, key: params.key },
   });
@@ -445,7 +445,7 @@ export async function listObjects(
 }> {
   const limit = params.limit || 50;
 
-  // Query con paginazione cursor-based
+  // Cursor-based paginated query
   const where: Prisma.FileObjectWhereInput = {};
   if (params.bucket) {
     where.bucket = params.bucket;

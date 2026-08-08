@@ -6,8 +6,8 @@
  * Requires authentication and the `company_profile:update` permission.
  * Delegates to the company logo service, which validates MIME type, enforces the
  * file size limit and stores the file as **pending**. It does not touch the
- * CompanyProfile: il collegamento avviene in `company.profile.update`, passando
- * il `fileObjectId` che questa rotta ritorna.
+ * CompanyProfile: the linking happens in `company.profile.update`, passing
+ * the `fileObjectId` that this route returns.
  */
 
 import { Readable } from 'stream';

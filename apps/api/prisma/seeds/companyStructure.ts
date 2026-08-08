@@ -22,9 +22,9 @@ export async function seedCompanyStructure(
       }
       functionIds[f.slug] = fn.id;
 
-      // Team predefinito della function — idempotente (unique su functionId+name).
-      // `isMain` è stato rimosso dallo schema (commit 28b1873, passaggio ad accesso
-      // opt-in via brand scope): il team resta identificato dal nome della function.
+      // Function's default team — idempotent (unique on functionId+name).
+      // `isMain` was removed from the schema (commit 28b1873, switch to opt-in
+      // access via brand scope): the team remains identified by the function's name.
       await tx.companyTeam.upsert({
         where:  { functionId_name: { functionId: fn.id, name: fn.name } },
         update: {},

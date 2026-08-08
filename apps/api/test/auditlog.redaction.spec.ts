@@ -1,12 +1,12 @@
 /**
- * Test Unitari per Redazione Metadata
- * Verifica che sanitizeMetadata() redatti correttamente i dati sensibili
+ * Unit Tests for Metadata Redaction
+ * Verifies that sanitizeMetadata() correctly redacts sensitive data
  *
- * Esercita la funzione **di produzione**, importata da `src/lib/auditLog`. Qui
- * ne viveva una copia incollata "per test isolati": era driftata in modo
- * invertito (blacklist prima della whitelist, 24 chiavi sicure invece di 79),
- * quindi ogni test verde certificava il comportamento della copia e nulla della
- * redazione che gira davvero — su una superficie di compliance.
+ * Exercises the **production** function, imported from `src/lib/auditLog`. A
+ * pasted-in copy "for isolated tests" used to live here: it had drifted in an
+ * inverted way (blacklist before whitelist, 24 safe keys instead of 79),
+ * so every green test certified the copy's behavior and nothing about the
+ * redaction that actually runs — on a compliance surface.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -14,14 +14,14 @@ import { describe, it, expect } from 'vitest';
 import { sanitizeMetadata } from '../src/lib/auditLog';
 
 /**
- * Restringe il risultato di `sanitizeMetadata`, che è `unknown` per costruzione:
- * la funzione può restituire un oggetto, un array o la stringa
- * `'[REDACTED:MAX_DEPTH]'`, e il tipo lo dice onestamente.
+ * Narrows the result of `sanitizeMetadata`, which is `unknown` by construction:
+ * the function can return an object, an array, or the string
+ * `'[REDACTED:MAX_DEPTH]'`, and the type honestly says so.
  *
- * Il controllo è a runtime e non un cast: se un giorno la funzione smettesse di
- * restituire un oggetto, un cast lascerebbe passare le asserzioni su proprietà
- * `undefined` — cioè test verdi su una redazione che non avviene più. Qui invece
- * fallisce, e dice cosa ha ricevuto.
+ * The check is at runtime and not a cast: if one day the function stopped
+ * returning an object, a cast would let assertions on `undefined`
+ * properties slip through — i.e. green tests on redaction that no longer happens. Here it
+ * fails instead, and says what it received.
  */
 function asRecord(value: unknown): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -35,12 +35,12 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 /**
- * Legge un percorso annidato su un risultato `unknown`, restringendo a ogni
- * livello. I segmenti numerici indicizzano gli array: `'users.0.password'`.
+ * Reads a nested path on an `unknown` result, narrowing at every
+ * level. Numeric segments index arrays: `'users.0.password'`.
  *
- * Evita di annidare `asRecord()` una volta per segmento, che renderebbe le
- * asserzioni illeggibili proprio dove il test è più interessante — la redazione
- * in profondità.
+ * Avoids nesting `asRecord()` once per segment, which would make the
+ * assertions unreadable right where the test is most interesting — deep
+ * redaction.
  */
 function at(value: unknown, path: string): unknown {
   return path.split('.').reduce<unknown>((acc, key) => {
@@ -157,9 +157,9 @@ describe('sanitizeMetadata', () => {
     });
 
     it('dovrebbe preservare i campi del diff fase/gruppo di pianificazione (cambio fase riga collezione)', () => {
-      // Aggiunti per il consolidamento dell'audit log del drawer riga collezione
-      // (fase/gruppo bufferizzati, committati in un'unica COLLECTION_ROW_UPDATE):
-      // senza whitelist questi finivano '[REDACTED]', vanificando il metadata.
+      // Added for the consolidation of the collection row drawer audit log
+      // (buffered phase/group, committed in a single COLLECTION_ROW_UPDATE):
+      // without a whitelist these used to end up '[REDACTED]', gutting the metadata.
       const input = {
         oldPhaseId: 'phase-1',
         newPhaseId: 'phase-2',
@@ -199,7 +199,7 @@ describe('sanitizeMetadata', () => {
       expect(at(sanitized, 'user.password')).toBe('***REDACTED***');
       expect(at(sanitized, 'user.profile.firstName')).toBe('Test');
       expect(at(sanitized, 'user.profile.apiKey')).toBe('***REDACTED***');
-      // credentials contiene token/secret quindi viene redatto completamente
+      // credentials contains token/secret so it gets fully redacted
       expect(at(sanitized, 'user.profile.credentials')).toBe('***REDACTED***');
     });
 
@@ -219,7 +219,7 @@ describe('sanitizeMetadata', () => {
       expect(at(sanitized, 'users.0.password')).toBe('***REDACTED***');
       expect(at(sanitized, 'users.1.username')).toBe('user2');
       expect(at(sanitized, 'users.1.password')).toBe('***REDACTED***');
-      // tokens contiene 'token' quindi viene redatto completamente
+      // tokens contains 'token' so it gets fully redacted
       expect(sanitized.tokens).toBe('***REDACTED***');
     });
   });
@@ -265,7 +265,7 @@ describe('sanitizeMetadata', () => {
 
       const sanitized = asRecord(sanitizeMetadata(input));
 
-      // id, isActive, count sono ora in whitelist
+      // id, isActive, count are now in the whitelist
       expect(sanitized.id).toBe(123);
       expect(sanitized.isActive).toBe(true);
       expect(sanitized.count).toBe(0);
@@ -275,7 +275,7 @@ describe('sanitizeMetadata', () => {
 
   describe('DoS protection', () => {
     it('dovrebbe limitare la profondità di ricorsione', () => {
-      // Crea oggetto con profondità > 5
+      // Create an object with depth > 5
       let deepObj: any = { value: 'test' };
       for (let i = 0; i < 10; i++) {
         deepObj = { nested: deepObj };
@@ -283,7 +283,7 @@ describe('sanitizeMetadata', () => {
 
       const sanitized = asRecord(sanitizeMetadata(deepObj));
 
-      // Dovrebbe avere MAX_DEPTH da qualche parte nella struttura
+      // Should have MAX_DEPTH somewhere in the structure
       const sanitizedStr = JSON.stringify(sanitized);
       expect(sanitizedStr).toContain('[REDACTED:MAX_DEPTH]');
     });
@@ -312,7 +312,7 @@ describe('sanitizeMetadata', () => {
 
       const sanitized = asRecord(sanitizeMetadata(input));
 
-      // Dovrebbe redattare senza crashare
+      // Should redact without crashing
       expect(sanitized).toBeDefined();
       expect(typeof sanitized).toBe('object');
     });

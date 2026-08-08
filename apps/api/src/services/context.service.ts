@@ -13,9 +13,9 @@ import { makeUrlResolver } from '../lib/storageUrl';
 import type { Prisma, PrismaClient } from '@prisma/client';
 
 /**
- * I guard di brand scope vivono in `brandScope.service.ts` (hanno bisogno della
- * sessione, questo modulo no). Ri-esportati qui perché è da qui che li importano
- * i router che li usavano già.
+ * The brand scope guards live in `brandScope.service.ts` (they need the
+ * session, this module doesn't). Re-exported here because this is where the
+ * routers that already used them import them from.
  */
 export {
   assertBrandAccess,
@@ -115,7 +115,7 @@ export async function resolveContext(
   prisma: PrismaClient,
   userRole?: Role
 ): Promise<ContextResult> {
-  // Carica dati in parallelo per performance
+  // Load data in parallel for performance
   const [prefs, allowedBrandIds, appConfig] = await Promise.all([
     prisma.userPreference.findUnique({ where: { userId } }),
     getUserAllowedBrandIds(userId, prisma, userRole),
@@ -152,7 +152,7 @@ export async function resolveContext(
     });
   }
 
-  // Helper per trovare un elemento per ID
+  // Helper to find an element by ID
   const pick = <T extends { id: string }>(
     list: T[],
     id?: string | null
@@ -160,7 +160,7 @@ export async function resolveContext(
     return id ? list.find(x => x.id === id) : undefined;
   };
 
-  // Parse defaults organizzativi
+  // Parse org-level defaults
   let contextDefaults: AppContextDefaults = { context: {} };
   if (appConfig) {
     try {
@@ -171,7 +171,7 @@ export async function resolveContext(
     }
   }
 
-  // Algoritmo di risoluzione con priorità
+  // Priority-based resolution algorithm
   const appDefBrand = pick(brands, contextDefaults.context?.brandId);
   const appDefSeason = pick(seasons, contextDefaults.context?.seasonId);
 
@@ -202,7 +202,7 @@ export async function setContext(
   seasonId: string,
   prisma: PrismaClient
 ): Promise<ContextResult> {
-  // Verifica che brand e season esistano e siano attivi
+  // Verify that brand and season exist and are active
   const [brand, season, currentPrefs] = await Promise.all([
     prisma.brand.findFirst({ where: { id: brandId, isActive: true } }),
     prisma.season.findFirst({ where: { id: seasonId, isActive: true } }),
@@ -216,7 +216,7 @@ export async function setContext(
     });
   }
 
-  // Merge dei dati: preserva menuStates, aggiorna brand/season
+  // Merge the data: preserve menuStates, update brand/season
   const mergedData = {
     ...((currentPrefs?.data as UserPreferenceData | null) ?? {}),
     lastBrandId: brand.id,
@@ -313,15 +313,15 @@ export async function getUserPreferenceValue<T>(
     select: { data: true },
   });
 
-  // Chiave arbitraria fornita dal chiamante — non riconducibile alle 3 note
-  // di UserPreferenceData, quindi Record<string, unknown> qui, non quel tipo.
+  // Arbitrary key provided by the caller — not traceable to the 3 known
+  // fields of UserPreferenceData, hence Record<string, unknown> here, not that type.
   const value = (prefs?.data as Record<string, unknown> | null)?.[key];
   return value === undefined ? defaultValue : (value as T);
 }
 
 /**
  * Persists a single key into the user's consolidated `UserPreference.data` JSON blob,
- * merging with existing preferences to preserve unrelated fields (brand/season, menu state, ecc.).
+ * merging with existing preferences to preserve unrelated fields (brand/season, menu state, etc.).
  */
 export async function setUserPreferenceValue<T>(
   userId: string,
@@ -334,8 +334,8 @@ export async function setUserPreferenceValue<T>(
     select: { data: true },
   });
 
-  // Il valore è generico (T) ma sempre JSON-serializzabile per contratto della
-  // funzione (persiste in una colonna Json) — TS non può provarlo dallo spread.
+  // The value is generic (T) but always JSON-serializable by the function's
+  // contract (it persists into a Json column) — TS can't prove that from the spread.
   const mergedData = {
     ...((currentPrefs?.data as Record<string, unknown> | null) ?? {}),
     [key]: value,
@@ -362,13 +362,13 @@ export async function setMenuCollapsibleStates(
   menuStates: Record<string, boolean>,
   prisma: PrismaClient
 ): Promise<Record<string, boolean>> {
-  // Leggi il valore attuale per preservare altri campi
+  // Read the current value to preserve other fields
   const currentPrefs = await prisma.userPreference.findUnique({
     where: { userId },
     select: { data: true },
   });
 
-  // Merge dei dati: preserva brand/season, aggiorna menuStates
+  // Merge the data: preserve brand/season, update menuStates
   const mergedData = {
     ...((currentPrefs?.data as UserPreferenceData | null) ?? {}),
     menuStates: menuStates,

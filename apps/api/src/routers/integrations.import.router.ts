@@ -1,6 +1,6 @@
 /**
- * Import/Export sub-router per integrazioni
- * Gestisce import ed export di dati
+ * Import/Export sub-router for integrations
+ * Handles data import and export
  */
 
 import { z } from 'zod';
@@ -28,8 +28,8 @@ export const importExportRouter = router({
 
       ctx.logger.info({ filename }, 'Import avviato');
 
-      // Placeholder per la logica di import
-      // In futuro qui si implementerà l'import reale
+      // Placeholder for the import logic
+      // The real import will be implemented here in the future
 
       return {
         success: true,
@@ -56,8 +56,8 @@ export const importExportRouter = router({
 
       ctx.logger.info({ type }, 'Export avviato');
 
-      // Placeholder per la logica di export
-      // In futuro qui si implementerà l'export reale
+      // Placeholder for the export logic
+      // The real export will be implemented here in the future
       const placeholderUrl = `/api/export/${type}-${Date.now()}.json`;
 
       return {

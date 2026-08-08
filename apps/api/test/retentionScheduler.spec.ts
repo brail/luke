@@ -1,14 +1,14 @@
 /**
- * Test unitari per l'orchestrazione di `retentionScheduler.ts`: quale tier usa quale
- * finestra di retention, che l'archiviazione avvenga prima del delete (mai dopo, mai
- * in caso di errore), e che le notifiche non lette non vengano mai toccate.
+ * Unit tests for the orchestration of `retentionScheduler.ts`: which tier uses which
+ * retention window, that archiving happens before delete (never after, never
+ * on error), and that unread notifications are never touched.
  *
- * Mockati: `configManager` (le finestre di retention sono un input, non ciò che si
- * testa qui), `../storage`/`auditLogArchive` (isolano l'orchestrazione dal contenuto
- * dell'archivio, già coperto in `auditLogArchive.spec.ts`), `schedulerLock` (il mutuo
- * esclusione cross-istanza richiede Postgres reale ed è coperto da
- * `schedulerLock.integration.spec.ts` — qui si bypassa per testare solo lo sweep).
- * Reale: `CRITICAL_AUDIT_ACTIONS`, per una partizione normale/critica realistica.
+ * Mocked: `configManager` (the retention windows are an input, not what's being
+ * tested here), `../storage`/`auditLogArchive` (isolate the orchestration from the
+ * archive's content, already covered in `auditLogArchive.spec.ts`), `schedulerLock`
+ * (cross-instance mutual exclusion requires real Postgres and is covered by
+ * `schedulerLock.integration.spec.ts` — here it's bypassed to test only the sweep).
+ * Real: `CRITICAL_AUDIT_ACTIONS`, for a realistic normal/critical partition.
  */
 
 import Fastify from 'fastify';
@@ -66,7 +66,7 @@ function buildFakePrisma() {
 describe('retentionScheduler', () => {
   let fastify: ReturnType<typeof Fastify>;
   const startTime = new Date('2026-01-01T00:00:00.000Z');
-  /** Momento in cui scatta il primo tick: il timer parte da zero all'`onReady`. */
+  /** Moment when the first tick fires: the timer starts from zero at `onReady`. */
   const tickTime = startTime.getTime() + TICK_INTERVAL_MS;
 
   beforeEach(() => {
@@ -113,13 +113,13 @@ describe('retentionScheduler', () => {
     const normalCall = calls.find((c: any) => c.where.action?.notIn);
     const criticalCall = calls.find((c: any) => c.where.action?.in);
 
-    // Bug plausibile: scambiare notIn/in farebbe archiviare le righe critiche come
-    // "normali" (retention troppo corta per un requisito di compliance).
+    // Plausible bug: swapping notIn/in would archive critical rows as
+    // "normal" (retention too short for a compliance requirement).
     expect(normalCall.where.action.notIn).toEqual(criticalActions);
     expect(criticalCall.where.action.in).toEqual(criticalActions);
 
-    // Bug plausibile: usare la stessa retentionDays per entrambi i tier — il floor
-    // critico smetterebbe di essere più lungo.
+    // Plausible bug: using the same retentionDays for both tiers — the critical
+    // floor would stop being longer.
     expect(normalCall.where.createdAt.lt.getTime()).toBe(tickTime - 10 * DAY_MS);
     expect(criticalCall.where.createdAt.lt.getTime()).toBe(tickTime - 100 * DAY_MS);
 
@@ -128,7 +128,7 @@ describe('retentionScheduler', () => {
     const criticalArchive = archiveCalls.find(c => c[4] === 'critical');
     expect(normalArchive?.[2]).toEqual(normalIds);
     expect(criticalArchive?.[2]).toEqual(criticalIds);
-    // Stesso tickId per i due tier dello stesso giro (id fisso, un solo `randomUUID()` per tick).
+    // Same tickId for both tiers of the same run (fixed id, only one `randomUUID()` per tick).
     expect(normalArchive?.[3]).toBe(criticalArchive?.[3]);
 
     expect(prisma.auditLog.deleteMany).toHaveBeenCalledWith({ where: { id: { in: normalIds } } });
@@ -153,7 +153,7 @@ describe('retentionScheduler', () => {
 
     await runOneTick(prisma);
 
-    // Durabilità: le righe critiche non archiviate restano nel DB per il prossimo tick.
+    // Durability: unarchived critical rows stay in the DB for the next tick.
     expect(prisma.auditLog.deleteMany).toHaveBeenCalledWith({ where: { id: { in: normalIds } } });
     expect(prisma.auditLog.deleteMany).not.toHaveBeenCalledWith({ where: { id: { in: criticalIds } } });
     expect(prisma.auditLog.deleteMany).toHaveBeenCalledTimes(1);
@@ -170,7 +170,7 @@ describe('retentionScheduler', () => {
     await runOneTick(prisma);
 
     const call = prisma.notification.findMany.mock.calls[0][0];
-    // Bug plausibile: rimuovere/invertire `isRead` sweeperebbe anche le notifiche non lette.
+    // Plausible bug: removing/inverting `isRead` would sweep unread notifications too.
     expect(call.where.isRead).toBe(true);
     expect(call.where.readAt.lt.getTime()).toBe(tickTime - 90 * DAY_MS);
 
@@ -188,15 +188,15 @@ describe('retentionScheduler', () => {
   });
 
   it('non archivia né cancella nulla quando non ci sono righe scadute (nessun file vuoto, nessuna deleteMany a vuoto)', async () => {
-    const prisma = buildFakePrisma(); // tutti i findMany di default risolvono a []
+    const prisma = buildFakePrisma(); // all findMany calls resolve to [] by default
 
     await runOneTick(prisma);
 
     expect(archiveAuditLogRows).not.toHaveBeenCalled();
     expect(prisma.auditLog.deleteMany).not.toHaveBeenCalled();
     expect(prisma.notification.deleteMany).not.toHaveBeenCalled();
-    // Le dedup key non passano da un collect di id: il delete-per-data scatta comunque,
-    // count 0 è un esito legittimo (nessuna key scaduta), non un caso da evitare.
+    // Dedup keys don't go through an id collect: the delete-by-date fires regardless,
+    // count 0 is a legitimate outcome (no expired keys), not a case to avoid.
     expect(prisma.notificationDedupKey.deleteMany).toHaveBeenCalledTimes(1);
   });
 });

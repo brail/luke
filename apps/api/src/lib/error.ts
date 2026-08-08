@@ -44,8 +44,8 @@ export function getTraceId(req: FastifyRequest): string | undefined {
 
 function redactError(err: unknown): unknown {
   if (!err || typeof err !== 'object') return err;
-  // Il check sopra garantisce un oggetto non-null: sicuro trattarlo come
-  // record per la redazione delle chiavi sensibili.
+  // The check above guarantees a non-null object: safe to treat it as a
+  // record for redacting sensitive keys.
   const clone: Record<string, unknown> = { ...(err as Record<string, unknown>) };
   const redactKeys = [
     'stack',

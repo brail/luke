@@ -10,27 +10,27 @@ import type { FastifyBaseLogger } from 'fastify';
  * Standardised error codes used across the API.
  */
 export enum ErrorCode {
-  // Errori di validazione
+  // Validation errors
   VALIDATION_ERROR = 'VALIDATION_ERROR',
   INVALID_INPUT = 'INVALID_INPUT',
 
-  // Errori di autenticazione
+  // Authentication errors
   UNAUTHORIZED = 'UNAUTHORIZED',
   FORBIDDEN = 'FORBIDDEN',
 
-  // Errori di configurazione
+  // Configuration errors
   CONFIG_ERROR = 'CONFIG_ERROR',
   CONNECTION_ERROR = 'CONNECTION_ERROR',
 
-  // Errori di database
+  // Database errors
   DATABASE_ERROR = 'DATABASE_ERROR',
 
-  // Errori di integrazione
+  // Integration errors
   INTEGRATION_ERROR = 'INTEGRATION_ERROR',
   SMTP_ERROR = 'SMTP_ERROR',
   STORAGE_ERROR = 'STORAGE_ERROR',
 
-  // Errori generici
+  // Generic errors
   INTERNAL_ERROR = 'INTERNAL_ERROR',
   NOT_FOUND = 'NOT_FOUND',
   CONFLICT = 'CONFLICT',
@@ -79,7 +79,7 @@ export function toTRPCError(error: StandardError): TRPCError {
 }
 
 /**
- * Mappa i codici di errore ai codici tRPC
+ * Maps error codes to tRPC codes
  */
 function getTRPCCodeFromErrorCode(
   code: ErrorCode
@@ -131,8 +131,8 @@ export function sanitizeForLogging(data: unknown): unknown {
     'clientSecret',
   ];
 
-  // Il check `typeof data === 'object'` sopra garantisce un oggetto non-null:
-  // sicuro trattarlo come record per la redazione ricorsiva delle chiavi.
+  // The `typeof data === 'object'` check above guarantees a non-null object:
+  // safe to treat it as a record for recursive key redaction.
   const sanitized: Record<string, unknown> = { ...(data as Record<string, unknown>) };
 
   for (const key in sanitized) {
@@ -165,21 +165,21 @@ export class SecureLogger {
   // any order without losing information, so putting the sanitized object first keeps it
   // structured under Pino and stays harmless under console.
   info(message: string, data?: unknown) {
-    // sanitizeForLogging ritorna unknown perché accetta qualunque input; qui il
-    // chiamante passa sempre un oggetto strutturato, coerente con l'overload Pino.
+    // sanitizeForLogging returns unknown because it accepts any input; here the
+    // caller always passes a structured object, consistent with the Pino overload.
     data ? this.logger.info(sanitizeForLogging(data) as object, message) : this.logger.info(message);
   }
 
   warn(message: string, data?: unknown) {
-    data ? this.logger.warn(sanitizeForLogging(data) as object, message) : this.logger.warn(message); // vedi info()
+    data ? this.logger.warn(sanitizeForLogging(data) as object, message) : this.logger.warn(message); // see info()
   }
 
   error(message: string, error?: unknown) {
-    error ? this.logger.error(sanitizeForLogging(error) as object, message) : this.logger.error(message); // vedi info()
+    error ? this.logger.error(sanitizeForLogging(error) as object, message) : this.logger.error(message); // see info()
   }
 
   debug(message: string, data?: unknown) {
-    data ? this.logger.debug(sanitizeForLogging(data) as object, message) : this.logger.debug(message); // vedi info()
+    data ? this.logger.debug(sanitizeForLogging(data) as object, message) : this.logger.debug(message); // see info()
   }
 }
 

@@ -1,14 +1,14 @@
 /**
- * Gate di copertura delle procedure tRPC, agganciato al ciclo di vita di vitest.
+ * tRPC procedure coverage gate, hooked into vitest's lifecycle.
  *
- * Vive **dentro** `pnpm test:integration` e non come step separato di CI: uno
- * step si può dimenticare di aggiungere, un `globalSetup` no.
+ * Lives **inside** `pnpm test:integration` and not as a separate CI step: a
+ * step can be forgotten when adding one; a `globalSetup` can't.
  *
- * `globalSetup` gira nel processo principale, quindi qui non si importa mai
- * `src/routers/index`: trascinerebbe dentro il module graph dell'applicazione e
- * i suoi side effect a livello di modulo (verificato: importarlo fuori da vitest
- * lascia il processo appeso). La discovery avviene nei worker, via
- * `setup.procedureUsage.ts`; qui si leggono solo JSON.
+ * `globalSetup` runs in the main process, so `src/routers/index` is never
+ * imported here: it would drag in the application's module graph and its
+ * module-level side effects (verified: importing it outside vitest leaves
+ * the process hanging). Discovery happens in the workers, via
+ * `setup.procedureUsage.ts`; only JSON is read here.
  */
 
 import { existsSync, readdirSync, readFileSync, rmSync } from 'fs';
@@ -24,10 +24,10 @@ const TEST_DIR = __dirname;
 const SPEC_SUFFIX = '.integration.spec.ts';
 
 /**
- * Tutte le spec di integrazione presenti su disco.
+ * All integration specs present on disk.
  *
- * `readdirSync` ricorsivo invece di una dipendenza glob: nessun pacchetto nuovo,
- * e la stessa forma della guardia rotte in `shell.smoke.spec.ts`.
+ * Recursive `readdirSync` instead of a glob dependency: no new package, and
+ * the same shape as the route guard in `shell.smoke.spec.ts`.
  */
 function discoverSpecFiles(): string[] {
   return readdirSync(TEST_DIR, { recursive: true, withFileTypes: true })
@@ -37,9 +37,10 @@ function discoverSpecFiles(): string[] {
 }
 
 export default async function setup(): Promise<() => Promise<void>> {
-  // La riga più importante del file. Un artefatto rimasto da una run precedente
-  // verrebbe contato come copertura di questa: è il modo esatto in cui il gate
-  // diventerebbe verde per sempre la prima volta che si rinomina una spec.
+  // The most important line in the file. An artifact left over from a
+  // previous run would get counted as coverage for this one: that's exactly
+  // how the gate would turn permanently green the first time a spec gets
+  // renamed.
   rmSync(USAGE_DIR, { recursive: true, force: true });
 
   return async function teardown(): Promise<void> {
@@ -67,13 +68,13 @@ export default async function setup(): Promise<() => Promise<void>> {
     const notRun = allSpecs.filter(spec => !ran.has(spec));
 
     if (notRun.length > 0) {
-      // Run parziale: il gate non può pronunciarsi sulla copertura complessiva.
+      // Partial run: the gate can't make a call on overall coverage.
       //
-      // L'escape è **derivato**, non dichiarato: nessuna variabile da impostare
-      // e quindi da dimenticare accesa. In locale lanciare una spec sola è
-      // normale e si avvisa; in CI la pipeline lancia sempre la suite intera,
-      // quindi una run parziale è un difetto — e saltare in silenzio sarebbe
-      // di nuovo il controllo dichiarato-e-mai-eseguito.
+      // The escape hatch is **derived**, not declared: no variable to set
+      // and therefore none to forget switched on. Running a single spec
+      // locally is normal and gets a warning; in CI the pipeline always
+      // runs the whole suite, so a partial run is a defect — and silently
+      // skipping would again be the declared-and-never-run check.
       const summary = `run parziale: ${ran.size}/${allSpecs.length} spec hanno registrato`;
       if (process.env.CI) {
         throw new Error(

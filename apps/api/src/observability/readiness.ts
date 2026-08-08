@@ -73,7 +73,7 @@ export async function checkLdap(
       return { ok: true, message: 'LDAP disabled, skipped' };
     }
 
-    // Ping LDAP con timeout breve (ldapts: connessione lazy al primo bind)
+    // Ping LDAP with a short timeout (ldapts: lazy connection on first bind)
     const client = new Client({
       url: config.url,
       timeout: 2000,
@@ -161,7 +161,7 @@ export async function checkBootstrapDependencies(
   logger: FastifyLoggerInstance
 ): Promise<void> {
   try {
-    // Test connessione database
+    // Test database connection
     await prisma.$connect();
     logger.info('Connessione database stabilita');
 
@@ -184,7 +184,7 @@ export async function checkBootstrapDependencies(
       throw secretError;
     }
   } catch (error: unknown) {
-    // Re-throw con messaggio dettagliato per debugging
+    // Re-throw with a detailed message for debugging
     const bootstrapError = new Error(
       `Bootstrap dependency check failed: ${toErrorMessage(error)}`
     );

@@ -1,6 +1,6 @@
 /**
- * Router tRPC per gestione Season
- * Implementa CRUD completo per Season
+ * tRPC router for Season management
+ * Implements full CRUD for Season
  */
 
 import { TRPCError } from '@trpc/server';
@@ -97,7 +97,7 @@ export const seasonRouter = router({
           });
         }
 
-        // Valida unicità navSeasonId se fornito
+        // Validates navSeasonId uniqueness if provided
         if (input.navSeasonId) {
           const conflict = await tx.season.findUnique({
             where: { navSeasonId: input.navSeasonId },
@@ -143,7 +143,7 @@ export const seasonRouter = router({
         updateData.code = normalizeCode(input.data.code);
       }
 
-      // Verifica unicità code se cambiato
+      // Verify code uniqueness if changed
       const targetCode = updateData.code ?? season.code;
       if (targetCode !== season.code) {
         const conflict = await ctx.prisma.season.findFirst({
@@ -157,9 +157,9 @@ export const seasonRouter = router({
         }
       }
 
-      // Valida/blocca cambio navSeasonId
+      // Validate/block navSeasonId change
       if (input.data.navSeasonId !== undefined && input.data.navSeasonId !== season.navSeasonId) {
-        // Blocca qualsiasi cambio se già valorizzato — usare endpoint unlink
+        // Block any change if already set — use the unlink endpoint
         if (season.navSeasonId !== null) {
           throw new TRPCError({
             code: 'BAD_REQUEST',

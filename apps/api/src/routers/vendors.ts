@@ -1,12 +1,12 @@
 /**
- * Router tRPC per gestione Vendor (anagrafica interna fornitori)
- * Implementa CRUD completo con soft delete.
+ * tRPC router for Vendor management (internal supplier registry)
+ * Implements full CRUD with soft delete.
  *
- * Pattern soft delete:
- * - remove() imposta isActive=false anziché cancellare il record
- * - list() filtra isActive=true per default (includeInactive=true per admin)
- * - Il sync NAV non tocca mai isActive: un vendor disattivato non viene
- *   riattivato automaticamente dalla sincronizzazione successiva
+ * Soft delete pattern:
+ * - remove() sets isActive=false instead of deleting the record
+ * - list() filters isActive=true by default (includeInactive=true for admin)
+ * - NAV sync never touches isActive: a deactivated vendor is never
+ *   automatically reactivated by a subsequent sync
  */
 
 import { TRPCError } from '@trpc/server';
@@ -166,7 +166,7 @@ export const vendorsRouter = router({
         }
 
         if (input.data.navVendorId !== undefined && input.data.navVendorId !== vendor.navVendorId) {
-          // Blocca qualsiasi cambio se già valorizzato — usare endpoint unlink
+          // Block any change if already set — use the unlink endpoint
           if (vendor.navVendorId !== null) {
             throw new TRPCError({
               code: 'BAD_REQUEST',

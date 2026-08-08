@@ -1,26 +1,27 @@
 /**
- * Tipi e costanti condivisi del gate di copertura procedure.
+ * Types and constants shared by the procedure coverage gate.
  *
- * **Questo modulo non deve mai importare `appRouter`, né direttamente né per
- * transitività.** `globalSetup.procedureCoverage.ts` gira nel processo
- * principale di vitest, e importare il router ci trascina dentro il module graph
- * dell'applicazione con i suoi side effect a livello di modulo: verificato, il
- * processo resta appeso ("close timed out after 30000ms"). La prima stesura di
- * questo gate ci è cascata, importando `USAGE_DIR` da un modulo che a sua volta
- * importava il router.
+ * **This module must never import `appRouter`, neither directly nor
+ * transitively.** `globalSetup.procedureCoverage.ts` runs in vitest's main
+ * process, and importing the router drags us into the application's module
+ * graph with its module-level side effects: verified, the process hangs
+ * ("close timed out after 30000ms"). The first draft of this gate fell into
+ * this trap, importing `USAGE_DIR` from a module that in turn imported the
+ * router.
  *
- * Regola: ciò che serve al processo principale sta qui; ciò che tocca il router
- * sta in `procedureRegistry.ts` / `procedureUsage.ts`, importati solo dai worker.
+ * Rule: whatever the main process needs lives here; whatever touches the
+ * router lives in `procedureRegistry.ts` / `procedureUsage.ts`, imported only
+ * by the workers.
  */
 
 import { join } from 'path';
 
 /**
- * Directory degli artefatti, uno per file di spec.
+ * Directory for the artifacts, one per spec file.
  *
- * Sotto `node_modules/` perché è già ignorata da git e cancellabile senza
- * conseguenze. Un file per spec e non un log condiviso in append: l'append
- * concorrente è atomico solo sotto `PIPE_BUF`, e una riga con 300+ path non lo è.
+ * Under `node_modules/` because it's already gitignored and deletable without
+ * consequences. One file per spec and not a shared append log: concurrent
+ * append is atomic only under `PIPE_BUF`, and a line with 300+ paths isn't.
  */
 export const USAGE_DIR = join(
   __dirname,
@@ -32,15 +33,15 @@ export const USAGE_DIR = join(
 );
 
 export interface UsageArtifact {
-  /** Path assoluto del file di spec che ha prodotto l'artefatto. */
+  /** Absolute path of the spec file that produced the artifact. */
   specFile: string;
-  /** Inventario osservato da quella spec, per rilevare divergenze fra worker. */
+  /** Inventory observed by that spec, to detect divergences across workers. */
   discovered: string[];
-  /** Path dotted effettivamente invocati. */
+  /** Dotted paths actually invoked. */
   invoked: string[];
 }
 
-/** Namespace di primo livello di un path dotted (`brand.list` → `brand`). */
+/** Top-level namespace of a dotted path (`brand.list` → `brand`). */
 export function namespaceOf(procedurePath: string): string {
   return procedurePath.split('.')[0];
 }

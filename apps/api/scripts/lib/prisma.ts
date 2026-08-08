@@ -1,21 +1,21 @@
 /**
- * Costruzione del client Prisma per gli script CLI one-shot.
+ * Prisma client construction for one-shot CLI scripts.
  *
- * Prisma 7 ha rimosso `datasources` e `datasourceUrl` dal costruttore, e un
- * `new PrismaClient()` senza argomenti non è più costruibile: l'unico modo di
- * aprire una connessione è il driver adapter, lo stesso che usa `src/server.ts`.
- * Gli script erano rimasti alla firma vecchia e fallivano all'avvio.
+ * Prisma 7 removed `datasources` and `datasourceUrl` from the constructor, and
+ * a `new PrismaClient()` with no arguments can no longer be built: the only way
+ * to open a connection is the driver adapter, the same one `src/server.ts` uses.
+ * The scripts were left on the old signature and failed on startup.
  */
 
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
 /**
- * Crea un client Prisma per uno script CLI.
+ * Creates a Prisma client for a CLI script.
  *
- * @param connectionString - URL del database. Default: `DATABASE_URL`.
- * @throws Se l'URL non è definito — meglio un errore esplicito qui che una
- *   connessione a un database non voluto.
+ * @param connectionString - Database URL. Default: `DATABASE_URL`.
+ * @throws If the URL is not defined — better an explicit error here than a
+ *   connection to an unintended database.
  */
 export function createScriptPrismaClient(
   connectionString = process.env.DATABASE_URL

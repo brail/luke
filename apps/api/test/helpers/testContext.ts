@@ -1,11 +1,11 @@
 /**
- * Helper per creare context di test per tRPC.
+ * Helper to create a test context for tRPC.
  *
- * La sessione punta a un utente **realmente presente nel database**: i router di
- * produzione usano `protectedProcedure`, che valida `tokenVersion` contro la riga
- * utente. Con una sessione finta (`id: 'test-user-id'`) ogni chiamata falliva con
- * "Sessione scaduta" — motivo per cui le spec avevano preso l'abitudine di
- * duplicare i router usando `publicProcedure`.
+ * The session points to a user **actually present in the database**: production
+ * routers use `protectedProcedure`, which validates `tokenVersion` against the
+ * user row. With a fake session (`id: 'test-user-id'`) every call used to fail
+ * with "Session expired" — the reason the specs had gotten into the habit of
+ * duplicating routers using `publicProcedure`.
  */
 
 import { randomUUID } from 'crypto';
@@ -18,33 +18,33 @@ import { createSilentLogger } from './logger';
 import type { Context } from '../../src/lib/trpc';
 
 /**
- * Crea un context di test con un utente reale del ruolo richiesto.
+ * Creates a test context with a real user of the requested role.
  *
- * Tronca i dati prima di costruire il context, così ogni test parte da un
- * database vuoto. Non è ridondante con le spec che chiamano già
- * `resetTestData()`: prima l'isolamento era una convenzione per-file, e bastava
- * un file senza pulizia iniziale per ereditare le righe di quello precedente.
- * È successo davvero — `brand.integration.spec.ts` non aveva `afterEach` e
- * lasciava un brand con codice fisso, che faceva fallire con P2002 le suite
- * successive. Su un database già popolato il difetto non si vedeva; è emerso
- * solo in CI, sul primo database davvero vuoto.
+ * Truncates the data before building the context, so every test starts from an
+ * empty database. It's not redundant with specs that already call
+ * `resetTestData()`: isolation used to be a per-file convention, and it only
+ * took one file without initial cleanup to inherit the rows from the previous
+ * one. It really happened — `brand.integration.spec.ts` had no `afterEach` and
+ * left behind a brand with a fixed code, which made subsequent suites fail
+ * with P2002. On an already populated database the defect wasn't visible; it
+ * only surfaced in CI, on the first genuinely empty database.
  *
- * Il nome dice il parametro di proposito. Si chiamava `createTestContext`, come
- * l'helper **sincrono** in `test/helpers.ts` che prende una `UserSession` e non
- * tocca il database: due funzioni omonime con semantiche incompatibili, scelte
- * per import. Con nomi distinti ogni confusione diventa un errore di
- * compilazione — import sbagliato, argomento sbagliato, o `await` mancante
- * (un `Promise<Context>` non ha `.prisma`).
+ * The name states the parameter on purpose. It used to be called
+ * `createTestContext`, like the **synchronous** helper in `test/helpers.ts`
+ * that takes a `UserSession` and doesn't touch the database: two same-named
+ * functions with incompatible semantics, chosen by import. With distinct
+ * names, any confusion becomes a compile error — wrong import, wrong argument,
+ * or a missing `await` (a `Promise<Context>` doesn't have `.prisma`).
  *
- * @param role - Ruolo dell'utente di sessione. Default `admin`.
+ * @param role - Role of the session user. Default `admin`.
  */
 export async function createContextForRole(
   role: Role = 'admin'
 ): Promise<Context> {
-  // Client condiviso del file di test, non uno nuovo: ogni client apre un pool
-  // proprio. E lo schema va garantito qui — le spec che usano solo questo helper
-  // non chiamano `setupTestDb()`, quindi senza `ensureTestSchema` funzionavano
-  // solo di rimbalzo, quando un'altra suite aveva già creato le tabelle.
+  // Shared client from the test file, not a new one: every client opens its
+  // own pool. And the schema must be guaranteed here — specs that use only
+  // this helper don't call `setupTestDb()`, so without `ensureTestSchema` they
+  // only worked by luck, when another suite had already created the tables.
   const prisma = getTestPrismaClient();
   await ensureTestSchema(prisma);
   await resetTestData(prisma);
@@ -71,7 +71,7 @@ export async function createContextForRole(
     },
   };
 
-  // Mock request e response
+  // Mock request and response
   const mockReq = {
     log: createSilentLogger(),
     headers: {},

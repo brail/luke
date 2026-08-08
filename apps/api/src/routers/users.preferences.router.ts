@@ -1,6 +1,6 @@
 /**
- * Router tRPC per gestione preferenze utente
- * Gestisce menu collapsible states e altre preferenze
+ * tRPC router for user preferences management
+ * Handles menu collapsible states and other preferences
  */
 
 import { z } from 'zod';
@@ -12,12 +12,12 @@ import {
 } from '../services/context.service';
 
 /**
- * Schema per validare gli stati collapsibili
+ * Schema to validate collapsible states
  */
 const menuCollapsibleStatesSchema = z.record(z.string(), z.boolean());
 
 /**
- * Router per preferenze menu
+ * Router for menu preferences
  */
 const menuRouter = router({
   /**
@@ -52,7 +52,7 @@ const menuRouter = router({
 });
 
 /**
- * Router per preferenze utente (menu, etc)
+ * Router for user preferences (menu, etc)
  */
 export const userPreferencesRouter = router({
   menu: menuRouter,

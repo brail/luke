@@ -1,10 +1,10 @@
 /**
- * Test unitari per `auditLogArchive.ts` — l'archivio NDJSON.gz scritto sul bucket
- * `backups` prima che `retentionScheduler.ts` cancelli le righe scadute.
+ * Unit tests for `auditLogArchive.ts` — the NDJSON.gz archive written to the
+ * `backups` bucket before `retentionScheduler.ts` deletes the expired rows.
  *
- * Decomprime davvero il buffer scritto dal mock storage: verificare solo "provider.put
- * è stato chiamato" testerebbe la wiring e non il contenuto, lasciando passare un bug
- * plausibile come un pipe rotto (`gzip` mai chiuso) o una serializzazione sbagliata.
+ * Actually decompresses the buffer written by the mock storage: checking only that "provider.put
+ * was called" would test the wiring and not the content, letting through a
+ * plausible bug like a broken pipe (`gzip` never closed) or bad serialization.
  */
 
 import { gunzipSync } from 'zlib';
@@ -34,7 +34,7 @@ function fakeRow(id: string, overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-/** Legge e decomprime il file scritto dal mock, restituendo le righe NDJSON parse-ate. */
+/** Reads and decompresses the file written by the mock, returning the parsed NDJSON rows. */
 function readArchivedRows(mockStorage: MockStorageProvider, key: string): unknown[] {
   const file = mockStorage.getFilesByBucket('backups').find(f => f.key === key);
   if (!file) throw new Error(`Nessun file archiviato con key ${key}`);
@@ -76,8 +76,8 @@ describe('archiveAuditLogRows', () => {
       },
     } as any;
 
-    // Il cast riconosce che il mock copre solo `put` (unico metodo esercitato da
-    // archiveAuditLogRows) e non l'intera IStorageProvider (capabilities/get/list).
+    // The cast acknowledges that the mock covers only `put` (the only method exercised by
+    // archiveAuditLogRows) and not the entire IStorageProvider (capabilities/get/list).
     const { key } = await archiveAuditLogRows(
       mockStorage as unknown as IStorageProvider,
       prisma,
@@ -104,8 +104,8 @@ describe('archiveAuditLogRows', () => {
     const spyingProvider: Partial<IStorageProvider> = {
       put: async params => {
         putParams = params as unknown as Record<string, unknown>;
-        // Consuma lo stream (altrimenti il gzip a monte non chiude mai) senza bisogno di
-        // decomprimerlo: il contenuto è già coperto dal test precedente.
+        // Consume the stream (otherwise the upstream gzip never closes) without needing to
+        // decompress it: the content is already covered by the previous test.
         for await (const _chunk of params.stream) { /* drain */ }
         return { key: params.key ?? 'unused', checksumSha256: 'unused', size: 0 };
       },
@@ -121,8 +121,8 @@ describe('archiveAuditLogRows', () => {
   });
 
   it('pagina il recupero delle righe oltre il batch di fetch, senza perdere né duplicare righe (bug plausibile: off-by-one sul chunking degli id)', async () => {
-    // Deriva la soglia dalla stessa costante usata dal codice sotto test (condivisa con
-    // retentionSweep.ts) invece di un numero fisso: se il batch size cambia, il test resta valido.
+    // Derives the threshold from the same constant used by the code under test (shared with
+    // retentionSweep.ts) instead of a fixed number: if the batch size changes, the test stays valid.
     const ids = Array.from({ length: BATCH_SIZE + 1 }, (_, i) => `audit-${i}`);
     const rows = ids.map(id => fakeRow(id));
     const findManyCalls: string[][] = [];
@@ -143,7 +143,7 @@ describe('archiveAuditLogRows', () => {
       'normal',
     );
 
-    // Due pagine: BATCH_SIZE + 1, non un'unica query con tutti gli id né un giro perso.
+    // Two pages: BATCH_SIZE + 1, not a single query with all the ids nor a lost round.
     expect(findManyCalls).toHaveLength(2);
     expect(findManyCalls[0]).toHaveLength(BATCH_SIZE);
     expect(findManyCalls[1]).toHaveLength(1);

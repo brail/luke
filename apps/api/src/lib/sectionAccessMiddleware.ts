@@ -34,14 +34,14 @@ export function withSectionAccess(section: Section) {
 
     const user = ctx.session.user;
 
-    // Recupera override e RBAC config in parallelo (disabledSections è dentro rbacConfig)
+    // Fetch override and RBAC config in parallel (disabledSections lives inside rbacConfig)
     const [override, rbacConfig] = await Promise.all([
       getOverride(ctx.prisma, user.id, section).catch(() => null),
       getRbacConfig(ctx.prisma),
     ]);
     const { disabledSections } = rbacConfig;
 
-    // 1. Kill switch: se la sezione è disabilitata globalmente, nega accesso
+    // 1. Kill switch: if the section is globally disabled, deny access
     if (disabledSections.includes(section)) {
       throw new TRPCError({
         code: 'FORBIDDEN',
@@ -49,7 +49,7 @@ export function withSectionAccess(section: Section) {
       });
     }
 
-    // 2. User override: se l'utente ha un override specifico, rispettalo
+    // 2. User override: if the user has a specific override, honor it
     if (override) {
       if (!override.enabled) {
         throw new TRPCError({
@@ -57,15 +57,15 @@ export function withSectionAccess(section: Section) {
           message: `Accesso negato alla sezione ${section} (override utente)`,
         });
       }
-      // Se override è enabled, procedi senza ulteriori controlli
+      // If the override is enabled, proceed without further checks
       return next();
     }
 
-    // 3. effectiveSectionAccess valuta: role defaults → RBAC permission fallback
+    // 3. effectiveSectionAccess evaluates: role defaults → RBAC permission fallback
     const allowed = effectiveSectionAccess({
       role: user.role,
       sectionAccessDefaults: rbacConfig.sectionAccessDefaults,
-      userOverride: undefined, // Già controllato sopra
+      userOverride: undefined, // Already checked above
       section,
       disabledSections,
     });

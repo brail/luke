@@ -1,6 +1,6 @@
 /**
- * Router tRPC per catalog (Brand/Season)
- * Implementa liste master per selezione context, filtrate per whitelist utente.
+ * tRPC router for catalog (Brand/Season)
+ * Implements master lists for context selection, filtered by user whitelist.
  */
 
 import type { Role } from '@luke/core';
@@ -10,7 +10,7 @@ import { router, protectedProcedure } from '../lib/trpc';
 import { getUserAllowedBrandIds } from '../services/context.service';
 
 /**
- * Router per catalog master data
+ * Router for catalog master data
  */
 export const catalogRouter = router({
   /**

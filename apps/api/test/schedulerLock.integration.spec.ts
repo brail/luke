@@ -1,9 +1,9 @@
 /**
- * Test di integrazione per `withSchedulerLock` (apps/api/src/lib/schedulerLock.ts).
+ * Integration tests for `withSchedulerLock` (apps/api/src/lib/schedulerLock.ts).
  *
- * Serve una tabella Prisma reale (`scheduler_locks`, upsert condizionale via raw SQL):
- * mockare `prisma.$queryRaw` testerebbe solo che la query viene chiamata, non che
- * l'esclusione reciproca funzioni davvero — da qui il tier integration, non unit.
+ * A real Prisma table is needed (`scheduler_locks`, conditional upsert via raw SQL):
+ * mocking `prisma.$queryRaw` would only test that the query gets called, not that
+ * mutual exclusion actually works — hence the integration tier, not unit.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -36,13 +36,13 @@ describe('withSchedulerLock', () => {
     const tick = vi.fn(async () => 'done');
     const result = await withSchedulerLock(testPrisma, 'backup', tick)();
 
-    // undefined distingue "saltato" da "il tick ha ritornato undefined" — qui l'unico
-    // modo in cui può succedere è che l'acquisizione del lock abbia fallito.
+    // undefined distinguishes "skipped" from "the tick returned undefined" — here the only
+    // way this can happen is if lock acquisition failed.
     expect(result).toBeUndefined();
     expect(tick).not.toHaveBeenCalled();
 
-    // Verifica anche sul DB, non solo sul risultato: il lock preso da 'other-instance' non
-    // deve essere stato sovrascritto dal tentativo fallito.
+    // Also verify against the DB, not just the result: the lock held by 'other-instance'
+    // must not have been overwritten by the failed attempt.
     const row = await testPrisma.schedulerLock.findUniqueOrThrow({ where: { name: 'backup' } });
     expect(row.heldBy).toBe('other-instance');
   });
@@ -62,8 +62,8 @@ describe('withSchedulerLock', () => {
   it('rilascia il lock subito dopo un tick riuscito, non aspettando il TTL', async () => {
     await withSchedulerLock(testPrisma, 'backup', vi.fn(async () => 'done'))();
 
-    // Se il rilascio non fosse esplicito, questa seconda chiamata troverebbe
-    // expiresAt ancora nel futuro (TTL 15 min) e verrebbe saltata.
+    // If release weren't explicit, this second call would find
+    // expiresAt still in the future (TTL 15 min) and would be skipped.
     const tick2 = vi.fn(async () => 'done');
     const result = await withSchedulerLock(testPrisma, 'backup', tick2)();
 
@@ -87,9 +87,9 @@ describe('withSchedulerLock', () => {
       data: { name: 'nav-sync:vendor', heldBy: 'other-instance', expiresAt: new Date(Date.now() + 60_000) },
     });
 
-    // Un bug plausibile: usare un'unica chiave 'nav-sync' condivisa fra le entità
-    // invece del nome per-entità — questo test fallirebbe in quel caso, perché
-    // 'nav-sync:brand' verrebbe bloccato dal lock preso su 'nav-sync:vendor'.
+    // A plausible bug: using a single 'nav-sync' key shared across entities
+    // instead of the per-entity name — this test would fail in that case, because
+    // 'nav-sync:brand' would be blocked by the lock held on 'nav-sync:vendor'.
     const tick = vi.fn(async () => 'done');
     const result = await withSchedulerLock(testPrisma, 'nav-sync:brand', tick)();
 

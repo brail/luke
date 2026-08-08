@@ -46,11 +46,11 @@ function redactSensitiveFields(obj: unknown): unknown {
     const redacted: Record<string, unknown> = { ...(obj as Record<string, unknown>) };
 
     for (const key of Object.keys(redacted)) {
-      // Controlla se la chiave contiene pattern sensibili
+      // Checks if the key contains sensitive patterns
       if (sensitivePatterns.some(pattern => pattern.test(key))) {
         redacted[key] = '[REDACTED]';
       } else if (typeof redacted[key] === 'object') {
-        // Ricorsione per oggetti nested
+        // Recursion for nested objects
         redacted[key] = redactSensitiveFields(redacted[key]);
       }
     }
@@ -74,14 +74,14 @@ export const pinoSerializers = {
   res: serializers.res,
   err: serializers.err,
 
-  // Custom: redact sensitive fields con pattern wildcard
+  // Custom: redact sensitive fields with wildcard pattern
   config: (value: unknown) => redactSensitiveFields(value),
 
   // Redact PII in user objects
   user: (value: unknown) => {
     if (typeof value === 'object' && value !== null) {
       const redacted: Record<string, unknown> = { ...(value as Record<string, unknown>) };
-      // Mantieni solo ID e ruolo, redigi email/username
+      // Keep only ID and role, redact email/username
       if (redacted.email) redacted.email = '[REDACTED]';
       if (redacted.username) redacted.username = '[REDACTED]';
       if (redacted.firstName) redacted.firstName = '[REDACTED]';
@@ -91,7 +91,7 @@ export const pinoSerializers = {
     return value;
   },
 
-  // Redaction generica per qualsiasi oggetto
+  // Generic redaction for any object
   sensitive: (value: unknown) => redactSensitiveFields(value),
 };
 
@@ -110,17 +110,17 @@ export function pinoTraceMiddleware(
   const span = trace.getActiveSpan();
   const spanContext = span?.spanContext();
 
-  // Estrai o genera x-luke-trace-id (business identifier)
+  // Extracts or generates x-luke-trace-id (business identifier)
   const xTraceId = (req.headers['x-luke-trace-id'] as string) || randomUUID();
 
-  // Aggiungi campi al logger request-scoped
+  // Adds fields to the request-scoped logger
   req.log = req.log.child({
     traceId: spanContext?.traceId || 'n/a',
     spanId: spanContext?.spanId || 'n/a',
     xTraceId,
   });
 
-  // Propagazione header in risposta per correlazione FE
+  // Propagates header in response for FE correlation
   reply.header('x-luke-trace-id', xTraceId);
 
   done();

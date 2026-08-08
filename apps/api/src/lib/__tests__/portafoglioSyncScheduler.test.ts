@@ -36,9 +36,9 @@ const mockPrisma = {
   navSyncFilter: {
     findUnique: vi.fn(),
   },
-  // Il tick passa da `guardMaintenance` → `isMaintenanceActive` → `getConfig`,
-  // che legge AppConfig: senza questo mock il tick esplode dentro un timer e
-  // l'errore emerge come unhandled rejection invece che come test rosso.
+  // The tick goes through `guardMaintenance` → `isMaintenanceActive` → `getConfig`,
+  // which reads AppConfig: without this mock the tick blows up inside a timer and
+  // the error surfaces as an unhandled rejection instead of as a failing test.
   appConfig: {
     findUnique: vi.fn().mockResolvedValue(null),
   },
@@ -107,9 +107,9 @@ describe('portafoglioSyncScheduler', () => {
 
       await onReadyHandler();
 
-      // Avanza oltre l'intervallo e lascia risolvere il lavoro async del tick.
-      // `runAllTimersAsync` non è utilizzabile: il tick è un setInterval ricorrente,
-      // e "esegui tutti i timer" su un timer che si ri-arma non termina mai.
+      // Advance past the interval and let the tick's async work resolve.
+      // `runAllTimersAsync` isn't usable: the tick is a recurring setInterval,
+      // and "run all timers" on a timer that re-arms itself never terminates.
       await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1000); // 5 min + 1 sec
     });
 

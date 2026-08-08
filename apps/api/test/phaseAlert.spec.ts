@@ -1,13 +1,14 @@
 /**
- * Test unitari per le funzioni pure del motore di alert (`phaseAlert.service.ts`)
- * che operano su un array di eventi già risolto — nessun accesso a Prisma, quindi
- * tier unit, non integration.
+ * Unit tests for the pure functions of the alert engine (`phaseAlert.service.ts`)
+ * that operate on an already-resolved array of events — no Prisma access, hence
+ * unit tier, not integration.
  *
- * Fixture minime: le funzioni sotto test leggono solo `id` e `phase.{order,isActive}`
- * dagli eventi; gli altri campi scalari di `CalendarEvent` sono valorizzati con
- * placeholder solo per soddisfare il tipo (derivato via `Parameters<>` invece di
- * importare il tipo privato `CalendarEventWithContext`, non esportato dal modulo —
- * questo file è test-only, non tocca codice applicativo).
+ * Minimal fixtures: the functions under test only read `id` and
+ * `phase.{order,isActive}` from the events; the other scalar fields of
+ * `CalendarEvent` are set with placeholders just to satisfy the type (derived via
+ * `Parameters<>` instead of importing the private type `CalendarEventWithContext`,
+ * not exported by the module — this file is test-only, it doesn't touch
+ * application code).
  */
 
 import { describe, it, expect } from 'vitest';
@@ -24,13 +25,13 @@ import {
 
 type RowEvent = Parameters<typeof getActivePhaseFromEvents>[0][number];
 
-/** Costruisce un evento calendario minimo, con la sola fase che conta per questi test. */
+/** Builds a minimal calendar event, with only the phase that matters for these tests. */
 function fakeEvent(opts: {
   id: string;
   planningGroupId?: string;
   phaseOrder: number | null;
   phaseIsActive?: boolean;
-  /** Scadenza dell'evento (`endAt ?? startAt`), per i test sull'esito al completamento. */
+  /** Event deadline (`endAt ?? startAt`), for tests on the completion outcome. */
   deadline?: Date;
 }): RowEvent {
   const now = new Date();
@@ -81,15 +82,15 @@ describe('getActivePhaseFromEvents', () => {
   });
 
   it('currentOrder uguale alla fase di un evento → quell\'evento è attivo (>=, non >)', () => {
-    // La riga è "a" quella fase, non l'ha ancora superata — la sua scadenza si applica ancora.
+    // The row is "at" that phase, it hasn't passed it yet — its deadline still applies.
     const atOrder1 = fakeEvent({ id: 'e2', phaseOrder: 1 });
     const events = [fakeEvent({ id: 'e1', phaseOrder: 0 }), atOrder1, fakeEvent({ id: 'e3', phaseOrder: 2 })];
     expect(getActivePhaseFromEvents(events, 1)).toEqual({ status: 'active', event: atOrder1 });
   });
 
   it('salta gli eventi su fase disattivata e misura contro la prima fase attiva successiva', () => {
-    // `isActive: false` è un soft delete: una fase ritirata esce dal processo e non deve più
-    // produrre scadenze, com'era già per `getNextPhaseFromEvents`.
+    // `isActive: false` is a soft delete: a retired phase leaves the process and must no
+    // longer produce deadlines, as was already the case for `getNextPhaseFromEvents`.
     const retired = fakeEvent({ id: 'e1', phaseOrder: 1, phaseIsActive: false });
     const live = fakeEvent({ id: 'e2', phaseOrder: 2 });
     expect(getActivePhaseFromEvents([retired, live], 1)).toEqual({ status: 'active', event: live });
@@ -116,7 +117,7 @@ describe('getMissingPhasesForCompletion', () => {
   });
 
   it('le fasi disattivate nell\'intervallo non contano come mancanti', () => {
-    // Non sono più parte del processo: chiederle prima di concludere sarebbe rumore.
+    // They're no longer part of the process: asking for them before concluding would be noise.
     const events = [
       fakeEvent({ id: 'e1', phaseOrder: 0 }),
       fakeEvent({ id: 'e2', phaseOrder: 1, phaseIsActive: false }),
@@ -162,10 +163,10 @@ describe('getNextPhaseFromEvents', () => {
   });
 
   it('l\'unico candidato successivo è su una fase disattivata → null, non il candidato disattivato', () => {
-    // Regressione: una fase disattivata (isActive:false) resta referenziata da un
-    // CalendarEvent esistente ma sparisce dal catalogo (`phase.list` filtra
-    // isActive:true) — mostrarla come "prossima fase" produceva un'etichetta
-    // irrisolvibile lato frontend ("—") invece di nascondere semplicemente la riga.
+    // Regression: a deactivated phase (isActive:false) remains referenced by an
+    // existing CalendarEvent but disappears from the catalog (`phase.list` filters
+    // isActive:true) — showing it as "next phase" produced an unresolvable label
+    // on the frontend side ("—") instead of simply hiding the row.
     const active = fakeEvent({ id: 'e1', phaseOrder: 0 });
     const inactiveNext = fakeEvent({ id: 'e2', phaseOrder: 1, phaseIsActive: false });
     const events = [active, inactiveNext];
@@ -190,7 +191,7 @@ describe('getNextPhaseFromEvents', () => {
 
   it('l\'evento attivo non fa parte dell\'array passato → null (activeIndex non trovato)', () => {
     const events = [fakeEvent({ id: 'e2', phaseOrder: 2 }), fakeEvent({ id: 'e3', phaseOrder: 3 })];
-    // "Attivo" costruito a parte, con id che non compare in `events`.
+    // "Active" built separately, with an id that doesn't appear in `events`.
     const foreignActive = { status: 'active' as const, event: fakeEvent({ id: 'not-in-array', phaseOrder: 1 }) };
     expect(getNextPhaseFromEvents(events, foreignActive)).toBeNull();
   });
@@ -212,8 +213,8 @@ describe('getCompletionDeadlineEvent', () => {
   });
 
   it('salta le fasi disattivate che seguono l\'ultima attiva', () => {
-    // Il caso reale: calendario con milestone su fasi ritirate dopo l'ultima fase ancora in uso.
-    // La scadenza di completamento deve restare l'ultima *attiva*, non la più lontana in assoluto.
+    // The real case: a calendar with milestones on retired phases after the last phase still in use.
+    // The completion deadline must remain the last *active* one, not the furthest overall.
     const events = [
       fakeEvent({ id: 'gate-1', phaseOrder: 0 }),
       fakeEvent({ id: 'gate-3', phaseOrder: 2 }),

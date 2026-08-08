@@ -59,9 +59,9 @@ async function runTick(prisma: PrismaClient, log: FastifyInstance['log']): Promi
       threshold => minutesRemaining <= threshold && !state.warningsSent.includes(threshold)
     );
     if (crossed.length > 0) {
-      // Più soglie possono attraversarsi nello stesso tick (es. dopo un downtime dello scheduler) —
-      // un'unica notifica con quella più urgente (la più vicina), non una raffica che rifarebbe la
-      // stessa query utenti + broadcast SSE una volta per soglia per lo stesso evento concettuale.
+      // Multiple thresholds can be crossed in the same tick (e.g. after scheduler downtime) —
+      // a single notification with the most urgent one (closest), not a burst that would redo
+      // the same user query + SSE broadcast once per threshold for the same conceptual event.
       const mostUrgent = Math.min(...crossed);
       await notifyAllUsers(prisma, {
         category: 'SYSTEM',

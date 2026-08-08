@@ -34,11 +34,11 @@ export async function authenticateLocal(
   username: string,
   password: string
 ): Promise<User | null> {
-  // Trova l'utente e la sua identità locale
+  // Find the user and their local identity
   const user = await prisma.user.findFirst({
     where: {
       username,
-      isActive: true, // Solo utenti attivi possono autenticarsi
+      isActive: true, // Only active users can authenticate
     },
     include: {
       identities: {
@@ -57,7 +57,7 @@ export async function authenticateLocal(
     return null;
   }
 
-  // Verifica la password
+  // Verify the password
   const isValidPassword = await argon2.verify(
     user.identities[0].localCredential.passwordHash,
     password
@@ -83,11 +83,11 @@ export async function authenticateUser(
 ) {
   const { username, password } = input;
 
-  // Bucket separato dal rate-limit per-IP di `withRateLimit('login')` (router auth.ts):
-  // ferma il password-spray distribuito su più IP contro un singolo account. Chiave
-  // normalizzata (case-insensitive) solo per il conteggio — la lookup credenziali sotto
-  // resta invariata. Nessuna dipendenza dati fra questa policy e la strategia di auth
-  // sotto: risolte in parallelo invece che in sequenza.
+  // Bucket separate from the per-IP rate limit of `withRateLimit('login')` (router auth.ts):
+  // stops password-spray distributed across multiple IPs against a single account. Key
+  // normalized (case-insensitive) only for the count — the credential lookup below
+  // stays unchanged. No data dependency between this policy and the auth strategy
+  // below: resolved in parallel instead of in sequence.
   const usernameRateLimitKey = username.trim().toLowerCase();
   const [usernameRateLimitPolicy, authStrategyConfig] = await Promise.all([
     resolveRateLimitPolicy('loginByUsername', ctx.prisma),
@@ -95,7 +95,7 @@ export async function authenticateUser(
   ]);
 
   try {
-    // Controllato prima di toccare DB/LDAP per non sprecare quel lavoro durante uno spray.
+    // Checked before touching DB/LDAP to avoid wasting that work during a spray.
     enforceRateLimit('loginByUsername', usernameRateLimitKey, usernameRateLimitPolicy);
   } catch (error) {
     await logAudit(ctx, {
@@ -124,7 +124,7 @@ export async function authenticateUser(
         // LDAP down - return null (auth fail) unless fallback logic catches it
         return null;
       } else {
-        // NON fare fallback per errori di autorizzazione
+        // Do NOT fall back for authorization errors
         throw ldapError;
       }
     } else {
@@ -157,10 +157,10 @@ export async function authenticateUser(
         );
         authMethod = 'ldap';
       } catch (e) {
-        // Passa l'errore per gestione corretta delle eccezioni tRPC
+        // Pass the error along for correct tRPC exception handling
         handleLdapError(e);
-        // Se handleLdapError non lancia, significa che è un errore di connessione/tech
-        // e authenticatedUser resta null
+        // If handleLdapError doesn't throw, it means it's a connection/tech error
+        // and authenticatedUser stays null
       }
       break;
 
@@ -258,7 +258,7 @@ export async function authenticateUser(
     });
   }
 
-  // Blocca login se utente LDAP in attesa di approvazione admin
+  // Block login if the LDAP user is pending admin approval
   if (authenticatedUser.pendingApproval) {
     const hasSyntheticEmail = authenticatedUser.email.endsWith('@ldap.local');
 
@@ -280,7 +280,7 @@ export async function authenticateUser(
     });
   }
 
-  // Verifica email (solo LOCAL)
+  // Verify email (LOCAL only)
   const requireEmailVerification =
     (await getConfig(ctx.prisma, 'auth.requireEmailVerification', false)) ===
     'true';
@@ -309,7 +309,7 @@ export async function authenticateUser(
     });
   }
 
-  // Blocca login dei non-admin durante la modalità manutenzione attiva
+  // Block non-admin logins while maintenance mode is active
   if (authenticatedUser.role !== 'admin' && await isMaintenanceActive(ctx.prisma)) {
     await logAudit(ctx, {
       action: 'AUTH_LOGIN_FAILED',
@@ -319,12 +319,12 @@ export async function authenticateUser(
       metadata: { username: input.username, reason: 'maintenance_mode_active', strategy },
     });
 
-    // Stesso enforcement (predicato + errore) della guardia tRPC in trpc.ts — un'unica fonte
-    // di verità per non far divergere le due copie in futuro.
+    // Same enforcement (predicate + error) as the tRPC guard in trpc.ts — a single source
+    // of truth so the two copies don't diverge in the future.
     await assertNotBlockedByMaintenance(ctx.prisma, authenticatedUser.role);
   }
 
-  // Aggiorna statistiche login
+  // Update login statistics
   await ctx.prisma.user.update({
     where: { id: authenticatedUser.id },
     data: {
@@ -347,7 +347,7 @@ export async function authenticateUser(
     },
   });
 
-  // Crea token
+  // Create token
   const token = createToken({
     id: authenticatedUser.id,
     email: authenticatedUser.email,
@@ -389,15 +389,15 @@ export async function logoutAllSessions(ctx: Context) {
 
   const userId = ctx.session.user.id;
 
-  // Incrementa tokenVersion
+  // Increment tokenVersion
   await ctx.prisma.user.update({
     where: { id: userId },
     data: { tokenVersion: { increment: 1 } },
   });
 
-  // Invalida cache (import dinamico per evitare cicli se necessario, o diretto se lib/trpc safe)
-  // Qui assumiamo che lib/trpc sia importabile. Se crea ciclo, meglio spostare la cache logic.
-  // Per ora importiamo dinamicamente come faceva il router per sicurezza.
+  // Invalidate cache (dynamic import to avoid cycles if needed, or direct if lib/trpc is safe)
+  // Here we assume lib/trpc is importable. If it creates a cycle, better to move the cache logic.
+  // For now we import dynamically, as the router used to do, for safety.
   const { invalidateTokenVersionCache } = await import('../lib/trpc.js');
   invalidateTokenVersionCache(userId);
 
@@ -441,7 +441,7 @@ export async function requestPasswordReset(ctx: Context, email: string) {
     },
   });
 
-  // Se utente non esiste o non ha auth locale, rispondi con successo fake
+  // If the user doesn't exist or has no local auth, respond with a fake success
   if (!user || user.identities.length === 0) {
     await logAudit(ctx, {
       action: 'PASSWORD_RESET_REQUESTED',
@@ -456,7 +456,7 @@ export async function requestPasswordReset(ctx: Context, email: string) {
     };
   }
 
-  // Genera token
+  // Generate token
   const token = randomBytes(32).toString('hex');
   const tokenHash = createHash('sha256').update(token).digest('hex');
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
@@ -493,9 +493,9 @@ export async function requestPasswordReset(ctx: Context, email: string) {
 
     return genericResponse;
   } catch (error) {
-    // L'invio email è fallito (es. SMTP non configurato).
-    // Elimina il token orfano e logga l'errore lato server.
-    // Non esponiamo il problema all'utente per mantenere la protezione da enumeration.
+    // Email sending failed (e.g. SMTP not configured).
+    // Delete the orphaned token and log the error server-side.
+    // We don't expose the problem to the user to preserve enumeration protection.
     await ctx.prisma.userToken.delete({ where: { id: userToken.id } }).catch(e => {
       ctx.logger.warn({ err: e, tokenId: userToken.id }, 'Failed to delete orphaned password reset token');
     });
@@ -757,10 +757,10 @@ export async function confirmEmailVerification(
 ) {
   const { token } = input;
 
-  // Hash del token per lookup
+  // Hash the token for lookup
   const tokenHash = createHash('sha256').update(token).digest('hex');
 
-  // Trova token valido (non scaduto)
+  // Find a valid (non-expired) token
   const userToken = await ctx.prisma.userToken.findFirst({
     where: {
       type: 'VERIFY',
@@ -790,7 +790,7 @@ export async function confirmEmailVerification(
     });
   }
 
-  // Aggiorna emailVerifiedAt ed elimina token in transazione
+  // Update emailVerifiedAt and delete the token in a transaction
   await ctx.prisma.$transaction(async tx => {
     await tx.user.update({
       where: { id: userToken.userId },

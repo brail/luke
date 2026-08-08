@@ -23,26 +23,26 @@ const logger = pino({ level: 'info' });
  * @returns Raw tRPC middleware (use directly with `.use()` on a procedure).
  */
 export function withIdempotency() {
-  // Non t.middleware(...)-wrapped: questo middleware short-circuita ritornando
-  // una risposta cached invece di passare sempre da next(), incompatibile con
-  // il tipo MiddlewareResult più stretto che t.middleware richiede — provato
-  // empiricamente: con un tipo preciso invece di `any`, `.use()` rifiuta la
-  // funzione su tutti i router che la usano (stesso errore ovunque).
+  // Not t.middleware(...)-wrapped: this middleware short-circuits by returning
+  // a cached response instead of always going through next(), which is incompatible
+  // with the stricter MiddlewareResult type that t.middleware requires — verified
+  // empirically: with a precise type instead of `any`, `.use()` rejects the
+  // function on every router that uses it (same error everywhere).
   return async ({ ctx, next, path, type, input }: any) => {
-    // Solo per mutation (query non hanno bisogno di idempotency)
+    // Only for mutations (queries don't need idempotency)
     if (type !== 'mutation') {
       return next();
     }
 
-    // Estrai idempotency key dall'header
+    // Extract idempotency key from the header
     const idempotencyKey = ctx.req.headers['idempotency-key'] as string;
 
-    // Se non c'è idempotency key, procedi normalmente
+    // If there's no idempotency key, proceed normally
     if (!idempotencyKey) {
       return next();
     }
 
-    // Valida formato idempotency key (UUID v4)
+    // Validate the idempotency key format (UUID v4)
     const uuidRegex =
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(idempotencyKey)) {
@@ -52,18 +52,18 @@ export function withIdempotency() {
       });
     }
 
-    // Serializza input per hash (usa path + input come identificatore)
-    const method = 'POST'; // tRPC usa sempre POST per mutation
+    // Serialize input for the hash (uses path + input as the identifier)
+    const method = 'POST'; // tRPC always uses POST for mutations
     const pathStr = `/trpc/${path}`;
-    // `input` arriva dal middleware, non da `ctx`: `ctx.input` non esiste sul
-    // context tRPC e valeva sempre undefined, quindi il body hash era
-    // costantemente "{}" — due richieste con la stessa key ma payload diversi
-    // risultavano identiche e la seconda riceveva in replay la risposta della
-    // prima invece del CONFLICT previsto. Richiede che `.use(withIdempotency())`
-    // sia concatenato DOPO `.input(...)`, altrimenti l'input non è ancora parsato.
+    // `input` comes from the middleware, not from `ctx`: `ctx.input` doesn't exist on
+    // the tRPC context and was always undefined, so the body hash was
+    // constantly "{}" — two requests with the same key but different payloads
+    // ended up identical, and the second one replayed the response of the
+    // first instead of the expected CONFLICT. Requires that `.use(withIdempotency())`
+    // be chained AFTER `.input(...)`, otherwise the input isn't parsed yet.
     const body = JSON.stringify(input ?? {});
 
-    // Check se esiste già una risposta
+    // Check whether a response already exists
     const result = idempotencyStore.check(
       idempotencyKey,
       method,
@@ -72,11 +72,11 @@ export function withIdempotency() {
     );
 
     if (result.hit) {
-      // Restituisci risposta cached
+      // Return the cached response
       return result.response;
     }
 
-    // Se c'è conflitto (stessa key, body diverso), ritorna 409 Conflict
+    // If there's a conflict (same key, different body), return 409 Conflict
     if (result.conflict) {
       throw new TRPCError({
         code: 'CONFLICT',
@@ -85,11 +85,11 @@ export function withIdempotency() {
       });
     }
 
-    // Esegui la mutation originale
+    // Execute the original mutation
     const mutationResult = await next();
 
-    // Memorizza la risposta solo se è un successo
-    // Per tRPC, assumiamo che se non c'è eccezione = successo
+    // Store the response only if it succeeded
+    // For tRPC, we assume that no exception = success
     try {
       idempotencyStore.store(
         idempotencyKey,
@@ -99,7 +99,7 @@ export function withIdempotency() {
         mutationResult
       );
     } catch (error) {
-      // Log errore ma non bloccare la risposta
+      // Log the error but don't block the response
       logger.warn({ err: error }, 'Failed to store idempotency result');
     }
 

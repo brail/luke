@@ -1,6 +1,6 @@
 /**
- * Test integration per Brand Logo Upload Endpoints
- * Verifica endpoint Fastify multipart con supertest
+ * Integration tests for Brand Logo Upload Endpoints
+ * Verifies Fastify multipart endpoint with supertest
  */
 
 import multipart from '@fastify/multipart';
@@ -14,26 +14,26 @@ import brandLogoRoutes from '../src/routes/brandLogo.routes';
 import { createValidPngBuffer } from './helpers/storageTestHelper';
 import { createContextForRole } from './helpers/testContext';
 
-// Mock del storage module
+// Mock of the storage module
 vi.mock('../src/storage', () => ({
   putObject: vi.fn(),
-  // `deleteObjectByKey`, non `deleteObject`: è quello che importa
-  // `brandLogo.service.ts`. Con il nome sbagliato la factory non lo definiva, e
-  // dal secondo upload in poi il ramo di cleanup del logo precedente lanciava
-  // dentro il `setImmediate` — dove il `catch` del service se lo mangiava.
+  // `deleteObjectByKey`, not `deleteObject`: that is what
+  // `brandLogo.service.ts` imports. With the wrong name the factory did not define it, and
+  // from the second upload onward the previous-logo cleanup branch threw
+  // inside the `setImmediate` -- where the service's `catch` swallowed it.
   deleteObjectByKey: vi.fn(),
   getStorageProvider: vi.fn(),
 }));
 
-// `brandLogo.service` NON va mockato: contiene proprio le validazioni che questi
-// test verificano (tipo file, magic bytes, esistenza del brand → 404). Mockarlo
-// faceva ritornare successo sempre, rendendo le asserzioni su 400/404 impossibili
-// da soddisfare e prive di significato. Si mocka solo lo storage sottostante.
+// `brandLogo.service` must NOT be mocked: it contains exactly the validations these
+// tests verify (file type, magic bytes, brand existence -> 404). Mocking it
+// always made it return success, making the 400/404 assertions impossible
+// to satisfy and meaningless. Only the underlying storage is mocked.
 
-// Il mock dell'auth deve stare qui, non in `beforeEach` con `vi.doMock`:
-// `brandLogo.routes` è importato staticamente e cattura il riferimento reale
-// prima che un doMock possa intervenire. La route usa `requireSessionWithPermission`,
-// non `authenticateRequest` — il vecchio mock puntava alla funzione sbagliata.
+// The auth mock must be here, not in `beforeEach` with `vi.doMock`:
+// `brandLogo.routes` is imported statically and captures the real reference
+// before a doMock could intervene. The route uses `requireSessionWithPermission`,
+// not `authenticateRequest` -- the old mock pointed at the wrong function.
 vi.mock('../src/lib/auth', async importOriginal => {
   const actual = await importOriginal<typeof import('../src/lib/auth')>();
   return {
@@ -64,13 +64,13 @@ describe('Brand Logo Upload Integration', () => {
   let authToken: string;
 
   beforeEach(async () => {
-    // Il codice brand è fisso: senza troncare i dati, un `TEST_BRAND` lasciato da
-    // un altro file di test fa fallire la create e con essa l'intera suite —
-    // rendendo il risultato dipendente dall'ordine di esecuzione. Il troncamento
-    // lo fa `createContextForRole`, prima di inserire l'utente di sessione.
+    // The brand code is fixed: without truncating the data, a `TEST_BRAND` left
+    // by another test file makes the create fail and with it the whole suite --
+    // making the result depend on execution order. The truncation
+    // is done by `createContextForRole`, before inserting the session user.
     testContext = await createContextForRole();
 
-    // Crea un brand di test
+    // Create a test brand
     testBrand = await testContext.prisma.brand.create({
       data: {
         code: 'TEST_BRAND',
@@ -79,15 +79,15 @@ describe('Brand Logo Upload Integration', () => {
       },
     });
 
-    // Mock JWT token per autenticazione
+    // Mock JWT token for authentication
     authToken = 'mock-jwt-token';
 
-    // Mock delle funzioni storage
+    // Mock the storage functions
     const { putObject, deleteObjectByKey, getStorageProvider } = await import(
       '../src/storage'
     );
-    // Stub parziali: coprono solo la superficie usata dal service, quindi i cast
-    // riconoscono che non sono implementazioni complete di StoredObjectMeta /
+    // Partial stubs: they only cover the surface used by the service, so the casts
+    // acknowledge that these are not complete implementations of StoredObjectMeta /
     // IStorageProvider.
     vi.mocked(putObject).mockResolvedValue({
       id: 'mock-file-id',
@@ -104,11 +104,11 @@ describe('Brand Logo Upload Integration', () => {
       delete: vi.fn(),
     } as unknown as Awaited<ReturnType<typeof getStorageProvider>>);
 
-    // Crea app Fastify per test
+    // Create Fastify app for testing
     const fastify = (await import('fastify')).default;
     app = fastify({ logger: false });
 
-    // Registra plugin multipart
+    // Register multipart plugin
     await app.register(multipart, {
       limits: {
         fileSize: 2 * 1024 * 1024, // 2MB
@@ -116,26 +116,26 @@ describe('Brand Logo Upload Integration', () => {
       },
     });
 
-    // Nessuna registrazione di `@fastify/rate-limit` qui: il limiter sotto test è
-    // quello che `brandLogoRoutes` registra da sé (`brandLogo.routes.ts:75`). Il
-    // plugin usa un `Symbol` per registrazione, quindi due registrazioni non si
-    // deduplicano: quella che stava qui era un secondo store indipendente da 100
-    // che non entrava mai in gioco e faceva sembrare il limite più largo di
-    // quello reale.
+    // No `@fastify/rate-limit` registration here: the limiter under test is
+    // the one `brandLogoRoutes` registers itself (`brandLogo.routes.ts:75`). The
+    // plugin uses a `Symbol` for registration, so two registrations do not
+    // deduplicate: the one that used to be here was a second, independent store of 100
+    // that never came into play and made the limit look larger than
+    // the real one.
 
-    // Registra le route di upload. Import statico, non `require`: il modulo è
-    // ESM sotto vitest e `require` fallisce con "Cannot find module".
+    // Register the upload routes. Static import, not `require`: the module is
+    // ESM under vitest and `require` fails with "Cannot find module".
     await app.register(brandLogoRoutes, {
       prisma: testContext.prisma,
     });
 
-    // `app.server` (l'http.Server che supertest pilota) esiste solo dopo ready().
+    // `app.server` (the http.Server that supertest drives) only exists after ready().
     await app.ready();
   });
 
   afterEach(async () => {
-    // Solo ciò che il troncamento non copre: il server Fastify e i mock. I dati
-    // li azzera `createContextForRole` nel `beforeEach` del test successivo.
+    // Only what the truncation does not cover: the Fastify server and the mocks. The data
+    // is reset by `createContextForRole` in the `beforeEach` of the next test.
     await app.close();
     vi.clearAllMocks();
   });
@@ -207,10 +207,10 @@ describe('Brand Logo Upload Integration', () => {
     it('con più file allegati usa il primo e ignora gli altri', async () => {
       const pngBuffer = createValidPngBuffer();
 
-      // `req.file()` legge la prima parte file e si ferma: le successive non
-      // vengono mai consumate, quindi il limite `files: 1` di busboy non scatta.
-      // È la semantica voluta per un endpoint a logo singolo — il test pretendeva
-      // un rifiuto che il codice non ha mai implementato.
+      // `req.file()` reads the first file part and stops: subsequent ones are
+      // never consumed, so busboy's `files: 1` limit never kicks in.
+      // This is the intended semantics for a single-logo endpoint -- the test expected
+      // a rejection that the code never implemented.
       const response = await request(app.server)
         .post(`/upload/brand-logo/${testBrand.id}`)
         .set('Authorization', `Bearer ${authToken}`)
@@ -222,12 +222,12 @@ describe('Brand Logo Upload Integration', () => {
     });
 
     it('rifiuta un file il cui contenuto non corrisponde al tipo dichiarato', async () => {
-      // La versione precedente allegava uno stream che emetteva `error`: il
-      // client abortiva la richiesta prima di ricevere risposta e supertest
-      // falliva con ECONNRESET — misurava l'harness, non il server.
+      // The previous version attached a stream that emitted `error`: the
+      // client aborted the request before receiving a response and supertest
+      // failed with ECONNRESET -- it was measuring the harness, not the server.
       //
-      // Il contratto verificabile è la validazione dei magic bytes: byte che non
-      // sono un PNG, dichiarati come PNG, devono essere respinti con 400.
+      // The verifiable contract is magic-byte validation: bytes that are not
+      // a PNG, declared as PNG, must be rejected with 400.
       const notAnImage = Buffer.from('questo non è un PNG');
 
       await request(app.server)
@@ -249,9 +249,9 @@ describe('Brand Logo Upload Integration', () => {
         .attach('file', pngBuffer, 'temp-logo.png')
         .expect(200);
 
-      // Il contratto è cambiato: niente `tempLogoId` fornito dal client né bucket
-      // `temp-brand-logos`. Il file finisce in `brand-logos` come fileObject
-      // *pending*, e viene confermato al salvataggio del brand via `fileObjectId`.
+      // The contract has changed: no `tempLogoId` provided by the client, no
+      // `temp-brand-logos` bucket. The file ends up in `brand-logos` as a *pending*
+      // fileObject, and gets confirmed when the brand is saved via `fileObjectId`.
       expect(response.body).toHaveProperty('publicUrl');
       expect(response.body).toHaveProperty('fileObjectId');
       expect(response.body.publicUrl).toMatch(/^\/api\/uploads\/brand-logos\//);
@@ -270,8 +270,8 @@ describe('Brand Logo Upload Integration', () => {
     it('accetta l\'upload senza tempId: il campo non fa più parte del contratto', async () => {
       const pngBuffer = createValidPngBuffer();
 
-      // L'id del file lo assegna il server (`fileObjectId`), non il client: un
-      // `tempId` inviato dal chiamante non viene né richiesto né usato.
+      // The file id is assigned by the server (`fileObjectId`), not the client: a
+      // `tempId` sent by the caller is neither required nor used.
       const response = await request(app.server)
         .post('/upload/brand-logo/temp')
         .set('Authorization', `Bearer ${authToken}`)
@@ -302,23 +302,23 @@ describe('Brand Logo Upload Integration', () => {
   });
 
   /**
-   * Il rate limit si esaurisce senza toccare il database.
+   * The rate limit is exhausted without touching the database.
    *
-   * La versione precedente faceva 40 upload veri via supertest ed era flaky:
-   * `app.ready()` non mette in ascolto, quindi supertest apriva e chiudeva un
-   * listener effimero **per richiesta** — 40 cicli listen/connect/close che sotto
-   * carico finivano in ETIMEDOUT a livello di socket. Il costo non era il rate
-   * limit (il limiter è un hook `onRequest`, quindi un 429 non parsa il multipart
-   * e non tocca Postgres) ma i 30 upload riusciti, ~6 round-trip ciascuno.
+   * The previous version made 40 real uploads via supertest and was flaky:
+   * `app.ready()` does not start listening, so supertest opened and closed an
+   * ephemeral listener **per request** -- 40 listen/connect/close cycles that under
+   * load ended up in ETIMEDOUT at the socket level. The cost was not the rate
+   * limit (the limiter is an `onRequest` hook, so a 429 does not parse the multipart
+   * and does not touch Postgres) but the 30 successful uploads, ~6 round-trips each.
    *
-   * Qui si usa `app.inject()` — niente socket, stesso ciclo di vita Fastify,
-   * quindi il limiter scatta comunque — e richieste **senza body**: il limiter
-   * conta all'arrivo, poi `req.file()` lancia e l'handler risponde 400. Zero
-   * query. La URL deve restare quella vera: il limiter è agganciato via `onRoute`,
-   * quindi una URL inesistente non consumerebbe quota.
+   * Here `app.inject()` is used -- no socket, same Fastify lifecycle,
+   * so the limiter still triggers -- with requests **without a body**: the limiter
+   * counts on arrival, then `req.file()` throws and the handler responds 400. Zero
+   * queries. The URL must remain the real one: the limiter is hooked via `onRoute`,
+   * so a nonexistent URL would not consume quota.
    */
   describe('Rate limiting', () => {
-    /** POST senza body sulla rotta sotto test: consuma quota, non tocca il DB. */
+    /** POST without a body on the route under test: consumes quota, does not touch the DB. */
     const consumeQuota = (ip = '127.0.0.1') =>
       app.inject({
         method: 'POST',
@@ -330,8 +330,8 @@ describe('Brand Logo Upload Integration', () => {
     it('espone il budget residuo già alla prima richiesta', async () => {
       const res = await consumeQuota();
 
-      // 30, non i 100 di sviluppo: `test/setup.ts` imposta NODE_ENV=test, quindi
-      // `isDevelopment()` è falso in `brandLogo.routes.ts:76`.
+      // 30, not the 100 used in development: `test/setup.ts` sets NODE_ENV=test, so
+      // `isDevelopment()` is false in `brandLogo.routes.ts:76`.
       expect(res.headers['x-ratelimit-limit']).toBe('30');
       expect(res.headers['x-ratelimit-remaining']).toBe('29');
       expect(res.statusCode).toBe(400);
@@ -341,7 +341,7 @@ describe('Brand Logo Upload Integration', () => {
       const first = await consumeQuota();
       const limit = Number(first.headers['x-ratelimit-limit']);
 
-      // Le restanti fino a esaurire il budget: tutte 400, nessuna 429.
+      // The remaining ones up to exhausting the budget: all 400, none 429.
       const consumed = [first.statusCode];
       for (let i = 1; i < limit; i++) {
         consumed.push((await consumeQuota()).statusCode);
@@ -354,15 +354,15 @@ describe('Brand Logo Upload Integration', () => {
     });
 
     it('il budget cade sull’IP quando il bearer non è un JWT valido, e le due rotte lo condividono', async () => {
-      // `authToken` è la stringa 'mock-jwt-token', non un JWT: `keyGenerator`
-      // non riesce a verificarla e ricade su `req.ip`. Con un bearer vero la
-      // chiave sarebbe l'id utente — è il fallback che questo test fissa, non il
-      // comportamento normale.
+      // `authToken` is the string 'mock-jwt-token', not a JWT: `keyGenerator`
+      // fails to verify it and falls back to `req.ip`. With a real bearer the
+      // key would be the user id -- this test pins down the fallback, not the
+      // normal behavior.
       const limit = Number((await consumeQuota('10.0.0.1')).headers['x-ratelimit-limit']);
       for (let i = 1; i < limit; i++) await consumeQuota('10.0.0.1');
 
-      // Stesso scope del plugin ⇒ stesso store: è l'incapsulamento che il commento
-      // in `brandLogo.routes.ts:62` esiste per proteggere.
+      // Same plugin scope, so same store: this is the encapsulation that the comment
+      // in `brandLogo.routes.ts:62` exists to protect.
       const other = await app.inject({
         method: 'POST',
         url: '/upload/brand-logo/temp',
@@ -371,7 +371,7 @@ describe('Brand Logo Upload Integration', () => {
       });
       expect(other.statusCode).toBe(429);
 
-      // Un IP diverso ha il suo budget: arriva al 400 dell'handler, non al 429.
+      // A different IP has its own budget: it reaches the handler's 400, not the 429.
       const elsewhere = await consumeQuota('10.0.0.2');
       expect(elsewhere.statusCode).toBe(400);
     });
@@ -379,8 +379,8 @@ describe('Brand Logo Upload Integration', () => {
 
   describe('Error handling', () => {
     it('should handle service layer errors gracefully', async () => {
-      // Il service non è più mockato (contiene le validazioni sotto test): il
-      // guasto si inietta nello storage, che è il livello davvero sostituibile.
+      // The service is no longer mocked (it contains the validations under test): the
+      // failure is injected into the storage, which is the layer that is actually replaceable.
       const { putObject } = await import('../src/storage');
       vi.mocked(putObject).mockRejectedValueOnce(new Error('Storage non raggiungibile'));
 
@@ -430,12 +430,12 @@ describe('Brand Logo Upload Integration', () => {
       const pngBuffer = createValidPngBuffer();
       const longFilename = 'a'.repeat(300) + '.png';
 
-      // `sanitizeFileName` tronca a 255 caratteri preservando l'estensione — è il
-      // limite per componente dei filesystem comuni. Rifiutare sarebbe più ostile
-      // e non più sicuro: il test pretendeva un 400 che il codice non produce.
-      // La `key` restituita qui viene dallo storage mockato, quindi non è il
-      // punto di osservazione giusto per il troncamento: ciò che questo test
-      // verifica è che un nome lunghissimo non faccia fallire la richiesta.
+      // `sanitizeFileName` truncates to 255 characters while preserving the extension -- this is the
+      // per-component limit of common filesystems. Rejecting would be more hostile
+      // and no more secure: the test expected a 400 that the code does not produce.
+      // The `key` returned here comes from the mocked storage, so it is not the
+      // right observation point for the truncation: what this test
+      // verifies is that a very long name does not make the request fail.
       const response = await request(app.server)
         .post(`/upload/brand-logo/${testBrand.id}`)
         .set('Authorization', `Bearer ${authToken}`)

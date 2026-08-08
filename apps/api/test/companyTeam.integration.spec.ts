@@ -1,11 +1,11 @@
 /**
- * Invarianti di CompanyTeam.
+ * CompanyTeam invariants.
  *
- * La versione precedente di questo file testava il concetto di "main team"
- * (`isMain`, main team auto-creato per ogni function, indice parziale su un solo
- * main per function). Il commit 28b1873 ha rimosso l'intero concetto passando a
- * un modello di accesso opt-in via brand scope: quei quattro test coprivano una
- * feature che non esiste più. Riscritti sugli invarianti attuali.
+ * The previous version of this file tested the "main team" concept
+ * (`isMain`, main team auto-created for each function, partial index on a single
+ * main per function). Commit 28b1873 removed the whole concept, moving to
+ * an opt-in access model via brand scope: those four tests covered a
+ * feature that no longer exists. Rewritten against the current invariants.
  */
 
 import { randomUUID } from 'crypto';
@@ -26,7 +26,7 @@ let prisma: PrismaClient;
 let adminSession: UserSession;
 
 
-/** Crea una function e restituisce il suo id. */
+/** Creates a function and returns its id. */
 async function createFunction(): Promise<string> {
   const uid = randomUUID().substring(0, 8);
   const fn = await prisma.companyFunction.create({
@@ -36,9 +36,9 @@ async function createFunction(): Promise<string> {
 }
 
 beforeAll(async () => {
-  // `setupTestDb()` garantisce lo schema e tronca: l'ordine dei file non è
-  // alfabetico né stabile, quindi nessuna suite può assumere che un'altra
-  // abbia già creato le tabelle.
+  // `setupTestDb()` guarantees the schema and truncates: file order isn't
+  // alphabetical or stable, so no suite can assume that another suite
+  // has already created the tables.
   prisma = await setupTestDb();
 
   ({ session: adminSession } = await createTestUser('admin'));
@@ -51,7 +51,7 @@ describe('CompanyTeam invariants', () => {
 
     await caller.company.team.create({ functionId, name: 'Duplicato' });
 
-    // @@unique([functionId, name]) sullo schema: il secondo insert deve fallire.
+    // @@unique([functionId, name]) on the schema: the second insert must fail.
     await expect(
       caller.company.team.create({ functionId, name: 'Duplicato' })
     ).rejects.toThrow();
@@ -61,7 +61,7 @@ describe('CompanyTeam invariants', () => {
     const [fnA, fnB] = await Promise.all([createFunction(), createFunction()]);
     const caller = createCallerWithSession(adminSession);
 
-    // L'unicità è per (functionId, name), non globale.
+    // Uniqueness is per (functionId, name), not global.
     await caller.company.team.create({ functionId: fnA, name: 'Condiviso' });
     const second = await caller.company.team.create({ functionId: fnB, name: 'Condiviso' });
 
@@ -71,8 +71,8 @@ describe('CompanyTeam invariants', () => {
   it('delete di un team inesistente → NOT_FOUND, non un errore Prisma grezzo', async () => {
     const caller = createCallerWithSession(adminSession);
 
-    // Il router intercetta P2025 e lo traduce: senza quel catch il client
-    // riceverebbe un INTERNAL_SERVER_ERROR su una richiesta legittima.
+    // The router catches P2025 and translates it: without that catch the client
+    // would receive an INTERNAL_SERVER_ERROR on a legitimate request.
     await expect(
       caller.company.team.delete({ id: randomUUID() })
     ).rejects.toSatisfy(
@@ -115,8 +115,8 @@ describe('CompanyTeam invariants', () => {
 
     await caller.company.team.update({ id: team.id, name: team.name, brandIds: [brandB.id] });
 
-    // La semantica è "sostituisci", non "aggiungi": accumulare allargherebbe
-    // silenziosamente l'accesso ai brand a ogni update.
+    // The semantics is "replace", not "add": accumulating would silently
+    // widen brand access on every update.
     const scopes = await prisma.companyTeamBrandScope.findMany({ where: { teamId: team.id } });
     expect(scopes.map(s => s.brandId)).toEqual([brandB.id]);
   });
@@ -135,7 +135,7 @@ describe('CompanyTeam invariants', () => {
       brandIds: [brand.id],
     });
 
-    // `brandIds: undefined` significa "non toccare", non "svuota".
+    // `brandIds: undefined` means "don't touch", not "clear".
     await caller.company.team.update({ id: team.id, name: 'Rinominato' });
 
     const scopes = await prisma.companyTeamBrandScope.findMany({ where: { teamId: team.id } });

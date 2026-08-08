@@ -1,6 +1,6 @@
 /**
- * Test unitari per gli schemi Zod aggiunti al salvataggio bufferizzato del drawer riga:
- * `CollectionRowQuotationDraftSchema` e il campo `phaseChangeNote` /`quotations` su
+ * Unit tests for the Zod schemas added for the row drawer's buffered save:
+ * `CollectionRowQuotationDraftSchema` and the `phaseChangeNote`/`quotations` field on
  * `CollectionLayoutRowInputSchema` (packages/core/src/schemas/collectionLayout.ts).
  */
 
@@ -11,8 +11,8 @@ import {
   CollectionRowQuotationDraftSchema,
 } from '@luke/core';
 
-/** Campi minimi richiesti da `CollectionLayoutRowInputSchema` — non l'oggetto sotto test qui,
- * serve solo a passare la validazione degli altri campi per isolare `quotations`/`phaseChangeNote`. */
+/** Minimal fields required by `CollectionLayoutRowInputSchema` — not the object under test here,
+ * just enough to pass validation of the other fields so `quotations`/`phaseChangeNote` stay isolated. */
 const BASE_ROW = {
   groupId: 'group-1',
   gender: 'MAN',

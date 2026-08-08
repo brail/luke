@@ -38,11 +38,11 @@ export async function registerSseRoute(
       return reply.status(401).send({ error: 'Invalid or expired SSE ticket' });
     }
 
-    // SSE headers — X-Accel-Buffering disabilita buffering nginx/proxy.
-    // reply.raw.writeHead() bypassa i Fastify hooks (incluso @fastify/cors), quindi
-    // Access-Control-Allow-Origin va aggiunto manualmente. Origin validato contro la
-    // stessa allowlist (buildCorsAllowedOrigins) usata dal plugin @fastify/cors principale,
-    // non riflesso a prescindere.
+    // SSE headers — X-Accel-Buffering disables nginx/proxy buffering.
+    // reply.raw.writeHead() bypasses Fastify hooks (including @fastify/cors), so
+    // Access-Control-Allow-Origin must be added manually. Origin is validated against the
+    // same allowlist (buildCorsAllowedOrigins) used by the main @fastify/cors plugin,
+    // not reflected indiscriminately.
     const origin = request.headers.origin;
     const headers: Record<string, string> = {
       'Content-Type': 'text/event-stream',
@@ -55,12 +55,12 @@ export async function registerSseRoute(
     }
     reply.raw.writeHead(200, headers);
 
-    // Flush iniziale per confermare connessione
+    // Initial flush to confirm connection
     reply.raw.write('data: {"type":"connected"}\n\n');
 
     sseStore.subscribe(userId, reply);
 
-    // Heartbeat ogni 30s per mantenere connessione viva attraverso proxy
+    // Heartbeat every 30s to keep connection alive through proxies
     const heartbeatTimer = setInterval(() => {
       try {
         reply.raw.write('data: {"type":"heartbeat"}\n\n');
@@ -69,13 +69,13 @@ export async function registerSseRoute(
       }
     }, HEARTBEAT_INTERVAL_MS);
 
-    // Cleanup su disconnect client
+    // Cleanup on client disconnect
     reply.raw.on('close', () => {
       clearInterval(heartbeatTimer);
       sseStore.unsubscribe(userId, reply);
     });
 
-    // Tieni la connessione aperta (non chiamare reply.send())
+    // Keep the connection open (do not call reply.send())
     await new Promise<void>(resolve => {
       reply.raw.on('close', resolve);
     });

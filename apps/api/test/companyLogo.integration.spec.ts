@@ -1,15 +1,15 @@
 /**
- * Logo aziendale: la key la deriva il server, non il client.
+ * Company logo: the key is derived by the server, not the client.
  *
- * `company.profile.update` faceva `{ ...input }` dentro l'upsert, quindi
- * `logoKey` arrivava dal client e finiva nel database senza che nessuno lo
- * guardasse — per poi essere dereferenziata da `readFileBuffer` a ogni export
- * PDF. Ora si passa un `fileObjectId` e il server ne verifica proprietà, stato e
- * bucket prima di scriverne la key.
+ * `company.profile.update` used to do `{ ...input }` inside the upsert, so
+ * `logoKey` came in from the client and ended up in the database with nobody
+ * checking it — only to be dereferenced by `readFileBuffer` on every PDF
+ * export. Now a `fileObjectId` is passed and the server verifies its
+ * ownership, state, and bucket before writing the key.
  *
- * Si entra da `appRouter.createCaller(ctx).company.profile`, mai dal sotto-router
- * importato: `router({ company: companyRouter })` ricostruisce un aggregato, e il
- * gate di copertura misura le invocazioni su `appRouter`.
+ * Enter through `appRouter.createCaller(ctx).company.profile`, never through the
+ * imported sub-router: `router({ company: companyRouter })` rebuilds an
+ * aggregate, and the coverage gate measures invocations on `appRouter`.
  */
 
 import { randomUUID } from 'crypto';
@@ -23,7 +23,7 @@ import { createContextForRole } from './helpers/testContext';
 describe('company.profile.update — logo', () => {
   let ctx: any;
 
-  /** Crea un FileObject nello stato richiesto dal test. */
+  /** Creates a FileObject in the state required by the test. */
   const seedFile = (over: Partial<{ bucket: string; createdBy: string; confirmedAt: Date | null }> = {}) =>
     ctx.prisma.fileObject.create({
       data: {
@@ -41,7 +41,7 @@ describe('company.profile.update — logo', () => {
 
   const caller = () => appRouter.createCaller(ctx).company.profile;
 
-  /** Attende che il cleanup post-commit abbia rimosso la riga. */
+  /** Waits for the post-commit cleanup to have removed the row. */
   const waitForCleanup = async (fileObjectId: string) => {
     for (let i = 0; i < 50; i++) {
       const row = await ctx.prisma.fileObject.findUnique({ where: { id: fileObjectId } });
@@ -85,9 +85,9 @@ describe('company.profile.update — logo', () => {
   });
 
   it('rifiuta un file già confermato', async () => {
-    // Fissa il fatto che `confirmUpload` crea pending: se qualcuno lo
-    // "riparasse" tornando alla conferma immediata, ogni upload in modalità
-    // MinIO smetterebbe di collegarsi e questo test lo direbbe.
+    // Pins down the fact that `confirmUpload` creates pending: if someone
+    // "fixed" it by going back to immediate confirmation, every upload in
+    // MinIO mode would stop linking, and this test would say so.
     const file = await seedFile({ confirmedAt: new Date() });
 
     await expect(
@@ -96,8 +96,8 @@ describe('company.profile.update — logo', () => {
   });
 
   it('rifiuta un id inesistente invece di salvare senza logo', async () => {
-    // Il caso realistico non è un id malevolo: è il reaper che ha spazzato il
-    // pending mentre l'utente era distratto.
+    // The realistic case isn't a malicious id: it's the reaper that swept away
+    // the pending row while the user was distracted.
     await expect(
       caller().update({ ...base, fileObjectId: randomUUID() })
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
@@ -110,10 +110,10 @@ describe('company.profile.update — logo', () => {
     const profile = await caller().update({ ...base, logoKey: null });
     expect(profile.logoKey).toBeNull();
 
-    // Il cleanup gira in `setImmediate` dopo il commit. Si asserisce sulla riga
-    // `FileObject`, che `deleteObjectByKey` cancella insieme al blob: è
-    // osservabile senza mockare lo storage, e prova che sia girata la funzione
-    // vera e non uno stub.
+    // The cleanup runs in `setImmediate` after the commit. We assert on the
+    // `FileObject` row, which `deleteObjectByKey` deletes together with the blob:
+    // it's observable without mocking storage, and proves the real function ran
+    // and not a stub.
     await waitForCleanup(file.id);
     expect(await ctx.prisma.fileObject.findUnique({ where: { id: file.id } })).toBeNull();
   });
@@ -132,8 +132,8 @@ describe('company.profile.update — logo', () => {
   });
 
   it('gli altri campi fanno ancora round-trip', async () => {
-    // Sostituire `...input` con un destructure è il punto in cui si perde un
-    // campo senza accorgersene.
+    // Replacing `...input` with a destructure is the point where a field gets
+    // lost without anyone noticing.
     const profile = await caller().update({
       legalName: 'Acme SpA',
       displayName: 'Acme',
@@ -150,8 +150,8 @@ describe('company.profile.update — logo', () => {
   });
 
   it('una storage key esplicita non è più esprimibile', async () => {
-    // Cast deliberato: lo schema non ammette più una stringa, e il test serve a
-    // fissare che il rifiuto avvenga a runtime e non solo in compilazione.
+    // Deliberate cast: the schema no longer accepts a plain string, and the test
+    // pins down that the rejection happens at runtime and not just at compile time.
     await expect(
       caller().update({ ...base, logoKey: '../brand-logos/x.png' } as never)
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });

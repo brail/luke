@@ -1,7 +1,7 @@
 /**
- * Router tRPC per Pricing: gestione parametri e calcolo prezzi
+ * tRPC router for Pricing: parameter management and price calculation
  *
- * Espone:
+ * Exposes:
  *  - pricing.parameterSets.list / create / update / remove / setDefault / copyFromPreviousSeason
  *  - pricing.calculate
  */

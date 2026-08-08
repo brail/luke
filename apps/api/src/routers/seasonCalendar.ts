@@ -136,9 +136,9 @@ export const seasonCalendarRouter = router({
           select: { brandId: true },
         });
         if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
-        // Fuori dalla transaction di proposito: le membership non sono scritte da
-        // qui, e leggerle sul client pooled è ciò che rende utilizzabile la
-        // cache per-richiesta dei brand accessibili.
+        // Outside the transaction on purpose: memberships aren't written from
+        // here, and reading them on the pooled client is what makes the
+        // per-request cache of accessible brands usable.
         await assertBrandAccess(ctx, calendar.brandId);
         return updateCalendarStatus(input.calendarId, input.status, txClient);
       });

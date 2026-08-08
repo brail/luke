@@ -1,33 +1,32 @@
 /**
- * Brand scope: chi può toccare quale brand.
+ * Brand scope: who can touch which brand.
  *
- * `requirePermission` risponde a "questo ruolo può leggere i prezzi?". Non
- * risponde a "questo utente può leggere i prezzi **di questo brand**?". Le due
- * domande sono state confuse in più router, e questo modulo è l'unico posto in
- * cui la seconda ha una risposta.
+ * `requirePermission` answers "can this role read prices?". It does not
+ * answer "can this user read prices **for this brand**?". The two
+ * questions have been conflated in several routers, and this module is the
+ * only place where the second one gets an answer.
  *
- * ## Perché qui e non altrove
+ * ## Why here and not elsewhere
  *
- * Non in `collectionLayout.service.ts`: quel modulo riceve un `prisma` nudo di
- * proposito, perché è invocato con il client di transazione da dentro
- * `$transaction`, e da altri service dove "chi è l'utente" non è in scope. I
- * guard hanno bisogno della sessione.
+ * Not in `collectionLayout.service.ts`: that module deliberately receives a
+ * bare `prisma`, because it's invoked with the transaction client from inside
+ * `$transaction`, and from other services where "who is the user" isn't in
+ * scope. The guards need the session.
  *
- * Non in `context.service.ts`: quello risolve brand e stagione correnti, ed è
- * un'altra responsabilità. Continua a ri-esportare `assertBrandAccess` per i
- * router che già la importavano da lì.
+ * Not in `context.service.ts`: that resolves the current brand and season,
+ * which is a different responsibility. It keeps re-exporting `assertBrandAccess`
+ * for routers that already imported it from there.
  *
- * ## Una sola implementazione
+ * ## A single implementation
  *
- * Ne esistevano due omonime con firme diverse: `(ctx, brandId)` e
- * `(userId, brandId, prisma, userRole?)`. La seconda aveva `userRole`
- * **opzionale** e tutti e 15 i suoi chiamanti lo omettevano — senza quel
- * parametro `getUserAllowedBrandIds` non prende mai l'early return per gli
- * admin, quindi un admin che non appartiene ad alcun team riceveva `[]` e
- * finiva FORBIDDEN su mezzo calendario stagionale. La toppa era un
- * `hasPermission({ role }, '*:*')` scritto a mano nell'unico punto in cui
- * qualcuno se n'era accorto. Con una firma sola il problema non è più
- * esprimibile.
+ * There used to be two identically-named ones with different signatures:
+ * `(ctx, brandId)` and `(userId, brandId, prisma, userRole?)`. The second had
+ * `userRole` as **optional** and all 15 of its callers omitted it — without
+ * that parameter `getUserAllowedBrandIds` never takes the early return for
+ * admins, so an admin who didn't belong to any team got `[]` back and ended up
+ * FORBIDDEN on half the season calendar. The patch was a hand-written
+ * `hasPermission({ role }, '*:*')` in the one place someone had noticed. With a
+ * single signature the problem can no longer be expressed.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -39,30 +38,30 @@ import { getUserAllowedBrandIds } from './context.service';
 import type { PrismaClient } from '@prisma/client';
 
 /**
- * Il minimo che serve a un guard.
+ * The minimum a guard needs.
  *
- * Strutturale e non `Context` perché le rotte Fastify non-tRPC
- * (`seasonCalendarExport.routes.ts`) hanno prisma e sessione ma non un context
- * tRPC, e devono poter usare gli stessi guard.
+ * Structural and not `Context` because non-tRPC Fastify routes
+ * (`seasonCalendarExport.routes.ts`) have prisma and session but no tRPC
+ * context, and must be able to use the same guards.
  */
 export interface BrandScopeCtx {
   prisma: PrismaClient;
   session: { user: { id: string; role: string } } | null;
-  /** Vedi `allowedBrandIds`. Presente su `Context`, opzionale altrove. */
+  /** See `allowedBrandIds`. Present on `Context`, optional elsewhere. */
   _allowedBrandIdsPromise?: Promise<string[] | null>;
 }
 
 /**
- * I brand accessibili all'utente della richiesta, risolti una volta sola.
+ * The brands accessible to the requesting user, resolved once.
  *
- * Memoizza la **promise**, non il valore: `seasonCalendar.listEvents` e
- * `copyFromSeason` lanciano più guard in parallelo con `Promise.all`, e con una
- * cache sul valore ognuno partirebbe prima che il primo abbia finito,
- * mancandola tutti. Risultato: una `companyTeamMembership.findMany` per
- * richiesta invece di una per guard, e zero per gli admin.
+ * Memoizes the **promise**, not the value: `seasonCalendar.listEvents` and
+ * `copyFromSeason` fire multiple guards in parallel with `Promise.all`, and
+ * with a value cache each one would start before the first had finished,
+ * missing it every time. Result: one `companyTeamMembership.findMany` per
+ * request instead of one per guard, and zero for admins.
  *
- * Se la query rigetta, ogni `await` successivo della stessa richiesta eredita il
- * rigetto. È voluto — la richiesta deve fallire, non ritentare.
+ * If the query rejects, every subsequent `await` in the same request inherits
+ * the rejection. That's intentional — the request must fail, not retry.
  */
 async function allowedBrandIds(ctx: BrandScopeCtx): Promise<string[] | null> {
   if (!ctx.session) {
@@ -72,9 +71,9 @@ async function allowedBrandIds(ctx: BrandScopeCtx): Promise<string[] | null> {
     });
   }
 
-  // Attenzione a `{ ...ctx, prisma: tx }`: lo spread copia lo slot per valore, e
-  // il `??=` scriverebbe sulla copia. Se serve un client di transazione, passalo
-  // come parametro esplicito.
+  // Watch out with `{ ...ctx, prisma: tx }`: the spread copies the slot by value, and
+  // the `??=` would write to the copy. If a transaction client is needed, pass it
+  // as an explicit parameter.
   ctx._allowedBrandIdsPromise ??= getUserAllowedBrandIds(
     ctx.session.user.id,
     ctx.prisma,
@@ -85,14 +84,14 @@ async function allowedBrandIds(ctx: BrandScopeCtx): Promise<string[] | null> {
 }
 
 /**
- * Lancia FORBIDDEN se l'utente non ha accesso al brand.
+ * Throws FORBIDDEN if the user doesn't have access to the brand.
  *
- * L'accesso è **opt-in stretto**: `null` (nessun vincolo) è riservato agli
- * admin, per tutti gli altri è esattamente l'unione dei `brandScopes` dei team
- * attivi. Nessun team significa nessun brand, non "tutti".
+ * Access is **strict opt-in**: `null` (no restriction) is reserved for
+ * admins; for everyone else it's exactly the union of the `brandScopes` of
+ * active teams. No team means no brand, not "all of them".
  *
- * @param brandId - Per le risorse identificate da un altro id (un layout, una
- *   riga) passa il `brandId` risolto dal record, mai un campo di input.
+ * @param brandId - For resources identified by a different id (a layout, a
+ *   row) pass the `brandId` resolved from the record, never an input field.
  */
 export async function assertBrandAccess(
   ctx: BrandScopeCtx,
@@ -109,13 +108,13 @@ export async function assertBrandAccess(
 }
 
 /**
- * Come `assertBrandAccess`, su più brand.
+ * Like `assertBrandAccess`, over multiple brands.
  *
- * Serve alle procedure che copiano fra brand: `collectionLayout.copyFromSeason`
- * e `seasonCalendar.cloneFromBrandSeason` prendono sorgente e destinazione, e
- * **servono entrambi** i controlli. Solo sulla sorgente permette di scrivere in
- * un brand che non è tuo; solo sulla destinazione è esfiltrazione — leggi la
- * collezione di un brand altrui clonandola in uno tuo.
+ * Used by procedures that copy between brands: `collectionLayout.copyFromSeason`
+ * and `seasonCalendar.cloneFromBrandSeason` take a source and a destination, and
+ * **both** checks are needed. Only checking the source lets you write into a
+ * brand that isn't yours; only checking the destination is exfiltration — you
+ * read another brand's collection by cloning it into your own.
  */
 export async function assertBrandAccessAll(
   ctx: BrandScopeCtx,
@@ -134,13 +133,12 @@ export async function assertBrandAccessAll(
 }
 
 /**
- * Restringe una lista di brand a quelli accessibili. Per gli admin la ritorna
- * intatta.
+ * Restricts a list of brands to the accessible ones. Returns it intact for
+ * admins.
  *
- * Diversa da `assertBrandAccessAll`: qui un brand non accessibile viene
- * silenziosamente escluso invece di far fallire la richiesta. È il
- * comportamento giusto per una vista filtrabile (il calendario), non per una
- * mutation.
+ * Different from `assertBrandAccessAll`: here an inaccessible brand is
+ * silently excluded instead of making the request fail. That's the right
+ * behavior for a filterable view (the calendar), not for a mutation.
  */
 export async function filterAllowedBrandIds(
   ctx: BrandScopeCtx,
@@ -151,17 +149,17 @@ export async function filterAllowedBrandIds(
   return requestedBrandIds.filter(id => allowed.includes(id));
 }
 
-// ─── Resolver per risorsa ─────────────────────────────────────────────────────
+// ─── Per-resource resolvers ─────────────────────────────────────────────────────
 //
-// Ognuno risolve il `brandId` a partire dall'id della risorsa, verifica
-// l'accesso e restituisce il record. Lanciano NOT_FOUND prima di FORBIDDEN: un
-// id inesistente non è un problema di permessi.
+// Each one resolves the `brandId` starting from the resource's id, verifies
+// access, and returns the record. They throw NOT_FOUND before FORBIDDEN: a
+// nonexistent id isn't a permission problem.
 //
-// Catene: layout → `brandId` (0 hop) · gruppo e riga → `collectionLayout.brandId`
-// (1 hop, `collectionLayoutId` è denormalizzato sulla riga) · quotazione →
+// Chains: layout → `brandId` (0 hop) · group and row → `collectionLayout.brandId`
+// (1 hop, `collectionLayoutId` is denormalized on the row) · quotation →
 // `row.collectionLayout.brandId` (2 hop).
 
-/** Layout, per `collectionLayoutId`. */
+/** Layout, by `collectionLayoutId`. */
 export async function resolveLayoutBrandAccess(
   ctx: BrandScopeCtx,
   collectionLayoutId: string
@@ -178,7 +176,7 @@ export async function resolveLayoutBrandAccess(
   return layout;
 }
 
-/** Gruppo, per `groupId`. */
+/** Group, by `groupId`. */
 export async function resolveGroupBrandAccess(
   ctx: BrandScopeCtx,
   groupId: string
@@ -199,7 +197,7 @@ export async function resolveGroupBrandAccess(
   return group;
 }
 
-/** Riga, per `rowId`. */
+/** Row, by `rowId`. */
 export async function resolveRowBrandAccess(ctx: BrandScopeCtx, rowId: string) {
   const row = await ctx.prisma.collectionLayoutRow.findUnique({
     where: { id: rowId },
@@ -218,7 +216,7 @@ export async function resolveRowBrandAccess(ctx: BrandScopeCtx, rowId: string) {
   return row;
 }
 
-/** Quotazione, per `quotationId`. */
+/** Quotation, by `quotationId`. */
 export async function resolveQuotationBrandAccess(
   ctx: BrandScopeCtx,
   quotationId: string
@@ -243,11 +241,11 @@ export async function resolveQuotationBrandAccess(
 }
 
 /**
- * Righe multiple, per `rowIds`. Pretende che appartengano tutte allo stesso
- * layout — è il presupposto di `bulkAssignRowsPlanningGroup`, che lo documenta
- * ma non lo verificava.
+ * Multiple rows, by `rowIds`. Requires that they all belong to the same
+ * layout — that's the assumption `bulkAssignRowsPlanningGroup` documents but
+ * didn't verify.
  *
- * @returns L'id del layout comune.
+ * @returns The shared layout's id.
  */
 export async function resolveRowsBrandAccess(
   ctx: BrandScopeCtx,
@@ -280,7 +278,7 @@ export async function resolveRowsBrandAccess(
   return rows[0].collectionLayoutId;
 }
 
-/** Revisione, per `revisionId`. */
+/** Revision, by `revisionId`. */
 export async function resolveRevisionBrandAccess(
   ctx: BrandScopeCtx,
   revisionId: string
@@ -302,11 +300,11 @@ export async function resolveRevisionBrandAccess(
 }
 
 /**
- * Riga di piano merchandising, per `rowId`.
+ * Merchandising plan row, by `rowId`.
  *
- * Catena distinta da quella del collection layout: `MerchandisingPlanRow.planId`
- * → `MerchandisingPlan.brandId`. Gli id sono uuid indistinguibili a occhio, e i
- * due `rowId` vivono in router diversi.
+ * A chain distinct from the collection layout's: `MerchandisingPlanRow.planId`
+ * → `MerchandisingPlan.brandId`. The ids are uuids, indistinguishable by eye,
+ * and the two `rowId`s live in different routers.
  */
 export async function resolveMerchPlanRowBrandAccess(
   ctx: BrandScopeCtx,
@@ -324,7 +322,7 @@ export async function resolveMerchPlanRowBrandAccess(
   return row;
 }
 
-/** Planning group, per `planningGroupId`. */
+/** Planning group, by `planningGroupId`. */
 export async function resolvePlanningGroupBrandAccess(
   ctx: BrandScopeCtx,
   planningGroupId: string

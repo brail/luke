@@ -1,7 +1,7 @@
 /**
- * Test unitari per gli helper generici di `retentionSweep.ts` (paging con tetto,
- * chunking per il delete). Puri: nessuna dipendenza da Prisma o da un modello
- * specifico, il chiamante fornisce le funzioni di query/delete.
+ * Unit tests for the generic helpers of `retentionSweep.ts` (paging with a cap,
+ * chunking for the delete). Pure: no dependency on Prisma or on a specific
+ * model, the caller provides the query/delete functions.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -19,7 +19,7 @@ describe('collectIdsOlderThan', () => {
   });
 
   it('pagina finché il risultato non è vuoto, senza superare il cap', async () => {
-    // 3 pagine da 2 elementi con pageSize=2, poi una pagina vuota.
+    // 3 pages of 2 elements with pageSize=2, then one empty page.
     const pages = [
       ['a', 'b'],
       ['c', 'd'],
@@ -33,14 +33,14 @@ describe('collectIdsOlderThan', () => {
     const ids = await collectIdsOlderThan(findPage, 100, 2);
 
     expect(ids).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
-    // 3 pagine piene + 1 pagina vuota per accorgersi che è finita.
+    // 3 full pages + 1 empty page to notice it's done.
     expect(findPage).toHaveBeenCalledTimes(4);
   });
 
   it('si ferma non appena una pagina torna più corta della take richiesta, senza un giro a vuoto in più', async () => {
     const findPage = vi.fn(async (skip: number) => {
       if (skip > 0) throw new Error('non dovrebbe pagare un secondo giro');
-      // Pagina parziale: 1 elemento su una take di 10 → segnale di fine dati.
+      // Partial page: 1 element on a take of 10 → end-of-data signal.
       return [{ id: 'only-one' }];
     });
 
@@ -54,14 +54,14 @@ describe('collectIdsOlderThan', () => {
     const requestedTakes: number[] = [];
     const findPage = vi.fn(async (skip: number, take: number) => {
       requestedTakes.push(take);
-      // Pagine sempre piene: senza il clamp sul cap, andrebbe avanti oltre 5.
+      // Always-full pages: without the clamp on the cap, it would go beyond 5.
       return Array.from({ length: take }, (_, i) => ({ id: `${skip + i}` }));
     });
 
     const ids = await collectIdsOlderThan(findPage, 5, 3);
 
     expect(ids).toHaveLength(5);
-    // Ultima pagina richiesta: solo i 2 mancanti per arrivare al cap di 5, non 3.
+    // Last page requested: only the 2 missing to reach the cap of 5, not 3.
     expect(requestedTakes).toEqual([3, 2]);
   });
 });
@@ -91,13 +91,13 @@ describe('deleteIdsInBatches', () => {
       ids.slice(10, 20),
       ids.slice(20, 25),
     ]);
-    // Nessun id ripetuto o mancante fra i chunk (bug plausibile: off-by-one su `i += batchSize`).
+    // No id repeated or missing across chunks (plausible bug: off-by-one on `i += batchSize`).
     expect(seenChunks.flat()).toEqual(ids);
     expect(deleted).toBe(25);
   });
 
   it('somma i conteggi restituiti da deleteMany, anche se diversi dalla dimensione del chunk richiesto', async () => {
-    // Simula righe già cancellate da un tick precedente: deleteMany conta meno di quanti id richiesti.
+    // Simulates rows already deleted by a previous tick: deleteMany counts fewer than the ids requested.
     const deleteMany = vi.fn(async (chunk: string[]) => Math.max(0, chunk.length - 1));
 
     const deleted = await deleteIdsInBatches(deleteMany, ['a', 'b', 'c'], 2);

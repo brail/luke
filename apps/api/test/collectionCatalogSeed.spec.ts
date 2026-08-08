@@ -1,14 +1,13 @@
 /**
- * Invarianti del seed del catalogo `revisionType` (`prisma/seeds/collectionCatalog.ts`).
+ * Invariants of the `revisionType` catalog seed (`prisma/seeds/collectionCatalog.ts`).
  *
- * Il catalogo contiene solo i tipi che l'utente sceglie a mano: le revisioni automatiche
- * stampano la propria etichetta senza passare da qui, quindi non c'è nessun valore che debba
- * esistere a DB perché qualcosa funzioni. Restano due proprietà del seed che nessun tipo
- * garantisce: che ogni voce rispetti il contratto del catalogo, e che non ce ne siano due
- * uguali.
+ * The catalog only contains the types the user picks by hand: automatic revisions print
+ * their own label without going through this, so there's no value that needs to exist in
+ * the DB for anything to work. Two properties of the seed remain that no type guarantees:
+ * that every entry respects the catalog contract, and that there are no duplicates.
  *
- * Prisma è mockato col solo `collectionCatalogItem.upsert` che il seed tocca: l'oggetto del
- * test è *cosa* viene seminato, non che Prisma scriva.
+ * Prisma is mocked with only the `collectionCatalogItem.upsert` that the seed touches: the
+ * object of the test is *what* gets seeded, not that Prisma writes.
  */
 
 import { describe, it, expect, beforeAll, vi } from 'vitest';
@@ -30,7 +29,7 @@ type SeededItem = {
 let seeded: SeededItem[];
 
 beforeAll(async () => {
-  // Il parametro è tipizzato per poter leggere `create` dalle chiamate registrate.
+  // The parameter is typed so we can read `create` from the recorded calls.
   const upsert = vi.fn(async (_args: { create: SeededItem }) => ({}));
   await seedCollectionCatalog({ collectionCatalogItem: { upsert } } as unknown as PrismaClient);
 
@@ -43,8 +42,8 @@ describe('seedCollectionCatalog — catalogo revisionType', () => {
   });
 
   it('ogni voce seminata rispetta il contratto CollectionCatalogItemInputSchema', () => {
-    // Copre l'enum delle categorie ISO e i limiti di lunghezza: una categoria scritta male nel
-    // seed fallisce qui invece che a runtime, quando il router serve il catalogo.
+    // Covers the ISO categories enum and the length limits: a mistyped category in the seed
+    // fails here instead of at runtime, when the router serves the catalog.
     for (const item of seeded) {
       const parsed = CollectionCatalogItemInputSchema.safeParse(item);
       expect(parsed.success, `voce non valida: ${item.value} — ${parsed.error?.message}`).toBe(true);
@@ -52,8 +51,8 @@ describe('seedCollectionCatalog — catalogo revisionType', () => {
   });
 
   it('non semina due voci con lo stesso value', () => {
-    // La chiave dell'upsert è (type, value): un duplicato non fallirebbe, sovrascriverebbe
-    // in silenzio la voce precedente.
+    // The upsert key is (type, value): a duplicate wouldn't fail, it would silently overwrite
+    // the previous entry.
     const values = seeded.map(i => `${i.type}:${i.value}`);
     expect(new Set(values).size).toBe(values.length);
   });

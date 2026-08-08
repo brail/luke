@@ -25,7 +25,7 @@ export function buildCorsAllowedOrigins(
   env: 'development' | 'production' | 'test',
   appConfig?: { security?: { cors?: { allowedOrigins?: string[] } } }
 ): CorsConfig {
-  // Priorità 1: AppConfig
+  // Priority 1: AppConfig
   if (appConfig?.security?.cors?.allowedOrigins?.length) {
     return {
       source: 'appConfig',
@@ -33,7 +33,7 @@ export function buildCorsAllowedOrigins(
     };
   }
 
-  // Priorità 2: ENV
+  // Priority 2: ENV
   const envCsv = process.env.LUKE_CORS_ALLOWED_ORIGINS?.trim();
   if (envCsv) {
     const origins = envCsv
@@ -48,7 +48,7 @@ export function buildCorsAllowedOrigins(
     }
   }
 
-  // Priorità 3: Default
+  // Priority 3: Default
   if (env === 'development' || env === 'test') {
     return {
       source: 'default-dev',

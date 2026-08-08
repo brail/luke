@@ -1,15 +1,15 @@
 /**
- * `collectionLayoutRevision.create` produce solo revisioni manuali, per costruzione.
+ * `collectionLayoutRevision.create` produces only manual revisions, by construction.
  *
- * Prima l'input accettava `cause` e `milestoneId`, e un guard nel router doveva rifiutare le
- * combinazioni riservate al sistema — controllando anche il *nome* del tipo di revisione, perché
- * `cause` aveva default MANUAL e da sola non bastava. Ora quei campi non sono nello schema di
- * input: il router scrive sempre `cause: 'MANUAL'`, e non c'è più niente da rifiutare. Questi test
- * fissano la proprietà che ha sostituito il guard — nessun input riesce a farsi creare una
- * revisione automatica da questo endpoint.
+ * The input used to accept `cause` and `milestoneId`, and a guard in the router had to reject
+ * the combinations reserved for the system — also checking the *name* of the revision type,
+ * because `cause` defaulted to MANUAL and that alone wasn't enough. Now those fields aren't in
+ * the input schema: the router always writes `cause: 'MANUAL'`, and there's nothing left to
+ * reject. These tests pin down the property that replaced the guard — no input can get an
+ * automatic revision created through this endpoint.
  *
- * Tier integration: il percorso passa da `resolveLayoutBrandAccess`, che legge il layout dal
- * database.
+ * Integration tier: the path goes through `resolveLayoutBrandAccess`, which reads the layout
+ * from the database.
  */
 
 import { randomUUID } from 'crypto';
@@ -61,8 +61,8 @@ describe('collectionLayoutRevision.create', () => {
   });
 
   it('ignora cause e milestoneId anche se il client li manda lo stesso', async () => {
-    // Il cast è il punto del test: TypeScript già impedisce di passare quei campi, qui si
-    // verifica che nemmeno un client non tipizzato (HTTP diretto) riesca a forzarli.
+    // The cast is the point of the test: TypeScript already prevents passing those fields, here
+    // we verify that not even an untyped client (direct HTTP) can force them through.
     const forged = {
       collectionLayoutId: layoutId,
       revisionTypeValue: 'REVISIONE_COSTRUTTIVA',
@@ -77,9 +77,9 @@ describe('collectionLayoutRevision.create', () => {
   });
 
   it('accetta un tipo di revisione che non esiste a catalogo', async () => {
-    // Nessun FK, nessuna validazione contro il catalogo: le pagine stampano la stringa così
-    // com'è. È la proprietà su cui si appoggiano le revisioni automatiche, che non hanno (e non
-    // devono avere) una voce seminata.
+    // No FK, no validation against the catalog: the pages print the string as-is. This is the
+    // property that automatic revisions rely on, since they don't have (and shouldn't have) a
+    // seeded entry.
     const revision = await asAdmin().collectionLayoutRevision.create({
       collectionLayoutId: layoutId,
       revisionTypeValue: 'TIPO_MAI_SEMINATO',

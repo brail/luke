@@ -146,15 +146,15 @@ export function isRedactedValue(v: unknown): boolean {
 }
 
 /**
- * Redazione ricorsiva dei metadati: whitelist prima, blacklist poi.
+ * Recursive metadata redaction: whitelist first, blacklist second.
  *
- * Esportata per i test. `auditlog.redaction.spec.ts` ne teneva una copia
- * incollata, che era già driftata in modo invertito — controllava la blacklist
- * per prima e aveva 24 chiavi al posto di 79 — quindi l'intera suite di
- * redazione asseriva un comportamento che la produzione non ha.
+ * Exported for tests. `auditlog.redaction.spec.ts` used to keep a pasted-in
+ * copy, which had already drifted in an inverted way — it checked the blacklist
+ * first and had 24 keys instead of 79 — so the entire redaction suite was
+ * asserting a behaviour production doesn't have.
  */
 export function sanitizeMetadata(obj: unknown, depth = 0): unknown {
-  // Limite ricorsione (DoS protection)
+  // Recursion limit (DoS protection)
   if (depth > 5) return '[REDACTED:MAX_DEPTH]';
 
   if (Array.isArray(obj)) {
@@ -164,13 +164,13 @@ export function sanitizeMetadata(obj: unknown, depth = 0): unknown {
   if (obj && typeof obj === 'object') {
     const sanitized: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj)) {
-      // Prima controlla whitelist, poi blacklist
+      // Check whitelist first, then blacklist
       if (SAFE_KEYS.has(key)) {
         sanitized[key] = sanitizeMetadata(value, depth + 1);
       } else if (/password|token|secret|key|auth|credential|bind/i.test(key)) {
         sanitized[key] = '***REDACTED***';
       } else {
-        // Default: redatta chiavi non whitelisted
+        // Default: redact non-whitelisted keys
         if (typeof value === 'string') {
           sanitized[key] = '[REDACTED]';
         } else if (Array.isArray(value)) {
@@ -203,12 +203,12 @@ export async function logAudit(
   params: AuditParams
 ): Promise<void> {
   try {
-    // Sanitizza i metadati per rimuovere campi sensibili
+    // Sanitize metadata to remove sensitive fields
     const sanitizedMetadata = params.metadata
       ? sanitizeMetadata(params.metadata)
       : undefined;
 
-    // Crea record AuditLog con nuovo schema
+    // Create AuditLog record with the new schema
     await ctx.prisma.auditLog.create({
       data: {
         actorId: ctx.session?.user?.id || null,
@@ -222,7 +222,7 @@ export async function logAudit(
       },
     });
 
-    // Log con Pino per correlazione
+    // Log with Pino for correlation
     ctx.req.log.info({
       traceId: ctx.traceId,
       action: params.action,
@@ -243,8 +243,8 @@ export async function logAudit(
   }
 }
 
-// Helper specifici rimossi - tutto centralizzato in logAudit() per DRY
-// Usa direttamente logAudit() con i nuovi parametri standardizzati
+// Entity-specific helpers removed - everything centralized in logAudit() for DRY
+// Use logAudit() directly with the new standardized parameters
 
 /** Translates audit log page/export filters into a Prisma where clause — shared by `auditLog.list` and the `/maintenance/audit-log/export` CSV route. */
 export function buildAuditLogWhere(filters: AuditLogFilters): Prisma.AuditLogWhereInput {
@@ -264,7 +264,7 @@ export function buildAuditLogWhere(filters: AuditLogFilters): Prisma.AuditLogWhe
   };
 }
 
-/** "Nome Cognome" (falling back to username) for an audit log actor — null when the actor itself is null (system action, or the user was hard-deleted). */
+/** "First Last" (falling back to username) for an audit log actor — null when the actor itself is null (system action, or the user was hard-deleted). */
 export function auditActorName(actor: { firstName: string; lastName: string; username: string } | null): string | null {
   return actor ? fullName(actor) : null;
 }

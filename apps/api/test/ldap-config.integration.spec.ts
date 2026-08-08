@@ -13,8 +13,8 @@ describe('LDAP Config Management', () => {
   });
 
   beforeEach(async () => {
-    // Il prefisso è `auth.`, non `auth.ldap.`: quello stretto lasciava dietro
-    // `auth.strategy`, e il test sul default passava solo se girava per primo.
+    // The prefix is `auth.`, not `auth.ldap.`: the narrower one left
+    // `auth.strategy` behind, and the default test only passed if it ran first.
     await prisma.appConfig.deleteMany({ where: { key: { startsWith: 'auth.' } } });
   });
 
@@ -36,8 +36,8 @@ describe('LDAP Config Management', () => {
   });
 
   it('restituisce configurazione parziale quando esistono solo alcune configurazioni', async () => {
-    // `createMany`, non `upsert`: il `beforeEach` ha già ripulito il prefisso,
-    // quindi non c'è nulla da aggiornare.
+    // `createMany`, not `upsert`: the `beforeEach` has already cleared the prefix,
+    // so there's nothing to update.
     await prisma.appConfig.createMany({
       data: [
         { key: 'auth.ldap.enabled', value: 'true', isEncrypted: false },
@@ -51,13 +51,13 @@ describe('LDAP Config Management', () => {
     expect(config.enabled).toBe(true);
     expect(config.url).toBe('ldap://example.com');
     expect(config.strategy).toBe('ldap-first');
-    expect(config.bindDN).toBe(''); // Valore di default
-    expect(config.bindPassword).toBe(''); // Valore di default
-    expect(config.searchBase).toBe(''); // Valore di default
-    expect(config.searchFilter).toBe(''); // Valore di default
-    expect(config.groupSearchBase).toBe(''); // Valore di default
-    expect(config.groupSearchFilter).toBe(''); // Valore di default
-    expect(config.roleMapping).toEqual({}); // Valore di default
+    expect(config.bindDN).toBe(''); // Default value
+    expect(config.bindPassword).toBe(''); // Default value
+    expect(config.searchBase).toBe(''); // Default value
+    expect(config.searchFilter).toBe(''); // Default value
+    expect(config.groupSearchBase).toBe(''); // Default value
+    expect(config.groupSearchFilter).toBe(''); // Default value
+    expect(config.roleMapping).toEqual({}); // Default value
   });
 
   it('gestisce correttamente configurazioni non cifrate', async () => {
@@ -78,6 +78,6 @@ describe('LDAP Config Management', () => {
     expect(config.enabled).toBe(true);
     expect(config.bindDN).toBe('cn=admin,dc=example,dc=com');
     expect(config.bindPassword).toBe('secret123');
-    expect(config.url).toBe(''); // Valore di default
+    expect(config.url).toBe(''); // Default value
   });
 });

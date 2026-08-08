@@ -1,6 +1,6 @@
 /**
- * Pool locale di curiosità in italiano per il daily greeting.
- * Contenuto statico, nessuna fonte esterna: usato quando la scelta random cade su "fact".
+ * Local pool of Italian-language trivia facts for the daily greeting.
+ * Static content, no external source: used when the random pick lands on "fact".
  */
 
 import { pickRandom } from './random';

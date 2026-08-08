@@ -77,15 +77,15 @@ export async function buildPortafoglioXlsx(
 
   const columns = Object.keys(rows[0]!);
 
-  // Larghezze colonne — va impostato PRIMA di aggiungere righe in streaming
+  // Column widths — must be set BEFORE adding rows in streaming
   sheet.columns = columns.map(key => ({ key, width: 18 }));
 
-  // Riga intestazione
+  // Header row
   const headerRow = sheet.addRow(columns);
   applyStreamingHeaderStyle(headerRow, 'report');
   await (headerRow as ExcelJS.Row & { commit(): Promise<void> }).commit();
 
-  // Righe dati — commit immediato = memoria liberata dopo ogni riga
+  // Data rows — immediate commit = memory freed after each row
   for (const row of rows) {
     const values = columns.map(col => {
       const val = row[col];

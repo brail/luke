@@ -1,9 +1,9 @@
 /**
- * Setup file del solo progetto integration: attiva il recorder delle procedure.
+ * Setup file for the integration project only: activates the procedure recorder.
  *
- * Separato da `test/setup.ts` perché quello è condiviso col progetto unit, dove
- * nessuna spec invoca `appRouter` e importarlo aggiungerebbe il module graph
- * dell'app a suite che non ne hanno bisogno.
+ * Separate from `test/setup.ts` because that one is shared with the unit
+ * project, where no spec invokes `appRouter` and importing it would add the
+ * app's module graph to suites that don't need it.
  */
 
 import { installProcedureRecorder } from './helpers/procedureUsage';

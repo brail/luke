@@ -27,7 +27,7 @@ import type {
 } from '@prisma/client';
 
 // ─────────────────────────────────────────────────────────────────
-// Tipo di ritorno arricchito
+// Enriched return type
 // ─────────────────────────────────────────────────────────────────
 
 export type QuotationWithParamSet = CollectionRowQuotation & {
@@ -81,7 +81,7 @@ export type CollectionLayoutWithRelations = CollectionLayout & {
 };
 
 // ─────────────────────────────────────────────────────────────────
-// Include clause comune
+// Common include clause
 // ─────────────────────────────────────────────────────────────────
 
 const ROW_VENDOR_INCLUDE = {
@@ -451,13 +451,13 @@ export async function createRow(
  * @throws {TRPCError} BAD_REQUEST if the gender or cross-layout move is invalid.
  */
 /**
- * L'errore che congela una riga conclusa. Una riga conclusa mostra un esito misurato contro la sua
- * fase e le milestone del suo gruppo di pianificazione: spostare l'una o l'altro senza riaprirla
- * cambierebbe quell'esito a posteriori. Gli altri campi restano modificabili — la conclusione
- * riguarda l'avanzamento, non l'anagrafica.
+ * The error that freezes a completed row. A completed row shows an outcome measured against its
+ * phase and its planning group's milestones: moving either without reopening it would change
+ * that outcome after the fact. The other fields stay editable — completion concerns progress,
+ * not the row's master data.
  *
- * Unico messaggio per i due percorsi di scrittura (riga singola e assegnazione bulk), così non
- * possono divergere raccontando all'utente due regole diverse per lo stesso vincolo.
+ * Single message for both write paths (single row and bulk assignment), so they can't diverge
+ * and tell the user two different rules for the same constraint.
  */
 function completedRowConflict(count: number): TRPCError {
   return new TRPCError({
@@ -497,12 +497,12 @@ export async function updateRow(
     }
   }
 
-  // Se si sposta il gruppo di pianificazione, verificare che appartenga allo stesso layout
+  // If moving the planning group, verify it belongs to the same layout
   if (input.planningGroupId && input.planningGroupId !== existingRow.planningGroupId) {
     await assertPlanningGroupInLayoutScope(existingRow.collectionLayoutId, input.planningGroupId, prisma);
   }
 
-  // Se si sposta il gruppo, verificare che il nuovo gruppo esista
+  // If moving the group, verify the new group exists
   if (input.groupId && input.groupId !== existingRow.groupId) {
     const newGroup = await prisma.collectionGroup.findUnique({
       where: { id: input.groupId },
@@ -523,9 +523,9 @@ export async function updateRow(
 
   const updated = await prisma.collectionLayoutRow.update({
     where: { id: rowId },
-    // Unchecked: il dominio tratta le FK (groupId, vendorId, ecc.) come scalari
-    // diretti, non come relation-connect — Prisma richiede il tipo esplicito per
-    // scegliere quel ramo dell'union invece dell'altro.
+    // Unchecked: the domain treats FKs (groupId, vendorId, etc.) as direct
+    // scalars, not relation-connect — Prisma requires the explicit type to
+    // pick that branch of the union instead of the other.
     data: input as Prisma.CollectionLayoutRowUncheckedUpdateInput,
     include: ROW_VENDOR_INCLUDE,
   }) as RowWithVendor;
@@ -562,9 +562,9 @@ export async function bulkAssignRowsPlanningGroup(
   await assertUnlocked('COLLECTION_LAYOUT', layoutId, userId, prisma);
   await assertPlanningGroupInLayoutScope(layoutId, planningGroupId, prisma);
 
-  // Stesso vincolo di `updateRow`, applicato prima dell'updateMany. Non si filtrano le righe
-  // concluse dalla selezione: un'azione bulk che ne ignora una parte senza dirlo è peggio di un
-  // errore, perché il conteggio restituito sembrerebbe un successo parziale voluto.
+  // Same constraint as `updateRow`, applied before the updateMany. Completed rows are not
+  // filtered out of the selection: a bulk action that silently skips part of it is worse than an
+  // error, because the returned count would look like an intended partial success.
   const completedCount = await prisma.collectionLayoutRow.count({
     where: { id: { in: rowIds }, completedAt: { not: null } },
   });
@@ -579,15 +579,15 @@ export async function bulkAssignRowsPlanningGroup(
 }
 
 /**
- * Marca la riga come conclusa, o la riapre. Sta qui e non nel router perché è l'unico altro punto
- * che scrive su una riga: tenerla accanto a `updateRow` mette l'invariante "riga conclusa" e chi la
- * fa rispettare dallo stesso lato del confine.
+ * Marks the row as completed, or reopens it. Lives here and not in the router because it's the
+ * only other place that writes to a row: keeping it next to `updateRow` puts the "completed row"
+ * invariant and its enforcer on the same side of the boundary.
  *
- * Concludendo, `completedAt: null` nel `where` rende l'operazione idempotente: una seconda chiamata
- * non riscrive la data della prima conclusione, che è il dato su cui si misura l'esito. Riaprire
- * azzera sempre.
+ * When completing, `completedAt: null` in the `where` makes the operation idempotent: a second
+ * call doesn't overwrite the date of the first completion, which is the value the outcome is
+ * measured against. Reopening always resets it.
  *
- * @returns Lo stato risultante della riga — `completedAt` è ciò che il chiamante registra in audit.
+ * @returns The resulting row state — `completedAt` is what the caller records in the audit log.
  */
 export async function setRowCompleted(
   rowId: string,
@@ -676,11 +676,11 @@ export async function duplicateRow(
       data: {
         ...rowData,
         order: row.order + 1,
-        pictureKey: null, // immagine non duplicata per evitare riferimenti condivisi
+        pictureKey: null, // picture not duplicated, to avoid shared references
       },
     });
 
-    // Duplica quotazioni
+    // Duplicate quotations
     for (const q of quotations) {
       const { id: _qid, rowId: _qrowId, createdAt: _qca, updatedAt: _qua, pricingParameterSet: _ps, ...qData } = q;
       await tx.collectionRowQuotation.create({
@@ -721,7 +721,7 @@ export async function updateLayoutSettings(
     data: {
       ...('skuBudget' in input && { skuBudget: input.skuBudget }),
       ...('hiddenColumns' in input && {
-        // Colonna Json?: Prisma richiede Prisma.JsonNull esplicito, non `null` diretto
+        // Json? column: Prisma requires an explicit Prisma.JsonNull, not a direct `null`
         hiddenColumns: input.hiddenColumns === null ? Prisma.JsonNull : input.hiddenColumns,
       }),
       ...(input.availableGenders && { availableGenders: input.availableGenders }),
@@ -753,8 +753,8 @@ export async function reorderRows(
   }
   await assertUnlocked('COLLECTION_LAYOUT', group.collectionLayoutId, userId, prisma);
 
-  // `updateMany` con il `groupId` nel where: vedi `reorderQuotations`. Un id che
-  // non appartiene al gruppo non viene toccato invece di essere riordinato.
+  // `updateMany` with `groupId` in the where: see `reorderQuotations`. An id
+  // that doesn't belong to the group is left untouched instead of being reordered.
   await prisma.$transaction(
     orderedIds.map((rowId, index) =>
       prisma.collectionLayoutRow.updateMany({

@@ -1,6 +1,6 @@
 /**
- * Router tRPC per lo storico transizioni di fase (CollectionRowPhaseHistory).
- * Query aggregate usate dalla dashboard di stagnazione predittiva (Fase 6.3).
+ * tRPC router for the phase transition history (CollectionRowPhaseHistory).
+ * Aggregate queries used by the predictive stagnation dashboard (Phase 6.3).
  */
 
 import { z } from 'zod';
@@ -12,16 +12,16 @@ import {
   resolveRowBrandAccess,
 } from '../services/brandScope.service';
 
-/** Millisecondi in un giorno: le durate qui restano frazionarie (media a un decimale), quindi
- * non passano da `daysBetween`, che arrotonda a giorni interi UTC. */
+/** Milliseconds in a day: durations here stay fractional (average to one decimal), so
+ * they don't go through `daysBetween`, which rounds to whole UTC days. */
 const MS_PER_DAY = 86_400_000;
 
 /**
- * Media, mediana e numerosità di un insieme di durate in giorni — il contratto statistico
- * condiviso dalle due letture aggregate di questo router (per fase e fino alla conclusione),
- * così arrotondamento e regola della mediana pari non possono divergere fra le due.
+ * Average, median, and sample size of a set of durations in days — the statistical contract
+ * shared by this router's two aggregate reads (per phase and up to conclusion),
+ * so that rounding and the even-median rule can't diverge between the two.
  *
- * @returns Media e mediana `null` su campione vuoto: nessun dato non è zero giorni.
+ * @returns Average and median `null` on an empty sample: no data isn't zero days.
  */
 function summarizeDays(days: number[]): { avgDays: number | null; medianDays: number | null; sampleCount: number } {
   if (days.length === 0) return { avgDays: null, medianDays: null, sampleCount: 0 };
@@ -64,7 +64,7 @@ export const phaseHistoryRouter = router({
    * (still in that phase) and is excluded from the average.
    *
    * @auth {collection_layout:read} — intentionally not `collection_alert:read`, same as when this
-   *   endpoint was added in Fase 4. The Fase 6.3 stagnation dashboard page sits behind the
+   *   endpoint was added in Phase 4. The Phase 6.3 stagnation dashboard page sits behind the
    *   `product.controllo` section (gated by `collection_alert:read`), so a role could see the page
    *   shell without this query succeeding (or vice versa) if the two permissions are ever granted
    *   differently via the AppConfig runtime override. Today both are granted identically to every
@@ -105,8 +105,8 @@ export const phaseHistoryRouter = router({
       }
 
       return Array.from(durationsByPhase.entries()).map(([phaseId, { label, days }]) => {
-        // `durationsByPhase` non ha mai bucket vuoti (una fase entra solo quando ha una durata),
-        // quindi qui media e mediana non sono mai null.
+        // `durationsByPhase` never has empty buckets (a phase is only added when it has a duration),
+        // so average and median are never null here.
         const { avgDays, medianDays, sampleCount } = summarizeDays(days);
         return { phaseId, phaseLabel: label, avgDays: avgDays!, medianDays: medianDays!, sampleCount };
       });
@@ -130,11 +130,11 @@ export const phaseHistoryRouter = router({
     .query(async ({ input, ctx }) => {
       await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
 
-      // Le due letture filtrano sullo stesso insieme di righe (il groupBy passa dalla relazione
-      // invece che da un `IN` sugli id appena letti), quindi sono indipendenti e girano insieme.
-      // `completedAt` è filtrato ma deliberatamente non indicizzato: non compare mai senza
-      // `collectionLayoutId`, che lo è, e le righe di un layout sono poche — un indice costerebbe
-      // solo in scrittura.
+      // The two reads filter on the same set of rows (the groupBy goes through the relation
+      // instead of an `IN` on the just-read ids), so they're independent and run together.
+      // `completedAt` is filtered but deliberately not indexed: it never appears without
+      // `collectionLayoutId`, which is, and a layout's rows are few — an index would only
+      // cost on writes.
       const rowScope = { collectionLayoutId: input.collectionLayoutId, completedAt: { not: null } } as const;
       const [rows, firstTransitions] = await Promise.all([
         ctx.prisma.collectionLayoutRow.findMany({

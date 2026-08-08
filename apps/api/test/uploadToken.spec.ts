@@ -1,12 +1,12 @@
 /**
- * Il token che lega una slot di upload al suo utente.
+ * The token that binds an upload slot to its user.
  *
- * `confirmUpload` accettava bucket e key dall'input e non li confrontava con
- * nulla. Il bucket era vincolato dall'enum, la key no: con la key di un blob
- * caricato da un altro ci si faceva creare un `FileObject` con `createdBy`
- * proprio, e da lì `confirmPendingFile` lo lasciava collegare come file proprio —
- * quel predicato verifica la proprietà della riga, ed è `confirmUpload` a
- * decidere chi possiede la riga.
+ * `confirmUpload` used to accept bucket and key from the input without comparing
+ * them against anything. The bucket was constrained by the enum, the key wasn't: with the
+ * key of a blob uploaded by someone else, you could get a `FileObject` created with your
+ * own `createdBy`, and from there `confirmPendingFile` would let it be linked as your own file —
+ * that predicate checks ownership of the row, and it's `confirmUpload` that
+ * decides who owns the row.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -32,7 +32,7 @@ describe('upload token', () => {
     const token = signUploadToken(slot);
     const [payloadB64, signature] = token.split('.');
 
-    // Riscrive la key puntando al blob di un altro, tenendo la firma originale.
+    // Rewrites the key to point at someone else's blob, keeping the original signature.
     const tampered = JSON.parse(
       Buffer.from(payloadB64.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString()
     );

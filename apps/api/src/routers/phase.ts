@@ -1,8 +1,8 @@
 /**
- * Router tRPC per il catalogo Phase unificato.
- * Sostituisce i due domini paralleli CollectionCatalogItem(type=progress) e
- * CalendarCatalogItem(type=eventType) con un unico ordinamento comparabile,
- * usato sia dallo stato di produzione delle righe collezione sia dal calendario.
+ * tRPC router for the unified Phase catalog.
+ * Replaces the two parallel domains CollectionCatalogItem(type=progress) and
+ * CalendarCatalogItem(type=eventType) with a single comparable ordering,
+ * used both by the collection rows' production status and by the calendar.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -21,14 +21,14 @@ function codeForOrder(order: number): string {
   return String(order + 1).padStart(2, '0');
 }
 
-/** Riga aperta, ridotta al contesto che serve nel messaggio d'errore del guard. */
-/** Righe aperte su una fase, già aggregate per layout: `{ codice brand/stagione → conteggio }`. */
+/** Open row, reduced to the context needed in the guard's error message. */
+/** Open rows on a phase, already aggregated per layout: `{ brand/season code → count }`. */
 type OpenRowsByScope = { scope: string; count: number }[];
 
 /**
- * Messaggio del guard di `remove`: dice quante righe restano aperte e **dove** (brand/stagione),
- * più quante milestone insistono ancora sulla fase. Un "fase in uso" senza coordinate lascerebbe
- * l'admin a cercarle a mano fra tutti i layout.
+ * Message for `remove`'s guard: says how many rows are still open and **where** (brand/season),
+ * plus how many milestones still reference the phase. A "phase in use" without coordinates would
+ * leave the admin searching for them by hand across every layout.
  */
 function describePhaseInUse(openRows: OpenRowsByScope, plannedEvents: number): string {
   const parts: string[] = [];
@@ -53,15 +53,15 @@ export const phaseRouter = router({
   /**
    * Lists active phases, used to populate frontend selects.
    *
-   * `includeInactive` serve a risolvere le **etichette** dello storico, non a popolare i picker: una
-   * fase ritirata resta referenziata dalle righe che l'hanno attraversata, e senza di essa il drawer
-   * mostrerebbe `Fase corrente: —` su un dato che invece c'è. Chi lo usa deve continuare a filtrare
-   * su `isActive` per le opzioni selezionabili (vedi `usePhaseCatalog`).
+   * `includeInactive` exists to resolve historical **labels**, not to populate pickers: a
+   * retired phase stays referenced by the rows that passed through it, and without it the drawer
+   * would show `Current phase: —` on data that actually exists. Consumers must keep filtering
+   * on `isActive` for the selectable options (see `usePhaseCatalog`).
    *
-   * Distinto da `listAll`, che serve alla gestione del catalogo e richiede il permesso di scrittura.
+   * Distinct from `listAll`, which serves catalog management and requires the write permission.
    *
    * @auth {phase_catalog:read}
-   * @input {{ includeInactive?: boolean }} — opzionale, default: solo attive.
+   * @input {{ includeInactive?: boolean }} — optional, default: active only.
    * @output {Phase[]} — sorted by order.
    */
   list: protectedProcedure
@@ -179,20 +179,20 @@ export const phaseRouter = router({
   /**
    * Soft-deletes a phase (isActive=false).
    *
-   * Rifiuta finché la fase è ancora in uso, perché disattivarla non è un'operazione neutra per il
-   * motore di alert: una fase ritirata smette di essere misurata, quindi le righe ferme lì
-   * uscirebbero in silenzio da badge, dashboard e notifiche di ritardo, e le milestone rimaste su
-   * quella fase resterebbero nei calendari a spostare quale sia la scadenza attiva. "In uso"
-   * significa due cose, entrambe bloccanti:
-   *   - righe di collection layout ancora **aperte** (`completedAt` null) su quella fase. Le righe
-   *     concluse non contano: hanno già smesso di essere misurate, ed è ciò che rende ritirabile
-   *     una fase che andava bene le stagioni scorse senza dover archiviare le stagioni.
-   *   - eventi di calendario non cancellati che la referenziano.
+   * Rejects while the phase is still in use, because deactivating it isn't a neutral operation for
+   * the alert engine: a retired phase stops being measured, so rows sitting on it would silently
+   * drop out of badges, dashboards, and overdue notifications, and milestones left on that phase
+   * would stay in the calendars, shifting which deadline is active. "In use"
+   * means two things, both blocking:
+   *   - collection layout rows still **open** (`completedAt` null) on that phase. Concluded rows
+   *     don't count: they've already stopped being measured, which is what makes it possible to
+   *     retire a phase that worked fine in past seasons without having to archive those seasons.
+   *   - uncancelled calendar events that reference it.
    *
    * @auth {phase_catalog:update}
    * @input {{ id: string }} — UUID of the phase to deactivate.
    * @output {{ success: true }}
-   * @throws CONFLICT — con conteggi e ripartizione per brand/stagione, così l'admin sa dove agire.
+   * @throws CONFLICT — with counts and breakdown per brand/season, so the admin knows where to act.
    */
   remove: protectedProcedure
     .use(requirePermission('phase_catalog:update'))
@@ -204,10 +204,10 @@ export const phaseRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Fase non trovata' });
       }
 
-      // Letture indipendenti: il conteggio degli eventi non dipende dalle righe trovate.
-      // Le righe si contano aggregate per layout invece di caricarle: una fase del catalogo è
-      // referenziata da ogni brand × stagione, quindi materializzarle tutte per comporre una
-      // stringa significherebbe leggere migliaia di righe a ogni tentativo di ritiro.
+      // Independent reads: the event count doesn't depend on the rows found.
+      // Rows are counted aggregated per layout instead of loading them: a catalog phase is
+      // referenced by every brand × season, so materializing all of them to build a
+      // string would mean reading thousands of rows on every retirement attempt.
       const [rowsPerLayout, plannedEvents] = await Promise.all([
         ctx.prisma.collectionLayoutRow.groupBy({
           by: ['collectionLayoutId'],
@@ -218,7 +218,7 @@ export const phaseRouter = router({
       ]);
 
       if (rowsPerLayout.length > 0 || plannedEvents > 0) {
-        // Solo i layout coinvolti, non tutti: serve a tradurre gli id in codici brand/stagione.
+        // Only the involved layouts, not all of them: needed to translate the ids into brand/season codes.
         const layouts = await ctx.prisma.collectionLayout.findMany({
           where: { id: { in: rowsPerLayout.map(r => r.collectionLayoutId) } },
           select: { id: true, brand: { select: { code: true } }, season: { select: { code: true } } },

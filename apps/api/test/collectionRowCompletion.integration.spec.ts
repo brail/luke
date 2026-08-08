@@ -1,16 +1,16 @@
 /**
- * Conclusione esplicita di una riga di collection layout (`rows.setCompleted`) e ciò che ne
- * dipende: l'esito congelato calcolato dal motore di alert e il tempo totale al completamento.
+ * Explicit completion of a collection layout row (`rows.setCompleted`) and what depends on
+ * it: the frozen outcome computed by the alert engine and the total time to completion.
  *
- * Perché serve uno stato esplicito: il calendario non può dedurlo. Una riga ferma sull'ultima
- * fase l'ha *raggiunta*, non completata (`getActivePhaseFromEvents` la misura ancora contro la
- * scadenza di quella fase), quindi senza un segnale dichiarato non esiste alcun momento in cui
- * una riga "finisce".
+ * Why an explicit state is needed: the calendar cannot infer it. A row sitting at the last
+ * phase has *reached* it, not completed it (`getActivePhaseFromEvents` still measures it against
+ * that phase's deadline), so without a declared signal there is no moment at which
+ * a row "finishes".
  *
- * Copre: RBAC delle due procedure nuove, riga di audit, idempotenza della conclusione (la data
- * originale non va riscritta), riapertura, esito in tempo/in ritardo scelto contro l'ultima
- * milestone legata a una fase **attiva**, esclusione delle righe concluse dall'indice di
- * strozzatura, e il lead time con le sue esclusioni.
+ * Covers: RBAC of the two new procedures, audit row, idempotence of completion (the original
+ * date must not be overwritten), reopening, on-time/late outcome chosen against the last
+ * milestone tied to an **active** phase, exclusion of completed rows from the bottleneck
+ * index, and lead time with its exclusions.
  */
 
 import { randomUUID } from 'crypto';
@@ -37,15 +37,15 @@ let viewerSession: UserSession;
 let layoutId: string;
 let groupId: string;
 let phaseId: string;
-/** Gruppo di pianificazione con una milestone che scade nel 2099: chiudere oggi è in anticipo. */
+/** Planning group with a milestone due in 2099: closing today is early. */
 let futureDeadlineGroupId: string;
-/** Gruppo con una milestone scaduta nel 2020: chiudere oggi è in ritardo. */
+/** Group with a milestone due in 2020: closing today is late. */
 let pastDeadlineGroupId: string;
-/** Gruppo la cui unica milestone è agganciata a una fase disattivata. */
+/** Group whose only milestone is attached to a deactivated phase. */
 let retiredPhaseGroupId: string;
-/** Gruppo con milestone su due fasi attive: una riga sulla prima ne salta una concludendo. */
+/** Group with milestones on two active phases: a row sitting at the first one skips one by completing. */
 let skipGroupId: string;
-/** Gruppo le cui uniche milestone stanno su una fase ritirata: non misura più nulla. */
+/** Group whose only milestones sit on a retired phase: it no longer measures anything. */
 let onlyRetiredGroupId: string;
 let finalPhaseValue: string;
 
@@ -85,9 +85,9 @@ beforeAll(async () => {
     prisma.season.create({ data: { code: `CS${uid}`, name: `Compl Season ${uid}`, year: 2034, isActive: true } }),
   ]);
 
-  // Editor e viewer devono vedere il brand, altrimenti `assertBrandAccess` risponderebbe
-  // FORBIDDEN prima ancora del controllo sui permessi — e i test sui ruoli passerebbero per la
-  // ragione sbagliata.
+  // Editor and viewer must be able to see the brand, otherwise `assertBrandAccess` would respond
+  // FORBIDDEN before even checking permissions -- and the role tests would pass for the
+  // wrong reason.
   const fn = await prisma.companyFunction.create({
     data: { slug: `compl_fn_${uid.toLowerCase()}`, name: `Compl Fn ${uid}`, order: 93, isActive: true },
   });
@@ -120,7 +120,7 @@ beforeAll(async () => {
   phaseId = phase.id;
   finalPhaseValue = finalPhase.value;
 
-  // Il calendario di stagione è quello che il motore risolve dal layout (brand + stagione).
+  // The season calendar is the one the engine resolves from the layout (brand + season).
   const calendar = await prisma.seasonCalendar.create({ data: { brandId: brand.id, seasonId: season.id } });
   const [future, past, retired, skip, onlyRetired] = await Promise.all([
     prisma.planningGroup.create({ data: { calendarId: calendar.id, name: `Futuro ${uid}` } }),
@@ -142,29 +142,29 @@ beforeAll(async () => {
     prisma.calendarEvent.create({
       data: { calendarId: calendar.id, planningGroupId: past.id, phaseId: phase.id, title: 'Gate passato', startAt: new Date('2020-06-30') },
     }),
-    // Stesso gruppo, due milestone: una su fase attiva (2020), una su fase ritirata e più
-    // lontana nel tempo (2099). Serve a verificare quale delle due fa da scadenza di chiusura.
+    // Same group, two milestones: one on an active phase (2020), one on a retired phase and further
+    // out in time (2099). This checks which of the two acts as the closing deadline.
     prisma.calendarEvent.create({
       data: { calendarId: calendar.id, planningGroupId: retired.id, phaseId: phase.id, title: 'Gate attivo', startAt: new Date('2020-06-30') },
     }),
     prisma.calendarEvent.create({
       data: { calendarId: calendar.id, planningGroupId: retired.id, phaseId: retiredPhase.id, title: 'Gate ritirato', startAt: new Date('2099-06-30') },
     }),
-    // Due milestone su fasi attive: una riga ferma sulla prima ne salta una concludendo.
+    // Two milestones on active phases: a row sitting at the first one skips one by completing.
     prisma.calendarEvent.create({
       data: { calendarId: calendar.id, planningGroupId: skip.id, phaseId: phase.id, title: 'Gate intermedio', startAt: new Date('2099-06-30') },
     }),
     prisma.calendarEvent.create({
       data: { calendarId: calendar.id, planningGroupId: skip.id, phaseId: finalPhase.id, title: 'Gate finale', startAt: new Date('2099-09-30') },
     }),
-    // Unica milestone del gruppo, su una fase ritirata: non deve più fornire una scadenza.
+    // The group's only milestone, on a retired phase: it must no longer provide a deadline.
     prisma.calendarEvent.create({
       data: { calendarId: calendar.id, planningGroupId: onlyRetired.id, phaseId: retiredPhase.id, title: 'Gate solo ritirato', startAt: new Date('2020-06-30') },
     }),
   ]);
 });
 
-/** Riga nel gruppo che ha una milestone successiva: concludere qui salta "Fase finale". */
+/** Row in the group that has a later milestone: completing here skips "Final phase". */
 function createRowAtEarlierPhase() {
   return createRow(skipGroupId);
 }
@@ -210,8 +210,8 @@ describe('rows.setCompleted — stato e audit', () => {
     expect(completeLogs[0].targetType).toBe('CollectionLayoutRow');
     expect(completeLogs[0].actorId).toBe(adminSession.user.id);
 
-    // `completedAt` è fra le SAFE_KEYS di `sanitizeMetadata`: nella riga di audit deve arrivare
-    // il valore, non `[REDACTED]`. Ogni riga registra lo stato *risultante*, non il precedente.
+    // `completedAt` is among the SAFE_KEYS of `sanitizeMetadata`: the audit row must receive
+    // the value, not `[REDACTED]`. Each row records the *resulting* state, not the previous one.
     expect((completeLogs[0].metadata as { completedAt: string | null }).completedAt).toEqual(
       expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/)
     );
@@ -219,8 +219,8 @@ describe('rows.setCompleted — stato e audit', () => {
   });
 
   it('concludere due volte non riscrive la data della prima conclusione', async () => {
-    // È il dato su cui si misura l'esito: un doppio click, o due tab aperte, non devono
-    // spostare in avanti il momento in cui la riga ha chiuso.
+    // This is the data point the outcome is measured against: a double click, or two open tabs, must not
+    // push forward the moment at which the row closed.
     const row = await createRow();
     const first = await asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true, note: 'motivazione di test' });
     const second = await asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true, note: 'motivazione di test' });
@@ -237,14 +237,14 @@ describe('rows.setCompleted — stato e audit', () => {
   it('la motivazione è obbligatoria', async () => {
     const row = await createRow();
     await expect(
-      // @ts-expect-error — la nota è obbligatoria nello schema: il test verifica che lo sia anche
-      // a runtime, per un client che non passa dai tipi.
+      // @ts-expect-error -- the note is required in the schema: the test verifies that it is also
+      // required at runtime, for a client that bypasses the types.
       asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true })
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
   it('la motivazione ha un tetto di 500 caratteri', async () => {
-    // Il limite è quello di `phaseChangeNote` in @luke/core: l'audit log non è un campo note.
+    // The limit is the one from `phaseChangeNote` in @luke/core: the audit log is not a note field.
     const row = await createRow();
     await expect(
       asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true, note: 'x'.repeat(501) })
@@ -256,8 +256,8 @@ describe('rows.setCompleted — stato e audit', () => {
   });
 
   it('la motivazione finisce in chiaro nell\'audit, su conclusione e riapertura', async () => {
-    // `completionNote` deve stare fra le SAFE_KEYS di `sanitizeMetadata`, altrimenti l'unico dato
-    // che spiega il perché arriverebbe `[REDACTED]`.
+    // `completionNote` must be among the SAFE_KEYS of `sanitizeMetadata`, otherwise the only data
+    // that explains the reason would arrive as `[REDACTED]`.
     const row = await createRow();
     await asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true, note: 'sviluppo chiuso' });
     await asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: false, note: 'riaperta per modifica materiali' });
@@ -273,14 +273,14 @@ describe('rows.setCompleted — stato e audit', () => {
 
 describe('fasi ritirate — smetti di misurare', () => {
   it('una milestone su fase ritirata non produce più alcuna criticità', async () => {
-    // `isActive: false` è un soft delete: la fase esce dal processo, quindi smette di fornire
-    // scadenze. Verificato end-to-end, non solo sulla funzione pura: è il cablaggio che conta.
+    // `isActive: false` is a soft delete: the phase drops out of the process, so it stops providing
+    // deadlines. Verified end-to-end, not just on the pure function: it's the wiring that matters.
     const row = await createRow(onlyRetiredGroupId);
     await expect(asAdmin().phaseAlert.criticalityForRow({ rowId: row.id })).resolves.toBeNull();
   });
 
   it('una fase ritirata non entra nemmeno fra le fasi mancanti alla conclusione', async () => {
-    // Chiederla prima di concludere sarebbe rumore: nessuno può più portarci la riga.
+    // Asking for it before completion would be noise: nothing can bring the row there anymore.
     const row = await createRow(onlyRetiredGroupId);
     await expect(asAdmin().phaseAlert.completionPreview({ rowId: row.id })).resolves.toEqual({
       missingPhases: [],
@@ -296,8 +296,8 @@ describe('phaseAlert.completionPreview — permessi', () => {
   });
 
   it('un viewer non può leggerla: serve il permesso di chi può concludere', async () => {
-    // Allineata a `setCompleted` (collection_layout:update) di proposito — se seguisse il permesso
-    // di lettura degli alert, i due potrebbero divergere via override RBAC in AppConfig.
+    // Deliberately aligned with `setCompleted` (collection_layout:update) -- if it followed the
+    // alert-read permission instead, the two could diverge via an RBAC override in AppConfig.
     const row = await createRow();
     await expectUnauthorized(
       () => asViewer().phaseAlert.completionPreview({ rowId: row.id }),
@@ -338,8 +338,8 @@ describe('rows.setCompleted — fasi saltate', () => {
   });
 
   it('con force → conclude e registra quali fasi sono state saltate', async () => {
-    // La forzatura non è vietata (sarebbe aggirabile saltando all'ultima fase) ma resta leggibile
-    // a consuntivo: è la differenza fra un consuntivo tutto verde e uno vero.
+    // Forcing is not forbidden (it could be worked around by jumping to the last phase) but it stays legible
+    // in retrospect: it's the difference between a report that's all green and one that's true.
     const row = await createRowAtEarlierPhase();
     await asAdmin().collectionLayout.rows.setCompleted({
       rowId: row.id, completed: true, note: 'campionatura annullata', force: true,
@@ -354,8 +354,8 @@ describe('rows.setCompleted — fasi saltate', () => {
   });
 
   it('l\'anteprima elenca le stesse fasi che la mutation pretende di forzare', async () => {
-    // Le due letture passano dallo stesso helper: se divergessero, l'utente confermerebbe un
-    // elenco e il server ne registrerebbe un altro.
+    // Both reads go through the same helper: if they diverged, the user would confirm one
+    // list and the server would record a different one.
     const row = await createRowAtEarlierPhase();
     const preview = await asAdmin().phaseAlert.completionPreview({ rowId: row.id });
     expect(preview.missingPhases.map(p => p.value)).toEqual([finalPhaseValue]);
@@ -368,8 +368,8 @@ describe('rows.setCompleted — fasi saltate', () => {
 
 describe('riga conclusa — campi congelati', () => {
   it('cambiare fase su una riga conclusa è rifiutato', async () => {
-    // L'esito è misurato contro la fase e le milestone del gruppo: spostarli senza riaprire lo
-    // cambierebbe a posteriori.
+    // The outcome is measured against the group's phase and milestones: moving them without reopening
+    // would change it after the fact.
     const row = await createRow();
     await asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true, note: 'motivazione di test' });
 
@@ -410,7 +410,7 @@ describe('riga conclusa — campi congelati', () => {
   });
 
   it('l\'assegnazione bulk del gruppo rifiuta se la selezione contiene righe concluse', async () => {
-    // Filtrarle in silenzio restituirebbe un conteggio parziale che sembra un successo voluto.
+    // Silently filtering them out would return a partial count that looks like an intended success.
     const open = await createRow(futureDeadlineGroupId);
     const closed = await createRow(futureDeadlineGroupId);
     await asAdmin().collectionLayout.rows.setCompleted({ rowId: closed.id, completed: true, note: 'motivazione di test' });
@@ -427,8 +427,8 @@ describe('riga conclusa — campi congelati', () => {
   });
 });
 
-/** Restringe il risultato di `criticalityForRow` all'arma 'completed' — solo quella porta il
- * delta — fallendo con un messaggio leggibile se la riga non risulta conclusa. */
+/** Narrows the result of `criticalityForRow` to the 'completed' branch -- only that one carries the
+ * delta -- failing with a readable message if the row is not actually completed. */
 function completedOutcome(
   criticality: Awaited<ReturnType<ReturnType<typeof createCallerWithSession>['phaseAlert']['criticalityForRow']>>
 ) {
@@ -460,8 +460,8 @@ describe('criticità di una riga conclusa', () => {
   });
 
   it('la scadenza di chiusura è l\'ultima milestone su fase attiva, non la più lontana in assoluto', async () => {
-    // Il gruppo ha una milestone al 2099 agganciata a una fase disattivata: misurare contro
-    // quella direbbe "in anticipo" per una riga che ha invece sforato l'ultima fase in uso.
+    // The group has a milestone in 2099 attached to a deactivated phase: measuring against
+    // that one would say "early" for a row that has actually overrun the last phase in use.
     const row = await createRow(retiredPhaseGroupId);
     await asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true, note: 'motivazione di test' });
 
@@ -471,7 +471,7 @@ describe('criticità di una riga conclusa', () => {
   });
 
   it('una riga conclusa esce dall\'indice di strozzatura, dove una riga attiva sullo stesso evento resta', async () => {
-    // Nessun evento la trattiene: contarla gonfierebbe la milestone su cui si è fermata.
+    // No event holds onto it anymore: counting it would inflate the milestone it stopped at.
     const active = await createRow(pastDeadlineGroupId);
     const completed = await createRow(pastDeadlineGroupId);
 
@@ -488,7 +488,7 @@ describe('criticità di una riga conclusa', () => {
       .reduce((sum, e) => sum + e.bands.reduce((s, b) => s + b.count, 0), 0);
 
     expect(countAfter).toBe(countBefore - 1);
-    // La riga rimasta aperta continua a contare: l'esclusione riguarda la conclusione, non l'evento.
+    // The row that stayed open keeps counting: the exclusion is about completion, not the event.
     const stillCounted = await asAdmin().phaseAlert.criticalityForRow({ rowId: active.id });
     expect(stillCounted).toMatchObject({ state: 'active' });
   });
@@ -510,8 +510,8 @@ describe('phaseHistory.completionLeadTime', () => {
   });
 
   it('una riga conclusa senza storico di fase non entra nel campione', async () => {
-    // Senza una prima transizione non c'è da dove far partire il conteggio: inventare un
-    // inizio (la creazione della riga) darebbe una durata che non misura il processo.
+    // Without a first transition there is no point to start the count from: inventing a
+    // start (the row's creation) would give a duration that does not measure the process.
     const layout = await createIsolatedLayout();
     const row = await asAdmin().collectionLayout.rows.create({
       groupId: layout.groupId,
@@ -545,7 +545,7 @@ describe('phaseHistory.completionLeadTime', () => {
     await prisma.collectionRowPhaseHistory.createMany({
       data: [
         { rowId: row.id, phaseId, reachedAt: tenDaysAgo },
-        // Una transizione intermedia non sposta l'inizio: conta la prima in assoluto.
+        // An intermediate transition does not move the start: the very first one counts.
         { rowId: row.id, phaseId, reachedAt: new Date(Date.now() - 2 * 86_400_000) },
       ],
     });
@@ -579,8 +579,8 @@ describe('phaseHistory.completionLeadTime', () => {
 });
 
 /**
- * Layout su brand/stagione propri: le statistiche sono aggregate per layout, quindi ogni test
- * che asserisce un campione ha bisogno di un layout che nessun altro test popola.
+ * Layout on its own brand/season: statistics are aggregated per layout, so every test
+ * that asserts a sample needs a layout that no other test populates.
  */
 async function createIsolatedLayout(): Promise<{ layoutId: string; groupId: string }> {
   const uid = randomUUID().substring(0, 6).toUpperCase();

@@ -1,6 +1,6 @@
 /**
- * Test per Idempotency tRPC Middleware
- * Verifica funzionalità di idempotency per richieste duplicate
+ * Tests for Idempotency tRPC Middleware
+ * Verifies idempotency functionality for duplicate requests
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -91,7 +91,7 @@ describe('Idempotency Store', () => {
       const result1 = idempotencyStore.check(key, method, path, body);
       expect(result1.hit).toBe(true);
 
-      // Clear store simula TTL expiration
+      // Clear store simulates TTL expiration
       idempotencyStore.clear();
 
       // Should miss after expiration
@@ -130,7 +130,7 @@ describe('Idempotency Store', () => {
       const stats = idempotencyStore.getStats();
       expect(stats.size).toBe(0);
       expect(stats.maxSize).toBe(1000);
-      expect(stats.ttlMs).toBe(5 * 60 * 1000); // 5 minuti
+      expect(stats.ttlMs).toBe(5 * 60 * 1000); // 5 minutes
     });
 
     it('should update statistics after operations', () => {

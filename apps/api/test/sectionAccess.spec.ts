@@ -1,6 +1,6 @@
 /**
- * Test per sistema Section Access Overrides
- * Verifica precedenza, safety rule e middleware enforcement
+ * Tests for the Section Access Overrides system
+ * Verifies precedence, safety rule and middleware enforcement
  */
 
 import { describe, it, expect } from 'vitest';
@@ -40,7 +40,7 @@ describe('Section Access Overrides', () => {
     });
 
     it('should fallback to role permissions when no override', () => {
-      // Admin ha accesso a settings
+      // Admin has access to settings
       const adminResult = effectiveSectionAccess({
         role: 'admin',
 
@@ -50,7 +50,7 @@ describe('Section Access Overrides', () => {
       });
       expect(adminResult).toBe(true);
 
-      // Viewer non ha accesso a settings
+      // Viewer has no access to settings
       const viewerResult = effectiveSectionAccess({
         role: 'viewer',
 
@@ -60,9 +60,9 @@ describe('Section Access Overrides', () => {
       });
       expect(viewerResult).toBe(false);
 
-      // Editor non ha accesso a settings: la sezione è admin-only per design
-      // (`SECTION_ACCESS_DEFAULTS.editor.settings === false`, nessun grant
-      // `settings:*` nel ruolo). Con defaults vuoti il fallback RBAC nega.
+      // Editor has no access to settings: the section is admin-only by design
+      // (`SECTION_ACCESS_DEFAULTS.editor.settings === false`, no `settings:*`
+      // grant in the role). With empty defaults the RBAC fallback denies.
       const editorResult = effectiveSectionAccess({
         role: 'editor',
 
@@ -74,7 +74,7 @@ describe('Section Access Overrides', () => {
     });
 
     it('should follow precedence: deny > allow > role', () => {
-      // Override deny dovrebbe sempre negare
+      // Deny override should always deny
       const denyResult = effectiveSectionAccess({
         role: 'admin',
 
@@ -84,7 +84,7 @@ describe('Section Access Overrides', () => {
       });
       expect(denyResult).toBe(false);
 
-      // Override allow dovrebbe sempre permettere
+      // Allow override should always allow
       const allowResult = effectiveSectionAccess({
         role: 'viewer',
 
@@ -126,12 +126,12 @@ describe('Section Access Overrides', () => {
         '../src/services/sectionAccess.service'
       );
 
-      // Il test esercita solo la logica del service: admin e override
-      // arrivano da un mock, quindi non serve (né si apre) alcuna connessione
-      // reale. Nessun override → risolve via fallback RBAC (admin = *:*).
+      // The test exercises only the service logic: admin and override
+      // come from a mock, so no real connection is needed (or opened).
+      // No override → resolves via RBAC fallback (admin = *:*).
       const mockPrisma = {
         user: {
-          findMany: async () => [{ sectionAccess: [] }], // 1 admin, nessun override
+          findMany: async () => [{ sectionAccess: [] }], // 1 admin, no override
         },
       } as any;
 
@@ -143,9 +143,9 @@ describe('Section Access Overrides', () => {
       const { countRecoveryCapableAdmins, ADMIN_RECOVERY_SECTIONS } =
         await import('../src/services/sectionAccess.service');
 
-      // La superficie di recupero è una congiunzione: basta perderne una.
-      // Il caso reale che ha motivato il fix è `settings.users` — chi la perde
-      // non può più creare né promuovere, pur conservando `settings`.
+      // The recovery surface is a conjunction: losing just one is enough.
+      // The real case that motivated the fix is `settings.users` — whoever loses it
+      // can no longer create or promote, even while keeping `settings`.
       for (const missing of ADMIN_RECOVERY_SECTIONS) {
         const mockPrisma = {
           user: {
@@ -167,15 +167,15 @@ describe('Section Access Overrides', () => {
         '../src/lib/sectionAccessMiddleware'
       );
 
-      // `withSectionAccess` ritorna un MiddlewareBuilder tRPC, non un callable:
-      // va esercitato attraverso una procedura reale, come in produzione.
+      // `withSectionAccess` returns a tRPC MiddlewareBuilder, not a callable:
+      // it must be exercised through a real procedure, as in production.
       const probeRouter = router({
         probe: publicProcedure
           .use(withSectionAccess('settings'))
           .query(() => 'success'),
       });
 
-      // Context con utente viewer senza override
+      // Context with a viewer user, no override
       const mockCtx = {
         session: {
           user: {
@@ -185,10 +185,10 @@ describe('Section Access Overrides', () => {
         },
         prisma: {
           userSectionAccess: {
-            findUnique: async () => null, // Nessun override
+            findUnique: async () => null, // No override
           },
-          // `getRbacConfig` legge rbac.sectionAccessDefaults e app.sections.disabled:
-          // nessuna riga → defaults statici, nessuna sezione disabilitata.
+          // `getRbacConfig` reads rbac.sectionAccessDefaults and app.sections.disabled:
+          // no row → static defaults, no section disabled.
           appConfig: {
             findUnique: async () => null,
           },

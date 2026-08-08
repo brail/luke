@@ -3,19 +3,19 @@ import { resolve } from 'path';
 import { defineConfig } from 'vitest/config';
 
 /**
- * Progetto unit: gira sempre, senza infrastruttura.
- * Le suite che richiedono PostgreSQL vivono in `vitest.integration.config.ts`.
+ * Unit project: always runs, no infrastructure.
+ * Suites that require PostgreSQL live in `vitest.integration.config.ts`.
  */
 export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    // I .js compilati in dist/ sono duplicati dei sorgenti: senza exclude esplicito
-    // vitest li raccoglie come suite fantasma a 0 test.
+    // The compiled .js files in dist/ are duplicates of the sources: without an
+    // explicit exclude vitest picks them up as phantom suites with 0 tests.
     include: ['test/**/*.{test,spec}.ts', 'src/**/*.{test,spec}.ts'],
-    // La convenzione è la membership: un file `*.integration.spec.ts` richiede
-    // PostgreSQL e vive nell'altro progetto. Niente elenco a mano da tenere
-    // allineato — una rinomina non può farne uscire uno di soppiatto.
+    // The convention is membership: a `*.integration.spec.ts` file requires
+    // PostgreSQL and lives in the other project. No manual list to keep
+    // aligned — a rename can't sneak one out.
     exclude: ['**/node_modules/**', 'dist/**', '**/*.integration.spec.ts'],
     setupFiles: ['./test/setup.ts'],
     testTimeout: 10000,

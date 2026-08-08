@@ -165,22 +165,22 @@ model AppConfig {
 model AuditLog {
   id         String   @id @default(uuid())
   /// FK to User (actor). Nullable: system actions have no actor. SetNull on user deletion preserves the log.
-  actorId    String? // Sostituisce userId (più chiaro)
+  actorId    String? // Replaces userId (clearer)
   /// Action in SCREAMING_SNAKE_CASE (e.g. USER_CREATE, CONFIG_UPDATE).
-  action     String // SCREAMING_SNAKE_CASE (es. USER_CREATE)
+  action     String // SCREAMING_SNAKE_CASE (e.g. USER_CREATE)
   /// Resource type targeted by the action (e.g. User, Config, Auth).
-  targetType String // Tipo risorsa (User, Config, Auth)
+  targetType String // Resource type (User, Config, Auth)
   /// ID of the target resource. Null for bulk or non-entity actions.
-  targetId   String? // ID risorsa target (opzionale)
+  targetId   String? // Target resource ID (optional)
   /// Outcome of the action: SUCCESS or FAILURE.
-  result     String // SUCCESS o FAILURE (esplicito)
+  result     String // SUCCESS or FAILURE (explicit)
   /// Redacted supplemental data (e.g. changed fields). Secrets must never appear here.
-  metadata   Json? // Dati redatti
+  metadata   Json? // Redacted data
   /// Distributed trace ID for correlating with API logs.
   traceId    String?
   /// Client IP address at the time of the action.
-  ip         String? // Rinomina da ipAddress per brevità
-  createdAt  DateTime @default(now()) // Rinomina da timestamp
+  ip         String? // Renamed from ipAddress for brevity
+  createdAt  DateTime @default(now()) // Renamed from timestamp
 
   // Relations
   /// The user who performed the action. Null for system-initiated events.
@@ -383,9 +383,9 @@ model PricingParameterSet {
   /// FK to Season. Restrict delete — cannot delete a season while parameter sets exist.
   seasonId               String
   /// Human-readable variant name (e.g. "Pelle", "Non Pelle", "Tunisia"). Unique within brand+season.
-  name                   String // es. "Pelle", "Non Pelle", "Tunisia"
+  name                   String // e.g. "Pelle", "Non Pelle", "Tunisia"
   /// ISO 3166-1 alpha-2 country of production (e.g. "CN", "IT", "TR").
-  countryCode            String // es. "CN", "IT", "TR" — ISO 3166-1 alpha-2
+  countryCode            String // e.g. "CN", "IT", "TR" — ISO 3166-1 alpha-2
   /// Currency for supplier purchase prices. Supported: USD, EUR, GBP, CHF, CNY.
   purchaseCurrency       String   @default("USD")
   /// Currency for retail/wholesale selling prices. Supported: USD, EUR, GBP, CHF, CNY.
@@ -431,7 +431,7 @@ model CollectionLayout {
   /// Total SKU budget for the entire layout.
   skuBudget        Int?
   /// JSON array of hidden column keys. Null means all columns visible.
-  hiddenColumns    Json? // String[] — colonne nascoste, null = tutte visibili
+  hiddenColumns    Json? // String[] — hidden columns, null = all visible
   /// Genders available for rows in this layout (e.g. ["MAN","WOMAN"]).
   availableGenders String[]                   @default(["MAN", "WOMAN"])
   /// The brand this layout belongs to.
@@ -481,7 +481,7 @@ model NavSyncFilter {
   /// Sync scope: "all" (sync everything), "whitelist" (only listed navNos), "exclude" (all except listed navNos).
   mode            String // "all" | "whitelist" | "exclude"
   /// NAV No_ values used when mode is "whitelist" or "exclude".
-  navNos          String[] // rilevante solo per whitelist/exclude
+  navNos          String[] // relevant only for whitelist/exclude
   /// Whether this sync filter is currently active.
   active          Boolean  @default(true)
   note            String?
@@ -529,10 +529,10 @@ model NavVendor {
 
   navLastModified DateTime? // Last Date Modified
   /// Timestamp of the last successful sync from NAV.
-  syncedAt        DateTime // timestamp ultimo sync
+  syncedAt        DateTime // timestamp of last sync
 
   /// Internal Vendor record linked to this NAV vendor, if matched.
-  vendor Vendor? // collegamento all'anagrafica interna
+  vendor Vendor? // link to the internal registry
 
   @@index([name])
   @@index([syncedAt])
@@ -546,10 +546,10 @@ model NavBrand {
   navCode     String   @id // Code (PK)
   description String   @default("") // Description
   /// Timestamp of the last successful sync from NAV.
-  syncedAt    DateTime // timestamp ultimo sync
+  syncedAt    DateTime // timestamp of last sync
 
   /// Internal Brand record linked to this NAV brand, if matched.
-  brand Brand? // collegamento all'anagrafica interna
+  brand Brand? // link to the internal registry
 
   @@index([description])
   @@map("nav_brands")
@@ -563,10 +563,10 @@ model NavSeason {
   startingDate DateTime? // Starting Date
   endingDate   DateTime? // Ending Date
   /// Timestamp of the last successful sync from NAV.
-  syncedAt     DateTime // timestamp ultimo sync
+  syncedAt     DateTime // timestamp of last sync
 
   /// Internal Season record linked to this NAV season, if matched.
-  season Season? // collegamento all'anagrafica interna
+  season Season? // link to the internal registry
 
   @@index([description])
   @@map("nav_seasons")
@@ -634,7 +634,7 @@ model CollectionLayoutRow {
   vendor          Vendor? @relation(fields: [vendorId], references: [id], onDelete: SetNull)
   line            String
   /// Short free-text article description appearing after the line name.
-  article         String? // testo libero corto, dopo line
+  article         String? // short free text, after line
   /// Workflow status value from the lineStatus catalog (catalog-managed).
   status          String // catalog-managed (lineStatus)
   /// Planned SKU count (distinct sizes/colors). Belongs to Row (not Group).
@@ -707,7 +707,7 @@ model CollectionRowQuotation {
   pricingParameterSet   PricingParameterSet? @relation(fields: [pricingParameterSetId], references: [id], onDelete: SetNull)
   retailPrice           Float?
   /// FOB price in the purchaseCurrency defined by the linked parameter set.
-  supplierQuotation     Float? // FOB in purchaseCurrency del param set
+  supplierQuotation     Float? // FOB in purchaseCurrency of the param set
   notes                 String?
   /// SKU count specific to this quotation variant.
   sku                   Int?
@@ -757,7 +757,7 @@ model CollectionCatalogItem {
   /// Unused since the progress domain moved to the Phase catalog. No remaining type writes this field.
   code              String?
   /// ISO 9001 categories associated with this item. Populated only for type=revisionType.
-  iso9001Categories String[] @default([]) // categorie ISO 9001 — popolato solo per type=revisionType
+  iso9001Categories String[] @default([]) // ISO 9001 categories — populated only for type=revisionType
   /// Display order within the type group.
   order             Int      @default(0)
   /// Soft-delete flag. Inactive items are hidden from pickers.
@@ -865,7 +865,7 @@ model CollectionLayoutRowRevision {
   pricePositioning String?
   designer         String?
   /// Storage key in the immutable "collection-row-pictures-revisions" bucket.
-  pictureKey       String? // key nel bucket immutabile collection-row-pictures-revisions
+  pictureKey       String? // key in the immutable collection-row-pictures-revisions bucket
   styleNotes       String?
   materialNotes    String?
   colorNotes       String?
@@ -892,7 +892,7 @@ model CollectionRowQuotationRevision {
   /// Soft FK to the live PricingParameterSet. No @relation — set may be deleted post-revision.
   pricingParameterSetId   String?
   /// Denormalised parameter set name at revision time.
-  pricingParameterSetName String? // denormalizzato
+  pricingParameterSetName String? // denormalised
   retailPrice             Float?
   supplierQuotation       Float?
   notes                   String?
@@ -1101,14 +1101,14 @@ model MerchandisingImage {
   @@map("merchandising_images")
 }
 
-// ─── Portafoglio Analytics Sync ───────────────────────────────────────────────
+// ─── Portfolio Analytics Sync ───────────────────────────────────────────────
 //
-// Repliche analytics delle tabelle NAV usate dalla query portafoglio ordini.
-// Prefisso nav_pf_ (portafoglio) per distinguerle dalle nav_* entity-dual.
-// Aggiornate dal sync service (background ogni 5 min + trigger manuale).
-// NO soft-delete, NO entità locale: sono repliche pure in sola lettura dall'app.
+// Analytics replicas of the NAV tables used by the order portfolio query.
+// Prefix nav_pf_ (portfolio) to distinguish them from the nav_* entity-dual tables.
+// Updated by the sync service (background every 5 min + manual trigger).
+// NO soft-delete, NO local entity: these are pure read-only replicas for the app.
 
-/// Sync state tracker per NAV portafoglio table. navRowversion = CONVERT(BIGINT, MAX(timestamp)) from last SQL Server sync. 0 for full-refresh tables.
+/// Sync state tracker per NAV portfolio table. navRowversion = CONVERT(BIGINT, MAX(timestamp)) from last SQL Server sync. 0 for full-refresh tables.
 model NavPfSyncState {
   /// Table name used as PK (e.g. "nav_pf_sales_header").
   tableName      String    @id
@@ -1186,9 +1186,9 @@ model NavPfSalesHeader {
   commissionGroupCode        String?
   /// Soft reference to NavPfGeoZone.code.
   geographicalZone           String?
-  /// NAV selling season code; correlates with the Luke Season entity for portafoglio filtering.
+  /// NAV selling season code; correlates with the Luke Season entity for portfolio filtering.
   sellingSeasonCode          String?
-  /// NAV Shortcut Dimension 2 — typically the brand/trademark dimension, used for portafoglio filtering.
+  /// NAV Shortcut Dimension 2 — typically the brand/trademark dimension, used for portfolio filtering.
   shortcutDimension2Code     String?
   customerPostingGroup       String?
   navRowversion              BigInt    @default(0)
@@ -1491,7 +1491,7 @@ model NavPfBudgetHeader {
   @@map("nav_pf_budget_header")
 }
 
-/// Read-only replica of [Company$Vendor] from NAV — only fields needed for name lookup in portafoglio queries.
+/// Read-only replica of [Company$Vendor] from NAV — only fields needed for name lookup in portfolio queries.
 model NavPfVendor {
   /// NAV vendor number — target of the soft reference from NavPfItem.vendorNo.
   no_           String  @id
@@ -1542,10 +1542,10 @@ model NavPfDdtPicking {
   @@map("nav_pf_ddt_picking")
 }
 
-// ─── Repliche tabelle KIMO-FASHION ────────────────────────────────────────────
-// Prefisso nav_kimo_ per distinguerle dalle nav_pf_* (portafoglio).
-// Alimentate da nav-kimo-sync.ts (background scheduler separato).
-// Sync state condiviso con nav_pf_sync_state (stesso schema, prefisso nav_kimo_).
+// ─── KIMO-FASHION Table Replicas ────────────────────────────────────────────
+// Prefix nav_kimo_ to distinguish them from nav_pf_* (portfolio).
+// Fed by nav-kimo-sync.ts (separate background scheduler).
+// Sync state shared with nav_pf_sync_state (same schema, prefix nav_kimo_).
 
 /// Read-only replica of [Company$KIMO-FASHION Sales Order Hdr] from NAV. Incrementally synced via rowversion.
 model NavKimoSalesHeader {
@@ -2314,7 +2314,7 @@ model BackupRecord {
   /// Job lifecycle, defaulting to PENDING at creation. See BackupStatus.
   status  BackupStatus  @default(PENDING)
 
-  /// Optional free-text label set by the admin at creation time (e.g. "prima di migrazione X").
+  /// Optional free-text label set by the admin at creation time (e.g. "before migration X").
   label String?
 
   /// Size of the final encrypted+compressed blob in bytes. Null until the job completes.

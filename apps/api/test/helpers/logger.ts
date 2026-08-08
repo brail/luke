@@ -1,10 +1,10 @@
 /**
- * Logger no-op per i test.
+ * No-op logger for tests.
  *
- * `{ info, warn, error, debug }` non basta: il tipo `FastifyBaseLogger` richiede
- * anche `child`, `level`, `fatal`, `trace` e `silent`. Mock parziali sono già
- * costati un falso negativo — un `ctx.logger?.warn(...)` su un oggetto vuoto
- * lanciava TypeError, mascherando un FORBIDDEN atteso in INTERNAL_SERVER_ERROR.
+ * `{ info, warn, error, debug }` isn't enough: the `FastifyBaseLogger` type also
+ * requires `child`, `level`, `fatal`, `trace`, and `silent`. Partial mocks have
+ * already cost a false negative — a `ctx.logger?.warn(...)` on an empty object
+ * threw a TypeError, masking an expected FORBIDDEN as INTERNAL_SERVER_ERROR.
  */
 
 import type { Context } from '../../src/lib/trpc';

@@ -1,6 +1,6 @@
 /**
- * Test unitari per Brand Logo Upload Service
- * Verifica validazioni MIME, size, magic bytes e logica di upload
+ * Unit tests for Brand Logo Upload Service
+ * Verifies MIME, size, magic bytes validations and upload logic
  */
 
 import { Readable } from 'stream';
@@ -22,7 +22,7 @@ import {
   MockStorageProvider,
 } from './helpers/storageTestHelper';
 
-// Mock del storage module
+// Mock of the storage module
 vi.mock('../src/storage', () => ({
   putObject: vi.fn(),
   deleteObjectByKey: vi.fn(),
@@ -37,13 +37,13 @@ describe('Brand Logo Upload Service', () => {
     testContext = await createTestContextWithMockStorage();
     mockStorage = testContext.mockStorage;
 
-    // Mock delle funzioni storage
+    // Mock of the storage functions
     const { putObject, deleteObjectByKey, getStorageProvider } = await import(
       '../src/storage'
     );
 
-    // I mock coprono solo la parte di superficie che il service usa: i cast
-    // riconoscono che sono stub parziali, non implementazioni complete.
+    // The mocks cover only the surface the service uses: the casts
+    // acknowledge that they're partial stubs, not complete implementations.
     vi.mocked(putObject).mockImplementation((async (
       _ctx: unknown,
       params: Parameters<typeof putObject>[1]
@@ -78,9 +78,10 @@ describe('Brand Logo Upload Service', () => {
   });
 
   afterEach(() => {
-    // Il database lo tronca `createTestContextWithMockStorage` al test dopo, e
-    // con CASCADE: la catena di `deleteMany` che stava qui ometteva `fileObject`
-    // e si sarebbe rotta al primo `onDelete: Restrict` nuovo.
+    // The database is truncated by `createTestContextWithMockStorage` on the
+    // next test, and with CASCADE: the `deleteMany` chain that used to be
+    // here omitted `fileObject` and would have broken on the first new
+    // `onDelete: Restrict`.
     mockStorage.clear();
     vi.clearAllMocks();
   });
@@ -89,7 +90,7 @@ describe('Brand Logo Upload Service', () => {
     let testBrand: any;
 
     beforeEach(async () => {
-      // Crea un brand di test
+      // Creates a test brand
       testBrand = await testContext.prisma.brand.create({
         data: {
           code: 'TEST_BRAND',
@@ -117,7 +118,7 @@ describe('Brand Logo Upload Service', () => {
       expect(result.bucket).toBe('brand-logos');
       expect(result.key).toBeDefined();
 
-      // In DB si salva la storage key, non l'URL pubblico (derivato a runtime)
+      // The DB stores the storage key, not the public URL (derived at runtime)
       const updatedBrand = await testContext.prisma.brand.findUnique({
         where: { id: testBrand.id },
       });
@@ -238,7 +239,7 @@ describe('Brand Logo Upload Service', () => {
     });
 
     it('should replace existing logo and cleanup old file', async () => {
-      // Prima upload
+      // First upload
       const pngBuffer1 = createValidPngBuffer();
       const testFile1 = createTestFile(
         'logo1.png',
@@ -252,7 +253,7 @@ describe('Brand Logo Upload Service', () => {
         file: testFile1,
       });
 
-      // Seconda upload (replace)
+      // Second upload (replace)
       const pngBuffer2 = createValidPngBuffer();
       const testFile2 = createTestFile(
         'logo2.png',
@@ -268,7 +269,7 @@ describe('Brand Logo Upload Service', () => {
 
       expect(result2.publicUrl).not.toBe(result1.publicUrl);
 
-      // Verifica che il brand abbia il nuovo logo
+      // Verifies that the brand has the new logo
       const updatedBrand = await testContext.prisma.brand.findUnique({
         where: { id: testBrand.id },
       });
@@ -289,7 +290,7 @@ describe('Brand Logo Upload Service', () => {
         file: maliciousFile,
       });
 
-      // Il filename dovrebbe essere sanitizzato
+      // The filename should be sanitized
       expect(result.publicUrl).not.toContain('../');
       expect(result.publicUrl).not.toContain('etc/passwd');
     });
@@ -308,9 +309,9 @@ describe('Brand Logo Upload Service', () => {
         file: testFile,
       });
 
-      // Non esiste più un `tempId` fornito dal client né un bucket separato:
-      // il file finisce in `brand-logos` come fileObject *pending*, e viene
-      // confermato al salvataggio del brand tramite `fileObjectId`.
+      // There's no longer a client-supplied `tempId` or a separate bucket:
+      // the file ends up in `brand-logos` as a *pending* fileObject, and
+      // gets confirmed when the brand is saved via `fileObjectId`.
       expect(result.fileObjectId).toBeDefined();
       expect(result.publicUrl).toMatch(/^\/api\/uploads\/brand-logos\//);
     });
@@ -347,15 +348,15 @@ describe('Brand Logo Upload Service', () => {
     });
   });
 
-  // Si passa da `appRouter`, mai da `brandRouter`: `router({ brand: brandRouter })`
-  // non conserva il sotto-router, ne ricostruisce un aggregato. Chiamarlo diretto
-  // salta la composizione che la produzione attraversa ed è invisibile al gate di
-  // copertura, che misura le invocazioni su `appRouter`.
+  // Goes through `appRouter`, never `brandRouter`: `router({ brand: brandRouter })`
+  // doesn't preserve the sub-router, it rebuilds an aggregate from it. Calling
+  // it directly skips the composition that production goes through and is
+  // invisible to the coverage gate, which measures invocations on `appRouter`.
   describe('conferma logo pending via brand.update', () => {
     let testBrand: any;
 
     beforeEach(async () => {
-      // Crea un brand di test
+      // Creates a test brand
       testBrand = await testContext.prisma.brand.create({
         data: {
           code: 'TEST_BRAND',
@@ -366,10 +367,10 @@ describe('Brand Logo Upload Service', () => {
     });
 
     it('confirms a pending upload and links it to the brand', async () => {
-      // Lo storage è mockato in questa suite, quindi `putObject` non scrive la
-      // riga fileObject: la si crea qui a mano nello stato in cui la lascerebbe
-      // un upload pending. L'oggetto sotto test è la logica di conferma del
-      // router, non l'upload.
+      // Storage is mocked in this suite, so `putObject` doesn't write the
+      // fileObject row: it's created here by hand in the state a pending
+      // upload would leave it in. The object under test is the router's
+      // confirmation logic, not the upload.
       const pending = await testContext.prisma.fileObject.create({
         data: {
           bucket: 'brand-logos',
@@ -403,12 +404,13 @@ describe('Brand Logo Upload Service', () => {
     it('rejects a fileObjectId that does not exist', async () => {
       const caller = appRouter.createCaller(testContext).brand;
 
-      // Decisione ribaltata. Prima passava in silenzio, con la motivazione che
-      // "il logo è opzionale e un riferimento morto non è motivo per rifiutare
-      // il salvataggio degli altri campi". Il caso realistico però non è un id
-      // inventato: è il reaper orario che ha spazzato il `FileObject` pending
-      // mentre l'utente era distratto. Il no-op salvava il brand senza logo
-      // mostrando "aggiornato" — perdita di dati con un toast di successo.
+      // Decision reversed. It used to pass silently, on the grounds that
+      // "the logo is optional and a dangling reference isn't a reason to
+      // reject saving the other fields". The realistic case, though, isn't
+      // a made-up id: it's the hourly reaper that swept away the pending
+      // `FileObject` while the user was distracted. The no-op saved the
+      // brand without a logo while showing "updated" — data loss with a
+      // success toast.
       await expect(
         caller.update({
           id: testBrand.id,
@@ -419,8 +421,8 @@ describe('Brand Logo Upload Service', () => {
         })
       ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
 
-      // E il rifiuto è totale: la transazione non deve lasciare a metà gli altri
-      // campi.
+      // And the rejection is total: the transaction must not leave the other
+      // fields half-applied.
       const updatedBrand = await testContext.prisma.brand.findUnique({
         where: { id: testBrand.id },
       });
@@ -476,7 +478,7 @@ describe('Brand Logo Upload Service', () => {
     });
 
     it('should handle corrupted stream', async () => {
-      // Crea uno stream che fallisce
+      // Creates a stream that fails
       const corruptedStream = new Readable({
         read() {
           this.emit('error', new Error('Stream corrupted'));

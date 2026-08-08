@@ -105,17 +105,17 @@ export function createUserSession(token: string): UserSession | null {
 }
 
 /**
- * Chiave per il rate limiter: l'id utente se il bearer è valido, altrimenti l'IP.
+ * Rate limiter key: the user id if the bearer token is valid, otherwise the IP.
  *
- * **Non è un controllo di autenticazione.** È solo la chiave del bucket: un token
- * scaduto, assente o manomesso ricade sull'IP, e a rifiutare la richiesta ci
- * pensa l'handler. Verificare la firma qui costa un HMAC e nessuna query.
+ * **Not an authentication check.** It's only the bucket key: an expired,
+ * missing, or tampered token falls back to the IP, and rejecting the request
+ * is the handler's job. Verifying the signature here costs one HMAC and no query.
  *
- * Serve perché le quattro rotte di upload avevano un `keyGenerator` che leggeva
- * `req.session?.user?.id` — che **nessuno assegna mai**: il limiter è un hook
- * `onRequest`, l'auth avviene dentro l'handler. Il ramo sinistro era morto in
- * tutte e quattro, quindi il limite era per IP: un ufficio dietro NAT condivideva
- * 30 upload al minuto fra tutti, e chi ruota indirizzi li moltiplicava.
+ * Needed because the four upload routes had a `keyGenerator` that read
+ * `req.session?.user?.id` — which **nobody ever assigns**: the limiter is an
+ * `onRequest` hook, auth happens inside the handler. That branch was dead in
+ * all four, so the limit ended up being per-IP: an office behind NAT shared
+ * 30 uploads a minute among everyone, and anyone rotating addresses multiplied it.
  */
 export function rateLimitKeyFromRequest(request: FastifyRequest): string {
   const token = extractTokenFromRequest(request);
@@ -129,11 +129,11 @@ export function rateLimitKeyFromRequest(request: FastifyRequest): string {
  * Extracts the Bearer token, verifies the signature **and the revocation state**,
  * and returns the session. Clears the legacy session cookie if the token is invalid.
  *
- * La verifica di revoca sta qui e non un livello più su di proposito: prima
- * viveva solo nel middleware tRPC, quindi ogni route Fastify non-tRPC accettava
- * token revocati e utenti disattivati. Costruire una sessione senza passare da
- * questo controllo ora non è più possibile — è una proprietà della funzione, non
- * una cosa da ricordarsi a ogni nuova route.
+ * The revocation check lives here and not one layer up on purpose: it used to
+ * live only in the tRPC middleware, so every non-tRPC Fastify route accepted
+ * revoked tokens and disabled users. Building a session without going through
+ * this check is no longer possible now — it's a property of the function, not
+ * something to remember for every new route.
  *
  * @returns Authenticated session, or `null` if the request is unauthenticated,
  *   the token is revoked, or the account is disabled.
@@ -151,7 +151,7 @@ export async function authenticateRequest(
 
   const session = createUserSession(token);
   if (!session) {
-    // Token non valido, rimuovi il cookie se presente
+    // Invalid token, remove the cookie if present
     reply.clearCookie('luke_session');
     return null;
   }

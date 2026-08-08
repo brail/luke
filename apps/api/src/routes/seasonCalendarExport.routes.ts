@@ -19,13 +19,13 @@ import { generateIcal } from '@luke/calendar';
 import { isDevelopment } from '@luke/core';
 
 import { authenticateRequest, rateLimitKeyFromRequest } from '../lib/auth';
-// Unico ingresso al motore PDF: è l'unico punto in cui `setUrlAccessPolicy` e
-// `setLocalAccessPolicy` sono chiuse. Qui vivevano quattro `new PdfPrinter(...)`
-// costruiti a mano, che non ereditavano nessuna policy — e che dal bump pdfmake
-// 0.2→0.3 erano comunque rotti: in 0.3 `createPdfKitDocument` restituisce una
-// Promise, non uno stream, quindi `doc.on(...)` lanciava (500 al chiamante) e la
-// Promise orfana rigettava con un TypeError non gestito, che i guard di
-// `server.ts` trasformano in `process.exit(1)`.
+// Single entry point to the PDF engine: it's the only place where `setUrlAccessPolicy`
+// and `setLocalAccessPolicy` are locked down. Four hand-built `new PdfPrinter(...)`
+// instances used to live here, inheriting no policy — and which, since the pdfmake
+// 0.2→0.3 bump, were broken anyway: in 0.3 `createPdfKitDocument` returns a
+// Promise, not a stream, so `doc.on(...)` threw (500 to the caller) and the
+// orphaned Promise rejected with an unhandled TypeError, which `server.ts`'s
+// guards turn into `process.exit(1)`.
 import { createPdfBuffer } from '../lib/export/pdf';
 import { filterAllowedBrandIds } from '../services/brandScope.service';
 import { listMilestonesDb } from '../services/seasonCalendar.service';
@@ -495,15 +495,15 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
   const prisma = options.prisma;
 
   /**
-   * Limite per-rotta sul limiter globale registrato in `server.ts`.
+   * Per-route limit on top of the global limiter registered in `server.ts`.
    *
-   * Non si registra `@fastify/rate-limit` qui: questo plugin è wrappato in
-   * `fp()`, quindi un `app.register(rateLimit, ...)` finirebbe nello scope root e
-   * diventerebbe il limite globale del server — lo stesso incidente documentato
-   * in `brandLogo.routes.ts`. L'opzione per-rotta stringe soltanto queste tre.
+   * `@fastify/rate-limit` isn't registered here: this plugin is wrapped in
+   * `fp()`, so an `app.register(rateLimit, ...)` would end up in the root
+   * scope and become the server's global limit — the same incident documented
+   * in `brandLogo.routes.ts`. The per-route option only tightens these three.
    *
-   * Il default globale (100 req/min per IP) è troppo generoso per la generazione
-   * di un PDF, che tiene l'intero documento in memoria.
+   * The global default (100 req/min per IP) is too generous for PDF
+   * generation, which holds the entire document in memory.
    */
   const exportRateLimit = {
     config: {

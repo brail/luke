@@ -1,17 +1,17 @@
 /**
  * harden-google-calendar-acl.ts
  *
- * Riapplica retroattivamente a tutti i GoogleCalendarBinding già provisioned:
- *  - syncCalendarReaders() con la lista email corrente scoped per funzione (team
- *    membership + admin) — i calendar creati prima della restrizione per-funzione
- *    hanno ancora l'ACL vecchia (tutti gli utenti attivi, senza filtro)
- *  - enforceDomainReadOnly() — downgrade della regola di dominio a freeBusyReader
+ * Retroactively reapplies to every already-provisioned GoogleCalendarBinding:
+ *  - syncCalendarReaders() with the current email list scoped per function (team
+ *    membership + admin) — calendars created before the per-function restriction
+ *    still have the old ACL (all active users, unfiltered)
+ *  - enforceDomainReadOnly() — downgrades the domain rule to freeBusyReader
  *
- * Entrambi gli hardening scattano solo al momento della creazione di un nuovo
- * binding — i calendar creati prima non ne beneficiano finché non gira questo
- * script una tantum.
+ * Both hardening steps only kick in at the moment a new binding is created —
+ * calendars created before that don't benefit from them until this script is
+ * run once.
  *
- * Uso:
+ * Usage:
  *   pnpm --filter @luke/api db:harden-google-acl
  */
 

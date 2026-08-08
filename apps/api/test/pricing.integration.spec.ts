@@ -1,16 +1,16 @@
 /**
- * Invarianti del router `pricing`.
+ * Invariants of the `pricing` router.
  *
- * Le procedure di scrittura sono **admin-only per progetto**: `pricing:update`
- * non è nel ruolo editor (`packages/core/src/auth/permissions.ts`), ed è una
- * regola esplicita in CLAUDE.md. Un editor che riesce a modificare un set di
- * parametri cambia i prezzi di listino di una stagione intera, quindi la matrice
- * dei permessi qui è la parte più importante del file.
+ * The write procedures are **admin-only by design**: `pricing:update`
+ * is not in the editor role (`packages/core/src/auth/permissions.ts`), and this is an
+ * explicit rule in CLAUDE.md. An editor who manages to modify a parameter set
+ * changes the list prices of an entire season, so the permission
+ * matrix here is the most important part of the file.
  *
- * Le funzioni di calcolo pure sono coperte in
- * `src/services/__tests__/pricing.service.test.ts`: quei test non passano dal
- * router e non muovono il gate di copertura procedure. Qui si esercita il
- * percorso di produzione, `appRouter` incluso.
+ * The pure calculation functions are covered in
+ * `src/services/__tests__/pricing.service.test.ts`: those tests do not go through the
+ * router and do not move the procedure coverage gate. Here the production
+ * path is exercised, `appRouter` included.
  */
 
 import { randomUUID } from 'crypto';
@@ -30,7 +30,7 @@ import type { PrismaClient } from '@prisma/client';
 let prisma: PrismaClient;
 const sessions: Record<'admin' | 'editor' | 'viewer', UserSession> = {} as never;
 
-/** Team di cui editor e viewer sono membri; gli si agganciano i brand scope. */
+/** Team that editor and viewer are members of; the brand scopes are attached to it. */
 let scopeTeamId: string;
 
 
@@ -38,13 +38,13 @@ function callerAs(role: 'admin' | 'editor' | 'viewer') {
   return createCallerWithSession(sessions[role]).pricing;
 }
 
-/** Input valido minimo, con i valori realistici del seed. */
+/** Minimal valid input, with realistic seed values. */
 function validInput(name: string) {
   return {
     name,
     countryCode: 'CN',
-    // `as const`: lo schema accetta l'unione di PRICING_CURRENCIES,
-    // non una stringa qualunque.
+    // `as const`: the schema accepts the union of PRICING_CURRENCIES,
+    // not just any string.
     purchaseCurrency: 'CNY' as const,
     sellingCurrency: 'EUR' as const,
     qualityControlPercent: 2,
@@ -71,14 +71,14 @@ async function createBrandAndSeason(year = 2030) {
 }
 
 /**
- * Dà a editor e viewer accesso al brand appena creato.
+ * Grants editor and viewer access to the brand just created.
  *
- * L'accesso ai brand è **opt-in stretto**: `getUserAllowedBrandIds` torna `null`
- * (nessun vincolo) solo per gli admin, e per tutti gli altri esattamente l'unione
- * dei `brandScopes` dei team attivi. Un editor senza team non vede alcun brand.
- * Prima dei guard di brand scope questi test passavano perché nessuna procedura
- * di pricing controllava lo scope — cioè per il difetto che i guard chiudono.
- * La copertura del caso negativo sta in `brandScope.integration.spec.ts`.
+ * Brand access is **strict opt-in**: `getUserAllowedBrandIds` returns `null`
+ * (no restriction) only for admins, and for everyone else exactly the union
+ * of the `brandScopes` of active teams. An editor with no team sees no brand.
+ * Before the brand scope guards, these tests passed because no pricing
+ * procedure checked the scope -- i.e. for the very defect the guards close.
+ * Coverage of the negative case lives in `brandScope.integration.spec.ts`.
  */
 async function grantBrandScope(brandId: string) {
   await prisma.companyTeamBrandScope.create({
@@ -87,8 +87,8 @@ async function grantBrandScope(brandId: string) {
 }
 
 beforeAll(async () => {
-  // `setupTestDb()` garantisce lo schema e tronca: l'ordine dei file non è
-  // stabile, nessuna suite può assumere che un'altra abbia creato le tabelle.
+  // `setupTestDb()` guarantees the schema and truncates: file order is not
+  // stable, no suite can assume that another one has already created the tables.
   prisma = await setupTestDb();
 
   const roles = ['admin', 'editor', 'viewer'] as const;
@@ -121,8 +121,8 @@ describe('pricing — matrice dei permessi', () => {
   it('editor e viewer non possono scrivere set di parametri', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
 
-    // `pricing:update` non è nel ruolo editor: è una decisione di prodotto, non
-    // una svista. Se un giorno la matrice cambia, questo test deve fallire.
+    // `pricing:update` is not in the editor role: this is a product decision, not
+    // an oversight. If the matrix ever changes, this test must fail.
     for (const role of ['editor', 'viewer'] as const) {
       const caller = callerAs(role);
 
@@ -197,8 +197,8 @@ describe('pricing — scoping brand+stagione', () => {
       data: validInput('Set di A'),
     });
 
-    // CLAUDE.md: i calcoli sono sempre scoped a brandId + seasonId. Conoscere
-    // l'id di un set non basta a usarlo in un contesto che non è il suo.
+    // CLAUDE.md: calculations are always scoped to brandId + seasonId. Knowing
+    // a set's id is not enough to use it in a context that is not its own.
     await expect(
       admin.calculate({
         mode: 'forward',
@@ -271,8 +271,8 @@ describe('pricing — invariante del set di default', () => {
       data: validInput('Primo'),
     });
 
-    // Senza questo, una stagione nuova non avrebbe alcun set selezionato e la
-    // calcolatrice partirebbe vuota.
+    // Without this, a new season would have no set selected and the
+    // calculator would start empty.
     expect(first.isDefault).toBe(true);
   });
 
@@ -317,8 +317,8 @@ describe('pricing — invariante del set di default', () => {
 
     await admin.parameterSets.remove({ id: first.id, brandId, seasonId });
 
-    // Restare senza default lascerebbe la stagione senza set selezionato: il
-    // buco si vedrebbe solo aprendo la pagina prezzi.
+    // Being left without a default would leave the season with no set selected: the
+    // gap would only be noticed by opening the pricing page.
     const sets = await admin.parameterSets.list({ brandId, seasonId });
     expect(sets).toHaveLength(1);
     expect(sets[0].isDefault).toBe(true);
@@ -372,8 +372,8 @@ describe('pricing — unicità del nome', () => {
       data: validInput('Standard'),
     });
 
-    // L'unicità è per (brand, stagione, nome): "Standard" deve poter esistere
-    // ovunque, altrimenti il nome diventa una risorsa globale scarsa.
+    // Uniqueness is per (brand, season, name): "Standard" must be able to exist
+    // everywhere, otherwise the name becomes a scarce global resource.
     await expect(
       admin.parameterSets.create({
         brandId: b.brandId,
@@ -417,8 +417,8 @@ describe('pricing — unicità del nome', () => {
       data: validInput('Stabile'),
     });
 
-    // Il controllo di unicità deve escludere sé stesso, altrimenti nessun set
-    // sarebbe più modificabile dopo la creazione.
+    // The uniqueness check must exclude itself, otherwise no set
+    // would be editable anymore after creation.
     await expect(
       admin.parameterSets.update({
         brandId,
@@ -483,9 +483,9 @@ describe('pricing — copyFromPreviousSeason', () => {
     expect(result?.sets).toHaveLength(1);
     expect(result?.sets[0].name).toBe('Da copiare');
 
-    // Il nome dice "copy", il contratto dice sola lettura. Se un giorno
-    // qualcuno la fa persistere, la stagione nuova si ritrova set che nessuno
-    // ha confermato — e senza questa asserzione nulla lo segnalerebbe.
+    // The name says "copy", the contract says read-only. If one day
+    // someone makes it persist, the new season ends up with sets that nobody
+    // has confirmed -- and without this assertion nothing would flag it.
     await expect(
       admin.parameterSets.list({ brandId: brand.id, seasonId: current.id })
     ).resolves.toEqual([]);
@@ -507,7 +507,7 @@ describe('pricing — validazione input', () => {
   it('rifiuta un margine ottimale del 100%', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
 
-    // Al 100% il moltiplicatore aziendale diverge: il limite è nello schema Zod.
+    // At 100% the company multiplier diverges: the limit is enforced in the Zod schema.
     await expect(
       callerAs('admin').parameterSets.create({
         brandId,
@@ -549,8 +549,8 @@ describe('pricing — validazione input', () => {
       data: validInput('Standard'),
     });
 
-    // `mode: 'inverse'` senza `retailPrice` è respinto dal refine dello schema,
-    // non dal corpo della procedura.
+    // `mode: 'inverse'` without `retailPrice` is rejected by the schema's refine,
+    // not by the procedure body.
     await expect(
       callerAs('admin').calculate({
         mode: 'inverse',
@@ -578,8 +578,8 @@ describe('pricing — export', () => {
       const result = await admin.export[format]({ brandId, seasonId });
 
       expect(result.filename).toMatch(new RegExp(`\\.${format}$`, 'i'));
-      // base64 non vuoto: un export che ritorna una stringa vuota è un file
-      // corrotto che si scopre solo aprendolo.
+      // Non-empty base64: an export that returns an empty string is a
+      // corrupted file that is only discovered when opened.
       expect(result.data.length).toBeGreaterThan(0);
     }
   });
@@ -597,8 +597,8 @@ describe('pricing — export', () => {
     const { data } = await admin.export.pdf({ brandId, seasonId });
     const header = Buffer.from(data, 'base64').subarray(0, 5).toString();
 
-    // Asserire solo "base64 non vuoto" non avrebbe intercettato la regressione
-    // pdfmake 0.2→0.3: serve guardare dentro il file. `%PDF-` è la firma.
+    // Asserting only "non-empty base64" would not have caught the
+    // pdfmake 0.2->0.3 regression: you need to look inside the file. `%PDF-` is the signature.
     expect(header).toBe('%PDF-');
   });
 

@@ -1,6 +1,6 @@
 /**
- * Router tRPC per gestione utenti
- * Compone i sub-router per CRUD core e procedure amministrative
+ * tRPC router for user management
+ * Composes sub-routers for core CRUD and administrative procedures
  */
 
 import { t } from '../lib/t';
@@ -10,8 +10,8 @@ import { usersCoreRouter } from './users.core.router';
 import { userPreferencesRouter } from './users.preferences.router';
 
 /**
- * Router per gestione utenti
- * Merge di:
+ * Router for user management
+ * Merge of:
  * - usersCoreRouter: list, getById, create, update, softDelete, hardDelete
  * - usersAdminRouter: revokeUserSessions, forceVerifyEmail, changeEmail
  * - userPreferencesRouter: preferences (menu collapsible states, etc)

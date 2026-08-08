@@ -1,20 +1,20 @@
 /**
- * Test del catalogo Phase unificato.
+ * Tests for the unified Phase catalog.
  *
- * Il fuoco è l'invariante introdotta insieme a questa suite: `code` (es. "01")
- * non è più un campo libero passato dal client, ma è sempre derivato da `order`
- * (`codeForOrder` in `src/routers/phase.ts`) su `create`, `update` e `reorder`.
- * Prima, `code` e `order` potevano divergere — un admin poteva rinominare il
- * codice senza spostare la riga, lasciando un valore visivamente fuorviante
- * sulla posizione reale. Qui si verifica che la divergenza non sia più
- * possibile, non solo che i CRUD funzionino.
+ * The focus is the invariant introduced together with this suite: `code` (e.g. "01")
+ * is no longer a free field passed by the client, but is always derived from `order`
+ * (`codeForOrder` in `src/routers/phase.ts`) on `create`, `update` and `reorder`.
+ * Before, `code` and `order` could diverge -- an admin could rename the
+ * code without moving the row, leaving a visually misleading value
+ * about the actual position. Here it is verified that the divergence is no longer
+ * possible, not just that the CRUD operations work.
  *
- * `phase_catalog:update` è admin-only per design (commento in
- * `packages/core/src/auth/permissions.ts`: "modifica riservata ad admin,
- * dominio separato dal calendario") — editor ha solo `phase_catalog:read`, a
- * differenza del resto dei suoi domini `:*`. Testato esplicitamente perché è
- * un'eccezione facile da annullare per errore allineando phase_catalog agli
- * altri permessi editor.
+ * `phase_catalog:update` is admin-only by design (comment in
+ * `packages/core/src/auth/permissions.ts`: "modification reserved to admin,
+ * domain separate from the calendar") -- editor only has `phase_catalog:read`, unlike
+ * the rest of its `:*` domains. Tested explicitly because it is
+ * an exception that is easy to accidentally erase by aligning phase_catalog with the
+ * editor's other permissions.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -138,7 +138,7 @@ describe('Phase Router', () => {
   });
 
   describe('list — includeInactive', () => {
-    /** Una fase attiva e una ritirata, per distinguere i due insiemi. */
+    /** One active phase and one retired one, to distinguish the two sets. */
     async function seedActiveAndRetired() {
       const active = await caller(adminContext).create({ value: 'LIST_ATTIVA', label: 'Attiva' });
       const retired = await caller(adminContext).create({ value: 'LIST_RITIRATA', label: 'Ritirata' });
@@ -154,8 +154,8 @@ describe('Phase Router', () => {
     });
 
     it('con includeInactive ritorna anche le ritirate: serve a risolvere le etichette dello storico', async () => {
-      // Una riga che ha attraversato una fase poi ritirata continua a referenziarla: senza questa
-      // lettura il drawer mostrerebbe un trattino al posto di un dato che esiste.
+      // A row that passed through a phase later retired keeps referencing it: without this
+      // read the drawer would show a dash in place of data that actually exists.
       const { retired } = await seedActiveAndRetired();
       const ids = (await caller(adminContext).list({ includeInactive: true })).map(p => p.id);
       expect(ids).toContain(retired.id);
@@ -168,8 +168,8 @@ describe('Phase Router', () => {
     });
 
     it('resta dietro il permesso di lettura, non quello di scrittura come listAll', async () => {
-      // Il punto della modifica: le etichette storiche servono a chiunque legga il layout, mentre
-      // `listAll` (gestione catalogo) resta admin-only.
+      // The point of the change: historical labels are needed by anyone reading the layout, while
+      // `listAll` (catalog management) stays admin-only.
       const viewer = await adminContext.prisma.user.create({
         data: { email: 'viewer-list@example.com', username: 'viewer-list', firstName: 'V', lastName: 'U', role: 'viewer', isActive: true },
       });
@@ -184,8 +184,8 @@ describe('Phase Router', () => {
   });
 
   describe('remove — guard sulle fasi ancora in uso', () => {
-    /** Layout minimo con una riga sulla fase data. `completedAt` decide se la riga è ancora
-     * "in lavorazione" agli occhi del motore di alert, cioè se la fase è ritirabile. */
+    /** Minimal layout with a row on the given phase. `completedAt` decides whether the row is still
+     * "in progress" in the eyes of the alert engine, i.e. whether the phase can be retired. */
     async function seedRowOnPhase(phaseId: string, completedAt: Date | null) {
       const prisma = adminContext.prisma;
       const [brand, season] = await Promise.all([
@@ -219,7 +219,7 @@ describe('Phase Router', () => {
     }
 
     it('rifiuta con CONFLICT se una riga aperta è ferma su quella fase', async () => {
-      // Ritirarla la farebbe uscire in silenzio da badge, dashboard e notifiche di ritardo.
+      // Retiring it would silently drop it from badges, dashboard, and delay notifications.
       const phase = await caller(adminContext).create({ value: 'IN_USO', label: 'In uso' });
       await seedRowOnPhase(phase.id, null);
 
@@ -238,8 +238,8 @@ describe('Phase Router', () => {
     });
 
     it('rifiuta se restano milestone non cancellate su quella fase, anche senza righe aperte', async () => {
-      // Gli eventi sopravvivono al ritiro della fase e continuano a spostare quale sia la
-      // scadenza attiva per le righe del loro gruppo di pianificazione.
+      // Events survive the retirement of the phase and keep shifting which
+      // deadline is active for the rows of their planning group.
       const phase = await caller(adminContext).create({ value: 'CON_EVENTI', label: 'Con eventi' });
       const { calendarId, planningGroupId } = await seedRowOnPhase(phase.id, new Date());
       await adminContext.prisma.calendarEvent.create({
@@ -263,8 +263,8 @@ describe('Phase Router', () => {
     });
 
     it('una fase con sole righe concluse si ritira: è il caso della fase buona per le stagioni passate', async () => {
-      // Le righe concluse hanno già smesso di essere misurate, quindi disattivare non spegne
-      // nessun alert — ed è ciò che rende ritirabile una fase senza archiviare le stagioni.
+      // Completed rows have already stopped being measured, so deactivating does not turn off
+      // any alert -- and that is what makes a phase retirable without archiving the seasons.
       const phase = await caller(adminContext).create({ value: 'STORICA', label: 'Storica' });
       await seedRowOnPhase(phase.id, new Date('2039-01-01'));
 
@@ -285,10 +285,10 @@ describe('Phase Router', () => {
     const contexts = {} as Record<Role, Context>;
 
     beforeEach(async () => {
-      // `adminContext` esiste già (beforeEach esterno): non ricrea un utente
-      // admin, riusa quel context. `createContextForRole` non è utilizzabile
-      // qui per editor/viewer perché tronca i dati ad ogni chiamata — invocarlo
-      // di nuovo cancellerebbe l'utente admin appena creato.
+      // `adminContext` already exists (outer beforeEach): it does not recreate an
+      // admin user, it reuses that context. `createContextForRole` cannot be used
+      // here for editor/viewer because it truncates the data on every call -- invoking it
+      // again would delete the admin user just created.
       contexts.admin = adminContext;
 
       const [editor, viewer] = await Promise.all(
@@ -326,7 +326,7 @@ describe('Phase Router', () => {
 
     it.each(ROLES)('%s può leggere il catalogo (list e listAll)', async role => {
       await expect(phaseAs(role).list()).resolves.toBeInstanceOf(Array);
-      // listAll è riservata a phase_catalog:update — solo admin la raggiunge qui.
+      // listAll is reserved to phase_catalog:update -- only admin reaches it here.
       if (role === 'admin') {
         await expect(phaseAs(role).listAll()).resolves.toBeInstanceOf(Array);
       }
@@ -358,8 +358,8 @@ describe('Phase Router', () => {
         r => phaseAs(r).reorder({ orderedIds: [created.id] }),
       ];
 
-      // Ogni chiamata è respinta dal middleware dei permessi prima di toccare
-      // il database: nessuno stato condiviso fra le invocazioni, indipendenti.
+      // Every call is rejected by the permissions middleware before touching
+      // the database: no state is shared between the invocations, which are independent.
       await Promise.all(
         mutations.flatMap(invoke => [
           expectUnauthorized(() => invoke('editor'), 'FORBIDDEN'),

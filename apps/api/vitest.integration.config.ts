@@ -3,12 +3,12 @@ import { resolve } from 'path';
 import { defineConfig } from 'vitest/config';
 
 /**
- * Progetto integration: richiede un PostgreSQL dedicato in `TEST_DATABASE_URL`.
- * Locale: `pnpm test:db:up` poi `pnpm test:integration`.
- * CI: service container nel job `test`.
+ * Integration project: requires a dedicated PostgreSQL in `TEST_DATABASE_URL`.
+ * Local: `pnpm test:db:up` then `pnpm test:integration`.
+ * CI: service container in the `test` job.
  *
- * I file girano in sequenza (`fileParallelism: false`) perché condividono
- * lo stesso database: in parallelo si cancellerebbero i dati a vicenda.
+ * Files run in sequence (`fileParallelism: false`) because they share the
+ * same database: running in parallel would have them wiping each other's data.
  */
 export default defineConfig({
   test: {
@@ -17,8 +17,8 @@ export default defineConfig({
     include: ['test/**/*.integration.spec.ts'],
     exclude: ['**/node_modules/**', 'dist/**'],
     setupFiles: ['./test/setup.ts', './test/setup.procedureUsage.ts'],
-    // Gate di copertura delle procedure tRPC: vive qui e non come step di CI
-    // perché uno step si può dimenticare di aggiungere. Vedi
+    // tRPC procedure coverage gate: lives here and not as a CI step because
+    // a step can be forgotten when adding one. See
     // `test/globalSetup.procedureCoverage.ts`.
     globalSetup: ['./test/globalSetup.procedureCoverage.ts'],
     fileParallelism: false,

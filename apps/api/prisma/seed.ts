@@ -1,10 +1,10 @@
 /**
- * Script di seed per Luke API
- * Crea utente admin e configurazioni iniziali
+ * Seed script for Luke API
+ * Creates the admin user and initial configurations
  *
- * Funzioni esportabili per uso in bootstrap e test:
- * - seedAdminUser(prisma): Crea/aggiorna utente admin
- * - seedAppConfigs(prisma): Crea configurazioni base (no LDAP)
+ * Exportable functions for use in bootstrap and tests:
+ * - seedAdminUser(prisma): Creates/updates the admin user
+ * - seedAppConfigs(prisma): Creates base configurations (no LDAP)
  */
 
 import { randomBytes } from 'crypto';
@@ -21,18 +21,18 @@ import { seedCompanyStructure } from './seeds/companyStructure';
 import { seedHolidayCountries } from './seeds/holidays';
 
 /**
- * Inizializza Prisma Client
+ * Initializes Prisma Client
  */
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) });
 
 /**
- * Crea/aggiorna l'utente admin con identità locale
- * Funzione idempotente: può essere eseguita multiple volte senza duplicazioni
+ * Creates/updates the admin user with a local identity
+ * Idempotent function: can be run multiple times without duplication
  */
 export async function seedAdminUser(prisma: PrismaClient): Promise<void> {
   console.log('👤 Seeding utente admin...');
 
-  // Verifica se l'utente admin esiste già
+  // Check whether the admin user already exists
   const existingAdmin = await prisma.user.findFirst({
     where: {
       OR: [{ email: 'admin@luke.local' }, { username: 'admin' }],
@@ -45,7 +45,7 @@ export async function seedAdminUser(prisma: PrismaClient): Promise<void> {
       `🔍 Admin user details: ID=${existingAdmin.id}, Email=${existingAdmin.email}, Username=${existingAdmin.username}, Active=${existingAdmin.isActive}`
     );
 
-    // Attiva l'utente admin se non è attivo
+    // Activate the admin user if it's not active
     if (!existingAdmin.isActive) {
       console.log('🔧 Attivazione utente admin...');
       await prisma.user.update({
@@ -57,26 +57,26 @@ export async function seedAdminUser(prisma: PrismaClient): Promise<void> {
       console.log('✅ Utente admin già attivo');
     }
   } else {
-    // Hash della password admin usando la funzione centralizzata
+    // Hash the admin password using the centralized function
     const adminPassword = 'changeme';
     const passwordHash = await hashPassword(adminPassword);
 
     console.log('🔧 Creazione utente admin...');
 
-    // Crea utente admin con identità locale in una transazione
+    // Create admin user with local identity in a transaction
     const adminUser = await prisma.$transaction(async tx => {
-      // Crea utente
+      // Create user
       const user = await tx.user.create({
         data: {
           email: 'admin@luke.local',
           username: 'admin',
           role: 'admin',
           isActive: true,
-          emailVerifiedAt: new Date(), // Admin pre-verificato
+          emailVerifiedAt: new Date(), // Admin pre-verified
         },
       });
 
-      // Crea identità locale
+      // Create local identity
       const identity = await tx.identity.create({
         data: {
           userId: user.id,
@@ -85,7 +85,7 @@ export async function seedAdminUser(prisma: PrismaClient): Promise<void> {
         },
       });
 
-      // Crea credenziale locale
+      // Create local credential
       await tx.localCredential.create({
         data: {
           identityId: identity.id,
@@ -103,8 +103,8 @@ export async function seedAdminUser(prisma: PrismaClient): Promise<void> {
 }
 
 /**
- * Aggiorna utenti esistenti con emailVerifiedAt
- * Imposta tutti gli utenti esistenti (senza emailVerifiedAt) come verificati
+ * Updates existing users with emailVerifiedAt
+ * Marks all existing users (without emailVerifiedAt) as verified
  */
 export async function updateExistingUsersVerification(
   prisma: PrismaClient
@@ -137,14 +137,14 @@ export async function updateExistingUsersVerification(
 }
 
 /**
- * Crea configurazioni base dell'applicazione
- * Funzione idempotente: può essere eseguita multiple volte senza duplicazioni
- * NON include configurazioni LDAP (gestite via UI/API)
+ * Creates the application's base configurations
+ * Idempotent function: can be run multiple times without duplication
+ * Does NOT include LDAP configurations (managed via UI/API)
  */
 export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
   console.log('⚙️  Seeding configurazioni base...');
 
-  // Genera NextAuth secret (JWT secret ora derivato via HKDF)
+  // Generate NextAuth secret (JWT secret now derived via HKDF)
   const nextAuthSecret = randomBytes(32).toString('hex');
 
   const initialConfigs = [
@@ -215,17 +215,17 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     },
     {
       key: 'security.tokenVersionCacheTTL',
-      value: '60000', // 60 secondi default
+      value: '60000', // 60 seconds default
       encrypt: false,
     },
     {
       key: 'security.session.maxAge',
-      value: '28800', // 8h in secondi
+      value: '28800', // 8h in seconds
       encrypt: false,
     },
     {
       key: 'security.session.updateAge',
-      value: '14400', // 4h in secondi
+      value: '14400', // 4h in seconds
       encrypt: false,
     },
     {
@@ -233,7 +233,7 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       value: 'http://localhost:3000,http://localhost:5173',
       encrypt: false,
     },
-    // Rate Limiting (JSON object unico)
+    // Rate Limiting (single JSON object)
     {
       key: 'rateLimit',
       value: JSON.stringify({
@@ -245,7 +245,7 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       }),
       encrypt: false,
     },
-    // Timeouts per integrazioni
+    // Timeouts for integrations
     {
       key: 'integrations.ldap.timeout',
       value: '10000', // ms
@@ -256,7 +256,7 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       value: '5000', // ms
       encrypt: false,
     },
-    // Storage configurazione
+    // Storage configuration
     {
       key: 'storage.type',
       value: 'local',
@@ -374,7 +374,7 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       value: 'false',
       encrypt: false,
     },
-    // Retention sweep (audit log + notifiche) — vedi retentionScheduler.ts
+    // Retention sweep (audit log + notifications) — see retentionScheduler.ts
     {
       key: 'auditLog.retentionDays',
       value: '365',
@@ -382,7 +382,7 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     },
     {
       key: 'auditLog.criticalRetentionDays',
-      value: '3650', // 10 anni, per le azioni in CRITICAL_AUDIT_ACTIONS
+      value: '3650', // 10 years, for actions in CRITICAL_AUDIT_ACTIONS
       encrypt: false,
     },
     {
@@ -433,8 +433,8 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
 }
 
 /**
- * Crea Brand, Season e un set di parametri pricing minimi per il context layer.
- * Funzione idempotente: può essere eseguita multiple volte senza duplicazioni.
+ * Creates Brand, Season, and a minimal pricing parameter set for the context layer.
+ * Idempotent function: can be run multiple times without duplication.
  */
 export async function seedContextData(prisma: PrismaClient): Promise<void> {
   console.log('🏢 Seeding context data (Brand & Season)...');
@@ -465,16 +465,16 @@ export async function seedContextData(prisma: PrismaClient): Promise<void> {
 
   console.log(`✅ Season '${season.code}' ready (ID: ${season.id})`);
 
-  // Seed set parametri pricing.
+  // Seed pricing parameter set.
   //
-  // Non è decorazione: senza almeno un set, la pagina Costi e Prezzi mostra
-  // l'empty state e lo smoke E2E salta il calcolo (`test.skip`). Il risultato
-  // sarebbe una suite verde che non ha mai eseguito il pricing — esattamente il
-  // verde che non prova niente da cui è nato tutto il piano qualità.
+  // Not decoration: without at least one set, the Costi e Prezzi page shows
+  // the empty state and the E2E smoke test skips the calculation (`test.skip`). The result
+  // would be a green suite that never actually ran pricing — exactly the
+  // green-that-proves-nothing the whole quality plan was born to fix.
   //
-  // Valori plausibili per una produzione in Cina con acquisto in USD e vendita
-  // in EUR; servono a far girare la catena completa, non a rappresentare
-  // condizioni commerciali reali.
+  // Plausible values for production in China with purchase in USD and selling
+  // in EUR; they're meant to exercise the full chain, not to represent
+  // real commercial conditions.
   const parameterSet = await prisma.pricingParameterSet.upsert({
     where: {
       brandId_seasonId_name: {
@@ -600,13 +600,13 @@ async function main() {
   console.log('🌱 Avvio seed database...');
 
   try {
-    // Seeding utente admin
+    // Seeding admin user
     await seedAdminUser(prisma);
 
-    // Aggiorna utenti esistenti con emailVerifiedAt
+    // Update existing users with emailVerifiedAt
     await updateExistingUsersVerification(prisma);
 
-    // Seeding configurazioni
+    // Seeding configurations
     await seedAppConfigs(prisma);
 
     // Seeding context data
@@ -624,7 +624,7 @@ async function main() {
     // Seeding milestone templates
     await seedMilestoneTemplates(prisma, functionIds);
 
-    // Log finale
+    // Final log
     console.log('\n🎉 Seed completato con successo!');
     console.log('\n🔑 Credenziali admin:');
     console.log('   Email: admin@luke.local');
@@ -647,12 +647,12 @@ async function main() {
 }
 
 /**
- * Esegui seed e chiudi connessione — solo quando questo file è l'entrypoint.
+ * Run seed and close the connection — only when this file is the entrypoint.
  *
- * Senza la guardia, un semplice `import { seedAdminUser } from '../prisma/seed'`
- * faceva partire l'intero seed come effetto collaterale dell'import, e il suo
- * `process.exit(1)` in caso di errore abbatteva il processo chiamante (nei test
- * si portava giù il runner).
+ * Without the guard, a simple `import { seedAdminUser } from '../prisma/seed'`
+ * would kick off the entire seed as a side effect of the import, and its
+ * `process.exit(1)` on error would take down the calling process (in tests
+ * it took the runner down with it).
  */
 function isEntrypoint(): boolean {
   const entry = process.argv[1];

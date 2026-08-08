@@ -1,6 +1,6 @@
 /**
- * Helper per mock storage provider nei test
- * Simula comportamento storage in-memory per test isolati
+ * Helper for mock storage provider in tests
+ * Simulates in-memory storage behavior for isolated tests
  */
 
 import { Readable } from 'stream';
@@ -22,20 +22,20 @@ export class MockStorageProvider {
   private nextId = 1;
 
   /**
-   * `key` è opzionale perché il vero `putObject` non la riceve: la genera il
-   * provider a partire da `originalName`. Il mock fa lo stesso — pretenderla in
-   * ingresso produceva "Invalid key: must be non-empty string".
+   * `key` is optional because the real `putObject` doesn't receive it: the
+   * provider generates it from `originalName`. The mock does the same —
+   * requiring it as input produced "Invalid key: must be non-empty string".
    */
   async put(params: {
     bucket: string;
     key?: string;
     originalName?: string;
-    /** Opzionale come nel vero `putObject`, che ripiega su application/octet-stream. */
+    /** Optional as in the real `putObject`, which falls back to application/octet-stream. */
     contentType?: string;
     size: number;
     stream: NodeJS.ReadableStream;
   }): Promise<MockFileObject> {
-    // Converti stream in buffer
+    // Convert stream to buffer
     const chunks: Buffer[] = [];
     for await (const chunk of params.stream) {
       chunks.push(chunk as Buffer);
@@ -96,7 +96,7 @@ export class MockStorageProvider {
     return files;
   }
 
-  // Helper per test
+  // Test helper
   getFileCount(): number {
     return this.files.size;
   }
@@ -118,7 +118,7 @@ export class MockStorageProvider {
 }
 
 /**
- * Crea context di test con mock storage provider
+ * Creates a test context with a mock storage provider
  */
 export async function createTestContextWithMockStorage(): Promise<
   Context & { mockStorage: MockStorageProvider }
@@ -128,19 +128,19 @@ export async function createTestContextWithMockStorage(): Promise<
 
   const mockStorage = new MockStorageProvider();
 
-  // Mock del storage provider nel context
+  // Mock the storage provider in the context
   const originalPrisma = context.prisma;
   context.prisma = {
     ...originalPrisma,
     fileObject: {
       ...originalPrisma.fileObject,
       create: async (data: any) => {
-        // Simula creazione fileObject nel DB
+        // Simulate fileObject creation in the DB
         const fileObject = await originalPrisma.fileObject.create(data);
         return fileObject;
       },
       findFirst: async (params: any) => {
-        // Per i test di moveTempLogoToBrand
+        // For moveTempLogoToBrand tests
         if (params.where?.bucket === 'temp-brand-logos') {
           const files = mockStorage.getFilesByBucket('temp-brand-logos');
           if (files.length > 0) {
@@ -170,7 +170,7 @@ export async function createTestContextWithMockStorage(): Promise<
 }
 
 /**
- * Helper per creare file di test
+ * Helper to create test files
  */
 export function createTestFile(
   filename: string,
@@ -193,7 +193,7 @@ export function createTestFile(
 }
 
 /**
- * Helper per creare immagini PNG valide per test
+ * Helper to create valid PNG images for tests
  */
 export function createValidPngBuffer(): Buffer {
   // PNG header + minimal PNG data
@@ -205,7 +205,7 @@ export function createValidPngBuffer(): Buffer {
 }
 
 /**
- * Helper per creare immagini JPEG valide per test
+ * Helper to create valid JPEG images for tests
  */
 export function createValidJpegBuffer(): Buffer {
   // JPEG header
@@ -215,9 +215,9 @@ export function createValidJpegBuffer(): Buffer {
 }
 
 /**
- * Helper per creare file con magic bytes sbagliati (per test validazione)
+ * Helper to create a file with wrong magic bytes (for validation tests)
  */
 export function createInvalidImageBuffer(): Buffer {
-  // File txt con estensione .png
+  // Txt file with a .png extension
   return Buffer.from('This is not an image file');
 }

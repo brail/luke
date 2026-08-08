@@ -39,9 +39,9 @@ export async function assertNotLastAdmin(
  * Same as `assertNotLastAdmin`, but also checks effective access to every
  * section in `ADMIN_RECOVERY_SECTIONS` (kill switch + role defaults + personal
  * overrides), not just role count. Demoting/deactivating/deleting `userId` must
- * never leave zero admins able to administer users — l'unico percorso in-app per
- * annullare una misconfigurazione RBAC (vedi i guard `set`/`setRoleDefaults` in
- * `sectionAccess.ts`, che controllano lo stesso invariante dall'altro lato).
+ * never leave zero admins able to administer users — the only in-app path to
+ * undo an RBAC misconfiguration (see the guards `set`/`setRoleDefaults` in
+ * `sectionAccess.ts`, which check the same invariant from the other side).
  */
 export async function assertNotLastAdminWithSettingsAccess(
   tx: Prisma.TransactionClient,
@@ -56,8 +56,8 @@ export async function assertNotLastAdminWithSettingsAccess(
   const survivingAdmins = await countRecoveryCapableAdminsAfterChange(
     tx,
     userId,
-    // `null`: demoting/deactivating/deleting removes every section at once, non
-    // una sezione specifica.
+    // `null`: demoting/deactivating/deleting removes every section at once, not
+    // a specific section.
     null,
     null,
     sectionAccessDefaults,

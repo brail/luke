@@ -41,9 +41,9 @@ export function buildHelmetConfig(env: string): HelmetConfig {
   const isProduction = env === 'production';
 
   return {
-    // CSP: solo in produzione per API JSON-only
+    // CSP: production only for JSON-only API
     contentSecurityPolicy: isDevelopment
-      ? false // Disabilita CSP in dev per evitare problemi
+      ? false // Disables CSP in dev to avoid issues
       : {
           directives: {
             defaultSrc: ["'none'"],
@@ -52,16 +52,16 @@ export function buildHelmetConfig(env: string): HelmetConfig {
           },
         },
 
-    // HSTS: solo in produzione
+    // HSTS: production only
     hsts: isProduction
       ? {
-          maxAge: 15552000, // 180 giorni
+          maxAge: 15552000, // 180 days
           includeSubDomains: true,
-          preload: false, // Non forzare preload
+          preload: false, // Do not force preload
         }
       : false,
 
-    // Header sempre presenti per sicurezza
+    // Headers always present for security
     noSniff: true, // X-Content-Type-Options: nosniff
     referrerPolicy: { policy: 'no-referrer' }, // Referrer-Policy: no-referrer
     frameguard: { action: 'deny' }, // X-Frame-Options: DENY

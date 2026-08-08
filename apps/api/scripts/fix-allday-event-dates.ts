@@ -1,18 +1,18 @@
 /**
  * fix-allday-event-dates.ts
  *
- * Corregge retroattivamente CalendarEvent.startAt/endAt per eventi allDay=true creati con il bug
- * di CalendarEventDialog.tsx (data locale senza offset → new Date() la interpreta come orario
- * locale invece di UTC midnight, causando un rollback di un giorno una volta convertita in UTC).
- * Ricalcola ogni riga come UTC midnight del giorno di calendario locale corrente — operazione
- * idempotente: sulle righe già corrette (UTC midnight) non cambia nulla, su quelle corrotte
- * ripristina il giorno originariamente scelto dall'utente (stesso meccanismo di auto-correzione
- * che rende l'UI di Luke già visivamente corretta oggi).
+ * Retroactively corrects CalendarEvent.startAt/endAt for allDay=true events created with the
+ * CalendarEventDialog.tsx bug (local date with no offset → new Date() interprets it as local
+ * time instead of UTC midnight, causing a one-day rollback once converted to UTC).
+ * Recomputes every row as UTC midnight of the current local calendar day — an idempotent
+ * operation: rows already correct (UTC midnight) are left unchanged, corrupted ones have
+ * the day the user originally picked restored (the same auto-correction mechanism that
+ * already makes Luke's UI display correctly today).
  *
- * Richiede TZ=Europe/Rome nel processo (impostato dallo script npm, non qui nel file: gli import
- * statici vengono eseguiti prima di qualunque istruzione top-level di questo modulo).
+ * Requires TZ=Europe/Rome in the process (set by the npm script, not here in the file: static
+ * imports run before any top-level statement of this module).
  *
- * Uso:
+ * Usage:
  *   pnpm --filter @luke/api db:fix-allday-dates [--dry-run] [--no-sync]
  */
 

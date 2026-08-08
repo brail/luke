@@ -1,16 +1,16 @@
 /**
- * Brand scope: il permesso non è l'accesso.
+ * Brand scope: permission is not access.
  *
- * `requirePermission('pricing:read')` risponde a "questo ruolo può leggere i
- * prezzi?". Non risponde a "questo utente può leggere i prezzi **di questo
- * brand**?". Le due domande erano confuse in cinque router: un editor con il
- * permesso, ma il cui team ha scope sul solo brand A, esportava la griglia
- * prezzi del brand B passandone l'UUID — recuperabile dal nome di un PDF
- * condiviso o da una riga di audit log.
+ * `requirePermission('pricing:read')` answers "can this role read
+ * prices?". It does not answer "can this user read prices **for this
+ * brand**?". The two questions were conflated in five routers: an editor with the
+ * permission, but whose team is scoped to brand A only, could export the price
+ * grid for brand B by passing its UUID — retrievable from the filename of a shared
+ * PDF or from an audit log row.
  *
- * L'accesso è **opt-in stretto**: `null` (nessun vincolo) è riservato agli
- * admin; per tutti gli altri è esattamente l'unione dei `brandScopes` dei team
- * attivi di cui l'utente è membro.
+ * Access is **strict opt-in**: `null` (no constraint) is reserved for
+ * admins; for everyone else it's exactly the union of the `brandScopes` of the
+ * active teams the user belongs to.
  */
 
 import { randomUUID } from 'crypto';
@@ -31,9 +31,9 @@ import type { PrismaClient } from '@prisma/client';
 
 let prisma: PrismaClient;
 
-/** Editor membro di un team con scope sul solo `inScopeBrandId`. */
+/** Editor who is a member of a team scoped to `inScopeBrandId` only. */
 let scopedSession: UserSession;
-/** Admin: `getUserAllowedBrandIds` restituisce `null`, nessun vincolo. */
+/** Admin: `getUserAllowedBrandIds` returns `null`, no constraint. */
 let adminSession: UserSession;
 
 let inScopeBrandId: string;
@@ -41,12 +41,12 @@ let outOfScopeBrandId: string;
 let seasonId: string;
 
 /**
- * Risorse del brand **fuori scope**: sono i bersagli della tabella FORBIDDEN.
+ * Resources for the brand **out of scope**: these are the targets of the FORBIDDEN table.
  *
- * Costruite passando dal router come admin invece che con Prisma diretto: le
- * righe richiedono un planning group, che richiede un calendario, e `createRow`
- * sa già risolvere quello di default. Meno fixture e, soprattutto, il percorso
- * reale.
+ * Built by going through the router as admin instead of with direct Prisma: rows
+ * require a planning group, which requires a calendar, and `createRow`
+ * already knows how to resolve the default one. Fewer fixtures and, more importantly, the
+ * real path.
  */
 const outRes = {
   layoutId: '',
@@ -56,7 +56,7 @@ const outRes = {
   revisionId: '',
 };
 
-/** Le stesse risorse sul brand in scope, per i casi positivi. */
+/** The same resources on the in-scope brand, for the positive cases. */
 const inRes = { layoutId: '', rowId: '' };
 
 beforeAll(async () => {
@@ -95,7 +95,7 @@ beforeAll(async () => {
     prisma.companyTeamMembership.create({
       data: { teamId: team.id, userId: editor.user.id },
     }),
-    // Scope sul solo brand "in": è ciò che rende l'altro fuori portata.
+    // Scoped to the "in" brand only: this is what puts the other one out of reach.
     prisma.companyTeamBrandScope.create({
       data: { teamId: team.id, brandId: inScopeBrandId },
     }),
@@ -135,8 +135,8 @@ beforeAll(async () => {
   });
   outRes.quotationId = quotation.id;
 
-  // La revisione a mano: `create` valida `revisionTypeValue` contro un catalogo
-  // che questa spec non ha motivo di seminare.
+  // The revision by hand: `create` validates `revisionTypeValue` against a catalog
+  // that this spec has no reason to seed.
   const revision = await prisma.collectionLayoutRevision.create({
     data: {
       collectionLayoutId: outRes.layoutId,
@@ -154,7 +154,7 @@ beforeAll(async () => {
 });
 
 describe('brand scope — pricing', () => {
-  /** Ogni caso: etichetta, e la chiamata parametrizzata sul brand. */
+  /** Each case: label, and the call parameterized on the brand. */
   const cases: [string, (session: UserSession, brandId: string) => Promise<unknown>][] = [
     ['export.pdf', (s, brandId) =>
       createCallerWithSession(s).pricing.export.pdf({ brandId, seasonId })],
@@ -172,8 +172,8 @@ describe('brand scope — pricing', () => {
   });
 
   it('il brand in scope non è bloccato dal guard', async () => {
-    // `list` è la sola delle tre che non richiede parametri già esistenti:
-    // superato il guard deve arrivare al risultato, non a un FORBIDDEN.
+    // `list` is the only one of the three that doesn't require already-existing parameters:
+    // once past the guard it must reach the result, not a FORBIDDEN.
     await expect(
       createCallerWithSession(scopedSession).pricing.parameterSets.list({
         brandId: inScopeBrandId,
@@ -218,15 +218,15 @@ describe('brand scope — collectionLayout e dashboard', () => {
 
 describe('brand scope — admin senza team', () => {
   /**
-   * Un admin che non appartiene ad alcun team non deve essere vincolato.
+   * An admin who doesn't belong to any team must not be constrained.
    *
-   * Prima dell'unificazione lo era: `assertBrandAccess` esisteva in due varianti,
-   * e quella di `seasonCalendar.service.ts` aveva `userRole` **opzionale** con
-   * tutti e 15 i chiamanti che lo omettevano. Senza quel parametro
-   * `getUserAllowedBrandIds` non prendeva mai l'early return per gli admin,
-   * quindi un admin senza team riceveva `[]` → FORBIDDEN su mezzo calendario
-   * stagionale. La toppa era un `hasPermission({ role }, '*:*')` scritto a mano
-   * nell'unico punto in cui qualcuno se n'era accorto.
+   * Before unification it was: `assertBrandAccess` existed in two variants,
+   * and the one in `seasonCalendar.service.ts` had `userRole` as **optional**, with
+   * all 15 callers omitting it. Without that parameter
+   * `getUserAllowedBrandIds` never took the early return for admins,
+   * so an admin with no team received `[]` → FORBIDDEN on half the seasonal
+   * calendar. The fix was a hand-written `hasPermission({ role }, '*:*')`
+   * at the one spot where someone had noticed.
    */
   it('seasonCalendar.getOrCreate risolve per un admin fuori da ogni team', async () => {
     await expect(
@@ -251,15 +251,15 @@ describe('brand scope — admin senza team', () => {
 
 describe('brand scope — risorse indirette', () => {
   /**
-   * Le procedure che non nominano un brand nell'input, ma lo raggiungono
-   * risolvendo il record: layout → gruppo → riga → quotazione, più le revisioni
-   * e lo storico fasi. Sono invisibili a un controllo che guardi solo `brandId`,
-   * ed erano tutte scoperte.
+   * The procedures that don't name a brand in their input, but reach it by
+   * resolving the record: layout → group → row → quotation, plus revisions
+   * and the phase history. They're invisible to a check that only looks at `brandId`,
+   * and they were all uncovered.
    *
-   * Una procedura per `it` e non raggruppate: `configMutations` è 20/min per
-   * utente, e `test/setup.ts` azzera lo store fra un test e l'altro. Raggruppate
-   * finirebbero per far scattare il limite, producendo un TOO_MANY_REQUESTS
-   * travestito da fallimento del guard.
+   * One procedure per `it` and not grouped: `configMutations` is 20/min per
+   * user, and `test/setup.ts` clears the store between tests. Grouped, they
+   * would end up tripping the limit, producing a TOO_MANY_REQUESTS
+   * disguised as a guard failure.
    */
   const denied: [string, () => Promise<unknown>][] = [
     ['groups.create', () =>
@@ -318,9 +318,9 @@ describe('brand scope — risorse indirette', () => {
         collectionLayoutId: outRes.layoutId,
         revisionId: outRes.revisionId,
       })],
-    // `collectionLayoutId` non è più un input: se ricomparisse, questa riga non
-    // compilerebbe. È il test che conta per il cross-layout — il runtime non può
-    // più esprimere l'incoerenza.
+    // `collectionLayoutId` is no longer an input: if it reappeared, this line wouldn't
+    // compile. This is the test that counts for the cross-layout case — the runtime can
+    // no longer express the inconsistency.
     ['revision.export.xlsx', () =>
       as().collectionLayoutRevision.export.xlsx({ revisionId: outRes.revisionId })],
     ['phaseHistory.listForRow', () =>
@@ -338,8 +338,8 @@ describe('brand scope — risorse indirette', () => {
   });
 
   it('un id inesistente è NOT_FOUND, non FORBIDDEN', async () => {
-    // L'ordine conta: un id che non esiste non è un problema di permessi, e
-    // rispondere FORBIDDEN direbbe all'attaccante che qualcosa esiste.
+    // Order matters: an id that doesn't exist isn't a permissions problem, and
+    // responding FORBIDDEN would tell the attacker that something exists.
     await expect(
       as().collectionLayout.groups.delete({ groupId: randomUUID() })
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
@@ -360,10 +360,10 @@ describe('brand scope — risorse indirette', () => {
 
 describe('brand scope — copyFromSeason', () => {
   /**
-   * Servono **entrambi** i guard, e una tabella con un solo verso non se ne
-   * accorge: con il solo controllo sulla sorgente si scrive in un brand non
-   * proprio; con il solo controllo sulla destinazione si legge la collezione di
-   * un brand altrui clonandola in uno proprio.
+   * **Both** guards are needed, and a table testing only one direction wouldn't
+   * catch it: with only the source check, you write into a brand you don't
+   * own; with only the destination check, you read another brand's collection
+   * by cloning it into your own.
    */
   it('sorgente fuori scope → FORBIDDEN', async () => {
     await expectUnauthorized(
@@ -394,16 +394,16 @@ describe('brand scope — copyFromSeason', () => {
 
 describe('reorder — gli id devono appartenere al parent', () => {
   /**
-   * Classe diversa dal brand scope, trovata di fianco. `reorder` prendeva la
-   * lista di id e faceva `update({ where: { id } })` su ognuno, senza filtrare
-   * sul parent: bastava un `rowId` legittimo per riordinare le quotazioni di una
-   * riga altrui. Il guard di brand non lo intercetta, perché il `rowId` passato
-   * è davvero tuo.
+   * A different class of bug from brand scope, found alongside it. `reorder` took the
+   * list of ids and ran `update({ where: { id } })` on each, without filtering
+   * on the parent: a legitimate `rowId` was enough to reorder another user's row's
+   * quotations. The brand guard doesn't catch it, because the `rowId` passed
+   * really is yours.
    */
   it('una quotazione di un\'altra riga non viene toccata', async () => {
     const asAdmin = createCallerWithSession(adminSession);
 
-    // Due righe distinte, ciascuna con la sua quotazione.
+    // Two distinct rows, each with its own quotation.
     const mine = await asAdmin.collectionLayout.rows.create({
       groupId: outRes.groupId,
       gender: 'UOMO',
@@ -425,8 +425,8 @@ describe('reorder — gli id devono appartenere al parent', () => {
       select: { order: true, rowId: true },
     });
 
-    // Riordino "la mia" riga, ma infilo nella lista la quotazione altrui in
-    // posizione 0 — che è ciò che ne cambierebbe l'ordine.
+    // Reordering "my" row, but slipping the other user's quotation into the list at
+    // position 0 — which is what would change its order.
     await asAdmin.collectionLayout.quotations.reorder({
       rowId: mine.id,
       orderedIds: [foreignQuotation.id, mineQuotation.id],

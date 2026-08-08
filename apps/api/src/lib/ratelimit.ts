@@ -14,7 +14,7 @@ import { t } from './t';
 
 import type { FastifyRequest } from 'fastify';
 
-// Logger interno per rate-limit
+// Internal rate-limit logger
 const logger = pino({ level: 'info' });
 
 /**
@@ -23,58 +23,58 @@ const logger = pino({ level: 'info' });
  */
 export const RATE_LIMIT_CONFIG = {
   login: {
-    max: 5, // 5 tentativi
-    windowMs: 60_000, // 1 minuto
+    max: 5, // 5 attempts
+    windowMs: 60_000, // 1 minute
     keyBy: 'ip' as const,
   },
-  // Bucket separato, chiave username (non IP): ferma il password-spray distribuito su
-  // più IP contro un singolo account, che il bucket 'login' (keyBy: 'ip') non copre.
-  // Applicato direttamente in authenticateUser() con lo username normalizzato come
-  // chiave esplicita — non passa da withRateLimit()/extractRateLimitKey (che non
-  // deriva 'username' da ctx, essendo login un endpoint pubblico non autenticato).
+  // Separate bucket, keyed by username (not IP): stops a password-spray distributed
+  // across many IPs against a single account, which the 'login' bucket (keyBy: 'ip') doesn't cover.
+  // Applied directly in authenticateUser() with the normalized username as an
+  // explicit key — it doesn't go through withRateLimit()/extractRateLimitKey (which
+  // doesn't derive 'username' from ctx, since login is an unauthenticated public endpoint).
   loginByUsername: {
-    max: 10, // 10 tentativi
-    windowMs: 900_000, // 15 minuti
+    max: 10, // 10 attempts
+    windowMs: 900_000, // 15 minutes
     keyBy: 'username' as const,
   },
   passwordChange: {
-    max: 3, // 3 tentativi
-    windowMs: 900_000, // 15 minuti
+    max: 3, // 3 attempts
+    windowMs: 900_000, // 15 minutes
     keyBy: 'userId' as const,
   },
   passwordReset: {
-    max: 3, // 3 tentativi
-    windowMs: 900_000, // 15 minuti
+    max: 3, // 3 attempts
+    windowMs: 900_000, // 15 minutes
     keyBy: 'ip' as const,
   },
   configMutations: {
-    max: 20, // 20 richieste
-    windowMs: 60_000, // 1 minuto
+    max: 20, // 20 requests
+    windowMs: 60_000, // 1 minute
     keyBy: 'userId' as const,
   },
   userMutations: {
-    max: 10, // 10 richieste
-    windowMs: 60_000, // 1 minuto
+    max: 10, // 10 requests
+    windowMs: 60_000, // 1 minute
     keyBy: 'userId' as const,
   },
   sectionAccessSet: {
-    max: 20, // 20 richieste
-    windowMs: 60_000, // 1 minuto
+    max: 20, // 20 requests
+    windowMs: 60_000, // 1 minute
     keyBy: 'userId' as const,
   },
   brandMutations: {
-    max: 10, // 10 richieste
-    windowMs: 60_000, // 1 minuto
+    max: 10, // 10 requests
+    windowMs: 60_000, // 1 minute
     keyBy: 'userId' as const,
   },
   pendingEmail: {
-    max: 10, // 10 tentativi per IP
-    windowMs: 900_000, // 15 minuti
+    max: 10, // 10 attempts per IP
+    windowMs: 900_000, // 15 minutes
     keyBy: 'ip' as const,
   },
   ldapTest: {
-    max: 3, // 3 tentativi
-    windowMs: 900_000, // 15 minuti
+    max: 3, // 3 attempts
+    windowMs: 900_000, // 15 minutes
     keyBy: 'userId' as const,
   },
   companyStructureMutations: {
@@ -84,15 +84,15 @@ export const RATE_LIMIT_CONFIG = {
   },
   navSyncTrigger: {
     max: 1,
-    windowMs: 600_000, // 10 minuti — 1 sync per finestra, previene connection pool exhaustion
+    windowMs: 600_000, // 10 minutes — 1 sync per window, prevents connection pool exhaustion
     keyBy: 'userId' as const,
   },
   exportGeneration: {
-    // Generare un PDF è l'operazione più costosa dell'API: pdfmake tiene l'intero
-    // documento in memoria e l'export carica anche i logo come Buffer. Senza
-    // limite, un singolo account in loop satura l'event loop del processo.
+    // Generating a PDF is the API's most expensive operation: pdfmake keeps the whole
+    // document in memory, and the export also loads logos as Buffers. Without a
+    // limit, a single account looping saturates the process's event loop.
     max: 10,
-    windowMs: 60_000, // 1 minuto
+    windowMs: 60_000, // 1 minute
     keyBy: 'userId' as const,
   },
 } as const;
@@ -101,11 +101,11 @@ export const RATE_LIMIT_CONFIG = {
  * Internal sliding-window entry tracked per key.
  */
 interface RateLimitEntry {
-  /** Numero di richieste nel window corrente */
+  /** Number of requests in the current window */
   count: number;
-  /** Timestamp di inizio window */
+  /** Window start timestamp */
   windowStart: number;
-  /** TTL in millisecondi */
+  /** TTL in milliseconds */
   windowMs: number;
 }
 
@@ -123,12 +123,12 @@ class RateLimitStore {
   }
 
   /**
-   * Verifica se una chiave è limitata
+   * Checks whether a key is limited
    *
-   * @param routeName - Nome della rotta
-   * @param key - Chiave (IP o userId)
-   * @param config - Configurazione rate-limit
-   * @returns true se limitata, false altrimenti
+   * @param routeName - Route name
+   * @param key - Key (IP or userId)
+   * @param config - Rate-limit configuration
+   * @returns true if limited, false otherwise
    */
   isLimited(
     routeName: string,
@@ -140,26 +140,26 @@ class RateLimitStore {
     const now = Date.now();
 
     if (!entry) {
-      return false; // Nessuna entry = non limitata
+      return false; // No entry = not limited
     }
 
-    // Verifica se il window è scaduto
+    // Check whether the window has expired
     if (now > entry.windowStart + entry.windowMs) {
-      // Window scaduto, rimuovi entry
+      // Window expired, remove entry
       store.delete(key);
       return false;
     }
 
-    // Verifica se ha superato il limite
+    // Check whether the limit has been exceeded
     return entry.count >= config.max;
   }
 
   /**
-   * Registra una richiesta per una chiave
+   * Records a request for a key
    *
-   * @param routeName - Nome della rotta
-   * @param key - Chiave (IP o userId)
-   * @param config - Configurazione rate-limit
+   * @param routeName - Route name
+   * @param key - Key (IP or userId)
+   * @param config - Rate-limit configuration
    */
   record(
     routeName: string,
@@ -171,26 +171,26 @@ class RateLimitStore {
     const entry = store.get(key);
 
     if (!entry) {
-      // Nuova entry
+      // New entry
       store.set(key, {
         count: 1,
         windowStart: now,
         windowMs: config.windowMs,
       });
     } else {
-      // Verifica se il window è scaduto
+      // Check whether the window has expired
       if (now > entry.windowStart + entry.windowMs) {
         // Reset window
         entry.count = 1;
         entry.windowStart = now;
         entry.windowMs = config.windowMs;
       } else {
-        // Incrementa contatore
+        // Increment counter
         entry.count++;
       }
     }
 
-    // Se la cache è piena, rimuovi l'entry più vecchia (LRU)
+    // If the cache is full, remove the oldest entry (LRU)
     if (store.size >= this.maxSize) {
       const oldestKey = store.keys().next().value;
       if (oldestKey) {
@@ -200,7 +200,7 @@ class RateLimitStore {
   }
 
   /**
-   * Ottiene o crea lo store per una rotta
+   * Gets or creates the store for a route
    */
   private getOrCreateStore(routeName: string): Map<string, RateLimitEntry> {
     if (!this.stores.has(routeName)) {
@@ -210,7 +210,7 @@ class RateLimitStore {
   }
 
   /**
-   * Rimuove entry scadute da tutti gli store
+   * Removes expired entries from all stores
    */
   private cleanup(): void {
     const now = Date.now();
@@ -228,7 +228,7 @@ class RateLimitStore {
       expiredKeys.forEach(key => store.delete(key));
       totalRemoved += expiredKeys.length;
 
-      // Se lo store è vuoto, rimuovilo
+      // If the store is empty, remove it
       if (store.size === 0) {
         this.stores.delete(routeName);
       }
@@ -243,17 +243,17 @@ class RateLimitStore {
   }
 
   /**
-   * Avvia il cleanup periodico
+   * Starts the periodic cleanup
    */
   private startCleanup(): void {
-    // Cleanup ogni minuto
+    // Cleanup every minute
     this.cleanupInterval = setInterval(() => {
       this.cleanup();
     }, 60 * 1000);
   }
 
   /**
-   * Ferma il cleanup periodico
+   * Stops the periodic cleanup
    */
   stop(): void {
     if (this.cleanupInterval) {
@@ -263,14 +263,14 @@ class RateLimitStore {
   }
 
   /**
-   * Pulisce completamente tutti gli store
+   * Completely clears all stores
    */
   clear(): void {
     this.stores.clear();
   }
 
   /**
-   * Ottiene statistiche degli store
+   * Gets statistics for the stores
    */
   getStats(): {
     routes: number;
@@ -354,10 +354,10 @@ export function withRateLimit(routeName: keyof typeof RATE_LIMIT_CONFIG) {
       );
 
       if (config.keyBy === 'username') {
-        // Nessuna rotta wired su withRateLimit() usa oggi keyBy 'username' (solo
-        // loginByUsername, controllato direttamente in authenticateUser()) — se mai
-        // capitasse (es. AppConfig override malformato su un'altra rotta), fallisce
-        // rumorosamente invece di derivare silenziosamente una chiave sbagliata.
+        // No route currently wired to withRateLimit() uses keyBy 'username' (only
+        // loginByUsername, checked directly in authenticateUser()) — if it ever
+        // did (e.g. a malformed AppConfig override on another route), fail
+        // loudly instead of silently deriving the wrong key.
         throw new Error(
           `withRateLimit('${routeName}'): keyBy 'username' non è supportato da questo middleware — la chiave va passata esplicitamente dal chiamante`
         );
@@ -388,5 +388,5 @@ export function withRateLimit(routeName: keyof typeof RATE_LIMIT_CONFIG) {
  */
 export const RATE_LIMIT_CONFIG_EXPORT = {
   maxSize: 1000,
-  cleanupIntervalMs: 60 * 1000, // 1 minuto
+  cleanupIntervalMs: 60 * 1000, // 1 minute
 } as const;

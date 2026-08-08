@@ -1,8 +1,8 @@
 /**
- * Router tRPC per Collection Catalog Items
- * Gestisce le opzioni configurabili dei campi Collection Layout:
+ * tRPC router for Collection Catalog Items
+ * Manages the configurable options for Collection Layout fields:
  * strategy, lineStatus, styleStatus, revisionType, pricePositioning
- * (la fase produzione è gestita dal catalogo Phase separato, vedi routers/phase.ts)
+ * (the production phase is managed by the separate Phase catalog, see routers/phase.ts)
  */
 
 import { TRPCError } from '@trpc/server';

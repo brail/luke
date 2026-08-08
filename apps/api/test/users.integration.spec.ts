@@ -1,10 +1,10 @@
 /**
- * `users.update` — reset password admin (piano: docs/TASK_admin_password_reset_fix.md).
+ * `users.update` — admin password reset (plan: docs/TASK_admin_password_reset_fix.md).
  *
- * `UpdateUserInputSchema` non aveva mai un campo `password`: il dialog "Modifica utente"
- * lo raccoglieva, ma il server lo scartava in silenzio. Questa suite copre il guard di
- * privilegio (`*:*`), il blocco self-reset, il locked-field per provider esterni, e gli
- * effetti collaterali attesi (tokenVersion, audit) sul percorso admin-to-admin.
+ * `UpdateUserInputSchema` never had a `password` field: the "Edit user" dialog
+ * collected it, but the server silently discarded it. This suite covers the privilege guard (`*:*`),
+ * self-reset block, locked-field for external providers, and expected side effects
+ * (tokenVersion, audit) on the admin-to-admin path.
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
@@ -44,7 +44,7 @@ beforeAll(async () => {
   sessions.viewer = viewer.session;
 });
 
-/** Utente LOCAL "usa e getta" per un singolo test — evita che i test si sporchino a vicenda. */
+/** LOCAL "throwaway" user for a single test — prevents tests from dirtying each other. */
 async function createTargetUser() {
   return createTestUser('viewer');
 }

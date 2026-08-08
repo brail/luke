@@ -26,12 +26,12 @@ export function getLockedFields(provider: string): LockedFields[] {
   if (provider === 'LOCAL') {
     return [];
   }
-  // Per provider esterni (LDAP, OIDC), blocca i campi sincronizzati
+  // For external providers (LDAP, OIDC), lock synchronized fields
   if (provider === 'LDAP') {
-    // Per LDAP: username non modificabile, firstName/lastName sincronizzati, password gestita da LDAP
+    // For LDAP: username immutable, firstName/lastName synchronized, password managed by LDAP
     return ['username', 'firstName', 'lastName', 'password'];
   }
-  // Per altri provider esterni (OIDC), blocca solo i campi sempre sincronizzati
+  // For other external providers (OIDC), lock only always-synchronized fields
   return ['firstName', 'lastName', 'password'];
 }
 
@@ -60,7 +60,7 @@ export async function deleteUserHandler({
     });
   }
 
-  // Protezione: impedisci auto-eliminazione
+  // Protection: prevent self-deactivation
   if (user.id === ctx.session.user.id) {
     throw new TRPCError({
       code: 'FORBIDDEN',
@@ -68,7 +68,7 @@ export async function deleteUserHandler({
     });
   }
 
-  // Soft delete: imposta isActive = false
+  // Soft delete: sets isActive = false
   const deletedUser = await ctx.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const current = await tx.user.findUnique({
       where: { id: input.id },
@@ -93,7 +93,7 @@ export async function deleteUserHandler({
 
   invalidateTokenVersionCache(input.id);
 
-  // Audit logging gestito automaticamente dal middleware withAuditLog
+  // Audit logging handled automatically by withAuditLog middleware
 
   return {
     id: deletedUser.id,

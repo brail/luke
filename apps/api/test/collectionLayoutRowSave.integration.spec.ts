@@ -1,17 +1,17 @@
 /**
- * Commit differito del drawer riga collezione: `rows.create`/`rows.update` ora
- * sincronizzano quotazioni + fase + gruppo di pianificazione nella stessa
- * transazione della riga, con un solo audit consolidato per la riga (più uno per
- * ciascuna quotazione toccata, come prima) — invece delle mutation immediate
- * (`quotations.create/update/delete`, `rows.changePhase`, rimossa) che scrivevano
- * sul DB indipendentemente dal Salva/Annulla del drawer.
+ * Deferred commit of the collection row drawer: `rows.create`/`rows.update` now
+ * sync quotations + phase + planning group within the same row transaction,
+ * with a single consolidated audit for the row (plus one for each quotation
+ * touched, as before) — instead of the immediate mutations
+ * (`quotations.create/update/delete`, `rows.changePhase`, removed) that wrote
+ * to the DB regardless of the drawer's Save/Cancel.
  *
- * Copre: sync quotazioni (create/update/delete per differenza), id di quotazione
- * estraneo alla riga (BAD_REQUEST, rollback dell'intera transazione), diff
- * fase/gruppo nel metadata solo quando cambiano davvero, nota di cambio fase mai
- * scritta se la fase non cambia, e l'idempotenza di `bulkAssignPlanningGroup`
- * (fix collaterale in `collectionLayout.service.ts`: riassegnare allo stesso
- * gruppo non deve toccare la riga).
+ * Covers: quotation sync (create/update/delete by diff), a quotation id
+ * foreign to the row (BAD_REQUEST, rollback of the entire transaction), phase/
+ * group diff in the metadata only when they actually change, phase-change note
+ * never written if the phase doesn't change, and the idempotency of
+ * `bulkAssignPlanningGroup` (collateral fix in `collectionLayout.service.ts`:
+ * reassigning to the same group must not touch the row).
  */
 
 import { randomUUID } from 'crypto';
@@ -145,8 +145,8 @@ describe('rows.update — sync quotazioni', () => {
     await expect(
       asAdmin().collectionLayout.rows.update({
         rowId: rowA.id,
-        // La modifica a `line` nella stessa richiesta non deve sopravvivere: la
-        // sync quotazioni fallisce dentro la stessa transazione dell'update riga.
+        // The change to `line` in the same request must not survive: the
+        // quotation sync fails inside the same transaction as the row update.
         data: { line: 'NON DEVE SALVARSI', quotations: [{ id: foreign.id, retailPrice: 999 }] },
       })
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
@@ -211,8 +211,8 @@ describe('rows.update — diff fase consolidato nell\'audit', () => {
       phaseChangeNote: 'motivazione del cambio',
     });
 
-    // La procedura dedicata `rows.changePhase` è stata rimossa (assorbita da `rows.update`):
-    // nessun record dovrebbe mai comparire con quella action per righe create in questa sessione.
+    // The dedicated `rows.changePhase` procedure has been removed (absorbed by `rows.update`):
+    // no record should ever appear with that action for rows created in this session.
     expect(
       await prisma.auditLog.count({ where: { action: 'COLLECTION_ROW_PHASE_CHANGE', targetId: row.id } })
     ).toBe(0);

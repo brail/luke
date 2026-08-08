@@ -1,6 +1,6 @@
 /**
- * LDAP sub-router per integrazioni
- * Gestisce configurazione e test connessione LDAP
+ * LDAP sub-router for integrations
+ * Handles LDAP configuration and connection testing
  */
 
 import { TRPCError } from '@trpc/server';
@@ -33,7 +33,7 @@ export const ldapRouter = router({
       try {
         const logger = new SecureLogger(ctx.logger);
 
-        // Validare che roleMapping sia JSON valido (solo se presente)
+        // Validate that roleMapping is valid JSON (only if present)
         if (input.roleMapping && input.roleMapping.trim() !== '') {
           try {
             JSON.parse(input.roleMapping);
@@ -45,7 +45,7 @@ export const ldapRouter = router({
           }
         }
 
-        // Salva ogni campo in AppConfig
+        // Save each field in AppConfig
         const configMappings = [
           {
             key: 'auth.ldap.enabled',
@@ -110,7 +110,7 @@ export const ldapRouter = router({
           hasBindPassword: !!input.bindPassword,
         });
 
-        // Log audit aggregato per LDAP
+        // Aggregated audit log for LDAP
         await logAudit(ctx, {
           action: 'CONFIG_UPSERT',
           targetType: 'AppConfig',
@@ -180,10 +180,10 @@ export const ldapRouter = router({
       try {
         const config = await getLdapConfig(ctx.prisma);
 
-        // Converti roleMapping object a JSON string per il frontend
+        // Convert roleMapping object to JSON string for the frontend
         const roleMappingJson = JSON.stringify(config.roleMapping, null, 2);
 
-        // Per sicurezza, omettere dati sensibili
+        // For security, omit sensitive data
         return {
           enabled: config.enabled,
           url: config.url,
@@ -203,7 +203,7 @@ export const ldapRouter = router({
           'Error getting LDAP config'
         );
 
-        // Se è un errore di configurazioni mancanti, restituisci configurazione di default
+        // If it's a missing-configuration error, return the default configuration
         if (message.includes('Configurazioni LDAP mancanti')) {
           return {
             enabled: false,
@@ -259,14 +259,14 @@ export const ldapRouter = router({
 
         ctx.logger.info('Testing LDAP connection');
 
-        // Crea client LDAP (ldapts: connessione lazy al primo bind)
+        // Create LDAP client (ldapts: lazy connection on first bind)
         client = new Client({
           url: config.url,
           timeout: 10000,
           connectTimeout: 5000,
         });
 
-        // Testa connessione e bind
+        // Test connection and bind
         try {
           await client.bind(config.bindDN, config.bindPassword);
           ctx.logger.info('LDAP connection test successful');
@@ -301,7 +301,7 @@ export const ldapRouter = router({
           cause: error,
         });
       } finally {
-        // Chiudi connessione
+        // Close connection
         if (client) {
           try {
             await client.unbind();
@@ -342,13 +342,13 @@ export const ldapRouter = router({
           });
         }
 
-        // Crea client LDAP (ldapts: connessione lazy al primo bind)
+        // Create LDAP client (ldapts: lazy connection on first bind)
         client = new Client({
           url: config.url,
           timeout: 10000,
         });
 
-        // Bind amministrativo
+        // Administrative bind
         try {
           await client.bind(config.bindDN, config.bindPassword);
         } catch (err: unknown) {
@@ -359,7 +359,7 @@ export const ldapRouter = router({
           });
         }
 
-        // Testa ricerca utente (input.username escapato contro LDAP injection — RFC 4515)
+        // Test user search (input.username escaped against LDAP injection — RFC 4515)
         const searchFilter = config.searchFilter.replace(
           /\$\{username\}/g,
           escapeLdapFilter(input.username)
@@ -396,7 +396,7 @@ export const ldapRouter = router({
           });
         }
 
-        // ldapts restituisce entry flat: { dn: string; [key]: string | string[] }
+        // ldapts returns flat entries: { dn: string; [key]: string | string[] }
         const results = searchEntries.map(entry => {
           const attributes: Record<string, string | string[]> = {};
           for (const key of Object.keys(entry)) {

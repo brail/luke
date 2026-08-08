@@ -143,7 +143,7 @@ export const notificationsRouter = router({
 
       const storedMap = new Map(stored.map(p => [p.category, p.enabled]));
 
-      // Restituisce tutte le categorie, default enabled se nessuna riga presente
+      // Returns all categories, default enabled if no row present
       return CATEGORIES.map(category => ({
         category,
         enabled: storedMap.get(category) ?? true,
