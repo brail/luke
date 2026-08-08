@@ -1522,7 +1522,7 @@ model NavPfDdtPicking {
   orderLineNo         Int
   /// SUM of pairs/qty per picking status ("Totale"=total, "Rilasciate"=released, "Aperte"=open,
   /// "DaInviareWmsps"=pending send to WMS-PS, "InviatoWmsps"=sent to WMS-PS, "EvasoWmsps"=fulfilled
-  /// by WMS-PS). Applies to this and the following pairs*/qty* fields: pairs* counts shoe pairs, qty* counts units.
+  /// by WMS-PS). Applies to this and the following `pairs*` / `qty*` fields: `pairs*` counts shoe pairs, `qty*` counts units.
   pairsTotale         Float?
   qtyTotale           Float?
   pairsRilasciate     Float?
