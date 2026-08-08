@@ -107,6 +107,13 @@ Dopo modifiche a router tRPC in `apps/api`: `cd apps/api && npx tsc -b`
     accompagnato da un test che dimostri il comportamento per-attaccante, non solo
     per-formato-config (vedi `apps/api/test/ratelimit.integration.spec.ts`,
     describe `blocks valid credentials too`).
+14. **Commenti nel codice sempre in inglese** — `//`, `/** */`, Prisma `///`:
+    sempre inglese, ovunque, **inclusi i termini di dominio** (stagione → season,
+    campionario → collection/catalog, reso → return, ecc.) — nessuna eccezione
+    per vocabolario italiano. In vista di i18n su develop-2.2, l'italiano non ha
+    trattamento privilegiato nel codice. Logica di merge sul commento esistente
+    (non toccare se accurato, integra se incompleto, riscrivi se driftato):
+    vedi `.claude/skills/luke-docs/references/inline-rules.md`.
 
 ### Soft delete pattern
 
