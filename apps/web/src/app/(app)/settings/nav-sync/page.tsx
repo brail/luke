@@ -31,7 +31,7 @@ import {
   TabsList,
   TabsTrigger,
 } from '../../../../components/ui/tabs';
-import { useToast } from '../../../../hooks/use-toast';
+import { useToast } from '../../../../hooks/useToast';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 

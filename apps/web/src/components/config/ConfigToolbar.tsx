@@ -1,6 +1,6 @@
 import { Search } from 'lucide-react';
 
-import { CATEGORIES } from '../../lib/config-helpers';
+import { CATEGORIES } from '../../lib/configHelpers';
 import { Input } from '../ui/input';
 import {
   Select,

@@ -1,5 +1,5 @@
 /**
- * Tests for portafoglio-pg-query service
+ * Tests for portafoglioPg-query service
  *
  * Covers:
  * - Query execution with base params (seasonCode, trademarkCode)

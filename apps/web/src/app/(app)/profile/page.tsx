@@ -37,8 +37,8 @@ import {
   TabsTrigger,
 } from '../../../components/ui/tabs';
 import { UserAvatar } from '../../../components/UserAvatar';
-import { useFormatDate } from '../../../hooks/use-format-date';
 import { useCopyToClipboard } from '../../../hooks/useCopyToClipboard';
+import { useFormatDate } from '../../../hooks/useFormatDate';
 import { trpc } from '../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../lib/trpcErrorMessages';
 

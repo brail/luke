@@ -40,8 +40,8 @@ import {
 } from '../../../../components/ui/select';
 import { Switch } from '../../../../components/ui/switch';
 import { Textarea } from '../../../../components/ui/textarea';
-import { useToast } from '../../../../hooks/use-toast';
 import { usePermission } from '../../../../hooks/usePermission';
+import { useToast } from '../../../../hooks/useToast';
 import { debugLog, debugWarn } from '../../../../lib/debug';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';

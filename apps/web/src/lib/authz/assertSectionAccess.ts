@@ -12,7 +12,7 @@ import type { Section } from '@luke/core';
 
 import { auth } from '../../auth';
 import { debugWarn } from '../../lib/debug';
-import { createAuthedTrpcClient } from '../../lib/trpc-auth';
+import { createAuthedTrpcClient } from '../../lib/trpcAuth';
 
 import type { Route } from 'next';
 

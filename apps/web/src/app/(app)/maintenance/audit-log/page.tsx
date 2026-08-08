@@ -29,7 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from '../../../../components/ui/table';
-import { useFormatDate } from '../../../../hooks/use-format-date';
+import { useFormatDate } from '../../../../hooks/useFormatDate';
 import { usePermission } from '../../../../hooks/usePermission';
 import { triggerUrlDownload } from '../../../../lib/download';
 import { trpc } from '../../../../lib/trpc';

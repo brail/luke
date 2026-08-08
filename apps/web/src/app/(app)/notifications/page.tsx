@@ -18,7 +18,7 @@ import {
 import { Separator } from '../../../components/ui/separator';
 import { Skeleton } from '../../../components/ui/skeleton';
 import { Switch } from '../../../components/ui/switch';
-import { useNotificationCenter } from '../../../hooks/use-notification-center';
+import { useNotificationCenter } from '../../../hooks/useNotificationCenter';
 import { NOTIFICATION_CATEGORY_META } from '../../../lib/notificationCategoryMeta';
 import { trpc } from '../../../lib/trpc';
 

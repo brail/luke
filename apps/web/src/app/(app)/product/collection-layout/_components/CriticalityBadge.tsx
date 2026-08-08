@@ -43,7 +43,7 @@ function daysUnitLabel(daysMode: 'calendar' | 'working', relevantCountryCodes: s
  * either way, only the fetch strategy differs.
  */
 export function formatCriticalityTooltip({ daysToDeadline, deadline, eventTitle, daysMode, relevantCountryCodes }: CriticalityInfo): string {
-  // `formatDate` from @luke/core (day only, locale it-IT) — not from `lib/config-helpers`,
+  // `formatDate` from @luke/core (day only, locale it-IT) — not from `lib/configHelpers`,
   // built for audit timestamps and with a time-of-day that isn't needed here.
   const dateLabel = formatDate(new Date(deadline));
   const unitLabel = daysUnitLabel(daysMode, relevantCountryCodes);

@@ -8,7 +8,7 @@ import {
   Palette,
 } from 'lucide-react';
 
-import { getCategoryIcon, getCategoryColor } from '../../lib/config-helpers';
+import { getCategoryIcon, getCategoryColor } from '../../lib/configHelpers';
 import { Badge } from '../ui/badge';
 
 interface ConfigKeyBadgeProps {
@@ -29,7 +29,7 @@ const iconComponents = {
 /**
  * Badge displaying the category of an AppConfig key with a matching icon and color.
  *
- * Icon and color are resolved via `getCategoryIcon` and `getCategoryColor` from `config-helpers`.
+ * Icon and color are resolved via `getCategoryIcon` and `getCategoryColor` from `configHelpers`.
  */
 export function ConfigKeyBadge({
   category,

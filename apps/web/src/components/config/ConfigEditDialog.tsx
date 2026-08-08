@@ -5,7 +5,7 @@ import {
   validateConfigKey,
   validateConfigValue,
   getCategoryFromKey,
-} from '../../lib/config-helpers';
+} from '../../lib/configHelpers';
 import { Button } from '../ui/button';
 import {
   Dialog,

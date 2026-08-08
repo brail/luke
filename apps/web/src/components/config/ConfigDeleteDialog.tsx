@@ -1,7 +1,7 @@
 import { AlertTriangle, Lock } from 'lucide-react';
 import { useState } from 'react';
 
-import { isCriticalKey } from '../../lib/config-helpers';
+import { isCriticalKey } from '../../lib/configHelpers';
 import {
   AlertDialog,
   AlertDialogAction,

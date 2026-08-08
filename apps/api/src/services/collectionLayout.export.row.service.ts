@@ -10,7 +10,7 @@ import ExcelJS from 'exceljs';
 import { calcMaxSupplierCost, formatDateTime } from '@luke/core';
 
 import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
-import { applyStreamingHeaderStyle } from '../lib/export/xlsx-streaming';
+import { applyStreamingHeaderStyle } from '../lib/export/xlsxStreaming';
 import { readFileBuffer } from '../storage';
 
 import { buildProgressLabelMap } from './collectionLayout.service';

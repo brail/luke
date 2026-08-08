@@ -1,6 +1,6 @@
 'use client';
 
-import { useAppConfig } from '../hooks/use-app-config';
+import { useAppConfig } from '../hooks/useAppConfig';
 import { cn } from '../lib/utils';
 
 interface BackendStatusProps {

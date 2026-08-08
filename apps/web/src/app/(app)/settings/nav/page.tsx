@@ -24,8 +24,8 @@ import {
 } from '../../../../components/ui/form';
 import { Input } from '../../../../components/ui/input';
 import { Switch } from '../../../../components/ui/switch';
-import { useToast } from '../../../../hooks/use-toast';
 import { usePermission } from '../../../../hooks/usePermission';
+import { useToast } from '../../../../hooks/useToast';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 

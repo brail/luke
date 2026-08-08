@@ -3,7 +3,7 @@
 import { Check, X } from 'lucide-react';
 import React from 'react';
 
-import { usePasswordValidation } from '../hooks/use-password-validation';
+import { usePasswordValidation } from '../hooks/usePasswordValidation';
 
 interface PasswordValidationIndicatorsProps {
   password: string;

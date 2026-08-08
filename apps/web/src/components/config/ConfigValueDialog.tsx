@@ -5,7 +5,7 @@ import { COPY_ERROR_MESSAGE, useCopyToClipboard } from '../../hooks/useCopyToCli
 import {
   formatJsonExpanded,
   formatJsonCompact,
-} from '../../lib/config-helpers';
+} from '../../lib/configHelpers';
 import { Button } from '../ui/button';
 import {
   Dialog,

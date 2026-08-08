@@ -4,7 +4,7 @@ import ExcelJS from 'exceljs';
 
 import type { StorageBucket } from '@luke/core';
 
-import { applyStreamingHeaderStyle } from '../lib/export/xlsx-streaming';
+import { applyStreamingHeaderStyle } from '../lib/export/xlsxStreaming';
 import { readFileBuffer } from '../storage';
 
 import { buildProgressLabelMap } from './collectionLayout.service';

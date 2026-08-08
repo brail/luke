@@ -2,7 +2,7 @@
 
 import { getAuditActionLabel, type AuditLogLastChangeTargetType } from '@luke/core';
 
-import { useFormatDate } from '../hooks/use-format-date';
+import { useFormatDate } from '../hooks/useFormatDate';
 import { trpc } from '../lib/trpc';
 import { cn } from '../lib/utils';
 

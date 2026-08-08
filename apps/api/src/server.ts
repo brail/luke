@@ -48,7 +48,7 @@ import {
   // pinoSerializers,
 } from './observability/pinoTrace';
 import { runReadinessChecks } from './observability/readiness';
-import { storagePlugin } from './plugins/storage-upload';
+import { storagePlugin } from './plugins/storageUpload';
 import { appRouter } from './routers';
 import { registerAuditLogExportDownloadRoute } from './routes/auditLogExportDownload';
 import { registerBackupDownloadRoute } from './routes/backupDownload';

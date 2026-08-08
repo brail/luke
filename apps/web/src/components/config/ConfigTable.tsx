@@ -16,7 +16,7 @@ import {
   formatValue,
   formatDate,
   isCriticalKey,
-} from '../../lib/config-helpers';
+} from '../../lib/configHelpers';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import {

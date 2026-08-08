@@ -19,7 +19,7 @@ import {
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { exportTimestamp } from '../lib/export/xlsx-streaming';
+import { exportTimestamp } from '../lib/export/xlsxStreaming';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';

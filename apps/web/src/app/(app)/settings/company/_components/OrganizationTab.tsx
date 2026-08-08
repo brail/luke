@@ -16,7 +16,7 @@ import { TeamList } from './TeamList';
  * a sidebar of company functions on the left and the team list for the selected function on the right.
  * Respects `company_function:*` and `company_team:*` permissions for all CRUD actions.
  */
-export function OrganizzazioneTab() {
+export function OrganizationTab() {
   const { can } = usePermission();
   const refresh = useRefresh();
 

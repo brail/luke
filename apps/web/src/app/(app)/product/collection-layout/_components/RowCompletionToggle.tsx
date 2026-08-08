@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { formatDate } from '@luke/core';
 
 import { PermissionButton } from '../../../../../components/PermissionButton';
-import { useToast } from '../../../../../hooks/use-toast';
+import { useToast } from '../../../../../hooks/useToast';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 

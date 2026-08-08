@@ -17,9 +17,9 @@ export type { SyncResult } from './sync/vendors.js';
 export { queryPortafoglioOrdini } from './statistics/portafoglio.js';
 export type { PortafoglioParams, PortafoglioRow } from './statistics/portafoglio.js';
 
-export { queryPortafoglioFromPg } from './queries/portafoglio-pg.js';
-export { queryKimoFromPg } from './queries/kimo-pg.js';
-export type { KimoParams, KimoRow } from './queries/kimo-pg.js';
+export { queryPortafoglioFromPg } from './queries/portafoglioPg.js';
+export { queryKimoFromPg } from './queries/kimoPg.js';
+export type { KimoParams, KimoRow } from './queries/kimoPg.js';
 
 export { syncPortafoglioNow } from './sync/portafoglio.js';
 export type { PortafoglioSyncResult } from './sync/portafoglio.js';

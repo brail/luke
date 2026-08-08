@@ -1,6 +1,6 @@
 'use client';
 
-import { useSessionVerification } from '../hooks/use-session-verification';
+import { useSessionVerification } from '../hooks/useSessionVerification';
 
 /**
  * Invisible component that periodically verifies the session token.

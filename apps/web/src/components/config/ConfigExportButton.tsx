@@ -2,7 +2,7 @@ import { Download, LoaderCircle } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { generateExportFileName } from '../../lib/config-helpers';
+import { generateExportFileName } from '../../lib/configHelpers';
 import { debugError } from '../../lib/debug';
 import { trpc } from '../../lib/trpc';
 import { Button } from '../ui/button';

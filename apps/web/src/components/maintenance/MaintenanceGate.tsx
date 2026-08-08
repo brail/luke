@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { getMaintenanceUrgencyTier } from '@luke/core';
 
-import { useMaintenanceStatus } from '../../hooks/use-maintenance-status';
+import { useMaintenanceStatus } from '../../hooks/useMaintenanceStatus';
 import { usePermission } from '../../hooks/usePermission';
 import {
   AlertDialog,

@@ -3,7 +3,7 @@
  *
  * Deliberately NOT a tRPC procedure and NOT the generic `/uploads/:bucket/*` proxy: the payload
  * can be many GB, so it must stream (see `streamRawResponse`), and the "backups" bucket is
- * excluded from the generic proxy on purpose (see storage-upload.ts).
+ * excluded from the generic proxy on purpose (see storageUpload.ts).
  *
  * Authorized via a short-lived signed token (`maintenance.backup.getDownloadLink` mints it,
  * same `downloadToken.ts` HMAC primitive as `/storage/download`) rather than a Bearer session —

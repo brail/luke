@@ -13,7 +13,7 @@ import {
   type XlsxMeta,
   applyStreamingHeaderStyle,
   createStreamingBuffer,
-} from '../lib/export/xlsx-streaming';
+} from '../lib/export/xlsxStreaming';
 
 // ─── Column formatting hints ─────────────────────────────────────────────────
 

@@ -33,8 +33,8 @@ import {
 } from '../../../../components/ui/select';
 import { Switch } from '../../../../components/ui/switch';
 import { Textarea } from '../../../../components/ui/textarea';
-import { useToast } from '../../../../hooks/use-toast';
 import { usePermission } from '../../../../hooks/usePermission';
+import { useToast } from '../../../../hooks/useToast';
 import { trpc } from '../../../../lib/trpc';
 
 const baseSchema = z.object({

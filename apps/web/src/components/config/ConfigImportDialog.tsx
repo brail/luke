@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import {
   validateConfigKey,
   validateConfigValue,
-} from '../../lib/config-helpers';
+} from '../../lib/configHelpers';
 import { debugError, debugWarn } from '../../lib/debug';
 import { trpc } from '../../lib/trpc';
 import { Badge } from '../ui/badge';

@@ -4,7 +4,7 @@ import { Archive, Bell, Check } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 
-import { useNotifications } from '../hooks/use-notifications';
+import { useNotifications } from '../hooks/useNotifications';
 import { trpc } from '../lib/trpc';
 
 import { NotificationRow } from './NotificationRow';

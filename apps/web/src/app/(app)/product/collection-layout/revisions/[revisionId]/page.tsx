@@ -12,7 +12,7 @@ import { Badge } from '../../../../../../components/ui/badge';
 import { Button } from '../../../../../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../../../../components/ui/card';
 import { useAppContext } from '../../../../../../contexts/AppContextProvider';
-import { useFormatDate } from '../../../../../../hooks/use-format-date';
+import { useFormatDate } from '../../../../../../hooks/useFormatDate';
 import { usePermission } from '../../../../../../hooks/usePermission';
 import { triggerDownload } from '../../../../../../lib/download';
 import { trpc } from '../../../../../../lib/trpc';
