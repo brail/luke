@@ -358,3 +358,19 @@ funzione vera, non che sia stato chiamato uno stub.
 
 Vale solo quando l'effetto è reale e osservabile. Se il collaboratore è davvero
 esterno (rete, SMTP), il mock resta l'unica via e va fatto funzionare.
+
+### Un `cd dir && comando` cambia la cwd anche per i comandi dopo
+
+Dopo `cd apps/api && npx tsc -b`, la cwd bash restava `apps/api/` per il
+comando successivo (`grep -r apps/api ...`), che quindi cercava
+`apps/api/apps/api` — path inesistente, silenziato da `2>/dev/null`,
+risultato "0 match" letto come "bonifica completa". Ho riportato all'utente
+"apps/api: 0 residui, lavoro completo" quando in realtà restavano ~30 file
+con commenti IT non tradotti — scoperto solo perché l'utente ha aperto a mano
+`server.ts` e ci ha trovato commenti italiani.
+
+**Regola**: mai `cd dir && comando`. Usare `(cd dir && comando)` in subshell,
+o passare il path diretto al tool (`npx tsc -b apps/api`), o tornare alla
+root subito dopo. Ogni check di verifica che segue un comando con `cd` va
+fatto con path assoluti, non relativi alla cwd presunta — specialmente prima
+di dichiarare un lavoro "completo" all'utente.
