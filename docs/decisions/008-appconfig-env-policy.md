@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Potentially stale — review needed
 
 ## Contesto
 

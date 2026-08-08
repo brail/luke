@@ -219,6 +219,7 @@ Vedi `src/lib/config.ts` per dettagli.
 | `LUKE_CORS_ALLOWED_ORIGINS` | — | Origini CORS ammesse in produzione (separare con virgola) |
 | `OTEL_*` | — | OpenTelemetry — export trace (standard OTEL env vars) |
 | `LOG_LEVEL` | `info` | Livello log Pino (`trace` / `debug` / `info` / `warn` / `error`) |
+| `APP_VERSION` | `dev` | Versione applicativa iniettata a build-time (Docker `ARG`/`ENV` dal git tag in CI) — non un segreto, mai letta da AppConfig per evitare drift dall'immagine in esecuzione |
 
 Al boot, `assertEnvPolicy()` in `src/server.ts` verifica che nessuna variabile vietata sia presente (pattern bloccati: `SMTP_*`, `LDAP_*`, `JWT_*`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, `*_TOKEN`). In produzione: `exit(1)`. Tutto il resto va in AppConfig (database).
 <!-- luke-docs:end:env -->
