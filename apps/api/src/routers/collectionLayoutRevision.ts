@@ -131,6 +131,13 @@ export const collectionLayoutRevisionRouter = router({
     }),
 
   export: router({
+    /**
+     * Exports a single revision as an XLSX workbook (base64-encoded).
+     *
+     * @auth collection_layout:read
+     * @input { revisionId: string } — collectionLayoutId is derived from the revision, not passed separately (see comment below).
+     * @output { data: string, filename: string } — base64-encoded XLSX buffer and generated filename.
+     */
     xlsx: protectedProcedure
       .use(requirePermission('collection_layout:read'))
       // `collectionLayoutId` non è più un input: lo porta la revisione. Erano due
@@ -155,6 +162,13 @@ export const collectionLayoutRevisionRouter = router({
         };
       }),
 
+    /**
+     * Exports a single revision as a PDF document (base64-encoded), including the exporting user's full name.
+     *
+     * @auth collection_layout:read
+     * @input { revisionId: string } — collectionLayoutId is derived from the revision, not passed separately (see comment above).
+     * @output { data: string, filename: string } — base64-encoded PDF buffer and generated filename.
+     */
     pdf: protectedProcedure
       .use(requirePermission('collection_layout:read'))
       // Come sopra: il layout lo porta la revisione.

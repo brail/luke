@@ -40,6 +40,11 @@ export const editLockRouter = router({
    * Acquires locks on several entities atomically (all-or-nothing) — for flows like the planning
    * wizard that need a `SeasonCalendar` + `CollectionLayout` lock together, so a conflict on one
    * never leaves the other partially acquired. See `acquireLocks` in the edit-lock service.
+   *
+   * @auth {season_calendar:update and/or collection_layout:update per entity type, checked
+   *   manually via assertLockPermissions (AND semantics), not requirePermission}
+   * @input {AcquireManyInputSchema} — non-empty array of { entityType, entityId } to lock.
+   * @output {EditLock[]} — the upserted lock records (locked by the caller, with new expiresAt).
    */
   acquireMany: protectedProcedure
     .input(AcquireManyInputSchema)
@@ -52,6 +57,11 @@ export const editLockRouter = router({
   /**
    * Heartbeat, called periodically by the frontend while a wizard session is open — extends the
    * TTL on locks already held by the caller. See `renewLocks` in the edit-lock service.
+   *
+   * @auth {season_calendar:update and/or collection_layout:update per entity type, checked
+   *   manually via assertLockPermissions (AND semantics), not requirePermission}
+   * @input {AcquireManyInputSchema} — non-empty array of { entityType, entityId } to renew.
+   * @output {EditLock[]} — the renewed lock records with pushed-out expiresAt.
    */
   renew: protectedProcedure
     .input(AcquireManyInputSchema)
@@ -61,7 +71,15 @@ export const editLockRouter = router({
       return renewLocks(input.entities, ctx.session!.user.id, ctx.prisma);
     }),
 
-  /** Releases locks on several entities in a single query — mirrors `acquireMany`. */
+  /**
+   * Releases locks on several entities in a single query — mirrors `acquireMany`. No explicit
+   * permission check: the delete is scoped to `lockedByUserId: caller`, so a user can only ever
+   * release their own locks regardless of section permissions.
+   *
+   * @auth {authenticated}
+   * @input {ReleaseManyInputSchema} — non-empty array of { entityType, entityId } to release.
+   * @output {{ success: true }}
+   */
   release: protectedProcedure
     .use(withRateLimit('configMutations'))
     .input(ReleaseManyInputSchema)

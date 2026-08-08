@@ -82,6 +82,7 @@ export const phaseAlertRouter = router({
    * Returns the currently configured (or default) alert thresholds — for admin display/edit UIs.
    *
    * @auth {collection_alert:read}
+   * @input {none}
    * @output {CollectionAlertThresholds}
    */
   thresholds: protectedProcedure

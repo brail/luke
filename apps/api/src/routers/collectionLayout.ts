@@ -79,6 +79,13 @@ import type { QuotationSyncResult } from '../services/collectionRow.quotation.se
 import type { PrismaClient } from '@prisma/client';
 
 const quotationsRouter = router({
+  /**
+   * Creates a price quotation for a collection layout row.
+   *
+   * @auth collection_layout:update
+   * @input CollectionRowQuotationInputSchema — rowId plus the quotation fields (vendor, pricing parameter set, etc.)
+   * @output The created CollectionRowQuotation record.
+   */
   create: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
@@ -90,6 +97,13 @@ const quotationsRouter = router({
       return result;
     }),
 
+  /**
+   * Updates an existing row quotation.
+   *
+   * @auth collection_layout:update
+   * @input { quotationId: string (uuid), data: CollectionRowQuotationUpdateSchema }
+   * @output The updated CollectionRowQuotation record.
+   */
   update: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
@@ -101,6 +115,13 @@ const quotationsRouter = router({
       return result;
     }),
 
+  /**
+   * Deletes a row quotation.
+   *
+   * @auth collection_layout:update
+   * @input { quotationId: string (uuid) }
+   * @output { success: true }
+   */
   delete: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
@@ -112,6 +133,13 @@ const quotationsRouter = router({
       return { success: true };
     }),
 
+  /**
+   * Reorders the quotations attached to a row.
+   *
+   * @auth collection_layout:update
+   * @input { rowId: string (uuid), orderedIds: string[] (uuid) — new quotation order }
+   * @output { success: true }
+   */
   reorder: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
@@ -125,6 +153,13 @@ const quotationsRouter = router({
 });
 
 const groupsRouter = router({
+  /**
+   * Creates a new group within a collection layout.
+   *
+   * @auth collection_layout:update
+   * @input { collectionLayoutId: string, data: CollectionGroupInputSchema }
+   * @output The created CollectionGroup record.
+   */
   create: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
@@ -142,6 +177,13 @@ const groupsRouter = router({
       return result;
     }),
 
+  /**
+   * Updates an existing collection group.
+   *
+   * @auth collection_layout:update
+   * @input { groupId: string, data: partial CollectionGroupInputSchema fields }
+   * @output The updated CollectionGroup record.
+   */
   update: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
@@ -158,6 +200,13 @@ const groupsRouter = router({
       return result;
     }),
 
+  /**
+   * Deletes a collection group.
+   *
+   * @auth collection_layout:update
+   * @input { groupId: string }
+   * @output { success: true }
+   */
   delete: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
@@ -193,6 +242,14 @@ function quotationSyncAuditPromises(ctx: Context, rowId: string, sync: Quotation
 }
 
 const rowsRouter = router({
+  /**
+   * Creates a new row within a collection group, optionally confirming a pending picture upload
+   * and syncing the row's quotations in the same transaction.
+   *
+   * @auth collection_layout:update
+   * @input CollectionLayoutRowInputSchema — row fields plus optional pendingPictureFileObjectId, quotations[], phaseChangeNote
+   * @output The created CollectionLayoutRow record.
+   */
   create: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
@@ -234,6 +291,13 @@ const rowsRouter = router({
       return result;
     }),
 
+  /**
+   * Updates an existing row, including its picture, phase/planning group assignment, and quotations.
+   *
+   * @auth collection_layout:update
+   * @input { rowId: string, data: partial CollectionLayoutRowInputSchema fields }
+   * @output The updated CollectionLayoutRow record.
+   */
   update: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
@@ -331,6 +395,13 @@ const rowsRouter = router({
       return result;
     }),
 
+  /**
+   * Deletes a collection layout row.
+   *
+   * @auth collection_layout:update
+   * @input { rowId: string }
+   * @output { success: true }
+   */
   delete: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
@@ -358,6 +429,10 @@ const rowsRouter = router({
    * ricalcolato qui, mai accettato dal client. Non è un divieto (basterebbe saltare all'ultima fase
    * per aggirarlo) ma una registrazione: `completionForced` e `skippedPhases` nell'audit rendono
    * distinguibili, a consuntivo, le righe chiuse pulitamente da quelle forzate.
+   *
+   * @auth collection_layout:update
+   * @input { rowId: string, completed: boolean, note: string (mandatory rationale, 1-500 chars), force?: boolean }
+   * @output The updated CollectionLayoutRow record, with completedAt set or cleared.
    */
   setCompleted: protectedProcedure
     .use(requirePermission('collection_layout:update'))
@@ -402,6 +477,13 @@ const rowsRouter = router({
       return row;
     }),
 
+  /**
+   * Duplicates a row within its group.
+   *
+   * @auth collection_layout:update
+   * @input { rowId: string }
+   * @output The newly created duplicate CollectionLayoutRow record.
+   */
   duplicate: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
@@ -413,6 +495,13 @@ const rowsRouter = router({
       return result;
     }),
 
+  /**
+   * Reorders rows within a group.
+   *
+   * @auth collection_layout:update
+   * @input { groupId: string, orderedIds: string[] — new row order }
+   * @output { success: true }
+   */
   reorder: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
@@ -429,6 +518,13 @@ const rowsRouter = router({
       return { success: true };
     }),
 
+  /**
+   * Bulk-assigns a planning group to multiple rows at once.
+   *
+   * @auth collection_layout:update
+   * @input CollectionLayoutBulkAssignPlanningGroupInputSchema — { rowIds: string[], planningGroupId: string | null }
+   * @output Result of the bulk update (affected row count).
+   */
   bulkAssignPlanningGroup: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
@@ -510,6 +606,13 @@ const ROW_EXPORT_INCLUDE = {
 } as const;
 
 const exportRouter = router({
+  /**
+   * Exports a single collection layout row as an Excel file.
+   *
+   * @auth collection_layout:read
+   * @input { rowId: string (uuid) }
+   * @output { data: base64-encoded xlsx buffer, filename: string }
+   */
   rowXlsx: protectedProcedure
     .use(requirePermission('collection_layout:read'))
     .use(withRateLimit('exportGeneration'))
@@ -541,6 +644,13 @@ const exportRouter = router({
       };
     }),
 
+  /**
+   * Exports a single collection layout row as a PDF file.
+   *
+   * @auth collection_layout:read
+   * @input { rowId: string (uuid) }
+   * @output { data: base64-encoded pdf buffer, filename: string }
+   */
   rowPdf: protectedProcedure
     .use(requirePermission('collection_layout:read'))
     .use(withRateLimit('exportGeneration'))
@@ -582,6 +692,13 @@ const exportRouter = router({
       };
     }),
 
+  /**
+   * Exports a full collection layout, optionally filtered to a subset of rows, as an Excel file.
+   *
+   * @auth collection_layout:read
+   * @input { collectionLayoutId: string (uuid), rowIds?: string[] (uuid) — filter to specific rows }
+   * @output { data: base64-encoded xlsx buffer, filename: string }
+   */
   xlsx: protectedProcedure
     .use(requirePermission('collection_layout:read'))
     .use(withRateLimit('exportGeneration'))
@@ -622,6 +739,13 @@ const exportRouter = router({
       };
     }),
 
+  /**
+   * Exports a full collection layout, optionally filtered to a subset of rows, as a PDF file.
+   *
+   * @auth collection_layout:read
+   * @input { collectionLayoutId: string (uuid), rowIds?: string[] (uuid) — filter to specific rows }
+   * @output { data: base64-encoded pdf buffer, filename: string }
+   */
   pdf: protectedProcedure
     .use(requirePermission('collection_layout:read'))
     .use(withRateLimit('exportGeneration'))

@@ -485,16 +485,16 @@ model NavSyncFilter {
   /// Whether this sync filter is currently active.
   active          Boolean  @default(true)
   note            String?
-  /// Se true, lo scheduler sincronizza automaticamente questa entità
+  /// If true, the scheduler syncs this entity automatically.
   autoSyncEnabled Boolean  @default(false)
-  /// Frequenza di sync automatico in minuti (usata solo se autoSyncEnabled=true)
+  /// Automatic sync frequency in minutes (used only when autoSyncEnabled=true).
   intervalMinutes Int      @default(30)
   updatedAt       DateTime @updatedAt
-  /// Esito dell'ultimo tentativo di sync schedulato: "SUCCESS" | "FAILURE". Null se mai eseguito.
+  /// Outcome of the last scheduled sync attempt: "SUCCESS" | "FAILURE". Null if never run.
   lastSyncStatus  String?
-  /// Messaggio d'errore dell'ultimo tentativo fallito. Null in caso di successo o se mai eseguito.
+  /// Error message from the last failed attempt. Null on success or if never run.
   lastSyncError   String?
-  /// Timestamp dell'ultimo tentativo di sync (successo o fallimento).
+  /// Timestamp of the last sync attempt (success or failure).
   lastSyncAt      DateTime?
 
   @@unique([entity])
@@ -504,6 +504,7 @@ model NavSyncFilter {
 
 /// Read-only replica of [COMPANY$Vendor] from Microsoft NAV. NAV timestamp used only in differential sync queries — not mapped here.
 model NavVendor {
+  /// Natural key: NAV's own "No_" field, used directly as the primary key (no separate id column).
   navNo      String  @id // No_
   name       String // Name
   name2      String? // Name 2
@@ -541,6 +542,7 @@ model NavVendor {
 
 /// Read-only replica of [COMPANY$Brand] from Microsoft NAV.
 model NavBrand {
+  /// Natural key: NAV's own "Code" field, used directly as the primary key (no separate id column).
   navCode     String   @id // Code (PK)
   description String   @default("") // Description
   /// Timestamp of the last successful sync from NAV.
@@ -555,6 +557,7 @@ model NavBrand {
 
 /// Read-only replica of [COMPANY$Season] from Microsoft NAV.
 model NavSeason {
+  /// Natural key: NAV's own "Code" field, used directly as the primary key (no separate id column).
   navCode      String    @id // Code (PK)
   description  String    @default("") // Description
   startingDate DateTime? // Starting Date
@@ -846,6 +849,7 @@ model CollectionLayoutRowRevision {
 
   // Snapshot fields — denormalised from the live row at revision time
   gender           String
+  /// Soft FK to the live Vendor at revision time. No @relation — vendor may be renamed or deleted later; see vendorName for the denormalised label.
   vendorId         String?
   /// Denormalised vendor name at revision time (vendor may be renamed or deleted later).
   vendorName       String?
@@ -1121,17 +1125,24 @@ model NavPfSyncState {
 
 /// Read-only replica of [Company$Sales Header] from NAV. Synced incrementally via rowversion.
 model NavPfSalesHeader {
+  /// NAV order number (source `No_`), used as the primary key.
   no_                        String    @id
+  /// NAV document type code (order/invoice/credit memo/...); part of the composite key shared with NavPfSalesLine.
   documentType               Int
   orderDate                  DateTime?
+  /// Soft reference to NavPfCustomer.no_ — the customer the goods are sold to.
   sellToCustomerNo           String?
+  /// Soft reference to NavPfCustomer.no_ — the customer to be invoiced.
   billToCustomerNo           String?
   billToName                 String?
+  /// Soft reference to NavPfSalesperson.code.
   salespersonCode            String?
+  /// Soft reference to NavPfSalesperson.code — area manager assigned to the order.
   areaManagerCode            String?
   subject1                   String?
   subject2                   String?
   currencyCode               String?
+  /// Soft reference to NavPfShipToAddress.code (composite with sellToCustomerNo).
   shipToCode                 String?
   shipToName                 String?
   shipToName2                String?
@@ -1140,7 +1151,9 @@ model NavPfSalesHeader {
   shipToCity                 String?
   shipToPostCode             String?
   shipToCounty               String?
+  /// Soft reference to NavPfShipmentMethod.code.
   shipmentMethodCode         String?
+  /// Soft reference to NavPfTransportReason.code.
   transportReasonCode        String?
   shippingAgentCode          String?
   shippingAgentServiceCode   String?
@@ -1148,24 +1161,34 @@ model NavPfSalesHeader {
   paymentMethodCode          String?
   invoiceDiscountCalculation String?
   invoiceDiscountValue       Float?
+  /// NAV boolean flag (0/1): whether the order is a consignment order.
   consignment                Int?
   rightOnReturnPct           Float?
   note                       String?
   campaignNo                 String?
   securitiesReceived         String?
+  /// NAV boolean flag (0/1), order-anomaly review workflow.
   anomalous                  Int?
+  /// NAV boolean flag (0/1), order-anomaly review workflow (complementary to anomalous).
   notAnomalous               Int?
   anomalousDate              DateTime?
+  /// NAV boolean flag (0/1): whether the order has been reviewed/checked.
   checked                    Int?
   checkedDate                DateTime?
+  /// Soft reference to NavPfBudgetHeader.no_.
   budgetNo                   String?
   courseDate                 DateTime?
+  /// Cross-reference to the corresponding KIMO-FASHION sales order (see NavKimoSalesHeader.assignedSalesDocumentNo).
   kimoFashionSoNo            String?
   orderType                  Int?
+  /// NAV boolean flag (0/1): expedited shipping requested.
   fastShipping               Int?
   commissionGroupCode        String?
+  /// Soft reference to NavPfGeoZone.code.
   geographicalZone           String?
+  /// NAV selling season code; correlates with the Luke Season entity for portafoglio filtering.
   sellingSeasonCode          String?
+  /// NAV Shortcut Dimension 2 — typically the brand/trademark dimension, used for portafoglio filtering.
   shortcutDimension2Code     String?
   customerPostingGroup       String?
   navRowversion              BigInt    @default(0)
@@ -1181,15 +1204,19 @@ model NavPfSalesHeader {
 /// Read-only replica of [Company$Sales Line] from NAV. PK is composite (documentType, documentNo, lineNo).
 model NavPfSalesLine {
   documentType             Int
+  /// Soft reference to NavPfSalesHeader.no_ — composite PK together with documentType, lineNo.
   documentNo               String
   lineNo                   Int
+  /// NAV sales line type code (e.g. item / G/L account / comment).
   type                     Int?
+  /// Item number for this line (when type=Item); soft reference to NavPfItem.no_.
   no_                      String?
   customerOrderRef         String?
   reference                String?
   genBusPostingGroup       String?
   vatBusPostingGroup       String?
   unitOfMeasure            String?
+  /// Soft reference to NavPfVariableCode.variableCode — the colour code for this line.
   constantVariableCode     String?
   assortmentCode           String?
   deleteReason             String?
@@ -1218,7 +1245,9 @@ model NavPfSalesLine {
   discount2Pct             Float?
   discount3Pct             Float?
   locationCode             String?
+  /// Soft reference to NavPfItem.modelItemNo — the model item this SKU line belongs to.
   modelCrossReference      String?
+  /// Soft reference to NavPfItem.constantAssortmentVarGrp.
   constantAssortmentVarGrp String?
   navRowversion            BigInt    @default(0)
 
@@ -1231,7 +1260,9 @@ model NavPfSalesLine {
 
 /// Read-only replica of [Company$Sales Header Extension] from NAV. Extends NavPfSalesHeader with additional fields.
 model NavPfSalesHeaderExt {
+  /// Part of the composite PK, matches NavPfSalesHeader.documentType for the extended header.
   documentType            Int
+  /// Soft reference to NavPfSalesHeader.no_ — composite PK together with documentType.
   documentNo              String
   warehouseSpecialityCode String?
   subject3                String?
@@ -1246,21 +1277,31 @@ model NavPfSalesHeaderExt {
 
 /// Read-only replica of [Company$Item] from NAV — only Configurator Relation 2 (models) and 3 (SKUs). Relation 2 used as Sales Line.No_ key; Relation 3 for carry_over/landed_cost/must_buy aggregations.
 model NavPfItem {
+  /// NAV item number.
   no_                       String    @id
   description               String?
   description2              String?
+  /// NAV Configurator Relation level: 2 = model (used as NavPfSalesLine.no_ key), 3 = SKU (used for carry_over/landed_cost/must_buy aggregations).
   configuratorRelation      Int?
+  /// Soft reference to NavPfItem.no_ of the parent model item (populated on Relation 3 / SKU rows).
   modelItemNo               String?
+  /// Soft reference to NavPfVariableCode.variableCode — the colour code for this SKU.
   variableCode01            String?
+  /// NAV boolean flag (0/1); business meaning not further documented upstream.
   smu                       Int?
+  /// NAV boolean flag (0/1): item is a carry-over from a prior season.
   carryOver                 Int?
+  /// NAV boolean flag (0/1): item is planned as a future carry-over.
   futureCarryOver           Int?
+  /// NAV boolean flag (0/1): item is sold out.
   soldOut                   Int?
   soldOutDate               DateTime?
   salesPurchaseStatusItem   String?
   salesPurchaseStatusDate   DateTime?
+  /// NAV boolean flag (0/1): item is at risk of selling out.
   potentialSoldOut          Int?
   minimumOrderQuantity      Float?
+  /// NAV boolean flag (0/1): item is flagged as must-buy.
   mustBuy                   Int?
   standardCost              Float?
   collectionCode            String?
@@ -1276,12 +1317,16 @@ model NavPfItem {
   productTypology           String?
   mainMaterial              String?
   soleMaterial              String?
+  /// Soft reference to NavPfVendor.no_.
   vendorNo                  String?
   manufacturer              String?
   advertisingMaterial       String?
   countryRegionOfOriginCode String?
+  /// Assortment variable group code; mirrors the same field on NavPfSalesLine.
   constantAssortmentVarGrp  String?
+  /// NAV season code; correlates with the Luke Season entity.
   seasonCode                String?
+  /// NAV trademark code; correlates with the Luke Brand entity.
   trademarkCode             String?
   navRowversion             BigInt    @default(0)
 
@@ -1295,6 +1340,7 @@ model NavPfItem {
 
 /// Read-only replica of [Company$Customer] from NAV.
 model NavPfCustomer {
+  /// NAV customer number — target of soft references from NavPfSalesHeader/NavKimoSalesHeader (sellToCustomerNo/billToCustomerNo) and NavPfShipToAddress (customerNo).
   no_                     String    @id
   name                    String?
   name2                   String?
@@ -1308,12 +1354,17 @@ model NavPfCustomer {
   eMail                   String?
   businessEMail           String?
   contact                 String?
+  /// Soft reference to NavPfGeoZone.code.
   geographicalZone        String?
+  /// Secondary geographical zone; soft reference to NavPfGeoZone.code.
   geographicalZone2       String?
+  /// NAV boolean flag (0/1): customer is flagged as a key account.
   keyAccount              Int?
   warehouseSpecialityCode String?
   languageCode            String?
+  /// NAV boolean flag (0/1): customer requires expedited shipment.
   fastShipment            Int?
+  /// NAV boolean flag (0/1): customer is blocked from new order assignments.
   blockedForAssignments   Int?
   reasonBlockCode         String?
   paymentMethodCode       String?
@@ -1330,22 +1381,31 @@ model NavPfCustomer {
   valuationDate           DateTime?
   reservationPriority     String?
   authorizedStoresNumber  Int?
+  /// NAV rating/classification code for store distribution quality; scale not further documented upstream.
   storeDistribution       Int?
+  /// NAV rating/classification code for store image quality; scale not further documented upstream.
   storeImage              Int?
+  /// NAV store type classification code.
   storeType               Int?
   variousReferences       String?
   homePage                String?
   qualityControl          String?
+  /// Legacy customer number from the predecessor "Febos" system, kept for cross-reference.
   oldFebosNo              String?
+  /// Legacy customer number from the predecessor "Bridge" system, kept for cross-reference.
   oldBridgeNo             String?
   purchaseGroup           String?
   distributionChannel     String?
   creditManager           String?
   eacLabels               String?
+  /// NAV boolean flag (0/1): customer requires a complete/consolidated shipment ("sovracollo completo").
   sovracolloCompleto      Int?
   commissionGroupCode     String?
+  /// NAV VAT business posting group (accounting classification).
   vatBusPostingGroup      String?
+  /// NAV general business posting group (accounting classification).
   genBusPostingGroup      String?
+  /// NAV customer posting group (accounting classification).
   customerPostingGroup    String?
   navRowversion           BigInt    @default(0)
 
@@ -1354,8 +1414,11 @@ model NavPfCustomer {
 
 /// Read-only replica of [Company$Ship-to Address] from NAV.
 model NavPfShipToAddress {
+  /// Soft reference to NavPfCustomer.no_ — composite PK together with code.
   customerNo        String
+  /// Ship-to address code within the customer; soft-referenced by NavPfSalesHeader.shipToCode.
   code              String
+  /// Soft reference to NavPfGeoZone.code.
   geographicalZone2 String?
   countryRegionCode String?
   navRowversion     BigInt  @default(0)
@@ -1367,7 +1430,9 @@ model NavPfShipToAddress {
 
 /// Read-only replica of [Company$Variable Code] from NAV. Contains colour descriptions keyed by variableGroup+variableCode.
 model NavPfVariableCode {
+  /// Variable code category (e.g. colour); composite PK together with variableCode.
   variableGroup String
+  /// Code soft-referenced by NavPfSalesLine.constantVariableCode and NavPfItem.variableCode01.
   variableCode  String
   description   String?
   navRowversion BigInt  @default(0)
@@ -1378,6 +1443,7 @@ model NavPfVariableCode {
 
 /// Read-only replica of [Company$Salesperson/Purchaser] from NAV.
 model NavPfSalesperson {
+  /// NAV salesperson/purchaser code — target of soft references from NavPfSalesHeader.salespersonCode/areaManagerCode and NavKimoSalesHeader.salespersonCodeNav.
   code          String  @id
   name          String?
   navRowversion BigInt  @default(0)
@@ -1387,6 +1453,7 @@ model NavPfSalesperson {
 
 /// Read-only replica of [Company$Geographical Zone] from NAV.
 model NavPfGeoZone {
+  /// NAV geographical zone code — target of soft references from NavPfSalesHeader.geographicalZone and NavPfCustomer.geographicalZone/geographicalZone2.
   code          String  @id
   description   String?
   navRowversion BigInt  @default(0)
@@ -1396,6 +1463,7 @@ model NavPfGeoZone {
 
 /// Read-only replica of [Company$Shipment Method] from NAV.
 model NavPfShipmentMethod {
+  /// NAV shipment method code — target of the soft reference from NavPfSalesHeader.shipmentMethodCode.
   code          String  @id
   description   String?
   navRowversion BigInt  @default(0)
@@ -1405,6 +1473,7 @@ model NavPfShipmentMethod {
 
 /// Read-only replica of [Company$Transport Reason Code] from NAV.
 model NavPfTransportReason {
+  /// NAV transport reason code — target of the soft reference from NavPfSalesHeader.transportReasonCode.
   code          String  @id
   description   String?
   navRowversion BigInt  @default(0)
@@ -1414,6 +1483,7 @@ model NavPfTransportReason {
 
 /// Read-only replica of [Company$Budget Header] from NAV.
 model NavPfBudgetHeader {
+  /// NAV budget number — target of the soft reference from NavPfSalesHeader.budgetNo.
   no_           String  @id
   budgetArea    String?
   navRowversion BigInt  @default(0)
@@ -1423,6 +1493,7 @@ model NavPfBudgetHeader {
 
 /// Read-only replica of [Company$Vendor] from NAV — only fields needed for name lookup in portafoglio queries.
 model NavPfVendor {
+  /// NAV vendor number — target of the soft reference from NavPfItem.vendorNo.
   no_           String  @id
   name          String?
   navRowversion BigInt  @default(0)
@@ -1432,7 +1503,9 @@ model NavPfVendor {
 
 /// Pre-aggregation of [Company$Reserv__Assign_ Link] (type 1). Stores MAX(Date Reservation) per (Sales Document No_, Sales Line No_). Full-refresh each sync cycle, scoped to document nos in nav_pf_sales_header.
 model NavPfDatePrenotazione {
+  /// Soft reference to NavPfSalesHeader.no_ — composite PK together with salesLineNo.
   salesDocumentNo String
+  /// Soft reference to NavPfSalesLine.lineNo (scoped to the same salesDocumentNo).
   salesLineNo     Int
   dateReservation DateTime?
   syncedAt        DateTime  @default(now())
@@ -1443,8 +1516,13 @@ model NavPfDatePrenotazione {
 
 /// Pre-aggregation of [Company$DDT_Picking Line] JOIN [Company$DDT_Picking Header]. Stores SUM per status per (Order No_, Order Line No_). Full-refresh each sync cycle, scoped to document nos in nav_pf_sales_header.
 model NavPfDdtPicking {
+  /// Soft reference to NavPfSalesHeader.no_ — composite PK together with orderLineNo.
   orderNo             String
+  /// Soft reference to NavPfSalesLine.lineNo (scoped to the same orderNo).
   orderLineNo         Int
+  /// SUM of pairs/qty per picking status ("Totale"=total, "Rilasciate"=released, "Aperte"=open,
+  /// "DaInviareWmsps"=pending send to WMS-PS, "InviatoWmsps"=sent to WMS-PS, "EvasoWmsps"=fulfilled
+  /// by WMS-PS). Applies to this and the following pairs*/qty* fields: pairs* counts shoe pairs, qty* counts units.
   pairsTotale         Float?
   qtyTotale           Float?
   pairsRilasciate     Float?
@@ -1471,14 +1549,21 @@ model NavPfDdtPicking {
 
 /// Read-only replica of [Company$KIMO-FASHION Sales Order Hdr] from NAV. Incrementally synced via rowversion.
 model NavKimoSalesHeader {
+  /// NAV internal entry number (not a business document number) — used as PK because KIMO-FASHION rows lack a stable business key.
   entryNo                 BigInt    @id
+  /// NAV trademark code; correlates with the Luke Brand entity.
   trademarkCode           String?
+  /// NAV selling season code; correlates with the Luke Season entity.
   sellingSeasonCode       String?
+  /// Soft reference to NavPfSalesperson.code.
   salespersonCodeNav      String?
+  /// NAV sales document number assigned once the KIMO-FASHION order is converted; the counterpart of NavPfSalesHeader.kimoFashionSoNo.
   assignedSalesDocumentNo String?
+  /// Soft reference to NavPfCustomer.no_.
   sellToCustomerNo        String?
   createSoDateTime        DateTime?
   releaseSoDateTime       DateTime?
+  /// NAV KIMO-FASHION document type code.
   kimoDocumentType        String?
   navRowversion           BigInt    @default(0)
 
@@ -1493,15 +1578,20 @@ model NavKimoSalesHeader {
 
 /// Read-only replica of [Company$KIMO-FASHION Sales Order Line] from NAV. PK = Entry No_ (BigInt unique per row). Line No_ does not exist in this NAV table.
 model NavKimoSalesLine {
+  /// NAV internal entry number (not a business line number) — used as PK since Line No_ does not exist in this NAV table.
   entryNo                BigInt  @id
+  /// FK-like reference to NavKimoSalesHeader.entryNo (no @relation — pure replica, joined manually).
   headerEntryNo          BigInt
+  /// Item/SKU number; soft reference to NavPfItem.no_.
   no_                    String?
+  /// Soft reference to NavPfItem.modelItemNo — the model item this SKU line belongs to.
   modelItemNo            String?
   colorCode              String?
   sizeCode               String?
   quantity               Float?
   lineAmount             Float?
   kimoFashionSoReference String?
+  /// NAV sales line type code.
   type                   Int?
   navRowversion          BigInt  @default(0)
 
@@ -2061,7 +2151,9 @@ enum LockEntityType {
 /// or expired via a fixed TTL (no renewal/heartbeat).
 model EditLock {
   id             String         @id @default(uuid())
+  /// Which kind of entity this lock targets: SEASON_CALENDAR or COLLECTION_LAYOUT.
   entityType     LockEntityType
+  /// Id of the locked entity — a SeasonCalendar or CollectionLayout id depending on entityType. Polymorphic, so no @relation.
   entityId       String
   /// FK to User. Cascade delete — a lock has no meaning once its owner is gone.
   lockedByUserId String
@@ -2198,7 +2290,7 @@ enum BackupTrigger {
   MIGRATED
 }
 
-/// Lifecycle status of a backup job.
+/// Lifecycle status of a backup job: PENDING (queued) → RUNNING (in progress) → COMPLETED | FAILED (terminal).
 enum BackupStatus {
   PENDING
   RUNNING
@@ -2215,8 +2307,11 @@ model BackupRecord {
   /// Storage key of the encrypted blob within the "backups" bucket.
   filename String
 
+  /// Whether the backup covers DB only or DB + storage files. See BackupScope.
   scope   BackupScope
+  /// What kicked off this backup — manual, scheduled, safety snapshot, import, or migration bridge step. See BackupTrigger.
   trigger BackupTrigger
+  /// Job lifecycle, defaulting to PENDING at creation. See BackupStatus.
   status  BackupStatus  @default(PENDING)
 
   /// Optional free-text label set by the admin at creation time (e.g. "prima di migrazione X").

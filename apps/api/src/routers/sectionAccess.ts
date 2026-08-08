@@ -90,6 +90,7 @@ export const sectionAccessRouter = router({
    * Single source of truth for client-side section visibility.
    *
    * @auth {authenticated}
+   * @input {none}
    * @output {Record<Section, boolean>}
    */
   getEffectiveForMe: protectedProcedure.query(async ({ ctx }) => {

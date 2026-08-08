@@ -63,6 +63,9 @@ export const auditLogRouter = router({
    * alimenta il widget "ultima modifica" sulle viste di dettaglio.
    *
    * @auth {permesso di lettura dell'entità target, vedi LAST_CHANGE_TARGET_PERMISSIONS}
+   * @input {AuditLogGetLastChangeInputSchema} — targetType and targetId of the entity to look up.
+   * @output {{ action: string, createdAt: Date, actorName: string | null } | null} — most recent
+   *   successful audit event for the target, or null if none exists.
    */
   getLastChange: protectedProcedure
     .input(AuditLogGetLastChangeInputSchema)
@@ -90,6 +93,9 @@ export const auditLogRouter = router({
    * Elenco paginato dell'audit trail completo, filtrabile per autore/azione/entità/esito/data.
    *
    * @auth {audit:read_all}
+   * @input {AuditLogListInputSchema} — filters (actor, action, targetType, result, date range)
+   *   plus page/limit.
+   * @output {AuditLogListOutput} — paginated audit log entries with resolved actor name/email.
    */
   list: protectedProcedure
     .use(requirePermission('audit:read_all'))
@@ -133,6 +139,8 @@ export const auditLogRouter = router({
    * come `list` — la route raw `/maintenance/audit-log/export` lo verifica e streamma il CSV.
    *
    * @auth {audit:read_all}
+   * @input {AuditLogFiltersSchema} — same filters accepted by `list`.
+   * @output {{ token: string }} — signed short-lived download token for the CSV export route.
    */
   getExportLink: protectedProcedure
     .use(requirePermission('audit:read_all'))

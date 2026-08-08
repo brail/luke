@@ -65,6 +65,9 @@ export const backupRouter = router({
    * Lists backups, newest first, with cursor-based pagination.
    *
    * @auth {maintenance:read}
+   * @input Optional `{ limit?, cursor? }` — defaults to 50 items, no cursor (first page).
+   * @output `{ items: BackupRecord[], nextCursor?: string }` — serialized records (BigInt sizes as
+   * strings) plus a cursor for the next page when more exist.
    */
   list: protectedProcedure
     .use(requirePermission('maintenance:read'))
@@ -91,6 +94,8 @@ export const backupRouter = router({
    * Returns a single backup's current state — used by the frontend to poll job progress.
    *
    * @auth {maintenance:read}
+   * @input `{ id: string }` — the backup record id.
+   * @output The serialized `BackupRecord`, or `NOT_FOUND` if it doesn't exist.
    */
   getById: protectedProcedure
     .use(requirePermission('maintenance:read'))
@@ -110,6 +115,8 @@ export const backupRouter = router({
    * native `<a href>` — no Bearer header, no buffering the whole file into a JS `Blob` first.
    *
    * @auth {maintenance:read}
+   * @input `{ id: string }` — the backup record id.
+   * @output `{ token, filename }` — signed download token and the blob's filename.
    */
   getDownloadLink: protectedProcedure
     .use(requirePermission('maintenance:read'))
@@ -132,6 +139,8 @@ export const backupRouter = router({
    * again. The passphrase itself is never persisted or included in the token.
    *
    * @auth {maintenance:backup_export}
+   * @input `{ id: string, passphrase: string }` — backup id and the export passphrase.
+   * @output `{ token, filename }` — signed export token and the `.lukebak` filename.
    */
   prepareExport: protectedProcedure
     .use(requirePermission('maintenance:backup_export'))
@@ -183,6 +192,8 @@ export const backupRouter = router({
    * the admin even attempts anything.
    *
    * @auth {maintenance:read}
+   * @input `{ id: string }` — the backup record id.
+   * @output Compatibility classification plus `backupSchemaMigrationName`.
    */
   checkRestoreCompatibility: protectedProcedure
     .use(requirePermission('maintenance:read'))
@@ -203,6 +214,8 @@ export const backupRouter = router({
    * the job itself runs in the background.
    *
    * @auth {maintenance:backup_create}
+   * @input `{ scope, label? }` — backup scope and optional label.
+   * @output `{ id: string }` — the new (pending) backup record's id.
    */
   create: protectedProcedure
     .use(requirePermission('maintenance:backup_create'))
@@ -243,6 +256,8 @@ export const backupRouter = router({
    * (status PENDING) and the frontend polls `list` for progress, same as any other backup job.
    *
    * @auth {maintenance:backup_restore}
+   * @input `{ id: string }` — the source backup record id.
+   * @output `{ id: string }` — the new `MIGRATED` backup record's id (status PENDING).
    */
   runMigrationBridge: protectedProcedure
     .use(requirePermission('maintenance:backup_restore'))
@@ -305,6 +320,8 @@ export const backupRouter = router({
    * Deletes a backup: removes the encrypted blob + sidecar from storage, then the DB record.
    *
    * @auth {maintenance:backup_delete}
+   * @input `{ id: string }` — the backup record id.
+   * @output `{ success: true }`
    */
   delete: protectedProcedure
     .use(requirePermission('maintenance:backup_delete'))
@@ -336,6 +353,8 @@ export const backupRouter = router({
    * aborted before anything is touched.
    *
    * @auth {maintenance:backup_restore}
+   * @input `{ id: string, preserveAuditLog: boolean, restoreFiles: boolean }`
+   * @output `{ success: true, safetySnapshotId: string }`
    */
   restore: protectedProcedure
     .use(requirePermission('maintenance:backup_restore'))
@@ -444,6 +463,9 @@ export const backupRouter = router({
    * filled in for any AppConfig key that hasn't been set yet.
    *
    * @auth {maintenance:read}
+   * @input None
+   * @output Schedule/retention settings: `{ enabled, dailyTime, scope, retentionDays,
+   * retentionMinCount, notifyOnFailure }`.
    */
   getScheduleConfig: protectedProcedure
     .use(requirePermission('maintenance:read'))
@@ -453,6 +475,8 @@ export const backupRouter = router({
    * Updates the automatic-backup schedule + retention settings in AppConfig.
    *
    * @auth {maintenance:update}
+   * @input `{ enabled, dailyTime, scope, retentionDays, retentionMinCount, notifyOnFailure }`
+   * @output `{ success: true }`
    */
   updateScheduleConfig: protectedProcedure
     .use(requirePermission('maintenance:update'))

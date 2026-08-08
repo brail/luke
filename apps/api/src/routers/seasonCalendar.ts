@@ -727,6 +727,7 @@ export const seasonCalendarRouter = router({
    * Lists all milestone templates.
    *
    * @auth milestone_template:read
+   * @input None
    * @output Array of MilestoneTemplate
    */
   listTemplates: protectedProcedure
@@ -772,6 +773,13 @@ export const seasonCalendarRouter = router({
 
   // ─── Template CRUD ──────────────────────────────────────────────────────────
 
+  /**
+   * Creates a milestone template.
+   *
+   * @auth milestone_template:create
+   * @input { name, description? }
+   * @output The created MilestoneTemplate
+   */
   createTemplate: protectedProcedure
     .use(requirePermission('milestone_template:create'))
     .input(z.object({
@@ -784,6 +792,13 @@ export const seasonCalendarRouter = router({
       return result;
     }),
 
+  /**
+   * Updates a milestone template's name and/or description.
+   *
+   * @auth milestone_template:update
+   * @input { id, name?, description? }
+   * @output Updated MilestoneTemplate
+   */
   updateTemplate: protectedProcedure
     .use(requirePermission('milestone_template:update'))
     .input(z.object({
@@ -798,6 +813,13 @@ export const seasonCalendarRouter = router({
       return result;
     }),
 
+  /**
+   * Deletes a milestone template.
+   *
+   * @auth milestone_template:delete
+   * @input { id }
+   * @output { success: true }
+   */
   deleteTemplate: protectedProcedure
     .use(requirePermission('milestone_template:delete'))
     .input(z.object({ id: z.string().uuid() }))
@@ -807,6 +829,13 @@ export const seasonCalendarRouter = router({
       return { success: true };
     }),
 
+  /**
+   * Creates an item (a single event definition) within a milestone template.
+   *
+   * @auth milestone_template:create
+   * @input { templateId, ...MilestoneTemplateItemBaseSchema }
+   * @output The created MilestoneTemplateItem
+   */
   createTemplateItem: protectedProcedure
     .use(requirePermission('milestone_template:create'))
     .input(z.object({ templateId: z.string().uuid() }).and(MilestoneTemplateItemBaseSchema))
@@ -817,6 +846,13 @@ export const seasonCalendarRouter = router({
       return result;
     }),
 
+  /**
+   * Updates a milestone template item.
+   *
+   * @auth milestone_template:update
+   * @input { id, ...partial fields of MilestoneTemplateItemBaseSchema }
+   * @output Updated MilestoneTemplateItem
+   */
   updateTemplateItem: protectedProcedure
     .use(requirePermission('milestone_template:update'))
     // `.partial()` alone would re-inject `.default()` values (durationDays/allDay/publishExternally)
@@ -830,6 +866,13 @@ export const seasonCalendarRouter = router({
       return result;
     }),
 
+  /**
+   * Deletes a milestone template item.
+   *
+   * @auth milestone_template:delete
+   * @input { id }
+   * @output { success: true }
+   */
   deleteTemplateItem: protectedProcedure
     .use(requirePermission('milestone_template:delete'))
     .input(z.object({ id: z.string().uuid() }))

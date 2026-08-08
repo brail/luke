@@ -15,7 +15,15 @@ import { navRouter } from './integrations.nav.router';
 import { storageRouter } from './integrations.storage.router';
 
 export const integrationsRouter = router({
-  // Endpoint di test per verificare che le mutation funzionino
+  /**
+   * Smoke-test mutation to verify that mutations reach the server and round-trip correctly —
+   * echoes the input message back, logging it server-side.
+   *
+   * @auth {public}
+   * @input {{ message: string }}
+   * @output {{ success: true, message: string }} — echoes the input message wrapped in a
+   *   confirmation string.
+   */
   test: publicProcedure
     .input(z.object({ message: z.string() }))
     .mutation(async ({ input, ctx }) => {

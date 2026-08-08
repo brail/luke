@@ -411,6 +411,13 @@ async function fetchTeam(teamId: string, prisma: PrismaClient) {
 }
 
 const companyTeamRouter = router({
+  /**
+   * Lists company teams for a given function, including membership count and brand scopes.
+   *
+   * @auth company_team:read
+   * @input { functionId, includeInactive? }
+   * @output Array of CompanyTeam with membership count and brand scopes
+   */
   listByFunction: protectedProcedure
     .use(requirePermission('company_team:read'))
     .input(z.object({ functionId: z.string().uuid(), includeInactive: z.boolean().optional() }))
@@ -428,6 +435,13 @@ const companyTeamRouter = router({
       });
     }),
 
+  /**
+   * Returns a company team by ID, including its memberships (with user info) and brand scopes.
+   *
+   * @auth company_team:read
+   * @input { id }
+   * @output CompanyTeam with memberships and brand scopes
+   */
   getById: protectedProcedure
     .use(requirePermission('company_team:read'))
     .input(z.object({ id: z.string().uuid() }))
@@ -447,6 +461,13 @@ const companyTeamRouter = router({
       return team;
     }),
 
+  /**
+   * Creates a company team and its brand scopes in a single transaction.
+   *
+   * @auth company_team:create
+   * @input CompanyTeamInputSchema
+   * @output The created CompanyTeam
+   */
   create: protectedProcedure
     .use(requirePermission('company_team:create'))
     .use(withRateLimit('companyStructureMutations'))
@@ -477,6 +498,13 @@ const companyTeamRouter = router({
       return team;
     }),
 
+  /**
+   * Updates a company team's fields and replaces its brand scopes when `brandIds` is provided.
+   *
+   * @auth company_team:update
+   * @input CompanyTeamUpdateInputSchema
+   * @output Updated CompanyTeam
+   */
   update: protectedProcedure
     .use(requirePermission('company_team:update'))
     .use(withRateLimit('companyStructureMutations'))
@@ -510,6 +538,13 @@ const companyTeamRouter = router({
       return team;
     }),
 
+  /**
+   * Deletes a company team.
+   *
+   * @auth company_team:delete
+   * @input { id }
+   * @output { ok: true }
+   */
   delete: protectedProcedure
     .use(requirePermission('company_team:delete'))
     .use(withRateLimit('companyStructureMutations'))
@@ -530,6 +565,13 @@ const companyTeamRouter = router({
       return { ok: true };
     }),
 
+  /**
+   * Adds users to a company team and notifies each added member.
+   *
+   * @auth company_team:update
+   * @input CompanyTeamMembershipInputSchema
+   * @output { ok: true }
+   */
   addMembers: protectedProcedure
     .use(requirePermission('company_team:update'))
     .use(withRateLimit('companyStructureMutations'))
@@ -575,6 +617,13 @@ const companyTeamRouter = router({
       return { ok: true };
     }),
 
+  /**
+   * Removes users from a company team and notifies each removed member.
+   *
+   * @auth company_team:update
+   * @input CompanyTeamMembershipRemoveInputSchema
+   * @output { ok: true }
+   */
   removeMembers: protectedProcedure
     .use(requirePermission('company_team:update'))
     .use(withRateLimit('companyStructureMutations'))
@@ -606,6 +655,13 @@ const companyTeamRouter = router({
       return { ok: true };
     }),
 
+  /**
+   * Updates a team member's role and notifies the affected user.
+   *
+   * @auth company_team:update
+   * @input CompanyTeamMembershipUpdateRoleInputSchema
+   * @output { ok: true }
+   */
   updateMemberRole: protectedProcedure
     .use(requirePermission('company_team:update'))
     .use(withRateLimit('companyStructureMutations'))
@@ -643,6 +699,12 @@ const companyTeamRouter = router({
       return { ok: true };
     }),
 
+  /**
+   * Lists all active brands, for use in team brand-scope selection.
+   *
+   * @auth brands:read
+   * @output Array of Brand (id, code, name)
+   */
   listAllBrands: protectedProcedure
     .use(requirePermission('brands:read'))
     .query(async ({ ctx }) => {

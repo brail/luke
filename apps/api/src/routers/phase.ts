@@ -78,6 +78,7 @@ export const phaseRouter = router({
    * Lists all phases including inactive ones, for admin management.
    *
    * @auth {phase_catalog:update}
+   * @input {none}
    * @output {Phase[]} — all phases sorted by order.
    */
   listAll: protectedProcedure

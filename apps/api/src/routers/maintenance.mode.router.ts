@@ -58,6 +58,11 @@ function emailUsers(ctx: Context, emails: string[], send: (email: string) => Pro
 export const maintenanceModeRouter = router({
   /**
    * Returns the current maintenance-mode state. Public — no session required.
+   *
+   * @auth public
+   * @input None
+   * @output `MaintenanceModeState` — `{ status, scheduledAt, activatedAt, message, forceLogout,
+   * warningLeadMinutes, warningsSent, activatedByUserId, notifyByEmail }`.
    */
   getStatus: publicProcedure.query(({ ctx }) => getMaintenanceState(ctx.prisma)),
 
@@ -67,6 +72,8 @@ export const maintenanceModeRouter = router({
    * Can be called again while already `SCHEDULED` to reschedule.
    *
    * @auth {admin}
+   * @input `{ scheduledAt, message?, forceLogout, warningLeadMinutes, notifyByEmail }`
+   * @output The updated `MaintenanceModeState` (status `SCHEDULED`).
    */
   schedule: adminProcedure
     .input(MaintenanceModeScheduleInputSchema)
@@ -136,6 +143,8 @@ export const maintenanceModeRouter = router({
    * immediate action, e.g. right before a restore).
    *
    * @auth {admin}
+   * @input `{ message?, forceLogout }`
+   * @output The updated `MaintenanceModeState` (status `ACTIVE`).
    */
   activateNow: adminProcedure
     .input(MaintenanceModeActivateInputSchema)
@@ -170,6 +179,9 @@ export const maintenanceModeRouter = router({
    * Cancels a pending schedule, returning to `INACTIVE`. Only valid while `SCHEDULED`.
    *
    * @auth {admin}
+   * @input None
+   * @output The updated `MaintenanceModeState` (status `INACTIVE`), or `BAD_REQUEST` if nothing
+   * is scheduled.
    */
   cancelScheduled: adminProcedure.mutation(async ({ ctx }) => {
     const current = await getMaintenanceState(ctx.prisma);
@@ -195,6 +207,9 @@ export const maintenanceModeRouter = router({
    * everyone if the admin opted into email notifications when this window was scheduled/activated.
    *
    * @auth {admin}
+   * @input None
+   * @output The updated `MaintenanceModeState` (status `INACTIVE`), or `BAD_REQUEST` if
+   * maintenance mode isn't active.
    */
   end: adminProcedure.mutation(async ({ ctx }) => {
     const current = await getMaintenanceState(ctx.prisma);
