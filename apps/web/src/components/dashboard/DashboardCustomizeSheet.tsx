@@ -76,10 +76,11 @@ function EditableList({
             value={input}
             onChange={e => setInput(normalizer(e.target.value))}
             placeholder={placeholder}
-            className="h-7 text-xs font-mono"
+            inputSize="sm"
+            className="font-mono"
             onKeyDown={e => { if (e.key === 'Enter') tryAdd(); }}
           />
-          <Button variant="outline" size="sm" className="h-7 px-2" onClick={tryAdd}>
+          <Button variant="outline" size="icon-sm" onClick={tryAdd}>
             <Plus className="h-3 w-3" />
           </Button>
         </div>
@@ -90,6 +91,13 @@ function EditableList({
 
 const FOREX_RE = /^[A-Z]{3}\/[A-Z]{3}$/;
 
+/**
+ * Side sheet for toggling and configuring dashboard widgets.
+ *
+ * Each widget in `WIDGET_REGISTRY` has a toggle switch. Configurable widgets
+ * (`clocks`, `forex`) expose a popover with an `EditableList` to add/remove
+ * IANA timezones or forex pairs. Saves changes immediately via `dashboard.saveConfig`.
+ */
 export function DashboardCustomizeSheet({
   open,
   onOpenChange,
@@ -139,7 +147,7 @@ export function DashboardCustomizeSheet({
                 {def.configurable && enabled && (
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-7 px-2">
+                      <Button variant="ghost" size="icon-sm">
                         <Settings2 className="h-3.5 w-3.5" />
                       </Button>
                     </PopoverTrigger>

@@ -14,6 +14,9 @@ interface SectionCardProps {
   children: React.ReactNode;
 }
 
+/**
+ * Card wrapper with a titled header for grouping related form fields or content.
+ */
 export function SectionCard({
   title,
   description,

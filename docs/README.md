@@ -1,0 +1,62 @@
+# Documentazione Luke
+
+<!-- luke-docs:start:index -->
+## Architettura & Design
+
+| File | Descrizione |
+|------|-------------|
+| [architecture-brand-flows.md](architecture-brand-flows.md) | Mappa architetturale dei flussi Brand — relazioni tra entità, lifecycle e transizioni di stato |
+| [collection-layout-versioning.md](collection-layout-versioning.md) | Sistema di revisioni del piano di collezione — registro qualità ISO 9001:2015, snapshot immutabili |
+| [storage-immutable-bucket.md](storage-immutable-bucket.md) | Bucket immutabile per foto revisioni — content-addressed storage, SHA-256 key, policy di retention |
+| [nav-integration.md](nav-integration.md) | Architettura integrazione Microsoft Dynamics NAV — pattern entità duale, sync differenziale, tabelle replica |
+| [google-calendar-setup.md](google-calendar-setup.md) | Setup integrazione Google Calendar — configurazione OAuth, provisioning calendario stagione, sync milestone |
+| [genoma-collezione-pianificazione.md](genoma-collezione-pianificazione.md) | Recepimento in Luke dell'algoritmo "Genoma della Collezione" — alert e monitoraggio avanzamento campionario |
+| [genoma-collezione-simplify-skipped.md](genoma-collezione-simplify-skipped.md) | Findings delle review `/simplify` non applicati durante l'implementazione del Genoma della Collezione, con motivazione dello skip |
+| [prisma-migration-workflow.md](prisma-migration-workflow.md) | Workflow per generare una migration Prisma versionata (Postgres temporaneo porta 5433 → `db push` su 5432) |
+| [rc-prod-clone.md](rc-prod-clone.md) | Procedura per clonare i dati di PROD su RC prima di promuovere una release stabile |
+
+## Decisioni Architetturali (ADR)
+
+Le decisioni architetturali rilevanti sono documentate in [`decisions/`](decisions/):
+
+| # | Titolo |
+|---|--------|
+| [001](decisions/001-jwt-hs256-hkdf.md) | JWT HS256 con derivazione HKDF-SHA256 per i segreti |
+| [002](decisions/002-rbac-policy.md) | RBAC Policy e Enforcement (Resource:Action) |
+| [003](decisions/003-core-server-only.md) | Core Package — export server-only isolati |
+| [004](decisions/004-prisma-select-only.md) | Prisma Select-Only Pattern (prevenzione data leakage) |
+| [005](decisions/005-shared-zod-schemas.md) | Schemi Zod centralizzati in `@luke/core` |
+| [006](decisions/006-resource-action-permissions.md) | Sistema permessi Resource:Action unificato |
+| [007](decisions/007-storage-layer-refactor.md) | Refactor storage layer — interfaccia `IStorageProvider` |
+| [008](decisions/008-appconfig-env-policy.md) | AppConfig KV System e Env Policy |
+| [009](decisions/009-tokenversion-session-invalidation.md) | TokenVersion Multi-Layer Session Invalidation |
+| [010](decisions/010-section-access-precedence.md) | Section Access a 4 Layer di Precedenza |
+| [011](decisions/011-single-instance-scaling-constraint.md) | Vincolo di scalabilità a istanza singola |
+
+Indice con Status aggiornato: [decisions/README.md](decisions/README.md).
+
+## Analisi & Report
+
+| File | Descrizione |
+|------|-------------|
+| [audit-report-brand-management.md](audit-report-brand-management.md) | Report audit architetturale — gestione Brand |
+| [luke-taric-classifier.md](luke-taric-classifier.md) | Integrazione classificatore TARIC — categorizzazione doganale articoli |
+| [quality-hardening-plan.md](quality-hardening-plan.md) | Piano di consolidamento dei controlli qualità — dall'analisi statica alla verifica comportamentale |
+
+## Task e note tecniche
+
+| File | Descrizione |
+|------|-------------|
+| [TASK_calendar_ux_deferred_items.md](TASK_calendar_ux_deferred_items.md) | Backlog differito della UX review calendario/collection-layout (2026-07-10) |
+| [TASK_working_days_calendar_relevance.md](TASK_working_days_calendar_relevance.md) | Design doc storico: giorni lavorativi paese-aware per la criticità calendario (implementato 2026-07-10) |
+
+## Directory operative
+
+| Directory | Descrizione |
+|-----------|-------------|
+| [merchandising-reference/](merchandising-reference/) | Materiali di riferimento per il dominio merchandising |
+| [access-porting/](access-porting/) | Documentazione porting da Microsoft Access — reverse engineering e analisi query |
+| [archive/](archive/) | Feature rimosse archiviate — es. what-if calendar solver (rimosso 2026-07) |
+
+*Ultimo aggiornamento: 2026-08-08*
+<!-- luke-docs:end:index -->

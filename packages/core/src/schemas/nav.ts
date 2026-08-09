@@ -1,13 +1,11 @@
 /**
- * Schema Zod per configurazione Microsoft NAV (SQL Server)
- * Centralizzato in @luke/core per riuso tra API e frontend
+ * Zod schemas for Microsoft NAV (SQL Server) integration configuration.
+ * Shared between API and frontend; the password is never included in response schemas.
  */
 
 import { z } from 'zod';
 
-/**
- * Schema per configurazione NAV (input per saveConfig)
- */
+/** Input schema for saving NAV SQL Server connection configuration. */
 export const navConfigSchema = z.object({
   host: z.string().min(1, 'Host richiesto'),
   port: z.number().int().min(1).max(65535),
@@ -22,7 +20,7 @@ export const navConfigSchema = z.object({
 });
 
 /**
- * Schema per risposta getNavConfig (password omessa, sostituita da flag)
+ * Response shape for `getNavConfig`. The password is omitted and replaced with `hasPassword`.
  */
 export const navConfigResponseSchema = z.object({
   host: z.string(),

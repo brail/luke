@@ -26,6 +26,15 @@ interface VendorComboboxProps {
   disabled?: boolean;
 }
 
+/**
+ * Searchable combobox for selecting a vendor from the active vendors list.
+ *
+ * Fetches active vendors via `trpc.vendor.list` and filters them client-side.
+ * Passes the selected vendor ID (or null to clear) to `onChange`.
+ *
+ * @param value - Currently selected vendor ID, or null when empty.
+ * @param onChange - Called with the new vendor ID or null on clear.
+ */
 export function VendorCombobox({ value, onChange, disabled }: VendorComboboxProps) {
   const [open, setOpen] = useState(false);
 
@@ -57,7 +66,7 @@ export function VendorCombobox({ value, onChange, disabled }: VendorComboboxProp
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[320px] p-0" align="start" onWheel={e => e.stopPropagation()}>
+      <PopoverContent className="w-80 p-0" align="start" onWheel={e => e.stopPropagation()}>
         <Command>
           <CommandInput placeholder="Cerca fornitore…" />
           <CommandList className="max-h-60">

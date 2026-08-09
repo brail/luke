@@ -36,8 +36,10 @@ interface UserActionsMenuProps {
 }
 
 /**
- * Menu dropdown azioni per utente
- * Include protezioni self-action e gestione stati
+ * Dropdown action menu for a single user row, with self-action guards.
+ * @param user - The user the actions apply to.
+ * @param currentUserId - ID of the currently logged-in user, used to block self-destructive actions.
+ * @param handlers - Callbacks for each available action (edit, disable, hard-delete, revoke sessions, manage access).
  */
 export function UserActionsMenu({
   user,
@@ -66,7 +68,7 @@ export function UserActionsMenu({
   const { mutate: forceVerify } = useStandardMutation({
     mutateFn: forceVerifyMutation.mutateAsync,
     invalidate: refresh.users,
-    onSuccess: (data: any) => toast.success(data.message),
+    onSuccess: data => toast.success(data.message),
     onErrorMessage: 'Errore',
   });
 
@@ -78,7 +80,7 @@ export function UserActionsMenu({
   };
 
   const handleDisable = () => {
-    // Doppia protezione: controlla anche qui prima di procedere
+    // Double protection: check here too before proceeding
     if (isSelfAction) {
       toast.error('Non puoi disattivare il tuo stesso account');
       return;
@@ -98,7 +100,7 @@ export function UserActionsMenu({
   };
 
   const handleHardDelete = () => {
-    // Doppia protezione: controlla anche qui prima di procedere
+    // Double protection: check here too before proceeding
     if (isSelfAction) {
       toast.error('Non puoi eliminare il tuo stesso account');
       return;

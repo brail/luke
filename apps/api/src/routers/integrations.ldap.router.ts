@@ -1,6 +1,6 @@
 /**
- * LDAP sub-router per integrazioni
- * Gestisce configurazione e test connessione LDAP
+ * LDAP sub-router for integrations
+ * Handles LDAP configuration and connection testing
  */
 
 import { TRPCError } from '@trpc/server';
@@ -11,6 +11,7 @@ import { ldapConfigSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import { getLdapConfig, encryptValue } from '../lib/configManager';
+import { toErrorCode, toErrorMessage } from '../lib/error';
 import { SecureLogger } from '../lib/errorHandler';
 import { escapeLdapFilter } from '../lib/ldapAuth';
 import { requirePermission } from '../lib/permissions';
@@ -19,23 +20,24 @@ import { router, protectedProcedure } from '../lib/trpc';
 
 export const ldapRouter = router({
   /**
-   * Salva la configurazione LDAP globale dell'applicazione
-   * IMPORTANTE: La configurazione LDAP è GLOBALE e non legata a utenti specifici.
-   * Tutti gli amministratori vedono e modificano la stessa configurazione.
-   * Le chiavi sono salvate come 'auth.ldap.*' senza riferimenti a userId.
+   * Saves the global LDAP configuration; all fields are stored under auth.ldap.* in AppConfig (encrypted where sensitive).
+   *
+   * @auth {config:update}
+   * @input {ldapConfigSchema} — url, bindDN, bindPassword, searchBase/Filter, groupSearch*, roleMapping, strategy, enabled.
+   * @output {{ success: true, message: string }}
    */
   saveLdapConfig: protectedProcedure
     .use(requirePermission('config:update'))
     .input(ldapConfigSchema)
     .mutation(async ({ input, ctx }) => {
       try {
-        const logger = new SecureLogger(console);
+        const logger = new SecureLogger(ctx.logger);
 
-        // Validare che roleMapping sia JSON valido (solo se presente)
+        // Validate that roleMapping is valid JSON (only if present)
         if (input.roleMapping && input.roleMapping.trim() !== '') {
           try {
             JSON.parse(input.roleMapping);
-          } catch (error) {
+          } catch {
             throw new TRPCError({
               code: 'BAD_REQUEST',
               message: 'Role Mapping deve essere un JSON valido',
@@ -43,7 +45,7 @@ export const ldapRouter = router({
           }
         }
 
-        // Salva ogni campo in AppConfig
+        // Save each field in AppConfig
         const configMappings = [
           {
             key: 'auth.ldap.enabled',
@@ -108,7 +110,7 @@ export const ldapRouter = router({
           hasBindPassword: !!input.bindPassword,
         });
 
-        // Log audit aggregato per LDAP
+        // Aggregated audit log for LDAP
         await logAudit(ctx, {
           action: 'CONFIG_UPSERT',
           targetType: 'AppConfig',
@@ -136,7 +138,7 @@ export const ldapRouter = router({
           success: true,
           message: 'Configurazione LDAP salvata con successo',
         };
-      } catch (error: any) {
+      } catch (error: unknown) {
         // Log audit FAILURE
         await logAudit(ctx, {
           action: 'CONFIG_UPSERT',
@@ -144,8 +146,8 @@ export const ldapRouter = router({
           targetId: 'auth.ldap',
           result: 'FAILURE',
           metadata: {
-            errorCode: error.code || 'UNKNOWN',
-            errorMessage: error.message?.substring(0, 100),
+            errorCode: toErrorCode(error),
+            errorMessage: toErrorMessage(error).substring(0, 100),
           },
         });
 
@@ -154,20 +156,23 @@ export const ldapRouter = router({
         }
 
         ctx.logger.error(
-          { error: error.message },
+          { error: toErrorMessage(error) },
           'Error saving LDAP config'
         );
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Errore durante salvataggio configurazione LDAP',
+          cause: error,
         });
       }
     }),
 
   /**
-   * Recupera la configurazione LDAP globale dell'applicazione
-   * IMPORTANTE: Restituisce sempre la stessa configurazione per tutti gli amministratori.
-   * Non ci sono filtri basati su userId - la configurazione è globale.
+   * Returns the current global LDAP configuration; sensitive fields (bindDN, password) are omitted.
+   *
+   * @auth {config:read}
+   * @input {none}
+   * @output {{ enabled, url, hasBindDN, hasBindPassword, searchBase, searchFilter, roleMapping, strategy, ... }}
    */
   getLdapConfig: protectedProcedure
     .use(requirePermission('config:read'))
@@ -175,10 +180,10 @@ export const ldapRouter = router({
       try {
         const config = await getLdapConfig(ctx.prisma);
 
-        // Converti roleMapping object a JSON string per il frontend
+        // Convert roleMapping object to JSON string for the frontend
         const roleMappingJson = JSON.stringify(config.roleMapping, null, 2);
 
-        // Per sicurezza, omettere dati sensibili
+        // For security, omit sensitive data
         return {
           enabled: config.enabled,
           url: config.url,
@@ -191,14 +196,15 @@ export const ldapRouter = router({
           roleMapping: roleMappingJson,
           strategy: config.strategy,
         };
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const message = toErrorMessage(error);
         ctx.logger.error(
-          { error: error.message },
+          { error: message },
           'Error getting LDAP config'
         );
 
-        // Se è un errore di configurazioni mancanti, restituisci configurazione di default
-        if (error.message.includes('Configurazioni LDAP mancanti')) {
+        // If it's a missing-configuration error, return the default configuration
+        if (message.includes('Configurazioni LDAP mancanti')) {
           return {
             enabled: false,
             url: '',
@@ -216,10 +222,18 @@ export const ldapRouter = router({
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Errore durante recupero configurazione LDAP',
+          cause: error,
         });
       }
     }),
 
+  /**
+   * Tests the LDAP connection by binding with the stored credentials.
+   *
+   * @auth {config:update}
+   * @input {none}
+   * @output {{ success: true, message: string }}
+   */
   testLdapConnection: protectedProcedure
     .use(requirePermission('config:update'))
     .use(withRateLimit('ldapTest'))
@@ -245,25 +259,26 @@ export const ldapRouter = router({
 
         ctx.logger.info('Testing LDAP connection');
 
-        // Crea client LDAP (ldapts: connessione lazy al primo bind)
+        // Create LDAP client (ldapts: lazy connection on first bind)
         client = new Client({
           url: config.url,
           timeout: 10000,
           connectTimeout: 5000,
         });
 
-        // Testa connessione e bind
+        // Test connection and bind
         try {
           await client.bind(config.bindDN, config.bindPassword);
           ctx.logger.info('LDAP connection test successful');
-        } catch (err: any) {
+        } catch (err: unknown) {
           ctx.logger.error(
-            { error: err.message },
+            { error: toErrorMessage(err) },
             'LDAP connection test failed'
           );
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
             message: 'Connessione LDAP fallita. Controllare i log per i dettagli.',
+            cause: err,
           });
         }
 
@@ -271,21 +286,22 @@ export const ldapRouter = router({
           success: true,
           message: 'Connessione LDAP riuscita',
         };
-      } catch (error: any) {
+      } catch (error: unknown) {
         if (error instanceof TRPCError) {
           throw error;
         }
 
         ctx.logger.error(
-          { error: error.message },
+          { error: toErrorMessage(error) },
           'LDAP connection test error'
         );
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Errore durante test connessione LDAP',
+          cause: error,
         });
       } finally {
-        // Chiudi connessione
+        // Close connection
         if (client) {
           try {
             await client.unbind();
@@ -302,9 +318,17 @@ export const ldapRouter = router({
       }
     }),
 
+  /**
+   * Tests the LDAP user search using the configured searchFilter with the given username.
+   *
+   * @auth {config:update}
+   * @input {{ username: string }} — username to search for (LDAP-escaped to prevent injection).
+   * @output {{ success: true, message: string, results: Array<{ dn, attributes }> }}
+   */
   testLdapSearch: protectedProcedure
-    .use(requirePermission('config:read'))
-    .input(z.object({ username: z.string() }))
+    .use(requirePermission('config:update'))
+    .use(withRateLimit('ldapTest'))
+    .input(z.object({ username: z.string().min(1).max(256) }))
     .mutation(async ({ input, ctx }) => {
       let client: Client | null = null;
 
@@ -318,23 +342,24 @@ export const ldapRouter = router({
           });
         }
 
-        // Crea client LDAP (ldapts: connessione lazy al primo bind)
+        // Create LDAP client (ldapts: lazy connection on first bind)
         client = new Client({
           url: config.url,
           timeout: 10000,
         });
 
-        // Bind amministrativo
+        // Administrative bind
         try {
           await client.bind(config.bindDN, config.bindPassword);
-        } catch (err: any) {
+        } catch (err: unknown) {
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
-            message: `Bind LDAP fallito: ${err.message}`,
+            message: `Bind LDAP fallito: ${toErrorMessage(err)}`,
+            cause: err,
           });
         }
 
-        // Testa ricerca utente (input.username escapato contro LDAP injection — RFC 4515)
+        // Test user search (input.username escaped against LDAP injection — RFC 4515)
         const searchFilter = config.searchFilter.replace(
           /\$\{username\}/g,
           escapeLdapFilter(input.username)
@@ -363,14 +388,15 @@ export const ldapRouter = router({
             ],
           });
           searchEntries = result.searchEntries;
-        } catch (err: any) {
+        } catch (err: unknown) {
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
-            message: `Ricerca LDAP fallita: ${err.message}`,
+            message: `Ricerca LDAP fallita: ${toErrorMessage(err)}`,
+            cause: err,
           });
         }
 
-        // ldapts restituisce entry flat: { dn: string; [key]: string | string[] }
+        // ldapts returns flat entries: { dn: string; [key]: string | string[] }
         const results = searchEntries.map(entry => {
           const attributes: Record<string, string | string[]> = {};
           for (const key of Object.keys(entry)) {
@@ -387,15 +413,16 @@ export const ldapRouter = router({
           message: `Ricerca completata. Trovati ${results.length} risultati.`,
           results,
         };
-      } catch (error: any) {
+      } catch (error: unknown) {
         if (error instanceof TRPCError) {
           throw error;
         }
 
-        ctx.logger.error({ error: error.message }, 'LDAP search test error');
+        ctx.logger.error({ error: toErrorMessage(error) }, 'LDAP search test error');
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Errore durante test ricerca LDAP',
+          cause: error,
         });
       } finally {
         if (client) {

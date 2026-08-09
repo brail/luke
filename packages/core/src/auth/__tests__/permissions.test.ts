@@ -5,22 +5,19 @@
  * - Type guards (isResource, isAction, isPermission)
  * - Role expansion (expandRole)
  * - Permission checking (hasPermission)
- * - Permission checking with grants (hasPermissionWithGrants)
  * - Matrix functions (getAllPermissions, getPermissionMatrix, validatePermissionMatrix)
  * - CSV export (permissionMatrixToCSV)
  * - Utilities (createPermission)
  */
 
 import { describe, it, expect } from 'vitest';
-import type { Role } from '../rbac';
-import type { Resource, Action, Permission } from '../permissions';
+
 import {
   isResource,
   isAction,
   isPermission,
   expandRole,
   hasPermission,
-  hasPermissionWithGrants,
   getAllPermissions,
   getPermissionMatrix,
   validatePermissionMatrix,
@@ -31,6 +28,9 @@ import {
   ROLE_PERMISSIONS,
   VALID_RESOURCE_ACTIONS,
 } from '../permissions';
+
+import type { Role } from '../../rbac';
+import type { Resource, Action } from '../permissions';
 
 describe('Type Guards', () => {
   describe('isResource', () => {
@@ -387,13 +387,11 @@ describe('Permission Checking', () => {
       expect(hasPermission(unknownUser, 'users:read')).toBe(false);
     });
 
-    it('should handle context parameter gracefully (current implementation ignores it)', () => {
+    it('should check permissions correctly without context', () => {
       const editorUser = { role: 'editor' as Role };
-      const context = { brandId: 'brand123', seasonId: 'season456' };
 
-      // Should still work same way - context not used in current implementation
-      expect(hasPermission(editorUser, 'brands:read', context)).toBe(true);
-      expect(hasPermission(editorUser, 'users:delete', context)).toBe(false);
+      expect(hasPermission(editorUser, 'brands:read')).toBe(true);
+      expect(hasPermission(editorUser, 'users:delete')).toBe(false);
     });
 
     it('should check specific permissions before wildcard', () => {
@@ -402,137 +400,6 @@ describe('Permission Checking', () => {
       // These should check the specific permission
       expect(hasPermission(editorUser, 'users:read')).toBe(true);
       expect(hasPermission(editorUser, 'users:create')).toBe(false);
-    });
-  });
-});
-
-describe('Permission Checking with Grants', () => {
-  describe('hasPermissionWithGrants', () => {
-    it('should grant permission based on role if role has it', () => {
-      const editorUser = { role: 'editor' as Role, id: 'user1' };
-
-      // Role-based permission (fast path)
-      expect(hasPermissionWithGrants(editorUser, 'brands:create')).toBe(true);
-      expect(hasPermissionWithGrants(editorUser, 'brands:create', [])).toBe(
-        true
-      );
-    });
-
-    it('should grant permission from explicit grants', () => {
-      const viewerUser = { role: 'viewer' as Role, id: 'user1' };
-
-      // Viewer normally cannot create
-      expect(hasPermissionWithGrants(viewerUser, 'brands:create')).toBe(false);
-
-      // But with explicit grant, can create
-      expect(
-        hasPermissionWithGrants(viewerUser, 'brands:create', ['brands:create'])
-      ).toBe(true);
-    });
-
-    it('should use grants to override role limitations', () => {
-      const viewerUser = { role: 'viewer' as Role, id: 'user1' };
-
-      // Grant specific permissions
-      const userGrants = ['brands:create', 'users:update'];
-
-      expect(
-        hasPermissionWithGrants(viewerUser, 'brands:create', userGrants)
-      ).toBe(true);
-      expect(
-        hasPermissionWithGrants(viewerUser, 'users:update', userGrants)
-      ).toBe(true);
-
-      // But not permissions not in grants
-      expect(
-        hasPermissionWithGrants(viewerUser, 'seasons:create', userGrants)
-      ).toBe(false);
-    });
-
-    it('should support wildcard grants', () => {
-      const viewerUser = { role: 'viewer' as Role, id: 'user1' };
-
-      // Wildcard grant gives all permissions
-      expect(hasPermissionWithGrants(viewerUser, 'users:delete', ['*:*'])).toBe(
-        true
-      );
-      expect(
-        hasPermissionWithGrants(viewerUser, 'seasons:create', ['*:*'])
-      ).toBe(true);
-
-      // Resource wildcard grant
-      expect(
-        hasPermissionWithGrants(viewerUser, 'seasons:delete', ['seasons:*'])
-      ).toBe(true);
-      expect(
-        hasPermissionWithGrants(viewerUser, 'seasons:create', ['seasons:*'])
-      ).toBe(true);
-    });
-
-    it('should prefer role-based permission over grants (fast path)', () => {
-      const editorUser = { role: 'editor' as Role, id: 'user1' };
-
-      // Editor has brands:* via role
-      expect(hasPermissionWithGrants(editorUser, 'brands:create')).toBe(true);
-
-      // Should still be true even if grants don't include it
-      expect(
-        hasPermissionWithGrants(editorUser, 'brands:create', ['other:read'])
-      ).toBe(true);
-    });
-
-    it('should handle empty grants array', () => {
-      const viewerUser = { role: 'viewer' as Role, id: 'user1' };
-
-      // Empty grants means only role permissions
-      expect(hasPermissionWithGrants(viewerUser, 'brands:read', [])).toBe(true);
-      expect(hasPermissionWithGrants(viewerUser, 'brands:create', [])).toBe(
-        false
-      );
-    });
-
-    it('should handle undefined grants', () => {
-      const viewerUser = { role: 'viewer' as Role, id: 'user1' };
-
-      // Undefined grants means only role permissions
-      expect(
-        hasPermissionWithGrants(viewerUser, 'brands:read', undefined)
-      ).toBe(true);
-      expect(
-        hasPermissionWithGrants(viewerUser, 'brands:create', undefined)
-      ).toBe(false);
-    });
-
-    it('should accept current grants only (not check expiry in function)', () => {
-      const viewerUser = { role: 'viewer' as Role, id: 'user1' };
-
-      // Function accepts any grants, expiry checking is done elsewhere
-      const grants = ['users:create'];
-      expect(hasPermissionWithGrants(viewerUser, 'users:create', grants)).toBe(
-        true
-      );
-    });
-
-    it('should work with admin users and grants', () => {
-      const adminUser = { role: 'admin' as Role, id: 'user1' };
-
-      // Admin should have access regardless of grants
-      expect(hasPermissionWithGrants(adminUser, 'users:delete')).toBe(true);
-      expect(hasPermissionWithGrants(adminUser, 'maintenance:update')).toBe(
-        true
-      );
-      expect(hasPermissionWithGrants(adminUser, 'brands:create', [])).toBe(
-        true
-      );
-    });
-
-    it('should handle context parameter gracefully', () => {
-      const editorUser = { role: 'editor' as Role, id: 'user1' };
-      const context = { brandId: 'brand123' };
-
-      expect(
-        hasPermissionWithGrants(editorUser, 'brands:read', undefined, context)
-      ).toBe(true);
     });
   });
 });
@@ -596,13 +463,17 @@ describe('Matrix Functions', () => {
     it('should have correct count for each resource', () => {
       const permissions = getAllPermissions();
 
-      // Count permissions for brands (4 actions)
-      const brandPerms = permissions.filter(p => p.startsWith('brands:'));
-      expect(brandPerms.length).toBe(5); // create, read, update, delete + wildcard
-
-      // Count permissions for audit (1 action: read only)
-      const auditPerms = permissions.filter(p => p.startsWith('audit:'));
-      expect(auditPerms.length).toBe(2); // read + wildcard
+      // Derivato da VALID_RESOURCE_ACTIONS: ogni risorsa espone le sue azioni + il
+      // wildcard `resource:*`. Conteggi hardcodati driftano al primo `read_all`
+      // aggiunto — l'invariante è la relazione, non il numero.
+      for (const [resource, actions] of Object.entries(VALID_RESOURCE_ACTIONS)) {
+        const resourcePerms = permissions.filter(p =>
+          p.startsWith(`${resource}:`)
+        );
+        expect(resourcePerms.length, `resource "${resource}"`).toBe(
+          actions.length + 1
+        );
+      }
     });
   });
 
@@ -725,7 +596,7 @@ describe('Matrix Functions', () => {
       expect(result.valid).toBe(true);
 
       // Check that validation checked ROLE_PERMISSIONS
-      for (const [role, permissions] of Object.entries(ROLE_PERMISSIONS)) {
+      for (const [_role, permissions] of Object.entries(ROLE_PERMISSIONS)) {
         for (const permission of permissions) {
           expect(isPermission(permission)).toBe(true);
         }
@@ -795,18 +666,18 @@ describe('CSV Export', () => {
 
     it('should include all valid actions for each resource', () => {
       const csv = permissionMatrixToCSV();
+      const lines = csv.split('\n');
 
-      // Brands has 4 actions
-      const brandsLines = csv
-        .split('\n')
-        .filter(line => line.includes('"brands"'));
-      expect(brandsLines.length).toBe(4);
-
-      // Audit has 1 action
-      const auditLines = csv
-        .split('\n')
-        .filter(line => line.includes('"audit"'));
-      expect(auditLines.length).toBe(1);
+      // Una riga per azione valida, nessuna riga wildcard. Derivato da
+      // VALID_RESOURCE_ACTIONS per non driftare quando una risorsa cresce.
+      for (const [resource, actions] of Object.entries(VALID_RESOURCE_ACTIONS)) {
+        const resourceLines = lines.filter(line =>
+          line.startsWith(`"${resource}",`)
+        );
+        expect(resourceLines.length, `resource "${resource}"`).toBe(
+          actions.length
+        );
+      }
     });
 
     it('should show correct permissions for admin', () => {
@@ -977,32 +848,12 @@ describe('Integration Tests', () => {
     expect(hasPermission(viewerUser, 'config:update')).toBe(false);
   });
 
-  it('should allow viewer with grants to exceed role permissions', () => {
-    const viewerUser = { role: 'viewer' as Role, id: 'user1' };
-    const grants = ['brands:create', 'users:update'];
-
-    // Via grants, viewer can now create brands
-    expect(hasPermissionWithGrants(viewerUser, 'brands:create', grants)).toBe(
-      true
-    );
-
-    // Via grants, viewer can update users
-    expect(hasPermissionWithGrants(viewerUser, 'users:update', grants)).toBe(
-      true
-    );
-
-    // But still cannot do other things
-    expect(hasPermissionWithGrants(viewerUser, 'users:delete', grants)).toBe(
-      false
-    );
-  });
-
   it('should validate entire permission system is consistent', () => {
     const validation = validatePermissionMatrix();
     expect(validation.valid).toBe(true);
 
     // All role permissions should be valid
-    for (const [role, perms] of Object.entries(ROLE_PERMISSIONS)) {
+    for (const [_role, perms] of Object.entries(ROLE_PERMISSIONS)) {
       perms.forEach(perm => {
         expect(isPermission(perm)).toBe(true);
       });

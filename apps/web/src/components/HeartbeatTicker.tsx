@@ -8,10 +8,11 @@ import { trpc } from '../lib/trpc';
 const HEARTBEAT_INTERVAL_MS = 60_000; // 60 secondi
 
 /**
- * Componente silenzioso che:
- * 1. Invia un heartbeat periodico per segnalare che l'utente è online
- * 2. Rileva immediatamente la revoca della sessione (tokenVersion invalidato)
- *    e forza il logout senza bisogno di interazione utente
+ * Invisible component that sends a periodic heartbeat and enforces session revocation.
+ *
+ * Fires `users.heartbeat` every 60 seconds. If the server returns UNAUTHORIZED
+ * (e.g. `tokenVersion` was invalidated), it immediately redirects to `/login`
+ * without requiring any user interaction. Renders nothing.
  */
 export function HeartbeatTicker() {
   const { mutate } = trpc.users.heartbeat.useMutation({

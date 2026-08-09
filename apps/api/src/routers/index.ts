@@ -1,51 +1,61 @@
 /**
- * Router principale tRPC
- * Combina tutti i router dell'applicazione
+ * Main tRPC router
+ * Combines all application routers
  */
 
 import { router } from '../lib/trpc';
 
+import { auditLogRouter } from './auditLog';
 import { authRouter } from './auth';
-import { companyRouter } from './company';
 import { brandRouter } from './brand';
 import { catalogRouter } from './catalog';
-import { collectionLayoutRouter } from './collectionLayout';
-import { calendarCatalogRouter } from './calendarCatalog';
 import { collectionCatalogRouter } from './collectionCatalog';
+import { collectionLayoutRouter } from './collectionLayout';
 import { collectionLayoutRevisionRouter } from './collectionLayoutRevision';
-import { merchandisingPlanRouter } from './merchandisingPlan';
+import { companyRouter } from './company';
 import { configRouter } from './config';
 import { contextRouter } from './context';
+import { dashboardRouter } from './dashboard';
+import { editLockRouter } from './editLock';
+import { feedbackRouter } from './feedback';
 import { healthRouter } from './health';
+import { holidaysRouter } from './holidays';
 import { integrationsRouter } from './integrations';
 import { maintenanceRouter } from './maintenance';
 import { meRouter } from './me';
+import { merchandisingPlanRouter } from './merchandisingPlan';
+import { notificationsRouter } from './notifications';
+import { phaseRouter } from './phase';
+import { phaseAlertRouter } from './phaseAlert';
+import { phaseHistoryRouter } from './phaseHistory';
+import { planningGroupRouter } from './planningGroup';
 import { pricingRouter } from './pricing';
 import { publicRouter } from './public';
+import { salesRouter } from './sales';
 import { seasonRouter } from './season';
+import { seasonCalendarRouter } from './seasonCalendar';
 import { sectionAccessRouter } from './sectionAccess';
 import { storageRouter } from './storage';
+import { systemRouter } from './system';
 import { usersRouter } from './users';
 import { vendorsRouter } from './vendors';
-import { salesRouter } from './sales';
-import { seasonCalendarRouter } from './seasonCalendar';
-import { holidaysRouter } from './holidays';
-import { dashboardRouter } from './dashboard';
-import { feedbackRouter } from './feedback';
-import { notificationsRouter } from './notifications';
 
 /**
- * Router principale dell'applicazione
- * Combina tutti i router disponibili
+ * Main application router
+ * Combines all available routers
  */
 export const appRouter = router({
+  auditLog: auditLogRouter,
   auth: authRouter,
   brand: brandRouter,
   company: companyRouter,
   catalog: catalogRouter,
   collectionLayout: collectionLayoutRouter,
-  calendarCatalog: calendarCatalogRouter,
+  editLock: editLockRouter,
   collectionCatalog: collectionCatalogRouter,
+  phase: phaseRouter,
+  phaseHistory: phaseHistoryRouter,
+  phaseAlert: phaseAlertRouter,
   collectionLayoutRevision: collectionLayoutRevisionRouter,
   merchandisingPlan: merchandisingPlanRouter,
   config: configRouter,
@@ -63,14 +73,16 @@ export const appRouter = router({
   vendors: vendorsRouter,
   sales: salesRouter,
   seasonCalendar: seasonCalendarRouter,
+  planningGroup: planningGroupRouter,
   holidays: holidaysRouter,
   dashboard: dashboardRouter,
   feedback: feedbackRouter,
   notifications: notificationsRouter,
+  system: systemRouter,
 });
 
 /**
- * Tipo del router principale per type-safety
- * Esportato per essere utilizzato dal client tRPC
+ * Type of the main router for type-safety
+ * Exported to be used by the tRPC client
  */
 export type AppRouter = typeof appRouter;

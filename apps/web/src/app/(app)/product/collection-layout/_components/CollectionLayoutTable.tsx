@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, Download, FileSpreadsheet, FileText, Loader2, Maximize2, Minimize2, Plus, RotateCcw, Search, Settings2 } from 'lucide-react';
+import { AlertTriangle, Download, FileSpreadsheet, FileText, Layers, LoaderCircle, Maximize2, Minimize2, Plus, RotateCcw, Search, Settings2 } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
@@ -28,11 +28,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '../../../../../components/ui/popover';
-import { computeWeightedMargin } from '../_hooks/usePricingCalc';
+import { computeWeightedMargin } from '../../_shared/pricingCalc';
 
+import { AssignPlanningGroupDialog } from './AssignPlanningGroupDialog';
 import { CollectionGroupSection } from './CollectionGroupSection';
 
-import type { PricingParameterSet } from '../_hooks/usePricingCalc';
+import type { PricingParameterSet } from '../../_shared/pricingCalc';
 
 type CollectionLayoutData = NonNullable<RouterOutputs['collectionLayout']['get']>;
 
@@ -51,7 +52,6 @@ interface CollectionLayoutTableProps {
   layout: CollectionLayoutData;
   canUpdate: boolean;
   parameterSets: PricingParameterSet[];
-  laggingRowIds?: Set<string>;
   onAddGroup: () => void;
   onAddRow: (groupId: string) => void;
   onEditRow: (row: CollectionRowData) => void;
@@ -70,11 +70,22 @@ interface CollectionLayoutTableProps {
   readOnly?: boolean;
 }
 
+/**
+ * Top-level collection layout table that orchestrates groups, toolbar, and exports.
+ *
+ * Renders a `CollectionGroupSection` for each group and a persistent toolbar
+ * with column-visibility controls, full-screen toggle, search, and export
+ * buttons (XLSX and PDF). Column visibility is persisted via `onUpdateSettings`.
+ *
+ * @param layout - Full collection layout including groups and hiddenColumns setting.
+ * @param parameterSets - Pricing parameter sets forwarded to each group section.
+ * @param onUpdateSettings - Called when the user changes column visibility.
+ * @param readOnly - Disables all mutation controls when true.
+ */
 export function CollectionLayoutTable({
   layout,
   canUpdate,
   parameterSets,
-  laggingRowIds,
   onAddGroup,
   onAddRow,
   onEditRow,
@@ -95,7 +106,29 @@ export function CollectionLayoutTable({
   const [search, setSearch] = useState('');
   const [columnsPopoverOpen, setColumnsPopoverOpen] = useState(false);
   const [exportFilteredOnly, setExportFilteredOnly] = useState(false);
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const filteredRowIdsByGroup = useRef<Map<string, string[]>>(new Map());
+
+  const toggleRowSelection = useCallback((rowId: string) => {
+    setSelectedRowIds(prev => {
+      const next = new Set(prev);
+      if (next.has(rowId)) next.delete(rowId);
+      else next.add(rowId);
+      return next;
+    });
+  }, []);
+
+  const selectAllRows = useCallback((ids: string[], checked: boolean) => {
+    setSelectedRowIds(prev => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (checked) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }, []);
 
   const handleFilteredRowIdsChange = useCallback((groupId: string, ids: string[]) => {
     filteredRowIdsByGroup.current.set(groupId, ids);
@@ -117,7 +150,7 @@ export function CollectionLayoutTable({
     0
   );
   const totalQty = layout.groups.reduce(
-    (sum, g) => sum + g.rows.reduce((s, r) => s + r.qtyForecast, 0),
+    (sum, g) => sum + g.rows.reduce((s, r) => s + (r.qtyForecast ?? 0), 0),
     0
   );
   const allRows = layout.groups.flatMap(g => g.rows);
@@ -254,7 +287,7 @@ export function CollectionLayoutTable({
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" disabled={isExportingXlsx || isExportingPdf}>
                 {(isExportingXlsx || isExportingPdf)
-                  ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Esportando…</>
+                  ? <><LoaderCircle className="h-4 w-4 mr-1 animate-spin" />Esportando…</>
                   : <><Download className="h-4 w-4 mr-1" />Esporta</>}
               </Button>
             </DropdownMenuTrigger>
@@ -288,6 +321,13 @@ export function CollectionLayoutTable({
           </DropdownMenu>
         )}
 
+        {canUpdate && !readOnly && selectedRowIds.size > 0 && (
+          <Button variant="outline" size="sm" onClick={() => setAssignDialogOpen(true)}>
+            <Layers className="h-4 w-4 mr-1" />
+            Assegna a gruppo di pianificazione ({selectedRowIds.size})
+          </Button>
+        )}
+
         {canUpdate && !readOnly && (
           <Button size="sm" onClick={onAddGroup} className="ml-auto">
             <Plus className="h-4 w-4 mr-1" />
@@ -306,7 +346,6 @@ export function CollectionLayoutTable({
             hiddenColumns={effectiveHiddenColumns}
             parameterSets={parameterSets}
             searchQuery={search}
-            laggingRowIds={laggingRowIds}
             onAddRow={onAddRow}
             onEditRow={onEditRow}
             onDuplicateRow={onDuplicateRow}
@@ -315,6 +354,9 @@ export function CollectionLayoutTable({
             onDeleteGroup={onDeleteGroup}
             isDeletingRow={isDeletingRow}
             onFilteredRowIdsChange={ids => handleFilteredRowIdsChange(group.id, ids)}
+            selectedRowIds={selectedRowIds}
+            onToggleRowSelection={toggleRowSelection}
+            onSelectAllRows={selectAllRows}
           />
         ))}
 
@@ -324,6 +366,16 @@ export function CollectionLayoutTable({
           </div>
         )}
       </div>
+
+      <AssignPlanningGroupDialog
+        open={assignDialogOpen}
+        onClose={() => setAssignDialogOpen(false)}
+        onAssigned={() => { setAssignDialogOpen(false); setSelectedRowIds(new Set()); }}
+        brandId={layout.brandId}
+        seasonId={layout.seasonId}
+        collectionLayoutId={layout.id}
+        rowIds={[...selectedRowIds]}
+      />
     </div>
   );
 }

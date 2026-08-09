@@ -4,6 +4,7 @@ import React from 'react';
 
 import { ErrorState } from '../../components/system/ErrorState';
 import { RetryButton } from '../../components/system/RetryButton';
+import { debugError } from '../../lib/debug';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -14,6 +15,12 @@ interface ErrorBoundaryState {
   hasError: boolean;
 }
 
+/**
+ * React class-based error boundary that catches render errors and shows a fallback UI.
+ *
+ * Renders `ErrorState` with a `RetryButton` that resets the boundary state.
+ * Calls the optional `onError` prop with the error and info for external reporting.
+ */
 export class ErrorBoundary extends React.Component<
   ErrorBoundaryProps,
   ErrorBoundaryState
@@ -25,7 +32,7 @@ export class ErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo): void {
-    console.error(error);
+    debugError(error);
     this.props.onError?.(error, info);
   }
 

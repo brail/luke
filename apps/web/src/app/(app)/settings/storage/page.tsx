@@ -6,6 +6,8 @@ import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
+import { APP_STORAGE_BUCKETS } from '@luke/core';
+
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
 import { Badge } from '../../../../components/ui/badge';
@@ -29,19 +31,30 @@ import { useRefresh } from '../../../../lib/refresh';
 import { trpc } from '../../../../lib/trpc';
 import { useStandardMutation } from '../../../../lib/useStandardMutation';
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const onNumberChange = (onChange: (v: number) => void) =>
+  (e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.valueAsNumber);
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const ALL_BUCKETS = [
-  { value: 'uploads',                              description: 'File caricati dagli utenti' },
-  { value: 'exports',                              description: 'File esportati dal sistema' },
-  { value: 'assets',                               description: 'Asset statici e risorse' },
-  { value: 'brand-logos',                          description: 'Logo brand' },
-  { value: 'collection-row-pictures',              description: 'Foto righe collection layout' },
-  { value: 'collection-row-pictures-revisions',    description: 'Foto righe CL — bucket immutabile per registro qualità' },
-  { value: 'merchandising-specsheet-images',       description: 'Immagini specsheet merchandising' },
-] as const;
+const BUCKET_DESCRIPTIONS: Record<(typeof APP_STORAGE_BUCKETS)[number], string> = {
+  uploads: 'File caricati dagli utenti',
+  exports: 'File esportati dal sistema',
+  assets: 'Asset statici e risorse',
+  'brand-logos': 'Logo brand',
+  'collection-row-pictures': 'Foto righe collection layout',
+  'collection-row-pictures-revisions': 'Foto righe CL — bucket immutabile per registro qualità',
+  'merchandising-specsheet-images': 'Immagini specsheet merchandising',
+  'company-assets': 'Logo e asset del profilo aziendale',
+};
 
-type BucketValue = typeof ALL_BUCKETS[number]['value'];
+const ALL_BUCKETS = APP_STORAGE_BUCKETS.map(value => ({
+  value,
+  description: BUCKET_DESCRIPTIONS[value],
+}));
+
+type BucketValue = (typeof APP_STORAGE_BUCKETS)[number];
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -54,22 +67,22 @@ const localSchema = z.object({
       /^(\/|~\/)[a-zA-Z0-9_./-]*$/,
       'Path deve iniziare con / oppure ~/'
     ),
-  maxFileSizeMB: z.coerce.number().int().min(1).max(1000),
-  buckets: z.array(z.string()).min(1, 'Almeno un bucket richiesto'),
+  maxFileSizeMB: z.number().int().min(1).max(1000),
+  buckets: z.array(z.enum(APP_STORAGE_BUCKETS)).min(1, 'Almeno un bucket richiesto'),
   enableProxy: z.boolean(),
 });
 
 const minioSchema = z.object({
   type: z.literal('minio'),
   endpoint: z.string().min(1, 'Endpoint richiesto'),
-  port: z.coerce.number().int().min(1).max(65535),
+  port: z.number().int().min(1).max(65535),
   useSSL: z.boolean(),
   accessKey: z.string().min(1, 'Access key richiesta'),
   secretKey: z.string().min(1, 'Secret key richiesta'),
   region: z.string().min(1, 'Region richiesta'),
   publicBaseUrl: z.string().url('URL non valido').or(z.literal('')).optional(),
-  presignedPutTtl: z.coerce.number().int().min(60).max(86400),
-  presignedGetTtl: z.coerce.number().int().min(60).max(86400),
+  presignedPutTtl: z.number().int().min(60).max(86400),
+  presignedGetTtl: z.number().int().min(60).max(86400),
 });
 
 const formSchema = z.discriminatedUnion('type', [localSchema, minioSchema]);
@@ -159,7 +172,7 @@ export default function StoragePage() {
       />
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(data => saveConfig(data as any))} className="space-y-6">
+        <form onSubmit={form.handleSubmit(data => saveConfig(data))} className="space-y-6">
 
           {/* ── Provider selector ─────────────────────────────────────────── */}
           <SectionCard title="Provider Storage" description="Seleziona il backend di storage da utilizzare">
@@ -267,7 +280,7 @@ export default function StoragePage() {
                     <FormItem>
                       <FormLabel>Dimensione massima file (MB)</FormLabel>
                       <FormControl>
-                        <Input {...field} type="number" min={1} max={1000} disabled={disabled} className="w-32" />
+                        <Input {...field} type="number" min={1} max={1000} disabled={disabled} className="w-32" onChange={onNumberChange(field.onChange)} />
                       </FormControl>
                       <FormDescription>Range: 1 – 1000 MB. Default: 50 MB.</FormDescription>
                       <FormMessage />
@@ -354,7 +367,7 @@ export default function StoragePage() {
                         <FormItem>
                           <FormLabel>Porta</FormLabel>
                           <FormControl>
-                            <Input {...field} type="number" min={1} max={65535} disabled={disabled} />
+                            <Input {...field} type="number" min={1} max={65535} disabled={disabled} onChange={onNumberChange(field.onChange)} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -458,7 +471,7 @@ export default function StoragePage() {
                         <FormItem>
                           <FormLabel>TTL presigned PUT (secondi)</FormLabel>
                           <FormControl>
-                            <Input {...field} type="number" min={60} max={86400} disabled={disabled} />
+                            <Input {...field} type="number" min={60} max={86400} disabled={disabled} onChange={onNumberChange(field.onChange)} />
                           </FormControl>
                           <FormDescription>Validità URL per upload diretto. Default: 3600 (1h).</FormDescription>
                           <FormMessage />
@@ -472,7 +485,7 @@ export default function StoragePage() {
                         <FormItem>
                           <FormLabel>TTL presigned GET (secondi)</FormLabel>
                           <FormControl>
-                            <Input {...field} type="number" min={60} max={86400} disabled={disabled} />
+                            <Input {...field} type="number" min={60} max={86400} disabled={disabled} onChange={onNumberChange(field.onChange)} />
                           </FormControl>
                           <FormDescription>Validità URL per download firmati. Default: 3600 (1h).</FormDescription>
                           <FormMessage />

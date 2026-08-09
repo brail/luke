@@ -11,13 +11,15 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { FastifyInstance } from 'fastify';
-import type { PrismaClient, NavSyncFilter } from '@prisma/client';
+
 import {
   registerPortafoglioSyncScheduler,
   triggerPortafoglioSyncNow,
   isPortafoglioSyncRunning,
 } from '../portafoglioSyncScheduler';
+
+import type { PrismaClient, NavSyncFilter } from '@prisma/client';
+import type { FastifyInstance } from 'fastify';
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -33,6 +35,12 @@ const mockFastify = {
 const mockPrisma = {
   navSyncFilter: {
     findUnique: vi.fn(),
+  },
+  // The tick goes through `guardMaintenance` → `isMaintenanceActive` → `getConfig`,
+  // which reads AppConfig: without this mock the tick blows up inside a timer and
+  // the error surfaces as an unhandled rejection instead of as a failing test.
+  appConfig: {
+    findUnique: vi.fn().mockResolvedValue(null),
   },
 } as unknown as PrismaClient;
 
@@ -99,11 +107,10 @@ describe('portafoglioSyncScheduler', () => {
 
       await onReadyHandler();
 
-      // Move time forward past interval
-      vi.advanceTimersByTime(5 * 60 * 1000 + 1000); // 5 min + 1 sec
-
-      // Give async tasks time to resolve
-      await vi.runAllTimersAsync();
+      // Advance past the interval and let the tick's async work resolve.
+      // `runAllTimersAsync` isn't usable: the tick is a recurring setInterval,
+      // and "run all timers" on a timer that re-arms itself never terminates.
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1000); // 5 min + 1 sec
     });
 
     it('should not trigger sync when config is disabled', async () => {
@@ -138,9 +145,7 @@ describe('portafoglioSyncScheduler', () => {
       await onReadyHandler();
 
       // Move time forward less than interval
-      vi.advanceTimersByTime(2 * 60 * 1000); // 2 min
-
-      await vi.runAllTimersAsync();
+      await vi.advanceTimersByTimeAsync(2 * 60 * 1000); // 2 min
 
       // Config should not have been checked multiple times beyond initial setup
     });
@@ -162,8 +167,7 @@ describe('portafoglioSyncScheduler', () => {
       await onReadyHandler();
 
       // Advance less than 10 min
-      vi.advanceTimersByTime(9 * 60 * 1000);
-      await vi.runAllTimersAsync();
+      await vi.advanceTimersByTimeAsync(9 * 60 * 1000);
 
       // Re-check config call count (should not trigger sync yet)
     });
@@ -301,8 +305,7 @@ describe('portafoglioSyncScheduler', () => {
       await onReadyHandler();
 
       // Advance 60 seconds (one tick)
-      vi.advanceTimersByTime(60 * 1000);
-      await vi.runAllTimersAsync();
+      await vi.advanceTimersByTimeAsync(60 * 1000);
 
       // Config should be checked at each tick
     });

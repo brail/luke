@@ -49,6 +49,15 @@ interface Props {
   isUpdatingStatus: boolean;
 }
 
+/**
+ * Table displaying all rows in a merchandising plan with plan-level status controls.
+ *
+ * @param plan - The merchandising plan (status, brand/season context).
+ * @param rows - Merchandising plan rows to display.
+ * @param onAddRow - Called when the user clicks the add-row action.
+ * @param onRowClick - Called with the clicked row to open the edit dialog.
+ * @param onUpdateStatus - Called with the new plan status ('DRAFT' | 'CONFIRMED').
+ */
 export function MerchandisingPlanTable({
   plan,
   rows,
@@ -186,7 +195,7 @@ export function MerchandisingPlanTable({
                       )}
                     </TableCell>
                     <TableCell className="font-mono text-xs">{row.articleCode}</TableCell>
-                    <TableCell className="max-w-[200px] truncate">{row.styleDescription}</TableCell>
+                    <TableCell className="max-w-[200px] truncate">{row.styleDescription}</TableCell> {/* 200px: caps description column so the table doesn't stretch; no exact scale match */}
                     <TableCell>{row.productCategory}</TableCell>
                     <TableCell>
                       <span className="font-mono text-xs">{row.colorCode}</span>

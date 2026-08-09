@@ -1,8 +1,3 @@
-/**
- * Componente Avatar utente con iniziali
- * Genera avatar colorati basati sulle iniziali del nome e cognome
- */
-
 import React from 'react';
 
 import { cn } from '../lib/utils';
@@ -58,6 +53,14 @@ function getSizeClasses(size: 'sm' | 'md' | 'lg'): string {
   }
 }
 
+/**
+ * Circular avatar that renders the user's initials on a deterministic color background.
+ *
+ * The background color is derived from a simple hash of the full name so the same
+ * user always gets the same color across sessions.
+ *
+ * @param size - Controls dimensions: `sm` 32 px, `md` 48 px, `lg` 64 px.
+ */
 export function UserAvatar({
   firstName,
   lastName,

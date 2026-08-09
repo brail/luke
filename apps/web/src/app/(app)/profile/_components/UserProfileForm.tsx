@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Loader2, Info } from 'lucide-react';
+import { LoaderCircle, Info } from 'lucide-react';
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -24,7 +24,7 @@ import { trpc } from '../../../../lib/trpc';
 import { useStandardMutation } from '../../../../lib/useStandardMutation';
 
 interface UserProfileFormProps {
-  /** Dati utente correnti */
+  /** Current authenticated user data used to pre-populate the form. */
   user: {
     id: string;
     email: string;
@@ -38,6 +38,12 @@ interface UserProfileFormProps {
   };
 }
 
+/**
+ * Profile edit form covering display name, locale, timezone, and email change.
+ * Fields for first name and last name are read-only when the account is managed
+ * by an external provider (LDAP or SSO); a tooltip indicates the sync source.
+ * @param user - Current user data; `provider` determines which fields are editable.
+ */
 export function UserProfileForm({ user }: UserProfileFormProps) {
   const refresh = useRefresh();
 
@@ -76,7 +82,7 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
     useStandardMutation({
       mutateFn: changeEmailMutation.mutateAsync,
       invalidate: refresh.me,
-      onSuccess: (data: any) => {
+      onSuccess: data => {
         toast.success(data.message);
         setNewEmail('');
         // Ricarica pagina per aggiornare sessione
@@ -130,7 +136,7 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
           >
             {isChangingEmail ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
                 Aggiorno...
               </>
             ) : (
@@ -282,11 +288,12 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
         <Button
           type="submit"
           disabled={!isDirty || isSubmitting}
+          // 120px: keeps button width stable while its label changes during submit; no exact scale match
           className="min-w-[120px]"
         >
           {isSubmitting ? (
             <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
               Salvataggio...
             </>
           ) : (

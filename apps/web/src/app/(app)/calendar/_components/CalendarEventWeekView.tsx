@@ -2,12 +2,12 @@
 
 import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
 import { ChevronLeft, ChevronRight, StickyNote } from 'lucide-react';
-import { ReactNode, useCallback, useMemo, useState } from 'react';
+import { type CSSProperties, ReactNode, useCallback, useMemo, useState } from 'react';
 
 import { Button } from '../../../../components/ui/button';
 import { cn } from '../../../../lib/utils';
-import { DAY_LABELS_IT, STATUS_OPACITY } from '../constants';
-import { addDays, canEditMilestone, daysBetween, getIsoWeek, groupEventsByDay, mondayOf, resolveBrandColor, sameDay, startOfDay } from '../utils';
+import { DAY_LABELS_IT, cancelledClass } from '../constants';
+import { addDays, canEditMilestone, daysBetween, getIsoWeek, groupBadge, groupEventsByDay, groupTooltip, mondayOf, resolveBrandColor, sameDay, startOfDay } from '../utils';
 
 import { DraggableEventChip } from './DraggableEventChip';
 import { type CalendarEventItem as CalendarEvent } from './types';
@@ -26,6 +26,9 @@ interface Props {
   canUpdate?: boolean;
   brandColorMap: Record<string, string>;
   holidayDates?: HolidayMap;
+  /** Shows a fixed-width group-initials badge on each chip — only worth the visual cost when the
+   * current view actually mixes events from >1 planning group. */
+  showGroupBadge?: boolean;
 }
 
 function WeekDayRow({ dayIso, isToday, isWeekend, isDragging, holidays, onDayClick, children }: {
@@ -35,7 +38,7 @@ function WeekDayRow({ dayIso, isToday, isWeekend, isDragging, holidays, onDayCli
   const isHoliday = !!holidays?.length;
   return (
     <div ref={setNodeRef} onClick={onDayClick} className={cn(
-      'flex-1 p-1.5 flex flex-wrap gap-1 content-start min-h-[52px]',
+      'flex-1 p-1.5 flex flex-wrap gap-1 content-start min-h-[52px]', // 52px: minimum row height tuned for a single event chip; no exact Tailwind scale match
       isWeekend && 'bg-muted/20',
       isHoliday && 'bg-rose-50 dark:bg-rose-950/20',
       isToday && 'bg-blue-50/50 dark:bg-blue-950/20',
@@ -47,7 +50,21 @@ function WeekDayRow({ dayIso, isToday, isWeekend, isDragging, holidays, onDayCli
   );
 }
 
-export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, onEventClick, onEventUpdate, onNoteClick, onDayClick, onDayNumberClick, activeBrandId, canUpdate, brandColorMap, holidayDates }: Props) {
+/**
+ * Week grid calendar view with dnd-kit drag-and-drop for rescheduling events.
+ *
+ * Renders a 7-column grid from Monday to Sunday. Each column lists event chips
+ * via `DraggableEventChip`. Holiday columns are highlighted in rose. Day number
+ * clicks navigate to the day view.
+ *
+ * @param onEventUpdate - Called after a drag completes with new ISO timestamps.
+ * @param onDayClick - Called with the ISO date string of an empty cell click.
+ * @param onDayNumberClick - Called with the ISO date to navigate to day view.
+ * @param activeBrandId - Dims events that belong to a different brand.
+ * @param brandColorMap - Pre-computed brand-ID→colour map.
+ * @param holidayDates - HolidayMap used to shade holiday columns.
+ */
+export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, onEventClick, onEventUpdate, onNoteClick, onDayClick, onDayNumberClick, activeBrandId, canUpdate, brandColorMap, holidayDates, showGroupBadge }: Props) {
   const weekStart = useMemo(() => mondayOf(viewDate), [viewDate]);
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
   const today = useMemo(() => new Date(), []);
@@ -66,6 +83,7 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
   }, [weekStart, days]);
 
   const draggingEvent = useMemo(() => milestones.find(m => m.id === draggingId), [milestones, draggingId]);
+  const draggingColor = useMemo(() => draggingEvent ? resolveBrandColor(draggingEvent.brandId, brandColorMap) : undefined, [draggingEvent, brandColorMap]);
   const handleDragStart = useCallback((event: DragStartEvent) => { setDraggingId(event.active.id as string); }, []);
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     setDraggingId(null);
@@ -83,10 +101,10 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="flex flex-col">
         <div className="flex items-center gap-2 px-4 py-2 border-b">
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onViewDateChange(addDays(weekStart, -7))}><ChevronLeft size={14} /></Button>
+          <Button variant="ghost" size="icon-sm" onClick={() => onViewDateChange(addDays(weekStart, -7))}><ChevronLeft size={14} /></Button>
           <span className="text-sm font-medium flex-1 text-center">{weekLabel}</span>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onViewDateChange(addDays(weekStart, 7))}><ChevronRight size={14} /></Button>
-          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => onViewDateChange(new Date())}>Oggi</Button>
+          <Button variant="ghost" size="icon-sm" onClick={() => onViewDateChange(addDays(weekStart, 7))}><ChevronRight size={14} /></Button>
+          <Button variant="outline" size="xs" onClick={() => onViewDateChange(new Date())}>Oggi</Button>
         </div>
 
         <div className="flex-1">
@@ -99,6 +117,7 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
                 <div className={cn('w-20 shrink-0 px-2 py-1.5 flex flex-col items-end justify-start border-r', isWeekend && 'bg-muted/20')}>
                   <span className="text-xs text-muted-foreground">{DAY_LABELS_IT[i]}</span>
                   <div className="flex items-center gap-0.5">
+                    {/* 8px: below Tailwind's text-xs (12px) floor; dense holiday-code badge */}
                     {holidayDates?.get(day.toISOString().slice(0, 10))?.map((h, hi) => (
                       <span key={hi} className="text-[8px] font-mono font-semibold text-rose-500 leading-none" title={h.nameEn ?? h.name}>{h.countryCode}</span>
                     ))}
@@ -125,19 +144,19 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
                     const color = resolveBrandColor(m.brandId, brandColorMap);
                     const canDrag = canEditMilestone(m, canUpdate, activeBrandId) && isStart;
                     const isPlainStart = !canDrag && isStart;
+                    const badge = groupBadge(showGroupBadge, m.planningGroupName);
                     return (
                       <div key={m.id} className={cn('shrink-0', isOtherBrand && 'opacity-40')}>
                         {canDrag ? (
                           <DraggableEventChip
                             id={m.id}
                             title={m.title}
-                            status={m.status}
+                            tooltip={groupTooltip(m.planningGroupName, m.title, span > 0 ? ` (${span + 1}gg)` : '')}
+                            cancelled={!!m.cancelledAt}
                             color={color}
-                            span={span}
                             isDragging={draggingId === m.id}
                             hasNote={hasNote}
-                            severity={m.severity ?? undefined}
-                            isProposed={m._proposed}
+                            groupInitials={badge}
                             onClick={(e) => { e.stopPropagation(); onEventClick(m.id); }}
                             onNoteClick={onNoteClick ? (e) => { e.stopPropagation(); onNoteClick(m.id); } : undefined}
                           />
@@ -146,14 +165,15 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
                             <button
                               type="button"
                               onClick={(e) => { e.stopPropagation(); onEventClick(m.id); }}
-                              className={cn('text-left rounded px-1.5 py-0.5 text-xs text-white truncate max-w-[200px]',
+                              className={cn('flex items-center text-left rounded px-1.5 py-0.5 text-xs text-white max-w-[200px] [background:var(--ev-color)]', // max-w-[200px]: prevent chip overflow in narrow week cells
                                 'hover:brightness-110 transition-all',
-                                STATUS_OPACITY[m.status] ?? 'opacity-100',
+                                cancelledClass(!!m.cancelledAt),
                                 onNoteClick && 'pr-5')}
-                              style={{ background: color }}
-                              title={`${m.title}${span > 0 ? ` (${span + 1}gg)` : ''}`}
+                              style={{ '--ev-color': color } as CSSProperties}
+                              title={groupTooltip(m.planningGroupName, m.title, span > 0 ? ` (${span + 1}gg)` : '')}
                             >
-                              {m.title}
+                              {badge && <span className="opacity-80 mr-1 shrink-0">{badge}</span>}
+                              <span className="truncate min-w-0">{m.title}</span>
                             </button>
                             {onNoteClick && (
                               <button
@@ -169,8 +189,8 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
                           </div>
                         ) : (
                           <div
-                            className="flex items-center h-6 rounded-r px-1.5 text-[11px] truncate max-w-[200px] cursor-pointer hover:brightness-95 transition-all"
-                            style={{ borderLeft: `3px solid ${color}`, background: `${color}18`, color: 'var(--muted-foreground)' }}
+                            className="flex items-center h-6 rounded-r px-1.5 text-[11px] truncate max-w-[200px] cursor-pointer hover:brightness-95 transition-all text-muted-foreground [border-left:3px_solid_var(--ev-color)]" // max-w-[200px]: prevent continuation chip overflow
+                            style={{ '--ev-color': color, background: `${color}18` } as CSSProperties}
                             onClick={(e) => { e.stopPropagation(); onEventClick(m.id); }}
                             title={m.title}
                           >
@@ -190,7 +210,7 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
       <DragOverlay>
         {draggingEvent && (
           <div className="rounded px-1.5 py-0.5 text-xs text-white truncate shadow-lg opacity-90 cursor-grabbing"
-            style={{ background: resolveBrandColor(draggingEvent.brandId, brandColorMap), minWidth: 80 }}>
+            style={{ background: draggingColor, minWidth: 80 }}>
             {draggingEvent.title}
           </div>
         )}

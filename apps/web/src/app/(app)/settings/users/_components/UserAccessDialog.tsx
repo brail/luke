@@ -4,7 +4,6 @@ import { Info, Settings2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-import { SECTION_ACCESS_DEFAULTS } from '@luke/core';
 import type { Section } from '@luke/core';
 
 import { Button } from '../../../../../components/ui/button';
@@ -19,6 +18,7 @@ import {
 import { Label } from '../../../../../components/ui/label';
 import { Switch } from '../../../../../components/ui/switch';
 import { trpc } from '../../../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
 import {
   ALL_SECTIONS,
@@ -33,12 +33,20 @@ interface UserAccessDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+/**
+ * Dialog for editing section-visibility overrides for an existing user.
+ * @param user - The user whose section access is being managed.
+ */
 export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogProps) {
   const utils = trpc.useUtils();
   const initialized = useRef(false);
 
   const { data: serverSectionOverrides, isLoading: loadingSection } =
     trpc.sectionAccess.getByUser.useQuery({ userId: user.id }, { enabled: open });
+
+  const { data: sectionDefaults } = trpc.sectionAccess.getDefaults.useQuery(undefined, {
+    enabled: open,
+  });
 
   const [pendingSection, setPendingSection] = useState<SectionOverrideMap>({});
   const [isDirty, setIsDirty] = useState(false);
@@ -62,7 +70,7 @@ export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogP
   }, [open, loadingSection, serverSectionOverrides]);
 
   const getRoleDefault = (section: Section): boolean =>
-    SECTION_ACCESS_DEFAULTS[user.role]?.[section] ?? false;
+    sectionDefaults?.computedRoleDefaults?.[user.role]?.[section] ?? false;
 
   const getSectionValue = (section: Section): boolean => {
     if (section in pendingSection) return pendingSection[section]!;
@@ -131,8 +139,8 @@ export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogP
       toast.success('Accesso aggiornato');
       setIsDirty(false);
       onOpenChange(false);
-    } catch (e: any) {
-      toast.error(e?.message ?? 'Errore nel salvataggio');
+    } catch (e: unknown) {
+      toast.error(getTrpcErrorMessage(e) ?? 'Errore nel salvataggio');
     } finally {
       setIsSaving(false);
     }
@@ -145,8 +153,8 @@ export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogP
 
   return (
     <Dialog open={open} onOpenChange={open => { if (!open) handleCancel(); }}>
-      <DialogContent className="sm:max-w-[560px] max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-[560px] max-h-[85vh] p-0 gap-0 flex flex-col"> {/* px/vh: dialog width tuned to content, vh cap has no Tailwind scale equivalent */}
+        <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Settings2 className="h-4 w-4" />
             Gestisci accesso — {user.firstName} {user.lastName}
@@ -157,10 +165,11 @@ export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogP
           </DialogDescription>
         </DialogHeader>
 
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
         {loadingSection ? (
           <div className="py-8 text-center text-muted-foreground">Caricamento...</div>
         ) : (
-          <div className="space-y-6 pt-2">
+          <div className="space-y-6">
             {/* Section overrides */}
             <div>
               <h3 className="text-sm font-semibold mb-3">Visibilità sezioni</h3>
@@ -215,8 +224,9 @@ export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogP
             </div>
           </div>
         )}
+        </div>
 
-        <DialogFooter className="mt-6">
+        <DialogFooter className="px-6 py-4 border-t shrink-0">
           <Button variant="outline" onClick={handleCancel} disabled={isSaving}>
             Annulla
           </Button>

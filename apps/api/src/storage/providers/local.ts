@@ -1,24 +1,21 @@
 /**
- * Local Filesystem Storage Provider
+ * Local filesystem implementation of IStorageProvider.
  *
- * Implementazione IStorageProvider per storage su filesystem locale
- *
- * Sicurezza:
- * - Path traversal protection (realpath + startsWith)
- * - Atomic writes (tmp + rename)
- * - Limiti dimensione file
- * - Permessi directory 0700
- * - Checksum SHA-256
+ * Security measures applied:
+ * - Path traversal protection via `realpath` + relative-path check
+ * - Atomic writes: file written to a `.tmp` directory, then renamed to its final path
+ * - Configurable per-file size limit (default 50 MB)
+ * - Directory permissions set to 0700, file permissions to 0600
+ * - SHA-256 checksum computed after write and returned in the result
  */
 
 import { createHash, randomUUID } from 'crypto';
-import pino from 'pino';
-
-const logger = pino({ level: 'info' });
 import { createReadStream, createWriteStream, realpathSync } from 'fs';
 import { readdir, mkdir, unlink, stat, realpath } from 'fs/promises';
 import { join, dirname, resolve, basename, relative, isAbsolute } from 'path';
 import { pipeline } from 'stream/promises';
+
+import pino from 'pino';
 
 import type {
   IStorageCapabilities,
@@ -32,12 +29,22 @@ import type {
   StorageListResult,
   LocalStorageConfig,
 } from '@luke/core';
-
 import { isPathSafe } from '@luke/core';
 
+const logger = pino({ level: 'info' });
+
 /**
- * Local Filesystem Provider
+ * `NodeJS.ReadableStream` doesn't declare `.destroy()` (it's specific to the
+ * more concrete `stream.Readable`) — narrows structurally instead of casting.
  */
+function tryDestroyStream(stream: NodeJS.ReadableStream): void {
+  const maybeDestroyable = stream as unknown as { destroy?: unknown };
+  if (typeof maybeDestroyable.destroy === 'function') {
+    (maybeDestroyable.destroy as () => void)();
+  }
+}
+
+/** Local filesystem storage provider. Implements IStorageProvider over a configurable base directory. */
 export class LocalFsProvider implements IStorageProvider {
   readonly capabilities: IStorageCapabilities = {
     supportsPresignedUpload: false,
@@ -56,10 +63,11 @@ export class LocalFsProvider implements IStorageProvider {
   }
 
   /**
-   * Inizializza il provider creando directory bucket
+   * Initializes the provider by creating the base directory and one subdirectory per configured bucket.
+   * Each bucket also gets a `.tmp` subdirectory used for atomic writes.
    */
   async init(): Promise<void> {
-    // Ottieni realpath del basePath
+    // Get the realpath of basePath
     try {
       await mkdir(this.basePath, { recursive: true, mode: 0o700 });
       this.realBasePath = await realpath(this.basePath);
@@ -69,75 +77,78 @@ export class LocalFsProvider implements IStorageProvider {
       );
     }
 
-    // Crea directory per ogni bucket
+    // Create directory for each bucket
     for (const bucket of this.buckets) {
       const bucketPath = join(this.basePath, bucket);
       await mkdir(bucketPath, { recursive: true, mode: 0o700 });
 
-      // Crea directory .tmp per atomic writes
+      // Create .tmp directory for atomic writes
       const tmpPath = join(bucketPath, '.tmp');
       await mkdir(tmpPath, { recursive: true, mode: 0o700 });
     }
 
-    // Crea esplicitamente directory brand-logos se manca
+    // Explicitly create brand-logos directory if missing
     const brandLogosPath = join(this.basePath, 'brand-logos');
     try {
       await mkdir(brandLogosPath, { recursive: true, mode: 0o700 });
       const brandLogosTmpPath = join(brandLogosPath, '.tmp');
       await mkdir(brandLogosTmpPath, { recursive: true, mode: 0o700 });
     } catch (error) {
-      // Log ma non fallire se già esiste
+      // Log but don't fail if it already exists
       logger.warn({ err: error }, 'Directory brand-logos creation warning');
     }
   }
 
   /**
-   * Valida path safety contro traversal attacks e ritorna path canonico
+   * Validates a relative subpath against traversal attacks and returns its canonical absolute path.
+   *
+   * @returns Canonical absolute path within the base directory.
+   * @throws If the path contains traversal sequences or resolves outside the base directory.
    */
   private validatePathSafety(candidateSubpath: string): string {
     if (!this.realBasePath) {
       throw new Error('Provider non inizializzato');
     }
 
-    // Pre-check con isPathSafe (blocca ../ e path assoluti)
+    // Pre-check with isPathSafe (blocks ../ and absolute paths)
     if (!isPathSafe(candidateSubpath)) {
       throw new Error('Path non sicuro: caratteri invalidi o traversal');
     }
 
-    // Canonicalizza base (già fatto in init, ma per sicurezza)
+    // Canonicalize base (already done in init, but for safety)
     const baseReal = this.realBasePath;
 
-    // Resolve target assoluto
+    // Resolve absolute target
     const targetAbs = resolve(baseReal, candidateSubpath);
 
-    // Canonicalizza directory parent (sync per evitare race)
+    // Canonicalize parent directory (sync to avoid a race)
     const dirAbs = dirname(targetAbs);
     let dirReal: string;
 
     try {
-      // Usa realpathSync.native per risolvere symlink
+      // Use realpathSync.native to resolve symlinks
       dirReal = realpathSync.native(dirAbs);
     } catch {
-      // Directory non esiste ancora - verifica con resolve
+      // Directory doesn't exist yet - verify with resolve
       dirReal = resolve(dirAbs);
     }
 
-    // Ricostruisci path finale canonico
+    // Rebuild the final canonical path
     const finalAbs = join(dirReal, basename(targetAbs));
 
-    // Verifica con path.relative (sicuro se relativo e non contiene ..)
+    // Verify with path.relative (safe if relative and doesn't contain ..)
     const rel = relative(baseReal, finalAbs);
 
     if (isAbsolute(rel) || rel.startsWith('..')) {
       throw new Error('Path traversal rilevato');
     }
 
-    // Ritorna path finale canonico per evitare ulteriori normalize
+    // Return the final canonical path to avoid further normalize calls
     return finalAbs;
   }
 
   /**
-   * Genera chiave server-side con partizionamento temporale
+   * Generates a server-side storage key with date-based path partitioning: `YYYY/MM/DD/<uuid>[.ext]`.
    */
   private generateKey(contentType?: string): string {
     const now = new Date();
@@ -146,14 +157,12 @@ export class LocalFsProvider implements IStorageProvider {
     const day = String(now.getDate()).padStart(2, '0');
     const uuid = randomUUID();
 
-    // Aggiungi estensione basata sul content-type
+    // Add extension based on content-type
     const extension = this.getExtensionFromContentType(contentType);
     return `${year}/${month}/${day}/${uuid}${extension}`;
   }
 
-  /**
-   * Determina estensione file dal content-type
-   */
+  /** Returns the file extension for a given MIME type, or an empty string if unknown. */
   private getExtensionFromContentType(contentType?: string): string {
     if (!contentType) return '';
     
@@ -170,9 +179,7 @@ export class LocalFsProvider implements IStorageProvider {
     }
   }
 
-  /**
-   * Calcola SHA-256 di un file
-   */
+  /** Computes the SHA-256 hex digest of the file at the given path. */
   private async calculateChecksum(filePath: string): Promise<string> {
     const hash = createHash('sha256');
     const stream = createReadStream(filePath);
@@ -183,16 +190,20 @@ export class LocalFsProvider implements IStorageProvider {
   }
 
   /**
-   * Scrive stream su file con limite dimensione
+   * Pipes a readable stream to a file, optionally enforcing a maximum byte limit.
+   *
+   * @param maxSize - Byte limit, or `null` to skip the check entirely (privileged internal writes only).
+   * @returns Number of bytes written.
+   * @throws If the stream exceeds `maxSize` bytes.
    */
   private async writeStreamToFile(
     stream: NodeJS.ReadableStream,
     targetPath: string,
-    maxSize: number
+    maxSize: number | null
   ): Promise<number> {
     let bytesWritten = 0;
 
-    // Crea directory parent se non esiste
+    // Create parent directory if it doesn't exist
     await mkdir(dirname(targetPath), { recursive: true, mode: 0o700 });
 
     const writeStream = createWriteStream(targetPath, { mode: 0o600 });
@@ -201,12 +212,10 @@ export class LocalFsProvider implements IStorageProvider {
       stream.on('data', (chunk: Buffer) => {
         bytesWritten += chunk.length;
 
-        // Verifica limite dimensione
-        if (bytesWritten > maxSize) {
-          // Chiudi gli stream
-          if (typeof (stream as any).destroy === 'function') {
-            (stream as any).destroy();
-          }
+        // Check size limit (if applicable)
+        if (maxSize !== null && bytesWritten > maxSize) {
+          // Close the streams
+          tryDestroyStream(stream);
           writeStream.destroy();
           reject(new Error(`File troppo grande (max ${maxSize} bytes)`));
         }
@@ -218,9 +227,7 @@ export class LocalFsProvider implements IStorageProvider {
       });
 
       writeStream.on('error', error => {
-        if (typeof (stream as any).destroy === 'function') {
-          (stream as any).destroy();
-        }
+        tryDestroyStream(stream);
         reject(error);
       });
 
@@ -233,36 +240,38 @@ export class LocalFsProvider implements IStorageProvider {
   }
 
   /**
-   * Upload file nello storage
+   * Stores a file in the local filesystem using an atomic write (temp file → rename).
+   *
+   * @returns The (generated or caller-supplied via `params.key`) key, SHA-256 checksum, and final byte size.
    */
   async put(params: StoragePutParams): Promise<StoragePutResult> {
-    // Genera chiave server-side con estensione
-    const key = this.generateKey(params.contentType);
+    // Use the caller-supplied key, if present; otherwise generate server-side with an extension
+    const key = params.key ?? this.generateKey(params.contentType);
 
-    // Path finale e temporaneo
+    // Final and temporary paths
     const finalPath = join(params.bucket, key);
     const tmpFileName = `${randomUUID()}.part`;
     const tmpPath = join(params.bucket, '.tmp', tmpFileName);
 
-    // Valida e ottieni path canonici
+    // Validate and get canonical paths
     const absFinalPath = this.validatePathSafety(finalPath);
     const absTmpPath = this.validatePathSafety(tmpPath);
 
     try {
-      // Crea directory parent per tmp
+      // Create parent directory for tmp
       await mkdir(dirname(absTmpPath), { recursive: true, mode: 0o700 });
 
-      // Scrivi su file temporaneo
+      // Write to temp file
       const size = await this.writeStreamToFile(
         params.stream,
         absTmpPath,
-        this.maxFileSizeBytes
+        params.bypassSizeLimit ? null : this.maxFileSizeBytes
       );
 
-      // Calcola checksum
+      // Calculate checksum
       const checksumSha256 = await this.calculateChecksum(absTmpPath);
 
-      // Crea directory finale
+      // Create final directory
       await mkdir(dirname(absFinalPath), { recursive: true, mode: 0o700 });
 
       // Atomic rename
@@ -278,7 +287,9 @@ export class LocalFsProvider implements IStorageProvider {
       // Cleanup
       try {
         await unlink(absTmpPath);
-      } catch {}
+      } catch {
+        // Best-effort cleanup, ignore if the temp file doesn't already exist
+      }
 
       throw new Error(
         `Errore upload file: ${error instanceof Error ? error.message : 'Unknown'}`
@@ -287,7 +298,10 @@ export class LocalFsProvider implements IStorageProvider {
   }
 
   /**
-   * Download file dallo storage
+   * Opens a readable stream for a stored file.
+   *
+   * @returns A stream, the file size, and a default content type (`application/octet-stream`).
+   * @throws If the path does not exist or is not a regular file.
    */
   async get(params: StorageGetParams): Promise<StorageGetResult> {
     const filePath = join(params.bucket, params.key);
@@ -301,8 +315,8 @@ export class LocalFsProvider implements IStorageProvider {
 
       const stream = createReadStream(absPath);
 
-      // Determina content type (default: application/octet-stream)
-      // Per ora semplice, potrebbe essere esteso con mime detection
+      // Determine content type (default: application/octet-stream)
+      // Simple for now, could be extended with mime detection
       const contentType = 'application/octet-stream';
 
       return {
@@ -318,7 +332,7 @@ export class LocalFsProvider implements IStorageProvider {
   }
 
   /**
-   * Cancella file dallo storage
+   * Deletes a stored file. If the file does not exist, the operation is treated as a success (idempotent).
    */
   async delete(params: StorageDeleteParams): Promise<void> {
     const filePath = join(params.bucket, params.key);
@@ -327,7 +341,7 @@ export class LocalFsProvider implements IStorageProvider {
     try {
       await unlink(absPath);
     } catch (error) {
-      // Se file non esiste, consideriamo l'operazione riuscita (idempotente)
+      // If the file doesn't exist, we consider the operation successful (idempotent)
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         throw new Error(
           `Errore cancellazione file: ${error instanceof Error ? error.message : 'Unknown'}`
@@ -337,18 +351,20 @@ export class LocalFsProvider implements IStorageProvider {
   }
 
   /**
-   * Lista file in un bucket
+   * Lists files in a bucket with optional prefix filtering and cursor-based pagination.
+   *
+   * @returns Lexicographically sorted items and an optional cursor for the next page.
    */
   async list(params: StorageListParams): Promise<StorageListResult> {
     const prefix = params.prefix || '';
     const limit = params.limit || 100;
 
-    // Valida path safety e ottieni path canonico del bucket
+    // Validate path safety and get the bucket's canonical path
     const bucketPath = this.validatePathSafety(params.bucket);
 
     const items: StorageListResult['items'] = [];
 
-    // Scandisce ricorsivamente la directory
+    // Recursively scans the directory
     async function scanDir(
       dirPath: string,
       relativePath: string = ''
@@ -365,15 +381,15 @@ export class LocalFsProvider implements IStorageProvider {
           const entryRelPath = join(relativePath, entry.name);
 
           if (entry.isDirectory()) {
-            // Ricorsione nelle sottodirectory
+            // Recurse into subdirectories
             await scanDir(join(dirPath, entry.name), entryRelPath);
           } else if (entry.isFile()) {
-            // Filtra per prefisso
+            // Filter by prefix
             if (!entryRelPath.startsWith(prefix)) {
               continue;
             }
 
-            // Ottieni stats
+            // Get stats
             const stats = await stat(join(dirPath, entry.name));
 
             items.push({
@@ -382,14 +398,14 @@ export class LocalFsProvider implements IStorageProvider {
               modifiedAt: stats.mtime,
             });
 
-            // Limita risultati
+            // Limit results
             if (items.length >= limit) {
               return;
             }
           }
         }
       } catch (error) {
-        // Se directory non esiste, ritorna array vuoto
+        // If the directory doesn't exist, return an empty array
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
           return;
         }
@@ -399,10 +415,10 @@ export class LocalFsProvider implements IStorageProvider {
 
     await scanDir(bucketPath);
 
-    // Ordina per key (lexicographic)
+    // Sort by key (lexicographic)
     items.sort((a, b) => a.key.localeCompare(b.key));
 
-    // Paginazione cursor-based
+    // Cursor-based pagination
     let startIndex = 0;
     if (params.cursor) {
       startIndex = items.findIndex(item => item.key > params.cursor!);

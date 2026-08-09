@@ -4,8 +4,9 @@ import { Copy, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import type { PricingParameterSetInput } from '@luke/core';
+import type { PricingCurrency, PricingParameterSetInput } from '@luke/core';
 
+import { PermissionButton } from '../../../../../components/PermissionButton';
 import { Button } from '../../../../../components/ui/button';
 import {
   Dialog,
@@ -15,12 +16,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../../components/ui/dialog';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '../../../../../components/ui/tooltip';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { trpc } from '../../../../../lib/trpc';
 
@@ -33,6 +28,15 @@ interface EmptyParameterStateProps {
   isLoading?: boolean;
 }
 
+/**
+ * Empty state shown when no pricing parameter sets exist for the active brand+season.
+ *
+ * Offers two paths: create from scratch via `ParameterSetDialog`, or copy all
+ * sets from the previous season (fetched automatically via tRPC). Copy is
+ * gated by `pricing:update`.
+ *
+ * @param onCreateSet - Called with validated `PricingParameterSetInput` for each set to create.
+ */
 export function EmptyParameterState({
   brandId,
   seasonId,
@@ -61,8 +65,11 @@ export function EmptyParameterState({
       onCreateSet({
         name: s.name,
         countryCode: s.countryCode,
-        purchaseCurrency: s.purchaseCurrency,
-        sellingCurrency: s.sellingCurrency,
+        // I set della stagione precedente sono già passati per PricingParameterSetInputSchema
+        // alla creazione — la valuta è garantita valida a runtime, TS non lo sa perché la
+        // colonna DB resta `String` generico.
+        purchaseCurrency: s.purchaseCurrency as PricingCurrency,
+        sellingCurrency: s.sellingCurrency as PricingCurrency,
         qualityControlPercent: s.qualityControlPercent,
         transportInsuranceCost: s.transportInsuranceCost,
         duty: s.duty,
@@ -94,58 +101,26 @@ export function EmptyParameterState({
 
       <div className="flex gap-3 flex-wrap justify-center">
         {hasPrevious && (
-          canUpdate ? (
-            <Button
-              variant="outline"
-              onClick={() => setIsCopyPreviewOpen(true)}
-              disabled={isLoading}
-            >
-              <Copy className="h-4 w-4 mr-2" />
-              Copia da {previousSeason?.code} {previousSeason?.year}
-            </Button>
-          ) : (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    disabled
-                    className="opacity-50 cursor-not-allowed"
-                  >
-                    <Copy className="h-4 w-4 mr-2" />
-                    Copia da {previousSeason?.code} {previousSeason?.year}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  Non hai i permessi per creare parametri
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )
-        )}
-        {canUpdate ? (
-          <Button
-            onClick={() => setIsCreateDialogOpen(true)}
+          <PermissionButton
+            variant="outline"
+            hasPermission={canUpdate}
+            tooltip="Non hai i permessi per creare parametri"
+            onClick={() => setIsCopyPreviewOpen(true)}
             disabled={isLoading}
           >
-            <Plus className="h-4 w-4 mr-2" />
-            Inserisci da zero
-          </Button>
-        ) : (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button disabled className="opacity-50 cursor-not-allowed">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Inserisci da zero
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                Non hai i permessi per creare parametri
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+            <Copy className="h-4 w-4 mr-2" />
+            Copia da {previousSeason?.code} {previousSeason?.year}
+          </PermissionButton>
         )}
+        <PermissionButton
+          hasPermission={canUpdate}
+          tooltip="Non hai i permessi per creare parametri"
+          onClick={() => setIsCreateDialogOpen(true)}
+          disabled={isLoading}
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          Inserisci da zero
+        </PermissionButton>
       </div>
 
       {/* Dialog conferma copia */}

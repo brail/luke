@@ -1,8 +1,10 @@
 import { z } from 'zod';
 
+/** Allowed gender values for merchandising plan rows. Superset of `COLLECTION_GENDER` (adds UNISEX, KID). */
 export const MERCHANDISING_GENDER = ['MAN', 'WOMAN', 'UNISEX', 'KID'] as const;
 export type MerchandisingGender = (typeof MERCHANDISING_GENDER)[number];
 
+/** Product life-type classification for merchandising rows. */
 export const MERCHANDISING_LIFE_TYPE = [
   'NEW_LINE',
   'NEW_STYLE',
@@ -11,9 +13,11 @@ export const MERCHANDISING_LIFE_TYPE = [
 ] as const;
 export type MerchandisingLifeType = (typeof MERCHANDISING_LIFE_TYPE)[number];
 
+/** Launch type for a merchandising row — whether the style will be sampled or bought open-to-buy. */
 export const MERCHANDISING_LAUNCH_TYPE = ['SAMPLED', 'OPEN_TO_BUY'] as const;
 export type MerchandisingLaunchType = (typeof MERCHANDISING_LAUNCH_TYPE)[number];
 
+/** Physical sections of a product used to organize specsheet components. */
 export const SPECSHEET_COMPONENT_SECTIONS = [
   'UPPER',
   'LINING',
@@ -24,10 +28,12 @@ export const SPECSHEET_COMPONENT_SECTIONS = [
 export type SpecsheetComponentSection =
   (typeof SPECSHEET_COMPONENT_SECTIONS)[number];
 
+/** Lifecycle states for a merchandising plan. `CONFIRMED` plans are locked for editing. */
 export const MERCHANDISING_PLAN_STATUS = ['DRAFT', 'CONFIRMED'] as const;
 export type MerchandisingPlanStatus =
   (typeof MERCHANDISING_PLAN_STATUS)[number];
 
+/** Input schema for a single row in a merchandising plan (style + pricing + sourcing details). */
 export const MerchandisingPlanRowInputSchema = z.object({
   planId: z.string().uuid(),
   order: z.number().int().optional(),
@@ -66,6 +72,7 @@ export type MerchandisingPlanRowInput = z.infer<
   typeof MerchandisingPlanRowInputSchema
 >;
 
+/** Input schema for a single component entry in a product specsheet. */
 export const MerchandisingComponentInputSchema = z.object({
   partNumber: z.string().optional().nullable(),
   component: z.string().min(1),
@@ -79,6 +86,7 @@ export type MerchandisingComponentInput = z.infer<
   typeof MerchandisingComponentInputSchema
 >;
 
+/** Input schema for the header-level specsheet fields (sourcing, notes). */
 export const MerchandisingSpecsheetInputSchema = z.object({
   madeIn: z.string().optional().nullable(),
   supplierName: z.string().optional().nullable(),

@@ -1,14 +1,18 @@
-import type { calendar_v3 } from 'googleapis';
-
 import { getClient } from './client.js';
 
+import type { calendar_v3 } from 'googleapis';
+
+
+/**
+ * Properties required to create or update a Google Calendar event.
+ */
 export interface EventInput {
   title: string;
   description?: string;
   startAt: Date;
   endAt?: Date;
   allDay: boolean;
-  status: 'confirmed' | 'tentative' | 'cancelled';
+  status: 'confirmed' | 'cancelled';
 }
 
 function buildEventBody(input: EventInput): calendar_v3.Schema$Event {
@@ -29,6 +33,12 @@ function buildEventBody(input: EventInput): calendar_v3.Schema$Event {
   };
 }
 
+/**
+ * Creates a new event on a Google Calendar.
+ *
+ * @throws {Error} When the Google API returns no event id
+ * @returns The newly created Google event id
+ */
 export async function createEvent(
   googleCalendarId: string,
   input: EventInput
@@ -42,6 +52,9 @@ export async function createEvent(
   return res.data.id;
 }
 
+/**
+ * Replaces all fields of an existing Google Calendar event with the values in `input`.
+ */
 export async function updateEvent(
   googleCalendarId: string,
   googleEventId: string,
@@ -55,6 +68,10 @@ export async function updateEvent(
   });
 }
 
+/**
+ * Deletes a Google Calendar event.
+ * Idempotent: silently succeeds if the event is already gone (410).
+ */
 export async function deleteEvent(
   googleCalendarId: string,
   googleEventId: string

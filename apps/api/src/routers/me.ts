@@ -1,6 +1,6 @@
 /**
- * Router tRPC per operazioni sul profilo utente corrente
- * Gestisce lettura e aggiornamento del profilo personale
+ * tRPC router for current user profile operations
+ * Handles reading and updating personal profile
  */
 
 import { TRPCError } from '@trpc/server';
@@ -14,19 +14,27 @@ import {
 
 import { logAudit } from '../lib/auditLog';
 import { sendVerificationEmail } from '../lib/emailHelpers';
+import { getTimeBasedGreeting, GREETING_INTROS, selectGreetingContent } from '../lib/greetingPhrases';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { hashPassword, verifyPassword } from '../lib/password';
+import { pickRandom } from '../lib/random';
 import { withRateLimit } from '../lib/ratelimit';
 import {
   protectedProcedure,
   router,
   invalidateTokenVersionCache,
 } from '../lib/trpc';
+import { getUserPreferenceValue, setUserPreferenceValue } from '../services/context.service';
+
+const DAILY_GREETING_ENABLED_KEY = 'dailyGreetingEnabled';
 
 export const meRouter = router({
   /**
-   * Ottiene i dati del profilo utente corrente
-   * Include informazioni sul provider per determinare campi modificabili
+   * Returns the current user's full profile including provider info and profile completion percentage.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {User with provider, profileCompletion, loginCount, lastLoginAt.}
    */
   get: protectedProcedure.query(async ({ ctx }) => {
     const user = await ctx.prisma.user.findUnique({
@@ -61,10 +69,10 @@ export const meRouter = router({
       });
     }
 
-    // Determina il provider principale (primo identity)
+    // Determines the main provider (first identity)
     const provider = user.identities[0]?.provider || 'LOCAL';
 
-    // Calcola percentuale completamento profilo
+    // Calculates profile completion percentage
     const profileCompletion = calculateProfileCompletion({
       firstName: user.firstName,
       lastName: user.lastName,
@@ -72,23 +80,34 @@ export const meRouter = router({
       timezone: user.timezone,
     });
 
+    const dailyGreetingEnabled = await getUserPreferenceValue(
+      user.id,
+      DAILY_GREETING_ENABLED_KEY,
+      false,
+      ctx.prisma
+    );
+
     return {
       ...user,
       provider,
       profileCompletion,
-      // Rimuovi identities dall'output (non necessario nel frontend)
+      dailyGreetingEnabled,
+      // Remove identities from output (not needed in frontend)
       identities: undefined,
     };
   }),
 
   /**
-   * Aggiorna il profilo utente corrente
-   * Blocca la modifica di campi sincronizzati per provider esterni
+   * Updates the current user's editable profile fields; blocks sync-locked fields for LDAP/OIDC users.
+   *
+   * @auth {authenticated}
+   * @input {UserProfileSchema} — email, firstName, lastName, locale, timezone.
+   * @output {Partial User with updated fields.}
    */
   updateProfile: protectedProcedure
     .input(UserProfileSchema)
     .mutation(async ({ ctx, input }) => {
-      // Verifica il provider dell'utente
+      // Check the user's provider
       const userWithProvider = await ctx.prisma.user.findUnique({
         where: { id: ctx.session.user.id },
         select: {
@@ -111,9 +130,9 @@ export const meRouter = router({
 
       const provider = userWithProvider.identities[0]?.provider || 'LOCAL';
 
-      // Per provider esterni (LDAP/OIDC), blocca la modifica di campi sincronizzati
+      // For external providers (LDAP/OIDC), block changes to synced fields
       if (provider !== 'LOCAL') {
-        // Verifica se l'utente sta tentando di modificare campi sincronizzati
+        // Check whether the user is trying to change synced fields
         const currentUser = await ctx.prisma.user.findUnique({
           where: { id: ctx.session.user.id },
           select: {
@@ -122,10 +141,13 @@ export const meRouter = router({
           },
         });
 
+        if (!currentUser) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente non trovato' });
+        }
+
         if (
-          currentUser &&
-          (input.firstName !== currentUser.firstName ||
-            input.lastName !== currentUser.lastName)
+          input.firstName !== currentUser.firstName ||
+          input.lastName !== currentUser.lastName
         ) {
           throw new TRPCError({
             code: 'FORBIDDEN',
@@ -135,7 +157,7 @@ export const meRouter = router({
         }
       }
 
-      // Aggiorna i campi consentiti
+      // Update the allowed fields
       const emailChanged = input.email !== userWithProvider.email;
       const updated = await ctx.prisma.user.update({
         where: { id: ctx.session.user.id },
@@ -174,8 +196,11 @@ export const meRouter = router({
     }),
 
   /**
-   * Cambia l'email dell'utente corrente (self-service, nessun permesso extra)
-   * Invia email di verifica al nuovo indirizzo
+   * Changes the current user's email address and sends a verification email to the new address.
+   *
+   * @auth {authenticated}
+   * @input {{ newEmail: string }} — the new email address (must be unique).
+   * @output {{ success: true, message: string }}
    */
   changeEmail: protectedProcedure
     .use(withRateLimit('userMutations'))
@@ -228,15 +253,18 @@ export const meRouter = router({
     }),
 
   /**
-   * Cambia la password dell'utente corrente
-   * Disponibile solo per utenti con provider LOCAL
+   * Changes the current user's password; only available for LOCAL provider users.
+   *
+   * @auth {authenticated}
+   * @input {ChangePasswordSchema} — currentPassword, newPassword.
+   * @output {{ ok: true }}
    */
   changePassword: protectedProcedure
     .use(withRateLimit('passwordChange'))
-    .use(withIdempotency())
     .input(ChangePasswordSchema)
+    .use(withIdempotency())
     .mutation(async ({ ctx, input }) => {
-      // Verifica che l'utente abbia provider LOCAL
+      // Check that the user has a LOCAL provider
       const userWithProvider = await ctx.prisma.user.findUnique({
         where: { id: ctx.session.user.id },
         select: {
@@ -273,7 +301,7 @@ export const meRouter = router({
         });
       }
 
-      // Verifica la password corrente
+      // Verify the current password
       const isCurrentPasswordValid = await verifyPassword(
         input.currentPassword,
         localIdentity.localCredential.passwordHash
@@ -286,7 +314,7 @@ export const meRouter = router({
         });
       }
 
-      // Verifica che la nuova password non sia uguale alla password attuale
+      // Verify the new password isn't the same as the current one
       const isSamePassword = await verifyPassword(
         input.newPassword,
         localIdentity.localCredential.passwordHash
@@ -300,28 +328,28 @@ export const meRouter = router({
         });
       }
 
-      // Genera hash per la nuova password
+      // Generate hash for the new password
       const newPasswordHash = await hashPassword(input.newPassword);
 
-      // Aggiorna la password e incrementa tokenVersion in transazione
+      // Update the password and bump tokenVersion in a transaction
       await ctx.prisma.$transaction(async trx => {
-        // Aggiorna password hash
+        // Update the password hash
         await trx.localCredential.update({
           where: { identityId: localIdentity.id },
           data: { passwordHash: newPasswordHash },
         });
 
-        // Incrementa tokenVersion per invalidare tutte le sessioni precedenti
+        // Bump tokenVersion to invalidate all previous sessions
         await trx.user.update({
           where: { id: ctx.session.user.id },
           data: { tokenVersion: { increment: 1 } },
         });
       });
 
-      // Invalida la cache tokenVersion per questo utente
+      // Invalidate the tokenVersion cache for this user
       invalidateTokenVersionCache(ctx.session.user.id);
 
-      // Log audit per il cambio password
+      // Audit log for the password change
       await logAudit(ctx, {
         action: 'USER_PASSWORD_CHANGE',
         targetType: 'User',
@@ -336,11 +364,14 @@ export const meRouter = router({
     }),
 
   /**
-   * Ottiene la cronologia degli accessi dell'utente corrente
-   * Utilizza AuditLog per recuperare i login recenti
+   * Returns the current user's recent login history from the audit log.
+   *
+   * @auth {authenticated}
+   * @input {{ limit?: number }} — max entries to return (default 10).
+   * @output {Array<{ id, timestamp, success, ipAddress, location }>}
    */
   loginHistory: protectedProcedure
-    .input(z.object({ limit: z.number().default(10) }).optional())
+    .input(z.object({ limit: z.number().min(1).max(100).default(10) }).optional())
     .query(async ({ ctx, input }) => {
       const logs = await ctx.prisma.auditLog.findMany({
         where: {
@@ -351,28 +382,41 @@ export const meRouter = router({
         take: input?.limit || 10,
       });
 
-      return logs.map(log => ({
-        id: log.id,
-        timestamp: log.createdAt,
-        success: log.action === 'AUTH_LOGIN',
-        ipAddress: log.ip,
-        // Estrai location da metadata se disponibile
-        location: (log.metadata as any)?.location || 'Unknown',
-      }));
+      return logs.map(log => {
+        const metadata = log.metadata;
+        const location =
+          metadata &&
+          typeof metadata === 'object' &&
+          !Array.isArray(metadata) &&
+          typeof (metadata as Record<string, unknown>).location === 'string'
+            ? ((metadata as Record<string, unknown>).location as string)
+            : 'Unknown';
+
+        return {
+          id: log.id,
+          timestamp: log.createdAt,
+          success: log.action === 'AUTH_LOGIN',
+          ipAddress: log.ip,
+          location,
+        };
+      });
     }),
 
   /**
-   * Revoca tutte le sessioni dell'utente corrente
-   * Incrementa tokenVersion per invalidare tutti i token esistenti
+   * Revokes all sessions for the current user by incrementing tokenVersion.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {{ success: true }}
    */
   revokeAllSessions: protectedProcedure.mutation(async ({ ctx }) => {
-    // Incrementa tokenVersion per invalidare tutte le sessioni
+    // Bump tokenVersion to invalidate all sessions
     await ctx.prisma.user.update({
       where: { id: ctx.session.user.id },
       data: { tokenVersion: { increment: 1 } },
     });
 
-    // Invalida la cache tokenVersion per questo utente
+    // Invalidate the tokenVersion cache for this user
     invalidateTokenVersionCache(ctx.session.user.id);
 
     // Log audit
@@ -390,8 +434,11 @@ export const meRouter = router({
   }),
 
   /**
-   * Aggiorna solo il timezone dell'utente
-   * Endpoint specifico per aggiornamenti parziali del timezone
+   * Updates only the timezone field for the current user.
+   *
+   * @auth {authenticated}
+   * @input {UpdateTimezoneSchema} — timezone (IANA timezone identifier).
+   * @output {{ id, timezone, updatedAt }}
    */
   updateTimezone: protectedProcedure
     .input(UpdateTimezoneSchema)
@@ -421,10 +468,63 @@ export const meRouter = router({
 
       return updated;
     }),
+
+  /**
+   * Returns the daily greeting content for the current user (time-based greeting, random intro,
+   * and a quote or fact), or `{ enabled: false }` if the user disabled the feature.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {{ enabled: false } | { enabled: true, greeting, userName, intro, type, content, author }}
+   */
+  getDailyGreeting: protectedProcedure.query(async ({ ctx }) => {
+    const userId = ctx.session.user.id;
+
+    const enabled = await getUserPreferenceValue(userId, DAILY_GREETING_ENABLED_KEY, false, ctx.prisma);
+    if (!enabled) {
+      return { enabled: false as const };
+    }
+
+    const [user, content] = await Promise.all([
+      ctx.prisma.user.findUnique({ where: { id: userId }, select: { firstName: true } }),
+      selectGreetingContent(),
+    ]);
+
+    const hour = Number(
+      new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', hour: 'numeric', hour12: false }).format(new Date())
+    );
+
+    return {
+      enabled: true as const,
+      greeting: getTimeBasedGreeting(hour),
+      userName: user?.firstName ?? '',
+      intro: pickRandom(GREETING_INTROS),
+      ...content,
+    };
+  }),
+
+  /**
+   * Persists the current user's daily greeting kill-switch preference.
+   *
+   * @auth {authenticated}
+   * @input {{ enabled: boolean }}
+   * @output {{ enabled: boolean }}
+   */
+  updateGreetingPreference: protectedProcedure
+    .input(z.object({ enabled: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const enabled = await setUserPreferenceValue(
+        ctx.session.user.id,
+        DAILY_GREETING_ENABLED_KEY,
+        input.enabled,
+        ctx.prisma
+      );
+      return { enabled };
+    }),
 });
 
 /**
- * Calcola la percentuale di completamento del profilo utente
+ * Calculates the user profile's completion percentage
  */
 function calculateProfileCompletion(profile: {
   firstName: string;

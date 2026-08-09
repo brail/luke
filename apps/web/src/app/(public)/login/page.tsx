@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import React, { useState } from 'react';
 
+import { AppVersionLabel } from '../../../components/AppVersionLabel';
 import { BackendStatus } from '../../../components/BackendStatus';
 import Logo from '../../../components/Logo';
 import { Button } from '../../../components/ui/button';
@@ -45,8 +46,8 @@ export default function LoginPage() {
       });
 
       if (result?.error) {
-        // Auth.js v5 appiattisce sempre gli errori di authorize() in "CredentialsSignin".
-        // Dopo un fallimento, verifica se l'utente è in attesa di approvazione LDAP.
+        // Auth.js v5 always flattens authorize() errors to "CredentialsSignin".
+        // After failure, check if user is awaiting LDAP approval.
         if (result.error === 'CredentialsSignin') {
           const pending = await utils.auth.getPendingStatus.fetch({ username });
           if (pending.isPending) {
@@ -57,7 +58,7 @@ export default function LoginPage() {
           }
         }
 
-        // Gestione specifica per email non verificata
+        // Specific handling for unverified email
         if (result.error.includes('Email non verificata')) {
           setError(
             'Email non verificata. Controlla la tua casella di posta per il link di verifica.'
@@ -66,7 +67,7 @@ export default function LoginPage() {
           setError('Credenziali non valide');
         }
       } else {
-        // Redirect a dashboard dopo login riuscito
+        // Redirect to dashboard after successful login
         router.push('/dashboard');
       }
     } catch {
@@ -101,6 +102,7 @@ export default function LoginPage() {
                 required
                 disabled={isLoading}
                 autoComplete="username"
+                suppressHydrationWarning
               />
             </div>
             <div className="space-y-2">
@@ -114,6 +116,7 @@ export default function LoginPage() {
                 required
                 disabled={isLoading}
                 autoComplete="current-password"
+                suppressHydrationWarning
               />
             </div>
             {error && (
@@ -133,6 +136,8 @@ export default function LoginPage() {
           <div className="mt-4">
             <BackendStatus />
           </div>
+          {/* 10px: below Tailwind's text-xs (12px) floor; unobtrusive footer version tag */}
+          <AppVersionLabel className="mt-3 text-center text-[10px] text-muted-foreground/50 select-none" />
         </CardContent>
       </Card>
     </div>

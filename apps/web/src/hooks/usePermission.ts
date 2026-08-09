@@ -6,39 +6,25 @@ import { useCallback } from 'react';
 import { hasPermission, type Permission, type Role } from '@luke/core';
 
 /**
- * Hook generico per verificare qualsiasi permission
+ * Returns permission-check helpers derived from the current session's role,
+ * following the Resource:Action pattern defined in `@luke/core`.
  *
- * Fornisce un metodo semplice per controllare i permessi usando il pattern Resource:Action
+ * @returns `{ can, canAll, canAny, getUserRole, isAuthenticated, session }`
  *
  * @example
  * ```typescript
- * const { can } = usePermission();
- *
- * if (can('brands:create')) {
- *   return <CreateBrandButton />;
- * }
- *
- * if (can('users:delete')) {
- *   return <DeleteUserButton />;
- * }
+ * const { can, canAll } = usePermission();
+ * if (can('brands:create')) { ... }
+ * if (canAll(['brands:create', 'brands:update'])) { ... }
  * ```
  */
 export function usePermission() {
   const { data: session } = useSession();
 
   /**
-   * Verifica se l'utente ha una permission specifica
+   * Returns `true` if the current user holds the given permission.
    *
-   * @param permission - Permission da verificare (es. 'brands:create', 'users:read')
-   * @returns true se l'utente ha la permission
-   *
-   * @example
-   * ```typescript
-   * const { can } = usePermission();
-   * can('brands:create') // true per admin/editor, false per viewer
-   * can('users:read') // true per tutti
-   * can('config:update') // true per admin/editor
-   * ```
+   * @param permission - Permission to check, e.g. `'brands:create'`, `'users:read'`.
    */
   const can = useCallback(
     (permission: Permission): boolean => {
@@ -52,16 +38,9 @@ export function usePermission() {
   );
 
   /**
-   * Verifica se l'utente ha tutte le permissions richieste
+   * Returns `true` if the current user holds every permission in the array.
    *
-   * @param permissions - Array di permissions richieste
-   * @returns true se l'utente ha tutte le permissions
-   *
-   * @example
-   * ```typescript
-   * const { canAll } = usePermission();
-   * canAll(['brands:create', 'brands:update']) // true se ha entrambe
-   * ```
+   * @param permissions - All permissions that must be granted.
    */
   const canAll = useCallback(
     (permissions: Permission[]): boolean => {
@@ -78,16 +57,9 @@ export function usePermission() {
   );
 
   /**
-   * Verifica se l'utente ha almeno una delle permissions richieste
+   * Returns `true` if the current user holds at least one permission in the array.
    *
-   * @param permissions - Array di permissions richieste
-   * @returns true se l'utente ha almeno una permission
-   *
-   * @example
-   * ```typescript
-   * const { canAny } = usePermission();
-   * canAny(['brands:create', 'brands:update']) // true se ha almeno una
-   * ```
+   * @param permissions - At least one of these must be granted.
    */
   const canAny = useCallback(
     (permissions: Permission[]): boolean => {
@@ -104,18 +76,15 @@ export function usePermission() {
   );
 
   /**
-   * Ottiene il ruolo dell'utente corrente
-   *
-   * @returns Il ruolo dell'utente (admin, editor, viewer) o undefined se non autenticato
+   * Returns the current user's role (`admin`, `editor`, or `viewer`),
+   * or `undefined` when not authenticated.
    */
   const getUserRole = useCallback((): Role | undefined => {
     return (session?.user?.role as Role) || undefined;
   }, [session?.user?.role]);
 
   /**
-   * Verifica se l'utente è autenticato
-   *
-   * @returns true se l'utente è autenticato
+   * Returns `true` if the user is currently authenticated (session user is present).
    */
   const isAuthenticated = useCallback((): boolean => {
     return !!session?.user;

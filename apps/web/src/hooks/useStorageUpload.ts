@@ -3,16 +3,28 @@
 import { useSession } from 'next-auth/react';
 import { useCallback, useState } from 'react';
 
-import type { StorageBucket } from '@luke/core';
+import { type APP_STORAGE_BUCKETS } from '@luke/core';
 
 import { trpc } from '../lib/trpc';
 
+/** Result of a completed upload: the public URL plus the id needed to link the file to an entity. */
 export interface StorageUploadResult {
   publicUrl: string;
-  fileId: string;
+  /**
+   * Id of the `FileObject` to pass to the mutation that links the file to the entity.
+   *
+   * Used to be called `fileId`, while the dedicated upload endpoints (brand temp,
+   * collection row) returned `fileObjectId`: three names for the same thing. Now
+   * there's just one.
+   */
+  fileObjectId: string;
   key?: string;
 }
 
+/** Upload-facing buckets only — excludes internal/private buckets like "backups". */
+export type UploadableBucket = (typeof APP_STORAGE_BUCKETS)[number];
+
+/** Options accepted by `useStorageUpload`. */
 export interface UseStorageUploadOptions {
   /**
    * Fallback URL to use when storage is in proxy (local) mode.
@@ -24,12 +36,22 @@ export interface UseStorageUploadOptions {
   extraFields?: Record<string, string>;
 }
 
+/** Return value of `useStorageUpload`: the upload function plus its in-flight state. */
 export interface UseStorageUploadReturn {
-  upload: (file: File, bucket: StorageBucket) => Promise<StorageUploadResult>;
+  upload: (file: File, bucket: UploadableBucket) => Promise<StorageUploadResult>;
   isUploading: boolean;
   progress: number;
 }
 
+/**
+ * Uploads a file to storage, picking the transport based on what
+ * `storage.requestUpload` responds with: a direct presigned PUT (MinIO) when
+ * `req.method === 'presigned'`, otherwise a multipart POST to `fallbackProxyUrl`
+ * (local proxy mode).
+ *
+ * @throws {Error} When the proxy path is required but no `fallbackProxyUrl` was
+ *   provided, or when the upload request itself fails.
+ */
 export function useStorageUpload(options: UseStorageUploadOptions = {}): UseStorageUploadReturn {
   const { fallbackProxyUrl, extraFields } = options;
   const [isUploading, setIsUploading] = useState(false);
@@ -39,7 +61,7 @@ export function useStorageUpload(options: UseStorageUploadOptions = {}): UseStor
   const requestUpload = trpc.storage.requestUpload.useMutation();
   const confirmUpload = trpc.storage.confirmUpload.useMutation();
 
-  const upload = useCallback(async (file: File, bucket: StorageBucket): Promise<StorageUploadResult> => {
+  const upload = useCallback(async (file: File, bucket: UploadableBucket): Promise<StorageUploadResult> => {
     setIsUploading(true);
     setProgress(0);
 
@@ -51,7 +73,7 @@ export function useStorageUpload(options: UseStorageUploadOptions = {}): UseStor
         originalName: file.name,
       });
 
-      if (req.method === 'presigned' && req.presignedUrl && req.key) {
+      if (req.method === 'presigned' && req.presignedUrl && req.key && req.uploadToken) {
         // MinIO path: PUT directly to presigned URL
         setProgress(20);
         const putRes = await fetch(req.presignedUrl, {
@@ -65,16 +87,21 @@ export function useStorageUpload(options: UseStorageUploadOptions = {}): UseStor
         }
 
         setProgress(80);
+        // Bucket and key are not sent back: the token carries them, which the server
+        // signed when it allocated the slot.
         const confirmed = await confirmUpload.mutateAsync({
-          bucket,
-          key: req.key,
+          uploadToken: req.uploadToken,
           contentType: file.type || 'application/octet-stream',
           size: file.size,
           originalName: file.name,
         });
 
         setProgress(100);
-        return { publicUrl: confirmed.publicUrl, fileId: confirmed.fileId, key: confirmed.key };
+        return {
+          publicUrl: confirmed.publicUrl,
+          fileObjectId: confirmed.fileObjectId,
+          key: confirmed.key,
+        };
       }
 
       // Local proxy path: POST multipart to entity-specific endpoint
@@ -108,7 +135,11 @@ export function useStorageUpload(options: UseStorageUploadOptions = {}): UseStor
 
       const data = await proxyRes.json();
       setProgress(100);
-      return { publicUrl: data.publicUrl, fileId: data.fileId ?? '', key: data.key };
+      return {
+        publicUrl: data.publicUrl,
+        fileObjectId: data.fileObjectId,
+        key: data.key,
+      };
     } finally {
       setIsUploading(false);
     }

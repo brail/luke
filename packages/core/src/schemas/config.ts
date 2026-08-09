@@ -1,14 +1,14 @@
 import { z } from 'zod';
-import { RateLimitConfigSchema, LdapResilienceSchema } from './appConfig';
+
+import { RateLimitConfigSchema, LdapResilienceSchema, CollectionAlertThresholdsSchema, AppContextDefaultsSchema } from './appConfig';
+import { MaintenanceModeStateSchema } from './maintenanceMode';
 
 /**
- * Registry centrale delle chiavi AppConfig con i relativi schemi Zod.
+ * Central registry of all AppConfig keys with their Zod validation schemas.
  *
- * Ogni chiave mappa al suo schema di validazione. I valori in DB sono sempre
- * stringhe; i tipi coerce (z.coerce.*) gestiscono la conversione automatica.
- *
- * Aggiungere nuove chiavi qui per ottenere type safety a compile-time
- * e validazione automatica al boot tramite validateCriticalConfig().
+ * All values stored in the database are raw strings; `z.coerce.*` schemas handle
+ * automatic type conversion. Add new keys here to gain compile-time type safety
+ * and automatic validation on boot via `validateCriticalConfig()`.
  */
 export const AppConfigRegistry = {
   // ── App ──────────────────────────────────────────────────────────────────
@@ -18,12 +18,17 @@ export const AppConfigRegistry = {
   'app.locale':          z.string(),
   'app.defaultTimezone': z.string(),
   'app.baseUrl':         z.string().url(),
+  'app.sections.disabled': z.string().transform(s => z.array(z.string()).parse(JSON.parse(s))),
+  'app.context.defaults':  z.string().transform(s => AppContextDefaultsSchema.parse(JSON.parse(s))),
 
   // ── Auth ─────────────────────────────────────────────────────────────────
   'auth.strategy':                       z.enum(['local-first', 'ldap-first', 'local-only', 'ldap-only']),
   'auth.requireEmailVerification':       z.coerce.boolean(),
   'auth.nextAuthSecret':                 z.string().min(32),
   'auth.provisioning.defaultTeamId':     z.string(),
+
+  // ── RBAC ─────────────────────────────────────────────────────────────────
+  'rbac.sectionAccessDefaults': z.string().transform(s => JSON.parse(s) as Record<string, Record<string, string>>),
 
   // ── SMTP ─────────────────────────────────────────────────────────────────
   'smtp.host':   z.string().min(1),
@@ -66,6 +71,12 @@ export const AppConfigRegistry = {
   // ── Rate limiting (JSON object) ───────────────────────────────────────────
   'rateLimit': z.string().transform(s => RateLimitConfigSchema.parse(JSON.parse(s))),
 
+  // ── Collection Control — motore alert (JSON object) ──────────────────────
+  'collectionControl.alertThresholds': z.string().transform(s => CollectionAlertThresholdsSchema.parse(JSON.parse(s))),
+
+  // ── Edit lock — session-scoped entity lock (currently: planning wizard) ────
+  'editLock.ttlMs': z.coerce.number().int().min(300_000).max(3_600_000),
+
   // ── LDAP ─────────────────────────────────────────────────────────────────
   'auth.ldap.enabled':        z.coerce.boolean(),
   'auth.ldap.url':            z.string().url(),
@@ -93,6 +104,7 @@ export const AppConfigRegistry = {
   'integrations.nav.password':              z.string(),
   'integrations.nav.company':               z.string().min(1),
   'integrations.nav.readOnly':              z.coerce.boolean(),
+  'integrations.nav.syncEnabled':           z.coerce.boolean(),
 
   // ── Google Workspace ──────────────────────────────────────────────────────
   'integrations.google.authMode':              z.enum(['service_account', 'oauth_user']),
@@ -111,16 +123,40 @@ export const AppConfigRegistry = {
   // ── Feedback ──────────────────────────────────────────────────────────────
   'integrations.github.feedbackToken': z.string().min(1),   // GitHub PAT (encrypted)
   'integrations.github.feedbackRepo':  z.string().min(1),   // format: "owner/repo"
+
+  // ── Backup & Disaster Recovery ────────────────────────────────────────────
+  'backup.schedule.enabled':        z.coerce.boolean(),
+  'backup.schedule.dailyTime':      z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), // "HH:mm"
+  'backup.schedule.scope':          z.enum(['DB', 'DB_AND_FILES']),
+  'backup.retentionDays':           z.coerce.number().int().min(1),
+  'backup.retentionMinCount':       z.coerce.number().int().min(0),
+  'backup.target.bucket':           z.string().min(1),
+  'backup.notifyOnFailure':         z.coerce.boolean(),
+
+  // ── Retention sweep (audit log + notifiche) ──────────────────────────────
+  'auditLog.retentionDays':             z.coerce.number().int().min(1),
+  'auditLog.criticalRetentionDays':     z.coerce.number().int().min(1),
+  'notification.retentionDays':         z.coerce.number().int().min(1),
+  'notification.dedupRetentionDays':    z.coerce.number().int().min(1),
+
+  // ── Maintenance Mode (schedulable, system-wide) ───────────────────────────
+  // Single JSON blob, not one key per field: nothing outside maintenanceMode.ts (apps/api)
+  // ever reads an individual sub-field, so one row keeps writes atomic for free instead of
+  // needing a $transaction across 9 rows.
+  'maintenance.mode.state': z.string().transform(s => MaintenanceModeStateSchema.parse(JSON.parse(s))),
 } as const satisfies Record<string, z.ZodTypeAny>;
 
 export type AppConfigKey = keyof typeof AppConfigRegistry;
 export type AppConfigValue<K extends AppConfigKey> = z.output<(typeof AppConfigRegistry)[K]>;
 
 /**
- * Funzione pura: valida una stringa grezza contro lo schema registrato per la chiave.
- * Non ha side effect, non dipende da framework — testabile in isolamento.
+ * Validates a raw string value against the registered Zod schema for the given key.
+ * Pure function — no side effects, no framework dependencies, fully unit-testable.
  *
- * @throws ZodError se il valore non supera la validazione
+ * @param key - Registry key identifying the schema to use
+ * @param raw - Raw string value as stored in the database
+ * @returns Parsed and typed value
+ * @throws {ZodError} When the value fails schema validation
  */
 export function parseConfigValue<K extends AppConfigKey>(
   key: K,
@@ -130,8 +166,8 @@ export function parseConfigValue<K extends AppConfigKey>(
 }
 
 /**
- * Chiavi critiche che devono essere presenti e valide al boot dell'API.
- * Se una di queste manca o è malformata, l'avvio fallisce in produzione.
+ * Config keys that must be present and valid at API boot time.
+ * A missing or malformed value for any of these keys causes the server to refuse to start in production.
  */
 export const CRITICAL_CONFIG_KEYS: AppConfigKey[] = [
   'auth.strategy',

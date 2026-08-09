@@ -1,21 +1,28 @@
 /**
- * OpenTelemetry Instrumentation Bootstrap
- * Eseguito prima di qualsiasi import per catturare startup completo
+ * OpenTelemetry instrumentation bootstrap.
+ *
+ * Must be imported before any other module so that auto-instrumentation patches
+ * (Fastify, HTTP, Undici, Prisma) are applied from the very start of the process.
+ *
+ * Initialization is skipped when `OTEL_ENABLED=false` or when
+ * `OTEL_EXPORTER_OTLP_ENDPOINT` is not set. Graceful SDK shutdown is wired to
+ * `SIGTERM` and `SIGINT` signals.
  */
 
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import { FastifyInstrumentation } from '@opentelemetry/instrumentation-fastify';
 import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
 import { UndiciInstrumentation } from '@opentelemetry/instrumentation-undici';
-import { Resource } from '@opentelemetry/resources';
+import { resourceFromAttributes } from '@opentelemetry/resources';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import {
-  SEMRESATTRS_SERVICE_NAME,
-  SEMRESATTRS_SERVICE_VERSION,
-  SEMRESATTRS_DEPLOYMENT_ENVIRONMENT,
+  ATTR_DEPLOYMENT_ENVIRONMENT_NAME,
+  ATTR_SERVICE_NAME,
+  ATTR_SERVICE_VERSION,
 } from '@opentelemetry/semantic-conventions';
 import { PrismaInstrumentation } from '@prisma/instrumentation';
 import pino from 'pino';
+
 import { isDevelopment } from '@luke/core';
 
 const logger = pino({
@@ -32,12 +39,10 @@ const otelEnabled = process.env.OTEL_ENABLED !== 'false' && otelEndpoint !== '';
 let sdk: NodeSDK | null = null;
 
 if (otelEnabled) {
-  const resource = new Resource({
-    [SEMRESATTRS_SERVICE_NAME]: '@luke/api',
-    [SEMRESATTRS_SERVICE_VERSION]: process.env.npm_package_version || '0.1.0',
-    [SEMRESATTRS_DEPLOYMENT_ENVIRONMENT]: isDevelopment()
-      ? 'development'
-      : 'production',
+  const resource = resourceFromAttributes({
+    [ATTR_SERVICE_NAME]: '@luke/api',
+    [ATTR_SERVICE_VERSION]: process.env.npm_package_version || '0.1.0',
+    [ATTR_DEPLOYMENT_ENVIRONMENT_NAME]: isDevelopment() ? 'development' : 'production',
   });
 
   sdk = new NodeSDK({

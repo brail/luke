@@ -48,6 +48,15 @@ function getCnWindowStatus(shanghaiHour: number): { open: boolean; suffix: strin
   return                                               { open: false, suffix: 'riapertura domani 09:00' };
 }
 
+/**
+ * Dashboard widget showing world clocks for a configurable list of IANA timezones.
+ *
+ * The first two timezones are displayed as large primary clocks; additional ones appear
+ * as a compact list. Shows a China business-hours indicator based on the Asia/Shanghai time.
+ * Updates every second but re-renders only when the minute changes.
+ *
+ * @param settings - Widget settings typed as `ClocksSettings`; falls back to `DEFAULT_CLOCKS_TIMEZONES`.
+ */
 export function ClocksWidget({ settings }: { settings?: Record<string, unknown> }) {
   const [now, setNow] = useState<Date | null>(null);
   const timezones = (settings as ClocksSettings | undefined)?.timezones ?? [...DEFAULT_CLOCKS_TIMEZONES];

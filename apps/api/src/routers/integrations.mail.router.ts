@@ -1,6 +1,6 @@
 /**
- * Mail sub-router per integrazioni
- * Gestisce configurazione e test SMTP
+ * Mail sub-router for integrations
+ * Handles SMTP configuration and testing
  */
 
 import * as nodemailer from 'nodemailer';
@@ -18,23 +18,30 @@ import {
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 
-// Schema per configurazione SMTP
+// Schema for SMTP configuration
 const smtpConfigSchema = z.object({
   host: z.string().min(1, 'Host SMTP è obbligatorio'),
   port: z.number().min(1).max(65535, 'Porta deve essere tra 1 e 65535'),
   secure: z.boolean().default(false),
   user: z.string().min(1, 'User SMTP è obbligatorio'),
-  pass: z.string().optional(), // Opzionale per aggiornamento senza cambiare password
+  pass: z.string().optional(), // Optional for update without changing password
   from: z.string().min(1, 'Email mittente è obbligatoria'),
   baseUrl: z.string().url('Base URL deve essere un URL valido'),
 });
 
 export const mailRouter = router({
+  /**
+   * Saves the SMTP configuration to AppConfig; password is stored encrypted.
+   *
+   * @auth {config:update}
+   * @input {smtpConfigSchema} — host, port, secure, user, optional pass, from, baseUrl.
+   * @output {{ success: true, message: string }}
+   */
   saveConfig: protectedProcedure
     .use(requirePermission('config:update'))
     .input(smtpConfigSchema)
     .mutation(async ({ input, ctx }) => {
-      // Salva ogni campo separatamente in AppConfig
+      // Saves each field separately in AppConfig
       await saveConfig(ctx.prisma, 'smtp.host', input.host, false);
       await saveConfig(ctx.prisma, 'smtp.port', input.port.toString(), false);
       await saveConfig(
@@ -47,7 +54,7 @@ export const mailRouter = router({
       await saveConfig(ctx.prisma, 'smtp.from', input.from, false);
       await saveConfig(ctx.prisma, 'app.baseUrl', input.baseUrl, false);
 
-      // Salva password solo se fornita (cifrata)
+      // Saves password only if provided (encrypted)
       if (input.pass && input.pass.length > 0) {
         await saveConfig(ctx.prisma, 'smtp.pass', input.pass, true);
       }
@@ -65,7 +72,7 @@ export const mailRouter = router({
         'Configurazione SMTP salvata'
       );
 
-      // Log audit
+      // Audit log
       await logAudit(ctx, {
         action: 'CONFIG_SMTP_UPDATE',
         targetType: 'Config',
@@ -84,6 +91,13 @@ export const mailRouter = router({
       };
     }),
 
+  /**
+   * Tests the SMTP connection and sends a test email to the configured sender or a custom address.
+   *
+   * @auth {config:read}
+   * @input {{ testEmail?: string }} — optional override for the test recipient address.
+   * @output {{ success: true, message: string, sentTo: string }}
+   */
   test: protectedProcedure
     .use(requirePermission('config:read'))
     .input(
@@ -93,19 +107,19 @@ export const mailRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       try {
-        const logger = new SecureLogger(console);
+        const logger = new SecureLogger(ctx.logger);
 
-        // Recupera la configurazione SMTP dai singoli campi AppConfig
+        // Fetches SMTP configuration from individual AppConfig fields
         const [host, port, secure, user, pass, from] = await Promise.all([
           getConfig(ctx.prisma, 'smtp.host', false),
           getConfig(ctx.prisma, 'smtp.port', false),
           getConfig(ctx.prisma, 'smtp.secure', false),
           getConfig(ctx.prisma, 'smtp.user', false),
-          getConfig(ctx.prisma, 'smtp.pass', true), // Decifra password
+          getConfig(ctx.prisma, 'smtp.pass', true), // Decrypts password
           getConfig(ctx.prisma, 'smtp.from', false),
         ]);
 
-        // Verifica che tutti i campi siano configurati
+        // Verifies all fields are configured
         if (!host || !port || !user || !pass || !from) {
           const standardError = createStandardError(
             ErrorCode.CONFIG_ERROR,
@@ -114,24 +128,24 @@ export const mailRouter = router({
           throw toTRPCError(standardError);
         }
 
-        // Crea transporter nodemailer
+        // Creates nodemailer transporter
         const transporter = nodemailer.createTransport({
           host,
           port: parseInt(port, 10),
-          secure: secure === 'true', // true per SSL/TLS, false per STARTTLS
+          secure: secure === 'true', // true for SSL/TLS, false for STARTTLS
           auth: {
             user,
             pass,
           },
         });
 
-        // Verifica la connessione
+        // Verifies the connection
         await transporter.verify();
 
-        // Determina il destinatario: parametro o mittente configurato
+        // Determines recipient: parameter or configured sender
         const recipient = input.testEmail || from;
 
-        // Invia email di test
+        // Sends test email
         const testEmail = {
           from,
           to: recipient,
@@ -152,7 +166,7 @@ export const mailRouter = router({
           message: 'Email di test inviata con successo',
           sentTo: recipient,
         };
-      } catch (error: any) {
+      } catch (error: unknown) {
         const standardError = IntegrationErrorHandler.handleSMTPError(error);
         throw toTRPCError(standardError);
       }

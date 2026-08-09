@@ -1,9 +1,10 @@
 /**
- * Helper per mock storage provider nei test
- * Simula comportamento storage in-memory per test isolati
+ * Helper for mock storage provider in tests
+ * Simulates in-memory storage behavior for isolated tests
  */
 
 import { Readable } from 'stream';
+
 import type { Context } from '../../src/lib/trpc';
 
 export interface MockFileObject {
@@ -20,31 +21,41 @@ export class MockStorageProvider {
   private files: Map<string, MockFileObject> = new Map();
   private nextId = 1;
 
+  /**
+   * `key` is optional because the real `putObject` doesn't receive it: the
+   * provider generates it from `originalName`. The mock does the same —
+   * requiring it as input produced "Invalid key: must be non-empty string".
+   */
   async put(params: {
     bucket: string;
-    key: string;
-    contentType: string;
+    key?: string;
+    originalName?: string;
+    /** Optional as in the real `putObject`, which falls back to application/octet-stream. */
+    contentType?: string;
     size: number;
     stream: NodeJS.ReadableStream;
   }): Promise<MockFileObject> {
-    // Converti stream in buffer
+    // Convert stream to buffer
     const chunks: Buffer[] = [];
     for await (const chunk of params.stream) {
       chunks.push(chunk as Buffer);
     }
     const data = Buffer.concat(chunks);
 
+    const key =
+      params.key ?? `${this.nextId}-${params.originalName ?? 'file.bin'}`;
+
     const fileObject: MockFileObject = {
       id: `mock-${this.nextId++}`,
       bucket: params.bucket,
-      key: params.key,
-      contentType: params.contentType,
+      key,
+      contentType: params.contentType ?? 'application/octet-stream',
       size: params.size,
       data,
       createdAt: new Date(),
     };
 
-    this.files.set(`${params.bucket}/${params.key}`, fileObject);
+    this.files.set(`${params.bucket}/${key}`, fileObject);
     return fileObject;
   }
 
@@ -85,7 +96,7 @@ export class MockStorageProvider {
     return files;
   }
 
-  // Helper per test
+  // Test helper
   getFileCount(): number {
     return this.files.size;
   }
@@ -107,29 +118,29 @@ export class MockStorageProvider {
 }
 
 /**
- * Crea context di test con mock storage provider
+ * Creates a test context with a mock storage provider
  */
 export async function createTestContextWithMockStorage(): Promise<
   Context & { mockStorage: MockStorageProvider }
 > {
-  const { createTestContext } = await import('./testContext');
-  const context = await createTestContext();
+  const { createContextForRole } = await import('./testContext');
+  const context = await createContextForRole();
 
   const mockStorage = new MockStorageProvider();
 
-  // Mock del storage provider nel context
+  // Mock the storage provider in the context
   const originalPrisma = context.prisma;
   context.prisma = {
     ...originalPrisma,
     fileObject: {
       ...originalPrisma.fileObject,
       create: async (data: any) => {
-        // Simula creazione fileObject nel DB
+        // Simulate fileObject creation in the DB
         const fileObject = await originalPrisma.fileObject.create(data);
         return fileObject;
       },
       findFirst: async (params: any) => {
-        // Per i test di moveTempLogoToBrand
+        // For moveTempLogoToBrand tests
         if (params.where?.bucket === 'temp-brand-logos') {
           const files = mockStorage.getFilesByBucket('temp-brand-logos');
           if (files.length > 0) {
@@ -159,7 +170,7 @@ export async function createTestContextWithMockStorage(): Promise<
 }
 
 /**
- * Helper per creare file di test
+ * Helper to create test files
  */
 export function createTestFile(
   filename: string,
@@ -182,7 +193,7 @@ export function createTestFile(
 }
 
 /**
- * Helper per creare immagini PNG valide per test
+ * Helper to create valid PNG images for tests
  */
 export function createValidPngBuffer(): Buffer {
   // PNG header + minimal PNG data
@@ -194,7 +205,7 @@ export function createValidPngBuffer(): Buffer {
 }
 
 /**
- * Helper per creare immagini JPEG valide per test
+ * Helper to create valid JPEG images for tests
  */
 export function createValidJpegBuffer(): Buffer {
   // JPEG header
@@ -204,9 +215,9 @@ export function createValidJpegBuffer(): Buffer {
 }
 
 /**
- * Helper per creare file con magic bytes sbagliati (per test validazione)
+ * Helper to create a file with wrong magic bytes (for validation tests)
  */
 export function createInvalidImageBuffer(): Buffer {
-  // File txt con estensione .png
+  // Txt file with a .png extension
   return Buffer.from('This is not an image file');
 }

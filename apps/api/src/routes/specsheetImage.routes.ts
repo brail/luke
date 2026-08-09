@@ -1,23 +1,25 @@
 /**
- * Plugin Fastify per upload immagini MerchandisingSpecsheet
- * Endpoint: POST /upload/specsheet-image/:specsheetId
- *           POST /upload/specsheet-image/temp
+ * Fastify plugin for merchandising specsheet image upload.
  *
- * Features:
- * - Autenticazione richiesta
- * - Rate limiting: 30 req/min in prod
- * - Validazione MIME: png, jpeg, webp
- * - Size limit: 10MB
+ * Endpoint: POST /upload/specsheet-image/:specsheetId
+ *
+ * Requires authentication and the `merchandising_plan:update` permission.
+ * Rate-limited to 30 req/min per user (100 in development). Max file size: 10 MB.
+ * Accepted MIME types: image/png, image/jpeg, image/webp.
+ * An optional `caption` field may be included in the multipart form data.
  */
 
 import rateLimit from '@fastify/rate-limit';
-import type { FastifyInstance } from 'fastify';
-import type { PrismaClient } from '@prisma/client';
+import { TRPCError } from '@trpc/server';
 
-import { isDevelopment, hasPermission, type Role } from '@luke/core';
+import { isDevelopment } from '@luke/core';
 
-import { authenticateRequest } from '../lib/auth';
+import { rateLimitKeyFromRequest, requireSessionWithPermission } from '../lib/auth';
+import { getTraceId, toErrorMessage } from '../lib/error';
 import { uploadSpecsheetImage } from '../services/specsheetImage.service';
+
+import type { PrismaClient } from '@prisma/client';
+import type { FastifyInstance } from 'fastify';
 
 export default async function specsheetImageRoutes(
   app: FastifyInstance,
@@ -26,25 +28,19 @@ export default async function specsheetImageRoutes(
   await app.register(rateLimit, {
     max: isDevelopment() ? 100 : 30,
     timeWindow: '1 minute',
-    keyGenerator: (req: any) => (req as any).session?.user?.id || req.ip,
+    keyGenerator: rateLimitKeyFromRequest,
   });
 
   app.post<{ Params: { specsheetId: string } }>(
     '/upload/specsheet-image/:specsheetId',
     async (req, reply) => {
-      const session = await authenticateRequest(req, reply);
-      if (!session) {
-        return reply.code(401).send({ error: 'Unauthorized', message: 'Autenticazione richiesta' });
-      }
-
-      if (!hasPermission(session.user as { role: Role }, 'merchandising_plan:update')) {
-        return reply.code(403).send({ error: 'Forbidden', message: 'Permesso negato: richiesta merchandising_plan:update' });
-      }
+      const session = await requireSessionWithPermission(req, reply, 'merchandising_plan:update', options.prisma);
+      if (!session) return;
 
       const ctx = {
         session,
         prisma: options.prisma,
-        traceId: (req as any).traceId || 'unknown',
+        traceId: getTraceId(req) || 'unknown',
         req,
         res: reply,
         logger: req.log,
@@ -87,10 +83,10 @@ export default async function specsheetImageRoutes(
         });
 
         return reply.code(200).send(result);
-      } catch (error: any) {
-        req.log.error({ error: error.message, specsheetId: req.params.specsheetId }, 'Specsheet image upload error');
+      } catch (error: unknown) {
+        req.log.error({ error: toErrorMessage(error), specsheetId: req.params.specsheetId }, 'Specsheet image upload error');
 
-        if (error.code === 'BAD_REQUEST' || error.code === 'NOT_FOUND') {
+        if (error instanceof TRPCError && (error.code === 'BAD_REQUEST' || error.code === 'NOT_FOUND')) {
           return reply.code(error.code === 'NOT_FOUND' ? 404 : 400).send({
             error: error.code,
             message: error.message,

@@ -17,11 +17,11 @@ import { Skeleton } from '../ui/skeleton';
 import { BrandAvatar } from './BrandAvatar';
 
 /**
- * Componente selettore per Brand e Season nella navbar
+ * Navbar selector for switching the active Brand and Season context.
  *
- * Due Select indipendenti che permettono di cambiare Brand e Season
- * mantenendo l'altro valore corrente.
- * Le liste sono filtrate per il whitelist brand/stagioni dell'utente.
+ * Renders two independent dropdowns. Changing the brand retains the current season if
+ * still accessible. Lists are filtered to the user's whitelisted brands and seasons.
+ * Persists the selection via `useContextMutation`.
  */
 export function ContextSelector() {
   const { brand, season } = useAppContext();
@@ -44,7 +44,7 @@ export function ContextSelector() {
     );
   }
 
-  // Handler per cambio Brand: mantieni stagione se ancora accessibile, altrimenti prima disponibile
+  // Handler for brand change: keep season if still accessible, otherwise first available
   const handleBrandChange = (brandId: string) => {
     if (season) {
       setContext({ brandId, seasonId: season.id });
@@ -66,7 +66,7 @@ export function ContextSelector() {
         onValueChange={handleBrandChange}
         disabled={isPending}
       >
-        <SelectTrigger className="w-52">
+        <SelectTrigger className="w-52 shrink-0 [&>span]:line-clamp-none">
           <SelectValue placeholder="Brand">
             {brand && (
               <div className="flex items-center gap-2">
@@ -94,7 +94,7 @@ export function ContextSelector() {
         onValueChange={handleSeasonChange}
         disabled={isPending}
       >
-        <SelectTrigger className="w-64">
+        <SelectTrigger className="w-64 shrink-0 [&>span]:line-clamp-none">
           <SelectValue placeholder="Season">
             {season && (
               <div className="flex items-center gap-2">

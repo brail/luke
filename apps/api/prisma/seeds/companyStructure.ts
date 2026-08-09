@@ -22,11 +22,13 @@ export async function seedCompanyStructure(
       }
       functionIds[f.slug] = fn.id;
 
-      // main team — idempotent (unique on functionId+name)
+      // Function's default team — idempotent (unique on functionId+name).
+      // `isMain` was removed from the schema (commit 28b1873, switch to opt-in
+      // access via brand scope): the team remains identified by the function's name.
       await tx.companyTeam.upsert({
         where:  { functionId_name: { functionId: fn.id, name: fn.name } },
         update: {},
-        create: { functionId: fn.id, name: fn.name, isMain: true },
+        create: { functionId: fn.id, name: fn.name },
       });
     });
   }
@@ -50,7 +52,7 @@ export async function seedCompanyStructure(
   // admin → all 3 main teams
   const prodottoId = functionIds['product'];
   if (prodottoId) {
-    const prodottoTeam = await prisma.companyTeam.findFirst({ where: { functionId: prodottoId, isMain: true } });
+    const prodottoTeam = await prisma.companyTeam.findFirst({ where: { functionId: prodottoId } });
     if (prodottoTeam) {
       const EDITOR_EMAILS = ['luca.bagante@shoose.it', 'luca.bagante@febos.com'];
       const editors = await prisma.user.findMany({ where: { email: { in: EDITOR_EMAILS } }, select: { id: true } });
@@ -68,7 +70,7 @@ export async function seedCompanyStructure(
   const adminUser = await prisma.user.findUnique({ where: { email: ADMIN_EMAIL }, select: { id: true } });
   if (adminUser) {
     const allMainTeams = await prisma.companyTeam.findMany({
-      where: { isMain: true, function: { slug: { in: ['product', 'sales', 'sourcing'] } } },
+      where: { function: { slug: { in: ['product', 'sales', 'sourcing'] } } },
       select: { id: true },
     });
     for (const team of allMainTeams) {

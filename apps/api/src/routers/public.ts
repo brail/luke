@@ -1,16 +1,20 @@
 /**
- * Router tRPC per endpoint pubblici
- * Accessibile senza autenticazione per informazioni dell'app
+ * tRPC router for public endpoints
+ * Accessible without authentication for app information
  */
+
+import { isDevelopment } from '@luke/core';
 
 import { getConfig } from '../lib/configManager';
 import { router, publicProcedure } from '../lib/trpc';
-import { isDevelopment } from '@luke/core';
 
 export const publicRouter = router({
   /**
-   * Informazioni pubbliche dell'applicazione
-   * Accessibile senza autenticazione per login page
+   * Returns public application metadata (name, version, environment) for the login page and unauthenticated clients.
+   *
+   * @auth {public}
+   * @input {none}
+   * @output {{ name: string, version: string, environment: string, timestamp: string }}
    */
   appInfo: publicProcedure.query(async ({ ctx }) => {
     try {

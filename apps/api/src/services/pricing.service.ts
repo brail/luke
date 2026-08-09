@@ -1,17 +1,16 @@
 /**
- * Pricing Service — Calcolatrice prezzi e gestione varianti parametri
- *
- * Implementa le stesse formule della PRICINGAPP esterna.
- * Le funzioni di calcolo sono pure (no dipendenze esterne).
- * Le funzioni CRUD ricevono il client Prisma come argomento.
+ * Pricing service — price calculation engine and parameter set CRUD.
+ * Calculation functions are pure (no I/O). CRUD functions receive PrismaClient as their last argument.
  */
 
 import { TRPCError } from '@trpc/server';
-import type { PrismaClient, PricingParameterSet } from '@prisma/client';
+
 import { calculateCompanyMultiplier, roundRetailPrice, type PricingParameterSetInput } from '@luke/core';
 
+import type { PrismaClient, PricingParameterSet } from '@prisma/client';
+
 // ─────────────────────────────────────────────────────────────────
-// Tipi interni
+// Internal types
 // ─────────────────────────────────────────────────────────────────
 
 export interface CalcParams {
@@ -77,11 +76,14 @@ export interface MarginResult {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Formule di calcolo pure
+// Pure calculation formulas
 // ─────────────────────────────────────────────────────────────────
 
 /**
- * Calcolo forward: dato il prezzo di acquisto, calcola il prezzo retail.
+ * Forward calculation: given a purchase price, computes the retail price through
+ * QC → tools → transport → duty → currency conversion → landed cost → wholesale → retail.
+ *
+ * @returns Breakdown of every intermediate step plus the rounded retail price.
  */
 export function calculateForward(
   purchasePrice: number,
@@ -102,26 +104,26 @@ export function calculateForward(
 
   const companyMultiplier = calculateCompanyMultiplier(optimalMargin);
 
-  // Step 1–2: CQ + stampi
+  // Step 1–2: QC + tools
   const qualityControlCost = purchasePrice * (qualityControlPercent / 100);
   const priceWithQC = purchasePrice + qualityControlCost + tools;
 
-  // Step 3: Trasporto + assicurazione
+  // Step 3: Transport + insurance
   const priceWithTransport = priceWithQC + transportInsuranceCost;
 
-  // Step 4–5: Dazio
+  // Step 4–5: Duty
   const dutyCost = priceWithTransport * (duty / 100);
   const priceWithDuty = priceWithTransport + dutyCost;
 
-  // Step 6: Conversione valuta + costi Italia
+  // Step 6: Currency conversion + Italy costs
   const landedCost = priceWithDuty / exchangeRate + italyAccessoryCosts;
 
-  // Step 7–9: Moltiplicatori e arrotondamento
+  // Step 7–9: Multipliers and rounding
   const wholesalePrice = landedCost * companyMultiplier;
   const retailPriceRaw = wholesalePrice * retailMultiplier;
   const retailPrice = roundRetailPrice(retailPriceRaw);
 
-  // Step 10: Margine aziendale reale
+  // Step 10: Actual company margin
   const companyMargin = (wholesalePrice - landedCost) / wholesalePrice;
 
   return {
@@ -146,7 +148,10 @@ export function calculateForward(
 }
 
 /**
- * Calcolo inverso: dato il prezzo retail, calcola il prezzo di acquisto massimo.
+ * Inverse calculation: given a retail price, computes the maximum allowable purchase price
+ * while maintaining the target margin. Reverses the forward chain step by step.
+ *
+ * @returns Breakdown of every intermediate step plus the floor-rounded purchase price.
  */
 export function calculateInverse(
   retailPrice: number,
@@ -167,31 +172,31 @@ export function calculateInverse(
 
   const companyMultiplier = calculateCompanyMultiplier(optimalMargin);
 
-  // Step 1–2: Rimuovi moltiplicatori
+  // Step 1–2: Remove multipliers
   const wholesalePrice = retailPrice / retailMultiplier;
   const landedCost = wholesalePrice / companyMultiplier;
 
-  // Step 3: Rimuovi costi accessori Italia
+  // Step 3: Remove Italy accessory costs
   const priceWithoutAccessories = landedCost - italyAccessoryCosts;
 
-  // Step 4–5: Rimuovi dazio
+  // Step 4–5: Remove duty
   const priceWithoutDuty = priceWithoutAccessories / (1 + duty / 100);
   const dutyCost = priceWithoutAccessories - priceWithoutDuty;
 
-  // Step 6: Converti in valuta di acquisto + rimuovi trasporto
+  // Step 6: Convert to purchase currency + remove transport
   const priceWithoutTransport =
     priceWithoutDuty * exchangeRate - transportInsuranceCost;
 
-  // Step 7–8: Rimuovi CQ e stampi
+  // Step 7–8: Remove QC and tools
   const purchasePriceBeforeTools =
     priceWithoutTransport / (1 + qualityControlPercent / 100);
   const qualityControlCost = priceWithoutTransport - purchasePriceBeforeTools;
   const purchasePriceRaw = purchasePriceBeforeTools - tools;
 
-  // Step 9: Arrotondamento per difetto (1 decimale)
+  // Step 9: Round down (floor), 1 decimal
   const purchasePrice = Math.floor(purchasePriceRaw * 10) / 10;
 
-  // Margine aziendale reale
+  // Actual company margin
   const companyMargin = (wholesalePrice - landedCost) / wholesalePrice;
 
   return {
@@ -213,7 +218,8 @@ export function calculateInverse(
 }
 
 /**
- * Calcolo margine: noti entrambi i prezzi, calcola il margine aziendale reale.
+ * Margin-only calculation: given both purchase and retail prices, computes the actual
+ * company margin without rounding either input.
  */
 export function calculateMarginOnly(
   purchasePrice: number,
@@ -222,7 +228,7 @@ export function calculateMarginOnly(
 ): MarginResult {
   const companyMultiplier = calculateCompanyMultiplier(params.optimalMargin);
 
-  // Calcola landed cost dal prezzo di acquisto (forward fino a landedCost)
+  // Calculate landed cost from the purchase price (forward up to landedCost)
   const qualityControlCost =
     purchasePrice * (params.qualityControlPercent / 100);
   const priceWithQC = purchasePrice + qualityControlCost + params.tools;
@@ -232,10 +238,10 @@ export function calculateMarginOnly(
   const landedCost =
     priceWithDuty / params.exchangeRate + params.italyAccessoryCosts;
 
-  // Calcola wholesale dal prezzo retail (inverso primo step)
+  // Calculate wholesale from the retail price (inverse first step)
   const wholesalePrice = retailPrice / params.retailMultiplier;
 
-  // Margine aziendale reale
+  // Actual company margin
   const companyMargin = (wholesalePrice - landedCost) / wholesalePrice;
 
   return {
@@ -252,11 +258,11 @@ export function calculateMarginOnly(
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Funzioni CRUD
+// CRUD functions
 // ─────────────────────────────────────────────────────────────────
 
 /**
- * Restituisce i set di parametri per un brand+season, ordinati per orderIndex.
+ * Returns all pricing parameter sets for a brand+season ordered by orderIndex then createdAt.
  */
 export async function getParameterSets(
   brandId: string,
@@ -270,10 +276,10 @@ export async function getParameterSets(
 }
 
 /**
- * Cerca i set di parametri dalla stagione più recente con dati per quel brand.
- * Usato per la funzione "Copia da stagione precedente".
+ * Finds parameter sets from the most recent season (by year) that has data for the brand,
+ * excluding the current season. Used by the "copy from previous season" feature.
  *
- * @returns I set della stagione più recente, oppure null se non esistono
+ * @returns The previous season metadata and its full set list, or null if none exists.
  */
 export async function getPreviousSeasonSets(
   brandId: string,
@@ -283,7 +289,7 @@ export async function getPreviousSeasonSets(
   season: { id: string; code: string; year: number | null; name: string };
   sets: PricingParameterSet[];
 } | null> {
-  // Trova la stagione corrente per confrontare year
+  // Find the current season to compare year
   const currentSeason = await prisma.season.findUnique({
     where: { id: currentSeasonId },
     select: { year: true, code: true },
@@ -291,7 +297,7 @@ export async function getPreviousSeasonSets(
 
   if (!currentSeason) return null;
 
-  // Cerca brand+seasons con parametri, esclusa la stagione corrente, ordinata per year desc
+  // Find brand+seasons with parameters, excluding the current season, ordered by year desc
   const previousEntry = await prisma.pricingParameterSet.findFirst({
     where: {
       brandId,
@@ -309,7 +315,7 @@ export async function getPreviousSeasonSets(
 
   if (!previousEntry) return null;
 
-  // Carica tutti i set di quella stagione
+  // Load all sets for that season
   const sets = await prisma.pricingParameterSet.findMany({
     where: { brandId, seasonId: previousEntry.seasonId },
     orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
@@ -319,7 +325,10 @@ export async function getPreviousSeasonSets(
 }
 
 /**
- * Imposta un set come default per brand+season (atomico: rimuove il default dagli altri).
+ * Atomically marks one parameter set as default and clears the flag on all others
+ * in the same brand+season scope.
+ *
+ * @throws {TRPCError} NOT_FOUND if the parameter set does not belong to the given brand+season.
  */
 export async function setAsDefault(
   id: string,
@@ -338,14 +347,14 @@ export async function setAsDefault(
     });
   }
 
-  // Transazione atomica
+  // Atomic transaction
   return prisma.$transaction(async tx => {
-    // Rimuovi default da tutti gli altri
+    // Remove default from all others
     await tx.pricingParameterSet.updateMany({
       where: { brandId, seasonId, NOT: { id } },
       data: { isDefault: false },
     });
-    // Imposta questo come default
+    // Set this one as default
     return tx.pricingParameterSet.update({
       where: { id },
       data: { isDefault: true },
@@ -354,8 +363,11 @@ export async function setAsDefault(
 }
 
 /**
- * Crea un nuovo set di parametri.
- * Se è il primo per quel brand+season, viene automaticamente impostato come default.
+ * Creates a new pricing parameter set. Automatically marks it as default if it is the
+ * first set for the given brand+season.
+ *
+ * @throws {TRPCError} NOT_FOUND if the brand or season does not exist.
+ * @throws {TRPCError} CONFLICT if a set with the same name already exists for this brand+season.
  */
 export async function createParameterSet(
   brandId: string,
@@ -363,7 +375,7 @@ export async function createParameterSet(
   input: PricingParameterSetInput,
   prisma: PrismaClient
 ): Promise<PricingParameterSet> {
-  // Controlla brand e season esistano
+  // Check that brand and season exist
   const [brand, season] = await Promise.all([
     prisma.brand.findUnique({ where: { id: brandId }, select: { id: true } }),
     prisma.season.findUnique({ where: { id: seasonId }, select: { id: true } }),
@@ -374,7 +386,7 @@ export async function createParameterSet(
   if (!season)
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Stagione non trovata' });
 
-  // Controlla unicità nome per brand+season
+  // Check name uniqueness for brand+season
   const existing = await prisma.pricingParameterSet.findUnique({
     where: { brandId_seasonId_name: { brandId, seasonId, name: input.name } },
   });
@@ -385,7 +397,7 @@ export async function createParameterSet(
     });
   }
 
-  // Se è il primo set per questo brand+season, diventa default
+  // If it's the first set for this brand+season, it becomes default
   const existingCount = await prisma.pricingParameterSet.count({
     where: { brandId, seasonId },
   });
@@ -414,7 +426,10 @@ export async function createParameterSet(
 }
 
 /**
- * Aggiorna un set di parametri esistente.
+ * Updates an existing pricing parameter set.
+ *
+ * @throws {TRPCError} NOT_FOUND if the set does not belong to the given brand+season.
+ * @throws {TRPCError} CONFLICT if the new name conflicts with another set in the same scope.
  */
 export async function updateParameterSet(
   id: string,
@@ -434,7 +449,7 @@ export async function updateParameterSet(
     });
   }
 
-  // Controlla unicità nome (esclude sé stesso)
+  // Check name uniqueness (excludes itself)
   if (input.name !== existing.name) {
     const conflict = await prisma.pricingParameterSet.findUnique({
       where: { brandId_seasonId_name: { brandId, seasonId, name: input.name } },
@@ -451,6 +466,7 @@ export async function updateParameterSet(
     where: { id },
     data: {
       name: input.name,
+      countryCode: input.countryCode,
       purchaseCurrency: input.purchaseCurrency,
       sellingCurrency: input.sellingCurrency,
       qualityControlPercent: input.qualityControlPercent,
@@ -466,8 +482,10 @@ export async function updateParameterSet(
 }
 
 /**
- * Elimina un set di parametri.
- * Se era il default, promuove automaticamente il successivo.
+ * Deletes a pricing parameter set. If it was the default, automatically promotes
+ * the next set (by orderIndex then createdAt) to default.
+ *
+ * @throws {TRPCError} NOT_FOUND if the set does not belong to the given brand+season.
  */
 export async function removeParameterSet(
   id: string,
@@ -489,7 +507,7 @@ export async function removeParameterSet(
   await prisma.$transaction(async tx => {
     await tx.pricingParameterSet.delete({ where: { id } });
 
-    // Se era il default, promuovi il primo rimasto
+    // If it was the default, promote the first one remaining
     if (target.isDefault) {
       const next = await tx.pricingParameterSet.findFirst({
         where: { brandId, seasonId },

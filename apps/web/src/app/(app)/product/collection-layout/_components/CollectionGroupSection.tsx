@@ -16,14 +16,15 @@ import { type CSSProperties, type HTMLAttributes, type ReactNode, useCallback, u
 import type { RouterOutputs } from '@luke/api';
 import {
   COLLECTION_GENDER,
-  COLLECTION_PROGRESS,
   COLLECTION_STATUS,
   COLLECTION_STRATEGY,
+  formatPhaseLabel,
 } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
+import { Checkbox } from '../../../../../components/ui/checkbox';
 import {
   Command,
   CommandGroup,
@@ -52,9 +53,12 @@ import {
 } from '../../../../../components/ui/tooltip';
 import { trpc } from '../../../../../lib/trpc';
 import { cn } from '../../../../../lib/utils';
-import { computeRowMargin, computeWeightedMargin } from '../_hooks/usePricingCalc';
+import { computeRowMargin, computeWeightedMargin, resolveVendorName } from '../../_shared/pricingCalc';
+import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
 
-import type { PricingParameterSet } from '../_hooks/usePricingCalc';
+import { CriticalityBandBadge, formatCompletionTooltip, formatCriticalityTooltip } from './CriticalityBadge';
+
+import type { PricingParameterSet } from '../../_shared/pricingCalc';
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -65,10 +69,12 @@ type CollectionRowData = CollectionGroupData['rows'][number];
 
 // ─── Row photo with fallback ──────────────────────────────────────────────────
 
+// 88x110px: fixed row-photo thumbnail size (and its placeholder/empty-state below), reused as-is
+// wherever a collection row's photo is shown so the table layout never shifts; no scale equivalent.
 function RowPhoto({ src, alt }: { src: string; alt: string }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);
-  if (failed) return (
+  if (failed) return ( // 88x110px: see comment on RowPhoto above
     <div className="h-[88px] w-[110px] rounded border border-dashed flex items-center justify-center bg-muted/30">
       <ImageIcon className="h-4 w-4 text-muted-foreground" />
     </div>
@@ -77,7 +83,7 @@ function RowPhoto({ src, alt }: { src: string; alt: string }) {
     <img
       src={src}
       alt={alt}
-      className="h-[88px] w-[110px] rounded object-contain border bg-muted/5"
+      className="h-[88px] w-[110px] rounded object-contain border bg-muted/5" // 88x110px: see comment on RowPhoto above
       onError={() => setFailed(true)}
     />
   );
@@ -188,9 +194,9 @@ function FilterableHeader({
               />
               <Button
                 variant="ghost"
-                size="sm"
+                size="xs"
                 className={cn(
-                  'mt-1 h-7 w-full justify-start px-2 text-xs',
+                  'mt-1 w-full justify-start px-2',
                   filterValue === '_none' ? 'text-primary font-medium' : 'text-muted-foreground'
                 )}
                 onClick={() => onFilter(col, filterValue === '_none' ? null : '_none')}
@@ -200,8 +206,8 @@ function FilterableHeader({
               {filterValue && filterValue !== '_none' && (
                 <Button
                   variant="ghost"
-                  size="sm"
-                  className="h-7 w-full justify-start px-2 text-xs text-muted-foreground"
+                  size="xs"
+                  className="w-full justify-start px-2 text-muted-foreground"
                   onClick={() => onFilter(col, null)}
                 >
                   Rimuovi filtro
@@ -238,8 +244,8 @@ function FilterableHeader({
               {filterValue && (
                 <Button
                   variant="ghost"
-                  size="sm"
-                  className="mt-1 h-7 w-full justify-start px-2 text-xs text-muted-foreground"
+                  size="xs"
+                  className="mt-1 w-full justify-start px-2 text-muted-foreground"
                   onClick={() => onFilter(col, null)}
                 >
                   Rimuovi filtro
@@ -283,12 +289,11 @@ function DragHandle({ listeners }: DragHandleProps) {
 interface SortableRowProps {
   id: string;
   disabled: boolean;
-  isLagging?: boolean;
   children: (listeners: Record<string, unknown> | undefined) => ReactNode;
   onClick: () => void;
 }
 
-function SortableRow({ id, disabled, isLagging, children, onClick }: SortableRowProps) {
+function SortableRow({ id, disabled, children, onClick }: SortableRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
     disabled,
@@ -303,7 +308,7 @@ function SortableRow({ id, disabled, isLagging, children, onClick }: SortableRow
       ref={setNodeRef}
       style={style}
       {...attributes}
-      className={cn('cursor-pointer hover:bg-muted/30', isLagging && 'bg-amber-50/60 dark:bg-amber-950/20 border-l-2 border-l-amber-400 dark:border-l-amber-500')}
+      className="cursor-pointer hover:bg-muted/30"
       onClick={onClick}
     >
       {children(disabled ? undefined : listeners as Record<string, unknown>)}
@@ -313,14 +318,21 @@ function SortableRow({ id, disabled, isLagging, children, onClick }: SortableRow
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const PROGRESS_BADGE: Record<string, { label: string; className: string }> = {
-  DESIGN:           { label: '01 — Design',        className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
-  CONSTRUCTION_OK:  { label: '02 — Costr. OK',     className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
-  MODELLERIA_OK:    { label: '03 — Modell. OK',    className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' },
-  RENDERING:        { label: '04 — Rendering',     className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' },
-  SPECSHEETS_READY: { label: '05 — Spec Sheets',   className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' },
-  SMS_LAUNCHED:     { label: '06 — SMS Lanciati',  className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' },
-};
+/** Classes cycling gray → yellow → blue → green as a Phase advances through the catalog order. */
+const PHASE_BADGE_CLASS_TIERS = [
+  'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+  'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
+  'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+  'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+];
+
+/** Picks a badge color tier for a Phase based on its relative position in the ordered catalog. */
+function phaseBadgeClassName(order: number, total: number): string {
+  if (total <= 1) return PHASE_BADGE_CLASS_TIERS[0];
+  const pct = order / (total - 1);
+  const idx = Math.min(PHASE_BADGE_CLASS_TIERS.length - 1, Math.floor(pct * PHASE_BADGE_CLASS_TIERS.length));
+  return PHASE_BADGE_CLASS_TIERS[idx];
+}
 
 const STATUS_LABELS: Record<string, string> = { CARRY_OVER: 'C/O', NEW: 'New' };
 
@@ -333,11 +345,8 @@ const NOTE_FIELDS: { key: keyof CollectionRowData; label: string }[] = [
 
 const GENDER_OPTIONS: FilterOption[] = COLLECTION_GENDER.map(v => ({ value: v, label: v }));
 const STRATEGY_OPTIONS: FilterOption[] = COLLECTION_STRATEGY.map(v => ({ value: v, label: v }));
+const [STRATEGY_CORE, STRATEGY_INNOVATION] = COLLECTION_STRATEGY;
 const STATUS_OPTIONS: FilterOption[] = COLLECTION_STATUS.map(v => ({ value: v, label: STATUS_LABELS[v] ?? v }));
-const PROGRESS_OPTIONS: FilterOption[] = COLLECTION_PROGRESS.map(v => ({
-  value: v,
-  label: PROGRESS_BADGE[v]?.label ?? v,
-}));
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -357,7 +366,6 @@ interface CollectionGroupSectionProps {
   hiddenColumns: string[];
   parameterSets: PricingParameterSet[];
   searchQuery?: string;
-  laggingRowIds?: Set<string>;
   onAddRow: (groupId: string) => void;
   onEditRow: (row: CollectionRowData) => void;
   onDuplicateRow: (rowId: string) => void;
@@ -366,17 +374,33 @@ interface CollectionGroupSectionProps {
   onDeleteGroup: (groupId: string, groupName: string) => void;
   isDeletingRow?: boolean;
   onFilteredRowIdsChange?: (ids: string[]) => void;
+  /** Row ids selected for bulk actions (e.g. "assign to planning group"), lifted to the parent page. */
+  selectedRowIds: Set<string>;
+  onToggleRowSelection: (rowId: string) => void;
+  onSelectAllRows: (ids: string[], checked: boolean) => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+/**
+ * Collapsible section rendering one collection group's rows in a sortable table.
+ *
+ * Supports column-level filtering, multi-column sorting, dnd-kit row
+ * reordering, and inline margin colouring via `computeRowMargin`. Notifies
+ * the parent of the currently visible row IDs via `onFilteredRowIdsChange`.
+ *
+ * @param group - The collection group and its rows to render.
+ * @param hiddenColumns - Column keys excluded from rendering.
+ * @param parameterSets - Pricing parameter sets used for margin calculation.
+ * @param searchQuery - Free-text filter applied across row fields.
+ * @param onFilteredRowIdsChange - Called whenever the visible row set changes.
+ */
 export function CollectionGroupSection({
   group,
   canUpdate,
   hiddenColumns,
   parameterSets,
   searchQuery = '',
-  laggingRowIds,
   onAddRow,
   onEditRow,
   onDuplicateRow,
@@ -385,10 +409,25 @@ export function CollectionGroupSection({
   onDeleteGroup,
   isDeletingRow = false,
   onFilteredRowIdsChange,
+  selectedRowIds,
+  onToggleRowSelection,
+  onSelectAllRows,
 }: CollectionGroupSectionProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [deleteRow, setDeleteRow] = useState<CollectionRowData | null>(null);
   const [deleteGroupConfirm, setDeleteGroupConfirm] = useState(false);
+
+  const { phases, phaseById, phaseOptions } = usePhaseCatalog();
+
+  // Single batched fetch for the whole group's layout, instead of one query per row.
+  const { data: criticalityList } = trpc.phaseAlert.criticalityForLayout.useQuery(
+    { collectionLayoutId: group.collectionLayoutId },
+    { staleTime: 60 * 1000 }
+  );
+  const criticalityByRowId = useMemo(
+    () => new Map((criticalityList ?? []).map(c => [c.rowId, c])),
+    [criticalityList]
+  );
 
   // Per-group sort/filter state
   const [sortCol, setSortCol] = useState<string | null>(null);
@@ -494,7 +533,7 @@ export function CollectionGroupSection({
     }
 
     let rows = baseRows.filter(row => {
-      const vendorName = row.vendor?.nickname ?? row.vendor?.name ?? null;
+      const vendorName = resolveVendorName(row.vendor, null);
       if (searchQuery && !textMatch(row.line, searchQuery) && !textMatch(vendorName, searchQuery)) return false;
       if (columnFilters.line && !textMatch(row.line, columnFilters.line)) return false;
       if (columnFilters.article && !textMatch(row.article, columnFilters.article)) return false;
@@ -505,10 +544,10 @@ export function CollectionGroupSection({
       if (columnFilters.strategy && !enumMatch(row.strategy, columnFilters.strategy)) return false;
       if (columnFilters.status && !enumMatch(row.status, columnFilters.status)) return false;
       if (columnFilters.styleStatus && !enumMatch(row.styleStatus, columnFilters.styleStatus)) return false;
-      if (columnFilters.progress && !enumMatch(row.progress, columnFilters.progress)) return false;
+      if (columnFilters.progress && !enumMatch(row.phaseId, columnFilters.progress)) return false;
       if (columnFilters.pricePositioning && !textMatch(row.pricePositioning, columnFilters.pricePositioning)) return false;
       if (columnFilters.skuForecast && !numberMatch(row.skuForecast ?? 0, columnFilters.skuForecast)) return false;
-      if (columnFilters.qtyForecast && !numberMatch(row.qtyForecast, columnFilters.qtyForecast)) return false;
+      if (columnFilters.qtyForecast && !numberMatch(row.qtyForecast ?? 0, columnFilters.qtyForecast)) return false;
       if (columnFilters.margin) {
         const m = computeRowMargin(row, parameterSets);
         const threshold = Number(columnFilters.margin);
@@ -526,6 +565,10 @@ export function CollectionGroupSection({
         if (sortCol === 'margin') {
           va = computeRowMargin(a, parameterSets)?.margin ?? -Infinity;
           vb = computeRowMargin(b, parameterSets)?.margin ?? -Infinity;
+        } else if (sortCol === 'progress') {
+          // Column key stays 'progress' for saved user column-visibility prefs; underlying field is phaseId.
+          va = a.phaseId ? (phaseById.get(a.phaseId)?.order ?? -1) : -1;
+          vb = b.phaseId ? (phaseById.get(b.phaseId)?.order ?? -1) : -1;
         } else {
           va = (a as Record<string, unknown>)[sortCol] as number | string ?? '';
           vb = (b as Record<string, unknown>)[sortCol] as number | string ?? '';
@@ -538,14 +581,14 @@ export function CollectionGroupSection({
     }
 
     return rows;
-  }, [group.rows, localRowOrder, searchQuery, columnFilters, columnFilterOperators, sortCol, sortDir, parameterSets]);
+  }, [group.rows, localRowOrder, searchQuery, columnFilters, columnFilterOperators, sortCol, sortDir, parameterSets, phaseById]);
 
   useEffect(() => {
     onFilteredRowIdsChange?.(filteredRows.map(r => r.id));
   }, [filteredRows, onFilteredRowIdsChange]);
 
   const skuTotal = group.rows.reduce((sum, r) => sum + (r.skuForecast ?? 0), 0);
-  const qtyTotal = group.rows.reduce((sum, r) => sum + r.qtyForecast, 0);
+  const qtyTotal = group.rows.reduce((sum, r) => sum + (r.qtyForecast ?? 0), 0);
   const skuVariant = skuRatioVariant(skuTotal, group.skuBudget);
   const groupWeightedMargin = computeWeightedMargin(group.rows, parameterSets);
 
@@ -594,8 +637,8 @@ export function CollectionGroupSection({
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-xs text-primary gap-1"
+                    size="xs"
+                    className="px-2 text-primary gap-1"
                     onClick={e => { e.stopPropagation(); resetFilters(); }}
                   >
                     <RotateCcw className="h-3 w-3" />
@@ -673,6 +716,12 @@ export function CollectionGroupSection({
               <Table className="min-w-max">
                 <TableHeader>
                   <TableRow className="bg-muted/10">
+                    <TableHead className="w-8">
+                      <Checkbox
+                        checked={filteredRows.length > 0 && filteredRows.every(r => selectedRowIds.has(r.id))}
+                        onCheckedChange={checked => onSelectAllRows(filteredRows.map(r => r.id), !!checked)}
+                      />
+                    </TableHead>
                     <TableHead className="w-8 text-center">#</TableHead>
                   {show('foto') && <TableHead className="w-24">Foto</TableHead>}
 
@@ -701,7 +750,7 @@ export function CollectionGroupSection({
                     <FilterableHeader col="styleStatus" label="Style St." type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.styleStatus} options={STATUS_OPTIONS} allowNone />
                   )}
                   {show('progress') && (
-                    <FilterableHeader col="progress" label="Progress" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.progress} options={PROGRESS_OPTIONS} allowNone />
+                    <FilterableHeader col="progress" label="Fase" type="enum" {...sortProps} {...filterProps} filterValue={columnFilters.progress} options={phaseOptions} allowNone />
                   )}
                   {show('designer') && (
                     <FilterableHeader col="designer" label="Designer" type="text" {...sortProps} {...filterProps} filterValue={columnFilters.designer} />
@@ -737,17 +786,28 @@ export function CollectionGroupSection({
                       </TableRow>
                     )}
                     {filteredRows.map((row, idx) => {
-                      const progressBadge = row.progress ? PROGRESS_BADGE[row.progress] : null;
+                      const rowPhase = row.phaseId ? phaseById.get(row.phaseId) : null;
+                      const progressBadge = rowPhase
+                        ? {
+                            label: formatPhaseLabel(rowPhase.code, rowPhase.label),
+                            className: phaseBadgeClassName(rowPhase.order, phases.length),
+                          }
+                        : null;
 
                       return (
                         <SortableRow
                           key={row.id}
                           id={row.id}
                           disabled={!isDndMode || !canUpdate}
-                          isLagging={laggingRowIds?.has(row.id)}
                           onClick={() => onEditRow(row)}
                         >
                           {(listeners) => (<>
+                            <TableCell className="w-8" onClick={e => e.stopPropagation()}>
+                              <Checkbox
+                                checked={selectedRowIds.has(row.id)}
+                                onCheckedChange={() => onToggleRowSelection(row.id)}
+                              />
+                            </TableCell>
                             <TableCell className="text-center text-xs text-muted-foreground w-8">
                               {isDndMode && canUpdate ? (
                                 <DragHandle listeners={listeners} />
@@ -769,7 +829,7 @@ export function CollectionGroupSection({
                           {row.pictureUrl ? (
                             <RowPhoto src={row.pictureUrl} alt={row.line} />
                           ) : (
-                            <div className="h-[88px] w-[110px] rounded border border-dashed flex items-center justify-center bg-muted/30">
+                            <div className="h-[88px] w-[110px] rounded border border-dashed flex items-center justify-center bg-muted/30"> {/* 88x110px: matches RowPhoto's placeholder size, see comment there */}
                               <ImageIcon className="h-4 w-4 text-muted-foreground" />
                             </div>
                           )}
@@ -783,9 +843,9 @@ export function CollectionGroupSection({
                         <TableCell className="text-sm text-muted-foreground">{row.gender}</TableCell>
                       )}
                       {show('supplier') && (
-                        <TableCell className="w-36 max-w-[9rem] text-sm text-muted-foreground">
+                        <TableCell className="w-36 text-sm text-muted-foreground">
                           <span className="block truncate">
-                            {row.vendor?.nickname ?? row.vendor?.name ?? '—'}
+                            {resolveVendorName(row.vendor, '—')}
                           </span>
                         </TableCell>
                       )}
@@ -796,10 +856,10 @@ export function CollectionGroupSection({
                         <TableCell>
                           {row.strategy && (
                             <Badge
-                              variant={row.strategy === 'INNOVATION' ? 'default' : 'secondary'}
+                              variant={row.strategy === STRATEGY_INNOVATION ? 'default' : 'secondary'}
                               className="text-xs"
                             >
-                              {row.strategy === 'INNOVATION' ? 'INNOV.' : 'CORE'}
+                              {row.strategy === STRATEGY_INNOVATION ? 'INNOV.' : STRATEGY_CORE}
                             </Badge>
                           )}
                         </TableCell>
@@ -822,14 +882,29 @@ export function CollectionGroupSection({
                       )}
                       {show('progress') && (
                         <TableCell>
-                          {progressBadge && (
-                            <span className={cn(
-                              'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium',
-                              progressBadge.className
-                            )}>
-                              {progressBadge.label}
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {progressBadge && (
+                              <span className={cn(
+                                'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium',
+                                progressBadge.className
+                              )}>
+                                {progressBadge.label}
+                              </span>
+                            )}
+                            {(() => {
+                              const criticality = criticalityByRowId.get(row.id);
+                              if (!criticality) return null;
+                              return (
+                                <CriticalityBandBadge
+                                  band={criticality.band}
+                                  tooltip={criticality.state === 'completed'
+                                    ? formatCompletionTooltip(criticality)
+                                    : formatCriticalityTooltip(criticality)}
+                                  className="text-[10px] px-1.5 py-0" // below Tailwind's text-xs (12px) floor; dense criticality badge
+                                />
+                              );
+                            })()}
+                          </div>
                         </TableCell>
                       )}
                       {show('designer') && (
@@ -924,10 +999,14 @@ export function CollectionGroupSection({
                           ) : (
                             <TooltipProvider>
                               <Tooltip>
+                                {/* Trigger sullo span: un bottone disabilitato non emette gli
+                                    eventi che aprono il tooltip (vedi `PermissionButton`). */}
                                 <TooltipTrigger asChild>
-                                  <Button variant="ghost" size="sm" disabled className="opacity-50 cursor-not-allowed">
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
+                                  <span className="inline-flex" tabIndex={0}>
+                                    <Button variant="ghost" size="sm" disabled className="opacity-50 cursor-not-allowed">
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </span>
                                 </TooltipTrigger>
                                 <TooltipContent>Non hai i permessi per eliminare righe</TooltipContent>
                               </Tooltip>

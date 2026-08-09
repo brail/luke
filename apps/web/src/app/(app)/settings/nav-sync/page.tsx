@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronLeft, ChevronRight, Loader2, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, LoaderCircle, RefreshCw } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 import { SectionCard } from '../../../../components/SectionCard';
@@ -31,8 +31,9 @@ import {
   TabsList,
   TabsTrigger,
 } from '../../../../components/ui/tabs';
-import { useToast } from '../../../../hooks/use-toast';
+import { useToast } from '../../../../hooks/useToast';
 import { trpc } from '../../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -75,7 +76,7 @@ function PortafoglioSyncTab() {
 
   const { data: syncState, refetch: refetchSyncState } =
     trpc.sales.statistics.portafoglio.getSyncState.useQuery(undefined, {
-      refetchInterval: 30_000, // SSE push gestisce real-time, questo è solo fallback
+      refetchInterval: 30_000, // SSE push handles real-time, this is just fallback
     });
 
   const filterQuery = trpc.integrations.nav.sync.getFilter.useQuery(
@@ -98,7 +99,7 @@ function PortafoglioSyncTab() {
       toast.success('Pianificazione salvata');
       void filterQuery.refetch();
     },
-    onError: (err: any) => toast.error('Errore salvataggio pianificazione', { description: err.message }),
+    onError: err => toast.error('Errore salvataggio pianificazione', { description: getTrpcErrorMessage(err) }),
   });
 
   const syncMutation = trpc.sales.statistics.portafoglio.triggerSync.useMutation({
@@ -108,7 +109,7 @@ function PortafoglioSyncTab() {
       const totalRows = result.stats.reduce((s, x) => s + x.rowsUpserted, 0);
       toast.success(`Sync completato — ${totalRows.toLocaleString('it-IT')} righe in ${secs} s`);
     },
-    onError: (err: any) => toast.error('Errore sync portafoglio', { description: err.message }),
+    onError: err => toast.error('Errore sync portafoglio', { description: getTrpcErrorMessage(err) }),
   });
 
   const isSyncing = syncMutation.isPending || (syncState?.isRunning ?? false);
@@ -172,7 +173,7 @@ function PortafoglioSyncTab() {
             >
               {isSyncing ? (
                 <>
-                  <Loader2 size={16} className="animate-spin" />
+                  <LoaderCircle size={16} className="animate-spin" />
                   Sincronizzazione…
                 </>
               ) : (
@@ -240,7 +241,7 @@ function KimoSyncTab() {
 
   const { data: syncState, refetch: refetchSyncState } =
     trpc.sales.statistics.kimo.getSyncState.useQuery(undefined, {
-      refetchInterval: 30_000, // SSE push gestisce real-time, questo è solo fallback
+      refetchInterval: 30_000, // SSE push handles real-time, this is just fallback
     });
 
   const filterQuery = trpc.integrations.nav.sync.getFilter.useQuery(
@@ -263,7 +264,7 @@ function KimoSyncTab() {
       toast.success('Pianificazione salvata');
       void filterQuery.refetch();
     },
-    onError: (err: any) => toast.error('Errore salvataggio pianificazione', { description: err.message }),
+    onError: err => toast.error('Errore salvataggio pianificazione', { description: getTrpcErrorMessage(err) }),
   });
 
   const syncMutation = trpc.sales.statistics.kimo.triggerSync.useMutation({
@@ -273,7 +274,7 @@ function KimoSyncTab() {
       const totalRows = result.stats.reduce((s, x) => s + x.rowsUpserted, 0);
       toast.success(`Sync completato — ${totalRows.toLocaleString('it-IT')} righe in ${secs} s`);
     },
-    onError: (err: any) => toast.error('Errore sync KIMO', { description: err.message }),
+    onError: err => toast.error('Errore sync KIMO', { description: getTrpcErrorMessage(err) }),
   });
 
   const isSyncing = syncMutation.isPending || (syncState?.isRunning ?? false);
@@ -337,7 +338,7 @@ function KimoSyncTab() {
             >
               {isSyncing ? (
                 <>
-                  <Loader2 size={16} className="animate-spin" />
+                  <LoaderCircle size={16} className="animate-spin" />
                   Sincronizzazione…
                 </>
               ) : (
@@ -443,9 +444,9 @@ function NavSyncTab({
     { refetchOnWindowFocus: false },
   );
 
-  // ── Preview: lazy — mai auto-eseguita ─────────────────────────────────────
-  // Viene caricata solo se l'utente preme "Carica anteprima"
-  // ed è visibile solo quando mode è whitelist o exclude.
+  // ── Preview: lazy — never auto-executed ───────────────────────────────────
+  // Loads only when user presses "Load preview"
+  // and is visible only when mode is whitelist or exclude.
   const previewQuery = trpc.integrations.nav.sync.preview.useQuery(
     { entity },
     { enabled: false, retry: 1 },
@@ -457,7 +458,7 @@ function NavSyncTab({
       toast.success('Filtro salvato');
       void filterQuery.refetch();
     },
-    onError: (err: any) => toast.error('Errore salvataggio filtro', { description: err.message }),
+    onError: err => toast.error('Errore salvataggio filtro', { description: getTrpcErrorMessage(err) }),
   });
 
   const saveSyncScheduleMutation = trpc.integrations.nav.sync.saveSyncSchedule.useMutation({
@@ -465,11 +466,11 @@ function NavSyncTab({
       toast.success('Pianificazione salvata');
       void filterQuery.refetch();
     },
-    onError: (err: any) => toast.error('Errore salvataggio pianificazione', { description: err.message }),
+    onError: err => toast.error('Errore salvataggio pianificazione', { description: getTrpcErrorMessage(err) }),
   });
 
   const runSyncMutation = trpc.integrations.nav.sync.run.useMutation({
-    onError: (err: any) => toast.error('Sync fallito', { description: err.message }),
+    onError: err => toast.error('Sync fallito', { description: getTrpcErrorMessage(err) }),
   });
 
   // ── Local state ────────────────────────────────────────────────────────────
@@ -501,7 +502,7 @@ function NavSyncTab({
     }
   }, [filterQuery.isSuccess, filterQuery.data]);
 
-  // Resetta la preview quando il mode cambia
+  // Reset preview when mode changes
   useEffect(() => {
     setTextFilter('');
     setCurrentPage(1);
@@ -510,7 +511,7 @@ function NavSyncTab({
 
   const isNotConfigured = filterQuery.isSuccess && !filterQuery.data;
 
-  // Resetta la pagina quando cambia il filtro testuale
+  // Reset page when text filter changes
   useEffect(() => {
     setCurrentPage(1);
   }, [textFilter]);
@@ -848,8 +849,7 @@ function NavSyncTab({
                   <div className="flex items-center gap-2">
                     <Button
                       variant="outline"
-                      size="icon"
-                      className="h-7 w-7"
+                      size="icon-sm"
                       onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                       disabled={currentPage === 1}
                       aria-label="Pagina precedente"
@@ -861,8 +861,7 @@ function NavSyncTab({
                     </span>
                     <Button
                       variant="outline"
-                      size="icon"
-                      className="h-7 w-7"
+                      size="icon-sm"
                       onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                       disabled={currentPage === totalPages}
                       aria-label="Pagina successiva"

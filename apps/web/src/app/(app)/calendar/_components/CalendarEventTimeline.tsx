@@ -8,8 +8,8 @@ import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
 import { Checkbox } from '../../../../components/ui/checkbox';
 import { cn } from '../../../../lib/utils';
-import { MONTH_NAMES_IT, STATUS_VARIANT } from '../constants';
-import { getIsoWeek, resolveBrandColor } from '../utils';
+import { MONTH_NAMES_IT } from '../constants';
+import { formatVisibleFunctions, getIsoWeek, groupBadge, groupTooltip, resolveBrandColor } from '../utils';
 
 import { type CalendarEventItem as CalendarEvent } from './types';
 
@@ -23,9 +23,24 @@ interface Props {
   functionsById: Record<string, string>;
   canUpdate?: boolean;
   brandColorMap: Record<string, string>;
+  /** Shows a fixed-width group-initials badge on each row — only worth the visual cost when the
+   * current view actually mixes events from >1 planning group. */
+  showGroupBadge?: boolean;
 }
 
-export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, onDayClick, onBulkDelete, activeBrandId, functionsById, canUpdate, brandColorMap }: Props) {
+/**
+ * Chronological list view that groups calendar events by ISO week.
+ *
+ * Supports multi-select for bulk deletion (gated by `canUpdate`). Each row
+ * shows the event chip, visible functions, and a sticky-note icon when a personal
+ * note exists.
+ *
+ * @param onBulkDelete - Called with the selected event IDs to trigger deletion.
+ * @param functionsById - Map of function ID → name, shown next to each event.
+ * @param activeBrandId - Dims events that belong to a different brand.
+ * @param brandColorMap - Pre-computed brand-ID→colour map.
+ */
+export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, onDayClick, onBulkDelete, activeBrandId, functionsById, canUpdate, brandColorMap, showGroupBadge }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -58,6 +73,8 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
     onBulkDelete?.(ids);
   };
 
+  // Fixed-width columns (checkbox, badge, dates, title, function, cancelled, note) sized to their
+  // content; custom track sizes aren't expressible via grid-cols-N.
   const colClass = canUpdate
     ? 'grid-cols-[32px_32px_120px_1fr_120px_120px_28px]'
     : 'grid-cols-[32px_120px_1fr_120px_120px_28px]';
@@ -67,10 +84,10 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
       {canUpdate && selected.size > 0 && (
         <div className="flex items-center gap-2 px-3 py-2 bg-muted/40 border-b text-sm">
           <span className="text-muted-foreground">{selected.size} selezionat{selected.size === 1 ? 'a' : 'e'}</span>
-          <Button variant="destructive" size="sm" className="h-7 text-xs" onClick={() => setConfirmOpen(true)}>
+          <Button variant="destructive" size="xs" onClick={() => setConfirmOpen(true)}>
             Elimina selezionat{selected.size === 1 ? 'a' : 'e'}
           </Button>
-          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSelected(new Set())}>Deseleziona</Button>
+          <Button variant="ghost" size="xs" onClick={() => setSelected(new Set())}>Deseleziona</Button>
         </div>
       )}
 
@@ -80,7 +97,7 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
           <span className="text-center">W</span>
           <span>Data</span>
           <span>Evento</span>
-          <span>Funzione</span>
+          <span>Visibile a</span>
           <span>Stato</span>
           <span />
         </div>
@@ -103,6 +120,7 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
               const d = new Date(m.startAt);
               const isSelected = selected.has(m.id);
               const hasNote = !!(m.notes?.[0]?.body);
+              const badge = groupBadge(showGroupBadge, m.planningGroupName);
               return (
                 <div
                   key={m.id}
@@ -115,14 +133,19 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
                       <Checkbox checked={isSelected} onCheckedChange={() => toggleOne(m.id)} aria-label={`Seleziona ${m.title}`} />
                     </span>
                   )}
+                  {/* 10px: below Tailwind's text-xs (12px) floor; dense timeline week label */}
                   <span className="text-[10px] text-muted-foreground/60 tabular-nums font-mono text-center">W{getIsoWeek(d)}</span>
                   <span className="text-muted-foreground tabular-nums">{d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })}</span>
                   <span className="flex items-center gap-2 min-w-0">
                     {m.brandId && <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: resolveBrandColor(m.brandId, brandColorMap) }} />}
-                    <span className="truncate font-medium">{m.title}</span>
+                    {/* 10px: below Tailwind's text-xs (12px) floor; dense timeline badge */}
+                    {badge && (
+                      <span className="text-[10px] font-semibold text-muted-foreground shrink-0">{badge}</span>
+                    )}
+                    <span className="truncate font-medium" title={m.planningGroupName ? groupTooltip(m.planningGroupName, m.title) : undefined}>{m.title}</span>
                   </span>
-                  <span className="text-xs text-muted-foreground truncate">{functionsById[m.ownerFunctionId] ?? m.ownerFunctionId}</span>
-                  <span><Badge variant={STATUS_VARIANT[m.status] ?? 'outline'} className="text-xs">{m.status}</Badge></span>
+                  <span className="text-xs text-muted-foreground truncate">{formatVisibleFunctions(m.visibilities, functionsById)}</span>
+                  <span>{m.cancelledAt && <Badge variant="destructive" className="text-xs">Annullato</Badge>}</span>
                   <span className="flex items-center justify-center">
                     {onNoteClick && (
                       <button

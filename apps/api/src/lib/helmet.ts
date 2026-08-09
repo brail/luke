@@ -1,8 +1,11 @@
 /**
- * Configurazione centralizzata per Helmet security headers
- * Baseline invariabile per tutte le versioni dell'API
+ * Centralised Helmet security-header configuration.
+ * Provides an immutable baseline for all API versions.
  */
 
+/**
+ * Typed Helmet plugin configuration subset used by the API.
+ */
 export interface HelmetConfig {
   contentSecurityPolicy?:
     | false
@@ -27,18 +30,20 @@ export interface HelmetConfig {
 }
 
 /**
- * Costruisce la configurazione Helmet basata sull'ambiente
- * @param env - Ambiente: 'development', 'test', 'production'
- * @returns Configurazione Helmet ottimizzata per l'ambiente
+ * Builds a Helmet configuration object tuned for the given environment.
+ * CSP is disabled in development; HSTS is enabled only in production.
+ *
+ * @param env - Runtime environment (`'development'`, `'test'`, or `'production'`).
+ * @returns Helmet configuration optimised for the environment.
  */
 export function buildHelmetConfig(env: string): HelmetConfig {
   const isDevelopment = env === 'development';
   const isProduction = env === 'production';
 
   return {
-    // CSP: solo in produzione per API JSON-only
+    // CSP: production only for JSON-only API
     contentSecurityPolicy: isDevelopment
-      ? false // Disabilita CSP in dev per evitare problemi
+      ? false // Disables CSP in dev to avoid issues
       : {
           directives: {
             defaultSrc: ["'none'"],
@@ -47,50 +52,19 @@ export function buildHelmetConfig(env: string): HelmetConfig {
           },
         },
 
-    // HSTS: solo in produzione
+    // HSTS: production only
     hsts: isProduction
       ? {
-          maxAge: 15552000, // 180 giorni
+          maxAge: 15552000, // 180 days
           includeSubDomains: true,
-          preload: false, // Non forzare preload
+          preload: false, // Do not force preload
         }
       : false,
 
-    // Header sempre presenti per sicurezza
+    // Headers always present for security
     noSniff: true, // X-Content-Type-Options: nosniff
     referrerPolicy: { policy: 'no-referrer' }, // Referrer-Policy: no-referrer
     frameguard: { action: 'deny' }, // X-Frame-Options: DENY
     dnsPrefetchControl: { allow: false }, // X-DNS-Prefetch-Control: off
   };
 }
-
-/**
- * Header di sicurezza applicati per ambiente
- */
-export const SECURITY_HEADERS = {
-  development: {
-    'X-Content-Type-Options': 'nosniff',
-    'Referrer-Policy': 'no-referrer',
-    'X-DNS-Prefetch-Control': 'off',
-    'X-Frame-Options': 'DENY',
-    // CSP e HSTS disabilitati in dev
-  },
-  test: {
-    'X-Content-Type-Options': 'nosniff',
-    'Referrer-Policy': 'no-referrer',
-    'X-DNS-Prefetch-Control': 'off',
-    'X-Frame-Options': 'DENY',
-    'Content-Security-Policy':
-      "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
-    // HSTS disabilitato in test
-  },
-  production: {
-    'X-Content-Type-Options': 'nosniff',
-    'Referrer-Policy': 'no-referrer',
-    'X-DNS-Prefetch-Control': 'off',
-    'X-Frame-Options': 'DENY',
-    'Content-Security-Policy':
-      "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
-    'Strict-Transport-Security': 'max-age=15552000; includeSubDomains',
-  },
-} as const;

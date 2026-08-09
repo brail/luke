@@ -1,7 +1,7 @@
 /**
- * Router tRPC per Merchandising Plan
+ * tRPC router for merchandising plan management.
  *
- * Espone:
+ * Exposes:
  *  - merchandisingPlan.getOrCreate
  *  - merchandisingPlan.updateStatus
  *  - merchandisingPlan.listRows
@@ -19,18 +19,27 @@ import {
   MerchandisingComponentInputSchema,
   MerchandisingSpecsheetInputSchema,
   MERCHANDISING_PLAN_STATUS,
+  partialWithoutDefaults,
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import { createNotification } from '../lib/notifications';
+import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
-import { requirePermission } from '../lib/permissions';
+import {
+  assertBrandAccess,
+  resolveMerchPlanRowBrandAccess,
+} from '../services/brandScope.service';
 
 export const merchandisingPlanRouter = router({
   /**
-   * Ottieni o crea il piano per brand+stagione (upsert atomico)
+   * Returns the merchandising plan for a brand/season pair, creating one atomically if it does not exist.
+   *
+   * @auth merchandising_plan:update
+   * @input { brandId, seasonId }
+   * @output MerchandisingPlan summary (id, status, timestamps)
    */
   getOrCreate: protectedProcedure
     .use(requirePermission('merchandising_plan:update'))
@@ -41,6 +50,8 @@ export const merchandisingPlanRouter = router({
       })
     )
     .query(async ({ input, ctx }) => {
+      await assertBrandAccess(ctx, input.brandId);
+
       return ctx.prisma.merchandisingPlan.upsert({
         where: { brandId_seasonId: { brandId: input.brandId, seasonId: input.seasonId } },
         create: { brandId: input.brandId, seasonId: input.seasonId },
@@ -50,7 +61,11 @@ export const merchandisingPlanRouter = router({
     }),
 
   /**
-   * Aggiorna lo status del piano (DRAFT ↔ CONFIRMED)
+   * Updates the plan status (DRAFT ↔ CONFIRMED).
+   *
+   * @auth merchandising_plan:update
+   * @input { planId, status }
+   * @output Updated MerchandisingPlan
    */
   updateStatus: protectedProcedure
     .use(requirePermission('merchandising_plan:update'))
@@ -77,7 +92,11 @@ export const merchandisingPlanRouter = router({
     }),
 
   /**
-   * Elenca le righe del piano, con specsheet summary e immagine default
+   * Lists all rows for a plan, ordered by `order`, including specsheet summary and default image URL.
+   *
+   * @auth merchandising_plan:read
+   * @input { planId }
+   * @output Array of MerchandisingPlanRow with resolved image URLs
    */
   listRows: protectedProcedure
     .use(requirePermission('merchandising_plan:read'))
@@ -122,7 +141,11 @@ export const merchandisingPlanRouter = router({
     }),
 
   /**
-   * Crea una nuova riga nel piano
+   * Creates a new row in the merchandising plan.
+   *
+   * @auth merchandising_plan:update
+   * @input MerchandisingPlanRowInputSchema
+   * @output The created MerchandisingPlanRow
    */
   createRow: protectedProcedure
     .use(requirePermission('merchandising_plan:update'))
@@ -172,7 +195,11 @@ export const merchandisingPlanRouter = router({
     }),
 
   /**
-   * Aggiorna una riga (patch parziale)
+   * Partially updates a plan row (patch semantics — only supplied fields are changed).
+   *
+   * @auth merchandising_plan:update
+   * @input { id, data: Partial<MerchandisingPlanRowInput> }
+   * @output Updated MerchandisingPlanRow
    */
   updateRow: protectedProcedure
     .use(requirePermission('merchandising_plan:update'))
@@ -180,7 +207,7 @@ export const merchandisingPlanRouter = router({
     .input(
       z.object({
         id: z.string().uuid(),
-        data: MerchandisingPlanRowInputSchema.omit({ planId: true }).partial(),
+        data: partialWithoutDefaults(MerchandisingPlanRowInputSchema.omit({ planId: true })),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -199,7 +226,11 @@ export const merchandisingPlanRouter = router({
     }),
 
   /**
-   * Elimina una riga (cascade automatico su specsheet)
+   * Deletes a plan row; the specsheet cascades automatically via the DB relation.
+   *
+   * @auth merchandising_plan:update
+   * @input { id }
+   * @output { success: true }
    */
   deleteRow: protectedProcedure
     .use(requirePermission('merchandising_plan:update'))
@@ -218,7 +249,11 @@ export const merchandisingPlanRouter = router({
     }),
 
   /**
-   * Riordina le righe in batch (transazione)
+   * Reorders multiple rows in a single transaction by updating their `order` field.
+   *
+   * @auth merchandising_plan:update
+   * @input { planId, rows: Array<{ id, order }> }
+   * @output { success: true }
    */
   reorderRows: protectedProcedure
     .use(requirePermission('merchandising_plan:update'))
@@ -242,12 +277,18 @@ export const merchandisingPlanRouter = router({
     }),
 
   /**
-   * Ottieni la specsheet di una riga (con componenti e immagini)
+   * Returns the specsheet for a plan row, including components and images with resolved URLs.
+   *
+   * @auth merchandising_plan:read
+   * @input { rowId }
+   * @output MerchandisingSpecsheet with components and images, or null if not yet created
    */
   getSpecsheet: protectedProcedure
     .use(requirePermission('merchandising_plan:read'))
     .input(z.object({ rowId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
+      await resolveMerchPlanRowBrandAccess(ctx, input.rowId);
+
       const specsheet = await ctx.prisma.merchandisingSpecsheet.findUnique({
         where: { rowId: input.rowId },
         include: {
@@ -267,7 +308,11 @@ export const merchandisingPlanRouter = router({
     }),
 
   /**
-   * Crea o aggiorna l'header della specsheet
+   * Creates or updates the header fields of the specsheet for a plan row.
+   *
+   * @auth merchandising_plan:update
+   * @input { rowId, ...MerchandisingSpecsheetInput }
+   * @output The upserted MerchandisingSpecsheet
    */
   upsertSpecsheet: protectedProcedure
     .use(requirePermission('merchandising_plan:update'))
@@ -293,7 +338,11 @@ export const merchandisingPlanRouter = router({
     }),
 
   /**
-   * Sostituisce l'intero array di componenti BOM (deleteMany + createMany in transazione)
+   * Replaces the entire BOM component list for a specsheet (deleteMany + createMany in a transaction).
+   *
+   * @auth merchandising_plan:update
+   * @input { specsheetId, components: MerchandisingComponentInput[] }
+   * @output { success: true }
    */
   upsertComponents: protectedProcedure
     .use(requirePermission('merchandising_plan:update'))
@@ -333,7 +382,11 @@ export const merchandisingPlanRouter = router({
     }),
 
   /**
-   * Aggiunge un'immagine alla specsheet (la prima diventa default)
+   * Adds an image to a specsheet. The first image added is automatically set as default.
+   *
+   * @auth merchandising_plan:update
+   * @input { specsheetId, key, caption? }
+   * @output The created MerchandisingImage
    */
   addImage: protectedProcedure
     .use(requirePermission('merchandising_plan:update'))
@@ -371,7 +424,11 @@ export const merchandisingPlanRouter = router({
     }),
 
   /**
-   * Elimina un'immagine; promuove la prima rimasta come default se era default
+   * Deletes an image from a specsheet. If it was the default, the next image (by order) is promoted.
+   *
+   * @auth merchandising_plan:update
+   * @input { id }
+   * @output { success: true }
    */
   deleteImage: protectedProcedure
     .use(requirePermission('merchandising_plan:update'))
@@ -411,7 +468,11 @@ export const merchandisingPlanRouter = router({
     }),
 
   /**
-   * Imposta un'immagine come default (reset tutti, poi set quella indicata)
+   * Sets a specific image as the default for its specsheet (resets all others, then sets this one).
+   *
+   * @auth merchandising_plan:update
+   * @input { id }
+   * @output { success: true }
    */
   setDefaultImage: protectedProcedure
     .use(requirePermission('merchandising_plan:update'))
@@ -445,7 +506,13 @@ export const merchandisingPlanRouter = router({
     }),
 
   /**
-   * Assegna (o rimuove) un utente a una riga
+   * Assigns (or removes when `userId` is null) a user to a plan row.
+   *
+   * Sends an in-app notification to the newly assigned user (or the previously assigned user on removal).
+   *
+   * @auth merchandising_plan:update
+   * @input { rowId, userId: string | null }
+   * @output Updated MerchandisingPlanRow
    */
   assignUser: protectedProcedure
     .use(requirePermission('merchandising_plan:update'))
@@ -457,6 +524,8 @@ export const merchandisingPlanRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await resolveMerchPlanRowBrandAccess(ctx, input.rowId);
+
       const existingRow = await ctx.prisma.merchandisingPlanRow.findUnique({
         where: { id: input.rowId },
         select: { assignedUserId: true, articleCode: true },

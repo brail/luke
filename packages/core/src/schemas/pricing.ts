@@ -1,13 +1,13 @@
 import { z } from 'zod';
 
 /**
- * Valute supportate dal sistema di pricing
+ * Currencies supported by the pricing system
  */
 export const PRICING_CURRENCIES = ['USD', 'EUR', 'GBP', 'CHF', 'CNY'] as const;
 export type PricingCurrency = (typeof PRICING_CURRENCIES)[number];
 
 /**
- * Schema per la creazione/modifica di un set di parametri
+ * Schema for creating/updating a parameter set
  */
 export const PricingParameterSetInputSchema = z.object({
   name: z
@@ -15,38 +15,38 @@ export const PricingParameterSetInputSchema = z.object({
     .min(1, 'Il nome è obbligatorio')
     .max(100, 'Il nome non può superare 100 caratteri'),
   countryCode: z
-    .string({ required_error: 'Il codice paese è obbligatorio' })
+    .string({ error: 'Il codice paese è obbligatorio' })
     .regex(
       /^[A-Z]{2}$/,
       'Inserire un codice paese ISO 3166-1 alpha-2 valido (es. IT, CN, TR)'
     ),
-  purchaseCurrency: z.string().min(1, 'La valuta di acquisto è obbligatoria'),
-  sellingCurrency: z.string().min(1, 'La valuta di vendita è obbligatoria'),
+  purchaseCurrency: z.enum(PRICING_CURRENCIES, { error: 'Valuta di acquisto non valida' }),
+  sellingCurrency: z.enum(PRICING_CURRENCIES, { error: 'Valuta di vendita non valida' }),
   qualityControlPercent: z
-    .number({ required_error: 'Campo obbligatorio' })
+    .number({ error: 'Campo obbligatorio' })
     .min(0, 'Il controllo qualità non può essere negativo')
     .max(100, 'Il controllo qualità non può superare il 100%'),
   transportInsuranceCost: z
-    .number({ required_error: 'Campo obbligatorio' })
+    .number({ error: 'Campo obbligatorio' })
     .min(0, 'Il costo di trasporto non può essere negativo'),
   duty: z
-    .number({ required_error: 'Campo obbligatorio' })
+    .number({ error: 'Campo obbligatorio' })
     .min(0, 'Il dazio non può essere negativo')
     .max(100, 'Il dazio non può superare il 100%'),
   exchangeRate: z
-    .number({ required_error: 'Campo obbligatorio' })
+    .number({ error: 'Campo obbligatorio' })
     .positive('Il tasso di cambio deve essere positivo'),
   italyAccessoryCosts: z
-    .number({ required_error: 'Campo obbligatorio' })
+    .number({ error: 'Campo obbligatorio' })
     .min(0, 'I costi accessori non possono essere negativi'),
   tools: z
-    .number({ required_error: 'Campo obbligatorio' })
+    .number({ error: 'Campo obbligatorio' })
     .min(0, 'I costi stampi non possono essere negativi'),
   retailMultiplier: z
-    .number({ required_error: 'Campo obbligatorio' })
+    .number({ error: 'Campo obbligatorio' })
     .positive('Il moltiplicatore retail deve essere positivo'),
   optimalMargin: z
-    .number({ required_error: 'Campo obbligatorio' })
+    .number({ error: 'Campo obbligatorio' })
     .min(0, 'Il margine ottimale non può essere negativo')
     .max(99.9, 'Il margine ottimale non può raggiungere il 100%'),
 });
@@ -56,7 +56,7 @@ export type PricingParameterSetInput = z.infer<
 >;
 
 /**
- * Schema per l'aggiornamento (include l'id)
+ * Schema for updating (includes the id)
  */
 export const PricingParameterSetUpdateSchema =
   PricingParameterSetInputSchema.extend({
@@ -68,13 +68,13 @@ export type PricingParameterSetUpdate = z.infer<
 >;
 
 /**
- * Modalità di calcolo disponibili
+ * Available calculation modes
  */
 export const PricingModeSchema = z.enum(['forward', 'inverse', 'margin']);
 export type PricingMode = z.infer<typeof PricingModeSchema>;
 
 /**
- * Schema per la richiesta di calcolo
+ * Schema for calculation request
  */
 export const PricingCalculateInputSchema = z
   .object({

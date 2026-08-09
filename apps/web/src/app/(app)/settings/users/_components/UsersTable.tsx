@@ -19,6 +19,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '../../../../../components/ui/tooltip';
+import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
 import { SortableHeader } from './SortableHeader';
 import {
@@ -36,8 +37,10 @@ interface UsersTableProps extends TableProps, SortHandlers, UserActionHandlers {
 }
 
 /**
- * Tabella utenti con header ordinabili e menu azioni
- * Gestisce rendering righe, stati vuoti e azioni utente
+ * Data table listing users with sortable headers, online-status indicator, and per-row action menu.
+ * @param sortBy - Column currently used for sorting.
+ * @param sortOrder - Direction of the active sort.
+ * @param currentUserId - ID of the logged-in user, forwarded to `UserActionsMenu` for self-action guards.
  */
 export function UsersTable({
   users,
@@ -71,7 +74,7 @@ export function UsersTable({
         <div className="text-destructive mb-2">
           Errore nel caricamento utenti
         </div>
-        <p className="text-sm text-muted-foreground mb-4">{error.message}</p>
+        <p className="text-sm text-muted-foreground mb-4">{getTrpcErrorMessage(error)}</p>
         <Button variant="outline" onClick={() => window.location.reload()}>
           Riprova
         </Button>

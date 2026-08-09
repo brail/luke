@@ -1,10 +1,3 @@
-import type { PrismaClient } from '@prisma/client';
-
-interface SyncLogger {
-  info(obj: unknown, msg?: string): void;
-  error(obj: unknown, msg?: string): void;
-  warn(obj: unknown, msg?: string): void;
-}
 
 import {
   createGoogleCalendarClient,
@@ -13,14 +6,32 @@ import {
   buildCalendarSummary,
   createCalendar,
   syncCalendarReaders,
+  enforceDomainReadOnly,
   type MilestoneForSync,
   type SyncContext,
 } from '@luke/calendar';
+import type { Role } from '@luke/core';
 
 import { getConfig } from '../lib/configManager.js';
 
+import { getUserAllowedFunctionIds } from './context.service.js';
+
+import type { PrismaClient } from '@prisma/client';
+
+interface SyncLogger {
+  info(obj: unknown, msg?: string): void;
+  error(obj: unknown, msg?: string): void;
+  warn(obj: unknown, msg?: string): void;
+}
+
 // ─── Client factory ───────────────────────────────────────────────────────────
 
+/**
+ * Reads Google integration config from AppConfig and initialises the Google Calendar client.
+ * Supports oauth_user and service_account authentication modes.
+ *
+ * @returns The configured workspace domain, or null if the integration is disabled or misconfigured.
+ */
 export async function getConfiguredGoogleClient(prisma: PrismaClient): Promise<{ domain: string } | null> {
   const [authMode, domain, enabled] = await Promise.all([
     getConfig(prisma, 'integrations.google.authMode', false),
@@ -66,9 +77,10 @@ type MilestoneRow = {
   startAt: Date;
   endAt: Date | null;
   allDay: boolean;
-  status: string;
+  cancelledAt: Date | null;
   publishExternally: boolean;
   visibilities: { companyFunctionId: string }[];
+  planningGroupName: string;
 };
 
 function mapMilestone(m: MilestoneRow): MilestoneForSync {
@@ -79,28 +91,58 @@ function mapMilestone(m: MilestoneRow): MilestoneForSync {
     startAt: m.startAt,
     endAt: m.endAt,
     allDay: m.allDay,
-    status: m.status,
+    cancelled: !!m.cancelledAt,
     publishExternally: m.publishExternally,
     visibilityFunctionIds: m.visibilities.map(v => v.companyFunctionId),
+    planningGroupName: m.planningGroupName,
   };
 }
 
+/**
+ * Loads a calendar event and maps it to the MilestoneForSync shape expected by @luke/calendar.
+ */
 export async function getMilestoneForSync(
   milestoneId: string,
   prisma: PrismaClient
 ): Promise<MilestoneForSync> {
   const m = await prisma.calendarEvent.findUniqueOrThrow({
     where: { id: milestoneId },
-    include: { visibilities: { select: { functionId: true } } },
+    include: { visibilities: { select: { functionId: true } }, planningGroup: { select: { name: true } } },
   });
   return mapMilestone({
     ...m,
     visibilities: m.visibilities.map(v => ({ companyFunctionId: v.functionId })),
+    planningGroupName: m.planningGroup.name,
   });
 }
 
 // ─── SyncContext builder ──────────────────────────────────────────────────────
 
+/**
+ * Resolves the Google Calendar reader emails for a company function: active users on a team
+ * belonging to that function, plus all active admins (admins see every section regardless of
+ * team membership).
+ */
+export async function getAllowedEmailsForFunction(companyFunctionId: string, prisma: PrismaClient): Promise<string[]> {
+  const users = await prisma.user.findMany({
+    where: {
+      isActive: true,
+      OR: [
+        { role: 'admin' },
+        { teamMemberships: { some: { team: { functionId: companyFunctionId, isActive: true } } } },
+      ],
+    },
+    select: { email: true },
+  });
+  return users.map(u => u.email).filter((e): e is string => !!e);
+}
+
+/**
+ * Builds the SyncContext for a season calendar, wiring up the DB-backed callbacks
+ * (getOrCreateBinding, getMappings, upsertMapping, deleteMapping) used by @luke/calendar sync.
+ *
+ * @returns A fully configured SyncContext ready to be passed to syncMilestone.
+ */
 export async function buildSyncContext(
   calendarId: string,
   prisma: PrismaClient
@@ -113,12 +155,6 @@ export async function buildSyncContext(
     },
   });
 
-  const users = await prisma.user.findMany({
-    where: { isActive: true },
-    select: { email: true },
-  });
-  const allowedUserEmails = users.map(u => u.email).filter((e): e is string => !!e);
-
   const brandCode = cal.brand.code;
   const seasonCode = cal.season.code;
 
@@ -126,7 +162,7 @@ export async function buildSyncContext(
     seasonCalendarId: calendarId,
     brandCode,
     seasonCode,
-    allowedUserEmails,
+    getAllowedEmailsForFunction: (companyFunctionId) => getAllowedEmailsForFunction(companyFunctionId, prisma),
 
     getOrCreateBinding: async (companyFunctionId) => {
       const existing = await prisma.googleCalendarBinding.findUnique({
@@ -140,7 +176,9 @@ export async function buildSyncContext(
       });
       const summary = buildCalendarSummary(brandCode, seasonCode, fn?.name ?? companyFunctionId);
       const { id: googleCalendarId } = await createCalendar(summary);
+      const allowedUserEmails = await getAllowedEmailsForFunction(companyFunctionId, prisma);
       await syncCalendarReaders(googleCalendarId, allowedUserEmails);
+      await enforceDomainReadOnly(googleCalendarId);
 
       return prisma.googleCalendarBinding.upsert({
         where: { seasonCalendarId_companyFunctionId: { seasonCalendarId: calendarId, companyFunctionId } },
@@ -170,6 +208,10 @@ export async function buildSyncContext(
 
 // ─── Sync operations ─────────────────────────────────────────────────────────
 
+/**
+ * Syncs a single calendar event to all bound Google Calendars. No-ops if the integration
+ * is disabled or not configured.
+ */
 export async function syncOneMilestone(
   milestoneId: string,
   prisma: PrismaClient,
@@ -180,17 +222,21 @@ export async function syncOneMilestone(
 
   const m = await prisma.calendarEvent.findUniqueOrThrow({
     where: { id: milestoneId },
-    include: { visibilities: { select: { functionId: true } } },
+    include: { visibilities: { select: { functionId: true } }, planningGroup: { select: { name: true } } },
   });
 
   const ctx = await buildSyncContext(m.calendarId, prisma);
   await syncMilestone(
-    mapMilestone({ ...m, visibilities: m.visibilities.map(v => ({ companyFunctionId: v.functionId })) }),
+    mapMilestone({ ...m, visibilities: m.visibilities.map(v => ({ companyFunctionId: v.functionId })), planningGroupName: m.planningGroup.name }),
     ctx
   );
   logger.info({ milestoneId }, 'Google Calendar sync completed');
 }
 
+/**
+ * Deletes all Google Calendar events mapped to the given milestone and removes
+ * the local mapping records. No-ops if the integration is disabled.
+ */
 export async function cleanupMilestoneEvents(
   milestoneId: string,
   prisma: PrismaClient,
@@ -201,14 +247,27 @@ export async function cleanupMilestoneEvents(
 
   const mappings = await prisma.googleEventMapping.findMany({ where: { eventId: milestoneId } });
 
-  await Promise.allSettled(
+  const results = await Promise.allSettled(
     mappings.map(m => deleteEvent(m.googleCalendarId, m.googleEventId))
   );
+  const failed = results.filter(r => r.status === 'rejected').length;
+  if (failed > 0) {
+    logger.warn(
+      { milestoneId, failed, total: mappings.length },
+      'Alcuni eventi Google Calendar non sono stati eliminati — la mappatura locale viene comunque rimossa'
+    );
+  }
 
   await prisma.googleEventMapping.deleteMany({ where: { eventId: milestoneId } });
   logger.info({ milestoneId, count: mappings.length }, 'Google Calendar events cleaned up');
 }
 
+/**
+ * Re-syncs all milestones of a season calendar to Google Calendar. Errors per milestone
+ * are caught individually so that a single failure does not abort the run.
+ *
+ * @returns Count of successfully synced milestones and count of errors.
+ */
 export async function reconcileCalendar(
   calendarId: string,
   prisma: PrismaClient,
@@ -219,7 +278,7 @@ export async function reconcileCalendar(
 
   const milestones = await prisma.calendarEvent.findMany({
     where: { calendarId },
-    include: { visibilities: { select: { functionId: true } } },
+    include: { visibilities: { select: { functionId: true } }, planningGroup: { select: { name: true } } },
   });
 
   if (milestones.length === 0) return { synced: 0, errors: 0 };
@@ -232,7 +291,7 @@ export async function reconcileCalendar(
   for (const m of milestones) {
     try {
       await syncMilestone(
-        mapMilestone({ ...m, visibilities: m.visibilities.map(v => ({ companyFunctionId: v.functionId })) }),
+        mapMilestone({ ...m, visibilities: m.visibilities.map(v => ({ companyFunctionId: v.functionId })), planningGroupName: m.planningGroup.name }),
         ctx
       );
       synced++;
@@ -244,4 +303,36 @@ export async function reconcileCalendar(
 
   logger.info({ calendarId, synced, errors }, 'Google Calendar reconciliation completed');
   return { synced, errors };
+}
+
+// ─── Subscription info ────────────────────────────────────────────────────────
+
+/**
+ * Lists the provisioned Google Calendars for a season calendar, one per company function,
+ * for display in the "subscribe" panel. Only includes bindings that have actually been
+ * provisioned (a Google Calendar was created for them).
+ *
+ * Scoped to the requesting user: admins see every section, everyone else only sections for
+ * functions they belong to via team membership — mirrors the ACL granted on the Google side.
+ */
+export async function listGoogleCalendarBindings(
+  calendarId: string,
+  prisma: PrismaClient,
+  userId: string,
+  userRole?: Role
+): Promise<{ companyFunctionId: string; functionName: string; googleCalendarId: string }[]> {
+  const allowedFunctionIds = await getUserAllowedFunctionIds(userId, prisma, userRole);
+  const bindings = await prisma.googleCalendarBinding.findMany({
+    where: {
+      seasonCalendarId: calendarId,
+      isProvisioned: true,
+      ...(allowedFunctionIds !== null && { companyFunctionId: { in: allowedFunctionIds } }),
+    },
+    include: { companyFunction: { select: { name: true } } },
+  });
+  return bindings.map(b => ({
+    companyFunctionId: b.companyFunctionId,
+    functionName: b.companyFunction.name,
+    googleCalendarId: b.googleCalendarId,
+  }));
 }

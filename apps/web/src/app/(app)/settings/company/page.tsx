@@ -8,7 +8,7 @@ import {
   TabsTrigger,
 } from '../../../../components/ui/tabs';
 
-import { OrganizzazioneTab } from './_components/OrganizzazioneTab';
+import { OrganizationTab } from './_components/OrganizationTab';
 import { ProfileTab } from './_components/ProfileTab';
 
 export default function CompanySettingsPage() {
@@ -27,7 +27,7 @@ export default function CompanySettingsPage() {
           <ProfileTab />
         </TabsContent>
         <TabsContent value="organizzazione" className="mt-6">
-          <OrganizzazioneTab />
+          <OrganizationTab />
         </TabsContent>
       </Tabs>
     </>

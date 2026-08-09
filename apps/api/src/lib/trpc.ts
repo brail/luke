@@ -1,112 +1,29 @@
 /**
- * Setup tRPC per Luke API
- * Definisce il context e le procedure base per i router
+ * tRPC setup for Luke API.
+ * Defines the request context factory, base procedures, and shared middleware.
  */
 
 import { randomUUID } from 'crypto';
 
 import { TRPCError } from '@trpc/server';
 
-import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import { hasPermission, type Role } from '@luke/core';
 
 import { authenticateRequest } from './auth';
-import { getTokenVersionCacheTTL } from './configManager';
+import { assertNotBlockedByMaintenance } from './maintenanceMode';
 import { t } from './t';
+import { verifyTokenVersion } from './tokenVersionCache';
+
 import type { Context } from './context';
-
 import type { PrismaClient } from '@prisma/client';
+import type { FastifyReply, FastifyRequest } from 'fastify';
+
+export { invalidateTokenVersionCache } from './tokenVersionCache';
 
 /**
- * Cache in-memory per tokenVersion con TTL
- * Evita query DB ad ogni richiesta per verificare tokenVersion
- */
-const tokenVersionCache = new Map<
-  string,
-  { version: number; timestamp: number }
->();
-
-// Cache per TTL dinamico da AppConfig
-let cachedTTLValue: number | null = null;
-let cachedTTLTimestamp: number = 0;
-const TTL_REFRESH_INTERVAL = 5 * 60 * 1000; // Refresh config ogni 5min
-
-/**
- * Invalida la cache tokenVersion per un utente specifico
- * Chiamata dopo revoca sessioni o cambio password
- */
-export function invalidateTokenVersionCache(userId: string): void {
-  tokenVersionCache.delete(userId);
-}
-
-/**
- * Ottiene il TTL della cache da AppConfig con refresh periodico
- * @param prisma - Client Prisma
- * @returns TTL in millisecondi
- */
-async function getCacheTTL(prisma: PrismaClient): Promise<number> {
-  const now = Date.now();
-
-  if (
-    cachedTTLValue === null ||
-    now - cachedTTLTimestamp > TTL_REFRESH_INTERVAL
-  ) {
-    cachedTTLValue = await getTokenVersionCacheTTL(prisma);
-    cachedTTLTimestamp = now;
-  }
-
-  return cachedTTLValue;
-}
-
-/**
- * Verifica tokenVersion con cache
- * @param userId - ID utente
- * @param tokenVersion - Versione dal JWT
- * @param prisma - Client Prisma
- * @returns true se valido, false se invalidato
- */
-async function verifyTokenVersion(
-  userId: string,
-  tokenVersion: number | undefined,
-  prisma: PrismaClient
-): Promise<boolean> {
-  // OPZIONE 1b: Rifiuta JWT senza tokenVersion
-  if (tokenVersion === undefined || tokenVersion === null) {
-    return false;
-  }
-
-  const cached = tokenVersionCache.get(userId);
-  const now = Date.now();
-  const cacheTTL = await getCacheTTL(prisma);
-
-  if (cached && now - cached.timestamp < cacheTTL) {
-    return cached.version === tokenVersion;
-  }
-
-  // Query DB per tokenVersion corrente
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { tokenVersion: true, isActive: true },
-  });
-
-  if (!user || !user.isActive) {
-    return false;
-  }
-
-  // Aggiorna cache
-  tokenVersionCache.set(userId, {
-    version: user.tokenVersion,
-    timestamp: now,
-  });
-
-  return user.tokenVersion === tokenVersion;
-}
-
-/**
- * Crea il context per tRPC
- * @param context - Oggetto contenente le dipendenze
- * @returns Context per tRPC
+ * Creates a tRPC context for an incoming Fastify request.
+ * Authenticates the request, assigns a traceId, and injects dependencies.
  */
 export async function createContext({
   prisma,
@@ -117,10 +34,10 @@ export async function createContext({
   req: FastifyRequest;
   res: FastifyReply;
 }): Promise<Context> {
-  // Autentica la richiesta e ottieni la sessione
-  const session = await authenticateRequest(req, res);
+  // Authenticate the request and get the session
+  const session = await authenticateRequest(req, res, prisma);
 
-  // Estrai o genera traceId
+  // Extract or generate traceId
   const traceId = (req.headers['x-luke-trace-id'] as string) || randomUUID();
 
   return {
@@ -134,30 +51,20 @@ export async function createContext({
 }
 
 /**
- * Inizializza tRPC con il context
- * NOTA: `t` è importato da './t.ts' per evitare circular dependencies
- */
-
-/**
- * Router base per tRPC
+ * Base tRPC router factory. Use this to create all domain routers.
  */
 export const router = t.router;
 
-/**
- * Esporta t per uso in middleware personalizzati
- */
 export { t };
 
 /**
- * Procedure pubblica (senza autenticazione)
- * Per ora tutte le procedure sono pubbliche
- * In futuro si aggiungerà middleware per autenticazione
+ * Base procedure with no authentication requirement.
+ * Use for endpoints that must be accessible without a session (e.g. login, health checks).
  */
 export const publicProcedure = t.procedure;
 
 /**
- * Middleware per logging delle procedure
- * Logga le chiamate tRPC per debugging
+ * Middleware that logs the start and completion of every tRPC call with duration.
  */
 export const loggingMiddleware = t.middleware(
   async ({ next, path, type, ctx }) => {
@@ -186,8 +93,8 @@ export const loggingMiddleware = t.middleware(
 );
 
 /**
- * Middleware per autenticazione
- * Verifica che l'utente sia autenticato e che il tokenVersion sia valido
+ * Middleware that enforces authentication and tokenVersion validity.
+ * Rejects requests with an `UNAUTHORIZED` error if the session is absent or the token has been revoked.
  */
 export const authMiddleware = t.middleware(async ({ ctx, next }) => {
   if (!ctx.session) {
@@ -197,7 +104,10 @@ export const authMiddleware = t.middleware(async ({ ctx, next }) => {
     });
   }
 
-  // Verifica tokenVersion con cache
+  // Redundant for real HTTP requests — `authenticateRequest` already rejects
+  // revoked tokens — but not for hand-built contexts (tests, internal jobs),
+  // which don't go through it. The check stays because the invariant must hold
+  // for every context, not just ones born from a request.
   const isTokenVersionValid = await verifyTokenVersion(
     ctx.session.user.id,
     ctx.session.user.tokenVersion,
@@ -214,14 +124,38 @@ export const authMiddleware = t.middleware(async ({ ctx, next }) => {
   return next({
     ctx: {
       ...ctx,
-      session: ctx.session, // Type-safe: session non è più null
+      session: ctx.session, // Type-safe: session is no longer null
     },
   });
 });
 
 /**
- * Middleware per autorizzazione admin
- * Verifica che l'utente sia autenticato e abbia ruolo admin
+ * Middleware that blocks non-admin traffic while Maintenance Mode is `ACTIVE`.
+ * Must be chained after `authMiddleware` (already done in `protectedProcedure`) so
+ * `ctx.session` is guaranteed. Admins are never blocked — they need `adminProcedure`
+ * (e.g. `maintenance.mode.end`) to keep working during the very maintenance they're managing.
+ */
+export const maintenanceGuard = t.middleware(async ({ ctx, next }) => {
+  if (!ctx.session) {
+    throw new TRPCError({
+      code: 'UNAUTHORIZED',
+      message: 'Devi essere autenticato per accedere a questa risorsa',
+    });
+  }
+
+  await assertNotBlockedByMaintenance(ctx.prisma, ctx.session.user.role);
+
+  return next({
+    ctx: {
+      ...ctx,
+      session: ctx.session, // Type-safe: session is no longer null
+    },
+  });
+});
+
+/**
+ * Middleware that restricts access to users with the `admin` role.
+ * Must be chained after `authMiddleware` (already done in `adminProcedure`).
  */
 export const adminMiddleware = t.middleware(async ({ ctx, next }) => {
   if (!ctx.session) {
@@ -241,33 +175,32 @@ export const adminMiddleware = t.middleware(async ({ ctx, next }) => {
   return next({
     ctx: {
       ...ctx,
-      session: ctx.session, // Type-safe: session non è più null
+      session: ctx.session, // Type-safe: session is no longer null
     },
   });
 });
 
 /**
- * Procedure con logging automatico
+ * Public procedure with automatic request logging.
  */
 export const loggedProcedure = publicProcedure.use(loggingMiddleware);
 
 /**
- * Procedure protetta (richiede autenticazione)
+ * Procedure that requires a valid authenticated session.
  */
 export const protectedProcedure = publicProcedure
   .use(loggingMiddleware)
-  .use(authMiddleware);
+  .use(authMiddleware)
+  .use(maintenanceGuard);
 
 /**
- * Procedure admin (richiede ruolo admin)
- * Chains authMiddleware so tokenVersion is verified before the role check.
+ * Procedure that requires admin role.
+ * Chains `authMiddleware` so tokenVersion is verified before the role check.
  */
 export const adminProcedure = publicProcedure
   .use(loggingMiddleware)
   .use(authMiddleware)
   .use(adminMiddleware);
 
-/**
- * Re-esporta Context da ./context per backward compatibility
- */
+/** Re-exported for backward compatibility. */
 export type { Context };

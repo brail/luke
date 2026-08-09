@@ -1,10 +1,10 @@
 /**
- * Router tRPC per gestione Brand
- * Implementa CRUD completo per Brand con audit logging
+ * tRPC router for Brand management
+ * Implements full CRUD for Brand with audit logging
  */
 
 import { TRPCError } from '@trpc/server';
-import type { Prisma } from '@prisma/client';
+
 
 import {
   BrandInputSchema,
@@ -16,12 +16,15 @@ import {
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { withRateLimit } from '../lib/ratelimit';
+import { confirmPendingFile } from '../lib/pendingFile';
 import { requirePermission } from '../lib/permissions';
-import { getUserAllowedBrandIds } from '../services/context.service.js';
+import { withRateLimit } from '../lib/ratelimit';
 import { makeUrlResolver } from '../lib/storageUrl';
-import { deleteObjectByKey } from '../storage';
 import { router, protectedProcedure } from '../lib/trpc';
+import { getUserAllowedBrandIds } from '../services/context.service.js';
+import { deleteObjectByKey } from '../storage';
+
+import type { Prisma } from '@prisma/client';
 
 const BRAND_SELECT = {
   id: true,
@@ -53,7 +56,11 @@ function buildWhereClause(filters: { isActive?: boolean; search?: string }): Pri
 
 export const brandRouter = router({
   /**
-   * Lista tutti i brand con filtri opzionali e cursor pagination
+   * Lists brands with optional filters and cursor-based pagination, scoped to the user's allowed brands.
+   *
+   * @auth {brands:read}
+   * @input {BrandListInputSchema} — optional cursor, limit, isActive filter, search string.
+   * @output {{ items: Brand[], nextCursor: string | null, hasMore: boolean }} — paginated brand list with resolved logoUrl.
    */
   list: protectedProcedure
     .use(requirePermission('brands:read'))
@@ -89,7 +96,11 @@ export const brandRouter = router({
     }),
 
   /**
-   * Crea un nuovo brand
+   * Creates a new brand, optionally linking a pending logo file object in the same transaction.
+   *
+   * @auth {brands:create}
+   * @input {BrandInputSchema} — code, name, navBrandId (optional), fileObjectId for logo (optional).
+   * @output {Brand} — the created brand with resolved logoUrl.
    */
   create: protectedProcedure
     .use(requirePermission('brands:create'))
@@ -111,7 +122,7 @@ export const brandRouter = router({
           });
         }
 
-        // Valida unicità navBrandId se fornito — dentro la transaction per evitare TOCTOU
+        // Validates navBrandId uniqueness if provided — inside the transaction to avoid TOCTOU
         if (brandData.navBrandId) {
           const conflict = await tx.brand.findUnique({
             where: { navBrandId: brandData.navBrandId },
@@ -132,29 +143,46 @@ export const brandRouter = router({
         // Confirms pending logo and links it to the brand atomically.
         // findUnique (not findFirst) since id is the PK — findFirst is unnecessary overhead.
         if (fileObjectId) {
-          const pendingFile = await tx.fileObject.findUnique({
-            where: { id: fileObjectId },
-            select: { key: true, confirmedAt: true, createdBy: true, bucket: true },
+          const confirmedKey = await confirmPendingFile(tx, {
+            fileObjectId,
+            bucket: 'brand-logos',
+            userId: ctx.session!.user.id,
           });
-          if (
-            pendingFile?.confirmedAt === null &&
-            pendingFile.createdBy === ctx.session!.user.id &&
-            pendingFile.bucket === 'brand-logos'
-          ) {
-            await tx.fileObject.update({
-              where: { id: fileObjectId },
-              data: { confirmedAt: new Date() },
-            });
-            return tx.brand.update({
-              where: { id: brand.id },
-              data: { logoKey: pendingFile.key },
-              select: BRAND_SELECT,
+          // A dead id is an error, not a no-op. The realistic trigger isn't a
+          // malicious id: it's the hourly reaper that swept up the pending file
+          // while the user was distracted. Without this, the brand saves without
+          // a logo and the UI says "created" — data loss with a success toast.
+          if (!confirmedKey) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Il file caricato non è più disponibile, ricaricalo',
             });
           }
+
+          return tx.brand.update({
+            where: { id: brand.id },
+            data: { logoKey: confirmedKey },
+            select: BRAND_SELECT,
+          });
         }
 
         return brand;
-      }, { timeout: 15000 });
+      }, { timeout: 15000 })
+        // The check-then-act above is inside a transaction, but PostgreSQL runs in
+        // READ COMMITTED: two concurrent creates with the same code don't see each
+        // other and both reach the insert. The unique constraint prevents the
+        // duplicate — but without this translation the loser would get a raw
+        // Prisma error (500) instead of the CONFLICT it gets via the explicit
+        // check when it loses the race. Same pattern as the P2025 in company.ts.
+        .catch((e: unknown) => {
+          if ((e as { code?: string })?.code === 'P2002') {
+            throw new TRPCError({
+              code: 'CONFLICT',
+              message: 'Codice brand già esistente',
+            });
+          }
+          throw e;
+        });
 
       let finalLogoUrl: string | null = null;
       if (created.logoKey) {
@@ -167,7 +195,11 @@ export const brandRouter = router({
     }),
 
   /**
-   * Aggiorna un brand esistente
+   * Updates an existing brand's fields; blocks NAV-link change if already set.
+   *
+   * @auth {brands:update}
+   * @input {BrandUpdateInputSchema} — id, partial brand fields, optional fileObjectId for new logo.
+   * @output {Brand} — the updated brand with resolved logoUrl.
    */
   update: protectedProcedure
     .use(requirePermission('brands:update'))
@@ -198,9 +230,9 @@ export const brandRouter = router({
           input.data.code = normalizedCode;
         }
 
-        // Valida unicità navBrandId se modificato
+        // Validates navBrandId uniqueness if changed
         if (input.data.navBrandId !== undefined && input.data.navBrandId !== existingBrand.navBrandId) {
-          // Blocca qualsiasi cambio al collegamento NAV se già valorizzato — usare endpoint unlink
+          // Blocks any change to the NAV link if already set — use the unlink endpoint
           if (existingBrand.navBrandId !== null) {
             throw new TRPCError({
               code: 'BAD_REQUEST',
@@ -224,19 +256,20 @@ export const brandRouter = router({
         let confirmedLogoKey: string | undefined;
 
         if (fileObjectId) {
-          const pendingFile = await tx.fileObject.findUnique({
-            where: { id: fileObjectId },
-            select: { key: true, confirmedAt: true, createdBy: true, bucket: true },
+          const confirmedKey = await confirmPendingFile(tx, {
+            fileObjectId,
+            bucket: 'brand-logos',
+            userId: ctx.session!.user.id,
           });
-          if (
-            pendingFile?.confirmedAt === null &&
-            pendingFile.createdBy === ctx.session!.user.id &&
-            pendingFile.bucket === 'brand-logos'
-          ) {
-            await tx.fileObject.update({ where: { id: fileObjectId }, data: { confirmedAt: new Date() } });
-            confirmedLogoKey = pendingFile.key;
-            oldLogoKey = existingBrand.logoKey;
+          if (!confirmedKey) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Il file caricato non è più disponibile, ricaricalo',
+            });
           }
+
+          confirmedLogoKey = confirmedKey;
+          oldLogoKey = existingBrand.logoKey;
         }
 
         return tx.brand.update({
@@ -263,7 +296,11 @@ export const brandRouter = router({
     }),
 
   /**
-   * Soft delete brand (isActive = false)
+   * Soft-deletes a brand by setting isActive=false.
+   *
+   * @auth {brands:delete}
+   * @input {BrandIdSchema} — brand UUID.
+   * @output {Brand} — the updated brand record.
    */
   remove: protectedProcedure
     .use(requirePermission('brands:delete'))
@@ -288,8 +325,11 @@ export const brandRouter = router({
     }),
 
   /**
-   * Scollega brand da NAV e lo soft-deletes atomicamente.
-   * Blocca se il brand ha CollectionLayout o PricingParameterSet attivi.
+   * Unlinks the NAV association and soft-deletes the brand atomically; blocked if active layouts or pricing sets exist.
+   *
+   * @auth {brands:delete}
+   * @input {BrandIdSchema} — brand UUID.
+   * @output {Brand} — the updated brand record.
    */
   unlink: protectedProcedure
     .use(requirePermission('brands:delete'))
@@ -330,7 +370,11 @@ export const brandRouter = router({
     }),
 
   /**
-   * Hard delete brand — solo per brand senza collegamento NAV e senza dipendenze attive.
+   * Permanently deletes a brand; blocked if it has a NAV link or active dependencies.
+   *
+   * @auth {brands:delete}
+   * @input {BrandIdSchema} — brand UUID.
+   * @output {{ success: true }}
    */
   hardDelete: protectedProcedure
     .use(requirePermission('brands:delete'))
@@ -368,7 +412,11 @@ export const brandRouter = router({
     }),
 
   /**
-   * Riattiva un brand soft-deleted (isActive = true)
+   * Restores a soft-deleted brand by setting isActive=true.
+   *
+   * @auth {brands:update}
+   * @input {BrandIdSchema} — brand UUID.
+   * @output {Brand} — the restored brand record with resolved logoUrl.
    */
   restore: protectedProcedure
     .use(requirePermission('brands:update'))

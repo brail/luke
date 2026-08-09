@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertCircle, BarChart2, Download, Loader2 } from 'lucide-react';
+import { AlertCircle, BarChart2, Download, LoaderCircle } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -233,7 +233,7 @@ function DownloadSection({
         >
           {isDownloading ? (
             <>
-              <Loader2 size={16} className="animate-spin" />
+              <LoaderCircle size={16} className="animate-spin" />
               Generazione in corso…
             </>
           ) : (

@@ -1,21 +1,21 @@
-import type {
-  Brand,
-  CollectionGroup,
-  CollectionLayout,
-  CollectionLayoutRow,
-  Season,
-  Vendor,
-} from '@prisma/client';
-import type { PrismaClient } from '@prisma/client';
-import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 
 import { formatDateTime } from '@luke/core';
 import type { StorageBucket } from '@luke/core';
 
 import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
 import { readFileBuffer } from '../storage';
+
 import { buildProgressLabelMap } from './collectionLayout.service';
+
 import type { QuotationWithParamSet } from './collectionLayout.service';
+import type { PrismaClient,
+  Brand,
+  CollectionGroup,
+  CollectionLayout,
+  CollectionLayoutRow,
+  Season,
+  Vendor } from '@prisma/client';
+import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -26,6 +26,7 @@ type RowWithVendor = CollectionLayoutRow & {
 
 type GroupWithRows = CollectionGroup & { rows: RowWithVendor[] };
 
+/** Minimal layout shape required by the PDF builder. */
 export type CollectionLayoutForPdf = CollectionLayout & {
   brand:  Pick<Brand,  'name' | 'code' | 'logoKey'>;
   season: Pick<Season, 'name' | 'code' | 'year'>;
@@ -239,6 +240,16 @@ function makeHeightsFn(dataCount: number): (i: number) => number {
 
 type Logger = { warn: (obj: object, msg: string) => void };
 
+/**
+ * Builds an A3 landscape PDF of a collection layout, grouped by group with a grand-total summary.
+ * Fetches brand logo and row photos from storage, computes margin colour coding per row.
+ *
+ * @param extractedBy - Display name of the requesting user (shown in the page header).
+ * @param extractedAt - Timestamp to include in the header.
+ * @param pictureBucket - Storage bucket for row photos; defaults to `'collection-row-pictures'`.
+ * @param extraFooterNote - Optional pre-formatted extra line appended to the footer (caller-formatted, this builder has no opinion on its content).
+ * @returns A Buffer containing the complete PDF file.
+ */
 export async function buildCollectionLayoutPdf(
   layout: CollectionLayoutForPdf,
   prisma: PrismaClient,
@@ -246,6 +257,7 @@ export async function buildCollectionLayoutPdf(
   extractedAt: Date,
   logger?: Logger,
   pictureBucket: StorageBucket = 'collection-row-pictures',
+  extraFooterNote?: string | null,
 ): Promise<Buffer> {
   const allRows = layout.groups.flatMap(g => g.rows);
 
@@ -325,7 +337,7 @@ export async function buildCollectionLayoutPdf(
           { text: row.productCategory ?? '',  fontSize: 7, margin: CELL_MARGIN },
           { text: row.strategy ?? '',         fontSize: 7, margin: CELL_MARGIN, alignment: 'center' as const },
           { text: row.status ?? '',           fontSize: 7, margin: CELL_MARGIN, alignment: 'center' as const },
-          { text: row.progress ? (progressLabelMap.get(row.progress) ?? row.progress) : '', fontSize: 7, margin: CELL_MARGIN },
+          { text: row.phaseId ? (progressLabelMap.get(row.phaseId) ?? '') : '', fontSize: 7, margin: CELL_MARGIN },
           { text: String(row.skuForecast ?? ''), fontSize: 7, alignment: 'right' as const, margin: CELL_MARGIN },
           { text: String(row.qtyForecast ?? ''), fontSize: 7, alignment: 'right' as const, margin: CELL_MARGIN },
           marginCell,
@@ -389,10 +401,9 @@ export async function buildCollectionLayoutPdf(
     footer: (currentPage: number, totalPages: number) =>
       buildPdfFooter(currentPage, totalPages, {
         logoDataUri: company.companyLogoDataUri,
-
         address: company.address,
         footerText: company.exportSettings.footerText,
-      }),
+      }, extraFooterNote),
     content,
   };
 

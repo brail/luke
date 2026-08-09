@@ -40,10 +40,11 @@ import {
 } from '../../../../components/ui/select';
 import { Switch } from '../../../../components/ui/switch';
 import { Textarea } from '../../../../components/ui/textarea';
-import { useToast } from '../../../../hooks/use-toast';
 import { usePermission } from '../../../../hooks/usePermission';
+import { useToast } from '../../../../hooks/useToast';
 import { debugLog, debugWarn } from '../../../../lib/debug';
 import { trpc } from '../../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 export default function LdapSettingsPage() {
   const { data: _session, status } = useSession();
@@ -68,7 +69,7 @@ export default function LdapSettingsPage() {
     },
   });
 
-  // Stato per i flag di presenza dei campi sensibili
+  // State for flags indicating presence of sensitive fields
   const [hasBindDN, setHasBindDN] = React.useState(false);
   const [hasBindPassword, setHasBindPassword] = React.useState(false);
   const [testConnectionStatus, setTestConnectionStatus] = React.useState<
@@ -88,7 +89,7 @@ export default function LdapSettingsPage() {
     error: configError,
   } = trpc.integrations.auth.getLdapConfig.useQuery(undefined);
 
-  // Aggiorna form quando arriva la configurazione esistente
+  // Update form when existing configuration arrives
   useEffect(() => {
     if (existingConfig) {
       form.reset({
@@ -116,9 +117,9 @@ export default function LdapSettingsPage() {
       setTestConnectionStatus('idle');
       setTestConnectionMessage('');
     },
-    onError: (err: any) => {
+    onError: err => {
       toast.error('Errore durante il salvataggio', {
-        description: err.message,
+        description: getTrpcErrorMessage(err),
       });
       debugWarn('LDAP save error:', err);
     },
@@ -133,26 +134,27 @@ export default function LdapSettingsPage() {
           'Connessione al server LDAP stabilita con successo'
         );
       },
-      onError: (err: any) => {
+      onError: err => {
+        const message = getTrpcErrorMessage(err);
         toast.error('Test connessione fallito', {
-          description: err.message,
+          description: message,
         });
         setTestConnectionStatus('error');
-        setTestConnectionMessage(err.message);
+        setTestConnectionMessage(message);
         debugWarn('LDAP connection test error:', err);
       },
     });
 
   const testSearchMutation = trpc.integrations.auth.testLdapSearch.useMutation({
-    onSuccess: (data: any) => {
+    onSuccess: data => {
       toast.success(`Test ricerca LDAP: ${data.message}`);
       debugLog('LDAP Search Results:', data);
       setShowSearchDialog(false);
       setSearchUsername('');
     },
-    onError: (err: any) => {
+    onError: err => {
       toast.error('Test ricerca fallito', {
-        description: err.message,
+        description: getTrpcErrorMessage(err),
       });
       debugWarn('LDAP search test error:', err);
     },
@@ -455,6 +457,7 @@ export default function LdapSettingsPage() {
   "CN=Users,DC=example,DC=com": "viewer"
 }`}
                       disabled={!canUpdate || !form.watch('enabled')}
+                      // 120px: enough rows to show the JSON placeholder example without scrolling; no exact scale match
                       className="min-h-[120px] font-mono"
                       {...field}
                     />

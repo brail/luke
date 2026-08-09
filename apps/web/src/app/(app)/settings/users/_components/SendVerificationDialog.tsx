@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from '../../../../../components/ui/dialog';
 import { trpc } from '../../../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
 interface Props {
   userId: string | null;
@@ -20,8 +21,8 @@ interface Props {
 }
 
 /**
- * Dialog riusabile per conferma invio email verifica post-creazione utente
- * Usa endpoint admin requestEmailVerificationAdmin
+ * Confirmation dialog for sending an email verification link to a newly created user.
+ * @param userId - ID of the user to send the verification email to; no-op when null.
  */
 export function SendVerificationDialog({ userId, open, onOpenChange }: Props) {
   const sendVerifyMutation =
@@ -33,8 +34,8 @@ export function SendVerificationDialog({ userId, open, onOpenChange }: Props) {
       await sendVerifyMutation.mutateAsync({ userId });
       toast.success('Email di verifica inviata');
       onOpenChange(false);
-    } catch (err: any) {
-      toast.error(err?.message || 'Impossibile inviare email. Verifica SMTP.');
+    } catch (err: unknown) {
+      toast.error(getTrpcErrorMessage(err) || 'Impossibile inviare email. Verifica SMTP.');
     }
   };
 

@@ -9,7 +9,8 @@
  */
 
 /**
- * Environment configuration interface
+ * Snapshot of the current environment configuration as resolved at call time.
+ * Returned by `getEnvConfig()`.
  */
 export interface EnvConfig {
   /** API base URL for backend communication */
@@ -22,15 +23,18 @@ export interface EnvConfig {
   isServer: boolean;
 }
 
-// Minimal interface to avoid full PrismaClient dependency issues in core
+/**
+ * Minimal Prisma client interface for reading AppConfig entries.
+ * Avoids importing the full PrismaClient in `@luke/core` to prevent circular dependencies.
+ */
 export interface IPrismaConfigClient {
   appConfig: {
     findUnique(args: {
       where: { key: string };
     }): Promise<{ value: string; isEncrypted?: boolean } | null>;
-    [key: string]: any;
+    [key: string]: any; // other Prisma methods (upsert, etc.) not typed here — see note above on circular dep
   };
-  [key: string]: any;
+  [key: string]: any; // allows a full PrismaClient to satisfy the interface without importing its types
 }
 
 /**

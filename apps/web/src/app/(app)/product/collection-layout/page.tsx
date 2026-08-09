@@ -1,17 +1,18 @@
 'use client';
 
-import { History, Plus } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { History } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
-import { COLLECTION_PROGRESS, type CollectionLayoutRowInput } from '@luke/core';
+import type { CollectionLayoutRowInput } from '@luke/core';
 
+import { CreateActionButton } from '../../../../components/CreateActionButton';
 import { PageHeader } from '../../../../components/PageHeader';
+import { PermissionButton } from '../../../../components/PermissionButton';
 import { SectionCard } from '../../../../components/SectionCard';
-import { Button } from '../../../../components/ui/button';
 import { Card, CardContent } from '../../../../components/ui/card';
 import { useAppContext } from '../../../../contexts/AppContextProvider';
 import { usePermission } from '../../../../hooks/usePermission';
@@ -19,12 +20,12 @@ import { triggerDownload } from '../../../../lib/download';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
-import { CollectionDeadlineBanner } from './_components/CollectionDeadlineBanner';
 import { CollectionGroupDialog } from './_components/CollectionGroupDialog';
 import { CollectionLayoutSummary } from './_components/CollectionLayoutSummary';
 import { CollectionLayoutTable } from './_components/CollectionLayoutTable';
 import { CollectionRowDrawer } from './_components/CollectionRowDrawer';
-import { CreateRevisionDrawer } from './_components/CreateRevisionDrawer';
+import { CreateRevisionDialog } from './_components/CreateRevisionDialog';
+import { CriticalityLayoutBanner } from './_components/CriticalityLayoutBanner';
 import { EmptyCollectionLayoutState } from './_components/EmptyCollectionLayoutState';
 
 type CollectionLayoutData = NonNullable<
@@ -33,42 +34,9 @@ type CollectionLayoutData = NonNullable<
 type CollectionGroupData = CollectionLayoutData['groups'][number];
 type CollectionRowData = CollectionGroupData['rows'][number];
 
-type CalEventSlim = { startAt: string | Date; requiredCollectionProgress: string | null; progressWarningDays: number | null };
-type RowSlim = { id: string; progress: string | null };
-
-function computeLaggingRowIds(
-  groups: Array<{ rows: RowSlim[] }>,
-  events: CalEventSlim[],
-): Set<string> | undefined {
-  const progressIndex = Object.fromEntries(COLLECTION_PROGRESS.map((p, i) => [p, i]));
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  const activeRequiredProgress = new Set<string>();
-  for (const event of events) {
-    if (!event.requiredCollectionProgress) continue;
-    const target = new Date(event.startAt);
-    target.setHours(0, 0, 0, 0);
-    const daysLeft = Math.round((target.getTime() - now.getTime()) / 86_400_000);
-    if (daysLeft >= 0 && daysLeft <= (event.progressWarningDays ?? 7)) {
-      activeRequiredProgress.add(event.requiredCollectionProgress);
-    }
-  }
-  if (activeRequiredProgress.size === 0) return undefined;
-  const minReqIdx = Math.min(...[...activeRequiredProgress].map(p => progressIndex[p] ?? 0));
-  const lagging = new Set<string>();
-  for (const group of groups) {
-    for (const row of group.rows) {
-      const rowIdx = row.progress ? (progressIndex[row.progress] ?? -1) : -1;
-      if (rowIdx < minReqIdx) lagging.add(row.id);
-    }
-  }
-  return lagging.size > 0 ? lagging : undefined;
-}
-
 export default function CollectionLayoutPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
   const { can } = usePermission();
-  const router = useRouter();
   const canUpdate = can('collection_layout:update');
   const canRevise = can('collection_layout:revise');
   const canViewRevisions = can('collection_layout:view_revisions');
@@ -80,24 +48,15 @@ export default function CollectionLayoutPage() {
       { brandId: brand?.id ?? '', seasonId: season?.id ?? '' },
       { enabled }
     );
-  const layout: CollectionLayoutData | null = (layoutData as any) ?? null;
+  // TS2589: RouterOutputs type is excessively deep — as any breaks instantiation before ?? null.
+  // Can't route this through narrowRouterOutput<T>() like the other two sites: T here IS the full
+  // deep RouterOutputs type (not a shallow hand-written interface), so instantiating a generic
+  // function with it is itself what triggers TS2589 — only a plain expression-level `as` cast avoids it.
+  const layout = ((layoutData as any) ?? null) as CollectionLayoutData | null;
 
   const { data: parameterSets = [] } = trpc.pricing.parameterSets.list.useQuery(
     { brandId: brand?.id ?? '', seasonId: season?.id ?? '' },
     { enabled }
-  );
-
-  const { data: rawCalendarEvents = [] } = trpc.seasonCalendar.listEventsForCollection.useQuery(
-    { brandId: brand?.id ?? '', seasonId: season?.id ?? '' },
-    { enabled, staleTime: 60_000 },
-  );
-  const calendarEvents = rawCalendarEvents as CalEventSlim[];
-
-  // cast breaks TS2589 deep instantiation from RouterOutputs
-  const layoutGroupsSlim = layout?.groups as Array<{ rows: RowSlim[] }> | undefined;
-  const laggingRowIds = useMemo(
-    () => layoutGroupsSlim ? computeLaggingRowIds(layoutGroupsSlim, calendarEvents) : undefined,
-    [layoutGroupsSlim, calendarEvents],
   );
 
   const utils = trpc.useUtils();
@@ -107,6 +66,7 @@ export default function CollectionLayoutPage() {
       brandId: brand?.id,
       seasonId: season?.id,
     });
+    utils.phaseAlert.invalidate();
   };
 
   // ─── UI state ───────────────────────────────────────────────────
@@ -128,9 +88,12 @@ export default function CollectionLayoutPage() {
     group?: CollectionGroupData;
   } | null>(null);
 
+  // Holds the id, not the row: the state snapshot would lag behind the live query
+  // (row completion writes and invalidates while drawer is open), and the row
+  // re-resolves anyway every render — see `editingRow`.
   const [rowDrawer, setRowDrawer] = useState<{
     mode: 'create' | 'edit';
-    row?: CollectionRowData;
+    rowId?: string;
     defaultGroupId?: string;
   } | null>(null);
 
@@ -185,19 +148,21 @@ export default function CollectionLayoutPage() {
   });
 
   const createRowMutation = trpc.collectionLayout.rows.create.useMutation({
-    onSuccess: () => {
+    onSuccess: result => {
       toast.success('Riga creata');
       setRowDrawer(null);
       invalidateLayout();
+      utils.auditLog.getLastChange.invalidate({ targetType: 'CollectionLayoutRow', targetId: result.id });
     },
     onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
   });
 
   const updateRowMutation = trpc.collectionLayout.rows.update.useMutation({
-    onSuccess: () => {
+    onSuccess: result => {
       toast.success('Riga aggiornata');
       setRowDrawer(null);
       invalidateLayout();
+      utils.auditLog.getLastChange.invalidate({ targetType: 'CollectionLayoutRow', targetId: result.id });
     },
     onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
   });
@@ -235,9 +200,7 @@ export default function CollectionLayoutPage() {
       ),
     onError: (err: unknown) =>
       toast.error(
-        getTrpcErrorMessage(err, {
-          default: "Errore durante l'esportazione XLSX",
-        })
+        getTrpcErrorMessage(err, { default: "Errore durante l'esportazione XLSX" })
       ),
   });
 
@@ -246,9 +209,7 @@ export default function CollectionLayoutPage() {
       triggerDownload(result.data, result.filename, 'application/pdf'),
     onError: (err: unknown) =>
       toast.error(
-        getTrpcErrorMessage(err, {
-          default: "Errore durante l'esportazione PDF",
-        })
+        getTrpcErrorMessage(err, { default: "Errore durante l'esportazione PDF" })
       ),
   });
 
@@ -280,17 +241,52 @@ export default function CollectionLayoutPage() {
   const handleRowSubmit = (data: CollectionLayoutRowInput) => {
     if (rowDrawer?.mode === 'create') {
       createRowMutation.mutate(data);
-    } else if (rowDrawer?.mode === 'edit' && rowDrawer.row) {
-      updateRowMutation.mutate({ rowId: rowDrawer.row.id, data });
+    } else if (rowDrawer?.mode === 'edit' && rowDrawer.rowId) {
+      updateRowMutation.mutate({ rowId: rowDrawer.rowId, data });
     }
   };
 
-  // Usa sempre i dati freschi dalla query live per evitare snapshot stale nel drawer
-  const openEditRow = (row: CollectionRowData) => {
-    const fresh =
-      layout?.groups.flatMap(g => g.rows).find(r => r.id === row.id) ?? row;
-    setRowDrawer({ mode: 'edit', row: fresh });
-  };
+  const openEditRow = (row: CollectionRowData) => setRowDrawer({ mode: 'edit', rowId: row.id });
+
+  /** Riga in modifica, risolta a ogni render dalla query live invece che da uno snapshot in state:
+   * la conclusione della riga scrive subito e invalida il layout mentre il drawer è aperto.
+   * Deliberatamente non memoizzata — una dependency array dovrebbe includere `layout` intero
+   * (troppo profondo per TS, vedi TS2589 nel deep-link sotto), e una chiave più stretta come
+   * `layout.updatedAt` non cambierebbe alla modifica di una riga, restituendo un dato vecchio.
+   * La scansione è lineare su qualche centinaio di righe, in una pagina che ne renderizza altrettante. */
+  const editingRow: CollectionRowData | undefined = rowDrawer?.rowId
+    ? (layout?.groups as { rows: CollectionRowData[] }[] | undefined)
+        ?.flatMap(g => g.rows)
+        .find(r => r.id === rowDrawer.rowId)
+    : undefined;
+
+  // Deep-link from the "Fase scaduta" notification (?rowId=...): opens that row's edit drawer
+  // once the layout has loaded, then strips the param so closing the drawer or refreshing doesn't
+  // reopen it. Row not found means the currently-selected brand/season doesn't match the one the
+  // notification was about — the page doesn't switch brand/season from the link (that's a
+  // separate, server-side user-preference concern, see milestoneDeadlineScheduler.ts) — so this
+  // is the expected failure mode, not an edge case, and gets an explicit toast rather than a
+  // silent no-op.
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const deepLinkHandledRef = useRef(false);
+  useEffect(() => {
+    if (deepLinkHandledRef.current || !layout) return;
+    const rowId = searchParams.get('rowId');
+    if (!rowId) return;
+    deepLinkHandledRef.current = true;
+    router.replace('/product/collection-layout');
+    // `as any` breaks instantiation depth before `.flatMap().find()` — same TS2589 workaround as
+    // the `layout` cast above (RouterOutputs is too deep for TS to chain two array ops over it).
+    const row = (layout.groups as any).flatMap((g: any) => g.rows).find((r: any) => r.id === rowId) as CollectionRowData | undefined;
+    if (row) {
+      openEditRow(row);
+    } else {
+      toast.error('Riga non trovata nel brand/stagione corrente — verifica di aver selezionato il contesto giusto');
+    }
+    // Depend on `layout?.id` (shallow) rather than `layout` itself — putting the full RouterOutputs
+    // type in a dependency array tuple hits the same TS2589 instantiation-depth wall as above.
+  }, [layout?.id, searchParams, router]);
 
   // ─── Render ─────────────────────────────────────────────────────
   if (contextLoading || layoutLoading) {
@@ -307,30 +303,27 @@ export default function CollectionLayoutPage() {
         title="Collection Layout"
         description={
           brand && season
-            ? `Collezione ${brand.name} — ${season.code} ${season.name}`
+            ? `Collezione ${brand.name} — ${season.code} ${season.year}`
             : 'Pianificazione collezione stagionale'
         }
         actions={layout && (
           <div className="flex items-center gap-2">
-            {canViewRevisions && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => router.push(`/product/collection-layout/revisions?layoutId=${layout.id}` as string as never)}
-              >
-                <History className="h-4 w-4 mr-1.5" />
-                Storico revisioni
-              </Button>
-            )}
-            {canRevise && (
-              <Button
-                size="sm"
-                onClick={() => setShowCreateRevision(true)}
-              >
-                <Plus className="h-4 w-4 mr-1.5" />
-                Crea revisione
-              </Button>
-            )}
+            <PermissionButton
+              hasPermission={canViewRevisions}
+              tooltip="Non hai i permessi per visualizzare le revisioni"
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(`/product/collection-layout/revisions?layoutId=${layout.id}` as string as never)}
+            >
+              <History className="h-4 w-4 mr-1.5" />
+              Storico revisioni
+            </PermissionButton>
+            <CreateActionButton
+              label="Crea revisione"
+              onClick={() => setShowCreateRevision(true)}
+              canCreate={canRevise}
+              resourceName="revisioni"
+            />
           </div>
         )}
       />
@@ -347,20 +340,18 @@ export default function CollectionLayoutPage() {
           <EmptyCollectionLayoutState
             brandId={brand.id}
             seasonId={season.id}
-            onCreateEmpty={(availableGenders) =>
+            onCreateEmpty={() =>
               getOrCreateMutation.mutate({
                 brandId: brand.id,
                 seasonId: season.id,
-                availableGenders,
               })
             }
-            onCopyFromSeason={(fromSeasonId, rows) =>
+            onCopyFromSeason={fromSeasonId =>
               copyFromSeasonMutation.mutate({
                 fromBrandId: brand.id,
                 fromSeasonId,
                 toBrandId: brand.id,
                 toSeasonId: season.id,
-                rows,
               })
             }
             isLoading={
@@ -370,21 +361,14 @@ export default function CollectionLayoutPage() {
         </SectionCard>
       ) : (
         <>
+          <CriticalityLayoutBanner collectionLayoutId={layout.id} />
           <CollectionLayoutSummary layout={layout} />
-          {brand && season && (
-            <CollectionDeadlineBanner
-              brandId={brand.id}
-              seasonId={season.id}
-              allRows={layout.groups.flatMap(g => g.rows)}
-            />
-          )}
           <Card>
             <CardContent className="pt-6">
               <CollectionLayoutTable
                 layout={layout}
                 canUpdate={canUpdate}
                 parameterSets={parameterSets}
-                laggingRowIds={laggingRowIds}
                 onAddGroup={() => setGroupDialog({ mode: 'create' })}
                 onAddRow={groupId =>
                   setRowDrawer({ mode: 'create', defaultGroupId: groupId })
@@ -438,7 +422,6 @@ export default function CollectionLayoutPage() {
                 layout={layout}
                 canUpdate={canUpdate}
                 parameterSets={parameterSets}
-                laggingRowIds={laggingRowIds}
                 onAddGroup={() => setGroupDialog({ mode: 'create' })}
                 onAddRow={groupId =>
                   setRowDrawer({ mode: 'create', defaultGroupId: groupId })
@@ -496,22 +479,24 @@ export default function CollectionLayoutPage() {
             if (!open) setRowDrawer(null);
           }}
           mode={rowDrawer?.mode ?? 'create'}
-          row={rowDrawer?.row}
+          row={editingRow}
           defaultGroupId={rowDrawer?.defaultGroupId}
           groups={layout.groups}
           parameterSets={parameterSets}
-          availableGenders={layout.availableGenders ?? ['MAN', 'WOMAN']}
+          availableGenders={layout.availableGenders}
+          brandId={brand?.id ?? ''}
+          seasonId={season?.id ?? ''}
           onSubmit={handleRowSubmit}
           onPictureUploaded={() => invalidateLayout()}
-          onQuotationChange={() => invalidateLayout()}
+          onCompletionChanged={() => invalidateLayout()}
           isLoading={isMutating}
           canUpdate={canUpdate}
         />
       )}
 
-      {/* Create revision drawer */}
+      {/* Create revision dialog */}
       {layout && (
-        <CreateRevisionDrawer
+        <CreateRevisionDialog
           open={showCreateRevision}
           onOpenChange={setShowCreateRevision}
           layout={layout}

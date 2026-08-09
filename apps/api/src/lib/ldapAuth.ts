@@ -1,10 +1,9 @@
 /**
- * Modulo per autenticazione LDAP
- * Gestisce connessione, ricerca utenti e mapping ruoli
+ * LDAP authentication module.
+ * Manages directory connection, user search, credential verification, and role mapping.
  */
 
 import { TRPCError } from '@trpc/server';
-import type { Entry } from 'ldapts';
 import pino from 'pino';
 
 import {
@@ -13,10 +12,14 @@ import {
   getLdapResilienceConfig,
   type LdapConfig,
 } from './configManager';
+import { sendVerificationEmail } from './emailHelpers';
 import { ResilientLdapClient } from './ldapClient';
 
+import type { PrismaClient, User } from '@prisma/client';
+import type { Entry } from 'ldapts';
+
 /**
- * Helper per normalizzare un attributo ldapts a array di stringhe
+ * Helper to normalize an ldapts attribute into an array of strings
  */
 function getAttr(entry: Entry, key: string): string[] {
   const v = entry[key];
@@ -25,13 +28,18 @@ function getAttr(entry: Entry, key: string): string[] {
   return typeof v === 'string' ? [v] : [];
 }
 
-import type { PrismaClient, User } from '@prisma/client';
+/**
+ * True if the email is the synthetic one generated for an LDAP user with no `mail` value set.
+ */
+export function isSyntheticLdapEmail(email: string): boolean {
+  return email.endsWith('@ldap.local');
+}
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
 /**
- * Escapa i caratteri speciali LDAP in un valore da inserire in un filtro di ricerca.
- * Segue RFC 4515 (Section 3).
+ * Escapes special characters in a value to be safely embedded in an LDAP search filter.
+ * Follows RFC 4515 §3.
  */
 export function escapeLdapFilter(value: string): string {
   return value
@@ -43,11 +51,14 @@ export function escapeLdapFilter(value: string): string {
 }
 
 /**
- * Autentica un utente via LDAP
- * @param prisma - Client Prisma
- * @param username - Username dell'utente
- * @param password - Password dell'utente
- * @returns User object se autenticazione riuscita, null altrimenti
+ * Authenticates a user against the configured LDAP directory.
+ * Performs bind authentication, group-based role resolution, and
+ * creates or updates the local user record on success.
+ *
+ * @param prisma - Prisma client.
+ * @returns Local `User` record on success, or `null` if authentication fails
+ *   (LDAP disabled, user not found, or invalid credentials).
+ * @throws {TRPCError} If the LDAP configuration is incomplete or an unexpected error occurs.
  */
 export async function authenticateViaLdap(
   prisma: PrismaClient,
@@ -57,19 +68,19 @@ export async function authenticateViaLdap(
   let ldapClient: ResilientLdapClient | null = null;
 
   try {
-    // Recupera configurazioni LDAP
+    // Fetch LDAP configurations
     const [config, resilienceConfig] = await Promise.all([
       getLdapConfig(prisma),
       getLdapResilienceConfig(prisma),
     ]);
 
-    // Verifica che LDAP sia abilitato
+    // Check that LDAP is enabled
     if (!config.enabled) {
       logger.debug('LDAP authentication disabled');
       return null;
     }
 
-    // Verifica che la configurazione sia completa
+    // Check that the configuration is complete
     if (!config.url || !config.searchBase || !config.searchFilter) {
       logger.error('LDAP configuration incomplete');
       throw new TRPCError({
@@ -80,16 +91,16 @@ export async function authenticateViaLdap(
 
     logger.info({ username }, 'Attempting LDAP authentication');
 
-    // Crea client LDAP resiliente
+    // Create resilient LDAP client
     ldapClient = new ResilientLdapClient(config, resilienceConfig, logger);
     await ldapClient.connect();
 
-    // Bind amministrativo per cercare l'utente
+    // Administrative bind to search for the user
     if (config.bindDN && config.bindPassword) {
       await ldapClient.bind(config.bindDN, config.bindPassword);
     }
 
-    // Cerca l'utente
+    // Search for the user
     const userResult = await searchUser(ldapClient, config, username);
     if (!userResult) {
       logger.info({ username }, 'User not found in LDAP');
@@ -98,7 +109,7 @@ export async function authenticateViaLdap(
 
     const { dn: userDN, attributes: userAttributes } = userResult;
 
-    // Verifica le credenziali dell'utente
+    // Verify the user's credentials
     const isValidCredentials = await verifyUserCredentials(
       ldapClient,
       userDN,
@@ -109,18 +120,18 @@ export async function authenticateViaLdap(
       return null;
     }
 
-    // Ripristina il bind amministrativo per la ricerca gruppi,
-    // poiché verifyUserCredentials lega il client come utente finale
+    // Restore the administrative bind for the group search,
+    // since verifyUserCredentials binds the client as the end user
     if (config.bindDN && config.bindPassword) {
       await ldapClient.bind(config.bindDN, config.bindPassword);
     }
 
-    // Cerca i gruppi dell'utente
+    // Search for the user's groups
     const userGroups = await searchUserGroups(ldapClient, config, userDN);
 
     const role = determineUserRole(userGroups, config.roleMapping, logger);
 
-    // Crea o aggiorna l'utente nel database
+    // Create or update the user in the database
     const user = await createOrUpdateUser(
       prisma,
       username,
@@ -142,9 +153,10 @@ export async function authenticateViaLdap(
     throw new TRPCError({
       code: 'INTERNAL_SERVER_ERROR',
       message: 'Errore durante autenticazione LDAP',
+      cause: error,
     });
   } finally {
-    // Chiudi connessione LDAP
+    // Close LDAP connection
     if (ldapClient) {
       try {
         await ldapClient.unbind();
@@ -159,7 +171,7 @@ export async function authenticateViaLdap(
 }
 
 /**
- * Cerca un utente nel server LDAP
+ * Search for a user on the LDAP server
  */
 async function searchUser(
   client: ResilientLdapClient,
@@ -187,32 +199,27 @@ async function searchUser(
     ],
   };
 
-  try {
-    const entries = await client.search(config.searchBase, options);
+  const entries = await client.search(config.searchBase, options);
 
-    if (entries.length === 0) {
-      return null;
-    }
-
-    // Prendi il primo risultato
-    // ldapts restituisce entry flat: { dn: string; [key]: string | string[] }
-    const entry = entries[0];
-    const dn = entry.dn;
-    const attributes: Record<string, string[]> = {};
-    for (const key of Object.keys(entry)) {
-      if (key === 'dn') continue;
-      attributes[key] = getAttr(entry, key);
-    }
-
-    return { dn, attributes };
-  } catch (error) {
-    // Il client resiliente gestisce già la mappatura degli errori
-    throw error;
+  if (entries.length === 0) {
+    return null;
   }
+
+  // Take the first result
+  // ldapts returns a flat entry: { dn: string; [key]: string | string[] }
+  const entry = entries[0];
+  const dn = entry.dn;
+  const attributes: Record<string, string[]> = {};
+  for (const key of Object.keys(entry)) {
+    if (key === 'dn') continue;
+    attributes[key] = getAttr(entry, key);
+  }
+
+  return { dn, attributes };
 }
 
 /**
- * Verifica le credenziali dell'utente
+ * Verify the user's credentials
  */
 async function verifyUserCredentials(
   client: ResilientLdapClient,
@@ -223,17 +230,17 @@ async function verifyUserCredentials(
     await client.bind(userDN, password);
     return true;
   } catch (error) {
-    // Se è un errore di credenziali, restituisci false
+    // If it's a credentials error, return false
     if (error instanceof TRPCError && error.code === 'UNAUTHORIZED') {
       return false;
     }
-    // Per altri errori (rete, timeout), rilancia
+    // For other errors (network, timeout), rethrow
     throw error;
   }
 }
 
 /**
- * Cerca i gruppi dell'utente
+ * Search for the user's groups
  */
 async function searchUserGroups(
   client: ResilientLdapClient,
@@ -259,7 +266,7 @@ async function searchUserGroups(
     const entries = await client.search(config.groupSearchBase, options);
     return entries.map(entry => entry.dn);
   } catch (error) {
-    // Non fallire l'autenticazione per errori di ricerca gruppi
+    // Don't fail authentication on group search errors
     logger.warn(
       { error: error instanceof Error ? error.message : 'Unknown error' },
       'Group search failed, proceeding without group membership'
@@ -269,14 +276,14 @@ async function searchUserGroups(
 }
 
 /**
- * Determina il ruolo dell'utente basato sui gruppi LDAP
+ * Determine the user's role based on LDAP groups
  */
 function determineUserRole(
   userGroups: string[],
   roleMapping: Record<string, string>,
-  log?: any
+  log?: pino.Logger
 ): 'admin' | 'editor' | 'viewer' {
-  // Cerca il mapping più specifico
+  // Look for the most specific mapping
   for (const groupDN of userGroups) {
     if (roleMapping[groupDN]) {
       const role = roleMapping[groupDN];
@@ -289,7 +296,7 @@ function determineUserRole(
     }
   }
 
-  // Default a viewer se nessun mapping trovato (applicato solo alla creazione di nuovi utenti)
+  // Default to viewer if no mapping is found (applied only when creating new users)
   if (log) {
     log.info({ userGroups }, 'No role mapping found for LDAP groups, defaulting to viewer (existing users keep their DB role)');
   }
@@ -297,18 +304,18 @@ function determineUserRole(
 }
 
 /**
- * Crea o aggiorna l'utente nel database
+ * Create or update the user in the database
  */
 async function createOrUpdateUser(
   prisma: PrismaClient,
   username: string,
   role: 'admin' | 'editor' | 'viewer',
-  userAttributes: any
+  userAttributes: Record<string, string[]>
 ): Promise<User> {
-  // Estrai email dagli attributi LDAP
+  // Extract email from LDAP attributes
   const ldapEmail = userAttributes.mail?.[0] || `${username}@ldap.local`;
 
-  // Estrai firstName e lastName dagli attributi LDAP
+  // Extract firstName and lastName from LDAP attributes
   const firstName =
     userAttributes.givenName?.[0] ||
     userAttributes.firstName?.[0] ||
@@ -331,7 +338,7 @@ async function createOrUpdateUser(
     `LDAP attributes for ${username}`
   );
 
-  // Cerca utente esistente (attivi, inclusi quelli in attesa di approvazione)
+  // Look up existing user (active, including those pending approval)
   let user = await prisma.user.findFirst({
     where: {
       username,
@@ -345,7 +352,7 @@ async function createOrUpdateUser(
       `User already exists, syncing firstName/lastName from LDAP`
     );
 
-    // Aggiorna firstName e lastName se sono diversi
+    // Update firstName and lastName if they differ
     if (user.firstName !== firstName || user.lastName !== lastName) {
       user = await prisma.user.update({
         where: { id: user.id },
@@ -360,7 +367,7 @@ async function createOrUpdateUser(
       );
     }
 
-    // Verifica che abbia un'identità LDAP — usa una transaction per evitare race condition
+    // Verify they have an LDAP identity — use a transaction to avoid a race condition
     await prisma.$transaction(async tx => {
       const ldapIdentity = await tx.identity.findFirst({
         where: {
@@ -382,7 +389,7 @@ async function createOrUpdateUser(
       }
     });
   } else {
-    // Crea nuovo utente
+    // Create new user
     user = await prisma.$transaction(async tx => {
       const newUser = await tx.user.create({
         data: {
@@ -410,6 +417,21 @@ async function createOrUpdateUser(
       );
       return newUser;
     });
+
+    // Real email already provided by LDAP: send the verification right away,
+    // no need to wait for the user to enter it manually in /auth/pending.
+    // Fire-and-forget: don't block the login response on the SMTP send.
+    if (!isSyntheticLdapEmail(ldapEmail)) {
+      sendVerificationEmail(prisma, {
+        userId: user.id,
+        reason: 'user_created',
+      }).catch(err => {
+        logger.warn(
+          { username, err },
+          'Failed to send verification email for new LDAP user'
+        );
+      });
+    }
 
     const auditNoTeam = (meta: Record<string, unknown>) =>
       prisma.auditLog.create({

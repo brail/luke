@@ -1,10 +1,12 @@
-import { TRPCError } from '@trpc/server';
 import { Readable } from 'stream';
 
+import { TRPCError } from '@trpc/server';
+
+import { logAudit } from '../lib/auditLog';
 import { streamToBuffer, validateMagicBytes, validateImageFile } from '../lib/imageUpload';
 import { resolvePublicUrl } from '../lib/storageUrl';
-import { logAudit } from '../lib/auditLog';
 import { putObject } from '../storage';
+
 import type { Context } from '../lib/trpc';
 
 const IMAGE_CONFIG = {
@@ -48,6 +50,13 @@ async function storeCollectionRowPicture(
 
 // Upload for an existing row — validates row exists, then stores file (pending).
 // Does NOT update the DB: the pictureKey is confirmed when the form saves via tRPC.
+/**
+ * Uploads a picture for an existing collection row as a pending file. The pictureKey
+ * is persisted only when the row is saved via the tRPC update mutation.
+ *
+ * @throws {TRPCError} NOT_FOUND if the row does not exist.
+ * @throws {TRPCError} BAD_REQUEST if the file type or magic bytes are invalid.
+ */
 export async function uploadCollectionRowPicture(
   ctx: Context,
   params: {
@@ -84,6 +93,12 @@ export async function uploadCollectionRowPicture(
 
 // Upload without a row — used in create mode before the row exists.
 // Returns fileObjectId so the frontend can pass it on form submit to confirm.
+/**
+ * Uploads a picture before the row exists (create-mode). The caller passes the returned
+ * fileObjectId in the row creation payload to confirm the upload.
+ *
+ * @throws {TRPCError} BAD_REQUEST if the file type or magic bytes are invalid.
+ */
 export async function uploadTempCollectionRowPicture(
   ctx: Context,
   params: { file: FileParams }

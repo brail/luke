@@ -1,0 +1,172 @@
+---
+name: luke-bugs
+description: >
+  Deep bug detection scan for the Luke codebase. Finds race conditions, async
+  bugs, N+1 queries, memory leaks, null crashes, error propagation failures,
+  stale closures, React logic bugs, and security logic errors.
+  Use when asked to find bugs, do a bug assessment, or check for runtime issues.
+  Scoping: default = diff vs merge-base. /luke-bugs apps/api | --since <ref> | --full
+context: fork
+agent: Explore
+---
+
+# Luke Deep Bug Scan
+
+Read-only. Do NOT modify any file.
+Find real runtime and logic bugs — not style issues, not architectural drift
+(that's /luke-audit's job). Every finding must be a plausible runtime failure,
+data corruption, or security issue with a realistic failure scenario.
+
+**Leggi per primo `.claude/skills/luke-shared/audit-protocol.md`** e applicalo
+integralmente: scoping sul diff (§1), soppressione via baseline (§2), sezione
+obbligatoria "Promozione a regola" (§3), `lessons.md` come input di check (§4).
+
+Poi leggi:
+
+- `apps/api/prisma/schema.prisma` — understand models and relations
+- `packages/core/src/auth/permissions.ts` — permission model
+- `apps/api/src/lib/` — middleware: requirePermission, auditLog, context
+- `lessons.md` — regressioni già pagate, da riverificare ad ogni run
+
+Scope: risolvilo secondo §1 del protocollo condiviso — `$ARGUMENTS` vuoto significa
+**diff vs merge-base**, non intero monorepo.
+
+## Un bug riproducibile diventa un test
+
+Per ogni finding CRITICAL o HIGH, includi nel fix il test che la coprirebbe
+(descrizione, file di destinazione, asserzione chiave). Un bug corretto senza test
+è un bug che può tornare: è la stessa gerarchia dei controlli del §3 del protocollo,
+applicata al comportamento invece che alla sintassi. Se il progetto ha già la suite
+adatta, indica il file; altrimenti indica dove andrebbe creata.
+
+---
+
+## Aree di controllo
+
+Tre aree, un passaggio solo. Vedi la nota sul fan-out in `../luke-shared/audit-protocol.md` §6.
+
+### 1 — Race Conditions, Async & Database
+
+**Race conditions & atomicity:**
+
+- Check-then-act without `$transaction`: `findUnique/findFirst` followed by `create/update/upsert` on related data outside a transaction
+- `pauseNavScheduler()` / `resumeNavScheduler()` not called symmetrically — if exception thrown between pause and resume, scheduler stays paused forever
+- RBAC cache: any write to RBAC AppConfig keys without `invalidateRbacCache()` immediately after
+- `prisma.$transaction([...])` array syntax where operations depend on each other (should use callback syntax)
+
+**Async/await bugs:**
+
+- `someAsync()` called without `await` and without `.catch()` — silent fire-and-forget <!-- skill-check-ignore -->
+- `Promise.all([...])` where one failure is not rethrown or logged
+- `Promise.allSettled` results iterated without checking `status === 'rejected'`
+- `array.forEach(async item => { await ... })` — forEach doesn't await async callbacks. Should be `await Promise.all(array.map(...))` or `for...of`
+- tRPC procedures calling NAV/SMTP/LDAP without try/catch — unhandled exception → 500 with no useful message
+- `setTimeout`/`setInterval` results not stored and not cleared on cleanup
+
+**Prisma & database:**
+
+- N+1 queries: loops containing `prisma.*.findUnique/findFirst` — should use `findMany` with `where: { id: { in: ids } }` or `include`
+- `findMany` without `select` on tables with sensitive fields (passwords, encrypted values)
+- Hard deletes `prisma.*.delete(` outside migration scripts (should be soft delete `isActive: false`)
+- `findMany` without `take`/`skip`/cursor on tables that grow unboundedly (audit logs, sync history, collection rows)
+- `findUnique` result used without null check before accessing properties
+
+**Catch blocks:**
+
+- Empty or silent catch: `} catch (err) { }` or `} catch { return null }` without at minimum `logger.error()` or `debugError()`
+- Error logged but not rethrown when caller needs to know it failed
+- `new TRPCError({ code: 'INTERNAL_SERVER_ERROR' })` without `cause:` — root cause disappears from logs
+
+---
+
+### 2 — Memory Leaks, Null Crashes & Error Propagation
+
+**Memory leaks & resource cleanup:**
+
+- `useEffect` in `apps/web/src/` with subscriptions, event listeners, intervals, or WebSocket connections opened without a cleanup return function
+- `window.addEventListener` / `document.addEventListener` without corresponding `removeEventListener` in cleanup
+- mssql `ConnectionPool` opened in test/preview functions without try/finally that closes the pool in all code paths
+- Module-level variables that accumulate data without bounds (in-memory caches without TTL or max size)
+- Prisma client instantiated at module level in Next.js pages (should be singleton via `globalThis`)
+
+**Null/undefined crashes:**
+
+- `value!.property` non-null assertion without preceding null check
+- `array[0]` or `array[index]` without bounds check — especially in tRPC result processing
+- `JSON.parse(someString)` outside try/catch — malformed input crashes process. Especially dangerous in AppConfig value parsing and LDAP roleMapping
+- Optional chaining `a?.b?.c` where null result is passed to a function expecting a value — silent wrong behavior
+
+**Error propagation:**
+
+- Sync operation failures (NAV sync errors) caught in orchestrator but not stored anywhere queryable — user has no way to know sync failed
+- `logAudit()` failures: if audit log write throws, does it crash the mutation or silently continue? Should never block primary operation but must log to fallback
+- tRPC error handlers that catch specific error but throw generic one — original error disappears
+
+---
+
+### 3 — React, Frontend Logic & Auth Bugs
+
+**React logic bugs (apps/web/src only):**
+
+- Stale closures: `useEffect`, `useCallback`, `useMemo` with dependency arrays missing variables referenced inside the callback
+- Direct state mutation: `items.push(newItem)` or `state.property = value` — React won't re-render
+- tRPC query hooks used without handling `isLoading`, `isError` states — UI crashes on error with no feedback
+- `useMutation` with `onMutate` optimistic update missing `onError` rollback — failed mutation leaves UI in incorrect state permanently
+- Lists rendered with index as key when items can be reordered/filtered — causes React to reuse wrong component instances
+- Mutations that modify data without calling `utils.entity.invalidate()` — sibling components show stale data
+
+**Security & auth logic bugs** (logic errors spotted while scanning — the dedicated
+security hunt with attack scenarios is /luke-security's job):
+
+- tRPC procedures that fetch resource by ID then apply permission check without verifying the resource belongs to the requesting user's context (IDOR: user A accesses user B's resource by guessing ID)
+- Error messages including SQL error details, file paths, stack traces, or internal IDs sent to frontend
+- Auth endpoints (login, password reset, email verification) without rate limiting policy in AppConfig
+- `getApiJwtSecret()` or `getNextAuthSecret()` called in client-side code or logged anywhere
+- `requirePermission` check + sensitive DB write in same procedure but NOT in a transaction (permission can be revoked between check and write)
+
+---
+
+## Report Format
+
+```
+## Luke Bug Scan Report
+Scanned: <path or 'full monorepo'>
+Date: <today>
+
+### Summary
+| Category                        | CRITICAL | HIGH | MEDIUM |
+|---------------------------------|----------|------|--------|
+| Race Conditions, Async & DB     |    N     |  N   |   N    |
+| Memory, Null & Error Propagation|    N     |  N   |   N    |
+| React, Frontend & Auth Logic    |    N     |  N   |   N    |
+
+### Severity Guide
+- CRITICAL: data corruption, auth bypass, potential data loss
+- HIGH: runtime crash in production, silent failure corrupting state
+- MEDIUM: degraded behavior, missing error feedback, perf issue at scale
+
+### Findings
+
+#### [CATEGORY]
+
+**[SEVERITY]** — <title>
+File: `path/to/file.ts:line`
+Scenario: <exact sequence of events that causes the bug>
+Impact: <what goes wrong>
+Fix:
+\`\`\`typescript
+// proposed fix
+\`\`\`
+Test di regressione: <file di destinazione + asserzione chiave>
+
+### Promozione a regola
+<sezione obbligatoria — vedi §3 del protocollo condiviso>
+```
+
+### Rules
+
+- Report ONLY plausible bugs with a realistic failure scenario
+- If you can't describe the exact scenario, don't report it
+- No style issues, no architectural drift — that's /luke-audit
+- Max 25 findings — cut MEDIUM first if over limit
+- If category is clean: `✅ No findings`

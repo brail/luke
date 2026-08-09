@@ -1,6 +1,3 @@
-import type { PrismaClient } from '@prisma/client';
-import type { Content, TDocumentDefinitions, TFontDictionary } from 'pdfmake/interfaces';
-
 import {
   CompanyAddressSchema,
   CompanyExportSettingsSchema,
@@ -8,7 +5,13 @@ import {
   type CompanyExportSettings,
 } from '@luke/core';
 
+
 import { readFileBuffer } from '../../storage/index.js';
+
+import type { PrismaClient } from '@prisma/client';
+import type { Content, TDocumentDefinitions, TFontDictionary } from 'pdfmake/interfaces';
+
+
 
 export { Content, TDocumentDefinitions, TFontDictionary };
 
@@ -39,25 +42,88 @@ export const LUKE_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0
   <circle cx="250.00" cy="578.34" r="14.49"/>
 </svg>`;
 
-let cachedFonts: TFontDictionary | null = null;
+/**
+ * pdfmake singleton, obtained with `require` and not with `import * as`.
+ *
+ * `import * as` produces a **sealed** namespace object: `setFonts()` assigns
+ * `this.fonts` and fails with `Cannot redefine property: fonts`. We need the
+ * real CJS object, which is mutable. The cast to `typeof import(...)` still
+ * keeps the real typings, so the surface used stays checked by `tsc`.
+ */
+const pdfMake = require('pdfmake') as typeof import('pdfmake');
 
-export function getPdfFonts(): TFontDictionary {
-  if (!cachedFonts) {
-    // pdfmake/build/vfs_fonts exports the VFS object directly (not pdfMake.vfs)
-    // eslint-disable-next-line no-undef
+let pdfMakeConfigured = false;
+
+/**
+ * Configures the pdfmake singleton: fonts in the virtual file system and
+ * access policy. Idempotent, run on the first export.
+ *
+ * ## Why fonts go through the VFS and not as a Buffer
+ *
+ * Up to pdfmake 0.2 the descriptor accepted a `Buffer` for each variant.
+ * In 0.3 every value passes through `URLResolver.resolve()`, which calls
+ * `.toLowerCase()` on it: a Buffer makes it blow up with
+ * `Cannot read properties of undefined`. Fonts must be written to the VFS and
+ * referenced by name.
+ *
+ * ## The policies are closed on purpose
+ *
+ * `createPdf` warns if they aren't set, and the default would be permissive:
+ * a document definition could make pdfmake download an external URL or read
+ * from the local filesystem. Our definitions are built server-side and images
+ * arrive as **data URIs** (`logoDataUri`), which are inline and touch neither
+ * network nor disk — verified: logos still show up with both policies set to
+ * `false`.
+ */
+function configurePdfMake(): typeof pdfMake {
+  if (!pdfMakeConfigured) {
     const vfs = require('pdfmake/build/vfs_fonts') as Record<string, string>;
-    cachedFonts = {
-      Roboto: {
-        normal:      Buffer.from(vfs['Roboto-Regular.ttf']!,       'base64'),
-        bold:        Buffer.from(vfs['Roboto-Medium.ttf']!,        'base64'),
-        italics:     Buffer.from(vfs['Roboto-Italic.ttf']!,        'base64'),
-        bolditalics: Buffer.from(vfs['Roboto-MediumItalic.ttf']!,  'base64'),
-      },
+
+    // `virtualfs` isn't in the @types/pdfmake@0.3.3 typings, which instead declare
+    // `addVirtualFileSystem()` and `addFontContainer()` — both absent from
+    // pdfmake 0.3.11 (verified at runtime). The typings are ahead of the
+    // library, so direct VFS access is the only working path. The cast is
+    // restricted to just the method used: if an upgrade removes it, the
+    // failure is immediate rather than silent.
+    const { virtualfs } = pdfMake as unknown as {
+      virtualfs: {
+        writeFileSync(filename: string, content: string, encoding: string): void;
+      };
     };
+
+    for (const [filename, base64] of Object.entries(vfs)) {
+      virtualfs.writeFileSync(filename, base64, 'base64');
+    }
+
+    pdfMake.setFonts({
+      Roboto: {
+        normal: 'Roboto-Regular.ttf',
+        bold: 'Roboto-Medium.ttf',
+        italics: 'Roboto-Italic.ttf',
+        bolditalics: 'Roboto-MediumItalic.ttf',
+      },
+    });
+
+    pdfMake.setUrlAccessPolicy(() => false);
+    pdfMake.setLocalAccessPolicy(() => false);
+
+    pdfMakeConfigured = true;
   }
-  return cachedFonts;
+
+  return pdfMake;
 }
 
+/**
+ * Builds a pdfmake header block for a branded document page.
+ * Displays the Luke logo on the left, brand name + optional subtitle in the centre,
+ * and the brand logo + optional page number on the right.
+ *
+ * @param brand - Brand display data.
+ * @param currentPage - Current page number (provided by pdfmake's header callback).
+ * @param totalPages - Total page count (provided by pdfmake's header callback).
+ * @param opts - Optional rendering controls (subtitle, extractedInfo, showPageNumber).
+ * @returns pdfmake `Content` object for use in `header`.
+ */
 export function buildBrandPageHeader(
   brand: { name: string; logoDataUri?: string | null },
   currentPage: number,
@@ -112,6 +178,16 @@ function formatAddress(address: CompanyAddress | null | undefined): string {
   return parts.join(', ');
 }
 
+/**
+ * Builds a pdfmake footer block with optional company branding.
+ * Shows the company logo and address on the left and the page number on the right.
+ *
+ * @param currentPage - Current page number (provided by pdfmake's footer callback).
+ * @param totalPages - Total page count.
+ * @param company - Optional company context (logo data URI, address, footer text).
+ * @param extraLine - Optional extra text line appended after the company info (already formatted by the caller).
+ * @returns pdfmake `Content` object for use in `footer`.
+ */
 export function buildPdfFooter(
   currentPage: number,
   totalPages: number,
@@ -120,20 +196,22 @@ export function buildPdfFooter(
     address?: CompanyAddress | null;
     footerText?: string | null;
   },
+  extraLine?: string | null,
 ): Content {
   const addressLine = formatAddress(company?.address);
   const infoLines: string[] = [];
   if (addressLine)         infoLines.push(addressLine);
   if (company?.footerText) infoLines.push(company.footerText);
+  if (extraLine)           infoLines.push(extraLine);
 
-  // pdfmake column objects support a `width` key that the Content type doesn't declare — cast needed
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const columns: any[] = [];
+  // pdfmake accepts `width` on every entry inside a `columns: [...]` block at
+  // runtime, but the individual members of the `Content` union don't declare
+  // it (property valid only at the column-container level) — targeted cast
+  // on the three entries that use it, not on the whole array.
+  const columns: Content[] = [];
 
   if (company?.logoDataUri) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    columns.push({ image: company.logoDataUri, fit: [48, 48], width: 'auto', margin: [0, 2, 8, 0] } as any);
+    columns.push({ image: company.logoDataUri, fit: [48, 48], width: 'auto', margin: [0, 2, 8, 0] } as unknown as Content);
   }
 
   columns.push({
@@ -148,7 +226,7 @@ export function buildPdfFooter(
     alignment: 'right',
     width: 40,
     margin: [0, 2, 0, 0],
-  });
+  } as unknown as Content);
 
   return {
     margin: [20, 6, 20, 0] as [number, number, number, number],
@@ -156,12 +234,23 @@ export function buildPdfFooter(
   } as Content;
 }
 
+/**
+ * Company branding and settings assembled for PDF export.
+ */
 export type CompanyExportContext = {
   companyLogoDataUri: string | null;
   exportSettings: CompanyExportSettings;
   address: CompanyAddress | null;
 };
 
+/**
+ * Loads the company profile, logo, and export settings from the database.
+ * Returns a safe empty context on any error so PDF generation can proceed without branding.
+ *
+ * @param prisma - Prisma client.
+ * @param logger - Optional logger for non-fatal warnings.
+ * @returns Populated `CompanyExportContext`, or a zeroed-out default on failure.
+ */
 export async function fetchCompanyExportContext(
   prisma: PrismaClient,
   logger?: { warn: (obj: object, msg: string) => void },
@@ -197,23 +286,19 @@ export async function fetchCompanyExportContext(
   }
 }
 
+/**
+ * Renders a pdfmake document definition to a `Buffer` containing the PDF binary.
+ *
+ * @param def - pdfmake `TDocumentDefinitions` object.
+ * @returns Buffer with the complete PDF content.
+ */
 export async function createPdfBuffer(def: TDocumentDefinitions): Promise<Buffer> {
-  // eslint-disable-next-line no-undef
-  const PdfPrinter = require('pdfmake') as new (fonts: TFontDictionary) => {
-    createPdfKitDocument(
-      def: TDocumentDefinitions,
-      options?: Record<string, unknown>,
-    ): NodeJS.EventEmitter & { end(): void };
-  };
-
-  const printer = new PdfPrinter(getPdfFonts());
-  const doc = printer.createPdfKitDocument(def);
-
-  return new Promise<Buffer>((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
-    doc.end();
-  });
+  // pdfmake's public API, not `js/Printer`. The previous version imported
+  // the internal class with `require` and a hand-written cast — and it's that
+  // cast that let the 0.2→0.3 bump (commit a864236, "safe bumps") pass the
+  // typecheck: the declared type described an API that no longer existed.
+  // Both the constructor and `createPdfKitDocument` had changed, and every
+  // PDF export in the app stayed broken until now. With the real typings,
+  // the next breaking change gets caught by `tsc`.
+  return configurePdfMake().createPdf(def).getBuffer();
 }

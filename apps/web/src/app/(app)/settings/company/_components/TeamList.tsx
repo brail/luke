@@ -31,6 +31,10 @@ interface TeamListProps {
   canDelete: boolean;
 }
 
+/**
+ * Displays the list of teams belonging to a company function with create, edit, and delete actions.
+ * @param functionId - ID of the parent company function whose teams are listed
+ */
 export function TeamList({ functionId, canCreate, canUpdate, canDelete }: TeamListProps) {
   const refresh = useRefresh();
   const { data: rawTeams = [], isLoading } = trpc.company.team.listByFunction.useQuery({ functionId });
@@ -98,8 +102,7 @@ export function TeamList({ functionId, canCreate, canUpdate, canDelete }: TeamLi
               <div className="flex shrink-0 items-center gap-1">
                 <Button
                   variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs"
+                  size="xs"
                   onClick={() => setEditTeamId(team.id)}
                 >
                   {canUpdate ? 'Gestisci' : 'Visualizza'}
@@ -109,8 +112,8 @@ export function TeamList({ functionId, canCreate, canUpdate, canDelete }: TeamLi
                   hasPermission={canDelete}
                   tooltip="Non hai i permessi per eliminare questo team"
                   variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs text-destructive hover:text-destructive"
+                  size="xs"
+                  className="text-destructive hover:text-destructive"
                   onClick={() => setDeleteTarget(team)}
                 >
                   Elimina

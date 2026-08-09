@@ -913,4 +913,4 @@ readinessProbe:
 - [APP_CONFIG.md](APP_CONFIG.md) - Gestione configurazioni centralizzate (AppConfig)
 - [OPERATIONS.md](OPERATIONS.md) - Documentazione operativa per SRE/DevOps
 - [SETUP_STATUS.md](SETUP_STATUS.md) - Registro tecnico interno e roadmap
-- [docs/adr/](docs/adr/) - Architecture Decision Records
+- [docs/decisions/](docs/decisions/) - Architecture Decision Records

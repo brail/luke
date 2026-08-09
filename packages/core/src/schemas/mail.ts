@@ -1,12 +1,13 @@
 /**
- * Schema Zod per configurazione Mail SMTP
- * Centralizzato in @luke/core per riuso tra API e frontend
+ * Zod schemas for SMTP mail configuration — shared between API and frontend.
+ * The `pass` field is omitted from response schemas and replaced with `hasPassword`.
  */
 
 import { z } from 'zod';
 
 /**
- * Schema per configurazione SMTP (input per saveConfig)
+ * Input schema for saving SMTP configuration.
+ * `from` accepts both `email@domain.com` and `Name <email@domain.com>` formats.
  */
 export const mailSmtpConfigSchema = z.object({
   host: z.string().min(1, 'Host SMTP richiesto'),
@@ -24,9 +25,7 @@ export const mailSmtpConfigSchema = z.object({
   baseUrl: z.string().url('URL valido richiesto'),
 });
 
-/**
- * Schema per risposta getMailConfig (output con dati sensibili omessi)
- */
+/** Response shape for `getMailConfig`. The password is replaced with a `hasPassword` boolean flag. */
 export const mailSmtpConfigResponseSchema = z.object({
   host: z.string(),
   port: z.number(),
@@ -37,25 +36,19 @@ export const mailSmtpConfigResponseSchema = z.object({
   baseUrl: z.string(),
 });
 
-/**
- * Schema per test email
- */
+/** Input schema for triggering a test email. Defaults to the currently authenticated user's address if omitted. */
 export const mailTestSchema = z.object({
   testEmail: z.string().email().optional(),
 });
 
-/**
- * Schema per risposta test email
- */
+/** Response shape for a test email operation, including the actual recipient address used. */
 export const mailTestResponseSchema = z.object({
   success: z.boolean(),
   message: z.string(),
   sentTo: z.string().optional(),
 });
 
-/**
- * Schema per risposta operazioni mail
- */
+/** Generic success/failure response for mail write operations (save, test). */
 export const mailOperationResponseSchema = z.object({
   success: z.boolean(),
   message: z.string(),

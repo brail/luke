@@ -47,6 +47,17 @@ interface ParameterSetDialogProps {
   mode: 'create' | 'edit';
 }
 
+/**
+ * Dialog for creating or editing a pricing parameter set.
+ *
+ * All monetary fields (duty, exchange rate, costs) are validated by
+ * `PricingParameterSetInputSchema`. Currencies are limited to `PRICING_CURRENCIES`.
+ * A live preview computes the effective landed cost for a sample supplier price.
+ *
+ * @param initialData - Pre-filled values in edit mode.
+ * @param onSubmit - Called with validated data and optional makeDefault flag.
+ * @param mode - Controls dialog title and whether `isDefault` toggle is shown.
+ */
 export function ParameterSetDialog({
   open,
   onOpenChange,
@@ -65,7 +76,7 @@ export function ParameterSetDialog({
     },
   });
 
-  // Reset del form e dello stato makeDefault quando il dialog si apre
+  // Reset form and makeDefault state when dialog opens
   useEffect(() => {
     if (open) {
       setMakeDefault(initialData?.isDefault ?? false);
@@ -87,8 +98,8 @@ export function ParameterSetDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="max-w-2xl max-h-[90vh] p-0 gap-0 flex flex-col"> {/* vh: no Tailwind scale equivalent for viewport-relative height */}
+        <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Calculator className="h-5 w-5" />
             {mode === 'create'
@@ -98,7 +109,8 @@ export function ParameterSetDialog({
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(data => onSubmit(data, makeDefault))} className="space-y-6">
+          <form onSubmit={form.handleSubmit(data => onSubmit(data, makeDefault))} className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-6">
             {/* Nome variante + Country Code */}
             <div className="grid grid-cols-2 gap-4">
               <FormField
@@ -431,8 +443,9 @@ export function ParameterSetDialog({
                 </div>
               </div>
             </div>
+          </div>
 
-            <DialogFooter>
+            <DialogFooter className="px-6 py-4 border-t shrink-0">
               <Button
                 type="button"
                 variant="outline"

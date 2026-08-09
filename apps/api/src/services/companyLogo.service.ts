@@ -1,10 +1,12 @@
-import { TRPCError } from '@trpc/server';
 import { Readable } from 'stream';
 
+import { TRPCError } from '@trpc/server';
+
+import { logAudit } from '../lib/auditLog.js';
 import { validateImageFile, streamToBuffer, validateMagicBytes } from '../lib/imageUpload.js';
 import { resolvePublicUrl } from '../lib/storageUrl.js';
-import { logAudit } from '../lib/auditLog.js';
 import { putObject } from '../storage/index.js';
+
 import type { Context } from '../lib/trpc.js';
 
 const IMAGE_CONFIG = {
@@ -13,6 +15,12 @@ const IMAGE_CONFIG = {
   allowedExtensions: ['.png', '.jpg', '.jpeg', '.webp'] as const,
 };
 
+/**
+ * Uploads a company logo to the company-assets bucket.
+ *
+ * @returns Public URL, bucket name, and storage key of the uploaded logo.
+ * @throws {TRPCError} BAD_REQUEST if the file type or magic bytes are invalid.
+ */
 export async function uploadCompanyLogo(
   ctx: Context,
   params: {
@@ -23,7 +31,7 @@ export async function uploadCompanyLogo(
       size: number;
     };
   }
-): Promise<{ publicUrl: string; bucket: string; key: string }> {
+): Promise<{ publicUrl: string; bucket: string; key: string; fileObjectId: string }> {
   const sanitizedFilename = validateImageFile(params.file, IMAGE_CONFIG);
 
   const buffer = await streamToBuffer(params.file.stream);
@@ -38,6 +46,9 @@ export async function uploadCompanyLogo(
     contentType: params.file.mimetype,
     size: params.file.size,
     stream: Readable.from(buffer),
+    // Pending: the file exists, but doesn't belong to the profile yet. It gets linked
+    // by `company.profile.update` passing the `fileObjectId`, never the key.
+    pending: true,
   });
 
   try {
@@ -53,5 +64,12 @@ export async function uploadCompanyLogo(
   }
 
   const publicUrl = await resolvePublicUrl(ctx.prisma, 'company-assets', fileObject.key);
-  return { publicUrl, bucket: 'company-assets', key: fileObject.key };
+  // `fileObjectId` is the field that matters: `key` is kept only because `publicUrl`
+  // exposes it anyway, but nothing downstream should rely on it.
+  return {
+    publicUrl,
+    bucket: 'company-assets',
+    key: fileObject.key,
+    fileObjectId: fileObject.id,
+  };
 }

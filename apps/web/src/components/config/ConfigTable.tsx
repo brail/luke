@@ -1,8 +1,3 @@
-/**
- * Tabella per visualizzare le configurazioni
- * Include sorting, azioni dropdown e gestione valori cifrati
- */
-
 import {
   MoreHorizontal,
   Lock,
@@ -15,13 +10,13 @@ import {
   ArrowUp,
   ArrowDown,
 } from 'lucide-react';
-import { toast } from 'sonner';
 
+import { COPY_ERROR_MESSAGE, useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import {
   formatValue,
   formatDate,
   isCriticalKey,
-} from '../../lib/config-helpers';
+} from '../../lib/configHelpers';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import {
@@ -45,7 +40,7 @@ import { ConfigKeyBadge } from './ConfigKeyBadge';
 
 
 
-interface Config {
+export interface Config {
   key: string;
   value?: string;
   valuePreview: string | null;
@@ -65,6 +60,15 @@ interface ConfigTableProps {
   canUpdate?: boolean;
 }
 
+/**
+ * Sortable table of AppConfig entries with inline actions for edit, view, copy, and delete.
+ *
+ * Encrypted values are displayed as masked text with a tooltip. Long plain values show
+ * an eye button to open `ConfigValueDialog`. Critical keys disable the delete action.
+ *
+ * @param canUpdate - When false, edit and delete actions are disabled.
+ * @param onSort - Called with the field name when a sortable column header is clicked.
+ */
 export function ConfigTable({
   configs,
   onEdit,
@@ -75,14 +79,9 @@ export function ConfigTable({
   onSort,
   canUpdate = true,
 }: ConfigTableProps) {
-  const handleCopyKey = async (key: string) => {
-    try {
-      await navigator.clipboard.writeText(key);
-      toast.success('Chiave copiata negli appunti');
-    } catch {
-      toast.error('Errore durante la copia');
-    }
-  };
+  const { copy } = useCopyToClipboard();
+  const handleCopyKey = (key: string) =>
+    copy(key, { successMessage: 'Chiave copiata negli appunti', errorMessage: COPY_ERROR_MESSAGE });
 
   const getSortIcon = (field: 'key' | 'updatedAt') => {
     if (sortBy !== field) {
@@ -128,6 +127,7 @@ export function ConfigTable({
                 {getSortIcon('updatedAt')}
               </div>
             </TableHead>
+            {/* 50px: fits the actions dropdown trigger; no exact scale match */}
             <TableHead className="w-[50px]">Azioni</TableHead>
           </TableRow>
         </TableHeader>

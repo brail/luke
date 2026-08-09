@@ -1,6 +1,10 @@
 # Luke Monorepo
 
-Monorepo enterprise con pnpm + Turborepo per applicazioni web moderne con focus su sicurezza, audit e qualità.
+<!-- luke-docs:start:overview -->
+Luke è la piattaforma gestionale interna per la filiera moda wholesale. Gestisce il ciclo completo della stagione — dal piano campionario al pricing, dal merchandising alle statistiche portafoglio ordini — con integrazione nativa Microsoft Dynamics NAV come ERP di riferimento e supporto ai processi ISO 9001:2015 per il controllo qualità delle revisioni campionario.
+
+Sviluppato come monorepo pnpm + Turborepo con sei workspace: frontend Next.js, backend Fastify + tRPC, package condivisi per schemi/RBAC, sync layer NAV, integrazione Google Calendar e un plugin ESLint interno per le regole di codifica specifiche di Luke.
+<!-- luke-docs:end:overview -->
 
 ## Indice
 
@@ -25,26 +29,32 @@ Monorepo enterprise con pnpm + Turborepo per applicazioni web moderne con focus 
 
 ## Struttura
 
-```
-luke/
-├── apps/
-│   ├── web/          # Next.js 15 + shadcn/ui frontend
-│   └── api/          # Fastify 5 + tRPC + Prisma backend
-├── packages/
-│   ├── core/         # Zod schemas, RBAC, utilities condivise
-│   └── nav/          # Integrazione Microsoft Dynamics NAV (SQL Server)
-└── [config files]    # pnpm, turbo, typescript, eslint, prettier
-```
+<!-- luke-docs:start:structure -->
+| Workspace | Tipo | Descrizione |
+|-----------|------|-------------|
+| `apps/web` | App | Frontend Next.js — dashboard, campionario, pricing, calendario, vendite |
+| `apps/api` | App | Backend Fastify 5 + tRPC + Prisma — API RBAC, audit log, integrazione NAV |
+| `packages/core` | Package | Schemi Zod, RBAC, AppConfigRegistry, utility storage e crypto server-only |
+| `packages/nav` | Package | Sync layer unidirezionale Microsoft Dynamics NAV → PostgreSQL (mssql) |
+| `packages/calendar` | Package | Integrazione Google Calendar, feed iCal, solver dipendenze milestone |
+| `packages/eslint-plugin-luke` | Package | Regole ESLint interne (es. `no-uncommented-any`, `no-uncommented-tailwind-arbitrary`) |
+<!-- luke-docs:end:structure -->
 
 ## Quick Start
 
 ### Prerequisiti
 
-- Node.js >= 20.0.0 (usa `nvm use` per versione automatica)
-- pnpm >= 8.0.0
+<!-- luke-docs:start:prerequisites -->
+- Node.js >= 22.0.0
+- pnpm >= 10.0.0
+- Docker (per PostgreSQL locale e MinIO opzionale)
+- PostgreSQL 16 (sviluppo e produzione)
+- Microsoft SQL Server (solo per la funzionalità di sync NAV)
+<!-- luke-docs:end:prerequisites -->
 
 ### Setup iniziale
 
+<!-- luke-docs:start:quickstart -->
 ```bash
 # Installa dipendenze
 pnpm install
@@ -61,6 +71,7 @@ pnpm --filter @luke/api run seed
 # Avvia in modalità sviluppo
 pnpm dev
 ```
+<!-- luke-docs:end:quickstart -->
 
 ## Workspaces
 
@@ -86,22 +97,25 @@ pnpm dev
 
 ## Scripts Disponibili
 
-```bash
-# Sviluppo
-pnpm dev              # Avvia tutti i workspace in dev mode
-pnpm build            # Build tutti i workspace
-pnpm lint             # Lint tutti i file
-pnpm format           # Formatta codice con Prettier
+<!-- luke-docs:start:scripts -->
+| Script | Descrizione |
+|--------|-------------|
+| `pnpm dev` | Avvia tutti i workspace in modalità sviluppo (via Turbo) |
+| `pnpm build` | Build completo di tutti i workspace |
+| `pnpm lint` | Lint di tutti i file TypeScript |
+| `pnpm typecheck` | Type check di tutti i workspace |
+| `pnpm format` | Formatta il codice con Prettier |
+| `pnpm db:seed` | Esegue il seed del database (`apps/api/prisma/seed.ts`) |
+| `pnpm changelog` | Genera `CHANGELOG.md` dal tag corrente via git-cliff |
+| `pnpm changelog:bump` | Genera `CHANGELOG.md` con bump automatico della versione |
+| `pnpm sync-version` | Allinea le versioni di tutti i `package.json` del monorepo |
+| `pnpm deps:latest` | Aggiorna tutte le dipendenze all'ultima versione |
+| `pnpm test` | Esegue i test di tutti i workspace (via Turbo) |
+| `pnpm check:drift` | Verifica integrità marker `luke-docs` e riferimenti nelle skill (bloccante in CI) |
+| `pnpm security` | Esegue la suite SAST (semgrep) + secrets (gitleaks) + dipendenze (osv-scanner) |
 
-# Dipendenze
-pnpm deps:latest      # Aggiorna tutte le dipendenze all'ultima versione
-pnpm install          # Installa dipendenze
-
-# Workspace specifici
-pnpm --filter @luke/web dev     # Solo frontend
-pnpm --filter @luke/api dev     # Solo backend
-pnpm --filter @luke/core build  # Solo core package
-```
+Workspace specifici: `pnpm --filter @luke/web dev` · `pnpm --filter @luke/api dev` · `pnpm --filter @luke/core build`
+<!-- luke-docs:end:scripts -->
 
 ## Convenzioni Naming
 
@@ -132,7 +146,7 @@ pnpm --filter @luke/core build  # Solo core package
 - **Derivazione**: HKDF-SHA256 (RFC 5869) dalla master key
 - **Parametri HKDF**: salt='luke', info domain-specific, length=32 bytes
 - **Claim standard**: `iss: 'urn:luke'`, `aud: 'luke.api'`, `exp`, `nbf`
-- **Clock tolerance**: ±30 secondi per gestire skew temporale
+- **Clock tolerance**: ±5 secondi (sufficiente per skew NTP, riduce finestra replay)
 - **Domini isolati**:
   - `api.jwt` → JWT API backend
   - `nextauth.secret` → NextAuth web sessions
@@ -162,7 +176,7 @@ pnpm --filter @luke/core build  # Solo core package
 - **NextAuth JWT**: `maxAge: 8h`, `updateAge: 4h` (refresh automatico ogni 4h)
 - **API JWT**: `expiresIn: 8h` (allineato con NextAuth)
 - **Cookie Policy**: `httpOnly: true`, `secure: production`, `sameSite: 'lax'`
-- **Clock Tolerance**: `±30s`
+- **Clock Tolerance**: `±5s`
 
 #### TokenVersion Enforcement Multi-Layer
 
@@ -284,9 +298,20 @@ Luke adotta una separazione netta tra **bootstrap infrastrutturale** e **configu
 |---|---|
 | `DATABASE_URL` | Prisma richiede l'URL DB prima del boot |
 | `PORT` / `HOST` | Override porta/bind opzionale |
-| `NODE_ENV` | Runtime mode |
+| `NODE_ENV` | Runtime mode — **impostare `development` in locale**, vedi sotto |
 | `LUKE_CORS_ALLOWED_ORIGINS` | Override CORS di deploy (non segreto) |
 | `OTEL_*`, `LOG_LEVEL` | Observability infra standard |
+
+> **`NODE_ENV=development` va messa a mano in `apps/api/.env`.**
+> Lo script dev è `tsx watch --env-file=.env`: nessuno la imposta al posto tuo, e
+> `isDevelopment()` confronta esattamente con `'development'`. Senza quella riga
+> l'API locale gira con la **postura di produzione** — CSP e HSTS attivi, e
+> soprattutto il rate limit a 100 req/min *senza* l'allowList per localhost che
+> `server.ts` prevede apposta per lo sviluppo. Il sintomo non è un errore chiaro:
+> sono 429 sporadici che nel browser arrivano come "Backend non raggiungibile" e
+> nelle suite E2E come login falliti. `apps/api/.env` è gitignored, quindi la riga
+> non arriva da sola su una macchina nuova.
+> Dettagli: [`docs/quality-hardening-plan.md`](docs/quality-hardening-plan.md) §5.
 
 #### Cosa può stare in `.env` — Web (eccezioni framework)
 
@@ -373,28 +398,23 @@ Il sistema include protezioni robuste per la gestione degli utenti:
 
 ## Database
 
-- **Sviluppo**: SQLite (file locale)
-- **Produzione**: PostgreSQL (Prisma compatibile)
-- **Migrations**: Prisma migrate
+- **Sviluppo e Produzione**: PostgreSQL 16 (via Prisma ORM)
+- **Migrations**: Prisma migrate (`prisma migrate deploy` in produzione, workflow Docker su porta 5433 per generazione)
 - **Schema**: Definito in `apps/api/prisma/schema.prisma`
 
 ## Workflow
 
-1. **Sviluppo**: `pnpm dev` avvia frontend + backend
-2. **Build**: `pnpm build` compila tutto per produzione
-3. **Deploy**: CI/CD con Turborepo caching
-4. **Monitor**: Audit log + structured logging
+<!-- luke-docs:start:deployment -->
+Il flusso di release è attivato dal push di un tag `vX.Y.Z`. GitHub Actions builda le immagini Docker e le pubblica su `ghcr.io`. Portainer rileva le nuove immagini e rideploya automaticamente lo stack. Push su `main` eseguono solo lint e typecheck — nessuna build immagine.
+
+Il volume `luke_api_data` contiene la master key (`~/.luke/secret.key`) e non va mai eliminato. In produzione, `entrypoint.sh` esegue `prisma migrate deploy` prima dell'avvio del server.
+<!-- luke-docs:end:deployment -->
 
 ## Architecture Decision Records (ADR)
 
-Le decisioni architetturali chiave del progetto sono documentate in ADR:
-
-- [ADR-001: JWT HS256 con HKDF-SHA256](docs/adr/001-jwt-hs256-hkdf.md) - Gestione segreti JWT con derivazione crittografica
-- [ADR-002: RBAC Policy e Enforcement](docs/adr/002-rbac-policy.md) - Controllo accessi basato su ruoli
-- [ADR-003: Core Package Server-Only Exports](docs/adr/003-core-server-only.md) - Isolamento codice server-only
-- [ADR-004: Prisma Select-Only Pattern](docs/adr/004-prisma-select-only.md) - Prevenzione data leakage
-
-Per contribuire al progetto, consulta le ADR per comprendere le convenzioni e i pattern adottati.
+<!-- luke-docs:start:adr-link -->
+Le decisioni architetturali rilevanti sono documentate in [`docs/decisions/`](docs/decisions/README.md).
+<!-- luke-docs:end:adr-link -->
 
 ## Error UX & User Experience
 
@@ -615,13 +635,13 @@ import {
 
 ## Tecnologie
 
-- **Monorepo**: pnpm workspaces + Turborepo
-- **Frontend**: Next.js 15, React 19, shadcn/ui, Tailwind
-- **Backend**: Fastify 5, tRPC, Prisma, Zod
-- **Database**: SQLite (dev) → PostgreSQL (prod)
-- **Auth**: JWT HS256+HKDF, RBAC, LDAP/OIDC
-- **Security**: AES-256-GCM, helmet, cors, rate limiting, idempotency
-- **Quality**: TypeScript strict, ESLint, Prettier, Husky
+<!-- luke-docs:start:architecture -->
+Luke è un monorepo pnpm + Turborepo con cinque workspace. Il backend (`apps/api`) espone API tRPC type-safe su Fastify 5, con PostgreSQL 16 via Prisma e autenticazione RBAC granulare (`resource:action`). Il frontend (`apps/web`) è un'app Next.js con App Router, shadcn/ui e React 19. La sincronizzazione con Microsoft Dynamics NAV avviene tramite `packages/nav` (mssql diretto, unidirezionale). Le milestone stagionali sono gestite da `packages/calendar` con integrazione Google Calendar e solver topologico delle dipendenze.
+
+Stack: **Next.js 16** · **Fastify 5** · **tRPC 11** · **Prisma 7** · **PostgreSQL 16** · **TypeScript 6** · **Zod 4** · **pnpm 11** · **Turbo 2**
+
+Per le decisioni architetturali chiave: [`docs/decisions/`](docs/decisions/README.md).
+<!-- luke-docs:end:architecture -->
 
 ## Manutenzione Import
 
@@ -639,15 +659,12 @@ pnpm lint
 
 # Validazione boundary client/server
 npx tsx tools/scripts/validate-client-server-boundaries.ts
-
-# Report import non utilizzati
-npx tsx tools/scripts/detect-unused-imports.ts
 ```
 
 #### Regole Import Applicate
 
 - **Ordinamento**: `builtin` → `external` → `internal` → `parent` → `sibling` → `index` → `type`
-- **Rimozione automatica**: Import non utilizzati e variabili non utilizzate
+- **Rimozione automatica**: `eslint --fix` (`@typescript-eslint/no-unused-vars`)
 - **Boundary client/server**: Validazione import `@luke/core/server` e moduli `node:`
 - **Formattazione**: Prettier per consistenza
 
@@ -673,7 +690,7 @@ pnpm install
 ## Note
 
 - **Master Key**: La prima volta, crea `~/.luke/secret.key` con una chiave AES-256
-- **Database**: SQLite file viene creato automaticamente al primo avvio
+- **Database**: PostgreSQL 16 — connessione via `DATABASE_URL` in `.env`
 - **Ports**: Frontend (3000), Backend (3001) - configurabili via AppConfig
 - **Caching**: Turborepo cache in `.turbo/` (ignorato da git)
 - **Segreti JWT**: Derivati automaticamente dalla master key via HKDF-SHA256 (nessun database)
@@ -743,7 +760,7 @@ Con **local** (`enableProxy=true`, default): stesso proxy per consistenza. Con `
 
 `uploads`, `exports`, `assets`, `brand-logos`, `collection-row-pictures`, `merchandising-specsheet-images`
 
-Per l'architettura completa: [docs/adr/007-storage-layer-refactor.md](docs/adr/007-storage-layer-refactor.md)
+Per l'architettura completa: [docs/decisions/007-storage-layer-refactor.md](docs/decisions/007-storage-layer-refactor.md)
 
 ## Dashboard Widget System
 
@@ -794,7 +811,20 @@ Nessuna variabile aggiuntiva richiesta. Il widget Forex usa `api.frankfurter.app
 - [docs/nav-integration.md](docs/nav-integration.md) - Architettura integrazione NAV
 - [docs/collection-layout-versioning.md](docs/collection-layout-versioning.md) - Collection Layout Versioning — registro qualità ISO 9001:2015 per le revisioni del piano di collezione
 - [docs/storage-immutable-bucket.md](docs/storage-immutable-bucket.md) - Bucket immutabile per le foto delle revisioni
-- [docs/adr/](docs/adr/) - Architecture Decision Records
+- [docs/decisions/](docs/decisions/) - Architecture Decision Records
+
+## Release
+
+<!-- luke-docs:start:release -->
+Il progetto usa [Conventional Commits](https://www.conventionalcommits.org/) per generare automaticamente il CHANGELOG via `git-cliff`. I commit sono validati dall'hook `.husky/commit-msg` (commitlint).
+
+Tag naming: `vX.Y.Z` — criteri SemVer: `patch` per fix/refactor, `minor` per nuove feature, `major` per breaking change su API/contratti.
+
+```bash
+pnpm changelog        # Genera CHANGELOG.md dal tag corrente
+pnpm changelog:bump   # Genera CHANGELOG.md con bump automatico versione
+```
+<!-- luke-docs:end:release -->
 
 ---
 

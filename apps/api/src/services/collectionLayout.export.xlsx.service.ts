@@ -1,22 +1,22 @@
 import ExcelJS from 'exceljs';
 
-import type {
+
+
+import type { StorageBucket } from '@luke/core';
+
+import { applyStreamingHeaderStyle } from '../lib/export/xlsxStreaming';
+import { readFileBuffer } from '../storage';
+
+import { buildProgressLabelMap } from './collectionLayout.service';
+
+import type { QuotationWithParamSet } from './collectionLayout.service';
+import type { PrismaClient,
   CollectionLayout,
   CollectionGroup,
   CollectionLayoutRow,
   Vendor,
   Brand,
-  Season,
-} from '@prisma/client';
-
-import type { PrismaClient } from '@prisma/client';
-
-import type { StorageBucket } from '@luke/core';
-
-import { applyStreamingHeaderStyle } from '../lib/export/xlsx-streaming';
-import { readFileBuffer } from '../storage';
-import { buildProgressLabelMap } from './collectionLayout.service';
-import type { QuotationWithParamSet } from './collectionLayout.service';
+  Season } from '@prisma/client';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,11 +27,26 @@ type RowWithVendor = CollectionLayoutRow & {
 
 type GroupWithRows = CollectionGroup & { rows: RowWithVendor[] };
 
+/** Minimal layout shape required by the XLSX builder. */
 export type CollectionLayoutForExport = CollectionLayout & {
   brand:  Pick<Brand,  'name' | 'code' | 'logoKey'>;
   season: Pick<Season, 'name' | 'code' | 'year'>;
   groups: GroupWithRows[];
 };
+
+/** Caller-defined label/value sheet appended after the main layout sheet. */
+export type ExtraInfoSheet = {
+  sheetName: string;
+  title: string;
+  subtitle: string;
+  rows: [string, string][];
+};
+
+/** Adds a bold-label row followed by a value cell to a label/value info sheet. */
+function addLabelValueRow(sheet: ExcelJS.Worksheet, label: string, value: string): void {
+  const row = sheet.addRow([label, value]);
+  row.getCell(1).font = { bold: true };
+}
 
 // ─── Margin computation per quotation ─────────────────────────────────────────
 
@@ -149,11 +164,21 @@ function fitInBox(imgW: number, imgH: number, boxW: number, boxH: number, paddin
 
 type Logger = { warn: (obj: object, msg: string) => void };
 
+/**
+ * Builds an XLSX workbook for the full collection layout.
+ * Includes a header row with auto-filter, embedded row photos, dynamic quotation columns,
+ * and margin colour coding. Photos are fetched in parallel from storage.
+ *
+ * @param pictureBucket - Storage bucket for row photos; defaults to `'collection-row-pictures'`.
+ * @param extraInfoSheet - Optional caller-defined label/value sheet appended after the main sheet (e.g. revision notes).
+ * @returns A Buffer containing the XLSX file.
+ */
 export async function buildCollectionLayoutXlsx(
   layout: CollectionLayoutForExport,
   prisma: PrismaClient,
   logger?: Logger,
   pictureBucket: StorageBucket = 'collection-row-pictures',
+  extraInfoSheet?: ExtraInfoSheet | null,
 ): Promise<Buffer> {
   const allRows = layout.groups.flatMap((g: GroupWithRows) => g.rows);
 
@@ -209,7 +234,7 @@ export async function buildCollectionLayoutXlsx(
         row.strategy,
         row.status,
         row.styleStatus,
-        row.progress ? (progressLabelMap.get(row.progress) ?? row.progress) : null,
+        row.phaseId ? (progressLabelMap.get(row.phaseId) ?? null) : null,
         row.skuForecast,
         row.qtyForecast,
         row.designer,
@@ -263,8 +288,8 @@ export async function buildCollectionLayoutXlsx(
       const imageBuf = row.pictureKey ? keyToBuffer.get(row.pictureKey) ?? null : null;
       if (imageBuf) {
         const ext = detectExtension(row.pictureKey!);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const imageId = wb.addImage({ buffer: imageBuf as any, extension: ext });
+         
+        const imageId = wb.addImage({ buffer: imageBuf as unknown as NonNullable<ExcelJS.Image['buffer']>, extension: ext }); // exceljs bundles its own stale non-generic Buffer type, structurally incompatible with @types/node's current Buffer<ArrayBufferLike>
         const dims = getImageDimensions(imageBuf, row.pictureKey!);
         const fit = dims
           ? fitInBox(dims.width, dims.height, FOTO_COL_WIDTH_PX, FOTO_ROW_HEIGHT_PX, 4)
@@ -281,6 +306,19 @@ export async function buildCollectionLayoutXlsx(
 
   for (let r = 2; r <= dataRowIndex; r++) {
     sheet.getRow(r).height = ROW_HEIGHT_WITH_IMAGE;
+  }
+
+  if (extraInfoSheet) {
+    const infoSheet = wb.addWorksheet(extraInfoSheet.sheetName);
+    infoSheet.columns = [{ key: 'label', width: 20 }, { key: 'value', width: 80 }];
+
+    const headerRow = infoSheet.addRow([extraInfoSheet.title, extraInfoSheet.subtitle]);
+    applyStreamingHeaderStyle(headerRow, 'planning');
+
+    for (const [label, value] of extraInfoSheet.rows) {
+      addLabelValueRow(infoSheet, label, value);
+      infoSheet.getCell(infoSheet.rowCount, 2).alignment = { wrapText: true, vertical: 'top' };
+    }
   }
 
   const arrayBuffer = await wb.xlsx.writeBuffer();

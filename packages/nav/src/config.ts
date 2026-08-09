@@ -1,5 +1,8 @@
 import type { PrismaClient } from '@prisma/client';
 
+/**
+ * Connection parameters for the NAV SQL Server database.
+ */
 export interface NavDbConfig {
   host: string;
   port: number;
@@ -15,8 +18,8 @@ export interface NavDbConfig {
 }
 
 /**
- * Firma compatibile con getConfig() di apps/api/src/lib/configManager.ts.
- * Passare la funzione dall'esterno per evitare dipendenze da apps/api.
+ * Signature compatible with `getConfig()` from `apps/api/src/lib/configManager.ts`.
+ * Injected from the outside so this package does not depend on `apps/api`.
  */
 export type GetConfigFn = (
   prisma: PrismaClient,
@@ -25,9 +28,10 @@ export type GetConfigFn = (
 ) => Promise<string | null>;
 
 /**
- * Sanitizza il nome della company NAV per uso sicuro nel table name SQL Server.
- * I table name non sono parametrizzabili in MSSQL → bracket-escaping manuale.
- * Lancia se il nome contiene caratteri non ammessi.
+ * Sanitizes the NAV company name for safe use in SQL Server table identifiers.
+ * Table names cannot be parameterized in MSSQL, so bracket-escaping is applied manually.
+ *
+ * @throws {Error} When the company name contains characters outside `[A-Za-z0-9 _\-.]`.
  */
 export function sanitizeCompany(company: string): string {
   if (!/^[A-Za-z0-9 _\-.]+$/.test(company)) {
@@ -40,8 +44,10 @@ export function sanitizeCompany(company: string): string {
 }
 
 /**
- * Legge la configurazione NAV da AppConfig tramite la funzione getConfig iniettata.
- * La password viene decifrata (decrypt: true) — le altre chiavi sono in chiaro.
+ * Reads all NAV connection parameters from AppConfig via the injected `getConfig` function.
+ * The password is decrypted (`decrypt: true`); all other keys are read as plain text.
+ *
+ * @throws {Error} When any required key (`host`, `port`, `database`, `user`, `password`, `company`) is missing.
  */
 export async function getNavDbConfig(
   prisma: PrismaClient,

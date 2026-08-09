@@ -1,11 +1,6 @@
-/**
- * Toolbar per la gestione delle configurazioni
- * Include ricerca, filtri e azioni principali
- */
-
 import { Search } from 'lucide-react';
 
-import { CATEGORIES } from '../../lib/config-helpers';
+import { CATEGORIES } from '../../lib/configHelpers';
 import { Input } from '../ui/input';
 import {
   Select,
@@ -24,6 +19,12 @@ interface ConfigToolbarProps {
   onFilterCategoryChange: (filterCategory: string | undefined) => void;
 }
 
+/**
+ * Search and filter toolbar for the AppConfig table.
+ *
+ * Provides a key search input and two dropdowns to filter by encryption type and category.
+ * All state is controlled; the parent is responsible for storing and applying filter values.
+ */
 export function ConfigToolbar({
   searchTerm,
   onSearchChange,
@@ -34,7 +35,7 @@ export function ConfigToolbar({
 }: ConfigToolbarProps) {
   return (
     <div className="flex flex-col sm:flex-row gap-3">
-      {/* Input Ricerca */}
+      {/* Input Ricerca — 200px: minimum readable width for the search field; no exact scale match */}
       <div className="relative flex-1 min-w-[200px]">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
         <Input
@@ -67,6 +68,7 @@ export function ConfigToolbar({
           }
         }}
       >
+        {/* 140px: fits the longest option label ("Cifrati"/"Normali") without wrapping; no exact scale match */}
         <SelectTrigger className="w-[140px]">
           <SelectValue />
         </SelectTrigger>
@@ -84,6 +86,7 @@ export function ConfigToolbar({
           onFilterCategoryChange(value === 'all' ? undefined : value)
         }
       >
+        {/* 140px: matches the type filter's width for a visually aligned toolbar; no exact scale match */}
         <SelectTrigger className="w-[140px]">
           <SelectValue />
         </SelectTrigger>

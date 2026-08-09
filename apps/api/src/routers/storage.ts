@@ -1,28 +1,28 @@
 /**
- * Router tRPC per Storage
+ * tRPC router for Storage
  *
- * Procedure per gestione file storage con RBAC e AuditLog
+ * Procedures for storage file management with RBAC and AuditLog
  */
 
 import { randomUUID } from 'crypto';
-
-import { TRPCError } from '@trpc/server';
 import { homedir } from 'os';
 import { join } from 'path';
+
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { isValidBucket, localStorageConfigSchema, type StorageBucket } from '@luke/core';
+import { APP_STORAGE_BUCKETS, isValidBucket, localStorageConfigSchema, type StorageBucket } from '@luke/core';
 
-import { requirePermission } from '../lib/permissions';
-import { router, protectedProcedure } from '../lib/trpc';
-import { withSectionAccess } from '../lib/sectionAccessMiddleware';
 import { getConfig, saveConfig } from '../lib/configManager';
-import { getStorageUrlConfig, resolvePublicUrl } from '../lib/storageUrl';
+import { requirePermission } from '../lib/permissions';
+import { withSectionAccess } from '../lib/sectionAccessMiddleware';
+import { getStorageBaseUrl, resolvePublicUrl } from '../lib/storageUrl';
+import { router, protectedProcedure } from '../lib/trpc';
 import { getObjectMetadata, listObjects, deleteObject, resetStorageProvider, getStorageProvider, loadMinioProvider } from '../storage';
-import { signDownloadToken } from '../utils/downloadToken';
+import { signDownloadToken, signUploadToken, verifyUploadToken } from '../utils/downloadToken';
 
 /**
- * Schema per list files
+ * Schema for list files
  */
 const ListFilesSchema = z.object({
   bucket: z.string().optional(),
@@ -31,43 +31,39 @@ const ListFilesSchema = z.object({
 });
 
 /**
- * Schema per delete file
+ * Schema for delete file
  */
 const DeleteFileSchema = z.object({
   id: z.string().uuid(),
 });
 
 /**
- * Schema per get download link
+ * Schema for get download link
  */
 const GetDownloadLinkSchema = z.object({
   id: z.string().uuid(),
 });
 
-const IMAGE_BUCKETS = ['uploads', 'exports', 'assets', 'brand-logos', 'collection-row-pictures', 'collection-row-pictures-revisions', 'merchandising-specsheet-images', 'company-assets'] as const;
-
 /**
- * Schema per create upload
+ * Schema for create upload
  */
 const CreateUploadSchema = z.object({
-  bucket: z.enum(IMAGE_BUCKETS),
+  bucket: z.enum(APP_STORAGE_BUCKETS),
   originalName: z.string().min(1).max(255),
   contentType: z.string().optional(),
   size: z.number().int().positive(),
 });
 
 const RequestUploadSchema = z.object({
-  bucket: z.enum(IMAGE_BUCKETS),
+  bucket: z.enum(APP_STORAGE_BUCKETS),
   contentType: z.string().min(1),
   size: z.number().int().positive(),
   originalName: z.string().min(1).max(255),
-  /** Pre-allocated key (for presigned path, so client knows the URL before upload) */
-  key: z.string().optional(),
 });
 
 const ConfirmUploadSchema = z.object({
-  bucket: z.enum(IMAGE_BUCKETS),
-  key: z.string().min(1),
+  /** Token signed by `requestUpload`: carries bucket, key and user. */
+  uploadToken: z.string().min(1),
   contentType: z.string().min(1),
   size: z.number().int().positive(),
   originalName: z.string().min(1).max(255),
@@ -79,7 +75,7 @@ const SaveStorageConfigSchema = z.discriminatedUnion('type', [
     type: z.literal('local'),
     basePath: z.string().min(1),
     maxFileSizeMB: z.number().int().positive().min(1).max(1000),
-    buckets: z.array(z.enum(IMAGE_BUCKETS)),
+    buckets: z.array(z.enum(APP_STORAGE_BUCKETS)),
     enableProxy: z.boolean().optional(),
   }),
   z.object({
@@ -97,18 +93,21 @@ const SaveStorageConfigSchema = z.discriminatedUnion('type', [
 ]);
 
 /**
- * Router Storage
+ * Storage Router
  */
 export const storageRouter = router({
   /**
-   * Lista file con paginazione
-   * Accessibile a tutti gli utenti autenticati
+   * Lists stored file objects with optional bucket filter and cursor-based pagination.
+   *
+   * @auth {config:read}
+   * @input {ListFilesSchema} — optional: bucket, limit, cursor.
+   * @output {{ items: FileObjectMetadata[], nextCursor: string | null }}
    */
   list: protectedProcedure
     .use(requirePermission('config:read'))
     .input(ListFilesSchema)
     .query(async ({ input, ctx }) => {
-      // Valida bucket se specificato
+      // Validate bucket if specified
       if (input.bucket && !isValidBucket(input.bucket)) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -139,8 +138,11 @@ export const storageRouter = router({
     }),
 
   /**
-   * Ottieni metadati di un file
-   * Accessibile a tutti gli utenti autenticati
+   * Returns metadata for a single file object; enforces ownership or admin/editor role.
+   *
+   * @auth {authenticated (ownership or admin/editor)}
+   * @input {GetDownloadLinkSchema} — { id: string (UUID) }
+   * @output {FileObjectMetadata}
    */
   getMetadata: protectedProcedure
     .input(GetDownloadLinkSchema)
@@ -154,7 +156,7 @@ export const storageRouter = router({
         });
       }
 
-      // Verifica ownership o admin/editor
+      // Verify ownership or admin/editor
       const isOwner = metadata.createdBy === ctx.session.user.id;
       const isAdminOrEditor = ['admin', 'editor'].includes(
         ctx.session.user.role
@@ -181,8 +183,11 @@ export const storageRouter = router({
     }),
 
   /**
-   * Genera link download firmato
-   * Accessibile a tutti gli utenti autenticati (con ownership check)
+   * Issues a signed download URL (TTL 5 min) for a file object; enforces ownership or admin/editor role.
+   *
+   * @auth {authenticated (ownership or admin/editor)}
+   * @input {GetDownloadLinkSchema} — { id: string (UUID) }
+   * @output {{ url: string, expiresIn: 300 }}
    */
   getDownloadLink: protectedProcedure
     .input(GetDownloadLinkSchema)
@@ -196,7 +201,7 @@ export const storageRouter = router({
         });
       }
 
-      // Verifica ownership o admin/editor
+      // Verify ownership or admin/editor
       const isOwner = metadata.createdBy === ctx.session.user.id;
       const isAdminOrEditor = ['admin', 'editor'].includes(
         ctx.session.user.role
@@ -209,27 +214,28 @@ export const storageRouter = router({
         });
       }
 
-      // Genera token firmato (TTL 5 minuti)
+      // Generate signed token (TTL 5 minutes)
       const token = signDownloadToken({
         bucket: metadata.bucket,
         key: metadata.key,
       });
 
-      // Costruisci URL usando la stessa base configurata per lo storage proxy
-      const { publicBaseUrl } = await getStorageUrlConfig(ctx.prisma);
-      const baseUrl = publicBaseUrl || `http://localhost:${process.env.PORT || 3001}`;
+      // Build URL using the same base configured for the storage proxy
+      const baseUrl = await getStorageBaseUrl(ctx.prisma);
       const downloadUrl = `${baseUrl}/storage/download?token=${token}`;
 
       return {
         url: downloadUrl,
-        expiresIn: 300, // 5 minuti in secondi
+        expiresIn: 300, // 5 minutes in seconds
       };
     }),
 
   /**
-   * Request an upload slot.
-   * - MinIO: returns presigned PUT URL + key for direct client upload
-   * - Local: returns proxy info (use entity-specific Fastify endpoint as fallback)
+   * Requests an upload slot; returns a presigned PUT URL for MinIO or proxy fallback info for local storage.
+   *
+   * @auth {authenticated}
+   * @input {RequestUploadSchema} — bucket, contentType, size, originalName, optional key.
+   * @output {{ method: "presigned" | "proxy", presignedUrl, key, expiresAt }}
    */
   requestUpload: protectedProcedure
     .input(RequestUploadSchema)
@@ -244,7 +250,10 @@ export const storageRouter = router({
         const ext = input.contentType === 'image/png' ? '.png'
                   : input.contentType === 'image/webp' ? '.webp'
                   : '.jpg';
-        const key = input.key ?? `${year}/${month}/${day}/${randomUUID()}${ext}`;
+        // The server chooses the key. It used to be `input.key ?? <generated>`, i.e.
+        // the client could preallocate it — and `confirmUpload` picked it back up
+        // from the input without verifying it.
+        const key = `${year}/${month}/${day}/${randomUUID()}${ext}`;
 
         const { url, expiresAt } = await provider.getPresignedPutUrl({
           bucket: input.bucket as StorageBucket,
@@ -258,12 +267,21 @@ export const storageRouter = router({
           presignedUrl: url,
           key,
           expiresAt: expiresAt.toISOString(),
+          // Binds the slot to bucket+key+user. TTL aligned with the presigned URL:
+          // a slow upload shouldn't outlive the URL but should die at confirmation.
+          uploadToken: signUploadToken({
+            bucket: input.bucket as StorageBucket,
+            key,
+            userId: ctx.session.user.id,
+            ttlMs: Math.max(expiresAt.getTime() - Date.now(), 0),
+          }),
         };
       }
 
       // Local storage: caller should use entity-specific upload endpoint
       return {
         method: 'proxy' as const,
+        uploadToken: null,
         presignedUrl: null,
         key: null,
         expiresAt: null,
@@ -271,38 +289,70 @@ export const storageRouter = router({
     }),
 
   /**
-   * Confirm a completed presigned upload — creates the FileObject DB record.
-   * Only needed for the presigned (MinIO) path; local proxy endpoints handle this internally.
+   * Confirms a completed presigned upload and creates the FileObject DB record; only needed for MinIO path.
+   *
+   * @auth {authenticated}
+   * @input {ConfirmUploadSchema} — bucket, key, contentType, size, originalName, optional checksumSha256.
+   * @output {{ fileId: string, publicUrl: string, key: string }}
    */
   confirmUpload: protectedProcedure
     .input(ConfirmUploadSchema)
     .mutation(async ({ input, ctx }) => {
-      const publicUrl = await resolvePublicUrl(ctx.prisma, input.bucket as StorageBucket, input.key);
+      // Bucket and key come from the signed token, not from the input. They used to be
+      // free-form fields: with the key of a blob uploaded by someone else, you could get
+      // a `FileObject` created with your own `createdBy`, and from there the
+      // `confirmPendingFile` predicate would let you link it as your own file.
+      let slot;
+      try {
+        slot = verifyUploadToken(input.uploadToken);
+      } catch {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Slot di upload non valida o scaduta, ricarica il file',
+        });
+      }
+
+      if (slot.userId !== ctx.session.user.id) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Slot di upload assegnata a un altro utente',
+        });
+      }
+
+      const publicUrl = await resolvePublicUrl(ctx.prisma, slot.bucket, slot.key);
 
       const fileObject = await ctx.prisma.fileObject.create({
         data: {
           id: randomUUID(),
-          bucket: input.bucket,
-          key: input.key,
+          bucket: slot.bucket,
+          key: slot.key,
           originalName: input.originalName,
           size: input.size,
           contentType: input.contentType,
           checksumSha256: input.checksumSha256 ?? '',
           createdBy: ctx.session.user.id,
-          confirmedAt: new Date(),
+          // Pending, not confirmed: this confirms the **transfer**, not the
+          // linking to an entity. Whoever links it calls `confirmPendingFile`,
+          // which requires `confirmedAt === null`. Welcome side effect: an
+          // abandoned upload ends up under the hourly reaper instead of staying
+          // forever.
+          confirmedAt: null,
         },
       });
 
       return {
-        fileId: fileObject.id,
+        fileObjectId: fileObject.id,
         publicUrl,
-        key: input.key,
+        key: slot.key,
       };
     }),
 
   /**
-   * Prepara upload (genera uploadId e URL) — legacy endpoint
-   * Accessibile a tutti gli utenti autenticati
+   * Legacy upload slot endpoint — generates an uploadId and proxy URL; use requestUpload for new code.
+   *
+   * @auth {authenticated}
+   * @input {CreateUploadSchema} — bucket, originalName, contentType, size.
+   * @output {{ uploadId: string, uploadUrl: string, bucket: string, maxSizeBytes: number }}
    */
   createUpload: protectedProcedure
     .input(CreateUploadSchema)
@@ -319,8 +369,7 @@ export const storageRouter = router({
       }
 
       const uploadId = randomUUID();
-      const { publicBaseUrl } = await getStorageUrlConfig(ctx.prisma);
-      const baseUrl = publicBaseUrl || `http://localhost:${process.env.PORT || 3001}`;
+      const baseUrl = await getStorageBaseUrl(ctx.prisma);
       const uploadUrl = `${baseUrl}/storage/upload/${uploadId}`;
 
       return {
@@ -332,14 +381,17 @@ export const storageRouter = router({
     }),
 
   /**
-   * Cancella file
-   * Solo admin e editor possono cancellare file
+   * Deletes a file object and its underlying storage object.
+   *
+   * @auth {config:update}
+   * @input {DeleteFileSchema} — { id: string (UUID) }
+   * @output {{ success: true, message: string }}
    */
   delete: protectedProcedure
     .use(requirePermission('config:update'))
     .input(DeleteFileSchema)
     .mutation(async ({ input, ctx }) => {
-      // Verifica esistenza
+      // Verify existence
       const metadata = await getObjectMetadata(ctx.prisma, input.id);
       if (!metadata) {
         throw new TRPCError({
@@ -348,7 +400,7 @@ export const storageRouter = router({
         });
       }
 
-      // Cancella file e metadati
+      // Delete file and metadata
       await deleteObject(ctx, input.id);
 
       return {
@@ -357,6 +409,13 @@ export const storageRouter = router({
       };
     }),
 
+  /**
+   * Tests the currently saved MinIO configuration by listing the uploads bucket and generating a test presigned URL.
+   *
+   * @auth {config:read}
+   * @input {none}
+   * @output {{ success: true, message: string, presignedUrlBase: string }}
+   */
   testMinioConnection: protectedProcedure
     .use(requirePermission('config:read'))
     .mutation(async ({ ctx }) => {
@@ -375,20 +434,22 @@ export const storageRouter = router({
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: `Errore caricamento config MinIO: ${err instanceof Error ? err.message : String(err)}`,
+          cause: err,
         });
       }
 
-      // Verifica connettività listando un bucket
+      // Verify connectivity by listing a bucket
       try {
         await provider.list({ bucket: 'uploads', limit: 1 });
       } catch (err: unknown) {
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: `Connessione a MinIO fallita: ${err instanceof Error ? err.message : String(err)}`,
+          cause: err,
         });
       }
 
-      // Genera URL presigned di prova per mostrare il base URL che riceverà il browser
+      // Generate a test presigned URL to show the base URL the browser will receive
       const presignResult = await provider.getPresignedPutUrl!({
         bucket: 'uploads',
         key: '_test/probe.jpg',
@@ -404,6 +465,13 @@ export const storageRouter = router({
       };
     }),
 
+  /**
+   * Returns the current storage configuration (local or MinIO), with sensitive credentials decrypted.
+   *
+   * @auth {config:read}
+   * @input {none}
+   * @output {{ type: "local" | "minio", local: {...}, minio: {...} }}
+   */
   getConfig: protectedProcedure
     .use(requirePermission('config:read'))
     .use(withSectionAccess('settings'))
@@ -432,7 +500,7 @@ export const storageRouter = router({
 
       let buckets: string[];
       try {
-        buckets = bucketsStr ? JSON.parse(bucketsStr) : IMAGE_BUCKETS.slice();
+        buckets = bucketsStr ? JSON.parse(bucketsStr) : APP_STORAGE_BUCKETS.slice();
       } catch {
         buckets = ['uploads'];
       }
@@ -459,6 +527,13 @@ export const storageRouter = router({
       };
     }),
 
+  /**
+   * Saves the storage configuration (local or MinIO) to AppConfig and resets the storage provider singleton.
+   *
+   * @auth {config:update}
+   * @input {SaveStorageConfigSchema} — discriminated union of local or minio config.
+   * @output {{ success: true }}
+   */
   saveConfig: protectedProcedure
     .use(requirePermission('config:update'))
     .use(withSectionAccess('settings'))

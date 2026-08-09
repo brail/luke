@@ -26,6 +26,10 @@ FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
+# postgresql16-client: pg_dump/pg_restore for the backup/restore feature (maintenance.backup router).
+# Version pinned to 16 to match the `postgres:16-alpine` service in docker-compose.yml.
+RUN apk add --no-cache postgresql16-client
+
 # APP_VERSION is injected at build time from the git tag (e.g. v1.2.3).
 ARG APP_VERSION=dev
 ENV APP_VERSION=$APP_VERSION
@@ -55,6 +59,7 @@ COPY --from=builder /app/packages/calendar/node_modules  ./packages/calendar/nod
 COPY --from=builder /app/apps/api/package.json    ./apps/api/package.json
 COPY --from=builder /app/apps/api/dist            ./apps/api/dist
 COPY --from=builder /app/apps/api/prisma          ./apps/api/prisma
+COPY --from=builder /app/apps/api/prisma.config.ts ./apps/api/prisma.config.ts
 COPY --from=builder /app/apps/api/node_modules    ./apps/api/node_modules
 
 # Email templates (plain text — tsc does not copy non-TS files)

@@ -1,6 +1,6 @@
 'use client';
 
-import { Calendar, Download, FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
+import { Calendar, Download, FileSpreadsheet, FileText, LoaderCircle } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -48,6 +48,18 @@ async function downloadExport(
   URL.revokeObjectURL(objectUrl);
 }
 
+/**
+ * Dropdown button for exporting the current calendar view.
+ *
+ * Supports iCal (.ics), PDF, and XLSX formats. The PDF export passes the active
+ * view name and date so the backend renders the correct layout. Downloads are
+ * triggered via a hidden `<a>` element.
+ *
+ * @param seasonId - Season whose calendar events are exported.
+ * @param brandIds - Brand IDs included in the export scope.
+ * @param view - Active calendar view name (passed to PDF export only).
+ * @param viewDate - Currently visible date (passed to PDF export only).
+ */
 export function ExportButton({ seasonId, brandIds, view, viewDate, disabled }: Props) {
   const { data: session } = useSession();
   const [loading, setLoading] = useState(false);
@@ -82,7 +94,7 @@ export function ExportButton({ seasonId, brandIds, view, viewDate, disabled }: P
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" disabled={disabled || loading || !brandIds.length}>
           {loading
-            ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Esportando…</>
+            ? <><LoaderCircle className="h-4 w-4 mr-1 animate-spin" />Esportando…</>
             : <><Download className="h-4 w-4 mr-1" />Esporta</>}
         </Button>
       </DropdownMenuTrigger>

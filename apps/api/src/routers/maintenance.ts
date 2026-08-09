@@ -1,22 +1,13 @@
 /**
  * Router tRPC per sezione Maintenance
- * Placeholder per funzionalità di manutenzione e diagnostica
  */
 
-import { router, protectedProcedure } from '../lib/trpc';
-import { requirePermission } from '../lib/permissions';
+import { router } from '../lib/trpc';
+
+import { backupRouter } from './maintenance.backup.router';
+import { maintenanceModeRouter } from './maintenance.mode.router';
 
 export const maintenanceRouter = router({
-  /**
-   * Ottiene lo stato del sistema
-   */
-  getStatus: protectedProcedure
-    .use(requirePermission('maintenance:read'))
-    .query(async () => {
-      return {
-        status: 'operational',
-        timestamp: new Date().toISOString(),
-        placeholder: true,
-      };
-    }),
+  backup: backupRouter,
+  mode: maintenanceModeRouter,
 });

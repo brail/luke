@@ -3,7 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Trash2 } from 'lucide-react';
 import { useEffect , useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, type FieldPath } from 'react-hook-form';
 import { z } from 'zod';
 
 import type { RouterOutputs } from '@luke/api';
@@ -12,6 +12,9 @@ import {
   MERCHANDISING_LIFE_TYPE,
   MERCHANDISING_LAUNCH_TYPE,
   MerchandisingPlanRowInputSchema,
+  type MerchandisingGender,
+  type MerchandisingLifeType,
+  type MerchandisingLaunchType,
 } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
@@ -85,6 +88,14 @@ interface Props {
   canUpdate: boolean;
 }
 
+/**
+ * Dialog for creating or editing a merchandising plan row.
+ *
+ * @param mode - "create" shows empty defaults; "edit" pre-fills from `row`.
+ * @param row - Existing row to edit; omit in create mode.
+ * @param planId - Parent merchandising plan ID.
+ * @param onDelete - When provided, shows a delete button gated by confirmation.
+ */
 export function MerchandisingRowDialog({
   open,
   onOpenChange,
@@ -148,12 +159,12 @@ export function MerchandisingRowDialog({
         styleCode: row.styleCode ?? '',
         colorCode: row.colorCode,
         colorDescription: row.colorDescription,
-        gender: row.gender as any,
+        gender: row.gender as MerchandisingGender,
         productCategory: row.productCategory,
         lineCode: row.lineCode ?? '',
-        lifeType: (row.lifeType as any) ?? null,
+        lifeType: (row.lifeType as MerchandisingLifeType | null) ?? null,
         carryoverFromSeason: row.carryoverFromSeason ?? '',
-        launchType: (row.launchType as any) ?? null,
+        launchType: (row.launchType as MerchandisingLaunchType | null) ?? null,
         smsPairsOrder: row.smsPairsOrder ?? null,
         targetPairs: row.targetPairs ?? null,
         cancellationStatus: row.cancellationStatus ?? '',
@@ -182,15 +193,16 @@ export function MerchandisingRowDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="max-w-2xl max-h-[90vh] p-0 gap-0 flex flex-col"> {/* vh: no Tailwind scale equivalent for viewport-relative height */}
+          <DialogHeader className="px-6 py-4 border-b shrink-0">
             <DialogTitle>
               {mode === 'create' ? 'Nuova riga SKU' : 'Modifica riga SKU'}
             </DialogTitle>
           </DialogHeader>
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+            <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col flex-1 min-h-0">
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
               {/* Identificazione */}
               <div className="grid grid-cols-2 gap-3">
                 <FormField
@@ -416,7 +428,7 @@ export function MerchandisingRowDialog({
                         </FormControl>
                         <SelectContent>
                           <SelectItem value="__none__">— Nessuno —</SelectItem>
-                          {parameterSets.map((ps: any) => (
+                          {parameterSets.map(ps => (
                             <SelectItem key={ps.id} value={ps.id}>
                               {ps.name}
                             </SelectItem>
@@ -442,7 +454,7 @@ export function MerchandisingRowDialog({
                     <FormField
                       key={name}
                       control={form.control}
-                      name={name as any}
+                      name={name as FieldPath<FormValues>}
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>{label}</FormLabel>
@@ -505,8 +517,9 @@ export function MerchandisingRowDialog({
                   </FormItem>
                 )}
               />
+            </div>
 
-              <DialogFooter className="flex items-center justify-between">
+              <DialogFooter className="flex items-center justify-between px-6 py-4 border-t shrink-0">
                 <div>
                   {mode === 'edit' && onDelete && canUpdate && (
                     <Button

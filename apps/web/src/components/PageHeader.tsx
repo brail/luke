@@ -6,6 +6,11 @@ interface PageHeaderProps {
   actions?: ReactNode;
 }
 
+/**
+ * Standardized page header with a title, optional description, and an optional action slot.
+ *
+ * @param actions - Rendered right-aligned; typically contains `CreateActionButton` or similar controls.
+ */
 export function PageHeader({ title, description, actions }: PageHeaderProps) {
   return (
     <div className="mb-6 flex items-start justify-between gap-4">

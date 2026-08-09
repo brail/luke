@@ -36,36 +36,20 @@ interface RoleWrapperProps {
 }
 
 /**
- * Componente per renderizzare contenuti basato su permissions
+ * Conditionally renders children based on the current user's Resource:Action permissions.
  *
- * Permette di controllare la visibilità dei componenti basandosi su
- * permission specifiche dell'utente (Resource:Action pattern)
+ * Supports three permission check modes that can be combined:
+ * - `permission` — user must hold this single permission
+ * - `permissions` — user must hold ALL listed permissions
+ * - `anyPermission` — user must hold AT LEAST ONE listed permission
  *
- * @example
- * ```tsx
- * // Renderizza solo se l'utente ha permission 'brands:create'
- * <RoleWrapper permission="brands:create">
- *   <CreateBrandButton />
- * </RoleWrapper>
+ * Renders `fallback` (default `null`) when the check fails or the user is not authenticated.
  *
- * // Renderizza solo se ha TUTTE le permissions
- * <RoleWrapper permissions={['brands:create', 'brands:update']}>
- *   <BrandForm />
- * </RoleWrapper>
- *
- * // Renderizza solo se ha ALMENO UNA delle permissions
- * <RoleWrapper anyPermission={['brands:create', 'brands:update']}>
- *   <EditableContent />
- * </RoleWrapper>
- *
- * // Con fallback se non autorizzato
- * <RoleWrapper
- *   permission="brands:delete"
- *   fallback={<p>Non hai i permessi per eliminare</p>}
- * >
- *   <DeleteButton />
- * </RoleWrapper>
- * ```
+ * @param permission - Single permission required to render children.
+ * @param permissions - All of these permissions must be held.
+ * @param anyPermission - At least one of these permissions must be held.
+ * @param fallback - Content to render when the permission check fails.
+ * @param requireAuth - When false, unauthenticated users bypass the auth check (default: true).
  */
 export function RoleWrapper({
   children,

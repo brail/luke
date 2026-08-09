@@ -23,8 +23,8 @@ import { useStandardMutation } from '../../../../../lib/useStandardMutation';
 import { ApproveUserDialog } from './ApproveUserDialog';
 
 /**
- * Tab per gestione utenti LDAP in attesa di approvazione admin.
- * L'approvazione richiede obbligatoriamente la configurazione dell'accesso.
+ * Tab listing users pending admin approval (LDAP and local accounts with `pendingApproval: true`).
+ * Approving a user opens `ApproveUserDialog`, which requires access configuration before confirming.
  */
 export function PendingUsersTab() {
   const { can } = usePermission();

@@ -1,66 +1,52 @@
 # Tools Directory
 
-Questa directory contiene strumenti e configurazioni per la manutenzione del monorepo.
+Strumenti di manutenzione del monorepo.
 
 ## 📁 Struttura
 
 ```
 tools/
-├── config/
-│   └── cleanup.blocklist.json    # File protetti durante cleanup
-├── reports/
-│   └── unused-files.report.md    # Report file inutili
+├── codemods/
+│   └── eliminate-hardcoded-urls.ts  # Codemod ts-morph, supporta --dry-run
+├── reports/                         # Output storici degli script
 ├── scripts/
-│   └── cleanup-execute.sh        # Script di esecuzione cleanup
-└── README.md                     # Questo file
+│   ├── check-docs-integrity.ts      # Link e marker luke-docs nei .md tracciati
+│   ├── check-skill-integrity.ts     # Path e simboli citati da .claude/skills/
+│   ├── validate-client-server-boundaries.ts
+│   └── lib/                         # Regole condivise fra gli script
+└── README.md                        # Questo file
 ```
 
-## 🧹 Cleanup File Inutili
+## 🔍 Controlli di drift
 
-### Report Generato
-
-- **File**: `reports/unused-files.report.md`
-- **Status**: ✅ DRY-RUN COMPLETATO
-- **File trovati**: 36 file (~363KB)
-- **Rischio**: 🟡 Medio (solo build artifacts in posizione sbagliata)
-
-### Categorie File
-
-1. **File `.backup`** (2 file) - File di sviluppo temporanei
-2. **Build artifacts in `src/`** (22 file) - Generati erroneamente in src/ invece di dist/
-3. **Build info non ignorato** (1 file) - tsbuildinfo tracciato da git
-4. **Directory `/src` duplicata** (8 file) - Componenti shadcn duplicati mai utilizzati
-5. **Backup database Prisma** (3 file) - Già in .gitignore ma ancora tracciati
-
-### Esecuzione
-
-**Opzione 1: Script automatico (raccomandato)**
+`check-docs-integrity` e `check-skill-integrity` girano in CI dietro
+`pnpm check:drift` e sono bloccanti. Entrambi derivano il proprio insieme di file
+da git, non da liste scritte a mano: il perché sta in `scripts/lib/gitPaths.ts`.
 
 ```bash
-./tools/scripts/cleanup-execute.sh
+pnpm check:drift
 ```
 
-**Opzione 2: Comandi manuali**
-Vedi `reports/unused-files.report.md` per i comandi `git rm` specifici.
+## 🧱 Boundary client/server
 
-### Validazione Post-Cleanup
+Verifica che i file client di `apps/web/src` non importino `@luke/core/server`
+né moduli `node:`.
 
 ```bash
-pnpm -w lint && pnpm -w typecheck && pnpm -w build
-pnpm -F @luke/api test
+npx tsx tools/scripts/validate-client-server-boundaries.ts
 ```
 
-## 🛡️ Sicurezza
+Non è wired in CI né in husky — stesso stato di `pnpm codemod:check-urls`.
 
-- **Blocklist**: `config/cleanup.blocklist.json` protegge file critici
-- **Gitignore aggiornato**: Pattern per evitare futuri problemi
-- **Backup automatico**: Script crea stash prima dell'esecuzione
+## 🧹 Cleanup file inutili
 
-## 📋 Guard-Rail
+Rimosso. Era uno script one-shot dell'ottobre 2025 con 36 path scritti a mano,
+tutti già cancellati da tempo: con `set -e` abortiva sul primo `git rm`, dopo
+aver però già eseguito `git stash push` sul lavoro in corso. Le cinque categorie
+che puliva (`.backup`, `.d.ts`/`.map` sotto `src/`, `tsbuildinfo`, `/src`
+duplicata, `dev.db.backup.*`) sono oggi coperte da `.gitignore`.
 
-File **MAI** rimossi:
-
-- `prisma/migrations/`, `schema.prisma`
-- `package.json`, `tsconfig*.json`
-- `README*`, `LICENSE*`
-- File di test e configurazione
+Anche gli import non utilizzati non hanno più uno script dedicato:
+`@typescript-eslint/no-unused-vars` è già `error` in `eslint.config.mjs`, e
+`eslint --fix` li rimuove lavorando sull'AST invece che per sostituzione di
+stringhe sulla riga di import.

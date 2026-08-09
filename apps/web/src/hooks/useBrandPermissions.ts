@@ -6,28 +6,21 @@ import { useMemo, useCallback } from 'react';
 import { hasPermission, type Role } from '@luke/core';
 
 /**
- * Hook per controllare le permissions specifiche per le operazioni su Brand
+ * Returns permission flags and helper methods for Brand CRUD operations,
+ * derived from the current session's role. All permission checks are memoized.
  *
- * Fornisce flag booleani per ogni azione (canList, canCreate, canUpdate, canDelete, canHardDelete)
- * con risultati in cache per evitare ricalcoli.
+ * Boolean flags (use as props — do NOT call as functions):
+ * `canList`, `canCreate`, `canUpdate`, `canDelete`, `canHardDelete`, `isAuthenticated`
+ *
+ * Method helpers (call with parentheses):
+ * `canEdit()`, `isReadOnly()`, `isAdmin()`, `isAdminOrEditor()`
  *
  * @example
  * ```typescript
- * const brandPerms = useBrandPermissions();
- *
- * if (!brandPerms.canCreate) {
- *   return <div>Non hai permesso di creare brand</div>;
- * }
- *
- * return (
- *   <form>
- *     <button disabled={!brandPerms.canUpdate}>Salva</button>
- *     <button disabled={!brandPerms.canDelete}>Elimina</button>
- *     {brandPerms.canHardDelete && (
- *       <button>Elimina permanentemente</button>
- *     )}
- *   </form>
- * );
+ * const perms = useBrandPermissions();
+ * <button disabled={!perms.canCreate}>New brand</button>
+ * <button disabled={!perms.canDelete}>Delete</button>
+ * {perms.canHardDelete && <button>Hard delete</button>}
  * ```
  */
 export function useBrandPermissions() {
@@ -70,28 +63,28 @@ export function useBrandPermissions() {
   }, [session?.user?.role]);
 
   /**
-   * Verifica se l'utente ha permesso di editare (create o update)
+   * Returns `true` if the user can create or update brands.
    */
   const canEdit = useCallback((): boolean => {
     return permissions.canCreate || permissions.canUpdate;
   }, [permissions.canCreate, permissions.canUpdate]);
 
   /**
-   * Verifica se l'utente è in modalità sola lettura (viewer)
+   * Returns `true` if the user can list brands but cannot create them (viewer role).
    */
   const isReadOnly = useCallback((): boolean => {
     return permissions.canList && !permissions.canCreate;
   }, [permissions.canList, permissions.canCreate]);
 
   /**
-   * Verifica se l'utente ha diritti admin
+   * Returns `true` if the user has the `admin` role.
    */
   const isAdmin = useCallback((): boolean => {
     return permissions.userRole === 'admin';
   }, [permissions.userRole]);
 
   /**
-   * Verifica se l'utente ha diritti admin o editor
+   * Returns `true` if the user has the `admin` or `editor` role.
    */
   const isAdminOrEditor = useCallback((): boolean => {
     return (

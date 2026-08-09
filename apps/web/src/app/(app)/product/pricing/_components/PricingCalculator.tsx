@@ -49,6 +49,17 @@ function fmt(value: number, currency: string) {
   }).format(value);
 }
 
+/**
+ * Interactive pricing calculator supporting three modes: forward (cost → price),
+ * inverse (price → max cost), and margin (cost + price → margin).
+ *
+ * Results are fetched from `trpc.pricing.calculate` and displayed with a
+ * colour-coded margin indicator. The lock icon freezes an intermediate field
+ * for what-if analysis.
+ *
+ * @param parameterSet - Active parameter set driving the calculation coefficients;
+ *   when null the calculator renders a disabled placeholder.
+ */
 export function PricingCalculator({ parameterSet }: PricingCalculatorProps) {
   const [purchasePrice, setPurchasePrice] = useState<string>('');
   const [retailPrice, setRetailPrice] = useState<string>('');
@@ -72,11 +83,11 @@ export function PricingCalculator({ parameterSet }: PricingCalculatorProps) {
       purchasePrice.trim() !== '' && !isNaN(Number(purchasePrice));
     const hasRetail = retailPrice.trim() !== '' && !isNaN(Number(retailPrice));
 
-    // Se almeno un campo è bloccato → il valore è fisso, calcola il margine
+    // If at least one field is locked → value is fixed, calculate margin
     if (purchaseLocked || retailLocked) {
       return { mode: 'margin', valid: hasPurchase && hasRetail };
     }
-    // Nessun lock: auto-detect dalla direzione del dato inserito
+    // No lock: auto-detect from direction of entered data
     if (hasPurchase && !hasRetail) return { mode: 'forward', valid: true };
     if (hasRetail && !hasPurchase) return { mode: 'inverse', valid: true };
     if (hasPurchase && hasRetail) return { mode: 'margin', valid: true };

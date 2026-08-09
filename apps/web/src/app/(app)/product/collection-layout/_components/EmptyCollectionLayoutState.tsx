@@ -38,6 +38,16 @@ function genderKey(v: readonly string[]) {
 
 type RowSelection = { included: boolean; copyQuotations: boolean };
 
+/**
+ * Empty state shown when no collection layout exists for the active brand+season.
+ *
+ * Offers two paths: create a blank layout (with gender selection) or copy rows
+ * from a previous season via a two-step dialog. The copy dialog lets the user
+ * choose which rows to include and whether to carry over quotations.
+ *
+ * @param onCreateEmpty - Called with the selected gender array to create a blank layout.
+ * @param onCopyFromSeason - Called with the source season ID and row selection to copy.
+ */
 export function EmptyCollectionLayoutState({
   brandId,
   seasonId,
@@ -247,24 +257,24 @@ export function EmptyCollectionLayoutState({
               <Alert className="border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30">
                 <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                 <AlertDescription className="text-xs text-amber-800 dark:text-amber-300">
-                  Il campo <strong>progress</strong> verrà azzerato in tutte le righe copiate. Le foto non vengono copiate.
+                  Il campo <strong>fase</strong> verrà azzerato in tutte le righe copiate. Le foto non vengono copiate.
                 </AlertDescription>
               </Alert>
 
               {/* Shortcut globali */}
               <div className="flex flex-wrap gap-2 text-xs">
-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setAllIncluded(true)}>
+                <Button variant="ghost" size="xs" onClick={() => setAllIncluded(true)}>
                   Seleziona tutte
                 </Button>
-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setAllIncluded(false)}>
+                <Button variant="ghost" size="xs" onClick={() => setAllIncluded(false)}>
                   Deseleziona tutte
                 </Button>
                 <span className="text-muted-foreground self-center">·</span>
-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setAllQuotations(true)}
+                <Button variant="ghost" size="xs" onClick={() => setAllQuotations(true)}
                   disabled={selectedRows.length === 0}>
                   Tutte con quotazioni
                 </Button>
-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setAllQuotations(false)}
+                <Button variant="ghost" size="xs" onClick={() => setAllQuotations(false)}
                   disabled={selectedRows.length === 0}>
                   Tutte senza quotazioni
                 </Button>
@@ -274,7 +284,7 @@ export function EmptyCollectionLayoutState({
                 <p className="text-sm text-muted-foreground text-center py-6">Caricamento righe...</p>
               ) : (
                 <div className="space-y-4 max-h-96 overflow-y-auto pr-1">
-                  {/* Header colonne */}
+                  {/* Header colonne — custom track sizes (label + 2 action columns) not expressible via grid-cols-N */}
                   <div className="grid grid-cols-[1fr_auto_auto] gap-2 items-center px-1">
                     <span />
                     <span className="text-xs font-medium text-muted-foreground text-center w-16">Includi</span>
@@ -293,6 +303,7 @@ export function EmptyCollectionLayoutState({
                           <div
                             key={row.id}
                             className={cn(
+                              // custom track sizes matching the header row above; not expressible via grid-cols-N
                               'grid grid-cols-[1fr_auto_auto] gap-2 items-center rounded-md border px-3 py-2 text-sm transition-colors',
                               sel.included ? 'border-primary/30 bg-primary/5' : 'border-border bg-muted/20'
                             )}

@@ -1,0 +1,19 @@
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "❌ gitleaks non trovato nel PATH. Installa con: brew install gitleaks" >&2
+  exit 1
+fi
+if ! command -v semgrep >/dev/null 2>&1; then
+  echo "❌ semgrep non trovato nel PATH. Installa con: brew install semgrep (o pipx install semgrep)" >&2
+  exit 1
+fi
+
+gitleaks protect --staged || exit 1
+
+# Solo regole ERROR-tier per velocità (<5s): community ruleset e la regola
+# WARNING (luke-mutation-requires-permission) girano in CI, non qui.
+#
+# La directory intera, filtrata per severità, invece dell'elenco file per file:
+# una regola nuova entra automaticamente in tutti e tre i gate (questo hook,
+# `security:sast`, `security.yml`). Enumerarli significava tre modifiche
+# sincronizzate per ogni regola, e dimenticarne una la disattivava in silenzio.
+semgrep scan --config .semgrep/rules/ --severity ERROR --error --baseline-commit HEAD

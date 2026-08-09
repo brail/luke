@@ -1,0 +1,22 @@
+rules:
+  - id: luke-no-raw-pdf-printer
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      Motore pdfmake istanziato direttamente. Solo `lib/export/pdf.ts` può farlo:
+      è l'unico punto in cui `setUrlAccessPolicy` e `setLocalAccessPolicy` sono
+      chiuse, e il default di pdfmake è permissivo (fetch di URL remote e lettura
+      dal filesystem locale a partire da una definizione di documento). Un printer
+      costruito a mano non eredita nessuna policy. In più l'API interna
+      `js/Printer` è cambiata fra pdfmake 0.2 e 0.3 senza che il typecheck se ne
+      accorgesse, lasciando quattro export rotti in produzione. Usare
+      `createPdfBuffer(def)`.
+    pattern-either:
+      - pattern: require('pdfmake/js/Printer')
+      - pattern: import $X from 'pdfmake/js/Printer'
+      - pattern: $P.createPdfKitDocument(...)
+    paths:
+      include:
+        - 'apps/api/src/**'
+      exclude:
+        - 'apps/api/src/lib/export/pdf.ts'

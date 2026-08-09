@@ -1,22 +1,19 @@
 /**
- * @luke/core/storage - Tipi per sistema storage
- *
- * Definisce l'interfaccia IStorageProvider e i tipi correlati per
- * gestire file storage in modo estensibile (local, SAMBA, GDrive, etc.)
- *
- * @version 0.1.0
- * @author Luke Team
+ * @luke/core/storage — Type definitions for the storage system.
+ * Defines `IStorageProvider` and all associated param/result interfaces.
+ * Implementations include local filesystem and MinIO; extensible to SAMBA, GDrive, etc.
  */
 
 /**
- * Bucket logici per organizzare i file
- * - uploads: File caricati dagli utenti
- * - exports: File esportati dal sistema
- * - assets: Asset statici e risorse
- * - brand-logos: Logo dei brand (pending + confirmed)
- * - collection-row-pictures: Foto righe collection layout
- * - collection-row-pictures-revisions: Foto righe — bucket immutabile per registro qualità
- * - merchandising-specsheet-images: Immagini specsheet
+ * Logical buckets to organize files
+ * - uploads: Files uploaded by users
+ * - exports: Files exported by the system
+ * - assets: Static assets and resources
+ * - brand-logos: Brand logos (pending + confirmed)
+ * - collection-row-pictures: Collection layout row photos
+ * - collection-row-pictures-revisions: Row photos — immutable bucket for quality log
+ * - merchandising-specsheet-images: Specsheet images
+ * - backups: Encrypted backup archives (private, never exposed via public proxy /uploads/:bucket/*)
  */
 export type StorageBucket =
   | 'uploads'
@@ -26,125 +23,148 @@ export type StorageBucket =
   | 'collection-row-pictures'
   | 'collection-row-pictures-revisions'
   | 'merchandising-specsheet-images'
-  | 'company-assets';
+  | 'company-assets'
+  | 'backups';
 
 /**
- * Metadati di un file memorizzato
+ * Buckets that hold real application files, as opposed to `backups` (internal/private).
+ * Used by the backup engine to enumerate "all files" for a DB_AND_FILES backup — deliberately
+ * excludes `backups` itself so a backup never recursively embeds prior backup blobs. Also the
+ * single source of truth for "which buckets are user/upload-facing" — `z.enum(APP_STORAGE_BUCKETS)`
+ * needs the literal tuple shape (not just `readonly StorageBucket[]`), hence the `as const satisfies`.
+ */
+export const APP_STORAGE_BUCKETS = [
+  'uploads',
+  'exports',
+  'assets',
+  'brand-logos',
+  'collection-row-pictures',
+  'collection-row-pictures-revisions',
+  'merchandising-specsheet-images',
+  'company-assets',
+] as const satisfies readonly StorageBucket[];
+
+/**
+ * Metadata for a stored file
  */
 export interface StoredObjectMeta {
-  /** ID univoco del file */
+  /** Unique file ID */
   id: string;
-  /** Bucket di appartenenza */
+  /** Bucket membership */
   bucket: StorageBucket;
-  /** Chiave interna (path logico generato server-side) */
+  /** Internal key (logical path generated server-side) */
   key: string;
-  /** Nome originale del file */
+  /** Original file name */
   originalName: string;
-  /** Dimensione in bytes */
+  /** Size in bytes */
   size: number;
   /** MIME type */
   contentType: string;
-  /** Checksum SHA-256 (hex) */
+  /** SHA-256 checksum (hex) */
   checksumSha256: string;
-  /** ID utente che ha creato il file */
+  /** ID of user who created the file */
   createdBy: string;
-  /** Data di creazione */
+  /** Creation date */
   createdAt: Date;
 }
 
 /**
- * Parametri per upload di un file
+ * Parameters for uploading a file
  */
 export interface StoragePutParams {
-  /** Bucket destinazione */
+  /** Destination bucket */
   bucket: StorageBucket;
-  /** Nome originale del file */
+  /** Original file name */
   originalName: string;
   /** MIME type (default: application/octet-stream) */
   contentType: string;
-  /** Dimensione attesa in bytes */
+  /** Expected size in bytes */
   size: number;
-  /** Stream del file da scrivere */
+  /** File stream to write */
   stream: NodeJS.ReadableStream;
+  /** Explicit key to use instead of auto-generated (e.g. to pair blob and sidecar). Optional — if absent, provider generates a date-partitioned key. */
+  key?: string;
+  /** If true, skips `maxFileSizeMB` limit of local provider. Reserved for privileged internal writes (e.g. backup engine) — never expose to user uploads. */
+  bypassSizeLimit?: boolean;
 }
 
 /**
- * Parametri per recupero di un file
+ * Parameters for retrieving a file
  */
 export interface StorageGetParams {
-  /** Bucket sorgente */
+  /** Source bucket */
   bucket: StorageBucket;
-  /** Chiave del file */
+  /** File key */
   key: string;
 }
 
 /**
- * Parametri per cancellazione di un file
+ * Parameters for deleting a file
  */
 export interface StorageDeleteParams {
-  /** Bucket sorgente */
+  /** Source bucket */
   bucket: StorageBucket;
-  /** Chiave del file */
+  /** File key */
   key: string;
 }
 
 /**
- * Parametri per listing dei file
+ * Parameters for listing files
  */
 export interface StorageListParams {
-  /** Bucket da listare */
+  /** Bucket to list */
   bucket: StorageBucket;
-  /** Prefisso per filtrare (es. '2025/10/') */
+  /** Prefix to filter (e.g. '2025/10/') */
   prefix?: string;
-  /** Cursore per paginazione */
+  /** Cursor for pagination */
   cursor?: string;
-  /** Limite risultati (default: 100) */
+  /** Result limit (default: 100) */
   limit?: number;
 }
 
 /**
- * Risultato di un'operazione put
+ * Result of a put operation
  */
 export interface StoragePutResult {
-  /** Chiave assegnata al file */
+  /** Key assigned to the file */
   key: string;
-  /** Checksum SHA-256 calcolato */
+  /** Calculated SHA-256 checksum */
   checksumSha256: string;
-  /** Dimensione effettiva scritta */
+  /** Actual size written */
   size: number;
 }
 
 /**
- * Risultato di un'operazione get
+ * Result of a get operation
  */
 export interface StorageGetResult {
-  /** Stream del file */
+  /** File stream */
   stream: NodeJS.ReadableStream;
-  /** Dimensione del file */
+  /** File size */
   size: number;
   /** MIME type */
   contentType: string;
 }
 
 /**
- * Item nel risultato di un list
+ * Item in a list operation result
  */
 export interface StorageListItem {
-  /** Chiave del file */
+  /** File key */
   key: string;
-  /** Dimensione in bytes */
+  /** Size in bytes */
   size: number;
-  /** Data ultima modifica */
+  /** Last modification date */
   modifiedAt: Date;
 }
 
 /**
- * Risultato di un'operazione list
+ * Result of a list operation
  */
 export interface StorageListResult {
-  /** Array di file trovati */
+  /** Array of found files */
   items: StorageListItem[];
-  /** Cursore per la pagina successiva (opzionale) */
+  /** Cursor for next page (optional) */
   nextCursor?: string;
 }
 
@@ -194,10 +214,10 @@ export interface PresignedGetResult {
 }
 
 /**
- * Interfaccia provider di storage
+ * Unified storage provider interface for all concrete implementations (LocalFs, MinIO, etc.).
+ * Implementations must be registered via the storage service — never instantiated directly by callers.
  *
- * Contratto unificato per implementazioni concrete (LocalFs, MinIO, etc.)
- * Garantisce estensibilità senza modifiche al service layer o router tRPC
+ * Check `capabilities` before calling optional methods (`getPresignedPutUrl`, `getPresignedGetUrl`).
  */
 export interface IStorageProvider {
   /** Capabilities advertised by this provider */

@@ -15,6 +15,7 @@ import {
 } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
+import { LastModifiedBy } from '../../../../../components/LastModifiedBy';
 import { Button } from '../../../../../components/ui/button';
 import {
   Dialog,
@@ -27,11 +28,14 @@ import { triggerDownload } from '../../../../../lib/download';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
+import { ChangePhaseDialog } from './ChangePhaseDialog';
+import { ChangePlanningGroupDialog } from './ChangePlanningGroupDialog';
 import {
   ForecastSection,
   IdentificationSection,
   NotesSection,
   PictureSidePanel,
+  PlanningSection,
   PricingFooterSection,
   SectionHeader,
   VendorSection,
@@ -54,9 +58,13 @@ interface CollectionRowDrawerProps {
   groups: CollectionGroup[];
   parameterSets: PricingParameterSet[];
   availableGenders: string[];
+  brandId: string;
+  seasonId: string;
   onSubmit: (data: CollectionLayoutRowInput) => void;
   onPictureUploaded?: () => void;
-  onQuotationChange?: () => void;
+  /** Called after the row is concluded or reopened — that write lands immediately, outside the
+   * drawer's buffered save, so the layout and alert queries need refetching right away. */
+  onCompletionChanged: () => void;
   isLoading?: boolean;
   canUpdate?: boolean;
 }
@@ -66,21 +74,23 @@ interface CollectionRowDrawerProps {
 function buildDefaultValues(
   defaultGroupId?: string,
   groups: CollectionGroup[] = [],
-  availableGenders: string[] = ['MAN', 'WOMAN']
+  availableGenders: string[] = ['MAN', 'WOMAN'],
+  defaultPlanningGroupId?: string
 ): CollectionLayoutRowInput {
   return {
     groupId: defaultGroupId ?? groups[0]?.id ?? '',
+    planningGroupId: defaultPlanningGroupId,
     gender: availableGenders[0] ?? 'MAN',
     vendorId: null,
     line: '',
     article: null,
     status: 'NEW',
     skuForecast: 1,
-    qtyForecast: 1,
+    qtyForecast: null,
     productCategory: '',
     strategy: null,
     styleStatus: null,
-    progress: null,
+    phaseId: null,
     designer: null,
     pictureKey: null,
     pendingPictureFileObjectId: null,
@@ -90,6 +100,13 @@ function buildDefaultValues(
     toolingNotes: null,
     toolingQuotation: null,
   };
+}
+
+function missingForecastLabels(data: CollectionLayoutRowInput): string[] {
+  const missing: string[] = [];
+  if (data.skuForecast == null) missing.push('SKU Forecast');
+  if (data.qtyForecast == null) missing.push('Qty Forecast');
+  return missing;
 }
 
 function rowToQuotationState(q: CollectionRow['quotations'][number]): QuotationState {
@@ -102,11 +119,28 @@ function rowToQuotationState(q: CollectionRow['quotations'][number]): QuotationS
     supplierQuotation: q.supplierQuotation ?? null,
     notes: q.notes ?? null,
     sku: q.sku ?? null,
+    isNew: false,
   };
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+/**
+ * Slide-over drawer for creating or editing a collection row.
+ *
+ * Orchestrates the form (via react-hook-form + `CollectionLayoutRowInputSchema`),
+ * picture upload (temp-path → confirm on save), and inline quotation management.
+ * Sections are rendered by `CollectionRowSections` sub-components.
+ *
+ * @param mode - "create" shows empty defaults; "edit" pre-fills from `row`.
+ * @param row - Existing row to edit; omit in create mode.
+ * @param defaultGroupId - Group pre-selected when creating a new row.
+ * @param groups - All groups in the layout (used in the group selector).
+ * @param parameterSets - Available pricing parameter sets for quotations.
+ * @param availableGenders - Genders enabled for this layout (e.g. ['MAN','WOMAN']).
+ * @param onPictureUploaded - Called after a picture is confirmed server-side.
+ * @param onCompletionChanged - Called after the row is concluded or reopened.
+ */
 export function CollectionRowDrawer({
   open,
   onOpenChange,
@@ -116,19 +150,29 @@ export function CollectionRowDrawer({
   groups,
   parameterSets,
   availableGenders,
+  brandId,
+  seasonId,
   onSubmit,
   onPictureUploaded,
-  onQuotationChange,
+  onCompletionChanged,
   isLoading = false,
   canUpdate = true,
 }: CollectionRowDrawerProps) {
   const [previewPictureUrl, setPreviewPictureUrl] = useState<string | null>(null);
   const [isUploadingPicture, setIsUploadingPicture] = useState(false);
   const [quotations, setQuotations] = useState<QuotationState[]>([]);
+  const [phaseChangeNote, setPhaseChangeNote] = useState('');
   const [pendingData, setPendingData] = useState<CollectionLayoutRowInput | null>(null);
+  const [changeGroupOpen, setChangeGroupOpen] = useState(false);
+  const [changePhaseOpen, setChangePhaseOpen] = useState(false);
   const { data: session } = useSession();
 
   const { data: vendorsList } = trpc.vendors.list.useQuery(undefined, { staleTime: 5 * 60 * 1000 });
+  const { data: planningGroups = [], isLoading: planningGroupsLoading } = trpc.planningGroup.list.useQuery(
+    { brandId, seasonId },
+    { enabled: open }
+  );
+  const defaultPlanningGroupId = planningGroups[0]?.id;
 
   const form = useForm<CollectionLayoutRowInput>({
     resolver: zodResolver(CollectionLayoutRowInputSchema),
@@ -136,12 +180,14 @@ export function CollectionRowDrawer({
   });
 
   const currentVendorId = form.watch('vendorId');
+  const currentPhaseId = form.watch('phaseId');
   const enabledParameterSetIds = useMemo(
     () => vendorsList?.items.find(v => v.id === currentVendorId)?.enabledParameterSets.map(p => p.id) ?? [],
     [currentVendorId, vendorsList?.items]
   );
 
   useEffect(() => {
+    setPhaseChangeNote('');
     if (!open) {
       setPreviewPictureUrl(null);
       return;
@@ -149,6 +195,7 @@ export function CollectionRowDrawer({
     if (mode === 'edit' && row) {
       form.reset({
         groupId: row.groupId,
+        planningGroupId: row.planningGroupId,
         gender: row.gender,
         vendorId: row.vendorId ?? null,
         line: row.line,
@@ -159,7 +206,8 @@ export function CollectionRowDrawer({
         productCategory: row.productCategory,
         strategy: row.strategy ?? null,
         styleStatus: row.styleStatus ?? null,
-        progress: row.progress ?? null,
+        pricePositioning: row.pricePositioning ?? null,
+        phaseId: row.phaseId ?? null,
         designer: row.designer ?? null,
         pictureKey: row.pictureKey ?? null,
         pendingPictureFileObjectId: null,
@@ -172,11 +220,11 @@ export function CollectionRowDrawer({
       setPreviewPictureUrl(row.pictureUrl ?? null);
       setQuotations((row.quotations ?? []).map(rowToQuotationState));
     } else {
-      form.reset(buildDefaultValues(defaultGroupId, groups, availableGenders));
+      form.reset(buildDefaultValues(defaultGroupId, groups, availableGenders, defaultPlanningGroupId));
       setPreviewPictureUrl(null);
       setQuotations([]);
     }
-  }, [open, mode, row?.id, defaultGroupId]);
+  }, [open, mode, row?.id, defaultGroupId, defaultPlanningGroupId]);
 
   const title = mode === 'create' ? 'Nuova riga' : (row?.line ?? 'Modifica riga');
 
@@ -226,27 +274,6 @@ export function CollectionRowDrawer({
     setPreviewPictureUrl(null);
   };
 
-  // ─── Quotation mutations ─────────────────────────────────────────
-  const createQuotationMutation = trpc.collectionLayout.quotations.create.useMutation({
-    onSuccess: newQ => {
-      setQuotations(prev => [...prev, rowToQuotationState(newQ as unknown as CollectionRow['quotations'][number])]);
-      onQuotationChange?.();
-    },
-    onError: e => toast.error(getTrpcErrorMessage(e)),
-  });
-
-  const updateQuotationMutation = trpc.collectionLayout.quotations.update.useMutation({
-    onError: e => toast.error(getTrpcErrorMessage(e)),
-  });
-
-  const deleteQuotationMutation = trpc.collectionLayout.quotations.delete.useMutation({
-    onSuccess: (_, vars) => {
-      setQuotations(prev => prev.filter(q => q.id !== vars.quotationId));
-      onQuotationChange?.();
-    },
-    onError: e => toast.error(getTrpcErrorMessage(e)),
-  });
-
   // ─── Row export mutations ────────────────────────────────────────
   const exportRowXlsxMutation = trpc.collectionLayout.export.rowXlsx.useMutation({
     onSuccess: result =>
@@ -263,10 +290,24 @@ export function CollectionRowDrawer({
     onError: e => toast.error(getTrpcErrorMessage(e, { default: "Errore durante l'esportazione PDF" })),
   });
 
-  // ─── Quotation handlers ──────────────────────────────────────────
+  // ─── Quotation handlers — tutti locali, nessuna mutation di rete: bufferizzano su `quotations`,
+  // il commit reale avviene al Salva (submitRow → onSubmit → collectionLayout.rows.update/create,
+  // che sincronizza le quotazioni nella stessa transazione della riga) ─────────────────
   const handleAddQuotation = () => {
     if (!row?.id) return;
-    createQuotationMutation.mutate({ rowId: row.id });
+    setQuotations(prev => [...prev, {
+      // crypto.randomUUID() requires a secure context (HTTPS or localhost) — falls back
+      // to a non-crypto random id over plain HTTP (e.g. an internal http:// hostname).
+      id: crypto.randomUUID?.() || Math.random().toString(36).substring(2) + Date.now().toString(36),
+      rowId: row.id,
+      order: prev.length,
+      pricingParameterSetId: null,
+      retailPrice: null,
+      supplierQuotation: null,
+      notes: null,
+      sku: null,
+      isNew: true,
+    }]);
   };
 
   const handleUpdateQuotationField = (
@@ -277,45 +318,66 @@ export function CollectionRowDrawer({
     setQuotations(prev => prev.map(q => q.id === id ? { ...q, [field]: value } : q));
   };
 
-  const handleBlurQuotation = (id: string, overrides?: Partial<QuotationState>) => {
-    const q = quotations.find(q => q.id === id);
-    if (!q) return;
-    const merged = overrides ? { ...q, ...overrides } : q;
-    updateQuotationMutation.mutate({
-      quotationId: merged.id,
-      data: {
-        pricingParameterSetId: merged.pricingParameterSetId,
-        retailPrice: merged.retailPrice ?? undefined,
-        supplierQuotation: merged.supplierQuotation ?? undefined,
-        notes: merged.notes,
-        sku: merged.sku,
-      },
-    });
+  const handleDeleteQuotation = (id: string) => {
+    setQuotations(prev => prev.filter(q => q.id !== id));
   };
 
-  const handleDeleteQuotation = (id: string) => {
-    deleteQuotationMutation.mutate({ quotationId: id });
-  };
+  const submitRow = form.handleSubmit(data => {
+    const payload: CollectionLayoutRowInput = {
+      ...data,
+      quotations: quotations.map(q => ({
+        id: q.isNew ? undefined : q.id,
+        pricingParameterSetId: q.pricingParameterSetId,
+        retailPrice: q.retailPrice ?? undefined,
+        supplierQuotation: q.supplierQuotation ?? undefined,
+        notes: q.notes,
+        sku: q.sku,
+      })),
+      phaseChangeNote: phaseChangeNote || undefined,
+    };
+    if (missingForecastLabels(payload).length > 0) { setPendingData(payload); return; }
+    onSubmit(payload);
+  });
+
+  const missingLabels = pendingData ? missingForecastLabels(pendingData) : [];
 
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-7xl w-full p-0 gap-0 flex flex-col max-h-[90vh]">
+      <DialogContent
+        // vh: no Tailwind scale equivalent for viewport-relative height
+        className="max-w-7xl w-full p-0 gap-0 flex flex-col max-h-[90vh]"
+      >
         {/* Fixed header */}
         <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle className="text-lg">{title}</DialogTitle>
+          {mode === 'edit' && row?.id && (
+            <LastModifiedBy targetType="CollectionLayoutRow" targetId={row.id} />
+          )}
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(data => {
-            if (data.skuForecast == null) { setPendingData(data); return; }
-            onSubmit(data);
-          })} className="flex flex-col flex-1 min-h-0">
+          <form onSubmit={submitRow} className="flex flex-col flex-1 min-h-0">
             {/* Scrollable body */}
             <div className="flex-1 min-h-0 overflow-y-auto">
+              {/* Planning band — full width above the identity grid */}
+              <div className="border-b px-6 py-5">
+                <PlanningSection
+                  control={form.control}
+                  canUpdate={canUpdate}
+                  planningGroups={planningGroups}
+                  mode={mode}
+                  onRequestChangePlanningGroup={() => setChangeGroupOpen(true)}
+                  onRequestChangePhase={() => setChangePhaseOpen(true)}
+                  rowId={mode === 'edit' ? row?.id : undefined}
+                  completedAt={row?.completedAt ?? null}
+                  onCompletionChanged={onCompletionChanged}
+                />
+              </div>
+
               {/* Top 3-column section */}
               <div className="grid grid-cols-7 divide-x">
-                {/* Left col: Identification (includes group at top) (3/7) */}
+                {/* Left col: Identity (includes group at top) (3/7) */}
                 <div className="col-span-3 px-6 py-6">
                   <IdentificationSection
                     control={form.control}
@@ -365,9 +427,8 @@ export function CollectionRowDrawer({
                   enabledParameterSetIds={enabledParameterSetIds}
                   onAddQuotation={handleAddQuotation}
                   onUpdateField={handleUpdateQuotationField}
-                  onBlurQuotation={handleBlurQuotation}
+                  onEnterQuotation={submitRow}
                   onDeleteQuotation={handleDeleteQuotation}
-                  isAddingQuotation={createQuotationMutation.isPending}
                 />
               </div>
             </div>
@@ -427,14 +488,44 @@ export function CollectionRowDrawer({
     <ConfirmDialog
       open={pendingData != null}
       onOpenChange={open => { if (!open) setPendingData(null); }}
-      title="SKU Forecast non impostato"
-      description="Stai salvando una riga senza SKU Forecast. Questo valore è necessario per i calcoli di budget del gruppo. Vuoi procedere senza impostarlo?"
+      title={
+        missingLabels.length > 1
+          ? 'Forecast non impostati'
+          : `${missingLabels[0] ?? ''} non impostato`
+      }
+      description={`Stai salvando una riga senza ${missingLabels.join(' e ')}. Questi valori sono necessari per i calcoli di budget del gruppo e di efficienza. Vuoi procedere senza impostarli?`}
       confirmText="Salva comunque"
       cancelText="Annulla"
       actionType="warning"
       onConfirm={() => { if (pendingData) { onSubmit(pendingData); setPendingData(null); } }}
       isLoading={isLoading}
     />
+
+    {mode === 'edit' && row && (
+      <ChangePlanningGroupDialog
+        open={changeGroupOpen}
+        onClose={() => setChangeGroupOpen(false)}
+        onChanged={newPlanningGroupId => {
+          setChangeGroupOpen(false);
+          form.setValue('planningGroupId', newPlanningGroupId, { shouldDirty: true });
+        }}
+        planningGroups={planningGroups}
+        isLoading={planningGroupsLoading}
+      />
+    )}
+
+    {mode === 'edit' && row && (
+      <ChangePhaseDialog
+        open={changePhaseOpen}
+        onClose={() => setChangePhaseOpen(false)}
+        onChanged={(newPhaseId, note) => {
+          setChangePhaseOpen(false);
+          form.setValue('phaseId', newPhaseId, { shouldDirty: true });
+          if (note) setPhaseChangeNote(note);
+        }}
+        currentPhaseId={currentPhaseId ?? null}
+      />
+    )}
     </>
   );
 }

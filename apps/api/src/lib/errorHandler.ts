@@ -1,58 +1,59 @@
 /**
- * Gestione errori uniforme per Luke API
- * Fornisce un modello standardizzato per errori e logging sicuro
+ * Unified error model and secure logging utilities for Luke API.
  */
 
 import { TRPCError } from '@trpc/server';
 
+import type { FastifyBaseLogger } from 'fastify';
+
 /**
- * Codici di errore standardizzati
+ * Standardised error codes used across the API.
  */
 export enum ErrorCode {
-  // Errori di validazione
+  // Validation errors
   VALIDATION_ERROR = 'VALIDATION_ERROR',
   INVALID_INPUT = 'INVALID_INPUT',
 
-  // Errori di autenticazione
+  // Authentication errors
   UNAUTHORIZED = 'UNAUTHORIZED',
   FORBIDDEN = 'FORBIDDEN',
 
-  // Errori di configurazione
+  // Configuration errors
   CONFIG_ERROR = 'CONFIG_ERROR',
   CONNECTION_ERROR = 'CONNECTION_ERROR',
 
-  // Errori di database
+  // Database errors
   DATABASE_ERROR = 'DATABASE_ERROR',
 
-  // Errori di integrazione
+  // Integration errors
   INTEGRATION_ERROR = 'INTEGRATION_ERROR',
   SMTP_ERROR = 'SMTP_ERROR',
   STORAGE_ERROR = 'STORAGE_ERROR',
 
-  // Errori generici
+  // Generic errors
   INTERNAL_ERROR = 'INTERNAL_ERROR',
   NOT_FOUND = 'NOT_FOUND',
   CONFLICT = 'CONFLICT',
 }
 
 /**
- * Interfaccia per errori standardizzati
+ * Structured error object returned by `createStandardError`.
  */
 export interface StandardError {
   code: ErrorCode;
   message: string;
-  details?: any;
+  details?: unknown;
   timestamp: string;
   traceId?: string;
 }
 
 /**
- * Crea un errore standardizzato
+ * Creates a `StandardError` with the current timestamp.
  */
 export function createStandardError(
   code: ErrorCode,
   message: string,
-  details?: any,
+  details?: unknown,
   traceId?: string
 ): StandardError {
   return {
@@ -65,7 +66,7 @@ export function createStandardError(
 }
 
 /**
- * Converte un errore standardizzato in TRPCError
+ * Converts a `StandardError` into a `TRPCError` with the appropriate tRPC error code.
  */
 export function toTRPCError(error: StandardError): TRPCError {
   // const httpStatus = getHttpStatusFromErrorCode(error.code);
@@ -78,7 +79,7 @@ export function toTRPCError(error: StandardError): TRPCError {
 }
 
 /**
- * Mappa i codici di errore ai codici tRPC
+ * Maps error codes to tRPC codes
  */
 function getTRPCCodeFromErrorCode(
   code: ErrorCode
@@ -107,9 +108,12 @@ function getTRPCCodeFromErrorCode(
 }
 
 /**
- * Sanitizza i dati sensibili per il logging
+ * Recursively redacts values whose keys match known sensitive patterns
+ * (password, token, secret, key, auth, credential, apiKey, etc.).
+ *
+ * @returns Deep clone of `data` with sensitive values replaced by `'[REDACTED]'`.
  */
-export function sanitizeForLogging(data: any): any {
+export function sanitizeForLogging(data: unknown): unknown {
   if (!data || typeof data !== 'object') {
     return data;
   }
@@ -127,7 +131,9 @@ export function sanitizeForLogging(data: any): any {
     'clientSecret',
   ];
 
-  const sanitized = { ...data };
+  // The `typeof data === 'object'` check above guarantees a non-null object:
+  // safe to treat it as a record for recursive key redaction.
+  const sanitized: Record<string, unknown> = { ...(data as Record<string, unknown>) };
 
   for (const key in sanitized) {
     if (
@@ -145,66 +151,72 @@ export function sanitizeForLogging(data: any): any {
 }
 
 /**
- * Logger sicuro che non espone dati sensibili
+ * Logger wrapper that automatically sanitises all data payloads before writing,
+ * ensuring sensitive fields are never emitted to the log stream.
  */
 export class SecureLogger {
-  private logger: any;
+  private logger: FastifyBaseLogger;
 
-  constructor(logger: any) {
+  constructor(logger: FastifyBaseLogger) {
     this.logger = logger;
   }
 
-  info(message: string, data?: any) {
-    this.logger.info(message, data ? sanitizeForLogging(data) : undefined);
+  // Pino expects (mergingObject, message) — object first — while console accepts args in
+  // any order without losing information, so putting the sanitized object first keeps it
+  // structured under Pino and stays harmless under console.
+  info(message: string, data?: unknown) {
+    // sanitizeForLogging returns unknown because it accepts any input; here the
+    // caller always passes a structured object, consistent with the Pino overload.
+    data ? this.logger.info(sanitizeForLogging(data) as object, message) : this.logger.info(message);
   }
 
-  warn(message: string, data?: any) {
-    this.logger.warn(message, data ? sanitizeForLogging(data) : undefined);
+  warn(message: string, data?: unknown) {
+    data ? this.logger.warn(sanitizeForLogging(data) as object, message) : this.logger.warn(message); // see info()
   }
 
-  error(message: string, error?: any) {
-    this.logger.error(message, error ? sanitizeForLogging(error) : undefined);
+  error(message: string, error?: unknown) {
+    error ? this.logger.error(sanitizeForLogging(error) as object, message) : this.logger.error(message); // see info()
   }
 
-  debug(message: string, data?: any) {
-    this.logger.debug(message, data ? sanitizeForLogging(data) : undefined);
+  debug(message: string, data?: unknown) {
+    data ? this.logger.debug(sanitizeForLogging(data) as object, message) : this.logger.debug(message); // see info()
   }
 }
 
 /**
- * Utility per gestire errori di integrazione
+ * Factory helpers for common integration error scenarios (SMTP, storage, config).
  */
 export class IntegrationErrorHandler {
-  static handleSMTPError(error: any): StandardError {
+  static handleSMTPError(error: unknown): StandardError {
     return createStandardError(
       ErrorCode.SMTP_ERROR,
       'Errore configurazione SMTP',
       {
-        originalError: error.message,
+        originalError: error instanceof Error ? error.message : String(error),
         type: 'smtp_connection_failed',
       }
     );
   }
 
-  static handleStorageError(provider: string, error: any): StandardError {
+  static handleStorageError(provider: string, error: unknown): StandardError {
     return createStandardError(
       ErrorCode.STORAGE_ERROR,
       `Errore connessione storage ${provider}`,
       {
         provider,
-        originalError: error.message,
+        originalError: error instanceof Error ? error.message : String(error),
         type: 'storage_connection_failed',
       }
     );
   }
 
-  static handleConfigError(key: string, error: any): StandardError {
+  static handleConfigError(key: string, error: unknown): StandardError {
     return createStandardError(
       ErrorCode.CONFIG_ERROR,
       `Errore salvataggio configurazione ${key}`,
       {
         configKey: key,
-        originalError: error.message,
+        originalError: error instanceof Error ? error.message : String(error),
         type: 'config_save_failed',
       }
     );

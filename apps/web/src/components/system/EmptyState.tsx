@@ -7,6 +7,12 @@ interface EmptyStateProps {
   icon?: React.ReactNode;
 }
 
+/**
+ * Centered empty state with an optional icon, title, description, and action slot.
+ *
+ * @param actionSlot - Rendered below the description; typically a `CreateActionButton`.
+ * @param icon - Lucide icon or any React node; receives `text-muted-foreground` coloring.
+ */
 export function EmptyState({
   title,
   description,

@@ -1,11 +1,15 @@
-import type { PrismaClient, Prisma } from '@prisma/client';
-import type { Logger } from 'pino';
-import type mssql from 'mssql';
-
 import { sanitizeCompany } from '../config.js';
-import type { NavDbConfig } from '../config.js';
-import { buildNavSyncFilter, buildWhereClause, processInBatches } from './utils.js';
 
+import { buildNavSyncFilter, buildWhereClause, createSyncRequest, processInBatches } from './utils.js';
+
+import type { NavDbConfig } from '../config.js';
+import type { PrismaClient, Prisma } from '@prisma/client';
+import type mssql from 'mssql';
+import type { Logger } from 'pino';
+
+/**
+ * Outcome of a single entity sync run.
+ */
 export interface SyncResult {
   entity: string;
   upserted: number;
@@ -13,18 +17,27 @@ export interface SyncResult {
   filterMode: string;
 }
 
-/** Quanti upsert Prisma eseguire in parallelo per batch. */
+/** How many Prisma upserts to execute in parallel per batch. */
 const UPSERT_BATCH_SIZE = 100;
 
 /**
- * Sincronizza [COMPANY$Vendor] di NAV → tabella nav_vendors di Postgres.
+ * Syncs `[COMPANY$Vendor]` from NAV into the `nav_vendors` Postgres table,
+ * and creates or updates the corresponding local `Vendor` record.
  *
- * Sync differenziale:
- * - Se nav_vendors è vuota → full sync (no clausola temporale)
- * - Altrimenti → record con [Last Date Modified] > MAX(navLastModified) locale
- *   oppure [Last Date Modified] IS NULL (vendor senza data aggiornamento).
- *   Il secondo predicato è necessario perché SQL Server esclude i NULL dai
- *   confronti > , e quei record non verrebbero mai rilevati dopo il primo sync.
+ * Uses differential sync based on `[Last Date Modified]`:
+ * - First run (empty `nav_vendors`): full sync, no temporal clause.
+ * - Subsequent runs: only records where `[Last Date Modified] > MAX(navLastModified)`
+ *   **or** `[Last Date Modified] IS NULL` are fetched. The `IS NULL` predicate is
+ *   required because SQL Server excludes NULLs from `>` comparisons, so vendors
+ *   without a modification date would otherwise never be re-synced.
+ *
+ * Whitelist mode always performs a full sync of the selected vendors, ignoring
+ * the watermark — the list is small and a previously-synced vendor would
+ * otherwise be excluded when added to a new whitelist.
+ *
+ * Soft-deleted vendors are never reactivated by the sync.
+ *
+ * @returns `SyncResult` with the count of successfully upserted records
  */
 export async function syncVendors(
   pool: mssql.ConnectionPool,
@@ -43,10 +56,10 @@ export async function syncVendors(
 
   const { filterMode, filterPredicates, bindParams } = filterResult;
 
-  // Watermark per sync differenziale — usata solo in mode=all/exclude.
-  // In modalità whitelist si fa sempre full sync dei vendor selezionati:
-  // la lista è piccola e un vendor precedentemente sincronizzato (watermark > 0)
-  // verrebbe altrimenti escluso anche se fa parte della nuova selezione.
+  // Watermark for differential sync — used only in mode=all/exclude.
+  // In whitelist mode always full sync of selected vendors:
+  // the list is small and a previously-synced vendor (watermark > 0)
+  // would otherwise be excluded even if it's part of the new selection.
   const useWatermark = filter?.mode !== 'whitelist';
   let lastModified: Date | null = null;
   if (useWatermark) {
@@ -54,11 +67,11 @@ export async function syncVendors(
     lastModified = agg._max.navLastModified;
   }
 
-  // Combina watermark + predicati filtro entità
+  // Combine watermark + entity filter predicates
   const whereParts: string[] = [];
   if (lastModified) {
-    // SQL Server esclude i NULL dai confronti >, quindi l'OR IS NULL è necessario
-    // per non perdere vendor senza data di modifica dopo il primo sync.
+    // SQL Server excludes NULLs from > comparisons, so OR IS NULL is necessary
+    // to not lose vendors without modification date after first sync.
     whereParts.push('([Last Date Modified] > @lastModified OR [Last Date Modified] IS NULL)');
   }
   whereParts.push(...filterPredicates);
@@ -66,10 +79,7 @@ export async function syncVendors(
   const whereClause = buildWhereClause(whereParts);
 
   const tableName = `[${sanitizeCompany(config.company)}$Vendor]`;
-  const request = pool.request();
-  // mssql type definitions don't expose `timeout` but it's a valid runtime property
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (request as any).timeout = 60_000;
+  const request = createSyncRequest(pool);
 
   if (lastModified) request.input('lastModified', lastModified);
   bindParams(request);
@@ -152,9 +162,9 @@ export async function syncVendors(
           update: data,
         });
 
-        // Upsert anagrafica interna Vendor: crea se non esiste, aggiorna name e countryCode.
-        // Non toccare isActive né campi arricchiti — un vendor soft-deleted
-        // non viene riattivato dal sync.
+        // Upsert local Vendor master: create if not exist, update name and countryCode.
+        // NEVER touch isActive or enriched fields — a soft-deleted vendor
+        // is not reactivated by sync.
         await tx.vendor.upsert({
           where: { navVendorId: navNo },
           create: { name, countryCode, navVendorId: navNo, isActive: true },

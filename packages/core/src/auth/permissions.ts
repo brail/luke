@@ -1,20 +1,19 @@
 /**
- * Sistema di permissions Resource:Action per Luke
+ * Resource:Action permission system for Luke
  *
- * Implementa un modello granulare di access control dove ogni permission
- * è definita come `${Resource}:${Action}` (es. 'brands:create', 'users:read').
+ * Implements a granular access control model where each permission
+ * is defined as `${Resource}:${Action}` (e.g. 'brands:create', 'users:read').
  *
- * Supporta wildcard matching per scalabilità:
- * - `*:*` = tutti i permessi (admin)
- * - `resource:*` = tutte le azioni su una risorsa (es. 'brands:*')
- * - `resource:action` = azione specifica (es. 'brands:create')
+ * Supports wildcard matching for scalability:
+ * - `*:*` = all permissions (admin)
+ * - `resource:*` = all actions on a resource (e.g. 'brands:*')
+ * - `resource:action` = specific action (e.g. 'brands:create')
  */
 
 import type { Role } from '../rbac';
 
 /**
- * Risorse disponibili nel sistema Luke - Const Enum
- * Ogni risorsa rappresenta un'entità o area funzionale
+ * Available resources in the Luke system. Each entry represents a functional entity or domain area.
  */
 export const RESOURCES = {
   BRANDS: 'brands',
@@ -32,17 +31,18 @@ export const RESOURCES = {
   MERCHANDISING_PLAN: 'merchandising_plan',
   SEASON_CALENDAR: 'season_calendar',
   MILESTONE_TEMPLATE: 'milestone_template',
-  CALENDAR_CATALOG: 'calendar_catalog',
+  PHASE_CATALOG: 'phase_catalog',
+  COLLECTION_ALERT: 'collection_alert',
   COMPANY_PROFILE: 'company_profile',
   COMPANY_FUNCTION: 'company_function',
   COMPANY_TEAM: 'company_team',
 } as const;
 
+/** Union of all valid resource string values (e.g. `'brands'`, `'users'`). */
 export type Resource = (typeof RESOURCES)[keyof typeof RESOURCES];
 
 /**
- * Azioni disponibili sulle risorse - Const Enum
- * '*' rappresenta wildcard per tutte le azioni
+ * Available actions on resources. `'*'` is the wildcard matching all actions.
  */
 export const ACTIONS = {
   CREATE: 'create',
@@ -54,148 +54,145 @@ export const ACTIONS = {
   EXPORT: 'export',
   REVISE: 'revise',
   VIEW_REVISIONS: 'view_revisions',
-  SIMULATE: 'simulate',
-  CONFIGURE_DEPENDENCIES: 'configure_dependencies',
+  FREEZE: 'freeze',
+  UNFREEZE: 'unfreeze',
+  UNCANCEL: 'uncancel',
+  BACKUP_CREATE: 'backup_create',
+  BACKUP_RESTORE: 'backup_restore',
+  BACKUP_DELETE: 'backup_delete',
+  BACKUP_EXPORT: 'backup_export',
+  MODE_MANAGE: 'mode_manage',
+  READ_ALL: 'read_all',
 } as const;
 
 export type Action = (typeof ACTIONS)[keyof typeof ACTIONS] | '*';
 
 /**
- * Permission = Resource:Action
- * Esempi: 'brands:create', 'users:read', 'settings:*', '*:*'
+ * A typed permission string in `Resource:Action` form.
+ *
+ * @example 'brands:create' | 'users:read' | 'settings:*' | '*:*'
  */
 export type Permission = `${Resource}:${Action}` | '*:*';
 
 /**
- * Context per Attribute-Based Access Control (ABAC)
- * Placeholder per implementazioni future (ownership, team-based access)
- */
-export interface PermissionContext {
-  brandId?: string;
-  seasonId?: string;
-  teamId?: string;
-}
-
-/**
- * Dichiarazione di permission per un endpoint
- * Specifica le permissions richieste e il contesto di validazione
+ * Declarative permission requirement for an endpoint, used for documentation and tooling.
  */
 export interface PermissionDeclaration {
   required: Permission | Permission[];
   description: string;
-  context?: {
-    checkOwnership?: boolean; // Verifica solo il tuo dato
-    requireAdmin?: boolean; // Che sia admin
-  };
 }
 
+/** Allowlist of valid actions per resource. Used to expand wildcards and validate permission strings. */
 export const VALID_RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
   [RESOURCES.BRANDS]: ['create', 'read', 'update', 'delete'] as const,
   [RESOURCES.SEASONS]: ['create', 'read', 'update', 'delete'] as const,
   [RESOURCES.USERS]: ['create', 'read', 'update', 'delete'] as const,
   [RESOURCES.CONFIG]: ['read', 'update'] as const,
-  [RESOURCES.AUDIT]: ['read'] as const,
+  [RESOURCES.AUDIT]: ['read', 'read_all'] as const,
   [RESOURCES.SETTINGS]: ['read', 'update'] as const,
-  [RESOURCES.MAINTENANCE]: ['read', 'update'] as const,
+  [RESOURCES.MAINTENANCE]: ['read', 'update', 'backup_create', 'backup_restore', 'backup_delete', 'backup_export', 'mode_manage'] as const,
   [RESOURCES.DASHBOARD]: ['read'] as const,
   [RESOURCES.PRICING]: ['read', 'update'] as const,
   [RESOURCES.COLLECTION_LAYOUT]: ['read', 'update', 'revise', 'view_revisions'] as const,
   [RESOURCES.VENDORS]: ['create', 'read', 'update', 'delete'] as const,
   [RESOURCES.SALES]: ['read'] as const,
   [RESOURCES.MERCHANDISING_PLAN]: ['create', 'read', 'update', 'delete'] as const,
-  [RESOURCES.SEASON_CALENDAR]: ['create', 'read', 'update', 'delete', 'sync', 'export', 'simulate', 'configure_dependencies'] as const,
+  [RESOURCES.SEASON_CALENDAR]: ['create', 'read', 'update', 'delete', 'sync', 'export', 'freeze', 'unfreeze', 'uncancel'] as const,
   [RESOURCES.MILESTONE_TEMPLATE]: ['create', 'read', 'update', 'delete'] as const,
-  [RESOURCES.CALENDAR_CATALOG]: ['read', 'update'] as const,
+  [RESOURCES.PHASE_CATALOG]: ['read', 'update'] as const,
+  [RESOURCES.COLLECTION_ALERT]: ['read'] as const,
   [RESOURCES.COMPANY_PROFILE]: ['read', 'update'] as const,
   [RESOURCES.COMPANY_FUNCTION]: ['create', 'read', 'update', 'delete'] as const,
   [RESOURCES.COMPANY_TEAM]: ['create', 'read', 'update', 'delete'] as const,
 } as const;
 
 /**
- * Mapping delle permissions per ruolo
- * Definisce le permissions di base per ogni ruolo nel sistema
+ * Base permission set for each role. Admin receives `*:*` wildcard; editor and viewer
+ * receive explicit resource:action grants. Used by `hasPermission` and `expandRole`.
  */
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   admin: [
-    '*:*', // Wildcard totale - accesso completo
+    '*:*', // Complete wildcard - full access
   ],
   editor: [
-    // Brands: accesso completo
+    // Brands: full access
     'brands:*',
-    // Seasons: accesso completo
+    // Seasons: full access
     'seasons:*',
-    // Users: lettura e modifica (no delete)
+    // Users: read and update (no delete)
     'users:read',
     'users:update',
-    // Config: lettura e modifica
+    // Config: read and update
     'config:read',
     'config:update',
-    // Audit: solo lettura
+    // Audit: read-only
     'audit:read',
-    // Dashboard: lettura
+    // Dashboard: read
     'dashboard:read',
-    // Pricing: solo lettura (modifica varianti riservata ad admin)
+    // Pricing: read-only (variant updates reserved for admin)
     'pricing:read',
-    // Collection Layout: lettura, modifica, revisioni
+    // Collection Layout: read, update, revisions
     'collection_layout:read',
     'collection_layout:update',
     'collection_layout:revise',
     'collection_layout:view_revisions',
-    // Vendors: accesso completo
+    // Vendors: full access
     'vendors:*',
-    // Sales: lettura statistiche
+    // Sales: read statistics
     'sales:read',
-    // Merchandising Plan: lettura e modifica
+    // Merchandising Plan: read and update
     'merchandising_plan:read',
     'merchandising_plan:update',
-    // Season Calendar: lettura, modifica, export, simulate, configure_dependencies
+    // Season Calendar: read, update, export, freeze
     'season_calendar:read',
     'season_calendar:update',
     'season_calendar:export',
-    'season_calendar:simulate',
-    'season_calendar:configure_dependencies',
-    // Milestone Template: solo lettura
+    'season_calendar:freeze',
+    // Milestone Template: read-only
     'milestone_template:read',
-    // Calendar Catalog: lettura (per dropdown tipi evento)
-    'calendar_catalog:read',
-    // Company structure: solo lettura (per dropdown e badge)
+    // Phase Catalog: read-only (updates reserved for admin, separate domain from calendar)
+    'phase_catalog:read',
+    // Collection Alert: read alert engine (criticality, planning deviation)
+    'collection_alert:read',
+    // Company structure: read-only (for dropdowns and badges)
     'company_profile:read',
     'company_function:read',
     'company_team:read',
   ],
   viewer: [
-    // Brands: solo lettura
+    // Brands: read-only
     'brands:read',
-    // Seasons: solo lettura
+    // Seasons: read-only
     'seasons:read',
-    // Users: solo lettura
+    // Users: read-only
     'users:read',
-    // Config: solo lettura
+    // Config: read-only
     'config:read',
-    // Audit: solo lettura
+    // Audit: read-only
     'audit:read',
-    // Dashboard: lettura
+    // Dashboard: read
     'dashboard:read',
-    // Pricing: solo lettura
+    // Pricing: read-only
     'pricing:read',
-    // Collection Layout: lettura + storico revisioni
+    // Collection Layout: read + revision history
     'collection_layout:read',
     'collection_layout:view_revisions',
-    // Vendors: solo lettura
+    // Vendors: read-only
     'vendors:read',
-    // Sales: lettura statistiche
+    // Sales: read statistics
     'sales:read',
-    // Merchandising Plan: solo lettura
+    // Merchandising Plan: read-only
     'merchandising_plan:read',
-    // Season Calendar: lettura, export, simulate
+    // Season Calendar: read, export
     'season_calendar:read',
     'season_calendar:export',
-    'season_calendar:simulate',
-    // Milestone Template: solo lettura
+    // Milestone Template: read-only
     'milestone_template:read',
-    // Calendar Catalog: lettura (per dropdown tipi evento)
-    'calendar_catalog:read',
-    // Company structure: solo lettura
+    // Phase Catalog: read-only
+    'phase_catalog:read',
+    // Collection Alert: read alert engine
+    'collection_alert:read',
+    // Company structure: read-only
     'company_profile:read',
     'company_function:read',
     'company_team:read',
@@ -203,12 +200,12 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
 };
 
 /**
- * Verifica se un utente ha una permission specifica
+ * Checks if a user has a specific permission
  *
- * @param user - Oggetto utente con ruolo
- * @param permission - Permission da verificare (es. 'brands:create')
- * @param context - Context opzionale per ABAC (futuro)
- * @returns true se l'utente ha la permission, false altrimenti
+ * @param user - User object with role
+ * @param permission - Permission to verify (e.g. 'brands:create')
+ * @param context - Optional context for ABAC (future)
+ * @returns true if the user has the permission, false otherwise
  *
  * @example
  * ```typescript
@@ -219,8 +216,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
  */
 export function hasPermission(
   user: { role: Role },
-  permission: Permission,
-  context?: PermissionContext
+  permission: Permission
 ): boolean {
   const userPermissions = ROLE_PERMISSIONS[user.role];
 
@@ -228,12 +224,12 @@ export function hasPermission(
     return false;
   }
 
-  // 1. Controlla wildcard totale (*:*)
+  // 1. Check total wildcard (*:*)
   if (userPermissions.includes('*:*' as Permission)) {
     return true;
   }
 
-  // 2. Controlla wildcard per risorsa (resource:*)
+  // 2. Check resource wildcard (resource:*)
   const [resource] = permission.split(':') as [Resource, Action];
   const resourceWildcard = `${resource}:*` as Permission;
 
@@ -241,16 +237,16 @@ export function hasPermission(
     return true;
   }
 
-  // 3. Controlla permission specifica
+  // 3. Check specific permission
   return userPermissions.includes(permission);
 }
 
 /**
- * Espande un ruolo nelle sue permissions specifiche
- * Utile per debug, UI e audit
+ * Expands a role into its specific permissions
+ * Useful for debug, UI and audit
  *
- * @param role - Ruolo da espandere
- * @returns Array di permissions specifiche (senza wildcard)
+ * @param role - Role to expand
+ * @returns Array of specific permissions (without wildcards)
  *
  * @example
  * ```typescript
@@ -265,14 +261,14 @@ export function expandRole(role: Role): Permission[] {
     return [];
   }
 
-  // Se ha wildcard totale, espandi a tutte le permissions valide per risorsa
+  // If it has total wildcard, expand to all valid permissions per resource
   if (rolePermissions.includes('*:*' as Permission)) {
     return Object.entries(VALID_RESOURCE_ACTIONS).flatMap(([resource, actions]) =>
       (actions as readonly Action[]).map(action => `${resource}:${action}` as Permission),
     );
   }
 
-  // Espandi wildcard per risorsa usando solo le azioni valide per quella risorsa
+  // Expand resource wildcard using only valid actions for that resource
   const expanded: Permission[] = [];
 
   for (const permission of rolePermissions) {
@@ -294,14 +290,20 @@ export function expandRole(role: Role): Permission[] {
 const RESOURCE_VALUES = Object.values(RESOURCES) as string[];
 const ACTION_VALUES: string[] = [...Object.values(ACTIONS), '*'];
 
+/** Returns `true` if `v` is a known `Resource` value. */
 export function isResource(v: unknown): v is Resource {
   return typeof v === 'string' && RESOURCE_VALUES.includes(v);
 }
 
+/** Returns `true` if `v` is a known `Action` value (including `'*'`). */
 export function isAction(v: unknown): v is Action {
   return typeof v === 'string' && ACTION_VALUES.includes(v);
 }
 
+/**
+ * Returns `true` if `v` is a structurally valid `Permission` string.
+ * Validates that the resource is known and the action is valid for that resource.
+ */
 export function isPermission(v: unknown): v is Permission {
   if (typeof v !== 'string') return false;
   if (v === '*:*') return true;
@@ -322,7 +324,7 @@ export function isPermission(v: unknown): v is Permission {
 
 // ── Matrix utilities ──────────────────────────────────────────────────────────
 
-/** Restituisce tutte le permissions valide (wildcards + specifiche) */
+/** Returns all valid permissions including wildcards (`*:*`, `resource:*`) and specific grants. */
 export function getAllPermissions(): Permission[] {
   const result: Permission[] = ['*:*'];
 
@@ -337,7 +339,7 @@ export function getAllPermissions(): Permission[] {
   return result;
 }
 
-/** Restituisce una struttura completa per ispezione/debug della matrice */
+/** Returns a complete snapshot of the permission matrix for inspection and debugging. */
 export function getPermissionMatrix(): {
   resources: Resource[];
   actions: Action[];
@@ -361,11 +363,15 @@ export function getPermissionMatrix(): {
   };
 }
 
-/** Valida l'integrità della matrice di permissions */
+/**
+ * Validates the integrity of the permission matrix.
+ *
+ * @returns `{ valid: true }` when no issues are found, or `{ valid: false, errors }` listing problems.
+ */
 export function validatePermissionMatrix(): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
 
-  // Ogni risorsa deve avere almeno un'azione valida
+  // Each resource must have at least one valid action
   for (const resource of Object.values(RESOURCES)) {
     const actions = VALID_RESOURCE_ACTIONS[resource as Resource];
     if (!actions || actions.length === 0) {
@@ -373,7 +379,7 @@ export function validatePermissionMatrix(): { valid: boolean; errors: string[] }
     }
   }
 
-  // Ogni resource in VALID_RESOURCE_ACTIONS deve corrispondere a una risorsa definita
+  // Each resource in VALID_RESOURCE_ACTIONS must correspond to a defined resource
   for (const resource of Object.keys(VALID_RESOURCE_ACTIONS)) {
     if (!isResource(resource)) {
       errors.push(`VALID_RESOURCE_ACTIONS references unknown resource '${resource}'`);
@@ -383,7 +389,7 @@ export function validatePermissionMatrix(): { valid: boolean; errors: string[] }
   return { valid: errors.length === 0, errors };
 }
 
-/** Esporta la matrice in formato CSV (Resource,Action,Admin,Editor,Viewer) */
+/** Serializes the permission matrix to CSV with columns: Resource, Action, Admin, Editor, Viewer. */
 export function permissionMatrixToCSV(): string {
   const roles: Role[] = ['admin', 'editor', 'viewer'];
   const rows: string[] = ['Resource,Action,Admin,Editor,Viewer'];
@@ -403,45 +409,8 @@ export function permissionMatrixToCSV(): string {
   return rows.join('\n');
 }
 
-/** Crea una stringa di permission tipizzata da resource e action */
+/** Builds a typed `Permission` string from a resource and action. */
 export function createPermission(resource: Resource, action: Action): Permission {
   return `${resource}:${action}` as Permission;
 }
 
-/**
- * Verifica se un utente ha una permission considerando sia ruolo che grants espliciti
- * Integra ROLE_PERMISSIONS con UserGrantedPermission dal database
- */
-export function hasPermissionWithGrants(
-  user: { role: Role; id: string },
-  permission: Permission,
-  userGrants?: string[],
-  context?: PermissionContext
-): boolean {
-  // 1. Controlla prima il ruolo (faster path)
-  if (hasPermission(user, permission, context)) {
-    return true;
-  }
-
-  // 2. Se non ha per ruolo, controlla grants espliciti
-  if (userGrants && userGrants.length > 0) {
-    // Controlla wildcard totale
-    if (userGrants.includes('*:*')) {
-      return true;
-    }
-
-    // Controlla wildcard per risorsa
-    const [resource] = permission.split(':') as [Resource, Action];
-    const resourceWildcard = `${resource}:*`;
-    if (userGrants.includes(resourceWildcard)) {
-      return true;
-    }
-
-    // Controlla permission specifica
-    if (userGrants.includes(permission)) {
-      return true;
-    }
-  }
-
-  return false;
-}

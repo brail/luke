@@ -1,8 +1,3 @@
-/**
- * Componente di paginazione per la tabella delle configurazioni
- * Mostra informazioni sulla pagina corrente e controlli di navigazione
- */
-
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 import { Button } from '../ui/button';
@@ -14,6 +9,11 @@ interface ConfigTablePaginationProps {
   onPageChange: (page: number) => void;
 }
 
+/**
+ * Pagination controls for the AppConfig table with previous/next buttons and up to 5 page number buttons.
+ *
+ * Returns null when `total` is 0.
+ */
 export function ConfigTablePagination({
   page,
   pageSize,

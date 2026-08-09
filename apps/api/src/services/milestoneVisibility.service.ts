@@ -1,10 +1,11 @@
 import type { PrismaClient } from '@prisma/client';
 
 /**
- * Returns Set of event IDs visible to userId from candidateEventIds.
- * Visibility sources:
- *   1. CalendarEventVisibility — function-level (user's team functions)
- *   2. CalendarEventUserVisibility — explicit user override
+ * Returns the subset of candidateEventIds visible to the given user.
+ * Visibility is granted by either function-level CalendarEventVisibility (via team
+ * membership) or an explicit CalendarEventUserVisibility override.
+ *
+ * @returns Set of visible event IDs from the candidate list.
  */
 export async function getVisibleMilestoneIdsForUser(
   userId: string,

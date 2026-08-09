@@ -14,6 +14,13 @@ const sizeClasses = {
   xl: 'w-24 h-24',
 };
 
+/**
+ * Animated Luke logo for loading states.
+ *
+ * Renders the SVG logo with the `animate-logo-pulse` CSS animation.
+ *
+ * @param size - Controls the wrapper dimensions: `sm` 32 px, `md` 48 px, `lg` 64 px, `xl` 96 px.
+ */
 export default function LoadingLogo({
   className,
   size = 'lg',

@@ -1,9 +1,7 @@
 /**
- * @luke/core/server - Server-side utilities
- *
- * Questo modulo fornisce utilities server-side riusabili
- * tra API e Web per evitare duplicazione e garantire
- * consistency
+ * @luke/core/server — Server-only utilities shared between `apps/api` and `apps/web`.
+ * Exports RBAC configuration management and cryptographic secret derivation.
+ * Never import this module on the client side.
  */
 
 export * from './rbacConfig';

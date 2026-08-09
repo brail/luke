@@ -45,9 +45,9 @@ interface ApproveUserDialogProps {
 }
 
 /**
- * Obbliga l'admin a configurare accesso (sezioni) prima di approvare.
- * Usato sia per LDAP pending che per utente locale appena creato (pendingApproval: true).
- * L'accesso ai brand è gestito tramite la membership ai team in Impostazioni → Azienda.
+ * Dialog that forces an admin to configure role and section access before approving a pending user.
+ * @param user - Pending user to approve, with current role pre-populated.
+ * @param onApproved - Called after the user has been successfully approved.
  */
 export function ApproveUserDialog({
   user,
@@ -129,8 +129,8 @@ export function ApproveUserDialog({
         if (!o && !isSaving) onOpenChange(false);
       }}
     >
-      <DialogContent className="sm:max-w-[560px] max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-[560px] max-h-[85vh] p-0 gap-0 flex flex-col"> {/* px/vh: dialog width tuned to content, vh cap has no Tailwind scale equivalent */}
+        <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <ShieldCheck className="h-4 w-4" />
             Configura accesso e approva — {user.username}
@@ -142,7 +142,7 @@ export function ApproveUserDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 pt-2">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-6">
           <div>
             <h3 className="text-sm font-semibold mb-3">Ruolo</h3>
             <Select
@@ -220,7 +220,7 @@ export function ApproveUserDialog({
           </div>
         </div>
 
-        <DialogFooter className="mt-6">
+        <DialogFooter className="px-6 py-4 border-t shrink-0">
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}

@@ -53,6 +53,18 @@ const EMPTY_FORM: ClosureForm = {
   notes: '',
 };
 
+/**
+ * Card-based manager for a vendor's closure and extra-opening periods in the
+ * active season.
+ *
+ * Supports manual creation, editing, prefill from national holidays, and bulk
+ * confirmation. Requires an active season in AppContext; renders a placeholder
+ * when none is selected. Mutations are gated by `season_calendar:update`.
+ *
+ * @param vendorId - ID of the vendor whose closures are managed.
+ * @param vendorName - Display name shown in the card title.
+ * @param vendorCountryCode - When set, prefill uses only this country's holidays.
+ */
 export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountryCode }: Props) {
   const { can } = usePermission();
   const canUpdate = can('season_calendar:update');
@@ -152,8 +164,8 @@ export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountry
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium">
+        <CardHeader size="compact">
+          <CardTitle size="compact">
             Periodi di chiusura — {vendorName} ({season.name})
           </CardTitle>
         </CardHeader>
@@ -234,7 +246,7 @@ export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountry
                           <span className="text-muted-foreground">—</span>
                         )}
                       </td>
-                      <td className="px-3 py-2 max-w-[120px] truncate" title={c.name}>{c.name}</td>
+                      <td className="px-3 py-2 max-w-[120px] truncate" title={c.name}>{c.name}</td> {/* 120px: caps closure-name column so the table doesn't stretch; no exact scale match */}
                       <td className="px-3 py-2 tabular-nums">
                         {String(c.startDate).slice(0, 10)}
                       </td>
@@ -261,8 +273,8 @@ export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountry
                           <Button
                             type="button"
                             variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                            size="icon-sm"
+                            className="text-destructive hover:text-destructive"
                             onClick={() => setDeleteTarget(c.id)}
                           >
                             <Trash2 className="h-3.5 w-3.5" />

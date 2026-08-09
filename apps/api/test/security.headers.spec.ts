@@ -1,6 +1,6 @@
 /**
- * Test di Security Headers HTTP
- * Verifica che tutti gli header di sicurezza siano presenti e corretti
+ * Tests for HTTP Security Headers
+ * Verifies that all security headers are present and correct
  */
 
 import request from 'supertest';
@@ -80,17 +80,17 @@ describe('Security Headers', () => {
     it('dovrebbe applicare gli stessi header su route root', async () => {
       const response = await request(server.server).get('/').expect(200);
 
-      // Verifica header base
+      // Verify base headers
       expect(response.headers['x-content-type-options']).toBe('nosniff');
       expect(response.headers['referrer-policy']).toBe('no-referrer');
       expect(response.headers['x-dns-prefetch-control']).toBe('off');
       expect(response.headers['x-frame-options']).toBe('DENY');
 
-      // Verifica CSP in test
+      // Verify CSP in test
       const csp = response.headers['content-security-policy'];
       expect(csp).toContain("default-src 'none'");
 
-      // Verifica assenza HSTS
+      // Verify HSTS is absent
       expect(response.headers['strict-transport-security']).toBeUndefined();
     });
   });
@@ -101,7 +101,7 @@ describe('Security Headers', () => {
         .get('/api/health')
         .expect(200);
 
-      // Snapshot degli header di sicurezza per verificare invariabilità
+      // Snapshot of security headers to verify they don't change
       const securityHeaders = {
         'x-content-type-options': response.headers['x-content-type-options'],
         'referrer-policy': response.headers['referrer-policy'],

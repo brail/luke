@@ -8,6 +8,14 @@ interface ErrorStateProps {
   icon?: React.ReactNode;
 }
 
+/**
+ * Centered error state with an optional icon, title, description, and two action slots.
+ *
+ * Wrapped in an ARIA live region so screen readers announce the error.
+ *
+ * @param actionSlot - Primary action, typically a `RetryButton`.
+ * @param secondarySlot - Optional secondary action or link.
+ */
 export function ErrorState({
   title,
   description,

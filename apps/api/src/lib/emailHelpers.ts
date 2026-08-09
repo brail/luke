@@ -1,6 +1,6 @@
 /**
- * Helper centralizzato per operazioni email verification
- * Elimina duplicazione di token generation + audit logging
+ * Centralised helper for email verification operations.
+ * Eliminates duplicated token generation and audit logging across callers.
  */
 
 import { randomBytes, createHash } from 'crypto';
@@ -11,6 +11,11 @@ import { logAudit } from './auditLog';
 import { getConfig } from './configManager';
 import { sendEmailVerificationEmail } from './mailer';
 
+import type { Context } from './context';
+
+/**
+ * Options for sending a verification email to a user.
+ */
 export interface SendVerificationEmailOptions {
   userId: string;
   reason?:
@@ -18,27 +23,31 @@ export interface SendVerificationEmailOptions {
     | 'email_changed'
     | 'admin_initiated'
     | 'user_requested';
-  actorId?: string; // Per audit log
+  /** ID of the user performing the action, used for audit logging. */
+  actorId?: string;
 }
 
 /**
- * Helper centralizzato per generare token + inviare email verifica
- * Gestisce: token generation, hash, DB save, email send, audit log
+ * Generates a verification token, persists it, sends the verification email,
+ * and records an audit log entry.
+ * Any previously pending VERIFY tokens for the user are invalidated first.
+ * If the email is already verified (and `reason` is not `'email_changed'`),
+ * the operation is a no-op and returns success immediately.
  *
- * @param prisma - Client Prisma
- * @param options - Opzioni invio (userId, reason, actorId)
- * @param ctx - Context tRPC opzionale per audit log
- * @returns Promise con risultato operazione
- * @throws Error se utente non trovato o invio email fallisce
+ * @param prisma - Prisma client.
+ * @param options - Target user, reason, and optional actor for audit logging.
+ * @param ctx - Optional tRPC-like context for request correlation in the audit log.
+ * @returns Success flag and a human-readable message.
+ * @throws {Error} If the user is not found or the email send fails after retries.
  */
 export async function sendVerificationEmail(
   prisma: PrismaClient,
   options: SendVerificationEmailOptions,
-  ctx?: { req: any; logger: any }
+  ctx?: Pick<Context, 'req' | 'logger'>
 ): Promise<{ success: boolean; message: string }> {
   const { userId, reason = 'user_requested', actorId } = options;
 
-  // Trova utente
+  // Find user
   const user = await prisma.user.findUnique({
     where: { id: userId, isActive: true },
     select: { id: true, email: true, emailVerifiedAt: true },
@@ -48,42 +57,48 @@ export async function sendVerificationEmail(
     throw new Error('Utente non trovato');
   }
 
-  // Skip se già verificata (tranne cambio email)
+  // Skip if already verified (except on email change)
   if (user.emailVerifiedAt && reason !== 'email_changed') {
     return { success: true, message: 'Email già verificata.' };
   }
 
-  // Genera token (32 byte = 64 char hex)
+  // Generate token (32 bytes = 64 hex chars)
   const token = randomBytes(32).toString('hex');
   const tokenHash = createHash('sha256').update(token).digest('hex');
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
 
-  // Invalida token VERIFY precedenti per questo utente prima di crearne uno nuovo
+  // Invalidate any previous VERIFY tokens for this user before creating a new one
   await prisma.userToken.deleteMany({
     where: { userId: user.id, type: 'VERIFY' },
   });
 
-  // Salva token in DB
+  // Save token to DB
   await prisma.userToken.create({
     data: { userId: user.id, type: 'VERIFY', tokenHash, expiresAt },
   });
 
-  // Recupera baseUrl da config
+  // Retrieve baseUrl from config
   const baseUrl =
     (await getConfig(prisma, 'app.baseUrl', false)) || 'http://localhost:3000';
 
-  // Invia email (con retry interno automatico)
+  // Send email (with automatic internal retry)
   try {
     await sendEmailVerificationEmail(prisma, user.email, token, baseUrl);
 
-    // Audit log SUCCESS (senza PII)
+    // Audit log SUCCESS (no PII)
+    // logAudit requires a full Context; here we build a partial one —
+    // some callers (e.g. ldapAuth.ts during automatic provisioning)
+    // don't have a real HTTP request and don't pass `ctx` at all. If `req`
+    // remains undefined, logAudit throws when reading ctx.req.ip/ctx.req.log —
+    // the caller already catches it with .catch(). Pre-existing behavior, not
+    // changed by this cast.
     await logAudit(
       {
         prisma,
         session: actorId ? { user: { id: actorId } } : undefined,
         req: ctx?.req,
         logger: ctx?.logger,
-      } as any,
+      } as unknown as Context,
       {
         action: 'EMAIL_VERIFICATION_SENT',
         targetType: 'Auth',
@@ -98,14 +113,20 @@ export async function sendVerificationEmail(
       message: 'Email di verifica inviata con successo.',
     };
   } catch (error) {
-    // Audit log FAILURE (senza PII)
+    // Audit log FAILURE (no PII)
+    // logAudit requires a full Context; here we build a partial one —
+    // some callers (e.g. ldapAuth.ts during automatic provisioning)
+    // don't have a real HTTP request and don't pass `ctx` at all. If `req`
+    // remains undefined, logAudit throws when reading ctx.req.ip/ctx.req.log —
+    // the caller already catches it with .catch(). Pre-existing behavior, not
+    // changed by this cast.
     await logAudit(
       {
         prisma,
         session: actorId ? { user: { id: actorId } } : undefined,
         req: ctx?.req,
         logger: ctx?.logger,
-      } as any,
+      } as unknown as Context,
       {
         action: 'EMAIL_VERIFICATION_SENT',
         targetType: 'Auth',

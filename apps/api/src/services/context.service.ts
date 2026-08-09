@@ -1,19 +1,39 @@
 /**
- * Context Service per gestione Brand/Season e UserPreference
- * Implementa logica di risoluzione del context con priorità deterministiche
+ * Context service — brand/season resolution and user preference management.
+ * Resolution priority: last-used → org default → first active.
  */
 
 import { TRPCError } from '@trpc/server';
 import pino from 'pino';
-import type { PrismaClient } from '@prisma/client';
+
 import { AppContextDefaultsSchema, type AppContextDefaults, type Role } from '@luke/core';
 
 import { makeUrlResolver } from '../lib/storageUrl';
 
-const logger = pino({ level: 'info' });
+import type { Prisma, PrismaClient } from '@prisma/client';
 
 /**
- * Risultato del context resolver
+ * The brand scope guards live in `brandScope.service.ts` (they need the
+ * session, this module doesn't). Re-exported here because this is where the
+ * routers that already used them import them from.
+ */
+export {
+  assertBrandAccess,
+  assertBrandAccessAll,
+  filterAllowedBrandIds,
+} from './brandScope.service';
+
+const logger = pino({ level: 'info' });
+
+/** Shape of `UserPreference.data` (Json column) — see schema.prisma doc comment on the model. */
+interface UserPreferenceData {
+  lastBrandId?: string;
+  lastSeasonId?: string;
+  menuStates?: Record<string, boolean>;
+}
+
+/**
+ * Resolved brand and season for the current user session.
  */
 export interface ContextResult {
   brand: {
@@ -33,10 +53,11 @@ export interface ContextResult {
 }
 
 /**
- * Restituisce i brand ID consentiti per un utente tramite team membership.
- * Admin: null (accesso illimitato).
- * Opt-in: nessun team → [] (nessun accesso). Unione degli scope di tutti i team.
- * Team senza scope contribuisce nulla (non sblocca accesso illimitato).
+ * Returns the set of brand IDs the user may access via team membership.
+ * Admins receive null (unrestricted). Users in no team receive an empty array (no access).
+ * A team with no brand scopes contributes nothing — it does not grant unrestricted access.
+ *
+ * @returns null for admin (unrestricted), or an array of allowed brand IDs.
  */
 export async function getUserAllowedBrandIds(
   userId: string,
@@ -60,21 +81,41 @@ export async function getUserAllowedBrandIds(
   return [...brandIds];
 }
 
+
 /**
- * Risolve il context per un utente con algoritmo deterministico
- * Priorità: lastUsed → orgDefault → firstActive
- * Rispetta il whitelist brand/season dell'utente.
+ * Returns the set of CompanyFunction IDs the user may access via team membership.
+ * Admins receive null (unrestricted). Users in no team receive an empty array (no access).
  *
- * @param userId - ID dell'utente
- * @param prisma - Client Prisma
- * @returns Context risolto (brand + season)
+ * @returns null for admin (unrestricted), or an array of allowed function IDs.
+ */
+export async function getUserAllowedFunctionIds(
+  userId: string,
+  prisma: PrismaClient,
+  userRole?: Role
+): Promise<string[] | null> {
+  if (userRole === 'admin') return null;
+
+  const memberships = await prisma.companyTeamMembership.findMany({
+    where: { userId, team: { isActive: true } },
+    select: { team: { select: { functionId: true } } },
+  });
+
+  return [...new Set(memberships.map(m => m.team.functionId))];
+}
+
+/**
+ * Resolves the active brand and season for a user using a deterministic priority algorithm:
+ * last-used preference → org-level AppConfig default → first active record.
+ * Respects brand whitelisting from team memberships.
+ *
+ * @throws {TRPCError} PRECONDITION_FAILED if no active brand or season exists.
  */
 export async function resolveContext(
   userId: string,
   prisma: PrismaClient,
   userRole?: Role
 ): Promise<ContextResult> {
-  // Carica dati in parallelo per performance
+  // Load data in parallel for performance
   const [prefs, allowedBrandIds, appConfig] = await Promise.all([
     prisma.userPreference.findUnique({ where: { userId } }),
     getUserAllowedBrandIds(userId, prisma, userRole),
@@ -102,7 +143,7 @@ export async function resolveContext(
     });
   }
 
-  const prefsBrandId = (prefs?.data as any)?.lastBrandId as string | undefined;
+  const prefsBrandId = (prefs?.data as UserPreferenceData | null)?.lastBrandId;
 
   if (!seasons.length) {
     throw new TRPCError({
@@ -111,7 +152,7 @@ export async function resolveContext(
     });
   }
 
-  // Helper per trovare un elemento per ID
+  // Helper to find an element by ID
   const pick = <T extends { id: string }>(
     list: T[],
     id?: string | null
@@ -119,7 +160,7 @@ export async function resolveContext(
     return id ? list.find(x => x.id === id) : undefined;
   };
 
-  // Parse defaults organizzativi
+  // Parse org-level defaults
   let contextDefaults: AppContextDefaults = { context: {} };
   if (appConfig) {
     try {
@@ -130,14 +171,14 @@ export async function resolveContext(
     }
   }
 
-  // Algoritmo di risoluzione con priorità
+  // Priority-based resolution algorithm
   const appDefBrand = pick(brands, contextDefaults.context?.brandId);
   const appDefSeason = pick(seasons, contextDefaults.context?.seasonId);
 
   const brand =
     pick(brands, prefsBrandId) ?? appDefBrand ?? brands[0];
   const season =
-    pick(seasons, (prefs?.data as any)?.lastSeasonId as string | undefined) ?? appDefSeason ?? seasons[0];
+    pick(seasons, (prefs?.data as UserPreferenceData | null)?.lastSeasonId) ?? appDefSeason ?? seasons[0];
 
   const resolveContext_ = brand.logoKey ? await makeUrlResolver(prisma) : null;
   return {
@@ -150,14 +191,10 @@ export async function resolveContext(
 }
 
 /**
- * Imposta il context per un utente
- * Valida che brand e season siano attivi prima di salvare
+ * Saves the user's active brand and season preference. Merges with existing preferences
+ * to preserve unrelated fields such as menu state.
  *
- * @param userId - ID dell'utente
- * @param brandId - ID del brand
- * @param seasonId - ID del season
- * @param prisma - Client Prisma
- * @returns Context impostato (brand + season)
+ * @throws {TRPCError} BAD_REQUEST if the brand or season is inactive or not found.
  */
 export async function setContext(
   userId: string,
@@ -165,7 +202,7 @@ export async function setContext(
   seasonId: string,
   prisma: PrismaClient
 ): Promise<ContextResult> {
-  // Verifica che brand e season esistano e siano attivi
+  // Verify that brand and season exist and are active
   const [brand, season, currentPrefs] = await Promise.all([
     prisma.brand.findFirst({ where: { id: brandId, isActive: true } }),
     prisma.season.findFirst({ where: { id: seasonId, isActive: true } }),
@@ -179,9 +216,9 @@ export async function setContext(
     });
   }
 
-  // Merge dei dati: preserva menuStates, aggiorna brand/season
+  // Merge the data: preserve menuStates, update brand/season
   const mergedData = {
-    ...((currentPrefs?.data as any) ?? {}),
+    ...((currentPrefs?.data as UserPreferenceData | null) ?? {}),
     lastBrandId: brand.id,
     lastSeasonId: season.id,
   };
@@ -209,10 +246,9 @@ export async function setContext(
 }
 
 /**
- * Ottiene i defaults del context dall'AppConfig
+ * Reads the org-level context defaults (default brand and season) from AppConfig.
  *
- * @param prisma - Client Prisma
- * @returns Defaults del context o oggetto vuoto
+ * @returns Parsed AppContextDefaults, or an empty object if not configured.
  */
 export async function getContextDefaults(
   prisma: PrismaClient
@@ -235,12 +271,9 @@ export async function getContextDefaults(
 }
 
 /**
- * Ottiene lo stato collapsible dei menu per l'utente
- * Restituisce un oggetto con il mapping {menuName: isCollapsed}
+ * Reads the sidebar menu collapsed/expanded states for a user.
  *
- * @param userId - ID dell'utente
- * @param prisma - Client Prisma
- * @returns Object con stati dei menu collapsibili
+ * @returns A map of menu name to collapsed boolean. Empty object if no preference is saved.
  */
 export async function getMenuCollapsibleStates(
   userId: string,
@@ -256,7 +289,7 @@ export async function getMenuCollapsibleStates(
   }
 
   try {
-    const menuStates = (prefs.data as any)?.menuStates ?? {};
+    const menuStates = (prefs.data as UserPreferenceData)?.menuStates ?? {};
     return JSON.parse(JSON.stringify(menuStates)) as Record<string, boolean>;
   } catch (error) {
     logger.warn({ err: error }, 'Errore parsing menuCollapsibleStates');
@@ -265,28 +298,79 @@ export async function getMenuCollapsibleStates(
 }
 
 /**
- * Imposta lo stato collapsible dei menu per l'utente
- * Fa upsert sulla preferenza esistente preservando altri dati
+ * Reads a single key out of the user's consolidated `UserPreference.data` JSON blob.
  *
- * @param userId - ID dell'utente
- * @param menuStates - Object con mapping {menuName: isCollapsed}
- * @param prisma - Client Prisma
- * @returns Stati salvati
+ * @returns The stored value, or `defaultValue` if unset or of the wrong type.
+ */
+export async function getUserPreferenceValue<T>(
+  userId: string,
+  key: string,
+  defaultValue: T,
+  prisma: PrismaClient
+): Promise<T> {
+  const prefs = await prisma.userPreference.findUnique({
+    where: { userId },
+    select: { data: true },
+  });
+
+  // Arbitrary key provided by the caller — not traceable to the 3 known
+  // fields of UserPreferenceData, hence Record<string, unknown> here, not that type.
+  const value = (prefs?.data as Record<string, unknown> | null)?.[key];
+  return value === undefined ? defaultValue : (value as T);
+}
+
+/**
+ * Persists a single key into the user's consolidated `UserPreference.data` JSON blob,
+ * merging with existing preferences to preserve unrelated fields (brand/season, menu state, etc.).
+ */
+export async function setUserPreferenceValue<T>(
+  userId: string,
+  key: string,
+  value: T,
+  prisma: PrismaClient
+): Promise<T> {
+  const currentPrefs = await prisma.userPreference.findUnique({
+    where: { userId },
+    select: { data: true },
+  });
+
+  // The value is generic (T) but always JSON-serializable by the function's
+  // contract (it persists into a Json column) — TS can't prove that from the spread.
+  const mergedData = {
+    ...((currentPrefs?.data as Record<string, unknown> | null) ?? {}),
+    [key]: value,
+  } as Prisma.InputJsonValue;
+
+  await prisma.userPreference.upsert({
+    where: { userId },
+    create: { userId, data: mergedData },
+    update: { data: mergedData },
+  });
+
+  return value;
+}
+
+/**
+ * Persists sidebar menu collapsed/expanded states for a user.
+ * Merges with existing preferences to preserve brand/season selections.
+ *
+ * @param menuStates - Map of menu name to collapsed boolean.
+ * @returns The saved menu states.
  */
 export async function setMenuCollapsibleStates(
   userId: string,
   menuStates: Record<string, boolean>,
   prisma: PrismaClient
 ): Promise<Record<string, boolean>> {
-  // Leggi il valore attuale per preservare altri campi
+  // Read the current value to preserve other fields
   const currentPrefs = await prisma.userPreference.findUnique({
     where: { userId },
     select: { data: true },
   });
 
-  // Merge dei dati: preserva brand/season, aggiorna menuStates
+  // Merge the data: preserve brand/season, update menuStates
   const mergedData = {
-    ...((currentPrefs?.data as any) ?? {}),
+    ...((currentPrefs?.data as UserPreferenceData | null) ?? {}),
     menuStates: menuStates,
   };
 
@@ -303,7 +387,7 @@ export async function setMenuCollapsibleStates(
   });
 
   try {
-    const saved = (updated.data as any)?.menuStates ?? {};
+    const saved = (updated.data as UserPreferenceData)?.menuStates ?? {};
     return JSON.parse(JSON.stringify(saved)) as Record<string, boolean>;
   } catch (error) {
     logger.warn({ err: error }, 'Errore parsing menuCollapsibleStates after set');

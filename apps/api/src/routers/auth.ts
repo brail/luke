@@ -1,6 +1,6 @@
 /**
- * Router tRPC per autenticazione
- * Gestisce login, logout e verifica sessione
+ * tRPC router for authentication
+ * Handles login, logout, and session verification
  */
 
 import { TRPCError } from '@trpc/server';
@@ -14,6 +14,19 @@ import {
   RequestEmailVerificationAdminSchema,
 } from '@luke/core';
 
+import { logAudit } from '../lib/auditLog';
+import { createToken } from '../lib/auth';
+import { sendVerificationEmail } from '../lib/emailHelpers';
+import { withIdempotency } from '../lib/idempotencyTrpc';
+import { isSyntheticLdapEmail } from '../lib/ldapAuth';
+import { requirePermission } from '../lib/permissions';
+import { withRateLimit } from '../lib/ratelimit';
+import {
+  router,
+  publicProcedure,
+  protectedProcedure,
+  adminProcedure,
+} from '../lib/trpc';
 import {
   authenticateUser,
   logoutAllSessions,
@@ -22,20 +35,19 @@ import {
   requestEmailVerification,
   confirmEmailVerification,
 } from '../services/auth.service';
-import { logAudit } from '../lib/auditLog';
-import { withIdempotency } from '../lib/idempotencyTrpc';
-import { withRateLimit } from '../lib/ratelimit';
-import { requirePermission } from '../lib/permissions';
-import {
-  router,
-  publicProcedure,
-  protectedProcedure,
-  adminProcedure,
-} from '../lib/trpc';
-import { sendVerificationEmail } from '../lib/emailHelpers';
 
 /**
- * Schema per login
+ * Masks an email address for exposure from an unauthenticated public endpoint
+ * (e.g. `a***@luke.com`), keeping the domain visible for recognizability.
+ */
+function maskEmail(email: string): string {
+  const [local, domain] = email.split('@');
+  if (!local || !domain) return email;
+  return `${local[0]}***@${domain}`;
+}
+
+/**
+ * Login schema
  */
 const LoginSchema = z.object({
   username: z.string().min(1, 'Username richiesto'),
@@ -43,50 +55,111 @@ const LoginSchema = z.object({
 });
 
 /**
- * Router per autenticazione
+ * Authentication router
  */
 export const authRouter = router({
   /**
-   * Login utente con fallback LDAP configurabile
+   * Authenticates a user using the configured strategy (local-first, ldap-first, etc.).
+   *
+   * @auth {public}
+   * @input {LoginSchema} — username and password.
+   * @output {Session token and user info as returned by authenticateUser().}
    */
   login: publicProcedure
     .use(withRateLimit('login'))
-    .use(withIdempotency())
     .input(LoginSchema)
+    .use(withIdempotency())
     .mutation(async ({ input, ctx }) => {
       return await authenticateUser(ctx, input);
     }),
 
   /**
-   * Logout utente (soft logout)
-   * Rimuove solo la sessione corrente, mantiene altre sessioni attive
+   * Logs out the current session; cookie removal is handled by NextAuth on the web layer.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {{ success: true, message: string }}
    */
   logout: protectedProcedure.mutation(async ({ ctx: _ctx }) => {
-    // Cookie API rimosso: Web gestisce logout tramite NextAuth signOut()
+    // Cookie API removed: Web handles logout via NextAuth signOut()
     return { success: true, message: 'Logout effettuato con successo' };
   }),
 
   /**
-   * Logout hard - Revoca tutte le sessioni dell'utente
-   * Invalida tokenVersion per forzare re-login su tutti i dispositivi
+   * Invalidates all sessions for the current user by incrementing tokenVersion.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {Result from logoutAllSessions().}
    */
   logoutAll: protectedProcedure.mutation(async ({ ctx }) => {
     return await logoutAllSessions(ctx);
   }),
 
   /**
-   * Verifica sessione corrente
+   * Returns the current authenticated user's session info.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {{ user: SessionUser }} — user object from the current session.
    */
   me: protectedProcedure.query(async ({ ctx }) => {
-    // La sessione è già verificata dal middleware
+    // The session is already verified by the middleware
     return {
       user: ctx.session.user,
     };
   }),
 
   /**
-   * Richiesta reset password
-   * Genera token e invia email con link di reset
+   * Re-mints a fresh API access token for the current session.
+   * `protectedProcedure` already validates the Bearer (expired → UNAUTHORIZED) and the
+   * `tokenVersion` (revoked → UNAUTHORIZED): the web callback uses it to
+   * renew the embedded accessToken before it expires, preventing a still-valid
+   * NextAuth session from sending an expired API JWT (`jwt expired`).
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {{ token: string, tokenVersion: number }}
+   */
+  refreshToken: protectedProcedure.mutation(async ({ ctx }) => {
+    // Role and tokenVersion are re-read from the database, not from the session claim.
+    // Re-signing from the claim turned refresh into an authority recycle: a
+    // demoted user would endlessly renew a token that still said
+    // `role: "admin"`, because the source of the new token was the old token.
+    const fresh = await ctx.prisma.user.findUnique({
+      where: { id: ctx.session.user.id },
+      select: {
+        email: true,
+        username: true,
+        role: true,
+        tokenVersion: true,
+        isActive: true,
+      },
+    });
+
+    if (!fresh || !fresh.isActive) {
+      throw new TRPCError({
+        code: 'UNAUTHORIZED',
+        message: 'Sessione non più valida',
+      });
+    }
+
+    const token = createToken({
+      id: ctx.session.user.id,
+      email: fresh.email,
+      username: fresh.username,
+      role: fresh.role,
+      tokenVersion: fresh.tokenVersion,
+    });
+    return { token, tokenVersion: fresh.tokenVersion };
+  }),
+
+  /**
+   * Generates a password-reset token and sends the reset link by email.
+   *
+   * @auth {public}
+   * @input {RequestPasswordResetSchema} — user email address.
+   * @output {Success confirmation (always, to prevent email enumeration).}
    */
   requestPasswordReset: publicProcedure
     .use(withRateLimit('passwordReset'))
@@ -96,31 +169,40 @@ export const authRouter = router({
     }),
 
   /**
-   * Conferma reset password
-   * Valida token e aggiorna password
+   * Validates the reset token and sets the new password.
+   *
+   * @auth {public}
+   * @input {ConfirmPasswordResetSchema} — token and newPassword.
+   * @output {Success confirmation.}
    */
   confirmPasswordReset: publicProcedure
     .use(withRateLimit('passwordReset'))
     .input(ConfirmPasswordResetSchema)
     .mutation(async ({ input, ctx }) => {
-      // confirmPasswordReset accetta { token, newPassword } e il ctx
+      // confirmPasswordReset accepts { token, newPassword } and ctx
       return await confirmPasswordReset(ctx, input);
     }),
 
   /**
-   * Richiesta verifica email
-   * Genera token e invia email con link di verifica
+   * Generates an email-verification token and sends the verification link.
+   *
+   * @auth {public}
+   * @input {RequestEmailVerificationSchema} — email address to verify.
+   * @output {Success confirmation.}
    */
   requestEmailVerification: publicProcedure
-    .use(withRateLimit('passwordReset')) // Usa stessa policy
+    .use(withRateLimit('passwordReset')) // Uses the same policy
     .input(RequestEmailVerificationSchema)
     .mutation(async ({ input, ctx }) => {
       return await requestEmailVerification(ctx, input.email);
     }),
 
   /**
-   * Conferma verifica email
-   * Valida token e marca email come verificata
+   * Validates the email-verification token and marks the address as verified.
+   *
+   * @auth {public}
+   * @input {ConfirmEmailVerificationSchema} — verification token.
+   * @output {Success confirmation.}
    */
   confirmEmailVerification: publicProcedure
     .use(withRateLimit('passwordReset'))
@@ -130,9 +212,12 @@ export const authRouter = router({
     }),
 
   /**
-   * Controlla se un username corrisponde a un utente LDAP in attesa di approvazione.
-   * Usato dal login page dopo un CredentialsSignin fallito per distinguere
-   * "credenziali errate" da "account pending". Non richiede password.
+   * Checks whether a username belongs to an LDAP user awaiting admin approval.
+   *
+   * @auth {public}
+   * @input {{ username: string }} — username to check.
+   * @output {{ isPending: boolean, needsEmail: boolean, maskedEmail: string | null }} — pending status,
+   *   whether a real email is needed, and (if not) the masked address the verification mail was sent to.
    */
   getPendingStatus: publicProcedure
     .use(withRateLimit('pendingEmail'))
@@ -147,17 +232,23 @@ export const authRouter = router({
         select: { email: true },
       });
 
-      if (!user) return { isPending: false, needsEmail: false };
+      if (!user) return { isPending: false, needsEmail: false, maskedEmail: null };
+
+      const needsEmail = isSyntheticLdapEmail(user.email);
 
       return {
         isPending: true,
-        needsEmail: user.email.endsWith('@ldap.local'),
+        needsEmail,
+        maskedEmail: needsEmail ? null : maskEmail(user.email),
       };
     }),
 
   /**
-   * Salva l'email fornita da un utente LDAP in attesa di approvazione
-   * Endpoint pubblico — usato dalla pagina /auth/pending
+   * Saves a real email for an LDAP pending user and sends the verification email.
+   *
+   * @auth {public}
+   * @input {{ username: string, email: string }} — LDAP username and the email to register.
+   * @output {{ success: true }}
    */
   submitPendingEmail: publicProcedure
     .use(withRateLimit('pendingEmail'))
@@ -170,7 +261,7 @@ export const authRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { username, email } = input;
 
-      // Trova utente LDAP in attesa di approvazione
+      // Find LDAP user pending approval
       const user = await ctx.prisma.user.findFirst({
         where: {
           username,
@@ -183,11 +274,11 @@ export const authRouter = router({
       });
 
       if (!user || user.identities.length === 0) {
-        // Risposta generica per evitare enumerazione
+        // Generic response to prevent enumeration
         return { success: true };
       }
 
-      // Verifica unicità email (esclude l'utente stesso)
+      // Check email uniqueness (excludes the user itself)
       const existing = await ctx.prisma.user.findFirst({
         where: { email, id: { not: user.id } },
       });
@@ -212,7 +303,7 @@ export const authRouter = router({
         metadata: { username },
       });
 
-      // Invia email di verifica all'indirizzo appena fornito
+      // Send verification email to the address just provided
       try {
         await sendVerificationEmail(
           ctx.prisma,
@@ -220,7 +311,7 @@ export const authRouter = router({
           ctx
         );
       } catch {
-        // Non bloccare la risposta se SMTP non è configurato
+        // Don't block the response if SMTP isn't configured
         ctx.logger.warn({ username }, 'Failed to send verification email for pending user');
       }
 
@@ -228,8 +319,11 @@ export const authRouter = router({
     }),
 
   /**
-   * Richiesta verifica email da admin (by userId)
-   * Usa helper DRY per evitare duplicazione codice
+   * Admin-triggered email verification for a specific user by userId.
+   *
+   * @auth {users:update (admin)}
+   * @input {RequestEmailVerificationAdminSchema} — userId of the target user.
+   * @output {Result from sendVerificationEmail().}
    */
   requestEmailVerificationAdmin: adminProcedure
     .use(requirePermission('users:update'))
@@ -255,6 +349,7 @@ export const authRouter = router({
           code: 'INTERNAL_SERVER_ERROR',
           message:
             error instanceof Error ? error.message : 'Errore invio email',
+          cause: error,
         });
       }
     }),

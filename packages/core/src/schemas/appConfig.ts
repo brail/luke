@@ -1,95 +1,164 @@
 import { z } from 'zod';
 
 /**
- * Schema Zod per il modello AppConfig
- * Definisce la struttura di una configurazione dell'applicazione
+ * Shape of a single AppConfig record as persisted in the database (generic KV entry).
  */
 export const AppConfigSchema = z.object({
-  /** Chiave identificativa della configurazione */
+  /** Configuration identifier key */
   key: z.string().min(1),
 
-  /** Valore della configurazione (oggetto serializzabile generico) */
+  /** Configuration value (generic serializable object) */
   value: z.unknown(),
 
-  /** Versione della configurazione per gestire aggiornamenti */
+  /** Configuration version for managing updates */
   version: z.number().int().positive(),
 
-  /** Data di creazione della configurazione */
+  /** Configuration creation date */
   createdAt: z.date(),
 
-  /** Data dell'ultimo aggiornamento */
+  /** Last update date */
   updatedAt: z.date(),
 });
 
-/**
- * Tipo TypeScript inferito dallo schema AppConfig
- */
+/** TypeScript type inferred from `AppConfigSchema`. */
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 
 /**
- * Schema per una singola policy di rate limiting
+ * Rate limiting policy for a single endpoint category.
+ * `keyBy` controls whether the limit is per IP address or per authenticated user.
  */
 export const RateLimitPolicySchema = z.object({
-  /** Numero massimo di richieste consentite */
+  /** Maximum number of allowed requests */
   max: z.number().int().positive(),
-  /** Finestra temporale (es. '1m', '15m', '2h') */
+  /** Time window (e.g. '1m', '15m', '2h') */
   timeWindow: z.string().min(2),
-  /** Tipo di chiave per il rate limiting */
-  keyBy: z.enum(['ip', 'userId']).default('ip'),
+  /** Key type for rate limiting */
+  keyBy: z.enum(['ip', 'userId', 'username']).default('ip'),
 });
 
 /**
- * Schema per la configurazione completa del rate limiting
+ * Full rate limiting configuration, with optional per-category policies.
+ * Stored as a JSON blob under the `rateLimit` AppConfig key.
  */
 export const RateLimitConfigSchema = z.object({
-  /** Policy per endpoint di login */
+  /** Policy for login endpoint */
   login: RateLimitPolicySchema.optional(),
-  /** Policy per cambio password */
+  /** Policy for login endpoint, username key (anti password-spray distributed across multiple IPs) */
+  loginByUsername: RateLimitPolicySchema.optional(),
+  /** Policy for password change */
   passwordChange: RateLimitPolicySchema.optional(),
-  /** Policy per reset password */
+  /** Policy for password reset */
   passwordReset: RateLimitPolicySchema.optional(),
-  /** Policy per mutazioni di configurazione */
+  /** Policy for configuration mutations */
   configMutations: RateLimitPolicySchema.optional(),
-  /** Policy per mutazioni di utenti */
+  /** Policy for user mutations */
   userMutations: RateLimitPolicySchema.optional(),
-  /** Policy per mutazioni struttura company (funzioni, team, membri) */
+  /** Policy for section access override (sectionAccess.set) */
+  sectionAccessSet: RateLimitPolicySchema.optional(),
+  /** Policy for brand mutations */
+  brandMutations: RateLimitPolicySchema.optional(),
+  /** Policy for pending user email sending */
+  pendingEmail: RateLimitPolicySchema.optional(),
+  /** Policy for LDAP bind/search test */
+  ldapTest: RateLimitPolicySchema.optional(),
+  /** Policy for company structure mutations (functions, teams, members) */
   companyStructureMutations: RateLimitPolicySchema.optional(),
-  /** Policy per trigger sync NAV (fornitori, ecc.) */
+  /** Policy for triggering NAV sync (suppliers, etc.) */
   navSyncTrigger: RateLimitPolicySchema.optional(),
+  /** Policy for export generation (PDF/XLSX): CPU and memory bound operation */
+  exportGeneration: RateLimitPolicySchema.optional(),
 });
 
 /**
- * Schema per la configurazione di resilienza LDAP
+ * LDAP connection resilience settings — timeouts, retries, and circuit-breaker parameters.
+ * All values correspond to individual AppConfig keys under `auth.ldap.resilience.*`.
  */
 export const LdapResilienceSchema = z.object({
-  /** Timeout per operazione LDAP in millisecondi */
+  /** Timeout for LDAP operation in milliseconds */
   timeoutMs: z.number().int().positive().default(3000),
-  /** Numero massimo di retry per operazioni fallite */
+  /** Maximum number of retries for failed operations */
   maxRetries: z.number().int().min(0).default(2),
-  /** Delay base per exponential backoff in millisecondi */
+  /** Base delay for exponential backoff in milliseconds */
   baseDelayMs: z.number().int().min(10).default(200),
-  /** Soglia di failure per aprire il circuit breaker */
+  /** Failure threshold to open circuit breaker */
   breakerFailureThreshold: z.number().int().min(1).default(5),
-  /** Cooldown del circuit breaker in millisecondi */
+  /** Circuit breaker cooldown in milliseconds */
   breakerCooldownMs: z.number().int().min(500).default(10000),
-  /** Numero massimo di tentativi in stato half-open */
+  /** Maximum number of attempts in half-open state */
   halfOpenMaxAttempts: z.number().int().min(1).default(1),
 });
 
 /**
- * Tipi TypeScript per rate limiting
+ * Visual weight of a band's badge, independent from its color — colors alone run out of
+ * distinguishable steps once more than ~4 bands are configured, so emphasis is the second axis
+ * an admin can use to rank severity (e.g. solid red "In ritardo grave" vs outline red "In ritardo").
+ * - `outline`: transparent background, colored border and text
+ * - `soft`: tinted background, colored border and text
+ * - `solid`: fully filled background, contrast-picked text
  */
-export type RateLimitPolicy = z.infer<typeof RateLimitPolicySchema>;
-export type RateLimitConfig = z.infer<typeof RateLimitConfigSchema>;
+export const AlertBandEmphasisSchema = z.enum(['outline', 'soft', 'solid']);
 
 /**
- * Tipo TypeScript per configurazione resilienza LDAP
+ * A single criticality band: rows whose days-to-deadline fall in
+ * [minDaysToDeadline, maxDaysToDeadline) are shown with this color/label.
+ * `maxDaysToDeadline: null` means "no upper bound" (furthest-out band).
  */
+export const AlertBandSchema = z.object({
+  minDaysToDeadline: z.number().int(),
+  maxDaysToDeadline: z.number().int().nullable(),
+  color: z.string().min(1),
+  label: z.string().min(1),
+  /** Defaulted so blobs written before emphasis existed keep parsing (and keep rendering as before). */
+  emphasis: AlertBandEmphasisSchema.default('outline'),
+});
+
+/** Ordered list of criticality bands for one scope (default or a specific Phase override). */
+export const AlertBandSetSchema = z.object({
+  bands: z.array(AlertBandSchema).min(1),
+});
+
+/**
+ * Badge for a row that has been explicitly marked as concluded. Not part of `AlertBandSetSchema`'s
+ * ordered list: completion is a state, not a day range — there is nothing to match against.
+ * Solid by default so a concluded row reads as a finished outcome rather than one more countdown.
+ */
+export const AlertOutcomeBandSchema = z.object({
+  color: z.string().min(1),
+  label: z.string().min(1),
+  emphasis: AlertBandEmphasisSchema.default('solid'),
+});
+
+/**
+ * Criticality thresholds for the collection-control alert engine (Fase 5).
+ * Global default bands, with an optional per-Phase override (fallback to `default` when absent).
+ * Stored as a JSON blob under the `collectionControl.alertThresholds` AppConfig key.
+ */
+export const CollectionAlertThresholdsSchema = z.object({
+  default: AlertBandSetSchema,
+  /** Keyed by `Phase.value` (the stable business key), not `Phase.id` — a generated UUID that
+   * differs per environment/seed and would silently stop matching if this config were copied
+   * across environments. */
+  perPhaseOverride: z.record(z.string(), AlertBandSetSchema).optional(),
+  /** Concluded on or before the last planned milestone's deadline. */
+  completedBand: AlertOutcomeBandSchema.default({ color: '#15803D', label: 'Concluso', emphasis: 'solid' }),
+  /** Concluded after it. Defaulted (rather than optional) so the two outcomes are always
+   * distinguishable, even in a config blob written before completion tracking existed. */
+  completedLateBand: AlertOutcomeBandSchema.default({ color: '#B91C1C', label: 'Concluso in ritardo', emphasis: 'solid' }),
+});
+
+export type AlertBandEmphasis = z.infer<typeof AlertBandEmphasisSchema>;
+export type AlertBand = z.infer<typeof AlertBandSchema>;
+export type AlertOutcomeBand = z.infer<typeof AlertOutcomeBandSchema>;
+export type AlertBandSet = z.infer<typeof AlertBandSetSchema>;
+export type CollectionAlertThresholds = z.infer<typeof CollectionAlertThresholdsSchema>;
+
+export type RateLimitPolicy = z.infer<typeof RateLimitPolicySchema>;
+export type RateLimitConfig = z.infer<typeof RateLimitConfigSchema>;
 export type LdapResilienceConfig = z.infer<typeof LdapResilienceSchema>;
 
 /**
- * Schema per i defaults del context (Brand/Season)
- * Utilizzato per configurare i default organizzativi
+ * Schema for the default Brand/Season context that applies to the organization.
+ * Stored in AppConfig and used when no user preference has been set.
  */
 export const AppContextDefaultsSchema = z.object({
   context: z
@@ -101,7 +170,4 @@ export const AppContextDefaultsSchema = z.object({
     .default({}),
 });
 
-/**
- * Tipo TypeScript per defaults del context
- */
 export type AppContextDefaults = z.infer<typeof AppContextDefaultsSchema>;

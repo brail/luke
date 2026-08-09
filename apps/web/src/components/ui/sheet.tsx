@@ -7,6 +7,8 @@ import * as React from 'react';
 
 import { cn } from '../../lib/utils';
 
+import { withNestedOverlayFix } from './radix-nested-overlay-fix';
+
 const Sheet = SheetPrimitive.Root;
 
 const SheetTrigger = SheetPrimitive.Trigger;
@@ -56,12 +58,13 @@ interface SheetContentProps
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
->(({ side = 'right', className, children, ...props }, ref) => (
+>(({ side = 'right', className, children, style, onInteractOutside, ...props }, ref) => (
   <SheetPortal>
     <SheetOverlay />
     <SheetPrimitive.Content
       ref={ref}
       className={cn(sheetVariants({ side }), className)}
+      {...withNestedOverlayFix(style, onInteractOutside)}
       {...props}
     >
       {children}

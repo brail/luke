@@ -1,0 +1,70 @@
+name: security
+
+on:
+  push:
+    branches: [develop-2.1, main]
+  schedule:
+    - cron: '0 6 * * 1' # lunedì 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  semgrep:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install semgrep (OSS, LGPL-2.1)
+        run: pip install semgrep
+
+      - name: Semgrep - community ruleset (bloccante)
+        run: semgrep scan --config p/typescript --config p/nextjs --config p/nodejs --config p/react --config p/sql-injection --error
+
+      # Directory intera filtrata per severità: una regola ERROR nuova entra da
+      # sola in tutti i gate, senza modifiche sincronizzate qui, in
+      # `security:sast` e in `.husky/pre-commit`.
+      - name: Semgrep - regole custom ERROR-tier (bloccante)
+        run: semgrep scan --config .semgrep/rules/ --severity ERROR --error
+
+      - name: Semgrep - luke-mutation-requires-permission (WARNING, non bloccante)
+        run: semgrep scan --config .semgrep/rules/mutation-requires-permission.yml
+
+  gitleaks:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with: { fetch-depth: 0 }
+
+      - name: Install gitleaks (CLI OSS/MIT — non gitleaks-action, che richiede licenza commerciale)
+        run: |
+          curl -sSL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+          rm gitleaks.tar.gz
+
+      - run: gitleaks detect --source .
+
+  # Bloccante. Era `continue-on-error: true` — "report-only sui push", con il
+  # segnale vero delegato a `osv-weekly`. Ma `osv-weekly` non è mai partito una
+  # volta: GitHub esegue i trigger `schedule` usando i workflow del **branch di
+  # default**, e questo file non esiste su `main`. Risultato: l'unico job che
+  # girava era volutamente non bloccante, e quello bloccante non aveva un file da
+  # eseguire. Sono passate inosservate 24 vulnerabilità note, 3 delle quali
+  # critiche sul layer di autenticazione.
+  osv-push:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: google/osv-scanner-action/osv-scanner-action@v2.3.8
+
+  # Copre il caso che il job su push non può coprire: una vulnerabilità
+  # divulgata dopo l'ultimo commit, su codice fermo. Resta inerte finché questo
+  # file non arriva anche su `main` — vedi il commento sopra.
+  osv-weekly:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: google/osv-scanner-action/osv-scanner-action@v2.3.8

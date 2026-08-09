@@ -2,32 +2,119 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop-2.1]
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop-2.1]
+  # Invocabile da release.yml: un tag non fa scattare i trigger push/pull_request,
+  # quindi senza questo non esisterebbe alcuna esecuzione di CI da cui dipendere
+  # prima di costruire le immagini.
+  workflow_call:
 
 jobs:
-  lint-and-typecheck:
-    name: Lint & TypeCheck
+  # Lint, typecheck e unit test stanno insieme perché condividono esattamente lo
+  # stesso ambiente e nessuno dei tre ha bisogno di un database. Separarli
+  # costava un secondo setup completo (checkout + install + prisma generate) per
+  # guadagnare un parallelismo che `pnpm test` — cache turbo, nessun servizio —
+  # non giustifica.
+  checks:
+    name: Lint, TypeCheck & Unit Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Generate Prisma client
-        run: pnpm --filter @luke/api exec prisma generate
+      - uses: ./.github/actions/setup-workspace
 
       - name: Lint
         run: pnpm lint
 
       - name: TypeCheck
         run: pnpm typecheck
+
+      # I file sotto test/ non rientrano in tsconfig.json (rootDir: src).
+      # Senza questo step il codice di test può marcire a livello di tipi senza segnalazione.
+      - name: TypeCheck (test)
+        run: pnpm typecheck:test
+
+      # Skill e documentazione affermano fatti sulla codebase (path, simboli,
+      # link) che possono driftare in silenzio: `luke-test` ha istruito per mesi
+      # ad aggiungere le spec a un file eliminato. Qui quei fatti diventano
+      # bloccanti.
+      - name: Docs & skills drift
+        run: pnpm check:drift
+
+      - name: Unit tests
+        run: pnpm test
+
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: luke_test
+          POSTGRES_USER: luke
+          POSTGRES_PASSWORD: luke_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U luke -d luke_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_URL: postgresql://luke:luke_test@localhost:5432/luke_test
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-workspace
+
+      - name: Integration tests
+        run: pnpm test:integration
+
+  migrations:
+    name: Migrations
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: luke_migrate
+          POSTGRES_USER: luke
+          POSTGRES_PASSWORD: luke_migrate
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U luke -d luke_migrate"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://luke:luke_migrate@localhost:5432/luke_migrate
+      SHADOW_DATABASE_URL: postgresql://luke:luke_migrate@localhost:5432/luke_shadow
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-workspace
+
+      - name: Create shadow database
+        run: |
+          PGPASSWORD=luke_migrate psql -h localhost -U luke -d luke_migrate \
+            -c 'CREATE DATABASE luke_shadow;'
+
+      # Stesso comando di entrypoint.sh in produzione: se fallisce qui,
+      # sarebbe fallito al deploy.
+      - name: Apply migrations from scratch
+        run: pnpm --filter @luke/api exec prisma migrate deploy
+
+      # schema.prisma e prisma/migrations/ possono divergere silenziosamente.
+      # --exit-code: 0 nessuna differenza, 2 drift rilevato.
+      - name: Schema drift check
+        run: |
+          pnpm --filter @luke/api exec prisma migrate diff \
+            --from-migrations ./prisma/migrations \
+            --to-schema ./prisma/schema.prisma \
+            --exit-code

@@ -15,13 +15,14 @@ import {
   TableRow,
 } from '../../../../../components/ui/table';
 import { usePermission } from '../../../../../hooks/usePermission';
+import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
 import type { SeasonItem } from './SeasonDialog';
 
 interface SeasonTableProps {
   seasons: SeasonItem[];
   isLoading: boolean;
-  error?: any;
+  error?: unknown;
   onEdit: (season: SeasonItem) => void;
   onDelete: (season: SeasonItem) => void;
   onRestore: (season: SeasonItem) => void;
@@ -30,6 +31,17 @@ interface SeasonTableProps {
   onRetry?: () => void;
 }
 
+/**
+ * Seasons data table with permission-aware action buttons.
+ *
+ * Mirrors the BrandTableWithPermissions pattern: Modifica/Disattiva/Elimina
+ * are always visible but gated by `seasons:update` and `seasons:delete`.
+ * NAV-linked seasons show "Scollega da NAV" instead of Disattiva.
+ *
+ * @param onUnlink - Called when the user requests to unlink a NAV-linked season.
+ * @param onHardDelete - Called when the user requests a permanent deletion.
+ * @param onRetry - Optional; shown in the error state to retry the data fetch.
+ */
 export function SeasonTable({
   seasons,
   isLoading,
@@ -50,7 +62,7 @@ export function SeasonTable({
     return (
       <div className="text-center py-8">
         <p className="text-destructive mb-4">
-          Errore caricamento stagioni: {error.message}
+          Errore caricamento stagioni: {getTrpcErrorMessage(error)}
         </p>
         {onRetry && (
           <Button onClick={onRetry} variant="outline">

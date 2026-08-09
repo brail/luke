@@ -28,15 +28,25 @@ import {
   ClipboardList,
   ListTree,
   LayoutTemplate,
-  Chrome,
+  GitBranch,
+  Gauge,
+  Globe,
+  Info,
+  MessageSquarePlus,
+  AlertTriangle,
+  Archive,
+  ShieldAlert,
+  ScrollText,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
+import { useState } from 'react';
 
 import { useMenuAccess } from '../hooks/useMenuAccess';
 import { useMenuPreferences } from '../hooks/useMenuPreferences';
 
+import { AppVersionLabel } from './AppVersionLabel';
 import { FeedbackDialog } from './FeedbackDialog';
 import Logo from './Logo';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
@@ -64,12 +74,31 @@ import {
   SidebarTrigger,
 } from './ui/sidebar';
 
+/**
+ * Main application sidebar with navigation links, collapsible sections, and a user menu dropdown.
+ *
+ * Renders menu items conditionally based on section access from `useMenuAccess`.
+ * Persists open/closed state for collapsible groups via `useMenuPreferences`.
+ */
+
+function FeedbackTrigger() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <DropdownMenuItem onSelect={() => setOpen(true)}>
+        <MessageSquarePlus className="mr-2 h-4 w-4" />
+        <span>Segnala / Suggerisci</span>
+      </DropdownMenuItem>
+      <FeedbackDialog open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
+
 export default function AppSidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
   const menuAccess = useMenuAccess();
   const { menuStates, toggleMenu } = useMenuPreferences();
-
   const isActive = (href: string) => pathname.startsWith(href);
 
   const handleSignOut = async () => {
@@ -114,6 +143,8 @@ export default function AppSidebar() {
           </div>
           <SidebarTrigger />
         </div>
+        {/* 10px: below Tailwind's text-xs (12px) floor; unobtrusive footer version tag */}
+        <AppVersionLabel className="px-3 pb-1 text-[10px] text-muted-foreground/50 select-none" />
       </SidebarHeader>
       <SidebarContent>
 
@@ -231,6 +262,19 @@ export default function AppSidebar() {
                         </SidebarMenuSubButton>
                       </SidebarMenuSubItem>
                     )}
+                    {menuAccess.productItems?.control && (
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          asChild
+                          isActive={isActive('/product/control')}
+                        >
+                          <Link href="/product/control">
+                            <Gauge size={16} />
+                            <span>Controllo</span>
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    )}
                   </SidebarMenuSub>
                 </CollapsibleContent>
               </Collapsible>
@@ -295,6 +339,14 @@ export default function AppSidebar() {
                         </Link>
                       </DropdownMenuItem>
                     )}
+                    {menuAccess.adminItems.phaseCatalog && (
+                      <DropdownMenuItem asChild>
+                        <Link href="/admin/phase-catalog" className="flex items-center gap-2">
+                          <GitBranch size={16} />
+                          <span>Fasi</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
                   </DropdownMenuGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -314,6 +366,7 @@ export default function AppSidebar() {
                   <DropdownMenuGroup>
                     {menuAccess.settingsItems.company && (
                       <DropdownMenuItem asChild>
+                        {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime */}
                         <Link href={"/settings/company" as any} className="flex items-center gap-2">
                           <Building2 size={16} />
                           <span>Azienda</span>
@@ -371,8 +424,17 @@ export default function AppSidebar() {
                     {menuAccess.settingsItems.google && (
                       <DropdownMenuItem asChild>
                         <Link href="/settings/google" className="flex items-center gap-2">
-                          <Chrome size={16} />
+                          <Globe size={16} />
                           <span>Google Workspace</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                    {menuAccess.settingsItems.collectionControl && (
+                      <DropdownMenuItem asChild>
+                        {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime (mirrors settings/company above) */}
+                        <Link href={"/settings/collection-control" as any} className="flex items-center gap-2">
+                          <AlertTriangle size={16} />
+                          <span>Alert Calendario/Fasi</span>
                         </Link>
                       </DropdownMenuItem>
                     )}
@@ -409,6 +471,33 @@ export default function AppSidebar() {
                         </Link>
                       </DropdownMenuItem>
                     )}
+                    {menuAccess.maintenanceItems.backup && (
+                      <DropdownMenuItem asChild>
+                        {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime (mirrors settings/collection-control above) */}
+                        <Link href={"/maintenance/backup" as any} className="flex items-center gap-2">
+                          <Archive size={16} />
+                          <span>Backup & Restore</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                    {menuAccess.maintenanceItems.mode && (
+                      <DropdownMenuItem asChild>
+                        {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime (mirrors settings/collection-control above) */}
+                        <Link href={"/maintenance/mode" as any} className="flex items-center gap-2">
+                          <ShieldAlert size={16} />
+                          <span>Modalità Manutenzione</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                    {menuAccess.maintenanceItems.auditLog && (
+                      <DropdownMenuItem asChild>
+                        {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime (mirrors settings/collection-control above) */}
+                        <Link href={"/maintenance/audit-log" as any} className="flex items-center gap-2">
+                          <ScrollText size={16} />
+                          <span>Audit Log</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
                   </DropdownMenuGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -417,20 +506,8 @@ export default function AppSidebar() {
         </SidebarFooter>
       )}
 
-      {/* Versione app — solo in development */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="px-3 pb-1 text-xs text-muted-foreground/60 select-none">
-          {[process.env.NEXT_PUBLIC_APP_VERSION, 'dev']
-            .filter(Boolean)
-            .join(' · ')}
-        </div>
-      )}
-
       {/* Footer con dropdown utente - sempre visibile */}
       <SidebarFooter>
-        <div className="px-1 pb-1">
-          <FeedbackDialog />
-        </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <div className="flex items-center gap-3 p-2 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors">
@@ -466,6 +543,14 @@ export default function AppSidebar() {
                 <span>Profilo</span>
               </Link>
             </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime */}
+              <Link href={"/about" as any}>
+                <Info className="mr-2 h-4 w-4" />
+                <span>Info su Luke</span>
+              </Link>
+            </DropdownMenuItem>
+            <FeedbackTrigger />
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={handleSignOut}

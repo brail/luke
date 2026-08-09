@@ -11,9 +11,10 @@ import {
 import { useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
-import type { PricingParameterSetInput } from '@luke/core';
+import type { PricingCurrency, PricingParameterSetInput } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
+import { LastModifiedBy } from '../../../../../components/LastModifiedBy';
 import { PermissionButton } from '../../../../../components/PermissionButton';
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
@@ -84,6 +85,17 @@ function buildRows(set: PricingParameterSet) {
   ];
 }
 
+/**
+ * Side panel listing pricing parameter sets with expand/collapse detail view.
+ *
+ * Lets the user select a set (highlighted as active), mark one as default,
+ * create new sets, edit existing ones, and delete non-default ones.
+ * All write actions are gated by `pricing:update`.
+ *
+ * @param selectedSetId - Currently selected parameter set ID.
+ * @param onSelectSet - Called when the user selects a different set.
+ * @param onSetDefault - Called with the set ID to mark it as the default.
+ */
 export function ParameterSetPanel({
   sets,
   selectedSetId,
@@ -181,8 +193,7 @@ export function ParameterSetPanel({
                         <TooltipTrigger asChild>
                           <Button
                             variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
+                            size="icon-sm"
                             onClick={() => onSetDefault(set.id)}
                             disabled={isLoading}
                           >
@@ -199,8 +210,7 @@ export function ParameterSetPanel({
                     hasPermission={canUpdate}
                     tooltip="Non hai i permessi per modificare i parametri"
                     variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
+                    size="icon-sm"
                     onClick={() => setEditingSet(set)}
                     disabled={isLoading}
                   >
@@ -215,8 +225,8 @@ export function ParameterSetPanel({
                           <TooltipTrigger asChild>
                             <Button
                               variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-destructive hover:text-destructive"
+                              size="icon-sm"
+                              className="text-destructive hover:text-destructive"
                               onClick={() => setDeleteTarget(set)}
                               disabled={isLoading}
                             >
@@ -229,15 +239,19 @@ export function ParameterSetPanel({
                     ) : (
                       <TooltipProvider>
                         <Tooltip>
+                          {/* Il trigger è lo span: un bottone disabilitato non emette gli eventi
+                              che aprono il tooltip (vedi `PermissionButton`). */}
                           <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 opacity-50 cursor-not-allowed"
-                              disabled
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                            <span className="inline-flex" tabIndex={0}>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                className="opacity-50 cursor-not-allowed"
+                                disabled
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </span>
                           </TooltipTrigger>
                           <TooltipContent>
                             Non hai i permessi per eliminare le varianti
@@ -281,6 +295,9 @@ export function ParameterSetPanel({
                       ))}
                     </TableBody>
                   </Table>
+                  <div className="px-2 pb-1 pt-2">
+                    <LastModifiedBy targetType="PricingParameterSet" targetId={set.id} />
+                  </div>
                 </div>
               )}
             </div>
@@ -308,7 +325,13 @@ export function ParameterSetPanel({
             if (!open) setEditingSet(null);
           }}
           mode="edit"
-          initialData={editingSet}
+          initialData={{
+            ...editingSet,
+            // Set esistente, già validato alla creazione — la colonna DB
+            // resta `String` generico, TS non lo sa.
+            purchaseCurrency: editingSet.purchaseCurrency as PricingCurrency,
+            sellingCurrency: editingSet.sellingCurrency as PricingCurrency,
+          }}
           onSubmit={(data, makeDefault) => {
             onUpdateSet(editingSet.id, data);
             if (makeDefault && !editingSet.isDefault) onSetDefault(editingSet.id);

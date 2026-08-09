@@ -4,9 +4,12 @@ import { Image, Plus, Trash2, X } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
-import { calcMaxSupplierCost, type CollectionLayoutRowInput } from '@luke/core';
+import { calcMaxSupplierCost, formatPhaseLabel, type CollectionLayoutRowInput } from '@luke/core';
 
 import { NumberInput } from '../../../../../components/NumberInput';
+import { PermissionButton } from '../../../../../components/PermissionButton';
+import { PhaseSelect } from '../../../../../components/PhaseSelect';
+import { formatPlanningGroupLabel, PlanningGroupSelect } from '../../../../../components/PlanningGroupSelect';
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
 import { FileDropZone } from '../../../../../components/ui/file-drop-zone';
@@ -28,10 +31,13 @@ import {
 import { Textarea } from '../../../../../components/ui/textarea';
 import { trpc } from '../../../../../lib/trpc';
 import { cn } from '../../../../../lib/utils';
+import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
 
+import { CriticalitySituation } from './CriticalityBadge';
+import { RowCompletionToggle } from './RowCompletionToggle';
 import { VendorCombobox } from './VendorCombobox';
 
-import type { PricingParameterSet } from '../_hooks/usePricingCalc';
+import type { PricingParameterSet } from '../../_shared/pricingCalc';
 import type { Control } from 'react-hook-form';
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
@@ -59,10 +65,14 @@ export type QuotationState = {
   supplierQuotation: number | null;
   notes: string | null;
   sku: number | null;
+  /** True for a quotation added client-side this session (not yet in DB) — decides create vs
+   * update at submit, in place of cross-checking `id` against a separately-tracked DB id set. */
+  isNew: boolean;
 };
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
+/** Styled section heading used between form sections in the row drawer. */
 export function SectionHeader({ title }: { title: string }) {
   return (
     <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
@@ -70,6 +80,14 @@ export function SectionHeader({ title }: { title: string }) {
     </p>
   );
 }
+
+/**
+ * Fixed-height label for the compact Pianificazione fields. Forces phase and
+ * planning-group labels to the same height so the two selects below them align
+ * even when the phase label carries criticality/variance badges. Shared so the
+ * height can't drift between the fields.
+ */
+const PLANNING_FIELD_LABEL = 'flex h-6 items-center';
 
 function parsePositiveFloat(value: string): number | null {
   const parsed = parseFloat(value);
@@ -132,6 +150,52 @@ function calcQuotationFields(q: QuotationState, ps: PricingParameterSet | null):
   };
 }
 
+// ─── Field: Catalog select ────────────────────────────────────────────────────
+
+interface CatalogSelectFieldProps {
+  control: Control<CollectionLayoutRowInput>;
+  name: 'status' | 'styleStatus' | 'strategy' | 'pricePositioning';
+  label: string;
+  options: { value: string; label: string }[];
+  canUpdate: boolean;
+  /** When false the field is required (no empty sentinel). Defaults to nullable. */
+  nullable?: boolean;
+}
+
+/**
+ * FormField wrapper for a collection-catalog Select. Nullable fields use the `_none`
+ * sentinel (Radix Select can't represent an empty value) mapped to/from `null`;
+ * required fields (`nullable={false}`) bind the value directly.
+ */
+function CatalogSelectField({ control, name, label, options, canUpdate, nullable = true }: CatalogSelectFieldProps) {
+  return (
+    <FormField
+      control={control}
+      name={name}
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>{label}</FormLabel>
+          <Select
+            onValueChange={nullable ? v => field.onChange(v === '_none' ? null : v) : field.onChange}
+            // `?? '_none'` is harmless for required fields — their value is never null.
+            value={field.value ?? '_none'}
+            disabled={!canUpdate}
+          >
+            <FormControl>
+              <SelectTrigger><SelectValue placeholder={nullable ? '—' : undefined} /></SelectTrigger>
+            </FormControl>
+            <SelectContent>
+              {nullable && <SelectItem value="_none">—</SelectItem>}
+              {options.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
 // ─── Section: Identificazione ─────────────────────────────────────────────────
 
 interface IdentificationSectionProps {
@@ -141,6 +205,12 @@ interface IdentificationSectionProps {
   groups: CollectionGroup[];
 }
 
+/**
+ * Form section for the core identity fields of a collection row:
+ * group, gender, category, line, article, status, designer, strategy, and
+ * price positioning. Planning group and phase live in `PlanningSection`.
+ * Catalog options (strategy, lineStatus, styleStatus) are fetched from tRPC.
+ */
 export function IdentificationSection({
   control,
   canUpdate,
@@ -157,10 +227,6 @@ export function IdentificationSection({
   );
   const { data: styleStatusOptions = [] } = trpc.collectionCatalog.list.useQuery(
     { type: 'styleStatus' },
-    { staleTime: 5 * 60 * 1000 }
-  );
-  const { data: progressOptions = [] } = trpc.collectionCatalog.list.useQuery(
-    { type: 'progress' },
     { staleTime: 5 * 60 * 1000 }
   );
   const { data: pricePositioningOptions = [] } = trpc.collectionCatalog.list.useQuery(
@@ -261,47 +327,25 @@ export function IdentificationSection({
 
       {/* line status | style status */}
       <div className="grid grid-cols-2 gap-4">
-        <FormField
+        <CatalogSelectField
           control={control}
           name="status"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Line Status *</FormLabel>
-              <Select onValueChange={field.onChange} value={field.value} disabled={!canUpdate}>
-                <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                <SelectContent>
-                  {lineStatusOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
+          label="Line Status *"
+          options={lineStatusOptions}
+          canUpdate={canUpdate}
+          nullable={false}
         />
 
-        <FormField
+        <CatalogSelectField
           control={control}
           name="styleStatus"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Style Status</FormLabel>
-              <Select
-                onValueChange={v => field.onChange(v === '_none' ? null : v)}
-                value={field.value ?? '_none'}
-                disabled={!canUpdate}
-              >
-                <FormControl><SelectTrigger><SelectValue placeholder="—" /></SelectTrigger></FormControl>
-                <SelectContent>
-                  <SelectItem value="_none">—</SelectItem>
-                  {styleStatusOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
+          label="Style Status"
+          options={styleStatusOptions}
+          canUpdate={canUpdate}
         />
       </div>
 
-      {/* designer | progress */}
+      {/* designer | strategy */}
       <div className="grid grid-cols-2 gap-4">
         <FormField
           control={control}
@@ -323,77 +367,216 @@ export function IdentificationSection({
           )}
         />
 
-        <FormField
+        <CatalogSelectField
           control={control}
-          name="progress"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Progress</FormLabel>
-              <Select
-                onValueChange={v => field.onChange(v === '_none' ? null : v)}
-                value={field.value ?? '_none'}
-                disabled={!canUpdate}
-              >
-                <FormControl><SelectTrigger><SelectValue placeholder="—" /></SelectTrigger></FormControl>
-                <SelectContent>
-                  <SelectItem value="_none">—</SelectItem>
-                  {progressOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.code ? `${o.code} — ${o.label}` : o.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
+          name="strategy"
+          label="Strategy"
+          options={strategyOptions}
+          canUpdate={canUpdate}
         />
       </div>
 
-      {/* strategy | posizionamento prezzo */}
+      {/* posizionamento prezzo */}
       <div className="grid grid-cols-2 gap-4">
-        <FormField
-          control={control}
-          name="strategy"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Strategy</FormLabel>
-              <Select
-                onValueChange={v => field.onChange(v === '_none' ? null : v)}
-                value={field.value ?? '_none'}
-                disabled={!canUpdate}
-              >
-                <FormControl><SelectTrigger><SelectValue placeholder="—" /></SelectTrigger></FormControl>
-                <SelectContent>
-                  <SelectItem value="_none">—</SelectItem>
-                  {strategyOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
+        <CatalogSelectField
           control={control}
           name="pricePositioning"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Posizionamento Prezzo</FormLabel>
-              <Select
-                onValueChange={v => field.onChange(v === '_none' ? null : v)}
-                value={field.value ?? '_none'}
-                disabled={!canUpdate}
-              >
-                <FormControl><SelectTrigger><SelectValue placeholder="—" /></SelectTrigger></FormControl>
-                <SelectContent>
-                  <SelectItem value="_none">—</SelectItem>
-                  {pricePositioningOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
+          label="Posizionamento Prezzo"
+          options={pricePositioningOptions}
+          canUpdate={canUpdate}
         />
       </div>
 
     </div>
+  );
+}
+
+// ─── Section: Pianificazione ──────────────────────────────────────────────────
+
+interface PlanningSectionProps {
+  control: Control<CollectionLayoutRowInput>;
+  canUpdate: boolean;
+  planningGroups: PlanningGroupOption[];
+  mode: 'create' | 'edit';
+  onRequestChangePlanningGroup?: () => void;
+  /** Edit mode only — opens the "Cambia fase" confirmation dialog instead of editing inline. */
+  onRequestChangePhase?: () => void;
+  /** Present only in edit mode — enables the criticality/variance badges next to the phase field. */
+  rowId?: string;
+  /** Valorizzato = riga conclusa: fase e gruppo si bloccano finché non viene riaperta. */
+  completedAt?: Date | string | null;
+  /** Obbligatoria: il toggle compare solo in edit mode, dove il drawer la passa sempre. */
+  onCompletionChanged: () => void;
+}
+
+/**
+ * Planning/status band shown full-width above the identity grid: planning group
+ * and phase, with the criticality and scheduling-variance badges those two
+ * fields drive. Kept apart from the identity fields so process/status reads at
+ * a glance.
+ *
+ * Ospita anche il controllo di conclusione: è lo stato che blocca proprio i due campi qui sotto,
+ * quindi sta accanto a loro invece che nell'header del drawer (dove collideva con la X di chiusura,
+ * ed era l'unico `DialogHeader` dell'app con un'azione allineata a destra).
+ */
+export function PlanningSection({
+  control,
+  canUpdate,
+  planningGroups,
+  mode,
+  onRequestChangePlanningGroup,
+  onRequestChangePhase,
+  rowId,
+  completedAt,
+  onCompletionChanged,
+}: PlanningSectionProps) {
+  const isCompleted = completedAt != null;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-4">
+        <SectionHeader title="Pianificazione" />
+        {mode === 'edit' && rowId && (
+          <RowCompletionToggle
+            rowId={rowId}
+            completedAt={completedAt ?? null}
+            canUpdate={canUpdate}
+            onChanged={onCompletionChanged}
+          />
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <PhaseSelectField
+          control={control}
+          canUpdate={canUpdate}
+          mode={mode}
+          onRequestChange={onRequestChangePhase}
+          rowId={rowId}
+          isCompleted={isCompleted}
+        />
+
+        {/* gruppo di pianificazione */}
+        <PlanningGroupSelectField
+          control={control}
+          canUpdate={canUpdate}
+          planningGroups={planningGroups}
+          mode={mode}
+          onRequestChange={onRequestChangePlanningGroup}
+          isCompleted={isCompleted}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Bottone di modifica di un campo che una riga conclusa congela. `PermissionButton` gestisce il
+ * gate generico "disabilitato + tooltip che spiega perché": qui la ragione è di stato, non di
+ * permesso, e il suo prop `tooltip` è una stringa libera che lo dice ("riaprila per…").
+ * `disabled` resta separato per il caso senza permesso di scrittura, dove il blocco per stato non
+ * c'entra e non va spiegato.
+ */
+function LockableChangeButton({
+  label,
+  lockedReason,
+  isLocked,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  lockedReason: string;
+  isLocked: boolean;
+  disabled: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <PermissionButton
+      type="button"
+      variant="outline"
+      size="sm"
+      className="h-5 px-2 text-xs"
+      hasPermission={!isLocked}
+      tooltip={lockedReason}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {label}
+    </PermissionButton>
+  );
+}
+
+// ─── Section: Fase ────────────────────────────────────────────────────────────
+
+interface PhaseSelectFieldProps {
+  control: Control<CollectionLayoutRowInput>;
+  canUpdate: boolean;
+  /** "create": plain selector (no calendar/alert history depends on the row yet). "edit": read-only
+   * display + explicit "Cambia fase" action, so changing it (which the buffered-save drawer treats
+   * as a confirmed, audited event with an optional note) is never a side effect of an unrelated
+   * field save — same reasoning as `PlanningGroupSelectField`, whose `mode` split this mirrors. */
+  mode: 'create' | 'edit';
+  onRequestChange?: () => void;
+  /** Present only in edit mode — enables the "Situazione" criticality block under the field. */
+  rowId?: string;
+  /** Riga conclusa: il cambio fase è bloccato finché non viene riaperta (stesso guard lato server). */
+  isCompleted?: boolean;
+}
+
+function PhaseSelectField({ control, canUpdate, mode, onRequestChange, rowId, isCompleted = false }: PhaseSelectFieldProps) {
+  const { phases, phaseById } = usePhaseCatalog();
+
+  return (
+    <FormField
+      control={control}
+      name="phaseId"
+      render={({ field }) => {
+        if (mode === 'edit') {
+          const current = phaseById.get(field.value ?? '');
+          return (
+            <FormItem>
+              {/* Sits at the same row as the "Gruppo di pianificazione" FormLabel next to it — this
+                  field has no text label of its own (the value line below reads "Fase corrente: …"
+                  instead), so the criticality badge fills that slot instead of an empty spacer,
+                  keeping the two-column row aligned. */}
+              <div className={cn(PLANNING_FIELD_LABEL, 'h-auto min-h-6')}>
+                {rowId && <CriticalitySituation rowId={rowId} phaseById={phaseById} />}
+              </div>
+              <div className="flex h-7 items-center justify-between gap-2 rounded-md border pl-3 pr-1">
+                <span className="truncate text-xs">
+                  <span className="text-muted-foreground">Fase corrente:</span>{' '}
+                  {current ? formatPhaseLabel(current.code, current.label) : '—'}
+                </span>
+                <LockableChangeButton
+                  label="Cambia fase"
+                  lockedReason="Riga conclusa: riaprila per cambiare fase"
+                  isLocked={isCompleted}
+                  disabled={!canUpdate}
+                  onClick={onRequestChange}
+                />
+              </div>
+              <FormMessage />
+            </FormItem>
+          );
+        }
+
+        return (
+          <FormItem>
+            <FormLabel className={PLANNING_FIELD_LABEL}>Fase</FormLabel>
+            <FormControl>
+              <PhaseSelect
+                size="xs"
+                value={field.value ?? '_none'}
+                onValueChange={v => field.onChange(v === '_none' ? null : v)}
+                phases={phases}
+                disabled={!canUpdate}
+                noneLabel="—"
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        );
+      }}
+    />
   );
 }
 
@@ -404,6 +587,9 @@ interface VendorSectionProps {
   canUpdate: boolean;
 }
 
+/**
+ * Form section for selecting the vendor of a collection row via `VendorCombobox`.
+ */
 export function VendorSection({ control, canUpdate }: VendorSectionProps) {
   return (
     <FormField
@@ -431,6 +617,16 @@ interface PictureSidePanelProps {
   onUploadPicture: (file: File) => void;
 }
 
+/**
+ * Side panel for previewing and uploading the collection row picture.
+ *
+ * Shows the current image with a remove button, or a `FileDropZone` when
+ * empty. Upload is handled by the parent; this component only calls the
+ * callbacks.
+ *
+ * @param onUploadPicture - Called with the selected File for upload.
+ * @param onRemovePicture - Called when the user removes the existing picture.
+ */
 export function PictureSidePanel({
   canUpdate,
   pictureUrl,
@@ -497,6 +693,7 @@ interface GroupSelectFieldProps {
   groups: CollectionGroup[];
 }
 
+/** Form field for selecting the parent group of a collection row. */
 export function GroupSelectField({ control, canUpdate, groups }: GroupSelectFieldProps) {
   return (
     <FormField
@@ -524,6 +721,79 @@ export function GroupSelectField({ control, canUpdate, groups }: GroupSelectFiel
   );
 }
 
+// ─── Section: Gruppo di pianificazione ────────────────────────────────────────
+
+interface PlanningGroupOption { id: string; name: string; isDefault: boolean; }
+
+interface PlanningGroupSelectFieldProps {
+  control: Control<CollectionLayoutRowInput>;
+  canUpdate: boolean;
+  planningGroups: PlanningGroupOption[];
+  /** "create": plain selector (no calendar events depend on the row yet). "edit": read-only display
+   * + explicit "Cambia gruppo" action, so changing it (which re-scopes calendar events) is never a
+   * side effect of an unrelated field save. */
+  mode: 'create' | 'edit';
+  onRequestChange?: () => void;
+  /** Riga conclusa: il cambio gruppo è bloccato finché non viene riaperta (stesso guard lato server). */
+  isCompleted?: boolean;
+}
+
+export function PlanningGroupSelectField({
+  control,
+  canUpdate,
+  planningGroups,
+  mode,
+  onRequestChange,
+  isCompleted = false,
+}: PlanningGroupSelectFieldProps) {
+  return (
+    <FormField
+      control={control}
+      name="planningGroupId"
+      render={({ field }) => {
+        if (mode === 'edit') {
+          const current = planningGroups.find(g => g.id === field.value);
+          return (
+            <FormItem>
+              <FormLabel className={PLANNING_FIELD_LABEL}>Gruppo di pianificazione</FormLabel>
+              <div className="flex h-7 items-center justify-between gap-2 rounded-md border pl-3 pr-1">
+                <span className="truncate text-xs">
+                  {current ? formatPlanningGroupLabel(current) : '—'}
+                </span>
+                <LockableChangeButton
+                  label="Cambia gruppo"
+                  lockedReason="Riga conclusa: riaprila per cambiare gruppo di pianificazione"
+                  isLocked={isCompleted}
+                  disabled={!canUpdate}
+                  onClick={onRequestChange}
+                />
+              </div>
+              <FormMessage />
+            </FormItem>
+          );
+        }
+
+        return (
+          <FormItem>
+            <FormLabel className={PLANNING_FIELD_LABEL}>Gruppo di pianificazione</FormLabel>
+            <FormControl>
+              <PlanningGroupSelect
+                size="xs"
+                value={field.value ?? ''}
+                onValueChange={field.onChange}
+                groups={planningGroups}
+                disabled={!canUpdate}
+                placeholder="Seleziona gruppo…"
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        );
+      }}
+    />
+  );
+}
+
 // ─── Section: Forecast ────────────────────────────────────────────────────────
 
 interface ForecastSectionProps {
@@ -531,6 +801,7 @@ interface ForecastSectionProps {
   canUpdate: boolean;
 }
 
+/** Form section for SKU forecast and quantity forecast fields. */
 export function ForecastSection({ control, canUpdate }: ForecastSectionProps) {
   return (
     <div className="grid grid-cols-2 gap-4">
@@ -563,14 +834,18 @@ export function ForecastSection({ control, canUpdate }: ForecastSectionProps) {
         name="qtyForecast"
         render={({ field }) => (
           <FormItem>
-            <FormLabel>Qty Forecast *</FormLabel>
+            <FormLabel>Qty Forecast</FormLabel>
             <FormControl>
               <NumberInput
                 {...field}
-                value={isNaN(field.value as number) ? '' : field.value}
-                onChange={e => field.onChange(parseInt(e.target.value, 10))}
+                value={field.value == null || isNaN(field.value as number) ? '' : field.value}
+                onChange={e => {
+                  const v = parseInt(e.target.value, 10);
+                  field.onChange(isNaN(v) ? null : v);
+                }}
                 onFocus={e => e.target.select()}
                 disabled={!canUpdate}
+                placeholder="—"
               />
             </FormControl>
             <FormMessage />
@@ -592,11 +867,26 @@ interface PricingFooterSectionProps {
   enabledParameterSetIds: string[];
   onAddQuotation: () => void;
   onUpdateField: (id: string, field: keyof Pick<QuotationState, 'pricingParameterSetId' | 'retailPrice' | 'supplierQuotation' | 'notes' | 'sku'>, value: string | number | null) => void;
-  onBlurQuotation: (id: string, overrides?: Partial<QuotationState>) => void;
+  onEnterQuotation: () => void;
   onDeleteQuotation: (id: string) => void;
-  isAddingQuotation?: boolean;
 }
 
+/**
+ * Form section for managing vendor quotations (price, supplier cost, SKU count)
+ * and the tooling quotation field.
+ *
+ * Only parameter sets enabled for the selected vendor are available for
+ * selection. Margin is computed live via `computeRowMargin` and displayed as a
+ * colour-coded indicator.
+ *
+ * @param quotations - Current quotation list managed by the parent drawer.
+ * @param enabledParameterSetIds - IDs of parameter sets enabled for the vendor.
+ * @param onAddQuotation - Called to append a new empty quotation row.
+ * @param onUpdateField - Called on every field change in a quotation row.
+ * @param onEnterQuotation - Called on Enter to submit the row (quotation edits are already
+ *   buffered in state by `onUpdateField` — nothing left to persist before submitting).
+ * @param onDeleteQuotation - Called to remove a quotation row.
+ */
 export function PricingFooterSection({
   control,
   canUpdate,
@@ -606,10 +896,13 @@ export function PricingFooterSection({
   enabledParameterSetIds,
   onAddQuotation,
   onUpdateField,
-  onBlurQuotation,
+  onEnterQuotation,
   onDeleteQuotation,
-  isAddingQuotation,
 }: PricingFooterSectionProps) {
+  const handleQuotationEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') { e.preventDefault(); onEnterQuotation(); }
+  };
+
   return (
     <div className="space-y-4">
       <SectionHeader title="Pricing" />
@@ -715,14 +1008,10 @@ export function PricingFooterSection({
                         <td className="px-3 py-1.5">
                           <Select
                             value={q.pricingParameterSetId ?? '_none'}
-                            onValueChange={v => {
-                              const val = v === '_none' ? null : v;
-                              onUpdateField(q.id, 'pricingParameterSetId', val);
-                              if (val !== null) onBlurQuotation(q.id, { pricingParameterSetId: val });
-                            }}
+                            onValueChange={v => onUpdateField(q.id, 'pricingParameterSetId', v === '_none' ? null : v)}
                             disabled={!canUpdate}
                           >
-                            <SelectTrigger className={cn('h-7 text-xs w-full', !q.pricingParameterSetId && 'border-destructive/60 text-muted-foreground')}>
+                            <SelectTrigger size="xs" className={cn('w-full', !q.pricingParameterSetId && 'border-destructive/60 text-muted-foreground')}>
                               <SelectValue placeholder="Seleziona *" />
                             </SelectTrigger>
                             <SelectContent>
@@ -751,13 +1040,14 @@ export function PricingFooterSection({
                               </span>
                             )}
                             <NumberInput
-                              className={cn('h-7 text-xs w-[88px]', sellSym && 'pl-5')}
+                              inputSize="sm"
+                              className={cn('w-[88px]', sellSym && 'pl-5')} // 88px: price input width tuned for currency values; no exact scale match
                               placeholder="0.00"
                               step={0.01}
                               min={0}
                               value={q.retailPrice ?? ''}
                               onChange={e => onUpdateField(q.id, 'retailPrice', parsePositiveFloat(e.target.value))}
-                              onBlur={() => q.pricingParameterSetId && onBlurQuotation(q.id)}
+                              onKeyDown={handleQuotationEnter}
                               disabled={!canUpdate || !q.pricingParameterSetId}
                             />
                           </div>
@@ -772,13 +1062,14 @@ export function PricingFooterSection({
                               </span>
                             )}
                             <NumberInput
-                              className={cn('h-7 text-xs w-[88px]', buySym && 'pl-5')}
+                              inputSize="sm"
+                              className={cn('w-[88px]', buySym && 'pl-5')} // 88px: price input width tuned for currency values; no exact scale match
                               placeholder="0.00"
                               step={0.01}
                               min={0}
                               value={q.supplierQuotation ?? ''}
                               onChange={e => onUpdateField(q.id, 'supplierQuotation', parsePositiveFloat(e.target.value))}
-                              onBlur={() => q.pricingParameterSetId && onBlurQuotation(q.id)}
+                              onKeyDown={handleQuotationEnter}
                               disabled={!canUpdate || !q.pricingParameterSetId}
                             />
                           </div>
@@ -826,11 +1117,12 @@ export function PricingFooterSection({
                         {/* Note */}
                         <td className="px-3 py-1.5">
                           <Input
-                            className="h-7 text-xs w-full"
+                            inputSize="sm"
+                            className="w-full"
                             placeholder="Note…"
                             value={q.notes ?? ''}
                             onChange={e => onUpdateField(q.id, 'notes', e.target.value || null)}
-                            onBlur={() => q.pricingParameterSetId && onBlurQuotation(q.id)}
+                            onKeyDown={handleQuotationEnter}
                             disabled={!canUpdate || !q.pricingParameterSetId}
                           />
                         </td>
@@ -838,13 +1130,14 @@ export function PricingFooterSection({
                         {/* SKU (peso per media margine) */}
                         <td className="px-2 py-1.5">
                           <NumberInput
-                            className="h-7 text-xs w-14 text-center"
+                            inputSize="sm"
+                            className="w-14 text-center"
                             placeholder="—"
                             min={1}
                             step={1}
                             value={q.sku ?? ''}
                             onChange={e => onUpdateField(q.id, 'sku', parsePositiveInt(e.target.value))}
-                            onBlur={() => q.pricingParameterSetId && onBlurQuotation(q.id)}
+                            onKeyDown={handleQuotationEnter}
                             disabled={!canUpdate || !q.pricingParameterSetId}
                           />
                         </td>
@@ -855,8 +1148,8 @@ export function PricingFooterSection({
                             <Button
                               type="button"
                               variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                              size="icon-sm"
+                              className="text-muted-foreground hover:text-destructive"
                               onClick={() => onDeleteQuotation(q.id)}
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -877,10 +1170,9 @@ export function PricingFooterSection({
               variant="outline"
               size="sm"
               onClick={onAddQuotation}
-              disabled={isAddingQuotation}
             >
               <Plus className="mr-1 h-3 w-3" />
-              {isAddingQuotation ? 'Aggiunta…' : 'Aggiungi quotazione'}
+              Aggiungi quotazione
             </Button>
           )}
         </div>
@@ -902,6 +1194,7 @@ const NOTE_FIELDS = [
   ['colorNotes', 'Note colori'],
 ] as const;
 
+/** Form section for the four free-text note fields of a collection row. */
 export function NotesSection({ control, canUpdate }: NotesSectionProps) {
   return (
     <div className="flex flex-col h-full gap-4">

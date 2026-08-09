@@ -1,19 +1,19 @@
 /**
  * nav-reset.ts
  *
- * Riporta il database allo stato "connessione NAV appena configurata":
- *  - Svuota le tabelle replica NAV (nav_vendors, nav_brands, nav_seasons)
- *  - Elimina tutti i brand/season/vendor eccetto i record di seed
- *    (Brand ACME e Season PE00, necessari per l'edge case del contesto obbligatorio)
- *  - Svuota collection_layouts e pricing_parameter_sets dipendenti
+ * Restores the database to "NAV connection just configured" state:
+ *  - Clears NAV replica tables (nav_vendors, nav_brands, nav_seasons)
+ *  - Deletes all brand/season/vendor except seed records
+ *    (Brand ACME and Season PE00, required for the mandatory context edge case)
+ *  - Clears dependent collection_layouts and pricing_parameter_sets
  *
- * Uso:
+ * Usage:
  *   pnpm --filter @luke/api db:nav-reset
  *
- * ATTENZIONE: distruttivo — solo per ambienti di sviluppo/test.
+ * WARNING: destructive — development/test environments only.
  */
 
-import { PrismaClient } from '@prisma/client';
+import { createScriptPrismaClient } from './lib/prisma';
 
 const SEED_BRAND_CODE = 'ACME';
 const SEED_SEASON_CODE = 'PE00';
@@ -28,12 +28,12 @@ async function main() {
     process.exit(1);
   }
 
-  const prisma = new PrismaClient();
+  const prisma = createScriptPrismaClient();
 
   try {
     console.log('🔄 NAV Reset — avvio pulizia dati...\n');
 
-    // ── 1. Dipendenze di brand/season (nessun onDelete: Cascade) ──────────
+    // ── 1. Brand/season dependencies (no onDelete: Cascade) ──────────
 
     const [clCount, ppsCount] = await Promise.all([
       prisma.collectionLayout.count(),
@@ -48,7 +48,7 @@ async function main() {
     console.log(`🗑  collection_layouts:       ${delCL.count} / ${clCount}`);
     console.log(`🗑  pricing_parameter_sets:   ${delPPS.count} / ${ppsCount}`);
 
-    // ── 2. Tabelle replica NAV ─────────────────────────────────────────────
+    // ── 2. NAV replica tables ─────────────────────────────────────────────
 
     const [nvCount, nbCount, nsCount] = await Promise.all([
       prisma.navVendor.count(),
@@ -66,7 +66,7 @@ async function main() {
     console.log(`🗑  nav_brands:               ${delNB.count} / ${nbCount}`);
     console.log(`🗑  nav_seasons:              ${delNS.count} / ${nsCount}`);
 
-    // ── 3. Anagrafiche locali (preserva i record di seed) ─────────────────
+    // ── 3. Local master records (preserve seed records) ─────────────────
 
     const [vendorCount, brandCount, seasonCount] = await Promise.all([
       prisma.vendor.count(),
@@ -84,7 +84,7 @@ async function main() {
     console.log(`🗑  brands (non-seed):        ${delB.count} / ${brandCount}`);
     console.log(`🗑  seasons (non-seed):       ${delS.count} / ${seasonCount}`);
 
-    // ── 4. Riepilogo stato finale ──────────────────────────────────────────
+    // ── 4. Final state summary ──────────────────────────────────────────
 
     const [remBrands, remSeasons, remVendors] = await Promise.all([
       prisma.brand.findMany({ select: { code: true, name: true } }),

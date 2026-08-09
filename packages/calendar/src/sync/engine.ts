@@ -1,13 +1,15 @@
+import { initials } from '@luke/core';
+
+import { syncCalendarReaders, enforceDomainReadOnly } from '../google/acl.js';
 import { buildCalendarSummary, createCalendar } from '../google/calendars.js';
 import { createEvent, deleteEvent, updateEvent } from '../google/events.js';
-import { syncCalendarReaders } from '../google/acl.js';
+
 import { computeContentHash } from './hash.js';
+
 import type { MilestoneForSync, SyncContext } from './types.js';
 
-function milestoneStatusToGoogle(status: string): 'confirmed' | 'tentative' | 'cancelled' {
-  if (status === 'CANCELLED') return 'cancelled';
-  if (status === 'PLANNED') return 'tentative';
-  return 'confirmed';
+function milestoneStatusToGoogle(cancelled: boolean): 'confirmed' | 'cancelled' {
+  return cancelled ? 'cancelled' : 'confirmed';
 }
 
 async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
@@ -28,6 +30,21 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
   throw lastErr;
 }
 
+/**
+ * Syncs a single milestone to all Google Calendars it should appear in.
+ *
+ * For each company function in `milestone.visibilityFunctionIds`:
+ * - If `publishExternally` is `false`: deletes the existing Google event and mapping if present.
+ * - If the existing content hash matches: skips (no-op).
+ * - If an existing mapping exists: updates the Google event in place.
+ * - Otherwise: provisions the binding if needed, creates the event, and stores the mapping.
+ *
+ * Also removes mappings for company functions that are no longer in the visibility list.
+ * All Google API calls are retried up to 3 times with exponential back-off (skipping 4xx errors).
+ *
+ * @param milestone - Milestone data and its target function ids
+ * @param ctx - Database I/O context (bindings, mappings, brand/season metadata)
+ */
 export async function syncMilestone(
   milestone: MilestoneForSync,
   ctx: SyncContext
@@ -51,12 +68,12 @@ export async function syncMilestone(
 
     const binding = await ctx.getOrCreateBinding(companyFunctionId);
     const eventInput = {
-      title: milestone.title,
+      title: `[${initials(milestone.planningGroupName)}] ${milestone.title}`,
       description: milestone.description ?? undefined,
       startAt: milestone.startAt,
       endAt: milestone.endAt ?? undefined,
       allDay: milestone.allDay,
-      status: milestoneStatusToGoogle(milestone.status),
+      status: milestoneStatusToGoogle(milestone.cancelled),
     };
 
     if (existing) {
@@ -90,6 +107,15 @@ export async function syncMilestone(
   }
 }
 
+/**
+ * Creates a new Google Calendar for the given company function and configures
+ * reader ACL scoped to that function's team members (plus admins), via `ctx.getAllowedEmailsForFunction`.
+ *
+ * @param ctx - Sync context providing brand/season codes and the reader-email resolver
+ * @param companyFunctionId - Identifier of the company function (used as calendar section label when no label is provided)
+ * @param functionLabel - Human-readable section label for the calendar summary (optional)
+ * @returns The newly provisioned Google Calendar id
+ */
 export async function provisionBinding(
   ctx: SyncContext,
   companyFunctionId: string,
@@ -98,6 +124,8 @@ export async function provisionBinding(
   const label = functionLabel ?? companyFunctionId;
   const summary = buildCalendarSummary(ctx.brandCode, ctx.seasonCode, label);
   const { id: googleCalendarId } = await createCalendar(summary);
-  await syncCalendarReaders(googleCalendarId, ctx.allowedUserEmails);
+  const allowedUserEmails = await ctx.getAllowedEmailsForFunction(companyFunctionId);
+  await syncCalendarReaders(googleCalendarId, allowedUserEmails);
+  await enforceDomainReadOnly(googleCalendarId);
   return googleCalendarId;
 }

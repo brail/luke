@@ -1,15 +1,39 @@
-import fp from 'fastify-plugin';
-import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import type { PrismaClient } from '@prisma/client';
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const PdfPrinter = require('pdfmake/src/printer');
+/**
+ * Fastify plugin for season calendar export endpoints.
+ *
+ * Endpoints (all require authentication; brand access is enforced per-request):
+ *  - GET /season-calendar/export/ical  — download milestones as an iCal (.ics) file
+ *  - GET /season-calendar/export/pdf   — download milestones as a PDF (list/week/month/gantt view)
+ *  - GET /season-calendar/export/xlsx  — download milestones as an Excel workbook
+ *
+ * Query parameters: seasonId (required), brandIds (comma-separated, required),
+ * functionId (optional filter), view (list|week|month|gantt, default: list),
+ * viewDate (ISO date string used by week/month views).
+ */
+
 import ExcelJS from 'exceljs';
-import type { TDocumentDefinitions, TableCell, Content } from 'pdfmake/interfaces';
+import fp from 'fastify-plugin';
+
 
 import { generateIcal } from '@luke/calendar';
-import type { Role } from '@luke/core';
-import { authenticateRequest } from '../lib/auth';
-import { filterAllowedBrandIds, listMilestonesDb } from '../services/seasonCalendar.service';
+import { isDevelopment } from '@luke/core';
+
+import { authenticateRequest, rateLimitKeyFromRequest } from '../lib/auth';
+// Single entry point to the PDF engine: it's the only place where `setUrlAccessPolicy`
+// and `setLocalAccessPolicy` are locked down. Four hand-built `new PdfPrinter(...)`
+// instances used to live here, inheriting no policy — and which, since the pdfmake
+// 0.2→0.3 bump, were broken anyway: in 0.3 `createPdfKitDocument` returns a
+// Promise, not a stream, so `doc.on(...)` threw (500 to the caller) and the
+// orphaned Promise rejected with an unhandled TypeError, which `server.ts`'s
+// guards turn into `process.exit(1)`.
+import { createPdfBuffer } from '../lib/export/pdf';
+import { filterAllowedBrandIds } from '../services/brandScope.service';
+import { listMilestonesDb } from '../services/seasonCalendar.service';
+
+import type { PrismaClient } from '@prisma/client';
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import type { TDocumentDefinitions, TableCell, Content } from 'pdfmake/interfaces';
+
 
 // ─── Shared types ────────────────────────────────────────────────────────────
 
@@ -17,42 +41,14 @@ interface ExportMilestone {
   id: string;
   title: string;
   description?: string | null;
-  type: string;
   status: string;
-  ownerFunctionId: string;
-  ownerFunctionName: string;
+  visibleFunctionNames: string;
   startAt: Date;
   endAt: Date | null;
   allDay: boolean;
   publishExternally: boolean;
   brandCode: string;
 }
-
-const TYPE_LABELS: Record<string, string> = {
-  KICKOFF: 'Kickoff',
-  REVIEW: 'Review',
-  GATE: 'Gate',
-  DEADLINE: 'Deadline',
-  MILESTONE: 'Milestone',
-  CUSTOM: 'Custom',
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  PLANNED: 'Pianificato',
-  IN_PROGRESS: 'In corso',
-  COMPLETED: 'Completato',
-  CANCELLED: 'Annullato',
-};
-
-// pdfmake built-in PDF fonts — no font files needed
-const PDF_FONTS = {
-  Helvetica: {
-    normal: 'Helvetica',
-    bold: 'Helvetica-Bold',
-    italics: 'Helvetica-Oblique',
-    bolditalics: 'Helvetica-BoldOblique',
-  },
-};
 
 // ─── Data fetch ───────────────────────────────────────────────────────────────
 
@@ -76,7 +72,7 @@ async function fetchExportMilestones(
     });
     for (const b of brands) brandMap.set(b.id, b.code);
 
-    const uniqueFunctionIds = [...new Set(milestones.map(m => m.ownerFunctionId))];
+    const uniqueFunctionIds = [...new Set(milestones.flatMap(m => m.visibilities.map(v => v.functionId)))];
     const functions = await prisma.companyFunction.findMany({
       where: { id: { in: uniqueFunctionIds } },
       select: { id: true, name: true },
@@ -88,10 +84,8 @@ async function fetchExportMilestones(
     id: m.id,
     title: m.title,
     description: m.description,
-    type: m.type,
-    status: m.status,
-    ownerFunctionId: m.ownerFunctionId,
-    ownerFunctionName: functionNameMap.get(m.ownerFunctionId) ?? m.ownerFunctionId,
+    status: m.cancelledAt ? 'CANCELLED' : 'ACTIVE',
+    visibleFunctionNames: m.visibilities.map(v => functionNameMap.get(v.functionId) ?? v.functionId).join(', '),
     startAt: new Date(m.startAt),
     endAt: m.endAt ? new Date(m.endAt) : null,
     allDay: m.allDay,
@@ -119,25 +113,18 @@ function generatePdf(milestones: ExportMilestone[], seasonLabel: string): Promis
     margin: [3, 3, 3, 3],
   });
 
-  const STATUS_FILL: Record<string, string> = {
-    PLANNED: '#fef3c7',
-    IN_PROGRESS: '#d1fae5',
-    COMPLETED: '#f0f9ff',
-    CANCELLED: '#fee2e2',
-  };
-
   const tableBody: TableCell[][] = [
     [
       headerCell('Data'),
       headerCell('Milestone'),
-      headerCell('Tipo'),
       headerCell('Brand'),
-      headerCell('Sezione'),
+      headerCell('Visibile a'),
       headerCell('Stato'),
       headerCell('Google Cal'),
     ],
     ...milestones.map((m, i) => {
-      const fill = STATUS_FILL[m.status] ?? (i % 2 === 0 ? '#f8fafc' : '#ffffff');
+      const cancelled = m.status === 'CANCELLED';
+      const fill = cancelled ? '#fee2e2' : (i % 2 === 0 ? '#f8fafc' : '#ffffff');
       const dateStr = m.startAt.toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: '2-digit' });
       const endStr = m.endAt
         ? ` → ${m.endAt.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })}`
@@ -145,10 +132,9 @@ function generatePdf(milestones: ExportMilestone[], seasonLabel: string): Promis
       return [
         dataCell(`${dateStr}${endStr}`, fill),
         dataCell(m.title, fill),
-        dataCell(TYPE_LABELS[m.type] ?? m.type, fill),
         dataCell(m.brandCode, fill),
-        dataCell(m.ownerFunctionName, fill),
-        dataCell(STATUS_LABELS[m.status] ?? m.status, fill),
+        dataCell(m.visibleFunctionNames, fill),
+        dataCell(cancelled ? 'Annullato' : 'Attivo', fill),
         dataCell(m.publishExternally ? 'Sì' : 'No', fill),
       ];
     }),
@@ -158,7 +144,7 @@ function generatePdf(milestones: ExportMilestone[], seasonLabel: string): Promis
     pageSize: 'A4',
     pageOrientation: 'landscape',
     pageMargins: [30, 50, 30, 40],
-    defaultStyle: { font: 'Helvetica', fontSize: 9 },
+    defaultStyle: { font: 'Roboto', fontSize: 9 },
     header: {
       columns: [
         { text: `Calendario Stagionale — ${seasonLabel}`, bold: true, fontSize: 13, margin: [30, 15, 0, 0] },
@@ -182,7 +168,7 @@ function generatePdf(milestones: ExportMilestone[], seasonLabel: string): Promis
       {
         table: {
           headerRows: 1,
-          widths: [70, '*', 52, 40, 70, 65, 52],
+          widths: [70, '*', 40, 90, 65, 52],
           body: tableBody,
         },
         layout: {
@@ -194,19 +180,7 @@ function generatePdf(milestones: ExportMilestone[], seasonLabel: string): Promis
     ],
   };
 
-  return new Promise((resolve, reject) => {
-    try {
-      const printer = new PdfPrinter(PDF_FONTS);
-      const doc = printer.createPdfKitDocument(docDef);
-      const chunks: Buffer[] = [];
-      doc.on('data', (c: Buffer) => chunks.push(c));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
-      doc.end();
-    } catch (err) {
-      reject(err);
-    }
-  });
+  return createPdfBuffer(docDef);
 }
 
 // ─── PDF helpers ─────────────────────────────────────────────────────────────
@@ -240,7 +214,7 @@ function milestonesOnDay(milestones: ExportMilestone[], day: Date): ExportMilest
 const BRAND_PALETTE = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
 function milestoneColor(m: ExportMilestone): string {
-  const key = m.brandCode || m.ownerFunctionId;
+  const key = m.brandCode;
   let hash = 0;
   for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) & 0xffffffff;
   return BRAND_PALETTE[Math.abs(hash) % BRAND_PALETTE.length]!;
@@ -298,7 +272,7 @@ function generatePdfWeek(milestones: ExportMilestone[], seasonLabel: string, vie
       return {
         stack: [
           { text: m.title, fontSize: 7, bold: true, color: '#ffffff' } as Content,
-          { text: STATUS_LABELS[m.status] ?? m.status, fontSize: 6, color: '#e2e8f0' } as Content,
+          { text: m.status === 'CANCELLED' ? 'Annullato' : 'Attivo', fontSize: 6, color: '#e2e8f0' } as Content,
         ],
         fillColor: milestoneColor(m),
         margin: [3, 3, 3, 3],
@@ -310,7 +284,7 @@ function generatePdfWeek(milestones: ExportMilestone[], seasonLabel: string, vie
     pageSize: 'A4',
     pageOrientation: 'landscape',
     pageMargins: [30, 55, 30, 40],
-    defaultStyle: { font: 'Helvetica', fontSize: 8 },
+    defaultStyle: { font: 'Roboto', fontSize: 8 },
     header: makePdfHeader(`Calendario Stagionale — ${seasonLabel}`, weekLabel),
     footer: (p: number, t: number): Content => ({ text: `${p} / ${t}`, alignment: 'center', color: '#94a3b8', fontSize: 8, margin: [0, 10, 0, 0] }),
     content: [{
@@ -319,17 +293,7 @@ function generatePdfWeek(milestones: ExportMilestone[], seasonLabel: string, vie
     }],
   };
 
-  return new Promise((resolve, reject) => {
-    try {
-      const printer = new PdfPrinter(PDF_FONTS);
-      const doc = printer.createPdfKitDocument(docDef);
-      const chunks: Buffer[] = [];
-      doc.on('data', (c: Buffer) => chunks.push(c));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
-      doc.end();
-    } catch (err) { reject(err); }
-  });
+  return createPdfBuffer(docDef);
 }
 
 // ─── PDF month view ───────────────────────────────────────────────────────────
@@ -388,7 +352,7 @@ function generatePdfMonth(milestones: ExportMilestone[], seasonLabel: string, vi
     pageSize: 'A4',
     pageOrientation: 'landscape',
     pageMargins: [30, 55, 30, 40],
-    defaultStyle: { font: 'Helvetica', fontSize: 8 },
+    defaultStyle: { font: 'Roboto', fontSize: 8 },
     header: makePdfHeader(`Calendario Stagionale — ${seasonLabel}`, monthLabel),
     footer: (p: number, t: number): Content => ({ text: `${p} / ${t}`, alignment: 'center', color: '#94a3b8', fontSize: 8, margin: [0, 10, 0, 0] }),
     content: [{
@@ -397,17 +361,7 @@ function generatePdfMonth(milestones: ExportMilestone[], seasonLabel: string, vi
     }],
   };
 
-  return new Promise((resolve, reject) => {
-    try {
-      const printer = new PdfPrinter(PDF_FONTS);
-      const doc = printer.createPdfKitDocument(docDef);
-      const chunks: Buffer[] = [];
-      doc.on('data', (c: Buffer) => chunks.push(c));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
-      doc.end();
-    } catch (err) { reject(err); }
-  });
+  return createPdfBuffer(docDef);
 }
 
 // ─── PDF gantt view ───────────────────────────────────────────────────────────
@@ -468,7 +422,7 @@ function generatePdfGantt(milestones: ExportMilestone[], seasonLabel: string): P
     pageSize: 'A4',
     pageOrientation: 'landscape',
     pageMargins: [30, 55, 30, 40],
-    defaultStyle: { font: 'Helvetica', fontSize: 8 },
+    defaultStyle: { font: 'Roboto', fontSize: 8 },
     header: makePdfHeader(`Calendario Stagionale — ${seasonLabel}`, 'Vista Gantt'),
     footer: (p: number, t: number): Content => ({ text: `${p} / ${t}`, alignment: 'center', color: '#94a3b8', fontSize: 8, margin: [0, 10, 0, 0] }),
     content: [{
@@ -477,17 +431,7 @@ function generatePdfGantt(milestones: ExportMilestone[], seasonLabel: string): P
     }],
   };
 
-  return new Promise((resolve, reject) => {
-    try {
-      const printer = new PdfPrinter(PDF_FONTS);
-      const doc = printer.createPdfKitDocument(docDef);
-      const chunks: Buffer[] = [];
-      doc.on('data', (c: Buffer) => chunks.push(c));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
-      doc.end();
-    } catch (err) { reject(err); }
-  });
+  return createPdfBuffer(docDef);
 }
 
 // ─── XLSX generation (ExcelJS) ────────────────────────────────────────────────
@@ -499,14 +443,14 @@ async function generateXlsx(milestones: ExportMilestone[], seasonLabel: string):
 
   const ws = wb.addWorksheet('Calendario', { views: [{ state: 'frozen', ySplit: 2 }] });
 
-  ws.mergeCells('A1:H1');
+  ws.mergeCells('A1:G1');
   const titleCell = ws.getCell('A1');
   titleCell.value = `Calendario Stagionale — ${seasonLabel}`;
   titleCell.font = { bold: true, size: 13 };
   titleCell.alignment = { vertical: 'middle' };
   ws.getRow(1).height = 24;
 
-  const headerRow = ws.addRow(['Data inizio', 'Data fine', 'Milestone', 'Tipo', 'Brand', 'Sezione', 'Stato', 'Google Cal']);
+  const headerRow = ws.addRow(['Data inizio', 'Data fine', 'Milestone', 'Brand', 'Visibile a', 'Stato', 'Google Cal']);
   headerRow.height = 18;
   headerRow.eachCell(cell => {
     cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
@@ -515,37 +459,31 @@ async function generateXlsx(milestones: ExportMilestone[], seasonLabel: string):
   });
 
   ws.columns = [
-    { width: 14 }, { width: 12 }, { width: 38 }, { width: 12 },
-    { width: 10 }, { width: 16 }, { width: 14 }, { width: 12 },
+    { width: 14 }, { width: 12 }, { width: 38 },
+    { width: 10 }, { width: 24 }, { width: 14 }, { width: 12 },
   ];
 
-  const STATUS_COLORS: Record<string, string> = {
-    PLANNED: 'FFFEF3C7',
-    IN_PROGRESS: 'FFD1FAE5',
-    COMPLETED: 'FFF0F9FF',
-    CANCELLED: 'FFFEE2E2',
-  };
-
   milestones.forEach((m, i) => {
+    const cancelled = m.status === 'CANCELLED';
     const row = ws.addRow([
       m.startAt.toLocaleDateString('it-IT'),
       m.endAt ? m.endAt.toLocaleDateString('it-IT') : '',
       m.title,
-      TYPE_LABELS[m.type] ?? m.type,
       m.brandCode,
-      m.ownerFunctionName,
-      STATUS_LABELS[m.status] ?? m.status,
+      m.visibleFunctionNames,
+      cancelled ? 'Annullato' : 'Attivo',
       m.publishExternally ? 'Sì' : 'No',
     ]);
     row.height = 16;
-    const bgColor = STATUS_COLORS[m.status] ?? (i % 2 === 0 ? 'FFF8FAFC' : 'FFFFFFFF');
+    // Only cancelled events carry a distinct fill; active ones fall back to the alternating row color.
+    const bgColor = cancelled ? 'FFFEE2E2' : (i % 2 === 0 ? 'FFF8FAFC' : 'FFFFFFFF');
     row.eachCell(cell => {
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
       cell.alignment = { vertical: 'middle' };
     });
   });
 
-  ws.autoFilter = { from: 'A2', to: 'H2' };
+  ws.autoFilter = { from: 'A2', to: 'G2' };
 
   const buf = await wb.xlsx.writeBuffer();
   return Buffer.from(buf);
@@ -556,8 +494,29 @@ async function generateXlsx(milestones: ExportMilestone[], seasonLabel: string):
 export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }) => {
   const prisma = options.prisma;
 
+  /**
+   * Per-route limit on top of the global limiter registered in `server.ts`.
+   *
+   * `@fastify/rate-limit` isn't registered here: this plugin is wrapped in
+   * `fp()`, so an `app.register(rateLimit, ...)` would end up in the root
+   * scope and become the server's global limit — the same incident documented
+   * in `brandLogo.routes.ts`. The per-route option only tightens these three.
+   *
+   * The global default (100 req/min per IP) is too generous for PDF
+   * generation, which holds the entire document in memory.
+   */
+  const exportRateLimit = {
+    config: {
+      rateLimit: {
+        max: isDevelopment() ? 100 : 10,
+        timeWindow: '1 minute',
+        keyGenerator: rateLimitKeyFromRequest,
+      },
+    },
+  };
+
   async function resolveParams(req: FastifyRequest, reply: FastifyReply) {
-    const session = await authenticateRequest(req, reply);
+    const session = await authenticateRequest(req, reply, prisma);
     if (!session) {
       reply.code(401).send({ error: 'Unauthorized' });
       return null;
@@ -570,7 +529,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
     }
 
     const requestedBrandIds = brandIdsCsv.split(',').map(s => s.trim()).filter(Boolean);
-    const allowedBrandIds = await filterAllowedBrandIds(session.user.id, requestedBrandIds, prisma, session.user.role as Role);
+    const allowedBrandIds = await filterAllowedBrandIds({ prisma, session }, requestedBrandIds);
     if (allowedBrandIds.length === 0) {
       reply.code(403).send({ error: 'No accessible brands' });
       return null;
@@ -592,7 +551,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
     return { session, seasonId, allowedBrandIds, functionId, seasonLabel, view: parsedView, viewDate: parsedViewDate };
   }
 
-  app.get('/season-calendar/export/ical', async (req, reply) => {
+  app.get('/season-calendar/export/ical', exportRateLimit, async (req, reply) => {
     const ctx = await resolveParams(req, reply);
     if (!ctx) return;
 
@@ -604,7 +563,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
       milestones.map(m => ({
         id: m.id, title: m.title, description: m.description,
         startAt: m.startAt, endAt: m.endAt, allDay: m.allDay,
-        status: m.status, brandCode: m.brandCode,
+        cancelled: m.status === 'CANCELLED', brandCode: m.brandCode,
       })),
       `Luke · ${ctx.seasonLabel}`
     );
@@ -615,7 +574,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
       .send(icalString);
   });
 
-  app.get('/season-calendar/export/pdf', async (req, reply) => {
+  app.get('/season-calendar/export/pdf', exportRateLimit, async (req, reply) => {
     const ctx = await resolveParams(req, reply);
     if (!ctx) return;
 
@@ -640,7 +599,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
       .send(pdfBuffer);
   });
 
-  app.get('/season-calendar/export/xlsx', async (req, reply) => {
+  app.get('/season-calendar/export/xlsx', exportRateLimit, async (req, reply) => {
     const ctx = await resolveParams(req, reply);
     if (!ctx) return;
 

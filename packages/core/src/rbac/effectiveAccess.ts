@@ -1,37 +1,37 @@
-import type { Role } from '../rbac';
 import { hasPermission, type Permission } from '../auth/permissions';
 import { SECTION_TO_PERMISSION, type Section } from '../schemas/rbac';
+
+import type { Role } from '../rbac';
 
 type SectionDefault = 'auto' | 'enabled' | 'disabled';
 
 /**
- * Parametri per la valutazione dell'accesso effettivo
+ * Parameters for evaluating effective section access.
  */
 type EffectiveAccessParams = {
-  /** Ruolo dell'utente */
+  /** Role of the user being evaluated */
   role: string;
-  /** Default di accesso per ruolo e sezione */
+  /** Per-role section access defaults loaded from AppConfig */
   sectionAccessDefaults: Record<
     string,
     Partial<Record<Section, SectionDefault>>
   >;
-  /** Override utente specifico */
+  /** User-specific override, if any */
   userOverride: { enabled?: boolean | null } | null | undefined;
-  /** Sezione da valutare */
+  /** Section to evaluate */
   section: Section;
-  /** Sezioni disabilitate globalmente (kill switch) */
+  /** Globally disabled sections (kill switch — highest precedence) */
   disabledSections?: string[];
 };
 
 /**
- * Valuta l'accesso effettivo a una sezione considerando la precedenza:
- * 0. Kill switch globale (disabled sections)
- * 1. Override utente (disabled > enabled > manca)
- * 2. Default di ruolo (disabled > enabled > auto)
- * 3. RBAC di ruolo (hasPermission via SECTION_TO_PERMISSION)
+ * Resolves whether a user can access a section, applying four precedence layers in order:
+ * 0. Global kill switch (`disabledSections`)
+ * 1. Per-user override (`disabled > enabled > absent`)
+ * 2. Per-role AppConfig default (`disabled > enabled > auto`)
+ * 3. Role RBAC fallback via `SECTION_TO_PERMISSION`
  *
- * @param params - Parametri per la valutazione
- * @returns true se accesso consentito, false altrimenti
+ * @returns `true` if access is granted, `false` otherwise
  */
 export function effectiveSectionAccess({
   role,
@@ -40,21 +40,21 @@ export function effectiveSectionAccess({
   section,
   disabledSections,
 }: EffectiveAccessParams): boolean {
-  // 0) Kill switch globale - precedenza massima
+  // 0) Global kill switch - maximum precedence
   if (disabledSections?.includes(section)) return false;
 
-  // 1) Override utente - precedenza alta
+  // 1) User override - high precedence
   if (userOverride?.enabled === false) return false;
   if (userOverride?.enabled === true) return true;
 
-  // 2) Default di ruolo da AppConfig
+  // 2) Role default from AppConfig
   const roleDefaults = sectionAccessDefaults[role] || {};
   const defaultForSection = roleDefaults[section] ?? 'auto';
 
   if (defaultForSection === 'disabled') return false;
   if (defaultForSection === 'enabled') return true;
 
-  // 3) Fallback RBAC ruolo — usa il nuovo sistema Resource:Action
+  // 3) RBAC role fallback — uses the new Resource:Action system
   const permission = SECTION_TO_PERMISSION[section];
   if (!permission) return false;
   return hasPermission({ role: role as Role }, permission as Permission);

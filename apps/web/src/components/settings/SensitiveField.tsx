@@ -12,15 +12,34 @@ import {
 } from '../ui/form';
 import { Input } from '../ui/input';
 
+import type { Noop, RefCallBack } from 'react-hook-form';
+
 interface SensitiveFieldProps {
   label: React.ReactNode;
   description?: string;
   hasValue?: boolean;
   placeholder?: string;
   disabled?: boolean;
-  field: any;
+  /** react-hook-form `field` object; typed structurally since the caller's field schema varies per form. */
+  field: {
+    name: string;
+    value: string | undefined;
+    onChange: (...event: unknown[]) => void;
+    onBlur: Noop;
+    ref: RefCallBack;
+    disabled?: boolean;
+  };
 }
 
+/**
+ * Password-type form field with a show/hide toggle for sensitive configuration values.
+ *
+ * When `hasValue` is true, the placeholder indicates that a value is already stored
+ * (encrypted in AppConfig) and the field can be left blank to retain it.
+ *
+ * @param hasValue - When true, shows a "already configured" placeholder and a description note.
+ * @param field - React Hook Form field object passed directly to the underlying `Input`.
+ */
 export function SensitiveField({
   label,
   description,

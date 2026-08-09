@@ -11,8 +11,12 @@ interface CreateActionButtonProps {
 }
 
 /**
- * Bottone di creazione uniforme con tooltip quando disabilitato.
- * Mostra sempre il bottone, disabilitato se l'utente non ha permessi.
+ * Standardized creation button that is always visible but disabled when the user lacks permission.
+ *
+ * Wraps `PermissionButton` and shows a tooltip when `canCreate` is false.
+ *
+ * @param canCreate - Boolean prop from `usePermission` — do NOT call as a function.
+ * @param resourceName - Human-readable resource name used in the permission tooltip.
  */
 export function CreateActionButton({
   label,

@@ -4,7 +4,8 @@ set -e
 echo "▶ Waiting for database..."
 until node -e "
   const { PrismaClient } = require('@prisma/client');
-  const p = new PrismaClient();
+  const { PrismaPg } = require('@prisma/adapter-pg');
+  const p = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
   p.\$queryRaw\`SELECT 1\`.then(() => { p.\$disconnect(); process.exit(0); })
     .catch(() => { p.\$disconnect(); process.exit(1); });
 " 2>/dev/null; do

@@ -1,13 +1,12 @@
 /**
- * Service layer per gestione logica di autenticazione
- * Gestisce login, reset password, verifica email e logout
+ * Authentication service — handles login, password reset, email verification, and logout.
  */
 
 import { randomBytes, createHash } from 'crypto';
+
 import { TRPCError } from '@trpc/server';
 import argon2 from 'argon2';
-import type { PrismaClient, User } from '@prisma/client';
-import type { Context } from '../lib/trpc';
+
 
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
@@ -17,21 +16,29 @@ import {
   sendPasswordResetEmail,
   sendEmailVerificationEmail,
 } from '../lib/mailer';
+import { assertNotBlockedByMaintenance, isMaintenanceActive } from '../lib/maintenanceMode';
 import { validatePassword } from '../lib/password';
+import { enforceRateLimit } from '../lib/ratelimit';
+import { resolveRateLimitPolicy } from '../lib/rateLimitPolicy';
+
+import type { Context } from '../lib/trpc';
+import type { PrismaClient, User } from '@prisma/client';
 
 /**
- * Autentica un utente con credenziali locali
+ * Authenticates a user against local credentials (argon2 password hash).
+ *
+ * @returns The matching active User, or null if credentials are invalid.
  */
 export async function authenticateLocal(
   prisma: PrismaClient,
   username: string,
   password: string
 ): Promise<User | null> {
-  // Trova l'utente e la sua identità locale
+  // Find the user and their local identity
   const user = await prisma.user.findFirst({
     where: {
       username,
-      isActive: true, // Solo utenti attivi possono autenticarsi
+      isActive: true, // Only active users can authenticate
     },
     include: {
       identities: {
@@ -50,7 +57,7 @@ export async function authenticateLocal(
     return null;
   }
 
-  // Verifica la password
+  // Verify the password
   const isValidPassword = await argon2.verify(
     user.identities[0].localCredential.passwordHash,
     password
@@ -64,7 +71,11 @@ export async function authenticateLocal(
 }
 
 /**
- * Gestisce il fallback delle strategie di autenticazione (Local/LDAP)
+ * Authenticates a user using the configured auth strategy (local-first, ldap-first,
+ * local-only, or ldap-only). Writes an audit log entry on success or failure.
+ *
+ * @returns User profile, signed JWT token, and the auth method used.
+ * @throws {TRPCError} UNAUTHORIZED if credentials are invalid, FORBIDDEN if account is pending or email unverified.
  */
 export async function authenticateUser(
   ctx: Context,
@@ -72,9 +83,31 @@ export async function authenticateUser(
 ) {
   const { username, password } = input;
 
-  // Recupera la strategia di autenticazione
-  const strategy =
-    (await getConfig(ctx.prisma, 'auth.strategy', false)) || 'local-first';
+  // Bucket separate from the per-IP rate limit of `withRateLimit('login')` (router auth.ts):
+  // stops password-spray distributed across multiple IPs against a single account. Key
+  // normalized (case-insensitive) only for the count — the credential lookup below
+  // stays unchanged. No data dependency between this policy and the auth strategy
+  // below: resolved in parallel instead of in sequence.
+  const usernameRateLimitKey = username.trim().toLowerCase();
+  const [usernameRateLimitPolicy, authStrategyConfig] = await Promise.all([
+    resolveRateLimitPolicy('loginByUsername', ctx.prisma),
+    getConfig(ctx.prisma, 'auth.strategy', false),
+  ]);
+
+  try {
+    // Checked before touching DB/LDAP to avoid wasting that work during a spray.
+    enforceRateLimit('loginByUsername', usernameRateLimitKey, usernameRateLimitPolicy);
+  } catch (error) {
+    await logAudit(ctx, {
+      action: 'AUTH_LOGIN_FAILED',
+      targetType: 'Auth',
+      result: 'FAILURE',
+      metadata: { username, reason: 'rate_limited_username' },
+    });
+    throw error;
+  }
+
+  const strategy = authStrategyConfig || 'local-first';
 
   ctx.logger.info({ strategy, username }, `Authentication strategy selected`);
 
@@ -91,7 +124,7 @@ export async function authenticateUser(
         // LDAP down - return null (auth fail) unless fallback logic catches it
         return null;
       } else {
-        // NON fare fallback per errori di autorizzazione
+        // Do NOT fall back for authorization errors
         throw ldapError;
       }
     } else {
@@ -124,10 +157,10 @@ export async function authenticateUser(
         );
         authMethod = 'ldap';
       } catch (e) {
-        // Passa l'errore per gestione corretta delle eccezioni tRPC
+        // Pass the error along for correct tRPC exception handling
         handleLdapError(e);
-        // Se handleLdapError non lancia, significa che è un errore di connessione/tech
-        // e authenticatedUser resta null
+        // If handleLdapError doesn't throw, it means it's a connection/tech error
+        // and authenticatedUser stays null
       }
       break;
 
@@ -225,7 +258,7 @@ export async function authenticateUser(
     });
   }
 
-  // Blocca login se utente LDAP in attesa di approvazione admin
+  // Block login if the LDAP user is pending admin approval
   if (authenticatedUser.pendingApproval) {
     const hasSyntheticEmail = authenticatedUser.email.endsWith('@ldap.local');
 
@@ -247,7 +280,7 @@ export async function authenticateUser(
     });
   }
 
-  // Verifica email (solo LOCAL)
+  // Verify email (LOCAL only)
   const requireEmailVerification =
     (await getConfig(ctx.prisma, 'auth.requireEmailVerification', false)) ===
     'true';
@@ -276,7 +309,22 @@ export async function authenticateUser(
     });
   }
 
-  // Aggiorna statistiche login
+  // Block non-admin logins while maintenance mode is active
+  if (authenticatedUser.role !== 'admin' && await isMaintenanceActive(ctx.prisma)) {
+    await logAudit(ctx, {
+      action: 'AUTH_LOGIN_FAILED',
+      targetType: 'Auth',
+      targetId: authenticatedUser.id,
+      result: 'FAILURE',
+      metadata: { username: input.username, reason: 'maintenance_mode_active', strategy },
+    });
+
+    // Same enforcement (predicate + error) as the tRPC guard in trpc.ts — a single source
+    // of truth so the two copies don't diverge in the future.
+    await assertNotBlockedByMaintenance(ctx.prisma, authenticatedUser.role);
+  }
+
+  // Update login statistics
   await ctx.prisma.user.update({
     where: { id: authenticatedUser.id },
     data: {
@@ -299,7 +347,7 @@ export async function authenticateUser(
     },
   });
 
-  // Crea token
+  // Create token
   const token = createToken({
     id: authenticatedUser.id,
     email: authenticatedUser.email,
@@ -327,7 +375,9 @@ export async function authenticateUser(
 }
 
 /**
- * Gestisce il logout "global" (invalida tutte le sessioni)
+ * Invalidates all active sessions for the current user by incrementing tokenVersion.
+ *
+ * @throws {TRPCError} UNAUTHORIZED if the caller is not authenticated.
  */
 export async function logoutAllSessions(ctx: Context) {
   if (!ctx.session?.user) {
@@ -339,15 +389,15 @@ export async function logoutAllSessions(ctx: Context) {
 
   const userId = ctx.session.user.id;
 
-  // Incrementa tokenVersion
+  // Increment tokenVersion
   await ctx.prisma.user.update({
     where: { id: userId },
     data: { tokenVersion: { increment: 1 } },
   });
 
-  // Invalida cache (import dinamico per evitare cicli se necessario, o diretto se lib/trpc safe)
-  // Qui assumiamo che lib/trpc sia importabile. Se crea ciclo, meglio spostare la cache logic.
-  // Per ora importiamo dinamicamente come faceva il router per sicurezza.
+  // Invalidate cache (dynamic import to avoid cycles if needed, or direct if lib/trpc is safe)
+  // Here we assume lib/trpc is importable. If it creates a cycle, better to move the cache logic.
+  // For now we import dynamically, as the router used to do, for safety.
   const { invalidateTokenVersionCache } = await import('../lib/trpc.js');
   invalidateTokenVersionCache(userId);
 
@@ -370,7 +420,10 @@ export async function logoutAllSessions(ctx: Context) {
 }
 
 /**
- * Richiede reset password
+ * Sends a password reset email to the given address. Always returns a generic success
+ * response to prevent email enumeration, even if the user does not exist.
+ *
+ * @param email - Email address to send the reset link to.
  */
 export async function requestPasswordReset(ctx: Context, email: string) {
   const normalizedEmail = email.toLowerCase();
@@ -388,7 +441,7 @@ export async function requestPasswordReset(ctx: Context, email: string) {
     },
   });
 
-  // Se utente non esiste o non ha auth locale, rispondi con successo fake
+  // If the user doesn't exist or has no local auth, respond with a fake success
   if (!user || user.identities.length === 0) {
     await logAudit(ctx, {
       action: 'PASSWORD_RESET_REQUESTED',
@@ -403,7 +456,7 @@ export async function requestPasswordReset(ctx: Context, email: string) {
     };
   }
 
-  // Genera token
+  // Generate token
   const token = randomBytes(32).toString('hex');
   const tokenHash = createHash('sha256').update(token).digest('hex');
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
@@ -440,9 +493,9 @@ export async function requestPasswordReset(ctx: Context, email: string) {
 
     return genericResponse;
   } catch (error) {
-    // L'invio email è fallito (es. SMTP non configurato).
-    // Elimina il token orfano e logga l'errore lato server.
-    // Non esponiamo il problema all'utente per mantenere la protezione da enumeration.
+    // Email sending failed (e.g. SMTP not configured).
+    // Delete the orphaned token and log the error server-side.
+    // We don't expose the problem to the user to preserve enumeration protection.
     await ctx.prisma.userToken.delete({ where: { id: userToken.id } }).catch(e => {
       ctx.logger.warn({ err: e, tokenId: userToken.id }, 'Failed to delete orphaned password reset token');
     });
@@ -468,7 +521,12 @@ export async function requestPasswordReset(ctx: Context, email: string) {
 }
 
 /**
- * Conferma reset password
+ * Validates a password reset token and sets the new password. Invalidates all sessions
+ * by incrementing tokenVersion and deletes the consumed token atomically.
+ *
+ * @throws {TRPCError} NOT_FOUND if the token is invalid or expired.
+ * @throws {TRPCError} FORBIDDEN if the account is inactive.
+ * @throws {TRPCError} BAD_REQUEST if the new password fails the policy.
  */
 export async function confirmPasswordReset(
   ctx: Context,
@@ -584,7 +642,11 @@ export async function confirmPasswordReset(
 }
 
 /**
- * Richiede verifica email
+ * Sends an email verification link. Returns a generic success response to prevent
+ * enumeration. No-ops silently if the email is already verified.
+ *
+ * @param email - Email address to verify.
+ * @throws {TRPCError} INTERNAL_SERVER_ERROR if the email cannot be sent.
  */
 export async function requestEmailVerification(ctx: Context, email: string) {
   const normalizedEmail = email.toLowerCase();
@@ -679,12 +741,15 @@ export async function requestEmailVerification(ctx: Context, email: string) {
     throw new TRPCError({
       code: 'INTERNAL_SERVER_ERROR',
       message: 'Impossibile inviare email.',
+      cause: error,
     });
   }
 }
 
 /**
- * Conferma verifica email
+ * Marks the user's email as verified and deletes the consumed token atomically.
+ *
+ * @throws {TRPCError} NOT_FOUND if the token is invalid or expired.
  */
 export async function confirmEmailVerification(
   ctx: Context,
@@ -692,10 +757,10 @@ export async function confirmEmailVerification(
 ) {
   const { token } = input;
 
-  // Hash del token per lookup
+  // Hash the token for lookup
   const tokenHash = createHash('sha256').update(token).digest('hex');
 
-  // Trova token valido (non scaduto)
+  // Find a valid (non-expired) token
   const userToken = await ctx.prisma.userToken.findFirst({
     where: {
       type: 'VERIFY',
@@ -725,7 +790,7 @@ export async function confirmEmailVerification(
     });
   }
 
-  // Aggiorna emailVerifiedAt ed elimina token in transazione
+  // Update emailVerifiedAt and delete the token in a transaction
   await ctx.prisma.$transaction(async tx => {
     await tx.user.update({
       where: { id: userToken.userId },

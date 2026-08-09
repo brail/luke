@@ -11,8 +11,10 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { buildPortafoglioXlsx } from '../sales.statistics';
+
 import type { PortafoglioRow } from '@luke/nav';
+
+import { buildPortafoglioXlsx } from '../sales.statistics';
 
 // ─── Test Data ────────────────────────────────────────────────────────────────
 

@@ -24,6 +24,12 @@ ENV NEXT_PUBLIC_APP_VERSION=$APP_VERSION
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
+# Build-time only placeholder: /api/auth/[...nextauth] is imported during
+# Next 16's page-data collection, which evaluates NextAuth(config) eagerly.
+# Discarded — runner stage doesn't inherit builder ENV; real value comes
+# from docker-compose at container start.
+ENV NEXTAUTH_SECRET=build-time-placeholder-unused-at-runtime
+
 COPY . .
 RUN pnpm install --frozen-lockfile
 

@@ -37,10 +37,13 @@ import {
   TabsTrigger,
 } from '../../../components/ui/tabs';
 import { UserAvatar } from '../../../components/UserAvatar';
-import { useFormatDate } from '../../../hooks/use-format-date';
+import { useCopyToClipboard } from '../../../hooks/useCopyToClipboard';
+import { useFormatDate } from '../../../hooks/useFormatDate';
 import { trpc } from '../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../lib/trpcErrorMessages';
 
 import { ChangePasswordCard } from './_components/ChangePasswordCard';
+import { GreetingPreference } from './_components/GreetingPreference';
 import { NotificationPreferences } from './_components/NotificationPreferences';
 import { UserProfileForm } from './_components/UserProfileForm';
 
@@ -51,6 +54,7 @@ import { UserProfileForm } from './_components/UserProfileForm';
 export default function ProfilePage() {
   const { data: session, status } = useSession();
   const formatDate = useFormatDate();
+  const { copy } = useCopyToClipboard();
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
 
   // Query per ottenere i dati del profilo utente
@@ -143,10 +147,7 @@ export default function ProfilePage() {
     lastLogin: user.lastLoginAt || new Date(),
   };
 
-  const handleCopyEmail = () => {
-    navigator.clipboard.writeText(user.email);
-    toast.success('Email copiata negli appunti!');
-  };
+  const handleCopyEmail = () => copy(user.email, { successMessage: 'Email copiata negli appunti!' });
 
   const handleExportProfile = () => {
     const profileData = {
@@ -262,8 +263,8 @@ export default function ProfilePage() {
                           email: user.email,
                         });
                         toast.success('Email di verifica inviata');
-                      } catch (err: any) {
-                        toast.error(err?.message || 'Errore invio email');
+                      } catch (err: unknown) {
+                        toast.error(getTrpcErrorMessage(err));
                       }
                     }}
                     disabled={requestVerifyMutation.isPending}
@@ -367,8 +368,9 @@ export default function ProfilePage() {
                     Scegli quali categorie di notifiche vuoi ricevere. Tutte abilitate per default.
                   </CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-3">
                   <NotificationPreferences />
+                  <GreetingPreference enabled={user.dailyGreetingEnabled} />
                 </CardContent>
               </Card>
             </TabsContent>

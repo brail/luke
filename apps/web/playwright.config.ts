@@ -1,18 +1,30 @@
 import { defineConfig, devices } from '@playwright/test';
 
+import { ADMIN_STORAGE_STATE } from './tests/support/smoke';
+
 /**
  * @see https://playwright.dev/docs/test-configuration
  */
 export default defineConfig({
-  testDir: './tests/e2e',
-  /* Run tests in files in parallel */
-  fullyParallel: true,
+  testDir: './tests/smoke',
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
   /* Retry on CI only */
   retries: process.env.CI ? 2 : 0,
-  /* Opt out of parallel tests on CI. */
-  workers: process.env.CI ? 1 : undefined,
+  /**
+   * Sempre seriale, non solo in CI, per due motivi indipendenti.
+   *
+   * 1. La pulizia in `brand-crud.smoke.spec.ts` cancella *tutti* i brand con
+   *    prefisso `SMOKE-`: in parallelo un worker cancellerebbe il brand che un
+   *    altro sta ancora usando.
+   * 2. Margine sul rate limit dell'API. In sviluppo localhost è in allowList,
+   *    ma puntando la suite a un ambiente non-dev valgono i 100 req/min per IP —
+   *    e con più worker li si supera.
+   *
+   * Uno smoke pre-release può permettersi il minuto in più. Per lo stesso motivo
+   * niente `fullyParallel`: sarebbe inerte con un solo worker.
+   */
+  workers: 1,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: [
     ['html'],
@@ -21,6 +33,8 @@ export default defineConfig({
   ],
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
+    ...devices['Desktop Chrome'],
+
     /* Base URL to use in actions like `await page.goto('/')`. */
     baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000',
 
@@ -34,42 +48,15 @@ export default defineConfig({
     video: 'retain-on-failure',
   },
 
-  /* Configure projects for major browsers */
   projects: [
+    /* Autentica una volta e deposita lo storageState per il progetto `smoke`. */
+    { name: 'smoke-setup', testMatch: /auth\.setup\.ts$/ },
     {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      name: 'smoke',
+      testMatch: /\.smoke\.spec\.ts$/,
+      dependencies: ['smoke-setup'],
+      use: { storageState: ADMIN_STORAGE_STATE },
     },
-
-    // {
-    //   name: 'firefox',
-    //   use: { ...devices['Desktop Firefox'] },
-    // },
-
-    // {
-    //   name: 'webkit',
-    //   use: { ...devices['Desktop Safari'] },
-    // },
-
-    /* Test against mobile viewports. */
-    // {
-    //   name: 'Mobile Chrome',
-    //   use: { ...devices['Pixel 5'] },
-    // },
-    // {
-    //   name: 'Mobile Safari',
-    //   use: { ...devices['iPhone 12'] },
-    // },
-
-    /* Test against branded browsers. */
-    // {
-    //   name: 'Microsoft Edge',
-    //   use: { ...devices['Desktop Edge'], channel: 'msedge' },
-    // },
-    // {
-    //   name: 'Google Chrome',
-    //   use: { ...devices['Desktop Chrome'], channel: 'chrome' },
-    // },
   ],
 
   /* Run your local dev server before starting the tests */
@@ -82,9 +69,9 @@ export default defineConfig({
         timeout: 120 * 1000, // 2 minutes
       },
 
-  /* Global setup and teardown */
+  /* Pre-flight su API e frontend. Nessun globalTeardown: la suite non lascia
+     stato globale da smontare — la pulizia dei brand di test è per-spec. */
   globalSetup: require.resolve('./tests/global-setup.ts'),
-  globalTeardown: require.resolve('./tests/global-teardown.ts'),
 
   /* Test timeout */
   timeout: 30 * 1000, // 30 seconds

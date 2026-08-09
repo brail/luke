@@ -1,27 +1,11 @@
-/**
- * Dialog per importare configurazioni da file JSON
- *
- * Questo componente gestisce l'importazione batch di configurazioni con:
- * - **Validazione file**: verifica formato JSON e struttura dati
- * - **Anteprima intelligente**: distingue tra nuove configurazioni e aggiornamenti
- * - **Validazione client-side**: controlla formato chiavi e valori
- * - **Progress bar funzionale**: feedback visivo durante l'importazione
- * - **Gestione errori**: report dettagliato di successi e fallimenti
- *
- * Il processo avviene in 3 step:
- * 1. Upload del file JSON
- * 2. Anteprima con validazione e distinzione new/update
- * 3. Importazione con progress bar
- */
-
-import { CheckCircle, XCircle, AlertTriangle, Loader2 } from 'lucide-react';
+import { CheckCircle, XCircle, AlertTriangle, LoaderCircle } from 'lucide-react';
 import React, { useState, useCallback } from 'react';
 import { toast } from 'sonner';
 
 import {
   validateConfigKey,
   validateConfigValue,
-} from '../../lib/config-helpers';
+} from '../../lib/configHelpers';
 import { debugError, debugWarn } from '../../lib/debug';
 import { trpc } from '../../lib/trpc';
 import { Badge } from '../ui/badge';
@@ -29,6 +13,7 @@ import { Button } from '../ui/button';
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogDescription,
@@ -63,6 +48,17 @@ interface ConfigImportDialogProps {
   onSuccess: () => void;
 }
 
+/**
+ * Three-step dialog for batch-importing AppConfig entries from a JSON file.
+ *
+ * Step 1 — file upload and JSON parsing. Step 2 — preview table distinguishing
+ * new vs. update vs. invalid entries (checked against existing keys via tRPC).
+ * Step 3 — import with a progress bar; reports per-item success and error counts.
+ *
+ * Existing keys are overwritten. Invalid entries (failed client-side validation) are skipped.
+ *
+ * @param onSuccess - Called after at least one config was imported successfully.
+ */
 export function ConfigImportDialog({
   onOpenChange,
   onSuccess,
@@ -107,16 +103,19 @@ export function ConfigImportDialog({
     reader.onload = async e => {
       try {
         const content = e.target?.result as string;
-        const data = JSON.parse(content);
+        const data = JSON.parse(content) as { configs?: unknown[] };
 
         if (!data.configs || !Array.isArray(data.configs)) {
           throw new Error('Formato file non valido: manca array "configs"');
         }
 
+        // Shape asserted here; validateConfig() below re-validates each field and marks invalid entries accordingly
+        const configs = data.configs as ImportConfig[];
+
         // Check existence of valid keys
-        const validKeys = data.configs
-          .filter((c: any) => validateConfig(c).valid)
-          .map((c: any) => c.key);
+        const validKeys = configs
+          .filter(c => validateConfig(c).valid)
+          .map(c => c.key);
 
         const existingKeys = new Set<string>();
         if (validKeys.length > 0) {
@@ -135,7 +134,7 @@ export function ConfigImportDialog({
 
         // Valida e determina status per ogni configurazione
         const previewData: ImportPreview[] = await Promise.all(
-          data.configs.map(async (config: any) => {
+          configs.map(async config => {
             const validation = validateConfig(config);
             if (!validation.valid) {
               return {
@@ -224,7 +223,7 @@ export function ConfigImportDialog({
     } finally {
       if (progressInterval !== null) clearInterval(progressInterval);
       setImporting(false);
-      // Mantieni progress a 100% per un momento prima di resettare
+      // Keep progress at 100% for a moment before resetting
       setTimeout(() => setProgress(0), 1000);
     }
   };
@@ -267,10 +266,12 @@ export function ConfigImportDialog({
     }
   };
 
+  const isPreviewStep = step === 'preview';
+
   return (
     <Dialog open={true} onOpenChange={handleClose}>
-      <DialogContent className="max-w-4xl max-h-[80vh]">
-        <DialogHeader>
+      <DialogContent className="max-w-4xl max-h-[80vh] p-0 gap-0 flex flex-col"> {/* vh: no Tailwind scale equivalent for viewport-relative height */}
+        <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle>Importa Configurazioni</DialogTitle>
           <DialogDescription>
             Importa configurazioni da un file JSON. Le configurazioni esistenti
@@ -278,6 +279,7 @@ export function ConfigImportDialog({
           </DialogDescription>
         </DialogHeader>
 
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
         {step === 'upload' && (
           <div className="space-y-4">
             <div className="space-y-2">
@@ -300,7 +302,7 @@ export function ConfigImportDialog({
           </div>
         )}
 
-        {step === 'preview' && (
+        {isPreviewStep && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-medium">Anteprima Importazione</h3>
@@ -355,27 +357,13 @@ export function ConfigImportDialog({
                 </TableBody>
               </Table>
             </div>
-
-            <div className="flex justify-end space-x-2">
-              <Button variant="outline" onClick={handleClose}>
-                Annulla
-              </Button>
-              <Button
-                onClick={handleImport}
-                disabled={
-                  preview.filter(p => p.status !== 'invalid').length === 0
-                }
-              >
-                Importa Configurazioni
-              </Button>
-            </div>
           </div>
         )}
 
         {step === 'importing' && (
           <div className="space-y-4">
             <div className="text-center">
-              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" />
+              <LoaderCircle className="w-8 h-8 animate-spin mx-auto mb-4" />
               <h3 className="text-lg font-medium">Importazione in corso...</h3>
               <p className="text-sm text-muted-foreground">
                 Importazione delle configurazioni
@@ -383,6 +371,23 @@ export function ConfigImportDialog({
             </div>
             <Progress value={progress} className="w-full" />
           </div>
+        )}
+        </div>
+
+        {isPreviewStep && (
+          <DialogFooter className="px-6 py-4 border-t shrink-0">
+            <Button variant="outline" onClick={handleClose}>
+              Annulla
+            </Button>
+            <Button
+              onClick={handleImport}
+              disabled={
+                preview.filter(p => p.status !== 'invalid').length === 0
+              }
+            >
+              Importa Configurazioni
+            </Button>
+          </DialogFooter>
         )}
       </DialogContent>
     </Dialog>

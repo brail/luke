@@ -1,71 +1,80 @@
 /**
- * Rate-Limit Store per Luke API
- * Store in-memory con LRU cache per gestire rate limiting per-rotta
- *
- * Caratteristiche:
- * - LRU cache con max 1000 keys per rotta
- * - TTL: configurabile per rotta (1-15 minuti)
- * - Key extraction: IP per endpoint pubblici, userId per endpoint autenticati
- * - Cleanup automatico ogni minuto
+ * In-memory rate-limit store for Luke API.
+ * Uses a per-route LRU Map (max 1 000 keys per route) with configurable TTL windows.
+ * Key extraction is IP-based for public endpoints and user-ID-based for authenticated ones.
+ * Expired entries are evicted on a 60-second cleanup interval.
  */
 
 import { TRPCError } from '@trpc/server';
 import pino from 'pino';
 
-import { t } from './t';
+import { buildRateLimitExceededError } from './rateLimitError';
 import { resolveRateLimitPolicy } from './rateLimitPolicy';
+import { t } from './t';
 
-// Logger interno per rate-limit
+import type { FastifyRequest } from 'fastify';
+
+// Internal rate-limit logger
 const logger = pino({ level: 'info' });
 
 /**
- * Configurazione rate-limit hardcoded
- * Valori conservativi per sicurezza
+ * Static fallback rate-limit configuration used when AppConfig / env overrides are absent.
+ * Values are conservative security defaults.
  */
 export const RATE_LIMIT_CONFIG = {
   login: {
-    max: 5, // 5 tentativi
-    windowMs: 60_000, // 1 minuto
+    max: 5, // 5 attempts
+    windowMs: 60_000, // 1 minute
     keyBy: 'ip' as const,
   },
+  // Separate bucket, keyed by username (not IP): stops a password-spray distributed
+  // across many IPs against a single account, which the 'login' bucket (keyBy: 'ip') doesn't cover.
+  // Applied directly in authenticateUser() with the normalized username as an
+  // explicit key — it doesn't go through withRateLimit()/extractRateLimitKey (which
+  // doesn't derive 'username' from ctx, since login is an unauthenticated public endpoint).
+  loginByUsername: {
+    max: 10, // 10 attempts
+    windowMs: 900_000, // 15 minutes
+    keyBy: 'username' as const,
+  },
   passwordChange: {
-    max: 3, // 3 tentativi
-    windowMs: 900_000, // 15 minuti
+    max: 3, // 3 attempts
+    windowMs: 900_000, // 15 minutes
     keyBy: 'userId' as const,
   },
   passwordReset: {
-    max: 3, // 3 tentativi
-    windowMs: 900_000, // 15 minuti
+    max: 3, // 3 attempts
+    windowMs: 900_000, // 15 minutes
     keyBy: 'ip' as const,
   },
   configMutations: {
-    max: 20, // 20 richieste
-    windowMs: 60_000, // 1 minuto
+    max: 20, // 20 requests
+    windowMs: 60_000, // 1 minute
     keyBy: 'userId' as const,
   },
   userMutations: {
-    max: 10, // 10 richieste
-    windowMs: 60_000, // 1 minuto
+    max: 10, // 10 requests
+    windowMs: 60_000, // 1 minute
     keyBy: 'userId' as const,
   },
   sectionAccessSet: {
-    max: 20, // 20 richieste
-    windowMs: 60_000, // 1 minuto
+    max: 20, // 20 requests
+    windowMs: 60_000, // 1 minute
     keyBy: 'userId' as const,
   },
   brandMutations: {
-    max: 10, // 10 richieste
-    windowMs: 60_000, // 1 minuto
+    max: 10, // 10 requests
+    windowMs: 60_000, // 1 minute
     keyBy: 'userId' as const,
   },
   pendingEmail: {
-    max: 10, // 10 tentativi per IP
-    windowMs: 900_000, // 15 minuti
+    max: 10, // 10 attempts per IP
+    windowMs: 900_000, // 15 minutes
     keyBy: 'ip' as const,
   },
   ldapTest: {
-    max: 3, // 3 tentativi
-    windowMs: 900_000, // 15 minuti
+    max: 3, // 3 attempts
+    windowMs: 900_000, // 15 minutes
     keyBy: 'userId' as const,
   },
   companyStructureMutations: {
@@ -74,26 +83,34 @@ export const RATE_LIMIT_CONFIG = {
     keyBy: 'userId' as const,
   },
   navSyncTrigger: {
-    max: 2,
-    windowMs: 300_000, // 5 minuti
+    max: 1,
+    windowMs: 600_000, // 10 minutes — 1 sync per window, prevents connection pool exhaustion
+    keyBy: 'userId' as const,
+  },
+  exportGeneration: {
+    // Generating a PDF is the API's most expensive operation: pdfmake keeps the whole
+    // document in memory, and the export also loads logos as Buffers. Without a
+    // limit, a single account looping saturates the process's event loop.
+    max: 10,
+    windowMs: 60_000, // 1 minute
     keyBy: 'userId' as const,
   },
 } as const;
 
 /**
- * Entry nel store rate-limit
+ * Internal sliding-window entry tracked per key.
  */
 interface RateLimitEntry {
-  /** Numero di richieste nel window corrente */
+  /** Number of requests in the current window */
   count: number;
-  /** Timestamp di inizio window */
+  /** Window start timestamp */
   windowStart: number;
-  /** TTL in millisecondi */
+  /** TTL in milliseconds */
   windowMs: number;
 }
 
 /**
- * Store rate-limit in-memory con LRU e TTL
+ * In-memory rate-limit store with per-route LRU maps and TTL-based window expiry.
  */
 class RateLimitStore {
   private stores = new Map<string, Map<string, RateLimitEntry>>();
@@ -106,12 +123,12 @@ class RateLimitStore {
   }
 
   /**
-   * Verifica se una chiave è limitata
+   * Checks whether a key is limited
    *
-   * @param routeName - Nome della rotta
-   * @param key - Chiave (IP o userId)
-   * @param config - Configurazione rate-limit
-   * @returns true se limitata, false altrimenti
+   * @param routeName - Route name
+   * @param key - Key (IP or userId)
+   * @param config - Rate-limit configuration
+   * @returns true if limited, false otherwise
    */
   isLimited(
     routeName: string,
@@ -123,26 +140,26 @@ class RateLimitStore {
     const now = Date.now();
 
     if (!entry) {
-      return false; // Nessuna entry = non limitata
+      return false; // No entry = not limited
     }
 
-    // Verifica se il window è scaduto
+    // Check whether the window has expired
     if (now > entry.windowStart + entry.windowMs) {
-      // Window scaduto, rimuovi entry
+      // Window expired, remove entry
       store.delete(key);
       return false;
     }
 
-    // Verifica se ha superato il limite
+    // Check whether the limit has been exceeded
     return entry.count >= config.max;
   }
 
   /**
-   * Registra una richiesta per una chiave
+   * Records a request for a key
    *
-   * @param routeName - Nome della rotta
-   * @param key - Chiave (IP o userId)
-   * @param config - Configurazione rate-limit
+   * @param routeName - Route name
+   * @param key - Key (IP or userId)
+   * @param config - Rate-limit configuration
    */
   record(
     routeName: string,
@@ -154,26 +171,26 @@ class RateLimitStore {
     const entry = store.get(key);
 
     if (!entry) {
-      // Nuova entry
+      // New entry
       store.set(key, {
         count: 1,
         windowStart: now,
         windowMs: config.windowMs,
       });
     } else {
-      // Verifica se il window è scaduto
+      // Check whether the window has expired
       if (now > entry.windowStart + entry.windowMs) {
         // Reset window
         entry.count = 1;
         entry.windowStart = now;
         entry.windowMs = config.windowMs;
       } else {
-        // Incrementa contatore
+        // Increment counter
         entry.count++;
       }
     }
 
-    // Se la cache è piena, rimuovi l'entry più vecchia (LRU)
+    // If the cache is full, remove the oldest entry (LRU)
     if (store.size >= this.maxSize) {
       const oldestKey = store.keys().next().value;
       if (oldestKey) {
@@ -183,7 +200,7 @@ class RateLimitStore {
   }
 
   /**
-   * Ottiene o crea lo store per una rotta
+   * Gets or creates the store for a route
    */
   private getOrCreateStore(routeName: string): Map<string, RateLimitEntry> {
     if (!this.stores.has(routeName)) {
@@ -193,7 +210,7 @@ class RateLimitStore {
   }
 
   /**
-   * Rimuove entry scadute da tutti gli store
+   * Removes expired entries from all stores
    */
   private cleanup(): void {
     const now = Date.now();
@@ -211,7 +228,7 @@ class RateLimitStore {
       expiredKeys.forEach(key => store.delete(key));
       totalRemoved += expiredKeys.length;
 
-      // Se lo store è vuoto, rimuovilo
+      // If the store is empty, remove it
       if (store.size === 0) {
         this.stores.delete(routeName);
       }
@@ -226,17 +243,17 @@ class RateLimitStore {
   }
 
   /**
-   * Avvia il cleanup periodico
+   * Starts the periodic cleanup
    */
   private startCleanup(): void {
-    // Cleanup ogni minuto
+    // Cleanup every minute
     this.cleanupInterval = setInterval(() => {
       this.cleanup();
     }, 60 * 1000);
   }
 
   /**
-   * Ferma il cleanup periodico
+   * Stops the periodic cleanup
    */
   stop(): void {
     if (this.cleanupInterval) {
@@ -246,14 +263,14 @@ class RateLimitStore {
   }
 
   /**
-   * Pulisce completamente tutti gli store
+   * Completely clears all stores
    */
   clear(): void {
     this.stores.clear();
   }
 
   /**
-   * Ottiene statistiche degli store
+   * Gets statistics for the stores
    */
   getStats(): {
     routes: number;
@@ -274,93 +291,102 @@ class RateLimitStore {
 }
 
 /**
- * Istanza singleton del store rate-limit
+ * Singleton rate-limit store shared by all tRPC procedures.
  */
 export const rateLimitStore = new RateLimitStore();
 
 /**
- * Estrae la chiave per rate-limit dal context tRPC
+ * Derives the rate-limit bucket key from the request context.
  *
- * @param ctx - Context tRPC
- * @param keyBy - Tipo di chiave ('ip' o 'userId')
- * @returns Chiave per rate-limit
+ * @param keyBy - `'ip'` for unauthenticated endpoints, `'userId'` for authenticated ones.
+ * @returns The resolved key string.
+ * @throws {Error} If `keyBy` is `'userId'` but the session is missing.
  */
 export function extractRateLimitKey(
-  ctx: { req: any; session?: { user: { id: string } } | null },
+  ctx: { req: FastifyRequest; session?: { user: { id: string } } | null },
   keyBy: 'ip' | 'userId'
 ): string {
   if (keyBy === 'ip') {
     return ctx.req.ip || 'unknown';
   }
 
-  if (keyBy === 'userId') {
-    if (!ctx.session?.user?.id) {
-      throw new Error('User ID required for userId-based rate limiting');
-    }
-    return ctx.session.user.id;
+  if (!ctx.session?.user?.id) {
+    throw new Error('User ID required for userId-based rate limiting');
   }
-
-  throw new Error(`Invalid keyBy: ${keyBy}`);
+  return ctx.session.user.id;
 }
 
 /**
- * Middleware tRPC per rate-limit
- * Factory che crea middleware per una specifica rotta
- * Usa risoluzione dinamica: AppConfig → ENV → Default
+ * Checks a key against `rateLimitStore` and either records the hit or throws
+ * `TOO_MANY_REQUESTS`. Shared by `withRateLimit()` (ctx-derived key) and by call sites that
+ * already have an explicit key, e.g. `loginByUsername` in `authenticateUser()`
+ * (`apps/api/src/services/auth.service.ts`) — username lives in the procedure input, not
+ * `ctx`, so it can't go through `extractRateLimitKey()`.
  *
- * @param routeName - Nome della rotta (deve essere in RATE_LIMIT_CONFIG)
- * @returns Middleware tRPC
+ * @throws {TRPCError} `TOO_MANY_REQUESTS` if the key has exceeded `config.max`.
+ */
+export function enforceRateLimit(
+  routeName: string,
+  key: string,
+  config: { max: number; windowMs: number }
+): void {
+  if (rateLimitStore.isLimited(routeName, key, config)) {
+    throw buildRateLimitExceededError(routeName, config);
+  }
+  // Record BEFORE the caller proceeds so concurrent requests see the updated count.
+  rateLimitStore.record(routeName, key, config);
+}
+
+/**
+ * Creates a tRPC middleware that enforces rate limiting for the specified route.
+ * Policy is resolved dynamically on every request: AppConfig → ENV → static default.
+ * Requests beyond the limit receive a `TOO_MANY_REQUESTS` tRPC error.
+ *
+ * @param routeName - Route name (must be a key of `RATE_LIMIT_CONFIG`).
+ * @returns tRPC middleware.
  */
 export function withRateLimit(routeName: keyof typeof RATE_LIMIT_CONFIG) {
   return t.middleware(async ({ ctx, next }) => {
     try {
-      // Risolvi policy dinamicamente
       const config = await resolveRateLimitPolicy(
         routeName as keyof typeof RATE_LIMIT_CONFIG,
         ctx.prisma
       );
 
-      // Estrai chiave per rate-limit
-      const key = extractRateLimitKey(ctx, config.keyBy);
-
-      // Verifica se è limitata
-      if (rateLimitStore.isLimited(routeName, key, config)) {
-        const windowMs = config.windowMs;
-        const windowMinutes = Math.ceil(windowMs / 60_000);
-
-        throw new TRPCError({
-          code: 'TOO_MANY_REQUESTS',
-          message: `Rate limit exceeded for ${routeName}. Max ${config.max} requests per ${windowMinutes} minute(s).`,
-        });
+      if (config.keyBy === 'username') {
+        // No route currently wired to withRateLimit() uses keyBy 'username' (only
+        // loginByUsername, checked directly in authenticateUser()) — if it ever
+        // did (e.g. a malformed AppConfig override on another route), fail
+        // loudly instead of silently deriving the wrong key.
+        throw new Error(
+          `withRateLimit('${routeName}'): keyBy 'username' non è supportato da questo middleware — la chiave va passata esplicitamente dal chiamante`
+        );
       }
 
-      // Record BEFORE awaiting next() so concurrent requests see updated count
-      rateLimitStore.record(routeName, key, config);
-
-      // Esegui la procedura
-      const result = await next();
-
-      return result;
+      const key = extractRateLimitKey(ctx, config.keyBy);
+      enforceRateLimit(routeName, key, config);
     } catch (error) {
-      // Se è già un TRPCError, rilancialo
       if (error instanceof TRPCError) {
         throw error;
       }
 
-      // Per altri errori, logga e rilancia come errore generico
       logger.error({ err: error }, `Rate limit error for ${routeName}`);
       throw new TRPCError({
         code: 'INTERNAL_SERVER_ERROR',
         message: 'Rate limit check failed',
+        cause: error,
       });
     }
+
+    // next() runs outside the rate-limit try/catch — procedure errors propagate untouched
+    return next();
   });
 }
 
 /**
- * Configurazione rate-limit esportata
+ * Internal rate-limit store configuration constants.
  */
 export const RATE_LIMIT_CONFIG_EXPORT = {
   maxSize: 1000,
-  cleanupIntervalMs: 60 * 1000, // 1 minuto
+  cleanupIntervalMs: 60 * 1000, // 1 minute
 } as const;

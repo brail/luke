@@ -1,46 +1,65 @@
+/**
+ * tRPC router for collection layout revision management (ISO 9001 quality register).
+ *
+ * Exposes:
+ *  - collectionLayoutRevision.create — snapshot the current layout as a numbered revision
+ *  - collectionLayoutRevision.list   — list revisions for a layout
+ *  - collectionLayoutRevision.getDetail — full detail of a single revision
+ *  - collectionLayoutRevision.getLayoutAsOf — reconstruct the layout at a past revision
+ *  - collectionLayoutRevision.export.xlsx / pdf — export a revision
+ */
+
 import { z } from 'zod';
 
 import {
-  CreateRevisionInputSchema,
+  CreateRevisionRequestSchema,
   GetRevisionsListInputSchema,
   GetRevisionDetailInputSchema,
   GetLayoutAsOfRevisionInputSchema,
 } from '@luke/core';
 
-import { TRPCError } from '@trpc/server';
-
 import { logAudit } from '../lib/auditLog';
-import { exportTimestamp } from '../lib/export/xlsx-streaming';
+import { exportTimestamp } from '../lib/export/xlsxStreaming';
+import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
-import { requirePermission } from '../lib/permissions';
-import { copyToImmutableBucket } from '../storage';
+import {
+  resolveLayoutBrandAccess,
+  resolveRevisionBrandAccess,
+} from '../services/brandScope.service';
+import { buildRevisionXlsx, buildRevisionPdf } from '../services/collectionLayout.export.revision.service';
 import {
   createRevision,
   listRevisions,
   getRevisionDetail,
   getLayoutAsOfRevision,
 } from '../services/collectionLayoutRevision.service';
-import { buildRevisionXlsx, buildRevisionPdf } from '../services/collectionLayout.export.revision.service';
+import { copyToImmutableBucket } from '../storage';
 
 export const collectionLayoutRevisionRouter = router({
+  /**
+   * Creates a new numbered revision snapshot of the current collection layout.
+   *
+   * Always a MANUAL revision: the input schema has no `cause`/`milestoneId`, so this endpoint
+   * structurally cannot produce one of the automatic snapshots that the calendar triggers file
+   * through the service. Row photos are copied to the immutable bucket.
+   *
+   * @auth collection_layout:revise
+   * @input CreateRevisionRequestSchema
+   * @output The created CollectionLayoutRevision record
+   */
   create: protectedProcedure
     .use(requirePermission('collection_layout:revise'))
     .use(withRateLimit('configMutations'))
-    .input(CreateRevisionInputSchema)
+    .input(CreateRevisionRequestSchema)
     .mutation(async ({ input, ctx }) => {
-      if (input.cause === 'MILESTONE') {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Le revisioni MILESTONE sono create automaticamente dal sistema al completamento di un evento calendario',
-        });
-      }
+      await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
 
       const copyPhoto = (sourceKey: string) =>
         copyToImmutableBucket(ctx.prisma, sourceKey, ctx.logger);
 
       const revision = await createRevision(
-        input,
+        { ...input, cause: 'MANUAL' },
         ctx.session.user.id,
         copyPhoto,
         ctx.prisma,
@@ -55,33 +74,55 @@ export const collectionLayoutRevisionRouter = router({
           collectionLayoutId: input.collectionLayoutId,
           revisionNumber: revision.revisionNumber,
           revisionTypeValue: input.revisionTypeValue,
-          cause: input.cause,
-          milestoneId: input.milestoneId ?? undefined,
-          rowsIncluded: input.includedRowIds.length,
+          rowsIncluded: revision.groups.flatMap(g => g.rows).length,
         },
       });
 
       return revision;
     }),
 
+  /**
+   * Lists all revisions for a collection layout in chronological order.
+   *
+   * @auth collection_layout:view_revisions
+   * @input GetRevisionsListInputSchema
+   * @output Array of revision summaries
+   */
   list: protectedProcedure
     .use(requirePermission('collection_layout:view_revisions'))
     .input(GetRevisionsListInputSchema)
     .query(async ({ input, ctx }) => {
+      await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
       return listRevisions(input.collectionLayoutId, ctx.prisma);
     }),
 
+  /**
+   * Returns full detail for a single revision, including all snapshotted row data.
+   *
+   * @auth collection_layout:view_revisions
+   * @input GetRevisionDetailInputSchema
+   * @output Full CollectionLayoutRevision with snapshot rows
+   */
   getDetail: protectedProcedure
     .use(requirePermission('collection_layout:view_revisions'))
     .input(GetRevisionDetailInputSchema)
     .query(async ({ input, ctx }) => {
+      await resolveRevisionBrandAccess(ctx, input.revisionId);
       return getRevisionDetail(input.revisionId, ctx.prisma);
     }),
 
+  /**
+   * Reconstructs the collection layout as it was at a specific revision.
+   *
+   * @auth collection_layout:view_revisions
+   * @input GetLayoutAsOfRevisionInputSchema
+   * @output Layout snapshot data as of the specified revision
+   */
   getLayoutAsOf: protectedProcedure
     .use(requirePermission('collection_layout:view_revisions'))
     .input(GetLayoutAsOfRevisionInputSchema)
     .query(async ({ input, ctx }) => {
+      await resolveRevisionBrandAccess(ctx, input.revisionId);
       return getLayoutAsOfRevision(
         input.collectionLayoutId,
         input.revisionId,
@@ -90,18 +131,30 @@ export const collectionLayoutRevisionRouter = router({
     }),
 
   export: router({
+    /**
+     * Exports a single revision as an XLSX workbook (base64-encoded).
+     *
+     * @auth collection_layout:read
+     * @input { revisionId: string } — collectionLayoutId is derived from the revision, not passed separately (see comment below).
+     * @output { data: string, filename: string } — base64-encoded XLSX buffer and generated filename.
+     */
     xlsx: protectedProcedure
       .use(requirePermission('collection_layout:read'))
-      .input(z.object({
-        revisionId: z.string().uuid(),
-        collectionLayoutId: z.string().uuid(),
-      }))
+      // `collectionLayoutId` is no longer an input: the revision carries it. There used to be two
+      // independent ids and nothing verified that the second was really the
+      // first one's layout, so you could export a revision by mounting it on
+      // another layout. The brand scope closes the cross-brand case, not the
+      // cross-layout one within the same brand — here that inconsistency simply stops
+      // being expressible.
+      .input(z.object({ revisionId: z.string().uuid() }))
       .mutation(async ({ input, ctx }) => {
+        const { collectionLayoutId } = await resolveRevisionBrandAccess(ctx, input.revisionId);
+
         const revision = await ctx.prisma.collectionLayoutRevision.findUniqueOrThrow({
           where: { id: input.revisionId },
-          select: { revisionNumber: true, revisionTypeValue: true, collectionLayout: { select: { brand: { select: { code: true } }, season: { select: { code: true } } } } },
+          select: { revisionNumber: true, revisionTypeValue: true, notes: true, collectionLayout: { select: { brand: { select: { code: true } }, season: { select: { code: true } } } } },
         });
-        const buf = await buildRevisionXlsx(input.revisionId, input.collectionLayoutId, ctx.prisma, ctx.logger);
+        const buf = await buildRevisionXlsx(input.revisionId, collectionLayoutId, revision, ctx.prisma, ctx.logger);
         const { brand, season } = revision.collectionLayout;
         return {
           data: buf.toString('base64'),
@@ -109,16 +162,23 @@ export const collectionLayoutRevisionRouter = router({
         };
       }),
 
+    /**
+     * Exports a single revision as a PDF document (base64-encoded), including the exporting user's full name.
+     *
+     * @auth collection_layout:read
+     * @input { revisionId: string } — collectionLayoutId is derived from the revision, not passed separately (see comment above).
+     * @output { data: string, filename: string } — base64-encoded PDF buffer and generated filename.
+     */
     pdf: protectedProcedure
       .use(requirePermission('collection_layout:read'))
-      .input(z.object({
-        revisionId: z.string().uuid(),
-        collectionLayoutId: z.string().uuid(),
-      }))
+      // As above: the revision carries the layout.
+      .input(z.object({ revisionId: z.string().uuid() }))
       .mutation(async ({ input, ctx }) => {
+        const { collectionLayoutId } = await resolveRevisionBrandAccess(ctx, input.revisionId);
+
         const revision = await ctx.prisma.collectionLayoutRevision.findUniqueOrThrow({
           where: { id: input.revisionId },
-          select: { revisionNumber: true, revisionTypeValue: true, collectionLayout: { select: { brand: { select: { code: true } }, season: { select: { code: true } } } } },
+          select: { revisionNumber: true, revisionTypeValue: true, notes: true, collectionLayout: { select: { brand: { select: { code: true } }, season: { select: { code: true } } } } },
         });
         const exportUser = await ctx.prisma.user.findUnique({
           where: { id: ctx.session.user.id },
@@ -127,7 +187,7 @@ export const collectionLayoutRevisionRouter = router({
         const fullName = exportUser
           ? [exportUser.firstName, exportUser.lastName].filter(Boolean).join(' ') || exportUser.username
           : ctx.session.user.email;
-        const buf = await buildRevisionPdf(input.revisionId, input.collectionLayoutId, fullName, ctx.prisma, ctx.logger);
+        const buf = await buildRevisionPdf(input.revisionId, collectionLayoutId, fullName, revision, ctx.prisma, ctx.logger);
         const { brand, season } = revision.collectionLayout;
         return {
           data: buf.toString('base64'),

@@ -119,7 +119,7 @@ export function ContextGate() {
   } as const;
 
   const contentProps = {
-    className: 'sm:max-w-[500px]',
+    className: 'sm:max-w-[500px]', // px: dialog width tuned to this form's content; no exact Tailwind max-w scale match
     onInteractOutside: (e: globalThis.Event) => e.preventDefault(),
     onEscapeKeyDown: (e: KeyboardEvent) => e.preventDefault(),
   } as const;
@@ -325,7 +325,7 @@ export function ContextGate() {
             <Button
               onClick={handleConfirm}
               disabled={!isConfirmEnabled}
-              className="min-w-[120px]"
+              className="min-w-[120px]" // px: keeps button width stable across "Conferma"/"Configurazione..." label change; no exact scale match
             >
               {isPending ? 'Configurazione...' : 'Conferma'}
             </Button>

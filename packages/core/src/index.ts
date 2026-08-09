@@ -1,11 +1,11 @@
 /**
- * @luke/core - Pacchetto core del sistema Luke
+ * @luke/core - Core package of the Luke system
  *
- * Questo pacchetto fornisce:
- * - Schemi Zod per validazione dati (User, AppConfig)
- * - Sistema RBAC per gestione ruoli e permissions
- * - Utility per date e gestione denaro
- * - Funzioni di pricing e calcolo margini
+ * This package provides:
+ * - Zod schemas for data validation (User, AppConfig)
+ * - RBAC system for role and permissions management
+ * - Utility functions for dates and money management
+ * - Pricing functions and margin calculation
  *
  * @version 0.1.0
  * @author Luke Team
@@ -24,6 +24,7 @@ export * from './schemas/brand';
 export * from './schemas/season';
 export * from './schemas/pricing';
 export * from './schemas/collectionLayout';
+export * from './schemas/phase';
 export * from './schemas/merchandisingPlan';
 export * from './schemas/seasonCalendar';
 export * from './schemas/company';
@@ -31,6 +32,9 @@ export * from './schemas/companyProfile';
 export * from './schemas/vendor';
 export * from './schemas/dashboard';
 export * from './schemas/notification';
+export * from './schemas/backup';
+export * from './schemas/auditLog';
+export * from './schemas/maintenanceMode';
 
 // Re-export RBAC
 export * from './rbac';
@@ -45,10 +49,16 @@ export { effectiveSectionAccess } from './rbac/effectiveAccess';
 export * from './auth/permissions';
 
 // Re-export utilities
+export * from './utils/backoff';
+export * from './utils/calendarEventLock';
 export * from './utils/date';
 export * from './utils/dateUtils';
 export * from './utils/pricing';
 export * from './utils/sanitize';
+export * from './utils/text';
+export * from './utils/user';
+export * from './utils/zod';
+export * from './utils/auditLogLabels';
 
 // Re-export storage types and config
 export * from './storage/types';
@@ -81,6 +91,9 @@ export {
   buildTempCollectionRowPictureUploadUrl,
   buildSpecsheetImageUploadUrl,
   buildTempSpecsheetImageUploadUrl,
+  buildBackupExportDownloadUrl,
+  buildBackupImportUrl,
+  buildAuditLogExportUrl,
   buildTrpcUrl,
   buildSeasonCalendarIcalUrl,
   buildSeasonCalendarPdfUrl,

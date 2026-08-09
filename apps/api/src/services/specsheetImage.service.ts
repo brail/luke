@@ -1,10 +1,12 @@
-import { TRPCError } from '@trpc/server';
 import { Readable } from 'stream';
 
+import { TRPCError } from '@trpc/server';
+
+import { logAudit } from '../lib/auditLog';
 import { streamToBuffer, validateMagicBytes, validateImageFile } from '../lib/imageUpload';
 import { resolvePublicUrl } from '../lib/storageUrl';
-import { logAudit } from '../lib/auditLog';
 import { putObject } from '../storage';
+
 import type { Context } from '../lib/trpc';
 
 const IMAGE_CONFIG = {
@@ -13,6 +15,15 @@ const IMAGE_CONFIG = {
   allowedExtensions: ['.png', '.jpg', '.jpeg', '.webp'] as const,
 };
 
+/**
+ * Validates and stores an image file for a merchandising specsheet.
+ * Validates MIME type, file size, extension, and magic bytes before storage.
+ * Automatically sets the first uploaded image as the default.
+ *
+ * @returns The new image record ID and its resolved public URL.
+ * @throws {TRPCError} BAD_REQUEST if the file is corrupted or the type is invalid.
+ * @throws {TRPCError} NOT_FOUND if the specsheet does not exist.
+ */
 export async function uploadSpecsheetImage(
   ctx: Context,
   params: {

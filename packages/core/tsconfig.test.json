@@ -1,0 +1,16 @@
+{
+  // Il tsconfig di build esclude `__tests__` e `*.test.ts` per non emetterli in
+  // dist — con l'effetto collaterale che `tsc --noEmit` non li controllava
+  // affatto. Questo progetto li include, senza emettere nulla.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

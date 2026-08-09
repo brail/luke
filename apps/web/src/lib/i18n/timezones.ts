@@ -1,6 +1,6 @@
 /**
- * Lista delle timezone supportate nel sistema
- * Utilizzata per la selezione del fuso orario utente
+ * Supported IANA timezone identifiers for user profile selection,
+ * covering the most common zones across Europe, America, Asia, Oceania, and UTC.
  */
 
 export interface TimezoneOption {
@@ -8,10 +8,7 @@ export interface TimezoneOption {
   label: string;
 }
 
-/**
- * Timezone supportate (top 20 più comuni)
- * Organizzate per continente per facilità di selezione
- */
+/** Full list of supported timezones with display labels, grouped by continent. */
 export const TIMEZONES: TimezoneOption[] = [
   // Europa
   { value: 'Europe/Rome', label: 'Europa/Roma (CET/CEST)' },
@@ -51,22 +48,19 @@ export const TIMEZONES: TimezoneOption[] = [
   { value: 'UTC', label: 'UTC (Coordinated Universal Time)' },
 ];
 
-/**
- * Trova un'opzione timezone per valore
- */
+/** Finds a `TimezoneOption` by its IANA identifier, or `undefined` if not found. */
 export function findTimezoneByValue(value: string): TimezoneOption | undefined {
   return TIMEZONES.find(timezone => timezone.value === value);
 }
 
-/**
- * Ottiene il valore di default per la timezone
- */
+/** Returns the application default timezone (`Europe/Rome`). */
 export function getDefaultTimezone(): string {
   return 'Europe/Rome';
 }
 
 /**
- * Ottiene la timezone corrente del browser
+ * Returns the browser's current IANA timezone from `Intl.DateTimeFormat`.
+ * Falls back to `getDefaultTimezone()` if the API is unavailable.
  */
 export function getBrowserTimezone(): string {
   try {

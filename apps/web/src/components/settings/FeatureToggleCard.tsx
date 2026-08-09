@@ -12,6 +12,9 @@ interface FeatureToggleCardProps {
   disabled?: boolean;
 }
 
+/**
+ * Card with a labeled toggle switch for enabling or disabling a feature.
+ */
 export function FeatureToggleCard({
   title,
   description,

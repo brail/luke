@@ -1,5 +1,5 @@
 /**
- * Admin procedures per utenti
+ * Admin procedures for users
  * revokeUserSessions, forceVerifyEmail, changeEmail
  */
 
@@ -18,8 +18,11 @@ import { UserIdSchema } from '../services/users.service';
 
 export const usersAdminRouter = router({
   /**
-   * Lista utenti LDAP in attesa di approvazione admin
-   * Richiede permission users:read
+   * Lists LDAP users pending admin approval (pendingApproval=true and isActive=true).
+   *
+   * @auth {users:read}
+   * @input {none}
+   * @output {{ users: User[], total: number }}
    */
   listPending: protectedProcedure
     .use(requirePermission('users:read'))
@@ -48,13 +51,16 @@ export const usersAdminRouter = router({
     }),
 
   /**
-   * Approva un utente LDAP in attesa — abilita l'accesso
-   * Richiede permission users:update
+   * Approves a pending LDAP user (clears pendingApproval flag) and sends an account-approved email.
+   *
+   * @auth {users:update}
+   * @input {UserIdSchema}
+   * @output {{ success: true, message: string }}
    */
   approvePending: protectedProcedure
     .use(requirePermission('users:update'))
-    .use(withAuditLog('USER_APPROVED', 'User'))
     .input(UserIdSchema)
+    .use(withAuditLog('USER_APPROVED', 'User'))
     .mutation(async ({ input, ctx }) => {
       const user = await ctx.prisma.user.findUnique({
         where: { id: input.id },
@@ -72,7 +78,7 @@ export const usersAdminRouter = router({
         data: { pendingApproval: false },
       });
 
-      // Invia email di notifica attivazione (solo se email non sintetica)
+      // Send activation notification email (only if the email isn't synthetic)
       if (!user.email.endsWith('@ldap.local')) {
         try {
           const baseUrl =
@@ -96,8 +102,11 @@ export const usersAdminRouter = router({
     }),
 
   /**
-   * Rifiuta e rimuove un utente LDAP in attesa
-   * Richiede permission users:delete
+   * Rejects and permanently deletes a pending LDAP user.
+   *
+   * @auth {users:delete}
+   * @input {UserIdSchema}
+   * @output {{ success: true, message: string }}
    */
   rejectPending: protectedProcedure
     .use(requirePermission('users:delete'))
@@ -132,15 +141,18 @@ export const usersAdminRouter = router({
 
 
   /**
-   * Revoca tutte le sessioni di un utente specifico
-   * Richiede permission users:update
+   * Revokes all sessions for a specific user by incrementing their tokenVersion; blocks self-revocation.
+   *
+   * @auth {users:update}
+   * @input {UserIdSchema}
+   * @output {{ success: true, message: string }}
    */
   revokeUserSessions: protectedProcedure
     .use(requirePermission('users:update'))
-    .use(withAuditLog('USER_REVOKE_SESSIONS', 'User'))
     .input(UserIdSchema)
+    .use(withAuditLog('USER_REVOKE_SESSIONS', 'User'))
     .mutation(async ({ ctx, input }) => {
-      // Verifica che l'utente esista
+      // Verify the user exists
       const targetUser = await ctx.prisma.user.findUnique({
         where: { id: input.id },
         select: { id: true, email: true, firstName: true, lastName: true },
@@ -153,7 +165,7 @@ export const usersAdminRouter = router({
         });
       }
 
-      // Protezione: impedisci auto-revoca (usa me.revokeAllSessions invece)
+      // Protection: prevent self-revocation (use me.revokeAllSessions instead)
       if (targetUser.id === ctx.session.user.id) {
         throw new TRPCError({
           code: 'FORBIDDEN',
@@ -162,16 +174,16 @@ export const usersAdminRouter = router({
         });
       }
 
-      // Incrementa tokenVersion per invalidare tutte le sessioni dell'utente
+      // Increment tokenVersion to invalidate all of the user's sessions
       await ctx.prisma.user.update({
         where: { id: input.id },
         data: { tokenVersion: { increment: 1 } },
       });
 
-      // Invalida la cache tokenVersion per questo utente
+      // Invalidate the tokenVersion cache for this user
       invalidateTokenVersionCache(input.id);
 
-      // Audit logging gestito automaticamente dal middleware withAuditLog
+      // Audit logging handled automatically by the withAuditLog middleware
 
       return {
         success: true,
@@ -180,19 +192,21 @@ export const usersAdminRouter = router({
     }),
 
   /**
-   * Forza verifica email per un utente (admin only)
-   * Imposta o rimuove emailVerifiedAt bypassando il token
-   * Richiede permission users:update
+   * Force-sets or clears the emailVerifiedAt timestamp for a user, bypassing the token flow.
+   *
+   * @auth {users:update}
+   * @input {{ userId: string (UUID), verified: boolean }}
+   * @output {{ success: true, message: string }}
    */
   forceVerifyEmail: protectedProcedure
     .use(requirePermission('users:update'))
-    .use(withAuditLog('EMAIL_VERIFICATION_FORCED', 'User'))
     .input(
       z.object({
         userId: z.string().uuid(),
         verified: z.boolean(),
       })
     )
+    .use(withAuditLog('EMAIL_VERIFICATION_FORCED', 'User'))
     .mutation(async ({ input, ctx }) => {
       const { userId, verified } = input;
 
@@ -220,9 +234,11 @@ export const usersAdminRouter = router({
     }),
 
   /**
-   * Cambio email per utente autenticato
-   * Reset automatico di emailVerifiedAt + invio email verifica
-   * Richiede permission users:update
+   * Changes the current user's email, resets emailVerifiedAt, and sends a new verification email.
+   *
+   * @auth {users:update}
+   * @input {{ newEmail: string }}
+   * @output {{ success: true, message: string }}
    */
   changeEmail: protectedProcedure
     .use(requirePermission('users:update'))
@@ -236,7 +252,7 @@ export const usersAdminRouter = router({
       const { newEmail } = input;
       const userId = ctx.session.user.id;
 
-      // Verifica unicità email
+      // Verify email uniqueness
       const existing = await ctx.prisma.user.findFirst({
         where: { email: newEmail, id: { not: userId } },
       });
@@ -248,13 +264,13 @@ export const usersAdminRouter = router({
         });
       }
 
-      // Aggiorna email + reset verification
+      // Update email + reset verification
       await ctx.prisma.user.update({
         where: { id: userId },
         data: { email: newEmail, emailVerifiedAt: null },
       });
 
-      // Audit EMAIL_CHANGED (senza PII)
+      // Audit EMAIL_CHANGED (no PII)
       await logAudit(ctx, {
         action: 'EMAIL_CHANGED',
         targetType: 'User',
@@ -263,7 +279,7 @@ export const usersAdminRouter = router({
         metadata: {},
       });
 
-      // Invia verifica usando helper DRY
+      // Send verification using the DRY helper
       try {
         await sendVerificationEmail(
           ctx.prisma,

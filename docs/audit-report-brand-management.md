@@ -238,7 +238,7 @@ L'audit architetturale del progetto Luke ha identificato e risolto **8 issue cri
 ### Nuovi File
 
 - `packages/core/src/schemas/brand.ts` - Schemi Zod centralizzati
-- `docs/adr/005-shared-zod-schemas.md` - Pattern documentation
+- `docs/decisions/005-shared-zod-schemas.md` - Pattern documentation
 - `docs/architecture-brand-flows.md` - Architettura documentata
 
 ### File Modificati

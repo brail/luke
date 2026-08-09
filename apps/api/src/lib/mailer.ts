@@ -1,6 +1,6 @@
 /**
- * Mailer per Luke API
- * Gestisce l'invio di email transazionali tramite Nodemailer
+ * Transactional email layer for Luke API.
+ * Sends all outbound emails via Nodemailer using SMTP settings from AppConfig.
  */
 
 import { readFileSync } from 'fs';
@@ -8,6 +8,8 @@ import { join } from 'path';
 
 import nodemailer from 'nodemailer';
 import pino from 'pino';
+
+import { calcBackoffDelay } from '@luke/core';
 
 import { getConfig } from './configManager';
 
@@ -17,7 +19,7 @@ import type Mail from 'nodemailer/lib/mailer';
 const logger = pino({ level: 'info' });
 
 /**
- * Configurazione SMTP recuperata da AppConfig
+ * Assembled SMTP configuration read from AppConfig keys.
  */
 export interface SmtpConfig {
   host: string;
@@ -31,10 +33,10 @@ export interface SmtpConfig {
 }
 
 /**
- * Recupera la configurazione SMTP da AppConfig
- * @param prisma - Client Prisma
- * @returns Configurazione SMTP
- * @throws Error se le configurazioni SMTP non sono complete
+ * Reads and assembles the SMTP configuration from AppConfig.
+ * The `smtp.pass` key is decrypted automatically.
+ *
+ * @throws {Error} If any required SMTP key (host, port, user, pass, from) is missing.
  */
 export async function getSmtpConfig(prisma: PrismaClient): Promise<SmtpConfig> {
   const [host, port, secure, user, pass, from] = await Promise.all([
@@ -65,12 +67,15 @@ export async function getSmtpConfig(prisma: PrismaClient): Promise<SmtpConfig> {
 }
 
 /**
- * Invia un'email generica con retry automatico
- * @param prisma - Client Prisma per recuperare config SMTP
- * @param to - Destinatario
- * @param subject - Oggetto email
- * @param html - Contenuto HTML
- * @param text - Contenuto testo plain
+ * Sends a generic email with automatic retry (up to 3 attempts, exponential backoff).
+ * The SMTP transporter is created fresh on each attempt and closed afterwards.
+ *
+ * @param prisma - Prisma client used to load SMTP configuration.
+ * @param to - Recipient email address.
+ * @param subject - Email subject line.
+ * @param html - HTML body content.
+ * @param text - Plain-text body content (fallback).
+ * @throws {Error} If all retry attempts fail.
  */
 export async function sendEmail(
   prisma: PrismaClient,
@@ -80,7 +85,6 @@ export async function sendEmail(
   text: string
 ): Promise<void> {
   const retries = 3;
-  const backoffMs = [250, 500, 1000];
 
   // Load SMTP config once instead of on every retry attempt
   const smtpConfig = await getSmtpConfig(prisma);
@@ -122,8 +126,7 @@ export async function sendEmail(
           `Impossibile inviare email: ${error instanceof Error ? error.message : 'Unknown error'}`
         );
       }
-      // Backoff esponenziale prima del prossimo tentativo
-      await new Promise(resolve => setTimeout(resolve, backoffMs[attempt]));
+      await new Promise(resolve => setTimeout(resolve, calcBackoffDelay(attempt, 250, 1000)));
     } finally {
       // Always close the TCP connection to the SMTP server
       transporter.close();
@@ -184,11 +187,11 @@ function generateBrandedHtml(
 }
 
 /**
- * Invia email per reset password
- * @param prisma - Client Prisma
- * @param to - Email destinatario
- * @param token - Token di reset (in chiaro)
- * @param baseUrl - Base URL dell'applicazione
+ * Sends a branded password-reset email containing a one-time link.
+ * The link is valid for 30 minutes.
+ *
+ * @param token - Plaintext reset token (hashed version is stored in the DB).
+ * @param baseUrl - Application base URL used to build the reset link.
  */
 export async function sendPasswordResetEmail(
   prisma: PrismaClient,
@@ -217,11 +220,11 @@ export async function sendPasswordResetEmail(
 }
 
 /**
- * Invia email per verifica indirizzo email
- * @param prisma - Client Prisma
- * @param to - Email destinatario
- * @param token - Token di verifica (in chiaro)
- * @param baseUrl - Base URL dell'applicazione
+ * Sends a branded email-verification email containing a one-time link.
+ * The link is valid for 24 hours.
+ *
+ * @param token - Plaintext verification token (hashed version is stored in the DB).
+ * @param baseUrl - Application base URL used to build the verification link.
  */
 export async function sendEmailVerificationEmail(
   prisma: PrismaClient,
@@ -250,7 +253,7 @@ export async function sendEmailVerificationEmail(
 }
 
 /**
- * Invia email di notifica attivazione account (approvazione admin)
+ * Sends a branded account-activation notification email after admin approval.
  */
 export async function sendAccountApprovedEmail(
   prisma: PrismaClient,
@@ -279,4 +282,68 @@ export async function sendAccountApprovedEmail(
   });
 
   await sendEmail(prisma, to, subject, html, text);
+}
+
+/**
+ * Sends a branded notice that a maintenance window has been scheduled or started.
+ * `reason` is the free-text message the admin entered when scheduling/activating, if any.
+ */
+export async function sendMaintenanceScheduledEmail(
+  prisma: PrismaClient,
+  to: string,
+  scheduledAt: Date,
+  reason: string | null,
+  baseUrl: string
+): Promise<void> {
+  const subject = 'Manutenzione programmata - Luke';
+  const whenLabel = scheduledAt.toLocaleString('it-IT', { dateStyle: 'full', timeStyle: 'short' });
+  const message = reason
+    ? `È stata programmata una manutenzione del sistema per ${whenLabel}.<br/><br/><strong>Motivo:</strong> ${reason}<br/><br/>Salva il lavoro in corso prima di quel momento: durante la manutenzione l'accesso sarà bloccato.`
+    : `È stata programmata una manutenzione del sistema per ${whenLabel}. Salva il lavoro in corso prima di quel momento: durante la manutenzione l'accesso sarà bloccato.`;
+
+  const html = generateBrandedHtml(
+    subject,
+    'Manutenzione programmata',
+    message,
+    'Vai a Luke',
+    baseUrl,
+    'Riceverai ulteriori avvisi mano a mano che si avvicina il momento della manutenzione.'
+  );
+  const text = `Manutenzione programmata\n\nÈ stata programmata una manutenzione del sistema per ${whenLabel}.${reason ? `\n\nMotivo: ${reason}` : ''}\n\nSalva il lavoro in corso prima di quel momento.\n\n${baseUrl}`;
+
+  await sendEmail(prisma, to, subject, html, text);
+}
+
+/**
+ * Sends a branded notice that a maintenance window has concluded and the system is available again.
+ * Only sent to users who received the corresponding `sendMaintenanceScheduledEmail` (i.e. when
+ * the admin opted in to email notifications for that specific maintenance window).
+ */
+export async function sendMaintenanceEndedEmail(
+  prisma: PrismaClient,
+  to: string,
+  baseUrl: string
+): Promise<void> {
+  const subject = 'Manutenzione conclusa - Luke';
+  const message = 'La manutenzione programmata del sistema è terminata. Il servizio è di nuovo pienamente disponibile.';
+
+  const html = generateBrandedHtml(subject, 'Manutenzione conclusa', message, 'Vai a Luke', baseUrl, 'Grazie per la pazienza.');
+  const text = `Manutenzione conclusa\n\n${message}\n\n${baseUrl}`;
+
+  await sendEmail(prisma, to, subject, html, text);
+}
+
+/**
+ * Fans a per-item send out in parallel via `Promise.allSettled`, tolerating individual failures
+ * (never throws) — shared by any bulk-notification email flow. Generic over `T` (not just a
+ * recipient address) so a caller whose per-recipient content varies (e.g. a personalized digest)
+ * can pass richer items instead of re-deriving content from the address alone.
+ */
+export async function sendBulkEmail<T>(
+  items: T[],
+  send: (item: T) => Promise<void>
+): Promise<{ sent: number; failed: number }> {
+  const results = await Promise.allSettled(items.map(send));
+  const sent = results.filter(r => r.status === 'fulfilled').length;
+  return { sent, failed: results.length - sent };
 }

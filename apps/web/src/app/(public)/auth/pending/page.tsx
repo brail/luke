@@ -32,6 +32,11 @@ function PendingApprovalContent() {
   const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
 
+  const { data: pendingStatus } = trpc.auth.getPendingStatus.useQuery(
+    { username },
+    { enabled: !needsEmail && !!username }
+  );
+
   const submitEmailMutation = trpc.auth.submitPendingEmail.useMutation();
 
   const { mutate: submitEmail, isPending } = useStandardMutation({
@@ -103,6 +108,15 @@ function PendingApprovalContent() {
             <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-800">
               Email salvata. Sarai contattato all&apos;indirizzo fornito
               quando il tuo account sarà attivato.
+            </div>
+          )}
+
+          {!needsEmail && pendingStatus?.maskedEmail && (
+            <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-800">
+              Abbiamo inviato un&apos;email di verifica a{' '}
+              <strong>{pendingStatus.maskedEmail}</strong>. Controlla la
+              casella e conferma l&apos;indirizzo: sarai contattato lì quando
+              il tuo account sarà attivato.
             </div>
           )}
 

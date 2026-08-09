@@ -1,27 +1,39 @@
 'use client';
 
 import { useDraggable } from '@dnd-kit/core';
-import { AlertTriangle, StickyNote } from 'lucide-react';
+import { StickyNote } from 'lucide-react';
 import { type MouseEvent } from 'react';
 
 import { cn } from '../../../../lib/utils';
-import { STATUS_OPACITY } from '../constants';
+import { cancelledClass } from '../constants';
 
 interface Props {
   id: string;
   title: string;
-  status: string;
+  /** Full tooltip text (title, plus any group/duration context) — built by the caller via
+   * `groupTooltip()` so this component doesn't need to know about spans or group names. */
+  tooltip: string;
+  cancelled: boolean;
   color: string;
-  span: number;
   isDragging: boolean;
   hasNote?: boolean;
-  severity?: string;
-  isProposed?: boolean;
+  /** Fixed-width group-initials badge (e.g. "U", "BR") — rendered outside the truncated title so it
+   * never crowds it out regardless of the full group name's length. */
+  groupInitials?: string;
   onClick: (e: MouseEvent) => void;
   onNoteClick?: (e: MouseEvent) => void;
 }
 
-export function DraggableEventChip({ id, title, status, color, span, isDragging, hasNote, severity, isProposed, onClick, onNoteClick }: Props) {
+/**
+ * Draggable event chip used in week and month calendar views.
+ *
+ * Integrates with dnd-kit via `useDraggable`. A sticky-note icon appears when
+ * `hasNote` is true or on hover.
+ *
+ * @param isDragging - Hides the chip's original slot while dragging is in progress.
+ * @param onNoteClick - When provided, renders the sticky-note button.
+ */
+export function DraggableEventChip({ id, title, tooltip, cancelled, color, isDragging, hasNote, groupInitials, onClick, onNoteClick }: Props) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id });
 
   const bg = color;
@@ -34,18 +46,17 @@ export function DraggableEventChip({ id, title, status, color, span, isDragging,
         {...listeners}
         {...attributes}
         className={cn(
-          'w-full text-left rounded px-1.5 py-0.5 text-xs text-white truncate',
+          'w-full flex items-center text-left rounded px-1.5 py-0.5 text-xs text-white',
           'hover:brightness-110 transition-all cursor-grab active:cursor-grabbing',
           onNoteClick && 'pr-5',
-          STATUS_OPACITY[status] ?? 'opacity-100',
+          cancelledClass(cancelled),
           isDragging && 'opacity-30',
-          isProposed && 'outline outline-1 outline-dashed outline-white/60',
         )}
         style={{ background: bg }}
-        title={`${title}${span > 0 ? ` (${span + 1}gg)` : ''}`}
+        title={tooltip}
       >
-        {severity === 'CRITICAL' && <AlertTriangle size={9} className="mr-0.5 inline text-yellow-300" />}
-        {title}
+        {groupInitials && <span className="opacity-80 mr-1 shrink-0">{groupInitials}</span>}
+        <span className="truncate min-w-0">{title}</span>
       </button>
 
       {onNoteClick && (

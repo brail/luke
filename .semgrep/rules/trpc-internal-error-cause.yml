@@ -1,0 +1,24 @@
+rules:
+  - id: luke-trpc-internal-error-cause
+    languages: [typescript]
+    severity: WARNING
+    message: >-
+      new TRPCError({ code: 'INTERNAL_SERVER_ERROR' }) dentro un catch senza `cause:` —
+      la causa reale sparisce dai log strutturati (l'onError globale in server.ts la
+      logga solo se presente). Aggiungi `cause: <variabile catturata>`. Se il throw non
+      cattura nessun errore (es. validazione), ignora pure il finding: non c'è una causa
+      da attaccare.
+    patterns:
+      - pattern: |
+          catch ($ERR) {
+            ...
+            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', ... });
+          }
+      - pattern-not: |
+          catch ($ERR) {
+            ...
+            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', ..., cause: $CAUSE, ... });
+          }
+    paths:
+      include:
+        - /apps/api/src/**/*.ts

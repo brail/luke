@@ -5,8 +5,9 @@ import { Controller, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
-import { EVENT_SEVERITY, RELEVANT_COUNTRY_CODES, type EventSeverity } from '@luke/core';
 
+import { CalendarDaysRelevanceSelect, NO_RELEVANCE_VALUE } from '../../../../../components/CalendarDaysRelevanceSelect';
+import { PhaseSelect } from '../../../../../components/PhaseSelect';
 import { Button } from '../../../../../components/ui/button';
 import { Checkbox } from '../../../../../components/ui/checkbox';
 import {
@@ -28,7 +29,6 @@ import {
 import { Textarea } from '../../../../../components/ui/textarea';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
-import { SEVERITY_LABELS } from '../../../calendar/constants';
 
 type TemplateItem = RouterOutputs['seasonCalendar']['listTemplates'][number]['items'][number];
 
@@ -50,61 +50,55 @@ interface Props {
 
 interface FormValues {
   title: string;
-  type: string;
-  ownerFunctionId: string;
+  phaseId: string;
+  calendarDaysRelevance: string;
   visibilityFunctionIds: string[];
   offsetDays: number;
   durationDays: number;
+  allDay: boolean;
   publishExternally: boolean;
   description: string;
-  severity: EventSeverity;
-  relevantCountries: string[];
 }
 
+/**
+ * Dialog for adding or editing a milestone item within a calendar template.
+ *
+ * Includes an optional offset-calculator helper that computes the offsetDays
+ * relative to another sibling item without creating a formal dependency.
+ *
+ * @param templateId - Parent template ID (used only in create mode).
+ * @param item - Existing item to edit; omit for create mode.
+ * @param availableFunctions - Company functions available as visibility targets.
+ * @param siblingItems - Other items in the same template, used by the offset calculator.
+ */
 export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, availableFunctions, siblingItems = [] }: Props) {
   const isEdit = !!item;
-  const defaultOwner = availableFunctions[0]?.id ?? '';
-  const { register, handleSubmit, reset, watch, setValue, control, formState: { errors } } = useForm<FormValues>();
+  const { register, handleSubmit, reset, setValue, control, formState: { errors } } = useForm<FormValues>();
 
   const [relItemId, setRelItemId] = useState('');
   const [relDelta, setRelDelta] = useState('0');
 
-  const { data: catalogItems = [] } = trpc.calendarCatalog.list.useQuery(
-    { type: 'eventType' },
-    { staleTime: 5 * 60 * 1000 }
-  );
-
-  const ownerFunctionId = watch('ownerFunctionId');
-  const visibilityFunctionIds = watch('visibilityFunctionIds') ?? [];
+  const { data: phases = [] } = trpc.phase.list.useQuery(undefined, { staleTime: 5 * 60 * 1000 });
 
   useEffect(() => {
     if (open) {
       setRelItemId('');
       setRelDelta('0');
-      const owner = item?.ownerFunctionId ?? defaultOwner;
       reset({
         title: item?.title ?? '',
-        type: item?.type ?? 'MILESTONE',
-        ownerFunctionId: owner,
+        phaseId: item?.phaseId ?? '_none',
+        calendarDaysRelevance: item?.calendarDaysRelevance ?? NO_RELEVANCE_VALUE,
         visibilityFunctionIds: item
-          ? (item.visibilities?.map(v => v.functionId) ?? [owner])
-          : [owner],
+          ? (item.visibilities?.map((v: NonNullable<TemplateItem['visibilities']>[number]) => v.functionId) ?? [])
+          : [],
         offsetDays: item?.offsetDays ?? 0,
-        durationDays: item?.durationDays ?? 0,
+        durationDays: item?.durationDays ?? 1,
+        allDay: item?.allDay ?? true,
         publishExternally: item?.publishExternally ?? true,
         description: item?.description ?? '',
-        severity: item?.severity ?? 'NORMAL',
-        relevantCountries: item?.relevantCountries ?? [],
       });
     }
   }, [open, item?.id]);
-
-  // Keep owner always in visibility list
-  useEffect(() => {
-    if (ownerFunctionId && !visibilityFunctionIds.includes(ownerFunctionId)) {
-      setValue('visibilityFunctionIds', [...visibilityFunctionIds, ownerFunctionId]);
-    }
-  }, [ownerFunctionId]); // intentional: only sync when owner changes
 
   const createMutation = trpc.seasonCalendar.createTemplateItem.useMutation({
     onSuccess: () => { toast.success('Item aggiunto'); onSaved(); },
@@ -121,15 +115,14 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
   const onSubmit = (values: FormValues) => {
     const payload = {
       title: values.title.trim(),
-      type: values.type,
-      ownerFunctionId: values.ownerFunctionId,
+      phaseId: values.phaseId === '_none' ? null : values.phaseId,
+      calendarDaysRelevance: values.calendarDaysRelevance === NO_RELEVANCE_VALUE ? null : (values.calendarDaysRelevance as 'COMPANY' | 'VENDOR' | 'BOTH'),
       visibilityFunctionIds: values.visibilityFunctionIds,
       offsetDays: Number(values.offsetDays),
       durationDays: Number(values.durationDays),
+      allDay: values.allDay,
       publishExternally: values.publishExternally,
       description: values.description.trim() || undefined,
-      severity: values.severity,
-      relevantCountries: values.relevantCountries,
     };
     if (isEdit) {
       updateMutation.mutate({ id: item.id, ...payload });
@@ -138,22 +131,14 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
     }
   };
 
-  const toggleVisible = (fnId: string) => {
-    if (fnId === ownerFunctionId) return;
-    const current = visibilityFunctionIds;
-    setValue(
-      'visibilityFunctionIds',
-      current.includes(fnId) ? current.filter(s => s !== fnId) : [...current, fnId]
-    );
-  };
-
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
+      <DialogContent className="max-w-lg max-h-[90vh] p-0 gap-0 flex flex-col"> {/* vh: no Tailwind scale equivalent for viewport-relative height */}
+        <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle>{isEdit ? 'Modifica item' : 'Nuovo item'}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
           <div className="space-y-1">
             <Label htmlFor="title">Titolo *</Label>
             <Input
@@ -164,42 +149,32 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
             {errors.title && <p className="text-xs text-destructive">{errors.title.message}</p>}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label>Tipo *</Label>
-              <Controller
-                name="type"
-                control={control}
-                render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {catalogItems.map(item => (
-                        <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-            </div>
+          <div className="space-y-1">
+            <Label>Fase</Label>
+            <Controller
+              name="phaseId"
+              control={control}
+              render={({ field }) => (
+                <PhaseSelect value={field.value} onValueChange={field.onChange} phases={phases} />
+              )}
+            />
+            <p className="text-xs text-muted-foreground">
+              Propagata all'evento generato quando il template viene applicato al calendario.
+            </p>
+          </div>
 
-            <div className="space-y-1">
-              <Label>Funzione owner *</Label>
-              <Controller
-                name="ownerFunctionId"
-                control={control}
-                render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger><SelectValue placeholder="Seleziona…" /></SelectTrigger>
-                    <SelectContent>
-                      {availableFunctions.map(fn => (
-                        <SelectItem key={fn.id} value={fn.id}>{fn.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-            </div>
+          <div className="space-y-1">
+            <Label>Conteggio giorni scadenza</Label>
+            <Controller
+              name="calendarDaysRelevance"
+              control={control}
+              render={({ field }) => (
+                <CalendarDaysRelevanceSelect value={field.value} onValueChange={field.onChange} />
+              )}
+            />
+            <p className="text-xs text-muted-foreground">
+              Propagato all'evento generato quando il template viene applicato al calendario.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -217,9 +192,10 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
               <Input
                 id="durationDays"
                 type="number"
-                min={0}
-                {...register('durationDays', { valueAsNumber: true })}
+                min={1}
+                {...register('durationDays', { valueAsNumber: true, min: 1 })}
               />
+              <p className="text-xs text-muted-foreground">1 = evento di un giorno singolo, N = N giorni consecutivi</p>
             </div>
           </div>
 
@@ -232,7 +208,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
                 <p className="text-xs font-medium text-muted-foreground">Calcola offset da altro item <span className="font-normal">(solo aiuto al calcolo, non crea una dipendenza)</span></p>
                 <div className="flex items-center gap-2">
                   <Select value={relItemId} onValueChange={setRelItemId}>
-                    <SelectTrigger className="h-8 text-xs flex-1"><SelectValue placeholder="Scegli item…" /></SelectTrigger>
+                    <SelectTrigger size="sm" className="flex-1"><SelectValue placeholder="Scegli item…" /></SelectTrigger>
                     <SelectContent>
                       {siblingItems.map(s => (
                         <SelectItem key={s.id} value={s.id}>
@@ -269,67 +245,52 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
           })()}
 
           <div className="space-y-2">
-            <Label>Visibile a</Label>
-            <div className="flex flex-wrap gap-3">
-              {availableFunctions.map(fn => (
-                <label key={fn.id} className="flex items-center gap-1.5 cursor-pointer">
-                  <Checkbox
-                    checked={visibilityFunctionIds.includes(fn.id)}
-                    onCheckedChange={() => toggleVisible(fn.id)}
-                    disabled={fn.id === ownerFunctionId}
-                  />
-                  <span className="text-sm">{fn.name}</span>
-                </label>
-              ))}
-            </div>
+            <Label>Visibile a *</Label>
+            <Controller
+              name="visibilityFunctionIds"
+              control={control}
+              rules={{ validate: v => (v?.length ?? 0) > 0 || 'Seleziona almeno una funzione' }}
+              render={({ field }) => (
+                <div className="flex flex-wrap gap-3">
+                  {availableFunctions.map(fn => {
+                    const isChecked = field.value?.includes(fn.id) ?? false;
+                    return (
+                      <label key={fn.id} className="flex items-center gap-1.5 cursor-pointer">
+                        <Checkbox
+                          checked={isChecked}
+                          onCheckedChange={() =>
+                            field.onChange(
+                              isChecked
+                                ? field.value.filter((s: string) => s !== fn.id)
+                                : [...(field.value ?? []), fn.id]
+                            )
+                          }
+                        />
+                        <span className="text-sm">{fn.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            />
+            {errors.visibilityFunctionIds && (
+              <p className="text-xs text-destructive">{errors.visibilityFunctionIds.message}</p>
+            )}
           </div>
 
-          {/* Severity + Countries */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label>Criticità</Label>
-              <Controller
-                name="severity"
-                control={control}
-                render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {EVENT_SEVERITY.map(s => (
-                        <SelectItem key={s} value={s}>
-                          {SEVERITY_LABELS[s] ?? s}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Paesi rilevanti</Label>
-              <Controller
-                name="relevantCountries"
-                control={control}
-                render={({ field }) => (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {RELEVANT_COUNTRY_CODES.map(code => (
-                      <label key={code} className="flex cursor-pointer items-center gap-1">
-                        <Checkbox
-                          checked={field.value.includes(code)}
-                          onCheckedChange={() => {
-                            const next = field.value.includes(code)
-                              ? field.value.filter((c: string) => c !== code)
-                              : [...field.value, code];
-                            field.onChange(next);
-                          }}
-                        />
-                        <span className="text-xs font-mono">{code}</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-              />
-            </div>
+          <div className="flex items-center gap-2">
+            <Controller
+              name="allDay"
+              control={control}
+              render={({ field }) => (
+                <Checkbox
+                  id="allDay"
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
+              )}
+            />
+            <Label htmlFor="allDay">Tutto il giorno</Label>
           </div>
 
           <div className="flex items-center gap-2">
@@ -356,8 +317,9 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
               rows={2}
             />
           </div>
+          </div>
 
-          <DialogFooter>
+          <DialogFooter className="px-6 py-4 border-t shrink-0">
             <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>
               Annulla
             </Button>

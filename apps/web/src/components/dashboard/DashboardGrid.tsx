@@ -47,6 +47,12 @@ function DashboardHeader({ firstName }: { firstName?: string }) {
   );
 }
 
+/**
+ * Responsive dashboard layout that renders enabled widgets based on the user's saved configuration.
+ *
+ * Loads widget config from `dashboard.getConfig`. Falls back to `WIDGET_REGISTRY.defaultEnabled`
+ * when no saved preference exists. Opens `DashboardCustomizeSheet` for personalization.
+ */
 export function DashboardGrid() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const { data: session } = useSession();

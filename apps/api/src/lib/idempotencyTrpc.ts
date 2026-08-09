@@ -1,12 +1,8 @@
 /**
- * Idempotency tRPC Middleware per Luke API
- * Wrapper tRPC che riusa l'IdempotencyStore esistente
- *
- * Caratteristiche:
- * - Riusa IdempotencyStore esistente (DRY)
- * - Header: Idempotency-Key (UUID v4)
- * - Serializzazione input tRPC per hash
- * - TTL: 5 minuti (ereditato da IdempotencyStore)
+ * tRPC idempotency middleware for Luke API.
+ * Reuses the shared `IdempotencyStore` to deduplicate mutation requests
+ * identified by a client-supplied `Idempotency-Key: <uuid-v4>` header.
+ * TTL and capacity are inherited from the store defaults (5 min / 1 000 keys).
  */
 
 import { TRPCError } from '@trpc/server';
@@ -14,30 +10,39 @@ import pino from 'pino';
 
 import { idempotencyStore } from './idempotency';
 
+import type { FastifyRequest } from 'fastify';
+
 const logger = pino({ level: 'info' });
 
 /**
- * Middleware tRPC per idempotency
- * Riusa l'IdempotencyStore esistente per gestire richieste duplicate
+ * Returns a raw tRPC middleware function that enforces idempotency for mutations.
+ * Requests without an `Idempotency-Key` header are passed through unchanged.
+ * A second request with the same key and identical body returns the cached response.
+ * A second request with the same key but a different body throws `CONFLICT`.
  *
- * @returns Middleware tRPC
+ * @returns Raw tRPC middleware (use directly with `.use()` on a procedure).
  */
 export function withIdempotency() {
-  return async ({ ctx, next, path, type }: any) => {
-    // Solo per mutation (query non hanno bisogno di idempotency)
+  // Not t.middleware(...)-wrapped: this middleware short-circuits by returning
+  // a cached response instead of always going through next(), which is incompatible
+  // with the stricter MiddlewareResult type that t.middleware requires — verified
+  // empirically: with a precise type instead of `any`, `.use()` rejects the
+  // function on every router that uses it (same error everywhere).
+  return async ({ ctx, next, path, type, input }: any) => {
+    // Only for mutations (queries don't need idempotency)
     if (type !== 'mutation') {
       return next();
     }
 
-    // Estrai idempotency key dall'header
+    // Extract idempotency key from the header
     const idempotencyKey = ctx.req.headers['idempotency-key'] as string;
 
-    // Se non c'è idempotency key, procedi normalmente
+    // If there's no idempotency key, proceed normally
     if (!idempotencyKey) {
       return next();
     }
 
-    // Valida formato idempotency key (UUID v4)
+    // Validate the idempotency key format (UUID v4)
     const uuidRegex =
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(idempotencyKey)) {
@@ -47,12 +52,18 @@ export function withIdempotency() {
       });
     }
 
-    // Serializza input per hash (usa path + input come identificatore)
-    const method = 'POST'; // tRPC usa sempre POST per mutation
+    // Serialize input for the hash (uses path + input as the identifier)
+    const method = 'POST'; // tRPC always uses POST for mutations
     const pathStr = `/trpc/${path}`;
-    const body = JSON.stringify(ctx.input || {});
+    // `input` comes from the middleware, not from `ctx`: `ctx.input` doesn't exist on
+    // the tRPC context and was always undefined, so the body hash was
+    // constantly "{}" — two requests with the same key but different payloads
+    // ended up identical, and the second one replayed the response of the
+    // first instead of the expected CONFLICT. Requires that `.use(withIdempotency())`
+    // be chained AFTER `.input(...)`, otherwise the input isn't parsed yet.
+    const body = JSON.stringify(input ?? {});
 
-    // Check se esiste già una risposta
+    // Check whether a response already exists
     const result = idempotencyStore.check(
       idempotencyKey,
       method,
@@ -61,11 +72,11 @@ export function withIdempotency() {
     );
 
     if (result.hit) {
-      // Restituisci risposta cached
+      // Return the cached response
       return result.response;
     }
 
-    // Se c'è conflitto (stessa key, body diverso), ritorna 409 Conflict
+    // If there's a conflict (same key, different body), return 409 Conflict
     if (result.conflict) {
       throw new TRPCError({
         code: 'CONFLICT',
@@ -74,11 +85,11 @@ export function withIdempotency() {
       });
     }
 
-    // Esegui la mutation originale
+    // Execute the original mutation
     const mutationResult = await next();
 
-    // Memorizza la risposta solo se è un successo
-    // Per tRPC, assumiamo che se non c'è eccezione = successo
+    // Store the response only if it succeeded
+    // For tRPC, we assume that no exception = success
     try {
       idempotencyStore.store(
         idempotencyKey,
@@ -88,7 +99,7 @@ export function withIdempotency() {
         mutationResult
       );
     } catch (error) {
-      // Log errore ma non bloccare la risposta
+      // Log the error but don't block the response
       logger.warn({ err: error }, 'Failed to store idempotency result');
     }
 
@@ -97,27 +108,24 @@ export function withIdempotency() {
 }
 
 /**
- * Helper per verificare se una richiesta ha idempotency key
- *
- * @param ctx - Context tRPC
- * @returns true se ha idempotency key, false altrimenti
+ * Returns `true` if the request carries an `Idempotency-Key` header.
  */
-export function hasIdempotencyKey(ctx: { req: any }): boolean {
+export function hasIdempotencyKey(ctx: { req: FastifyRequest }): boolean {
   return !!ctx.req.headers['idempotency-key'];
 }
 
 /**
- * Helper per estrarre l'idempotency key da una richiesta
+ * Extracts the `Idempotency-Key` header value from the request.
  *
- * @param ctx - Context tRPC
- * @returns Idempotency key o null
+ * @returns The key string, or `null` if the header is absent.
  */
-export function getIdempotencyKey(ctx: { req: any }): string | null {
-  return ctx.req.headers['idempotency-key'] || null;
+export function getIdempotencyKey(ctx: { req: FastifyRequest }): string | null {
+  const header = ctx.req.headers['idempotency-key'];
+  return (Array.isArray(header) ? header[0] : header) || null;
 }
 
 /**
- * Configurazione idempotency tRPC esportata
+ * Static configuration constants for the tRPC idempotency middleware.
  */
 export const IDEMPOTENCY_TRPC_CONFIG = {
   headerName: 'idempotency-key',

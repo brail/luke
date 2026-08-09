@@ -1,28 +1,35 @@
 /**
- * Router tRPC per Collection Catalog Items
- * Gestisce le opzioni configurabili dei campi Collection Layout:
- * strategy, lineStatus, styleStatus, progress
+ * tRPC router for Collection Catalog Items
+ * Manages the configurable options for Collection Layout fields:
+ * strategy, lineStatus, styleStatus, revisionType, pricePositioning
+ * (the production phase is managed by the separate Phase catalog, see routers/phase.ts)
  */
 
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import {
   COLLECTION_CATALOG_TYPES,
   CollectionCatalogItemInputSchema,
-  CollectionCatalogItemInputBaseSchema,
+  partialWithoutDefaults,
 } from '@luke/core';
 
-import { TRPCError } from '@trpc/server';
 
 import { logAudit } from '../lib/auditLog';
+import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
-import { requirePermission } from '../lib/permissions';
 
 const CatalogTypeSchema = z.enum(COLLECTION_CATALOG_TYPES);
 
 export const collectionCatalogRouter = router({
-  /** Lista items attivi per tipo — usato nei select del frontend */
+  /**
+   * Lists active collection catalog items for a given type, used to populate frontend selects.
+   *
+   * @auth {collection_layout:read}
+   * @input {{ type: CatalogTypeSchema }} — catalog type (strategy, lineStatus, styleStatus, progress).
+   * @output {CollectionCatalogItem[]} — active items sorted by order.
+   */
   list: protectedProcedure
     .use(requirePermission('collection_layout:read'))
     .input(z.object({ type: CatalogTypeSchema }))
@@ -33,7 +40,13 @@ export const collectionCatalogRouter = router({
       });
     }),
 
-  /** Lista tutti gli items (inclusi inattivi) — per admin */
+  /**
+   * Lists all collection catalog items including inactive ones, for admin management.
+   *
+   * @auth {collection_layout:update}
+   * @input {{ type?: CatalogTypeSchema }} — optional type filter.
+   * @output {CollectionCatalogItem[]} — all items sorted by type then order.
+   */
   listAll: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .input(z.object({ type: CatalogTypeSchema.optional() }))
@@ -44,6 +57,13 @@ export const collectionCatalogRouter = router({
       });
     }),
 
+  /**
+   * Creates a new collection catalog item for the specified type.
+   *
+   * @auth {collection_layout:update}
+   * @input {CollectionCatalogItemInputSchema} — type, value (unique per type), label, optional order.
+   * @output {CollectionCatalogItem} — the newly created item.
+   */
   create: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
@@ -70,9 +90,7 @@ export const collectionCatalogRouter = router({
           value: input.value,
           label: input.label,
           order: input.order ?? (maxOrder._max.order ?? -1) + 1,
-          code: input.code ?? null,
           iso9001Categories: input.iso9001Categories ?? [],
-          expectedMinProgress: input.expectedMinProgress ?? null,
         },
       });
 
@@ -87,13 +105,20 @@ export const collectionCatalogRouter = router({
       return result;
     }),
 
+  /**
+   * Updates mutable fields of a collection catalog item (label, order, code, iso9001Categories, etc.).
+   *
+   * @auth {collection_layout:update}
+   * @input {{ id: string, data: Partial<CollectionCatalogItemInputSchema without type> }}
+   * @output {CollectionCatalogItem} — the updated item.
+   */
   update: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
     .input(
       z.object({
         id: z.string().uuid(),
-        data: CollectionCatalogItemInputBaseSchema.omit({ type: true }).partial(),
+        data: partialWithoutDefaults(CollectionCatalogItemInputSchema.omit({ type: true })),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -125,6 +150,13 @@ export const collectionCatalogRouter = router({
       return result;
     }),
 
+  /**
+   * Soft-deletes a collection catalog item (isActive=false).
+   *
+   * @auth {collection_layout:update}
+   * @input {{ id: string }} — UUID of the item to deactivate.
+   * @output {{ success: true }}
+   */
   remove: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
@@ -153,6 +185,13 @@ export const collectionCatalogRouter = router({
       return { success: true };
     }),
 
+  /**
+   * Restores a soft-deleted collection catalog item (isActive=true).
+   *
+   * @auth {collection_layout:update}
+   * @input {{ id: string }} — UUID of the item to restore.
+   * @output {{ success: true }}
+   */
   restore: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
@@ -181,6 +220,13 @@ export const collectionCatalogRouter = router({
       return { success: true };
     }),
 
+  /**
+   * Reorders collection catalog items of a given type by assigning new position indices.
+   *
+   * @auth {collection_layout:update}
+   * @input {{ type: CatalogTypeSchema, orderedIds: string[] }} — type and full ordered array of UUIDs.
+   * @output {{ success: true }}
+   */
   reorder: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))

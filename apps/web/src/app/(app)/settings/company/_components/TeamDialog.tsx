@@ -51,6 +51,10 @@ interface CreateTeamDialogProps {
   functionId: string;
 }
 
+/**
+ * Modal dialog for creating a new team inside a given company function.
+ * @param functionId - ID of the parent company function the team will belong to
+ */
 export function CreateTeamDialog({ open, onClose, onSaved, functionId }: CreateTeamDialogProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -103,6 +107,11 @@ interface EditTeamDialogProps {
   teamId: string;
 }
 
+/**
+ * Modal dialog for editing an existing team: name/description, member list, and brand access scopes.
+ * Uses tabbed layout (Info / Membri / Brand) and batches member add/remove mutations on save.
+ * @param teamId - ID of the team to load and edit
+ */
 export function EditTeamDialog({ open, onClose, onSaved, teamId }: EditTeamDialogProps) {
   const { can } = usePermission();
   const canUpdate = can('company_team:update');

@@ -5,9 +5,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { trpc } from '../lib/trpc';
 
 /**
- * Hook per gestire le preferenze di menu collapsibili
- * Memorizza lo stato in localStorage per UX veloce
- * Sincronizza con DB in background con debounce
+ * Manages the collapsed/expanded state of sidebar accordion menus.
+ * State is initialised from `localStorage` for instant UI restore, then
+ * reconciled with the DB value from `trpc.users.preferences.menu.get`.
+ * Changes are written to `localStorage` immediately and synced to the DB
+ * with a 2 s debounce (or immediately when `localStorage` is unavailable).
+ * The DB is also flushed synchronously on unmount and before tab/browser close.
+ *
+ * @returns `{ menuStates, isLoading, toggleMenu }` — call `toggleMenu(key, isOpen)`
+ *   to open or close a named menu section (accordion: opening one closes all others).
  */
 export function useMenuPreferences() {
   const [menuStates, setMenuStates] = useState<Record<string, boolean>>({});
@@ -121,7 +127,7 @@ export function useMenuPreferences() {
     };
   }, [flushToDb]);
 
-  // Flush prima di unload (chiusura tab/browser)
+  // Flush before unload (closing tab/browser)
   useEffect(() => {
     const handleBeforeUnload = () => {
       flushToDb();

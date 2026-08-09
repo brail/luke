@@ -1,6 +1,6 @@
 'use client';
 
-import { useAppConfig } from '../hooks/use-app-config';
+import { useAppConfig } from '../hooks/useAppConfig';
 import { cn } from '../lib/utils';
 
 interface BackendStatusProps {
@@ -8,15 +8,14 @@ interface BackendStatusProps {
 }
 
 /**
- * Indicatore di connettività al backend.
+ * Backend connectivity indicator shown as a colored dot.
  *
- * - Dev:  dot colorato + testo ("v1.2.3 · development" oppure messaggio di errore)
- * - Prod: solo dot colorato; in caso di errore aggiunge testo generico
+ * In development mode it also renders a text label with the app version or error message.
+ * In production only the dot is shown; a short generic error text appears on failure.
  */
 export function BackendStatus({ className }: BackendStatusProps) {
   const { isLoading, hasError } = useAppConfig();
   const isDev = process.env.NODE_ENV === 'development';
-  const version = process.env.NEXT_PUBLIC_APP_VERSION;
 
   const dotClass = cn(
     'h-2 w-2 rounded-full flex-shrink-0',
@@ -39,12 +38,6 @@ export function BackendStatus({ className }: BackendStatusProps) {
       {!isLoading && hasError && (
         <span>
           {isDev ? 'Backend non raggiungibile' : 'Servizio non disponibile'}
-        </span>
-      )}
-
-      {!isLoading && !hasError && isDev && (
-        <span>
-          {[version, 'development'].filter(Boolean).join(' · ')}
         </span>
       )}
     </div>

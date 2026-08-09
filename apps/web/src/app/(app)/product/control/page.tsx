@@ -1,0 +1,375 @@
+'use client';
+
+import { AlertTriangle } from 'lucide-react';
+import { useMemo, useState } from 'react';
+
+import { formatDate } from '@luke/core';
+
+import { PageHeader } from '../../../../components/PageHeader';
+import { Badge } from '../../../../components/ui/badge';
+import { Card, CardContent } from '../../../../components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../components/ui/tabs';
+import { useAppContext } from '../../../../contexts/AppContextProvider';
+import { bandBadgeStyle } from '../../../../lib/alertBandStyle';
+import { trpc } from '../../../../lib/trpc';
+import { cn } from '../../../../lib/utils';
+import { assignBrandColors, resolveBrandColor } from '../../calendar/utils';
+
+import { CollectionStatistics } from './_components/CollectionStatistics';
+import { EmptyContextCard } from './_components/EmptyContextCard';
+import { useControlLayout } from './_hooks/useControlLayout';
+
+import type { ReactNode } from 'react';
+
+/**
+ * Controllo: pianificazione fasi (Saturazione/Strozzatura/Stagnazione) e statistiche
+ * collezione riunite in un'unica pagina, separate da uno switch di primo livello —
+ * sono due letture diverse dei dati (salute del processo vs. contenuto della collezione).
+ */
+export default function ControlloPage() {
+  return (
+    <>
+      <PageHeader
+        title="Controllo"
+        description="Pianificazione fasi e statistiche del Collection Layout"
+      />
+
+      <div className="p-6">
+        <Tabs defaultValue="fasi">
+          <TabsList>
+            <TabsTrigger value="fasi">Pianificazione Fasi</TabsTrigger>
+            <TabsTrigger value="statistiche">Statistiche Collezione</TabsTrigger>
+          </TabsList>
+          <TabsContent value="fasi" className="space-y-6">
+            <Tabs defaultValue="saturation">
+              <TabsList>
+                <TabsTrigger value="saturation">Saturazione</TabsTrigger>
+                <TabsTrigger value="bottleneck">Strozzatura</TabsTrigger>
+                <TabsTrigger value="stagnation">Stagnazione</TabsTrigger>
+              </TabsList>
+              <TabsContent value="saturation">
+                <SaturationTab />
+              </TabsContent>
+              <TabsContent value="bottleneck">
+                <BottleneckTab />
+              </TabsContent>
+              <TabsContent value="stagnation">
+                <StagnationTab />
+              </TabsContent>
+            </Tabs>
+          </TabsContent>
+          <TabsContent value="statistiche">
+            <CollectionStatistics />
+          </TabsContent>
+        </Tabs>
+      </div>
+    </>
+  );
+}
+
+/**
+ * Loading/empty/error placeholder for a tab's main query. `error` is visually distinct
+ * (destructive color + icon) from `empty` (plain muted text) — a failed fetch defaults `data` to
+ * `[]` same as a genuinely empty result, so without this the two were indistinguishable.
+ */
+function QueryStateMessage({ variant, message }: { variant: 'loading' | 'empty' | 'error'; message: string }) {
+  if (variant === 'error') {
+    return (
+      <div className="py-12 flex flex-col items-center gap-1.5 text-sm text-destructive">
+        <AlertTriangle className="h-5 w-5" />
+        {message}
+      </div>
+    );
+  }
+  return <div className="py-12 text-center text-muted-foreground">{message}</div>;
+}
+
+/**
+ * Wraps a tab's loaded content with the shared loading/error/empty branching — the mechanical
+ * part that's identical across all 3 tabs (only the content and the messages differ), pulled out
+ * so a future 4th tab can't forget the `isError` check the way the pre-fix code silently did.
+ */
+function QueryBoundary({
+  isError, isLoading, isEmpty, errorMessage, emptyMessage, children,
+}: {
+  isError: boolean;
+  isLoading: boolean;
+  isEmpty: boolean;
+  errorMessage: string;
+  emptyMessage: string;
+  children: ReactNode;
+}) {
+  if (isError) return <QueryStateMessage variant="error" message={errorMessage} />;
+  if (isLoading) return <QueryStateMessage variant="loading" message="Caricamento…" />;
+  if (isEmpty) return <QueryStateMessage variant="empty" message={emptyMessage} />;
+  return <>{children}</>;
+}
+
+/**
+ * Dashboard Termografica di Saturazione.
+ * Conta le righe per banda di criticità, raggruppate per brand × categoria prodotto,
+ * per la stagione corrente. Nessuna libreria di charting: griglia CSS/Tailwind color-coded.
+ */
+function SaturationTab() {
+  const { season, isLoading: contextLoading } = useAppContext();
+  const [selectedBrandIds, setSelectedBrandIds] = useState<string[]>([]);
+
+  const { data: brandsData } = trpc.brand.list.useQuery({ isActive: true, limit: 100 }, { enabled: !!season?.id });
+  const allBrands = brandsData?.items ?? [];
+  const brandIds = selectedBrandIds.length > 0 ? selectedBrandIds : allBrands.map(b => b.id);
+
+  const { data: cells = [], isLoading, isError } = trpc.phaseAlert.saturationHeatmap.useQuery(
+    { seasonId: season?.id ?? '', brandIds },
+    { enabled: !!season?.id && brandIds.length > 0 }
+  );
+
+  const brandsById = useMemo(() => new Map(allBrands.map(b => [b.id, b])), [allBrands]);
+  const brandColorMap = useMemo(() => assignBrandColors(allBrands), [allBrands]);
+  const categories = useMemo(() => Array.from(new Set(cells.map(c => c.productCategory))).sort(), [cells]);
+  const brandRows = useMemo(() => Array.from(new Set(cells.map(c => c.brandId))), [cells]);
+
+  const cellsByKey = useMemo(() => {
+    const map = new Map<string, typeof cells>();
+    for (const cell of cells) {
+      const key = `${cell.brandId}::${cell.productCategory}`;
+      const existing = map.get(key) ?? [];
+      existing.push(cell);
+      map.set(key, existing);
+    }
+    return map;
+  }, [cells]);
+
+  if (!season && !contextLoading) {
+    return <EmptyContextCard message="Seleziona una stagione per visualizzare la saturazione" />;
+  }
+
+  return (
+    <>
+      {allBrands.length > 1 && (
+        <div className="flex items-center gap-1.5 flex-wrap mb-4">
+          {allBrands.map(b => {
+            const selected = brandIds.includes(b.id);
+            return (
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => setSelectedBrandIds(prev =>
+                  prev.includes(b.id) ? prev.filter(id => id !== b.id) : [...prev, b.id]
+                )}
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-all',
+                  selected
+                    ? 'border-transparent text-white font-medium'
+                    : 'border-border bg-background text-muted-foreground hover:text-foreground',
+                )}
+                style={selected ? { background: resolveBrandColor(b.id, brandColorMap) } : undefined}
+              >
+                <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ background: selected ? 'rgba(255,255,255,0.6)' : resolveBrandColor(b.id, brandColorMap) }}
+                />
+                {b.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <Card>
+        <CardContent className="p-0 overflow-x-auto">
+          <QueryBoundary
+            isError={isError}
+            isLoading={isLoading}
+            isEmpty={cells.length === 0}
+            errorMessage="Errore nel caricamento dei dati di saturazione — riprova più tardi"
+            emptyMessage="Nessun dato di criticità disponibile"
+          >
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="px-3 py-2 text-left font-medium">Brand</th>
+                  {categories.map(cat => (
+                    <th key={cat} className="px-3 py-2 text-left font-medium">{cat}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {brandRows.map(brandId => (
+                  <tr key={brandId} className="border-b last:border-0">
+                    <td className="px-3 py-2 font-medium">{brandsById.get(brandId)?.name ?? brandId}</td>
+                    {categories.map(cat => {
+                      const cellData = cellsByKey.get(`${brandId}::${cat}`) ?? [];
+                      return (
+                        <td key={cat} className="px-3 py-2">
+                          <div className="flex flex-wrap gap-1">
+                            {cellData.map(c => (
+                              // Band color and emphasis come from AppConfig (admin-configured hex),
+                              // not from design tokens — no static class can express them.
+                              <Badge key={c.label} variant="outline" style={bandBadgeStyle(c)} title={c.label}>
+                                {c.count}
+                              </Badge>
+                            ))}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </QueryBoundary>
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
+/**
+ * Indice di Strozzatura.
+ * Conta le righe per banda di criticità, raggruppate per evento/milestone attivo, per il brand
+ * e la stagione correnti — identifica quale milestone specifica sta trattenendo più righe.
+ */
+function BottleneckTab() {
+  const { layout, enabled, contextLoading } = useControlLayout();
+
+  const { data: events = [], isLoading, isError } = trpc.phaseAlert.bottleneckByEvent.useQuery(
+    { collectionLayoutId: layout?.id ?? '' },
+    { enabled: !!layout?.id }
+  );
+
+  const maxCount = Math.max(1, ...events.map(e => e.bands.reduce((s, b) => s + b.count, 0)));
+
+  if (!enabled && !contextLoading) {
+    return <EmptyContextCard message="Seleziona un brand e una stagione" />;
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <QueryBoundary
+          isError={isError}
+          isLoading={isLoading}
+          isEmpty={events.length === 0}
+          errorMessage="Errore nel caricamento dell'indice di strozzatura — riprova più tardi"
+          emptyMessage="Nessun evento attivo con righe in carico"
+        >
+          <div className="space-y-4">
+            {events.map(event => {
+              const total = event.bands.reduce((s, b) => s + b.count, 0);
+              return (
+                <div key={event.eventId} className="space-y-1.5">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium">{event.eventTitle}</span>
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {formatDate(new Date(event.eventStartAt))} · {total} righe
+                    </span>
+                  </div>
+                  <div className="flex h-3 w-full rounded overflow-hidden bg-muted">
+                    {event.bands.map(b => (
+                      <div
+                        key={b.label}
+                        style={{ width: `${(b.count / maxCount) * 100}%`, backgroundColor: b.color }}
+                        title={`${b.label}: ${b.count}`}
+                      />
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {event.bands.map(b => (
+                      <Badge key={b.label} variant="outline" style={bandBadgeStyle(b)}>
+                        {b.label}: {b.count}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </QueryBoundary>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Monitoraggio Predittivo di Stagnazione.
+ * Tempo medio/mediano per fase, dallo storico CollectionRowPhaseHistory — indipendente
+ * dal motore alert, identifica righe che stagnano prima ancora di superare la soglia
+ * di criticità assoluta.
+ */
+function StagnationTab() {
+  const { layout, enabled, contextLoading } = useControlLayout();
+
+  const { data: stats = [], isLoading, isError } = trpc.phaseHistory.layoutStats.useQuery(
+    { collectionLayoutId: layout?.id ?? '' },
+    { enabled: !!layout?.id }
+  );
+
+  // Closes the picture that the phase table cannot close: the final phase has no
+  // subsequent transition to end it, so total time to completion
+  // exists only for rows marked as completed.
+  const { data: leadTime } = trpc.phaseHistory.completionLeadTime.useQuery(
+    { collectionLayoutId: layout?.id ?? '' },
+    { enabled: !!layout?.id }
+  );
+
+  const sorted = [...stats].sort((a, b) => b.avgDays - a.avgDays);
+  const maxAvg = Math.max(1, ...stats.map(s => s.avgDays));
+
+  if (!enabled && !contextLoading) {
+    return <EmptyContextCard message="Seleziona un brand e una stagione" />;
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-0">
+        {leadTime && leadTime.sampleCount > 0 && (
+          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 border-b px-3 py-2 text-sm">
+            <span className="font-medium">Tempo totale al completamento</span>
+            <span className="text-muted-foreground">
+              media <span className="tabular-nums text-foreground">{leadTime.avgDays}</span> gg ·
+              mediana <span className="tabular-nums text-foreground">{leadTime.medianDays}</span> gg ·
+              su <span className="tabular-nums text-foreground">{leadTime.sampleCount}</span> righe concluse
+            </span>
+          </div>
+        )}
+        <QueryBoundary
+          isError={isError}
+          isLoading={isLoading}
+          isEmpty={sorted.length === 0}
+          errorMessage="Errore nel caricamento dello storico fasi — riprova più tardi"
+          emptyMessage="Nessuno storico di transizione fase disponibile per questo layout"
+        >
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/50">
+                <th className="px-3 py-2 text-left font-medium">Fase</th>
+                <th className="px-3 py-2 text-left font-medium">Distribuzione</th>
+                <th className="px-3 py-2 text-right font-medium">Media (gg)</th>
+                <th className="px-3 py-2 text-right font-medium">Mediana (gg)</th>
+                <th className="px-3 py-2 text-right font-medium">Campioni</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map(s => (
+                <tr key={s.phaseId} className="border-b last:border-0">
+                  <td className="px-3 py-2 font-medium">{s.phaseLabel}</td>
+                  <td className="px-3 py-2 w-48">
+                    <div className="h-2 rounded bg-muted overflow-hidden">
+                      <div
+                        className="h-full bg-primary"
+                        style={{ width: `${(s.avgDays / maxAvg) * 100}%` }}
+                      />
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">{s.avgDays}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{s.medianDays}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{s.sampleCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </QueryBoundary>
+      </CardContent>
+    </Card>
+  );
+}

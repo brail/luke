@@ -1,41 +1,41 @@
 /**
- * Scheduler per la sincronizzazione periodica NAV → PG del portafoglio ordini.
+ * Periodic scheduler for NAV → Postgres synchronisation of the order portafoglio.
  *
- * Avvio: hook onReady di Fastify (dopo che il server è in ascolto).
- * Arresto: hook onClose di Fastify (ferma il timer).
+ * Startup: Fastify `onReady` hook (after the server begins listening).
+ * Shutdown: Fastify `onClose` hook (stops the timer).
  *
  * Design:
- * - Tick ogni 1 minuto.
- * - Legge la configurazione (autoSyncEnabled, intervalMinutes) da NavSyncFilter
- *   dove entity='portafoglio' a ogni tick — nessun restart necessario per applicare modifiche.
- * - Se non esiste configurazione il sync automatico è disabilitato.
- * - `triggerPortafoglioSyncNow()` è esportato per il tRPC handler "Aggiorna Ora".
- * - Un errore di sync non causa il crash del server.
+ * - Global tick every 1 minute.
+ * - Reads `autoSyncEnabled` and `intervalMinutes` from NavSyncFilter (entity = 'portafoglio')
+ *   on every tick — changes take effect within one minute without a restart.
+ * - Automatic sync is disabled when no configuration row exists.
+ * - `triggerPortafoglioSyncNow()` is exported for the "Sync Now" tRPC handler.
+ * - Sync errors are logged but do not crash the server.
  */
 
-import type { FastifyInstance } from 'fastify';
-import type { PrismaClient } from '@prisma/client';
-import type { Logger } from 'pino';
 
-import { getNavDbConfig, getPool } from '@luke/nav';
+import { getNavDbConfig, getPool, syncPortafoglioNow, type PortafoglioSyncResult } from '@luke/nav';
 
-import { syncPortafoglioNow, type PortafoglioSyncResult } from '../services/nav-portafoglio-sync';
 import { getConfig } from './configManager';
-import { notifyAdmins } from './notifications';
+import { guardMaintenance } from './maintenanceMode';
+import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
+import { withSchedulerLock } from './schedulerLock';
 import { sseStore } from './sseStore';
+
+import type { PrismaClient } from '@prisma/client';
+import type { FastifyInstance } from 'fastify';
+import type { Logger } from 'pino';
 
 export type { PortafoglioSyncResult };
 
 // ─── Module-level state ───────────────────────────────────────────────────────
 
-const TICK_INTERVAL_MS = 60 * 1000; // controlla ogni minuto
+const TICK_INTERVAL_MS = 60 * 1000; // checks every minute
 
 let _isRunning = false;
 let _lastRunAt: Date | null = null;
 let _prisma: PrismaClient | null = null;
 let _logger: Logger | null = null;
-let _lastSuccessNotified = 0;
-const SUCCESS_DEDUP_MS = 24 * 60 * 60 * 1000;
 
 // ─── Internal runner ──────────────────────────────────────────────────────────
 
@@ -45,30 +45,22 @@ async function _runSync(): Promise<PortafoglioSyncResult | null> {
   _isRunning = true;
   _lastRunAt = new Date();
   const log = _logger;
+  const prisma = _prisma;
   sseStore.pushToAll({ type: 'sync-state', entity: 'portafoglio', isRunning: true });
 
   try {
-    const navConfig = await getNavDbConfig(_prisma, getConfig);
+    const navConfig = await getNavDbConfig(prisma, getConfig);
     const pool = await getPool(navConfig);
-    const result = await syncPortafoglioNow(pool, navConfig.company, _prisma, log);
-    if (Date.now() - _lastSuccessNotified > SUCCESS_DEDUP_MS) {
-      await notifyAdmins(_prisma, {
-        category: 'SYSTEM',
-        title: 'Portafoglio sync completato',
-        message: `${result.totalDurationMs}ms`,
-        data: { type: 'portafoglio_sync_success' },
-      });
-      _lastSuccessNotified = Date.now();
-    }
+    const result = await syncPortafoglioNow(pool, navConfig.company, prisma, log);
     return result;
   } catch (err) {
     log.error({ err }, 'Portafoglio sync scheduler: sync fallito');
-    await notifyAdmins(_prisma, {
+    await notifyDeduped(prisma, 'portafoglio-sync:failure', SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(prisma, {
       category: 'SYSTEM',
       title: 'Portafoglio sync fallito',
       message: (err as Error).message ?? 'Errore sconosciuto',
       data: { type: 'portafoglio_sync_failure' },
-    }).catch(e => log.error({ err: e }, 'Failed to notify admins of sync failure'));
+    })).catch(e => log.error({ err: e }, 'Failed to notify admins of sync failure'));
     return null;
   } finally {
     _isRunning = false;
@@ -79,21 +71,25 @@ async function _runSync(): Promise<PortafoglioSyncResult | null> {
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Avvia un sync del portafoglio immediatamente.
- * Restituisce null se un sync è già in corso o NAV non è configurato.
- * Usato dal tRPC handler "Aggiorna Ora".
+ * Triggers an immediate portafoglio sync run.
+ *
+ * @returns Sync result, or `null` if a sync is already in progress or NAV is not configured.
  */
 export async function triggerPortafoglioSyncNow(): Promise<PortafoglioSyncResult | null> {
   return _runSync();
 }
 
-/** Restituisce true se un sync è attualmente in corso. */
+/** Returns `true` if a portafoglio sync is currently in progress. */
 export function isPortafoglioSyncRunning(): boolean {
   return _isRunning;
 }
 
 // ─── Fastify registration ────────────────────────────────────────────────────
 
+/**
+ * Registers the portafoglio sync scheduler as a Fastify plugin.
+ * Starts the tick interval on `onReady` and clears it on `onClose`.
+ */
 export function registerPortafoglioSyncScheduler(
   fastify: FastifyInstance,
   prisma: PrismaClient,
@@ -104,11 +100,11 @@ export function registerPortafoglioSyncScheduler(
   const tick = async () => {
     if (_isRunning) return;
 
-    // Controlla che NAV sia configurato prima di tentare la connessione
+    // Verifies NAV is configured before attempting connection
     const host = await getConfig(prisma, 'integrations.nav.host', false);
     if (!host) return;
 
-    // Legge la configurazione di pianificazione dal DB a ogni tick
+    // Reads scheduling configuration from DB on every tick
     const config = await prisma.navSyncFilter.findUnique({
       where: { entity: 'portafoglio' },
       select: { autoSyncEnabled: true, intervalMinutes: true },
@@ -120,17 +116,21 @@ export function registerPortafoglioSyncScheduler(
     const elapsed = _lastRunAt ? Date.now() - _lastRunAt.getTime() : Infinity;
     if (elapsed < intervalMs) return;
 
-    void _runSync();
+    // Locked around _runSync (not the outer tick): _runSync is fire-and-forget from here, so
+    // the tick itself returns almost instantly — the lock must span the actual sync work.
+    void withSchedulerLock(prisma, 'portafoglio-sync', _runSync)();
   };
+
+  const guardedTick = guardMaintenance(prisma, tick);
 
   fastify.addHook('onReady', async () => {
     _logger = fastify.log as unknown as Logger;
     fastify.log.info('Portafoglio sync scheduler: avviato (tick ogni minuto, intervallo configurabile)');
 
-    // Prima esecuzione subito dopo il ready (rispettando la config DB)
-    void tick();
+    // First execution immediately after ready (respecting DB config)
+    void guardedTick();
 
-    timer = setInterval(() => void tick(), TICK_INTERVAL_MS);
+    timer = setInterval(() => void guardedTick(), TICK_INTERVAL_MS);
   });
 
   fastify.addHook('onClose', async () => {

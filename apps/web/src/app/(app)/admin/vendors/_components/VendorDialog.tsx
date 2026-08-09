@@ -42,6 +42,17 @@ interface VendorDialogProps {
   isLoading: boolean;
 }
 
+/**
+ * Tabbed dialog for creating or editing a Vendor.
+ *
+ * "Dati generali" tab covers contact info, NAV link, and enabled pricing
+ * parameter sets (shown only when a brand+season context is active).
+ * "Chiusure" tab embeds `VendorClosurePeriodManager` and is visible only in
+ * edit mode. Write fields are disabled for users without `vendors:update`.
+ *
+ * @param vendor - Existing vendor to edit; omit for create mode.
+ * @param onSubmit - Called with validated `VendorInput` on submission.
+ */
 export function VendorDialog({
   open,
   onOpenChange,
@@ -118,7 +129,7 @@ export function VendorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[680px] max-h-[90vh] flex flex-col">
+      <DialogContent className="sm:max-w-[680px] max-h-[90vh] flex flex-col"> {/* px/vh: dialog width tuned to content, vh cap has no Tailwind scale equivalent */}
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {!canEdit && (

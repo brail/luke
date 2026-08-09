@@ -1,10 +1,10 @@
 /**
- * Core CRUD procedures per utenti
+ * Core CRUD procedures for users
  * list, getById, create, update, softDelete, hardDelete
  */
 
+import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
-import type { Prisma } from '@prisma/client';
 import argon2 from 'argon2';
 import { z } from 'zod';
 
@@ -13,20 +13,26 @@ import type { LockedFields, Role } from '@luke/core';
 import { invalidateRbacCache } from '@luke/core/server';
 
 import { logAudit } from '../lib/auditLog';
-import { createNotification } from '../lib/notifications';
 import { withAuditLog } from '../lib/auditMiddleware';
+import { toErrorCode, toErrorMessage } from '../lib/error';
 import { withIdempotency } from '../lib/idempotencyTrpc';
+import { assertNotLastAdminWithSettingsAccess } from '../lib/lastAdminGuard';
+import { createNotification } from '../lib/notifications';
+import { hashPassword } from '../lib/password';
 import { requirePermission } from '../lib/permissions';
 import { getOnlineUserIds, updatePresence } from '../lib/presenceStore';
 import { withRateLimit } from '../lib/ratelimit';
+import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
 import { router, protectedProcedure } from '../lib/trpc';
-
 import { deleteUserHandler, getLockedFields, UserIdSchema } from '../services/users.service';
 
 export const usersCoreRouter = router({
   /**
-   * Lista tutti gli utenti con paginazione e filtri
-   * Richiede permission users:read
+   * Lists all non-pending users with optional filters, sorting, and offset pagination; includes online presence status.
+   *
+   * @auth {users:read}
+   * @input {optional: { page, limit, search, role, sortBy, sortOrder }}
+   * @output {{ users: User[], total: number, page: number, limit: number, totalPages: number }}
    */
   list: protectedProcedure
     .use(requirePermission('users:read'))
@@ -80,49 +86,57 @@ export const usersCoreRouter = router({
         where.role = role;
       }
 
-      const [users, total] = await ctx.prisma.$transaction([
-        ctx.prisma.user.findMany({
-          where,
-          skip,
-          take: limit,
+      const selectFields = {
+        id: true,
+        email: true,
+        username: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        isActive: true,
+        emailVerifiedAt: true,
+        createdAt: true,
+        updatedAt: true,
+        identities: {
           select: {
             id: true,
-            email: true,
-            username: true,
-            firstName: true,
-            lastName: true,
-            role: true,
-            isActive: true,
-            emailVerifiedAt: true,
-            createdAt: true,
-            updatedAt: true,
-            identities: {
-              select: {
-                id: true,
-                provider: true,
-                providerId: true,
-                // NO localCredential, NO metadata
-              },
-            },
+            provider: true,
+            providerId: true,
+            // NO localCredential, NO metadata
           },
-          orderBy:
-            sortBy === 'provider'
-              ? undefined // Ordinamento per provider gestito dopo
-              : {
-                  [sortBy]: sortOrder,
-                },
-        }),
-        ctx.prisma.user.count({ where }),
-      ]);
+        },
+      } satisfies Prisma.UserSelect;
 
-      // Ordinamento per provider se richiesto
+      let users: Prisma.UserGetPayload<{ select: typeof selectFields }>[];
+      let total: number;
+
       if (sortBy === 'provider') {
-        users.sort((a, b) => {
+        // Provider isn't a sortable DB column (it's derived from the first
+        // linked identity): sorting correctly needs the entire result set,
+        // not just the page — otherwise the ordering only holds within the
+        // already-extracted page, not globally.
+        const all = await ctx.prisma.user.findMany({ where, select: selectFields });
+        all.sort((a, b) => {
           const providerA = a.identities?.[0]?.provider || 'LOCAL';
           const providerB = b.identities?.[0]?.provider || 'LOCAL';
           const comparison = providerA.localeCompare(providerB);
           return sortOrder === 'asc' ? comparison : -comparison;
         });
+        total = all.length;
+        users = all.slice(skip, skip + limit);
+      } else {
+        const [pageUsers, count] = await ctx.prisma.$transaction([
+          ctx.prisma.user.findMany({
+            where,
+            skip,
+            take: limit,
+            select: selectFields,
+            orderBy: { [sortBy]: sortOrder },
+          }),
+          ctx.prisma.user.count({ where }),
+        ]);
+        users = pageUsers;
+        total = count;
       }
 
       const onlineIds = getOnlineUserIds();
@@ -137,14 +151,17 @@ export const usersCoreRouter = router({
     }),
 
   /**
-   * Ottiene un utente per ID
-   * Richiede permission users:read - solo self-profile o admin
+   * Returns a user by ID; non-admin users may only fetch their own profile.
+   *
+   * @auth {users:read}
+   * @input {UserIdSchema}
+   * @output {User with identities}
    */
   getById: protectedProcedure
     .use(requirePermission('users:read'))
     .input(UserIdSchema)
     .query(async ({ input, ctx }) => {
-      // RBAC: solo self-profile o admin
+      // RBAC: self-profile or admin only
       if (
         input.id !== ctx.session.user.id &&
         !hasPermission({ role: ctx.session.user.role as Role }, '*:*')
@@ -188,17 +205,20 @@ export const usersCoreRouter = router({
     }),
 
   /**
-   * Crea un nuovo utente con identità locale
-   * Richiede permission users:create
+   * Creates a new user with a local identity and hashed password within a transaction.
+   *
+   * @auth {users:create}
+   * @input {CreateUserInputSchema}
+   * @output {User (without sensitive fields)}
    */
   create: protectedProcedure
     .use(requirePermission('users:create'))
     .use(withRateLimit('userMutations'))
+    .input(CreateUserInputSchema)
     .use(withIdempotency())
     .use(withAuditLog('USER_CREATE', 'User'))
-    .input(CreateUserInputSchema)
     .mutation(async ({ input, ctx }) => {
-      // Verifica che email e username non esistano già
+      // Verify that email and username don't already exist
       const existingUser = await ctx.prisma.user.findFirst({
         where: {
           OR: [{ email: input.email }, { username: input.username }],
@@ -215,7 +235,7 @@ export const usersCoreRouter = router({
         });
       }
 
-      // Hash della password con argon2id
+      // Hash the password with argon2id
       const passwordHash = await argon2.hash(input.password, {
         type: argon2.argon2id,
         timeCost: 3,
@@ -223,44 +243,61 @@ export const usersCoreRouter = router({
         parallelism: 1,
       });
 
-      // Crea utente, identità e credenziale in una transazione
-      const result = await ctx.prisma.$transaction(async tx => {
-        // Crea utente
-        const user = await tx.user.create({
-          data: {
-            email: input.email,
-            username: input.username,
-            firstName: input.firstName || '',
-            lastName: input.lastName || '',
-            role: input.role,
-            isActive: true,
-            pendingApproval: true,
-          },
+      // Create user, identity, and credential in a transaction
+      let result;
+      try {
+        result = await ctx.prisma.$transaction(async tx => {
+          // Create user
+          const user = await tx.user.create({
+            data: {
+              email: input.email,
+              username: input.username,
+              firstName: input.firstName || '',
+              lastName: input.lastName || '',
+              role: input.role,
+              isActive: true,
+              pendingApproval: true,
+            },
+          });
+
+          // Create local identity
+          const identity = await tx.identity.create({
+            data: {
+              userId: user.id,
+              provider: 'LOCAL',
+              providerId: input.username,
+            },
+          });
+
+          // Create local credential
+          await tx.localCredential.create({
+            data: {
+              identityId: identity.id,
+              passwordHash,
+            },
+          });
+
+          return user;
         });
+      } catch (err) {
+        // The uniqueness check above has a race window: a second concurrent
+        // request with the same email/username can arrive here before this
+        // transaction commits. The DB constraint still holds — here we
+        // translate the P2002 into the same CONFLICT as the non-race path,
+        // instead of letting it surface as a generic 500.
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: 'Email o username già esistente',
+            cause: err,
+          });
+        }
+        throw err;
+      }
 
-        // Crea identità locale
-        const identity = await tx.identity.create({
-          data: {
-            userId: user.id,
-            provider: 'LOCAL',
-            providerId: input.username,
-          },
-        });
+      // Audit logging handled automatically by the withAuditLog middleware
 
-        // Crea credenziale locale
-        await tx.localCredential.create({
-          data: {
-            identityId: identity.id,
-            passwordHash,
-          },
-        });
-
-        return user;
-      });
-
-      // Audit logging gestito automaticamente dal middleware withAuditLog
-
-      // Invio email gestito via UI dialog post-creazione
+      // Email sending handled via a post-creation UI dialog
       return {
         id: result.id,
         email: result.email,
@@ -275,19 +312,25 @@ export const usersCoreRouter = router({
     }),
 
   /**
-   * Aggiorna un utente esistente
-   * Richiede permission users:update
+   * Updates an existing user's fields, enforcing role/self-modification guards and uniqueness constraints.
+   *
+   * @auth {users:update}
+   * @input {UpdateUserInputSchema}
+   * @output {User (without sensitive fields)}
    */
   update: protectedProcedure
     .use(requirePermission('users:update'))
     .use(withRateLimit('userMutations'))
+    .input(UpdateUserInputSchema)
     .use(withIdempotency())
     .use(withAuditLog('USER_UPDATE', 'User'))
-    .input(UpdateUserInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const { id, ...updateData } = input;
+      // `password` is destructured separately from `updateData`: Prisma's `User` has no
+      // `password` column (it lives in `LocalCredential.passwordHash` via `Identity`),
+      // leaving it inside `updateData` would break `Prisma.UserUpdateInput` at compile time.
+      const { id, password, ...updateData } = input;
 
-      // Verifica che l'utente esista con identities
+      // Verify the user exists, with identities
       const existingUser = await ctx.prisma.user.findUnique({
         where: { id },
         include: {
@@ -312,6 +355,9 @@ export const usersCoreRouter = router({
       const attemptedLockedFields = Object.keys(updateData).filter(field =>
         lockedFields.includes(field as LockedFields)
       );
+      if (password !== undefined && lockedFields.includes('password')) {
+        attemptedLockedFields.push('password');
+      }
 
       if (attemptedLockedFields.length > 0) {
         throw new TRPCError({
@@ -320,7 +366,7 @@ export const usersCoreRouter = router({
         });
       }
 
-      // Protezione: impedisci auto-disabilitazione
+      // Protection: prevent self-deactivation
       if (
         updateData.isActive === false &&
         existingUser.id === ctx.session.user.id
@@ -331,7 +377,7 @@ export const usersCoreRouter = router({
         });
       }
 
-      // Protezione: impedisci auto-modifica del ruolo
+      // Protection: prevent self role-modification
       if (updateData.role && existingUser.id === ctx.session.user.id) {
         throw new TRPCError({
           code: 'FORBIDDEN',
@@ -339,29 +385,32 @@ export const usersCoreRouter = router({
         });
       }
 
-      // Protezione: impedisci rimozione ruolo admin dall'ultimo admin
+      // Protection: password reset restricted to admin (`*:*`) — `users:update` (the
+      // permission for this entire procedure) is also granted to `editor`; without this
+      // guard an editor could take over any account, including an admin's, by resetting
+      // its password and authenticating as it.
       if (
-        existingUser.role === 'admin' &&
-        updateData.role &&
-        updateData.role !== 'admin'
+        password !== undefined &&
+        !hasPermission({ role: ctx.session.user.role as Role }, '*:*')
       ) {
-        const adminCount = await ctx.prisma.user.count({
-          where: {
-            role: 'admin',
-            isActive: true,
-          },
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Solo un amministratore può reimpostare la password di un utente',
         });
-
-        if (adminCount <= 1) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message:
-              "Non puoi rimuovere il ruolo admin dall'ultimo amministratore del sistema",
-          });
-        }
       }
 
-      // Se si sta aggiornando email o username, verifica che non esistano già
+      // Protection: prevent resetting one's own password from this endpoint — an admin
+      // who wants to change their own password uses `me.changePassword` (which requires
+      // the current password, a security property this admin-to-admin path doesn't have
+      // and must not bypass).
+      if (password !== undefined && existingUser.id === ctx.session.user.id) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Usa "Cambia password" nel tuo profilo per modificare la tua password',
+        });
+      }
+
+      // If updating email or username, verify they don't already exist
       if (updateData.email || updateData.username) {
         const conflictingUser = await ctx.prisma.user.findFirst({
           where: {
@@ -395,36 +444,158 @@ export const usersCoreRouter = router({
         }
       }
 
-      const updatedUser = await ctx.prisma.user.update({
-        where: { id },
-        data: {
-          ...updateData,
-          updatedAt: new Date(),
-        },
-      });
+      // Hash outside the transaction (argon2 is CPU-bound, it must not hold a
+      // DB transaction open). `password` here is already guaranteed to be
+      // `undefined` or valid (Zod already applied `.min(12)` upstream, during
+      // input parsing).
+      const passwordHash =
+        password !== undefined ? await hashPassword(password) : undefined;
 
-      if (updateData.role && updateData.role !== existingUser.role) {
+      // A role change or a deactivation must invalidate already-issued tokens.
+      // Without the bump, `verifyTokenVersion` keeps passing and
+      // `requirePermission` reads the role from the JWT claim, never from the
+      // database: the demotion had no effect until the token expired — and
+      // `auth.refreshToken`, which re-signed from that same claim, kept
+      // postponing it indefinitely. A demoted admin stayed admin forever.
+      // Read inside the transaction (not from `existingUser`, computed earlier):
+      // a concurrent promotion/demotion on the same user must not be able to
+      // skip either this bump or the last-admin guard below.
+      let txResult;
+      try {
+        txResult = await ctx.prisma.$transaction(async tx => {
+          const current = await tx.user.findUnique({
+            where: { id },
+            select: { role: true, isActive: true },
+          });
+
+          if (
+            updateData.role !== undefined &&
+            updateData.role !== current?.role &&
+            !hasPermission({ role: ctx.session.user.role as Role }, '*:*')
+          ) {
+            throw new TRPCError({
+              code: 'FORBIDDEN',
+              message: 'Solo un amministratore può modificare il ruolo di un utente',
+            });
+          }
+
+          const revokesSessions =
+            (updateData.role !== undefined && updateData.role !== current?.role) ||
+            (updateData.isActive !== undefined &&
+              updateData.isActive !== current?.isActive) ||
+            passwordHash !== undefined;
+
+          const removesAdminPrivilege =
+            current?.role === 'admin' &&
+            ((updateData.role !== undefined && updateData.role !== 'admin') ||
+              updateData.isActive === false);
+
+          if (removesAdminPrivilege) {
+            await assertNotLastAdminWithSettingsAccess(
+              tx,
+              id,
+              "Non puoi rimuovere i privilegi amministrativi dall'ultimo amministratore del sistema"
+            );
+          }
+
+          // The guard above + `getLockedFields` guarantee that, if we get here with
+          // `passwordHash` set, the provider is LOCAL — `identities[0]` is therefore
+          // the LOCAL credential to update.
+          if (passwordHash !== undefined) {
+            await tx.localCredential.update({
+              where: { identityId: existingUser.identities[0].id },
+              data: { passwordHash, updatedAt: new Date() },
+            });
+          }
+
+          const updated = await tx.user.update({
+            where: { id },
+            data: {
+              ...updateData,
+              updatedAt: new Date(),
+              ...(revokesSessions ? { tokenVersion: { increment: 1 } } : {}),
+            },
+          });
+
+          return { updated, revokesSessions, current };
+        });
+      } catch (err) {
+        // Same race window as the check above: a second request with the
+        // same email/username can commit between the findFirst and this
+        // update. The DB constraint still holds — we translate the P2002
+        // into the same CONFLICT as the non-race path.
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: 'Email o username già esistente',
+            cause: err,
+          });
+        }
+        throw err;
+      }
+      const { updated: updatedUser, revokesSessions, current } = txResult;
+
+      if (revokesSessions) {
+        invalidateTokenVersionCache(id);
+      }
+
+      // The mutation is already committed: a notification failure must not
+      // masquerade as a failure of the update itself.
+      if (updateData.role && updateData.role !== current?.role) {
         invalidateRbacCache();
-        await createNotification(ctx.prisma, {
-          userId: input.id,
-          category: 'WORKFLOW',
-          title: 'Ruolo aggiornato',
-          message: `Il tuo ruolo è cambiato da "${existingUser.role}" a "${updateData.role}"`,
-          data: { oldRole: existingUser.role, newRole: updateData.role },
-        });
+        try {
+          await createNotification(ctx.prisma, {
+            userId: input.id,
+            category: 'WORKFLOW',
+            title: 'Ruolo aggiornato',
+            message: `Il tuo ruolo è cambiato da "${current?.role}" a "${updateData.role}"`,
+            data: { oldRole: current?.role, newRole: updateData.role },
+          });
+        } catch (err) {
+          ctx.logger.error({ err, userId: input.id }, 'Notifica cambio ruolo fallita dopo update riuscito');
+        }
       }
 
-      if (typeof updateData.isActive === 'boolean' && updateData.isActive !== existingUser.isActive) {
-        await createNotification(ctx.prisma, {
-          userId: input.id,
-          category: 'WORKFLOW',
-          title: updateData.isActive ? 'Account attivato' : 'Account disattivato',
-          message: updateData.isActive ? 'Il tuo account è stato attivato' : 'Il tuo account è stato disattivato',
-          data: { isActive: updateData.isActive },
-        });
+      if (typeof updateData.isActive === 'boolean' && updateData.isActive !== current?.isActive) {
+        try {
+          await createNotification(ctx.prisma, {
+            userId: input.id,
+            category: 'WORKFLOW',
+            title: updateData.isActive ? 'Account attivato' : 'Account disattivato',
+            message: updateData.isActive ? 'Il tuo account è stato attivato' : 'Il tuo account è stato disattivato',
+            data: { isActive: updateData.isActive },
+          });
+        } catch (err) {
+          ctx.logger.error({ err, userId: input.id }, 'Notifica cambio stato attivo fallita dopo update riuscito');
+        }
       }
 
-      // Audit logging gestito automaticamente dal middleware withAuditLog
+      if (passwordHash !== undefined) {
+        // Dedicated audit entry (in addition to the generic USER_UPDATE from the
+        // `withAuditLog` middleware) — `USER_PASSWORD_RESET_BY_ADMIN` is in
+        // `CRITICAL_AUDIT_ACTIONS`, so `logAudit` here rethrows if the write fails
+        // instead of swallowing it, same pattern as `PASSWORD_CHANGED` in
+        // `auth.service.ts`.
+        await logAudit(ctx, {
+          action: 'USER_PASSWORD_RESET_BY_ADMIN',
+          targetType: 'User',
+          targetId: id,
+          result: 'SUCCESS',
+          metadata: { resetBy: ctx.session.user.id },
+        });
+        try {
+          await createNotification(ctx.prisma, {
+            userId: input.id,
+            category: 'WORKFLOW',
+            title: 'Password reimpostata',
+            message: 'La tua password è stata reimpostata da un amministratore',
+          });
+        } catch (err) {
+          ctx.logger.error({ err, userId: input.id }, 'Notifica reset password fallita dopo update riuscito');
+        }
+      }
+
+      // Audit logging handled automatically by the withAuditLog middleware
 
       return {
         id: updatedUser.id,
@@ -440,20 +611,25 @@ export const usersCoreRouter = router({
     }),
 
   /**
-   * Elimina un utente (soft delete)
-   * Imposta isActive = false invece di eliminare il record
-   * Richiede permission users:delete
+   * Soft-deletes a user by setting isActive to false without removing the record.
+   *
+   * @auth {users:delete}
+   * @input {UserIdSchema}
+   * @output {void}
    */
   softDelete: protectedProcedure
     .use(requirePermission('users:delete'))
     .use(withRateLimit('userMutations'))
-    .use(withAuditLog('USER_DELETE', 'User'))
     .input(UserIdSchema)
+    .use(withAuditLog('USER_DELETE', 'User'))
     .mutation(deleteUserHandler),
 
   /**
-   * Heartbeat di presenza: aggiorna il timestamp online dell'utente corrente.
-   * Chiamato ogni 60s dal client autenticato.
+   * Presence heartbeat: updates the online timestamp for the currently authenticated user.
+   *
+   * @auth {authenticated}
+   * @input {none}
+   * @output {{ ok: true }}
    */
   heartbeat: protectedProcedure.mutation(({ ctx }) => {
     updatePresence(ctx.session.user.id);
@@ -461,9 +637,11 @@ export const usersCoreRouter = router({
   }),
 
   /**
-   * Hard delete di un utente (elimina completamente dal database)
-   * ATTENZIONE: Questa operazione è irreversibile
-   * Richiede permission users:delete
+   * Permanently deletes a user and all cascade relations; blocked for self or last remaining admin.
+   *
+   * @auth {users:delete}
+   * @input {UserIdSchema}
+   * @output {{ success: true, message: string }}
    */
   hardDelete: protectedProcedure
     .use(requirePermission('users:delete'))
@@ -481,7 +659,7 @@ export const usersCoreRouter = router({
         });
       }
 
-      // Protezione: impedisci auto-eliminazione definitiva
+      // Protection: prevent permanent self-deletion
       if (user.id === ctx.session.user.id) {
         throw new TRPCError({
           code: 'FORBIDDEN',
@@ -489,40 +667,45 @@ export const usersCoreRouter = router({
         });
       }
 
-      // Protezione: impedisci eliminazione definitiva dell'ultimo admin
-      if (hasPermission({ role: user.role as Role }, '*:*')) {
-        const adminCount = await ctx.prisma.user.count({
-          where: {
-            role: 'admin',
-            isActive: true,
-          },
-        });
-
-        if (adminCount <= 1) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message:
-              "Non puoi eliminare definitivamente l'ultimo amministratore del sistema",
-          });
-        }
-      }
-
-      // Hard delete: elimina utente e tutte le relazioni (cascade)
+      // Hard delete: deletes user and all relations (cascade)
       try {
-        await ctx.prisma.user.delete({
-          where: { id: input.id },
+        const deletedSnapshot = await ctx.prisma.$transaction(async tx => {
+          const current = await tx.user.findUnique({
+            where: { id: input.id },
+            select: { role: true, email: true, username: true },
+          });
+          if (current && hasPermission({ role: current.role as Role }, '*:*')) {
+            await assertNotLastAdminWithSettingsAccess(
+              tx,
+              input.id,
+              "Non puoi eliminare definitivamente l'ultimo amministratore del sistema"
+            );
+          }
+
+          await tx.user.delete({
+            where: { id: input.id },
+          });
+
+          return current;
         });
 
-        // Log SUCCESS dopo delete riuscita
+        invalidateTokenVersionCache(input.id);
+
+        // Log SUCCESS after a successful delete — snapshot read inside the
+        // transaction (not the outer pre-transaction one): reflects the
+        // actually-deleted state even if a concurrent update on the same
+        // user happened in the meantime. Falls back to the outer snapshot
+        // only in the unlikely case that `current` is null (the user would
+        // already be gone anyway, and the delete above would have thrown).
         await logAudit(ctx, {
           action: 'USER_HARD_DELETE',
           targetType: 'User',
           targetId: input.id,
           result: 'SUCCESS',
           metadata: {
-            deletedEmail: user.email,
-            deletedUsername: user.username,
-            deletedRole: user.role,
+            deletedEmail: deletedSnapshot?.email ?? user.email,
+            deletedUsername: deletedSnapshot?.username ?? user.username,
+            deletedRole: deletedSnapshot?.role ?? user.role,
           },
         });
 
@@ -535,8 +718,8 @@ export const usersCoreRouter = router({
           targetId: input.id,
           result: 'FAILURE',
           metadata: {
-            errorCode: (error as any).code || 'UNKNOWN',
-            errorMessage: (error as any).message?.substring(0, 100),
+            errorCode: toErrorCode(error),
+            errorMessage: toErrorMessage(error).substring(0, 100),
           },
         });
         throw error;

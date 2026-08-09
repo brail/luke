@@ -1,6 +1,6 @@
 /**
- * Test Helpers per Luke API
- * Utilities per mock context, caller factory e gestione DB isolato
+ * Test Helpers for Luke API
+ * Utilities for mock context, caller factory and isolated DB management
  */
 
 import { randomUUID } from 'crypto';
@@ -10,66 +10,56 @@ import { PrismaClient } from '@prisma/client';
 import Fastify from 'fastify';
 
 import { buildHelmetConfig } from '../src/lib/helmet';
+import { hashPassword } from '../src/lib/password';
 import { type Context } from '../src/lib/trpc';
 import { appRouter } from '../src/routers/index';
+
+import { setupTestDb as setupSharedTestDb } from './helpers/database';
+import { createSilentLogger } from './helpers/logger';
 
 import type { UserSession } from '../src/lib/auth';
 
 /**
- * Database di test isolato
+ * Isolated test database
  */
 let testPrisma: PrismaClient;
 
 /**
- * Inizializza il database di test
+ * Initializes the test database.
+ * Delegates to `helpers/database.ts`, the single source for the URL and schema reset.
  */
 export async function setupTestDb(): Promise<PrismaClient> {
-  // Usa un database di test completamente separato
-  const testDbPath = './test.db';
-  testPrisma = new PrismaClient({
-    datasources: {
-      db: {
-        url: `file:${testDbPath}`,
-      },
-    },
-  });
-
-  // Applica le migrazioni al database di test
-  const { execSync } = await import('child_process');
-  try {
-    execSync('npx prisma migrate deploy', {
-      cwd: process.cwd(),
-      stdio: 'pipe',
-      env: {
-        ...process.env,
-        DATABASE_URL: `file:${testDbPath}`,
-      },
-    });
-  } catch (error) {
-    console.warn('Failed to apply migrations:', error);
-  }
-
+  testPrisma = await setupSharedTestDb();
   return testPrisma;
 }
 
 /**
- * Pulisce il database di test
+ * Password for test users. Needed by tests that exercise `me.changePassword`:
+ * without a local credential the router responds FORBIDDEN ("password change
+ * not allowed for external providers") instead of UNAUTHORIZED, and the test
+ * ends up measuring the wrong branch.
  */
-export async function teardownTestDb(): Promise<void> {
-  if (testPrisma) {
-    await testPrisma.$disconnect();
+export const TEST_USER_PASSWORD = 'TestPassw0rd!23';
 
-    // Rimuovi il file del database di test
-    const { unlinkSync, existsSync } = await import('fs');
-    const testDbPath = './test.db';
-    if (existsSync(testDbPath)) {
-      unlinkSync(testDbPath);
-    }
-  }
+/**
+ * Hash of the test password, computed once per file.
+ *
+ * `ARGON2_OPTIONS` is tuned for production (64 MB, 3 iterations): ~90ms per
+ * hash. The password is a constant, so redoing the hash on every
+ * `createTestUser` meant ~3s per integration run to produce the same result
+ * dozens of times over. Memoizes the promise, not the string: concurrent
+ * calls share the same computation instead of each starting their own.
+ */
+let testPasswordHash: Promise<string> | null = null;
+
+function getTestPasswordHash(): Promise<string> {
+  testPasswordHash ??= hashPassword(TEST_USER_PASSWORD);
+  return testPasswordHash;
 }
 
 /**
- * Crea un utente di test con ruolo specificato
+ * Creates a test user with the specified role, complete with local identity
+ * and credential — i.e. a real local user, not a shell.
  */
 export async function createTestUser(
   role: 'admin' | 'editor' | 'viewer'
@@ -77,7 +67,7 @@ export async function createTestUser(
   user: any;
   session: UserSession;
 }> {
-  // Genera identificatori univoci usando timestamp + random
+  // Generates unique identifiers using timestamp + random
   const timestamp = Date.now();
   const random = Math.random().toString(36).substring(2, 8);
   const uniqueId = `${timestamp}-${random}`;
@@ -90,16 +80,23 @@ export async function createTestUser(
       lastName: 'User',
       role,
       isActive: true,
-      emailVerifiedAt: new Date(), // Campo richiesto per i test
+      emailVerifiedAt: new Date(), // Field required for tests
     },
   });
 
-  // Crea identità locale per l'utente
-  await testPrisma.identity.create({
+  // Creates local identity + credential for the user
+  const identity = await testPrisma.identity.create({
     data: {
       userId: user.id,
       provider: 'LOCAL',
-      providerId: `${role}-${uniqueId}`, // Assicura unicità
+      providerId: `${role}-${uniqueId}`, // Ensures uniqueness
+    },
+  });
+
+  await testPrisma.localCredential.create({
+    data: {
+      identityId: identity.id,
+      passwordHash: await getTestPasswordHash(),
     },
   });
 
@@ -117,27 +114,17 @@ export async function createTestUser(
 }
 
 /**
- * Crea un context di test con sessione opzionale
+ * Creates a test context with an optional session
  */
 export function createTestContext(session: UserSession | null = null): Context {
   return {
     prisma: testPrisma,
     session,
-    logger: {
-      info: () => {},
-      error: () => {},
-      warn: () => {},
-      debug: () => {},
-    },
+    logger: createSilentLogger(),
     req: {
       headers: { 'x-luke-trace-id': randomUUID() },
       ip: '127.0.0.1',
-      log: {
-        info: () => {},
-        error: () => {},
-        warn: () => {},
-        debug: () => {},
-      },
+      log: createSilentLogger(),
     } as any,
     res: {} as any,
     traceId: randomUUID(),
@@ -145,25 +132,25 @@ export function createTestContext(session: UserSession | null = null): Context {
 }
 
 /**
- * Crea un caller tRPC per un ruolo specifico
+ * Creates a tRPC caller for a specific role
  */
 export async function createCallerAs(
   role: 'admin' | 'editor' | 'viewer' | null
 ) {
   if (role === null) {
-    // Nessuna sessione (non autenticato)
+    // No session (unauthenticated)
     const ctx = createTestContext(null);
     return appRouter.createCaller(ctx);
   }
 
-  // Crea utente e sessione per il ruolo
+  // Creates user and session for the role
   const { session } = await createTestUser(role);
   const ctx = createTestContext(session);
   return appRouter.createCaller(ctx);
 }
 
 /**
- * Crea un caller tRPC con sessione specifica
+ * Creates a tRPC caller with a specific session
  */
 export function createCallerWithSession(session: UserSession) {
   const ctx = createTestContext(session);
@@ -171,14 +158,14 @@ export function createCallerWithSession(session: UserSession) {
 }
 
 /**
- * Crea un caller tRPC senza autenticazione
+ * Creates a tRPC caller without authentication
  */
 export function createAnonymousCaller() {
   return createCallerAs(null);
 }
 
 /**
- * Crea un caller tRPC con idempotency-key specifica
+ * Creates a tRPC caller with a specific idempotency-key
  */
 export async function createCallerWithIdempotency(
   idempotencyKey: string,
@@ -198,30 +185,7 @@ export async function createCallerWithIdempotency(
 }
 
 /**
- * Crea un mock request con header specifico
- */
-export function mockReqWithHeader(
-  headerName: string,
-  value: string,
-  ip: string = '127.0.0.1'
-) {
-  return {
-    ip,
-    headers: {
-      [headerName]: value,
-      'x-luke-trace-id': randomUUID(),
-    },
-    log: {
-      info: () => {},
-      error: () => {},
-      warn: () => {},
-      debug: () => {},
-    },
-  };
-}
-
-/**
- * Crea un caller tRPC con IP specifico (per test rate-limit)
+ * Creates a tRPC caller with a specific IP (for rate-limit tests)
  */
 export async function createCallerWithIP(
   ip: string,
@@ -235,52 +199,50 @@ export async function createCallerWithIP(
 }
 
 /**
- * Helper per aspettare che una promessa venga risolta o rifiutata
+ * Helper to wait for a promise to resolve or reject
  */
 export async function expectToThrow<T>(
   promise: Promise<T>,
   expectedError?: { code?: string; message?: string }
 ): Promise<void> {
+  // The "didn't throw" case must be distinguished BEFORE entering the catch:
+  // the previous version threw inside the `try`, its own `catch` intercepted
+  // that Error (which has no `.code`) and reported "Expected error code 'X',
+  // got 'undefined'" — i.e. an error-code failure instead of "the promise
+  // resolved". Wrong diagnosis on every test of this kind.
+  let caught: any;
+  let threw = false;
+
   try {
     await promise;
+  } catch (error) {
+    threw = true;
+    caught = error;
+  }
+
+  if (!threw) {
     throw new Error('Expected promise to throw, but it resolved');
-  } catch (error: any) {
-    if (expectedError) {
-      if (expectedError.code && error.code !== expectedError.code) {
-        throw new Error(
-          `Expected error code '${expectedError.code}', got '${error.code}'`
-        );
-      }
-      if (
-        expectedError.message &&
-        !error.message.includes(expectedError.message)
-      ) {
-        throw new Error(
-          `Expected error message to contain '${expectedError.message}', got '${error.message}'`
-        );
-      }
+  }
+
+  if (expectedError) {
+    if (expectedError.code && caught.code !== expectedError.code) {
+      throw new Error(
+        `Expected error code '${expectedError.code}', got '${caught.code}'`
+      );
+    }
+    if (
+      expectedError.message &&
+      !caught.message.includes(expectedError.message)
+    ) {
+      throw new Error(
+        `Expected error message to contain '${expectedError.message}', got '${caught.message}'`
+      );
     }
   }
 }
 
 /**
- * Helper per verificare che un'operazione sia autorizzata
- */
-export async function expectAuthorized<T>(
-  operation: () => Promise<T>
-): Promise<T> {
-  try {
-    return await operation();
-  } catch (error: any) {
-    if (error.code === 'UNAUTHORIZED' || error.code === 'FORBIDDEN') {
-      throw new Error(`Operation was not authorized: ${error.message}`);
-    }
-    throw error;
-  }
-}
-
-/**
- * Helper per verificare che un'operazione sia negata
+ * Helper to verify that an operation is denied
  */
 export async function expectUnauthorized(
   operation: () => Promise<any>,
@@ -299,18 +261,18 @@ export async function expectUnauthorized(
 }
 
 /**
- * Crea un server Fastify isolato per test HTTP
- * Registra solo i plugin essenziali per testare security headers
+ * Creates an isolated Fastify server for HTTP tests
+ * Registers only the essential plugins to test security headers
  */
 export async function buildTestServer() {
   const fastify = Fastify({
-    logger: false, // Disabilita logging per test
+    logger: false, // Disables logging for tests
   });
 
-  // Registra Helmet con configurazione per test
+  // Registers Helmet with test configuration
   await fastify.register(helmet, buildHelmetConfig('test'));
 
-  // Registra route di test per verificare headers
+  // Registers test route to verify headers
   fastify.get('/api/health', async () => {
     return {
       status: 'ok',
@@ -321,7 +283,7 @@ export async function buildTestServer() {
     };
   });
 
-  // Route root per test
+  // Root route for tests
   fastify.get('/', async () => {
     return {
       message: 'Luke API Test Server',
@@ -334,28 +296,40 @@ export async function buildTestServer() {
 }
 
 /**
- * Configurazione di test per RBAC
+ * Re-exports of the modules under `helpers/`, which make this file the
+ * single barrel for the test surface.
+ *
+ * **They are load-bearing even if no spec imports from here.** They aren't
+ * for convenience: they're there to make name collisions collide. Two
+ * same-named helpers in different files become a compile error here,
+ * instead of two imports that look interchangeable and aren't. This already
+ * happened — `createTestContext` existed synchronously in this file (takes
+ * a `UserSession`, doesn't touch the database) and asynchronously in
+ * `helpers/testContext.ts` (creates a real user and truncates data), and
+ * the choice between the two depended on which path you'd imported.
+ *
+ * Explicit, not `export *`: `export *` collisions fall under TS2308, which
+ * has edge cases in ambiguity resolution; a duplicate explicit re-export is
+ * a clean, immediate error.
+ *
+ * When adding an export to a `helpers/` module, add it here too — that's
+ * what keeps the check active.
  */
-export const RBAC_TEST_CONFIG = {
-  roles: ['admin', 'editor', 'viewer'] as const,
-  adminOnlyMutations: [
-    'users.create',
-    'users.update',
-    'users.delete',
-    'users.hardDelete',
-    'users.revokeUserSessions',
-    'config.set',
-    'config.update',
-    'config.delete',
-    'integrations.storage.saveConfig',
-    'integrations.mail.saveConfig',
-    'integrations.auth.saveLdapConfig',
-  ],
-  adminOrEditorQueries: ['users.list'],
-  protectedMutations: [
-    'me.updateProfile',
-    'me.changePassword',
-    'me.revokeAllSessions',
-  ],
-  publicEndpoints: ['auth.login', 'integrations.test'],
-} as const;
+export { createContextForRole } from './helpers/testContext';
+export { createSilentLogger } from './helpers/logger';
+export {
+  getTestDatabaseUrl,
+  createTestPrismaClient,
+  getTestPrismaClient,
+  ensureTestSchema,
+  resetTestData,
+  disconnectTestDb,
+} from './helpers/database';
+export {
+  MockStorageProvider,
+  createTestContextWithMockStorage,
+  createTestFile,
+  createValidPngBuffer,
+  createValidJpegBuffer,
+  createInvalidImageBuffer,
+} from './helpers/storageTestHelper';

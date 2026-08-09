@@ -6,7 +6,6 @@ import { z } from 'zod';
 
 import { PasswordValidationIndicators } from './PasswordValidationIndicators';
 import { Button } from './ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 
@@ -72,7 +71,13 @@ type UserFormData = CreateUserData | EditUserData;
 
 interface UserFormProps {
   mode: 'create' | 'edit';
-  initialData?: Partial<UserFormData> & { provider?: string };
+  // firstName/lastName accept `null` here (not just `undefined`) because initialData is prefilled
+  // from a DB-backed user record where those columns are nullable; the submitted UserFormData stays plain string.
+  initialData?: Partial<Omit<UserFormData, 'firstName' | 'lastName'>> & {
+    firstName?: string | null;
+    lastName?: string | null;
+    provider?: string;
+  };
   onSubmit: (data: UserFormData) => void;
   onCancel: () => void;
   isLoading?: boolean;
@@ -85,13 +90,21 @@ interface UserFormProps {
     | 'password'
   )[];
   isSelfEdit?: boolean;
+  /** Whether the current user may reset this user's password in edit mode (requires `*:*`). */
+  canResetPassword?: boolean;
 }
 
 /**
- * Componente form per creazione e modifica utenti
- * Gestisce validazione client-side e stato del form
+ * Form for creating or editing a user with client-side Zod validation.
+ *
+ * In `edit` mode the password field is optional; leaving it blank retains the
+ * existing password. Fields listed in `syncedFields` (e.g. from LDAP) are
+ * rendered as read-only and excluded from the submitted payload.
+ *
+ * @param syncedFields - Field names managed by an external provider; rendered disabled and omitted from `onSubmit`.
+ * @param isSelfEdit - Prevents the current user from modifying their own role or active status.
+ * @param canResetPassword - When false in edit mode, disables the password field (only `*:*` may reset another user's password).
  */
- 
 export function UserForm({
   mode,
   initialData,
@@ -100,8 +113,9 @@ export function UserForm({
   isLoading = false,
   syncedFields = [],
   isSelfEdit = false,
+  canResetPassword = true,
 }: UserFormProps) {
-  // Determina se l'utente è LDAP
+  // Determine if user is LDAP
   const isLdapUser = initialData?.provider === 'LDAP';
   const [formData, setFormData] = useState<UserFormData>({
     email: initialData?.email || '',
@@ -122,16 +136,16 @@ export function UserForm({
   ) => {
     setFormData(prev => ({ ...prev, [field]: value }));
 
-    // Rimuovi errore quando l'utente inizia a digitare
+    // Clear error when user starts typing
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
 
-    // Validazione in tempo reale per password (semplificata)
+    // Real-time password validation (simplified)
     if (field === 'password') {
       const passwordValue = value as string;
-      // La validazione avanzata è gestita dal componente PasswordValidationIndicators
-      // Qui gestiamo solo la validazione di base per il form
+      // Advanced validation is handled by PasswordValidationIndicators component
+      // Here we only handle basic validation for the form
       if (
         passwordValue &&
         passwordValue.length > 0 &&
@@ -146,25 +160,25 @@ export function UserForm({
       }
     }
 
-    // Validazione in tempo reale per conferma password
+    // Real-time confirmation password validation
     if (field === 'confirmPassword') {
       const confirmPasswordValue = value as string;
       const passwordValue = formData.password;
 
       if (mode === 'edit') {
-        // In edit mode, se password è vuota, confirmPassword deve essere vuota
+        // In edit mode, if password is empty, confirmPassword must be empty
         if (!passwordValue || passwordValue.trim() === '') {
           if (confirmPasswordValue && confirmPasswordValue.trim() !== '') {
             setErrors(prev => ({
               ...prev,
               confirmPassword:
-                'Conferma password non necessaria se password è vuota',
+                'Confirm password not needed if password is empty',
             }));
           } else {
             setErrors(prev => ({ ...prev, confirmPassword: '' }));
           }
         } else {
-          // Se password è presente, deve coincidere
+          // If password is present, must match
           if (confirmPasswordValue && confirmPasswordValue !== passwordValue) {
             setErrors(prev => ({
               ...prev,
@@ -178,7 +192,7 @@ export function UserForm({
           }
         }
       } else {
-        // Modalità create: password deve coincidere
+        // Create mode: password must match
         if (confirmPasswordValue && confirmPasswordValue !== passwordValue) {
           setErrors(prev => ({
             ...prev,
@@ -197,32 +211,32 @@ export function UserForm({
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    // Usa lo schema corretto in base alla modalità
+    // Use correct schema based on mode
     const schema = mode === 'create' ? CreateUserSchema : EditUserSchema;
     const result = schema.safeParse(formData);
 
     if (!result.success) {
       const fieldErrors: Record<string, string> = {};
-      result.error.errors.forEach(error => {
-        if (error.path[0]) {
-          fieldErrors[error.path[0] as string] = error.message;
+      result.error.issues.forEach(issue => {
+        if (issue.path[0]) {
+          fieldErrors[issue.path[0] as string] = issue.message;
         }
       });
       setErrors(fieldErrors);
       return;
     }
 
-    // Rimuovi confirmPassword dai dati prima di inviare
+    // Remove confirmPassword from data before sending
     const { confirmPassword: _confirmPassword, ...dataToSubmit } = result.data;
 
-    // Per edit mode, se password è vuota, rimuovila dai dati
+    // In edit mode, if password is empty, remove it from data
     if (
       mode === 'edit' &&
       (!formData.password || formData.password.trim() === '')
     ) {
       const { password: _password, ...dataWithoutPassword } = dataToSubmit;
 
-      // Rimuovi i campi sincronizzati dai dati da inviare
+      // Remove synced fields from data to send
       const filteredData = { ...dataWithoutPassword };
       syncedFields?.forEach(field => {
         delete filteredData[field as keyof typeof filteredData];
@@ -230,7 +244,7 @@ export function UserForm({
 
       onSubmit(filteredData as UserFormData);
     } else {
-      // Rimuovi i campi sincronizzati dai dati da inviare
+      // Remove synced fields from data to send
       const filteredData = { ...dataToSubmit };
       syncedFields?.forEach(field => {
         delete filteredData[field as keyof typeof filteredData];
@@ -241,14 +255,8 @@ export function UserForm({
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>
-          {mode === 'create' ? 'Nuovo Utente' : 'Modifica Utente'}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
           {/* Prima riga: Email e Username */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Email */}
@@ -402,7 +410,10 @@ export function UserForm({
                     : 'Lascia vuoto per non modificare la password'
                 }
                 className={errors.password ? 'border-destructive' : ''}
-                disabled={syncedFields?.includes('password')}
+                disabled={
+                  syncedFields?.includes('password') ||
+                  (mode === 'edit' && !canResetPassword)
+                }
               />
               {errors.password && (
                 <p className="text-sm text-destructive">{errors.password}</p>
@@ -412,11 +423,20 @@ export function UserForm({
                   Campo sincronizzato esternamente
                 </p>
               )}
-              {mode === 'edit' && !syncedFields?.includes('password') && (
-                <p className="text-xs text-muted-foreground">
-                  Lascia vuoto se non vuoi modificare la password attuale
-                </p>
-              )}
+              {mode === 'edit' &&
+                !syncedFields?.includes('password') &&
+                !canResetPassword && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Solo un amministratore può reimpostare la password di un utente
+                  </p>
+                )}
+              {mode === 'edit' &&
+                !syncedFields?.includes('password') &&
+                canResetPassword && (
+                  <p className="text-xs text-muted-foreground">
+                    Lascia vuoto se non vuoi modificare la password attuale
+                  </p>
+                )}
 
               {/* Indicatori validazione password */}
               <PasswordValidationIndicators
@@ -487,27 +507,26 @@ export function UserForm({
               )}
             </Label>
           </div>
+      </div>
 
-          {/* Pulsanti */}
-          <div className="flex justify-end space-x-2 pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onCancel}
-              disabled={isLoading}
-            >
-              Annulla
-            </Button>
-            <Button type="submit" disabled={isLoading}>
-              {isLoading
-                ? 'Salvataggio...'
-                : mode === 'create'
-                  ? 'Crea Utente'
-                  : 'Salva Modifiche'}
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+      {/* Pulsanti */}
+      <div className="flex justify-end space-x-2 px-6 py-4 border-t shrink-0">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onCancel}
+          disabled={isLoading}
+        >
+          Annulla
+        </Button>
+        <Button type="submit" disabled={isLoading}>
+          {isLoading
+            ? 'Salvataggio...'
+            : mode === 'create'
+              ? 'Crea Utente'
+              : 'Salva Modifiche'}
+        </Button>
+      </div>
+    </form>
   );
 }

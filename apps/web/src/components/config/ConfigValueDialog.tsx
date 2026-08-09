@@ -1,20 +1,16 @@
-/**
- * Dialog per visualizzare il valore completo di una configurazione
- * Read-only con possibilità di copiare il valore
- */
-
 import { Copy, Check, Code } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner';
 
+import { COPY_ERROR_MESSAGE, useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import {
   formatJsonExpanded,
   formatJsonCompact,
-} from '../../lib/config-helpers';
+} from '../../lib/configHelpers';
 import { Button } from '../ui/button';
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogDescription,
@@ -26,12 +22,20 @@ interface ConfigValueDialogProps {
   keyName?: string;
 }
 
+/**
+ * Read-only dialog that displays the full value of an AppConfig entry.
+ *
+ * Detects JSON values and offers an expand/compact toggle. Provides a copy-to-clipboard button.
+ *
+ * @param value - The plain-text config value to display (never an encrypted value).
+ * @param keyName - Optional config key shown in the dialog title for context.
+ */
 export function ConfigValueDialog({
   onOpenChange,
   value,
   keyName,
 }: ConfigValueDialogProps) {
-  const [copied, setCopied] = useState(false);
+  const { copy, copiedValue } = useCopyToClipboard();
   const [isJsonExpanded, setIsJsonExpanded] = useState(false);
 
   // Verifica se il valore è un JSON
@@ -42,21 +46,10 @@ export function ConfigValueDialog({
       : formatJsonCompact(value)
     : value;
 
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      toast.success('Valore copiato negli appunti');
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      toast.error('Errore durante la copia');
-    }
-  };
-
   return (
     <Dialog open={true} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[80vh] w-full">
-        <DialogHeader>
+      <DialogContent className="max-w-4xl max-h-[80vh] w-full p-0 gap-0 flex flex-col"> {/* vh: no Tailwind scale equivalent for viewport-relative height */}
+        <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle>
             Valore Configurazione
             {keyName && (
@@ -71,14 +64,15 @@ export function ConfigValueDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
           <div className="bg-muted p-4 rounded-lg">
             <pre className="whitespace-pre-wrap break-all text-sm overflow-auto max-h-96 font-mono">
               {displayValue}
             </pre>
           </div>
+        </div>
 
-          <div className="flex justify-between">
+          <DialogFooter className="flex-row justify-between sm:justify-between sm:space-x-0 px-6 py-4 border-t shrink-0">
             {isJson && (
               <Button
                 variant="outline"
@@ -94,10 +88,10 @@ export function ConfigValueDialog({
             <Button
               variant="outline"
               size="sm"
-              onClick={handleCopy}
+              onClick={() => copy(value, { successMessage: 'Valore copiato negli appunti', errorMessage: COPY_ERROR_MESSAGE })}
               className="flex items-center gap-2"
             >
-              {copied ? (
+              {copiedValue === value ? (
                 <>
                   <Check className="w-4 h-4" />
                   Copiato
@@ -109,8 +103,7 @@ export function ConfigValueDialog({
                 </>
               )}
             </Button>
-          </div>
-        </div>
+          </DialogFooter>
       </DialogContent>
     </Dialog>
   );

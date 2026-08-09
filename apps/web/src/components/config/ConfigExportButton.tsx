@@ -1,13 +1,8 @@
-/**
- * Componente per esportare le configurazioni in formato JSON
- * Maschera i valori cifrati per sicurezza
- */
-
-import { Download, Loader2 } from 'lucide-react';
+import { Download, LoaderCircle } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { generateExportFileName } from '../../lib/config-helpers';
+import { generateExportFileName } from '../../lib/configHelpers';
 import { debugError } from '../../lib/debug';
 import { trpc } from '../../lib/trpc';
 import { Button } from '../ui/button';
@@ -17,6 +12,12 @@ interface ConfigExportButtonProps {
   disabled?: boolean;
 }
 
+/**
+ * Button that exports all AppConfig entries as a JSON file download.
+ *
+ * Encrypted values are replaced with `[ENCRYPTED]` in the export for security.
+ * Triggers a browser download via a temporary object URL.
+ */
 export function ConfigExportButton({ className, disabled }: ConfigExportButtonProps) {
   const [isExporting, setIsExporting] = useState(false);
 
@@ -33,7 +34,7 @@ export function ConfigExportButton({ className, disabled }: ConfigExportButtonPr
 
       // Prepara i dati per l'export
       const exportData = {
-        configs: result.configs.map((config: any) => ({
+        configs: result.configs.map(config => ({
           key: config.key,
           value: config.value,
           encrypt: config.isEncrypted,
@@ -77,7 +78,7 @@ export function ConfigExportButton({ className, disabled }: ConfigExportButtonPr
     >
       {isExporting ? (
         <>
-          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          <LoaderCircle className="w-4 h-4 mr-2 animate-spin" />
           Esportazione...
         </>
       ) : (

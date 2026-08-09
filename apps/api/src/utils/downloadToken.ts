@@ -1,50 +1,43 @@
 /**
- * Download Token HMAC per storage
+ * Download/Export Token HMAC
  *
- * Sistema stateless per generare e verificare token temporanei
- * per download di file dallo storage.
+ * Stateless system for generating and verifying temporary download/export tokens —
+ * for files from storage (bucket/key) or data generated on-the-fly (e.g. audit log CSV).
  *
- * Sicurezza:
- * - HMAC-SHA256 con chiave derivata via HKDF
- * - TTL breve (5 minuti)
+ * Security:
+ * - HMAC-SHA256 with a key derived via HKDF
+ * - Short TTL (5 minutes)
  * - Stateless (no Redis/DB)
- * - Payload minimo (bucket, key, exp)
+ * - Minimal payload (exp [, extra])
  */
 
 import { createHmac, timingSafeEqual } from 'crypto';
 
+import type { AuditLogFilters, BackupExportHeader, StorageBucket } from '@luke/core';
 import { deriveSecret } from '@luke/core/server';
 
-import type { StorageBucket } from '@luke/core';
 
 /**
- * TTL dei token download (5 minuti)
+ * Token TTL (5 minutes)
  */
 const DOWNLOAD_TOKEN_TTL_MS = 5 * 60 * 1000;
 
 /**
- * Chiave HMAC derivata via HKDF
+ * HMAC key derived via HKDF
  * Info: "luke:download-token"
  */
 const HMAC_KEY = deriveSecret('luke:download-token');
 
-/**
- * Payload del token download
- */
-export interface DownloadTokenPayload {
-  /** Bucket del file */
-  bucket: StorageBucket;
-  /** Chiave del file */
-  key: string;
-  /** Timestamp di scadenza (Unix ms) */
+/** Field common to every payload signed by this module: expiry. The rest of the payload (bucket/key, filters, ...) is specific to each token variant and passed via `requiredKeys` to `verifyTokenPayload`. */
+interface BaseTokenPayload {
   exp: number;
 }
 
 /**
- * Firma un payload con HMAC-SHA256
+ * Signs a payload with HMAC-SHA256
  *
- * @param payload - Payload da firmare (JSON minified)
- * @returns Firma HMAC in base64url
+ * @param payload - Payload to sign (JSON minified)
+ * @returns HMAC signature in base64url
  */
 function signPayload(payload: string): string {
   const hmac = createHmac('sha256', HMAC_KEY);
@@ -60,14 +53,7 @@ function signPayload(payload: string): string {
 }
 
 /**
- * Verifica una firma HMAC in modo timing-safe
- *
- * @param payload - Payload originale
- * @param signature - Firma da verificare (base64url)
- * @returns true se la firma è valida
- */
-/**
- * Verifica una firma HMAC in modo timing-safe
+ * Verifies an HMAC signature in a timing-safe way
  *
  * Compares raw 32-byte HMAC digests directly so the comparison has constant
  * length regardless of the provided signature string, eliminating the timing
@@ -102,70 +88,36 @@ function verifySignature(payload: string, signature: string): boolean {
 }
 
 /**
- * Genera un token firmato per download di un file
- *
- * Formato token: base64url(payload).base64url(signature)
- *
- * @param params - Parametri del token
- * @returns Token firmato
- *
- * @example
- * const token = signDownloadToken({ bucket: 'uploads', key: '2025/10/file.pdf' });
- * // Ritorna: "eyJidWNrZXQiOiJ1cGxvYWRzI...".abcd1234...
+ * Signs a payload (exp + variant-specific fields) in the
+ * `base64url(payload).base64url(signature)` format, shared by all token variants
+ * (plain download, export with an attached header, audit log CSV export, ...).
  */
-export function signDownloadToken(params: {
-  bucket: StorageBucket;
-  key: string;
-  exp?: number;
-}): string {
-  const now = Date.now();
-  const exp = params.exp || now + DOWNLOAD_TOKEN_TTL_MS;
-
-  const payload: DownloadTokenPayload = {
-    bucket: params.bucket,
-    key: params.key,
-    exp,
-  };
-
-  // JSON minified (no whitespace)
+function signTokenPayload<T extends BaseTokenPayload>(payload: T): string {
   const payloadStr = JSON.stringify(payload);
 
-  // Base64url encode payload
   const payloadB64 = Buffer.from(payloadStr, 'utf8')
     .toString('base64')
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=/g, '');
 
-  // Firma payload
   const signature = signPayload(payloadStr);
 
-  // Token: payload.signature
   return `${payloadB64}.${signature}`;
 }
 
 /**
- * Verifica e decodifica un token download
+ * Verifies and decodes a token signed by `signTokenPayload`.
  *
- * @param token - Token da verificare
- * @returns Payload decodificato se valido
- * @throws Error se token invalido o scaduto
- *
- * @example
- * try {
- *   const { bucket, key } = verifyDownloadToken(token);
- *   // Download file da bucket/key
- * } catch (error) {
- *   // Token invalido
- * }
+ * @param token - Token to verify
+ * @param requiredKeys - Fields besides `exp` that must be present (e.g. `['bucket', 'key']`)
+ * @throws Error if the token is invalid, incomplete, or expired
  */
-export function verifyDownloadToken(token: string): DownloadTokenPayload {
-  // Valida formato base
+function verifyTokenPayload<T extends BaseTokenPayload>(token: string, requiredKeys: (keyof T)[] = []): T {
   if (!token || typeof token !== 'string') {
     throw new Error('Token invalido');
   }
 
-  // Split payload.signature
   const parts = token.split('.');
   if (parts.length !== 2) {
     throw new Error('Token formato invalido');
@@ -173,44 +125,188 @@ export function verifyDownloadToken(token: string): DownloadTokenPayload {
 
   const [payloadB64, signature] = parts;
 
-  // Decode payload
   let payloadStr: string;
   try {
-    // Converti da base64url a base64 standard
     const base64 = payloadB64.replace(/-/g, '+').replace(/_/g, '/');
-    // Aggiungi padding se necessario
-    const padded = base64.padEnd(
-      base64.length + ((4 - (base64.length % 4)) % 4),
-      '='
-    );
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
     payloadStr = Buffer.from(padded, 'base64').toString('utf8');
   } catch {
     throw new Error('Token payload invalido');
   }
 
-  // Parse JSON
-  let payload: DownloadTokenPayload;
+  let payload: T;
   try {
     payload = JSON.parse(payloadStr);
   } catch {
     throw new Error('Token payload JSON invalido');
   }
 
-  // Valida campi obbligatori
-  if (!payload.bucket || !payload.key || typeof payload.exp !== 'number') {
+  if (typeof payload.exp !== 'number') {
     throw new Error('Token payload incompleto');
   }
+  for (const key of requiredKeys) {
+    if (payload[key] === undefined) {
+      throw new Error('Token payload incompleto');
+    }
+  }
 
-  // Verifica firma HMAC
   if (!verifySignature(payloadStr, signature)) {
     throw new Error('Token firma invalida');
   }
 
-  // Verifica scadenza
-  const now = Date.now();
-  if (payload.exp < now) {
+  if (payload.exp < Date.now()) {
     throw new Error('Token scaduto');
   }
 
   return payload;
+}
+
+/**
+ * Download token payload
+ */
+export interface DownloadTokenPayload extends BaseTokenPayload {
+  bucket: StorageBucket;
+  key: string;
+}
+
+/**
+ * Generates a signed token for downloading a file
+ *
+ * Token format: base64url(payload).base64url(signature)
+ *
+ * @example
+ * const token = signDownloadToken({ bucket: 'uploads', key: '2025/10/file.pdf' });
+ * // Returns: "eyJidWNrZXQiOiJ1cGxvYWRzI...".abcd1234...
+ */
+export function signDownloadToken(params: {
+  bucket: StorageBucket;
+  key: string;
+  exp?: number;
+}): string {
+  const exp = params.exp || Date.now() + DOWNLOAD_TOKEN_TTL_MS;
+  return signTokenPayload<DownloadTokenPayload>({ bucket: params.bucket, key: params.key, exp });
+}
+
+/**
+ * Verifies and decodes a download token
+ *
+ * @throws Error if the token is invalid or expired
+ *
+ * @example
+ * try {
+ *   const { bucket, key } = verifyDownloadToken(token);
+ *   // Download file from bucket/key
+ * } catch (error) {
+ *   // Invalid token
+ * }
+ */
+export function verifyDownloadToken(token: string): DownloadTokenPayload {
+  return verifyTokenPayload<DownloadTokenPayload>(token, ['bucket', 'key']);
+}
+
+/**
+ * Upload token payload — binds an upload slot to bucket, key **and user**.
+ *
+ * `confirmUpload` used to accept bucket and key directly from the input, without
+ * ever comparing them against what storage actually contains. The bucket was
+ * constrained by the enum, the key wasn't: it was enough to call it with the key
+ * of a blob uploaded by someone else to get a `FileObject` created with your own
+ * `createdBy`. From there the `confirmPendingFile` predicate (`createdBy === userId`)
+ * passes, and someone else's file gets linked as your own logo — the predicate
+ * verifies ownership of the *row*, and it's `confirmUpload` that decides who owns
+ * the row.
+ *
+ * Binding the key to the slot the server allocated closes the hole without any
+ * round-trip to storage, which wouldn't have a `head`/`exists` anyway
+ * (`IStorageProvider` only exposes put/get/delete/list).
+ */
+export interface UploadTokenPayload extends BaseTokenPayload {
+  bucket: StorageBucket;
+  key: string;
+  /** The user the slot was assigned to: only they can confirm it. */
+  userId: string;
+}
+
+/**
+ * Signs the slot allocated by `requestUpload`.
+ *
+ * @param ttlMs - Align it to the presigned URL's expiry, don't leave the
+ *   default: a slow upload on a poor network would exceed 5 minutes and
+ *   fail at confirmation, with the blob already uploaded.
+ */
+export function signUploadToken(params: {
+  bucket: StorageBucket;
+  key: string;
+  userId: string;
+  ttlMs?: number;
+}): string {
+  const exp = Date.now() + (params.ttlMs ?? DOWNLOAD_TOKEN_TTL_MS);
+  return signTokenPayload<UploadTokenPayload>({
+    bucket: params.bucket,
+    key: params.key,
+    userId: params.userId,
+    exp,
+  });
+}
+
+/**
+ * Verifies an upload token.
+ *
+ * The caller must compare `userId` against the session: the signature proves
+ * that the server allocated that slot, not that they are the one using it.
+ *
+ * @throws Error if the token is invalid, incomplete, or expired.
+ */
+export function verifyUploadToken(token: string): UploadTokenPayload {
+  return verifyTokenPayload<UploadTokenPayload>(token, ['bucket', 'key', 'userId']);
+}
+
+/**
+ * Export token payload — same stateless HMAC signature as `DownloadTokenPayload`, but also
+ * includes the `.lukebak` envelope header (already passphrase-encrypted, never the secret
+ * in plaintext) so the streaming route doesn't need to re-read the DB to reconstruct it.
+ */
+export interface ExportTokenPayload extends BaseTokenPayload {
+  bucket: StorageBucket;
+  key: string;
+  header: BackupExportHeader;
+}
+
+/** Signs a token for exporting a backup (same HMAC as `signDownloadToken`, extended payload). */
+export function signExportToken(params: {
+  bucket: StorageBucket;
+  key: string;
+  header: BackupExportHeader;
+  exp?: number;
+}): string {
+  const exp = params.exp || Date.now() + DOWNLOAD_TOKEN_TTL_MS;
+  return signTokenPayload<ExportTokenPayload>({ bucket: params.bucket, key: params.key, header: params.header, exp });
+}
+
+/** Verifies and decodes an export token. @throws Error if the token is invalid or expired. */
+export function verifyExportToken(token: string): ExportTokenPayload {
+  return verifyTokenPayload<ExportTokenPayload>(token, ['bucket', 'key', 'header']);
+}
+
+/**
+ * Audit log CSV export token payload — same stateless HMAC as the other variants,
+ * but without bucket/key: it's not a file already present in storage, the CSV is
+ * generated on-the-fly from the filters encapsulated in the token.
+ */
+export interface AuditLogExportTokenPayload extends BaseTokenPayload {
+  filters: AuditLogFilters;
+}
+
+/** Signs a token for the audit log CSV export, encapsulating the applied filters. */
+export function signAuditLogExportToken(params: {
+  filters: AuditLogFilters;
+  exp?: number;
+}): string {
+  const exp = params.exp || Date.now() + DOWNLOAD_TOKEN_TTL_MS;
+  return signTokenPayload<AuditLogExportTokenPayload>({ filters: params.filters, exp });
+}
+
+/** Verifies and decodes an audit log export token. @throws Error if the token is invalid or expired. */
+export function verifyAuditLogExportToken(token: string): AuditLogExportTokenPayload {
+  return verifyTokenPayload<AuditLogExportTokenPayload>(token, ['filters']);
 }

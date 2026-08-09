@@ -1,20 +1,29 @@
-import type { PrismaClient, Prisma } from '@prisma/client';
-import type { Logger } from 'pino';
-import type mssql from 'mssql';
-
 import { sanitizeCompany } from '../config.js';
+
+import { buildNavSyncFilter, buildWhereClause, createSyncRequest, processInBatches } from './utils.js';
+
 import type { NavDbConfig } from '../config.js';
 import type { SyncResult } from './vendors.js';
-import { buildNavSyncFilter, buildWhereClause, processInBatches } from './utils.js';
+import type { PrismaClient, Prisma } from '@prisma/client';
+import type mssql from 'mssql';
+import type { Logger } from 'pino';
 
 const UPSERT_BATCH_SIZE = 100;
 
 /**
- * Sincronizza [COMPANY$Season] di NAV → tabella nav_seasons di Postgres.
+ * Syncs `[COMPANY$Season]` from NAV into the `nav_seasons` Postgres table,
+ * and creates or updates the corresponding local `Season` record.
  *
- * Sync completo (no watermark differenziale): [COMPANY$Season] espone solo il
- * campo timestamp SQL Server (rowversion binario), non una data di modifica.
- * La tabella è tipicamente piccola (<100 record) quindi il full sync è preferibile.
+ * Always performs a full sync (no differential watermark) because the NAV
+ * Season table exposes only a SQL Server `rowversion` (binary), not a
+ * modification date. The table is typically small (<100 rows).
+ *
+ * Local `Season` records that already exist with the same code but no NAV
+ * link are skipped (not auto-created); the user must link them manually.
+ * Only `name` is updated on existing local seasons — `isActive` and other
+ * enriched fields are never touched.
+ *
+ * @returns `SyncResult` with the count of successfully upserted records
  */
 export async function syncSeasons(
   pool: mssql.ConnectionPool,
@@ -35,9 +44,7 @@ export async function syncSeasons(
   const whereClause = buildWhereClause(filterPredicates);
 
   const tableName = `[${sanitizeCompany(config.company)}$Season]`;
-  const request = pool.request();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (request as any).timeout = 60_000;
+  const request = createSyncRequest(pool);
   bindParams(request);
 
   const result = await request.query<{
@@ -50,7 +57,7 @@ export async function syncSeasons(
   const rows = result.recordset;
 
   if (rows.length === 0) {
-    logger.info({ entity, filterMode, upserted: 0 }, 'NAV sync: nessun record da aggiornare');
+    logger.info({ entity, filterMode, upserted: 0 }, 'NAV sync: no records to update');
     return { entity, upserted: 0, skipped: false, filterMode };
   }
 
@@ -64,7 +71,7 @@ export async function syncSeasons(
     const endingDate = row['Ending Date'] ?? null;
 
     try {
-      // Atomico: replica NAV + anagrafica locale in un'unica transaction.
+      // Atomic: NAV replica + local master data in a single transaction.
       await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         await tx.navSeason.upsert({
           where: { navCode },
@@ -72,19 +79,19 @@ export async function syncSeasons(
           update: { description, startingDate, endingDate, syncedAt },
         });
 
-        // Guard: se esiste già una season locale con lo stesso code ma senza collegamento NAV,
-        // non auto-creare — l'utente deve collegarla manualmente.
+        // Guard: if a local season already exists with the same code but no NAV link,
+        // do not auto-create — the user must link it manually.
         const localConflict = await tx.season.findFirst({
           where: { code: navCode, navSeasonId: null },
           select: { id: true },
         });
         if (localConflict) {
-          logger.warn({ entity, navCode }, 'NAV sync: season locale con stesso code senza NAV link — skip auto-create');
+          logger.warn({ entity, navCode }, 'NAV sync: local season with same code without NAV link — skip auto-create');
           return;
         }
 
-        // Upsert season locale: crea se non esiste, aggiorna solo name.
-        // MAI toccare isActive né altri campi arricchiti.
+        // Upsert local season: create if not exist, update only name.
+        // NEVER touch isActive or other enriched fields.
         await tx.season.upsert({
           where: { navSeasonId: navCode },
           create: { code: navCode, name: description, navSeasonId: navCode, isActive: true },

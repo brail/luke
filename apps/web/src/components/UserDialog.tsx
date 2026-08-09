@@ -13,16 +13,25 @@ interface User {
   id: string;
   email: string;
   username: string;
-  firstName?: string;
-  lastName?: string;
+  firstName?: string | null;
+  lastName?: string | null;
   role: 'admin' | 'editor' | 'viewer';
   isActive: boolean;
-  createdAt: Date;
-  updatedAt: Date;
   identities?: Array<{
     provider: 'LOCAL' | 'LDAP' | 'OIDC';
     providerId: string;
   }>;
+}
+
+export interface UserDialogSubmitData {
+  email: string;
+  username: string;
+  firstName?: string;
+  lastName?: string;
+  password?: string;
+  confirmPassword?: string;
+  role: 'admin' | 'editor' | 'viewer';
+  isActive: boolean;
 }
 
 interface UserDialogProps {
@@ -30,16 +39,7 @@ interface UserDialogProps {
   onOpenChange: (open: boolean) => void;
   mode: 'create' | 'edit';
   user?: User;
-  onSubmit: (userData: {
-    email: string;
-    username: string;
-    firstName?: string;
-    lastName?: string;
-    password?: string;
-    confirmPassword?: string;
-    role: 'admin' | 'editor' | 'viewer';
-    isActive: boolean;
-  }) => void;
+  onSubmit: (userData: UserDialogSubmitData) => void;
   isLoading?: boolean;
   syncedFields?: (
     | 'email'
@@ -50,11 +50,17 @@ interface UserDialogProps {
     | 'password'
   )[];
   isSelfEdit?: boolean;
+  /** Whether the current user may reset another user's password (requires `*:*`). Defaults to `true` for callers that don't gate this (e.g. self-service create flows outside admin settings). */
+  canResetPassword?: boolean;
 }
 
 /**
- * Dialog modal per creazione e modifica utenti
- * Wrapper del UserForm con gestione modal
+ * Modal dialog for creating or editing a user, wrapping `UserForm`.
+ *
+ * @param mode - `create` shows a blank form; `edit` pre-populates fields from `user`.
+ * @param syncedFields - Fields managed externally (e.g. LDAP) are rendered as read-only.
+ * @param isSelfEdit - When true, prevents the user from changing their own role or disabling their own account.
+ * @param canResetPassword - When false, disables the password field in edit mode with an explanatory note.
  */
 export function UserDialog({
   open,
@@ -65,6 +71,7 @@ export function UserDialog({
   isLoading = false,
   syncedFields,
   isSelfEdit = false,
+  canResetPassword = true,
 }: UserDialogProps) {
   void open; // Usa il parametro open per evitare warning
 
@@ -87,8 +94,8 @@ export function UserDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] p-0 gap-0 flex flex-col"> {/* px/vh: dialog width tuned to content, vh cap has no Tailwind scale equivalent */}
+        <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle>
             {mode === 'create' ? 'Nuovo Utente' : 'Modifica Utente'}
           </DialogTitle>
@@ -110,6 +117,7 @@ export function UserDialog({
           isLoading={isLoading}
           syncedFields={syncedFields}
           isSelfEdit={isSelfEdit}
+          canResetPassword={canResetPassword}
         />
       </DialogContent>
     </Dialog>

@@ -1,42 +1,48 @@
 /**
  * Portafoglio Ordini / Analisi Venduto — NAV query module
  *
- * Replica in T-SQL la catena di query Access:
+ * Replicates in T-SQL the chain of Access queries:
  *   def01-ANALISIVENDUTO-PIVOT → ... → qSoloVendNoFiltr-STEP0
  *
- * Genera il set di dati completo per il download Excel del portafoglio ordini.
+ * Generates the complete dataset for Excel download of order portfolio.
  */
 
-import type * as mssql from 'mssql';
 import pino from 'pino';
 
 import { sanitizeCompany } from '../config.js';
+import { createSyncRequest } from '../sync/utils.js';
+
+import type * as mssql from 'mssql';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+/**
+ * Filter parameters for the Portafoglio Ordini query.
+ * Season and trademark are mandatory; agent and customer are optional.
+ */
 export interface PortafoglioParams {
-  /** Codice stagione NAV (es. 'E26'). Obbligatorio — viene dal contesto. */
+  /** NAV season code (e.g. 'E26'). Mandatory — comes from context. */
   seasonCode: string;
-  /** Codice marchio NAV (Shortcut Dimension 2, es. 'CPH'). Obbligatorio — viene dal contesto. */
+  /** NAV trademark code (Shortcut Dimension 2, e.g. 'CPH'). Mandatory — comes from context. */
   trademarkCode: string;
-  /** Codice agente (Salesperson Code). Opzionale. */
+  /** Salesperson code (Salesperson Code). Optional. */
   salespersonCode?: string;
-  /** Codice cliente Sell-to (Customer No_). Opzionale. */
+  /** Sell-to customer code (Customer No_). Optional. */
   customerCode?: string;
 }
 
 /**
- * Riga del risultato del portafoglio ordini.
- * Usa Record per evitare di tipizzare ~150 colonne NAV custom.
- * Il builder xlsx usa le chiavi del primo record come intestazioni.
+ * Single row returned by the Portafoglio Ordini query.
+ * Typed as a loose record to avoid enumerating ~150 NAV-specific columns.
+ * The xlsx builder uses keys from the first record as column headers.
  */
 export type PortafoglioRow = Record<string, unknown>;
 
 // ─── Query builder ────────────────────────────────────────────────────────────
 
 /**
- * Costruisce il nome completo della tabella NAV con company prefix.
- * Usa sanitizeCompany già chiamato per evitare ricalcoli.
+ * Constructs the full NAV table name with company prefix.
+ * Uses already-sanitized company to avoid recalculation.
  */
 function tableRef(sanitizedCompany: string, tableName: string): string {
   return `[${sanitizedCompany}$${tableName}]`;
@@ -761,22 +767,23 @@ OPTION (RECOMPILE);
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Esegue il portafoglio ordini completo su NAV SQL Server.
+ * Executes the full Portafoglio Ordini query against NAV SQL Server and returns
+ * all matching order lines with aggregated shipping, invoicing, and commission data.
  *
- * @param pool    - Pool di connessione mssql (da getPool())
- * @param company - Nome azienda NAV grezzo (es. 'NewEra') — viene sanitizzato internamente
- * @param params  - Parametri di filtro (season e trademark obbligatori)
- * @param logger  - Logger Pino
- * @returns Array di righe (Record<string, unknown>) pronte per il builder xlsx
+ * The company name is sanitized internally before being embedded in table identifiers.
+ *
+ * @param pool - mssql connection pool (from `getPool()`)
+ * @param company - Raw NAV company name (e.g. `'NewEra'`); bracket-escaped before use
+ * @param params - Filter parameters; `seasonCode` and `trademarkCode` are required
+ * @param logger - Pino logger instance (defaults to `info` level)
+ * @returns Array of rows ready for the xlsx builder; column names match NAV field aliases
  *
  * @example
- * ```typescript
  * const rows = await queryPortafoglioOrdini(pool, config.company, {
  *   seasonCode: 'E26',
  *   trademarkCode: 'CPH',
  *   salespersonCode: '1184',
  * }, logger);
- * ```
  */
 export async function queryPortafoglioOrdini(
   pool: mssql.ConnectionPool,
@@ -796,7 +803,9 @@ export async function queryPortafoglioOrdini(
     'NAV portafoglio query start',
   );
 
-  const request = pool.request();
+  // Heaviest multi-join in the package — deserves the same timeout as
+  // sync modules, not the driver default.
+  const request = createSyncRequest(pool);
 
   // Parameters — brand and season are always required (from context)
   request.input('SeasonCode', params.seasonCode);

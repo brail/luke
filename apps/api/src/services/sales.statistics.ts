@@ -1,9 +1,8 @@
 /**
- * Sales statistics service — xlsx builder (streaming)
- *
- * Usa ExcelJS WorkbookWriter (streaming) invece del Workbook in-memory per evitare
- * OOM su dataset grandi (es. 76.000 righe × 100 colonne = ~4 GB heap con il builder
- * classico). Il builder streaming scrive ogni riga su stream e la libera subito.
+ * Sales statistics service — streaming XLSX builder.
+ * Uses ExcelJS WorkbookWriter (streaming) instead of the in-memory Workbook to avoid OOM
+ * on large datasets (e.g. 76,000 rows × 100 columns ≈ 4 GB heap with the classic builder).
+ * Each row is committed and released immediately, keeping memory usage O(1).
  */
 
 import ExcelJS from 'exceljs';
@@ -14,7 +13,7 @@ import {
   type XlsxMeta,
   applyStreamingHeaderStyle,
   createStreamingBuffer,
-} from '../lib/export/xlsx-streaming';
+} from '../lib/export/xlsxStreaming';
 
 // ─── Column formatting hints ─────────────────────────────────────────────────
 
@@ -53,9 +52,12 @@ const DATE_COLUMNS = new Set([
 // ─── Builder ─────────────────────────────────────────────────────────────────
 
 /**
- * Costruisce un buffer xlsx dal risultato del portafoglio ordini usando il
- * WorkbookWriter in streaming. Ogni riga viene scritta su stream e rilasciata
- * immediatamente: memoria O(1) rispetto alle righe (non O(n)).
+ * Builds an XLSX buffer from order-portfolio rows using the streaming WorkbookWriter.
+ * Each row is written and committed immediately, keeping memory usage O(1).
+ *
+ * @param sheetName - Worksheet tab name (default `'Portafoglio'`).
+ * @param meta - Optional workbook metadata (title, author, etc.).
+ * @returns A Buffer containing the complete XLSX file.
  */
 export async function buildPortafoglioXlsx(
   rows: PortafoglioRow[],
@@ -75,15 +77,15 @@ export async function buildPortafoglioXlsx(
 
   const columns = Object.keys(rows[0]!);
 
-  // Larghezze colonne — va impostato PRIMA di aggiungere righe in streaming
+  // Column widths — must be set BEFORE adding rows in streaming
   sheet.columns = columns.map(key => ({ key, width: 18 }));
 
-  // Riga intestazione
+  // Header row
   const headerRow = sheet.addRow(columns);
   applyStreamingHeaderStyle(headerRow, 'report');
   await (headerRow as ExcelJS.Row & { commit(): Promise<void> }).commit();
 
-  // Righe dati — commit immediato = memoria liberata dopo ogni riga
+  // Data rows — immediate commit = memory freed after each row
   for (const row of rows) {
     const values = columns.map(col => {
       const val = row[col];

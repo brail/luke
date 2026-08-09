@@ -25,13 +25,6 @@ import {
 } from '../../../../components/ui/dialog';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../../../../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../components/ui/tabs';
 import {
   Tooltip,
@@ -48,7 +41,6 @@ const TYPE_LABELS: Record<CollectionCatalogType, string> = {
   strategy:         'Strategy',
   lineStatus:       'Line Status',
   styleStatus:      'Style Status',
-  progress:         'Progress',
   revisionType:     'Tipo revisione',
   pricePositioning: 'Posizionamento Prezzo',
 };
@@ -62,7 +54,6 @@ type CatalogItem = {
   order: number;
   isActive: boolean;
   iso9001Categories: Iso9001Category[];
-  expectedMinProgress: string | null;
 };
 
 type ItemDialogState = { mode: 'create'; type: CollectionCatalogType } | { mode: 'edit'; item: CatalogItem };
@@ -83,11 +74,6 @@ export default function CollectionCatalogPage() {
   const { data: items = [], isLoading } = trpc.collectionCatalog.listAll.useQuery(
     { type: activeTab },
     { staleTime: 30 * 1000 },
-  );
-
-  const { data: progressItems = [] } = trpc.collectionCatalog.list.useQuery(
-    { type: 'progress' },
-    { staleTime: 5 * 60 * 1000 },
   );
 
   const createMutation = trpc.collectionCatalog.create.useMutation({
@@ -147,7 +133,7 @@ export default function CollectionCatalogPage() {
                     <Button
                       size="sm"
                       disabled={!canWrite}
-                      className={cn(!canWrite && 'opacity-50 cursor-not-allowed')}
+                      className={!canWrite ? 'opacity-50 cursor-not-allowed' : undefined}
                       onClick={() => canWrite && setItemDialog({ mode: 'create', type: activeTab })}
                     >
                       <Plus className="mr-1 h-4 w-4" />
@@ -220,9 +206,9 @@ export default function CollectionCatalogPage() {
                                     <TooltipTrigger asChild>
                                       <span>
                                         <Button
-                                          size="icon"
+                                          size="icon-sm"
                                           variant="ghost"
-                                          className={cn('h-7 w-7', !canWrite && 'opacity-50 cursor-not-allowed')}
+                                          className={!canWrite ? 'opacity-50 cursor-not-allowed' : undefined}
                                           disabled={!canWrite || restoreMutation.isPending}
                                           onClick={() => canWrite && restoreMutation.mutate({ id: item.id })}
                                         >
@@ -240,9 +226,9 @@ export default function CollectionCatalogPage() {
                                       <TooltipTrigger asChild>
                                         <span>
                                           <Button
-                                            size="icon"
+                                            size="icon-sm"
                                             variant="ghost"
-                                            className={cn('h-7 w-7', !canWrite && 'opacity-50 cursor-not-allowed')}
+                                            className={!canWrite ? 'opacity-50 cursor-not-allowed' : undefined}
                                             disabled={!canWrite || isMutating}
                                             onClick={() => canWrite && setItemDialog({ mode: 'edit', item })}
                                           >
@@ -259,9 +245,9 @@ export default function CollectionCatalogPage() {
                                       <TooltipTrigger asChild>
                                         <span>
                                           <Button
-                                            size="icon"
+                                            size="icon-sm"
                                             variant="ghost"
-                                            className={cn('h-7 w-7 text-destructive', !canWrite && 'opacity-50 cursor-not-allowed')}
+                                            className={cn('text-destructive', !canWrite && 'opacity-50 cursor-not-allowed')}
                                             disabled={!canWrite || isMutating}
                                             onClick={() => canWrite && setDeletingItem(item)}
                                           >
@@ -291,7 +277,6 @@ export default function CollectionCatalogPage() {
       {itemDialog && (
         <CatalogItemDialog
           state={itemDialog}
-          progressItems={progressItems as CatalogItem[]}
           onClose={() => setItemDialog(null)}
           onSubmit={(data) => {
             if (itemDialog.mode === 'create') {
@@ -326,20 +311,16 @@ export default function CollectionCatalogPage() {
 type DialogSubmitData = {
   value: string;
   label: string;
-  code?: string | null;
   iso9001Categories?: Iso9001Category[] | null;
-  expectedMinProgress?: string | null;
 };
 
 function CatalogItemDialog({
   state,
-  progressItems,
   onClose,
   onSubmit,
   isLoading,
 }: {
   state: ItemDialogState;
-  progressItems: CatalogItem[];
   onClose: () => void;
   onSubmit: (data: DialogSubmitData) => void;
   isLoading: boolean;
@@ -349,15 +330,10 @@ function CatalogItemDialog({
 
   const [value, setValue] = useState(initial?.value ?? '');
   const [label, setLabel] = useState(initial?.label ?? '');
-  const [code, setCode] = useState(initial?.code ?? '');
   const [selectedCategories, setSelectedCategories] = useState<Iso9001Category[]>(
     (initial?.iso9001Categories ?? []) as Iso9001Category[]
   );
-  const [expectedMinProgress, setExpectedMinProgress] = useState<string>(
-    initial?.expectedMinProgress ?? ''
-  );
 
-  const isProgress     = activeType === 'progress';
   const isRevisionType = activeType === 'revisionType';
 
   const canSubmit =
@@ -375,9 +351,7 @@ function CatalogItemDialog({
     onSubmit({
       value: value.trim(),
       label: label.trim(),
-      code: isProgress ? (code.trim() || null) : null,
       iso9001Categories: isRevisionType ? selectedCategories : null,
-      expectedMinProgress: isRevisionType ? (expectedMinProgress || null) : null,
     });
   };
 
@@ -417,20 +391,6 @@ function CatalogItemDialog({
             />
           </div>
 
-          {isProgress && (
-            <div className="space-y-1.5">
-              <Label htmlFor="cat-code">Codice (es. 01)</Label>
-              <Input
-                id="cat-code"
-                value={code}
-                onChange={e => setCode(e.target.value)}
-                placeholder="es. 01"
-                maxLength={10}
-              />
-              <p className="text-xs text-muted-foreground">Mostrato come "{code || '01'} — {label || 'Label'}"</p>
-            </div>
-          )}
-
           {isRevisionType && (
             <>
               <div className="space-y-2">
@@ -450,27 +410,6 @@ function CatalogItemDialog({
                 {selectedCategories.length === 0 && (
                   <p className="text-xs text-destructive">Selezionare almeno una categoria</p>
                 )}
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="cat-progress">Progress minimo atteso (opzionale)</Label>
-                <Select
-                  value={expectedMinProgress || '_none'}
-                  onValueChange={v => setExpectedMinProgress(v === '_none' ? '' : v)}
-                >
-                  <SelectTrigger id="cat-progress">
-                    <SelectValue placeholder="Nessuno" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_none">Nessuno</SelectItem>
-                    {progressItems.filter(p => p.isActive).map(p => (
-                      <SelectItem key={p.value} value={p.value}>
-                        {p.code ? `${p.code} — ${p.label}` : p.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">Se impostato, avvisa il PM se una riga inclusa non ha raggiunto questo progress.</p>
               </div>
             </>
           )}

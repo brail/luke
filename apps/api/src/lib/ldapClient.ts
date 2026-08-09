@@ -1,18 +1,19 @@
 /**
- * Wrapper LDAP resiliente con circuit breaker, retry e timeout
- * Gestisce errori di rete, timeout e mappatura semantica per fallback sicuro
+ * Resilient LDAP client with circuit breaker, exponential-backoff retry, and timeout.
+ * Handles network errors, timeouts, and semantic error mapping for safe fallback behaviour.
  */
 
 import { TRPCError } from '@trpc/server';
 import { Client, InvalidCredentialsError } from 'ldapts';
-import type { SearchOptions, Entry } from 'ldapts';
 import pino from 'pino';
 
+import { calcBackoffDelay, type LdapResilienceConfig } from '@luke/core';
+
 import type { LdapConfig } from './configManager';
-import type { LdapResilienceConfig } from '@luke/core';
+import type { SearchOptions, Entry } from 'ldapts';
 
 /**
- * Stati del circuit breaker
+ * Possible states of the circuit breaker state machine.
  */
 enum CircuitBreakerState {
   CLOSED = 'closed',
@@ -21,8 +22,8 @@ enum CircuitBreakerState {
 }
 
 /**
- * Circuit breaker custom per LDAP
- * Gestisce state machine: closed → open → halfOpen → closed
+ * LDAP-specific circuit breaker implementing the closed → open → half-open → closed
+ * state machine. Trips when the failure count reaches the configured threshold.
  */
 class CircuitBreaker {
   private state: CircuitBreakerState = CircuitBreakerState.CLOSED;
@@ -37,7 +38,7 @@ class CircuitBreaker {
   ) {}
 
   /**
-   * Esegue operazione tramite circuit breaker
+   * Executes an operation through the circuit breaker
    */
   async execute<T>(operation: () => Promise<T>): Promise<T> {
     if (this.state === CircuitBreakerState.OPEN) {
@@ -106,7 +107,8 @@ class CircuitBreaker {
 }
 
 /**
- * Client LDAP resiliente con retry, timeout e circuit breaker
+ * LDAP client with transparent retry, timeout, and circuit-breaker protection.
+ * All public operations route through the circuit breaker and the retry loop.
  */
 export class ResilientLdapClient {
   private _client: Client | null = null;
@@ -121,9 +123,8 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Connette al server LDAP
-   * ldapts usa connessione lazy: il Client viene creato qui,
-   * la connessione TCP avviene al primo bind().
+   * Initialises the underlying ldapts `Client`.
+   * The TCP connection is established lazily on the first `bind()` call.
    */
   async connect(): Promise<void> {
     return this.breaker.execute(async () => {
@@ -146,7 +147,10 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Bind con credenziali
+   * Binds to the LDAP server with the given DN and password.
+   * Maps `InvalidCredentialsError` (LDAP code 49) to a `UNAUTHORIZED` TRPCError.
+   *
+   * @throws {TRPCError} `UNAUTHORIZED` for invalid credentials; other errors are retried.
    */
   async bind(dn: string, password: string): Promise<void> {
     return this.breaker.execute(async () => {
@@ -172,7 +176,10 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Ricerca LDAP
+   * Performs an LDAP search under the given base DN.
+   *
+   * @returns Array of matching directory entries.
+   * @throws {TRPCError} `BAD_GATEWAY` on network errors, `BAD_REQUEST` for invalid filters.
    */
   async search(
     base: string,
@@ -208,7 +215,8 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Chiude connessione LDAP
+   * Gracefully closes the LDAP connection by sending an unbind request.
+   * Errors during unbind are logged as warnings and swallowed.
    */
   async unbind(): Promise<void> {
     if (this._client) {
@@ -226,7 +234,7 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Distrugge il client e chiude tutte le connessioni
+   * Forcefully destroys the client and closes all connections, ignoring any errors.
    */
   async destroy(): Promise<void> {
     if (this._client) {
@@ -240,7 +248,7 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Retry con exponential backoff e jitter
+   * Retry with exponential backoff and jitter
    */
   private async retryWithBackoff<T>(operation: () => Promise<T>): Promise<T> {
     let lastError: Error | null = null;
@@ -255,7 +263,7 @@ export class ResilientLdapClient {
       } catch (error) {
         lastError = error instanceof Error ? error : new Error('Unknown error');
 
-        // Non retry per errori di autenticazione o validazione
+        // Don't retry authentication or validation errors
         if (this.isNonRetryableError(error)) {
           throw error;
         }
@@ -291,13 +299,12 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Calcola delay per exponential backoff con jitter
+   * Calculate delay for exponential backoff with jitter
    */
   private calculateBackoffDelay(attempt: number): number {
-    const exponentialDelay =
-      this.resilienceConfig.baseDelayMs * Math.pow(2, attempt);
-    const jitter = Math.random() * 0.1 * exponentialDelay; // 10% jitter
-    return Math.min(exponentialDelay + jitter, 5000); // Max 5 secondi
+    const exponentialDelay = calcBackoffDelay(attempt, this.resilienceConfig.baseDelayMs, 5000);
+    const jitter = Math.random() * 0.1 * exponentialDelay;
+    return exponentialDelay + jitter;
   }
 
   /**
@@ -308,14 +315,14 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Verifica se l'errore è di credenziali invalide (non retryable)
+   * Checks whether the error is invalid credentials (non-retryable)
    */
   private isInvalidCredentialsError(error: unknown): boolean {
     return error instanceof InvalidCredentialsError;
   }
 
   /**
-   * Verifica se l'errore è di rete (retryable)
+   * Checks whether the error is a network error (retryable)
    */
   private isNetworkError(error: unknown): boolean {
     if (error instanceof Error) {
@@ -334,7 +341,7 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Verifica se l'errore è di filtro invalido (non retryable)
+   * Checks whether the error is an invalid filter (non-retryable)
    */
   private isInvalidFilterError(error: unknown): boolean {
     if (error instanceof Error) {
@@ -349,9 +356,27 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Verifica se l'errore non è retryable
+   * Checks whether the error is not retryable.
+   *
+   * Includes the `TRPCError`s already mapped by `bind()` and `search()`: those
+   * methods translate the library's error BEFORE the retry logic sees it, so
+   * checking only the original error isn't enough. In particular, a wrong
+   * password becomes `UNAUTHORIZED`, and without this check it used to be
+   * retried `maxRetries + 1` times — meaning every failed login hit Active
+   * Directory three times, bringing the account closer to lockout with every typo.
+   *
+   * `BAD_GATEWAY` is deliberately left out: it's the mapping of network errors
+   * in `search()`, which are transient and therefore legitimately retryable.
    */
   private isNonRetryableError(error: unknown): boolean {
+    if (error instanceof TRPCError) {
+      return (
+        error.code === 'UNAUTHORIZED' ||
+        error.code === 'FORBIDDEN' ||
+        error.code === 'BAD_REQUEST'
+      );
+    }
+
     return (
       this.isInvalidCredentialsError(error) || this.isInvalidFilterError(error)
     );

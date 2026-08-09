@@ -1,19 +1,20 @@
 import { trpc } from './trpc';
 
 /**
- * Helper centralizzato per invalidazioni consistenti delle query tRPC
+ * Returns a flat map of named invalidation helpers for React Query caches.
+ * Use these as the `invalidate` option in `useStandardMutation` to ensure
+ * consistent and de-duplicated cache invalidation after mutations.
  *
- * Fornisce un'interfaccia flat e self-documenting per invalidare le cache React Query
- * dopo le mutazioni, eliminando duplicazioni e garantendo coerenza.
+ * @returns Object with invalidation functions keyed by domain
+ *   (`me`, `users`, `storageConfig`, `storageFiles`, `ldapConfig`,
+ *   `context`, `company`, `allStorage`).
  *
  * @example
  * ```typescript
  * const refresh = useRefresh();
- *
  * const { mutate } = useStandardMutation({
  *   mutateFn: trpc.me.updateProfile.mutateAsync,
  *   invalidate: refresh.me,
- *   onSuccessMessage: 'Profilo aggiornato',
  * });
  * ```
  */

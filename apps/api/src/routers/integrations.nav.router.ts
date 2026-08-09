@@ -1,22 +1,24 @@
 /**
- * NAV sub-router per integrazioni
- * Gestisce configurazione, test connessione e sincronizzazione
- * Microsoft Dynamics NAV (SQL Server)
+ * NAV sub-router for integrations
+ * Handles configuration, connection testing, and synchronization
+ * for Microsoft Dynamics NAV (SQL Server)
  */
 
 import { z } from 'zod';
 
 import { navConfigSchema } from '@luke/core';
-import { getNavDbConfig, getPool, closePool, runNavSync, testNavConnection, sanitizeCompany } from '@luke/nav';
-import { pauseNavScheduler, resumeNavScheduler } from '../lib/navSyncScheduler';
+import { createSyncRequest, getNavDbConfig, getPool, closePool, runNavSync, testNavConnection, sanitizeCompany } from '@luke/nav';
+
 
 import { logAudit } from '../lib/auditLog';
 import { saveConfig, getConfig } from '../lib/configManager';
+import { toErrorMessage } from '../lib/error';
 import {
   ErrorCode,
   createStandardError,
   toTRPCError,
 } from '../lib/errorHandler';
+import { pauseNavScheduler, resumeNavScheduler } from '../lib/navSyncScheduler';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
@@ -25,8 +27,11 @@ import { router, protectedProcedure } from '../lib/trpc';
 
 const navSyncRouter = router({
   /**
-   * Preview live: query diretta su NAV SQL Server (non sulla replica Postgres).
-   * Restituisce i campi essenziali per la tabella di selezione.
+   * Queries NAV SQL Server directly (not the PG replica) for a live preview of vendor/brand/season records.
+   *
+   * @auth {config:read}
+   * @input {{ entity: "vendor" | "brand" | "season" }}
+   * @output {Array<{ navNo, name, city, countryCode, blocked }>}
    */
   preview: protectedProcedure
     .use(requirePermission('config:read'))
@@ -39,15 +44,14 @@ const navSyncRouter = router({
         const tableName = `[${sanitizeCompany(config.company)}$Brand]`;
         let result;
         try {
-          const req = pool.request();
-          (req as any).timeout = 30_000;
+          const req = createSyncRequest(pool);
           result = await req.query<{ 'Code': string; 'Description': string | null }>(`
             SELECT [Code], [Description]
             FROM ${tableName}
             ORDER BY [Code]
           `);
-        } catch (e: any) {
-          const err = createStandardError(ErrorCode.CONNECTION_ERROR, `Errore query NAV: ${e.message}`);
+        } catch (e: unknown) {
+          const err = createStandardError(ErrorCode.CONNECTION_ERROR, `Errore query NAV: ${toErrorMessage(e)}`);
           throw toTRPCError(err);
         }
         return result.recordset.map(row => ({
@@ -63,8 +67,7 @@ const navSyncRouter = router({
         const tableName = `[${sanitizeCompany(config.company)}$Season]`;
         let result;
         try {
-          const req = pool.request();
-          (req as any).timeout = 30_000;
+          const req = createSyncRequest(pool);
           result = await req.query<{
             'Code': string;
             'Description': string | null;
@@ -75,8 +78,8 @@ const navSyncRouter = router({
             FROM ${tableName}
             ORDER BY [Code]
           `);
-        } catch (e: any) {
-          const err = createStandardError(ErrorCode.CONNECTION_ERROR, `Errore query NAV: ${e.message}`);
+        } catch (e: unknown) {
+          const err = createStandardError(ErrorCode.CONNECTION_ERROR, `Errore query NAV: ${toErrorMessage(e)}`);
           throw toTRPCError(err);
         }
         return result.recordset.map(row => ({
@@ -101,15 +104,14 @@ const navSyncRouter = router({
 
       let result;
       try {
-        const req = pool.request();
-        (req as any).timeout = 30_000;
+        const req = createSyncRequest(pool);
         result = await req.query<NavVendorRow>(`
           SELECT [No_], [Name], [City], [Country_Region Code], [Blocked]
           FROM ${tableName}
           ORDER BY [Name]
         `);
-      } catch (e: any) {
-        const err = createStandardError(ErrorCode.CONNECTION_ERROR, `Errore query NAV: ${e.message}`);
+      } catch (e: unknown) {
+        const err = createStandardError(ErrorCode.CONNECTION_ERROR, `Errore query NAV: ${toErrorMessage(e)}`);
         throw toTRPCError(err);
       }
 
@@ -123,23 +125,55 @@ const navSyncRouter = router({
     }),
 
   /**
-   * Restituisce lo stato di pianificazione auto-sync per tutte le entità.
-   * Usato dalla UI per mostrare lo stato corrente per-entità.
+   * Returns the auto-sync schedule status (enabled, intervalMinutes) and the outcome
+   * of the most recent scheduled sync attempt for all NAV sync entities.
+   *
+   * @auth {config:read}
+   * @input {none}
+   * @output {Record<string, { autoSyncEnabled: boolean, intervalMinutes: number, lastSyncStatus: string | null, lastSyncError: string | null, lastSyncAt: Date | null }>}
    */
   getStatus: protectedProcedure
     .use(requirePermission('config:read'))
     .query(async ({ ctx }) => {
       const filters = await ctx.prisma.navSyncFilter.findMany({
-        select: { entity: true, autoSyncEnabled: true, intervalMinutes: true },
+        select: {
+          entity: true,
+          autoSyncEnabled: true,
+          intervalMinutes: true,
+          lastSyncStatus: true,
+          lastSyncError: true,
+          lastSyncAt: true,
+        },
       });
       return Object.fromEntries(
-        filters.map(f => [f.entity, { autoSyncEnabled: f.autoSyncEnabled, intervalMinutes: f.intervalMinutes }])
-      ) as Record<string, { autoSyncEnabled: boolean; intervalMinutes: number }>;
+        filters.map(f => [
+          f.entity,
+          {
+            autoSyncEnabled: f.autoSyncEnabled,
+            intervalMinutes: f.intervalMinutes,
+            lastSyncStatus: f.lastSyncStatus,
+            lastSyncError: f.lastSyncError,
+            lastSyncAt: f.lastSyncAt,
+          },
+        ])
+      ) as Record<
+        string,
+        {
+          autoSyncEnabled: boolean;
+          intervalMinutes: number;
+          lastSyncStatus: string | null;
+          lastSyncError: string | null;
+          lastSyncAt: Date | null;
+        }
+      >;
     }),
 
   /**
-   * Salva la configurazione di pianificazione auto-sync per un'entità.
-   * Crea il filtro con mode='all' se non esiste ancora.
+   * Saves the auto-sync schedule for a NAV entity; creates the filter with mode='all' if absent.
+   *
+   * @auth {config:update}
+   * @input {{ entity, autoSyncEnabled: boolean, intervalMinutes: number }}
+   * @output {NavSyncFilter}
    */
   saveSyncSchedule: protectedProcedure
     .use(requirePermission('config:update'))
@@ -180,7 +214,13 @@ const navSyncRouter = router({
       return filter;
     }),
 
-  /** Restituisce il NavSyncFilter corrente per l'entità. */
+  /**
+   * Returns the current NavSyncFilter for the given entity.
+   *
+   * @auth {config:read}
+   * @input {{ entity: string }}
+   * @output {NavSyncFilter | null}
+   */
   getFilter: protectedProcedure
     .use(requirePermission('config:read'))
     .input(z.object({ entity: z.string().min(1) }))
@@ -190,7 +230,13 @@ const navSyncRouter = router({
       });
     }),
 
-  /** Upsert del NavSyncFilter. */
+  /**
+   * Upserts the NavSyncFilter for an entity (mode, navNos whitelist/exclude, active flag).
+   *
+   * @auth {config:update}
+   * @input {{ entity, mode: "all"|"whitelist"|"exclude", navNos: string[], active? }}
+   * @output {NavSyncFilter}
+   */
   saveFilter: protectedProcedure
     .use(requirePermission('config:update'))
     .input(z.object({
@@ -225,8 +271,11 @@ const navSyncRouter = router({
     }),
 
   /**
-   * Esegue il sync manualmente on-demand per una singola entità.
-   * Restituisce i risultati con durationMs.
+   * Triggers an on-demand NAV sync for a single entity; returns per-entity results with durationMs.
+   *
+   * @auth {config:update}
+   * @input {{ entity: "vendor" | "brand" | "season" }}
+   * @output {{ results: Array<{ entity, upserted, skipped, filterMode, durationMs }> }}
    */
   run: protectedProcedure
     .use(requirePermission('config:update'))
@@ -267,11 +316,14 @@ const navSyncRouter = router({
 
 const navVendorsRouter = router({
   /**
-   * Lista vendor sincronizzati dal DB locale (non query live su NAV).
-   * Usato dalla tendina di selezione fornitore nel Collection Layout.
+   * Lists vendors synced from NAV in the local PG replica (not a live NAV query).
+   *
+   * @auth {vendors:read}
+   * @input {none}
+   * @output {Array<{ navNo, name, searchName }>} — sorted by searchName ascending.
    */
   list: protectedProcedure
-    .use(requirePermission('collection_layout:update'))
+    .use(requirePermission('vendors:read'))
     .query(async ({ ctx }) => {
       return ctx.prisma.navVendor.findMany({
         select: { navNo: true, name: true, searchName: true },
@@ -284,9 +336,11 @@ const navVendorsRouter = router({
 
 const navBrandsRouter = router({
   /**
-   * Lista brand sincronizzati dal DB locale.
-   * Esclude i navCode già collegati a un brand locale (navBrandId univoco).
-   * excludeLinkedTo: navCode del brand corrente in modifica — resta visibile anche se già linkato.
+   * Lists NAV brands from the local replica, excluding codes already linked to a local brand (except excludeLinkedTo).
+   *
+   * @auth {brands:read}
+   * @input {{ excludeLinkedTo?: string }} — navCode of the brand currently being edited.
+   * @output {Array<{ navCode, description }>}
    */
   list: protectedProcedure
     .use(requirePermission('brands:read'))
@@ -315,9 +369,11 @@ const navBrandsRouter = router({
 
 const navSeasonsRouter = router({
   /**
-   * Lista season sincronizzate dal DB locale.
-   * Esclude i navCode già collegati a una season locale (navSeasonId univoco).
-   * excludeLinkedTo: navCode della season corrente in modifica — resta visibile anche se già linkato.
+   * Lists NAV seasons from the local replica, excluding codes already linked to a local season (except excludeLinkedTo).
+   *
+   * @auth {seasons:read}
+   * @input {{ excludeLinkedTo?: string }} — navCode of the season currently being edited.
+   * @output {Array<{ navCode, description, startingDate, endingDate }>}
    */
   list: protectedProcedure
     .use(requirePermission('seasons:read'))
@@ -345,14 +401,21 @@ const navSeasonsRouter = router({
 // ── Main router ───────────────────────────────────────────────────────────────
 
 export const navRouter = router({
+  /**
+   * Saves the NAV SQL Server connection config to AppConfig; resets the mssql pool if credentials changed.
+   *
+   * @auth {config:update}
+   * @input {navConfigSchema} — host, port, database, user, password (optional), company, readOnly, syncEnabled.
+   * @output {{ success: true, message: string, connectionChanged: boolean }}
+   */
   saveConfig: protectedProcedure
     .use(requirePermission('config:update'))
     .input(navConfigSchema)
     .mutation(async ({ input, ctx }) => {
-      // Password aggiornata solo se il campo non è vuoto (form non tocca il campo → stringa vuota)
+      // Password updated only if the field isn't empty (form doesn't touch the field → empty string)
       const passwordUpdated = !!input.password && input.password.length > 0;
 
-      // Legge i valori correnti per rilevare cambi di connessione
+      // Reads the current values to detect connection changes
       const [prevHost, prevPort, prevDatabase, prevUser, prevCompany] = await Promise.all([
         getConfig(ctx.prisma, 'integrations.nav.host', false),
         getConfig(ctx.prisma, 'integrations.nav.port', false),
@@ -369,7 +432,7 @@ export const navRouter = router({
         prevCompany !== input.company ||
         passwordUpdated;
 
-      // Se la connessione è cambiata, azzera il pool mssql (credenziali vecchie non più valide)
+      // If the connection changed, resets the mssql pool (old credentials no longer valid)
       if (connectionChanged) {
         await pauseNavScheduler();
         try {
@@ -410,10 +473,17 @@ export const navRouter = router({
       };
     }),
 
+  /**
+   * Tests the NAV SQL Server connection using the stored credentials.
+   *
+   * @auth {config:read}
+   * @input {none}
+   * @output {{ success: true, message: string, steps: Step[] }}
+   */
   testConnection: protectedProcedure
     .use(requirePermission('config:read'))
     .mutation(async ({ ctx }) => {
-      // Legge tutta la config salvata (inclusa password decifrata)
+      // Reads the entire saved config (including decrypted password)
       let config;
       try {
         config = await getNavDbConfig(ctx.prisma, getConfig);

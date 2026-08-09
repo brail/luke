@@ -1,7 +1,7 @@
 /**
- * Router tRPC per Pricing: gestione parametri e calcolo prezzi
+ * tRPC router for Pricing: parameter management and price calculation
  *
- * Espone:
+ * Exposes:
  *  - pricing.parameterSets.list / create / update / remove / setDefault / copyFromPreviousSeason
  *  - pricing.calculate
  */
@@ -15,10 +15,11 @@ import {
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { exportTimestamp } from '../lib/export/xlsx-streaming';
-import { withRateLimit } from '../lib/ratelimit';
+import { exportTimestamp } from '../lib/export/xlsxStreaming';
 import { requirePermission } from '../lib/permissions';
+import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
+import { assertBrandAccess } from '../services/context.service';
 import { buildPricingGridPdf, buildPricingGridXlsx } from '../services/pricing.export.service';
 import {
   calculateForward,
@@ -33,10 +34,19 @@ import {
 } from '../services/pricing.service';
 
 const exportRouter = router({
+  /**
+   * Exports the pricing parameter grid for a brand+season as an XLSX file (base64-encoded).
+   *
+   * @auth {pricing:read}
+   * @input {{ brandId: string (UUID), seasonId: string (UUID) }}
+   * @output {{ data: string (base64), filename: string }}
+   */
   xlsx: protectedProcedure
     .use(requirePermission('pricing:read'))
+    .use(withRateLimit('exportGeneration'))
     .input(z.object({ brandId: z.string().uuid(), seasonId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
+      await assertBrandAccess(ctx, input.brandId);
       const [sets, brand, season] = await Promise.all([
         ctx.prisma.pricingParameterSet.findMany({
           where: { brandId: input.brandId, seasonId: input.seasonId },
@@ -60,10 +70,19 @@ const exportRouter = router({
       return { data: buffer.toString('base64'), filename: `${brand.code}-${season.code}-Griglia-${exportTimestamp()}.xlsx` };
     }),
 
+  /**
+   * Exports the pricing parameter grid for a brand+season as a PDF file (base64-encoded).
+   *
+   * @auth {pricing:read}
+   * @input {{ brandId: string (UUID), seasonId: string (UUID) }}
+   * @output {{ data: string (base64), filename: string }}
+   */
   pdf: protectedProcedure
     .use(requirePermission('pricing:read'))
+    .use(withRateLimit('exportGeneration'))
     .input(z.object({ brandId: z.string().uuid(), seasonId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
+      await assertBrandAccess(ctx, input.brandId);
       const [sets, brand, season, exportUser] = await Promise.all([
         ctx.prisma.pricingParameterSet.findMany({
           where: { brandId: input.brandId, seasonId: input.seasonId },
@@ -97,8 +116,11 @@ const exportRouter = router({
 
 const parameterSetsRouter = router({
   /**
-   * Lista le varianti di parametri per un brand+season.
-   * brandId e seasonId sono obbligatori.
+   * Lists all pricing parameter sets for the given brand+season, ordered by index.
+   *
+   * @auth {pricing:read}
+   * @input {{ brandId: string (UUID), seasonId: string (UUID) }}
+   * @output {PricingParameterSet[]}
    */
   list: protectedProcedure
     .use(requirePermission('pricing:read'))
@@ -109,12 +131,16 @@ const parameterSetsRouter = router({
       })
     )
     .query(async ({ input, ctx }) => {
+      await assertBrandAccess(ctx, input.brandId);
       return getParameterSets(input.brandId, input.seasonId, ctx.prisma);
     }),
 
   /**
-   * Crea una nuova variante di parametri.
-   * Se è la prima per brand+season, diventa automaticamente il default.
+   * Creates a new pricing parameter set; auto-sets it as default if it is the first for brand+season.
+   *
+   * @auth {pricing:update}
+   * @input {{ brandId: string, seasonId: string, data: PricingParameterSetInputSchema }}
+   * @output {PricingParameterSet}
    */
   create: protectedProcedure
     .use(requirePermission('pricing:update'))
@@ -127,6 +153,7 @@ const parameterSetsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await assertBrandAccess(ctx, input.brandId);
       const result = await createParameterSet(
         input.brandId,
         input.seasonId,
@@ -138,7 +165,11 @@ const parameterSetsRouter = router({
     }),
 
   /**
-   * Aggiorna una variante esistente.
+   * Updates an existing pricing parameter set by ID.
+   *
+   * @auth {pricing:update}
+   * @input {{ brandId: string, seasonId: string, data: PricingParameterSetUpdateSchema }}
+   * @output {PricingParameterSet}
    */
   update: protectedProcedure
     .use(requirePermission('pricing:update'))
@@ -151,6 +182,7 @@ const parameterSetsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await assertBrandAccess(ctx, input.brandId);
       const result = await updateParameterSet(
         input.data.id,
         input.brandId,
@@ -163,8 +195,11 @@ const parameterSetsRouter = router({
     }),
 
   /**
-   * Elimina una variante.
-   * Se era il default, promuove automaticamente la successiva.
+   * Deletes a pricing parameter set; auto-promotes the next set as default if needed.
+   *
+   * @auth {pricing:update}
+   * @input {{ id: string, brandId: string, seasonId: string }}
+   * @output {{ success: true }}
    */
   remove: protectedProcedure
     .use(requirePermission('pricing:update'))
@@ -176,6 +211,7 @@ const parameterSetsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await assertBrandAccess(ctx, input.brandId);
       await removeParameterSet(
         input.id,
         input.brandId,
@@ -187,7 +223,11 @@ const parameterSetsRouter = router({
     }),
 
   /**
-   * Imposta una variante come default per il brand+season.
+   * Sets a pricing parameter set as the default for the given brand+season.
+   *
+   * @auth {pricing:update}
+   * @input {{ id: string, brandId: string, seasonId: string }}
+   * @output {PricingParameterSet}
    */
   setDefault: protectedProcedure
     .use(requirePermission('pricing:update'))
@@ -199,14 +239,18 @@ const parameterSetsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await assertBrandAccess(ctx, input.brandId);
       const result = await setAsDefault(input.id, input.brandId, input.seasonId, ctx.prisma);
       await logAudit(ctx, { action: 'PRICING_PARAMETER_SET_SET_DEFAULT', targetType: 'PricingParameterSet', targetId: input.id, result: 'SUCCESS', metadata: { brandId: input.brandId, seasonId: input.seasonId } });
       return result;
     }),
 
   /**
-   * Restituisce i parametri dalla stagione più recente per quel brand.
-   * Non salva nulla: serve per la funzione "Copia da stagione precedente".
+   * Returns the parameter sets from the most recent previous season for the given brand (read-only, no save).
+   *
+   * @auth {pricing:read}
+   * @input {{ brandId: string, seasonId: string }}
+   * @output {PricingParameterSet[] from the previous season}
    */
   copyFromPreviousSeason: protectedProcedure
     .use(requirePermission('pricing:read'))
@@ -217,6 +261,7 @@ const parameterSetsRouter = router({
       })
     )
     .query(async ({ input, ctx }) => {
+      await assertBrandAccess(ctx, input.brandId);
       return getPreviousSeasonSets(input.brandId, input.seasonId, ctx.prisma);
     }),
 });
@@ -226,15 +271,18 @@ export const pricingRouter = router({
   export: exportRouter,
 
   /**
-   * Esegue il calcolo del prezzo in una delle tre modalità:
-   * - forward: purchasePrice → retailPrice
-   * - inverse: retailPrice → purchasePrice massimo
-   * - margin: entrambi i prezzi noti → companyMargin
+   * Runs a pricing calculation in one of three modes: forward (cost→retail), inverse (retail→max cost), or margin (both known→companyMargin).
+   *
+   * @auth {pricing:read}
+   * @input {PricingCalculateInputSchema} — mode, parameterSetId, brandId, seasonId, and relevant price fields.
+   * @output {Calculated pricing breakdown with margins, costs, and retail/purchase price.}
    */
   calculate: protectedProcedure
     .use(requirePermission('pricing:read'))
     .input(PricingCalculateInputSchema)
     .mutation(async ({ input, ctx }) => {
+      await assertBrandAccess(ctx, input.brandId);
+
       // Carica i parametri del set selezionato
       const paramSet = await ctx.prisma.pricingParameterSet.findUnique({
         where: { id: input.parameterSetId },

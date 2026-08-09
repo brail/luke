@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "composite": true,
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
@@ -18,8 +19,12 @@
       "@luke/core": ["../../packages/core/src"],
       "@luke/core/*": ["../../packages/core/src/*"],
       "pdfmake/interfaces": ["./node_modules/@types/pdfmake/interfaces.d.ts"]
-    }
+    },
+    "types": ["node"]
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "exclude": ["node_modules", "dist"],
+  "references": [
+    { "path": "../../packages/core" }
+  ]
 }

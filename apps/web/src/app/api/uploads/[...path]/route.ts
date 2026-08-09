@@ -9,6 +9,12 @@ import { debugError } from '../../../../lib/debug';
 // Rejects '..' traversal and any segment with shell-special characters
 const SAFE_SEGMENT_RE = /^[a-zA-Z0-9._-]+$/;
 
+/**
+ * Handles GET /api/uploads/[...path]. Authenticated proxy that streams static files from the API
+ * backend storage at `/uploads/<path>`. Validates each path segment against {@link SAFE_SEGMENT_RE}
+ * to prevent path traversal attacks. Responses are cached immutably for one year.
+ * @auth {session-required}
+ */
 export const GET = auth(async function GET(req) {
   if (!req.auth) {
     return new NextResponse('Unauthorized', { status: 401 });

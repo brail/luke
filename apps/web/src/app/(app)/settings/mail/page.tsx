@@ -31,9 +31,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../../../components/ui/select';
-import { useToast } from '../../../../hooks/use-toast';
 import { usePermission } from '../../../../hooks/usePermission';
+import { useToast } from '../../../../hooks/useToast';
 import { trpc } from '../../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 export default function MailPage() {
   const toast = useToast();
@@ -69,13 +70,13 @@ export default function MailPage() {
   useEffect(() => {
     if (existingConfigs) {
       const configs = existingConfigs.items;
-      const smtpHost = configs.find((c: any) => c.key === 'smtp.host');
-      const smtpPort = configs.find((c: any) => c.key === 'smtp.port');
-      const smtpSecure = configs.find((c: any) => c.key === 'smtp.secure');
-      const smtpUser = configs.find((c: any) => c.key === 'smtp.user');
-      const smtpPass = configs.find((c: any) => c.key === 'smtp.pass');
-      const smtpFrom = configs.find((c: any) => c.key === 'smtp.from');
-      const appBaseUrl = configs.find((c: any) => c.key === 'app.baseUrl');
+      const smtpHost = configs.find(c => c.key === 'smtp.host');
+      const smtpPort = configs.find(c => c.key === 'smtp.port');
+      const smtpSecure = configs.find(c => c.key === 'smtp.secure');
+      const smtpUser = configs.find(c => c.key === 'smtp.user');
+      const smtpPass = configs.find(c => c.key === 'smtp.pass');
+      const smtpFrom = configs.find(c => c.key === 'smtp.from');
+      const appBaseUrl = configs.find(c => c.key === 'app.baseUrl');
 
       form.reset({
         host: smtpHost?.valuePreview || '',
@@ -99,15 +100,15 @@ export default function MailPage() {
       setTestStatus('idle');
       setTestMessage('');
     },
-    onError: (error: any) => {
+    onError: error => {
       toast.error('Errore durante il salvataggio', {
-        description: error.message,
+        description: getTrpcErrorMessage(error),
       });
     },
   });
 
   const testMailMutation = trpc.integrations.mail.test.useMutation({
-    onSuccess: (data: any) => {
+    onSuccess: data => {
       setTestStatus('success');
       setTestMessage(
         data.sentTo
@@ -117,11 +118,12 @@ export default function MailPage() {
       toast.success('Test riuscito');
       setTestEmail('');
     },
-    onError: (error: any) => {
+    onError: error => {
       setTestStatus('error');
-      setTestMessage(error.message);
+      const message = getTrpcErrorMessage(error);
+      setTestMessage(message);
       toast.error('Test fallito', {
-        description: error.message,
+        description: message,
       });
     },
   });
@@ -131,7 +133,7 @@ export default function MailPage() {
     const { pass, ...payloadWithoutPassword } = data;
     const payload = !pass || pass.trim() === '' ? payloadWithoutPassword : data;
 
-    saveConfigMutation.mutate(payload as any);
+    saveConfigMutation.mutate(payload);
   };
 
   const handleTestMail = () => {

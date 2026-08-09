@@ -1,20 +1,29 @@
-import type { PrismaClient, Prisma } from '@prisma/client';
-import type { Logger } from 'pino';
-import type mssql from 'mssql';
-
 import { sanitizeCompany } from '../config.js';
+
+import { buildNavSyncFilter, buildWhereClause, createSyncRequest, processInBatches } from './utils.js';
+
 import type { NavDbConfig } from '../config.js';
 import type { SyncResult } from './vendors.js';
-import { buildNavSyncFilter, buildWhereClause, processInBatches } from './utils.js';
+import type { PrismaClient, Prisma } from '@prisma/client';
+import type mssql from 'mssql';
+import type { Logger } from 'pino';
 
 const UPSERT_BATCH_SIZE = 100;
 
 /**
- * Sincronizza [COMPANY$Brand] di NAV → tabella nav_brands di Postgres.
+ * Syncs `[COMPANY$Brand]` from NAV into the `nav_brands` Postgres table,
+ * and creates or updates the corresponding local `Brand` record.
  *
- * Sync completo (no watermark differenziale): [COMPANY$Brand] espone solo il
- * campo timestamp SQL Server (rowversion binario), non una data di modifica.
- * La tabella è tipicamente piccola (<200 record) quindi il full sync è preferibile.
+ * Always performs a full sync (no differential watermark) because the NAV
+ * Brand table exposes only a SQL Server `rowversion` (binary), not a
+ * modification date. The table is typically small (<200 rows).
+ *
+ * Local `Brand` records that already exist with the same code but no NAV
+ * link are skipped (not auto-created); the user must link them manually.
+ * Only `name` is updated on existing local brands — `isActive`, `logoUrl`,
+ * and other enriched fields are never touched.
+ *
+ * @returns `SyncResult` with the count of successfully upserted records
  */
 export async function syncBrands(
   pool: mssql.ConnectionPool,
@@ -35,9 +44,7 @@ export async function syncBrands(
   const whereClause = buildWhereClause(filterPredicates);
 
   const tableName = `[${sanitizeCompany(config.company)}$Brand]`;
-  const request = pool.request();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (request as any).timeout = 60_000;
+  const request = createSyncRequest(pool);
   bindParams(request);
 
   const result = await request.query<{
@@ -48,7 +55,7 @@ export async function syncBrands(
   const rows = result.recordset;
 
   if (rows.length === 0) {
-    logger.info({ entity, filterMode, upserted: 0 }, 'NAV sync: nessun record da aggiornare');
+    logger.info({ entity, filterMode, upserted: 0 }, 'NAV sync: no records to update');
     return { entity, upserted: 0, skipped: false, filterMode };
   }
 
@@ -60,7 +67,7 @@ export async function syncBrands(
     const description = row['Description'] ?? '';
 
     try {
-      // Atomico: replica NAV + anagrafica locale in un'unica transaction.
+      // Atomic: NAV replica + local master data in a single transaction.
       await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         await tx.navBrand.upsert({
           where: { navCode },
@@ -68,19 +75,19 @@ export async function syncBrands(
           update: { description, syncedAt },
         });
 
-        // Guard: se esiste già un brand locale con lo stesso code ma senza collegamento NAV,
-        // non auto-creare — l'utente deve collegarlo manualmente.
+        // Guard: if a local brand already exists with the same code but no NAV link,
+        // do not auto-create — the user must link it manually.
         const localConflict = await tx.brand.findFirst({
           where: { code: navCode, navBrandId: null },
           select: { id: true },
         });
         if (localConflict) {
-          logger.warn({ entity, navCode }, 'NAV sync: brand locale con stesso code senza NAV link — skip auto-create');
+          logger.warn({ entity, navCode }, 'NAV sync: local brand with same code without NAV link — skip auto-create');
           return;
         }
 
-        // Upsert brand locale: crea se non esiste, aggiorna solo name.
-        // MAI toccare isActive né logoUrl né altri campi arricchiti.
+        // Upsert local brand: create if not exist, update only name.
+        // NEVER touch isActive or logoUrl or other enriched fields.
         await tx.brand.upsert({
           where: { navBrandId: navCode },
           create: { code: navCode, name: description, navBrandId: navCode, isActive: true },

@@ -1,16 +1,15 @@
 /**
- * Config Manager per Luke API
- * Gestisce la cifratura/decifratura dei valori sensibili in AppConfig
- * usando AES-256-GCM con master key da file ~/.luke/secret.key
+ * AppConfig manager for Luke API.
+ * Handles encryption and decryption of sensitive values stored in the AppConfig
+ * table using AES-256-GCM with a master key loaded from ~/.luke/secret.key.
  */
 
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { homedir } from 'os';
-import { join } from 'path';
 
+import { TRPCError } from '@trpc/server';
 import pino from 'pino';
 import { z } from 'zod';
+
 import {
   type AppConfigKey,
   type AppConfigValue,
@@ -20,15 +19,18 @@ import {
   type LdapResilienceConfig,
   Roles,
 } from '@luke/core';
+import { getMasterKey, invalidateRbacCache } from '@luke/core/server';
 
-import type { PrismaClient } from '@prisma/client';
+import { acquireLastAdminLock } from './lastAdminGuard';
+
+import type { BackupScope, Prisma, PrismaClient } from '@prisma/client';
 
 const logger = pino({ level: 'info' });
 
 const RoleMappingSchema = z.record(z.string(), z.enum(Roles));
 
 /**
- * Interfaccia per configurazione LDAP
+ * Full LDAP configuration assembled from AppConfig keys.
  */
 export interface LdapConfig {
   enabled: boolean;
@@ -43,66 +45,40 @@ export interface LdapConfig {
   strategy: 'local-first' | 'ldap-first' | 'local-only' | 'ldap-only';
 }
 
-const MASTER_KEY_PATH = join(homedir(), '.luke', 'secret.key');
-const ALGORITHM = 'aes-256-gcm';
-const IV_LENGTH = 16; // 128 bits
-// const TAG_LENGTH = 16; // 128 bits
-const KEY_LENGTH = 32; // 256 bits
+// Exported for reuse by other AES-256-GCM modules (e.g. apps/api/src/lib/backup/crypto.ts)
+// that must stay on the same master-key crypto parameters.
+export const ALGORITHM = 'aes-256-gcm';
+export const IV_LENGTH = 16; // 128 bits
+export const AUTH_TAG_LENGTH = 16; // 128 bits — explicit for the semgrep gcm-no-tag-length rule
 
 /**
- * Ottiene la master key per la cifratura
- * Se non esiste, la crea automaticamente
- */
-export function getMasterKey(): Buffer {
-  const keyDir = join(homedir(), '.luke');
-
-  if (!existsSync(MASTER_KEY_PATH)) {
-    // Crea directory se non esiste
-    if (!existsSync(keyDir)) {
-      mkdirSync(keyDir, { mode: 0o700 });
-    }
-
-    // Genera nuova master key
-    const masterKey = randomBytes(KEY_LENGTH);
-    writeFileSync(MASTER_KEY_PATH, masterKey, { mode: 0o600 });
-
-    logger.info({ path: MASTER_KEY_PATH }, 'Master key creata');
-  }
-
-  const keyBuffer = readFileSync(MASTER_KEY_PATH);
-
-  if (keyBuffer.length !== KEY_LENGTH) {
-    throw new Error(
-      `Master key deve essere di ${KEY_LENGTH} bytes, trovati ${keyBuffer.length}`
-    );
-  }
-
-  return keyBuffer;
-}
-
-/**
- * Cifra un valore usando AES-256-GCM
- * @param plaintext - Testo da cifrare
- * @returns Stringa nel formato "iv:authTag:ciphertext" (tutto in hex)
+ * Encrypts a plaintext value using AES-256-GCM and the current master key.
+ *
+ * @param plaintext - Value to encrypt.
+ * @returns Hex-encoded string in the format `iv:authTag:ciphertext`.
  */
 export function encryptValue(plaintext: string): string {
   const masterKey = getMasterKey();
   const iv = randomBytes(IV_LENGTH);
-  const cipher = createCipheriv(ALGORITHM, masterKey, iv);
+  const cipher = createCipheriv(ALGORITHM, masterKey, iv, {
+    authTagLength: AUTH_TAG_LENGTH,
+  });
 
   let ciphertext = cipher.update(plaintext, 'utf8', 'hex');
   ciphertext += cipher.final('hex');
 
   const authTag = cipher.getAuthTag();
 
-  // Formato: iv:authTag:ciphertext (tutto in hex)
+  // Format: iv:authTag:ciphertext (all in hex)
   return `${iv.toString('hex')}:${authTag.toString('hex')}:${ciphertext}`;
 }
 
 /**
- * Decifra un valore usando AES-256-GCM
- * @param encrypted - Stringa nel formato "iv:authTag:ciphertext"
- * @returns Testo decifrato
+ * Decrypts a value that was encrypted by `encryptValue`.
+ *
+ * @param encrypted - Hex-encoded string in the format `iv:authTag:ciphertext`.
+ * @returns Decrypted plaintext.
+ * @throws {Error} If the format is invalid or decryption fails (e.g. wrong key or tampered data).
  */
 export function decryptValue(encrypted: string): string {
   const masterKey = getMasterKey();
@@ -119,7 +95,9 @@ export function decryptValue(encrypted: string): string {
   const iv = Buffer.from(ivHex, 'hex');
   const authTag = Buffer.from(authTagHex, 'hex');
 
-  const decipher = createDecipheriv(ALGORITHM, masterKey, iv);
+  const decipher = createDecipheriv(ALGORITHM, masterKey, iv, {
+    authTagLength: AUTH_TAG_LENGTH,
+  });
   decipher.setAuthTag(authTag);
 
   let plaintext = decipher.update(ciphertext, 'hex', 'utf8');
@@ -129,21 +107,76 @@ export function decryptValue(encrypted: string): string {
 }
 
 /**
- * Salva una configurazione nel database con supporto cifratura
+ * Upserts a configuration entry in the database.
  *
- * @param prisma - Client Prisma
- * @param key - Chiave della configurazione (deve rispettare formato e prefissi ammessi)
- * @param value - Valore da salvare
- * @param encrypt - Se true, cifra il valore con AES-256-GCM prima di salvarlo
+ * @param prisma - Prisma client.
+ * @param key - Configuration key (dot-notation, must conform to AppConfigRegistry).
+ * @param value - Value to store.
+ * @param encrypt - When `true`, the value is encrypted with AES-256-GCM before storage.
  *
  * @example
- * // Salva valore plaintext
+ * // Store plaintext value
  * await saveConfig(prisma, "app.name", "Luke", false);
  *
  * @example
- * // Salva valore cifrato
- * await saveConfig(prisma, "auth.ldap.password", "secret123", true);
+ * // Store encrypted value
+ * await saveConfig(prisma, "auth.ldap.bindPassword", "secret123", true);
  */
+
+/**
+ * Keys read by `getRbacConfig`'s cache — any write here must invalidate it,
+ * or the RBAC-aware last-admin guards (`lastAdminGuard.ts`,
+ * `sectionAccess.ts`) can evaluate against a stale kill-switch/defaults value
+ * for up to the cache TTL.
+ */
+const RBAC_CACHE_KEYS = /^(rbac\.|app\.sections\.disabled$)/;
+
+/**
+ * `app.sections.disabled` is the RBAC kill switch: it beats every other
+ * access layer, including the admin `*:*` fallback (see
+ * `effectiveSectionAccess`). Disabling `'settings'` while an admin exists
+ * would lock everyone — admins included — out of the only in-app place to
+ * undo it. Guarded here, the single chokepoint every write to this key goes
+ * through (generic `config.set`/`config.update`, gated only by the
+ * editor-shared `config:update` permission — no admin check upstream).
+ */
+async function saveSectionsDisabledGuarded(
+  prisma: PrismaClient,
+  rawValue: string,
+  finalValue: string,
+  encrypt: boolean
+): Promise<void> {
+  await prisma.$transaction(async tx => {
+    let disabled: string[];
+    try {
+      disabled = z.array(z.string()).parse(JSON.parse(rawValue));
+    } catch {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'app.sections.disabled deve essere un array JSON di stringhe',
+      });
+    }
+
+    if (disabled.includes('settings')) {
+      await acquireLastAdminLock(tx);
+      const adminCount = await tx.user.count({ where: { role: 'admin', isActive: true } });
+      if (adminCount > 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message:
+            "Questa configurazione disabiliterebbe Settings per tutti, admin inclusi — nessun modo di annullarla dall'app.",
+        });
+      }
+    }
+
+    await tx.appConfig.upsert({
+      where: { key: 'app.sections.disabled' },
+      update: { value: finalValue, isEncrypted: encrypt, updatedAt: new Date() },
+      create: { key: 'app.sections.disabled', value: finalValue, isEncrypted: encrypt },
+    });
+  });
+}
+
 export async function saveConfig(
   prisma: PrismaClient,
   key: string,
@@ -152,39 +185,47 @@ export async function saveConfig(
 ): Promise<void> {
   const finalValue = encrypt ? encryptValue(value) : value;
 
-  await prisma.appConfig.upsert({
-    where: { key },
-    update: {
-      value: finalValue,
-      isEncrypted: encrypt,
-      updatedAt: new Date(),
-    },
-    create: {
-      key,
-      value: finalValue,
-      isEncrypted: encrypt,
-    },
-  });
+  if (key === 'app.sections.disabled') {
+    await saveSectionsDisabledGuarded(prisma, value, finalValue, encrypt);
+  } else {
+    await prisma.appConfig.upsert({
+      where: { key },
+      update: {
+        value: finalValue,
+        isEncrypted: encrypt,
+        updatedAt: new Date(),
+      },
+      create: {
+        key,
+        value: finalValue,
+        isEncrypted: encrypt,
+      },
+    });
+  }
+
+  if (RBAC_CACHE_KEYS.test(key)) {
+    invalidateRbacCache();
+  }
 }
 
 /**
- * Recupera una configurazione dal database con supporto decifratura
+ * Reads a single configuration value from the database.
  *
- * **SICUREZZA**: Per motivi di sicurezza, questa funzione dovrebbe essere usata
- * solo per singole chiavi. Per liste multiple, usare `listConfigsPaged`.
+ * **Security note**: Use this function only for individual keys.
+ * For paginated listings use `listConfigsPaged` instead.
  *
- * @param prisma - Client Prisma
- * @param key - Chiave della configurazione
- * @param decrypt - Se true, decifra automaticamente i valori cifrati
- * @returns Valore della configurazione (decifrato se richiesto e cifrato)
- *
- * @example
- * // Recupera valore decifrato
- * const value = await getConfig(prisma, "auth.ldap.password", true);
+ * @param prisma - Prisma client.
+ * @param key - Configuration key to look up.
+ * @param decrypt - When `true`, encrypted values are decrypted automatically.
+ * @returns Decrypted (or raw) string value, or `null` if the key does not exist.
  *
  * @example
- * // Recupera valore raw (cifrato rimane cifrato)
- * const value = await getConfig(prisma, "auth.ldap.password", false);
+ * // Read decrypted value
+ * const value = await getConfig(prisma, "auth.ldap.bindPassword", true);
+ *
+ * @example
+ * // Read raw value (encrypted blob is returned as-is)
+ * const value = await getConfig(prisma, "auth.ldap.bindPassword", false);
  */
 export async function getConfig(
   prisma: PrismaClient,
@@ -218,12 +259,14 @@ export async function getConfig(
 }
 
 /**
- * Recupera e valida una configurazione usando il registry tipizzato.
- * Restituisce il valore già parsato nel tipo corretto (number, boolean, ecc.)
- * secondo lo schema Zod definito in AppConfigRegistry.
+ * Reads a configuration value and parses it through the AppConfigRegistry Zod schema.
+ * Returns the value already coerced to the correct TypeScript type (number, boolean, etc.).
  *
- * @throws Error se la chiave non esiste nel DB
- * @throws ZodError se il valore non supera la validazione
+ * @param prisma - Prisma client.
+ * @param key - Typed configuration key defined in AppConfigRegistry.
+ * @returns Parsed and validated value.
+ * @throws {Error} If the key does not exist in the database.
+ * @throws {ZodError} If the stored value fails schema validation.
  */
 export async function getTypedConfig<K extends AppConfigKey>(
   prisma: PrismaClient,
@@ -237,9 +280,12 @@ export async function getTypedConfig<K extends AppConfigKey>(
 }
 
 /**
- * Verifica al boot che le chiavi critiche siano presenti e valide nel DB.
- * In produzione: lancia un'eccezione se una chiave è mancante o malformata.
- * In sviluppo: logga solo un warning.
+ * Validates all critical configuration keys on server boot.
+ * In production, throws an error if any key is missing or fails schema validation,
+ * preventing the server from starting in a broken state.
+ * In development, only a warning is logged.
+ *
+ * @throws {Error} In production if one or more critical keys are invalid.
  */
 export async function validateCriticalConfig(prisma: PrismaClient): Promise<void> {
   const errors: string[] = [];
@@ -269,10 +315,11 @@ export async function validateCriticalConfig(prisma: PrismaClient): Promise<void
 }
 
 /**
- * Lista tutte le configurazioni
- * @param prisma - Client Prisma
- * @param decrypt - Se true, decifra i valori cifrati
- * @returns Array di configurazioni
+ * Returns all configuration entries, optionally decrypting encrypted values.
+ *
+ * @param prisma - Prisma client.
+ * @param decrypt - When `true`, encrypted values are decrypted. Defaults to `true`.
+ * @returns Array of configuration records.
  */
 export async function listConfigs(
   prisma: PrismaClient,
@@ -307,37 +354,20 @@ export async function listConfigs(
 }
 
 /**
- * Lista configurazioni con paginazione, filtri e ordinamento
+ * Returns a paginated, filterable list of configuration entries.
  *
- * **SICUREZZA**: I valori cifrati non vengono mai decrittati in questa funzione.
- * Per valori cifrati, `valuePreview` sarà sempre `null`.
+ * **Security**: Encrypted values are never decrypted in this function.
+ * `valuePreview` is always `null` for encrypted entries.
  *
- * @param prisma - Client Prisma
- * @param params - Parametri per filtri, paginazione e ordinamento
- * @param params.q - Ricerca per chiave (case-insensitive)
- * @param params.category - Filtra per categoria (prefisso della chiave)
- * @param params.isEncrypted - Filtra per tipo di cifratura
- * @param params.sortBy - Campo per ordinamento
- * @param params.sortDir - Direzione ordinamento
- * @param params.page - Numero pagina (1-based)
- * @param params.pageSize - Dimensione pagina (5-100)
- * @returns Risultati paginati con metadati
- *
- * @example
- * // Lista base con paginazione
- * const result = await listConfigsPaged(prisma, { page: 1, pageSize: 20 });
- *
- * @example
- * // Ricerca con filtri
- * const result = await listConfigsPaged(prisma, {
- *   q: "ldap",
- *   category: "auth",
- *   isEncrypted: true,
- *   sortBy: "updatedAt",
- *   sortDir: "desc",
- *   page: 1,
- *   pageSize: 50
- * });
+ * @param prisma - Prisma client.
+ * @param params.q - Case-insensitive substring search on the key.
+ * @param params.category - Filter by key prefix (e.g. `"auth"` matches `"auth.ldap.url"`).
+ * @param params.isEncrypted - Filter by encryption status.
+ * @param params.sortBy - Field to sort by (`'key'` or `'updatedAt'`). Defaults to `'key'`.
+ * @param params.sortDir - Sort direction. Defaults to `'asc'`.
+ * @param params.page - 1-based page number. Defaults to `1`.
+ * @param params.pageSize - Page size (5–100). Defaults to `20`.
+ * @returns Paginated result with items, total count, and pagination metadata.
  */
 export async function listConfigsPaged(
   prisma: PrismaClient,
@@ -373,12 +403,12 @@ export async function listConfigsPaged(
     pageSize = 20,
   } = params;
 
-  // Costruisci where clause per filtri
-  const where: any = {};
+  // Build the where clause for filters
+  const where: Prisma.AppConfigWhereInput = {};
 
-  // Gestisci filtri per key
+  // Handle key filters
   if (q && category) {
-    // Se abbiamo sia ricerca che categoria, combina i filtri
+    // If we have both search and category, combine the filters
     where.AND = [
       { key: { contains: q, mode: 'insensitive' } },
       { key: { startsWith: `${category}.` } },
@@ -395,10 +425,10 @@ export async function listConfigsPaged(
     where.isEncrypted = isEncrypted;
   }
 
-  // Calcola skip per paginazione
+  // Compute skip for pagination
   const skip = (page - 1) * pageSize;
 
-  const countWhere: any = {};
+  const countWhere: Prisma.AppConfigWhereInput = {};
 
   if (q && category) {
     countWhere.AND = [
@@ -415,7 +445,7 @@ export async function listConfigsPaged(
     countWhere.isEncrypted = isEncrypted;
   }
 
-  // Esegui query parallele per items e total
+  // Run the items and total queries in parallel
   const [itemsRaw, total] = await Promise.all([
     prisma.appConfig.findMany({
       where,
@@ -432,7 +462,7 @@ export async function listConfigsPaged(
     prisma.appConfig.count({ where: countWhere }),
   ]);
 
-  // Processa i risultati
+  // Process the results
   const items = itemsRaw.map(item => ({
     key: item.key,
     category: item.key.split('.')[0] || 'misc',
@@ -451,9 +481,7 @@ export async function listConfigsPaged(
 }
 
 /**
- * Elimina una configurazione
- * @param prisma - Client Prisma
- * @param key - Chiave della configurazione da eliminare
+ * Permanently deletes a configuration entry from the database.
  */
 export async function deleteConfig(
   prisma: PrismaClient,
@@ -462,14 +490,19 @@ export async function deleteConfig(
   await prisma.appConfig.delete({
     where: { key },
   });
+
+  if (RBAC_CACHE_KEYS.test(key)) {
+    invalidateRbacCache();
+  }
 }
 
 /**
- * Recupera un segreto dal database e lo decifra
- * @param prisma - Client Prisma
- * @param key - Chiave del segreto da recuperare
- * @returns Valore decifrato del segreto
- * @throws Error se la chiave non esiste o non è cifrata
+ * Reads and decrypts a secret value from the database.
+ * Unlike `getConfig`, this function enforces that the entry must be encrypted;
+ * calling it on a plaintext entry throws rather than returning the raw value.
+ *
+ * @returns Decrypted secret value.
+ * @throws {Error} If the key does not exist, is not encrypted, or decryption fails.
  */
 export async function getSecret(
   prisma: PrismaClient,
@@ -501,37 +534,183 @@ export async function getSecret(
 }
 
 /**
- * Recupera il TTL della cache tokenVersion da AppConfig
- * @param prisma - Client Prisma
- * @returns TTL in millisecondi (default: 60000ms = 60s)
+ * Reads a numeric AppConfig value, clamped to `[min, max]`. Missing keys and out-of-range or
+ * non-numeric values both fall back to `defaultValue` — shared by every "TTL-style" getter below
+ * so the fetch/parse/bounds-check boilerplate lives in one place.
  */
-export async function getTokenVersionCacheTTL(
-  prisma: PrismaClient
+async function getBoundedNumericConfig(
+  prisma: PrismaClient,
+  key: string,
+  { defaultValue, min, max }: { defaultValue: number; min: number; max: number }
 ): Promise<number> {
-  const config = await getConfig(
-    prisma,
-    'security.tokenVersionCacheTTL',
-    false
-  );
+  const config = await getConfig(prisma, key, false);
+  if (!config) return defaultValue;
 
-  if (!config) {
-    return 60000; // Default: 60 secondi
-  }
+  const value = parseInt(config, 10);
+  if (isNaN(value) || value < min || value > max) return defaultValue;
 
-  const ttl = parseInt(config, 10);
-
-  // Validazione: min 10s, max 10min
-  if (isNaN(ttl) || ttl < 10000 || ttl > 600000) {
-    return 60000;
-  }
-
-  return ttl;
+  return value;
 }
 
 /**
- * Recupera la password policy da AppConfig
- * @param prisma - Client Prisma
- * @returns Password policy con validazioni hard minimum per sicurezza
+ * Reads the tokenVersion cache TTL from AppConfig.
+ * Enforces a minimum of 10 s and a maximum of 10 min; invalid values fall back to the default.
+ *
+ * @returns TTL in milliseconds. Defaults to 60 000 ms (60 s).
+ */
+export function getTokenVersionCacheTTL(prisma: PrismaClient): Promise<number> {
+  return getBoundedNumericConfig(prisma, 'security.tokenVersionCacheTTL', {
+    defaultValue: 60000, min: 10000, max: 600000,
+  });
+}
+
+/**
+ * Reads the `EditLock` session TTL from AppConfig — currently only consumed by the planning
+ * wizard, but the getter (like the underlying lock mechanism) isn't wizard-specific.
+ * Enforces the same 5 min – 60 min bounds as `AppConfigRegistry`; invalid values fall back
+ * to the default.
+ *
+ * @returns TTL in milliseconds. Defaults to 900 000 ms (15 min).
+ */
+export function getEditLockTtlMs(prisma: PrismaClient): Promise<number> {
+  return getBoundedNumericConfig(prisma, 'editLock.ttlMs', {
+    defaultValue: 900000, min: 300000, max: 3600000,
+  });
+}
+
+/**
+ * Reads how many days a backup stays before it's eligible for retention pruning.
+ *
+ * @returns Retention window in days. Defaults to 30; invalid values fall back to the default.
+ */
+export function getBackupRetentionDays(prisma: PrismaClient): Promise<number> {
+  return getBoundedNumericConfig(prisma, 'backup.retentionDays', {
+    defaultValue: 30, min: 1, max: 3650,
+  });
+}
+
+/**
+ * Reads the minimum number of completed backups the retention sweep must always keep,
+ * even if they're past their retention window.
+ *
+ * @returns Minimum backup count to retain. Defaults to 3; invalid values fall back to the default.
+ */
+export function getBackupRetentionMinCount(prisma: PrismaClient): Promise<number> {
+  return getBoundedNumericConfig(prisma, 'backup.retentionMinCount', {
+    defaultValue: 3, min: 0, max: 1000,
+  });
+}
+
+/**
+ * Reads how many days a non-critical audit log row stays before it's eligible for retention sweep.
+ *
+ * @returns Retention window in days. Defaults to 365; invalid values fall back to the default.
+ */
+export function getAuditLogRetentionDays(prisma: PrismaClient): Promise<number> {
+  return getBoundedNumericConfig(prisma, 'auditLog.retentionDays', {
+    defaultValue: 365, min: 1, max: 3650,
+  });
+}
+
+/**
+ * Reads the retention floor (in days) for audit log rows whose `action` is in
+ * `CRITICAL_AUDIT_ACTIONS` — kept far longer than ordinary rows for compliance.
+ *
+ * @returns Retention window in days. Defaults to 3650 (10 years); invalid values fall back to the default.
+ */
+export function getAuditLogCriticalRetentionDays(prisma: PrismaClient): Promise<number> {
+  return getBoundedNumericConfig(prisma, 'auditLog.criticalRetentionDays', {
+    defaultValue: 3650, min: 1, max: 36500,
+  });
+}
+
+/**
+ * Reads how many days a read notification stays before it's eligible for retention sweep.
+ * Unread notifications are never swept, regardless of age.
+ *
+ * @returns Retention window in days. Defaults to 90; invalid values fall back to the default.
+ */
+export function getNotificationRetentionDays(prisma: PrismaClient): Promise<number> {
+  return getBoundedNumericConfig(prisma, 'notification.retentionDays', {
+    defaultValue: 90, min: 1, max: 3650,
+  });
+}
+
+/**
+ * Reads how many days a `NotificationDedupKey` row stays before it's eligible for retention
+ * sweep. Well above the longest dedup window in use (23h) — purely a safety margin.
+ *
+ * @returns Retention window in days. Defaults to 30; invalid values fall back to the default.
+ */
+export function getNotificationDedupRetentionDays(prisma: PrismaClient): Promise<number> {
+  return getBoundedNumericConfig(prisma, 'notification.dedupRetentionDays', {
+    defaultValue: 30, min: 1, max: 3650,
+  });
+}
+
+/** Automatic-backup schedule + retention settings, resolved from AppConfig with the scheduler's own defaults. */
+export interface BackupScheduleSettings {
+  enabled: boolean;
+  dailyTime: string;
+  scope: BackupScope;
+  retentionDays: number;
+  retentionMinCount: number;
+  notifyOnFailure: boolean;
+}
+
+/**
+ * Parses a raw config value through its `AppConfigRegistry` Zod schema, falling back to
+ * `fallback` if the key is unset or the stored value no longer validates.
+ */
+function parseConfigOrDefault<K extends AppConfigKey>(
+  raw: string | null,
+  key: K,
+  fallback: AppConfigValue<K>
+): AppConfigValue<K> {
+  if (raw === null) return fallback;
+  try {
+    return parseConfigValue(key, raw);
+  } catch (error) {
+    logger.warn(
+      { key, error: error instanceof Error ? error.message : 'Unknown error' },
+      'Valore AppConfig non valido, uso fallback'
+    );
+    return fallback;
+  }
+}
+
+/**
+ * Reads the automatic-backup schedule settings — single source of truth shared by the
+ * scheduler tick and the admin settings UI, so both agree on defaults for unset keys.
+ */
+export async function getBackupScheduleSettings(prisma: PrismaClient): Promise<BackupScheduleSettings> {
+  const [enabledRaw, dailyTimeRaw, scopeRaw, notifyRaw, retentionDays, retentionMinCount] = await Promise.all([
+    getConfig(prisma, 'backup.schedule.enabled', false),
+    getConfig(prisma, 'backup.schedule.dailyTime', false),
+    getConfig(prisma, 'backup.schedule.scope', false),
+    getConfig(prisma, 'backup.notifyOnFailure', false),
+    getBackupRetentionDays(prisma),
+    getBackupRetentionMinCount(prisma),
+  ]);
+
+  return {
+    // z.coerce.boolean() treats any non-empty string (including the literal "false") as true —
+    // explicit string comparison sidesteps that footgun for these two, unlike dailyTime/scope below.
+    enabled: enabledRaw === 'true',
+    dailyTime: parseConfigOrDefault(dailyTimeRaw, 'backup.schedule.dailyTime', '03:00'),
+    scope: parseConfigOrDefault(scopeRaw, 'backup.schedule.scope', 'DB'),
+    retentionDays,
+    retentionMinCount,
+    notifyOnFailure: notifyRaw !== 'false',
+  };
+}
+
+/**
+ * Reads the password policy from AppConfig.
+ * Individual keys are read concurrently; missing keys fall back to secure defaults.
+ * The `minLength` is always clamped to a minimum of 8 characters.
+ *
+ * @returns Password policy with validated constraints.
  */
 export async function getPasswordPolicy(prisma: PrismaClient): Promise<{
   minLength: number;
@@ -559,10 +738,11 @@ export async function getPasswordPolicy(prisma: PrismaClient): Promise<{
 }
 
 /**
- * Recupera la configurazione LDAP completa dal database
- * @param prisma - Client Prisma
- * @returns Configurazione LDAP decifrata e tipizzata
- * @throws Error se le configurazioni non sono complete
+ * Assembles the full LDAP configuration from multiple AppConfig keys.
+ * Encrypted values (e.g. `bindPassword`) are decrypted automatically.
+ * Returns a safe default configuration when no LDAP keys exist in the database.
+ *
+ * @returns Fully populated and decrypted `LdapConfig`.
  */
 export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
   const configKeys = [
@@ -586,10 +766,10 @@ export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
     },
   });
 
-  // Crea mappa per accesso rapido
+  // Build a map for quick access
   const configMap = new Map(configs.map(c => [c.key, c]));
 
-  // Se non ci sono configurazioni LDAP, restituisci configurazione di default
+  // If there's no LDAP configuration, return the default configuration
   if (configs.length === 0) {
     return {
       enabled: false,
@@ -605,14 +785,14 @@ export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
     };
   }
 
-  // Helper per recuperare valore con fallback
+  // Helper to retrieve a value with fallback
   const getConfigValue = (key: string, defaultValue: string = ''): string => {
     const config = configMap.get(key);
     if (!config) return defaultValue;
     return config.isEncrypted ? decryptValue(config.value) : config.value;
   };
 
-  // Recupera e decifra i valori con fallback per chiavi mancanti
+  // Retrieve and decrypt values, falling back for missing keys
   const enabled = configMap.get('auth.ldap.enabled')?.value === 'true';
   const url = getConfigValue('auth.ldap.url');
   const bindDN = getConfigValue('auth.ldap.bindDN');
@@ -655,9 +835,10 @@ export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
 }
 
 /**
- * Recupera la configurazione di resilienza LDAP dal database
- * @param prisma - Client Prisma
- * @returns Configurazione resilienza LDAP con fallback ai default dello schema
+ * Reads the LDAP resilience configuration (circuit breaker, retries, timeouts) from AppConfig.
+ * Each key is read independently; missing keys fall back to the LdapResilienceSchema defaults.
+ *
+ * @returns Validated `LdapResilienceConfig` object.
  */
 export async function getLdapResilienceConfig(
   prisma: PrismaClient,

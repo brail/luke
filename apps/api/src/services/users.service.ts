@@ -1,6 +1,5 @@
 /**
- * Service per gestione utenti
- * Contiene logica di business comune per il router users
+ * User management service — shared business logic for the users router.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -8,39 +7,47 @@ import { z } from 'zod';
 
 import { hasPermission, type LockedFields, type Role } from '@luke/core';
 
-/**
- * Schema per ID utente — condiviso tra i sub-router
- */
+import { assertNotLastAdminWithSettingsAccess } from '../lib/lastAdminGuard';
+import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
+
+import type { Context } from '../lib/trpc';
+import type { Prisma } from '@prisma/client';
+
+/** UUID schema for a user ID — shared across sub-routers. */
 export const UserIdSchema = z.object({
   id: z.string().uuid('ID utente non valido'),
 });
 
 /**
- * Helper per determinare i campi bloccati in base al provider
+ * Returns the set of user fields that cannot be edited for the given auth provider.
+ * LOCAL users have no locked fields; LDAP users have username, name, and password locked.
  */
 export function getLockedFields(provider: string): LockedFields[] {
   if (provider === 'LOCAL') {
     return [];
   }
-  // Per provider esterni (LDAP, OIDC), blocca i campi sincronizzati
+  // For external providers (LDAP, OIDC), lock synchronized fields
   if (provider === 'LDAP') {
-    // Per LDAP: username non modificabile, firstName/lastName sincronizzati, password gestita da LDAP
+    // For LDAP: username immutable, firstName/lastName synchronized, password managed by LDAP
     return ['username', 'firstName', 'lastName', 'password'];
   }
-  // Per altri provider esterni (OIDC), blocca solo i campi sempre sincronizzati
+  // For other external providers (OIDC), lock only always-synchronized fields
   return ['firstName', 'lastName', 'password'];
 }
 
 /**
- * Handler comune per soft delete utente
- * Imposta isActive = false invece di eliminare il record
+ * Soft-deletes a user by setting `isActive = false`.
+ * Guards against self-deactivation and deletion of the last admin.
+ *
+ * @throws {TRPCError} NOT_FOUND if the user does not exist.
+ * @throws {TRPCError} FORBIDDEN if the caller targets their own account or the last admin.
  */
 export async function deleteUserHandler({
   input,
   ctx,
 }: {
   input: z.infer<typeof UserIdSchema>;
-  ctx: any;
+  ctx: Context & { session: NonNullable<Context['session']> };
 }) {
   const user = await ctx.prisma.user.findUnique({
     where: { id: input.id },
@@ -53,7 +60,7 @@ export async function deleteUserHandler({
     });
   }
 
-  // Protezione: impedisci auto-eliminazione
+  // Protection: prevent self-deactivation
   if (user.id === ctx.session.user.id) {
     throw new TRPCError({
       code: 'FORBIDDEN',
@@ -61,33 +68,32 @@ export async function deleteUserHandler({
     });
   }
 
-  // Protezione: impedisci eliminazione dell'ultimo admin
-  if (hasPermission({ role: user.role as Role }, '*:*')) {
-    const adminCount = await ctx.prisma.user.count({
-      where: {
-        role: 'admin',
-        isActive: true,
+  // Soft delete: sets isActive = false
+  const deletedUser = await ctx.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const current = await tx.user.findUnique({
+      where: { id: input.id },
+      select: { role: true },
+    });
+    if (current && hasPermission({ role: current.role as Role }, '*:*')) {
+      await assertNotLastAdminWithSettingsAccess(
+        tx,
+        input.id,
+        "Non puoi eliminare l'ultimo amministratore del sistema"
+      );
+    }
+
+    return tx.user.update({
+      where: { id: input.id },
+      data: {
+        isActive: false,
+        updatedAt: new Date(),
       },
     });
-
-    if (adminCount <= 1) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: "Non puoi eliminare l'ultimo amministratore del sistema",
-      });
-    }
-  }
-
-  // Soft delete: imposta isActive = false
-  const deletedUser = await ctx.prisma.user.update({
-    where: { id: input.id },
-    data: {
-      isActive: false,
-      updatedAt: new Date(),
-    },
   });
 
-  // Audit logging gestito automaticamente dal middleware withAuditLog
+  invalidateTokenVersionCache(input.id);
+
+  // Audit logging handled automatically by withAuditLog middleware
 
   return {
     id: deletedUser.id,

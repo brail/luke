@@ -1,27 +1,37 @@
-import fp from 'fastify-plugin';
-import { hasPermission, type Role } from '@luke/core';
-import type { FastifyInstance } from 'fastify';
-import type { PrismaClient } from '@prisma/client';
+/**
+ * Fastify plugin for company logo upload.
+ *
+ * Endpoint: POST /upload/company-logo
+ *
+ * Requires authentication and the `company_profile:update` permission.
+ * Delegates to the company logo service, which validates MIME type, enforces the
+ * file size limit and stores the file as **pending**. It does not touch the
+ * CompanyProfile: the linking happens in `company.profile.update`, passing
+ * the `fileObjectId` that this route returns.
+ */
 
-import { authenticateRequest } from '../lib/auth.js';
+import { Readable } from 'stream';
+
+import { TRPCError } from '@trpc/server';
+import fp from 'fastify-plugin';
+
+import { requireSessionWithPermission } from '../lib/auth.js';
+import { getTraceId, toErrorMessage } from '../lib/error.js';
 import { uploadCompanyLogo } from '../services/companyLogo.service.js';
+
+import type { PrismaClient } from '@prisma/client';
+import type { FastifyInstance } from 'fastify';
 
 export default fp(
   async (app: FastifyInstance, options: { prisma: PrismaClient }) => {
     app.post('/upload/company-logo', async (req, reply) => {
-      const session = await authenticateRequest(req, reply);
-      if (!session) {
-        return reply.code(401).send({ error: 'Unauthorized', message: 'Autenticazione richiesta' });
-      }
-
-      if (!hasPermission(session.user as { role: Role }, 'company_profile:update')) {
-        return reply.code(403).send({ error: 'Forbidden', message: 'Permesso negato: richiesta company_profile:update' });
-      }
+      const session = await requireSessionWithPermission(req, reply, 'company_profile:update', options.prisma);
+      if (!session) return;
 
       const ctx = {
         session,
         prisma: options.prisma,
-        traceId: (req as any).traceId || 'unknown',
+        traceId: getTraceId(req) || 'unknown',
         req,
         res: reply,
         logger: req.log,
@@ -43,16 +53,16 @@ export default fp(
           file: {
             filename: data.filename,
             mimetype: data.mimetype,
-            stream: require('stream').Readable.from(buffer),
+            stream: Readable.from(buffer),
             size: buffer.length,
           },
         });
 
         return reply.code(200).send(result);
-      } catch (error: any) {
-        req.log.error({ error: error.message }, 'Company logo upload error');
+      } catch (error: unknown) {
+        req.log.error({ error: toErrorMessage(error) }, 'Company logo upload error');
 
-        if (error.code === 'BAD_REQUEST' || error.code === 'NOT_FOUND') {
+        if (error instanceof TRPCError && (error.code === 'BAD_REQUEST' || error.code === 'NOT_FOUND')) {
           return reply.code(error.code === 'NOT_FOUND' ? 404 : 400).send({
             error: error.code,
             message: error.message,

@@ -49,6 +49,13 @@ export type CollectionLayoutAsOfRevision = {
 
 // ─── createRevision ───────────────────────────────────────────────────────────
 
+/**
+ * Snapshots the current collection layout as a new revision. Photos are copied to the
+ * immutable bucket before the transaction to keep the transaction short.
+ *
+ * @param copyPhoto - Callback that copies a photo by source key and returns the new key.
+ * @returns The created revision with all groups, rows, and quotation snapshots.
+ */
 export async function createRevision(
   input: CreateRevisionInput,
   userId: string,
@@ -64,6 +71,7 @@ export async function createRevision(
           rows: {
             include: {
               vendor: { select: { id: true, name: true, nickname: true } },
+              phase: { select: { value: true } },
               quotations: {
                 include: { pricingParameterSet: { select: { id: true, name: true } } },
                 orderBy: { order: 'asc' },
@@ -77,16 +85,11 @@ export async function createRevision(
     },
   });
 
-  // Gather all rows indexed by id for quick lookup
-  const allRowsById = new Map(
-    layout.groups.flatMap(g => g.rows).map(r => [r.id, r]),
-  );
+  const allRows = layout.groups.flatMap(g => g.rows);
 
   // Pre-copy photos OUTSIDE the transaction — orphan files if tx fails are acceptable
   // (CAS via sha256 dedup ensures no data loss, only unreferenced bytes in the bucket)
-  const rowsWithPhotos = input.includedRowIds
-    .map(id => allRowsById.get(id))
-    .filter((r): r is NonNullable<typeof r> => !!r?.pictureKey);
+  const rowsWithPhotos = allRows.filter(r => !!r.pictureKey);
 
   const photoCopyEntries = await Promise.all(
     rowsWithPhotos.map(async r => [r.id, await copyPhoto(r.pictureKey!)] as const),
@@ -129,12 +132,8 @@ export async function createRevision(
       groupRevisionMap.set(group.id, groupRev.id);
     }
 
-    // Snapshot included rows
-    const includedRowIdSet = new Set(input.includedRowIds);
-    for (const rowId of input.includedRowIds) {
-      const row = allRowsById.get(rowId);
-      if (!row) continue;
-
+    // Snapshot every row in the layout — revisions always cover the full layout
+    for (const row of allRows) {
       const sourceGroupRevisionId = groupRevisionMap.get(row.groupId);
       if (!sourceGroupRevisionId) continue;
 
@@ -142,7 +141,7 @@ export async function createRevision(
         data: {
           revisionId: revision.id,
           sourceGroupRevisionId,
-          sourceRowId: rowId,
+          sourceRowId: row.id,
           wasDeleted: false,
           gender: row.gender,
           vendorId: row.vendorId,
@@ -155,9 +154,9 @@ export async function createRevision(
           productCategory: row.productCategory,
           strategy: row.strategy,
           styleStatus: row.styleStatus,
-          progress: row.progress,
+          progress: row.phase?.value ?? null,
           designer: row.designer,
-          pictureKey: photoCopyMap.get(rowId) ?? null,
+          pictureKey: photoCopyMap.get(row.id) ?? null,
           styleNotes: row.styleNotes,
           materialNotes: row.materialNotes,
           colorNotes: row.colorNotes,
@@ -186,7 +185,7 @@ export async function createRevision(
 
       // Mark row as revised
       await tx.collectionLayoutRow.update({
-        where: { id: rowId },
+        where: { id: row.id },
         data: { lastRevisedAt: new Date() },
       });
     }
@@ -199,7 +198,6 @@ export async function createRevision(
         groups: {
           include: {
             rows: {
-              where: { sourceRowId: { in: [...includedRowIdSet] } },
               include: { quotationRevisions: true },
               orderBy: { order: 'asc' },
             },
@@ -213,6 +211,11 @@ export async function createRevision(
 
 // ─── listRevisions ────────────────────────────────────────────────────────────
 
+/**
+ * Lists all revisions for a collection layout in descending revision number order.
+ *
+ * @returns Lightweight revision summaries including row count and creator info.
+ */
 export async function listRevisions(
   collectionLayoutId: string,
   prisma: PrismaClient,
@@ -242,6 +245,11 @@ export async function listRevisions(
 
 // ─── getRevisionDetail ────────────────────────────────────────────────────────
 
+/**
+ * Fetches a single revision with its full group/row/quotation snapshot.
+ *
+ * @throws Prisma NotFoundError if the revision does not exist.
+ */
 export async function getRevisionDetail(
   revisionId: string,
   prisma: PrismaClient,
@@ -265,6 +273,12 @@ export async function getRevisionDetail(
 
 // ─── getLayoutAsOfRevision ────────────────────────────────────────────────────
 
+/**
+ * Reconstructs the layout state as it appeared at a specific revision by applying a
+ * "latest snapshot ≤ target revision number" strategy via raw SQL. Deleted rows are excluded.
+ *
+ * @returns The target revision summary plus the reconstructed group/row structure.
+ */
 export async function getLayoutAsOfRevision(
   collectionLayoutId: string,
   revisionId: string,
@@ -283,6 +297,9 @@ export async function getLayoutAsOfRevision(
   // JOIN on collection_group_revisions to carry sourceGroupId directly — rows from
   // earlier revisions have a sourceGroupRevisionId that belongs to a different revision,
   // so we cannot look it up from the target revision's group map alone.
+  // Raw SQL exemption (CLAUDE.md Stack Constraints): DISTINCT ON + json_agg(...) FILTER
+  // has no Prisma ORM equivalent. Uses the safe Prisma.sql tagged template (parameterized),
+  // never $queryRawUnsafe.
   const rowRevisions = await prisma.$queryRaw<(CollectionLayoutRowRevision & { source_group_id: string; quotations_json: string })[]>(
     Prisma.sql`
       SELECT DISTINCT ON (rr."sourceRowId")

@@ -5,13 +5,15 @@ import { useMemo } from 'react';
 import { useSectionAccess } from './useSectionAccess';
 
 /**
- * Hook per verificare l'accesso ai menu della sidebar
+ * Returns the sidebar visibility map for the current user, derived from
+ * `useSectionAccess`. Parent sections (settings, maintenance, admin) act as
+ * master switches: a sub-item is visible only when both the parent section and
+ * its own sub-section are enabled. A parent dropdown is shown only when at
+ * least one of its sub-items is visible.
  *
- * Il parent (settings/maintenance) fa da master switch:
- * - se il parent è false, nessun sub-item è visibile
- * - se il parent è true, ogni sub-item è visibile solo se anche la sua
- *   sotto-sezione è abilitata
- * La voce dropdown del parent appare solo se almeno un sub-item è visibile.
+ * @returns Object with boolean flags for each sidebar entry and grouped
+ *   sub-item maps (`settingsItems`, `maintenanceItems`, `adminItems`, `productItems`,
+ *   `salesItems`) plus `showGeneralSection` and `showSystemSection` macro-flags.
  */
 export function useMenuAccess() {
   const s = useSectionAccess();
@@ -27,6 +29,7 @@ export function useMenuAccess() {
       nav: s.settings && s['settings.nav'],
       nav_sync: s.settings && s['settings.nav_sync'],
       google: s.settings && s['settings.google'],
+      collectionControl: s.settings && s['settings.collection_control'],
     };
     const showSettings = Object.values(settingsItems).some(Boolean);
 
@@ -34,6 +37,9 @@ export function useMenuAccess() {
     const maintenanceItems = {
       config: s.maintenance && s['maintenance.config'],
       import_export: s.maintenance && s['maintenance.import_export'],
+      backup: s.maintenance && s['maintenance.backup'],
+      mode: s.maintenance && s['maintenance.mode'],
+      auditLog: s.maintenance && s['maintenance.audit_log'],
     };
     const showMaintenance = Object.values(maintenanceItems).some(Boolean);
 
@@ -44,12 +50,14 @@ export function useMenuAccess() {
       vendors: s.admin && s['admin.vendors'],
       collectionLayoutConfiguration: s.admin && s['admin.collection_layout_configuration'],
       calendarConfiguration: s.admin && s['admin.calendar_configuration'],
+      phaseCatalog: s.admin && s['admin.phase_catalog'],
     };
     const showAdmin = Object.values(adminItems).some(Boolean);
 
     // Prodotto: sub-items
     const productItems = {
       merchandisingPlan: s.product && s['product.merchandising_plan'],
+      control: s.product && s['product.control'],
     };
 
     const showCalendar = s['planning'];

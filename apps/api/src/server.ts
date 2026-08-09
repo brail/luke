@@ -1,55 +1,68 @@
 /**
- * Server Fastify per Luke API
- * Configurazione completa con tRPC, Prisma, sicurezza e logging
+ * Luke API server entry point.
+ *
+ * Bootstraps a Fastify instance with tRPC, Prisma, security plugins, and all upload/export routes.
+ * Startup sequence: env-policy guard → DB connection → master key validation → plugin registration
+ * → scheduler registration → listen.
  */
+
+import { readdir, stat, unlink } from 'fs/promises';
+import { join } from 'path';
 
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import Fastify from 'fastify';
 import pino from 'pino';
 
+import { isDevelopment, isProduction } from '@luke/core';
 import {
   validateMasterKey,
   deriveSecret,
   HKDF_INFO_COOKIE,
 } from '@luke/core/server';
-import { isDevelopment, isProduction } from '@luke/core';
 
-import { buildCorsAllowedOrigins } from './lib/cors';
-import { createContext } from './lib/trpc';
-import { setGlobalErrorHandler } from './lib/error';
+import { registerBackupScheduler } from './lib/backupScheduler';
+import { registerCalendarDigestScheduler } from './lib/calendarDigestScheduler';
+import { registerCalendarNotificationBuffer } from './lib/calendarNotificationBuffer';
 import { getConfig, validateCriticalConfig } from './lib/configManager';
+import { buildCorsAllowedOrigins } from './lib/cors';
+import { setGlobalErrorHandler } from './lib/error';
+import { buildHelmetConfig } from './lib/helmet';
+import { idempotencyStore } from './lib/idempotency';
+import { registerKimoSyncScheduler } from './lib/kimoSyncScheduler';
+import { registerMaintenanceModeScheduler } from './lib/maintenanceModeScheduler';
+import { registerMilestoneDeadlineScheduler } from './lib/milestoneDeadlineScheduler';
 import { registerNavSyncScheduler } from './lib/navSyncScheduler';
 import { registerPortafoglioSyncScheduler } from './lib/portafoglioSyncScheduler';
-import { registerKimoSyncScheduler } from './lib/kimoSyncScheduler';
-import { registerMilestoneDeadlineScheduler } from './lib/milestoneDeadlineScheduler';
-import { idempotencyStore } from './lib/idempotency';
 import { rateLimitStore } from './lib/ratelimit';
+import { registerRetentionScheduler } from './lib/retentionScheduler';
+import { createContext } from './lib/trpc';
 import {
   pinoTraceMiddleware,
   // pinoSerializers,
 } from './observability/pinoTrace';
 import { runReadinessChecks } from './observability/readiness';
-import { storagePlugin } from './plugins/storage-upload';
+import { storagePlugin } from './plugins/storageUpload';
+import { appRouter } from './routers';
+import { registerAuditLogExportDownloadRoute } from './routes/auditLogExportDownload';
+import { registerBackupDownloadRoute } from './routes/backupDownload';
+import { registerBackupExportDownloadRoute } from './routes/backupExportDownload';
+import { registerBackupImportRoute } from './routes/backupImport';
 import brandLogoRoutes from './routes/brandLogo.routes';
 import collectionRowPictureRoutes from './routes/collectionRowPicture.routes';
 import companyLogoRoutes from './routes/companyLogo.routes';
 import seasonCalendarExportRoutes from './routes/seasonCalendarExport.routes';
-import { registerSseRoute } from './routes/sse';
 import specsheetImageRoutes from './routes/specsheetImage.routes';
-import { appRouter } from './routers';
+import { registerSseRoute } from './routes/sse';
 import { getStorageProvider } from './storage';
-import { readdir, stat, unlink } from 'fs/promises';
-import { join } from 'path';
 
-/**
- * Configurazione del logger Pino con serializers per sicurezza
- */
+/** Pino logger configuration: `warn` in production, `info` + pino-pretty in development. */
 const loggerConfig = {
   level: isProduction() ? 'warn' : 'info',
   transport: isDevelopment()
@@ -62,24 +75,38 @@ const loggerConfig = {
         },
       }
     : undefined,
-} as any;
+};
 
-/**
- * Inizializza Fastify con configurazione logger
- */
+/** Fastify instance shared across all route registrations in this module. */
 const fastify = Fastify({
   logger: loggerConfig,
-  requestTimeout: 360_000, // 6 min — allineato a proxyTimeout Next.js e pool NAV (300 s + margine)
-  connectionTimeout: 0,    // disabilitato — requestTimeout gestisce il limite totale
-  maxParamLength: 5000, // tRPC batch requests contain multiple procedure names in the URL param
+  requestTimeout: 360_000, // 6 min — aligned with Next.js proxyTimeout and the NAV pool (300 s + margin)
+  connectionTimeout: 0,    // disabled — requestTimeout handles the total limit
+  routerOptions: { maxParamLength: 5000 }, // tRPC batch requests contain multiple procedure names in the URL param
+  // apps/api is never directly reachable from the Internet (no port published
+  // in docker-compose.prod.yml/rc.yml): the only entry point is the apps/web container,
+  // either via next.config.js rewrites or via NextAuth's server-to-server fetch
+  // (apps/web/src/auth.ts). Trusting X-Forwarded-For here is therefore safe and necessary
+  // so that req.ip resolves to the real client IP instead of the web container's internal
+  // address (root cause of the shared rate-limit bucket on /trpc/auth.login).
+  // `1` (not `true`): trust exactly one hop (the apps/web container, the only possible
+  // sender). `true` trusts an unlimited chain and resolves req.ip to the leftmost
+  // entry — i.e. the value a client can self-declare — making every
+  // keyBy:'ip' rate-limit bucket bypassable by sending a fake X-Forwarded-For (CRITICAL,
+  // audit 2026-08-07). With `1`, apps/api trusts only the direct socket (always apps/web)
+  // and reads the entry immediately before it — the one NPM itself appended via
+  // $proxy_add_x_forwarded_for, never the one self-declared by the client.
+  trustProxy: 1,
 });
 
-// Registra handler/onError globali per logging e risposta sicura
+// Register global handler/onError for logging and a safe response
 setGlobalErrorHandler(fastify);
 
 /**
- * Parser JSON personalizzato per gestire Content-Type con charset
- * Risolve il problema delle mutation tRPC che non ricevono i parametri
+ * Custom JSON content-type parser that accepts `application/json; charset=utf-8` and similar.
+ *
+ * Fixes tRPC mutations where the framework's default parser rejected the charset suffix,
+ * causing input parameters to be silently dropped.
  */
 fastify.addContentTypeParser(
   /^application\/json/,
@@ -94,24 +121,24 @@ fastify.addContentTypeParser(
   }
 );
 
-/**
- * Inizializza Prisma Client
- */
+/** Prisma client instance using the pg adapter. Shared across all route handlers and services. */
 const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }),
   log: isDevelopment() ? ['query', 'info', 'warn', 'error'] : ['error'],
 });
 
 /**
- * Registra plugin di sicurezza
+ * Registers security-related Fastify plugins: cookie, rate-limit, helmet, CORS,
+ * and the Pino trace-correlation hook.
  */
-async function registerSecurityPlugins() {
-  // Cookie plugin per gestione sessioni
-  // Secret derivato via HKDF-SHA256 dalla master key (dominio: cookie.secret)
+async function registerSecurityPlugins(): Promise<string[]> {
+  // Cookie plugin for session management
+  // Secret derived via HKDF-SHA256 from the master key (domain: cookie.secret)
   await fastify.register(cookie, {
     secret: deriveSecret(HKDF_INFO_COOKIE),
   });
 
-  // Rate limiting globale (permissivo)
+  // Global rate limiting (permissive)
   await fastify.register(rateLimit, {
     max: isDevelopment() ? 2000 : 100,
     timeWindow: '1 minute',
@@ -119,7 +146,7 @@ async function registerSecurityPlugins() {
     skipOnError: true,
     // In dev, bypass rate limiting for localhost to avoid dev friction
     allowList: isDevelopment() ? ['127.0.0.1', '::1', '::ffff:127.0.0.1'] : [],
-    errorResponseBuilder: (request: any, context: any) => ({
+    errorResponseBuilder: (request: any, context: any) => ({ // Fastify rate-limit internals lack exported types
       statusCode: 429,
       error: 'Rate limit exceeded',
       message: `Too many requests from ${request.ip}`,
@@ -127,36 +154,23 @@ async function registerSecurityPlugins() {
     }),
   });
 
-  // Helmet per security headers con CSP minimale per API JSON-only
-  await fastify.register(helmet, {
-    contentSecurityPolicy: isDevelopment()
-      ? false // Disabilita CSP in dev per evitare problemi
-      : {
-          directives: {
-            defaultSrc: ["'none'"],
-            frameAncestors: ["'none'"],
-            baseUri: ["'none'"],
-          },
-        },
-    hsts: isDevelopment()
-      ? false // Disabilita HSTS in dev
-      : {
-          maxAge: 15552000, // 180 giorni
-          includeSubDomains: true,
-          preload: false, // Non forzare preload
-        },
-    // Header aggiuntivi per sicurezza
-    noSniff: true, // X-Content-Type-Options: nosniff
-    referrerPolicy: { policy: 'no-referrer' }, // Referrer-Policy: no-referrer
-    frameguard: { action: 'deny' }, // X-Frame-Options: DENY
-    dnsPrefetchControl: false, // X-DNS-Prefetch-Control: off
-  });
-
-  // CORS ibrido con priorità AppConfig → ENV → default
   const envName = isDevelopment() ? 'development' : isProduction() ? 'production' : 'test';
+
+  // Helmet for security headers with a minimal CSP for a JSON-only API.
+  //
+  // The configuration comes from `lib/helmet.ts`, which declares itself centralized:
+  // an inline copy used to live here, and the two had already diverged. The copy
+  // passed `dnsPrefetchControl: false`, which in helmet **disables the
+  // middleware** instead of setting the header — so the server wasn't sending
+  // `X-DNS-Prefetch-Control` at all, while `security.headers.spec.ts` asserted it
+  // as `off` against `buildHelmetConfig` and passed. A green test for a
+  // nonexistent header.
+  await fastify.register(helmet, buildHelmetConfig(envName));
+
+  // Hybrid CORS with priority AppConfig → ENV → default
   const corsConfig = buildCorsAllowedOrigins(envName);
 
-  // Log informativo CORS (non stampare lista completa in prod)
+  // Informational CORS log (don't print the full list in prod)
   if (
     corsConfig.source === 'default-prod-deny' &&
     corsConfig.origins.length === 0
@@ -168,7 +182,7 @@ async function registerSecurityPlugins() {
     );
   }
 
-  // Registra CORS solo se ci sono origini configurate o siamo in dev
+  // Register CORS only if there are configured origins or we're in dev
   if (corsConfig.origins.length > 0 || isDevelopment()) {
     await fastify.register(cors, {
       origin: isDevelopment() ? true : corsConfig.origins,
@@ -188,12 +202,14 @@ async function registerSecurityPlugins() {
     });
   }
 
-  // Middleware per correlazione trace ID con log Pino
+  // Middleware for trace ID correlation with Pino logs
   fastify.addHook('onRequest', pinoTraceMiddleware);
 
-  // Rate limiting ora gestito via tRPC middleware per-rotta
+  // Rate limiting now handled via per-route tRPC middleware
 
-  // Idempotency è gestito a livello tRPC middleware per procedure specifiche
+  // Idempotency is handled at the tRPC middleware level for specific procedures
+
+  return corsConfig.origins;
 }
 
 // /**
@@ -207,36 +223,44 @@ async function registerSecurityPlugins() {
 //   });
 // }
 
-/**
- * Registra tRPC plugin
- */
+/** Registers the tRPC Fastify adapter at the `/trpc` prefix. */
 async function registerTRPCPlugin() {
   await fastify.register(fastifyTRPCPlugin, {
     prefix: '/trpc',
     trpcOptions: {
       router: appRouter,
-      createContext: async ({ req, res }: any) =>
+      createContext: async ({ req, res }: any) => // fastify-trpc-plugin adapter types not exported
         createContext({ prisma, req, res }),
-      onError: ({ path, error, ctx }: any) => {
+      onError: ({ path, error, ctx }: any) => { // fastify-trpc-plugin OnErrorFn type not exported
         const traceId = ctx?.traceId;
+        const cause = error.cause; // `error` is already `any` (see comment above) — redundant cast
         fastify.log.error(
           {
             path,
-            err: { message: error.message, code: (error as any).code },
+            err: { message: error.message, code: error.code },
+            // `cause` is deliberately set on many `INTERNAL_SERVER_ERROR`s
+            // (see apps/api/src/lib/ratelimit.ts and others) precisely because
+            // otherwise it disappears here: without this field, the real cause
+            // never reaches the logs.
+            ...(cause !== undefined
+              ? { cause: cause instanceof Error ? cause.message : String(cause) }
+              : {}),
             traceId,
           },
           'tRPC error'
         );
       },
     },
-    // Gestisci richieste OPTIONS per CORS
+    // Handle OPTIONS requests for CORS
     useWSS: false,
   });
 }
 
 /**
- * Registra multipart plugin globalmente per tutti i route di upload
- * Limite 50MB (massimo per storage-upload generale); i service applicano limiti più stringenti per specifiche entità
+ * Registers `@fastify/multipart` globally with a 50 MB file size limit.
+ *
+ * This is the maximum allowed by the generic storage upload endpoint. Individual
+ * domain services (brand logo, collection pictures, etc.) enforce stricter limits.
  */
 async function registerMultipart() {
   await fastify.register(multipart, {
@@ -247,69 +271,68 @@ async function registerMultipart() {
   });
 }
 
-/**
- * Registra storage plugin per upload/download
- */
+/** Registers the generic storage upload/download plugin. */
 async function registerStoragePlugin() {
   await fastify.register(storagePlugin, { prisma });
 }
 
-/**
- * Registra brand logo routes
- */
+/** Registers the brand logo upload routes. */
 async function registerBrandLogoRoutes() {
   await fastify.register(brandLogoRoutes, { prisma });
 }
 
+/** Registers the company logo upload routes. */
 async function registerCompanyLogoRoutes() {
   await fastify.register(companyLogoRoutes, { prisma });
 }
 
-/**
- * Registra collection row picture routes
- */
+/** Registers the collection layout row picture upload routes. */
 async function registerCollectionRowPictureRoutes() {
   await fastify.register(collectionRowPictureRoutes, { prisma });
 }
 
-/**
- * Registra specsheet image routes
- */
+/** Registers the merchandising specsheet image upload routes. */
 async function registerSpecsheetImageRoutes() {
   await fastify.register(specsheetImageRoutes, { prisma });
 }
 
+/** Registers the season calendar export routes (iCal, PDF, XLSX). */
 async function registerSeasonCalendarExportRoutes() {
   await fastify.register(seasonCalendarExportRoutes, { prisma });
 }
 
 /**
- * Registra route di health check e readiness
+ * Registers health and readiness probe routes:
+ *  - GET /livez   — liveness (always 200 if the process is running)
+ *  - GET /readyz  — readiness (runs all registered checks, 503 if any fail)
+ *  - GET /healthz — legacy health endpoint for Portainer and Docker healthcheck
+ *  - GET /api/health — detailed health info including uptime and version
+ *  - GET /         — root discovery endpoint listing available endpoints
  */
 async function registerHealthRoute() {
-  // Liveness: processo attivo (sempre 200 se process vivo)
+  // Liveness: process alive (always 200 if the process is alive)
   fastify.get('/livez', async (_request, _reply) => {
     return { status: 'ok' };
   });
 
-  // Readiness: sistema pronto per servire richieste
+  // Readiness: system ready to serve requests
   fastify.get('/readyz', async (_request, reply) => {
     const result = await runReadinessChecks(prisma);
 
     if (!result.allOk) {
       reply.status(503);
-      // Log interno senza esporre in risposta HTTP
+      // Internal log without exposing it in the HTTP response
       fastify.log.warn({ checks: result.checks }, 'Readiness check failed');
     }
 
     return {
       status: result.allOk ? 'ready' : 'unready',
       timestamp: result.timestamp,
-      checks: result.checks, // OK esporre status per debug K8s
+      checks: result.checks, // OK to expose status for K8s debugging
     };
   });
 
-  // Route legacy per retrocompatibilità
+  // Legacy route for backward compatibility
   fastify.get('/healthz', async (_request, _reply) => {
     return {
       status: 'ok',
@@ -327,7 +350,7 @@ async function registerHealthRoute() {
     };
   });
 
-  // Route root per compatibilità
+  // Root route for compatibility
   fastify.get('/', async (_request, _reply) => {
     return {
       message: 'Luke API is running!',
@@ -350,16 +373,19 @@ async function registerHealthRoute() {
 }
 
 /**
- * Cron job per cleanup file temporanei più vecchi di 1 ora
+ * Starts a background interval that cleans up unconfirmed (pending) temp files
+ * older than 1 hour and orphaned `.tmp` partial files older than 2 hours.
+ *
+ * Runs immediately on startup, then every 30 minutes. The interval is cleared on server close.
  */
 function setupTempFileCleanup() {
-  const cleanupInterval = 30 * 60 * 1000; // 30 minuti
+  const cleanupInterval = 30 * 60 * 1000; // 30 minutes
 
   const cleanupTempFiles = async () => {
     try {
       const provider = await getStorageProvider(prisma);
 
-      // Trova file temporanei più vecchi di 1 ora
+      // Find temp files older than 1 hour
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
       const tempFiles = await prisma.fileObject.findMany({
         where: {
@@ -404,8 +430,8 @@ function setupTempFileCleanup() {
         );
       }
 
-      // Pulizia file orfani nelle directory .tmp (upload falliti/interrotti)
-      // Rimuove file più vecchi di 2 ore che non sono stati promossi al path finale
+      // Cleanup of orphan files in .tmp directories (failed/interrupted uploads)
+      // Removes files older than 2 hours that weren't promoted to their final path
       try {
         const basePath =
           (await getConfig(prisma, 'storage.local.basePath', false)) ||
@@ -426,7 +452,7 @@ function setupTempFileCleanup() {
                 fastify.log.debug({ filePath }, 'Removed orphan .tmp file');
               }
             } catch {
-              // File già rimosso o non accessibile — ignora
+              // File already removed or inaccessible — ignore
             }
           }
         }
@@ -438,7 +464,7 @@ function setupTempFileCleanup() {
     }
   };
 
-  // Avvia cleanup immediato e poi ogni 30 minuti
+  // Run cleanup immediately, then every 30 minutes
   setImmediate(cleanupTempFiles);
   const cleanupTimer = setInterval(cleanupTempFiles, cleanupInterval);
 
@@ -450,7 +476,10 @@ function setupTempFileCleanup() {
 }
 
 /**
- * Configura graceful shutdown
+ * Wires up graceful shutdown for SIGTERM, SIGINT, uncaughtException, and unhandledRejection.
+ *
+ * On any termination signal: stops in-memory stores, closes the HTTP server (5 s timeout),
+ * disconnects Prisma, then exits. Fatal errors follow the same path with `process.exit(1)`.
  */
 function setupGracefulShutdown() {
   const closeWithTimeout = async (ms: number) => {
@@ -474,24 +503,24 @@ function setupGracefulShutdown() {
       rateLimitStore.stop();
       idempotencyStore.stop();
 
-      // Chiudi server HTTP
+      // Close HTTP server
       await closeWithTimeout(5_000);
       fastify.log.info('Server HTTP chiuso');
 
       fastify.log.info('Shutdown completato');
       process.exit(0);
-    } catch (error: any) {
-      fastify.log.error('Errore durante shutdown:', error);
+    } catch (error: unknown) {
+      fastify.log.error({ err: error }, 'Errore durante shutdown');
       process.exit(1);
     }
   };
 
-  // Gestisci segnali di terminazione
+  // Handle termination signals
   process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
   process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-  // Gestisci errori non catturati
-  const onFatal = async (reason: any, type: string) => {
+  // Handle uncaught errors
+  const onFatal = async (reason: any, type: string) => { // process events can propagate any thrown value, not just Error
     try {
       fastify.log.fatal({ reason }, `${type}: shutting down`);
       await closeWithTimeout(5_000);
@@ -502,11 +531,11 @@ function setupGracefulShutdown() {
     }
   };
 
-  process.on('uncaughtException', (error: any) => {
+  process.on('uncaughtException', (error: any) => { // Node.js listener signature accepts any thrown value
     void onFatal(error, 'uncaughtException');
   });
 
-  process.on('unhandledRejection', (reason: any) => {
+  process.on('unhandledRejection', (reason: any) => { // rejection reason can be any value
     void onFatal(reason, 'unhandledRejection');
   });
 }
@@ -514,24 +543,24 @@ function setupGracefulShutdown() {
 /**
  * POLICY: Bootstrap env guard (API server)
  *
- * Solo variabili di infrastruttura sono ammesse in process.env.
- * Qualsiasi configurazione applicativa (credenziali, segreti, endpoint esterni)
- * deve vivere in AppConfig (database). Se viene rilevata una variabile vietata:
- *   - in produzione: il server termina con exit(1)
- *   - in sviluppo: viene emesso un warning esplicito
+ * Only infrastructure variables are allowed in process.env.
+ * Any application configuration (credentials, secrets, external endpoints)
+ * must live in AppConfig (database). If a forbidden variable is detected:
+ *   - in production: the server exits with exit(1)
+ *   - in development: an explicit warning is emitted
  *
- * Variabili ammesse (API):
- *   DATABASE_URL              — Prisma, necessario prima del boot DB
- *   PORT, HOST                — bind server
- *   NODE_ENV, npm_package_version — runtime standard
- *   LUKE_CORS_ALLOWED_ORIGINS — override CORS di deploy (non segreto)
+ * Allowed variables (API):
+ *   DATABASE_URL              — Prisma, needed before DB boot
+ *   PORT, HOST                — server bind
+ *   NODE_ENV, npm_package_version — standard runtime
+ *   LUKE_CORS_ALLOWED_ORIGINS — deploy CORS override (not a secret)
  *   OTEL_*, LOG_LEVEL         — observability infra
  *
- * Eccezioni web container (non toccate da questo guard):
- *   NEXTAUTH_SECRET, NEXTAUTH_URL — vincolo framework NextAuth
- *   INTERNAL_API_URL              — Next.js rewrites, risolto a build-time
- *   NEXT_PUBLIC_*                 — baked nel bundle client, impossibile da DB
- *   COOKIE_SECURE                 — setting deploy HTTP vs HTTPS
+ * Web container exceptions (not touched by this guard):
+ *   NEXTAUTH_SECRET, NEXTAUTH_URL — NextAuth framework constraint
+ *   INTERNAL_API_URL              — Next.js rewrites, resolved at build time
+ *   NEXT_PUBLIC_*                 — baked into the client bundle, impossible from DB
+ *   COOKIE_SECURE                 — HTTP vs HTTPS deploy setting
  */
 const FORBIDDEN_ENV_PATTERNS: RegExp[] = [
   /^SMTP_/i,
@@ -546,6 +575,11 @@ const FORBIDDEN_ENV_PATTERNS: RegExp[] = [
 
 const ALLOWED_ENV_EXCEPTIONS = new Set<string>([]);
 
+/**
+ * Enforces the env-var policy: exits with code 1 in production (warns in development)
+ * if any forbidden pattern (SMTP_*, LDAP_*, JWT_*, *_SECRET, *_PASSWORD, etc.) is found
+ * in `process.env`. See the policy comment block above for the full allowed-list.
+ */
 function assertEnvPolicy(): void {
   const violations = Object.keys(process.env).filter(key =>
     !ALLOWED_ENV_EXCEPTIONS.has(key) &&
@@ -566,18 +600,22 @@ function assertEnvPolicy(): void {
 }
 
 /**
- * Avvia il server
+ * Starts the Luke API server.
+ *
+ * Runs the full startup sequence: env-policy guard, DB connection, config validation,
+ * master key check, plugin registration, scheduler setup, and HTTP listen.
+ * Exits with code 1 on any startup failure.
  */
 const start = async () => {
   try {
-    // Verifica policy env var PRIMA di tutto il resto
+    // Verify env var policy BEFORE everything else
     assertEnvPolicy();
 
-    // Test connessione database
+    // Test database connection
     await prisma.$connect();
     fastify.log.info('Connessione database stabilita');
 
-    // Valida chiavi critiche in AppConfig
+    // Validate critical keys in AppConfig
     await validateCriticalConfig(prisma);
 
     // Test master key availability
@@ -590,43 +628,62 @@ const start = async () => {
     try {
       deriveSecret('api.jwt');
       fastify.log.info('Segreti JWT derivati con successo');
-    } catch (error: any) {
+    } catch {
       fastify.log.error('Impossibile derivare segreti JWT');
       process.exit(1);
     }
 
-    // Registra plugin e route nell'ordine corretto
-    await registerSecurityPlugins(); // CORS deve essere registrato prima di tRPC
+    // Register plugins and routes in the correct order
+    const corsAllowedOrigins = await registerSecurityPlugins(); // CORS must be registered before tRPC
     await registerTRPCPlugin();
-    await registerMultipart(); // Multipart globale (richiesto da tutti i route di upload)
+    await registerMultipart(); // Global multipart (required by all upload routes)
     await registerStoragePlugin(); // Storage upload/download routes
+    await registerBackupDownloadRoute(fastify, prisma); // Backup blob download (admin-only, streamed)
+    await registerBackupExportDownloadRoute(fastify, prisma); // Passphrase-protected portable export download (streamed)
+    await registerAuditLogExportDownloadRoute(fastify, prisma); // Audit log CSV export (admin-only, streamed)
+    await registerBackupImportRoute(fastify, prisma); // Passphrase-protected portable export upload
     await registerBrandLogoRoutes(); // Brand logo upload routes
     await registerCompanyLogoRoutes(); // Company logo upload routes
     await registerCollectionRowPictureRoutes(); // Collection row picture upload routes
     await registerSpecsheetImageRoutes(); // Specsheet image upload routes
     await registerSeasonCalendarExportRoutes(); // iCal + CSV export
-    await registerSseRoute(fastify); // SSE real-time push
+    await registerSseRoute(fastify, corsAllowedOrigins); // SSE real-time push
     await registerHealthRoute();
 
-    // Configura cleanup file temporanei
+    // Configure temp file cleanup
     setupTempFileCleanup();
 
-    // Registra scheduler sync NAV (onReady + onClose)
+    // Register NAV sync scheduler (onReady + onClose)
     registerNavSyncScheduler(fastify, prisma);
 
-    // Registra scheduler sync portafoglio NAV → PG (onReady + onClose)
+    // Register NAV portfolio sync scheduler → PG (onReady + onClose)
     registerPortafoglioSyncScheduler(fastify, prisma);
 
-    // Registra scheduler sync tabelle KIMO-FASHION NAV → PG (onReady + onClose)
+    // Register KIMO-FASHION table sync scheduler NAV → PG (onReady + onClose)
     registerKimoSyncScheduler(fastify, prisma);
 
-    // Registra scheduler notifiche deadline milestone (tick ogni ora)
+    // Register milestone deadline notification scheduler (tick every hour)
     registerMilestoneDeadlineScheduler(fastify, prisma);
 
-    // Configura graceful shutdown
+    // Register calendar email digest scheduler (daily run at 07:00)
+    registerCalendarDigestScheduler(fastify, prisma);
+
+    // Register automatic backup scheduler + retention pruning (tick every hour)
+    registerBackupScheduler(fastify, prisma);
+
+    // Register maintenance mode scheduler: warning ladder + automatic activation (tick every 60s)
+    registerMaintenanceModeScheduler(fastify, prisma);
+
+    // Register periodic flush of the calendar notification aggregation buffer (tick every 30s)
+    registerCalendarNotificationBuffer(fastify, prisma);
+
+    // Register retention sweep for audit log + notifications + dedup keys (tick every 24h)
+    registerRetentionScheduler(fastify, prisma);
+
+    // Configure graceful shutdown
     setupGracefulShutdown();
 
-    // Avvia server
+    // Start server
     const port = parseInt(process.env.PORT || '3001', 10);
     const host = process.env.HOST || '0.0.0.0';
 
@@ -640,11 +697,11 @@ const start = async () => {
     if (isDevelopment()) {
       fastify.log.info(`Prisma Studio: pnpm --filter @luke/api prisma:studio`);
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     fastify.log.error({ err }, 'Errore avvio server');
     process.exit(1);
   }
 };
 
-// Avvia il server
+// Start the server
 start();

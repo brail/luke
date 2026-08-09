@@ -1,16 +1,18 @@
 'use client';
 
-import { Calendar, CalendarClock, RefreshCw, Copy, Plus, List, GanttChart, CalendarRange, CalendarDays, Maximize2, Minimize2, ChevronDown, Check, FlaskConical, MoreHorizontal } from 'lucide-react';
+import { Calendar, CalendarClock, CalendarPlus, RefreshCw, Copy, Plus, List, GanttChart, CalendarRange, CalendarDays, Maximize2, Minimize2, ChevronDown, Check, MoreHorizontal, Snowflake } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 
-import type { SimulationResult } from '@luke/calendar';
-
+import { ConfirmDialog } from '../../../components/ConfirmDialog';
+import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent } from '../../../components/ui/card';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../../../components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../../components/ui/tooltip';
 import { useAppContext } from '../../../contexts/AppContextProvider';
 import { usePermission } from '../../../hooks/usePermission';
 import { trpc } from '../../../lib/trpc';
@@ -27,13 +29,24 @@ import { CalendarEventTimeline } from './_components/CalendarEventTimeline';
 import { CalendarEventWeekView } from './_components/CalendarEventWeekView';
 import { CloneBrandSeasonDialog } from './_components/CloneBrandSeasonDialog';
 import { ExportButton } from './_components/ExportButton';
+import { FreezePlanningGroupWizard } from './_components/FreezePlanningGroupWizard';
+import { GoogleCalendarSubscribeDialog } from './_components/GoogleCalendarSubscribeDialog';
+import { ManagePlanningGroupsDialog } from './_components/ManagePlanningGroupsDialog';
+import { PlanningWizard } from './_components/PlanningWizard/PlanningWizard';
+import { SelectPlanningGroupDialog } from './_components/SelectPlanningGroupDialog';
 import { useHolidays } from './_components/useHolidays';
-import { WhatIfBanner } from './_components/WhatIfBanner';
-import { addDays, assignBrandColors, daysBetween, resolveBrandColor } from './utils';
+import { assignBrandColors, resolveBrandColor } from './utils';
+
+import type { CalendarEventItem } from './_components/types';
+
+const VALID_VIEWS = ['list', 'gantt', 'week', 'day', 'month'] as const;
+type CalendarView = (typeof VALID_VIEWS)[number];
 
 export default function CalendarPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
   const { can } = usePermission();
+  const searchParams = useSearchParams();
+  const router = useRouter();
 
   const [selectedBrandIds, setSelectedBrandIds] = useState<string[]>([]);
   const [selectedFunctionIds, setSelectedFunctionIds] = useState<string[]>([]);
@@ -43,12 +56,26 @@ export default function CalendarPage() {
   const [createDefaultAllDay, setCreateDefaultAllDay] = useState(true);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
-  const [view, setView] = useState<'list' | 'gantt' | 'week' | 'day' | 'month'>('month');
-  const [viewDate, setViewDate] = useState<Date>(() => new Date());
+  const [manageGroupsOpen, setManageGroupsOpen] = useState(false);
+  const [subscribeOpen, setSubscribeOpen] = useState(false);
+  /** Set by ApplyTemplateDialog's onApplied — drives the automatic post-apply wizard. */
+  const [postApplyWizard, setPostApplyWizard] = useState<{ planningGroupId: string; events: CalendarEventItem[] } | null>(null);
+  // Which planning-group picker is open — freeze and unfreeze share the same picker dialog,
+  // they only differ in title/filter/target once a group is chosen.
+  const [pickerAction, setPickerAction] = useState<'freeze' | 'unfreeze' | 'amend' | null>(null);
+  // Which group the picker resolved to, and what to do with it — freeze steps through a wizard,
+  // unfreeze just confirms, but there's only ever one active target regardless of which.
+  const [activeGroupAction, setActiveGroupAction] = useState<{ type: 'freeze' | 'unfreeze' | 'amend'; groupId: string } | null>(null);
+  const [view, setViewState] = useState<CalendarView>(() => {
+    const v = searchParams.get('view');
+    return (VALID_VIEWS as readonly string[]).includes(v ?? '') ? (v as CalendarView) : 'month';
+  });
+  const [viewDate, setViewDateState] = useState<Date>(() => {
+    const d = searchParams.get('date');
+    const parsed = d ? new Date(d) : null;
+    return parsed && !isNaN(parsed.getTime()) ? parsed : new Date();
+  });
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [simulateMode, setSimulateMode] = useState(false);
-  const [proposedShifts, setProposedShifts] = useState<{ eventId: string; newStartAt: string }[]>([]);
-  const [simulateResult, setSimulateResult] = useState<SimulationResult | null>(null);
 
   useEffect(() => {
     if (!isFullscreen) return;
@@ -56,6 +83,22 @@ export default function CalendarPage() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [isFullscreen]);
+
+  const setSearchParam = useCallback((key: string, value: string) => {
+    const p = new URLSearchParams(searchParams.toString());
+    p.set(key, value);
+    router.replace(`?${p.toString()}`, { scroll: false });
+  }, [router, searchParams]);
+
+  const setView = useCallback((v: CalendarView) => {
+    setViewState(v);
+    setSearchParam('view', v);
+  }, [setSearchParam]);
+
+  const setViewDate = useCallback((d: Date) => {
+    setViewDateState(d);
+    setSearchParam('date', d.toISOString().slice(0, 10));
+  }, [setSearchParam]);
 
   const contextBrandId = brand?.id ?? null;
   const enabled = !!contextBrandId && !!season?.id;
@@ -89,47 +132,99 @@ export default function CalendarPage() {
     { enabled }
   );
 
-  const { data: milestones, isLoading: milestonesLoading, refetch } = trpc.seasonCalendar.listMilestones.useQuery(
+  const { data: rawMilestones, isLoading: milestonesLoading, refetch } = trpc.seasonCalendar.listMilestones.useQuery(
     { seasonId: season?.id ?? '', brandIds: selectedBrandIds.length > 0 ? selectedBrandIds : [contextBrandId ?? ''] },
     { enabled: enabled && selectedBrandIds.length > 0 }
   );
+  // TS2589: RouterOutputs type is excessively deep — as unknown breaks instantiation before re-narrowing
+  const milestones = rawMilestones as unknown as CalendarEventItem[] | undefined;
 
   const { data: syncStatus } = trpc.seasonCalendar.getSyncStatus.useQuery(
     { calendarId: calendar?.id ?? '' },
     { enabled: !!calendar?.id }
   );
 
+  const utils = trpc.useUtils();
+  /** Refetches milestones and invalidates the criticality caches — an event's phase/date change
+   * affects the alert engine, so the collection layout badges must update without a page reload. */
+  const refetchAfterEventChange = () => {
+    void refetch();
+    utils.phaseAlert.invalidate();
+  };
+  /** Unfreeze flips PlanningGroup.frozenAt, which drives seasonState/showFreezeInBar and the
+   * freeze/unfreeze picker's filter — without this they'd stay on stale data until reload. (Freeze
+   * invalidates the same query itself, in FreezePlanningGroupWizard, since it's shared by two
+   * callers here.) */
+  const refetchAfterFreezeChange = () => {
+    refetchAfterEventChange();
+    void utils.planningGroup.list.invalidate();
+  };
+
   const triggerSyncMutation = trpc.seasonCalendar.triggerSync.useMutation({
-    onSuccess: () => { toast.success('Sincronizzazione avviata'); void refetch(); },
+    onSuccess: data => {
+      if (data.errors > 0) {
+        toast.error(`Sincronizzazione completata con errori: ${data.synced} ok, ${data.errors} falliti`);
+      } else {
+        toast.success(`Sincronizzazione completata: ${data.synced} evento/i sincronizzati`);
+      }
+      refetchAfterEventChange();
+    },
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
   const updateEventMutation = trpc.seasonCalendar.updateMilestone.useMutation({
-    onSuccess: () => void refetch(),
+    onSuccess: () => refetchAfterEventChange(),
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
-  const simulateMutation = trpc.seasonCalendar.simulate.useMutation({
-    onSuccess: (data) => setSimulateResult(data as SimulationResult),
-    onError: (err) => toast.error(getTrpcErrorMessage(err)),
-  });
-
   const handleEventUpdate = (id: string, data: { startAt: string; endAt?: string | null }) => {
-    if (simulateMode) {
-      setProposedShifts(prev => [...prev.filter(s => s.eventId !== id), { eventId: id, newStartAt: data.startAt }]);
-      setSimulateResult(null);
-      return;
-    }
     updateEventMutation.mutate({ id, data: { ...data, endAt: data.endAt ?? undefined } });
   };
 
   const deleteEventsMutation = trpc.seasonCalendar.deleteMilestones.useMutation({
-    onSuccess: () => void refetch(),
+    onSuccess: () => refetchAfterEventChange(),
     onError: err => toast.error(getTrpcErrorMessage(err)),
+  });
+
+  const unfreezeMutation = trpc.seasonCalendar.unfreezePlanningGroup.useMutation({
+    onSuccess: () => { toast.success('Pianificazione scongelata'); setActiveGroupAction(null); refetchAfterFreezeChange(); },
+    onError: err => toast.error(getTrpcErrorMessage(err, { CONFLICT: 'Il gruppo non è congelato' })),
+  });
+
+  const amendMutation = trpc.seasonCalendar.amendPlanningGroupFreeze.useMutation({
+    onSuccess: data => {
+      toast.success(data.amendedCount > 0 ? `Baseline assegnata a ${data.amendedCount} fase/i aggiunta/e dopo il congelamento` : 'Nessuna fase da aggiornare — tutti gli eventi hanno già una baseline');
+      setActiveGroupAction(null);
+      refetchAfterFreezeChange();
+    },
+    onError: err => toast.error(getTrpcErrorMessage(err, { CONFLICT: 'Il gruppo non è congelato' })),
   });
 
   const canSync = can('season_calendar:sync');
   const canUpdate = can('season_calendar:update');
+  const canFreeze = can('season_calendar:freeze');
+  const canUnfreeze = can('season_calendar:unfreeze');
+
+  // ─── Planning vs maintenance state ───────────────────────────────────────
+  // Derived from PlanningGroup.frozenAt (no new endpoint — planningGroup.list already returns it
+  // for the group-management dialog). "Planning" means at least one group has events not yet
+  // frozen; "maintenance" means every group with events is frozen. See
+  // docs/TASK_calendar_ux_deferred_items.md §6 for the design rationale.
+  const { data: planningGroups } = trpc.planningGroup.list.useQuery(
+    { brandId: contextBrandId ?? '', seasonId: season?.id ?? '' },
+    { enabled }
+  );
+  const groupsWithEvents = (planningGroups ?? []).filter(g => g._count.events > 0);
+  const unfrozenGroupsWithEvents = groupsWithEvents.filter(g => !g.frozenAt);
+  const seasonState: 'not-started' | 'planning' | 'maintenance' =
+    groupsWithEvents.length === 0 ? 'not-started'
+      : unfrozenGroupsWithEvents.length > 0 ? 'planning'
+        : 'maintenance';
+  const mostRecentFreeze = groupsWithEvents
+    .map(g => g.frozenAt)
+    .filter((d): d is string => !!d)
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
+  const showFreezeInBar = canFreeze && seasonState === 'planning';
 
   const handleDayClick = useCallback((isoDate: string) => { setCreateDefaultAllDay(true); setCreateDate(isoDate); }, []);
   const handleDayClickTimed = useCallback((isoDate: string) => { setCreateDefaultAllDay(false); setCreateDate(isoDate); }, []);
@@ -151,55 +246,16 @@ export default function CalendarPage() {
     return milestones.filter(m => m.visibilities.some(v => selectedFunctionIds.includes(v.functionId)));
   }, [milestones, selectedFunctionIds]);
 
-  const handleSimulate = useCallback(() => {
-    if (!calendar) return;
-    simulateMutation.mutate({
-      calendarIds: [calendar.id],
-      proposedShifts,
-      requestSuggestion: true,
-    });
-  }, [calendar, proposedShifts, simulateMutation]);
-
-  const handleApplySuggestion = useCallback((shifts: { eventId: string; fromStartAt: string | Date; toStartAt: string | Date; reason: string }[]) => {
-    setProposedShifts(shifts.map(s => ({ eventId: s.eventId, newStartAt: new Date(s.toStartAt).toISOString() })));
-    setSimulateResult(null);
-  }, []);
-
-  const handleApplyShifts = useCallback(async () => {
-    const eventMap = new Map(filteredMilestones.map(m => [m.id, m]));
-    await Promise.all(proposedShifts.map(shift => {
-      const m = eventMap.get(shift.eventId);
-      if (!m) return Promise.resolve();
-      const delta = daysBetween(new Date(m.startAt), new Date(shift.newStartAt));
-      const newEnd = m.endAt ? addDays(new Date(m.endAt), delta).toISOString() : undefined;
-      return updateEventMutation.mutateAsync({ id: shift.eventId, data: { startAt: shift.newStartAt, endAt: newEnd } });
-    }));
-    setSimulateMode(false);
-    setProposedShifts([]);
-    setSimulateResult(null);
-    void refetch();
-  }, [proposedShifts, filteredMilestones, updateEventMutation, refetch]);
-
-  const handleResetSimulate = useCallback(() => {
-    setSimulateMode(false);
-    setProposedShifts([]);
-    setSimulateResult(null);
-  }, []);
+  /** Group badges only earn their visual cost when the current view actually mixes >1 planning
+   * group — the common case (a single group) would otherwise show a redundant label on every chip. */
+  const showGroupBadge = useMemo(
+    () => new Set(filteredMilestones.map(m => m.planningGroupId)).size > 1,
+    [filteredMilestones]
+  );
 
   const { data: holidayCountries = [] } = trpc.holidays.listCountries.useQuery(undefined, { staleTime: 60 * 60 * 1000 });
   const holidayCountryCodes = useMemo(() => holidayCountries.map(c => c.code), [holidayCountries]);
   const holidayDates = useHolidays(holidayCountryCodes);
-
-  const displayMilestones = useMemo(() => {
-    if (!simulateMode || proposedShifts.length === 0) return filteredMilestones;
-    const shiftsMap = new Map(proposedShifts.map(s => [s.eventId, s]));
-    return filteredMilestones.map(m => {
-      const shift = shiftsMap.get(m.id);
-      if (!shift) return m;
-      const delta = daysBetween(new Date(m.startAt), new Date(shift.newStartAt));
-      return { ...m, startAt: shift.newStartAt, endAt: m.endAt ? addDays(new Date(m.endAt), delta).toISOString() : null, _proposed: true };
-    });
-  }, [simulateMode, proposedShifts, filteredMilestones]);
 
   const activeEvent = useMemo(
     () => filteredMilestones.find(m => m.id === activeEventId) ?? null,
@@ -241,6 +297,11 @@ export default function CalendarPage() {
           <Plus size={14} className="mr-1" />Nuovo evento
         </Button>
       )}
+      {showFreezeInBar && (
+        <Button size="sm" variant="outline" onClick={() => setPickerAction('freeze')} disabled={!calendar}>
+          <Snowflake size={14} className="mr-1" />Congela pianificazione
+        </Button>
+      )}
       <div className="flex border rounded-md overflow-hidden">
         <Button variant={view === 'month' ? 'default' : 'ghost'} size="sm" className="rounded-none border-0" onClick={() => setView('month')} title="Mese"><CalendarDays size={14} /></Button>
         <Button variant={view === 'gantt' ? 'default' : 'ghost'} size="sm" className="rounded-none border-0" onClick={() => setView('gantt')} title="Gantt"><GanttChart size={14} /></Button>
@@ -248,23 +309,16 @@ export default function CalendarPage() {
         <Button variant={view === 'day' ? 'default' : 'ghost'} size="sm" className="rounded-none border-0" onClick={() => setView('day')} title="Giorno"><CalendarClock size={14} /></Button>
         <Button variant={view === 'list' ? 'default' : 'ghost'} size="sm" className="rounded-none border-0" onClick={() => setView('list')} title="Lista"><List size={14} /></Button>
       </div>
-      {canUpdate && (
-        <Button
-          variant={simulateMode ? 'destructive' : 'outline'}
-          size="sm"
-          onClick={() => simulateMode ? handleResetSimulate() : setSimulateMode(true)}
-          disabled={!calendar}
-          title="What-If"
-        >
-          <FlaskConical size={14} className="mr-1" />What-If
-        </Button>
-      )}
       <ExportButton seasonId={season?.id ?? ''} brandIds={selectedBrandIds} view={view} viewDate={viewDate} disabled={!season?.id} />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" title="Altre azioni"><MoreHorizontal size={14} /></Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => setSubscribeOpen(true)} disabled={!calendar}>
+            <CalendarPlus size={13} className="mr-2" />Iscriviti ai calendari Google
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           {canUpdate && (
             <>
               <DropdownMenuItem onClick={() => setCloneOpen(true)} disabled={!calendar}>
@@ -273,9 +327,30 @@ export default function CalendarPage() {
               <DropdownMenuItem onClick={() => setTemplateOpen(true)} disabled={!calendar}>
                 Applica template
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setManageGroupsOpen(true)} disabled={!calendar}>
+                Gruppi di pianificazione
+              </DropdownMenuItem>
+              {canFreeze && !showFreezeInBar && (
+                <DropdownMenuItem onClick={() => setPickerAction('freeze')} disabled={!calendar}>
+                  <Snowflake size={13} className="mr-2" />
+                  Congela pianificazione
+                </DropdownMenuItem>
+              )}
+              {canFreeze && (
+                <DropdownMenuItem onClick={() => setPickerAction('amend')} disabled={!calendar}>
+                  <Snowflake size={13} className="mr-2" />
+                  Aggiorna congelamento
+                </DropdownMenuItem>
+              )}
             </>
           )}
+          {canUnfreeze && (
+            <DropdownMenuItem onClick={() => setPickerAction('unfreeze')} disabled={!calendar}>
+              <Snowflake size={13} className="mr-2" />
+              Forza scongelamento (admin)
+            </DropdownMenuItem>
+          )}
+          {(canUpdate || canUnfreeze) && <DropdownMenuSeparator />}
           {canSync && (
             <DropdownMenuItem
               onClick={() => calendar && triggerSyncMutation.mutate({ calendarId: calendar.id })}
@@ -313,7 +388,11 @@ export default function CalendarPage() {
                 )}
                 style={selected ? { background: resolveBrandColor(b.id, brandColorMap) } : undefined}
               >
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: selected ? 'rgba(255,255,255,0.6)' : resolveBrandColor(b.id, brandColorMap) }} />
+                {/* Selected state uses a translucent white overlay dot (theme-independent by design); unselected uses the brand's own dynamic color */}
+                <span
+                  className={cn('w-2 h-2 rounded-full shrink-0', selected && 'bg-white/60')}
+                  style={selected ? undefined : { background: resolveBrandColor(b.id, brandColorMap) }}
+                />
                 {b.name}
               </button>
             );
@@ -325,7 +404,7 @@ export default function CalendarPage() {
       {availableFunctions.length > 0 && (
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs">
+            <Button variant="outline" size="xs" className="gap-1.5">
               <span className={cn(someFnsSelected && 'text-primary font-medium')}>
                 Visualizza
                 {someFnsSelected
@@ -381,34 +460,16 @@ export default function CalendarPage() {
     </div>
   );
 
-  const eventTitleById = useMemo(() =>
-    Object.fromEntries(filteredMilestones.map(m => [m.id, m.title])),
-    [filteredMilestones]
-  );
-
   const calendarBody = (
     <div>
       {filterStrip}
-      {simulateMode && (
-        <WhatIfBanner
-          shiftCount={proposedShifts.length}
-          violations={simulateResult?.violations ?? []}
-          suggestion={simulateResult?.suggestion ?? null}
-          loading={simulateMutation.isPending}
-          onSimulate={handleSimulate}
-          onApplySuggestion={handleApplySuggestion}
-          onApply={() => void handleApplyShifts()}
-          onReset={handleResetSimulate}
-          eventTitleById={eventTitleById}
-        />
-      )}
       <Card>
         <CardContent className="p-0">
           {calendarLoading || milestonesLoading ? (
             <div className="py-12 text-center text-muted-foreground">Caricamento…</div>
           ) : view === 'week' ? (
             <CalendarEventWeekView
-              milestones={displayMilestones}
+              milestones={filteredMilestones}
               viewDate={viewDate}
               onViewDateChange={setViewDate}
               onEventClick={id => setActiveEventId(id)}
@@ -420,10 +481,11 @@ export default function CalendarPage() {
               canUpdate={canUpdate}
               brandColorMap={brandColorMap}
               holidayDates={holidayDates}
+              showGroupBadge={showGroupBadge}
             />
           ) : view === 'month' ? (
             <CalendarEventMonthView
-              milestones={displayMilestones}
+              milestones={filteredMilestones}
               viewDate={viewDate}
               onViewDateChange={setViewDate}
               onEventClick={id => setActiveEventId(id)}
@@ -436,10 +498,11 @@ export default function CalendarPage() {
               canUpdate={canUpdate}
               brandColorMap={brandColorMap}
               holidayDates={holidayDates}
+              showGroupBadge={showGroupBadge}
             />
           ) : view === 'day' ? (
             <CalendarEventDayView
-              milestones={displayMilestones}
+              milestones={filteredMilestones}
               viewDate={viewDate}
               onViewDateChange={setViewDate}
               onEventClick={id => setActiveEventId(id)}
@@ -449,8 +512,9 @@ export default function CalendarPage() {
               activeBrandId={contextBrandId ?? undefined}
               canUpdate={canUpdate}
               brandColorMap={brandColorMap}
+              showGroupBadge={showGroupBadge}
             />
-          ) : displayMilestones.length === 0 ? (
+          ) : filteredMilestones.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">
               <Calendar size={32} className="mx-auto mb-2 opacity-40" />
               <p>Nessun evento per i filtri selezionati</p>
@@ -462,7 +526,7 @@ export default function CalendarPage() {
             </div>
           ) : view === 'gantt' ? (
             <CalendarEventGantt
-              milestones={displayMilestones}
+              milestones={filteredMilestones}
               onEventClick={id => setActiveEventId(id)}
               onNoteClick={id => setNoteEventId(id)}
               onEventUpdate={handleEventUpdate}
@@ -472,10 +536,11 @@ export default function CalendarPage() {
               canUpdate={canUpdate}
               brandColorMap={brandColorMap}
               holidayDates={holidayDates}
+              showGroupBadge={showGroupBadge}
             />
           ) : (
             <CalendarEventTimeline
-              milestones={displayMilestones}
+              milestones={filteredMilestones}
               onEventClick={id => setActiveEventId(id)}
               onNoteClick={id => setNoteEventId(id)}
               onDayClick={onDayClickProp}
@@ -484,6 +549,7 @@ export default function CalendarPage() {
               functionsById={functionsById}
               canUpdate={canUpdate}
               brandColorMap={brandColorMap}
+              showGroupBadge={showGroupBadge}
             />
           )}
         </CardContent>
@@ -491,11 +557,43 @@ export default function CalendarPage() {
     </div>
   );
 
+  const seasonStateCopy: Record<typeof seasonState, { label: string; tooltip: string }> = {
+    'not-started': {
+      label: 'Pianificazione da iniziare',
+      tooltip: 'Nessun gruppo di pianificazione ha ancora eventi. Applica un template o crea eventi per iniziare.',
+    },
+    planning: {
+      label: 'In pianificazione',
+      tooltip: `${unfrozenGroupsWithEvents.length} di ${groupsWithEvents.length} gruppi con eventi non ancora congelati — la pianificazione è ancora in corso.`,
+    },
+    maintenance: {
+      label: 'Congelata — manutenzione',
+      tooltip: `Tutti i gruppi con eventi sono congelati${mostRecentFreeze ? ` — ultimo congelamento il ${new Date(mostRecentFreeze).toLocaleDateString('it-IT')}` : ''}. Modifiche ora sono manutenzione, non pianificazione iniziale.`,
+    },
+  };
+  const seasonStateBadge = season && (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge variant={seasonState === 'maintenance' ? 'secondary' : 'outline'} className="cursor-help">
+            {seasonStateCopy[seasonState].label}
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs">
+          {seasonStateCopy[seasonState].tooltip}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+
   return (
     <>
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold whitespace-nowrap">Calendario Stagionale</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold whitespace-nowrap">Calendario Stagionale</h1>
+            {seasonStateBadge}
+          </div>
           {season && <p className="text-muted-foreground mt-1">{season.name}{season.year ? ` · ${season.year}` : ''}</p>}
         </div>
         <div className="flex gap-2 items-center">
@@ -511,6 +609,7 @@ export default function CalendarPage() {
           <div className="shrink-0 border-b px-6 py-3 flex items-center justify-between bg-card">
             <div className="flex items-center gap-3">
               <span className="font-semibold text-sm">Calendario Stagionale</span>
+              {seasonStateBadge}
               {season && <span className="text-sm text-muted-foreground">{season.name}{season.year ? ` · ${season.year}` : ''}</span>}
             </div>
             <div className="flex gap-2 items-center">
@@ -528,14 +627,15 @@ export default function CalendarPage() {
         <CalendarEventDialog
           open={!!activeEventId}
           onClose={() => setActiveEventId(null)}
-          onSaved={() => void refetch()}
-          onDeleted={() => { setActiveEventId(null); void refetch(); }}
-          calendarId={calendar?.id ?? ''}
+          onSaved={refetchAfterEventChange}
+          onDeleted={() => { setActiveEventId(null); refetchAfterEventChange(); }}
+          brandId={contextBrandId ?? ''}
+          seasonId={season?.id ?? ''}
           availableFunctions={availableFunctions}
           functionsById={functionsById}
           event={activeEvent}
+          existingMilestones={milestones ?? []}
           readOnly={!canEditActiveEvent}
-          allEvents={filteredMilestones}
         />
       )}
 
@@ -544,10 +644,12 @@ export default function CalendarPage() {
         <CalendarEventDialog
           open
           onClose={() => { setCreateDate(null); setCreateDefaultAllDay(true); }}
-          onSaved={() => { setCreateDate(null); setCreateDefaultAllDay(true); void refetch(); }}
-          calendarId={calendar.id}
+          onSaved={() => { setCreateDate(null); setCreateDefaultAllDay(true); refetchAfterEventChange(); }}
+          brandId={contextBrandId ?? ''}
+          seasonId={season?.id ?? ''}
           availableFunctions={availableFunctions}
           functionsById={functionsById}
+          existingMilestones={milestones ?? []}
           defaultDate={createDate || undefined}
           defaultAllDay={createDefaultAllDay}
         />
@@ -568,9 +670,78 @@ export default function CalendarPage() {
         <ApplyTemplateDialog
           open={templateOpen}
           onClose={() => setTemplateOpen(false)}
-          onApplied={() => { setTemplateOpen(false); void refetch(); }}
+          onApplied={(createdEvents, planningGroupId) => {
+            setTemplateOpen(false);
+            void refetch();
+            setPostApplyWizard({ planningGroupId, events: createdEvents });
+          }}
+          brandId={contextBrandId ?? ''}
+          seasonId={season?.id ?? ''}
+        />
+      )}
+
+      {calendar && manageGroupsOpen && (
+        <ManagePlanningGroupsDialog
+          open={manageGroupsOpen}
+          onClose={() => setManageGroupsOpen(false)}
           calendarId={calendar.id}
-          hasMilestones={(milestones?.length ?? 0) > 0}
+          brandId={contextBrandId ?? ''}
+          seasonId={season?.id ?? ''}
+        />
+      )}
+
+      {/* Automatic wizard, triggered right after a template is applied to a planning group */}
+      {calendar && postApplyWizard && (
+        <PlanningWizard
+          open
+          onClose={() => setPostApplyWizard(null)}
+          onFrozen={() => { setPostApplyWizard(null); refetchAfterEventChange(); }}
+          calendarId={calendar.id}
+          planningGroupId={postApplyWizard.planningGroupId}
+          brandId={contextBrandId ?? ''}
+          seasonId={season?.id ?? ''}
+          events={postApplyWizard.events}
+          holidayDates={holidayDates}
+        />
+      )}
+
+      {/* Manual freeze/unfreeze: pick a planning group, then either confirm (unfreeze) or step
+          through the freeze wizard (events are already set, no stepping needed there). */}
+      {pickerAction && (
+        <SelectPlanningGroupDialog
+          open
+          onClose={() => setPickerAction(null)}
+          onSelect={group => {
+            setActiveGroupAction({ type: pickerAction, groupId: group.id });
+            setPickerAction(null);
+          }}
+          brandId={contextBrandId ?? ''}
+          seasonId={season?.id ?? ''}
+          title={
+            pickerAction === 'freeze' ? 'Congela quale gruppo di pianificazione?'
+              : pickerAction === 'amend' ? 'Aggiorna il congelamento di quale gruppo?'
+                : 'Scongelare quale gruppo di pianificazione?'
+          }
+          // amend shares unfreeze's branch here on purpose: both only make sense on an already-frozen group
+          filter={pickerAction === 'freeze' ? g => !g.frozenAt && g._count.events > 0 : g => !!g.frozenAt}
+          emptyMessage={pickerAction === 'freeze' ? 'Nessun gruppo con eventi da congelare' : 'Nessun gruppo congelato'}
+        />
+      )}
+      {activeGroupAction?.type === 'freeze' && (
+        <FreezePlanningGroupWizard
+          open
+          onClose={() => setActiveGroupAction(null)}
+          onFrozen={() => { setActiveGroupAction(null); refetchAfterEventChange(); }}
+          planningGroupId={activeGroupAction.groupId}
+          milestones={filteredMilestones.filter(m => m.planningGroupId === activeGroupAction.groupId)}
+        />
+      )}
+
+      {subscribeOpen && (
+        <GoogleCalendarSubscribeDialog
+          open={subscribeOpen}
+          onClose={() => setSubscribeOpen(false)}
+          calendarId={calendar?.id}
         />
       )}
 
@@ -583,6 +754,31 @@ export default function CalendarPage() {
           targetSeasonId={season.id}
         />
       )}
+
+      <ConfirmDialog
+        open={activeGroupAction?.type === 'unfreeze'}
+        onOpenChange={v => { if (!v) setActiveGroupAction(null); }}
+        title="Forzare lo scongelamento del gruppo di pianificazione?"
+        description="Azzera la baseline congelata di tutti gli eventi del gruppo — lo scostamento piano/realtà misurato finora andrà perso. Operazione riservata agli amministratori, da usare solo per correggere un congelamento fatto per errore."
+        confirmText="Forza scongelamento"
+        cancelText="Annulla"
+        variant="destructive"
+        actionType="warning"
+        isLoading={unfreezeMutation.isPending}
+        onConfirm={() => activeGroupAction && unfreezeMutation.mutate({ planningGroupId: activeGroupAction.groupId })}
+      />
+
+      <ConfirmDialog
+        open={activeGroupAction?.type === 'amend'}
+        onOpenChange={v => { if (!v) setActiveGroupAction(null); }}
+        title="Aggiornare il congelamento del gruppo di pianificazione?"
+        description="Assegna una baseline alle fasi/eventi aggiunti dopo il congelamento originale, usando le loro date correnti. Gli eventi già congelati e la data di congelamento del gruppo non vengono toccati."
+        confirmText="Aggiorna congelamento"
+        cancelText="Annulla"
+        actionType="warning"
+        isLoading={amendMutation.isPending}
+        onConfirm={() => activeGroupAction && amendMutation.mutate({ planningGroupId: activeGroupAction.groupId })}
+      />
     </>
   );
 }

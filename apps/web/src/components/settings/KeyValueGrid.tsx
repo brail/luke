@@ -8,6 +8,11 @@ interface KeyValueGridProps {
   className?: string;
 }
 
+/**
+ * Responsive grid layout for settings form field pairs.
+ *
+ * @param cols - Number of columns on desktop: `2` (default) or `3`.
+ */
 export function KeyValueGrid({
   cols = 2,
   children,

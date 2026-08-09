@@ -8,6 +8,7 @@ import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
+import type { RouterOutputs } from '@luke/api';
 import { BrandInputSchema, type BrandInput, normalizeCode } from '@luke/core';
 import { buildTempBrandLogoUploadUrl } from '@luke/core';
 
@@ -51,7 +52,7 @@ import { trpc } from '../../../../../lib/trpc';
 import { cn } from '../../../../../lib/utils';
 
 // Schema per form con isActive obbligatorio (per React Hook Form)
-// logoUrl accetta qualsiasi stringa (anche percorsi relativi in DEV) o null/undefined
+// logoUrl accepts any string (including relative paths in DEV) or null/undefined
 const BrandFormSchema = BrandInputSchema.extend({
   isActive: z.boolean(),
   logoUrl: z.union([z.string(), z.null(), z.undefined()]).optional(),
@@ -62,24 +63,21 @@ const BrandFormSchema = BrandInputSchema.extend({
 
 type BrandFormData = z.infer<typeof BrandFormSchema>;
 
+type BrandItem = RouterOutputs['brand']['list']['items'][number];
+
 interface BrandDialogWithPermissionsProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  brand?: any;
+  brand?: BrandItem | null;
   onSubmit: (data: BrandInput) => Promise<void>;
   isLoading: boolean;
 }
 
 /**
- * Dialog per creazione e modifica Brand con permission-aware UI
+ * Wraps a form field with a tooltip when the field is disabled.
  *
- * Features:
- * - Disabilita i campi se l'utente non ha permessi di modifica
- * - Mostra "Read-Only" per i viewer
- * - Nasconde il pulsante di eliminazione se l'utente non ha permessi
- * - Mostra tooltip sui campi disabilitati spiegando il perché
- * - Conferma speciale per hard delete (solo admin)
- * - Disabilita upload logo se non admin/editor
+ * @param disabled - Whether the wrapped field should be treated as disabled.
+ * @param tooltip - Tooltip message shown when disabled is true.
  */
 function DisabledFieldWrapper({
   children,
@@ -97,13 +95,30 @@ function DisabledFieldWrapper({
   return (
     <TooltipProvider>
       <Tooltip>
-        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        {/* The trigger is the `div`, not the field: a disabled input doesn't emit `pointerenter`
+            or `focus`, so with `asChild` directly on the field the tooltip would never open
+            — same fix applied in `PermissionButton`. `tabIndex` makes it keyboard-reachable,
+            where a disabled field cannot be reached. */}
+        <TooltipTrigger asChild>
+          <div tabIndex={0}>{children}</div>
+        </TooltipTrigger>
         <TooltipContent>{tooltip}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );
 }
 
+/**
+ * Permission-aware dialog for creating and editing a Brand.
+ *
+ * Disables all fields and the submit button for read-only users, and shows
+ * contextual tooltips explaining why. NAV-linked fields are locked regardless
+ * of the user's role. Logo upload is gated by `brands:update`.
+ *
+ * @param brand - Existing brand to edit; omit for create mode.
+ * @param onSubmit - Called with validated `BrandInput` after the user submits.
+ * @param isLoading - Shows a saving spinner on the submit button.
+ */
 export function BrandDialogWithPermissions({
   open,
   onOpenChange,
@@ -168,7 +183,7 @@ export function BrandDialogWithPermissions({
     },
   });
 
-  // Reset form quando brand cambia
+  // Reset form when brand changes
   React.useEffect(() => {
     if (brand) {
       form.reset({
@@ -206,7 +221,7 @@ export function BrandDialogWithPermissions({
     form,
   ]);
 
-  // Auto-focus su campo code quando dialog si apre
+  // Auto-focus code field when dialog opens
   React.useEffect(() => {
     if (open && brandPerms.canEdit()) {
       const timer = setTimeout(() => {
@@ -217,7 +232,7 @@ export function BrandDialogWithPermissions({
       }, 100);
       return () => clearTimeout(timer);
     } else if (!open) {
-      // Reset form quando dialog si chiude
+      // Reset form when dialog closes
       form.reset();
       setLogoUrl(null);
       setPendingFileObjectId(null);
@@ -321,13 +336,13 @@ export function BrandDialogWithPermissions({
   };
 
   const isFormDisabled = !brandPerms.canEdit();
-  // Campi che provengono da NAV sono read-only se il brand è già collegato
+  // Fields from NAV are read-only if brand is already linked
   const isNavLinked = !!brand?.navBrandId;
   const isNavFieldReadOnly = isNavLinked || isFormDisabled;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
         <DialogHeader>
           <DialogTitle>{dialogTitle}</DialogTitle>
           <DialogDescription>{dialogDescription}</DialogDescription>
@@ -338,7 +353,7 @@ export function BrandDialogWithPermissions({
             onSubmit={form.handleSubmit(handleSubmit)}
             className="space-y-6"
           >
-            {/* Campo nascosto per logoUrl */}
+            {/* Hidden field for logoUrl */}
             <FormField
               control={form.control}
               name="logoUrl"
@@ -426,7 +441,7 @@ export function BrandDialogWithPermissions({
               </DisabledFieldWrapper>
             </div>
 
-            {/* Codice */}
+            {/* Code */}
             <FormField
               control={form.control}
               name="code"
@@ -465,7 +480,7 @@ export function BrandDialogWithPermissions({
               )}
             />
 
-            {/* Nome */}
+            {/* Name */}
             <FormField
               control={form.control}
               name="name"
@@ -494,7 +509,7 @@ export function BrandDialogWithPermissions({
               )}
             />
 
-            {/* Codice NAV */}
+            {/* NAV Code */}
             {isNavLinked ? (
               <div className="space-y-2">
                 <label className="text-sm font-medium flex items-center gap-2">
@@ -542,7 +557,7 @@ export function BrandDialogWithPermissions({
               />
             )}
 
-            {/* Stato Attivo */}
+            {/* Active Status */}
             <FormField
               control={form.control}
               name="isActive"

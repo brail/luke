@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Loader2, Eye, EyeOff } from 'lucide-react';
+import { LoaderCircle, Eye, EyeOff } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -21,14 +21,18 @@ import { trpc } from '../../../../lib/trpc';
 
 
 interface ChangePasswordCardProps {
-  /** Se il componente deve essere visibile */
+  /** Controls whether the card is rendered; when false the component returns null. */
   visible: boolean;
-  /** Callback chiamato quando il cambio password ha successo */
+  /** Called immediately after a successful password change, before the forced sign-out delay. */
   onSuccess?: () => void;
 }
 
 /**
- * Componente per il cambio password con validazione policy in tempo reale
+ * Password-change card with real-time policy validation indicators.
+ * On success it resets the form and triggers `next-auth` sign-out after a short delay
+ * to invalidate all active sessions.
+ * @param visible - When false the component renders nothing.
+ * @param onSuccess - Optional callback fired before the automatic sign-out redirect.
  */
 export function ChangePasswordCard({
   visible,
@@ -65,7 +69,7 @@ export function ChangePasswordCard({
       if (onSuccess) {
         onSuccess();
       }
-      // Forza logout dopo cambio password per invalidare tutte le sessioni
+      // Force logout after password change to invalidate all sessions
       setTimeout(() => {
         signOut({ callbackUrl: '/login' });
       }, 1000);
@@ -233,11 +237,12 @@ export function ChangePasswordCard({
           <Button
             type="submit"
             disabled={isSubmitting}
+            // 140px: keeps button width stable while its label changes during submit; no exact scale match
             className="min-w-[140px]"
           >
             {isSubmitting ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
                 Cambio...
               </>
             ) : (

@@ -1,23 +1,25 @@
 /**
- * Scheduler per la sincronizzazione periodica NAV → PG delle tabelle KIMO-FASHION.
+ * Periodic scheduler for NAV → Postgres synchronisation of KIMO-FASHION tables.
  *
- * Design identico a portafoglioSyncScheduler:
- * - Tick ogni 1 minuto.
- * - Legge configurazione (autoSyncEnabled, intervalMinutes) da NavSyncFilter entity='kimo'.
- * - `triggerKimoSyncNow()` per trigger manuale dal tRPC handler.
- * - Errori di sync non causano crash del server.
+ * Design mirrors `portafoglioSyncScheduler`:
+ * - Global tick every 1 minute.
+ * - Reads `autoSyncEnabled` and `intervalMinutes` from NavSyncFilter (entity = 'kimo') on every tick.
+ * - `triggerKimoSyncNow()` is exposed for manual triggers from the tRPC handler.
+ * - Sync errors are logged but do not crash the server.
  */
 
-import type { FastifyInstance } from 'fastify';
-import type { PrismaClient } from '@prisma/client';
-import type { Logger } from 'pino';
 
-import { getNavDbConfig, getPool } from '@luke/nav';
+import { getNavDbConfig, getPool, syncKimoNow, type KimoSyncResult } from '@luke/nav';
 
-import { syncKimoNow, type KimoSyncResult } from '../services/nav-kimo-sync';
 import { getConfig } from './configManager';
-import { notifyAdmins } from './notifications';
+import { guardMaintenance } from './maintenanceMode';
+import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
+import { withSchedulerLock } from './schedulerLock';
 import { sseStore } from './sseStore';
+
+import type { PrismaClient } from '@prisma/client';
+import type { FastifyInstance } from 'fastify';
+import type { Logger } from 'pino';
 
 export type { KimoSyncResult };
 
@@ -29,8 +31,6 @@ let _isRunning = false;
 let _lastRunAt: Date | null = null;
 let _prisma: PrismaClient | null = null;
 let _logger: Logger | null = null;
-let _lastSuccessNotified = 0;
-const SUCCESS_DEDUP_MS = 24 * 60 * 60 * 1000;
 
 // ─── Internal runner ──────────────────────────────────────────────────────────
 
@@ -40,30 +40,22 @@ async function _runSync(): Promise<KimoSyncResult | null> {
   _isRunning = true;
   _lastRunAt = new Date();
   const log = _logger;
+  const prisma = _prisma;
   sseStore.pushToAll({ type: 'sync-state', entity: 'kimo', isRunning: true });
 
   try {
-    const navConfig = await getNavDbConfig(_prisma, getConfig);
+    const navConfig = await getNavDbConfig(prisma, getConfig);
     const pool = await getPool(navConfig);
-    const result = await syncKimoNow(pool, navConfig.company, _prisma, log);
-    if (Date.now() - _lastSuccessNotified > SUCCESS_DEDUP_MS) {
-      await notifyAdmins(_prisma, {
-        category: 'SYSTEM',
-        title: 'KIMO sync completato',
-        message: `${result.totalDurationMs}ms`,
-        data: { type: 'kimo_sync_success' },
-      });
-      _lastSuccessNotified = Date.now();
-    }
+    const result = await syncKimoNow(pool, navConfig.company, prisma, log);
     return result;
   } catch (err) {
     log.error({ err }, 'Kimo sync scheduler: sync fallito');
-    await notifyAdmins(_prisma, {
+    await notifyDeduped(prisma, 'kimo-sync:failure', SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(prisma, {
       category: 'SYSTEM',
       title: 'KIMO sync fallito',
       message: (err as Error).message ?? 'Errore sconosciuto',
       data: { type: 'kimo_sync_failure' },
-    }).catch(e => log.error({ err: e }, 'Failed to notify admins of sync failure'));
+    })).catch(e => log.error({ err: e }, 'Failed to notify admins of sync failure'));
     return null;
   } finally {
     _isRunning = false;
@@ -74,20 +66,25 @@ async function _runSync(): Promise<KimoSyncResult | null> {
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Avvia un sync KIMO immediatamente.
- * Restituisce null se già in corso o NAV non configurato.
+ * Triggers an immediate KIMO sync run.
+ *
+ * @returns Sync result, or `null` if a sync is already in progress or NAV is not configured.
  */
 export async function triggerKimoSyncNow(): Promise<KimoSyncResult | null> {
   return _runSync();
 }
 
-/** Restituisce true se un sync KIMO è attualmente in corso. */
+/** Returns `true` if a KIMO sync is currently in progress. */
 export function isKimoSyncRunning(): boolean {
   return _isRunning;
 }
 
 // ─── Fastify registration ─────────────────────────────────────────────────────
 
+/**
+ * Registers the KIMO sync scheduler as a Fastify plugin.
+ * Starts the tick interval on `onReady` and clears it on `onClose`.
+ */
 export function registerKimoSyncScheduler(
   fastify: FastifyInstance,
   prisma: PrismaClient,
@@ -112,16 +109,20 @@ export function registerKimoSyncScheduler(
     const elapsed = _lastRunAt ? Date.now() - _lastRunAt.getTime() : Infinity;
     if (elapsed < intervalMs) return;
 
-    void _runSync();
+    // Locked around _runSync (not the outer tick): _runSync is fire-and-forget from here, so
+    // the tick itself returns almost instantly — the lock must span the actual sync work.
+    void withSchedulerLock(prisma, 'kimo-sync', _runSync)();
   };
+
+  const guardedTick = guardMaintenance(prisma, tick);
 
   fastify.addHook('onReady', async () => {
     _logger = fastify.log as unknown as Logger;
     fastify.log.info('Kimo sync scheduler: avviato (tick ogni minuto, intervallo configurabile)');
 
-    void tick();
+    void guardedTick();
 
-    timer = setInterval(() => void tick(), TICK_INTERVAL_MS);
+    timer = setInterval(() => void guardedTick(), TICK_INTERVAL_MS);
   });
 
   fastify.addHook('onClose', async () => {

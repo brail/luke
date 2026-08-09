@@ -10,6 +10,12 @@ interface SettingsFormShellProps {
   children: React.ReactNode;
 }
 
+/**
+ * Layout shell for settings pages that handles loading and error states before rendering the form.
+ *
+ * Renders a loading message while `isLoading` is true, an error message when `error` is set,
+ * or the `children` form content otherwise. Includes `PageHeader` in all states.
+ */
 export function SettingsFormShell({
   title,
   description,

@@ -5,8 +5,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '../../../../components/ui/button';
 import { cn } from '../../../../lib/utils';
-import { STATUS_OPACITY } from '../constants';
-import { addDays, canEditMilestone, resolveBrandColor, sameDay } from '../utils';
+import { cancelledClass } from '../constants';
+import { addDays, canEditMilestone, groupBadge, groupTooltip, resolveBrandColor, sameDay } from '../utils';
 
 import { type CalendarEventItem as CalendarEvent } from './types';
 
@@ -21,6 +21,9 @@ interface Props {
   activeBrandId?: string;
   brandColorMap: Record<string, string>;
   canUpdate?: boolean;
+  /** Shows a fixed-width group-initials badge on each event — only worth the visual cost when the
+   * current view actually mixes events from >1 planning group. */
+  showGroupBadge?: boolean;
 }
 
 const GRID_START = 7;
@@ -40,7 +43,20 @@ function dayLabel(date: Date): string {
 
 type DragState = { id: string; startY: number; deltaMinutes: number; origStartAt: Date; origEndAt: Date | null };
 
-export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, onEventClick, onEventUpdate, onNoteClick, onDayClick, activeBrandId, brandColorMap, canUpdate }: Props) {
+/**
+ * Hour-grid day view for calendar events, with drag-to-reschedule support.
+ *
+ * Displays all-day events in a banner strip and timed events in a scrollable
+ * hour grid (07:00–22:00). Dragging a timed event updates `startAt`/`endAt`
+ * via `onEventUpdate` in 15-minute snaps.
+ *
+ * @param onEventUpdate - Called after a drag completes with the new ISO timestamps.
+ * @param onDayClick - Called with the ISO timestamp of the clicked hour slot.
+ * @param onNoteClick - Called with the event ID to open the personal-note dialog.
+ * @param activeBrandId - Dims events that belong to a different brand.
+ * @param brandColorMap - Pre-computed brand-ID→colour map from `assignBrandColors`.
+ */
+export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, onEventClick, onEventUpdate, onNoteClick, onDayClick, activeBrandId, brandColorMap, canUpdate, showGroupBadge }: Props) {
   const today = useMemo(() => new Date(), []);
   const isToday = sameDay(viewDate, today);
 
@@ -127,12 +143,12 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
   return (
     <div className="flex flex-col">
       <div className="flex items-center gap-2 px-4 py-2 border-b">
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onViewDateChange(addDays(viewDate, -1))}><ChevronLeft size={14} /></Button>
+        <Button variant="ghost" size="icon-sm" onClick={() => onViewDateChange(addDays(viewDate, -1))}><ChevronLeft size={14} /></Button>
         <span className={cn('text-sm font-medium flex-1 text-center capitalize', isToday && 'text-blue-600 dark:text-blue-400')}>
           {dayLabel(viewDate)}
         </span>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onViewDateChange(addDays(viewDate, 1))}><ChevronRight size={14} /></Button>
-        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => onViewDateChange(new Date())}>Oggi</Button>
+        <Button variant="ghost" size="icon-sm" onClick={() => onViewDateChange(addDays(viewDate, 1))}><ChevronRight size={14} /></Button>
+        <Button variant="outline" size="xs" onClick={() => onViewDateChange(new Date())}>Oggi</Button>
       </div>
 
       {allDayEvents.length > 0 && (
@@ -142,14 +158,17 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
             const color = resolveBrandColor(m.brandId, brandColorMap);
             const isOtherBrand = !!activeBrandId && !!m.brandId && m.brandId !== activeBrandId;
             const hasNote = !!(m.notes?.[0]?.body);
+            const badge = groupBadge(showGroupBadge, m.planningGroupName);
             return (
               <div key={m.id} className={cn('flex items-center gap-1 group/all', isOtherBrand && 'opacity-40')}>
                 <button
                   type="button"
                   onClick={() => onEventClick(m.id)}
-                  className={cn('text-xs text-white rounded px-2 py-0.5 hover:brightness-110 transition-all', STATUS_OPACITY[m.status] ?? 'opacity-100')}
-                  style={{ background: color }}
+                  className={cn('flex items-center text-xs text-white rounded px-2 py-0.5 hover:brightness-110 transition-all [background:var(--ev-color)]', cancelledClass(!!m.cancelledAt))}
+                  style={{ '--ev-color': color } as React.CSSProperties}
+                  title={groupTooltip(m.planningGroupName, m.title)}
                 >
+                  {badge && <span className="opacity-80 mr-1 shrink-0">{badge}</span>}
                   {m.title}
                 </button>
                 {onNoteClick && (
@@ -176,6 +195,7 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
               className="absolute flex border-t border-border/20"
               style={{ top: (h - GRID_START) * ROW_H, left: 0, right: 0, height: ROW_H }}
             >
+              {/* 11px: below Tailwind's text-xs (12px) floor; dense hour-grid label */}
               <div className="shrink-0 flex items-start justify-end pt-1 pr-2 text-[11px] text-muted-foreground/50 tabular-nums select-none" style={{ width: LABEL_W }}>
                 {String(h).padStart(2, '0')}:00
               </div>
@@ -194,6 +214,7 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
 
           {showNow && (
             <div className="absolute pointer-events-none z-20 flex items-center" style={{ top: nowTop, left: 0, right: 0 }}>
+              {/* 11px: below Tailwind's text-xs (12px) floor; dense now-line label */}
               <div className="text-[11px] text-blue-500 tabular-nums font-medium select-none" style={{ width: LABEL_W, textAlign: 'right', paddingRight: 8 }}>
                 {String(Math.floor(nowMinutes / 60)).padStart(2, '0')}:{String(nowMinutes % 60).padStart(2, '0')}
               </div>
@@ -219,11 +240,12 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
             const canDrag = canEditMilestone(m, canUpdate, activeBrandId);
             const previewStart = isDragging ? new Date(start.getTime() + deltaMin * 60_000) : start;
             const previewEnd = isDragging ? new Date(end.getTime() + deltaMin * 60_000) : end;
+            const badge = groupBadge(showGroupBadge, m.planningGroupName);
             return (
               <div
                 key={m.id}
-                className={cn('absolute rounded-r group/timed z-10', isOtherBrand && 'opacity-40', STATUS_OPACITY[m.status] ?? 'opacity-100', isDragging && 'z-30 shadow-lg')}
-                style={{ top, left: LABEL_W + 4, right: 8, height, borderLeft: `3px solid ${color}`, background: isDragging ? `${color}44` : `${color}22`, cursor: canDrag ? (isDragging ? 'grabbing' : 'grab') : 'default' }}
+                className={cn('absolute rounded-r group/timed z-10 [border-left:3px_solid_var(--ev-color)]', isOtherBrand && 'opacity-40', cancelledClass(!!m.cancelledAt), isDragging && 'z-30 shadow-lg')}
+                style={{ top, left: LABEL_W + 4, right: 8, height, '--ev-color': color, background: isDragging ? `${color}44` : `${color}22`, cursor: canDrag ? (isDragging ? 'grabbing' : 'grab') : 'default' } as React.CSSProperties}
                 onPointerDown={canDrag ? (e) => startDrag(e, m) : undefined}
               >
                 <button
@@ -233,10 +255,14 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
                     if (wasDraggingRef.current) { wasDraggingRef.current = false; return; }
                     onEventClick(m.id);
                   }}
-                  className="w-full h-full flex flex-col items-start px-2 py-1 text-left rounded-r overflow-hidden"
-                  style={{ pointerEvents: isDragging ? 'none' : undefined }}
+                  className={cn('w-full h-full flex flex-col items-start px-2 py-1 text-left rounded-r overflow-hidden', isDragging && 'pointer-events-none')}
+                  title={m.planningGroupName ? groupTooltip(m.planningGroupName, m.title) : undefined}
                 >
-                  <span className="text-xs font-medium truncate w-full" style={{ color }}>{m.title}</span>
+                  <span className="text-xs font-medium truncate w-full [color:var(--ev-color)] flex items-center">
+                    {badge && <span className="opacity-80 mr-1 shrink-0">{badge}</span>}
+                    <span className="truncate min-w-0">{m.title}</span>
+                  </span>
+                  {/* 11px: below Tailwind's text-xs (12px) floor; dense event chip */}
                   {height >= ROW_H * 0.8 && (
                     <span className="text-[11px] text-muted-foreground tabular-nums">
                       {timeLabel(previewStart)}{m.endAt ? ` – ${timeLabel(previewEnd)}` : ''}

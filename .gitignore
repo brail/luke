@@ -4,8 +4,24 @@ EXTERNAL_APPS/
 # Merchandising domain reference files (Excel, binary)
 docs/merchandising-reference/
 
-# Claude Code local settings
-.claude/
+# Claude Code: skill, hook e settings condivisi sono versionati — sono il tooling
+# che fa rispettare CLAUDE.md, e tenerli fuori da git li lasciava su una sola
+# macchina, non revisionabili e senza backup.
+#
+# `.claude/*` e non `.claude/`: una directory esclusa non viene percorsa da git,
+# e nessuna negazione sotto di essa può più rientrare. `!.claude/skills/**` sotto
+# `.claude/` sarebbe silenziosamente inerte.
+#
+# `*` non matcha `/`, quindi la prima riga esclude solo il livello immediato
+# (settings.local.json, scheduled_tasks.lock, worktrees, .DS_Store) e non
+# impedisce la discesa nelle directory riammesse.
+.claude/*
+!.claude/skills/
+!.claude/hooks/
+!.claude/settings.json
+# Ridondante con `.claude/*` oggi. Resta perché è l'unico file che non deve mai
+# finire in git: sopravvive a un futuro `!.claude/*.json`.
+.claude/settings.local.json
 #CLAUDE.md
 
 # Planning/roadmap docs (local only)
@@ -55,6 +71,13 @@ pids
 # Coverage directory used by tools like istanbul
 coverage/
 *.lcov
+
+# Playwright: report, artefatti dei fallimenti e storageState autenticato
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+apps/web/tests/.auth/
 
 # nyc test coverage
 .nyc_output

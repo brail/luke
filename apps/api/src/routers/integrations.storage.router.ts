@@ -1,20 +1,20 @@
 /**
- * Storage sub-router per integrazioni
- * Gestisce configurazione e test connessione per SMB e Google Drive
+ * Storage sub-router for integrations
+ * Handles configuration and connection testing for SMB and Google Drive
  */
 
 import { z } from 'zod';
 
+import { saveConfig } from '../lib/configManager';
 import {
   toTRPCError,
   IntegrationErrorHandler,
   SecureLogger,
 } from '../lib/errorHandler';
-import { saveConfig } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 
-// Schema per configurazione SMB
+// Schema for SMB configuration
 const smbConfigSchema = z.object({
   host: z.string().min(1, 'Host è obbligatorio'),
   path: z.string().min(1, 'Path è obbligatorio'),
@@ -22,7 +22,7 @@ const smbConfigSchema = z.object({
   password: z.string().optional(),
 });
 
-// Schema per configurazione Google Drive OAuth
+// Schema for Google Drive OAuth configuration
 const driveConfigSchema = z.object({
   clientId: z.string().min(1, 'Client ID è obbligatorio'),
   clientSecret: z.string().min(1, 'Client Secret è obbligatorio'),
@@ -30,6 +30,13 @@ const driveConfigSchema = z.object({
 });
 
 export const storageRouter = router({
+  /**
+   * Saves the legacy SMB or Google Drive storage provider configuration (encrypted).
+   *
+   * @auth {config:update}
+   * @input {{ provider: "smb"|"drive", config: smbConfigSchema | driveConfigSchema }}
+   * @output {{ success: true, message: string }}
+   */
   saveConfig: protectedProcedure
     .use(requirePermission('config:update'))
     .input(
@@ -46,15 +53,15 @@ export const storageRouter = router({
         );
         const { provider, config } = input;
         const configKey = `storage.${provider}`;
-        const logger = new SecureLogger(console);
+        const logger = new SecureLogger(ctx.logger);
 
-        // Cifra le credenziali sensibili
+        // Encrypts the sensitive credentials
         let configToSave = { ...config };
 
         if (provider === 'smb' && 'password' in config && config.password) {
           configToSave = {
             ...configToSave,
-            password: '[REDACTED]', // Per i log
+            password: '[REDACTED]', // For logs
           };
         }
 
@@ -65,11 +72,11 @@ export const storageRouter = router({
         ) {
           configToSave = {
             ...configToSave,
-            clientSecret: '[REDACTED]', // Per i log
+            clientSecret: '[REDACTED]', // For logs
           };
         }
 
-        // Salva la configurazione cifrata
+        // Saves the encrypted configuration
         const configValue = JSON.stringify(config);
         await saveConfig(ctx.prisma, configKey, configValue, true);
 
@@ -82,7 +89,7 @@ export const storageRouter = router({
           success: true,
           message: `Configurazione ${provider.toUpperCase()} salvata con successo`,
         };
-      } catch (error: any) {
+      } catch (error: unknown) {
         const standardError = IntegrationErrorHandler.handleConfigError(
           `storage.${input.provider}`,
           error
@@ -91,6 +98,13 @@ export const storageRouter = router({
       }
     }),
 
+  /**
+   * Placeholder: tests the SMB or Drive storage connection (not yet implemented).
+   *
+   * @auth {config:read}
+   * @input {{ provider: string }}
+   * @output {{ success: true, message: string }}
+   */
   testConnection: protectedProcedure
     .use(requirePermission('config:read'))
     .input(
@@ -101,8 +115,8 @@ export const storageRouter = router({
     .query(async ({ input, ctx }) => {
       const { provider } = input;
 
-      // Per ora restituisce un placeholder
-      // In futuro qui si implementerà la logica di test reale
+      // For now returns a placeholder
+      // The real test logic will be implemented here in the future
       ctx.logger.info({ provider }, 'Test connessione storage (placeholder)');
 
       return {

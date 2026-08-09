@@ -8,6 +8,7 @@ import { SectionCard } from '../components/SectionCard';
 import { ErrorState } from '../components/system/ErrorState';
 import { RetryButton } from '../components/system/RetryButton';
 import { Button } from '../components/ui/button';
+import { debugError } from '../lib/debug';
 
 export default function Error({
   error,
@@ -17,7 +18,7 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error(error);
+    debugError(error);
   }, [error]);
 
   return (
@@ -37,6 +38,7 @@ export default function Error({
           actionSlot={
             <div className="flex gap-3">
               <RetryButton onRetry={reset} autoFocus />
+              {/* `as any`: `/support` isn't an implemented route yet — placeholder link, not a typedRoutes lag */}
               <Link href={'/support' as any} aria-label="Apri supporto">
                 <Button variant="outline">Report issue</Button>
               </Link>

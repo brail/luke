@@ -1,3 +1,7 @@
+/**
+ * Milestone data required by the Google Calendar sync engine.
+ * Contains only the fields needed to create/update/delete events and compute content hashes.
+ */
 export interface MilestoneForSync {
   id: string;
   title: string;
@@ -5,11 +9,18 @@ export interface MilestoneForSync {
   startAt: Date;
   endAt: Date | null;
   allDay: boolean;
-  status: string;
+  cancelled: boolean;
   publishExternally: boolean;
   visibilityFunctionIds: string[];
+  /** Planning group name, prefixed onto the Google event title to disambiguate same-named
+   * milestones from different groups sharing the same brand+season+function calendar. */
+  planningGroupName: string;
 }
 
+/**
+ * Persisted mapping between a Luke milestone and a Google Calendar event,
+ * scoped to a specific company function (calendar per section).
+ */
 export interface GoogleEventMappingRecord {
   eventId: string;
   companyFunctionId: string;
@@ -19,6 +30,10 @@ export interface GoogleEventMappingRecord {
   lastSyncedAt: Date;
 }
 
+/**
+ * Binding between a season calendar section (company function) and a provisioned
+ * Google Calendar. Created on first sync for that function; cached for subsequent runs.
+ */
 export interface GoogleCalendarBindingRecord {
   id: string;
   seasonCalendarId: string;
@@ -27,11 +42,16 @@ export interface GoogleCalendarBindingRecord {
   isProvisioned: boolean;
 }
 
+/**
+ * Runtime context injected into the sync engine.
+ * Abstracts all database I/O so the engine remains pure and testable.
+ */
 export interface SyncContext {
   seasonCalendarId: string;
   brandCode: string;
   seasonCode: string;
-  allowedUserEmails: string[];
+  /** Resolves reader emails scoped to the company function — team members of that function, plus admins. */
+  getAllowedEmailsForFunction: (companyFunctionId: string) => Promise<string[]>;
   getOrCreateBinding: (companyFunctionId: string) => Promise<GoogleCalendarBindingRecord>;
   getMappings: (milestoneId: string) => Promise<GoogleEventMappingRecord[]>;
   upsertMapping: (mapping: Omit<GoogleEventMappingRecord, 'lastSyncedAt'>) => Promise<void>;

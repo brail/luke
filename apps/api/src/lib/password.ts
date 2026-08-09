@@ -1,26 +1,31 @@
 /**
- * Helper per gestione password con Argon2
- * Wrapper per le operazioni di hash e verifica password
+ * Password management utilities using Argon2id.
+ * Provides hashing, verification, and policy validation.
  */
 
 import argon2 from 'argon2';
 
 /**
- * Configurazione Argon2 per hash password
- * Usa argon2id per sicurezza ottimale
+ * Argon2 configuration for password hashing
+ * Uses argon2id for optimal security
+ *
+ * Exported for reuse by other Argon2id modules (e.g. `lib/backup/crypto.ts`, which derives a
+ * key from passphrase with the same tuning instead of a verification hash) that must remain
+ * aligned on these parameters.
  */
-const ARGON2_OPTIONS: argon2.Options = {
+export const ARGON2_OPTIONS: argon2.Options = {
   type: argon2.argon2id,
   memoryCost: 2 ** 16, // 64 MB
-  timeCost: 3, // 3 iterazioni
+  timeCost: 3, // 3 iterations
   parallelism: 1, // 1 thread
   hashLength: 32, // 32 bytes
 };
 
 /**
- * Genera hash di una password usando Argon2
- * @param password - Password in chiaro
- * @returns Hash della password
+ * Hashes a password using Argon2id with the configured memory, time, and parallelism cost.
+ *
+ * @returns Argon2id hash string.
+ * @throws {Error} If hashing fails for any reason.
  */
 export async function hashPassword(password: string): Promise<string> {
   try {
@@ -33,10 +38,9 @@ export async function hashPassword(password: string): Promise<string> {
 }
 
 /**
- * Verifica una password contro il suo hash
- * @param password - Password in chiaro da verificare
- * @param hash - Hash della password memorizzato
- * @returns true se la password è corretta, false altrimenti
+ * Verifies a plaintext password against a stored Argon2id hash.
+ *
+ * @returns `true` if the password matches, `false` otherwise (including on malformed hash).
  */
 export async function verifyPassword(
   password: string,
@@ -44,14 +48,14 @@ export async function verifyPassword(
 ): Promise<boolean> {
   try {
     return await argon2.verify(hash, password);
-  } catch (error) {
-    // In caso di errore (hash malformato, ecc.), considera la password non valida
+  } catch {
+    // On error (malformed hash, etc.), consider the password invalid
     return false;
   }
 }
 
 /**
- * Interfaccia per password policy
+ * Password complexity requirements loaded from AppConfig.
  */
 export interface PasswordPolicy {
   minLength: number;
@@ -62,7 +66,7 @@ export interface PasswordPolicy {
 }
 
 /**
- * Risultato della validazione password
+ * Outcome of a password validation check.
  */
 export interface PasswordValidationResult {
   isValid: boolean;
@@ -70,10 +74,10 @@ export interface PasswordValidationResult {
 }
 
 /**
- * Valida una password contro una policy
- * @param password - Password da validare
- * @param policy - Password policy da applicare
- * @returns Risultato validazione con lista errori
+ * Validates a plaintext password against the given policy.
+ *
+ * @param policy - Complexity requirements to enforce.
+ * @returns Validation result with `isValid` flag and a list of human-readable error messages.
  */
 export function validatePassword(
   password: string,
@@ -81,30 +85,30 @@ export function validatePassword(
 ): PasswordValidationResult {
   const errors: string[] = [];
 
-  // Verifica lunghezza minima
+  // Checks minimum length
   if (password.length < policy.minLength) {
     errors.push(`Lunghezza minima: ${policy.minLength} caratteri`);
   }
 
-  // Verifica maiuscola
+  // Checks for uppercase letter
   if (policy.requireUppercase && !/[A-Z]/.test(password)) {
     errors.push('Richiesta almeno una lettera maiuscola');
   }
 
-  // Verifica minuscola
+  // Checks for lowercase letter
   if (policy.requireLowercase && !/[a-z]/.test(password)) {
     errors.push('Richiesta almeno una lettera minuscola');
   }
 
-  // Verifica cifra
+  // Checks for digit
   if (policy.requireDigit && !/[0-9]/.test(password)) {
     errors.push('Richiesta almeno una cifra');
   }
 
-  // Verifica carattere speciale
+  // Checks for special character
   if (
     policy.requireSpecialChar &&
-    !/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)
+    !/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password)
   ) {
     errors.push('Richiesto almeno un carattere speciale');
   }

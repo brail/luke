@@ -37,6 +37,10 @@ function commonValue<K extends keyof PricingParameterSet>(
   return sets.every(s => s[key] === first) ? first : null;
 }
 
+/**
+ * Collapsible reference grid mapping retail prices to max supplier costs for each parameter set.
+ * @param sets - List of parameter sets to display as columns; the first set is used as the reference for shared multipliers.
+ */
 export function PricingGrid({ sets }: PricingGridProps) {
   const { brand, season } = useAppContext();
   const [open, setOpen] = useState(false);
@@ -89,8 +93,8 @@ export function PricingGrid({ sets }: PricingGridProps) {
           <div className="flex items-center gap-1.5">
             <Button
               variant="outline"
-              size="sm"
-              className="h-7 gap-1.5 text-xs"
+              size="xs"
+              className="gap-1.5"
               onClick={() => handleExport('xlsx')}
               disabled={exportXlsxMutation.isPending}
             >
@@ -99,8 +103,8 @@ export function PricingGrid({ sets }: PricingGridProps) {
             </Button>
             <Button
               variant="outline"
-              size="sm"
-              className="h-7 gap-1.5 text-xs"
+              size="xs"
+              className="gap-1.5"
               onClick={() => handleExport('pdf')}
               disabled={exportPdfMutation.isPending}
             >

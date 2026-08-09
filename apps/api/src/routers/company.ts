@@ -1,5 +1,13 @@
+/**
+ * tRPC router for company structure management.
+ *
+ * Exposes three sub-routers:
+ *  - company.profile — singleton CompanyProfile CRUD
+ *  - company.function — CompanyFunction CRUD, reorder, soft-delete, restore
+ *  - company.team — CompanyTeam CRUD, brand scopes, membership management
+ */
+
 import { TRPCError } from '@trpc/server';
-import type { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 
 import {
@@ -11,21 +19,29 @@ import {
   CompanyTeamMembershipInputSchema,
   CompanyTeamMembershipRemoveInputSchema,
   CompanyTeamMembershipUpdateRoleInputSchema,
-  hasPermission,
-  type Role,
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog.js';
 import { createNotification } from '../lib/notifications.js';
-import { withRateLimit } from '../lib/ratelimit.js';
+import { confirmPendingFile } from '../lib/pendingFile.js';
 import { requirePermission } from '../lib/permissions.js';
+import { withRateLimit } from '../lib/ratelimit.js';
 import { router, protectedProcedure } from '../lib/trpc.js';
+import { deleteObjectByKey } from '../storage';
+
+import type { PrismaClient } from '@prisma/client';
 
 // ─── Profile ────────────────────────────────────────────────────────────────
 
 const SINGLETON_ID = 'singleton';
 
 const companyProfileRouter = router({
+  /**
+   * Returns the singleton company profile, auto-creating it with empty values on first access.
+   *
+   * @auth company_profile:read
+   * @output CompanyProfile singleton
+   */
   get: protectedProcedure
     .use(requirePermission('company_profile:read'))
     .query(async ({ ctx }) => {
@@ -38,23 +54,86 @@ const companyProfileRouter = router({
       });
     }),
 
+  /**
+   * Creates or updates the singleton company profile.
+   *
+   * @auth company_profile:update
+   * @input CompanyProfileInputSchema
+   * @output Updated CompanyProfile
+   */
   update: protectedProcedure
     .use(requirePermission('company_profile:update'))
     .use(withRateLimit('companyStructureMutations'))
     .input(CompanyProfileInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const countryCode = (input.address as { countryCode?: string } | undefined)?.countryCode ?? undefined;
-      const profile = await ctx.prisma.companyProfile.upsert({
-        where: { id: SINGLETON_ID },
-        create: { id: SINGLETON_ID, ...input, countryCode: countryCode ?? null },
-        update: { ...input, ...(countryCode !== undefined ? { countryCode } : {}) },
-      });
+      // No `...input` in the upsert: that's how `logoKey` used to pass from the client
+      // to the database without anyone checking it.
+      const { fileObjectId, logoKey, ...rest } = input;
+      const countryCode = (rest.address as { countryCode?: string } | undefined)?.countryCode ?? undefined;
+
+      let oldLogoKey: string | null = null;
+
+      const profile = await ctx.prisma.$transaction(async tx => {
+        const existing = await tx.companyProfile.findUnique({
+          where: { id: SINGLETON_ID },
+          select: { logoKey: true },
+        });
+
+        let logoData: { logoKey: string | null } | Record<string, never> = {};
+
+        if (fileObjectId) {
+          const confirmedKey = await confirmPendingFile(tx, {
+            fileObjectId,
+            bucket: 'company-assets',
+            userId: ctx.session.user.id,
+          });
+
+          // BAD_REQUEST and not a silent no-op: the realistic case isn't a
+          // malicious id, it's the reaper. You upload the logo, get distracted for seventy
+          // minutes, save — the pending `FileObject` has been swept, the predicate fails,
+          // and without this error the profile would save without a logo while showing
+          // "Profile updated".
+          if (!confirmedKey) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Il file caricato non è più disponibile, ricaricalo',
+            });
+          }
+
+          logoData = { logoKey: confirmedKey };
+          oldLogoKey = existing?.logoKey ?? null;
+        } else if (logoKey === null) {
+          logoData = { logoKey: null };
+          oldLogoKey = existing?.logoKey ?? null;
+        }
+
+        return tx.companyProfile.upsert({
+          where: { id: SINGLETON_ID },
+          create: { id: SINGLETON_ID, ...rest, ...logoData, countryCode: countryCode ?? null },
+          update: { ...rest, ...logoData, ...(countryCode !== undefined ? { countryCode } : {}) },
+        });
+      }, { timeout: 15000 });
+
+      // After the commit, never inside: a rollback would leave the blob deleted.
+      // Until now nothing deleted replaced logos, which stayed in
+      // `company-assets` forever.
+      if (oldLogoKey && oldLogoKey !== profile.logoKey) {
+        const staleKey = oldLogoKey;
+        setImmediate(async () => {
+          try {
+            await deleteObjectByKey(ctx, { bucket: 'company-assets', key: staleKey });
+          } catch (err) {
+            ctx.logger?.warn({ err }, 'Failed to cleanup old company logo');
+          }
+        });
+      }
 
       await logAudit(ctx, {
         action: 'COMPANY_PROFILE_UPDATED',
         targetType: 'CompanyProfile',
         targetId: SINGLETON_ID,
         result: 'SUCCESS',
+        metadata: { logoChanged: Boolean(fileObjectId) || logoKey === null },
       });
 
       return profile;
@@ -64,6 +143,13 @@ const companyProfileRouter = router({
 // ─── Function ───────────────────────────────────────────────────────────────
 
 const companyFunctionRouter = router({
+  /**
+   * Lists active company functions ordered by `order` then `name`.
+   *
+   * @auth company_function:read
+   * @input { includeInactive? }
+   * @output Array of CompanyFunction with team count
+   */
   list: protectedProcedure
     .use(requirePermission('company_function:read'))
     .input(z.object({ includeInactive: z.boolean().optional() }).optional())
@@ -77,6 +163,13 @@ const companyFunctionRouter = router({
       });
     }),
 
+  /**
+   * Returns a company function by ID, including its teams and their membership counts.
+   *
+   * @auth company_function:read
+   * @input { id }
+   * @output CompanyFunction with teams
+   */
   getById: protectedProcedure
     .use(requirePermission('company_function:read'))
     .input(z.object({ id: z.string().uuid() }))
@@ -96,6 +189,13 @@ const companyFunctionRouter = router({
       return fn;
     }),
 
+  /**
+   * Creates a company function. Rejects on slug collision, suggesting restore if the existing one is inactive.
+   *
+   * @auth company_function:create
+   * @input CompanyFunctionInputSchema
+   * @output The created CompanyFunction
+   */
   create: protectedProcedure
     .use(requirePermission('company_function:create'))
     .use(withRateLimit('companyStructureMutations'))
@@ -138,6 +238,13 @@ const companyFunctionRouter = router({
       return fn;
     }),
 
+  /**
+   * Updates a company function's fields.
+   *
+   * @auth company_function:update
+   * @input CompanyFunctionUpdateInputSchema
+   * @output Updated CompanyFunction
+   */
   update: protectedProcedure
     .use(requirePermission('company_function:update'))
     .use(withRateLimit('companyStructureMutations'))
@@ -160,6 +267,13 @@ const companyFunctionRouter = router({
       return fn;
     }),
 
+  /**
+   * Updates the `order` field for all listed function IDs in a single transaction.
+   *
+   * @auth company_function:update
+   * @input { orderedIds }
+   * @output { ok: true }
+   */
   reorder: protectedProcedure
     .use(requirePermission('company_function:update'))
     .use(withRateLimit('companyStructureMutations'))
@@ -183,6 +297,15 @@ const companyFunctionRouter = router({
       return { ok: true };
     }),
 
+  /**
+   * Soft-deletes a company function (sets `isActive = false`).
+   *
+   * Blocked if the function is visible on active (non-cancelled) calendar events.
+   *
+   * @auth company_function:delete
+   * @input { id }
+   * @output The deactivated CompanyFunction
+   */
   delete: protectedProcedure
     .use(requirePermission('company_function:delete'))
     .use(withRateLimit('companyStructureMutations'))
@@ -196,14 +319,14 @@ const companyFunctionRouter = router({
       const fn = await ctx.prisma.$transaction(async tx => {
         const activeMilestones = await tx.calendarEvent.count({
           where: {
-            ownerFunctionId: input.id,
-            status: { not: 'CANCELLED' },
+            visibilities: { some: { functionId: input.id } },
+            cancelledAt: null,
           },
         });
         if (activeMilestones > 0) {
           throw new TRPCError({
             code: 'PRECONDITION_FAILED',
-            message: `Cannot deactivate: ${activeMilestones} active calendar event(s) owned by this function`,
+            message: `Cannot deactivate: ${activeMilestones} active calendar event(s) visible to this function`,
           });
         }
         return tx.companyFunction.update({
@@ -222,6 +345,15 @@ const companyFunctionRouter = router({
       return fn;
     }),
 
+  /**
+   * Restores a soft-deleted company function (sets `isActive = true`).
+   *
+   * Blocked if another active function already holds the same slug (checked inside a transaction).
+   *
+   * @auth company_function:update
+   * @input { id }
+   * @output The restored CompanyFunction
+   */
   restore: protectedProcedure
     .use(requirePermission('company_function:update'))
     .use(withRateLimit('companyStructureMutations'))
@@ -279,6 +411,13 @@ async function fetchTeam(teamId: string, prisma: PrismaClient) {
 }
 
 const companyTeamRouter = router({
+  /**
+   * Lists company teams for a given function, including membership count and brand scopes.
+   *
+   * @auth company_team:read
+   * @input { functionId, includeInactive? }
+   * @output Array of CompanyTeam with membership count and brand scopes
+   */
   listByFunction: protectedProcedure
     .use(requirePermission('company_team:read'))
     .input(z.object({ functionId: z.string().uuid(), includeInactive: z.boolean().optional() }))
@@ -296,6 +435,13 @@ const companyTeamRouter = router({
       });
     }),
 
+  /**
+   * Returns a company team by ID, including its memberships (with user info) and brand scopes.
+   *
+   * @auth company_team:read
+   * @input { id }
+   * @output CompanyTeam with memberships and brand scopes
+   */
   getById: protectedProcedure
     .use(requirePermission('company_team:read'))
     .input(z.object({ id: z.string().uuid() }))
@@ -315,6 +461,13 @@ const companyTeamRouter = router({
       return team;
     }),
 
+  /**
+   * Creates a company team and its brand scopes in a single transaction.
+   *
+   * @auth company_team:create
+   * @input CompanyTeamInputSchema
+   * @output The created CompanyTeam
+   */
   create: protectedProcedure
     .use(requirePermission('company_team:create'))
     .use(withRateLimit('companyStructureMutations'))
@@ -345,6 +498,13 @@ const companyTeamRouter = router({
       return team;
     }),
 
+  /**
+   * Updates a company team's fields and replaces its brand scopes when `brandIds` is provided.
+   *
+   * @auth company_team:update
+   * @input CompanyTeamUpdateInputSchema
+   * @output Updated CompanyTeam
+   */
   update: protectedProcedure
     .use(requirePermission('company_team:update'))
     .use(withRateLimit('companyStructureMutations'))
@@ -378,6 +538,13 @@ const companyTeamRouter = router({
       return team;
     }),
 
+  /**
+   * Deletes a company team.
+   *
+   * @auth company_team:delete
+   * @input { id }
+   * @output { ok: true }
+   */
   delete: protectedProcedure
     .use(requirePermission('company_team:delete'))
     .use(withRateLimit('companyStructureMutations'))
@@ -398,6 +565,13 @@ const companyTeamRouter = router({
       return { ok: true };
     }),
 
+  /**
+   * Adds users to a company team and notifies each added member.
+   *
+   * @auth company_team:update
+   * @input CompanyTeamMembershipInputSchema
+   * @output { ok: true }
+   */
   addMembers: protectedProcedure
     .use(requirePermission('company_team:update'))
     .use(withRateLimit('companyStructureMutations'))
@@ -443,6 +617,13 @@ const companyTeamRouter = router({
       return { ok: true };
     }),
 
+  /**
+   * Removes users from a company team and notifies each removed member.
+   *
+   * @auth company_team:update
+   * @input CompanyTeamMembershipRemoveInputSchema
+   * @output { ok: true }
+   */
   removeMembers: protectedProcedure
     .use(requirePermission('company_team:update'))
     .use(withRateLimit('companyStructureMutations'))
@@ -474,6 +655,13 @@ const companyTeamRouter = router({
       return { ok: true };
     }),
 
+  /**
+   * Updates a team member's role and notifies the affected user.
+   *
+   * @auth company_team:update
+   * @input CompanyTeamMembershipUpdateRoleInputSchema
+   * @output { ok: true }
+   */
   updateMemberRole: protectedProcedure
     .use(requirePermission('company_team:update'))
     .use(withRateLimit('companyStructureMutations'))
@@ -511,8 +699,14 @@ const companyTeamRouter = router({
       return { ok: true };
     }),
 
+  /**
+   * Lists all active brands, for use in team brand-scope selection.
+   *
+   * @auth brands:read
+   * @output Array of Brand (id, code, name)
+   */
   listAllBrands: protectedProcedure
-    .use(requirePermission('company_team:update'))
+    .use(requirePermission('brands:read'))
     .query(async ({ ctx }) => {
       return ctx.prisma.brand.findMany({
         where: { isActive: true },
@@ -522,21 +716,6 @@ const companyTeamRouter = router({
     }),
 });
 
-// ─── Milestone user visibility ───────────────────────────────────────────────
-
-async function assertFunctionMemberOrAdmin(
-  ctx: { session: { user: { id: string; role: string } }; prisma: import('@prisma/client').PrismaClient },
-  functionId: string
-) {
-  if (hasPermission({ role: ctx.session.user.role as Role }, 'company_function:update')) return;
-  const membership = await ctx.prisma.companyTeamMembership.findFirst({
-    where: { userId: ctx.session.user.id, team: { functionId, isActive: true } },
-  });
-  if (!membership) {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'Not a member of the owning function' });
-  }
-}
-
 // ─── Export ──────────────────────────────────────────────────────────────────
 
 export const companyRouter = router({
@@ -544,5 +723,3 @@ export const companyRouter = router({
   function: companyFunctionRouter,
   team: companyTeamRouter,
 });
-
-export { assertFunctionMemberOrAdmin };

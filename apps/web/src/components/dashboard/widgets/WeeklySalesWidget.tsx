@@ -6,6 +6,12 @@ import { cn } from '../../../lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Skeleton } from '../../ui/skeleton';
 
+/**
+ * Dashboard widget showing a 7-day bar chart of order counts for the active brand/season context.
+ *
+ * Today's bar is highlighted with `bg-foreground`. Renders a placeholder when the context is
+ * not active or no data is available. Fetches from `dashboard.getWeeklySales`.
+ */
 export function WeeklySalesWidget() {
   const { brand, season } = useAppContext();
   const enabled = !!brand?.id && !!season?.id;

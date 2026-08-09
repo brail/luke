@@ -1,38 +1,37 @@
 /**
- * Router tRPC per la sezione Vendite
+ * tRPC router for the Sales section
  *
- * Espone:
- *  - sales.statistics.portafoglio.getFilters  — filtri disponibili (agenti dal contesto)
- *  - sales.statistics.portafoglio.download    — genera xlsx portafoglio ordini
- *  - sales.statistics.kimo.getFilters         — filtri disponibili per Kimo+Bidone
- *  - sales.statistics.kimo.getSyncState       — stato sync tabelle nav_kimo_*
- *  - sales.statistics.kimo.triggerSync        — trigger manuale sync KIMO
- *  - sales.statistics.kimo.download           — genera xlsx Vendite+Bidone KIMO
+ * Exposes:
+ *  - sales.statistics.portafoglio.getFilters  — available filters (agents from context)
+ *  - sales.statistics.portafoglio.download    — generates order portfolio xlsx
+ *  - sales.statistics.kimo.getFilters         — available filters for Kimo+Basket
+ *  - sales.statistics.kimo.getSyncState       — sync state of nav_kimo_* tables
+ *  - sales.statistics.kimo.triggerSync        — manual trigger for KIMO sync
+ *  - sales.statistics.kimo.download           — generates Sales+Basket KIMO xlsx
  */
 
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { getNavDbConfig, getPool, queryPortafoglioOrdini, sanitizeCompany } from '@luke/nav';
 import type { Role } from '@luke/core';
-import { getUserAllowedBrandIds } from '../services/context.service';
+import { createSyncRequest, getNavDbConfig, getPool, queryPortafoglioOrdini, sanitizeCompany, queryPortafoglioFromPg, queryKimoFromPg } from '@luke/nav';
 
 import { getConfig } from '../lib/configManager';
-import { requirePermission } from '../lib/permissions';
-import { router, protectedProcedure } from '../lib/trpc';
-import { buildPortafoglioXlsx } from '../services/sales.statistics';
-import { buildKimoXlsx } from '../services/kimo.statistics';
-
-import { queryPortafoglioFromPg } from '../services/portafoglio-pg-query';
-import { queryKimoFromPg } from '../services/kimo-pg-query';
-import {
-  triggerPortafoglioSyncNow,
-  isPortafoglioSyncRunning,
-} from '../lib/portafoglioSyncScheduler';
 import {
   triggerKimoSyncNow,
   isKimoSyncRunning,
 } from '../lib/kimoSyncScheduler';
+import { requirePermission } from '../lib/permissions';
+import {
+  triggerPortafoglioSyncNow,
+  isPortafoglioSyncRunning,
+} from '../lib/portafoglioSyncScheduler';
+import { router, protectedProcedure } from '../lib/trpc';
+import { getUserAllowedBrandIds } from '../services/context.service';
+import { buildKimoXlsx } from '../services/kimo.statistics';
+import { buildPortafoglioXlsx } from '../services/sales.statistics';
+
+import type { PrismaClient } from '@prisma/client';
 
 // ─── Input schema ─────────────────────────────────────────────────────────────
 
@@ -46,13 +45,31 @@ const portafoglioDownloadInput = portafoglioBaseInput.extend({
   customerCode: z.string().min(1).optional(),
 });
 
+/**
+ * Resolves salesperson names for a set of codes from the nav_pf_salesperson replica.
+ * Returns a Map so callers can look up names for codes gathered from different sources.
+ */
+async function resolveSalespersonNames(
+  prisma: PrismaClient,
+  codes: string[],
+): Promise<Map<string, string>> {
+  if (!codes.length) return new Map();
+  const rows = await prisma.navPfSalesperson.findMany({
+    where: { code: { in: codes } },
+    select: { code: true, name: true },
+  });
+  return new Map(rows.map(r => [r.code, r.name ?? '']));
+}
+
 // ─── Sub-router: portafoglio ──────────────────────────────────────────────────
 
 const portafoglioRouter = router({
   /**
-   * Restituisce i filtri disponibili per il portafoglio.
-   * Legge gli agenti da nav_pf_sales_header + nav_pf_salesperson (dati replicati in PG).
-   * Fallback su NAV diretto se la replica non ha ancora dati per questa stagione.
+   * Returns available filter options (salespersons) for the order portfolio of a brand+season, reading from PG replica with NAV direct fallback.
+   *
+   * @auth {sales:read}
+   * @input {{ brandId: string (UUID), seasonId: string (UUID) }}
+   * @output {{ brand, season, salespersons: { code, name }[] }}
    */
   getFilters: protectedProcedure
     .use(requirePermission('sales:read'))
@@ -71,18 +88,26 @@ const portafoglioRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand o stagione non trovati' });
       }
 
-      // Prova prima con i dati replicati in PG
-      const pgRows = await ctx.prisma.$queryRaw<{ code: string; name: string }[]>`
-        SELECT DISTINCT sp.code, sp.name
-        FROM nav_pf_sales_header sh
-        JOIN nav_pf_salesperson sp ON sh."salespersonCode" = sp.code
-        WHERE sh."sellingSeasonCode" = ${season.code}
-          AND sh."shortcutDimension2Code" = ${brand.code}
-          AND sh."salespersonCode" IS NOT NULL
-        ORDER BY sp.name
-      `;
+      // Tries first with data replicated in PG
+      const headerRows = await ctx.prisma.navPfSalesHeader.findMany({
+        where: {
+          sellingSeasonCode: season.code,
+          shortcutDimension2Code: brand.code,
+          salespersonCode: { not: null },
+        },
+        select: { salespersonCode: true },
+        distinct: ['salespersonCode'],
+      });
+      const salespersonCodes = headerRows
+        .map(r => r.salespersonCode)
+        .filter((c): c is string => c !== null);
 
-      if (pgRows.length > 0) {
+      if (salespersonCodes.length > 0) {
+        const nameMap = await resolveSalespersonNames(ctx.prisma, salespersonCodes);
+        const pgRows = salespersonCodes
+          .map(code => ({ code, name: nameMap.get(code) ?? '' }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+
         return {
           brand: { code: brand.code, name: brand.name },
           season: { code: season.code, name: season.name },
@@ -90,14 +115,13 @@ const portafoglioRouter = router({
         };
       }
 
-      // Fallback: NAV diretto se la replica non ha ancora dati
+      // Fallback: direct NAV if replica has no data yet
       try {
         const navConfig = await getNavDbConfig(ctx.prisma, getConfig);
         const pool = await getPool(navConfig);
         const co = sanitizeCompany(navConfig.company);
 
-        const request = pool.request();
-        (request as unknown as Record<string, unknown>)['timeout'] = 15_000;
+        const request = createSyncRequest(pool, 15_000);
         request.input('SeasonCode', season.code);
         request.input('TrademarkCode', brand.code);
 
@@ -127,8 +151,11 @@ const portafoglioRouter = router({
     }),
 
   /**
-   * Avvia un sync portafoglio NAV → PG immediatamente.
-   * Usato dal bottone "Aggiorna Ora" nell'UI.
+   * Triggers an immediate NAV→PG portafoglio sync; returns conflict error if a sync is already running.
+   *
+   * @auth {sales:read}
+   * @input {none}
+   * @output {Sync result from triggerPortafoglioSyncNow()}
    */
   triggerSync: protectedProcedure
     .use(requirePermission('sales:read'))
@@ -154,8 +181,11 @@ const portafoglioRouter = router({
     }),
 
   /**
-   * Restituisce lo stato di sync delle tabelle nav_pf_*.
-   * Usato dalla UI per mostrare last-sync timestamp e progress.
+   * Returns the sync state (last sync timestamp, row count, duration) for all nav_pf_* replica tables.
+   *
+   * @auth {sales:read}
+   * @input {none}
+   * @output {{ isRunning: boolean, tables: { tableName, lastSyncedAt, rowCount, lastDurationMs }[] }}
    */
   getSyncState: protectedProcedure
     .use(requirePermission('sales:read'))
@@ -176,8 +206,11 @@ const portafoglioRouter = router({
     }),
 
   /**
-   * Genera il file xlsx del portafoglio ordini per il brand/season corrente.
-   * Restituisce il buffer codificato in base64 per il download lato client.
+   * Generates and returns the order portfolio XLSX for a brand+season (base64-encoded); uses PG replica with NAV direct fallback.
+   *
+   * @auth {sales:read}
+   * @input {{ brandId, seasonId, salespersonCode?, customerCode? }}
+   * @output {{ data: string (base64), filename: string, rowCount: number, queryDurationMs: number }}
    */
   download: protectedProcedure
     .use(requirePermission('sales:read'))
@@ -206,7 +239,7 @@ const portafoglioRouter = router({
         'sales.statistics.portafoglio.download start',
       );
 
-      // Controlla se i dati PG sono disponibili per questa stagione/brand
+      // Checks if PG data is available for this season/brand
       const pgCount = await ctx.prisma.navPfSalesHeader.count({
         where: {
           sellingSeasonCode: season.code,
@@ -220,7 +253,7 @@ const portafoglioRouter = router({
       let dataSource: 'pg' | 'nav';
 
       if (pgHasData) {
-        // Query su dati replicati in PostgreSQL (veloce, indici ottimizzati)
+        // Query on data replicated in PostgreSQL (fast, optimized indexes)
         dataSource = 'pg';
         rows = await queryPortafoglioFromPg(ctx.prisma, {
           seasonCode: season.code,
@@ -229,7 +262,7 @@ const portafoglioRouter = router({
           customerCode: input.customerCode,
         });
       } else {
-        // Fallback: query diretta NAV (lenta, nessuna replica disponibile)
+        // Fallback: direct NAV query (slow, no replica available)
         ctx.logger.warn(
           { brandCode: brand.code, seasonCode: season.code },
           'Portafoglio PG replica vuota — fallback NAV diretto',
@@ -248,7 +281,7 @@ const portafoglioRouter = router({
       const queryDurationMs = Date.now() - queryStart;
       ctx.logger.info({ dataSource, rowCount: rows.length, queryDurationMs }, 'portafoglio download query done');
 
-      // Build xlsx
+      // Builds xlsx
       const sheetName = `${season.code}_${brand.code}`;
       const dbUser = await ctx.prisma.user.findUnique({
         where: { id: ctx.session.user.id },
@@ -259,7 +292,7 @@ const portafoglioRouter = router({
         title: 'Analisi Vendite',
         subject: `${brand.name} - ${season.code}`,
         author: authorName,
-        manager: `Luke - v${process.env.npm_package_version ?? 'unknown'}`,
+        manager: `Luke - v${process.env.APP_VERSION ?? 'dev'}`,
       });
       const now = new Date();
       const pad = (n: number) => String(n).padStart(2, '0');
@@ -285,8 +318,11 @@ const portafoglioRouter = router({
 
 const kimoRouter = router({
   /**
-   * Filtri disponibili per Vendite+Bidone Kimo.
-   * Legge gli agenti distinti da nav_kimo_sales_header per il brand corrente.
+   * Returns available filter options (salespersons) for the Kimo sales+basket report, merging agents from nav_pf_* and nav_kimo_*.
+   *
+   * @auth {sales:read}
+   * @input {{ brandId: string (UUID), seasonId: string (UUID) }}
+   * @output {{ brand, season, salespersons: { code, name }[] }}
    */
   getFilters: protectedProcedure
     .use(requirePermission('sales:read'))
@@ -305,31 +341,39 @@ const kimoRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand o stagione non trovati' });
       }
 
-      // Agenti dalle SO (step0)
-      const spSo = await ctx.prisma.$queryRaw<{ code: string; name: string }[]>`
-        SELECT DISTINCT sp."code", sp."name"
-        FROM nav_pf_sales_header sh
-        JOIN nav_pf_salesperson sp ON sh."salespersonCode" = sp."code"
-        WHERE sh."sellingSeasonCode" = ${season.code}
-          AND sh."shortcutDimension2Code" = ${brand.code}
-          AND sh."salespersonCode" IS NOT NULL
-      `;
+      // Agents from SO (step0) and BASKET (step1) — independent queries, in parallel
+      const [soHeaderRows, basketHeaderRows] = await Promise.all([
+        ctx.prisma.navPfSalesHeader.findMany({
+          where: {
+            sellingSeasonCode: season.code,
+            shortcutDimension2Code: brand.code,
+            salespersonCode: { not: null },
+          },
+          select: { salespersonCode: true },
+          distinct: ['salespersonCode'],
+        }),
+        ctx.prisma.navKimoSalesHeader.findMany({
+          where: {
+            trademarkCode: brand.code,
+            salespersonCodeNav: { not: null },
+            OR: [{ assignedSalesDocumentNo: null }, { assignedSalesDocumentNo: '' }],
+          },
+          select: { salespersonCodeNav: true },
+          distinct: ['salespersonCodeNav'],
+        }),
+      ]);
+      const spSoCodes = soHeaderRows
+        .map(r => r.salespersonCode)
+        .filter((c): c is string => c !== null);
+      const spBaCodes = basketHeaderRows
+        .map(r => r.salespersonCodeNav)
+        .filter((c): c is string => c !== null);
 
-      // Agenti dai BASKET (step1)
-      const spBa = await ctx.prisma.$queryRaw<{ code: string; name: string }[]>`
-        SELECT DISTINCT sp."code", sp."name"
-        FROM nav_kimo_sales_header kh
-        JOIN nav_pf_salesperson sp ON kh."salespersonCodeNav" = sp."code"
-        WHERE kh."trademarkCode" = ${brand.code}
-          AND (kh."assignedSalesDocumentNo" IS NULL OR kh."assignedSalesDocumentNo" = '')
-          AND kh."salespersonCodeNav" IS NOT NULL
-      `;
-
-      // Unione deduplicata
-      const spMap = new Map<string, string>();
-      for (const r of [...spSo, ...spBa]) spMap.set(r.code, r.name);
-      const salespersons = [...spMap.entries()]
-        .map(([code, name]) => ({ code, name }))
+      // Deduplicated union
+      const allCodes = [...new Set([...spSoCodes, ...spBaCodes])];
+      const nameMap = await resolveSalespersonNames(ctx.prisma, allCodes);
+      const salespersons = allCodes
+        .map(code => ({ code, name: nameMap.get(code) ?? '' }))
         .sort((a, b) => a.name.localeCompare(b.name));
 
       return {
@@ -340,7 +384,11 @@ const kimoRouter = router({
     }),
 
   /**
-   * Stato di sync delle tabelle nav_kimo_*.
+   * Returns the sync state for all nav_kimo_* replica tables.
+   *
+   * @auth {sales:read}
+   * @input {none}
+   * @output {{ isRunning: boolean, tables: { tableName, lastSyncedAt, rowCount, lastDurationMs }[] }}
    */
   getSyncState: protectedProcedure
     .use(requirePermission('sales:read'))
@@ -362,7 +410,11 @@ const kimoRouter = router({
     }),
 
   /**
-   * Avvia un sync KIMO NAV → PG immediatamente.
+   * Triggers an immediate NAV→PG KIMO sync; returns conflict error if already running.
+   *
+   * @auth {sales:read}
+   * @input {none}
+   * @output {Sync result from triggerKimoSyncNow()}
    */
   triggerSync: protectedProcedure
     .use(requirePermission('sales:read'))
@@ -388,8 +440,11 @@ const kimoRouter = router({
     }),
 
   /**
-   * Genera il file xlsx Vendite+Bidone Kimo per il brand/season corrente.
-   * UNION di SO da nav_pf_* e BASKET da nav_kimo_*.
+   * Generates and returns the Kimo sales+basket XLSX (UNION of nav_pf_* orders and nav_kimo_* baskets) for a brand+season.
+   *
+   * @auth {sales:read}
+   * @input {{ brandId, seasonId, salespersonCode?, customerCode? }}
+   * @output {{ data: string (base64), filename: string, rowCount: number, queryDurationMs: number }}
    */
   download: protectedProcedure
     .use(requirePermission('sales:read'))
@@ -443,7 +498,7 @@ const kimoRouter = router({
         title:   'Vendite + Bidone Kimo',
         subject: `${brand.name} - ${season.code}`,
         author:  authorName,
-        manager: `Luke - v${process.env.npm_package_version ?? 'unknown'}`,
+        manager: `Luke - v${process.env.APP_VERSION ?? 'dev'}`,
       });
 
       const now = new Date();

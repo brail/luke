@@ -1,12 +1,17 @@
-import type { PrismaClient } from '@prisma/client';
 import pino from 'pino';
 
-import { getNavDbConfig, type GetConfigFn } from '../config.js';
 import { getPool } from '../client.js';
-import { syncVendors, type SyncResult } from './vendors.js';
+import { getNavDbConfig, type GetConfigFn } from '../config.js';
+
 import { syncBrands } from './brands.js';
 import { syncSeasons } from './seasons.js';
+import { syncVendors, type SyncResult } from './vendors.js';
 
+import type { PrismaClient } from '@prisma/client';
+
+/**
+ * Summary returned by `runNavSync` after one full or partial sync run.
+ */
 export interface NavSyncReport {
   startedAt: Date;
   completedAt: Date;
@@ -14,13 +19,19 @@ export interface NavSyncReport {
 }
 
 /**
- * Orchestratore del sync NAV.
+ * Orchestrates the NAV sync for one or all entities.
  *
- * Accetta un PrismaClient e la funzione getConfig di configManager
- * (dependency injection — il package non dipende da apps/api).
+ * Accepts a `PrismaClient` and the `getConfig` function from `configManager`
+ * via dependency injection so this package does not depend on `apps/api`.
  *
- * @param entity - Se specificata, sincronizza solo quell'entità.
- *                 Se omessa, sincronizza tutte e tre (vendor, brand, season).
+ * Each entity sync runs in its own try/catch: a failure in one entity does
+ * not abort the others.
+ *
+ * @param prisma - Prisma client used to read AppConfig and write local tables
+ * @param getConfig - Config accessor injected from `apps/api/src/lib/configManager`
+ * @param logger - Pino logger instance (defaults to `info` level)
+ * @param entity - When provided, syncs only that entity; omit to sync all three
+ * @returns Report with per-entity upsert counts and overall timing
  */
 export async function runNavSync(
   prisma: PrismaClient,

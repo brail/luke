@@ -1,19 +1,20 @@
 /**
- * Test di Integrazione per AuditLog
- * Verifica end-to-end che ogni azione sensibile produca entry coerenti
+ * Integration Tests for AuditLog
+ * Verifies end-to-end that every sensitive action produces consistent entries
  */
 
 import { PrismaClient } from '@prisma/client';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 
 import { appRouter } from '../src/routers';
 
 import {
   setupTestDb,
-  teardownTestDb,
   createTestUser,
+  TEST_USER_PASSWORD,
   createTestContext,
   createCallerAs,
+  createCallerWithSession,
 } from './helpers';
 
 
@@ -24,15 +25,10 @@ describe('AuditLog Integration', () => {
     testPrisma = await setupTestDb();
   });
 
-  afterEach(async () => {
-    await teardownTestDb();
-  });
-
   describe('USER_CREATE', () => {
     it('dovrebbe loggare entry coerente per creazione utente', async () => {
       const { user: admin, session } = await createTestUser('admin');
-      const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+      const caller = createCallerWithSession(session);
 
       const newUser = await caller.users.create({
         username: 'testuser',
@@ -60,7 +56,7 @@ describe('AuditLog Integration', () => {
       expect(log.ip).toBe('127.0.0.1');
       expect(log.createdAt).toBeInstanceOf(Date);
 
-      // Verifica che non ci siano password in metadata
+      // Verify there are no passwords in metadata
       const metadataStr = JSON.stringify(log.metadata);
       expect(metadataStr).not.toContain('password');
       expect(metadataStr).not.toContain('SecurePass');
@@ -72,8 +68,7 @@ describe('AuditLog Integration', () => {
       const { user: admin, session } = await createTestUser('admin');
       const { user: targetUser } = await createTestUser('viewer');
 
-      const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+      const caller = createCallerWithSession(session);
 
       await caller.users.update({
         id: targetUser.id,
@@ -104,8 +99,7 @@ describe('AuditLog Integration', () => {
       const { user: admin, session } = await createTestUser('admin');
       const { user: targetUser } = await createTestUser('viewer');
 
-      const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+      const caller = createCallerWithSession(session);
 
       await caller.users.softDelete({ id: targetUser.id });
 
@@ -131,8 +125,7 @@ describe('AuditLog Integration', () => {
       const { user: admin, session } = await createTestUser('admin');
       const { user: targetUser } = await createTestUser('viewer');
 
-      const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+      const caller = createCallerWithSession(session);
 
       await caller.users.hardDelete({ id: targetUser.id });
 
@@ -143,43 +136,30 @@ describe('AuditLog Integration', () => {
       expect(auditLogs).toHaveLength(1);
       const log = auditLogs[0];
 
+      // `targetId` is now populated: a deletion log without the id of what
+      // was deleted isn't traceable. The original comment
+      // ("the middleware can't extract the ID from the input") describes a limitation
+      // that has since been overcome.
       expect(log).toMatchObject({
         action: 'USER_HARD_DELETE',
         targetType: 'User',
-        targetId: null, // Il middleware non può estrarre l'ID dall'input
         actorId: admin.id,
         result: 'SUCCESS',
       });
+      expect(log.targetId).toEqual(expect.any(String));
     });
   });
 
   describe('USER_PASSWORD_CHANGE', () => {
     it('dovrebbe loggare entry per cambio password senza password in chiaro', async () => {
+      // `createTestUser` already creates a LOCAL identity **and** credential: creating a
+      // second one violates the unique constraint on identityId.
       const { user: user, session } = await createTestUser('viewer');
 
-      // Crea credenziale locale per l'utente (l'identità esiste già)
-      const identity = await testPrisma.identity.findFirst({
-        where: { userId: user.id, provider: 'LOCAL' },
-      });
-
-      if (identity) {
-        // Crea hash valido per la password 'oldpass'
-        const argon2 = await import('argon2');
-        const passwordHash = await argon2.hash('oldpass');
-
-        await testPrisma.localCredential.create({
-          data: {
-            identityId: identity.id,
-            passwordHash: passwordHash,
-          },
-        });
-      }
-
-      const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+      const caller = createCallerWithSession(session);
 
       await caller.me.changePassword({
-        currentPassword: 'oldpass',
+        currentPassword: TEST_USER_PASSWORD,
         newPassword: 'NewSecurePass123!',
         confirmNewPassword: 'NewSecurePass123!',
       });
@@ -199,7 +179,7 @@ describe('AuditLog Integration', () => {
         result: 'SUCCESS',
       });
 
-      // Verifica che non ci siano password in metadata
+      // Verify there are no passwords in metadata
       const metadataStr = JSON.stringify(log.metadata);
       expect(metadataStr).not.toContain('password');
       expect(metadataStr).not.toContain('NewSecurePass');
@@ -208,32 +188,15 @@ describe('AuditLog Integration', () => {
 
   describe('AUTH_LOGIN', () => {
     it('dovrebbe loggare entry per login riuscito', async () => {
+      // Credential already created by `createTestUser`
       const { user } = await createTestUser('viewer');
 
-      // Crea credenziale locale per l'utente (l'identità esiste già)
-      const identity = await testPrisma.identity.findFirst({
-        where: { userId: user.id, provider: 'LOCAL' },
-      });
+      const caller = await createCallerAs(null); // Unauthenticated
 
-      if (identity) {
-        // Crea hash valido per la password 'testpass'
-        const argon2 = await import('argon2');
-        const passwordHash = await argon2.hash('testpass');
-
-        await testPrisma.localCredential.create({
-          data: {
-            identityId: identity.id,
-            passwordHash: passwordHash,
-          },
-        });
-      }
-
-      const caller = createCallerAs(null); // Non autenticato
-
-      // Simula login con password corretta
+      // Simulate login with the correct password
       await caller.auth.login({
         username: user.username,
-        password: 'testpass',
+        password: TEST_USER_PASSWORD,
       });
 
       const auditLogs = await testPrisma.auditLog.findMany({
@@ -247,7 +210,7 @@ describe('AuditLog Integration', () => {
         action: 'AUTH_LOGIN',
         targetType: 'Auth',
         targetId: user.id,
-        actorId: null, // Login non ha sessione attiva
+        actorId: null, // Login has no active session
         result: 'SUCCESS',
       });
 
@@ -259,8 +222,7 @@ describe('AuditLog Integration', () => {
   describe('CONFIG_UPSERT', () => {
     it('dovrebbe loggare entry per configurazione con redazione segreti', async () => {
       const { user: admin, session } = await createTestUser('admin');
-      const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+      const caller = createCallerWithSession(session);
 
       await caller.config.set({
         key: 'app.test.secret',
@@ -282,21 +244,20 @@ describe('AuditLog Integration', () => {
         result: 'SUCCESS',
       });
 
-      // Verifica redazione segreti
+      // Verify secret redaction
       const metadataStr = JSON.stringify(log.metadata);
       expect(metadataStr).toContain('app.test.secret');
-      expect(metadataStr).toContain('[REDACTED]'); // Valore redatto
+      expect(metadataStr).toContain('[REDACTED]'); // Redacted value
       expect(metadataStr).not.toContain('super-secret-value');
     });
   });
 
   describe('Ordering e timestamp', () => {
     it('dovrebbe ordinare per createdAt DESC', async () => {
-      const { user: admin, session } = await createTestUser('admin');
-      const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+      const { session } = await createTestUser('admin');
+      const caller = createCallerWithSession(session);
 
-      // Crea 3 azioni sequenziali
+      // Create 3 sequential actions
       const user1 = await caller.users.create({
         username: 'user1',
         email: 'user1@test.com',
@@ -304,7 +265,7 @@ describe('AuditLog Integration', () => {
         role: 'viewer',
       });
 
-      const user2 = await caller.users.create({
+      await caller.users.create({
         username: 'user2',
         email: 'user2@test.com',
         password: 'SecurePassword123!',
@@ -313,7 +274,7 @@ describe('AuditLog Integration', () => {
 
       await caller.users.softDelete({ id: user1.id });
 
-      // Verifica ordinamento
+      // Verify ordering
       const auditLogs = await testPrisma.auditLog.findMany({
         orderBy: { createdAt: 'desc' },
         take: 3,
@@ -321,7 +282,7 @@ describe('AuditLog Integration', () => {
 
       expect(auditLogs).toHaveLength(3);
 
-      // Verifica che siano ordinati per data decrescente
+      // Verify they're ordered by descending date
       for (let i = 0; i < auditLogs.length - 1; i++) {
         expect(auditLogs[i].createdAt.getTime()).toBeGreaterThanOrEqual(
           auditLogs[i + 1].createdAt.getTime()
@@ -332,11 +293,10 @@ describe('AuditLog Integration', () => {
 
   describe('Metadata redaction', () => {
     it('dovrebbe redattare campi sensibili nei metadata', async () => {
-      const { user: admin, session } = await createTestUser('admin');
-      const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+      const { session } = await createTestUser('admin');
+      const caller = createCallerWithSession(session);
 
-      // Crea utente con dati sensibili
+      // Create user with sensitive data
       await caller.users.create({
         username: 'sensitiveuser',
         email: 'sensitive@test.com',
@@ -351,13 +311,13 @@ describe('AuditLog Integration', () => {
       expect(auditLogs).toHaveLength(1);
       const log = auditLogs[0];
 
-      // Verifica che i metadata contengano informazioni utili ma non password
+      // Verify that metadata contains useful information but no password
       expect(log.metadata).toBeTruthy();
       expect(log.metadata).toHaveProperty('input_username');
       expect(log.metadata).toHaveProperty('input_email');
       expect(log.metadata).toHaveProperty('input_role');
 
-      // Verifica che non ci siano password in metadata
+      // Verify there are no passwords in metadata
       const metadataStr = JSON.stringify(log.metadata);
       expect(metadataStr).not.toContain('password');
       expect(metadataStr).not.toContain('SecurePass');
@@ -366,17 +326,16 @@ describe('AuditLog Integration', () => {
 
   describe('USER_HARD_DELETE con targetId corretto', () => {
     it('dovrebbe loggare targetId corretto per hard delete', async () => {
-      const { user: admin, session } = await createTestUser('admin');
+      const { session } = await createTestUser('admin');
       const { user: targetUser } = await createTestUser('viewer');
-      const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+      const caller = createCallerWithSession(session);
 
       await caller.users.hardDelete({ id: targetUser.id });
 
       const auditLogs = await testPrisma.auditLog.findMany({
         where: {
           action: 'USER_HARD_DELETE',
-          targetId: targetUser.id, // Ora deve essere popolato!
+          targetId: targetUser.id, // Must now be populated!
         },
       });
 
@@ -392,18 +351,17 @@ describe('AuditLog Integration', () => {
 
   describe('CONFIG_VIEW_VALUE con targetId', () => {
     it('dovrebbe loggare targetId per visualizzazione valore raw', async () => {
-      const { user: admin, session } = await createTestUser('admin');
-      const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+      const { session } = await createTestUser('admin');
+      const caller = createCallerWithSession(session);
 
-      // Prima crea una config
+      // First create a config
       await caller.config.set({
         key: 'app.test.secret',
         value: 'secret123',
         encrypt: true,
       });
 
-      // Poi visualizzala in modalità raw
+      // Then view it in raw mode
       await caller.config.viewValue({
         key: 'app.test.secret',
         mode: 'raw',
@@ -424,8 +382,7 @@ describe('AuditLog Integration', () => {
   describe('CONFIG_UPSERT per LDAP', () => {
     it('dovrebbe loggare evento aggregato per salvataggio LDAP', async () => {
       const { user: admin, session } = await createTestUser('admin');
-      const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+      const caller = createCallerWithSession(session);
 
       await caller.integrations.auth.saveLdapConfig({
         enabled: true,
@@ -458,7 +415,7 @@ describe('AuditLog Integration', () => {
         result: 'SUCCESS',
       });
 
-      // Verifica metadata redatti
+      // Verify redacted metadata
       const metadataStr = JSON.stringify(log.metadata);
       expect(metadataStr).not.toContain('supersecret123');
       expect(metadataStr).not.toContain('bindPassword');
@@ -467,18 +424,38 @@ describe('AuditLog Integration', () => {
     });
 
     it('dovrebbe loggare FAILURE per errore LDAP', async () => {
-      const { user: admin, session } = await createTestUser('admin');
+      const { session } = await createTestUser('admin');
       const ctx = createTestContext(session);
-      const caller = appRouter.createCaller(ctx);
+
+      // The FAILURE branch isn't reachable with malformed input: `ldapConfigSchema`
+      // already validates URL and roleMapping (the `JSON.parse` inside the handler is in fact
+      // redundant), so the procedure would be rejected by `.input()` without ever
+      // executing the body — and without writing any audit entry. The only realistic way
+      // to get there is a write failure, which is injected here.
+      const failingCtx = {
+        ...ctx,
+        prisma: new Proxy(ctx.prisma, {
+          get(target, prop, receiver) {
+            if (prop === '$transaction') {
+              return async () => {
+                throw new Error('scrittura AppConfig fallita');
+              };
+            }
+            return Reflect.get(target, prop, receiver);
+          },
+        }),
+      } as typeof ctx;
+
+      const caller = appRouter.createCaller(failingCtx);
 
       await expect(
         caller.integrations.auth.saveLdapConfig({
           enabled: true,
-          url: 'invalid-url',
-          bindDN: '',
-          bindPassword: '',
-          searchBase: '',
-          searchFilter: '',
+          url: 'ldap://ldap.example.com',
+          bindDN: 'cn=admin,dc=example,dc=com',
+          bindPassword: 'secret',
+          searchBase: 'dc=example,dc=com',
+          searchFilter: '(uid={{username}})',
           groupSearchBase: '',
           groupSearchFilter: '',
           roleMapping: '',

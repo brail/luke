@@ -1,26 +1,46 @@
-import type { PrismaClient, NotificationCategory, Prisma } from '@prisma/client';
+
+import { CATEGORY_LEVEL_EVENT_KEY, fullName } from '@luke/core';
 
 import { sseStore } from './sseStore';
 
+import type { PrismaClient, NotificationCategory, Prisma } from '@prisma/client';
+
+/**
+ * Parameters for creating a single in-app notification.
+ */
 interface CreateNotificationParams {
   userId: string;
   category: NotificationCategory;
+  /** Optional fine-grained event key within `category` (e.g. a `CalendarEventKey`) — checked before the category-level preference. */
+  eventKey?: string;
   title: string;
   message: string;
   link?: string;
   data?: Record<string, unknown>;
 }
 
+/**
+ * Creates a single in-app notification for a user if the user has not disabled that
+ * notification category (or, when `eventKey` is set, the specific event). Immediately
+ * pushes an SSE ping to connected clients.
+ */
 export async function createNotification(
   prisma: PrismaClient,
   params: CreateNotificationParams
 ): Promise<void> {
-  const pref = await prisma.notificationPreference.findUnique({
-    where: { userId_category: { userId: params.userId, category: params.category } },
-    select: { enabled: true },
+  // Single query covering both the event-level row (if `eventKey` is set) and the category-level
+  // fallback row — event-level wins when present, otherwise the category-level row applies.
+  const eventKeysToCheck = params.eventKey
+    ? [params.eventKey, CATEGORY_LEVEL_EVENT_KEY]
+    : [CATEGORY_LEVEL_EVENT_KEY];
+  const prefs = await prisma.notificationPreference.findMany({
+    where: { userId: params.userId, category: params.category, eventKey: { in: eventKeysToCheck } },
+    select: { eventKey: true, enabled: true },
   });
-
-  if (pref?.enabled === false) return;
+  const eventPref = params.eventKey ? prefs.find(p => p.eventKey === params.eventKey) : undefined;
+  const categoryPref = prefs.find(p => p.eventKey === CATEGORY_LEVEL_EVENT_KEY);
+  const enabled = eventPref ? eventPref.enabled : (categoryPref?.enabled ?? true);
+  if (!enabled) return;
 
   await prisma.notification.create({
     data: {
@@ -36,48 +56,91 @@ export async function createNotification(
   sseStore.pushToUser(params.userId, { type: 'notification', payload: {} });
 }
 
+/**
+ * Batch visibility lookup — resolves function-level and user-level visibility for multiple
+ * calendar events in 3 queries total. Returns a map of eventId → userId[].
+ */
+export async function getVisibleUserIdsForMilestones(
+  milestoneIds: string[],
+  prisma: PrismaClient
+): Promise<Map<string, string[]>> {
+  if (milestoneIds.length === 0) return new Map();
+
+  const [fnVisibilities, userVisibilities] = await Promise.all([
+    prisma.calendarEventVisibility.findMany({
+      where: { eventId: { in: milestoneIds } },
+      select: { eventId: true, functionId: true },
+    }),
+    prisma.calendarEventUserVisibility.findMany({
+      where: { eventId: { in: milestoneIds } },
+      select: { eventId: true, userId: true },
+    }),
+  ]);
+
+  const functionIds = [...new Set(fnVisibilities.map(v => v.functionId))];
+  const teamMembers = functionIds.length > 0
+    ? await prisma.companyTeamMembership.findMany({
+        where: { team: { functionId: { in: functionIds }, isActive: true } },
+        select: { userId: true, team: { select: { functionId: true } } },
+      })
+    : [];
+
+  const fnToUsers = new Map<string, string[]>();
+  for (const m of teamMembers) {
+    if (!fnToUsers.has(m.team.functionId)) fnToUsers.set(m.team.functionId, []);
+    fnToUsers.get(m.team.functionId)!.push(m.userId);
+  }
+
+  const result = new Map<string, Set<string>>(milestoneIds.map(id => [id, new Set()]));
+  for (const v of fnVisibilities) {
+    const set = result.get(v.eventId)!;
+    for (const uid of fnToUsers.get(v.functionId) ?? []) set.add(uid);
+  }
+  for (const v of userVisibilities) result.get(v.eventId)?.add(v.userId);
+
+  return new Map(Array.from(result, ([id, set]) => [id, Array.from(set)]));
+}
+
+/**
+ * Returns the set of user IDs who should receive notifications for a milestone.
+ * Includes members of all company teams whose function is linked to the event,
+ * plus any users with a direct user-level visibility entry.
+ */
 export async function getVisibleUserIdsForMilestone(
   milestoneId: string,
   prisma: PrismaClient
 ): Promise<string[]> {
-  const [fnVisibilities, userVisibilities] = await Promise.all([
-    prisma.calendarEventVisibility.findMany({ where: { eventId: milestoneId }, select: { functionId: true } }),
-    prisma.calendarEventUserVisibility.findMany({ where: { eventId: milestoneId }, select: { userId: true } }),
-  ]);
-
-  const functionIds = fnVisibilities.map(v => v.functionId);
-  const teamMembers = functionIds.length > 0
-    ? await prisma.companyTeamMembership.findMany({
-        where: { team: { functionId: { in: functionIds }, isActive: true } },
-        select: { userId: true },
-      })
-    : [];
-
-  const userIds = new Set<string>();
-  for (const m of teamMembers) userIds.add(m.userId);
-  for (const u of userVisibilities) userIds.add(u.userId);
-  return Array.from(userIds);
+  return (await getVisibleUserIdsForMilestones([milestoneId], prisma)).get(milestoneId) ?? [];
 }
 
-export async function notifyAdmins(
+/**
+ * Shared core: filters disabled prefs, bulk-creates notifications, SSE-pings each recipient.
+ * Exported (not just used internally by `notifyAdmins`/`notifyAllUsers`) so a caller that
+ * already has the recipient id list on hand — e.g. because it also needs it for something
+ * else in the same request — can call this directly instead of forcing another `user.findMany`
+ * through `notifyAllUsers`'s own internal query.
+ */
+export async function bulkNotify(
   prisma: PrismaClient,
-  params: Omit<CreateNotificationParams, 'userId'>
+  userIds: string[],
+  params: {
+    category: NotificationCategory;
+    title: string;
+    message: string;
+    link?: string | null;
+    data?: Record<string, unknown>;
+  }
 ): Promise<void> {
-  const admins = await prisma.user.findMany({
-    where: { role: 'admin', isActive: true },
-    select: { id: true },
-  });
-  if (admins.length === 0) return;
+  if (userIds.length === 0) return;
 
-  const adminIds = admins.map(a => a.id);
-
-  // Batch preference check: find only explicitly-disabled prefs
+  // Scoped to eventKey:'' (category-level rows only) — an event-level override that mutes
+  // one specific event must not suppress the user's entire category-level aggregate notification.
   const disabledPrefs = await prisma.notificationPreference.findMany({
-    where: { userId: { in: adminIds }, category: params.category, enabled: false },
+    where: { userId: { in: userIds }, category: params.category, eventKey: CATEGORY_LEVEL_EVENT_KEY, enabled: false },
     select: { userId: true },
   });
   const disabledSet = new Set(disabledPrefs.map(p => p.userId));
-  const toNotify = adminIds.filter(id => !disabledSet.has(id));
+  const toNotify = userIds.filter(id => !disabledSet.has(id));
   if (toNotify.length === 0) return;
 
   await prisma.notification.createMany({
@@ -94,4 +157,265 @@ export async function notifyAdmins(
   for (const userId of toNotify) {
     sseStore.pushToUser(userId, { type: 'notification', payload: {} });
   }
+}
+
+// ─── Aggregation buffer for calendar notifications ─────────────────────────────
+
+const CALENDAR_BUFFER_WINDOW_MS = 3 * 60 * 1000;
+
+interface CalendarBufferEntry {
+  actorName: string;
+  calendarId: string | undefined;
+  calendarLabel: string | null;
+  /** Active admin ids at entry-creation time — cached so later calls in the same window don't re-query them. */
+  adminIds: string[];
+  userIds: Set<string>;
+  count: number;
+  firstCallAt: number;
+  /** Raw `titleSuffix`/`message` from the first call, used verbatim only if the entry flushes with `count === 1`. */
+  titleSuffix: string;
+  rawMessage: string;
+  singleLink: string;
+  /**
+   * Event key of the first (and, if the entry flushes with `count === 1`, only) call.
+   * Only consulted when `count === 1` — an entry that collapsed multiple event types
+   * together has no single well-defined event key, so per-event mutes don't apply to it
+   * (only the coarser category-level mute does, via `bulkNotify`'s own check).
+   */
+  eventKey: string | undefined;
+}
+
+const calendarBuffer = new Map<string, CalendarBufferEntry>();
+
+function calendarBufferKey(actorId: string, calendarId: string | undefined): string {
+  return `${actorId}::${calendarId ?? '_none'}`;
+}
+
+/**
+ * Sends a CALENDAR-category notification about a calendar event change to all
+ * users who have visibility on the event(s) plus all active admins, excluding the actor.
+ *
+ * - `eventId`: fetch visibility live for a single event (create/update/status change)
+ * - `eventIds`: batch fetch visibility for multiple events (applyTemplate, clone)
+ * - `preloadedUserIds`: use pre-fetched snapshot (delete, where event no longer exists)
+ * - `calendarId`: optional — resolves brand·season label appended to the message
+ *
+ * Does not send immediately: enqueues into a short in-memory buffer keyed by
+ * (actorId, calendarId), flushed periodically by `flushDueCalendarNotifications`.
+ * Multiple calls within the buffer window collapse into a single aggregated
+ * notification instead of one per call — see that function for the flush logic.
+ *
+ * Fire-and-forget: callers should call without `await` and `.catch(logger.error)`.
+ */
+export async function notifyCalendarChange(
+  prisma: PrismaClient,
+  params: {
+    eventId?: string;
+    eventIds?: string[];
+    preloadedUserIds?: string[];
+    actorId: string;
+    titleSuffix: string;
+    message: string;
+    link?: string;
+    calendarId?: string;
+    /** Fine-grained CALENDAR event key (e.g. a `CalendarEventKey`) — see `CalendarBufferEntry.eventKey`. */
+    eventKey?: string;
+  }
+): Promise<void> {
+  let visibleUserIds: string[];
+  if (params.preloadedUserIds) {
+    visibleUserIds = params.preloadedUserIds;
+  } else if (params.eventIds) {
+    const map = await getVisibleUserIdsForMilestones(params.eventIds, prisma);
+    visibleUserIds = [...new Set(params.eventIds.flatMap(id => map.get(id) ?? []))];
+  } else if (params.eventId) {
+    visibleUserIds = await getVisibleUserIdsForMilestone(params.eventId, prisma);
+  } else {
+    visibleUserIds = [];
+  }
+
+  // Synchronous enqueue — no `await` between read and write, so concurrent calls
+  // in the same event-loop tick cannot race on the same buffer entry.
+  const key = calendarBufferKey(params.actorId, params.calendarId);
+  const existing = calendarBuffer.get(key);
+
+  // Actor and calendar are fixed by the buffer key, so a call joining an already-open
+  // window can reuse the admin list cached on it instead of re-querying admin/actor/calendar.
+  if (existing) {
+    const allIds = [...new Set([...visibleUserIds, ...existing.adminIds])].filter(id => id !== params.actorId);
+    if (allIds.length === 0) return;
+    for (const id of allIds) existing.userIds.add(id);
+    existing.count += 1;
+    return;
+  }
+
+  const [admins, actor, calendar] = await Promise.all([
+    prisma.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } }),
+    prisma.user.findUnique({
+      where: { id: params.actorId },
+      select: { firstName: true, lastName: true, username: true },
+    }),
+    params.calendarId
+      ? prisma.seasonCalendar.findUnique({
+          where: { id: params.calendarId },
+          select: { brand: { select: { name: true } }, season: { select: { name: true } } },
+        })
+      : Promise.resolve(null),
+  ]);
+
+  const adminIds = admins.map(a => a.id);
+  const allIds = [...new Set([...visibleUserIds, ...adminIds])].filter(id => id !== params.actorId);
+  if (allIds.length === 0) return;
+
+  const actorName = actor ? fullName(actor) : params.actorId;
+  const calendarLabel = calendar ? `${calendar.brand.name} · ${calendar.season.name}` : null;
+
+  calendarBuffer.set(key, {
+    actorName,
+    calendarId: params.calendarId,
+    calendarLabel,
+    adminIds,
+    userIds: new Set(allIds),
+    count: 1,
+    firstCallAt: Date.now(),
+    titleSuffix: params.titleSuffix,
+    rawMessage: params.message,
+    singleLink: params.link ?? '/calendar',
+    eventKey: params.eventKey,
+  });
+}
+
+async function flushCalendarEntry(prisma: PrismaClient, entry: CalendarBufferEntry): Promise<void> {
+  const userIds = [...entry.userIds];
+  if (entry.count === 1) {
+    let recipients = userIds;
+    if (entry.eventKey) {
+      const eventDisabled = await prisma.notificationPreference.findMany({
+        where: { userId: { in: userIds }, category: 'CALENDAR', eventKey: entry.eventKey, enabled: false },
+        select: { userId: true },
+      });
+      const eventDisabledSet = new Set(eventDisabled.map(p => p.userId));
+      recipients = userIds.filter(id => !eventDisabledSet.has(id));
+      if (recipients.length === 0) return;
+    }
+    const title = `${entry.actorName} ${entry.titleSuffix}`;
+    const message = entry.calendarLabel ? `${entry.rawMessage} · ${entry.calendarLabel}` : entry.rawMessage;
+    await bulkNotify(prisma, recipients, { category: 'CALENDAR', title, message, link: entry.singleLink });
+    return;
+  }
+
+  const title = `${entry.actorName} ha modificato ${entry.count} eventi`;
+  const message = entry.calendarLabel
+    ? `${entry.count} modifiche al calendario · ${entry.calendarLabel}`
+    : `${entry.count} modifiche al calendario`;
+
+  await bulkNotify(prisma, userIds, {
+    category: 'CALENDAR',
+    title,
+    message,
+    link: '/calendar',
+    data: { aggregated: true, count: entry.count, calendarId: entry.calendarId ?? null },
+  });
+}
+
+type Logger = { error: (obj: unknown, msg?: string) => void };
+
+async function drainCalendarEntries(prisma: PrismaClient, entries: CalendarBufferEntry[], log: Logger, context = ''): Promise<void> {
+  for (const entry of entries) {
+    try {
+      await flushCalendarEntry(prisma, entry);
+    } catch (err) {
+      log.error({ err }, `Failed to flush aggregated calendar notification${context}`);
+    }
+  }
+}
+
+/**
+ * Flushes all buffered calendar-notification entries whose buffer window has elapsed.
+ * Each due entry is removed from the buffer *before* it is sent, so a new call for the
+ * same (actorId, calendarId) pair arriving mid-flush starts a fresh entry/window instead
+ * of being merged into one that is already being sent.
+ */
+export async function flushDueCalendarNotifications(prisma: PrismaClient, log: Logger): Promise<void> {
+  const now = Date.now();
+  const due: CalendarBufferEntry[] = [];
+  for (const [key, entry] of calendarBuffer) {
+    if (now - entry.firstCallAt >= CALENDAR_BUFFER_WINDOW_MS) {
+      calendarBuffer.delete(key);
+      due.push(entry);
+    }
+  }
+  await drainCalendarEntries(prisma, due, log);
+}
+
+/**
+ * Forces an immediate flush of the entire calendar-notification buffer, regardless of
+ * window elapsed. Used on graceful shutdown (`onClose`) to avoid losing buffered
+ * notifications that haven't reached their normal flush time yet.
+ */
+export async function flushAllCalendarNotifications(prisma: PrismaClient, log: Logger): Promise<void> {
+  const entries = [...calendarBuffer.values()];
+  calendarBuffer.clear();
+  await drainCalendarEntries(prisma, entries, log, ' on shutdown');
+}
+
+// ─── Dedup helper for periodic scheduler notifications ────────────────────────
+
+export const SYSTEM_FAILURE_DEDUP_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Runs `send()` only if `windowMs` has elapsed since the last successful send for `key`.
+ * The dedup ledger is persisted in `NotificationDedupKey` (not in-memory) so it survives
+ * process restarts — otherwise every redeploy/restart would reset the window and re-fire
+ * recurring notifications (e.g. sync failures, overdue milestones) regardless of how
+ * recently one was already sent. The timestamp is updated only after `send()` resolves
+ * without throwing, so a failed send is retried on the next call instead of being silently
+ * suppressed for the full window.
+ */
+export async function notifyDeduped(
+  prisma: PrismaClient,
+  key: string,
+  windowMs: number,
+  send: () => Promise<void>
+): Promise<void> {
+  const existing = await prisma.notificationDedupKey.findUnique({ where: { key } });
+  if (existing && Date.now() - existing.lastSentAt.getTime() < windowMs) return;
+  await send();
+  await prisma.notificationDedupKey.upsert({
+    where: { key },
+    create: { key, lastSentAt: new Date() },
+    update: { lastSentAt: new Date() },
+  });
+}
+
+/**
+ * Broadcasts a notification to all active admin users in a single `createMany` call.
+ * Respects per-user notification preferences (disabled entries are excluded).
+ * Sends an SSE ping to each notified admin's active connections.
+ */
+export async function notifyAdmins(
+  prisma: PrismaClient,
+  params: Omit<CreateNotificationParams, 'userId'>
+): Promise<void> {
+  const admins = await prisma.user.findMany({
+    where: { role: 'admin', isActive: true },
+    select: { id: true },
+  });
+  await bulkNotify(prisma, admins.map(a => a.id), params);
+}
+
+/**
+ * Broadcasts a notification to every active user (all roles) in a single `createMany` call.
+ * Respects per-user notification preferences (disabled entries are excluded).
+ * Sends an SSE ping to each notified user's active connections.
+ */
+export async function notifyAllUsers(
+  prisma: PrismaClient,
+  params: Omit<CreateNotificationParams, 'userId'>
+): Promise<void> {
+  const users = await prisma.user.findMany({
+    where: { isActive: true },
+    select: { id: true },
+  });
+  await bulkNotify(prisma, users.map(u => u.id), params);
 }

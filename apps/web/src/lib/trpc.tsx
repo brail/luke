@@ -1,7 +1,8 @@
 'use client';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createTRPCReact, httpBatchLink } from '@trpc/react-query';
+import { httpBatchStreamLink } from '@trpc/client';
+import { createTRPCReact } from '@trpc/react-query';
 import { useSession } from 'next-auth/react';
 import React, { useState } from 'react';
 
@@ -12,14 +13,34 @@ import type { AppRouter } from '@luke/api';
 // Nota: safe in monorepo; se separassimo i repo, considerare @luke/core/server
 
 /**
- * Client tRPC per React Query
- * Tipizzato con AppRouter reale per inferenza end-to-end
- * Nota futura: Migrare a import da @luke/core se web/api si separano in repository diversi
+ * Typed tRPC client bound to `AppRouter` for end-to-end type inference.
+ *
+ * Future: migrate to an import from `@luke/core` if `web` and `api` are split
+ * into separate repositories.
  */
 export const trpc = createTRPCReact<AppRouter>();
 
 /**
- * Provider tRPC con configurazione React Query
+ * Narrows a deeply-nested tRPC `RouterOutputs` value to a shallower, hand-written local type — the
+ * workaround for TS2589 ("Type instantiation is excessively deep"), which some queries with several
+ * levels of nested `include` hit when consumed directly inside a `useMemo`/component. The cast is
+ * the actual fix here (there's no deeper one short of flattening the query shape), so keep this as
+ * the single documented place it happens rather than repeating `as unknown as T` ad hoc.
+ *
+ * Only fits when `T` is a shallow interface you wrote by hand (e.g. picking a few fields) — if `T`
+ * itself is (or embeds) the full deep `RouterOutputs` shape, instantiating this generic with it is
+ * itself expensive enough to retrigger TS2589; use a plain `(value as any) as T` expression at the
+ * call site instead in that case (see `collection-layout/page.tsx`'s `layout` for an example).
+ */
+export function narrowRouterOutput<T>(value: unknown): T {
+  return value as T;
+}
+
+/**
+ * Wraps children with the tRPC and React Query providers.
+ * Creates a `QueryClient` with project-wide defaults (1 min stale time, no
+ * window-focus refetch, no mutation retry) and attaches a `Bearer` JWT header
+ * from the NextAuth session on every tRPC request.
  */
 export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
   const { data: session } = useSession();
@@ -44,18 +65,18 @@ export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
     () =>
       trpc.createClient({
         links: [
-          httpBatchLink({
+          httpBatchStreamLink({
             // Relative path — Next.js rewrites proxy /trpc/* → http://api:3001/trpc/*
             // This works whether the browser hits port 80 (via NPM) or port 3000 directly.
             url: '/trpc',
             // Headers per autenticazione, Content-Type e trace correlation
             headers() {
+              // crypto.randomUUID() requires a secure context (HTTPS or localhost) — falls back
+              // to a non-crypto random id over plain HTTP (e.g. an internal http:// hostname).
               const headers: Record<string, string> = {
-                'Content-Type': 'application/json',
                 'x-luke-trace-id':
                   crypto.randomUUID?.() ||
-                  Math.random().toString(36).substring(2) +
-                    Date.now().toString(36), // Nuovo per ogni batch request
+                  Math.random().toString(36).substring(2) + Date.now().toString(36),
               };
 
               // Aggiungi token JWT se disponibile

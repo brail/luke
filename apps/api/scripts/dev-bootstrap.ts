@@ -1,30 +1,31 @@
 /**
- * Script di bootstrap per database di sviluppo Luke API
+ * Bootstrap script for the Luke API development database
  *
- * Responsabilità:
- * 1. Verifica master key (fail-fast se mancante)
- * 2. Reset completo database (drop + migrations)
- * 3. Seed idempotente (admin user + configurazioni base)
- * 4. Sanity checks post-seed
- * 5. Exit code 0 se successo, 1 se fallimento
+ * Responsibilities:
+ * 1. Verify master key (fail-fast if missing)
+ * 2. Full database reset (drop + migrations)
+ * 3. Idempotent seed (admin user + base configurations)
+ * 4. Post-seed sanity checks
+ * 5. Exit code 0 on success, 1 on failure
  *
- * Prerequisiti: docker-compose -f docker-compose.dev.yml up -d
+ * Prerequisites: docker-compose -f docker-compose.dev.yml up -d
  */
 
 import { execSync } from 'child_process';
 import { join } from 'path';
 
-import { PrismaClient } from '@prisma/client';
-
 import { getMasterKey } from '@luke/core/server';
 
+import { createScriptPrismaClient } from './lib/prisma';
+
+
 /**
- * Funzione principale di bootstrap
+ * Main bootstrap function
  */
 async function bootstrap() {
   console.log('🚀 Bootstrap sviluppo Luke API...\n');
 
-  // 1. Verifica master key
+  // 1. Verify master key
   try {
     getMasterKey();
     console.log('✅ Master key valida\n');
@@ -33,7 +34,7 @@ async function bootstrap() {
     process.exit(1);
   }
 
-  // 2. Reset database
+  // 2. Reset the database
   console.log('🗑️  Reset database...');
   try {
     execSync('pnpm prisma migrate reset --force --skip-seed', {
@@ -57,12 +58,12 @@ async function bootstrap() {
     throw error;
   }
 
-  // 4. Seed database
+  // 4. Seed the database
   console.log('\n🌱 Esecuzione seed...');
-  const prisma = new PrismaClient();
+  const prisma = createScriptPrismaClient();
 
   try {
-    // Importa e esegui funzioni di seed
+    // Import and run seed functions
     const { seedAdminUser, seedAppConfigs } = await import('../prisma/seed');
 
     await seedAdminUser(prisma);
@@ -111,5 +112,5 @@ async function bootstrap() {
   }
 }
 
-// Esegui bootstrap
+// Run bootstrap
 bootstrap();

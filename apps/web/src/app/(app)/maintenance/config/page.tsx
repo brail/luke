@@ -7,7 +7,7 @@ import { ConfigDeleteDialog } from '../../../../components/config/ConfigDeleteDi
 import { ConfigEditDialog } from '../../../../components/config/ConfigEditDialog';
 import { ConfigExportButton } from '../../../../components/config/ConfigExportButton';
 import { ConfigImportDialog } from '../../../../components/config/ConfigImportDialog';
-import { ConfigTable } from '../../../../components/config/ConfigTable';
+import { ConfigTable, type Config } from '../../../../components/config/ConfigTable';
 import { ConfigTablePagination } from '../../../../components/config/ConfigTablePagination';
 import { ConfigToolbar } from '../../../../components/config/ConfigToolbar';
 import { ConfigValueDialog } from '../../../../components/config/ConfigValueDialog';
@@ -52,7 +52,7 @@ export default function MaintenanceConfigPage() {
   const pageSize = 20;
 
   // Stati per dialog
-  const [selectedConfig, setSelectedConfig] = useState<any>(null);
+  const [selectedConfig, setSelectedConfig] = useState<Config | null>(null);
   const [deleteConfigKey, setDeleteConfigKey] = useState<string | null>(null);
   const [viewValue, setViewValue] = useState('');
   const [viewValueKey, setViewValueKey] = useState<string>('');
@@ -77,18 +77,18 @@ export default function MaintenanceConfigPage() {
     setEditDialogOpen(true);
   };
 
-  const handleEditConfig = (config: any) => {
+  const handleEditConfig = (config: Config) => {
     setSelectedConfig(config);
     setEditDialogOpen(true);
   };
 
-  const handleDeleteConfig = (config: any) => {
+  const handleDeleteConfig = (config: Config) => {
     setDeleteConfigKey(config.key);
   };
 
-  const handleViewValue = (config: any) => {
+  const handleViewValue = (config: Config) => {
     // Solo per valori non cifrati - sicurezza garantita dal componente Table
-    setViewValue(config.valuePreview || config.value);
+    setViewValue(config.valuePreview || config.value || '');
     setViewValueKey(config.key);
   };
 

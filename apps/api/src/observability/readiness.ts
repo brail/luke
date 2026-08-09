@@ -1,6 +1,9 @@
 /**
- * Readiness Checks Estensibili
- * Sistema modulare per verifiche di readiness (DB, secrets, LDAP, integrations future)
+ * Extensible readiness check system.
+ *
+ * Provides modular checks (database, secrets, LDAP) that are run in parallel
+ * and aggregated into a single status response. New checks can be added to
+ * `getReadinessChecks` without modifying the runner or HTTP route.
  */
 
 import { Client } from 'ldapts';
@@ -8,35 +11,39 @@ import { Client } from 'ldapts';
 import { deriveSecret, validateMasterKey } from '@luke/core/server';
 
 import { getLdapConfig } from '../lib/configManager';
+import { toErrorMessage } from '../lib/error';
 
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyLoggerInstance } from 'fastify';
 
 
-/**
- * Interfaccia per check di readiness
- */
+/** Describes a single readiness check with a name and an async probe function. */
 export interface ReadinessCheck {
   name: string;
   check: () => Promise<{ ok: boolean; message?: string }>;
 }
 
 /**
- * Verifica connessione database
+ * Probes the database connection by executing `SELECT 1`.
+ *
+ * @returns `{ ok: true }` on success, or `{ ok: false, message }` on failure.
  */
 export async function checkDatabase(
   prisma: PrismaClient
 ): Promise<{ ok: boolean; message?: string }> {
   try {
+    // Raw SQL exemption (CLAUDE.md Stack Constraints): health-probe query.
     await prisma.$queryRaw`SELECT 1`;
     return { ok: true };
-  } catch (error: any) {
-    return { ok: false, message: error.message };
+  } catch (error: unknown) {
+    return { ok: false, message: toErrorMessage(error) };
   }
 }
 
 /**
- * Verifica derivazione segreti
+ * Verifies that HKDF secret derivation is operational by performing a test derivation.
+ *
+ * @returns `{ ok: true }` on success, or `{ ok: false, message }` if derivation fails.
  */
 export async function checkSecrets(): Promise<{
   ok: boolean;
@@ -45,13 +52,17 @@ export async function checkSecrets(): Promise<{
   try {
     deriveSecret('api.jwt'); // Test derivazione
     return { ok: true };
-  } catch (error: any) {
+  } catch {
     return { ok: false, message: 'Secret derivation failed' };
   }
 }
 
 /**
- * Verifica connessione LDAP (se abilitato)
+ * Probes the LDAP server with a bind/unbind cycle if LDAP is enabled in AppConfig.
+ *
+ * Skips and returns `ok: true` when LDAP is disabled. Uses a 2-second connect/operation timeout.
+ *
+ * @returns `{ ok: true }` on success, or `{ ok: false, message }` if the bind fails.
  */
 export async function checkLdap(
   prisma: PrismaClient
@@ -62,7 +73,7 @@ export async function checkLdap(
       return { ok: true, message: 'LDAP disabled, skipped' };
     }
 
-    // Ping LDAP con timeout breve (ldapts: connessione lazy al primo bind)
+    // Ping LDAP with a short timeout (ldapts: lazy connection on first bind)
     const client = new Client({
       url: config.url,
       timeout: 2000,
@@ -72,8 +83,8 @@ export async function checkLdap(
     try {
       await client.bind(config.bindDN, config.bindPassword);
       return { ok: true };
-    } catch (err: any) {
-      return { ok: false, message: `LDAP bind failed: ${err.message}` };
+    } catch (err: unknown) {
+      return { ok: false, message: `LDAP bind failed: ${toErrorMessage(err)}` };
     } finally {
       try {
         await client.unbind();
@@ -81,14 +92,16 @@ export async function checkLdap(
         // ignore
       }
     }
-  } catch (error: any) {
-    return { ok: false, message: error.message };
+  } catch (error: unknown) {
+    return { ok: false, message: toErrorMessage(error) };
   }
 }
 
 /**
- * Registry estensibile di readiness checks
- * Aggiungi nuovi check qui per integrations future (SAP, API esterne, etc.)
+ * Returns the list of all registered readiness checks.
+ *
+ * Add new entries here to extend the `/readyz` probe with additional integrations
+ * (e.g. SAP, external APIs) without modifying the runner or the HTTP route.
  */
 export function getReadinessChecks(prisma: PrismaClient): ReadinessCheck[] {
   return [
@@ -101,8 +114,10 @@ export function getReadinessChecks(prisma: PrismaClient): ReadinessCheck[] {
 }
 
 /**
- * Esegue tutti i readiness checks in parallelo
- * Ritorna status aggregato con dettagli per ogni check
+ * Runs all registered readiness checks in parallel and aggregates the results.
+ *
+ * @returns An object with `allOk` (true if every check passed), a per-check status map,
+ *          and the current ISO timestamp.
  */
 export async function runReadinessChecks(prisma: PrismaClient): Promise<{
   allOk: boolean;
@@ -136,16 +151,17 @@ export async function runReadinessChecks(prisma: PrismaClient): Promise<{
 }
 
 /**
- * Verifica dipendenze critiche durante bootstrap (fail-fast)
- * Esegue controlli che devono passare prima che il server si avvii
- * Lancia errori dettagliati in caso di fallimento per debugging
+ * Performs fail-fast checks that must pass before the server accepts traffic.
+ *
+ * Verifies: database connectivity, master key availability, and JWT secret derivation.
+ * Throws a detailed error if any check fails, allowing the boot sequence to exit cleanly.
  */
 export async function checkBootstrapDependencies(
   prisma: PrismaClient,
   logger: FastifyLoggerInstance
 ): Promise<void> {
   try {
-    // Test connessione database
+    // Test database connection
     await prisma.$connect();
     logger.info('Connessione database stabilita');
 
@@ -160,17 +176,17 @@ export async function checkBootstrapDependencies(
     try {
       deriveSecret('api.jwt');
       logger.info('Segreti JWT derivati con successo');
-    } catch (error: any) {
+    } catch (error: unknown) {
       const secretError = new Error(
-        `Impossibile derivare segreti JWT: ${error.message}`
+        `Impossibile derivare segreti JWT: ${toErrorMessage(error)}`
       );
       logger.error(secretError.message);
       throw secretError;
     }
-  } catch (error: any) {
-    // Re-throw con messaggio dettagliato per debugging
+  } catch (error: unknown) {
+    // Re-throw with a detailed message for debugging
     const bootstrapError = new Error(
-      `Bootstrap dependency check failed: ${error.message}`
+      `Bootstrap dependency check failed: ${toErrorMessage(error)}`
     );
     logger.error(
       { error: bootstrapError },

@@ -1,16 +1,19 @@
 /**
- * Collection Layout Service — Gestione Collection Layout per brand+stagione
- *
- * Funzioni pure esportate, prisma sempre ultimo argomento.
- * Errori: TRPCError con codici NOT_FOUND, CONFLICT, BAD_REQUEST.
+ * Collection Layout service — CRUD for collection layouts, groups, and rows scoped to brand+season.
+ * All exported functions receive PrismaClient as their last argument.
+ * Errors are surfaced as TRPCError with codes NOT_FOUND, CONFLICT, or BAD_REQUEST.
  */
 
+import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 
 import type {
   CollectionGroupInput,
   CollectionLayoutRowInput,
 } from '@luke/core';
+
+import { assertUnlocked } from './editLock.service.js';
+import { resolveDefaultPlanningGroupId } from './seasonCalendar.service.js';
 
 import type {
   PrismaClient,
@@ -24,7 +27,7 @@ import type {
 } from '@prisma/client';
 
 // ─────────────────────────────────────────────────────────────────
-// Tipo di ritorno arricchito
+// Enriched return type
 // ─────────────────────────────────────────────────────────────────
 
 export type QuotationWithParamSet = CollectionRowQuotation & {
@@ -37,6 +40,38 @@ export type RowWithVendor = CollectionLayoutRow & {
   pictureUrl?: string | null;
 };
 
+/**
+ * Verifies a planning group belongs to the same brand+season as a collection layout.
+ *
+ * @throws {TRPCError} NOT_FOUND if the layout or planning group does not exist.
+ * @throws {TRPCError} BAD_REQUEST if they belong to a different brand/season.
+ */
+async function assertPlanningGroupInLayoutScope(
+  layoutId: string,
+  planningGroupId: string,
+  prisma: PrismaClient | Prisma.TransactionClient
+): Promise<void> {
+  const [layout, planningGroup] = await Promise.all([
+    prisma.collectionLayout.findUniqueOrThrow({
+      where: { id: layoutId },
+      select: { brandId: true, seasonId: true },
+    }),
+    prisma.planningGroup.findUnique({
+      where: { id: planningGroupId },
+      select: { calendar: { select: { brandId: true, seasonId: true } } },
+    }),
+  ]);
+  if (!planningGroup) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo di pianificazione destinazione non trovato' });
+  }
+  if (planningGroup.calendar.brandId !== layout.brandId || planningGroup.calendar.seasonId !== layout.seasonId) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'Il gruppo di pianificazione appartiene a una stagione diversa',
+    });
+  }
+}
+
 export type CollectionLayoutWithRelations = CollectionLayout & {
   brand: Pick<Brand, 'name' | 'code' | 'logoKey'>;
   groups: (CollectionGroup & {
@@ -46,7 +81,7 @@ export type CollectionLayoutWithRelations = CollectionLayout & {
 };
 
 // ─────────────────────────────────────────────────────────────────
-// Include clause comune
+// Common include clause
 // ─────────────────────────────────────────────────────────────────
 
 const ROW_VENDOR_INCLUDE = {
@@ -78,6 +113,12 @@ const LAYOUT_INCLUDE = {
 // Collection Layout
 // ─────────────────────────────────────────────────────────────────
 
+/**
+ * Fetches the collection layout for a brand+season combination, including all groups,
+ * rows, vendor info, and quotations ordered by their display order.
+ *
+ * @returns The layout with relations, or null if not yet created.
+ */
 export async function getLayout(
   brandId: string,
   seasonId: string,
@@ -89,6 +130,12 @@ export async function getLayout(
   }) as Promise<CollectionLayoutWithRelations | null>;
 }
 
+/**
+ * Returns the existing collection layout for a brand+season, or creates an empty one
+ * if none exists yet.
+ *
+ * @param availableGenders - Optional gender filter to set on creation.
+ */
 export async function getOrCreateLayout(
   brandId: string,
   seasonId: string,
@@ -109,6 +156,14 @@ export async function getOrCreateLayout(
 
 type RowCopySelection = { id: string; copyQuotations: boolean };
 
+/**
+ * Copies a collection layout from one brand+season to another. Optionally restricts which
+ * rows are copied and whether their quotations are included.
+ *
+ * @param options - When provided, only the listed row IDs are copied; each entry controls quotation copy.
+ * @throws {TRPCError} NOT_FOUND if the source layout does not exist.
+ * @throws {TRPCError} CONFLICT if a layout already exists for the target brand+season.
+ */
 export async function copyFromSeason(
   fromBrandId: string,
   fromSeasonId: string,
@@ -149,7 +204,7 @@ export async function copyFromSeason(
       data: {
         brandId: toBrandId,
         seasonId: toSeasonId,
-        availableGenders: (source as any).availableGenders,
+        availableGenders: source.availableGenders,
       },
     });
 
@@ -187,7 +242,7 @@ export async function copyFromSeason(
             collectionLayoutId: newLayout.id,
             groupId: newGroup.id,
             pictureKey: null,
-            progress: null,
+            phaseId: null,
           },
         });
 
@@ -214,6 +269,11 @@ export async function copyFromSeason(
 // Collection Groups
 // ─────────────────────────────────────────────────────────────────
 
+/**
+ * Creates a new group in the given collection layout.
+ *
+ * @throws {TRPCError} NOT_FOUND if the layout does not exist.
+ */
 export async function createGroup(
   collectionLayoutId: string,
   input: CollectionGroupInput,
@@ -244,10 +304,16 @@ export async function createGroup(
   });
 }
 
+/**
+ * Updates an existing group's name, order, or SKU budget.
+ *
+ * @throws {TRPCError} NOT_FOUND if the group does not exist.
+ */
 export async function updateGroup(
   groupId: string,
   input: Partial<CollectionGroupInput>,
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  userId: string
 ): Promise<CollectionGroup> {
   const group = await prisma.collectionGroup.findUnique({
     where: { id: groupId },
@@ -259,6 +325,7 @@ export async function updateGroup(
       message: 'Gruppo non trovato',
     });
   }
+  await assertUnlocked('COLLECTION_LAYOUT', group.collectionLayoutId, userId, prisma);
 
   return prisma.collectionGroup.update({
     where: { id: groupId },
@@ -270,9 +337,15 @@ export async function updateGroup(
   });
 }
 
+/**
+ * Deletes a group and all its rows (cascaded by DB relation).
+ *
+ * @throws {TRPCError} NOT_FOUND if the group does not exist.
+ */
 export async function deleteGroup(
   groupId: string,
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  userId: string
 ): Promise<void> {
   const group = await prisma.collectionGroup.findUnique({
     where: { id: groupId },
@@ -284,6 +357,7 @@ export async function deleteGroup(
       message: 'Gruppo non trovato',
     });
   }
+  await assertUnlocked('COLLECTION_LAYOUT', group.collectionLayoutId, userId, prisma);
 
   await prisma.collectionGroup.delete({ where: { id: groupId } });
 }
@@ -292,9 +366,17 @@ export async function deleteGroup(
 // Collection Layout Rows
 // ─────────────────────────────────────────────────────────────────
 
+/**
+ * Creates a new row in the specified group. Validates that the gender is allowed by the
+ * layout's availableGenders filter.
+ *
+ * @throws {TRPCError} NOT_FOUND if the group does not exist.
+ * @throws {TRPCError} BAD_REQUEST if the gender is not in the layout's allowed set.
+ */
 export async function createRow(
   input: CollectionLayoutRowInput,
-  prisma: PrismaClient
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string
 ): Promise<RowWithVendor> {
   const group = await prisma.collectionGroup.findUnique({
     where: { id: input.groupId },
@@ -307,9 +389,10 @@ export async function createRow(
       message: 'Gruppo non trovato',
     });
   }
+  await assertUnlocked('COLLECTION_LAYOUT', group.collectionLayoutId, userId, prisma);
 
   // Validate gender against layout availableGenders
-  const availableGenders = (group.collectionLayout as any).availableGenders as string[];
+  const availableGenders = group.collectionLayout.availableGenders;
   if (availableGenders.length > 0 && !availableGenders.includes(input.gender)) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
@@ -321,11 +404,17 @@ export async function createRow(
     where: { groupId: input.groupId },
   });
 
-  const { order, ...rowData } = input;
+  const { order, planningGroupId, ...rowData } = input;
+  const resolvedPlanningGroupId = planningGroupId ?? await resolveDefaultPlanningGroupId(
+    group.collectionLayout.brandId,
+    group.collectionLayout.seasonId,
+    prisma
+  );
 
   return prisma.collectionLayoutRow.create({
     data: {
       collectionLayoutId: group.collectionLayoutId,
+      planningGroupId: resolvedPlanningGroupId,
       order: order ?? existingCount,
       gender: rowData.gender,
       vendorId: rowData.vendorId ?? null,
@@ -337,7 +426,7 @@ export async function createRow(
       productCategory: rowData.productCategory,
       strategy: rowData.strategy ?? null,
       styleStatus: rowData.styleStatus ?? null,
-      progress: rowData.progress ?? null,
+      phaseId: rowData.phaseId ?? null,
       designer: rowData.designer ?? null,
       pictureKey: rowData.pictureKey ?? null,
       styleNotes: rowData.styleNotes ?? null,
@@ -351,28 +440,55 @@ export async function createRow(
   }) as Promise<RowWithVendor>;
 }
 
+/**
+ * Updates fields on a collection row. Validates gender against the layout's filter
+ * and, if moving to a different group, ensures the destination belongs to the same layout.
+ *
+ * @param existingRow - Caller-fetched row state, reused instead of a redundant internal
+ *   `findUnique` — the row-drawer save path (only caller) already fetches this for its own
+ *   before/after audit diff.
+ * @throws {TRPCError} NOT_FOUND if the destination group does not exist.
+ * @throws {TRPCError} BAD_REQUEST if the gender or cross-layout move is invalid.
+ */
+/**
+ * The error that freezes a completed row. A completed row shows an outcome measured against its
+ * phase and its planning group's milestones: moving either without reopening it would change
+ * that outcome after the fact. The other fields stay editable — completion concerns progress,
+ * not the row's master data.
+ *
+ * Single message for both write paths (single row and bulk assignment), so they can't diverge
+ * and tell the user two different rules for the same constraint.
+ */
+function completedRowConflict(count: number): TRPCError {
+  return new TRPCError({
+    code: 'CONFLICT',
+    message: count === 1
+      ? 'Riga conclusa: riaprila prima di cambiare fase o gruppo di pianificazione.'
+      : `${count} righe della selezione sono concluse: riaprile prima di cambiarne il gruppo di pianificazione.`,
+  });
+}
+
 export async function updateRow(
   rowId: string,
   input: Partial<CollectionLayoutRowInput>,
-  prisma: PrismaClient
+  existingRow: Pick<CollectionLayoutRow, 'collectionLayoutId' | 'groupId' | 'phaseId' | 'planningGroupId' | 'completedAt'>,
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string
 ): Promise<RowWithVendor> {
-  const row = await prisma.collectionLayoutRow.findUnique({
-    where: { id: rowId },
-  });
+  await assertUnlocked('COLLECTION_LAYOUT', existingRow.collectionLayoutId, userId, prisma);
 
-  if (!row) {
-    throw new TRPCError({
-      code: 'NOT_FOUND',
-      message: 'Riga non trovata',
-    });
+  const movesPhase = input.phaseId !== undefined && input.phaseId !== existingRow.phaseId;
+  const movesPlanningGroup = input.planningGroupId !== undefined && input.planningGroupId !== existingRow.planningGroupId;
+  if (existingRow.completedAt !== null && (movesPhase || movesPlanningGroup)) {
+    throw completedRowConflict(1);
   }
 
   if (input.gender) {
     const layout = await prisma.collectionLayout.findUnique({
-      where: { id: row.collectionLayoutId },
+      where: { id: existingRow.collectionLayoutId },
       select: { availableGenders: true },
     });
-    const availableGenders = (layout as any)?.availableGenders as string[] | undefined;
+    const availableGenders = layout?.availableGenders;
     if (availableGenders && availableGenders.length > 0 && !availableGenders.includes(input.gender)) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
@@ -381,8 +497,13 @@ export async function updateRow(
     }
   }
 
-  // Se si sposta il gruppo, verificare che il nuovo gruppo esista
-  if (input.groupId && input.groupId !== row.groupId) {
+  // If moving the planning group, verify it belongs to the same layout
+  if (input.planningGroupId && input.planningGroupId !== existingRow.planningGroupId) {
+    await assertPlanningGroupInLayoutScope(existingRow.collectionLayoutId, input.planningGroupId, prisma);
+  }
+
+  // If moving the group, verify the new group exists
+  if (input.groupId && input.groupId !== existingRow.groupId) {
     const newGroup = await prisma.collectionGroup.findUnique({
       where: { id: input.groupId },
     });
@@ -392,7 +513,7 @@ export async function updateRow(
         message: 'Gruppo destinazione non trovato',
       });
     }
-    if (newGroup.collectionLayoutId !== row.collectionLayoutId) {
+    if (newGroup.collectionLayoutId !== existingRow.collectionLayoutId) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
         message: 'Impossibile spostare una riga in un gruppo di un layout diverso',
@@ -400,16 +521,100 @@ export async function updateRow(
     }
   }
 
-  return prisma.collectionLayoutRow.update({
+  const updated = await prisma.collectionLayoutRow.update({
     where: { id: rowId },
-    data: input as any,
+    // Unchecked: the domain treats FKs (groupId, vendorId, etc.) as direct
+    // scalars, not relation-connect — Prisma requires the explicit type to
+    // pick that branch of the union instead of the other.
+    data: input as Prisma.CollectionLayoutRowUncheckedUpdateInput,
     include: ROW_VENDOR_INCLUDE,
-  }) as Promise<RowWithVendor>;
+  }) as RowWithVendor;
+
+  // Phase history hook: record every transition, never a separate job — avoids drift between
+  // the row's live phaseId and its history.
+  if (input.phaseId != null && input.phaseId !== existingRow.phaseId) {
+    await prisma.collectionRowPhaseHistory.create({
+      data: {
+        rowId,
+        phaseId: input.phaseId,
+        reachedAt: new Date(),
+        recordedByUserId: userId ?? null,
+      },
+    });
+  }
+
+  return updated;
 }
 
+/**
+ * Bulk-assigns a set of rows, all already known to belong to `layoutId`, to a planning group.
+ * Callers are expected to have resolved and validated `layoutId` from `rowIds` themselves.
+ *
+ * @throws {TRPCError} BAD_REQUEST if the target planning group belongs to a different brand/season.
+ */
+export async function bulkAssignRowsPlanningGroup(
+  rowIds: string[],
+  layoutId: string,
+  planningGroupId: string,
+  prisma: PrismaClient,
+  userId: string
+): Promise<{ success: true; count: number }> {
+  await assertUnlocked('COLLECTION_LAYOUT', layoutId, userId, prisma);
+  await assertPlanningGroupInLayoutScope(layoutId, planningGroupId, prisma);
+
+  // Same constraint as `updateRow`, applied before the updateMany. Completed rows are not
+  // filtered out of the selection: a bulk action that silently skips part of it is worse than an
+  // error, because the returned count would look like an intended partial success.
+  const completedCount = await prisma.collectionLayoutRow.count({
+    where: { id: { in: rowIds }, completedAt: { not: null } },
+  });
+  if (completedCount > 0) throw completedRowConflict(completedCount);
+
+  const { count } = await prisma.collectionLayoutRow.updateMany({
+    where: { id: { in: rowIds }, planningGroupId: { not: planningGroupId } },
+    data: { planningGroupId },
+  });
+
+  return { success: true, count };
+}
+
+/**
+ * Marks the row as completed, or reopens it. Lives here and not in the router because it's the
+ * only other place that writes to a row: keeping it next to `updateRow` puts the "completed row"
+ * invariant and its enforcer on the same side of the boundary.
+ *
+ * When completing, `completedAt: null` in the `where` makes the operation idempotent: a second
+ * call doesn't overwrite the date of the first completion, which is the value the outcome is
+ * measured against. Reopening always resets it.
+ *
+ * @returns The resulting row state — `completedAt` is what the caller records in the audit log.
+ */
+export async function setRowCompleted(
+  rowId: string,
+  completed: boolean,
+  prisma: PrismaClient
+): Promise<{ id: string; completedAt: Date | null }> {
+  return prisma.$transaction(async tx => {
+    await tx.collectionLayoutRow.updateMany({
+      where: { id: rowId, ...(completed ? { completedAt: null } : {}) },
+      data: { completedAt: completed ? new Date() : null },
+    });
+    return tx.collectionLayoutRow.findUniqueOrThrow({
+      where: { id: rowId },
+      select: { id: true, completedAt: true },
+    });
+  });
+}
+
+/**
+ * Deletes a collection row.
+ *
+ * @throws {TRPCError} NOT_FOUND if the row does not exist.
+ */
 export async function deleteRow(
   rowId: string,
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  userId: string
 ): Promise<void> {
   const row = await prisma.collectionLayoutRow.findUnique({
     where: { id: rowId },
@@ -421,13 +626,21 @@ export async function deleteRow(
       message: 'Riga non trovata',
     });
   }
+  await assertUnlocked('COLLECTION_LAYOUT', row.collectionLayoutId, userId, prisma);
 
   await prisma.collectionLayoutRow.delete({ where: { id: rowId } });
 }
 
+/**
+ * Duplicates a row, inserting the copy immediately after the source row and shifting
+ * subsequent rows down by 1. Quotations are copied; picture key is not (shared references avoided).
+ *
+ * @throws {TRPCError} NOT_FOUND if the source row does not exist.
+ */
 export async function duplicateRow(
   rowId: string,
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  userId: string
 ): Promise<RowWithVendor> {
   const row = await prisma.collectionLayoutRow.findUnique({
     where: { id: rowId },
@@ -445,6 +658,7 @@ export async function duplicateRow(
       message: 'Riga non trovata',
     });
   }
+  await assertUnlocked('COLLECTION_LAYOUT', row.collectionLayoutId, userId, prisma);
 
   return prisma.$transaction(async tx => {
     // Shift rows below source by +1
@@ -456,17 +670,17 @@ export async function duplicateRow(
       data: { order: { increment: 1 } },
     });
 
-    const { id: _id, createdAt: _ca, updatedAt: _ua, pictureKey: _pic, quotations, ...rowData } = row as any;
+    const { id: _id, createdAt: _ca, updatedAt: _ua, pictureKey: _pic, quotations, ...rowData } = row;
 
     const newRow = await tx.collectionLayoutRow.create({
       data: {
         ...rowData,
         order: row.order + 1,
-        pictureKey: null, // immagine non duplicata per evitare riferimenti condivisi
+        pictureKey: null, // picture not duplicated, to avoid shared references
       },
     });
 
-    // Duplica quotazioni
+    // Duplicate quotations
     for (const q of quotations) {
       const { id: _qid, rowId: _qrowId, createdAt: _qca, updatedAt: _qua, pricingParameterSet: _ps, ...qData } = q;
       await tx.collectionRowQuotation.create({
@@ -481,6 +695,11 @@ export async function duplicateRow(
   });
 }
 
+/**
+ * Updates layout-level settings: SKU budget, hidden columns, or available genders.
+ *
+ * @throws {TRPCError} NOT_FOUND if the layout does not exist.
+ */
 export async function updateLayoutSettings(
   collectionLayoutId: string,
   input: { skuBudget?: number | null; hiddenColumns?: string[] | null; availableGenders?: string[] },
@@ -502,17 +721,25 @@ export async function updateLayoutSettings(
     data: {
       ...('skuBudget' in input && { skuBudget: input.skuBudget }),
       ...('hiddenColumns' in input && {
-        hiddenColumns: input.hiddenColumns as any,
+        // Json? column: Prisma requires an explicit Prisma.JsonNull, not a direct `null`
+        hiddenColumns: input.hiddenColumns === null ? Prisma.JsonNull : input.hiddenColumns,
       }),
       ...(input.availableGenders && { availableGenders: input.availableGenders }),
     },
   });
 }
 
+/**
+ * Reassigns the order index of all rows in a group based on the provided ordered ID list.
+ *
+ * @param orderedIds - Row IDs in the desired display order (0-indexed).
+ * @throws {TRPCError} NOT_FOUND if the group does not exist.
+ */
 export async function reorderRows(
   groupId: string,
   orderedIds: string[],
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  userId: string
 ): Promise<void> {
   const group = await prisma.collectionGroup.findUnique({
     where: { id: groupId },
@@ -524,24 +751,32 @@ export async function reorderRows(
       message: 'Gruppo non trovato',
     });
   }
+  await assertUnlocked('COLLECTION_LAYOUT', group.collectionLayoutId, userId, prisma);
 
+  // `updateMany` with `groupId` in the where: see `reorderQuotations`. An id
+  // that doesn't belong to the group is left untouched instead of being reordered.
   await prisma.$transaction(
     orderedIds.map((rowId, index) =>
-      prisma.collectionLayoutRow.update({
-        where: { id: rowId },
+      prisma.collectionLayoutRow.updateMany({
+        where: { id: rowId, groupId },
         data: { order: index },
       })
     )
   );
 }
 
+/**
+ * Builds a map of Phase id → display label from the Phase catalog.
+ * Labels are formatted as "CODE — label" when a code is present.
+ *
+ * @returns Map keyed by Phase id.
+ */
 export async function buildProgressLabelMap(
   prisma: PrismaClient,
 ): Promise<Map<string, string>> {
-  const items = await prisma.collectionCatalogItem.findMany({
-    where: { type: 'progress' },
-    select: { value: true, code: true, label: true },
+  const items = await prisma.phase.findMany({
+    select: { id: true, code: true, label: true },
   });
-  return new Map(items.map(p => [p.value, p.code ? `${p.code} — ${p.label}` : p.label]));
+  return new Map(items.map(p => [p.id, p.code ? `${p.code} — ${p.label}` : p.label]));
 }
 

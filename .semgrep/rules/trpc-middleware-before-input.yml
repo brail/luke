@@ -1,0 +1,18 @@
+rules:
+  - id: luke-trpc-middleware-before-input
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      `.use(withAuditLog(...))` e `.use(withIdempotency(...))` vanno DOPO
+      `.input(...)`. Un middleware incatenato prima riceve `input` non ancora
+      parsato: il difetto non produce errori né test rossi, semplicemente svuota
+      i metadati. È già costato due sottosistemi — ogni audit log ha perso i
+      metadati di input, e la rilevazione dei conflitti di idempotency non ha mai
+      funzionato perché il body veniva hashato sempre come "{}".
+    patterns:
+      - pattern-either:
+          - pattern: $P.use(withAuditLog(...)).input(...)
+          - pattern: $P.use(withIdempotency(...)).input(...)
+    paths:
+      include:
+        - '/apps/api/src/routers/**'
