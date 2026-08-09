@@ -4,6 +4,11 @@ All notable changes to Luke are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [1.10.0-rc.13] - 2026-08-09
+
+### Fixed
+- **api**: Import @fastify/cookie for reply.clearCookie type augmentation
+
 ## [1.10.0-rc.12] - 2026-08-09
 
 ### Added
@@ -107,6 +112,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ignore luke-docs templates in prettier
 - **skills**: Drop 91 ignore markers from the ADR template
 - **web,api,nav**: Normalize filenames to camelCase, translate Italian names to English
+- Bump version to 1.10.0-rc.12
 
 ### Other
 - Script per le migration Prisma 7 e tier unit per apps/web
