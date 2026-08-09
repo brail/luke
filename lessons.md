@@ -23,6 +23,36 @@ redirect('/app/dashboard' as Route);
 
 Mai `as any` — viola strict mode. Pattern già usato in `NotificationDropdown.tsx`.
 
+### `crypto.randomUUID()` bare in un componente client crasha fuori da secure context
+
+`settings/collection-control/page.tsx` chiamava `crypto.randomUUID()` diretto per
+generare le key React di `BandSetEditor`. In produzione, su un host raggiunto
+via HTTP semplice (non HTTPS/localhost), il Web Crypto API non espone
+`randomUUID` — `TypeError: crypto.randomUUID is not a function`, pagina intera
+sostituita dall'error boundary di `app/error.tsx`. Il pattern corretto esisteva
+già in due punti del repo (`lib/trpc.tsx`, `CollectionRowDrawer.tsx`) ma non era
+stato applicato qui: bug noto, fix noto, semplicemente non riusato.
+
+Corretto in loco con il fallback già in uso altrove:
+
+```ts
+crypto.randomUUID?.() || Math.random().toString(36).substring(2) + Date.now().toString(36)
+```
+
+ma un fix inline non impedisce la ricorrenza — richiesto esplicitamente di
+**promuovere a regola** invece di limitarsi a patchare il file. Creata
+`@luke/no-bare-client-random-uuid` in `packages/eslint-plugin-luke/rules/`:
+segnala `crypto.randomUUID()` non-opzionale in qualunque file con direttiva
+`'use client'` in testa (i Server Component girano in Node, dove l'API è
+sempre disponibile — la regola li ignora per costruzione, controllando `Program.body[0]`).
+Wired in `eslint.config.mjs` scoping su `apps/web/src/**`, error.
+
+**Regola**: un bug di runtime dovuto a un'API che il codice usa in un solo
+posto "per errore" mentre altrove è già gestita correttamente va chiuso con
+una regola ESLint enforced, non con la sola correzione del call site — il
+prossimo `crypto.randomUUID()` bare va bloccato al commit, non scoperto in
+produzione da un errore generico senza stack trace visibile all'utente.
+
 ---
 
 ## Prisma & PostgreSQL

@@ -123,6 +123,12 @@ export default [
     rules: { '@luke/no-uncommented-tailwind-arbitrary': 'error' },
   },
   {
+    // crypto.randomUUID() secure-context backstop — only 'use client' files run in the
+    // browser; the rule itself checks for the directive, this just scopes it to apps/web.
+    files: ['apps/web/src/**/*.{ts,tsx}'],
+    rules: { '@luke/no-bare-client-random-uuid': 'error' },
+  },
+  {
     ignores: [
       '**/node_modules/**',
       '**/dist/**',

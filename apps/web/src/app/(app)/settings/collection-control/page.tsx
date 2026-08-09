@@ -193,7 +193,9 @@ function BandSetEditor({
   // external re-syncing. It exists only for the React key: with `index`,
   // `moveBand`/`removeBand` would jump focus and local state (e.g. open select)
   // to the wrong row after reordering or removal.
-  const [ids, setIds] = useState(() => bands.map(() => crypto.randomUUID()));
+  const [ids, setIds] = useState(() =>
+    bands.map(() => crypto.randomUUID?.() || Math.random().toString(36).substring(2) + Date.now().toString(36))
+  );
 
   const updateBand = (index: number, patch: Partial<AlertBand>) => {
     onChange(bands.map((b, i) => (i === index ? { ...b, ...patch } : b)));
@@ -218,7 +220,7 @@ function BandSetEditor({
 
   const addBand = () => {
     onChange([...bands, { ...EMPTY_BAND }]);
-    setIds([...ids, crypto.randomUUID()]);
+    setIds([...ids, crypto.randomUUID?.() || Math.random().toString(36).substring(2) + Date.now().toString(36)]);
   };
 
   return (
