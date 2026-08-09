@@ -4,6 +4,125 @@ All notable changes to Luke are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [1.10.0-rc.12] - 2026-08-09
+
+### Added
+- **audit**: Add audit log viewer and last-modified-by widget
+- **calendar**: Block freeze on uncovered phases, warn on vendor-holiday overlaps
+- **notifications**: Add notification center, soft-archive and per-event calendar overrides
+- **web**: Support pasting images from clipboard in FileDropZone
+- **api**: Add retention sweep for audit log and notifications
+- **api**: Seed retention sweep AppConfig keys with their default values
+- **core**: Add quotations/phaseChangeNote draft fields to collection layout row schema
+- **api**: Buffer row-drawer phase/planning-group/quotation edits into one Save transaction ⚠️ **BREAKING**
+- **web**: Buffer row-drawer edits until Save and redesign the phase/situazione header
+- **merch**: Revisioni automatiche su milestone, non forgiabili a mano ⚠️ **BREAKING**
+- **merch**: Intensità delle bande alert e conclusione esplicita delle righe
+- **nav**: Persist the outcome of each scheduled sync
+- **rbac**: Guard against locking everyone out of the admin functions
+
+### CI
+- Gate on tests and migrations, escalate findings to semgrep rules
+- Make skill and docs drift blocking
+- Derive the version list from the workspace and guard it before tagging
+- **semgrep**: Catch brand scope on resource-id inputs
+
+### Changed
+- **api**: Extract streamRawResponse helper
+- **core**: Remove hasPermissionWithGrants dead code
+- **api**: Rename the async test context and close the helper barrel
+- **api**: Drop four copies of createContext in favour of the barrel
+- **api**: Cut 1740 lines of duplicated test scaffolding and dead tooling
+- **api**: Extract confirmPendingFile
+- Eliminate `any` across the codebase and make it enforceable
+- **rbac**: Rename product.controllo section key to product.control
+
+### Documentation
+- Add quality hardening plan and flag the NODE_ENV dev trap
+- Record the integration test ordering lesson
+- Record the second hardening round and the local integration setup
+- Correct the stale LDAP entry in the hardening plan
+- Record the semgrep probing and module-mock lessons
+- Record single-instance scaling constraint (ADR-011)
+- Update readme tree and adr validation [luke-docs]
+- **api**: Normalize tRPC procedure and Prisma schema doc comments [luke-docs]
+- Require English-only code comments (rule 14)
+- **skills**: Align luke-docs language policy with CLAUDE.md rule 14
+- Fix APP_VERSION env var drift in README and ADR-008
+- **skills**: Extend luke-docs inline JSDoc target to web lib/hooks
+- **api**: Translate all Italian code comments to English
+- Log cd-cwd-leak lesson from this session verification bug
+- Translate Italian comments to English across apps/web, packages/core, packages/nav
+
+### Fixed
+- **api**: Bypass Fastify reply.send() for large streamed downloads
+- **calendar**: Fix template duration semantics, visibility validation, freeze naming, linked date editing
+- **api**: Default daily greeting to disabled for users
+- **api**: Correct middleware ordering, idempotency hashing and error mapping
+- **api**: Repair CLI scripts broken by Prisma 7
+- **api**: Make test isolation an invariant, not a per-file convention
+- **api**: Guarantee schema before every test fixture
+- **deps**: Resolve 24 known vulnerabilities, 3 critical on the auth layer
+- **ci**: Skip gitignored paths in the skill integrity check
+- **ci**: Apply the gitignore rule to link targets too, and honour directory patterns
+- **release**: Make the version bump a command, not a manual edit
+- **api**: Migrate createPdfBuffer to pdfmake 0.3, repairing every PDF export
+- **calendar**: Repair the PDF export, which killed the API process
+- **api**: Enforce brand scope on 17 procedures that only checked the role ⚠️ **BREAKING**
+- **auth**: Make session revocation and role demotion actually take effect
+- **api**: Rate-limit export generation and constrain the company logo key
+- **api**: Unify assertBrandAccess and unblock admins with no team
+- **api**: Enforce brand scope on 23 procedures addressed by resource id ⚠️ **BREAKING**
+- **api**: Scope reorder writes to their parent
+- **api**: Scope revision exports to their own layout ⚠️ **BREAKING**
+- **api**: Key the upload rate limit by user, not by IP
+- **api**: Bind a confirmed upload to the slot the server allocated ⚠️ **BREAKING**
+- **api**: Derive the company logo key from a verified FileObject ⚠️ **BREAKING**
+- **api**: Bring brand logo handling up to the company profile's guarantees ⚠️ **BREAKING**
+- **api**: Prevent concurrent scheduler execution across API instances
+- **web**: Persist quotation edits when Enter closes the row drawer
+- **api**: Persist notification dedup state to survive process restarts
+- **web**: Correct post-deny redirect path in section access guard
+- **pricing**: Persist countryCode on parameter set update
+- **web**: Stop season selector value from truncating
+- **api**: Derive phase catalog code from order instead of independent input
+- **api**: Satisfy tsconfig.test.json in retention sweep specs
+- **api**: Skip deactivated phases when resolving next phase
+- **web**: Aggiorna il semaforo backend della login con un poll
+- **web**: Il tooltip dei bottoni senza permesso non compariva mai
+- **api**: Rilascia il lock dello scheduler cancellando la riga
+- **auth**: Risolvi bypass rate-limit su login (pentest Strix RC)
+- **test**: Narrow the specs left behind by the `any` sweep
+- **deps**: Unpin fast-uri and js-yaml, resolve 4 known vulnerabilities
+- **rbac**: Close the lockout path through settings.users
+- **web**: Move trailing JSX comment out of ConfigTable header row
+- **rbac**: Make SECTION_ACCESS_DEFAULTS the base, not dead code
+- **api**: Unbreak nav CI build and pin vulnerable nanoid
+
+### Maintenance
+- Track .claude/ skills, hooks and shared settings
+- Sync eslint-plugin-luke to the monorepo version
+- Add prod to RC clone script via backup/export/import pipeline
+- **skills**: Scope luke-* skills to their own session
+- Ignore luke-docs templates in prettier
+- **skills**: Drop 91 ignore markers from the ADR template
+- **web,api,nav**: Normalize filenames to camelCase, translate Italian names to English
+
+### Other
+- Script per le migration Prisma 7 e tier unit per apps/web
+
+### Tests
+- **api**: Revive the test tier and split unit from integration
+- **calendar**: Cover sync engine, content hash, ACL, events and iCal
+- **web**: Add Playwright smoke suite, drop the never-passing legacy one
+- **api**: Exercise brand through appRouter, not the sub-router
+- **api**: Gate tRPC procedure coverage on measured invocations
+- **api**: Cover the pricing router and the price calculation engine
+- **api**: Exhaust the brand-logo rate limit without touching the database
+- **api**: Cover buffered row save, quotation sync, and phase alert changes
+- **web**: Update quotation smoke test for buffered save flow
+- **api**: Cover sectionAccess, including the procedure no UI can reach
+
 ## [1.10.0-rc.11] - 2026-07-27
 
 ### Fixed
@@ -11,6 +130,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Maintenance
 - Bump version to 1.10.0-rc.11
+- Update CHANGELOG for v1.10.0-rc.11
 
 ## [1.10.0-rc.10] - 2026-07-27
 
