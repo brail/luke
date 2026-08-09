@@ -11,6 +11,10 @@ import { verifyTokenVersion } from './tokenVersionCache';
 
 import type { PrismaClient } from '@prisma/client';
 import type { FastifyRequest, FastifyReply } from 'fastify';
+// Side-effect import: brings in @fastify/cookie's `declare module 'fastify'`
+// augmentation (reply.clearCookie) into any TS program that reaches this file,
+// even ones that don't also reach server.ts (e.g. apps/web's typecheck graph).
+import type {} from '@fastify/cookie';
 
 export type { JWTPayload } from './jwt';
 
