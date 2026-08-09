@@ -16,6 +16,7 @@ import { SectionCard } from '../../../../components/SectionCard';
 import { Card, CardContent } from '../../../../components/ui/card';
 import { useAppContext } from '../../../../contexts/AppContextProvider';
 import { usePermission } from '../../../../hooks/usePermission';
+import { triggerDownload } from '../../../../lib/download';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -189,6 +190,28 @@ export default function CollectionLayoutPage() {
       onSuccess: () => invalidateLayout(),
       onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
     });
+
+  const exportXlsxMutation = trpc.collectionLayout.export.xlsx.useMutation({
+    onSuccess: result =>
+      triggerDownload(
+        result.data,
+        result.filename,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      ),
+    onError: (err: unknown) =>
+      toast.error(
+        getTrpcErrorMessage(err, { default: "Errore durante l'esportazione XLSX" })
+      ),
+  });
+
+  const exportPdfMutation = trpc.collectionLayout.export.pdf.useMutation({
+    onSuccess: result =>
+      triggerDownload(result.data, result.filename, 'application/pdf'),
+    onError: (err: unknown) =>
+      toast.error(
+        getTrpcErrorMessage(err, { default: "Errore durante l'esportazione PDF" })
+      ),
+  });
 
   const isMutating =
     createGroupMutation.isPending ||
@@ -365,6 +388,14 @@ export default function CollectionLayoutPage() {
                 }
                 isDeletingRow={deleteRowMutation.isPending}
                 onToggleFullscreen={() => setIsFullscreen(true)}
+                onExportXlsx={rowIds =>
+                  exportXlsxMutation.mutate({ collectionLayoutId: layout.id, rowIds })
+                }
+                isExportingXlsx={exportXlsxMutation.isPending}
+                onExportPdf={rowIds =>
+                  exportPdfMutation.mutate({ collectionLayoutId: layout.id, rowIds })
+                }
+                isExportingPdf={exportPdfMutation.isPending}
               />
             </CardContent>
           </Card>
@@ -411,6 +442,14 @@ export default function CollectionLayoutPage() {
                 isDeletingRow={deleteRowMutation.isPending}
                 isFullscreen
                 onToggleFullscreen={() => setIsFullscreen(false)}
+                onExportXlsx={rowIds =>
+                  exportXlsxMutation.mutate({ collectionLayoutId: layout.id, rowIds })
+                }
+                isExportingXlsx={exportXlsxMutation.isPending}
+                onExportPdf={rowIds =>
+                  exportPdfMutation.mutate({ collectionLayoutId: layout.id, rowIds })
+                }
+                isExportingPdf={exportPdfMutation.isPending}
               />
             </div>
           </div>,
