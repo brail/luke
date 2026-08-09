@@ -4,6 +4,7 @@ import ExcelJS from 'exceljs';
 
 import type { StorageBucket } from '@luke/core';
 
+import { imageFetchLimiter } from '../lib/export/concurrency';
 import { applyStreamingHeaderStyle } from '../lib/export/xlsxStreaming';
 import { readFileBuffer } from '../storage';
 
@@ -213,8 +214,11 @@ export async function buildCollectionLayoutXlsx(
   // Fetch images
   const uniqueKeys = [...new Set(allRows.map(r => r.pictureKey).filter((k): k is string => !!k))];
   const keyToBuffer = new Map<string, Buffer | null>();
+  const limit = imageFetchLimiter();
   await Promise.all(
-    uniqueKeys.map(key => readFileBuffer(prisma, pictureBucket, key, logger).then(buf => keyToBuffer.set(key, buf))),
+    uniqueKeys.map(key =>
+      limit(() => readFileBuffer(prisma, pictureBucket, key, logger).then(buf => keyToBuffer.set(key, buf))),
+    ),
   );
 
   // Data rows

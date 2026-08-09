@@ -1,0 +1,116 @@
+/**
+ * Regression tests for the PDF export OOM hotfix companion (v2.0.0):
+ * - image fetch concurrency bounded by IMAGE_FETCH_CONCURRENCY
+ * - single image fetch failure doesn't break the row
+ * - end-to-end smoke test produces a valid PDF buffer
+ */
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { IMAGE_FETCH_CONCURRENCY } from '../../lib/export/concurrency';
+import { readFileBuffer } from '../../storage';
+import { buildCollectionLayoutPdf } from '../collectionLayout.export.pdf.service';
+
+import type { CollectionLayoutForPdf } from '../collectionLayout.export.pdf.service';
+import type { PrismaClient } from '@prisma/client';
+
+vi.mock('../../storage', () => ({
+  readFileBuffer: vi.fn(),
+}));
+
+const mockPrisma = {
+  phase: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  companyProfile: {
+    findUnique: vi.fn().mockResolvedValue(null),
+  },
+} as unknown as PrismaClient;
+
+function makeRow(id: string, pictureKey: string | null) {
+  return {
+    id,
+    collectionLayoutId: 'layout-1',
+    groupId: 'group-1',
+    order: 0,
+    line: 'Line',
+    gender: null,
+    productCategory: null,
+    strategy: null,
+    status: null,
+    styleStatus: null,
+    phaseId: null,
+    skuForecast: 10,
+    qtyForecast: 100,
+    designer: null,
+    styleNotes: null,
+    materialNotes: null,
+    colorNotes: null,
+    toolingNotes: null,
+    pictureKey,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    vendor: null,
+    quotations: [],
+  } as unknown as CollectionLayoutForPdf['groups'][number]['rows'][number];
+}
+
+function makeLayout(rows: ReturnType<typeof makeRow>[]): CollectionLayoutForPdf {
+  return {
+    id: 'layout-1',
+    brandId: 'brand-1',
+    seasonId: 'season-1',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    brand: { name: 'Brand', code: 'BR', logoKey: null },
+    season: { name: 'Season', code: 'S1', year: 2026 },
+    groups: [
+      { id: 'group-1', collectionLayoutId: 'layout-1', name: 'Group 1', order: 0, skuBudget: null, createdAt: new Date(), updatedAt: new Date(), rows } as unknown as CollectionLayoutForPdf['groups'][number],
+    ],
+  } as unknown as CollectionLayoutForPdf;
+}
+
+describe('buildCollectionLayoutPdf', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('bounds image fetch concurrency to IMAGE_FETCH_CONCURRENCY', async () => {
+    const uniqueKeyCount = IMAGE_FETCH_CONCURRENCY * 3;
+    const rows = Array.from({ length: uniqueKeyCount }, (_, i) => makeRow(`row-${i}`, `key-${i}.jpg`));
+
+    let inFlight = 0;
+    let peak = 0;
+    vi.mocked(readFileBuffer).mockImplementation(async () => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await new Promise(resolve => setTimeout(resolve, 5));
+      inFlight--;
+      return null;
+    });
+
+    await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date());
+
+    expect(peak).toBeLessThanOrEqual(IMAGE_FETCH_CONCURRENCY);
+    expect(readFileBuffer).toHaveBeenCalledTimes(uniqueKeyCount);
+  });
+
+  it('renders a row without a photo when its image fetch fails', async () => {
+    vi.mocked(readFileBuffer).mockResolvedValue(null);
+    const rows = [makeRow('row-1', 'missing.jpg')];
+
+    const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date());
+
+    expect(buffer.length).toBeGreaterThan(0);
+  });
+
+  it('produces a valid non-empty PDF buffer (smoke test)', async () => {
+    vi.mocked(readFileBuffer).mockResolvedValue(null);
+    const rows = [makeRow('row-1', null), makeRow('row-2', 'key.jpg')];
+
+    const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date());
+
+    expect(buffer.length).toBeGreaterThan(0);
+    expect(buffer.subarray(0, 4).toString('ascii')).toBe('%PDF');
+  });
+});

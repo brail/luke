@@ -2,6 +2,7 @@
 import { formatDateTime } from '@luke/core';
 import type { StorageBucket } from '@luke/core';
 
+import { imageFetchLimiter } from '../lib/export/concurrency';
 import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
 import { readFileBuffer } from '../storage';
 
@@ -263,6 +264,7 @@ export async function buildCollectionLayoutPdf(
 
   const uniqueRowKeys = [...new Set(allRows.map(r => r.pictureKey).filter((k): k is string => !!k))];
   const keyToDataUriMap = new Map<string, string | null>();
+  const limit = imageFetchLimiter();
   const [progressLabelMap, brandLogoDataUri, company] = await Promise.all([
     buildProgressLabelMap(prisma),
     layout.brand.logoKey
@@ -272,8 +274,10 @@ export async function buildCollectionLayoutPdf(
       : Promise.resolve(null),
     fetchCompanyExportContext(prisma, logger),
     ...uniqueRowKeys.map(key =>
-      readFileBuffer(prisma, pictureBucket, key, logger)
-        .then(buf => keyToDataUriMap.set(key, buf ? toDataUri(buf, key) : null)),
+      limit(() =>
+        readFileBuffer(prisma, pictureBucket, key, logger)
+          .then(buf => keyToDataUriMap.set(key, buf ? toDataUri(buf, key) : null)),
+      ),
     ),
   ]);
 

@@ -570,25 +570,34 @@ async function resolveLayoutUrls<T extends {
   } as T & { brand: { logoUrl: string | null } }; // spread di un T generico con override annidato: TS non verifica la forma esatta
 }
 
-const EXPORT_INCLUDE = {
-  brand:  { select: { name: true, code: true, logoKey: true } },
-  season: { select: { name: true, code: true, year: true } },
-  groups: {
-    orderBy: { order: 'asc' as const },
-    include: {
-      rows: {
-        orderBy: { order: 'asc' as const },
-        include: {
-          vendor: { select: { id: true, name: true, nickname: true } },
-          quotations: {
-            orderBy: { order: 'asc' as const },
-            include: { pricingParameterSet: true },
+/**
+ * Builds the export `include` for a CollectionLayout, optionally pushing a row-id
+ * filter into the nested `rows` relation so Prisma only loads the requested rows
+ * instead of the whole layout (large layouts with many photos can OOM the process
+ * otherwise — see COLLECTION_LAYOUT_EXPORT_XLSX incident).
+ */
+export function buildExportInclude(rowIds?: string[]) {
+  return {
+    brand:  { select: { name: true, code: true, logoKey: true } },
+    season: { select: { name: true, code: true, year: true } },
+    groups: {
+      orderBy: { order: 'asc' as const },
+      include: {
+        rows: {
+          where: rowIds && rowIds.length > 0 ? { id: { in: rowIds } } : undefined,
+          orderBy: { order: 'asc' as const },
+          include: {
+            vendor: { select: { id: true, name: true, nickname: true } },
+            quotations: {
+              orderBy: { order: 'asc' as const },
+              include: { pricingParameterSet: true },
+            },
           },
         },
       },
     },
-  },
-} as const;
+  } as const;
+}
 
 const ROW_EXPORT_INCLUDE = {
   vendor: { select: { id: true, name: true, nickname: true } },
@@ -709,23 +718,12 @@ const exportRouter = router({
     .mutation(async ({ ctx, input }) => {
       const layout = await ctx.prisma.collectionLayout.findUnique({
         where: { id: input.collectionLayoutId },
-        include: EXPORT_INCLUDE,
+        include: buildExportInclude(input.rowIds),
       });
       if (!layout) throw new TRPCError({ code: 'NOT_FOUND', message: 'Layout non trovato' });
       await assertBrandAccess(ctx, layout.brandId);
 
-      let exportLayout = layout;
-      if (input.rowIds && input.rowIds.length > 0) {
-        const rowIdSet = new Set(input.rowIds);
-        exportLayout = {
-          ...layout,
-          groups: layout.groups
-            .map(g => ({ ...g, rows: g.rows.filter(r => rowIdSet.has(r.id)) }))
-            .filter(g => g.rows.length > 0),
-        };
-      }
-
-      const buffer = await buildCollectionLayoutXlsx(exportLayout, ctx.prisma, ctx.logger);
+      const buffer = await buildCollectionLayoutXlsx(layout, ctx.prisma, ctx.logger);
       await logAudit(ctx, {
         action: 'COLLECTION_LAYOUT_EXPORT_XLSX',
         targetType: 'CollectionLayout',
@@ -756,21 +754,10 @@ const exportRouter = router({
     .mutation(async ({ ctx, input }) => {
       const layout = await ctx.prisma.collectionLayout.findUnique({
         where: { id: input.collectionLayoutId },
-        include: EXPORT_INCLUDE,
+        include: buildExportInclude(input.rowIds),
       });
       if (!layout) throw new TRPCError({ code: 'NOT_FOUND', message: 'Layout non trovato' });
       await assertBrandAccess(ctx, layout.brandId);
-
-      let exportLayout = layout;
-      if (input.rowIds && input.rowIds.length > 0) {
-        const rowIdSet = new Set(input.rowIds);
-        exportLayout = {
-          ...layout,
-          groups: layout.groups
-            .map(g => ({ ...g, rows: g.rows.filter(r => rowIdSet.has(r.id)) }))
-            .filter(g => g.rows.length > 0),
-        };
-      }
 
       const exportUser = await ctx.prisma.user.findUnique({
         where: { id: ctx.session.user.id },
@@ -781,7 +768,7 @@ const exportRouter = router({
         ? [exportUser.firstName, exportUser.lastName].filter(Boolean).join(' ') || exportUser.username
         : ctx.session.user.username;
 
-      const buffer = await buildCollectionLayoutPdf(exportLayout, ctx.prisma, fullName, new Date(), ctx.logger);
+      const buffer = await buildCollectionLayoutPdf(layout, ctx.prisma, fullName, new Date(), ctx.logger);
       await logAudit(ctx, {
         action: 'COLLECTION_LAYOUT_EXPORT_PDF',
         targetType: 'CollectionLayout',
