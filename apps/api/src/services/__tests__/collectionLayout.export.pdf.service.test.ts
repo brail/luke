@@ -2,9 +2,13 @@
  * Regression tests for the PDF export OOM hotfix companion (v2.0.0):
  * - image fetch concurrency bounded by IMAGE_FETCH_CONCURRENCY
  * - single image fetch failure doesn't break the row
+ * - large source photos are downscaled before being embedded
  * - end-to-end smoke test produces a valid PDF buffer
  */
 
+import { randomBytes } from 'node:crypto';
+
+import sharp from 'sharp';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { IMAGE_FETCH_CONCURRENCY } from '../../lib/export/concurrency';
@@ -102,6 +106,25 @@ describe('buildCollectionLayoutPdf', () => {
     const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date());
 
     expect(buffer.length).toBeGreaterThan(0);
+  });
+
+  it('downscales a large source photo before embedding it (OOM regression)', async () => {
+    const noise = await sharp(randomBytes(1500 * 1500 * 3), {
+      raw: { width: 1500, height: 1500, channels: 3 },
+    })
+      .jpeg({ quality: 90 })
+      .toBuffer();
+
+    vi.mocked(readFileBuffer).mockResolvedValue(noise);
+    const rows = [makeRow('row-1', 'huge.jpg')];
+
+    const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date());
+
+    // The full-size source photo (base64-encoded into the content stream)
+    // must not survive into the output PDF — this is the actual bug: a
+    // single large photo embedded at original resolution can exhaust the
+    // container's heap on its own.
+    expect(buffer.length).toBeLessThan(noise.length);
   });
 
   it('produces a valid non-empty PDF buffer (smoke test)', async () => {

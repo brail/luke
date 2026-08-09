@@ -1,91 +1,36 @@
+import sharp from 'sharp';
 
-import { extractBucketFromUrl, extractKeyFromUrl } from '@luke/core';
+type Logger = { warn: (obj: object, msg: string) => void };
 
-import { readFileBuffer } from '../../storage';
-
-import type { PrismaClient } from '@prisma/client';
+/** Target boxes are requested at this multiple of the display size, for retina/print sharpness. */
+export const EMBED_OVERSAMPLE_FACTOR = 2;
 
 /**
- * Fetches a remote image and returns its raw bytes.
- *
- * @param timeoutMs - Request timeout in milliseconds. Defaults to 5000.
- * @returns Buffer with the image bytes, or `null` if the request fails or times out.
+ * Downscales an image buffer to fit within maxWidth×maxHeight (never upscales,
+ * preserves aspect ratio and original format). Falls back to the original
+ * buffer if sharp fails to decode it (e.g. corrupt file) — export must not
+ * fail because a single photo is bad.
  */
-export async function fetchImageAsBuffer(url: string, timeoutMs = 5000): Promise<Buffer | null> {
+export async function resizeForEmbed(
+  buf: Buffer,
+  maxWidthPx: number,
+  maxHeightPx: number,
+  logger?: Logger,
+): Promise<Buffer> {
   try {
-    const res = await fetch(url, { signal: globalThis.AbortSignal.timeout(timeoutMs) });
-    if (!res.ok) return null;
-    const ab = await res.arrayBuffer();
-    return Buffer.from(ab);
-  } catch {
-    return null;
+    // sequentialRead matches this pipeline's actual access pattern (decode once,
+    // resize, encode, discard) — keeps libvips from buffering more of a large
+    // source photo than a single linear pass needs, which is the whole point here.
+    const image = sharp(buf, { sequentialRead: true });
+    const { width, height } = await image.metadata();
+    if (width !== undefined && height !== undefined && width <= maxWidthPx && height <= maxHeightPx) {
+      return buf;
+    }
+    return await image
+      .resize({ width: maxWidthPx, height: maxHeightPx, fit: 'inside', withoutEnlargement: true })
+      .toBuffer();
+  } catch (err) {
+    logger?.warn({ err }, 'image resize for export failed, embedding original buffer');
+    return buf;
   }
-}
-
-/**
- * Fetches a remote image and returns it as a base64-encoded string.
- *
- * @param timeoutMs - Request timeout in milliseconds. Defaults to 5000.
- * @returns Base64 string, or `null` on failure.
- */
-export async function fetchImageAsBase64(url: string, timeoutMs = 5000): Promise<string | null> {
-  const buf = await fetchImageAsBuffer(url, timeoutMs);
-  if (!buf) return null;
-  return buf.toString('base64');
-}
-
-/** Returns a complete data URI including the correct MIME type from the HTTP response. */
-export async function fetchImageAsDataUri(url: string, timeoutMs = 5000): Promise<string | null> {
-  try {
-    const res = await fetch(url, { signal: globalThis.AbortSignal.timeout(timeoutMs) });
-    if (!res.ok) return null;
-    const mimeType = (res.headers.get('content-type') ?? 'image/jpeg').split(';')[0].trim();
-    const base64 = Buffer.from(await res.arrayBuffer()).toString('base64');
-    return `data:${mimeType};base64,${base64}`;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Reads an image from local storage for proxy URLs (`/api/uploads/...`)
- * or falls back to an HTTP fetch for absolute URLs (e.g. production with a public base URL).
- *
- * @returns Buffer with image bytes, or `null` if the image cannot be retrieved.
- */
-export async function fetchImageBufferFromUrl(
-  url: string,
-  prisma: PrismaClient,
-): Promise<Buffer | null> {
-  const bucket = extractBucketFromUrl(url);
-  const key = extractKeyFromUrl(url);
-  if (bucket && key) {
-    return readFileBuffer(prisma, bucket, key);
-  }
-  return fetchImageAsBuffer(url);
-}
-
-/**
- * Same as `fetchImageBufferFromUrl` but returns a data URI suitable for pdfmake.
- * MIME type is read from the `FileObject` database record when available,
- * falling back to `image/jpeg`.
- *
- * @returns Data URI string (e.g. `data:image/png;base64,...`), or `null` on failure.
- */
-export async function fetchImageDataUriFromUrl(
-  url: string,
-  prisma: PrismaClient,
-): Promise<string | null> {
-  const bucket = extractBucketFromUrl(url);
-  const key = extractKeyFromUrl(url);
-  if (bucket && key) {
-    const [buf, meta] = await Promise.all([
-      readFileBuffer(prisma, bucket, key),
-      prisma.fileObject.findFirst({ where: { bucket, key }, select: { contentType: true } }),
-    ]);
-    if (!buf) return null;
-    const mime = meta?.contentType ?? 'image/jpeg';
-    return `data:${mime};base64,${buf.toString('base64')}`;
-  }
-  return fetchImageAsDataUri(url);
 }

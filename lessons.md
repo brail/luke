@@ -404,3 +404,27 @@ o passare il path diretto al tool (`npx tsc -b apps/api`), o tornare alla
 root subito dopo. Ogni check di verifica che segue un comando con `cd` va
 fatto con path assoluti, non relativi alla cwd presunta — specialmente prima
 di dichiarare un lavoro "completo" all'utente.
+
+---
+
+## Release / Docker
+
+### Mai buildare l'immagine Docker in locale per "validare prima del commit"
+
+Piano di hotfix (resize immagini via `sharp`) prevedeva come step obbligatorio
+un `docker build` locale del Dockerfile completo per verificare il binario
+nativo prima del commit. L'utente ha interrotto: **le build Docker sono
+"roba online GitHub"** — avvengono in CI (`.github/workflows/release.yml` →
+build+push su `ghcr.io` al tag), non sulla macchina di sviluppo. Il tentativo
+locale ha anche esposto perché è la via sbagliata: la build del monorepo
+intero dentro Docker Desktop (risorse limitate rispetto alla macchina host)
+è andata OOM nella fase `tsc` di `@luke/api`, un fallimento del tutto
+scollegato dal binario nativo che si voleva verificare — rumore, non segnale.
+
+**Regola**: non proporre/eseguire `docker build` locale come step di
+validazione pre-commit. La build reale (e l'unico posto dove il binario
+nativo di una dipendenza come `sharp` viene davvero verificato) è la pipeline
+CI innescata dal push del tag `vX.Y.Z`. Per de-rischiare dipendenze native
+prima del commit, verificare invece staticamente (Dockerfile base image,
+`pnpm-workspace.yaml` overrides/allowBuilds, target arch in
+`docker/build-push-action`) e poi fidarsi della CI come gate reale.

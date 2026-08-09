@@ -18,7 +18,10 @@
     "paths": {
       "@luke/core": ["../../packages/core/src"],
       "@luke/core/*": ["../../packages/core/src/*"],
-      "pdfmake/interfaces": ["./node_modules/@types/pdfmake/interfaces.d.ts"]
+      "pdfmake/interfaces": ["./node_modules/@types/pdfmake/interfaces.d.ts"],
+      // sharp's package.json "exports" field omits a "types" condition, so NodeNext
+      // resolution can't find its bundled lib/index.d.ts on its own — map it directly.
+      "sharp": ["./node_modules/sharp/lib/index.d.ts"]
     },
     "types": ["node"]
   },

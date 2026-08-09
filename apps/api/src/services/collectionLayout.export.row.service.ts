@@ -9,6 +9,7 @@ import ExcelJS from 'exceljs';
 
 import { calcMaxSupplierCost, formatDateTime } from '@luke/core';
 
+import { EMBED_OVERSAMPLE_FACTOR, resizeForEmbed } from '../lib/export/image';
 import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
 import { applyStreamingHeaderStyle } from '../lib/export/xlsxStreaming';
 import { readFileBuffer } from '../storage';
@@ -115,6 +116,9 @@ function fmtPct(val: number | null): string {
 
 type Logger = { warn: (obj: object, msg: string) => void };
 
+const ROW_PHOTO_WIDTH = 120;
+const ROW_PHOTO_HEIGHT = 90;
+
 /**
  * Builds an A4 landscape PDF product sheet for a single collection row.
  * Includes the row photo, identification fields, and a per-quotation margin table.
@@ -139,8 +143,13 @@ export async function buildCollectionRowPdf(
         )
       : Promise.resolve(null),
     row.pictureKey
-      ? readFileBuffer(prisma, 'collection-row-pictures', row.pictureKey, logger).then(buf =>
-          buf ? dataUri(buf, row.pictureKey!) : null,
+      ? readFileBuffer(prisma, 'collection-row-pictures', row.pictureKey, logger).then(async buf =>
+          buf
+            ? dataUri(
+                await resizeForEmbed(buf, ROW_PHOTO_WIDTH * EMBED_OVERSAMPLE_FACTOR, ROW_PHOTO_HEIGHT * EMBED_OVERSAMPLE_FACTOR, logger),
+                row.pictureKey!,
+              )
+            : null,
         )
       : Promise.resolve(null),
     fetchCompanyExportContext(prisma, logger),
@@ -190,7 +199,7 @@ export async function buildCollectionRowPdf(
   };
 
   const photoCell: Content = rowImageDataUri
-    ? { image: rowImageDataUri, fit: [120, 90], alignment: 'center', margin: [0, 0, 0, 8] as [number, number, number, number] }
+    ? { image: rowImageDataUri, fit: [ROW_PHOTO_WIDTH, ROW_PHOTO_HEIGHT], alignment: 'center', margin: [0, 0, 0, 8] as [number, number, number, number] }
     : { text: 'No foto', fontSize: 8, color: '#999', alignment: 'center', margin: [0, 8] as [number, number] };
 
   const topSection: Content = {
@@ -269,6 +278,8 @@ export async function buildCollectionRowPdf(
 
 // ─── XLSX Builder ─────────────────────────────────────────────────────────────
 
+const ROW_XLSX_MAX_H_PX = 189; // 50mm at 96dpi
+
 /**
  * Builds a two-sheet XLSX workbook for a single collection row:
  * `Riga` sheet with identification data and embedded photo, `Quotazioni` sheet with margin calculations.
@@ -287,10 +298,15 @@ export async function buildCollectionRowXlsx(
   wb.creator = 'Luke';
   wb.created = new Date();
 
-  const [rowImageBuf, progressLabelMap] = await Promise.all([
+  const [rawRowImageBuf, progressLabelMap] = await Promise.all([
     row.pictureKey ? readFileBuffer(prisma, 'collection-row-pictures', row.pictureKey, logger) : null,
     buildProgressLabelMap(prisma),
   ]);
+  // Width is capped generously (not tied to the embed box) since only height is
+  // visually constrained here — see the proportional scale-by-height below.
+  const rowImageBuf = rawRowImageBuf
+    ? await resizeForEmbed(rawRowImageBuf, ROW_XLSX_MAX_H_PX * 10, ROW_XLSX_MAX_H_PX * EMBED_OVERSAMPLE_FACTOR, logger)
+    : null;
 
   // Sheet 1: identification
   const infoSheet = wb.addWorksheet('Riga');
@@ -329,12 +345,11 @@ export async function buildCollectionRowXlsx(
   // Embed product image in column C, max height 50mm (189px at 96dpi), aspect-ratio preserved
   if (rowImageBuf) {
     const ext = row.pictureKey!.toLowerCase().endsWith('.png') ? 'png' : 'jpeg';
-    const MAX_H_PX = 189; // 50mm at 96dpi
     const dims = getImageDimensions(rowImageBuf, row.pictureKey!);
-    let imgW = MAX_H_PX;
-    let imgH = MAX_H_PX;
+    let imgW = ROW_XLSX_MAX_H_PX;
+    let imgH = ROW_XLSX_MAX_H_PX;
     if (dims && dims.height > 0) {
-      const scale = Math.min(1, MAX_H_PX / dims.height);
+      const scale = Math.min(1, ROW_XLSX_MAX_H_PX / dims.height);
       imgW = Math.round(dims.width * scale);
       imgH = Math.round(dims.height * scale);
     }

@@ -3,6 +3,7 @@ import { formatDateTime } from '@luke/core';
 import type { StorageBucket } from '@luke/core';
 
 import { imageFetchLimiter } from '../lib/export/concurrency';
+import { EMBED_OVERSAMPLE_FACTOR, resizeForEmbed } from '../lib/export/image';
 import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
 import { readFileBuffer } from '../storage';
 
@@ -274,10 +275,18 @@ export async function buildCollectionLayoutPdf(
       : Promise.resolve(null),
     fetchCompanyExportContext(prisma, logger),
     ...uniqueRowKeys.map(key =>
-      limit(() =>
-        readFileBuffer(prisma, pictureBucket, key, logger)
-          .then(buf => keyToDataUriMap.set(key, buf ? toDataUri(buf, key) : null)),
-      ),
+      limit(async () => {
+        const buf = await readFileBuffer(prisma, pictureBucket, key, logger);
+        keyToDataUriMap.set(
+          key,
+          buf
+            ? toDataUri(
+                await resizeForEmbed(buf, IMAGE_WIDTH * EMBED_OVERSAMPLE_FACTOR, IMAGE_HEIGHT * EMBED_OVERSAMPLE_FACTOR, logger),
+                key,
+              )
+            : null,
+        );
+      }),
     ),
   ]);
 
