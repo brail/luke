@@ -57,7 +57,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: google/osv-scanner-action/osv-scanner-action@v2.3.8
+      - uses: google/osv-scanner-action/osv-scanner-action@v2.5.1
 
   # Copre il caso che il job su push non può coprire: una vulnerabilità
   # divulgata dopo l'ultimo commit, su codice fermo. Resta inerte finché questo
@@ -67,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: google/osv-scanner-action/osv-scanner-action@v2.3.8
+      - uses: google/osv-scanner-action/osv-scanner-action@v2.5.1
 
   # `contains(needs.*.result, 'failure')` ignora gli skip: i job push-only sono
   # 'skipped' (non 'failure') sui trigger schedule, e viceversa, quindi questo
