@@ -138,6 +138,18 @@ describe('Brand Logo Upload', () => {
       });
       expect(brandAfterSecond?.logoKey).toBe(second.key);
       expect(brandAfterSecond?.logoKey).not.toBe(first.key);
+
+      // The old logo is cleaned up via `setImmediate` in uploadBrandLogo(), fire-and-forget
+      // (intentional — the upload response must not block on it). Left unawaited, its DB
+      // writes (FileObject delete + audit log insert) can still be in flight when the next
+      // test's beforeEach TRUNCATEs the tables, causing a Postgres deadlock (40P01). Poll
+      // until the cleanup has actually landed before this test hands control back.
+      await expect
+        .poll(
+          () => testContext.prisma.fileObject.findFirst({ where: { bucket: 'brand-logos', key: first.key } }),
+          { timeout: 5000 }
+        )
+        .toBeNull();
     });
   });
 
