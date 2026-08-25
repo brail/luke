@@ -65,6 +65,10 @@ COPY --from=builder /app/apps/api/node_modules    ./apps/api/node_modules
 # Email templates (plain text — tsc does not copy non-TS files)
 COPY --from=builder /app/apps/api/src/templates   ./apps/api/dist/templates
 
+# One-shot admin scripts (db:* in package.json) — compiled like the rest of
+# the app (see tsconfig.scripts.json), not run via tsx against raw source.
+COPY --from=builder /app/apps/api/dist-scripts    ./apps/api/dist-scripts
+
 # Entrypoint script
 COPY apps/api/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

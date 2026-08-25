@@ -43,20 +43,21 @@
  *   pnpm --filter @luke/api db:migrate-storage-to-minio -- --apply --bucket=brand-logos
  *
  * Must run somewhere with access to both the local storage volume (`storage.local.basePath`)
- * and the DB/master key — in production that's inside the running `api` container:
- *   docker exec -it <api-container> node_modules/.bin/tsx scripts/migrate-storage-to-minio.ts --apply
+ * and the DB/master key — in production that's inside the running `api` container, using the
+ * compiled output (see tsconfig.scripts.json — the image ships dist-scripts/, not raw .ts):
+ *   docker exec -it <api-container> node dist-scripts/scripts/migrate-storage-to-minio.js --apply
  */
 
 import pLimit from 'p-limit';
 
 import { APP_STORAGE_BUCKETS, type StorageBucket } from '@luke/core';
 
-import { loadLocalProvider, loadMinioProvider } from '../src/storage';
+import { loadLocalProvider, loadMinioProvider } from '../src/storage/index.js';
 
-import { createScriptPrismaClient } from './lib/prisma';
+import { createScriptPrismaClient } from './lib/prisma.js';
 
-import type { LocalFsProvider } from '../src/storage/providers/local';
-import type { MinioProvider } from '../src/storage/providers/minio';
+import type { LocalFsProvider } from '../src/storage/providers/local.js';
+import type { MinioProvider } from '../src/storage/providers/minio.js';
 
 /** Bounds concurrent local→MinIO file copies per bucket (network round-trips, not CPU-bound). */
 const COPY_CONCURRENCY = 5;

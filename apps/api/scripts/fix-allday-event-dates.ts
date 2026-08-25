@@ -18,7 +18,7 @@
 
 import { getConfiguredGoogleClient, reconcileCalendar } from '../src/services/googleCalendarSync.service.js';
 
-import { createScriptPrismaClient } from './lib/prisma';
+import { createScriptPrismaClient } from './lib/prisma.js';
 
 
 function utcMidnightOfLocalDay(d: Date): Date {

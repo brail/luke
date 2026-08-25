@@ -13,7 +13,7 @@
  * WARNING: destructive — development/test environments only.
  */
 
-import { createScriptPrismaClient } from './lib/prisma';
+import { createScriptPrismaClient } from './lib/prisma.js';
 
 const SEED_BRAND_CODE = 'ACME';
 const SEED_SEASON_CODE = 'PE00';

@@ -16,7 +16,7 @@ import { join } from 'path';
 
 import { getMasterKey } from '@luke/core/server';
 
-import { createScriptPrismaClient } from './lib/prisma';
+import { createScriptPrismaClient } from './lib/prisma.js';
 
 
 /**
@@ -64,7 +64,7 @@ async function bootstrap() {
 
   try {
     // Import and run seed functions
-    const { seedAdminUser, seedAppConfigs } = await import('../prisma/seed');
+    const { seedAdminUser, seedAppConfigs } = await import('../prisma/seed.js');
 
     await seedAdminUser(prisma);
     await seedAppConfigs(prisma);

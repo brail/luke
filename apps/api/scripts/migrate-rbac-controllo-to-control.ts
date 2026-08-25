@@ -21,7 +21,7 @@
  *   pnpm --filter @luke/api db:migrate-rbac-section-key --apply    # write
  */
 
-import { createScriptPrismaClient } from './lib/prisma';
+import { createScriptPrismaClient } from './lib/prisma.js';
 
 const CONFIG_KEY = 'rbac.sectionAccessDefaults';
 const OLD_KEY = 'product.controllo';

@@ -18,7 +18,7 @@
  *   pnpm --filter @luke/api db:complete-stranded-rows [--dry-run]
  */
 
-import { createScriptPrismaClient } from './lib/prisma';
+import { createScriptPrismaClient } from './lib/prisma.js';
 
 async function main() {
   const dryRun = process.argv.includes('--dry-run');

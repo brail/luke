@@ -20,7 +20,7 @@ import { enforceDomainReadOnly, syncCalendarReaders } from '@luke/calendar';
 
 import { getConfiguredGoogleClient, getAllowedEmailsForFunction } from '../src/services/googleCalendarSync.service.js';
 
-import { createScriptPrismaClient } from './lib/prisma';
+import { createScriptPrismaClient } from './lib/prisma.js';
 
 async function main() {
   const prisma = createScriptPrismaClient();
