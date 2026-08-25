@@ -68,3 +68,78 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: google/osv-scanner-action/osv-scanner-action@v2.3.8
+
+  # `contains(needs.*.result, 'failure')` ignora gli skip: i job push-only sono
+  # 'skipped' (non 'failure') sui trigger schedule, e viceversa, quindi questo
+  # gate si comporta correttamente su entrambi i trigger. `if: always()` è
+  # necessario perché senza, un job 'skipped' tra i needs farebbe skippare
+  # anche questo. Dedup via ricerca issue aperta con label `security-ci-failure`
+  # — un'unica issue aggiornata a commenti finché qualcuno non la chiude,
+  # niente spam a ogni run settimanale che continua a fallire. Canale scelto:
+  # GitHub Issue, perché non esiste uno Slack/webhook nel repo — niente nuovo
+  # secret da gestire.
+  notify-on-failure:
+    needs: [semgrep, gitleaks, osv-push, osv-weekly]
+    if: always() && contains(needs.*.result, 'failure')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/github-script@v9
+        env:
+          JOB_RESULTS: ${{ toJSON(needs) }}
+        with:
+          script: |
+            const label = 'security-ci-failure';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const branch = context.ref.replace('refs/heads/', '');
+
+            const results = JSON.parse(process.env.JOB_RESULTS);
+            const failedJobs = Object.entries(results)
+              .filter(([, job]) => job.result === 'failure')
+              .map(([name]) => name)
+              .join(', ');
+
+            const labels = await github.rest.issues.listLabelsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            if (!labels.data.some((l) => l.name === label)) {
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: label,
+                color: 'b60205',
+                description: 'security.yml workflow failed — needs triage',
+              });
+            }
+
+            const body = [
+              `Failed job(s): **${failedJobs}**`,
+              `Branch: \`${branch}\` — trigger: \`${context.eventName}\``,
+              `Run: ${runUrl}`,
+            ].join('\n');
+
+            const openIssues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: label,
+            });
+
+            if (openIssues.data.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: openIssues.data[0].number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `Security workflow failing on ${branch}`,
+                body,
+                labels: [label],
+              });
+            }
