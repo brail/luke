@@ -322,10 +322,18 @@ Mai `prisma migrate reset` in produzione.
 tag `vX.Y.Z` → build Docker → `ghcr.io` → Portainer pull & redeploy.
 **MAI cancellare il volume `luke_api_data`** — la master key vive lì.
 
+**Un branch `develop-X.Y` muore al merge in `main`** — non viene riattivato,
+mai backport su un branch già mergeato: il prossimo ciclo di feature apre un
+nuovo `develop-(X+1).0`/`develop-X.(Y+1)` tagliato da `main`. `dependabot.yml`
+non punta a nessun `develop-*` (nessun `target-branch`, default sul branch
+di default `main`) — non richiede update al cambio branch.
+
 **Al cambio di develop branch** (es. `develop-2.1` → `develop-2.2`):
-aggiornare `target-branch` in `.github/dependabot.yml` (blocchi `github-actions` e
-`docker`) e la lista `branches` in `.github/workflows/ci.yml` (`push` e `pull_request`)
-— altrimenti lint/typecheck CI smette di girare sul nuovo branch senza segnalarlo.
+aggiornare la lista `branches` in `.github/workflows/ci.yml` (`push` e
+`pull_request`) e in `.github/workflows/security.yml` (`push`) — altrimenti
+CI/security scan smettono di girare sulle PR verso il nuovo branch senza
+segnalarlo. Poi cancellare il branch precedente (locale + remoto): è stale
+appena mergeato, tenerlo in giro invita a backport sbagliati.
 
 ## Security Testing / Pentest
 

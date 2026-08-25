@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, develop-2.1]
+    branches: [main, develop-2.2]
   pull_request:
-    branches: [main, develop-2.1]
+    branches: [main, develop-2.2]
   # Invocabile da release.yml: un tag non fa scattare i trigger push/pull_request,
   # quindi senza questo non esisterebbe alcuna esecuzione di CI da cui dipendere
   # prima di costruire le immagini.

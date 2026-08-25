@@ -2,7 +2,7 @@ name: security
 
 on:
   push:
-    branches: [develop-2.1, main]
+    branches: [develop-2.2, main]
   schedule:
     - cron: '0 6 * * 1' # lunedì 06:00 UTC
   workflow_dispatch:

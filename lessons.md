@@ -431,21 +431,36 @@ prima del commit, verificare invece staticamente (Dockerfile base image,
 
 ## Branch management
 
-### `develop-2.1` è stale — non assumere backport automatico
+### Un `develop-X.Y` mergeato in `main` è morto — non riattivarlo mai
 
 Durante l'hotfix `deepmerge-ts` (GHSA-ggr8-5vv4-36mx) avevo ipotizzato di
 portare il fix anche su `develop-2.1`, trattandola come branch di
 integrazione attivo. L'utente ha corretto: `develop-2.1` è dormant — il suo
-ultimo commit è il merge-into-main del 2026-08-09, e `main` da lì ha
-accumulato altri 5 commit (fix sharp/vitest, storage validation, migration
-script) mai arrivati su quel branch. Non è un target valido per backport
-finché non viene esplicitamente riattivato.
+ultimo commit (`31ed3cb`, 2026-08-09) è il merge-into-main, e `main` da lì
+ha accumulato altri commit mai arrivati su quel branch (`ca71324` ci notify,
+`603662a` deepmerge fix, `6598c41`/`e43f66c`/`f416c52` sharp/vitest,
+`416b918`/`4e55e5f` OOM export fix). Non un target valido per backport.
 
-**Regola**: prima di proporre un backport su un branch `develop-*`,
-verificare con `git log --oneline develop-X..main` (e viceversa) se il
-branch è ancora allineato/attivo o è stato abbandonato dopo un merge. Un
-branch fermo a un vecchio merge-commit non è per definizione "ancora in
-sviluppo" — trattarlo come stale finché non risulta il contrario, non il
-default opposto. Ritirare `develop-2.1` / tagliare `develop-2.2` da `main`
-resta task separato (steps documentati in CLAUDE.md: `target-branch` in
-`dependabot.yml`, `branches` in `ci.yml`).
+Correzione a questa stessa nota (2026-08-25): la prima stesura elencava tra
+questi commit "storage validation" e "migration script" — sbagliato,
+verificato con `git branch -a --contains <hash>`: quei due commit vivono
+solo su branch remoti orfani (`hotfix/deepmerge-ts-dos`,
+`ci/security-failure-notification`), mai su `main` né su `develop-2.1`.
+Prima di citare commit specifici in una lezione, verificarne l'appartenenza
+al branch con `--contains`, non fidarsi della ricostruzione a memoria dal
+grafo.
+
+**Regola generale — ciclo di vita `develop-X.Y`**: nasce tagliato da `main`,
+riceve le feature del ciclo, muore nel momento in cui viene mergeato in
+`main` (release). Da lì è single-use: non si riapre, non si backporta sopra,
+non si tratta come "ancora in sviluppo" solo perché il branch esiste ancora
+su `git branch -a`. Il ciclo successivo apre un `develop-(X+1)` nuovo,
+tagliato da `main` aggiornato — mai dallo stesso `develop-X.Y` riesumato.
+Prima di proporre un backport su un branch `develop-*`, verificare con
+`git log --oneline develop-X..main` (e viceversa) se è ancora allineato o
+abbandonato dopo merge: un branch fermo a un vecchio merge-commit è stale
+per default, non il contrario. Il branch morto va poi cancellato (locale +
+remoto) appena il successore è tagliato — vedi CLAUDE.md § Versioning &
+Release per gli step (aggiornare `branches` in `ci.yml`/`security.yml`,
+cancellare il precedente; `dependabot.yml` non è coinvolto, punta sempre a
+`main` di default).
