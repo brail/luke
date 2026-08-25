@@ -318,6 +318,13 @@ Mai `prisma migrate reset` in produzione.
 2. Commit `"chore: bump version to X.Y.Z"`
 3. `git tag vX.Y.Z && git push origin vX.Y.Z`
 
+**CHANGELOG**: sempre `git-cliff --unreleased --tag vX.Y.Z --prepend CHANGELOG.md`
+(via `scripts/release-prepare.sh` / `pnpm changelog:tag`) — **mai `--bump -o`**
+o rigenerazione completa del file: sovrascriverebbe sezioni curate a mano
+(es. il rollup `[2.0.0]`, costruito con un range custom fuori dal flusso
+standard). `--prepend` tocca solo i commit dall'ultimo tag, il resto del file
+resta intatto.
+
 **Release flow**: push su `main` → solo CI (lint + typecheck);
 tag `vX.Y.Z` → build Docker → `ghcr.io` → Portainer pull & redeploy.
 **MAI cancellare il volume `luke_api_data`** — la master key vive lì.

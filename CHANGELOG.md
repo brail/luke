@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **storage**: Validate all buckets, batch AppConfig reads, drop dead bucket form field
 - **deps**: Bump deepmerge-ts to 8.0.2 via pnpm override — patches GHSA-ggr8-5vv4-36mx (CVE-2026-40345, CVSS 8.2 High) DoS vulnerability
 
+### CI
+- **security**: Notify on security.yml failure (#25)
+
 ## [2.0.0] - 2026-08-09
 
 ### Added

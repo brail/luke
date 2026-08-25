@@ -33,7 +33,7 @@ fi
 echo "📦 Prossima versione: $TAG"
 echo
 
-pnpm exec git-cliff --bump -o CHANGELOG.md
+pnpm exec git-cliff --unreleased --tag "$TAG" --prepend CHANGELOG.md
 echo "✅ CHANGELOG.md aggiornato"
 echo
 
