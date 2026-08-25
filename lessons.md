@@ -428,3 +428,24 @@ CI innescata dal push del tag `vX.Y.Z`. Per de-rischiare dipendenze native
 prima del commit, verificare invece staticamente (Dockerfile base image,
 `pnpm-workspace.yaml` overrides/allowBuilds, target arch in
 `docker/build-push-action`) e poi fidarsi della CI come gate reale.
+
+## Branch management
+
+### `develop-2.1` è stale — non assumere backport automatico
+
+Durante l'hotfix `deepmerge-ts` (GHSA-ggr8-5vv4-36mx) avevo ipotizzato di
+portare il fix anche su `develop-2.1`, trattandola come branch di
+integrazione attivo. L'utente ha corretto: `develop-2.1` è dormant — il suo
+ultimo commit è il merge-into-main del 2026-08-09, e `main` da lì ha
+accumulato altri 5 commit (fix sharp/vitest, storage validation, migration
+script) mai arrivati su quel branch. Non è un target valido per backport
+finché non viene esplicitamente riattivato.
+
+**Regola**: prima di proporre un backport su un branch `develop-*`,
+verificare con `git log --oneline develop-X..main` (e viceversa) se il
+branch è ancora allineato/attivo o è stato abbandonato dopo un merge. Un
+branch fermo a un vecchio merge-commit non è per definizione "ancora in
+sviluppo" — trattarlo come stale finché non risulta il contrario, non il
+default opposto. Ritirare `develop-2.1` / tagliare `develop-2.2` da `main`
+resta task separato (steps documentati in CLAUDE.md: `target-branch` in
+`dependabot.yml`, `branches` in `ci.yml`).
