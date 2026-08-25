@@ -30,6 +30,10 @@ overrides:
   brace-expansion: '>=5.0.9'
   hono: '>=4.12.34' # GHSA-8j4g-w8fx-2239
   find-my-way: '>=9.7.0' # GHSA-c96f-x56v-gq3h — DoS via HTTP/2
+  # Transitive via @prisma/config. GHSA-ggr8-5vv4-36mx — deepmerge()/
+  # deepmergeInto() stack exhaustion on a crafted self-referential object
+  # graph (DoS). Not a direct dependency anywhere in the workspace.
+  deepmerge-ts: '>=8.0.2'
   # Range e non pin esatto: un pin fissa la versione anche quando esce la patch,
   # e `pnpm update` non può scavalcarlo. GHSA-7p8r-x3mc-p8w7 su <=3.1.4.
   # Il limite superiore c'è perché un override senza tetto trascina ogni consumer

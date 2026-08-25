@@ -5,6 +5,15 @@ All notable changes to Luke are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-08-25
+
+### Added
+- **api**: Add local→MinIO storage migration script
+
+### Fixed
+- **storage**: Validate all buckets, batch AppConfig reads, drop dead bucket form field
+- **deps**: Bump deepmerge-ts to 8.0.2 via pnpm override — patches GHSA-ggr8-5vv4-36mx (CVE-2026-40345, CVSS 8.2 High) DoS vulnerability
+
 ## [2.0.0] - 2026-08-09
 
 ### Added
