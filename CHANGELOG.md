@@ -4,6 +4,15 @@ All notable changes to Luke are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [2.1.1] - 2026-08-25
+
+### Documentation
+- Add develop-2.1 staleness lesson to lessons.md
+
+### Fixed
+- **release**: Stop full-overwrite CHANGELOG regen, use prepend-only
+- **api**: Compile db:* scripts for production instead of running raw TS
+
 
 ## [2.1.0] - 2026-08-25
 
