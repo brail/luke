@@ -32,9 +32,12 @@
  *   this script against a live server while it's still on `local` is fine (cleanup targets
  *   local), but don't flip `storage.type` to `minio` mid-run.
  * - `backups` bucket is excluded by default (can be large, low urgency) — pass --include-backups.
- * - Content-Type is not preserved: LocalFsProvider never recorded it, so every migrated
- *   object is uploaded as `application/octet-stream` (matches existing readFileBuffer/get
- *   behavior — not a regression introduced by this script).
+ *
+ * Content-Type: read from `FileObject.contentType` (recorded at original upload time) when a
+ * row exists for the key; falls back to `application/octet-stream` only for orphans (no
+ * FileObject row — no ground truth available). Keys already present in MinIO from a prior run
+ * of this script (before this fallback was fixed) are re-tagged in place via a metadata-only
+ * `CopyObject` — see the "repair" pass below.
  *
  * Usage:
  *   pnpm --filter @luke/api db:migrate-storage-to-minio                    # dry-run
@@ -80,6 +83,10 @@ interface BucketReport {
   migrated: number;
   skippedAlreadyPresent: number;
   orphans: number;
+  /** Keys already in MinIO with a known real Content-Type, eligible for repair (regardless of --apply). */
+  metadataFixCandidates: number;
+  /** Keys actually re-tagged in MinIO — always 0 in dry-run. */
+  metadataFixed: number;
   checksumMismatches: string[];
   brokenReferences: string[];
   failures: string[];
@@ -111,6 +118,8 @@ async function migrateBucket(
     migrated: 0,
     skippedAlreadyPresent: 0,
     orphans: 0,
+    metadataFixCandidates: 0,
+    metadataFixed: 0,
     checksumMismatches: [],
     brokenReferences: [],
     failures: [],
@@ -126,20 +135,23 @@ async function migrateBucket(
 
   const fileObjects = await prisma.fileObject.findMany({
     where: { bucket },
-    select: { key: true, checksumSha256: true, confirmedAt: true },
+    select: { key: true, checksumSha256: true, confirmedAt: true, contentType: true },
   });
   const fileObjectByKey = new Map(fileObjects.map(f => [f.key, f]));
 
   const candidateKeys: string[] = [];
+  const metadataRepairKeys: string[] = [];
   for (const key of localKeys) {
     if (minioKeys.has(key)) {
       report.skippedAlreadyPresent++;
+      if (fileObjectByKey.get(key)?.contentType) metadataRepairKeys.push(key);
       continue;
     }
     candidateKeys.push(key);
     if (!fileObjectByKey.has(key)) report.orphans++;
   }
   report.candidates = candidateKeys.length;
+  report.metadataFixCandidates = metadataRepairKeys.length;
 
   if (apply) {
     const limit = pLimit(COPY_CONCURRENCY);
@@ -153,7 +165,7 @@ async function migrateBucket(
               bucket,
               key,
               originalName: key.split('/').pop() || key,
-              contentType: 'application/octet-stream',
+              contentType: fileObject?.contentType ?? 'application/octet-stream',
               size,
               stream,
               bypassSizeLimit: true,
@@ -168,6 +180,24 @@ async function migrateBucket(
           } catch (err) {
             report.failures.push(key);
             console.error(`   ❌ errore copiando ${key}:`, err instanceof Error ? err.message : err);
+          }
+        })
+      )
+    );
+
+    // Repair: keys already migrated by a prior run (before the fallback above was fixed)
+    // still carry the wrong Content-Type in MinIO — re-tag them in place.
+    const repairLimit = pLimit(COPY_CONCURRENCY);
+    await Promise.all(
+      metadataRepairKeys.map(key =>
+        repairLimit(async () => {
+          const contentType = fileObjectByKey.get(key)!.contentType;
+          try {
+            await minio.fixContentType({ bucket, key, contentType });
+            report.metadataFixed++;
+          } catch (err) {
+            report.failures.push(key);
+            console.error(`   ❌ errore correggendo metadata ${key}:`, err instanceof Error ? err.message : err);
           }
         })
       )
@@ -202,7 +232,8 @@ async function main() {
     for (const r of reports) {
       console.log(
         `   ${r.bucket}: candidati=${r.candidates} migrati=${r.migrated} già-presenti=${r.skippedAlreadyPresent} orfani=${r.orphans} ` +
-        `checksum-KO=${r.checksumMismatches.length} falliti=${r.failures.length} riferimenti-rotti-preesistenti=${r.brokenReferences.length}`
+        `metadata-da-correggere=${r.metadataFixCandidates} metadata-corretti=${r.metadataFixed} checksum-KO=${r.checksumMismatches.length} ` +
+        `falliti=${r.failures.length} riferimenti-rotti-preesistenti=${r.brokenReferences.length}`
       );
       if (r.checksumMismatches.length) console.log(`      checksum mismatch: ${r.checksumMismatches.join(', ')}`);
       if (r.failures.length) console.log(`      falliti: ${r.failures.join(', ')}`);
@@ -211,6 +242,8 @@ async function main() {
 
     const totalCandidates = reports.reduce((n, r) => n + r.candidates, 0);
     const totalMigrated = reports.reduce((n, r) => n + r.migrated, 0);
+    const totalMetadataFixCandidates = reports.reduce((n, r) => n + r.metadataFixCandidates, 0);
+    const totalMetadataFixed = reports.reduce((n, r) => n + r.metadataFixed, 0);
     const totalMismatches = reports.reduce((n, r) => n + r.checksumMismatches.length, 0);
     const totalFailures = reports.reduce((n, r) => n + r.failures.length, 0);
     const totalBroken = reports.reduce((n, r) => n + r.brokenReferences.length, 0);
@@ -223,9 +256,9 @@ async function main() {
       console.log('\n⚠️  Migrazione completata con errori — vedi sopra prima di cambiare storage.type su minio.');
       process.exitCode = 1;
     } else if (!apply) {
-      console.log(`\nℹ️  Nessuna scrittura eseguita — rilanciare con --apply per applicare (${totalCandidates} file da copiare).`);
+      console.log(`\nℹ️  Nessuna scrittura eseguita — rilanciare con --apply per applicare (${totalCandidates} file da copiare, ${totalMetadataFixCandidates} metadata da correggere).`);
     } else {
-      console.log(`\n✅ Migrazione completata: ${totalMigrated} file copiati su MinIO.`);
+      console.log(`\n✅ Migrazione completata: ${totalMigrated} file copiati su MinIO, ${totalMetadataFixed} metadata corretti.`);
       if (totalBroken > 0) {
         console.log(`⚠️  ${totalBroken} riferimenti FileObject confermati risultano privi del file sia in locale che su MinIO (rottura preesistente, non introdotta da questo script).`);
       }

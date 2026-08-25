@@ -18,6 +18,7 @@ import {
   HeadBucketCommand,
   CreateBucketCommand,
   PutObjectCommand,
+  CopyObjectCommand,
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -185,6 +186,21 @@ export class MinioProvider implements IStorageProvider {
       size: res.ContentLength ?? 0,
       contentType: res.ContentType ?? 'application/octet-stream',
     };
+  }
+
+  /**
+   * Rewrites the Content-Type metadata of an existing object in place via S3 CopyObject
+   * (same bucket/key as source and destination, `MetadataDirective: REPLACE`) — S3 performs
+   * this server-side, no bytes are re-transferred over the network.
+   */
+  async fixContentType(params: { bucket: StorageBucket; key: string; contentType: string }): Promise<void> {
+    await this.client.send(new CopyObjectCommand({
+      Bucket: params.bucket,
+      Key: params.key,
+      CopySource: `${params.bucket}/${encodeURIComponent(params.key)}`,
+      ContentType: params.contentType,
+      MetadataDirective: 'REPLACE',
+    }));
   }
 
   /** Deletes a file from MinIO. */
