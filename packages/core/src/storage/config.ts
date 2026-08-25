@@ -5,7 +5,7 @@
 
 import { z } from 'zod';
 
-import type { StorageBucket } from './types';
+import { APP_STORAGE_BUCKETS, type StorageBucket } from './types';
 
 /**
  * Schema per configurazione storage locale (filesystem)
@@ -108,14 +108,5 @@ export type StorageType = z.infer<typeof storageTypeSchema>;
  * Use before constructing storage paths to avoid runtime errors from typos.
  */
 export function isValidBucket(bucket: string): bucket is StorageBucket {
-  return [
-    'uploads',
-    'exports',
-    'assets',
-    'brand-logos',
-    'collection-row-pictures',
-    'collection-row-pictures-revisions',
-    'merchandising-specsheet-images',
-    'company-assets',
-  ].includes(bucket);
+  return ([...APP_STORAGE_BUCKETS, 'backups'] as readonly string[]).includes(bucket);
 }

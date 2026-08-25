@@ -36,30 +36,38 @@ let providerInstance: IStorageProvider | null = null;
 // Promise-based init lock: concurrent callers await the same initialisation
 let providerInitPromise: Promise<IStorageProvider> | null = null;
 
-async function loadLocalProvider(prisma: PrismaClient): Promise<LocalFsProvider> {
-  const rawBasePath =
-    (await getConfig(prisma, 'storage.local.basePath', false)) ||
-    join(homedir(), '.luke', 'storage');
+/**
+ * Instantiates a LocalFsProvider configured from AppConfig values.
+ *
+ * @returns Initialized LocalFsProvider ready for use.
+ */
+export async function loadLocalProvider(prisma: PrismaClient): Promise<LocalFsProvider> {
+  const [rawBasePathConfig, maxFileSizeMBStr, bucketsStr, publicBaseUrl, enableProxyStr] =
+    await Promise.all([
+      getConfig(prisma, 'storage.local.basePath', false),
+      getConfig(prisma, 'storage.local.maxFileSizeMB', false),
+      getConfig(prisma, 'storage.local.buckets', false),
+      getConfig(prisma, 'storage.local.publicBaseUrl', false),
+      getConfig(prisma, 'storage.local.enableProxy', false),
+    ]);
+
+  const rawBasePath = rawBasePathConfig || join(homedir(), '.luke', 'storage');
   const basePath = rawBasePath.startsWith('~/')
     ? join(homedir(), rawBasePath.slice(2))
     : rawBasePath;
 
-  const maxFileSizeMBStr =
-    (await getConfig(prisma, 'storage.local.maxFileSizeMB', false)) || '50';
-  const maxFileSizeMB = parseInt(maxFileSizeMBStr, 10);
+  const maxFileSizeMB = parseInt(maxFileSizeMBStr || '50', 10);
 
-  const bucketsStr =
-    (await getConfig(prisma, 'storage.local.buckets', false)) ||
-    '["uploads","exports","assets","brand-logos","collection-row-pictures","collection-row-pictures-revisions","merchandising-specsheet-images","company-assets"]';
   let buckets: unknown;
   try {
-    buckets = JSON.parse(bucketsStr);
+    buckets = JSON.parse(
+      bucketsStr ||
+        '["uploads","exports","assets","brand-logos","collection-row-pictures","collection-row-pictures-revisions","merchandising-specsheet-images","company-assets"]'
+    );
   } catch {
     throw new Error(`storage.local.buckets non è JSON valido: ${bucketsStr}`);
   }
 
-  const publicBaseUrl = await getConfig(prisma, 'storage.local.publicBaseUrl', false);
-  const enableProxyStr = await getConfig(prisma, 'storage.local.enableProxy', false);
   const enableProxy = enableProxyStr ? enableProxyStr === 'true' : true;
 
   const config = localStorageConfigSchema.parse({

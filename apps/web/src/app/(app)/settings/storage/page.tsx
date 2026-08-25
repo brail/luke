@@ -12,7 +12,6 @@ import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
-import { Checkbox } from '../../../../components/ui/checkbox';
 import {
   Form,
   FormControl,
@@ -36,26 +35,6 @@ import { useStandardMutation } from '../../../../lib/useStandardMutation';
 const onNumberChange = (onChange: (v: number) => void) =>
   (e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.valueAsNumber);
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const BUCKET_DESCRIPTIONS: Record<(typeof APP_STORAGE_BUCKETS)[number], string> = {
-  uploads: 'File caricati dagli utenti',
-  exports: 'File esportati dal sistema',
-  assets: 'Asset statici e risorse',
-  'brand-logos': 'Logo brand',
-  'collection-row-pictures': 'Foto righe collection layout',
-  'collection-row-pictures-revisions': 'Foto righe CL — bucket immutabile per registro qualità',
-  'merchandising-specsheet-images': 'Immagini specsheet merchandising',
-  'company-assets': 'Logo e asset del profilo aziendale',
-};
-
-const ALL_BUCKETS = APP_STORAGE_BUCKETS.map(value => ({
-  value,
-  description: BUCKET_DESCRIPTIONS[value],
-}));
-
-type BucketValue = (typeof APP_STORAGE_BUCKETS)[number];
-
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
 const localSchema = z.object({
@@ -68,7 +47,6 @@ const localSchema = z.object({
       'Path deve iniziare con / oppure ~/'
     ),
   maxFileSizeMB: z.number().int().min(1).max(1000),
-  buckets: z.array(z.enum(APP_STORAGE_BUCKETS)).min(1, 'Almeno un bucket richiesto'),
   enableProxy: z.boolean(),
 });
 
@@ -125,7 +103,6 @@ export default function StoragePage() {
       type: 'local',
       basePath: '',
       maxFileSizeMB: 50,
-      buckets: ALL_BUCKETS.map(b => b.value),
       enableProxy: true,
     },
   });
@@ -152,7 +129,6 @@ export default function StoragePage() {
         type: 'local',
         basePath: config.local.basePath,
         maxFileSizeMB: config.local.maxFileSizeMB,
-        buckets: config.local.buckets as BucketValue[],
         enableProxy: config.local.enableProxy,
       });
     }
@@ -172,7 +148,12 @@ export default function StoragePage() {
       />
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(data => saveConfig(data))} className="space-y-6">
+        <form
+          onSubmit={form.handleSubmit(data =>
+            saveConfig(data.type === 'local' ? { ...data, buckets: [...APP_STORAGE_BUCKETS] } : data)
+          )}
+          className="space-y-6"
+        >
 
           {/* ── Provider selector ─────────────────────────────────────────── */}
           <SectionCard title="Provider Storage" description="Seleziona il backend di storage da utilizzare">
@@ -191,7 +172,6 @@ export default function StoragePage() {
                               type: 'local',
                               basePath: config?.local.basePath || '',
                               maxFileSizeMB: config?.local.maxFileSizeMB ?? 50,
-                              buckets: (config?.local.buckets as BucketValue[]) ?? ALL_BUCKETS.map(b => b.value),
                               enableProxy: config?.local.enableProxy ?? true,
                             });
                           } else {
@@ -296,8 +276,11 @@ export default function StoragePage() {
                       <div>
                         <FormLabel>Proxy Next.js</FormLabel>
                         <FormDescription>
-                          Se attivo, le immagini vengono servite tramite <code>/api/uploads/…</code> (sviluppo).
-                          Disabilitare in produzione quando l'API è accessibile direttamente.
+                          Se attivo, i file vengono serviti tramite <code>/api/uploads/…</code> — il server
+                          Next.js fa da proxy verso l'API. Nella topologia standard di produzione (unico
+                          ingress pubblico sul container web, API non esposta direttamente) va lasciato
+                          attivo. Disabilitarlo solo se l'API è raggiungibile direttamente dal browser
+                          (Public Base URL configurato).
                         </FormDescription>
                       </div>
                       <FormControl>
@@ -307,35 +290,6 @@ export default function StoragePage() {
                   )}
                 />
 
-                <FormField
-                  control={form.control}
-                  name="buckets"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Bucket abilitati</FormLabel>
-                      <div className="mt-2 space-y-2">
-                        {ALL_BUCKETS.map(({ value, description }) => (
-                          <div key={value} className="flex items-center space-x-2">
-                            <Checkbox
-                              id={`bucket-${value}`}
-                              checked={field.value?.includes(value)}
-                              onCheckedChange={checked => {
-                                const current = field.value || [];
-                                field.onChange(checked ? [...current, value] : current.filter(b => b !== value));
-                              }}
-                              disabled={disabled}
-                            />
-                            <Label htmlFor={`bucket-${value}`} className="cursor-pointer font-normal">
-                              <span className="font-mono text-sm">{value}</span>
-                              <span className="ml-2 text-muted-foreground">{description}</span>
-                            </Label>
-                          </div>
-                        ))}
-                      </div>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
               </div>
             </SectionCard>
           )}
