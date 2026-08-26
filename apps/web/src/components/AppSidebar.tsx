@@ -81,25 +81,13 @@ import {
  * Persists open/closed state for collapsible groups via `useMenuPreferences`.
  */
 
-function FeedbackTrigger() {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <DropdownMenuItem onSelect={() => setOpen(true)}>
-        <MessageSquarePlus className="mr-2 h-4 w-4" />
-        <span>Segnala / Suggerisci</span>
-      </DropdownMenuItem>
-      <FeedbackDialog open={open} onOpenChange={setOpen} />
-    </>
-  );
-}
-
 export default function AppSidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
   const menuAccess = useMenuAccess();
   const { menuStates, toggleMenu } = useMenuPreferences();
   const isActive = (href: string) => pathname.startsWith(href);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   const handleSignOut = async () => {
     await signOut({ callbackUrl: '/login' });
@@ -550,7 +538,10 @@ export default function AppSidebar() {
                 <span>Info su Luke</span>
               </Link>
             </DropdownMenuItem>
-            <FeedbackTrigger />
+            <DropdownMenuItem onSelect={() => setFeedbackOpen(true)}>
+              <MessageSquarePlus className="mr-2 h-4 w-4" />
+              <span>Segnala / Suggerisci</span>
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={handleSignOut}
@@ -563,6 +554,7 @@ export default function AppSidebar() {
         </DropdownMenu>
       </SidebarFooter>
       <SidebarRail />
+      <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
     </Sidebar>
   );
 }

@@ -395,6 +395,12 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       value: '30',
       encrypt: false,
     },
+    // Feedback GitHub issue sync — see feedbackSyncScheduler.ts
+    {
+      key: 'integrations.github.feedbackSyncIntervalMs',
+      value: '86400000', // 24h
+      encrypt: false,
+    },
   ];
 
   let configsCreated = 0;

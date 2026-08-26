@@ -121,8 +121,9 @@ export const AppConfigRegistry = {
   'integrations.google.oauth.userEmail':       z.string().email(),
 
   // ── Feedback ──────────────────────────────────────────────────────────────
-  'integrations.github.feedbackToken': z.string().min(1),   // GitHub PAT (encrypted)
-  'integrations.github.feedbackRepo':  z.string().min(1),   // format: "owner/repo"
+  'integrations.github.feedbackToken':          z.string().min(1),   // GitHub PAT (encrypted)
+  'integrations.github.feedbackRepo':           z.string().min(1),   // format: "owner/repo"
+  'integrations.github.feedbackSyncIntervalMs': z.coerce.number().int().min(300_000).max(604_800_000), // 5min–7d, default 24h (seed.ts)
 
   // ── Backup & Disaster Recovery ────────────────────────────────────────────
   'backup.schedule.enabled':        z.coerce.boolean(),

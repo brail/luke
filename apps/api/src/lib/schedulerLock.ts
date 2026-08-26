@@ -41,6 +41,7 @@ const INSTANCE_ID = randomUUID();
 export type SchedulerName =
   | 'backup'
   | 'calendar-digest'
+  | 'feedback-sync'
   | 'kimo-sync'
   | 'maintenance-mode'
   | 'milestone-deadline'

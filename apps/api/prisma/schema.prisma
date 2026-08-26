@@ -87,6 +87,8 @@ model User {
   calendarEventVisibilitiesGranted  CalendarEventUserVisibility[] @relation("CalendarEventUserVisibilityGrantor")
   /// In-app notifications for this user.
   notifications                     Notification[]
+  /// Bug reports / feature requests filed by this user, tracked for GitHub issue sync.
+  feedbackSubmissions               FeedbackSubmission[]
   /// Per-category notification preferences.
   notificationPreferences           NotificationPreference[]
   /// Collection layout revisions created by this user.
@@ -2108,6 +2110,32 @@ model Notification {
   @@index([userId, createdAt])
   @@index([userId, isArchived])
   @@map("notifications")
+}
+
+/// A bug report or feature request filed via the in-app feedback dialog and mirrored as a GitHub
+/// issue. Tracked so `feedbackSyncScheduler` can detect new comments or a state change on the
+/// GitHub side and notify the original submitter in-app — the submitter has no GitHub account
+/// of their own to watch the issue.
+model FeedbackSubmission {
+  id           String   @id @default(uuid())
+  /// FK to User (submitter). Cascade delete — the GitHub issue itself is unaffected.
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  issueNumber  Int
+  issueUrl     String
+  /// "owner/repo", copied from `integrations.github.feedbackRepo` at submission time.
+  repo         String
+  /// Mirrors the GitHub issue's own open/closed state.
+  status       String   @default("open")
+  /// GitHub issue `comments` count as of the last sync tick — a jump since the last check means
+  /// new activity to notify about.
+  commentCount Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("feedback_submissions")
 }
 
 /// Per-user, per-category (or per-event) notification preference. When enabled=false, notifications for that scope are suppressed.

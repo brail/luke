@@ -120,10 +120,6 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
       'backup/restore e modalità manutenzione sono distruttivi per costruzione: attivarli dentro la suite bloccherebbe le spec successive',
     uncovered: 16,
   },
-  feedback: {
-    reason: 'apre una issue GitHub reale usando il token configurato',
-    uncovered: 1,
-  },
   system: {
     reason:
       'about legge le versioni delle dipendenze, triggerCalendarDigest invia notifiche reali',

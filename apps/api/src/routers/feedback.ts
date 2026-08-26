@@ -2,7 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { logAudit } from '../lib/auditLog';
-import { getConfig } from '../lib/configManager';
+import { getTypedConfig } from '../lib/configManager';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
 
@@ -25,8 +25,8 @@ export const feedbackRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const [token, repo] = await Promise.all([
-        getConfig(ctx.prisma, 'integrations.github.feedbackToken', true),
-        getConfig(ctx.prisma, 'integrations.github.feedbackRepo', false),
+        getTypedConfig(ctx.prisma, 'integrations.github.feedbackToken'),
+        getTypedConfig(ctx.prisma, 'integrations.github.feedbackRepo'),
       ]).catch(() => {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
@@ -62,6 +62,11 @@ export const feedbackRouter = router({
       });
 
       if (!res.ok) {
+        const errorBody = await res.text().catch(() => '');
+        ctx.logger.error(
+          { status: res.status, repo, body: errorBody },
+          'GitHub issue creation failed',
+        );
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Errore nella creazione della segnalazione. Riprova.',
@@ -69,6 +74,15 @@ export const feedbackRouter = router({
       }
 
       const issue = await res.json() as { html_url: string; number: number };
+
+      await ctx.prisma.feedbackSubmission.create({
+        data: {
+          userId: ctx.session.user.id,
+          issueNumber: issue.number,
+          issueUrl: issue.html_url,
+          repo,
+        },
+      });
 
       await logAudit(ctx, {
         action: 'FEEDBACK_SUBMIT',

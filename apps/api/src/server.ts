@@ -33,6 +33,7 @@ import { registerCalendarNotificationBuffer } from './lib/calendarNotificationBu
 import { getConfig, validateCriticalConfig } from './lib/configManager';
 import { buildCorsAllowedOrigins } from './lib/cors';
 import { setGlobalErrorHandler } from './lib/error';
+import { registerFeedbackSyncScheduler } from './lib/feedbackSyncScheduler';
 import { buildHelmetConfig } from './lib/helmet';
 import { idempotencyStore } from './lib/idempotency';
 import { registerKimoSyncScheduler } from './lib/kimoSyncScheduler';
@@ -679,6 +680,9 @@ const start = async () => {
 
     // Register retention sweep for audit log + notifications + dedup keys (tick every 24h)
     registerRetentionScheduler(fastify, prisma);
+
+    // Register feedback GitHub issue sync scheduler (tick interval from AppConfig, default 24h)
+    registerFeedbackSyncScheduler(fastify, prisma);
 
     // Configure graceful shutdown
     setupGracefulShutdown();
