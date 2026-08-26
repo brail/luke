@@ -34,6 +34,23 @@ export function validateMagicBytes(buffer: Buffer, mimetype: string): boolean {
 }
 
 /**
+ * Inverse of `validateMagicBytes`: identifies a MIME type from a buffer's leading bytes,
+ * instead of checking a claimed one. Used to repair a generic/wrong recorded Content-Type
+ * (e.g. `application/octet-stream`) when there's no client-supplied mimetype to validate against.
+ *
+ * @returns The detected MIME type, or `null` if the bytes don't match any known image signature.
+ */
+export function sniffContentType(buffer: Buffer): string | null {
+  const magicBytes = buffer.slice(0, 4).toString('hex');
+  for (const [mimetype, signatures] of Object.entries(IMAGE_MAGIC_BYTES)) {
+    if (signatures.some(sig => magicBytes.startsWith(sig))) {
+      return mimetype;
+    }
+  }
+  return null;
+}
+
+/**
  * Validates an uploaded image file against MIME type, size, and extension constraints.
  * Sanitises the filename by stripping special characters.
  *

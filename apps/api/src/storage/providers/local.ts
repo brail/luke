@@ -49,6 +49,7 @@ export class LocalFsProvider implements IStorageProvider {
   readonly capabilities: IStorageCapabilities = {
     supportsPresignedUpload: false,
     supportsPresignedDownload: false,
+    supportsContentTypeFix: false,
   };
 
   private basePath: string;

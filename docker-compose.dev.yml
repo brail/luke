@@ -15,50 +15,25 @@ services:
       timeout: 5s
       retries: 10
 
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    entrypoint: ["/bin/sh", "/docker-entrypoint.sh"]
     environment:
-      MINIO_ROOT_USER:              minioadmin
-      MINIO_ROOT_PASSWORD:          minioadmin
-      MINIO_API_CORS_ALLOW_ORIGIN:  "*"
+      S3_ROOT_USER:     s3admin
+      S3_ROOT_PASSWORD: s3adminpwd
     ports:
-      - "9000:9000"  # S3 API
-      - "9001:9001"  # Console UI
+      - "8333:8333"  # S3 API
+      - "9333:9333"  # Master (cluster status / healthcheck; dev-only convenience)
     volumes:
-      - minio_dev_data:/data
+      - ./docker/seaweedfs/entrypoint.sh:/docker-entrypoint.sh:ro
+      - seaweedfs_dev_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9333/cluster/status"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
 
-  minio-init:
-    image: minio/mc:latest
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-        mc alias set local http://minio:9000 minioadmin minioadmin &&
-        mc mb --ignore-existing local/uploads &&
-        mc mb --ignore-existing local/exports &&
-        mc mb --ignore-existing local/assets &&
-        mc mb --ignore-existing local/brand-logos &&
-        mc mb --ignore-existing local/temp-brand-logos &&
-        mc mb --ignore-existing local/collection-row-pictures &&
-        mc mb --ignore-existing local/temp-collection-row-pictures &&
-        mc mb --ignore-existing local/merchandising-specsheet-images &&
-        mc mb --ignore-existing local/temp-merchandising-specsheet-images &&
-        mc mb --ignore-existing local/company-assets &&
-        mc anonymous set download local/brand-logos &&
-        mc anonymous set download local/collection-row-pictures &&
-        mc anonymous set download local/merchandising-specsheet-images &&
-        mc anonymous set download local/company-assets
-      "
-    restart: on-failure
-
 volumes:
   postgres_dev_data:
-  minio_dev_data:
+  seaweedfs_dev_data:

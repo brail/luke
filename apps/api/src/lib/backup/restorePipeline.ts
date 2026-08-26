@@ -3,7 +3,7 @@
  * → gunzip → untar, staged entirely to local disk, then `pg_restore` + (optionally) file replay.
  *
  * Extraction is staged to local disk in full before any destructive step runs, for two reasons:
- * 1. The source blob stream (especially from MinIO) is not something we want to hold open for the
+ * 1. The source blob stream (especially from S3-compatible storage) is not something we want to hold open for the
  *    full duration of a potentially multi-minute `pg_restore` — read it to completion promptly.
  * 2. It lets the DB restore run to completion (or fail) before any file is touched, so a failed
  *    `pg_restore` never leaves storage files partially overwritten — only the DB was touched.

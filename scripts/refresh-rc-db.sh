@@ -27,7 +27,7 @@
 #
 # NOT handled (by design): SMTP is left pointing at whatever RC's AppConfig
 # already had (now overwritten with prod's config) — RC WILL be able to send
-# real email to real users if something in the app triggers it. MinIO
+# real email to real users if something in the app triggers it. S3 storage
 # binaries (photos, attachments) are not cloned — file references in the UI
 # will 404 in RC, expected.
 #

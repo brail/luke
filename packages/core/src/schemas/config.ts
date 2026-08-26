@@ -50,23 +50,23 @@ export const AppConfigRegistry = {
   'security.cors.developmentOrigins':      z.string(),
 
   // ── Storage ──────────────────────────────────────────────────────────────
-  'storage.type':                z.enum(['local', 'minio']),
+  'storage.type':                z.enum(['local', 's3']),
   'storage.local.basePath':      z.string().min(1),
   'storage.local.maxFileSizeMB': z.coerce.number().int().min(1),
   'storage.local.buckets':       z.string().transform(s => JSON.parse(s) as string[]),
   'storage.local.publicBaseUrl': z.string().url(),
   'storage.local.enableProxy':   z.coerce.boolean(),
 
-  // ── Storage — MinIO ───────────────────────────────────────────────────────
-  'storage.minio.endpoint':        z.string().min(1),
-  'storage.minio.port':            z.coerce.number().int().min(1).max(65535),
-  'storage.minio.useSSL':          z.coerce.boolean(),
-  'storage.minio.accessKey':       z.string().min(1),
-  'storage.minio.secretKey':       z.string().min(1),
-  'storage.minio.region':          z.string(),
-  'storage.minio.publicBaseUrl':   z.string().url(),
-  'storage.minio.presignedPutTtl': z.coerce.number().int().min(60),
-  'storage.minio.presignedGetTtl': z.coerce.number().int().min(60),
+  // ── Storage — S3-compatible (MinIO, SeaweedFS, Ceph RGW, ...) ─────────────
+  'storage.s3.endpoint':        z.string().min(1),
+  'storage.s3.port':            z.coerce.number().int().min(1).max(65535),
+  'storage.s3.useSSL':          z.coerce.boolean(),
+  'storage.s3.accessKey':       z.string().min(1),
+  'storage.s3.secretKey':       z.string().min(1),
+  'storage.s3.region':          z.string(),
+  'storage.s3.publicBaseUrl':   z.string().url(),
+  'storage.s3.presignedPutTtl': z.coerce.number().int().min(60),
+  'storage.s3.presignedGetTtl': z.coerce.number().int().min(60),
 
   // ── Rate limiting (JSON object) ───────────────────────────────────────────
   'rateLimit': z.string().transform(s => RateLimitConfigSchema.parse(JSON.parse(s))),

@@ -44,8 +44,8 @@ export async function makeUrlResolver(
 ): Promise<(bucket: StorageBucket, key: string) => string> {
   const storageType = (await getConfig(prisma, 'storage.type', false)) || 'local';
 
-  if (storageType === 'minio') {
-    // MinIO assets are served via the authenticated proxy route /api/uploads/{bucket}/{key}.
+  if (storageType === 's3') {
+    // S3-compatible assets are served via the authenticated proxy route /api/uploads/{bucket}/{key}.
     // Buckets remain private; the Next.js route handler enforces authentication.
     return (bucket, key) => getProxyUrl(bucket, key);
   }

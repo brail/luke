@@ -47,7 +47,7 @@ Sviluppato come monorepo pnpm + Turborepo con sei workspace: frontend Next.js, b
 <!-- luke-docs:start:prerequisites -->
 - Node.js >= 22.0.0
 - pnpm >= 10.0.0
-- Docker (per PostgreSQL locale e MinIO opzionale)
+- Docker (per PostgreSQL locale e storage S3 opzionale)
 - PostgreSQL 16 (sviluppo e produzione)
 - Microsoft SQL Server (solo per la funzionalità di sync NAV)
 <!-- luke-docs:end:prerequisites -->
@@ -721,7 +721,7 @@ Per dettagli completi, vedi [docs/nav-integration.md](docs/nav-integration.md).
 
 ## Storage
 
-Il sistema storage è astratto tramite l'interfaccia `IStorageProvider` con due provider supportati: filesystem locale e MinIO (S3-compatible). Il provider attivo è selezionato da `storage.type` in AppConfig — nessuna env var, nessuna ricompilazione.
+Il sistema storage è astratto tramite l'interfaccia `IStorageProvider` con due provider supportati: filesystem locale e S3-compatible (nello stack Docker: SeaweedFS; l'implementazione usa solo l'API S3 generica, quindi qualsiasi backend S3-compatible funziona — MinIO, Ceph RGW, ecc.). Il provider attivo è selezionato da `storage.type` in AppConfig — nessuna env var, nessuna ricompilazione.
 
 ### Chiavi nel database, non URL
 
@@ -739,7 +739,7 @@ Il file viene caricato come **pending** (`FileObject.confirmedAt = null`) prima 
 
 ### Provider URL
 
-Con **MinIO**: le immagini sono servite tramite la route Next.js autenticata `/api/uploads/[...path]`. I bucket rimangono privati.
+Con **S3**: le immagini sono servite tramite la route Next.js autenticata `/api/uploads/[...path]`. I bucket rimangono privati.
 
 Con **local** (`enableProxy=true`, default): stesso proxy per consistenza. Con `enableProxy=false`: URL pubblico diretto via `publicBaseUrl`.
 
@@ -747,14 +747,14 @@ Con **local** (`enableProxy=true`, default): stesso proxy per consistenza. Con `
 
 | Chiave | Descrizione |
 |--------|-------------|
-| `storage.type` | `local` \| `minio` |
+| `storage.type` | `local` \| `s3` |
 | `storage.local.basePath` | Directory base locale (default `/data/uploads`) |
 | `storage.local.enableProxy` | Forza proxy URL (default `true`) |
 | `storage.local.publicBaseUrl` | Base URL pubblico se proxy disabilitato |
-| `storage.minio.endpoint` | Endpoint MinIO (es. `minio:9000`) |
-| `storage.minio.accessKey` / `secretKey` | Credenziali MinIO (cifrate in DB) |
-| `storage.minio.bucket` | Bucket MinIO (default `luke`) |
-| `storage.minio.presignedPutTtl` / `presignedGetTtl` | TTL URL presigned in secondi |
+| `storage.s3.endpoint` | Endpoint storage S3-compatible (es. `seaweedfs:8333`) |
+| `storage.s3.accessKey` / `secretKey` | Credenziali S3 (cifrate in DB) |
+| `storage.s3.publicBaseUrl` | Base URL pubblico per i bucket pubblici |
+| `storage.s3.presignedPutTtl` / `presignedGetTtl` | TTL URL presigned in secondi |
 
 ### Bucket validi
 

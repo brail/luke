@@ -3,7 +3,7 @@
  *
  * `reply.send(stream)` has been observed to silently truncate large streamed responses under
  * this Fastify version (Content-Length reset to 0, empty body, "stream closed prematurely"
- * logged) — reproduced with multi-MB backup blobs sourced from the MinIO provider's underlying
+ * logged) — reproduced with multi-MB backup blobs sourced from the S3 provider's underlying
  * `http.IncomingMessage`. `reply.hijack()` + writing directly to the raw Node response avoids
  * whatever internal handling causes this.
  */

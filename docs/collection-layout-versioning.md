@@ -112,7 +112,7 @@ Le foto vengono copiate dal bucket `collection-row-pictures` al bucket immutabil
 
 **File orfani**: se la transazione della revisione fallisce dopo il pre-copy, il file copiato rimane nel bucket senza riferimenti DB. Questo è accettabile perché:
 - Il contenuto è identico (stesso sha256) — nessun dato perso
-- In produzione MinIO, il bucket può avere retention policy `governance`/`compliance`
+- In produzione, il bucket può avere retention policy S3 Object Lock `governance`/`compliance` (vedi [docs/storage-immutable-bucket.md](./storage-immutable-bucket.md) per il caveat sulla verifica contro il backend effettivo)
 
 ---
 

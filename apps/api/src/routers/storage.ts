@@ -18,7 +18,7 @@ import { requirePermission } from '../lib/permissions';
 import { withSectionAccess } from '../lib/sectionAccessMiddleware';
 import { getStorageBaseUrl, resolvePublicUrl } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
-import { getObjectMetadata, listObjects, deleteObject, resetStorageProvider, getStorageProvider, loadMinioProvider } from '../storage';
+import { getObjectMetadata, listObjects, deleteObject, resetStorageProvider, getStorageProvider, loadS3Provider } from '../storage';
 import { signDownloadToken, signUploadToken, verifyUploadToken } from '../utils/downloadToken';
 
 /**
@@ -79,7 +79,7 @@ const SaveStorageConfigSchema = z.discriminatedUnion('type', [
     enableProxy: z.boolean().optional(),
   }),
   z.object({
-    type: z.literal('minio'),
+    type: z.literal('s3'),
     endpoint: z.string().min(1),
     port: z.number().int().min(1).max(65535),
     useSSL: z.boolean(),
@@ -231,7 +231,7 @@ export const storageRouter = router({
     }),
 
   /**
-   * Requests an upload slot; returns a presigned PUT URL for MinIO or proxy fallback info for local storage.
+   * Requests an upload slot; returns a presigned PUT URL for S3-compatible storage or proxy fallback info for local storage.
    *
    * @auth {authenticated}
    * @input {RequestUploadSchema} — bucket, contentType, size, originalName, optional key.
@@ -289,7 +289,7 @@ export const storageRouter = router({
     }),
 
   /**
-   * Confirms a completed presigned upload and creates the FileObject DB record; only needed for MinIO path.
+   * Confirms a completed presigned upload and creates the FileObject DB record; only needed for the S3 path.
    *
    * @auth {authenticated}
    * @input {ConfirmUploadSchema} — bucket, key, contentType, size, originalName, optional checksumSha256.
@@ -410,30 +410,30 @@ export const storageRouter = router({
     }),
 
   /**
-   * Tests the currently saved MinIO configuration by listing the uploads bucket and generating a test presigned URL.
+   * Tests the currently saved S3 configuration by listing the uploads bucket and generating a test presigned URL.
    *
    * @auth {config:read}
    * @input {none}
    * @output {{ success: true, message: string, presignedUrlBase: string }}
    */
-  testMinioConnection: protectedProcedure
+  testS3Connection: protectedProcedure
     .use(requirePermission('config:read'))
     .mutation(async ({ ctx }) => {
       const storageType = await getConfig(ctx.prisma, 'storage.type', false);
-      if (storageType !== 'minio') {
+      if (storageType !== 's3') {
         throw new TRPCError({
           code: 'BAD_REQUEST',
-          message: 'Provider attuale non è MinIO. Salva prima la configurazione MinIO.',
+          message: 'Provider attuale non è S3. Salva prima la configurazione S3.',
         });
       }
 
       let provider;
       try {
-        provider = await loadMinioProvider(ctx.prisma);
+        provider = await loadS3Provider(ctx.prisma);
       } catch (err: unknown) {
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
-          message: `Errore caricamento config MinIO: ${err instanceof Error ? err.message : String(err)}`,
+          message: `Errore caricamento config storage S3: ${err instanceof Error ? err.message : String(err)}`,
           cause: err,
         });
       }
@@ -444,7 +444,7 @@ export const storageRouter = router({
       } catch (err: unknown) {
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
-          message: `Connessione a MinIO fallita: ${err instanceof Error ? err.message : String(err)}`,
+          message: `Connessione allo storage S3 fallita: ${err instanceof Error ? err.message : String(err)}`,
           cause: err,
         });
       }
@@ -458,19 +458,26 @@ export const storageRouter = router({
       });
       const presignedUrlBase = new URL(presignResult.url).origin;
 
+      // Without a publicBaseUrl, presigned URLs fall back to the internal endpoint
+      // (see S3Provider constructor) — which is normally a Docker-internal hostname
+      // the browser can't resolve. Surface that as a known fact, not a guess the
+      // frontend has to make by pattern-matching the hostname string.
+      const publicBaseUrl = await getConfig(ctx.prisma, 'storage.s3.publicBaseUrl', false);
+
       return {
         success: true,
-        message: 'Connessione MinIO riuscita',
+        message: 'Connessione storage S3 riuscita',
         presignedUrlBase,
+        publicBaseUrlConfigured: !!publicBaseUrl,
       };
     }),
 
   /**
-   * Returns the current storage configuration (local or MinIO), with sensitive credentials decrypted.
+   * Returns the current storage configuration (local or S3), with sensitive credentials decrypted.
    *
    * @auth {config:read}
    * @input {none}
-   * @output {{ type: "local" | "minio", local: {...}, minio: {...} }}
+   * @output {{ type: "local" | "s3", local: {...}, s3: {...} }}
    */
   getConfig: protectedProcedure
     .use(requirePermission('config:read'))
@@ -479,23 +486,23 @@ export const storageRouter = router({
       const [
         storageType,
         basePath, maxFileSizeMBStr, bucketsStr, enableProxyStr,
-        minioEndpoint, minioPortStr, minioUseSslStr, minioAccessKey, minioSecretKey,
-        minioRegion, minioPublicBaseUrl, minioPutTtlStr, minioGetTtlStr,
+        s3Endpoint, s3PortStr, s3UseSslStr, s3AccessKey, s3SecretKey,
+        s3Region, s3PublicBaseUrl, s3PutTtlStr, s3GetTtlStr,
       ] = await Promise.all([
         getConfig(ctx.prisma, 'storage.type', false),
         getConfig(ctx.prisma, 'storage.local.basePath', false),
         getConfig(ctx.prisma, 'storage.local.maxFileSizeMB', false),
         getConfig(ctx.prisma, 'storage.local.buckets', false),
         getConfig(ctx.prisma, 'storage.local.enableProxy', false),
-        getConfig(ctx.prisma, 'storage.minio.endpoint', false),
-        getConfig(ctx.prisma, 'storage.minio.port', false),
-        getConfig(ctx.prisma, 'storage.minio.useSSL', false),
-        getConfig(ctx.prisma, 'storage.minio.accessKey', true),
-        getConfig(ctx.prisma, 'storage.minio.secretKey', true),
-        getConfig(ctx.prisma, 'storage.minio.region', false),
-        getConfig(ctx.prisma, 'storage.minio.publicBaseUrl', false),
-        getConfig(ctx.prisma, 'storage.minio.presignedPutTtl', false),
-        getConfig(ctx.prisma, 'storage.minio.presignedGetTtl', false),
+        getConfig(ctx.prisma, 'storage.s3.endpoint', false),
+        getConfig(ctx.prisma, 'storage.s3.port', false),
+        getConfig(ctx.prisma, 'storage.s3.useSSL', false),
+        getConfig(ctx.prisma, 'storage.s3.accessKey', true),
+        getConfig(ctx.prisma, 'storage.s3.secretKey', true),
+        getConfig(ctx.prisma, 'storage.s3.region', false),
+        getConfig(ctx.prisma, 'storage.s3.publicBaseUrl', false),
+        getConfig(ctx.prisma, 'storage.s3.presignedPutTtl', false),
+        getConfig(ctx.prisma, 'storage.s3.presignedGetTtl', false),
       ]);
 
       let buckets: string[];
@@ -506,32 +513,32 @@ export const storageRouter = router({
       }
 
       return {
-        type: (storageType || 'local') as 'local' | 'minio',
+        type: (storageType || 'local') as 'local' | 's3',
         local: {
           basePath: basePath || join(homedir(), '.luke', 'storage'),
           maxFileSizeMB: parseInt(maxFileSizeMBStr || '50', 10),
           buckets,
           enableProxy: enableProxyStr !== 'false',
         },
-        minio: {
-          endpoint: minioEndpoint || 'minio',
-          port: parseInt(minioPortStr || '9000', 10),
-          useSSL: minioUseSslStr === 'true',
-          accessKey: minioAccessKey || '',
-          secretKey: minioSecretKey || '',
-          region: minioRegion || 'us-east-1',
-          publicBaseUrl: minioPublicBaseUrl || '',
-          presignedPutTtl: parseInt(minioPutTtlStr || '3600', 10),
-          presignedGetTtl: parseInt(minioGetTtlStr || '3600', 10),
+        s3: {
+          endpoint: s3Endpoint || 'seaweedfs',
+          port: parseInt(s3PortStr || '8333', 10),
+          useSSL: s3UseSslStr === 'true',
+          accessKey: s3AccessKey || '',
+          secretKey: s3SecretKey || '',
+          region: s3Region || 'us-east-1',
+          publicBaseUrl: s3PublicBaseUrl || '',
+          presignedPutTtl: parseInt(s3PutTtlStr || '3600', 10),
+          presignedGetTtl: parseInt(s3GetTtlStr || '3600', 10),
         },
       };
     }),
 
   /**
-   * Saves the storage configuration (local or MinIO) to AppConfig and resets the storage provider singleton.
+   * Saves the storage configuration (local or S3) to AppConfig and resets the storage provider singleton.
    *
    * @auth {config:update}
-   * @input {SaveStorageConfigSchema} — discriminated union of local or minio config.
+   * @input {SaveStorageConfigSchema} — discriminated union of local or s3 config.
    * @output {{ success: true }}
    */
   saveConfig: protectedProcedure
@@ -555,16 +562,16 @@ export const storageRouter = router({
         ]);
       } else {
         await Promise.all([
-          saveConfig(ctx.prisma, 'storage.type', 'minio', false),
-          saveConfig(ctx.prisma, 'storage.minio.endpoint', input.endpoint, false),
-          saveConfig(ctx.prisma, 'storage.minio.port', input.port.toString(), false),
-          saveConfig(ctx.prisma, 'storage.minio.useSSL', String(input.useSSL), false),
-          saveConfig(ctx.prisma, 'storage.minio.accessKey', input.accessKey, true),
-          saveConfig(ctx.prisma, 'storage.minio.secretKey', input.secretKey, true),
-          saveConfig(ctx.prisma, 'storage.minio.region', input.region, false),
-          saveConfig(ctx.prisma, 'storage.minio.publicBaseUrl', input.publicBaseUrl || '', false),
-          saveConfig(ctx.prisma, 'storage.minio.presignedPutTtl', input.presignedPutTtl.toString(), false),
-          saveConfig(ctx.prisma, 'storage.minio.presignedGetTtl', input.presignedGetTtl.toString(), false),
+          saveConfig(ctx.prisma, 'storage.type', 's3', false),
+          saveConfig(ctx.prisma, 'storage.s3.endpoint', input.endpoint, false),
+          saveConfig(ctx.prisma, 'storage.s3.port', input.port.toString(), false),
+          saveConfig(ctx.prisma, 'storage.s3.useSSL', String(input.useSSL), false),
+          saveConfig(ctx.prisma, 'storage.s3.accessKey', input.accessKey, true),
+          saveConfig(ctx.prisma, 'storage.s3.secretKey', input.secretKey, true),
+          saveConfig(ctx.prisma, 'storage.s3.region', input.region, false),
+          saveConfig(ctx.prisma, 'storage.s3.publicBaseUrl', input.publicBaseUrl || '', false),
+          saveConfig(ctx.prisma, 'storage.s3.presignedPutTtl', input.presignedPutTtl.toString(), false),
+          saveConfig(ctx.prisma, 'storage.s3.presignedGetTtl', input.presignedGetTtl.toString(), false),
         ]);
       }
 

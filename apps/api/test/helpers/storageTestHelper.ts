@@ -221,3 +221,12 @@ export function createInvalidImageBuffer(): Buffer {
   // Txt file with a .png extension
   return Buffer.from('This is not an image file');
 }
+
+/**
+ * Helper to create valid WebP images for tests (RIFF container header)
+ */
+export function createValidWebpBuffer(): Buffer {
+  const riffHeader = Buffer.from([0x52, 0x49, 0x46, 0x46]); // "RIFF"
+  const webpData = Buffer.from('test webp content');
+  return Buffer.concat([riffHeader, webpData]);
+}

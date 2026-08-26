@@ -1,9 +1,12 @@
 /**
- * MinIO (S3-compatible) implementation of IStorageProvider.
+ * S3-compatible implementation of IStorageProvider (MinIO, SeaweedFS, Ceph RGW, ...).
+ * Assumes a self-hosted, path-style-addressing backend (`forcePathStyle: true`, auto-creates
+ * missing buckets on `init()`) — not verified against real AWS S3, where path-style addressing
+ * is deprecated for new buckets and bucket names are globally unique.
  *
- * Uses two S3Client instances: one for internal server-to-MinIO traffic and one
+ * Uses two S3Client instances: one for internal server-to-storage traffic and one
  * for presigned URL generation that points to the browser-reachable public endpoint
- * (configured via `storage.minio.publicBaseUrl` in AppConfig).
+ * (configured via `storage.s3.publicBaseUrl` in AppConfig).
  * Bucket auto-creation is performed at initialization for all known buckets.
  */
 
@@ -26,13 +29,14 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type {
   IStorageCapabilities,
   IStorageProvider,
-  MinioStorageConfig,
+  S3StorageConfig,
   PresignedGetParams,
   PresignedGetResult,
   PresignedPutParams,
   PresignedPutResult,
   StorageBucket,
   StorageDeleteParams,
+  StorageFixContentTypeParams,
   StorageGetParams,
   StorageGetResult,
   StorageListParams,
@@ -41,19 +45,20 @@ import type {
   StoragePutResult,
 } from '@luke/core';
 
-/** MinIO / S3-compatible storage provider. Implements IStorageProvider using the AWS SDK v3. */
-export class MinioProvider implements IStorageProvider {
+/** S3-compatible storage provider. Implements IStorageProvider using the AWS SDK v3. */
+export class S3Provider implements IStorageProvider {
   readonly capabilities: IStorageCapabilities = {
     supportsPresignedUpload: true,
     supportsPresignedDownload: true,
+    supportsContentTypeFix: true,
   };
 
   private readonly client: S3Client;
   /** Used for presigned URL generation — points to the browser-reachable host */
   private readonly presignClient: S3Client;
-  private readonly config: MinioStorageConfig;
+  private readonly config: S3StorageConfig;
 
-  constructor(config: MinioStorageConfig) {
+  constructor(config: S3StorageConfig) {
     this.config = config;
     const protocol = config.useSSL ? 'https' : 'http';
     const internalEndpoint = `${protocol}://${config.endpoint}:${config.port}`;
@@ -71,7 +76,7 @@ export class MinioProvider implements IStorageProvider {
 
     // Presigned URLs must use the public-facing endpoint so browsers can reach them.
     // If publicBaseUrl is not set, fall back to the internal endpoint (works when
-    // MinIO is directly accessible on the same hostname, e.g. local dev without Docker).
+    // the S3-compatible service is directly accessible on the same hostname, e.g. local dev without Docker).
     const presignEndpoint = config.publicBaseUrl || internalEndpoint;
     this.presignClient = presignEndpoint === internalEndpoint
       ? this.client
@@ -84,7 +89,7 @@ export class MinioProvider implements IStorageProvider {
   }
 
   /**
-   * Ensures all known buckets exist in MinIO, creating any that are missing.
+   * Ensures all known buckets exist, creating any that are missing.
    */
   async init(): Promise<void> {
     const allBuckets: StorageBucket[] = [
@@ -130,7 +135,7 @@ export class MinioProvider implements IStorageProvider {
   }
 
   /**
-   * Uploads a file to MinIO via a true streaming multipart upload (`@aws-sdk/lib-storage`),
+   * Uploads a file via a true streaming multipart upload (`@aws-sdk/lib-storage`),
    * without buffering the payload in memory — required for arbitrarily large files (e.g. DB backups).
    *
    * @returns The (generated or caller-supplied via `params.key`) key, SHA-256 checksum, and byte size.
@@ -169,7 +174,7 @@ export class MinioProvider implements IStorageProvider {
   }
 
   /**
-   * Retrieves a file from MinIO as a readable stream.
+   * Retrieves a file as a readable stream.
    *
    * @throws If the object does not exist in the bucket.
    */
@@ -193,7 +198,7 @@ export class MinioProvider implements IStorageProvider {
    * (same bucket/key as source and destination, `MetadataDirective: REPLACE`) — S3 performs
    * this server-side, no bytes are re-transferred over the network.
    */
-  async fixContentType(params: { bucket: StorageBucket; key: string; contentType: string }): Promise<void> {
+  async fixContentType(params: StorageFixContentTypeParams): Promise<void> {
     await this.client.send(new CopyObjectCommand({
       Bucket: params.bucket,
       Key: params.key,
@@ -203,7 +208,7 @@ export class MinioProvider implements IStorageProvider {
     }));
   }
 
-  /** Deletes a file from MinIO. */
+  /** Deletes a file. */
   async delete(params: StorageDeleteParams): Promise<void> {
     await this.client.send(new DeleteObjectCommand({
       Bucket: params.bucket,
@@ -212,7 +217,7 @@ export class MinioProvider implements IStorageProvider {
   }
 
   /**
-   * Lists objects in a MinIO bucket, with optional prefix and limit.
+   * Lists objects in a bucket, with optional prefix and limit.
    *
    * @returns Page items and an optional continuation token for the next page.
    */
@@ -237,7 +242,7 @@ export class MinioProvider implements IStorageProvider {
   }
 
   /**
-   * Generates a presigned PUT URL for direct browser-to-MinIO upload.
+   * Generates a presigned PUT URL for direct browser-to-storage upload.
    *
    * Uses the public presign client so the URL points to the browser-reachable endpoint.
    *
@@ -265,7 +270,7 @@ export class MinioProvider implements IStorageProvider {
   }
 
   /**
-   * Generates a presigned GET URL for time-limited direct download from MinIO.
+   * Generates a presigned GET URL for time-limited direct download.
    *
    * @returns The presigned URL and its expiry time.
    */

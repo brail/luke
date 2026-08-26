@@ -1,7 +1,8 @@
 /**
  * @luke/core/storage — Type definitions for the storage system.
  * Defines `IStorageProvider` and all associated param/result interfaces.
- * Implementations include local filesystem and MinIO; extensible to SAMBA, GDrive, etc.
+ * Implementations include local filesystem and S3-compatible providers (MinIO, SeaweedFS, ...);
+ * extensible to SAMBA, GDrive, etc.
  */
 
 /**
@@ -177,6 +178,15 @@ export interface IStorageCapabilities {
   supportsPresignedUpload: boolean;
   /** Provider can generate presigned GET URLs for direct client download */
   supportsPresignedDownload: boolean;
+  /** Provider can rewrite an existing object's Content-Type metadata in place, without re-transferring bytes */
+  supportsContentTypeFix: boolean;
+}
+
+/** Parameters for rewriting an existing object's Content-Type metadata in place */
+export interface StorageFixContentTypeParams {
+  bucket: StorageBucket;
+  key: string;
+  contentType: string;
 }
 
 /** Parameters for generating a presigned PUT URL */
@@ -214,7 +224,7 @@ export interface PresignedGetResult {
 }
 
 /**
- * Unified storage provider interface for all concrete implementations (LocalFs, MinIO, etc.).
+ * Unified storage provider interface for all concrete implementations (LocalFs, S3, etc.).
  * Implementations must be registered via the storage service — never instantiated directly by callers.
  *
  * Check `capabilities` before calling optional methods (`getPresignedPutUrl`, `getPresignedGetUrl`).
@@ -232,6 +242,8 @@ export interface IStorageProvider {
   getPresignedPutUrl?(params: PresignedPutParams): Promise<PresignedPutResult>;
   /** Only present when capabilities.supportsPresignedDownload === true */
   getPresignedGetUrl?(params: PresignedGetParams): Promise<PresignedGetResult>;
+  /** Only present when capabilities.supportsContentTypeFix === true */
+  fixContentType?(params: StorageFixContentTypeParams): Promise<void>;
   /** One-time setup: ensure required buckets exist (idempotent) */
   init?(): Promise<void>;
 }

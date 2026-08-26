@@ -29,7 +29,7 @@
     "db:complete-stranded-rows": "tsx --env-file=.env scripts/complete-stranded-rows.ts",
     "db:fix-allday-dates": "TZ=Europe/Rome tsx --env-file=.env scripts/fix-allday-event-dates.ts",
     "db:migrate-rbac-section-key": "tsx --env-file=.env scripts/migrate-rbac-controllo-to-control.ts",
-    "db:migrate-storage-to-minio": "tsx --env-file=.env scripts/migrate-storage-to-minio.ts"
+    "db:migrate-storage": "tsx --env-file=.env scripts/migrate-storage.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

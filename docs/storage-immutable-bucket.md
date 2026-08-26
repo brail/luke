@@ -27,24 +27,13 @@ Se la transazione della revisione fallisce dopo `copyToImmutableBucket`:
 - Non è un problema: il contenuto è identico a file già presenti (stesso sha256)
 - In produzione, il bucket può avere un lifecycle rule per pulire file non referenziati dopo N giorni
 
-### MinIO: Configurazione retention policy (produzione)
+### Configurazione retention policy (produzione)
 
-Per rendere il bucket veramente immutabile in MinIO:
+Object Lock (versioning + retention WORM) è una feature S3 standard, non specifica di un vendor — si configura via API S3 (`PutBucketVersioning` + `PutObjectLockConfiguration`/`PutObjectRetention`), non tramite lo storage provider applicativo (`IStorageProvider` non espone bucket policy/retention — è fuori dal suo scope, va fatto a livello di storage backend).
 
-```sh
-# Abilita versioning (requisito per Object Lock)
-mc versioning enable ALIAS/collection-row-pictures-revisions
+Lo stack Docker gira SeaweedFS, che supporta Object Lock (modalità GOVERNANCE e COMPLIANCE, Legal Hold) dalla release 3.94 in poi. **Non verificato in questo progetto** — prima di affidarsi a `compliance` per un requisito legale reale, verificare contro la versione SeaweedFS effettivamente deployata: al momento della scrittura risultano report aperti upstream di delete che riescono comunque in modalità `compliance` in alcune build (seaweedfs/seaweedfs#8350). Con MinIO (se ancora in uso per un'installazione esistente) lo stesso setup si faceva con `mc versioning enable` + `mc retention set --default compliance ...`; con SeaweedFS l'equivalente passa dalla API S3 standard (`aws s3api put-object-lock-configuration` / `put-object-retention`), non da un CLI `mc`-style.
 
-# Abilita Object Lock con modalità governance (ammette override con permissions admin)
-mc retention set --default governance 365d ALIAS/collection-row-pictures-revisions
-```
-
-Per compliance totale (nessun override):
-```sh
-mc retention set --default compliance 3650d ALIAS/collection-row-pictures-revisions
-```
-
-**IMPORTANTE**: Con retention `compliance`, nemmeno l'admin può cancellare i file prima della scadenza. Valutare in base ai requisiti legali del cliente.
+**IMPORTANTE**: con retention in modalità compliance, nemmeno l'admin dovrebbe poter cancellare i file prima della scadenza — ma vedi il caveat sopra prima di considerarlo garantito. Valutare in base ai requisiti legali del cliente, e testare esplicitamente il comportamento di delete contro la build effettivamente in produzione prima di considerare il bucket davvero immutabile.
 
 ### Permessi applicativi
 

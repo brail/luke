@@ -1,6 +1,6 @@
 /**
  * @luke/core/storage — Zod schemas for storage provider configuration.
- * Covers local filesystem and MinIO (S3-compatible) providers.
+ * Covers local filesystem and S3-compatible providers (MinIO, SeaweedFS, Ceph RGW, ...).
  */
 
 import { z } from 'zod';
@@ -74,16 +74,16 @@ export const localStorageConfigSchema = z.object({
 export type LocalStorageConfig = z.infer<typeof localStorageConfigSchema>;
 
 /**
- * Schema per configurazione MinIO (S3-compatible)
+ * Schema per configurazione storage S3-compatible (MinIO, SeaweedFS, Ceph RGW, ...)
  */
-export const minioStorageConfigSchema = z.object({
+export const s3StorageConfigSchema = z.object({
   endpoint: z.string().min(1),
-  port: z.number().int().min(1).max(65535).default(9000),
+  port: z.number().int().min(1).max(65535).default(8333),
   useSSL: z.boolean().default(false),
   accessKey: z.string().min(1),
   secretKey: z.string().min(1),
   region: z.string().default('us-east-1'),
-  /** Public base URL for public-read buckets (e.g. https://minio.example.com) */
+  /** Public base URL for public-read buckets (e.g. https://s3.example.com) */
   publicBaseUrl: z.string().url().optional(),
   /** TTL in seconds for presigned PUT URLs */
   presignedPutTtl: z.number().int().min(60).max(86400).default(3600),
@@ -91,12 +91,12 @@ export const minioStorageConfigSchema = z.object({
   presignedGetTtl: z.number().int().min(60).max(86400).default(3600),
 });
 
-export type MinioStorageConfig = z.infer<typeof minioStorageConfigSchema>;
+export type S3StorageConfig = z.infer<typeof s3StorageConfigSchema>;
 
 /**
  * Schema per tipo di storage (estensibile per futuri provider)
  */
-export const storageTypeSchema = z.enum(['local', 'minio']);
+export const storageTypeSchema = z.enum(['local', 's3']);
 
 /**
  * Tipo per identificare il provider di storage

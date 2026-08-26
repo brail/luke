@@ -3,7 +3,7 @@
  *
  * Endpoints:
  *  - GET  /uploads/:bucket/*          — Authenticated asset proxy; streams from the active provider
- *                                       (works with both local FS and MinIO).
+ *                                       (works with both local FS and S3-compatible storage).
  *  - POST /storage/upload/:uploadId   — Authenticated multipart upload to `uploads`, `exports`,
  *                                       or `assets` buckets. Bucket-level RBAC enforced.
  *  - GET  /storage/download?token=..  — Download via HMAC-signed token; no session required.
@@ -45,9 +45,9 @@ export async function storagePlugin(
 
   /**
    * GET /uploads/:bucket/*
-   * Authenticated proxy for storage assets — works with both the local provider and MinIO.
+   * Authenticated proxy for storage assets — works with both the local provider and S3-compatible storage.
    * Authentication happens in the Next.js route handler; this route is internal-only.
-   * Replaces the old fastify-static: works for any provider (local/MinIO).
+   * Replaces the old fastify-static: works for any provider (local/S3).
    */
   fastify.get<{
     Params: { bucket: string; '*': string };

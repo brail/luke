@@ -287,44 +287,44 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       value: 'true',
       encrypt: false,
     },
-    // Storage — MinIO defaults (used when storage.type = 'minio')
+    // Storage — S3-compatible defaults (used when storage.type = 's3'); dev stack runs SeaweedFS
     {
-      key: 'storage.minio.endpoint',
-      value: 'minio',
+      key: 'storage.s3.endpoint',
+      value: 'seaweedfs',
       encrypt: false,
     },
     {
-      key: 'storage.minio.port',
-      value: '9000',
+      key: 'storage.s3.port',
+      value: '8333',
       encrypt: false,
     },
     {
-      key: 'storage.minio.useSSL',
+      key: 'storage.s3.useSSL',
       value: 'false',
       encrypt: false,
     },
     {
-      key: 'storage.minio.accessKey',
-      value: 'minioadmin',
+      key: 'storage.s3.accessKey',
+      value: 's3admin',
       encrypt: true,
     },
     {
-      key: 'storage.minio.secretKey',
-      value: 'minioadmin',
+      key: 'storage.s3.secretKey',
+      value: 's3adminpwd',
       encrypt: true,
     },
     {
-      key: 'storage.minio.region',
+      key: 'storage.s3.region',
       value: 'us-east-1',
       encrypt: false,
     },
     {
-      key: 'storage.minio.presignedPutTtl',
+      key: 'storage.s3.presignedPutTtl',
       value: '3600',
       encrypt: false,
     },
     {
-      key: 'storage.minio.presignedGetTtl',
+      key: 'storage.s3.presignedGetTtl',
       value: '3600',
       encrypt: false,
     },

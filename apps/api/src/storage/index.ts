@@ -1,7 +1,7 @@
 /**
  * Storage service layer — factory and high-level file management functions.
  *
- * Instantiates the active storage provider (local FS or MinIO) from AppConfig,
+ * Instantiates the active storage provider (local FS or S3-compatible) from AppConfig,
  * then exposes provider-agnostic operations that combine provider I/O with
  * FileObject DB persistence and audit logging.
  */
@@ -14,7 +14,7 @@ import { Readable } from 'stream';
 
 import {
   localStorageConfigSchema,
-  minioStorageConfigSchema,
+  s3StorageConfigSchema,
   sanitizeFileName,
   type IStorageProvider,
   type StorageBucket,
@@ -26,7 +26,7 @@ import { getConfig } from '../lib/configManager';
 
 
 import { LocalFsProvider } from './providers/local';
-import { MinioProvider } from './providers/minio';
+import { S3Provider } from './providers/s3';
 
 import type { Context } from '../lib/trpc';
 import type { Prisma, PrismaClient } from '@prisma/client';
@@ -84,37 +84,37 @@ export async function loadLocalProvider(prisma: PrismaClient): Promise<LocalFsPr
 }
 
 /**
- * Instantiates a MinioProvider configured from AppConfig values.
+ * Instantiates an S3Provider configured from AppConfig values.
  *
- * @returns Initialized MinioProvider ready for use.
+ * @returns Initialized S3Provider ready for use.
  */
-export async function loadMinioProvider(prisma: PrismaClient): Promise<MinioProvider> {
+export async function loadS3Provider(prisma: PrismaClient): Promise<S3Provider> {
   const [endpoint, portStr, useSslStr, accessKey, secretKey, region, publicBaseUrl, putTtlStr, getTtlStr] =
     await Promise.all([
-      getConfig(prisma, 'storage.minio.endpoint', false),
-      getConfig(prisma, 'storage.minio.port', false),
-      getConfig(prisma, 'storage.minio.useSSL', false),
-      getConfig(prisma, 'storage.minio.accessKey', true),
-      getConfig(prisma, 'storage.minio.secretKey', true),
-      getConfig(prisma, 'storage.minio.region', false),
-      getConfig(prisma, 'storage.minio.publicBaseUrl', false),
-      getConfig(prisma, 'storage.minio.presignedPutTtl', false),
-      getConfig(prisma, 'storage.minio.presignedGetTtl', false),
+      getConfig(prisma, 'storage.s3.endpoint', false),
+      getConfig(prisma, 'storage.s3.port', false),
+      getConfig(prisma, 'storage.s3.useSSL', false),
+      getConfig(prisma, 'storage.s3.accessKey', true),
+      getConfig(prisma, 'storage.s3.secretKey', true),
+      getConfig(prisma, 'storage.s3.region', false),
+      getConfig(prisma, 'storage.s3.publicBaseUrl', false),
+      getConfig(prisma, 'storage.s3.presignedPutTtl', false),
+      getConfig(prisma, 'storage.s3.presignedGetTtl', false),
     ]);
 
-  const config = minioStorageConfigSchema.parse({
+  const config = s3StorageConfigSchema.parse({
     endpoint: endpoint || 'localhost',
-    port: parseInt(portStr || '9000', 10),
+    port: parseInt(portStr || '8333', 10),
     useSSL: useSslStr === 'true',
-    accessKey: accessKey || 'minioadmin',
-    secretKey: secretKey || 'minioadmin',
+    accessKey: accessKey || 's3admin',
+    secretKey: secretKey || 's3adminpwd',
     region: region || 'us-east-1',
     publicBaseUrl: publicBaseUrl || undefined,
     presignedPutTtl: parseInt(putTtlStr || '3600', 10),
     presignedGetTtl: parseInt(getTtlStr || '3600', 10),
   });
 
-  const provider = new MinioProvider(config);
+  const provider = new S3Provider(config);
   await provider.init();
   return provider;
 }
@@ -125,7 +125,7 @@ export async function loadMinioProvider(prisma: PrismaClient): Promise<MinioProv
  * Concurrent callers during initialization await the same promise to avoid
  * creating multiple provider instances.
  *
- * @returns The active IStorageProvider (local FS or MinIO).
+ * @returns The active IStorageProvider (local FS or S3-compatible).
  */
 export async function getStorageProvider(
   prisma: PrismaClient
@@ -139,8 +139,8 @@ export async function getStorageProvider(
       const storageType = (await getConfig(prisma, 'storage.type', false)) || 'local';
 
       let provider: IStorageProvider;
-      if (storageType === 'minio') {
-        provider = await loadMinioProvider(prisma);
+      if (storageType === 's3') {
+        provider = await loadS3Provider(prisma);
       } else {
         provider = await loadLocalProvider(prisma);
       }

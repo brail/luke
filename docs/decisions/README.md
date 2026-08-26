@@ -14,6 +14,7 @@
 | [009](009-tokenversion-session-invalidation.md) | TokenVersion Multi-Layer Session Invalidation | Potentially stale — review needed |
 | [010](010-section-access-precedence.md) | Section Access a 4 Layer di Precedenza | Accepted |
 | [011](011-single-instance-scaling-constraint.md) | Vincolo Single-Instance e Stato Process-Local | Accepted |
+| [012](012-generic-s3-storage-provider.md) | Provider Storage S3 Generico (rename da MinIO) + Swap a SeaweedFS | Accepted |
 
-*Ultimo aggiornamento: 2026-08-08*
+*Ultimo aggiornamento: 2026-08-25*
 <!-- luke-docs:end:adr-index -->

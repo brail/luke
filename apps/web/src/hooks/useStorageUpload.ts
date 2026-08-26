@@ -45,7 +45,7 @@ export interface UseStorageUploadReturn {
 
 /**
  * Uploads a file to storage, picking the transport based on what
- * `storage.requestUpload` responds with: a direct presigned PUT (MinIO) when
+ * `storage.requestUpload` responds with: a direct presigned PUT (S3) when
  * `req.method === 'presigned'`, otherwise a multipart POST to `fallbackProxyUrl`
  * (local proxy mode).
  *
@@ -74,7 +74,7 @@ export function useStorageUpload(options: UseStorageUploadOptions = {}): UseStor
       });
 
       if (req.method === 'presigned' && req.presignedUrl && req.key && req.uploadToken) {
-        // MinIO path: PUT directly to presigned URL
+        // S3 path: PUT directly to presigned URL
         setProgress(20);
         const putRes = await fetch(req.presignedUrl, {
           method: 'PUT',

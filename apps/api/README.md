@@ -177,7 +177,7 @@ Vedi `src/lib/config.ts` per dettagli.
 | `integrations.auth.*` | Configurazione e test connessione LDAP |
 | `integrations.mail.*` | Configurazione SMTP e invio email di test |
 | `integrations.nav.*` | Configurazione NAV, trigger sync manuale, log sync |
-| `integrations.storage.*` | Configurazione provider storage (locale / MinIO) |
+| `integrations.storage.*` | Configurazione provider storage (locale / S3) |
 | `maintenance.backup.*` | Backup/restore del database applicativo |
 | `maintenance.mode.*` | Modalità manutenzione (lock scrittura, banner utenti) |
 | `me.*` | Profilo utente corrente, sessioni attive, revoca sessioni |
@@ -255,7 +255,7 @@ Trigger sync: manuale via `/settings/nav-sync` nel frontend (Vendor/Brand/Season
 ## Storage
 
 <!-- luke-docs:start:storage -->
-Il layer storage è astratto da `IStorageProvider` (da `@luke/core`). Il provider attivo è selezionato da `storage.type` in AppConfig — `local` o `minio` — senza env var né ricompilazione.
+Il layer storage è astratto da `IStorageProvider` (da `@luke/core`). Il provider attivo è selezionato da `storage.type` in AppConfig — `local` o `s3` — senza env var né ricompilazione.
 
 **Upload a due fasi**: il file è caricato come `FileObject` pending (`confirmedAt = null`); la conferma avviene nella stessa transaction Prisma che crea l'entità. File pending abbandonati sono rimossi dal job di cleanup periodico.
 

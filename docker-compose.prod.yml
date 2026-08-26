@@ -9,8 +9,8 @@
 #   NEXTAUTH_SECRET        — random string (openssl rand -base64 32)
 #   PUBLIC_HOSTNAME        — public hostname, e.g. luke.example.com
 #   COOKIE_SECURE          — "true" if behind HTTPS, "false" if plain HTTP
-#   MINIO_ROOT_USER        — MinIO admin username
-#   MINIO_ROOT_PASSWORD    — MinIO admin password (strong, 32+ chars)
+#   S3_ROOT_USER           — S3 storage admin username
+#   S3_ROOT_PASSWORD       — S3 storage admin password (strong, 32+ chars)
 #
 # To deploy a specific version instead of latest, change image tags to e.g.:
 #   image: ghcr.io/brail/luke-api:1.2.3
@@ -93,18 +93,19 @@ services:
         max-size: "10m"
         max-file: "5"
 
-  # ── MinIO object storage ─────────────────────────────────────────────────────
-  minio:
-    image: minio/minio:latest
+  # ── SeaweedFS object storage (S3-compatible) ──────────────────────────────────
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
     restart: unless-stopped
-    command: server /data --console-address ":9001"
+    entrypoint: ["/bin/sh", "/docker-entrypoint.sh"]
     environment:
-      MINIO_ROOT_USER:     ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      S3_ROOT_USER:     ${S3_ROOT_USER}
+      S3_ROOT_PASSWORD: ${S3_ROOT_PASSWORD}
     volumes:
-      - minio_data:/data
+      - ./docker/seaweedfs/entrypoint.sh:/docker-entrypoint.sh:ro
+      - seaweedfs_data:/data
     healthcheck:
-      test: ['CMD-SHELL', 'curl -f http://localhost:9000/minio/health/live || exit 1']
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9333/cluster/status"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -115,43 +116,7 @@ services:
         max-size: "10m"
         max-file: "5"
 
-  minio-init:
-    image: minio/mc:latest
-    depends_on:
-      minio:
-        condition: service_healthy
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    entrypoint: >
-      /bin/sh -c "
-        mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} &&
-        mc mb --ignore-existing local/uploads &&
-        mc mb --ignore-existing local/exports &&
-        mc mb --ignore-existing local/assets &&
-        mc mb --ignore-existing local/brand-logos &&
-        mc mb --ignore-existing local/temp-brand-logos &&
-        mc mb --ignore-existing local/collection-row-pictures &&
-        mc mb --ignore-existing local/temp-collection-row-pictures &&
-        mc mb --ignore-existing local/merchandising-specsheet-images &&
-        mc mb --ignore-existing local/temp-merchandising-specsheet-images &&
-        mc mb --ignore-existing local/company-assets &&
-        mc anonymous set download local/brand-logos &&
-        mc anonymous set download local/collection-row-pictures &&
-        mc anonymous set download local/merchandising-specsheet-images &&
-        mc anonymous set download local/company-assets &&
-        mc ilm rule add --expire-days 1 local/temp-brand-logos &&
-        mc ilm rule add --expire-days 1 local/temp-collection-row-pictures &&
-        mc ilm rule add --expire-days 1 local/temp-merchandising-specsheet-images
-      "
-    restart: on-failure
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "5"
-
 volumes:
   postgres_data:
   api_data:
-  minio_data:
+  seaweedfs_data:

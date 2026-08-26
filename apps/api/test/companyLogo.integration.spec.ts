@@ -87,7 +87,7 @@ describe('company.profile.update — logo', () => {
   it('rifiuta un file già confermato', async () => {
     // Pins down the fact that `confirmUpload` creates pending: if someone
     // "fixed" it by going back to immediate confirmation, every upload in
-    // MinIO mode would stop linking, and this test would say so.
+    // S3 mode would stop linking, and this test would say so.
     const file = await seedFile({ confirmedAt: new Date() });
 
     await expect(

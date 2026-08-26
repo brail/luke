@@ -95,7 +95,7 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   integrations: {
     reason:
-      'solo saveLdapConfig; tutto il resto parla con sistemi esterni reali (NAV via mssql, Google OAuth, SMTP, MinIO) e serve un layer di fake prima di poter testare',
+      'solo saveLdapConfig; tutto il resto parla con sistemi esterni reali (NAV via mssql, Google OAuth, SMTP, storage S3) e serve un layer di fake prima di poter testare',
     uncovered: 27,
   },
 

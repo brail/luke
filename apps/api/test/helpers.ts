@@ -331,5 +331,6 @@ export {
   createTestFile,
   createValidPngBuffer,
   createValidJpegBuffer,
+  createValidWebpBuffer,
   createInvalidImageBuffer,
 } from './helpers/storageTestHelper';

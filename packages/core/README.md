@@ -61,7 +61,7 @@ Pacchetto condiviso del monorepo Luke: contiene tutti gli schemi Zod, i tipi Typ
 
 | Simbolo | Tipo | Descrizione |
 |---------|------|-------------|
-| `IStorageProvider` | interfaccia | Contratto per i provider storage (locale / MinIO) |
+| `IStorageProvider` | interfaccia | Contratto per i provider storage (locale / S3-compatible) |
 | `localStorageConfigSchema` | schema | Configurazione provider storage locale |
 | `VALID_BUCKETS` | costante | Bucket validi: `uploads`, `exports`, `assets`, `brand-logos`, `collection-row-pictures`, `collection-row-pictures-revisions`, `merchandising-specsheet-images`, `company-assets` |
 

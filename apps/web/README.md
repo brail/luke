@@ -27,7 +27,7 @@ Gruppo autenticato `(app)/`:
 - `/settings/users` — Gestione utenti e ruoli
 - `/settings/mail` — Configurazione SMTP con test email
 - `/settings/ldap` — Autenticazione LDAP enterprise con test connessione
-- `/settings/storage` — Provider storage (locale / MinIO)
+- `/settings/storage` — Provider storage (locale / S3)
 - `/settings/nav` — Connessione SQL Server NAV
 - `/settings/nav-sync` — Controllo e log sincronizzazione NAV
 - `/settings/google` — Integrazione Google Calendar (flusso OAuth 2.0)
