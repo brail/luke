@@ -38,9 +38,10 @@ in CI.
 | **Smoke E2E**   | `apps/web/tests/smoke/*.smoke.spec.ts`                  | `apps/web/playwright.config.ts`         |
 
 Membership is **the file name**, not a list. There used to be a hand-written
-list (`test/integration-specs.ts`), removed: a list has an asymmetric
-failure mode <!-- skill-check-ignore --> — a missing entry is noticed right away, but a stale
-entry after a rename isn't, and a suite can silently drop out of the run.
+list (`test/integration-specs.ts` <!-- skill-check-ignore -->), removed: a
+list has an asymmetric failure mode — a missing entry is noticed right away,
+but a stale entry after a rename isn't, and a suite can silently drop out of
+the run.
 
 Choice rule: **does it need a real Prisma table?**
 
