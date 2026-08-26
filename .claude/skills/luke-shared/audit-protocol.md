@@ -153,6 +153,12 @@ used as a checklist:
 3. If a lesson is expressible as a semgrep/eslint rule and isn't yet, include
    it in the "Promotion to rule" section (§3).
 
+`lessons-archive.md` (also at the root) holds lessons already fully covered
+by a deterministic check — do **not** read it here. Reading it on every run
+would defeat its purpose: it exists precisely so that a lesson a machine
+already blocks on every push stops costing tokens on every audit too. See
+its own header for the archival policy.
+
 A lesson nobody checks is documentation, not a control.
 
 ---

@@ -123,7 +123,7 @@ model CollectionLayout {
 - `// TODO:`, `// FIXME:`, `// HACK:` — preserve as-is
 - Blocks of commented-out code — do NOT remove; add
   `// luke-docs:flag stale-commented-code` above for manual review
-- Any comment in `.planning/`, `CLAUDE.md`, `lessons.md`
+- Any comment in `.planning/`, `CLAUDE.md`, `lessons.md`, `lessons-archive.md`
 - Comments explaining the **why** of a decision (architectural rationale) —
   these are worth more than comments explaining the _what_
 - Commented-out imports used as a quick reference during development (but flag them)

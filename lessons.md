@@ -7,6 +7,15 @@ gets corrected, it adds a rule here to avoid repeating the mistake
 Format: `## <rule in one line>` under the right category, with context,
 root cause and fix. New categories allowed when needed.
 
+**Archival policy**: once a lesson becomes fully covered by a deterministic
+check (an ESLint/semgrep rule, or a blocking CI/pre-push script — control
+hierarchy level 1-2 in `.claude/skills/luke-shared/audit-protocol.md` §3),
+trim it here to one line: `### <one line> — enforced by <mechanism>. See
+lessons-archive.md.` and move the full narrative to `lessons-archive.md`,
+which the `luke-*` audit skills don't read. This file is read in full on
+every audit run (§4 of the protocol); a lesson a machine already blocks on
+every push shouldn't also cost tokens on every audit.
+
 ---
 
 ## TypeScript & Next.js
@@ -24,37 +33,7 @@ redirect('/app/dashboard' as Route);
 
 Never `as any` — violates strict mode. Pattern already used in `NotificationDropdown.tsx`.
 
-### Bare `crypto.randomUUID()` in a client component crashes outside a secure context
-
-`settings/collection-control/page.tsx` called `crypto.randomUUID()` directly
-to generate React keys for `BandSetEditor`. In production, on a host reached
-over plain HTTP (not HTTPS/localhost), the Web Crypto API doesn't expose
-`randomUUID` — `TypeError: crypto.randomUUID is not a function`, the whole
-page replaced by the `app/error.tsx` error boundary. The correct pattern
-already existed in two places in the repo (`lib/trpc.tsx`,
-`CollectionRowDrawer.tsx`) but hadn't been applied here: known bug, known
-fix, simply not reused.
-
-Fixed in place with the fallback already used elsewhere:
-
-```ts
-crypto.randomUUID?.() || Math.random().toString(36).substring(2) + Date.now().toString(36)
-```
-
-but an inline fix doesn't prevent recurrence — explicitly asked to
-**promote to a rule** instead of just patching the file. Created
-`@luke/no-bare-client-random-uuid` in `packages/eslint-plugin-luke/rules/`:
-flags non-optional `crypto.randomUUID()` in any file with a `'use client'`
-directive at the top (Server Components run in Node, where the API is
-always available — the rule ignores them by construction, checking
-`Program.body[0]`). Wired into `eslint.config.mjs` scoped to
-`apps/web/src/**`, error level.
-
-**Rule**: a runtime bug caused by an API the code uses in exactly one place
-"by mistake" while it's already handled correctly elsewhere must be closed
-with an enforced ESLint rule, not just a fix at the call site — the next
-bare `crypto.randomUUID()` must be blocked at commit time, not discovered in
-production from a generic error with no stack trace visible to the user.
+### Bare `crypto.randomUUID()` in a client component — enforced by ESLint `@luke/no-bare-client-random-uuid` (error, `apps/web/src/**`). See `lessons-archive.md`.
 
 ---
 
@@ -312,26 +291,7 @@ doesn't match `/`:
    `git check-ignore -q <file>` — 0 = ignored, 1 = trackable.
 3. Final cross-check: `git add -An <dir>` lists exactly what would be staged.
 
-### A skill with `agent: Explore` cannot invoke subagents
-
-`luke-audit`, `luke-bugs` and `luke-security` declared `agent: Explore` and
-contained "Run 3 agents in parallel" with three detailed briefs. The Explore
-agent has every tool **except** Agent: the fan-out never happened, and
-silently degraded to a single pass. No error, no signal — just reports
-produced in a way different from what was declared, for months.
-
-The fix isn't switching to `agent: general-purpose`: those skills are
-read-only, and today the constraint is guaranteed by the agent type, which
-has no write tools. Unlocking subagents would have handed them Write and
-Edit, downgrading a structural invariant to a prose instruction.
-
-**Rules**:
-
-1. Before writing orchestration instructions in a skill, verify the
-   declared agent type has the Agent tool.
-2. Verified by `tools/scripts/check-skill-integrity.ts`, blocking in CI.
-3. Applies in general: an instruction the runtime can't execute doesn't
-   fail, it gets ignored. It's the most silent form of inert control.
+### A skill with `agent: Explore` cannot invoke subagents — enforced by `tools/scripts/check-skill-integrity.ts` (blocking in CI/pre-push). See `lessons-archive.md`.
 
 ### A test that starts from a sub-router skips composition
 

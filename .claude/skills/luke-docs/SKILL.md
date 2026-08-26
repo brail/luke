@@ -50,7 +50,7 @@ concurrent sessions — you write files, so §7.2 applies to you.
 6. **No placeholders** — never `TBD`, `TODO`, `…`, `{to be filled in}` in
    generated text. If information is missing: omit the section and flag it
    in the report.
-7. **Never touch**: `.planning/`, `CLAUDE.md`, `lessons.md`.
+7. **Never touch**: `.planning/`, `CLAUDE.md`, `lessons.md`, `lessons-archive.md`.
 8. **Always a final report** — files created/updated/unchanged + symbols
    documented + flagged issues.
 9. **Commit suggestion** at the end: `docs: update readme tree, inline comments and adr validation [luke-docs]`
