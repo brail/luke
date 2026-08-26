@@ -24,6 +24,7 @@ services:
     ports:
       - "8333:8333"  # S3 API
       - "9333:9333"  # Master (cluster status / healthcheck; dev-only convenience)
+      - "8888:8888"  # Filer UI (browse buckets/files; dev-only convenience)
     volumes:
       - ./docker/seaweedfs/entrypoint.sh:/docker-entrypoint.sh:ro
       - seaweedfs_dev_data:/data
