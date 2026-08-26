@@ -16,18 +16,18 @@ agent: Explore
 Read-only. Do NOT modify any file.
 Every finding needs a concrete attack scenario — no theoretical issues.
 
-**Leggi per primo `.claude/skills/luke-shared/audit-protocol.md`** e applicalo
-integralmente: scoping sul diff (§1), soppressione via baseline (§2), sezione
-obbligatoria "Promozione a regola" (§3), `lessons.md` come input di check (§4).
+**Read `.claude/skills/luke-shared/audit-protocol.md` first** and apply it in
+full: diff scoping (§1), baseline suppression (§2), the mandatory "Promotion
+to rule" section (§3), `lessons.md` as a check input (§4).
 
-Scope: risolvilo secondo §1 del protocollo condiviso — `$ARGUMENTS` vuoto significa
-**diff vs merge-base**, non intero monorepo.
+Scope: resolve it per §1 of the shared protocol — empty `$ARGUMENTS` means
+**diff vs merge-base**, not the whole monorepo.
 
-Eccezione allo scoping: i controlli su autenticazione, sessione e gestione dei
-token vanno valutati **sempre a livello di sistema**, anche quando il diff non li
-tocca. Un bypass nasce spesso dall'interazione fra codice nuovo e un controllo
-esistente altrove: qui limitare la lettura al diff nasconde proprio la classe di
-problemi che questa skill cerca.
+Exception to scoping: authentication, session, and token-handling checks must
+always be evaluated **at the system level**, even when the diff doesn't touch
+them. A bypass often arises from the interaction between new code and an
+existing control elsewhere — limiting the read to the diff here would hide
+exactly the class of problems this skill looks for.
 
 ---
 
@@ -42,9 +42,9 @@ If either plugin is not installed, note it in the report and continue.
 
 ---
 
-## Phase 2 — Aree di controllo
+## Phase 2 — Check Areas
 
-Tre aree, un passaggio solo. Vedi la nota sul fan-out in `../luke-shared/audit-protocol.md` §6.
+Three areas, one single pass. See the fan-out note in `../luke-shared/audit-protocol.md` §6.
 
 ### 1 — Authentication, Session & Token Security
 
@@ -116,10 +116,10 @@ Fix:
 \`\`\`typescript
 // proposed fix
 \`\`\`
-Test di regressione: <file di destinazione + asserzione chiave>
+Regression test: <target file + key assertion>
 
-### Promozione a regola
-<sezione obbligatoria — vedi §3 del protocollo condiviso>
+### Promotion to rule
+<mandatory section — see §3 of the shared protocol>
 ```
 
 ### Rules

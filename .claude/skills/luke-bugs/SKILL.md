@@ -17,33 +17,33 @@ Find real runtime and logic bugs — not style issues, not architectural drift
 (that's /luke-audit's job). Every finding must be a plausible runtime failure,
 data corruption, or security issue with a realistic failure scenario.
 
-**Leggi per primo `.claude/skills/luke-shared/audit-protocol.md`** e applicalo
-integralmente: scoping sul diff (§1), soppressione via baseline (§2), sezione
-obbligatoria "Promozione a regola" (§3), `lessons.md` come input di check (§4).
+**Read `.claude/skills/luke-shared/audit-protocol.md` first** and apply it in
+full: diff scoping (§1), baseline suppression (§2), the mandatory "Promotion
+to rule" section (§3), `lessons.md` as a check input (§4).
 
-Poi leggi:
+Then read:
 
 - `apps/api/prisma/schema.prisma` — understand models and relations
 - `packages/core/src/auth/permissions.ts` — permission model
 - `apps/api/src/lib/` — middleware: requirePermission, auditLog, context
-- `lessons.md` — regressioni già pagate, da riverificare ad ogni run
+- `lessons.md` — regressions already paid for, to re-check on every run
 
-Scope: risolvilo secondo §1 del protocollo condiviso — `$ARGUMENTS` vuoto significa
-**diff vs merge-base**, non intero monorepo.
+Scope: resolve it per §1 of the shared protocol — empty `$ARGUMENTS` means
+**diff vs merge-base**, not the whole monorepo.
 
-## Un bug riproducibile diventa un test
+## A reproducible bug becomes a test
 
-Per ogni finding CRITICAL o HIGH, includi nel fix il test che la coprirebbe
-(descrizione, file di destinazione, asserzione chiave). Un bug corretto senza test
-è un bug che può tornare: è la stessa gerarchia dei controlli del §3 del protocollo,
-applicata al comportamento invece che alla sintassi. Se il progetto ha già la suite
-adatta, indica il file; altrimenti indica dove andrebbe creata.
+For every CRITICAL or HIGH finding, include in the fix the test that would
+cover it (description, target file, key assertion). A bug fixed without a
+test is a bug that can come back: it's the same control hierarchy from §3 of
+the protocol, applied to behavior instead of syntax. If the project already
+has a suitable suite, name the file; otherwise say where it should be created.
 
 ---
 
-## Aree di controllo
+## Check Areas
 
-Tre aree, un passaggio solo. Vedi la nota sul fan-out in `../luke-shared/audit-protocol.md` §6.
+Three areas, one single pass. See the fan-out note in `../luke-shared/audit-protocol.md` §6.
 
 ### 1 — Race Conditions, Async & Database
 
@@ -157,10 +157,10 @@ Fix:
 \`\`\`typescript
 // proposed fix
 \`\`\`
-Test di regressione: <file di destinazione + asserzione chiave>
+Regression test: <target file + key assertion>
 
-### Promozione a regola
-<sezione obbligatoria — vedi §3 del protocollo condiviso>
+### Promotion to rule
+<mandatory section — see §3 of the shared protocol>
 ```
 
 ### Rules

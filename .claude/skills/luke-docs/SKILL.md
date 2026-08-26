@@ -13,156 +13,161 @@ context: fork
 agent: general-purpose
 ---
 
-# Luke Docs — Generatore e manutentore di documentazione
+# Luke Docs — Documentation generator and maintainer
 
-Tre modalità:
+Three modes:
 
-| Modalità | Cosa fa                                                                                          | Riferimento dettagli             |
-| -------- | ------------------------------------------------------------------------------------------------ | -------------------------------- |
-| `readme` | Crea/aggiorna i `README.md` a ogni livello (root, `apps/*`, `packages/*`, `docs/`)               | `references/readme-templates.md` |
-| `inline` | Normalizza i commenti nel sorgente: JSDoc su export TS, commenti tRPC, field docs Prisma (`///`) | `references/inline-rules.md`     |
-| `adr`    | Valida gli ADR in `docs/decisions/` contro la codebase, aggiorna gli Status, mantiene l'indice   | `references/adr-rules.md`        |
+| Mode     | What it does                                                                                       | Details reference                |
+| -------- | ---------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `readme` | Creates/updates the `README.md` files at every level (root, `apps/*`, `packages/*`, `docs/`)         | `references/readme-templates.md` |
+| `inline` | Normalizes source-code comments: JSDoc on TS exports, tRPC comments, Prisma field docs (`///`)       | `references/inline-rules.md`     |
+| `adr`    | Validates the ADRs in `docs/decisions/` against the codebase, updates Status, maintains the index    | `references/adr-rules.md`        |
 
-Nessuna modalità in $ARGUMENTS → esegui `readme` → `inline` → `adr` in sequenza, report combinato.
+No mode in $ARGUMENTS → run `readme` → `inline` → `adr` in sequence, combined report.
 
-**Prima di eseguire una modalità, leggi il suo file in `references/`** — contiene
-template, logica di merge e checklist qualità obbligatorie.
+**Before running a mode, read its file in `references/`** — it contains
+templates, merge logic, and mandatory quality checklists.
 
-**Leggi anche `.claude/skills/luke-shared/audit-protocol.md`** e applica le sezioni
-che la sua tabella di applicabilità assegna a `/luke-docs`: §1 scoping e §7 sessioni
-concorrenti — scrivi file, quindi §7.2 ti riguarda.
-
----
-
-## Regole obbligatorie (precedono tutto il resto)
-
-1. **Read before write** — mai generare contenuto per un file senza averlo letto prima.
-2. **No SQL, no migrations, no test runner** — `schema.prisma` si legge come testo;
-   mai `prisma migrate/generate`, `pnpm db:*`, `pnpm test`.
-3. **Parallel agents: max 3** simultanei.
-4. **Preserva i marker** — mai sovrascrivere contenuto fuori dai marker `luke-docs:start/end`.
-   L'integrità dei marker e la risoluzione dei link interni **non** si verificano
-   qui: le controlla `tools/scripts/check-docs-integrity.ts`, bloccante in CI.
-   Sono parsing puro, e un parsing affidato a un LLM è un controllo di livello 4
-   dove ne basta uno di livello 2.
-5. **Dry-run** — con `--dry-run`, stampa il piano senza scrivere alcun file.
-6. **No placeholder** — mai `TBD`, `TODO`, `…`, `{da compilare}` nel testo generato.
-   Se manca informazione: ometti la sezione e segnalala nel report.
-7. **Non toccare mai**: `.planning/`, `CLAUDE.md`, `lessons.md`.
-8. **Report finale sempre** — file creati/aggiornati/invariati + simboli documentati + issue flaggate.
-9. **Commit suggestion** al termine: `docs: update readme tree, inline comments and adr validation [luke-docs]`
-
-## Lingua
-
-| Contesto                                             | Lingua       |
-| ---------------------------------------------------- | ------------ |
-| Commenti inline (JSDoc, tRPC `/** */`, Prisma `///`) | **Inglese**  |
-| README.md (tutti i livelli) e ADR                    | **Italiano** |
-
-Nessuna eccezione per termini di dominio italiani (es. "stagione"→season,
-"campionario"→collection/catalog, "reso"→return): tradurre sempre, anche nei
-commenti inline. Vedi CLAUDE.md, sezione Development Patterns, regola 14.
+**Also read `.claude/skills/luke-shared/audit-protocol.md`** and apply the
+sections its applicability table assigns to `/luke-docs`: §1 scoping and §7
+concurrent sessions — you write files, so §7.2 applies to you.
 
 ---
 
-## Flag `--since <git-ref>` (opzionale)
+## Mandatory rules (take precedence over everything else)
 
-Limita il lavoro ai soli file modificati rispetto al ref. Prima di Phase 1:
+1. **Read before write** — never generate content for a file without having
+   read it first.
+2. **No SQL, no migrations, no test runner** — `schema.prisma` is read as
+   text; never `prisma migrate/generate`, `pnpm db:*`, `pnpm test`.
+3. **Parallel agents: max 3** simultaneously.
+4. **Preserve markers** — never overwrite content outside the
+   `luke-docs:start/end` markers. Marker integrity and internal-link
+   resolution are **not** verified here: `tools/scripts/check-docs-integrity.ts`
+   checks them, blocking in CI. It's pure parsing, and parsing entrusted to an
+   LLM is a level-4 control where a level-2 one is enough.
+5. **Dry-run** — with `--dry-run`, print the plan without writing any file.
+6. **No placeholders** — never `TBD`, `TODO`, `…`, `{to be filled in}` in
+   generated text. If information is missing: omit the section and flag it
+   in the report.
+7. **Never touch**: `.planning/`, `CLAUDE.md`, `lessons.md`.
+8. **Always a final report** — files created/updated/unchanged + symbols
+   documented + flagged issues.
+9. **Commit suggestion** at the end: `docs: update readme tree, inline comments and adr validation [luke-docs]`
+
+## Language
+
+| Context                                                | Language     |
+| -------------------------------------------------------- | ------------- |
+| Inline comments (JSDoc, tRPC `/** */`, Prisma `///`)      | **English**  |
+| README.md (all levels) and ADRs                          | **Italian**  |
+
+No exception for Italian domain terms (e.g. "stagione"→season,
+"campionario"→collection/catalog, "reso"→return): always translate, even in
+inline comments. See CLAUDE.md, Development Patterns section, rule 14.
+
+---
+
+## `--since <git-ref>` flag (optional)
+
+Limits the work to only the files changed relative to the ref. Before Phase 1:
 
 ```bash
 git diff --name-only <git-ref> HEAD
 ```
 
-- `inline`: processa solo i `.ts` / `.prisma` nel diff
-- `readme`: rigenera il README di un workspace solo se almeno un suo file è nel diff,
-  oppure se il README non esiste ancora
-- `adr`: rivalida solo gli ADR le cui affermazioni referenziano file nel diff;
-  rigenera sempre l'indice
+- `inline`: only process `.ts` / `.prisma` files in the diff
+- `readme`: regenerate a workspace's README only if at least one of its files
+  is in the diff, or if the README doesn't exist yet
+- `adr`: only revalidate ADRs whose statements reference files in the diff;
+  always regenerate the index
 
-Lista vuota → termina: `Nessun file rilevante modificato rispetto a <git-ref>. Nulla da fare.`
-
----
-
-## Modalità `readme`
-
-**Phase 1 — Explore (obbligatoria).** Leggi in ordine:
-
-1. `package.json` root (workspaces, scripts, engines) + `turbo.json`
-2. Per ogni workspace: `package.json`, `src/index.ts(x)`, `README.md` esistente
-3. `.env.production.example` + policy env in `CLAUDE.md` — catalogo variabili d'ambiente
-   (l'enforcement è `assertEnvPolicy()` in `apps/api/src/server.ts`)
-4. `apps/api/prisma/schema.prisma` — solo i nomi dei model
-5. `apps/api/src/routers/` — elenco file router (nomi, non contenuto)
-6. `apps/web/src/app/` — albero directory a 2 livelli
-7. `docs/` — elenco ricorsivo dei `.md` (titoli H1, path)
-8. `.planning/ROADMAP.md` — solo per capire la direzione (non riprodurre)
-
-Costruisci dizionario: `workspace → { name, description, dependents[], envVars[], exports[], scripts[], routerNamespaces[] }`.
-
-**Phase 2 — Genera README** con i template in `references/readme-templates.md`:
-root + apps (max 3 in parallelo) → packages (max 3 in parallelo) → `docs/README.md`.
-
-**Phase 3 — Coerenza semantica:** i package name in "Utilizzato da"/"Dipendenze
-interne" corrispondono ai nomi reali; le sezioni omesse per informazione mancante
-sono segnalate nel report.
-
-La risoluzione dei link e l'integrità dei marker **non** vanno verificate a mano:
-`pnpm check:drift` le controlla in CI. Se fallisce, il link va riparato o
-cancellato — mai aggiunto a una lista di eccezioni, o il checker diventa arredamento.
+Empty list → stop: `No relevant file changed relative to <git-ref>. Nothing to do.`
 
 ---
 
-## Modalità `inline`
+## `readme` mode
 
-**Phase 1 — Audit (obbligatoria).** Costruisci la lista target:
+**Phase 1 — Explore (mandatory).** Read in order:
 
-- `packages/**/src/**/*.ts`: export senza JSDoc, JSDoc driftato, `//` su export pubblici
-- `apps/api/src/routers/**/*.ts`: procedure senza `/** */` o senza input/output/permesso RBAC
-- `apps/api/prisma/schema.prisma`: field e model senza `///`
+1. Root `package.json` (workspaces, scripts, engines) + `turbo.json`
+2. For every workspace: `package.json`, `src/index.ts(x)`, existing `README.md`
+3. `.env.production.example` + env policy in `CLAUDE.md` — env var catalog
+   (enforcement is `assertEnvPolicy()` in `apps/api/src/server.ts`)
+4. `apps/api/prisma/schema.prisma` — model names only
+5. `apps/api/src/routers/` — list of router files (names, not content)
+6. `apps/web/src/app/` — 2-level directory tree
+7. `docs/` — recursive listing of `.md` files (H1 titles, path)
+8. `.planning/ROADMAP.md` — only to understand direction (don't reproduce)
 
-**Phase 2-4 — Scrivi** seguendo template e logica di merge in `references/inline-rules.md`:
-JSDoc packages (max 3 in parallelo) → commenti tRPC (max 3 router in parallelo) → Prisma field docs.
+Build a dictionary: `workspace → { name, description, dependents[], envVars[], exports[], scripts[], routerNamespaces[] }`.
+
+**Phase 2 — Generate README** using the templates in
+`references/readme-templates.md`: root + apps (max 3 in parallel) →
+packages (max 3 in parallel) → `docs/README.md`.
+
+**Phase 3 — Semantic consistency:** package names in "Used by"/"Internal
+dependencies" match the real names; sections omitted for missing information
+are flagged in the report.
+
+Link resolution and marker integrity are **not** to be verified by hand:
+`pnpm check:drift` checks them in CI. If it fails, the link must be fixed or
+removed — never added to an exceptions list, or the checker becomes furniture.
 
 ---
 
-## Modalità `adr`
+## `inline` mode
 
-**Phase 1 — Discover:** leggi i file in `docs/decisions/`; per ciascuno estrai
-titolo, `Status`, affermazioni chiave dalla sezione Decisione.
-Se `docs/decisions/` non esiste: segnala nel report e fermati.
+**Phase 1 — Audit (mandatory).** Build the target list:
 
-**Phase 2 — Valida** contro la codebase (max 3 ADR in parallelo) secondo
-`references/adr-rules.md`. Modifica solo il campo `Status`.
+- `packages/**/src/**/*.ts`: exports without JSDoc, drifted JSDoc, `//` on public exports
+- `apps/api/src/routers/**/*.ts`: procedures without `/** */` or without input/output/RBAC permission
+- `apps/api/prisma/schema.prisma`: fields and models without `///`
 
-**Phase 3 — Rigenera l'indice** `docs/decisions/README.md`.
+**Phase 2-4 — Write** following the templates and merge logic in
+`references/inline-rules.md`: package JSDoc (max 3 in parallel) → tRPC
+comments (max 3 routers in parallel) → Prisma field docs.
 
 ---
 
-## Report finale (formato obbligatorio)
+## `adr` mode
+
+**Phase 1 — Discover:** read the files in `docs/decisions/`; for each one
+extract the title, `Status`, and key statements from the Decision section.
+If `docs/decisions/` doesn't exist: flag it in the report and stop.
+
+**Phase 2 — Validate** against the codebase (max 3 ADRs in parallel) per
+`references/adr-rules.md`. Only modify the `Status` field.
+
+**Phase 3 — Regenerate the index** `docs/decisions/README.md`.
+
+---
+
+## Final report (mandatory format)
 
 ```
 === luke-docs report ===
 
 README:
-  Creati:     N file
-  Aggiornati: N file
-  Invariati:  N file
-  Sezioni omesse (info mancante): [lista]
+  Created:     N files
+  Updated:     N files
+  Unchanged:   N files
+  Sections omitted (missing info): [list]
 
 INLINE:
-  JSDoc aggiunti:   N simboli
-  JSDoc aggiornati: N simboli
-  Commenti tRPC:    N procedure
-  Field Prisma:     N field
-  Flag stale code:  N
+  JSDoc added:      N symbols
+  JSDoc updated:    N symbols
+  tRPC comments:    N procedures
+  Prisma fields:    N fields
+  Flagged stale code: N
 
 ADR:
-  Validati:            N
-  Confermati:          N  (Status invariato)
-  Potentially stale:   N  (lista con dettaglio)
-  Non verificabili:    N
-  Indice aggiornato:   docs/decisions/README.md
+  Validated:           N
+  Confirmed:           N  (Status unchanged)
+  Potentially stale:   N  (list with detail)
+  Not verifiable:      N
+  Index updated:       docs/decisions/README.md
 
-Commit suggerito:
+Suggested commit:
   docs: update readme tree, inline comments and adr validation [luke-docs]
 ```

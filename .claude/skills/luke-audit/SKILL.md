@@ -17,11 +17,11 @@ Read-only. Do NOT modify any file.
 Find violations of the architectural constraints in CLAUDE.md.
 Report findings with proposed fixes — never apply them.
 
-**Leggi per primo `.claude/skills/luke-shared/audit-protocol.md`** e applicalo
-integralmente: scoping sul diff (§1), soppressione via baseline (§2), sezione
-obbligatoria "Promozione a regola" (§3), `lessons.md` come input di check (§4).
+**Read `.claude/skills/luke-shared/audit-protocol.md` first** and apply it in
+full: diff scoping (§1), baseline suppression (§2), the mandatory "Promotion
+to rule" section (§3), `lessons.md` as a check input (§4).
 
-Poi leggi questi file:
+Then read these files:
 
 - `CLAUDE.md` (project root)
 - `lessons.md` (project root, if it exists)
@@ -34,14 +34,14 @@ Poi leggi questi file:
 These source files are the single source of truth for enum-like checks below —
 never assume a hardcoded count or list from this skill file.
 
-Scope: risolvilo secondo §1 del protocollo condiviso — `$ARGUMENTS` vuoto significa
-**diff vs merge-base**, non intero monorepo.
+Scope: resolve it per §1 of the shared protocol — empty `$ARGUMENTS` means
+**diff vs merge-base**, not the whole monorepo.
 
 ---
 
-## Aree di controllo
+## Check Areas
 
-Tre aree, un passaggio solo. Vedi la nota sul fan-out in `../luke-shared/audit-protocol.md` §6.
+Three areas, one single pass. See the fan-out note in `../luke-shared/audit-protocol.md` §6.
 
 ### 1 — Stack, Config & Env
 
@@ -175,7 +175,7 @@ Date: <today>
 
 ✅ clean  ⚠️ LOW only  🔴 HIGH or MEDIUM present
 
-Soppresse da baseline: N
+Suppressed by baseline: N
 
 ### Findings
 
@@ -192,8 +192,8 @@ Fix:
 **[LOW]** — <title> — `file.ts:line`
 Fix: <one-line fix>
 
-### Promozione a regola
-<sezione obbligatoria — vedi §3 del protocollo condiviso>
+### Promotion to rule
+<mandatory section — see §3 of the shared protocol>
 ```
 
 ### Rules

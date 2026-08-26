@@ -1,17 +1,25 @@
 # Luke Project — Claude Rules
 
-# /Users/brail/code/cursor/luke/CLAUDE.md
+## Rules of engagement (before every change)
 
-## Regole di ingaggio (prima di ogni modifica)
-
-1. Elenca i file che intendi modificare e spiega l'approccio
-2. Attendi conferma se tocchi più di 3 file o uno qualsiasi tra:
+1. List the files you intend to modify and explain your approach
+2. Wait for confirmation if you touch more than 3 files or any of:
    crypto/auth, RBAC/section definitions, AppConfigRegistry, pricing logic,
    schema.prisma, release workflow
-3. **Mai `git commit` senza esplicita approvazione** — mostra il diff, chiedi conferma,
-   aspetta il via libera, poi committa
-4. Quando vieni corretto su qualcosa, aggiungi immediatamente una regola in `lessons.md`
-5. Dopo ogni modifica: lint + typecheck del package toccato, riporta i risultati
+3. **Never `git commit` without explicit approval** — show the diff, ask for
+   confirmation, wait for the go-ahead, then commit
+
+## Language Policy for Instruction Files
+
+Every Claude instruction file — this `CLAUDE.md`, `lessons.md`, and
+everything under `.claude/` (skills, agents, commands) — is written **only
+in English**, regardless of what language the conversation is in. Same rule
+as code comments (rule 14 below): no exception, including for Italian
+domain vocabulary. Rationale: these files are read by the model, not by a
+human audience — English tokenizes more densely and the model follows
+instructions more reliably in it. This does NOT apply to content these
+skills *generate* for humans (README.md, ADRs in `docs/decisions/`) — see
+`.claude/skills/luke-docs/SKILL.md` for that separate policy.
 
 ---
 
@@ -19,209 +27,210 @@
 
 ```
 apps/
-  web/          → Next.js 15 + shadcn/ui (frontend, porta 3000)
-  api/          → Fastify 5 + tRPC + Prisma (backend, porta 3001)
+  web/          → Next.js 15 + shadcn/ui (frontend, port 3000)
+  api/          → Fastify 5 + tRPC + Prisma (backend, port 3001)
 packages/
   core/         → @luke/core: schemas, RBAC, pricing, storage, crypto, URL utils
   nav/          → @luke/nav: NAV sync layer (mssql pool, sync modules)
   eslint-plugin-luke/ → custom ESLint rules
 ```
 
-Dev: `pnpm dev` avvia tutto via Turbo.
-Se API fallisce con "Cannot find module @luke/core/dist": `pnpm --filter @luke/core build`.
-Turbo cache può essere stale — se i dist mancano, build manuale.
-Dopo modifiche a router tRPC in `apps/api`: `cd apps/api && npx tsc -b`
-(altrimenti `apps/web` tsc non vede il nuovo shape).
+Dev: `pnpm dev` starts everything via Turbo.
+If the API fails with "Cannot find module @luke/core/dist": `pnpm --filter @luke/core build`.
+Turbo cache can be stale — if the dist files are missing, build manually.
+After changes to a tRPC router in `apps/api`: `cd apps/api && npx tsc -b`
+(otherwise `apps/web` tsc won't see the new shape).
 
 ## Stack Constraints
 
-- **Package manager**: pnpm only — mai npm o yarn.
-  Comandi: `pnpm --filter <app> <script>` dalla root, o cd nel package
-- **ORM**: Prisma — raw SQL solo in `packages/nav/src/` (mai in application logic).
-  Eccezioni consentite, solo con commento che giustifica: health-probe `SELECT 1`
-  (`observability/readiness.ts`); query su tabelle di dominio applicativo (non NAV)
-  che richiedono feature SQL non esprimibili in Prisma ORM (es. `DISTINCT ON` +
-  `json_agg ... FILTER`) — usare sempre `Prisma.sql` tagged template, mai
-  `$queryRawUnsafe`/`$executeRawUnsafe` per queste.
-- **API layer**: tRPC per tutte le route dashboard/UI; Prisma diretto per AI agent queries
-- **Validation**: schemi Zod da `@luke/core` — mai ridefinire inline.
-  Catalogo in `packages/core/src/schemas/` — verificare sempre lì prima di crearne uno.
-  Principali: `userSchema`, `ldapConfigSchema`/`navConfigSchema` (+ `*ResponseSchema`
-  senza password), `brandSchema`/`seasonSchema`/`vendorSchema`,
+- **Package manager**: pnpm only — never npm or yarn.
+  Commands: `pnpm --filter <app> <script>` from the root, or cd into the package
+- **ORM**: Prisma — raw SQL only in `packages/nav/src/` (never in application logic).
+  Allowed exceptions, only with a justifying comment: health-probe `SELECT 1`
+  (`observability/readiness.ts`); queries on application-domain tables (not NAV)
+  that require SQL features not expressible in the Prisma ORM (e.g. `DISTINCT ON` +
+  `json_agg ... FILTER`) — always use the `Prisma.sql` tagged template, never
+  `$queryRawUnsafe`/`$executeRawUnsafe` for these.
+- **API layer**: tRPC for all dashboard/UI routes; direct Prisma for AI agent queries
+- **Validation**: Zod schemas from `@luke/core` — never redefine inline.
+  Catalog in `packages/core/src/schemas/` — always check there before creating a new one.
+  Main ones: `userSchema`, `ldapConfigSchema`/`navConfigSchema` (+ `*ResponseSchema`
+  without password), `brandSchema`/`seasonSchema`/`vendorSchema`,
   `pricingParameterSetInputSchema`, `collectionLayoutRowInputSchema`,
   `appConfigSchema`/`AppConfigRegistry`, `sectionEnum`/`SECTION_TO_PERMISSION`/
   `SECTION_ACCESS_DEFAULTS`, `rbacSchema`, `authSchemas`, `mailSchema`,
   `RateLimitConfigSchema`/`LdapResilienceSchema`
-- **TypeScript**: strict mode — no `any`, no type assertion senza commento esplicativo
-- **URLs in frontend**: mai hardcode `localhost:3001` in `apps/web/src` — usare
-  `buildApiUrl()`, `buildTrpcUrl()` da `@luke/core/net/url`
-  (check manuale: `pnpm codemod:check-urls` — non ancora una regola ESLint in
-  `packages/eslint-plugin-luke/`, né wired in CI/husky)
+- **TypeScript**: strict mode — no `any`, no type assertion without an explanatory comment
+- **URLs in frontend**: never hardcode `localhost:3001` in `apps/web/src` — use
+  `buildApiUrl()`, `buildTrpcUrl()` from `@luke/core/net/url`
+  (manual check: `pnpm codemod:check-urls` — not yet an ESLint rule in
+  `packages/eslint-plugin-luke/`, nor wired into CI/husky)
 
 ---
 
-## Development Patterns — Regole Obbligatorie
+## Development Patterns — Mandatory Rules
 
-1. **`$transaction` per ogni write multi-tabella** — upsert su 2+ tabelle correlate
-   sempre in `prisma.$transaction(async tx => { ... })`
-2. **try/catch individuale nei sync batch** — in `syncAll()` e simili, ogni
-   `await syncXxx()` ha il suo try/catch: un errore non blocca le altre entità
-3. **`$transaction` per check-then-act** — "leggi → valida → scrivi" sempre in
-   transaction (race condition)
-4. **Audit logging su ogni mutation** — create/update/delete/restore/unlink →
-   `withAuditLog` middleware o `logAudit()` esplicito
-5. **`requirePermission()` su ogni endpoint protetto** — READ → `entity:read`,
-   CREATE → `entity:create`, ecc. Mai `update` per query read-only
-6. **`onDelete` esplicito su ogni `@relation` Prisma** — default sicuro
-   `onDelete: Restrict`; `Cascade` solo se intenzionale e commentato
-7. **Mai duplicare schema/tipi** — se esiste in `@luke/core`, importarlo da lì
-8. **Indici su FK e colonne filtrate** — ogni FK e colonna in WHERE (`isActive`,
-   `vendorId`, ...) → `@@index([campo])`
-9. **Allineamento versioni dependency** — dopo ogni upgrade, stessa versione in
-   tutti i `package.json` del workspace
-10. **Mai `console.*`** — API: `logger.*` (Pino); Web: `debugLog/debugWarn/debugError`
-    da `lib/debug.ts`
-11. **Query context-dependent: params espliciti** — ogni procedura tRPC che dipende
-    da brand/season DEVE ricevere `brandId`/`seasonId` come input Zod espliciti,
-    MAI leggerli da `userPreference` server-side. Il frontend li passa da
-    `useAppContext()` con `enabled: !!brand?.id && !!season?.id` → React Query
-    refetch automatico al cambio contesto.
-    Pattern di riferimento: `pricing.parameterSets.list`, `collectionLayout.get`,
+1. **`$transaction` for every multi-table write** — upsert on 2+ related tables
+   always inside `prisma.$transaction(async tx => { ... })`
+2. **individual try/catch in sync batches** — in `syncAll()` and similar, every
+   `await syncXxx()` has its own try/catch: one error must not block the other entities
+3. **`$transaction` for check-then-act** — "read → validate → write" always in
+   a transaction (race condition)
+4. **Audit logging on every mutation** — create/update/delete/restore/unlink →
+   `withAuditLog` middleware or explicit `logAudit()`
+5. **`requirePermission()` on every protected endpoint** — READ → `entity:read`,
+   CREATE → `entity:create`, etc. Never `update` for a read-only query
+6. **Explicit `onDelete` on every Prisma `@relation`** — safe default
+   `onDelete: Restrict`; `Cascade` only if intentional and commented
+7. **Never duplicate schema/types** — if it exists in `@luke/core`, import it from there
+8. **Indexes on FKs and filtered columns** — every FK and every column used in a
+   WHERE (`isActive`, `vendorId`, ...) → `@@index([field])`
+9. **Dependency version alignment** — after every upgrade, same version across
+   all `package.json` files in the workspace
+10. **Never `console.*`** — API: `logger.*` (Pino); Web: `debugLog/debugWarn/debugError`
+    from `lib/debug.ts`
+11. **Context-dependent queries: explicit params** — every tRPC procedure that
+    depends on brand/season MUST receive `brandId`/`seasonId` as explicit Zod
+    inputs, NEVER read them from `userPreference` server-side. The frontend
+    passes them from `useAppContext()` with `enabled: !!brand?.id && !!season?.id`
+    → automatic React Query refetch on context change.
+    Reference pattern: `pricing.parameterSets.list`, `collectionLayout.get`,
     `sales.statistics.portafoglio.getFilters`
-12. **Endpoint auth-adjacent → rate limit doppio (IP + account)** — login e ogni
-    endpoint che verifica credenziali/token deve avere sia un bucket `keyBy: 'ip'`
-    sia uno `keyBy` sull'identità (username/account): il primo da solo non ferma
-    un password-spray distribuito su molti IP contro un singolo account.
-    Pattern di riferimento: `auth.login` (`login` + `loginByUsername` in
+12. **Auth-adjacent endpoint → double rate limit (IP + account)** — login and
+    every endpoint that verifies credentials/tokens must have both an
+    `keyBy: 'ip'` bucket and one `keyBy` on identity (username/account): the
+    former alone doesn't stop a password-spray distributed across many IPs
+    against a single account.
+    Reference pattern: `auth.login` (`login` + `loginByUsername` in
     `apps/api/src/lib/ratelimit.ts`)
-13. **Chiamate server-to-server web→api: inoltrare sempre l'IP client reale** —
-    qualunque fetch fatta da `apps/web` verso `apps/api` per conto di una request
-    utente (non solo NextAuth `authorize()`) deve propagare l'IP reale
-    (`X-Forwarded-For`), altrimenti un bucket rate-limit `keyBy: 'ip'` su apps/api
-    collassa silenziosamente su un'unica chiave condivisa da tutti gli utenti
-    (l'indirizzo del container web) invece che per-attaccante. Fastify si fida di
-    quell'header solo perché apps/api non è mai raggiungibile direttamente da
-    Internet (nessuna porta pubblicata) — non generalizzare `trustProxy: true` a
-    un servizio pubblicamente esposto senza rivalutare il rischio di spoofing.
-    Un bucket `keyBy: 'ip'` aggiunto su un percorso server-to-server va sempre
-    accompagnato da un test che dimostri il comportamento per-attaccante, non solo
-    per-formato-config (vedi `apps/api/test/ratelimit.integration.spec.ts`,
+13. **Server-to-server web→api calls: always forward the real client IP** —
+    any fetch made by `apps/web` to `apps/api` on behalf of a user request
+    (not just NextAuth `authorize()`) must propagate the real IP
+    (`X-Forwarded-For`), otherwise a `keyBy: 'ip'` rate-limit bucket on
+    apps/api silently collapses onto a single key shared by all users
+    (the web container's address) instead of being per-attacker. Fastify
+    trusts that header only because apps/api is never directly reachable
+    from the Internet (no published port) — do not generalize
+    `trustProxy: true` to a publicly exposed service without re-evaluating
+    spoofing risk. A `keyBy: 'ip'` bucket added on a server-to-server path
+    must always come with a test that demonstrates per-attacker behavior,
+    not just per-config-format (see `apps/api/test/ratelimit.integration.spec.ts`,
     describe `blocks valid credentials too`).
-14. **Commenti nel codice sempre in inglese** — `//`, `/** */`, Prisma `///`:
-    sempre inglese, ovunque, **inclusi i termini di dominio** (stagione → season,
-    campionario → collection/catalog, reso → return, ecc.) — nessuna eccezione
-    per vocabolario italiano. In vista di i18n su develop-2.2, l'italiano non ha
-    trattamento privilegiato nel codice. Logica di merge sul commento esistente
-    (non toccare se accurato, integra se incompleto, riscrivi se driftato):
-    vedi `.claude/skills/luke-docs/references/inline-rules.md`.
+14. **Code comments always in English** — `//`, `/** */`, Prisma `///`:
+    always English, everywhere, **including domain terms** (stagione → season,
+    campionario → collection/catalog, reso → return, etc.) — no exception for
+    Italian vocabulary. With i18n coming on develop-2.2, Italian gets no
+    privileged treatment in the source code. Merge logic on existing comments
+    (leave untouched if accurate, extend if incomplete, rewrite if drifted):
+    see `.claude/skills/luke-docs/references/inline-rules.md`.
 
 ### Soft delete pattern
 
-- `remove()`: `isActive=false` — mai hard delete; `restore()`: `isActive=true`
-- `list()`: filtra `isActive=true` default; `includeInactive=true` per admin
-- Riga inattiva in tabella: `className={!item.isActive ? 'opacity-50' : undefined}`
+- `remove()`: `isActive=false` — never hard delete; `restore()`: `isActive=true`
+- `list()`: filters `isActive=true` by default; `includeInactive=true` for admin
+- Inactive row in a table: `className={!item.isActive ? 'opacity-50' : undefined}`
 
 ---
 
 ## AppConfig System
 
-Tutta la configurazione runtime vive nella tabella `AppConfig` (Postgres KV).
-`AppConfigRegistry` in `packages/core/src/schemas/config.ts` è la **single source of truth**.
+All runtime configuration lives in the `AppConfig` table (Postgres KV).
+`AppConfigRegistry` in `packages/core/src/schemas/config.ts` is the **single source of truth**.
 
-- **Mai `process.env.*` nel codice applicativo** — usare `getConfigValue(prisma, key)`
-  o il tRPC config router. Env var solo per bootstrap (URL, NODE_ENV)
-- **Ogni nuova chiave config va aggiunta a `AppConfigRegistry`** col suo schema Zod
-- Valori in DB sempre stringhe — `z.coerce.*` per numeri/boolean,
-  `.transform(s => JSON.parse(s))` per JSON blob
-- Valori sensitivi letti con `decrypt: true` in `getConfig()`
-- `CRITICAL_CONFIG_KEYS`: solo `auth.strategy`. Aggiungere solo se l'assenza deve
-  bloccare il boot
+- **Never `process.env.*` in application code** — use `getConfigValue(prisma, key)`
+  or the tRPC config router. Env vars only for bootstrap (URL, NODE_ENV)
+- **Every new config key must be added to `AppConfigRegistry`** with its Zod schema
+- Values in the DB are always strings — `z.coerce.*` for numbers/booleans,
+  `.transform(s => JSON.parse(s))` for JSON blobs
+- Sensitive values read with `decrypt: true` in `getConfig()`
+- `CRITICAL_CONFIG_KEYS`: only `auth.strategy`. Add only if its absence must
+  block boot
 
-## Auth & Crypto — NON TOCCARE senza richiesta esplicita
+## Auth & Crypto — DO NOT TOUCH without an explicit request
 
-- Master key: `~/.luke/secret.key` (32 bytes, mode 0600) — auto-generata al primo avvio
-- Segreti derivati via HKDF-SHA256: `nextauth.secret`, `api.jwt`, `cookie.secret`
-- Crypto utilities **server-only** — importare da `@luke/core/server`, mai da
-  `@luke/core` (lancia eccezione nel browser)
-- `packages/core/src/crypto/secrets.server.ts` — non modificare senza commento
-  che spiega l'intent di sicurezza
+- Master key: `~/.luke/secret.key` (32 bytes, mode 0600) — auto-generated on first boot
+- Secrets derived via HKDF-SHA256: `nextauth.secret`, `api.jwt`, `cookie.secret`
+- Crypto utilities are **server-only** — import from `@luke/core/server`, never from
+  `@luke/core` (throws in the browser)
+- `packages/core/src/crypto/secrets.server.ts` — don't modify without a comment
+  explaining the security intent
 
 ## RBAC & Section Access
 
-Due layer distinti che devono restare in sync.
+Two distinct layers that must stay in sync.
 
-**Layer 1 — Resource:Action** (`packages/core/src/auth/permissions.ts`, statico):
+**Layer 1 — Resource:Action** (`packages/core/src/auth/permissions.ts`, static):
 
-- Ruoli: `admin` (`*:*`), `editor`, `viewer`
-- Sempre `hasPermission(user, 'resource:action')` — mai `user.role === 'admin'` inline
-- Ogni endpoint tRPC protetto: `requirePermission('entity:action')` obbligatorio
+- Roles: `admin` (`*:*`), `editor`, `viewer`
+- Always `hasPermission(user, 'resource:action')` — never inline `user.role === 'admin'`
+- Every protected tRPC endpoint: `requirePermission('entity:action')` mandatory
 
 **Layer 2 — Section visibility** (dot-notation: `product.pricing`, `settings.ldap`, ...):
 
-- Accesso valutato da `effectiveSectionAccess()`, precedenza a 4 livelli:
-  kill switch → override utente → AppConfig role defaults → RBAC fallback
-- **Nuova sezione = aggiornare TRE posti in sync**: `sectionEnum`,
-  `SECTION_TO_PERMISSION`, `SECTION_ACCESS_DEFAULTS` (tutti e tre i ruoli)
-- `SECTION_ACCESS_DEFAULTS` è statico (version-controlled); override runtime
-  per-ruolo in AppConfig (`rbac.sectionAccessDefaults`)
-- Sempre `invalidateRbacCache()` dopo write su chiavi RBAC in AppConfig
+- Access evaluated by `effectiveSectionAccess()`, 4-level precedence:
+  kill switch → user override → AppConfig role defaults → RBAC fallback
+- **New section = update THREE places in sync**: `sectionEnum`,
+  `SECTION_TO_PERMISSION`, `SECTION_ACCESS_DEFAULTS` (all three roles)
+- `SECTION_ACCESS_DEFAULTS` is static (version-controlled); per-role runtime
+  override lives in AppConfig (`rbac.sectionAccessDefaults`)
+- Always `invalidateRbacCache()` after writing to RBAC keys in AppConfig
 
 ## LDAP
 
-- Quattro strategie via `auth.strategy` in AppConfig:
-  `local-first` | `ldap-first` | `local-only` | `ldap-only` — mai hardcodare
-- Circuit breaker attivo (`breakerFailureThreshold` / `breakerCooldownMs`) —
-  non bypassare il resilience wrapper
-- `roleMapping`: JSON string che mappa gruppi LDAP → ruoli Luke
+- Four strategies via `auth.strategy` in AppConfig:
+  `local-first` | `ldap-first` | `local-only` | `ldap-only` — never hardcode
+- Circuit breaker active (`breakerFailureThreshold` / `breakerCooldownMs`) —
+  don't bypass the resilience wrapper
+- `roleMapping`: JSON string mapping LDAP groups → Luke roles
 
 ## Pricing Engine
 
-- Tre modalità in `PricingModeSchema`: `forward` | `inverse` | `margin`
-- **Write riservato ad admin** — `pricing:update` non è nel ruolo editor (solo
-  `pricing:read`). Mai esporre mutation di parameter set all'editor
-- `PricingParameterSetInputSchema` definisce tutti i campi — non aggiungerne fuori
-- Calcoli sempre scoped a `brandId` + `seasonId`
-- Valute: solo quelle in `PRICING_CURRENCIES`
-  (`packages/core/src/schemas/pricing.ts`) — non aggiungerne senza aggiornarla
+- Three modes in `PricingModeSchema`: `forward` | `inverse` | `margin`
+- **Write reserved to admin** — `pricing:update` is not in the editor role (only
+  `pricing:read`). Never expose parameter set mutations to the editor
+- `PricingParameterSetInputSchema` defines all fields — don't add any outside it
+- Calculations always scoped to `brandId` + `seasonId`
+- Currencies: only those in `PRICING_CURRENCIES`
+  (`packages/core/src/schemas/pricing.ts`) — don't add any without updating it
 
 ## Collection Layout
 
-Modello a due livelli: **Groups** contengono **Rows**, ordering indipendente.
+Two-level model: **Groups** contain **Rows**, independent ordering.
 
-- Max `COLLECTION_COLUMNS_MAX_VISIBLE` (7) colonne visibili simultaneamente.
-  Sempre visibili: `#`, `line`, `skuForecast`, `actions`.
-  Default nascoste: `gender`, `designer`, `styleStatus`
-- Sempre gli enum definiti, mai stringhe libere: `COLLECTION_GENDER`,
+- Max `COLLECTION_COLUMNS_MAX_VISIBLE` (7) columns visible at once.
+  Always visible: `#`, `line`, `skuForecast`, `actions`.
+  Hidden by default: `gender`, `designer`, `styleStatus`
+- Always use the defined enums, never free strings: `COLLECTION_GENDER`,
   `COLLECTION_STRATEGY`, `COLLECTION_STATUS`, `COLLECTION_PROGRESS`
-  (ordinamento fisso `01 - FASE DI DESIGN` → `06 - SMS LANCIATI`)
-- `skuBudget` appartiene al Group, `skuForecast` alla Row — non invertire
-- Upload foto: `buildCollectionRowPictureUploadUrl(rowId)` — mai path manuali
+  (fixed ordering `01 - FASE DI DESIGN` → `06 - SMS LANCIATI`)
+- `skuBudget` belongs to the Group, `skuForecast` to the Row — don't swap them
+- Photo upload: `buildCollectionRowPictureUploadUrl(rowId)` — never manual paths
 
 ## Storage Layer
 
-`IStorageProvider` è un'interfaccia intenzionale per futuri provider (local/samba/gdrive).
+`IStorageProvider` is an interface deliberately designed for future providers (local/samba/gdrive).
 
-- Mai file handling fuori da un'implementazione `IStorageProvider`
-- Bucket validi: quelli accettati da `isValidBucket()` in
-  `packages/core/src/storage/config.ts` — mai aggiungere bucket senza aggiornare
+- Never handle files outside an `IStorageProvider` implementation
+- Valid buckets: whatever `isValidBucket()` accepts in
+  `packages/core/src/storage/config.ts` — never add a bucket without updating
   `localStorageConfigSchema`
-- Sempre le builder functions — mai costruire path `/upload/...` a mano
-- `enableProxy`: non hardcodare — leggere da config
+- Always use the builder functions — never construct `/upload/...` paths by hand
+- `enableProxy`: don't hardcode — read from config
 
 ## NAV / packages/nav
 
-Dettagli tabelle NAV e decisioni sync: `docs/nav-integration.md`
+NAV table details and sync decisions: `docs/nav-integration.md`
 
-- Table names: sempre `[${sanitizeCompany(config.company)}$TableName]`
-- `packages/nav` NON importa da `apps/api` — config injettata via `GetConfigFn`
-- Nuovi sync module: `buildNavSyncFilter` + `buildWhereClause` + `processInBatches`
-  da `sync/utils.ts`, batch 100, `request.timeout = 60_000`
+- Table names: always `[${sanitizeCompany(config.company)}$TableName]`
+- `packages/nav` does NOT import from `apps/api` — config is injected via `GetConfigFn`
+- New sync modules: `buildNavSyncFilter` + `buildWhereClause` + `processInBatches`
+  from `sync/utils.ts`, batch 100, `request.timeout = 60_000`
 - Wrap NAV replica + local upsert in `prisma.$transaction()`
-- Mai auto-riattivare entità soft-deleted durante sync; sync aggiorna SOLO campi
-  provenienti da NAV (tipicamente `name`) — mai `isActive` né campi arricchiti
-- Nuove query/tipi: `packages/nav/src/queries/` e `packages/nav/src/types/`
-- `Brand.code` max 20 chars, `Season.code` max 10 chars (allineato a NAV nvarchar)
-- DAB: solo bridge LLM→NAV, non per il sync layer
+- Never auto-reactivate soft-deleted entities during sync; sync only updates
+  fields coming FROM NAV (typically `name`) — never `isActive` nor enriched fields
+- New queries/types: `packages/nav/src/queries/` and `packages/nav/src/types/`
+- `Brand.code` max 20 chars, `Season.code` max 10 chars (aligned with NAV nvarchar)
+- DAB: only an LLM→NAV bridge, not for the sync layer
 
 ---
 
@@ -229,43 +238,43 @@ Dettagli tabelle NAV e decisioni sync: `docs/nav-integration.md`
 
 ### shadcn/ui strict
 
-- Solo componenti shadcn/ui — mai import Radix diretti, mai MUI.
-  Nuovi componenti via CLI: `pnpm dlx shadcn@latest add <component>`
+- Only shadcn/ui components — never import Radix directly, never MUI.
+  New components via CLI: `pnpm dlx shadcn@latest add <component>`
 - Tailwind utility classes only — no `style={{}}`, no CSS modules.
-  Arbitrary values (`w-[327px]`) solo con commento che giustifica
-- Colori via CSS variables (`--background`, `--primary`, ...) — mai hex/rgb hardcodati
-- className sempre via `cn()` da `lib/utils`; varianti multiple → CVA
+  Arbitrary values (`w-[327px]`) only with a justifying comment
+- Colors via CSS variables (`--background`, `--primary`, ...) — never hardcoded hex/rgb
+- className always via `cn()` from `lib/utils`; multiple variants → CVA
 
-### UI Patterns obbligatori
+### Mandatory UI Patterns
 
-**Permission-aware UI** (uniforme su tutte le pagine):
+**Permission-aware UI** (consistent across all pages):
 
-- Creation buttons: `<CreateActionButton>` — sempre visibile, disabled + tooltip
-  se no permesso
-- Table actions: Modifica/Elimina sempre visibili, disabled + tooltip se no permesso.
+- Creation buttons: `<CreateActionButton>` — always visible, disabled + tooltip
+  if no permission
+- Table actions: Edit/Delete always visible, disabled + tooltip if no permission.
   Disabled style: `className="opacity-50 cursor-not-allowed"` +
-  `<TooltipProvider><Tooltip>` con messaggio "Non hai i permessi per [azione] [risorsa]"
-- Config pages (mail, storage, LDAP): save button gated con `can('config:update')`
+  `<TooltipProvider><Tooltip>` with message "You don't have permission to [action] [resource]"
+- Config pages (mail, storage, LDAP): save button gated on `can('config:update')`
 
-**Delete confirmation**: SEMPRE `<ConfirmDialog>` da `components/ConfirmDialog.tsx` —
-mai `globalThis.confirm()`.
+**Delete confirmation**: ALWAYS `<ConfirmDialog>` from `components/ConfirmDialog.tsx` —
+never `globalThis.confirm()`.
 
 **Permission hooks** (`usePermission`):
 
-- Boolean props: `canCreate`, `canUpdate`, `canDelete`, `canList` — NO parentesi
+- Boolean props: `canCreate`, `canUpdate`, `canDelete`, `canList` — NO parentheses
 - Function methods: `canEdit()`, `isReadOnly()`, `isAdmin()`, `isAdminOrEditor()`,
-  `can()`, `canAll()`, `canAny()` — SÌ parentesi
+  `can()`, `canAll()`, `canAny()` — YES parentheses
 
-**Error handling**: `getTrpcErrorMessage(error, entityOverrides?)` da
+**Error handling**: `getTrpcErrorMessage(error, entityOverrides?)` from
 `lib/trpcErrorMessages.ts`
 
-**i18n (futuro)**: non bloccare il lavoro attuale, ma evitare stringhe hardcoded
-in componenti profondi senza possibilità di estrazione (date, numeri, stringhe UI).
+**i18n (future)**: don't block current work on it, but avoid hardcoded strings
+in deeply nested components without a way to extract them later (dates, numbers, UI strings).
 
 ### ESLint Import Order
 
-Gruppi: (1) builtin + external uniti, alfabetico, NO blank line tra loro;
-(2) blank line; (3) internal (path relativi), alfabetico.
+Groups: (1) builtin + external merged, alphabetical, NO blank line between them;
+(2) blank line; (3) internal (relative paths), alphabetical.
 
 ```tsx
 import { AlertCircle } from 'lucide-react';
@@ -277,96 +286,102 @@ import { cn } from '../../../../lib/utils';
 
 ---
 
-## Env Policy — Regola Architetturale Ferma
+## Env Policy — Firm Architectural Rule
 
-`.env` ammette SOLO bootstrap infrastrutturale. Tutto il resto va in AppConfig.
+`.env` allows ONLY infrastructural bootstrap. Everything else goes in AppConfig.
 
-**Ammesso in `.env` API**: `DATABASE_URL`, `PORT`, `HOST`, `NODE_ENV`,
+**Allowed in API `.env`**: `DATABASE_URL`, `PORT`, `HOST`, `NODE_ENV`,
 `LUKE_CORS_ALLOWED_ORIGINS`, `OTEL_*`, `LOG_LEVEL`, `APP_VERSION`
-(metadata build-time iniettata come Docker `ARG`/`ENV` dal git tag in CI —
-non un segreto, mai letta da AppConfig per evitare drift dall'immagine in esecuzione)
+(build-time metadata injected as a Docker `ARG`/`ENV` from the git tag in CI —
+not a secret, never read from AppConfig to avoid drift from the running image)
 
-**Ammesso in `.env` Web** (eccezioni framework): `INTERNAL_API_URL`,
+**Allowed in Web `.env`** (framework exceptions): `INTERNAL_API_URL`,
 `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_FRONTEND_URL`, `NEXTAUTH_URL`,
-`NEXTAUTH_SECRET`, `COOKIE_SECURE`, `NEXT_PUBLIC_APP_VERSION` (stesso pattern build-time)
+`NEXTAUTH_SECRET`, `COOKIE_SECURE`, `NEXT_PUBLIC_APP_VERSION` (same build-time pattern)
 
-**Vietato in `.env`**: credenziali SMTP, LDAP, storage, token, password applicative.
+**Forbidden in `.env`**: SMTP, LDAP, storage credentials, tokens, application passwords.
 
-Enforcement: `assertEnvPolicy()` in `apps/api/src/server.ts` blocca il boot in
-produzione se trova pattern vietati (`SMTP_*`, `LDAP_*`, `JWT_*`, `*_SECRET`,
+Enforcement: `assertEnvPolicy()` in `apps/api/src/server.ts` blocks boot in
+production if it finds forbidden patterns (`SMTP_*`, `LDAP_*`, `JWT_*`, `*_SECRET`,
 `*_PASSWORD`, `*_API_KEY`, `*_TOKEN`).
 
 ---
 
 ## Prisma Migration Workflow
 
-Ogni modifica a `schema.prisma` richiede migration versionata.
-Workflow completo (Postgres temporaneo porta 5433 → `migrate dev` → `db push` su
-5432 → commit del file migration): **`docs/prisma-migration-workflow.md`**
+Every change to `schema.prisma` requires a versioned migration.
+Full workflow (temporary Postgres on port 5433 → `migrate dev` → `db push` on
+5432 → commit the migration file): **`docs/prisma-migration-workflow.md`**
 
-In produzione: `entrypoint.sh` esegue `prisma migrate deploy`.
-Mai `prisma migrate reset` in produzione.
+In production: `entrypoint.sh` runs `prisma migrate deploy`.
+Never `prisma migrate reset` in production.
 
 ## Versioning & Release
 
-**SemVer**: `patch` = fix/refactor/chore/migration senza feature;
-`minor` = nuova funzionalità visibile; `major` = breaking change API/contratti.
+**SemVer**: `patch` = fix/refactor/chore/migration without a feature;
+`minor` = new visible functionality; `major` = breaking change to API/contracts.
 
-**Prima di ogni `git tag vX.Y.Z`** (workflow obbligatorio):
+**Release workflow** (`pnpm release:prepare`, wraps `scripts/release-prepare.sh`):
 
-1. Bump tutti i `package.json` del monorepo a X.Y.Z
-2. Commit `"chore: bump version to X.Y.Z"`
-3. `git tag vX.Y.Z && git push origin vX.Y.Z`
+1. `pnpm release:prepare` — computes the next version from conventional
+   commits (`git-cliff --bumped-version`), updates `CHANGELOG.md` (`--prepend`,
+   never `--bump -o`: overwrites hand-curated sections like the `[2.0.0]`
+   rollup) and syncs every `package.json` to it atomically — never bump
+   versions by hand: `sync-version` without `--set` reads the *existing* tag
+   and silently regresses them
+2. `git diff` — review CHANGELOG + version bumps
+3. `git commit -am "chore: bump version to X.Y.Z"`
+4. `git tag vX.Y.Z && git push origin vX.Y.Z` — `.husky/pre-push` blocks the
+   push if CHANGELOG/package.json don't match the tag
 
-**CHANGELOG**: sempre `git-cliff --unreleased --tag vX.Y.Z --prepend CHANGELOG.md`
-(via `scripts/release-prepare.sh` / `pnpm changelog:tag`) — **mai `--bump -o`**
-o rigenerazione completa del file: sovrascriverebbe sezioni curate a mano
-(es. il rollup `[2.0.0]`, costruito con un range custom fuori dal flusso
-standard). `--prepend` tocca solo i commit dall'ultimo tag, il resto del file
-resta intatto.
+**Release flow**: push to `main` → CI only (lint + typecheck);
+tag `vX.Y.Z` → Docker build → `ghcr.io` → Portainer pull & redeploy.
+**NEVER delete the `luke_api_data` volume** — the master key lives there.
 
-**Release flow**: push su `main` → solo CI (lint + typecheck);
-tag `vX.Y.Z` → build Docker → `ghcr.io` → Portainer pull & redeploy.
-**MAI cancellare il volume `luke_api_data`** — la master key vive lì.
+**A `develop-X.Y` branch dies on merge into `main`** — it is not reactivated,
+never backport onto a branch that has already been merged: the next feature
+cycle opens a new `develop-(X+1).0`/`develop-X.(Y+1)` cut from `main`.
+`dependabot.yml` doesn't target any `develop-*` (no `target-branch`, defaults
+to the default branch `main`) — no update needed when the branch changes.
 
-**Un branch `develop-X.Y` muore al merge in `main`** — non viene riattivato,
-mai backport su un branch già mergeato: il prossimo ciclo di feature apre un
-nuovo `develop-(X+1).0`/`develop-X.(Y+1)` tagliato da `main`. `dependabot.yml`
-non punta a nessun `develop-*` (nessun `target-branch`, default sul branch
-di default `main`) — non richiede update al cambio branch.
-
-**Al cambio di develop branch** (es. `develop-2.1` → `develop-2.2`):
-aggiornare la lista `branches` in `.github/workflows/ci.yml` (`push` e
-`pull_request`) e in `.github/workflows/security.yml` (`push`) — altrimenti
-CI/security scan smettono di girare sulle PR verso il nuovo branch senza
-segnalarlo. Poi cancellare il branch precedente (locale + remoto): è stale
-appena mergeato, tenerlo in giro invita a backport sbagliati.
+**When switching develop branch** (e.g. `develop-2.1` → `develop-2.2`):
+update the `branches` list in `.github/workflows/ci.yml` (`push` and
+`pull_request`) and in `.github/workflows/security.yml` (`push`) — otherwise
+CI/security scans silently stop running on PRs targeting the new branch.
+Then delete the previous branch (local + remote): it's stale as soon as it's
+merged, keeping it around invites bad backports.
 
 ## Security Testing / Pentest
 
-- **Target sempre un hostname reale deployato** (`rc.luke.febos.local`, dominio
-  prod) — **mai** `localhost`/`host.docker.internal` verso un `pnpm dev` locale.
-  `next dev` espone per design stack trace, path assoluti e `next-devtools` a
-  utenti non autenticati: è comportamento atteso, non una vulnerabilità. Uno
-  scanner (Strix o altro) lanciato dentro un container Docker sulla stessa
-  macchina di sviluppo raggiunge il `pnpm dev` locale via l'alias
-  `host.docker.internal` e produce un falso positivo "development mode
-  disclosure" che spreca tempo di triage. RC e prod girano sempre `next build` +
-  `next start` dietro reverse proxy (vedi Dockerfile/docker-compose.*.yml) — solo
-  quegli host sono scope valido per un assessment.
+- **Always target a real deployed hostname** (`rc.luke.febos.local`, prod
+  domain) — **never** `localhost`/`host.docker.internal` against a local
+  `pnpm dev`. `next dev` exposes stack traces, absolute paths and
+  `next-devtools` to unauthenticated users by design: that's expected
+  behavior, not a vulnerability. A scanner (Strix or other) launched inside a
+  Docker container on the same dev machine reaches the local `pnpm dev` via
+  the `host.docker.internal` alias and produces a "development mode
+  disclosure" false positive that wastes triage time. RC and prod always run
+  `next build` + `next start` behind a reverse proxy (see
+  Dockerfile/docker-compose.*.yml) — only those hosts are valid scope for an
+  assessment.
 
 ## Commit Conventions
 
-[Conventional Commits](https://www.conventionalcommits.org/) — alimentano il
-CHANGELOG via `git-cliff`, validati da `.husky/commit-msg` (commitlint).
+[Conventional Commits](https://www.conventionalcommits.org/) — feed the
+CHANGELOG via `git-cliff`, validated by `.husky/commit-msg` (commitlint).
 
 - Format: `<type>(<scope>)?: <description>`
 - Types: `feat` (minor) | `fix` (patch) | `docs` | `style` | `refactor` | `perf` |
   `test` | `chore` | `ci`
-- Breaking: `!` dopo il type (`feat!:`) oppure footer `BREAKING CHANGE: ...`
-- Scope consigliati: `core`, `api`, `web`, `nav`, e domini funzionali
+- Breaking: `!` after the type (`feat!:`) or footer `BREAKING CHANGE: ...`
+- Recommended scopes: `core`, `api`, `web`, `nav`, and functional domains
   (`merch`, `pricing`, `rbac`, `sourcing`, `auth`, `dashboard`, `calendar`, `company`)
+- **Always and only in English** — subject, body and footer. Same rule as
+  code comments (rule 14): no Italian, no exception for domain vocabulary.
+  The CHANGELOG is generated by `git-cliff` from these messages (see above),
+  so it automatically inherits the rule — no separate enforcement needed on
+  the CHANGELOG.md file.
 
-Esempi: `feat(calendar): add MilestoneDependency model` ·
+Examples: `feat(calendar): add MilestoneDependency model` ·
 `fix(rbac): correct section access fallback for editor role` ·
 `feat(api)!: rename collection.rows to collection.layoutRows`

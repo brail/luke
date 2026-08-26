@@ -15,14 +15,15 @@ agent: general-purpose
 You are running a complete enterprise-grade audit of the Luke codebase.
 This orchestrates three specialized skills in sequence. Do NOT modify any file.
 
-**Leggi per primo `.claude/skills/luke-shared/audit-protocol.md`.**
+**Read `.claude/skills/luke-shared/audit-protocol.md` first.**
 
-Scope: risolvilo secondo §1 del protocollo condiviso e passalo invariato alle tre
-skill, così che i tre report coprano esattamente lo stesso insieme di file.
+Scope: resolve it per §1 of the shared protocol and pass it unchanged to the
+three skills, so that the three reports cover exactly the same set of files.
 
-`/luke-full` è il caso in cui `--full` ha più senso: prima di una release vuoi lo
-stato assoluto, non il delta dell'ultima sessione. Il default resta comunque il
-diff — chiedi conferma prima di lanciare uno scan completo non richiesto.
+`/luke-full` is the case where `--full` makes the most sense: before a release
+you want the absolute state, not the delta since the last session. The
+default still stays the diff — ask for confirmation before launching an
+unrequested full scan.
 
 ---
 
@@ -72,8 +73,8 @@ After all three skills complete, produce this unified executive summary:
 | OVERALL            |    N     |  N   |   N    |  N  | xx/100 |
 
 Score formula: 100 − (CRITICAL×20 + HIGH×10 + MEDIUM×3 + LOW×1), floor 0.
-Calcolato SOLO sulle finding nuove (post-baseline, §2 e §5 del protocollo).
-Riporta accanto: `Soppresse da baseline: N`.
+Calculated ONLY on new findings (post-baseline, §2 and §5 of the protocol).
+Report alongside it: `Suppressed by baseline: N`.
 
 ## 🔴 Must Fix Before Next Release
 List every CRITICAL finding across all three skills with file:line and one-line fix.
@@ -92,11 +93,11 @@ Full details are in each skill's individual report above.
 E.g. "Error propagation is the dominant issue — 4 of 6 HIGH findings
 involve errors being swallowed in catch blocks."
 
-## Promozione a regola (consolidata)
-Unisci le sezioni "Promozione a regola" delle tre skill, deduplicandole.
-Se la stessa classe emerge da due skill, proponila una volta sola.
-Questa sezione è l'output più prezioso del report: converte findings LLM
-in controlli deterministici che rendono il prossimo report più corto.
+## Promotion to rule (consolidated)
+Merge the "Promotion to rule" sections from the three skills, deduplicating
+them. If the same class emerges from two skills, propose it once.
+This section is the report's most valuable output: it converts LLM findings
+into deterministic checks that make the next report shorter.
 
 ## Recommended Next Session Focus
 One specific area to address first, based on finding density and severity.

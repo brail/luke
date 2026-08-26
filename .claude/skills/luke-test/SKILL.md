@@ -10,105 +10,108 @@ description: >
 
 # Luke Test Writer
 
-Scrive e aggiorna i test per il codice cambiato. A differenza delle skill di audit,
-questa **modifica file** — ma solo file di test, mai codice applicativo.
+Writes and updates tests for changed code. Unlike the audit skills, this one
+**modifies files** — but only test files, never application code.
 
-Se durante il lavoro emerge che il codice sotto test ha un bug, **non correggerlo**:
-segnalalo e scrivi il test che lo espone, marcandolo `.fails` o `.todo` con un
-commento che spiega perché. La decisione se cambiare il comportamento è dell'utente.
+If, while working, it turns out the code under test has a bug, **don't fix
+it**: flag it and write the test that exposes it, marking it `.fails` or
+`.todo` with a comment explaining why. The decision to change the behavior
+belongs to the user.
 
-**Leggi per primo `.claude/skills/luke-shared/audit-protocol.md`** e applica le
-sezioni che la sua tabella di applicabilità assegna a `/luke-test`: §1 scoping
-(default: diff vs merge-base) e §7 sessioni concorrenti — sei una skill che
-scrive file, quindi §7.2 ti riguarda.
+**Read `.claude/skills/luke-shared/audit-protocol.md` first** and apply the
+sections its applicability table assigns to `/luke-test`: §1 scoping
+(default: diff vs merge-base) and §7 concurrent sessions — you're a skill
+that writes files, so §7.2 applies to you.
 
 ---
 
-## 1. Mappa dei tier
+## 1. Tier map
 
-Il progetto ha tre tier. Sbagliare tier è l'errore più costoso: un test unit che
-tocca il database finisce nel progetto sbagliato e fallisce in CI.
+The project has three tiers. Picking the wrong tier is the costliest mistake:
+a unit test that touches the database ends up in the wrong project and fails
+in CI.
 
-| Tier            | Membership                                           | Config                                  |
-| --------------- | ---------------------------------------------------- | --------------------------------------- |
-| **Unit**        | tutto ciò che **non** matcha `*.integration.spec.ts` | `apps/api/vitest.config.ts`             |
-| **Integration** | `apps/api/test/**/*.integration.spec.ts`             | `apps/api/vitest.integration.config.ts` |
-| **Smoke E2E**   | `apps/web/tests/smoke/*.smoke.spec.ts`               | `apps/web/playwright.config.ts`         |
+| Tier            | Membership                                            | Config                                  |
+| --------------- | ------------------------------------------------------ | ---------------------------------------- |
+| **Unit**        | everything that does **not** match `*.integration.spec.ts` | `apps/api/vitest.config.ts`             |
+| **Integration** | `apps/api/test/**/*.integration.spec.ts`                | `apps/api/vitest.integration.config.ts` |
+| **Smoke E2E**   | `apps/web/tests/smoke/*.smoke.spec.ts`                  | `apps/web/playwright.config.ts`         |
 
-La membership è **il nome del file**, non un elenco. C'era una lista a mano
-(`test/integration-specs.ts`), eliminata: un elenco ha un fallimento asimmetrico, <!-- skill-check-ignore -->
-una voce mancante si nota subito ma una voce stale dopo una rinomina no, e una
-suite può uscire dalla run in silenzio.
+Membership is **the file name**, not a list. There used to be a hand-written
+list (`test/integration-specs.ts`), removed: a list has an asymmetric
+failure mode <!-- skill-check-ignore --> — a missing entry is noticed right away, but a stale
+entry after a rename isn't, and a suite can silently drop out of the run.
 
-Regola di scelta: **serve una tabella Prisma reale?**
+Choice rule: **does it need a real Prisma table?**
 
-- No → unit. Mocka `ctx.prisma` con i soli metodi usati.
-- Sì → integration: chiama il file `<nome>.integration.spec.ts` e sei dentro.
+- No → unit. Mock `ctx.prisma` with only the methods used.
+- Yes → integration: name the file `<name>.integration.spec.ts` and you're in.
 
-Comandi:
+Commands:
 
 ```bash
 pnpm test                          # unit
-pnpm test:integration:local        # integration: avvia il container e passa TEST_DATABASE_URL
-pnpm --filter @luke/web test:e2e   # smoke, con lo stack applicativo in piedi
+pnpm test:integration:local        # integration: starts the container and passes TEST_DATABASE_URL
+pnpm --filter @luke/web test:e2e   # smoke, with the app stack running
 ```
 
-Senza `TEST_DATABASE_URL` la suite **fallisce**, non salta: è voluto — un job
-verde con zero test eseguiti è peggio di un job rosso. Valori e forma esplicita
-in `docker-compose.test.yml`.
+Without `TEST_DATABASE_URL` the suite **fails**, it doesn't skip: that's
+intentional — a green job with zero tests run is worse than a red job.
+Values and explicit shape live in `docker-compose.test.yml`.
 
-**Copertura delle procedure**: la suite di integrazione ha un gate che verifica
-quali procedure tRPC vengono _invocate davvero_ (`test/procedure-coverage.ts`).
-Se aggiungi una procedura senza test, `pnpm test:integration` fallisce e ti
-stampa la voce da incollare. Non aggirarlo dichiarandola scoperta senza motivo:
-il gate rifiuta i motivi segnaposto.
-
----
-
-## 2. Helper esistenti — usa questi, non reinventarli
-
-**`apps/api/test/helpers.ts` è il barrel unico: la sua lista di export _è_ l'API
-di test. Leggila lì.**
-
-Questa sezione elencava le firme una per una ed è driftata: citava
-`hasTestDatabase()` mesi dopo la sua rimozione e `teardownTestDb(prisma)` dopo che <!-- skill-check-ignore -->
-il parametro era sparito. Duplicava la codebase, e una duplicazione marcisce
-sempre. Il rimedio non è una duplicazione più fresca.
-
-I moduli sotto `test/helpers/` (`database`, `logger`, `testContext`,
-`storageTestHelper`) sono tutti ri-esportati dal barrel — anche perché è quella
-ri-esportazione a far collidere i nomi omonimi in fase di compilazione. Se
-aggiungi un export a un modulo helper, aggiungilo anche al barrel.
-
-Le tre regole che dal codice **non** si desumono:
-
-1. **Mai `new PrismaClient()` diretto**: in Prisma 7 il costruttore non accetta un
-   URL, serve l'adapter — e un client senza adapter punta al database di sviluppo.
-2. **`TEST_DATABASE_URL` mancante = la suite fallisce, mai skip.** `describe.skipIf`
-   sulla disponibilità del database è vietato: fa riportare verde il job con zero
-   test eseguiti, che è peggio di un job rosso. È il motivo per cui
-   `hasTestDatabase()` è stata rimossa invece che riparata. <!-- skill-check-ignore -->
-3. **Nessun hook di teardown del database.** La disconnessione avviene una volta
-   per file, nel setup globale (`test/setup.ts`), e l'isolamento è per
-   troncamento. `teardownTestDb()` era il no-op che sopravviveva ai propri <!-- skill-check-ignore -->
-   chiamanti: è stato rimosso insieme a loro. Non reintrodurlo.
+**Procedure coverage**: the integration suite has a gate that checks which
+tRPC procedures are _actually invoked_ (`test/procedure-coverage.ts`). If you
+add a procedure without a test, `pnpm test:integration` fails and prints the
+entry to paste in. Don't work around it by declaring it uncovered without
+reason: the gate rejects placeholder reasons.
 
 ---
 
-## 3. Regole di scrittura
+## 2. Existing helpers — use these, don't reinvent them
 
-Nascono tutte da rotture reali già avvenute in questo progetto.
+**`apps/api/test/helpers.ts` is the single barrel: its export list _is_ the
+test API. Read it there.**
 
-### 3.1 Asserisci invarianti, non numeri
+This section used to list the signatures one by one and drifted: it cited
+`hasTestDatabase()` months after its removal and `teardownTestDb(prisma)` <!-- skill-check-ignore -->
+after the parameter had disappeared. It duplicated the codebase, and a
+duplicate always rots. The fix isn't a fresher duplicate.
 
-Un conteggio hardcodato è una bomba a orologeria: si rompe all'aggiunta di una
-azione, e il fallimento sembra una regressione quando è solo un test vecchio.
+The modules under `test/helpers/` (`database`, `logger`, `testContext`,
+`storageTestHelper`) are all re-exported from the barrel — partly because
+that re-export is what makes identically-named exports collide at compile
+time. If you add an export to a helper module, add it to the barrel too.
+
+Three rules that the code itself doesn't make obvious:
+
+1. **Never `new PrismaClient()` directly**: in Prisma 7 the constructor
+   doesn't accept a URL, it needs the adapter — and a client without an
+   adapter points at the development database.
+2. **Missing `TEST_DATABASE_URL` = the suite fails, never skips.**
+   `describe.skipIf` on database availability is forbidden: it reports the
+   job green with zero tests run, which is worse than a red job. That's why
+   `hasTestDatabase()` was removed instead of fixed. <!-- skill-check-ignore -->
+3. **No database teardown hook.** Disconnection happens once per file, in
+   the global setup (`test/setup.ts`), and isolation is by truncation.
+   `teardownTestDb()` was the no-op that outlived its own callers <!-- skill-check-ignore -->: it
+   was removed along with them. Don't reintroduce it.
+
+---
+
+## 3. Writing rules
+
+All of these come from real breakages that already happened in this project.
+
+### 3.1 Assert invariants, not numbers
+
+A hardcoded count is a time bomb: it breaks the moment an action is added,
+and the failure looks like a regression when it's just a stale test.
 
 ```ts
-// ✗ si rompe appena `audit` guadagna un'azione
+// ✗ breaks the moment `audit` gains an action
 expect(auditPerms.length).toBe(2);
 
-// ✓ deriva dalla fonte di verità
+// ✓ derives from the source of truth
 for (const [resource, actions] of Object.entries(VALID_RESOURCE_ACTIONS)) {
   expect(permissions.filter(p => p.startsWith(`${resource}:`)).length).toBe(
     actions.length + 1
@@ -116,11 +119,11 @@ for (const [resource, actions] of Object.entries(VALID_RESOURCE_ACTIONS)) {
 }
 ```
 
-### 3.2 Passa dal surface pubblico, non dagli internals
+### 3.2 Go through the public surface, not internals
 
-I middleware tRPC (`requirePermission`, `withSectionAccess`) ritornano un
-`MiddlewareBuilder`, non una funzione invocabile. Testali attraverso una procedura
-reale — è il percorso di produzione e sopravvive agli upgrade di tRPC.
+tRPC middlewares (`requirePermission`, `withSectionAccess`) return a
+`MiddlewareBuilder`, not a callable function. Test them through a real
+procedure — it's the production path and survives tRPC upgrades.
 
 ```ts
 const probeRouter = router({
@@ -131,23 +134,23 @@ const probeRouter = router({
 await expect(probeRouter.createCaller(ctx).probe()).resolves.toBe('ok');
 ```
 
-### 3.3 I mock devono essere completi quanto il percorso testato
+### 3.3 Mocks must be as complete as the path under test
 
-Un mock parziale non fa fallire il test: lo fa fallire **per la ragione sbagliata**.
-Un `logger: {}` ha trasformato un `FORBIDDEN` atteso in `INTERNAL_SERVER_ERROR`,
-mascherando cosa stesse davvero succedendo.
+A partial mock doesn't make the test fail: it makes it fail **for the wrong
+reason**. A `logger: {}` turned an expected `FORBIDDEN` into
+`INTERNAL_SERVER_ERROR`, masking what was actually going on.
 
-Prima di scrivere un mock, segui il percorso di esecuzione e includi **ogni**
-metodo che verrà toccato — inclusi quelli dei middleware attraversati
-(`ctx.logger`, `ctx.prisma.appConfig` per `getRbacConfig`, ecc.).
+Before writing a mock, follow the execution path and include **every**
+method it will touch — including the ones hit by the middlewares along the
+way (`ctx.logger`, `ctx.prisma.appConfig` for `getRbacConfig`, etc.).
 
-### 3.4 Timer ricorrenti: mai `runAllTimersAsync`
+### 3.4 Recurring timers: never `runAllTimersAsync`
 
-Su uno scheduler con `setInterval`, "esegui tutti i timer" non termina per
-definizione — vitest aborta dopo 10.000 iterazioni.
+On a scheduler with `setInterval`, "run all timers" doesn't terminate by
+definition — vitest aborts after 10,000 iterations.
 
 ```ts
-// ✗ loop infinito
+// ✗ infinite loop
 vi.advanceTimersByTime(60_000);
 await vi.runAllTimersAsync();
 
@@ -155,40 +158,41 @@ await vi.runAllTimersAsync();
 await vi.advanceTimersByTimeAsync(60_000);
 ```
 
-### 3.5 Mai test tautologici
+### 3.5 Never write tautological tests
 
-Un test che asserisce «il codice fa quello che il codice fa», scritto leggendo
-l'implementazione, dà copertura senza dare garanzie — ed è peggio di nessun test,
-perché sembra protezione.
+A test that asserts "the code does what the code does," written by reading
+the implementation, gives coverage without giving guarantees — and it's
+worse than no test, because it looks like protection.
 
-Prima di ogni asserzione, chiediti: **quale bug plausibile farebbe fallire questo
-test?** Se non sai rispondere, non scriverlo. Deriva l'atteso dal contratto (schema
-Zod, tipo, regola in CLAUDE.md, comportamento richiesto), non dal corpo della funzione.
+Before every assertion, ask yourself: **what plausible bug would make this
+test fail?** If you can't answer, don't write it. Derive the expectation
+from the contract (Zod schema, type, a CLAUDE.md rule, required behavior),
+not from the function body.
 
 ---
 
-## 4. Cosa testare per tipo di modifica
+## 4. What to test per type of change
 
-| Cambiamento                 | Test minimo richiesto                                                                            |
-| --------------------------- | ------------------------------------------------------------------------------------------------ |
-| Nuova procedura tRPC        | Permesso concesso/negato per admin, editor, viewer, anonimo                                      |
-| Nuovo campo su schema Zod   | Input valido accettato, input invalido rifiutato con il messaggio giusto                         |
-| Nuova regola RBAC / sezione | Le tre fonti (`sectionEnum`, `SECTION_TO_PERMISSION`, `SECTION_ACCESS_DEFAULTS`) restano in sync |
-| Mutation                    | `withAuditLog`/`logAudit` produce la riga di audit attesa                                        |
-| Write multi-tabella         | Il rollback della transaction lascia lo stato consistente                                        |
-| Nuova route rate-limited    | Presente in `RATE_LIMIT_CONFIG`, `DEFAULTS` e `RateLimitConfigSchema` (vedi `lessons.md`)        |
-| Bug fix                     | Il test fallisce sul codice pre-fix — verificalo davvero, non assumerlo                          |
+| Change                        | Minimum required test                                                                             |
+| ------------------------------ | --------------------------------------------------------------------------------------------------- |
+| New tRPC procedure              | Permission granted/denied for admin, editor, viewer, anonymous                                     |
+| New field on a Zod schema       | Valid input accepted, invalid input rejected with the right message                                 |
+| New RBAC rule / section         | The three sources (`sectionEnum`, `SECTION_TO_PERMISSION`, `SECTION_ACCESS_DEFAULTS`) stay in sync |
+| Mutation                        | `withAuditLog`/`logAudit` produces the expected audit row                                          |
+| Multi-table write                | Transaction rollback leaves state consistent                                                        |
+| New rate-limited route          | Present in `RATE_LIMIT_CONFIG`, `DEFAULTS` and `RateLimitConfigSchema` (see `lessons.md`)           |
+| Bug fix                         | The test fails on the pre-fix code — actually verify this, don't assume it                          |
 
 ---
 
 ## 5. Output
 
-1. Test scritti o aggiornati, con i percorsi.
-2. Esito reale di `pnpm test` (e `pnpm test:integration` se toccato). Riporta
-   l'output, non una parafrasi.
-3. Se il gate di copertura ha chiesto di aggiornare `test/procedure-coverage.ts`,
-   dillo e mostra la voce cambiata.
-4. Cosa **non** hai coperto e perché — un elenco onesto vale più di una copertura
-   gonfiata.
-5. I file di test di altre sessioni vive che hai lasciato stare (§7.2), se ce ne
-   sono. Riga vuota se il set era vuoto: non è una sezione da riempire.
+1. Tests written or updated, with paths.
+2. The actual result of `pnpm test` (and `pnpm test:integration` if touched).
+   Report the output, not a paraphrase.
+3. If the coverage gate asked to update `test/procedure-coverage.ts`, say so
+   and show the changed entry.
+4. What you did **not** cover and why — an honest list is worth more than
+   inflated coverage.
+5. Test files from other live sessions you left alone (§7.2), if any. Leave
+   the line blank if the set was empty: it's not a section to pad.

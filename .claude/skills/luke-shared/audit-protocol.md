@@ -1,71 +1,73 @@
 # Luke Audit Protocol — shared rules
 
-Protocollo comune a tutte le skill `luke-*`: `/luke-audit`, `/luke-bugs`,
+Protocol shared by all `luke-*` skills: `/luke-audit`, `/luke-bugs`,
 `/luke-security`, `/luke-full`, `/luke-test`, `/luke-fix`, `/luke-docs`.
-Ogni skill lo legge prima di iniziare; i controlli specifici restano nel file
-della singola skill.
+Every skill reads it before starting; the specific checks stay in each
+skill's own file.
 
-## Applicabilità
+## Applicability
 
-Non tutte le sezioni valgono per tutte le skill: §2, §3 e §5 presuppongono che la
-skill produca _finding_, e `/luke-test`, `/luke-fix`, `/luke-docs` non ne producono.
+Not every section applies to every skill: §2, §3 and §5 assume the skill
+produces _findings_, and `/luke-test`, `/luke-fix`, `/luke-docs` don't produce any.
 
-Questa tabella è l'unico posto dove l'applicabilità è scritta. Prima viveva nella
-riga con cui ogni skill puntava qui, e ogni skill ne aveva inventata una versione
-diversa: quattro dicevano «applicalo» senza qualificare, `/luke-test` citava la
-sola §1, `/luke-fix` e `/luke-docs` non puntavano affatto — pur scrivendo file.
+This table is the single place where applicability is written. It used to
+live in the line each skill used to point here, and every skill had invented
+a different version of it: four said "apply it" with no qualification,
+`/luke-test` cited only §1, `/luke-fix` and `/luke-docs` didn't point here at
+all — despite writing files.
 
-| §   | Regola                             | Si applica a                                            |
-| --- | ---------------------------------- | ------------------------------------------------------- |
-| 1   | Scoping sul diff                   | tutte                                                   |
-| 2   | Baseline                           | audit, bugs, security, full                             |
-| 3   | Escalation a regola deterministica | audit, bugs, security, full                             |
-| 4   | `lessons.md` come input di check   | audit, bugs, security, full                             |
-| 5   | Onestà dello score                 | audit, bugs, security, full                             |
-| 6   | Niente fan-out                     | chi dichiara `agent: Explore`                           |
-| 7   | Sessioni concorrenti               | tutte — §7.2 solo per chi scrive file (test, fix, docs) |
+| §   | Rule                                | Applies to                                                |
+| --- | ------------------------------------ | ---------------------------------------------------------- |
+| 1   | Diff scoping                         | all                                                        |
+| 2   | Baseline                             | audit, bugs, security, full                                |
+| 3   | Escalation to a deterministic rule   | audit, bugs, security, full                                |
+| 4   | `lessons.md` as a check input        | audit, bugs, security, full                                |
+| 5   | Score honesty                        | audit, bugs, security, full                                |
+| 6   | No fan-out                           | whoever declares `agent: Explore`                          |
+| 7   | Concurrent sessions                  | all — §7.2 only for those who write files (test, fix, docs) |
 
 ---
 
-## 1. Scoping — default sul diff, non sul monorepo
+## 1. Scoping — default on the diff, not the monorepo
 
-Uno scan dell'intero monorepo produce le stesse finding ad ogni run, costa molto e
-si lancia raramente. L'obiettivo è l'opposto: costo basso, uso ad ogni sessione.
+A full-monorepo scan produces the same findings on every run, costs a lot,
+and gets run rarely. The goal is the opposite: low cost, used every session.
 
-Interpreta `$ARGUMENTS` così:
+Interpret `$ARGUMENTS` as follows:
 
-| Forma                  | Comportamento                                                            |
-| ---------------------- | ------------------------------------------------------------------------ |
-| _(vuoto)_              | **Default**: file cambiati rispetto al merge-base col branch di sviluppo |
-| `--since <ref>`        | File cambiati rispetto a `<ref>`                                         |
-| `--full`               | Intero monorepo (esplicito)                                              |
-| `<path>`               | Solo quel path, ricorsivo                                                |
-| `<path> --since <ref>` | Intersezione dei due                                                     |
+| Form                    | Behavior                                                                  |
+| ----------------------- | -------------------------------------------------------------------------- |
+| _(empty)_                | **Default**: files changed relative to the merge-base with the development branch |
+| `--since <ref>`          | Files changed relative to `<ref>`                                         |
+| `--full`                 | Whole monorepo (explicit)                                                 |
+| `<path>`                 | Just that path, recursive                                                 |
+| `<path> --since <ref>`   | Intersection of the two                                                   |
 
-Per ricavare il set di default:
+To derive the default set:
 
 ```bash
-# branch di sviluppo corrente (develop-*), fallback su main
+# current development branch (develop-*), fallback to main
 BASE=$(git branch -r --list 'origin/develop-*' | sort -V | tail -1 | sed 's|origin/||' | xargs)
 BASE=${BASE:-main}
 git diff --name-only "$(git merge-base HEAD "$BASE")"...HEAD
-git diff --name-only HEAD          # modifiche non committate
-git ls-files --others --exclude-standard  # file nuovi non tracciati
+git diff --name-only HEAD          # uncommitted changes
+git ls-files --others --exclude-standard  # new untracked files
 ```
 
-Unisci i tre elenchi. Se il risultato è vuoto, dillo e fermati — non ripiegare
-sullo scan completo senza chiederlo.
+Merge the three lists. If the result is empty, say so and stop — don't fall
+back to a full scan without asking.
 
-**Contesto oltre il diff**: leggi comunque i file di verità (`CLAUDE.md`,
-`lessons.md`, schemi in `packages/core/src/schemas/`) e i file direttamente
-importati da quelli cambiati. Il diff limita _cosa segnali_, non _cosa leggi_.
+**Context beyond the diff**: still read the source-of-truth files
+(`CLAUDE.md`, `lessons.md`, schemas in `packages/core/src/schemas/`) and the
+files directly imported by the changed ones. The diff limits _what you
+report_, not _what you read_.
 
 ---
 
-## 2. Baseline — segnala solo il nuovo
+## 2. Baseline — report only what's new
 
-File: `.luke-audit-baseline.json` nella root del progetto. Se non esiste, trattalo
-come vuoto (nessuna soppressione).
+File: `.luke-audit-baseline.json` at the project root. If it doesn't exist,
+treat it as empty (no suppression).
 
 ```json
 {
@@ -73,195 +75,204 @@ come vuoto (nessuna soppressione).
   "entries": [
     {
       "key": "luke-audit:apps/api/src/lib/foo.ts:raw-sql-outside-nav",
-      "reason": "query DISTINCT ON non esprimibile in Prisma, eccezione documentata in CLAUDE.md",
+      "reason": "DISTINCT ON query not expressible in Prisma, documented exception in CLAUDE.md",
       "addedAt": "2026-07-29"
     }
   ]
 }
 ```
 
-`key` = `<skill>:<path relativo>:<slug della regola>`. **Mai includere il numero di
-riga**: driftano ad ogni edit e renderebbero la soppressione inutile.
+`key` = `<skill>:<relative path>:<rule slug>`. **Never include the line
+number**: it drifts on every edit and would make the suppression useless.
 
-Regole:
+Rules:
 
-1. Calcola la `key` di ogni finding prima di riportarla.
-2. Se la `key` è in baseline, **non riportarla** nel corpo del report.
-3. A fine report indica solo il conteggio: `N finding soppresse da baseline`.
-4. **Non scrivere mai** tu il file di baseline. Proponi le righe da aggiungere in
-   un blocco separato; è l'utente a decidere cosa accettare.
+1. Compute the `key` for every finding before reporting it.
+2. If the `key` is in the baseline, **do not report it** in the report body.
+3. At the end of the report, show only the count: `N findings suppressed by baseline`.
+4. **Never write** the baseline file yourself. Propose the lines to add in a
+   separate block; it's the user's decision what to accept.
 
-Il senso: una finding che riemerge ad ogni run e viene ignorata ogni volta educa
-a ignorare il report. O si ripara, o si accetta esplicitamente.
+The point: a finding that keeps resurfacing on every run and gets ignored
+every time teaches people to ignore the report. Either it gets fixed, or it
+gets explicitly accepted.
 
 ---
 
-## 3. Escalation a regola deterministica — obbligatoria
+## 3. Escalation to a deterministic rule — mandatory
 
-**La regola più importante di questo protocollo.**
+**The most important rule in this protocol.**
 
-Una finding trovata da un LLM è un controllo debole: non deterministico, costoso,
-e ritrovabile solo se qualcuno lancia la skill. Una regola semgrep o eslint è
-gratuita, ripetibile e gira in CI su ogni push.
+A finding produced by an LLM is a weak control: non-deterministic, costly,
+and only rediscoverable if someone runs the skill. A semgrep or eslint rule
+is free, repeatable, and runs in CI on every push.
 
-Ad ogni run, prima del report finale:
+On every run, before the final report:
 
-1. Raggruppa le finding per classe (stessa regola, file diversi).
-2. Per ogni classe con **≥2 occorrenze**, oppure già presente in un report
-   precedente, valuta se è esprimibile come pattern sintattico.
-3. Se sì, **proponi la regola** invece di limitarti a elencare le occorrenze:
-   - pattern puramente sintattico → `.semgrep/rules/<nome>.yml`
-   - richiede il type checker o l'AST TypeScript → `packages/eslint-plugin-luke/rules/<nome>.js`
-4. Includi la regola scritta, pronta da incollare, e il comando per verificarla.
+1. Group findings by class (same rule, different files).
+2. For every class with **≥2 occurrences**, or already present in a previous
+   report, evaluate whether it's expressible as a syntactic pattern.
+3. If so, **propose the rule** instead of just listing the occurrences:
+   - purely syntactic pattern → `.semgrep/rules/<name>.yml`
+   - requires the type checker or the TypeScript AST → `packages/eslint-plugin-luke/rules/<name>.js`
+4. Include the written rule, ready to paste, and the command to verify it.
 
-Report in coda, sempre presente:
+Report footer, always present:
 
 ```
-### Promozione a regola
+### Promotion to rule
 
-| Classe di finding | Occorrenze | Livello proposto | File |
+| Finding class | Occurrences | Proposed level | File |
 |---|---|---|---|
 | ... | N | semgrep / eslint | .semgrep/rules/....yml |
 
-<regola completa, pronta da incollare>
+<complete rule, ready to paste>
 ```
 
-Se nessuna classe è promuovibile: `Nessuna classe promuovibile in questo run.`
+If no class is promotable: `No promotable class in this run.`
 
-**Gerarchia dei controlli** — ogni finding va spinta più in alto possibile:
+**Control hierarchy** — every finding should be pushed as high as possible:
 
-1. Impossibile da sbagliare (tipi, schema Prisma, vincoli DB)
-2. Bloccato automaticamente (eslint, semgrep, test in CI)
-3. Segnalato deterministicamente (drift check, osv-scanner)
-4. Trovato da un LLM ← **stato di partenza, non di arrivo**
-
----
-
-## 4. lessons.md come input di check
-
-`lessons.md` nella root registra le regressioni già pagate — inclusa quella che ha
-causato l'hotfix v1.9.1 (drift fra `RATE_LIMIT_CONFIG`, `DEFAULTS` e
-`RateLimitConfigSchema`). Va **letto ad ogni run** e usato come lista di controlli:
-
-1. Leggi `lessons.md`.
-2. Per ogni lesson con una forma meccanica verificabile, controlla che il codice
-   nello scope non la violi.
-3. Se una lesson è esprimibile come regola semgrep/eslint e non lo è ancora,
-   includila nella sezione "Promozione a regola" (§3).
-
-Una lesson che nessuno verifica è documentazione, non un controllo.
+1. Impossible to get wrong (types, Prisma schema, DB constraints)
+2. Automatically blocked (eslint, semgrep, CI tests)
+3. Deterministically flagged (drift check, osv-scanner)
+4. Found by an LLM ← **starting state, not the end state**
 
 ---
 
-## 5. Onestà dello score
+## 4. lessons.md as a check input
 
-Se la skill produce un punteggio, deve essere calcolato **solo sulle finding nuove**
-(post-baseline). Un punteggio che include finding accettate non è comparabile fra
-run e scende per ragioni che non riguardano il codice appena scritto.
+`lessons.md` at the root logs regressions already paid for — including the
+one that caused the v1.9.1 hotfix (drift between `RATE_LIMIT_CONFIG`,
+`DEFAULTS` and `RateLimitConfigSchema`). It must be **read on every run** and
+used as a checklist:
 
-Indica sempre, accanto allo score, il numero di finding soppresse.
+1. Read `lessons.md`.
+2. For every lesson with a mechanically verifiable shape, check that the code
+   in scope doesn't violate it.
+3. If a lesson is expressible as a semgrep/eslint rule and isn't yet, include
+   it in the "Promotion to rule" section (§3).
 
----
-
-## 6. Capacità dell'agente — niente fan-out nelle skill Explore
-
-`/luke-audit`, `/luke-bugs` e `/luke-security` dichiarano `agent: Explore` nel
-frontmatter. **Un agente Explore non ha il tool Agent**: non può invocare
-subagenti.
-
-Le tre skill contenevano "Run 3 agents in parallel" con tre brief dettagliati.
-Non è mai stato eseguito: ogni report `luke-*` mai letto è stato prodotto da un
-passaggio singolo e sequenziale sulle tre checklist. Un fan-out dichiarato e mai
-avvenuto è la stessa classe di difetto che questo protocollo esiste per trovare —
-solo, dentro il protocollo stesso.
-
-**Regola: una skill con `agent: Explore` non deve contenere istruzioni per
-invocare subagenti.** Verificata da `tools/scripts/check-skill-integrity.ts`, che
-gira in CI.
-
-Il fan-out non va ripristinato passando a `agent: general-purpose`. Le tre skill
-aprono con "Read-only. Do NOT modify any file", e oggi quel vincolo è garantito
-**dal tipo di agente**, che non ha tool di scrittura. Passare a
-`general-purpose` per sbloccare i subagenti consegnerebbe Write ed Edit a delle
-skill di sola lettura: un invariante strutturale degradato a istruzione in prosa,
-in cambio di un parallelismo che non è mai esistito.
-
-Il fan-out esiste già alla granularità giusta: `/luke-full` (`agent:
-general-purpose`) orchestra le tre skill via `Skill()`, ciascuna nel proprio
-contesto forkato — tre lavori diversi, non tre fette della stessa checklist.
-
-**Contropartita**: le tre aree girano davvero in un contesto solo, quindi su
-scope `--full` il contesto può esaurirsi. Lo scope di default è il diff, perciò
-morde solo su `--full` esplicito. Se succede, la risposta è `/luke-full`, non
-resuscitare il fan-out.
+A lesson nobody checks is documentation, not a control.
 
 ---
 
-## 7. Sessioni concorrenti
+## 5. Score honesty
 
-Due sessioni Claude Code sullo stesso repo condividono working tree, database di
-test e cache: sono processi diversi sulle stesse risorse, senza alcun arbitro.
+If the skill produces a score, it must be computed **only on new findings**
+(post-baseline). A score that includes accepted findings isn't comparable
+across runs and drops for reasons unrelated to the code just written.
 
-Il sintomo osservato è una skill che **si ferma** trovando file che non ha scritto
-lei, li tratta come anomalia e interrompe il lavoro. Sono file di un'altra sessione
-viva. La risposta giusta non è fermarsi: è riconoscerli, non toccarli, e proseguire.
+Always show, next to the score, the number of suppressed findings.
 
-### 7.1 Identità e censimento
+---
 
-`$CLAUDE_CODE_SESSION_ID` è l'identità della sessione. Resta la stessa nei
-subagenti (`/luke-full` che invoca le tre skill di audit condivide la propria), e
-quindi anche fra skill successive dello stesso turno di lavoro.
+## 6. Agent capability — no fan-out in Explore skills
 
-Ogni sessione ha già una scratchpad dir che porta quel nome; le sessioni sorelle
-sono directory adiacenti. Nessun registro nuovo da inventare:
+`/luke-audit`, `/luke-bugs` and `/luke-security` declare `agent: Explore` in
+their frontmatter. **An Explore agent doesn't have the Agent tool**: it
+cannot invoke subagents.
+
+The three skills used to contain "Run 3 agents in parallel" with three
+detailed briefs. It was never executed: every `luke-*` report ever read was
+produced by a single sequential pass over the three checklists. A declared
+and never-happening fan-out is the same class of defect this protocol exists
+to find — only, inside the protocol itself.
+
+**Rule: a skill with `agent: Explore` must not contain instructions to invoke
+subagents.** Verified by `tools/scripts/check-skill-integrity.ts`, which runs
+in CI.
+
+The fan-out shouldn't be restored by switching to `agent: general-purpose`.
+The three skills open with "Read-only. Do NOT modify any file", and today
+that constraint is guaranteed **by the agent type**, which has no write
+tools. Switching to `general-purpose` to unlock subagents would hand Write
+and Edit to read-only skills: a structural invariant downgraded to a prose
+instruction, in exchange for a parallelism that never existed.
+
+The fan-out already exists at the right granularity: `/luke-full` (`agent:
+general-purpose`) orchestrates the three skills via `Skill()`, each in its
+own forked context — three different jobs, not three slices of the same
+checklist.
+
+**Trade-off**: the three areas do run in a single context, so on `--full`
+scope the context can run out. The default scope is the diff, so this only
+bites on explicit `--full`. If it happens, the answer is `/luke-full`, not
+resurrecting the fan-out.
+
+---
+
+## 7. Concurrent sessions
+
+Two Claude Code sessions on the same repo share the working tree, the test
+database, and the cache: they're different processes on the same resources,
+with no arbiter.
+
+The observed symptom is a skill that **stops** when it finds files it didn't
+write, treats them as an anomaly, and interrupts the work. Those are files
+from another live session. The right response isn't to stop: it's to
+recognize them, leave them alone, and continue.
+
+### 7.1 Identity and discovery
+
+`$CLAUDE_CODE_SESSION_ID` is the session's identity. It stays the same across
+subagents (`/luke-full` invoking the three audit skills shares its own), and
+therefore also across successive skills within the same work turn.
+
+Every session already has a scratchpad dir named after it; sibling sessions
+are adjacent directories. No new registry to invent:
 
 ```bash
 SESSIONS_ROOT=$(dirname "$(find /private/tmp/claude-* -maxdepth 2 -type d \
   -name "$CLAUDE_CODE_SESSION_ID" 2>/dev/null | head -1)")
 LEDGER="$SESSIONS_ROOT/$CLAUDE_CODE_SESSION_ID/scratchpad/luke-written.txt"
 
-# File scritti da sessioni ancora vive (ledger toccato negli ultimi 30 minuti)
+# Files written by sessions still alive (ledger touched in the last 30 minutes)
 find "$SESSIONS_ROOT" -maxdepth 3 -name luke-written.txt -mmin -30 \
   -not -path "*/$CLAUDE_CODE_SESSION_ID/*" -exec cat {} +
 ```
 
-La liveness è l'mtime del ledger, non un heartbeat né un PID: la skill può girare
-in un subagente con PID proprio, e un protocollo di heartbeat sarebbe infrastruttura
-nuova per un fatto che il filesystem già registra.
+Liveness is the ledger's mtime, not a heartbeat or a PID: the skill can run
+inside a subagent with its own PID, and a heartbeat protocol would be new
+infrastructure for a fact the filesystem already records.
 
-**Un ledger vecchio non vincola nessuno.** È deliberato: i file scritti da una
-sessione di ieri devono restare modificabili oggi, altrimenti la seconda run di
-`/luke-test` sugli stessi test si rifiuterebbe di aggiornarli.
+**An old ledger binds no one.** This is deliberate: files written by
+yesterday's session must stay editable today, otherwise the second run of
+`/luke-test` on the same tests would refuse to update them.
 
-### 7.2 Ledger e proprietà dei file — solo per le skill che scrivono
+### 7.2 Ledger and file ownership — only for skills that write
 
-1. Appendi a `$LEDGER` il path di **ogni** file che scrivi, uno per riga, subito
-   dopo averlo scritto.
-2. All'avvio calcola il set dei file di sessioni vive diverse dalla tua.
-3. Un file in quel set **non si riscrive**: leggilo pure come contesto, evita di
-   duplicarne il contenuto, ed elencalo in output come `di altra sessione, non
-toccato`. **Non è un errore e non interrompe il lavoro.**
-4. Un file nel ledger della **tua** sessione è tuo, anche se scritto da una skill
-   precedente: modificalo normalmente.
+1. Append to `$LEDGER` the path of **every** file you write, one per line,
+   right after writing it.
+2. On startup, compute the set of files from live sessions other than your own.
+3. A file in that set **doesn't get rewritten**: you can still read it as
+   context, avoid duplicating its content, and list it in the output as
+   `owned by another session, not touched`. **This is not an error and does
+   not interrupt the work.**
+4. A file in **your own** session's ledger is yours, even if written by a
+   previous skill: modify it normally.
 
-Il set è vuoto quando giri da solo, e ogni percorso resta identico a oggi.
+The set is empty when you're running alone, and every path stays identical
+to today.
 
-### 7.3 Risorse condivise non partizionabili
+### 7.3 Shared, non-partitionable resources
 
-Il database di test è uno solo: porta fissa `5434`, nome fisso, e l'isolamento fra
-test è un `TRUNCATE` di tutte le tabelle. Due run di integrazione in parallelo si
-cancellano le fixture a vicenda, e il fallimento sembra un bug del prodotto.
-`fileParallelism: false` serializza dentro un processo vitest, non fra processi.
+There's only one test database: fixed port `5434`, fixed name, and isolation
+between tests is a `TRUNCATE` of every table. Two integration runs in
+parallel wipe each other's fixtures, and the failure looks like a product
+bug. `fileParallelism: false` serializes inside one vitest process, not
+across processes.
 
-- Prima di lanciare i test di integrazione: se `pgrep -f vitest` trova una run
-  altrui, aspetta o salta il passo — e dillo nell'output.
-- Mai `pnpm test:db:down`: cancella il volume sotto la run di un'altra sessione.
+- Before launching integration tests: if `pgrep -f vitest` finds someone
+  else's run, wait or skip the step — and say so in the output.
+- Never `pnpm test:db:down`: it deletes the volume out from under another
+  session's run.
 
-### 7.4 Revert — mai con git
+### 7.4 Revert — never with git
 
-Ripristinare un file dopo una modifica fallita si fa **annullando la propria
-Edit**, mai con `git checkout` o `git restore` sul file.
+Restoring a file after a failed change is done **by undoing your own Edit**,
+never with `git checkout` or `git restore` on the file.
 
-Il comando git non distingue la tua modifica dal resto: butta via anche il lavoro
-non committato dell'altra sessione e quello dell'utente. È distruttivo già in
-sessione singola; la concorrenza lo rende solo più probabile.
+The git command can't tell your change apart from the rest: it throws away
+the other session's uncommitted work too, and the user's. It's destructive
+even in a single session; concurrency just makes it more likely.

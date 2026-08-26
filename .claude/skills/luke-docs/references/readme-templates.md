@@ -1,16 +1,17 @@
-# luke-docs — Template README (modalità `readme`)
+# luke-docs — README templates (`readme` mode)
 
-Ogni sezione generata vive tra marker `<!-- luke-docs:start:NAME -->` / `<!-- luke-docs:end:NAME -->`.
-Contenuto fuori dai marker = manuale, mai toccarlo.
+Every generated section lives between `<!-- luke-docs:start:NAME -->` /
+`<!-- luke-docs:end:NAME -->` markers. Content outside the markers = manual,
+never touch it.
 
-## Logica update (run successive)
+## Update logic (subsequent runs)
 
-| Situazione                          | Comportamento                                 |
-| ----------------------------------- | --------------------------------------------- |
-| README non esiste                   | Scrivi tutto da zero con tutti i marker       |
-| README esiste, sezione ha marker    | Sostituisci il contenuto tra i marker         |
-| README esiste, sezione senza marker | **Non toccare** — è stata scritta manualmente |
-| Marker presente ma contenuto vuoto  | Genera il contenuto                           |
+| Situation                              | Behavior                                       |
+| ----------------------------------------- | ------------------------------------------------- |
+| README doesn't exist                      | Write everything from scratch with all markers    |
+| README exists, section has markers        | Replace the content between the markers           |
+| README exists, section has no markers     | **Don't touch it** — it was written manually      |
+| Marker present but content empty          | Generate the content                              |
 
 ---
 
@@ -21,9 +22,9 @@ Contenuto fuori dai marker = manuale, mai toccarlo.
 
 <!-- luke-docs:start:overview -->
 
-{1-2 paragrafi: cos'è Luke, chi lo usa, problema che risolve — FEBOS/BLAUER, B2B interno,
-collection management, season planning, sourcing, merchandise planning.
-Menziona ISO 9001 e integrazione NAV se rilevante.}
+{1-2 paragraphs: what Luke is, who uses it, what problem it solves — FEBOS/BLAUER,
+internal B2B, collection management, season planning, sourcing, merchandise planning.
+Mention ISO 9001 and NAV integration if relevant.}
 
 <!-- luke-docs:end:overview -->
 
@@ -31,7 +32,7 @@ Menziona ISO 9001 e integrazione NAV se rilevante.}
 
 <!-- luke-docs:start:structure -->
 
-{Tabella: Workspace | Tipo | Descrizione — genera da dizionario Phase 1}
+{Table: Workspace | Type | Description — generate from the Phase 1 dictionary}
 
 <!-- luke-docs:end:structure -->
 
@@ -39,7 +40,7 @@ Menziona ISO 9001 e integrazione NAV se rilevante.}
 
 <!-- luke-docs:start:prerequisites -->
 
-{Versioni da package.json engines + runtime richiesti: Node.js, pnpm, Docker, PostgreSQL, MinIO, MSSQL per NAV sync}
+{Versions from package.json engines + required runtimes: Node.js, pnpm, Docker, PostgreSQL, MinIO, MSSQL for NAV sync}
 
 <!-- luke-docs:end:prerequisites -->
 
@@ -47,7 +48,7 @@ Menziona ISO 9001 e integrazione NAV se rilevante.}
 
 <!-- luke-docs:start:quickstart -->
 
-{Blocco bash: clone, pnpm install, cp .env.example .env, pnpm dev}
+{Bash block: clone, pnpm install, cp .env.example .env, pnpm dev}
 
 <!-- luke-docs:end:quickstart -->
 
@@ -55,7 +56,7 @@ Menziona ISO 9001 e integrazione NAV se rilevante.}
 
 <!-- luke-docs:start:scripts -->
 
-{Tabella degli script root-level rilevanti: dev, build, lint, typecheck, test, db:migrate}
+{Table of relevant root-level scripts: dev, build, lint, typecheck, test, db:migrate}
 
 <!-- luke-docs:end:scripts -->
 
@@ -63,8 +64,8 @@ Menziona ISO 9001 e integrazione NAV se rilevante.}
 
 <!-- luke-docs:start:deployment -->
 
-{3-4 frasi: conventional tag → GitHub Actions → ghcr.io → Portainer.
-Non inventare dettagli che non riesci a verificare dalla codebase.}
+{3-4 sentences: conventional tag → GitHub Actions → ghcr.io → Portainer.
+Don't invent details you can't verify from the codebase.}
 
 <!-- luke-docs:end:deployment -->
 
@@ -72,8 +73,8 @@ Non inventare dettagli che non riesci a verificare dalla codebase.}
 
 <!-- luke-docs:start:architecture -->
 
-{Paragrafo breve: stack, pattern principali (tRPC end-to-end types, RBAC, NAV sync).
-Link a docs/decisions/ per le decisioni architetturali.}
+{Short paragraph: stack, main patterns (end-to-end tRPC types, RBAC, NAV sync).
+Link to docs/decisions/ for architectural decisions.}
 
 <!-- luke-docs:end:architecture -->
 
@@ -89,8 +90,8 @@ Le decisioni architetturali rilevanti sono documentate in [`docs/decisions/`](do
 
 <!-- luke-docs:start:release -->
 
-{Conventional commits + git-cliff per CHANGELOG automatico.
-Tag naming: vX.Y.Z. commitlint + husky hooks attivi.}
+{Conventional commits + git-cliff for automatic CHANGELOG.
+Tag naming: vX.Y.Z. commitlint + husky hooks active.}
 
 <!-- luke-docs:end:release -->
 ```
@@ -104,7 +105,7 @@ Tag naming: vX.Y.Z. commitlint + husky hooks attivi.}
 
 <!-- luke-docs:start:overview -->
 
-{Next.js 15, App Router, shadcn/ui. Cosa renderizza, chi lo usa.}
+{Next.js 15, App Router, shadcn/ui. What it renders, who uses it.}
 
 <!-- luke-docs:end:overview -->
 
@@ -112,8 +113,8 @@ Tag naming: vX.Y.Z. commitlint + husky hooks attivi.}
 
 <!-- luke-docs:start:routes -->
 
-{Albero delle directory `src/app/` a 2 livelli con una riga descrittiva per ciascuna.
-Usa indentazione markdown, non tabella.}
+{2-level directory tree of `src/app/` with one descriptive line for each.
+Use markdown indentation, not a table.}
 
 <!-- luke-docs:end:routes -->
 
@@ -121,7 +122,7 @@ Usa indentazione markdown, non tabella.}
 
 <!-- luke-docs:start:internal-deps -->
 
-{Lista dei packages/ interni importati da questo app.}
+{List of internal packages/ imported by this app.}
 
 <!-- luke-docs:end:internal-deps -->
 
@@ -129,7 +130,7 @@ Usa indentazione markdown, non tabella.}
 
 <!-- luke-docs:start:env -->
 
-{Tabella: Variabile | Descrizione | Richiesta. Solo quelle consumate da web.}
+{Table: Variable | Description | Required. Only the ones consumed by web.}
 
 <!-- luke-docs:end:env -->
 
@@ -137,7 +138,7 @@ Usa indentazione markdown, non tabella.}
 
 <!-- luke-docs:start:dev -->
 
-{Comando per avviare in dev dal root del monorepo e dalla dir dell'app.}
+{Command to start dev from the monorepo root and from the app's directory.}
 
 <!-- luke-docs:end:dev -->
 ```
@@ -151,7 +152,7 @@ Usa indentazione markdown, non tabella.}
 
 <!-- luke-docs:start:overview -->
 
-{Fastify 5 + tRPC + Prisma + PostgreSQL. Cosa espone (tRPC endpoint, eventuale REST).}
+{Fastify 5 + tRPC + Prisma + PostgreSQL. What it exposes (tRPC endpoint, any REST).}
 
 <!-- luke-docs:end:overview -->
 
@@ -159,8 +160,8 @@ Usa indentazione markdown, non tabella.}
 
 <!-- luke-docs:start:trpc-routers -->
 
-{Lista dei namespace router (da elenco file in `src/routers/`).
-Formato: `namespace.*` — descrizione breve}
+{List of router namespaces (from the file listing in `src/routers/`).
+Format: `namespace.*` — short description}
 
 <!-- luke-docs:end:trpc-routers -->
 
@@ -168,7 +169,7 @@ Formato: `namespace.*` — descrizione breve}
 
 <!-- luke-docs:start:internal-deps -->
 
-{Lista packages/ importati.}
+{List of imported packages/.}
 
 <!-- luke-docs:end:internal-deps -->
 
@@ -176,9 +177,9 @@ Formato: `namespace.*` — descrizione breve}
 
 <!-- luke-docs:start:env -->
 
-{Tabella: Variabile | Tipo | Default | Descrizione.
-Fonti: `.env.production.example` + policy env in CLAUDE.md.
-Menziona `assertEnvPolicy()` in `apps/api/src/server.ts` (enforcement in produzione).}
+{Table: Variable | Type | Default | Description.
+Sources: `.env.production.example` + env policy in CLAUDE.md.
+Mention `assertEnvPolicy()` in `apps/api/src/server.ts` (production enforcement).}
 
 <!-- luke-docs:end:env -->
 
@@ -186,7 +187,7 @@ Menziona `assertEnvPolicy()` in `apps/api/src/server.ts` (enforcement in produzi
 
 <!-- luke-docs:start:database -->
 
-{PostgreSQL + Prisma. Comandi migrate + studio. Elenco model rilevati in Phase 1.}
+{PostgreSQL + Prisma. migrate + studio commands. List of models detected in Phase 1.}
 
 <!-- luke-docs:end:database -->
 
@@ -194,8 +195,8 @@ Menziona `assertEnvPolicy()` in `apps/api/src/server.ts` (enforcement in produzi
 
 <!-- luke-docs:start:nav -->
 
-{packages/nav, MSSQL diretto (no DAB), sync unidirezionale NAV → Luke.
-Config NAV letta da AppConfig, non da env.}
+{packages/nav, direct MSSQL (no DAB), one-way NAV → Luke sync.
+NAV config read from AppConfig, not from env.}
 
 <!-- luke-docs:end:nav -->
 
@@ -203,23 +204,23 @@ Config NAV letta da AppConfig, non da env.}
 
 <!-- luke-docs:start:storage -->
 
-{Provider IStorageProvider. Bucket validi: leggi `isValidBucket()` in
-`packages/core/src/storage/config.ts` — non hardcodare l'elenco.
-Content-addressed SHA256 key per foto revisioni.}
+{IStorageProvider provider. Valid buckets: read `isValidBucket()` in
+`packages/core/src/storage/config.ts` — don't hardcode the list.
+Content-addressed SHA256 key for revision photos.}
 
 <!-- luke-docs:end:storage -->
 ```
 
 ---
 
-## `packages/*/README.md` (uno per package)
+## `packages/*/README.md` (one per package)
 
 ```markdown
 # @luke/{name}
 
 <!-- luke-docs:start:overview -->
 
-{1 frase: cosa fa questo package, quale domain problem risolve.}
+{1 sentence: what this package does, what domain problem it solves.}
 
 <!-- luke-docs:end:overview -->
 
@@ -227,7 +228,7 @@ Content-addressed SHA256 key per foto revisioni.}
 
 <!-- luke-docs:start:dependents -->
 
-{Lista di apps/packages che importano da questo package — da dizionario Phase 1.}
+{List of apps/packages that import from this package — from the Phase 1 dictionary.}
 
 <!-- luke-docs:end:dependents -->
 
@@ -235,8 +236,8 @@ Content-addressed SHA256 key per foto revisioni.}
 
 <!-- luke-docs:start:exports -->
 
-{Tabella o lista: Simbolo | Tipo | Descrizione breve.
-Solo export pubblici di `src/index.ts`. Max 20 righe — se ci sono troppi export, raggruppa per categoria.}
+{Table or list: Symbol | Type | Short description.
+Only public exports from `src/index.ts`. Max 20 rows — if there are too many exports, group by category.}
 
 <!-- luke-docs:end:exports -->
 
@@ -244,7 +245,7 @@ Solo export pubblici di `src/index.ts`. Max 20 righe — se ci sono troppi expor
 
 <!-- luke-docs:start:concepts -->
 
-{3-6 bullet point su comportamenti non ovvi, pattern, vincoli architetturali del package.}
+{3-6 bullet points on non-obvious behaviors, patterns, architectural constraints of the package.}
 
 <!-- luke-docs:end:concepts -->
 
@@ -252,35 +253,35 @@ Solo export pubblici di `src/index.ts`. Max 20 righe — se ci sono troppi expor
 
 <!-- luke-docs:start:example -->
 
-{Snippet TypeScript minimale che mostra l'uso più comune. Deve essere sintatticamente valido.}
+{Minimal TypeScript snippet showing the most common usage. Must be syntactically valid.}
 
 <!-- luke-docs:end:example -->
 ```
 
 ---
 
-## `docs/README.md` (indice documentazione)
+## `docs/README.md` (documentation index)
 
 ```markdown
 # Documentazione Luke
 
 <!-- luke-docs:start:index -->
 
-{Indice dei contenuti in docs/, con link e una riga descrittiva per ciascun file/directory.
-Generato da elenco file rilevato in Phase 1.}
+{Index of the contents of docs/, with links and one descriptive line for each file/directory.
+Generated from the file listing detected in Phase 1.}
 
 <!-- luke-docs:end:index -->
 ```
 
 ---
 
-## Checklist qualità README (verifica prima di chiudere)
+## README quality checklist (verify before closing)
 
-- [ ] Nessun testo placeholder (`TBD`, `…`, `{da compilare}`)
-- [ ] Tutti i code snippet sono sintatticamente validi
-- [ ] Tutti i link interni `[testo](#ancora)` risolvono a sezioni esistenti
-- [ ] Il link root README → `docs/decisions/README.md` risolve
-- [ ] Le env var listate corrispondono a `.env.production.example` reale
-- [ ] L'elenco export corrisponde a ciò che `index.ts` esporta realmente
-- [ ] Nessun numero di versione hardcoded (usa `package.json` come source of truth)
-- [ ] Tabella "Struttura monorepo" nel root README include tutti i workspace
+- [ ] No placeholder text (`TBD`, `…`, `{to be filled in}`)
+- [ ] All code snippets are syntactically valid
+- [ ] All internal links `[text](#anchor)` resolve to existing sections
+- [ ] The root README → `docs/decisions/README.md` link resolves
+- [ ] The listed env vars match the real `.env.production.example`
+- [ ] The export list matches what `index.ts` actually exports
+- [ ] No hardcoded version number (use `package.json` as source of truth)
+- [ ] The "Struttura monorepo" table in the root README includes every workspace

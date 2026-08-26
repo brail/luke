@@ -1,39 +1,40 @@
-# luke-docs — Regole commenti inline (modalità `inline`)
+# luke-docs — Inline comment rules (`inline` mode)
 
-Lingua: **inglese** per tutti i commenti inline (JSDoc, tRPC, Prisma `///`).
-Nessuna eccezione per termini di dominio italiani (es. "stagione"→season,
-"campionario"→collection/catalog, "reso"→return): tradurre sempre. Vedi
-CLAUDE.md, sezione Development Patterns, regola 14.
+Language: **English** for all inline comments (JSDoc, tRPC, Prisma `///`).
+No exception for Italian domain terms (e.g. "stagione"→season,
+"campionario"→collection/catalog, "reso"→return): always translate. See
+CLAUDE.md, Development Patterns section, rule 14.
 
-## Logica di merge (vale per tutte le fasi)
+## Merge logic (applies to every phase)
 
-**Prima di scrivere qualsiasi commento, leggi quello esistente (se presente):**
+**Before writing any comment, read the existing one (if present):**
 
-| Situazione                          | Comportamento                                              |
-| ----------------------------------- | ---------------------------------------------------------- |
-| Commento accurato e completo        | Lascia invariato — non toccare                             |
-| Commento accurato ma incompleto     | Integra il contenuto mancante, preserva il testo esistente |
-| Commento driftato dalla firma reale | Riscrivi, segnala nel report come "aggiornato"             |
-| Commento assente                    | Crea da zero                                               |
+| Situation                              | Behavior                                                       |
+| ---------------------------------------- | ------------------------------------------------------------------ |
+| Comment accurate and complete            | Leave unchanged — don't touch it                                   |
+| Comment accurate but incomplete          | Add the missing content, preserve the existing text                |
+| Comment drifted from the real signature  | Rewrite it, flag it in the report as "updated"                     |
+| Comment absent                           | Create from scratch                                                 |
 
 ---
 
-## JSDoc su export TypeScript (`packages/**/src`, `apps/web/src/lib`, `apps/web/src/hooks`)
+## JSDoc on TypeScript exports (`packages/**/src`, `apps/web/src/lib`, `apps/web/src/hooks`)
 
-Stesso template per i tre target. `apps/web/src/lib` e `apps/web/src/hooks`
-aggiunti 2026-08-08 — prima il modo `inline` copriva solo `packages/`.
-Non estendere a `apps/web/src/components` o `apps/web/src/app` (troppo volume,
-JSX poco portato a JSDoc di firma) senza una decisione esplicita separata.
+Same template for all three targets. `apps/web/src/lib` and
+`apps/web/src/hooks` were added on 2026-08-08 — before that, `inline` mode
+only covered `packages/`. Don't extend to `apps/web/src/components` or
+`apps/web/src/app` (too much volume, JSX doesn't map well to signature
+JSDoc) without a separate, explicit decision.
 
-Template per **funzione esportata**:
+Template for an **exported function**:
 
 ```typescript
 /**
- * {Descrizione in una frase di cosa fa. Verbo attivo: "Calculates", "Returns", "Validates".}
+ * {One-sentence description of what it does. Active verb: "Calculates", "Returns", "Validates".}
  *
- * @param paramName - {Descrizione solo se non autoesplicativa}
- * @returns {Descrizione del valore restituito}
- * @throws {TipoErrore} {Condizione}
+ * @param paramName - {Description only if not self-explanatory}
+ * @returns {Description of the returned value}
+ * @throws {ErrorType} {Condition}
  *
  * @example
  * const result = myFunction({ id: 'abc' });
@@ -41,55 +42,56 @@ Template per **funzione esportata**:
 export function myFunction(...) { ... }
 ```
 
-Template per **tipo / interface esportata**:
+Template for an **exported type / interface**:
 
 ```typescript
 /**
- * {Descrizione del concetto di dominio che rappresenta, non la sua forma.}
- * Esempio: "Immutable snapshot of a CollectionLayout at revision time."
+ * {Description of the domain concept it represents, not its shape.}
+ * Example: "Immutable snapshot of a CollectionLayout at revision time."
  */
 export type MyType = { ... }
 ```
 
-Template per **costante / enum esportata**:
+Template for an **exported constant / enum**:
 
 ```typescript
 /**
- * {Valori ammessi per {campo}. Usato in {contesto}.}
+ * {Allowed values for {field}. Used in {context}.}
  */
 export const MY_ENUM = ['A', 'B', 'C'] as const;
 ```
 
-**Regole JSDoc:**
+**JSDoc rules:**
 
-- Non aggiungere JSDoc a funzioni interne non esportate (a meno che siano complesse e prive di qualsiasi commento)
-- Non aggiungere `@param` per parametri autoesplicativi (`id: string`, `enabled: boolean`)
-- Non descrivere l'implementazione — descrivi il comportamento osservabile
-- Non ripetere il nome della funzione nella descrizione ("MyFunction does X" → scrivi "Does X")
+- Don't add JSDoc to internal, non-exported functions (unless they're
+  complex and have no comment at all)
+- Don't add `@param` for self-explanatory parameters (`id: string`, `enabled: boolean`)
+- Don't describe the implementation — describe the observable behavior
+- Don't repeat the function name in the description ("MyFunction does X" → write "Does X")
 
 ---
 
-## Commenti procedure tRPC (`apps/api/src/routers/`)
+## tRPC procedure comments (`apps/api/src/routers/`)
 
 ```typescript
 /**
- * {Cosa fa questa procedura in una frase.}
+ * {What this procedure does, in one sentence.}
  *
- * @auth {Azione RBAC richiesta, es: "collection:read" | "admin" | "public"}
- * @input {Descrizione breve dell'input. Riferisci lo schema Zod se ha un nome.}
- * @output {Descrizione del payload restituito.}
+ * @auth {Required RBAC action, e.g.: "collection:read" | "admin" | "public"}
+ * @input {Brief input description. Reference the Zod schema if it has a name.}
+ * @output {Description of the returned payload.}
  */
 ```
 
-Il valore di `@auth` va verificato nel middleware reale (`requirePermission(...)`),
-mai dedotto dal nome della procedura.
+The `@auth` value must be verified against the real middleware
+(`requirePermission(...)`), never inferred from the procedure name.
 
 ---
 
-## Field docs Prisma (`///`)
+## Prisma field docs (`///`)
 
-Prisma usa il **triplo slash** `///` per i commenti che diventano parte dei generated types.
-Mai `//` (doppio slash) — viene ignorato dagli strumenti.
+Prisma uses **triple slash** `///` for comments that become part of the
+generated types. Never `//` (double slash) — it's ignored by the tooling.
 
 ```prisma
 /// Layout of a collection: groups + rows with independent ordering.
@@ -105,28 +107,33 @@ model CollectionLayout {
 }
 ```
 
-**Regole Prisma:**
+**Prisma rules:**
 
-- Salta `id`, `createdAt`, `updatedAt` salvo semantica non standard
-- Commenta **sempre**: FK (spiega cosa referenzia), enum field (spiega gli stati), campi con `@default` non ovvi, relazioni `@relation`
-- Aggiungi `///` anche sopra la riga `model ModelName {` con una riga di descrizione del modello
-
----
-
-## Cosa NON toccare in modalità `inline`
-
-- `// TODO:`, `// FIXME:`, `// HACK:` — preserva invariati
-- Blocchi di codice commentato — NON rimuovere; aggiungi `// luke-docs:flag stale-commented-code` sopra per revisione manuale
-- Qualsiasi commento in `.planning/`, `CLAUDE.md`, `lessons.md`
-- Commenti che spiegano il **perché** di una decisione (rationale architetturale) — hanno più valore dei commenti che spiegano il _cosa_
-- Import commentati usati come riferimento rapido durante lo sviluppo (ma flaggali)
+- Skip `id`, `createdAt`, `updatedAt` unless the semantics are non-standard
+- **Always** comment: FKs (explain what they reference), enum fields
+  (explain the states), fields with a non-obvious `@default`, `@relation`
+  relationships
+- Also add `///` above the `model ModelName {` line with one description
+  line for the model
 
 ---
 
-## Checklist qualità inline (verifica prima di chiudere)
+## What NOT to touch in `inline` mode
 
-- [ ] Nessun JSDoc descrive l'implementazione anziché il comportamento
-- [ ] Tutte le procedure tRPC con `@auth` hanno il valore corretto (verificato nel middleware)
-- [ ] I `///` Prisma sono sul field, non sul tipo inline
-- [ ] Nessun commento è stato rimosso (solo aggiunti o modificati)
-- [ ] I `luke-docs:flag` sono stati aggiunti dove previsto
+- `// TODO:`, `// FIXME:`, `// HACK:` — preserve as-is
+- Blocks of commented-out code — do NOT remove; add
+  `// luke-docs:flag stale-commented-code` above for manual review
+- Any comment in `.planning/`, `CLAUDE.md`, `lessons.md`
+- Comments explaining the **why** of a decision (architectural rationale) —
+  these are worth more than comments explaining the _what_
+- Commented-out imports used as a quick reference during development (but flag them)
+
+---
+
+## Inline quality checklist (verify before closing)
+
+- [ ] No JSDoc describes the implementation instead of the behavior
+- [ ] Every tRPC procedure with `@auth` has the correct value (verified against the middleware)
+- [ ] Prisma `///` comments are on the field, not on the inline type
+- [ ] No comment was removed (only added or modified)
+- [ ] `luke-docs:flag` markers were added where expected
