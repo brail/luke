@@ -328,6 +328,12 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       value: '3600',
       encrypt: false,
     },
+    // Storage — asset derivative pipeline (thumb/card/export image variants)
+    {
+      key: 'storage.derivatives.enabled',
+      value: 'true',
+      encrypt: false,
+    },
     // NAV (Microsoft Dynamics NAV / SQL Server)
     {
       key: 'integrations.nav.host',

@@ -68,6 +68,9 @@ export const AppConfigRegistry = {
   'storage.s3.presignedPutTtl': z.coerce.number().int().min(60),
   'storage.s3.presignedGetTtl': z.coerce.number().int().min(60),
 
+  // ── Storage — asset derivative pipeline (thumb/card/export image variants) ────
+  'storage.derivatives.enabled': z.coerce.boolean(),
+
   // ── Rate limiting (JSON object) ───────────────────────────────────────────
   'rateLimit': z.string().transform(s => RateLimitConfigSchema.parse(JSON.parse(s))),
 

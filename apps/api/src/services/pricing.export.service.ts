@@ -3,20 +3,14 @@ import { calcMaxSupplierCost, calculateCompanyMultiplier, generateRetailPriceRan
 
 import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
 import { applyStreamingHeaderStyle, createStreamingBuffer } from '../lib/export/xlsxStreaming';
-import { readFileBuffer } from '../storage';
+
+import { resolveLogoDataUri } from './asset.service';
 
 import type { PrismaClient, PricingParameterSet } from '@prisma/client';
 import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 
 type Brand = { name: string; code: string; logoKey?: string | null };
 type Season = { code: string; year: number | null };
-
-function toDataUri(buf: Buffer, key: string): string | null {
-  const lower = key.toLowerCase();
-  if (lower.endsWith('.png')) return `data:image/png;base64,${buf.toString('base64')}`;
-  if (lower.endsWith('.webp')) return null;
-  return `data:image/jpeg;base64,${buf.toString('base64')}`;
-}
 
 function fmt2(n: number) { return n.toFixed(2); }
 function fmt1(n: number) { return n.toFixed(1); }
@@ -167,11 +161,7 @@ export async function buildPricingGridPdf(
   const refSet = sets[0];
 
   const [logoDataUri, company] = await Promise.all([
-    brand.logoKey
-      ? readFileBuffer(prisma, 'brand-logos', brand.logoKey).then(buf =>
-          buf ? toDataUri(buf, brand.logoKey!) : null,
-        ).catch(() => null)
-      : Promise.resolve(null),
+    resolveLogoDataUri(prisma, brand.logoKey),
     fetchCompanyExportContext(prisma),
   ]);
 

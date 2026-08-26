@@ -3,10 +3,10 @@ import { formatDateTime } from '@luke/core';
 import type { StorageBucket } from '@luke/core';
 
 import { imageFetchLimiter } from '../lib/export/concurrency';
-import { EMBED_OVERSAMPLE_FACTOR, resizeForEmbed } from '../lib/export/image';
+import { bufferToDataUri, EMBED_OVERSAMPLE_FACTOR, resizeForEmbed } from '../lib/export/image';
 import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
-import { readFileBuffer } from '../storage';
 
+import { readAssetBuffer, resolveLogoDataUri } from './asset.service';
 import { buildProgressLabelMap } from './collectionLayout.service';
 
 import type { QuotationWithParamSet } from './collectionLayout.service';
@@ -128,16 +128,6 @@ function computeMarginResult(
     isAboveTarget: avgPct >= refOptimal,
     isWarning: avgPct < refOptimal && avgPct >= refOptimal - 3,
   };
-}
-
-// ─── Image helpers ────────────────────────────────────────────────────────────
-
-/** Returns a data URI string, or null for unsupported types (e.g. WebP). */
-function toDataUri(buf: Buffer, key: string): string | null {
-  const lower = key.toLowerCase();
-  if (lower.endsWith('.png')) return `data:image/png;base64,${buf.toString('base64')}`;
-  if (lower.endsWith('.webp')) return null;
-  return `data:image/jpeg;base64,${buf.toString('base64')}`;
 }
 
 // ─── Table layout ─────────────────────────────────────────────────────────────
@@ -268,21 +258,17 @@ export async function buildCollectionLayoutPdf(
   const limit = imageFetchLimiter();
   const [progressLabelMap, brandLogoDataUri, company] = await Promise.all([
     buildProgressLabelMap(prisma),
-    layout.brand.logoKey
-      ? readFileBuffer(prisma, 'brand-logos', layout.brand.logoKey, logger).then(buf =>
-          buf ? toDataUri(buf, layout.brand.logoKey!) : null,
-        )
-      : Promise.resolve(null),
+    resolveLogoDataUri(prisma, layout.brand.logoKey, logger),
     fetchCompanyExportContext(prisma, logger),
     ...uniqueRowKeys.map(key =>
       limit(async () => {
-        const buf = await readFileBuffer(prisma, pictureBucket, key, logger);
+        const result = await readAssetBuffer(prisma, pictureBucket, key, 'export', logger);
         keyToDataUriMap.set(
           key,
-          buf
-            ? toDataUri(
-                await resizeForEmbed(buf, IMAGE_WIDTH * EMBED_OVERSAMPLE_FACTOR, IMAGE_HEIGHT * EMBED_OVERSAMPLE_FACTOR, logger),
-                key,
+          result
+            ? bufferToDataUri(
+                await resizeForEmbed(result.buffer, IMAGE_WIDTH * EMBED_OVERSAMPLE_FACTOR, IMAGE_HEIGHT * EMBED_OVERSAMPLE_FACTOR, logger),
+                result.contentType,
               )
             : null,
         );

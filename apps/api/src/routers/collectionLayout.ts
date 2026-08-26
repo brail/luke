@@ -31,6 +31,7 @@ import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
+import { resolveVariantUrls } from '../services/asset.service';
 import {
   assertBrandAccess,
   assertBrandAccessAll,
@@ -547,6 +548,17 @@ const rowsRouter = router({
 /**
  * Resolves `pictureKey` → `pictureUrl` for each row and `logoKey` → `logoUrl` for the brand
  * in a layout response, using the active storage provider to build URLs.
+ *
+ * Row pictures serve the `card` derivative (800px, WebP) rather than the master —
+ * the same `pictureUrl` field feeds both the grid thumbnail and the row drawer
+ * preview, and `card` fits both without a second field on the contract. Brand
+ * logos serve `thumb` instead: `ASSET_KINDS['brand-logo'].variants` never includes
+ * `card` (only `thumb`/`export`, see `@luke/core/storage/assets`), so requesting
+ * `card` here would always miss and silently fall back to the full-size master.
+ * Falls back to the master's own URL for a row/logo whose derivative isn't ready
+ * yet (just uploaded, or the background worker hasn't caught up) — never a broken
+ * image. One batched query per bucket for the whole layout via `resolveVariantUrls`,
+ * not N — and one shared URL resolver, not one per call.
  */
 async function resolveLayoutUrls<T extends {
   brand: { logoKey: string | null; [k: string]: unknown };
@@ -554,17 +566,30 @@ async function resolveLayoutUrls<T extends {
   [k: string]: unknown;
 }>(layout: T, prisma: PrismaClient): Promise<T & { brand: { logoUrl: string | null } }> {
   const resolve = await makeUrlResolver(prisma);
+
+  const pictureKeys = layout.groups.flatMap(g => g.rows.map(r => r.pictureKey).filter((k): k is string => k !== null));
+  const [pictureCardUrls, logoThumbUrls] = await Promise.all([
+    resolveVariantUrls(prisma, 'collection-row-pictures', pictureKeys, 'card', resolve),
+    layout.brand.logoKey
+      ? resolveVariantUrls(prisma, 'brand-logos', [layout.brand.logoKey], 'thumb', resolve)
+      : Promise.resolve(new Map<string, string>()),
+  ]);
+
   return {
     ...layout,
     brand: {
       ...layout.brand,
-      logoUrl: layout.brand.logoKey ? resolve('brand-logos', layout.brand.logoKey) : null,
+      logoUrl: layout.brand.logoKey
+        ? (logoThumbUrls.get(layout.brand.logoKey) ?? resolve('brand-logos', layout.brand.logoKey))
+        : null,
     },
     groups: layout.groups.map(g => ({
       ...g,
       rows: g.rows.map(r => ({
         ...r,
-        pictureUrl: r.pictureKey ? resolve('collection-row-pictures', r.pictureKey) : null,
+        pictureUrl: r.pictureKey
+          ? (pictureCardUrls.get(r.pictureKey) ?? resolve('collection-row-pictures', r.pictureKey))
+          : null,
       })),
     })),
   } as T & { brand: { logoUrl: string | null } }; // spread di un T generico con override annidato: TS non verifica la forma esatta

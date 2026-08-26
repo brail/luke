@@ -333,4 +333,5 @@ export {
   createValidJpegBuffer,
   createValidWebpBuffer,
   createInvalidImageBuffer,
+  seedLocalStorageConfig,
 } from './helpers/storageTestHelper';

@@ -1,21 +1,13 @@
-import { Readable } from 'stream';
-
 import { TRPCError } from '@trpc/server';
 
 import { calcBackoffDelay, type StorageBucket } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { streamToBuffer, validateMagicBytes, validateImageFile } from '../lib/imageUpload';
-import { resolvePublicUrl } from '../lib/storageUrl';
-import { putObject, deleteObjectByKey, getStorageProvider } from '../storage';
+import { getStorageProvider, deleteObjectByKey } from '../storage';
+
+import { ingestImageAsset } from './asset.service';
 
 import type { Context } from '../lib/trpc';
-
-const IMAGE_CONFIG = {
-  allowedMimes: ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'] as const,
-  maxSizeBytes: 2 * 1024 * 1024,
-  allowedExtensions: ['.png', '.jpg', '.jpeg', '.webp'] as const,
-};
 
 /**
  * Uploads a brand logo to the pending bucket without linking it to any brand.
@@ -35,38 +27,25 @@ export async function uploadTempBrandLogo(
     };
   }
 ): Promise<{ publicUrl: string; fileObjectId: string }> {
-  const sanitizedFilename = validateImageFile(params.file, IMAGE_CONFIG);
-
-  const buffer = await streamToBuffer(params.file.stream);
-
-  if (!validateMagicBytes(buffer, params.file.mimetype)) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: 'File corrotto o tipo non valido' });
-  }
-
-  const fileObject = await putObject(ctx, {
-    bucket: 'brand-logos',
-    originalName: sanitizedFilename,
-    contentType: params.file.mimetype,
-    size: params.file.size,
-    stream: Readable.from(buffer),
+  const result = await ingestImageAsset(ctx, {
+    kind: 'brand-logo',
+    file: params.file,
     pending: true,
   });
-
-  const publicUrl = await resolvePublicUrl(ctx.prisma, 'brand-logos', fileObject.key);
 
   try {
     await logAudit(ctx, {
       action: 'BRAND_PENDING_LOGO_UPLOADED',
       targetType: 'FileObject',
-      targetId: fileObject.id,
+      targetId: result.fileObjectId,
       result: 'SUCCESS',
-      metadata: { filename: sanitizedFilename, size: params.file.size, contentType: params.file.mimetype },
+      metadata: { filename: result.originalName, size: params.file.size, contentType: params.file.mimetype },
     });
   } catch (auditError) {
     ctx.logger?.warn({ auditError }, 'Audit log failed for pending brand logo upload');
   }
 
-  return { publicUrl, fileObjectId: fileObject.id };
+  return { publicUrl: result.publicUrl, fileObjectId: result.fileObjectId };
 }
 
 /**
@@ -88,31 +67,21 @@ export async function uploadBrandLogo(
     };
   }
 ): Promise<{ publicUrl: string; bucket: string; key: string }> {
-  const sanitizedFilename = validateImageFile(params.file, IMAGE_CONFIG);
-
-  const buffer = await streamToBuffer(params.file.stream);
-
-  if (!validateMagicBytes(buffer, params.file.mimetype)) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: 'File corrotto o tipo non valido' });
-  }
-
+  // Brand existence is checked before uploading (not after): a confirmed (non-pending)
+  // upload for a brand that turns out not to exist would leave an orphaned FileObject
+  // the reaper never touches — it only sweeps *pending* files (see `setupTempFileCleanup`
+  // in `server.ts`).
   const brand = await ctx.prisma.brand.findUnique({ where: { id: params.brandId } });
 
   if (!brand) {
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand non trovato' });
   }
 
-  const fileObject = await putObject(ctx, {
-    bucket: 'brand-logos',
-    originalName: sanitizedFilename,
-    contentType: params.file.mimetype,
-    size: params.file.size,
-    stream: Readable.from(buffer),
-  });
+  const result = await ingestImageAsset(ctx, { kind: 'brand-logo', file: params.file });
 
   await ctx.prisma.brand.update({
     where: { id: params.brandId },
-    data: { logoKey: fileObject.key },
+    data: { logoKey: result.key },
   });
 
   if (brand.logoKey) {
@@ -132,7 +101,7 @@ export async function uploadBrandLogo(
       targetId: params.brandId,
       result: 'SUCCESS',
       metadata: {
-        filename: sanitizedFilename,
+        filename: result.originalName,
         originalFilename: params.file.filename,
         size: params.file.size,
         contentType: params.file.mimetype,
@@ -143,8 +112,7 @@ export async function uploadBrandLogo(
     ctx.logger?.warn({ auditError }, 'Audit log failed for brand logo upload');
   }
 
-  const publicUrl = await resolvePublicUrl(ctx.prisma, 'brand-logos', fileObject.key);
-  return { publicUrl, bucket: 'brand-logos', key: fileObject.key };
+  return { publicUrl: result.publicUrl, bucket: result.bucket, key: result.key };
 }
 
 /**

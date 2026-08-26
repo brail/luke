@@ -64,6 +64,7 @@ export * from './utils/auditLogLabels';
 export * from './storage/types';
 export * from './storage/config';
 export * from './storage/contracts';
+export * from './storage/assets';
 
 // Re-export runtime environment utilities
 export {

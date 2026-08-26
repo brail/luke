@@ -12,14 +12,14 @@ import sharp from 'sharp';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { IMAGE_FETCH_CONCURRENCY } from '../../lib/export/concurrency';
-import { readFileBuffer } from '../../storage';
+import { readAssetBuffer } from '../asset.service';
 import { buildCollectionLayoutXlsx } from '../collectionLayout.export.xlsx.service';
 
 import type { CollectionLayoutForExport } from '../collectionLayout.export.xlsx.service';
 import type { PrismaClient } from '@prisma/client';
 
-vi.mock('../../storage', () => ({
-  readFileBuffer: vi.fn(),
+vi.mock('../asset.service', () => ({
+  readAssetBuffer: vi.fn(),
 }));
 
 const mockPrisma = {
@@ -82,7 +82,7 @@ describe('buildCollectionLayoutXlsx', () => {
 
     let inFlight = 0;
     let peak = 0;
-    vi.mocked(readFileBuffer).mockImplementation(async () => {
+    vi.mocked(readAssetBuffer).mockImplementation(async () => {
       inFlight++;
       peak = Math.max(peak, inFlight);
       await new Promise(resolve => setTimeout(resolve, 5));
@@ -93,11 +93,11 @@ describe('buildCollectionLayoutXlsx', () => {
     await buildCollectionLayoutXlsx(makeLayout(rows), mockPrisma);
 
     expect(peak).toBeLessThanOrEqual(IMAGE_FETCH_CONCURRENCY);
-    expect(readFileBuffer).toHaveBeenCalledTimes(uniqueKeyCount);
+    expect(readAssetBuffer).toHaveBeenCalledTimes(uniqueKeyCount);
   });
 
   it('renders a row without a photo when its image fetch fails', async () => {
-    vi.mocked(readFileBuffer).mockResolvedValue(null);
+    vi.mocked(readAssetBuffer).mockResolvedValue(null);
     const rows = [makeRow('row-1', 'missing.jpg')];
 
     const buffer = await buildCollectionLayoutXlsx(makeLayout(rows), mockPrisma);
@@ -112,7 +112,7 @@ describe('buildCollectionLayoutXlsx', () => {
       .jpeg({ quality: 90 })
       .toBuffer();
 
-    vi.mocked(readFileBuffer).mockResolvedValue(noise);
+    vi.mocked(readAssetBuffer).mockResolvedValue({ buffer: noise, contentType: 'image/jpeg', width: 1500, height: 1500 });
     const rows = [makeRow('row-1', 'huge.jpg')];
 
     const buffer = await buildCollectionLayoutXlsx(makeLayout(rows), mockPrisma);
@@ -124,7 +124,7 @@ describe('buildCollectionLayoutXlsx', () => {
   });
 
   it('produces a valid non-empty XLSX buffer (smoke test)', async () => {
-    vi.mocked(readFileBuffer).mockResolvedValue(null);
+    vi.mocked(readAssetBuffer).mockResolvedValue(null);
     const rows = [makeRow('row-1', null), makeRow('row-2', 'key.jpg')];
 
     const buffer = await buildCollectionLayoutXlsx(makeLayout(rows), mockPrisma);

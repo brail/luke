@@ -39,6 +39,7 @@ const INSTANCE_ID = randomUUID();
  * listed out by hand, so a future entity added there can't silently miss a lock name here.
  */
 export type SchedulerName =
+  | 'asset-derivatives'
   | 'backup'
   | 'calendar-digest'
   | 'feedback-sync'

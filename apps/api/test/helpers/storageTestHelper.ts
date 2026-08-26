@@ -5,7 +5,10 @@
 
 import { Readable } from 'stream';
 
+import { resetStorageProvider } from '../../src/storage';
+
 import type { Context } from '../../src/lib/trpc';
+import type { PrismaClient } from '@prisma/client';
 
 export interface MockFileObject {
   id: string;
@@ -229,4 +232,43 @@ export function createValidWebpBuffer(): Buffer {
   const riffHeader = Buffer.from([0x52, 0x49, 0x46, 0x46]); // "RIFF"
   const webpData = Buffer.from('test webp content');
   return Buffer.concat([riffHeader, webpData]);
+}
+
+/**
+ * Seeds AppConfig for the local storage provider pointed at `basePath`, then resets
+ * the cached provider singleton so the next `getStorageProvider()` call picks it
+ * up. Every asset-pipeline integration test needs this exact sequence: `appRouter`
+ * is imported eagerly by `test/setup.procedureUsage.ts` (a `setupFiles` entry, for
+ * the procedure-coverage gate) before any single test file's own `vi.mock` hoisting
+ * can run, and it now reaches `services/asset.service.ts` (hence `../storage`)
+ * through `collectionLayout.ts`'s `resolveVariantUrls` — a module already evaluated
+ * by an earlier file can't be retroactively mocked, so real local storage on a
+ * throwaway temp directory is what these tests actually exercise.
+ */
+export async function seedLocalStorageConfig(
+  prisma: PrismaClient,
+  basePath: string,
+  options: { buckets?: string[]; maxFileSizeMB?: number } = {},
+): Promise<void> {
+  const rows: Array<{ key: string; value: string }> = [
+    { key: 'storage.type', value: 'local' },
+    { key: 'storage.local.basePath', value: basePath },
+    { key: 'storage.local.maxFileSizeMB', value: String(options.maxFileSizeMB ?? 50) },
+    {
+      key: 'storage.local.buckets',
+      value: JSON.stringify(options.buckets ?? [
+        'collection-row-pictures',
+        'collection-row-pictures-revisions',
+        'brand-logos',
+        'company-assets',
+        'merchandising-specsheet-images',
+      ]),
+    },
+    { key: 'storage.local.enableProxy', value: 'true' },
+    { key: 'storage.derivatives.enabled', value: 'true' },
+  ];
+  for (const row of rows) {
+    await prisma.appConfig.create({ data: { key: row.key, value: row.value, isEncrypted: false } });
+  }
+  resetStorageProvider();
 }

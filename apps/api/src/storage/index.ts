@@ -177,6 +177,42 @@ export function resetStorageProvider(): void {
  *
  * @returns Metadata of the stored object, including its generated key and checksum.
  */
+/** Minimal shape both `putObject`/`putDerivativeObject`'s Prisma `create()` results and `listObjects`'s `findMany()` rows satisfy — enough to build a `StoredObjectMeta`. */
+type FileObjectRow = {
+  id: string;
+  bucket: string;
+  key: string;
+  originalName: string;
+  size: number;
+  contentType: string;
+  checksumSha256: string;
+  createdBy: string;
+  createdAt: Date;
+  parentId: string | null;
+  variant: string | null;
+  width: number | null;
+  height: number | null;
+};
+
+/** Shared by every function that turns a `FileObject` row into the public `StoredObjectMeta` shape — one place to keep in sync when either type gains a field. */
+function toStoredObjectMeta(row: FileObjectRow): StoredObjectMeta {
+  return {
+    id: row.id,
+    bucket: row.bucket as StorageBucket,
+    key: row.key,
+    originalName: row.originalName,
+    size: row.size,
+    contentType: row.contentType,
+    checksumSha256: row.checksumSha256,
+    createdBy: row.createdBy,
+    createdAt: row.createdAt,
+    parentId: row.parentId,
+    variant: row.variant,
+    width: row.width,
+    height: row.height,
+  };
+}
+
 export async function putObject(
   ctx: Context,
   params: {
@@ -187,6 +223,14 @@ export async function putObject(
     stream: NodeJS.ReadableStream;
     /** If true, confirmedAt = null (file is pending confirmation before linking to an entity) */
     pending?: boolean;
+    /** Explicit key to use instead of provider-generated (e.g. a derivative's deterministic key from `buildVariantKey`). */
+    key?: string;
+    /** Asset pipeline fields — set only when this row is part of the master/derivative tree (see `asset.service.ts`). */
+    parentId?: string;
+    variant?: string;
+    pipelineVersion?: number;
+    width?: number;
+    height?: number;
   }
 ): Promise<StoredObjectMeta> {
   const provider = await getStorageProvider(ctx.prisma);
@@ -201,6 +245,7 @@ export async function putObject(
     contentType: params.contentType || 'application/octet-stream',
     size: params.size,
     stream: params.stream,
+    key: params.key,
   });
 
   // Save metadata to DB
@@ -215,6 +260,11 @@ export async function putObject(
       checksumSha256,
       createdBy: ctx.session?.user.id || 'system',
       confirmedAt: params.pending ? null : new Date(),
+      parentId: params.parentId,
+      variant: params.variant,
+      pipelineVersion: params.pipelineVersion,
+      width: params.width,
+      height: params.height,
     },
   });
 
@@ -232,17 +282,72 @@ export async function putObject(
     },
   });
 
-  return {
-    id: fileObject.id,
-    bucket: fileObject.bucket as StorageBucket,
-    key: fileObject.key,
-    originalName: fileObject.originalName,
-    size: fileObject.size,
-    contentType: fileObject.contentType,
-    checksumSha256: fileObject.checksumSha256,
-    createdBy: fileObject.createdBy,
-    createdAt: fileObject.createdAt,
-  };
+  return toStoredObjectMeta(fileObject);
+}
+
+/**
+ * Writes one derivative (thumb/card/export) of a master `FileObject` — used by the
+ * asset pipeline (`asset.service.ts`, both the sync-in-request variant and the
+ * background derivative worker). Takes `prisma` directly rather than a full
+ * `Context`: the background worker has no HTTP request to build one from. No
+ * per-call audit entry — the master's own upload audit entry already covers this
+ * upload; a derivative isn't an independent user action.
+ *
+ * `masterConfirmedAt` is mirrored onto the derivative rather than always confirming
+ * it immediately: if the master is still a *pending* upload (not yet linked to an
+ * entity), its derivative must stay pending too, so `confirmPendingFile` confirms
+ * both together — otherwise a pending upload that's later abandoned would leave a
+ * confirmed derivative behind for the reaper to never touch (it only reaps
+ * masters, see `setupTempFileCleanup` in `server.ts`).
+ */
+export async function putDerivativeObject(
+  prisma: PrismaClient,
+  params: {
+    bucket: StorageBucket;
+    /** Deterministic key from `buildVariantKey` — never provider-generated. */
+    key: string;
+    parentId: string;
+    variant: string;
+    pipelineVersion: number;
+    contentType: string;
+    buffer: Buffer;
+    width: number | null;
+    height: number | null;
+    createdBy: string;
+    masterConfirmedAt: Date | null;
+  }
+): Promise<StoredObjectMeta> {
+  const provider = await getStorageProvider(prisma);
+
+  const { key, checksumSha256, size } = await provider.put({
+    bucket: params.bucket,
+    originalName: params.variant,
+    contentType: params.contentType,
+    size: params.buffer.byteLength,
+    stream: Readable.from(params.buffer),
+    key: params.key,
+  });
+
+  const fileObject = await prisma.fileObject.create({
+    data: {
+      id: randomUUID(),
+      bucket: params.bucket,
+      key,
+      originalName: params.variant,
+      size,
+      contentType: params.contentType,
+      checksumSha256,
+      createdBy: params.createdBy,
+      confirmedAt: params.masterConfirmedAt,
+      parentId: params.parentId,
+      variant: params.variant,
+      pipelineVersion: params.pipelineVersion,
+      width: params.width,
+      height: params.height,
+    },
+  });
+
+  return toStoredObjectMeta(fileObject);
 }
 
 /**
@@ -262,17 +367,7 @@ export async function getObjectMetadata(
     return null;
   }
 
-  return {
-    id: fileObject.id,
-    bucket: fileObject.bucket as StorageBucket,
-    key: fileObject.key,
-    originalName: fileObject.originalName,
-    size: fileObject.size,
-    contentType: fileObject.contentType,
-    checksumSha256: fileObject.checksumSha256,
-    createdBy: fileObject.createdBy,
-    createdAt: fileObject.createdAt,
-  };
+  return toStoredObjectMeta(fileObject);
 }
 
 /**
@@ -335,6 +430,26 @@ export async function deleteObject(ctx: Context, id: string): Promise<void> {
     throw new Error('File non trovato');
   }
 
+  // The FK's onDelete:Cascade removes derivative *rows* once the master row is
+  // deleted below, but Postgres cascade never touches the storage provider — a
+  // derivative's physical object must be removed here explicitly, or it becomes
+  // a permanent orphan on disk/S3 (same fix already applied to the temp-file
+  // reaper in server.ts, extended here to every confirmed-delete call site).
+  const derivatives = await ctx.prisma.fileObject.findMany({
+    where: { parentId: id },
+    select: { bucket: true, key: true },
+  });
+  for (const derivative of derivatives) {
+    try {
+      await provider.delete({ bucket: derivative.bucket as StorageBucket, key: derivative.key });
+    } catch (err) {
+      ctx.logger?.warn(
+        { err, bucket: derivative.bucket, key: derivative.key },
+        'Failed to delete derivative file from storage'
+      );
+    }
+  }
+
   // Delete from provider
   await provider.delete({
     bucket: metadata.bucket,
@@ -374,6 +489,31 @@ export async function deleteObjectByKey(
 ): Promise<void> {
   const provider = await getStorageProvider(ctx.prisma);
 
+  // Looked up before the physical delete (not after, as before) so its derivatives
+  // can be found and cleaned up while the master row still exists — the FK's
+  // onDelete:Cascade would otherwise remove derivative *rows* the moment the
+  // master row disappears below, without ever touching their physical objects.
+  const fileObject = await ctx.prisma.fileObject.findFirst({
+    where: { bucket: params.bucket, key: params.key },
+  });
+
+  if (fileObject) {
+    const derivatives = await ctx.prisma.fileObject.findMany({
+      where: { parentId: fileObject.id },
+      select: { bucket: true, key: true },
+    });
+    for (const derivative of derivatives) {
+      try {
+        await provider.delete({ bucket: derivative.bucket as StorageBucket, key: derivative.key });
+      } catch (err) {
+        ctx.logger?.warn(
+          { err, bucket: derivative.bucket, key: derivative.key },
+          'Failed to delete derivative file from storage'
+        );
+      }
+    }
+  }
+
   // Delete from provider (best-effort: don't block if the physical file doesn't exist)
   try {
     await provider.delete({ bucket: params.bucket, key: params.key });
@@ -383,11 +523,6 @@ export async function deleteObjectByKey(
       'Physical file delete failed (may already be gone)'
     );
   }
-
-  // Delete metadata from DB if it exists
-  const fileObject = await ctx.prisma.fileObject.findFirst({
-    where: { bucket: params.bucket, key: params.key },
-  });
 
   if (fileObject) {
     await ctx.prisma.fileObject.delete({ where: { id: fileObject.id } });
@@ -471,17 +606,7 @@ export async function listObjects(
   const results = hasMore ? items.slice(0, limit) : items;
 
   return {
-    items: results.map(item => ({
-      id: item.id,
-      bucket: item.bucket as StorageBucket,
-      key: item.key,
-      originalName: item.originalName,
-      size: item.size,
-      contentType: item.contentType,
-      checksumSha256: item.checksumSha256,
-      createdBy: item.createdBy,
-      createdAt: item.createdAt,
-    })),
+    items: results.map(toStoredObjectMeta),
     nextCursor: hasMore ? results[results.length - 1]?.id : undefined,
   };
 }
@@ -504,11 +629,23 @@ export async function copyToImmutableBucket(
   sourceKey: string,
   logger?: { warn: (obj: object, msg: string) => void },
 ): Promise<string> {
-  // Read source file
-  const buffer = await readFileBuffer(prisma, 'collection-row-pictures', sourceKey, logger);
+  // Read source file — the master (or its already-normalized bytes if it went
+  // through the asset pipeline), never a derivative: this is the ISO 9001 quality
+  // register, which preserves full quality, not a downsized preview.
+  const [buffer, sourceFileObject] = await Promise.all([
+    readFileBuffer(prisma, 'collection-row-pictures', sourceKey, logger),
+    prisma.fileObject.findFirst({
+      where: { bucket: 'collection-row-pictures', key: sourceKey },
+      select: { contentType: true },
+    }),
+  ]);
   if (!buffer) {
     throw new Error(`copyToImmutableBucket: source file not found — key=${sourceKey}`);
   }
+  // Real content-type from the source's own FileObject row — never assumed. A
+  // hardcoded 'image/jpeg' here previously mislabeled every PNG/WebP row picture
+  // copied into the immutable register.
+  const contentType = sourceFileObject?.contentType ?? 'application/octet-stream';
 
   // Compute sha256 for dedup
   const sha256 = createHash('sha256').update(buffer).digest('hex');
@@ -529,7 +666,7 @@ export async function copyToImmutableBucket(
   const { key } = await provider.put({
     bucket: 'collection-row-pictures-revisions',
     originalName,
-    contentType: 'image/jpeg',
+    contentType,
     size: buffer.byteLength,
     stream,
   });
@@ -542,7 +679,7 @@ export async function copyToImmutableBucket(
       key,
       originalName,
       size: buffer.byteLength,
-      contentType: 'image/jpeg',
+      contentType,
       checksumSha256: sha256,
       createdBy: 'system',
       confirmedAt: new Date(),

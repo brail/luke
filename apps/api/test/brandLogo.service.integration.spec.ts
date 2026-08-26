@@ -3,87 +3,55 @@
  * Verifies MIME, size, magic bytes validations and upload logic
  */
 
+import { mkdtemp, rm } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { Readable } from 'stream';
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import { appRouter } from '../src/routers/index';
 import {
   uploadBrandLogo,
   uploadTempBrandLogo,
 } from '../src/services/brandLogo.service';
+import { resetStorageProvider } from '../src/storage';
 
 import {
-  createTestContextWithMockStorage,
   createTestFile,
   createValidPngBuffer,
   createValidJpegBuffer,
   createInvalidImageBuffer,
-  MockStorageProvider,
+  seedLocalStorageConfig,
 } from './helpers/storageTestHelper';
+import { createContextForRole } from './helpers/testContext';
 
-// Mock of the storage module
-vi.mock('../src/storage', () => ({
-  putObject: vi.fn(),
-  deleteObjectByKey: vi.fn(),
-  getStorageProvider: vi.fn(),
-}));
+import type { Context } from '../src/lib/trpc';
+
+// Real local storage on a throwaway temp directory, not a module mock: `appRouter`
+// is imported eagerly by `test/setup.procedureUsage.ts` (a `setupFiles` entry, for
+// the procedure-coverage gate) before this file's own `vi.mock` hoisting could ever
+// run, and `appRouter` now reaches `services/asset.service.ts` — which imports
+// `../storage` — through `collectionLayout.ts`'s `resolveVariantUrls`. A module
+// already evaluated by an earlier file can't be retroactively mocked, so
+// `vi.mock('../src/storage', ...)` would silently do nothing here; a previous
+// version of this file relied on exactly that, undetected, because none of its
+// assertions happened to depend on the mock's literal return values. See
+// `seedLocalStorageConfig` (`./helpers/storageTestHelper`) for the shared setup.
 
 describe('Brand Logo Upload Service', () => {
-  let testContext: any;
-  let mockStorage: MockStorageProvider;
+  let testContext: Context;
+  let basePath: string;
 
   beforeEach(async () => {
-    testContext = await createTestContextWithMockStorage();
-    mockStorage = testContext.mockStorage;
-
-    // Mock of the storage functions
-    const { putObject, deleteObjectByKey, getStorageProvider } = await import(
-      '../src/storage'
-    );
-
-    // The mocks cover only the surface the service uses: the casts
-    // acknowledge that they're partial stubs, not complete implementations.
-    vi.mocked(putObject).mockImplementation((async (
-      _ctx: unknown,
-      params: Parameters<typeof putObject>[1]
-    ) => {
-      const fileObject = await mockStorage.put(params);
-      return {
-        id: fileObject.id,
-        key: fileObject.key,
-        bucket: fileObject.bucket,
-        contentType: fileObject.contentType,
-        size: fileObject.size,
-        createdAt: fileObject.createdAt,
-      };
-    }) as unknown as typeof putObject);
-
-    vi.mocked(deleteObjectByKey).mockImplementation((async (
-      _ctx: unknown,
-      params: { bucket: string; key: string }
-    ) => {
-      await mockStorage.delete(params);
-    }) as unknown as typeof deleteObjectByKey);
-
-    vi.mocked(getStorageProvider).mockResolvedValue({
-      get: async (params: { bucket: string; key: string }) => {
-        const { stream } = await mockStorage.get(params);
-        return { stream };
-      },
-      delete: async (params: { bucket: string; key: string }) => {
-        await mockStorage.delete(params);
-      },
-    } as unknown as Awaited<ReturnType<typeof getStorageProvider>>);
+    testContext = await createContextForRole();
+    basePath = await mkdtemp(join(tmpdir(), 'luke-brandlogo-service-'));
+    await seedLocalStorageConfig(testContext.prisma, basePath, { buckets: ['brand-logos'], maxFileSizeMB: 2 });
   });
 
-  afterEach(() => {
-    // The database is truncated by `createTestContextWithMockStorage` on the
-    // next test, and with CASCADE: the `deleteMany` chain that used to be
-    // here omitted `fileObject` and would have broken on the first new
-    // `onDelete: Restrict`.
-    mockStorage.clear();
-    vi.clearAllMocks();
+  afterEach(async () => {
+    resetStorageProvider();
+    await rm(basePath, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   });
 
   describe('uploadBrandLogo', () => {
@@ -367,10 +335,9 @@ describe('Brand Logo Upload Service', () => {
     });
 
     it('confirms a pending upload and links it to the brand', async () => {
-      // Storage is mocked in this suite, so `putObject` doesn't write the
-      // fileObject row: it's created here by hand in the state a pending
-      // upload would leave it in. The object under test is the router's
-      // confirmation logic, not the upload.
+      // The pending row is created here by hand, in the state a real pending
+      // upload would leave it in, so the test isolates the router's confirmation
+      // logic (`confirmPendingFile`) from the upload path itself.
       const pending = await testContext.prisma.fileObject.create({
         data: {
           bucket: 'brand-logos',
@@ -379,7 +346,7 @@ describe('Brand Logo Upload Service', () => {
           contentType: 'image/png',
           size: 1024,
           checksumSha256: 'x'.repeat(64),
-          createdBy: testContext.session.user.id,
+          createdBy: testContext.session!.user.id,
           confirmedAt: null,
         },
       });
@@ -399,6 +366,52 @@ describe('Brand Logo Upload Service', () => {
         where: { id: pending.id },
       });
       expect(confirmed?.confirmedAt).not.toBeNull();
+    });
+
+    it('confirms a pending master\'s derivatives alongside it, not just the master row', async () => {
+      // A derivative is excluded from the reaper's own query (`parentId: null` in
+      // `setupTempFileCleanup`) regardless of its own `confirmedAt`, so this isn't
+      // required for the derivative to survive — but a bug here would leave every
+      // derivative permanently `confirmedAt: null`, which is the kind of drift a
+      // future feature ("list confirmed assets") could silently trip over.
+      const pending = await testContext.prisma.fileObject.create({
+        data: {
+          bucket: 'brand-logos',
+          key: `pending-${Date.now()}.png`,
+          originalName: 'temp-logo.png',
+          contentType: 'image/png',
+          size: 1024,
+          checksumSha256: 'x'.repeat(64),
+          createdBy: testContext.session!.user.id,
+          confirmedAt: null,
+        },
+      });
+      const derivative = await testContext.prisma.fileObject.create({
+        data: {
+          bucket: 'brand-logos',
+          key: `pending-${Date.now()}/v1/thumb.webp`,
+          originalName: 'thumb',
+          contentType: 'image/webp',
+          size: 256,
+          checksumSha256: 'y'.repeat(64),
+          createdBy: testContext.session!.user.id,
+          confirmedAt: null,
+          parentId: pending.id,
+          variant: 'thumb',
+          pipelineVersion: 1,
+        },
+      });
+
+      const caller = appRouter.createCaller(testContext).brand;
+      await caller.update({
+        id: testBrand.id,
+        data: { name: 'Brand con logo e derivata', fileObjectId: pending.id },
+      });
+
+      const confirmedDerivative = await testContext.prisma.fileObject.findUnique({
+        where: { id: derivative.id },
+      });
+      expect(confirmedDerivative?.confirmedAt).not.toBeNull();
     });
 
     it('rejects a fileObjectId that does not exist', async () => {

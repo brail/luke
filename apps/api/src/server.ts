@@ -27,6 +27,7 @@ import {
   HKDF_INFO_COOKIE,
 } from '@luke/core/server';
 
+import { registerDerivativeScheduler } from './lib/assets/derivativeWorker';
 import { registerBackupScheduler } from './lib/backupScheduler';
 import { registerCalendarDigestScheduler } from './lib/calendarDigestScheduler';
 import { registerCalendarNotificationBuffer } from './lib/calendarNotificationBuffer';
@@ -391,6 +392,11 @@ function setupTempFileCleanup() {
       const tempFiles = await prisma.fileObject.findMany({
         where: {
           confirmedAt: null,
+          // Masters only: a derivative is never independently "pending confirmation" —
+          // it lives or dies with its master (onDelete: Cascade). Sweeping it here on its
+          // own `confirmedAt`/age would delete its storage object while the FileObject
+          // row for the (still-linked) master survives, leaving a dangling reference.
+          parentId: null,
           bucket: { in: ['brand-logos', 'company-assets', 'collection-row-pictures', 'merchandising-specsheet-images'] },
           createdAt: { lt: oneHourAgo },
         },
@@ -401,10 +407,50 @@ function setupTempFileCleanup() {
           `Cleaning up ${tempFiles.length} temp files older than 1 hour`
         );
 
+        // `deleteMany` on the master below cascades its derivative *rows* for
+        // free (onDelete: Cascade), but Postgres cascade never touches the
+        // storage provider — a derivative's physical object must be removed
+        // here explicitly, or it becomes a permanent orphan on disk/S3. One
+        // batched query for every candidate master's derivatives, not one per
+        // master — the loop below just looks up its own slice.
+        const allDerivatives = await prisma.fileObject.findMany({
+          where: { parentId: { in: tempFiles.map(f => f.id) } },
+          select: { parentId: true, bucket: true, key: true },
+        });
+        const derivativesByParent = new Map<string, { bucket: string; key: string }[]>();
+        for (const derivative of allDerivatives) {
+          const list = derivativesByParent.get(derivative.parentId!) ?? [];
+          list.push(derivative);
+          derivativesByParent.set(derivative.parentId!, list);
+        }
+
         // Delete physical files first (best-effort), collect succeeded IDs
         const succeededIds: string[] = [];
         for (const file of tempFiles) {
           try {
+            let derivativeDeleteFailed = false;
+            for (const derivative of derivativesByParent.get(file.id) ?? []) {
+              try {
+                await provider.delete({
+                  bucket: derivative.bucket as 'brand-logos' | 'company-assets' | 'collection-row-pictures' | 'merchandising-specsheet-images',
+                  key: derivative.key,
+                });
+              } catch (err) {
+                derivativeDeleteFailed = true;
+                fastify.log.warn(
+                  { err, fileKey: derivative.key },
+                  'Failed to delete derivative file from storage'
+                );
+              }
+            }
+
+            // A derivative stuck on disk/S3 must keep the master's DB row alive too —
+            // deleting the master below would cascade its derivative *row* away
+            // (onDelete: Cascade) while the physical object survives, turning a
+            // retryable failure into a permanent orphan with no reference left to
+            // find it by. Skip the whole master this tick; it's retried next tick.
+            if (derivativeDeleteFailed) continue;
+
             await provider.delete({
               bucket: file.bucket as 'brand-logos' | 'company-assets' | 'collection-row-pictures' | 'merchandising-specsheet-images',
               key: file.key,
@@ -419,7 +465,8 @@ function setupTempFileCleanup() {
           }
         }
 
-        // Batch delete DB records only for files successfully removed from storage
+        // Batch delete DB records only for files successfully removed from storage.
+        // Cascades to each master's derivative rows automatically (onDelete: Cascade).
         if (succeededIds.length > 0) {
           await prisma.fileObject.deleteMany({
             where: { id: { in: succeededIds } },
@@ -680,6 +727,9 @@ const start = async () => {
 
     // Register retention sweep for audit log + notifications + dedup keys (tick every 24h)
     registerRetentionScheduler(fastify, prisma);
+
+    // Register asset derivative reconciliation (thumb/card/export image variants, tick every 5min)
+    registerDerivativeScheduler(fastify, prisma);
 
     // Register feedback GitHub issue sync scheduler (tick interval from AppConfig, default 24h)
     registerFeedbackSyncScheduler(fastify, prisma);

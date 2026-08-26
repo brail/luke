@@ -65,9 +65,19 @@ export async function confirmPendingFile(
     return null;
   }
 
+  const confirmedAt = new Date();
   await tx.fileObject.update({
     where: { id: params.fileObjectId },
-    data: { confirmedAt: new Date() },
+    data: { confirmedAt },
+  });
+
+  // Derivatives mirror the master's pending state and are confirmed alongside it —
+  // they're excluded from the reaper's own query (`parentId: null`), so this isn't
+  // required for their survival, but it keeps `confirmedAt` meaningful across the
+  // whole tree instead of derivative rows staying "pending" forever.
+  await tx.fileObject.updateMany({
+    where: { parentId: params.fileObjectId, confirmedAt: null },
+    data: { confirmedAt },
   });
 
   return pendingFile.key;

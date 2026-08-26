@@ -12,14 +12,18 @@ import sharp from 'sharp';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { IMAGE_FETCH_CONCURRENCY } from '../../lib/export/concurrency';
-import { readFileBuffer } from '../../storage';
+import { readAssetBuffer } from '../asset.service';
 import { buildCollectionLayoutPdf } from '../collectionLayout.export.pdf.service';
 
 import type { CollectionLayoutForPdf } from '../collectionLayout.export.pdf.service';
 import type { PrismaClient } from '@prisma/client';
 
-vi.mock('../../storage', () => ({
-  readFileBuffer: vi.fn(),
+vi.mock('../asset.service', () => ({
+  readAssetBuffer: vi.fn(),
+  // Every fixture in this file uses `logoKey: null`, which real `resolveLogoDataUri`
+  // short-circuits to `null` without touching storage — this mock mirrors exactly
+  // that, so it needs no per-test setup.
+  resolveLogoDataUri: vi.fn().mockResolvedValue(null),
 }));
 
 const mockPrisma = {
@@ -85,7 +89,7 @@ describe('buildCollectionLayoutPdf', () => {
 
     let inFlight = 0;
     let peak = 0;
-    vi.mocked(readFileBuffer).mockImplementation(async () => {
+    vi.mocked(readAssetBuffer).mockImplementation(async () => {
       inFlight++;
       peak = Math.max(peak, inFlight);
       await new Promise(resolve => setTimeout(resolve, 5));
@@ -96,11 +100,11 @@ describe('buildCollectionLayoutPdf', () => {
     await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date());
 
     expect(peak).toBeLessThanOrEqual(IMAGE_FETCH_CONCURRENCY);
-    expect(readFileBuffer).toHaveBeenCalledTimes(uniqueKeyCount);
+    expect(readAssetBuffer).toHaveBeenCalledTimes(uniqueKeyCount);
   });
 
   it('renders a row without a photo when its image fetch fails', async () => {
-    vi.mocked(readFileBuffer).mockResolvedValue(null);
+    vi.mocked(readAssetBuffer).mockResolvedValue(null);
     const rows = [makeRow('row-1', 'missing.jpg')];
 
     const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date());
@@ -115,7 +119,7 @@ describe('buildCollectionLayoutPdf', () => {
       .jpeg({ quality: 90 })
       .toBuffer();
 
-    vi.mocked(readFileBuffer).mockResolvedValue(noise);
+    vi.mocked(readAssetBuffer).mockResolvedValue({ buffer: noise, contentType: 'image/jpeg', width: 1500, height: 1500 });
     const rows = [makeRow('row-1', 'huge.jpg')];
 
     const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date());
@@ -128,7 +132,7 @@ describe('buildCollectionLayoutPdf', () => {
   });
 
   it('produces a valid non-empty PDF buffer (smoke test)', async () => {
-    vi.mocked(readFileBuffer).mockResolvedValue(null);
+    vi.mocked(readAssetBuffer).mockResolvedValue(null);
     const rows = [makeRow('row-1', null), makeRow('row-2', 'key.jpg')];
 
     const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date());

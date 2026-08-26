@@ -8,14 +8,18 @@ import { randomBytes } from 'node:crypto';
 import sharp from 'sharp';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { readFileBuffer } from '../../storage';
+import { readAssetBuffer } from '../asset.service';
 import { buildCollectionRowPdf, buildCollectionRowXlsx } from '../collectionLayout.export.row.service';
 
 import type { CollectionRowForExport, RowExportContext } from '../collectionLayout.export.row.service';
 import type { PrismaClient } from '@prisma/client';
 
-vi.mock('../../storage', () => ({
-  readFileBuffer: vi.fn(),
+vi.mock('../asset.service', () => ({
+  readAssetBuffer: vi.fn(),
+  // Every fixture in this file uses `logoKey: null`, which real `resolveLogoDataUri`
+  // short-circuits to `null` without touching storage — this mock mirrors exactly
+  // that, so it needs no per-test setup.
+  resolveLogoDataUri: vi.fn().mockResolvedValue(null),
 }));
 
 const mockPrisma = {
@@ -80,7 +84,7 @@ describe('buildCollectionRowPdf', () => {
 
   it('downscales a large source photo before embedding it (OOM regression)', async () => {
     const noise = await makeLargeJpeg();
-    vi.mocked(readFileBuffer).mockResolvedValue(noise);
+    vi.mocked(readAssetBuffer).mockResolvedValue({ buffer: noise, contentType: 'image/jpeg', width: 1500, height: 1500 });
 
     const buffer = await buildCollectionRowPdf(makeCtx('huge.jpg'), mockPrisma, 'Tester', new Date());
 
@@ -92,7 +96,7 @@ describe('buildCollectionRowPdf', () => {
   });
 
   it('produces a valid non-empty PDF buffer when there is no photo (smoke test)', async () => {
-    vi.mocked(readFileBuffer).mockResolvedValue(null);
+    vi.mocked(readAssetBuffer).mockResolvedValue(null);
 
     const buffer = await buildCollectionRowPdf(makeCtx(null), mockPrisma, 'Tester', new Date());
 
@@ -108,7 +112,7 @@ describe('buildCollectionRowXlsx', () => {
 
   it('downscales a large source photo before embedding it (OOM regression)', async () => {
     const noise = await makeLargeJpeg();
-    vi.mocked(readFileBuffer).mockResolvedValue(noise);
+    vi.mocked(readAssetBuffer).mockResolvedValue({ buffer: noise, contentType: 'image/jpeg', width: 1500, height: 1500 });
 
     const buffer = await buildCollectionRowXlsx(makeCtx('huge.jpg'), mockPrisma);
 
@@ -116,7 +120,7 @@ describe('buildCollectionRowXlsx', () => {
   });
 
   it('produces a valid non-empty XLSX buffer when there is no photo (smoke test)', async () => {
-    vi.mocked(readFileBuffer).mockResolvedValue(null);
+    vi.mocked(readAssetBuffer).mockResolvedValue(null);
 
     const buffer = await buildCollectionRowXlsx(makeCtx(null), mockPrisma);
 

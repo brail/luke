@@ -1,19 +1,10 @@
-import { Readable } from 'stream';
-
 import { TRPCError } from '@trpc/server';
 
 import { logAudit } from '../lib/auditLog';
-import { streamToBuffer, validateMagicBytes, validateImageFile } from '../lib/imageUpload';
-import { resolvePublicUrl } from '../lib/storageUrl';
-import { putObject } from '../storage';
+
+import { ingestImageAsset } from './asset.service';
 
 import type { Context } from '../lib/trpc';
-
-const IMAGE_CONFIG = {
-  allowedMimes: ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'] as const,
-  maxSizeBytes: 10 * 1024 * 1024,
-  allowedExtensions: ['.png', '.jpg', '.jpeg', '.webp'] as const,
-};
 
 /**
  * Validates and stores an image file for a merchandising specsheet.
@@ -37,14 +28,9 @@ export async function uploadSpecsheetImage(
     };
   }
 ): Promise<{ id: string; publicUrl: string }> {
-  const sanitizedFilename = validateImageFile(params.file, IMAGE_CONFIG);
-
-  const buffer = await streamToBuffer(params.file.stream);
-
-  if (!validateMagicBytes(buffer, params.file.mimetype)) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: 'File corrotto o tipo non valido' });
-  }
-
+  // Specsheet existence is checked before uploading: a confirmed (non-pending) upload
+  // for a specsheet that doesn't exist would leave an orphaned FileObject the reaper
+  // never touches — it only sweeps *pending* files (see `setupTempFileCleanup` in `server.ts`).
   const specsheet = await ctx.prisma.merchandisingSpecsheet.findUnique({
     where: { id: params.specsheetId },
     include: { _count: { select: { images: true } } },
@@ -54,30 +40,24 @@ export async function uploadSpecsheetImage(
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Specsheet non trovata' });
   }
 
-  const fileObject = await putObject(ctx, {
-    bucket: 'merchandising-specsheet-images',
-    originalName: sanitizedFilename,
-    contentType: params.file.mimetype,
-    size: params.file.size,
-    stream: Readable.from(buffer),
-  });
-
   const isFirst = specsheet._count.images === 0;
-  const existingCount = await ctx.prisma.merchandisingImage.count({
-    where: { specsheetId: params.specsheetId },
-  });
+  // Independent of each other — `ingestImageAsset` doesn't touch `merchandisingImage`,
+  // and the count doesn't need the upload's result — so there's no reason to wait
+  // on one before starting the other.
+  const [result, existingCount] = await Promise.all([
+    ingestImageAsset(ctx, { kind: 'specsheet-image', file: params.file }),
+    ctx.prisma.merchandisingImage.count({ where: { specsheetId: params.specsheetId } }),
+  ]);
 
   const image = await ctx.prisma.merchandisingImage.create({
     data: {
       specsheetId: params.specsheetId,
-      key: fileObject.key,
+      key: result.key,
       isDefault: isFirst,
       order: existingCount,
       caption: params.caption ?? null,
     },
   });
-
-  const publicUrl = await resolvePublicUrl(ctx.prisma, 'merchandising-specsheet-images', fileObject.key);
 
   try {
     await logAudit(ctx, {
@@ -85,11 +65,11 @@ export async function uploadSpecsheetImage(
       targetType: 'MerchandisingSpecsheet',
       targetId: params.specsheetId,
       result: 'SUCCESS',
-      metadata: { filename: sanitizedFilename, size: params.file.size, imageId: image.id },
+      metadata: { filename: result.originalName, size: params.file.size, imageId: image.id },
     });
   } catch (auditError) {
     ctx.logger?.warn({ auditError }, 'Audit log failed for specsheet image upload');
   }
 
-  return { id: image.id, publicUrl };
+  return { id: image.id, publicUrl: result.publicUrl };
 }

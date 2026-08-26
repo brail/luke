@@ -34,3 +34,21 @@ export async function resizeForEmbed(
     return buf;
   }
 }
+
+/**
+ * Builds a data URI from a buffer and its *known* content-type — never guessed from
+ * a filename/key extension. The previous per-file `toDataUri(buf, key)` helpers
+ * inferred the MIME from the key's suffix and returned `null` for `.webp` (pdfmake/
+ * exceljs can't embed WebP), which silently dropped any row picture uploaded as
+ * WebP from every export. `readAssetBuffer` (`services/asset.service.ts`) already
+ * resolves the `export` variant, whose pipeline guarantees PNG or JPEG output — so
+ * by the time a buffer reaches this function there is no WebP case left to handle.
+ */
+export function bufferToDataUri(buf: Buffer, contentType: string): string {
+  return `data:${contentType};base64,${buf.toString('base64')}`;
+}
+
+/** ExcelJS only accepts these three; the `export` variant's pipeline never produces anything else (`format: 'auto'` picks PNG or JPEG — see `deriveVariant`). */
+export function extensionForExcelJs(contentType: string): 'jpeg' | 'png' | 'gif' {
+  return contentType === 'image/png' ? 'png' : 'jpeg';
+}

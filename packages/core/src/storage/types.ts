@@ -67,6 +67,14 @@ export interface StoredObjectMeta {
   createdBy: string;
   /** Creation date */
   createdAt: Date;
+  /** Master this file is a derivative of. Absent/null on masters. */
+  parentId?: string | null;
+  /** Variant name (thumb | card | export). Absent/null on masters. */
+  variant?: string | null;
+  /** Pixel width, when known (image assets only). */
+  width?: number | null;
+  /** Pixel height, when known (image assets only). */
+  height?: number | null;
 }
 
 /**

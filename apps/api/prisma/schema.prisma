@@ -240,12 +240,35 @@ model FileObject {
   confirmedAt     DateTime? // null = pending confirmation; set on entity link
   createdAt       DateTime  @default(now())
 
+  /// Master this row is a derivative of. Null on masters (and on non-image uploads, e.g. backups).
+  parentId           String?
+  /// Cascade is intentional: a derivative without its master is meaningless — it's regenerable
+  /// cache produced by the asset pipeline, not source data, so it never needs independent retention.
+  parent             FileObject?  @relation("AssetDerivatives", fields: [parentId], references: [id], onDelete: Cascade)
+  /// Derivatives generated from this master (thumb/card/export).
+  variants           FileObject[] @relation("AssetDerivatives")
+  /// Variant name (thumb | card | export). Null on masters.
+  variant            String?
+  /// Asset pipeline version this row was produced with (ASSET_PIPELINE_VERSION in @luke/core). Bump the constant to force regeneration of stale derivatives.
+  pipelineVersion    Int          @default(0)
+  /// Pixel width from the normalization/derivation pipeline. Null for non-image uploads or an undecodable source.
+  width              Int?
+  /// Pixel height from the normalization/derivation pipeline. Null for non-image uploads or an undecodable source.
+  height             Int?
+  /// Derivative generation state — meaningful on masters only: PENDING | READY | FAILED.
+  derivativesStatus  String       @default("PENDING")
+  /// Number of derivative-generation attempts made so far — masters only.
+  derivativeAttempts Int          @default(0)
+
   @@unique([bucket, key])
+  @@unique([parentId, variant, pipelineVersion])
   @@index([bucket, key])
   @@index([createdAt])
   @@index([createdBy])
   @@index([cleanupStatus])
   @@index([confirmedAt])
+  @@index([parentId])
+  @@index([derivativesStatus])
   @@map("file_objects")
 }
 

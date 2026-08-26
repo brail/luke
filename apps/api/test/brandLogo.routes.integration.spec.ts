@@ -3,6 +3,10 @@
  * Verifies Fastify multipart endpoint with supertest
  */
 
+import { mkdtemp, rm, writeFile } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
+
 import multipart from '@fastify/multipart';
 import { FastifyInstance } from 'fastify';
 import request from 'supertest';
@@ -10,20 +14,20 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 
 import brandLogoRoutes from '../src/routes/brandLogo.routes';
+import { resetStorageProvider } from '../src/storage';
 
-import { createValidPngBuffer } from './helpers/storageTestHelper';
+import { createValidPngBuffer, seedLocalStorageConfig } from './helpers/storageTestHelper';
 import { createContextForRole } from './helpers/testContext';
 
-// Mock of the storage module
-vi.mock('../src/storage', () => ({
-  putObject: vi.fn(),
-  // `deleteObjectByKey`, not `deleteObject`: that is what
-  // `brandLogo.service.ts` imports. With the wrong name the factory did not define it, and
-  // from the second upload onward the previous-logo cleanup branch threw
-  // inside the `setImmediate` -- where the service's `catch` swallowed it.
-  deleteObjectByKey: vi.fn(),
-  getStorageProvider: vi.fn(),
-}));
+// Storage is NOT mocked here (see `seedLocalStorageConfig`, in `./helpers/storageTestHelper`): `appRouter` is
+// imported eagerly by `test/setup.procedureUsage.ts` (a `setupFiles` entry, for the
+// procedure-coverage gate) before this file's own `vi.mock` hoisting can run, and
+// `appRouter` now reaches `services/asset.service.ts` — which imports `../storage` —
+// through `collectionLayout.ts`'s `resolveVariantUrls`. A module already evaluated
+// by an earlier file can't be retroactively mocked, so `putObject` et al. would
+// silently run for real regardless of a `vi.mock('../src/storage', ...)` here. Real
+// local storage pointed at a throwaway temp directory is what these tests actually
+// exercise now — see `seedLocalStorageConfig`.
 
 // `brandLogo.service` must NOT be mocked: it contains exactly the validations these
 // tests verify (file type, magic bytes, brand existence -> 404). Mocking it
@@ -62,6 +66,7 @@ describe('Brand Logo Upload Integration', () => {
   let testContext: any;
   let testBrand: any;
   let authToken: string;
+  let basePath: string;
 
   beforeEach(async () => {
     // The brand code is fixed: without truncating the data, a `TEST_BRAND` left
@@ -82,27 +87,8 @@ describe('Brand Logo Upload Integration', () => {
     // Mock JWT token for authentication
     authToken = 'mock-jwt-token';
 
-    // Mock the storage functions
-    const { putObject, deleteObjectByKey, getStorageProvider } = await import(
-      '../src/storage'
-    );
-    // Partial stubs: they only cover the surface used by the service, so the casts
-    // acknowledge that these are not complete implementations of StoredObjectMeta /
-    // IStorageProvider.
-    vi.mocked(putObject).mockResolvedValue({
-      id: 'mock-file-id',
-      key: 'mock-key',
-      bucket: 'brand-logos',
-      contentType: 'image/png',
-      size: 1000,
-      createdAt: new Date(),
-    } as unknown as Awaited<ReturnType<typeof putObject>>);
-
-    vi.mocked(deleteObjectByKey).mockResolvedValue(undefined);
-    vi.mocked(getStorageProvider).mockResolvedValue({
-      get: vi.fn(),
-      delete: vi.fn(),
-    } as unknown as Awaited<ReturnType<typeof getStorageProvider>>);
+    basePath = await mkdtemp(join(tmpdir(), 'luke-brandlogo-routes-'));
+    await seedLocalStorageConfig(testContext.prisma, basePath, { buckets: ['brand-logos'], maxFileSizeMB: 2 });
 
     // Create Fastify app for testing
     const fastify = (await import('fastify')).default;
@@ -134,10 +120,13 @@ describe('Brand Logo Upload Integration', () => {
   });
 
   afterEach(async () => {
-    // Only what the truncation does not cover: the Fastify server and the mocks. The data
-    // is reset by `createContextForRole` in the `beforeEach` of the next test.
+    // Only what the truncation does not cover: the Fastify server, the storage
+    // provider singleton, and the temp directory. The data is reset by
+    // `createContextForRole` in the `beforeEach` of the next test.
     await app.close();
     vi.clearAllMocks();
+    resetStorageProvider();
+    await rm(basePath, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   });
 
   describe('POST /upload/brand-logo/:brandId', () => {
@@ -379,10 +368,13 @@ describe('Brand Logo Upload Integration', () => {
 
   describe('Error handling', () => {
     it('should handle service layer errors gracefully', async () => {
-      // The service is no longer mocked (it contains the validations under test): the
-      // failure is injected into the storage, which is the layer that is actually replaceable.
-      const { putObject } = await import('../src/storage');
-      vi.mocked(putObject).mockRejectedValueOnce(new Error('Storage non raggiungibile'));
+      // The service is not mocked (it contains the validations under test), and
+      // storage itself can no longer be module-mocked here (see the note at the top
+      // of this file). The failure is injected for real instead: a plain *file*
+      // sits where the provider needs to create the `brand-logos` *directory*, so
+      // `LocalFsProvider.init()`'s `mkdir` genuinely fails on the next storage call.
+      await writeFile(join(basePath, 'brand-logos'), 'not a directory');
+      resetStorageProvider();
 
       const pngBuffer = createValidPngBuffer();
 
