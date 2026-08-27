@@ -85,8 +85,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   users: {
     reason:
-      'CRUD coperto dalle spec audit/idempotenza; approvePending dalla spec sull\'assegnazione team obbligatoria (Piano C); heartbeat e le preferenze menu no',
-    uncovered: 10,
+      'CRUD coperto dalle spec audit/idempotenza; approvePending dalla spec sull\'assegnazione team obbligatoria (Piano C); forceLocalAccess e revokeLocalAccess dalla spec sul bypass LDAP/OIDC (usersLocalAccess.integration.spec.ts); heartbeat e le preferenze menu no',
+    uncovered: 9,
   },
   seasonCalendar: {
     reason:
@@ -181,8 +181,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   auditLog: {
     reason:
-      'nessun test sulle procedure di lettura. `auditlog.integration.spec.ts` verifica le righe scritte interrogando Prisma, non list/getLastChange/getExportLink',
-    uncovered: 3,
+      '`auditlog.integration.spec.ts` verifica le righe scritte perlopiù interrogando Prisma direttamente, oltre a invocare `list`; getLastChange/getExportLink restano scoperte',
+    uncovered: 2,
   },
   editLock: {
     reason: 'nessun test scritto sul lock di sessione del wizard di pianificazione',

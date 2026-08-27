@@ -24,7 +24,7 @@ import { getOnlineUserIds, updatePresence } from '../lib/presenceStore';
 import { withRateLimit } from '../lib/ratelimit';
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
 import { router, protectedProcedure } from '../lib/trpc';
-import { deleteUserHandler, getLockedFields, UserIdSchema } from '../services/users.service';
+import { deleteUserHandler, getLockedFields, resolveEffectiveProvider, UserIdSchema } from '../services/users.service';
 
 export const usersCoreRouter = router({
   /**
@@ -117,8 +117,10 @@ export const usersCoreRouter = router({
         // already-extracted page, not globally.
         const all = await ctx.prisma.user.findMany({ where, select: selectFields });
         all.sort((a, b) => {
-          const providerA = a.identities?.[0]?.provider || 'LOCAL';
-          const providerB = b.identities?.[0]?.provider || 'LOCAL';
+          // A user may hold more than one identity (e.g. after `forceLocalAccess`) — sort/display
+          // by the effective (external-first) provider, not an arbitrary/unordered `[0]`.
+          const providerA = resolveEffectiveProvider(a.identities ?? []);
+          const providerB = resolveEffectiveProvider(b.identities ?? []);
           const comparison = providerA.localeCompare(providerB);
           return sortOrder === 'asc' ? comparison : -comparison;
         });
@@ -351,7 +353,10 @@ export const usersCoreRouter = router({
           message: 'User has no identity record — data integrity error',
         });
       }
-      const lockedFields = getLockedFields(existingUser.identities[0].provider);
+      // `existingUser` may hold more than one identity (e.g. after `forceLocalAccess` granted a
+      // LOCAL identity alongside an existing LDAP one) — `resolveEffectiveProvider` picks the
+      // external one deterministically instead of trusting an arbitrary/unordered `identities[0]`.
+      const lockedFields = getLockedFields(resolveEffectiveProvider(existingUser.identities));
       const attemptedLockedFields = Object.keys(updateData).filter(field =>
         lockedFields.includes(field as LockedFields)
       );
@@ -498,12 +503,20 @@ export const usersCoreRouter = router({
             );
           }
 
-          // The guard above + `getLockedFields` guarantee that, if we get here with
-          // `passwordHash` set, the provider is LOCAL — `identities[0]` is therefore
-          // the LOCAL credential to update.
+          // The guard above + `getLockedFields`/`resolveEffectiveProvider` guarantee that, if we
+          // get here with `passwordHash` set, the user has no external identity — but look up the
+          // LOCAL identity explicitly rather than indexing `identities[0]`, since that assumption
+          // no longer holds for every user (see `resolveEffectiveProvider`).
           if (passwordHash !== undefined) {
+            const localIdentity = existingUser.identities.find(i => i.provider === 'LOCAL');
+            if (!localIdentity) {
+              throw new TRPCError({
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'User has no LOCAL identity record — data integrity error',
+              });
+            }
             await tx.localCredential.update({
-              where: { identityId: existingUser.identities[0].id },
+              where: { identityId: localIdentity.id },
               data: { passwordHash, updatedAt: new Date() },
             });
           }

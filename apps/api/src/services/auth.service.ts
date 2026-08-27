@@ -11,6 +11,7 @@ import argon2 from 'argon2';
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
 import { getConfig, getPasswordPolicy } from '../lib/configManager';
+import { createResetToken } from '../lib/emailHelpers';
 import { authenticateViaLdap } from '../lib/ldapAuth';
 import {
   sendPasswordResetEmail,
@@ -456,19 +457,7 @@ export async function requestPasswordReset(ctx: Context, email: string) {
     };
   }
 
-  // Generate token
-  const token = randomBytes(32).toString('hex');
-  const tokenHash = createHash('sha256').update(token).digest('hex');
-  const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
-
-  const userToken = await ctx.prisma.userToken.create({
-    data: {
-      userId: user.id,
-      type: 'RESET',
-      tokenHash,
-      expiresAt,
-    },
-  });
+  const { token, userToken } = await createResetToken(ctx.prisma, user.id);
 
   const baseUrl =
     (await getConfig(ctx.prisma, 'app.baseUrl', false)) ||
@@ -488,7 +477,7 @@ export async function requestPasswordReset(ctx: Context, email: string) {
       targetType: 'Auth',
       targetId: user.id,
       result: 'SUCCESS',
-      metadata: { expiresAt: expiresAt.toISOString() },
+      metadata: { expiresAt: userToken.expiresAt.toISOString() },
     });
 
     return genericResponse;

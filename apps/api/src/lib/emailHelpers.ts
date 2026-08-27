@@ -142,3 +142,34 @@ export async function sendVerificationEmail(
     throw new Error('Impossibile inviare email. Verifica configurazione SMTP.', { cause: error });
   }
 }
+
+/** Result of {@link createResetToken}. */
+export interface CreateResetTokenResult {
+  /** Plaintext token — embed it in the reset link. Never persisted directly (`userToken` holds the hash). */
+  token: string;
+  userToken: { id: string; expiresAt: Date };
+}
+
+/**
+ * Generates a password-reset token and persists it as a `UserToken` (type `RESET`, 30-minute
+ * expiry). Does not send anything or check for an existing `LocalCredential` — callers own that
+ * (self-service `requestPasswordReset` treats a missing one as user-not-found; admin-triggered
+ * `forceLocalAccess` may have just created one in the same request).
+ *
+ * @param prisma - Prisma client.
+ * @param userId - Target user.
+ */
+export async function createResetToken(
+  prisma: PrismaClient,
+  userId: string
+): Promise<CreateResetTokenResult> {
+  const token = randomBytes(32).toString('hex');
+  const tokenHash = createHash('sha256').update(token).digest('hex');
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+
+  const userToken = await prisma.userToken.create({
+    data: { userId, type: 'RESET', tokenHash, expiresAt },
+  });
+
+  return { token, userToken };
+}

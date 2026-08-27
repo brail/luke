@@ -41,7 +41,13 @@ export type SortColumn =
 export type SortOrder = 'asc' | 'desc';
 
 /** Identifiers for the actions available in the per-user dropdown menu. */
-export type UserAction = 'edit' | 'disable' | 'revokeSessions' | 'hardDelete';
+export type UserAction =
+  | 'edit'
+  | 'disable'
+  | 'revokeSessions'
+  | 'hardDelete'
+  | 'forceLocalAccess'
+  | 'revokeLocalAccess';
 
 /**
  * Callbacks for each user action emitted by `UserActionsMenu`.
@@ -52,6 +58,8 @@ export interface UserActionHandlers {
   onHardDelete: (user: UserListItem) => void;
   onRevokeSessions: (user: UserListItem) => void;
   onManageAccess: (user: UserListItem) => void;
+  onForceLocalAccess: (user: UserListItem) => void;
+  onRevokeLocalAccess: (user: UserListItem) => void;
 }
 
 /**

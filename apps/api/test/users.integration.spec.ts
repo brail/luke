@@ -120,6 +120,39 @@ describe('users.update — reset password admin', () => {
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
+  it('utente dual-identity (LDAP + LOCAL, es. dopo forceLocalAccess) → password reset resta bloccato', async () => {
+    // Regression test for the `identities[0]` nondeterminism fixed alongside
+    // `forceLocalAccess`/`revokeLocalAccess`: a user can now hold more than one identity, and
+    // `getLockedFields` must key off the external one deterministically, not an unordered `[0]`.
+    const timestamp = Date.now();
+    const dualUser = await prisma.user.create({
+      data: {
+        email: `dual-pwtest-${timestamp}@test.com`,
+        username: `dual-pwtest-${timestamp}`,
+        firstName: 'Dual',
+        lastName: 'User',
+        role: 'viewer',
+        isActive: true,
+        emailVerifiedAt: new Date(),
+      },
+    });
+    // LOCAL identity created first, LDAP second: the ordering that would have broken a naive
+    // `identities[0]` read (which would have resolved to LOCAL → password wrongly unlocked).
+    const localIdentity = await prisma.identity.create({
+      data: { userId: dualUser.id, provider: 'LOCAL', providerId: dualUser.username },
+    });
+    await prisma.localCredential.create({
+      data: { identityId: localIdentity.id, passwordHash: 'not-a-real-hash' },
+    });
+    await prisma.identity.create({
+      data: { userId: dualUser.id, provider: 'LDAP', providerId: `cn=dual-pwtest-${timestamp}` },
+    });
+
+    await expect(
+      usersAs('admin').update({ id: dualUser.id, password: NEW_PASSWORD })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
+
   it('password omessa: nessun bump di tokenVersion, nessuna riga USER_PASSWORD_RESET_BY_ADMIN', async () => {
     const { user: target } = await createTargetUser();
     const tokenVersionBefore = target.tokenVersion;

@@ -29,6 +29,61 @@ import { UserAccessDialog } from './_components/UserAccessDialog';
 import { UsersTable } from './_components/UsersTable';
 import { UsersToolbar } from './_components/UsersToolbar';
 
+/** Identifiers for the actions the confirm dialog can be opened for. */
+type ConfirmActionType =
+  | 'disable'
+  | 'hardDelete'
+  | 'revokeSessions'
+  | 'forceLocalAccess'
+  | 'revokeLocalAccess';
+
+/** Copy + dialog styling for each `ConfirmActionType`, keyed by type so adding one is a single new entry. */
+const CONFIRM_ACTION_CONFIG: Record<
+  ConfirmActionType,
+  {
+    title: string;
+    description: string;
+    confirmText: string;
+    actionType: 'disable' | 'hardDelete' | 'revokeSessions' | 'warning';
+  }
+> = {
+  disable: {
+    title: 'Disattiva Utente',
+    description:
+      "L'utente non potrà più accedere al sistema. L'operazione può essere annullata riattivando l'utente.",
+    confirmText: 'Disattiva',
+    actionType: 'disable',
+  },
+  hardDelete: {
+    title: 'Elimina Definitivamente',
+    description:
+      "Questa operazione è irreversibile. Tutti i dati dell'utente verranno eliminati permanentemente dal database.",
+    confirmText: 'Elimina Definitivamente',
+    actionType: 'hardDelete',
+  },
+  revokeSessions: {
+    title: 'Revoca Sessioni Utente',
+    description:
+      "L'utente verrà disconnesso da tutti i dispositivi e dovrà effettuare nuovamente il login. Questa operazione è utile per motivi di sicurezza.",
+    confirmText: 'Revoca Sessioni',
+    actionType: 'revokeSessions',
+  },
+  forceLocalAccess: {
+    title: 'Forza Accesso Locale',
+    description:
+      "Verrà creata una credenziale locale per questo utente e inviato un link per impostare la password, bypassando il controllo Active Directory/LDAP esistente. L'identity esterna non viene rimossa: se AD riattiva l'account, tornerà a funzionare anche quello.",
+    confirmText: 'Forza Accesso Locale',
+    actionType: 'warning',
+  },
+  revokeLocalAccess: {
+    title: 'Revoca Accesso Locale',
+    description:
+      "La credenziale locale verrà rimossa: l'utente potrà accedere solo tramite LDAP/OIDC. Tutte le sessioni attive verranno terminate.",
+    confirmText: 'Revoca Accesso Locale',
+    actionType: 'warning',
+  },
+};
+
 /**
  * Pagina gestione utenti con CRUD completo
  * Include lista paginata, filtri, creazione, modifica e eliminazione utenti
@@ -52,7 +107,7 @@ export default function UsersPage() {
   // Stato per modal di conferma
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{
-    type: 'delete' | 'disable' | 'hardDelete' | 'revokeSessions';
+    type: ConfirmActionType;
     user: UserListItem;
     handler: () => void;
   } | null>(null);
@@ -100,6 +155,8 @@ export default function UsersPage() {
   const hardDeleteUserMutation = trpc.users.hardDelete.useMutation();
   const revokeUserSessionsMutation =
     trpc.users.revokeUserSessions.useMutation();
+  const forceLocalAccessMutation = trpc.users.forceLocalAccess.useMutation();
+  const revokeLocalAccessMutation = trpc.users.revokeLocalAccess.useMutation();
 
   // Mutations standardizzate
   const { mutate: createUser, isPending: isCreatingUser } = useStandardMutation(
@@ -157,6 +214,24 @@ export default function UsersPage() {
       invalidate: refresh.users,
       onSuccess: data => toast.success(data.message),
       onErrorMessage: 'Errore nella revoca sessioni',
+    });
+
+  const { mutate: forceLocalAccess, isPending: isForcingLocalAccess } =
+    useStandardMutation({
+      mutateFn: forceLocalAccessMutation.mutateAsync,
+      invalidate: refresh.users,
+      onSuccess: data => toast.success(data.message),
+      onErrorMessage: "Errore nel forzare l'accesso locale",
+      entityMessages: { FORBIDDEN: true },
+    });
+
+  const { mutate: revokeLocalAccess, isPending: isRevokingLocalAccess } =
+    useStandardMutation({
+      mutateFn: revokeLocalAccessMutation.mutateAsync,
+      invalidate: refresh.users,
+      onSuccess: data => toast.success(data.message),
+      onErrorMessage: "Errore nel revocare l'accesso locale",
+      entityMessages: { FORBIDDEN: true },
     });
 
   // Handlers per le azioni
@@ -232,6 +307,31 @@ export default function UsersPage() {
       type: 'revokeSessions',
       user,
       handler: () => revokeUserSessions({ id: user.id }),
+    });
+    setConfirmDialogOpen(true);
+  };
+
+  const handleForceLocalAccess = (user: UserListItem) => {
+    setConfirmAction({
+      type: 'forceLocalAccess',
+      user,
+      handler: () => forceLocalAccess({ id: user.id }),
+    });
+    setConfirmDialogOpen(true);
+  };
+
+  const handleRevokeLocalAccess = (user: UserListItem) => {
+    // Same self-lockout guard as handleRevokeUserSessions (revoke bumps
+    // tokenVersion, would end the admin's own session mid-action).
+    if (user.id === session?.user?.id) {
+      toast.error('Non puoi revocare il tuo stesso accesso locale.');
+      return;
+    }
+
+    setConfirmAction({
+      type: 'revokeLocalAccess',
+      user,
+      handler: () => revokeLocalAccess({ id: user.id }),
     });
     setConfirmDialogOpen(true);
   };
@@ -359,6 +459,8 @@ export default function UsersPage() {
                   onHardDelete={handleHardDeleteUser}
                   onRevokeSessions={handleRevokeUserSessions}
                   onManageAccess={setAccessDialogUser}
+                  onForceLocalAccess={handleForceLocalAccess}
+                  onRevokeLocalAccess={handleRevokeLocalAccess}
                 />
               )}
             </SectionCard>
@@ -392,41 +494,21 @@ export default function UsersPage() {
           <ConfirmDialog
             open={confirmDialogOpen}
             onOpenChange={setConfirmDialogOpen}
-            title={
-              confirmAction.type === 'disable'
-                ? 'Disattiva Utente'
-                : confirmAction.type === 'hardDelete'
-                  ? 'Elimina Definitivamente'
-                  : confirmAction.type === 'revokeSessions'
-                    ? 'Revoca Sessioni Utente'
-                    : 'Conferma Azione'
-            }
-            description={
-              confirmAction.type === 'disable'
-                ? "L'utente non potrà più accedere al sistema. L'operazione può essere annullata riattivando l'utente."
-                : confirmAction.type === 'hardDelete'
-                  ? "Questa operazione è irreversibile. Tutti i dati dell'utente verranno eliminati permanentemente dal database."
-                  : confirmAction.type === 'revokeSessions'
-                    ? "L'utente verrà disconnesso da tutti i dispositivi e dovrà effettuare nuovamente il login. Questa operazione è utile per motivi di sicurezza."
-                    : 'Sei sicuro di voler procedere con questa azione?'
-            }
-            confirmText={
-              confirmAction.type === 'disable'
-                ? 'Disattiva'
-                : confirmAction.type === 'hardDelete'
-                  ? 'Elimina Definitivamente'
-                  : confirmAction.type === 'revokeSessions'
-                    ? 'Revoca Sessioni'
-                    : 'Conferma'
-            }
+            title={CONFIRM_ACTION_CONFIG[confirmAction.type].title}
+            description={CONFIRM_ACTION_CONFIG[confirmAction.type].description}
+            confirmText={CONFIRM_ACTION_CONFIG[confirmAction.type].confirmText}
             cancelText="Annulla"
             variant="destructive"
             onConfirm={handleConfirmAction}
             isLoading={
-              isDeletingUser || isHardDeletingUser || isRevokingSessions
+              isDeletingUser ||
+              isHardDeletingUser ||
+              isRevokingSessions ||
+              isForcingLocalAccess ||
+              isRevokingLocalAccess
             }
             userEmail={confirmAction.user?.email}
-            actionType={confirmAction.type}
+            actionType={CONFIRM_ACTION_CONFIG[confirmAction.type].actionType}
           />
         )}
 

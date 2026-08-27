@@ -9,6 +9,8 @@ import {
   Mail,
   Settings2,
   Shield,
+  KeyRound,
+  Lock,
   X,
 } from 'lucide-react';
 import React from 'react';
@@ -39,7 +41,7 @@ interface UserActionsMenuProps {
  * Dropdown action menu for a single user row, with self-action guards.
  * @param user - The user the actions apply to.
  * @param currentUserId - ID of the currently logged-in user, used to block self-destructive actions.
- * @param handlers - Callbacks for each available action (edit, disable, hard-delete, revoke sessions, manage access).
+ * @param handlers - Callbacks for each available action (edit, disable, hard-delete, revoke sessions, manage access, force/revoke local access).
  */
 export function UserActionsMenu({
   user,
@@ -107,6 +109,23 @@ export function UserActionsMenu({
     }
     handlers.onHardDelete(user);
   };
+
+  const handleRevokeLocalAccess = () => {
+    // Same self-lockout guard as revoke-sessions (this also bumps tokenVersion,
+    // ending the caller's own session mid-action) — mirrors the server-side check.
+    if (isSelfAction) {
+      toast.error('Non puoi revocare il tuo stesso accesso locale.');
+      return;
+    }
+    handlers.onRevokeLocalAccess(user);
+  };
+
+  const hasExternalIdentity = user.identities.some(
+    identity => identity.provider !== 'LOCAL'
+  );
+  const hasLocalIdentity = user.identities.some(
+    identity => identity.provider === 'LOCAL'
+  );
 
   return (
     <DropdownMenu>
@@ -178,6 +197,27 @@ export function UserActionsMenu({
         {canUpdate && (
           <>
             <DropdownMenuSeparator />
+            {hasExternalIdentity && (
+              <DropdownMenuItem
+                onClick={() => handlers.onForceLocalAccess(user)}
+                className="text-orange-600 focus:text-orange-600"
+              >
+                <KeyRound className="mr-2 h-4 w-4" />
+                {hasLocalIdentity
+                  ? 'Reinvia link accesso locale'
+                  : 'Forza accesso locale'}
+              </DropdownMenuItem>
+            )}
+            {hasLocalIdentity && hasExternalIdentity && (
+              <DropdownMenuItem
+                onClick={handleRevokeLocalAccess}
+                disabled={isSelfAction}
+                className="text-orange-600 focus:text-orange-600"
+              >
+                <Lock className="mr-2 h-4 w-4" />
+                Revoca accesso locale
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               onClick={handleRevokeSessions}
               className="text-orange-600 focus:text-orange-600"
