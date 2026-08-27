@@ -30,7 +30,7 @@ const PASSPHRASE_SALT_LENGTH = 16;
 
 /** Same Argon2id tuning as `lib/password.ts`, reused here for a raw-key KDF instead of a verify-hash. */
 async function derivePassphraseKey(passphrase: string, salt: Buffer): Promise<Buffer> {
-  return argon2.hash(passphrase, { ...ARGON2_OPTIONS, raw: true, salt }) as Promise<Buffer>;
+  return argon2.hash(passphrase, { ...ARGON2_OPTIONS, raw: true, salt });
 }
 
 /**

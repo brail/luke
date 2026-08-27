@@ -13,7 +13,7 @@ import argon2 from 'argon2';
  * key from passphrase with the same tuning instead of a verification hash) that must remain
  * aligned on these parameters.
  */
-export const ARGON2_OPTIONS: argon2.Options = {
+export const ARGON2_OPTIONS: argon2.HashOptions = {
   type: argon2.argon2id,
   memoryCost: 2 ** 16, // 64 MB
   timeCost: 3, // 3 iterations
@@ -32,7 +32,8 @@ export async function hashPassword(password: string): Promise<string> {
     return await argon2.hash(password, ARGON2_OPTIONS);
   } catch (error) {
     throw new Error(
-      `Errore durante l'hash della password: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`
+      `Errore durante l'hash della password: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`,
+      { cause: error }
     );
   }
 }
