@@ -21,8 +21,8 @@
   },
   "dependencies": {
     "@luke/core": "workspace:*",
-    "@prisma/client": "^7.8.0",
-    "mssql": "^12.6.0",
+    "@prisma/client": "7.9.1",
+    "mssql": "^12.7.0",
     "pino": "^10.3.1"
   },
   "devDependencies": {
