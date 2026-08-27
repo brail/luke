@@ -9,8 +9,8 @@
  * `SIGTERM` and `SIGINT` signals.
  */
 
+import FastifyOtelInstrumentation from '@fastify/otel';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
-import { FastifyInstrumentation } from '@opentelemetry/instrumentation-fastify';
 import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
 import { UndiciInstrumentation } from '@opentelemetry/instrumentation-undici';
 import { resourceFromAttributes } from '@opentelemetry/resources';
@@ -54,7 +54,10 @@ if (otelEnabled) {
     instrumentations: [
       new HttpInstrumentation(),
       new UndiciInstrumentation(),
-      new FastifyInstrumentation(),
+      // @opentelemetry/instrumentation-fastify is deprecated in favor of this,
+      // the Fastify-authors-maintained package; registerOnInitialization keeps
+      // the same NodeSDK auto-registration behavior the old package had.
+      new FastifyOtelInstrumentation({ registerOnInitialization: true }),
       new PrismaInstrumentation(),
     ],
   });
