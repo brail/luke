@@ -24,6 +24,12 @@ ENV NEXT_PUBLIC_APP_VERSION=$APP_VERSION
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
+# next build's type-checking phase OOMs on V8's default old-space heap
+# (~2GB) in memory-constrained build environments (small CI runners, a
+# Docker Desktop VM shared with other containers). Raise it explicitly
+# rather than relying on V8's auto-detected default.
+ENV NODE_OPTIONS=--max-old-space-size=4096
+
 # Build-time only placeholder: /api/auth/[...nextauth] is imported during
 # Next 16's page-data collection, which evaluates NextAuth(config) eagerly.
 # Discarded — runner stage doesn't inherit builder ENV; real value comes
