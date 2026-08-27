@@ -262,57 +262,34 @@ export function isApiUrl(url: string): boolean {
 }
 
 /**
- * Builds the iCal subscription URL for a season calendar, supporting multiple brands.
- * `brandIds` are encoded as a comma-separated query parameter. The `token` is a signed
- * public-access token that allows unauthenticated calendar subscriptions.
+ * Builds the export download URL for a season calendar.
  *
- * @param sectionKey - Optional section filter for partial calendar subscriptions
+ * Authenticated with a Bearer token by the caller (`fetch`), not a signed query token — these
+ * generate their payload from the database on the fly rather than serving a stored file.
+ *
+ * @param format - `ical` (.ics), `pdf`, or `xlsx`
+ * @param params - Season and brand scope; `view`/`viewDate` select the PDF layout and are
+ *                 ignored by the other two formats
  */
-export function buildSeasonCalendarIcalUrl(
-  seasonId: string,
-  brandIds: string[],
-  token: string,
-  sectionKey?: string,
+export function buildSeasonCalendarExportUrl(
+  format: 'ical' | 'pdf' | 'xlsx',
+  params: {
+    seasonId: string;
+    brandIds: string[];
+    view?: 'list' | 'week' | 'month' | 'gantt' | 'day';
+    viewDate?: Date;
+  },
   options: UrlOptions = {}
 ): string {
-  const params = new URLSearchParams({
-    brandIds: brandIds.join(','),
-    token,
+  const query = new URLSearchParams({
+    seasonId: params.seasonId,
+    brandIds: params.brandIds.join(','),
   });
-  if (sectionKey) params.set('sectionKey', sectionKey);
-  return buildApiUrl(`/season-calendar/${seasonId}/ical?${params.toString()}`, options);
-}
-
-/**
- * Builds the PDF export URL for a season calendar, supporting multiple brands.
- *
- * @param sectionKey - Optional section filter for partial calendar exports
- */
-export function buildSeasonCalendarPdfUrl(
-  seasonId: string,
-  brandIds: string[],
-  sectionKey?: string,
-  options: UrlOptions = {}
-): string {
-  const params = new URLSearchParams({ brandIds: brandIds.join(',') });
-  if (sectionKey) params.set('sectionKey', sectionKey);
-  return buildApiUrl(`/season-calendar/${seasonId}/pdf?${params.toString()}`, options);
-}
-
-/**
- * Builds the XLSX export URL for a season calendar, supporting multiple brands.
- *
- * @param sectionKey - Optional section filter for partial calendar exports
- */
-export function buildSeasonCalendarXlsxUrl(
-  seasonId: string,
-  brandIds: string[],
-  sectionKey?: string,
-  options: UrlOptions = {}
-): string {
-  const params = new URLSearchParams({ brandIds: brandIds.join(',') });
-  if (sectionKey) params.set('sectionKey', sectionKey);
-  return buildApiUrl(`/season-calendar/${seasonId}/xlsx?${params.toString()}`, options);
+  if (format === 'pdf') {
+    if (params.view) query.set('view', params.view);
+    if (params.viewDate) query.set('viewDate', params.viewDate.toISOString());
+  }
+  return buildApiUrl(`/download/season-calendar/${format}?${query.toString()}`, options);
 }
 
 /**

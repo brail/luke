@@ -81,13 +81,13 @@ afterAll(async () => {
   await app.close();
 });
 
-describe('GET /season-calendar/export/pdf', () => {
+describe('GET /download/season-calendar/pdf', () => {
   it.each(['list', 'week', 'month', 'gantt'])(
     'la vista %s produce un PDF valido',
     async view => {
       const res = await app.inject({
         method: 'GET',
-        url: `/season-calendar/export/pdf?seasonId=${seasonId}&brandIds=${brandId}&view=${view}&viewDate=2032-03-01`,
+        url: `/download/season-calendar/pdf?seasonId=${seasonId}&brandIds=${brandId}&view=${view}&viewDate=2032-03-01`,
         headers: { authorization: authHeader },
       });
 
@@ -102,7 +102,7 @@ describe('GET /season-calendar/export/pdf', () => {
   it('senza Authorization risponde 401', async () => {
     const res = await app.inject({
       method: 'GET',
-      url: `/season-calendar/export/pdf?seasonId=${seasonId}&brandIds=${brandId}`,
+      url: `/download/season-calendar/pdf?seasonId=${seasonId}&brandIds=${brandId}`,
     });
 
     expect(res.statusCode).toBe(401);

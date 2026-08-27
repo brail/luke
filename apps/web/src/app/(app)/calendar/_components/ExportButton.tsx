@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { buildApiUrl } from '@luke/core';
+import { buildSeasonCalendarExportUrl } from '@luke/core';
 
 import { Button } from '../../../../components/ui/button';
 import {
@@ -24,11 +24,10 @@ interface Props {
 }
 
 async function downloadExport(
-  path: string,
+  url: string,
   filename: string,
   token: string
 ): Promise<void> {
-  const url = buildApiUrl(path);
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -71,17 +70,13 @@ export function ExportButton({ seasonId, brandIds, view, viewDate, disabled }: P
       return;
     }
 
-    let qs = `seasonId=${encodeURIComponent(seasonId)}&brandIds=${encodeURIComponent(brandIds.join(','))}`;
-    if (format === 'pdf') {
-      qs += `&view=${encodeURIComponent(view)}&viewDate=${encodeURIComponent(viewDate.toISOString())}`;
-    }
-    const path = `/season-calendar/export/${format}?${qs}`;
+    const url = buildSeasonCalendarExportUrl(format, { seasonId, brandIds, view, viewDate });
     const ext = format === 'ical' ? 'ics' : format;
     const filename = `luke-calendar-${seasonId}.${ext}`;
 
     setLoading(true);
     try {
-      await downloadExport(path, filename, token);
+      await downloadExport(url, filename, token);
     } catch {
       toast.error('Esportazione fallita');
     } finally {

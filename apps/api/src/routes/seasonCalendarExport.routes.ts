@@ -2,9 +2,9 @@
  * Fastify plugin for season calendar export endpoints.
  *
  * Endpoints (all require authentication; brand access is enforced per-request):
- *  - GET /season-calendar/export/ical  — download milestones as an iCal (.ics) file
- *  - GET /season-calendar/export/pdf   — download milestones as a PDF (list/week/month/gantt view)
- *  - GET /season-calendar/export/xlsx  — download milestones as an Excel workbook
+ *  - GET /download/season-calendar/ical  — download milestones as an iCal (.ics) file
+ *  - GET /download/season-calendar/pdf   — download milestones as a PDF (list/week/month/gantt view)
+ *  - GET /download/season-calendar/xlsx  — download milestones as an Excel workbook
  *
  * Query parameters: seasonId (required), brandIds (comma-separated, required),
  * functionId (optional filter), view (list|week|month|gantt, default: list),
@@ -555,7 +555,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
     return { session, seasonId, allowedBrandIds, allowedFunctionIds: allowed.functionIds, functionId, seasonLabel, view: parsedView, viewDate: parsedViewDate };
   }
 
-  app.get('/season-calendar/export/ical', exportRateLimit, async (req, reply) => {
+  app.get('/download/season-calendar/ical', exportRateLimit, async (req, reply) => {
     const ctx = await resolveParams(req, reply);
     if (!ctx) return;
 
@@ -578,7 +578,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
       .send(icalString);
   });
 
-  app.get('/season-calendar/export/pdf', exportRateLimit, async (req, reply) => {
+  app.get('/download/season-calendar/pdf', exportRateLimit, async (req, reply) => {
     const ctx = await resolveParams(req, reply);
     if (!ctx) return;
 
@@ -603,7 +603,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
       .send(pdfBuffer);
   });
 
-  app.get('/season-calendar/export/xlsx', exportRateLimit, async (req, reply) => {
+  app.get('/download/season-calendar/xlsx', exportRateLimit, async (req, reply) => {
     const ctx = await resolveParams(req, reply);
     if (!ctx) return;
 
