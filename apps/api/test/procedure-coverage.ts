@@ -225,7 +225,7 @@ export function mergeArtifacts(artifacts: UsageArtifact[]): CoverageResult {
   if (artifacts.length === 0) {
     throw new Error(
       '[procedure-coverage] nessun artefatto: il recorder non ha girato in ' +
-        'nessuna spec. Verifica `setupFiles` in vitest.integration.config.ts.'
+        'nessuna spec. Verifica `setupFiles` in vitest.integration.config.mts.'
     );
   }
 

@@ -33,8 +33,8 @@ in CI.
 
 | Tier            | Membership                                            | Config                                  |
 | --------------- | ------------------------------------------------------ | ---------------------------------------- |
-| **Unit**        | everything that does **not** match `*.integration.spec.ts` | `apps/api/vitest.config.ts`             |
-| **Integration** | `apps/api/test/**/*.integration.spec.ts`                | `apps/api/vitest.integration.config.ts` |
+| **Unit**        | everything that does **not** match `*.integration.spec.ts` | `apps/api/vitest.config.mts`             |
+| **Integration** | `apps/api/test/**/*.integration.spec.ts`                | `apps/api/vitest.integration.config.mts` |
 | **Smoke E2E**   | `apps/web/tests/smoke/*.smoke.spec.ts`                  | `apps/web/playwright.config.ts`         |
 
 Membership is **the file name**, not a list. There used to be a hand-written

@@ -4,7 +4,7 @@ import { defineConfig } from 'vitest/config';
 
 /**
  * Unit project: always runs, no infrastructure.
- * Suites that require PostgreSQL live in `vitest.integration.config.ts`.
+ * Suites that require PostgreSQL live in `vitest.integration.config.mts`.
  */
 export default defineConfig({
   test: {
@@ -24,7 +24,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': resolve(__dirname, './src'),
+      '@': resolve(import.meta.dirname, './src'),
     },
   },
 });

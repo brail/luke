@@ -26,8 +26,8 @@
     "test/**/*",
     "scripts/**/*",
     "prisma/**/*.ts",
-    "vitest.config.ts",
-    "vitest.integration.config.ts"
+    "vitest.config.mts",
+    "vitest.integration.config.mts"
   ],
   "exclude": ["node_modules", "dist"]
 }
