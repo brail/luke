@@ -80,8 +80,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   me: {
     reason:
-      'changePassword, get e revokeAllSessions coperte dalle spec sessione; profilo, timezone e saluto giornaliero no',
-    uncovered: 6,
+      'changePassword, get e revokeAllSessions coperte dalle spec sessione; changeEmail, profilo, timezone e saluto giornaliero no',
+    uncovered: 5,
   },
   users: {
     reason:
