@@ -15,6 +15,8 @@ export interface UserListItem {
   emailVerifiedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Null for an account that has never completed a login. */
+  lastLoginAt: string | null;
   identities: Array<{
     id: string;
     provider: 'LOCAL' | 'LDAP' | 'OIDC';
@@ -35,6 +37,7 @@ export type SortColumn =
   | 'isActive'
   | 'emailVerifiedAt'
   | 'createdAt'
+  | 'lastLoginAt'
   | 'provider';
 
 /** Sort direction. */

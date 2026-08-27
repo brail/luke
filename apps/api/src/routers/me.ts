@@ -373,9 +373,14 @@ export const meRouter = router({
   loginHistory: protectedProcedure
     .input(z.object({ limit: z.number().min(1).max(100).default(10) }).optional())
     .query(async ({ ctx, input }) => {
+      // Filtered by `targetId`, not `actorId`: login events are recorded before a session
+      // exists, so they always store `actorId: null` and point at the account through
+      // `targetId` instead. Filtering by actor matched 0 rows out of every login ever
+      // recorded, which is why this history always came back empty.
       const logs = await ctx.prisma.auditLog.findMany({
         where: {
-          actorId: ctx.session.user.id,
+          targetId: ctx.session.user.id,
+          targetType: 'Auth',
           action: { in: ['AUTH_LOGIN', 'AUTH_LOGIN_FAILED'] },
         },
         orderBy: { createdAt: 'desc' },

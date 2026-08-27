@@ -269,6 +269,21 @@ describe('AuditLog Integration', () => {
       expect(entry?.subjectEmail).toBeNull();
     });
 
+    it('dovrebbe restituire la login history dell\'utente invece di un elenco vuoto', async () => {
+      const { user, session } = await createTestUser('viewer');
+
+      const anonCaller = await createCallerAs(null);
+      await anonCaller.auth.login({ username: user.username, password: TEST_USER_PASSWORD });
+
+      const history = await createCallerWithSession(session).me.loginHistory({ limit: 10 });
+
+      // Regression: `me.loginHistory` filtered by `actorId`, which login events never set,
+      // so it returned [] for every user no matter how many times they had logged in.
+      expect(history.length).toBeGreaterThan(0);
+      expect(history[0].success).toBe(true);
+      expect(history[0].ipAddress).toBe('127.0.0.1');
+    });
+
     it('non dovrebbe attribuire un soggetto quando esiste un actor reale', async () => {
       const { user: admin, session } = await createTestUser('admin');
       const caller = createCallerWithSession(session);

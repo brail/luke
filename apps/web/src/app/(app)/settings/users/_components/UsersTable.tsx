@@ -19,6 +19,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '../../../../../components/ui/tooltip';
+import { useFormatDate } from '../../../../../hooks/useFormatDate';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
 import { SortableHeader } from './SortableHeader';
@@ -58,6 +59,9 @@ export function UsersTable({
   onForceLocalAccess,
   onRevokeLocalAccess,
 }: UsersTableProps) {
+  // Before the early returns below: hooks cannot run conditionally.
+  const fmt = useFormatDate();
+
   // Loading state
   if (isLoading) {
     return (
@@ -156,12 +160,12 @@ export function UsersTable({
                 Stato
               </SortableHeader>
               <SortableHeader
-                column="createdAt"
+                column="lastLoginAt"
                 currentSort={sortBy}
                 sortOrder={sortOrder}
                 onSort={onSort}
               >
-                Creato
+                Ultimo accesso
               </SortableHeader>
               <TableHead>Azioni</TableHead>
             </TableRow>
@@ -251,12 +255,12 @@ export function UsersTable({
               Stato
             </SortableHeader>
             <SortableHeader
-              column="createdAt"
+              column="lastLoginAt"
               currentSort={sortBy}
               sortOrder={sortOrder}
               onSort={onSort}
             >
-              Creato
+              Ultimo accesso
             </SortableHeader>
             <TableHead>Azioni</TableHead>
           </TableRow>
@@ -307,9 +311,20 @@ export function UsersTable({
                 </Badge>
               </TableCell>
               <TableCell>
-                {user.createdAt
-                  ? new Date(user.createdAt).toLocaleDateString('it-IT')
-                  : 'N/A'}
+                {user.lastLoginAt ? (
+                  fmt.dateTime(user.lastLoginAt)
+                ) : (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge variant="secondary">Mai</Badge>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        L&apos;utente non ha mai effettuato l&apos;accesso
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
               </TableCell>
               <TableCell>
                 <UserActionsMenu

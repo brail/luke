@@ -53,6 +53,7 @@ export const usersCoreRouter = router({
               'isActive',
               'emailVerifiedAt',
               'createdAt',
+              'lastLoginAt',
               'provider',
             ])
             .default('createdAt'),
@@ -97,6 +98,9 @@ export const usersCoreRouter = router({
         emailVerifiedAt: true,
         createdAt: true,
         updatedAt: true,
+        // Null means the account has never completed a login — the users table renders that
+        // as an explicit "Mai" rather than an empty cell.
+        lastLoginAt: true,
         identities: {
           select: {
             id: true,
@@ -133,7 +137,12 @@ export const usersCoreRouter = router({
             skip,
             take: limit,
             select: selectFields,
-            orderBy: { [sortBy]: sortOrder },
+            // `lastLoginAt` is nullable and Postgres sorts NULLs first on DESC, which would
+            // put every never-logged-in account above the most recently active ones.
+            orderBy:
+              sortBy === 'lastLoginAt'
+                ? { lastLoginAt: { sort: sortOrder, nulls: 'last' } }
+                : { [sortBy]: sortOrder },
           }),
           ctx.prisma.user.count({ where }),
         ]);
