@@ -40,15 +40,9 @@ export async function seedCompanyStructure(
     create: { id: 'singleton', legalName: 'FEBOS S.r.l.', displayName: 'FEBOS', countryCode: 'IT' },
   });
 
-  // AppConfig default team key (empty = not yet configured)
-  await prisma.appConfig.upsert({
-    where:  { key: 'auth.provisioning.defaultTeamId' },
-    update: {},
-    create: { key: 'auth.provisioning.defaultTeamId', value: '', isEncrypted: false },
-  });
-
   // Real user memberships — idempotent upsert
-  // editors → Prodotto main team (brandScopes=[] = all brands)
+  // editors → Prodotto main team (brandScopes=[] = no brand access — see getUserAllowedBrandIds;
+  // this seed team is a placeholder and needs its own scope added before it grants anything)
   // admin → all 3 main teams
   const prodottoId = functionIds['product'];
   if (prodottoId) {

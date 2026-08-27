@@ -85,13 +85,13 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   users: {
     reason:
-      'CRUD coperto dalle spec audit/idempotenza; il flusso di approvazione utenti pending, heartbeat e le preferenze menu no',
-    uncovered: 11,
+      'CRUD coperto dalle spec audit/idempotenza; approvePending dalla spec sull\'assegnazione team obbligatoria (Piano C); heartbeat e le preferenze menu no',
+    uncovered: 10,
   },
   seasonCalendar: {
     reason:
-      'listMilestones dalla spec sulla visibilità e getOrCreate da quella sul brand scope; è il dominio più grande dell’app e la copertura va costruita per milestone, non in un colpo',
-    uncovered: 29,
+      'listMilestones e grantUserVisibility dalla spec sulla visibilità (brand scope + hardening del grant), getOrCreate da quella sul brand scope; è il dominio più grande dell’app e la copertura va costruita per milestone, non in un colpo',
+    uncovered: 28,
   },
   integrations: {
     reason:

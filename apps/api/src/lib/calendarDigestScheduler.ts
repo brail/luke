@@ -8,20 +8,24 @@
  * final live value), groups the result by calendar and recipient, and sends
  * one branded email digest per calendar per user.
  *
- * Recipients for created/updated events: getVisibleUserIdsForMilestones() + admins.
- * Recipients for deleted events: snapshot stored in AuditLog.metadata.visibleUserIds + admins.
+ * Recipients for created/updated events: `resolveEventAudience()` — brand-scoped, per-function
+ * or per-user grant, admins included only via their own team membership (no automatic fan-out).
+ * Recipients for deleted events: the snapshot in `AuditLog.metadata.visibleUserIds` (captured by
+ * the pre-fix resolver, so wider than it should be) re-filtered at read time through
+ * `resolveBrandAccess` — the invariant holds even against audit rows written before this fix.
  *
  * If SMTP is not configured the job logs a warning and skips — no crash.
  */
 
 
-import { fullName } from '@luke/core';
+import { CATEGORY_LEVEL_EVENT_KEY, fullName } from '@luke/core';
+
+import { hasBrandAccess, resolveBrandAccess, resolveEventAudience } from '../services/calendarAudience.service';
 
 import { isRedactedValue } from './auditLog';
 import { getConfig } from './configManager';
 import { sendBulkEmail, sendEmail } from './mailer';
 import { guardMaintenance } from './maintenanceMode';
-import { getVisibleUserIdsForMilestones } from './notifications';
 import { withSchedulerLock } from './schedulerLock';
 
 import type { PrismaClient } from '@prisma/client';
@@ -138,12 +142,38 @@ export interface DigestDateRange {
   end: Date;
 }
 
-async function runDigestCore(
+// One email per calendar per user — content varies per (calendar, user) pair, so each task
+// carries its own fully-rendered subject/html/text rather than being a plain recipient list.
+export interface EmailTask { email: string; subject: string; html: string; text: string }
+
+/**
+ * Adds `onlyUserId` to `recipients` when the manual "send to me" trigger is bypassing
+ * `P_relevance` (function/grant visibility) for a user who wouldn't otherwise be in the
+ * audience — e.g. an admin belonging to no team. `P_access` (brand) still applies: bypassing it
+ * too would let the test button send someone a digest for a brand `listMilestones` won't show
+ * them. `onlyUserAccess === undefined` means the user is inactive/pending — no bypass.
+ */
+function addManualBypassRecipient(
+  recipients: Set<string>,
+  brandId: string | null | undefined,
+  onlyUserId: string | undefined,
+  onlyUserAccess: Set<string> | null | undefined,
+): void {
+  if (!onlyUserId || !brandId) return;
+  if (hasBrandAccess(onlyUserAccess, brandId)) recipients.add(onlyUserId);
+}
+
+/**
+ * Builds the fully-rendered email tasks for a digest run, without sending them — the seam that
+ * makes recipients testable without mocking SMTP. Returns an empty array when there's nothing to
+ * send (no changes in range, or nothing survives the recipient/preference filtering).
+ */
+export async function buildDigestTasks(
   prisma: PrismaClient,
   log: FastifyInstance['log'],
   range?: DigestDateRange,
   onlyUserId?: string,
-): Promise<void> {
+): Promise<{ tasks: EmailTask[]; calendarCount: number }> {
   log.info('Calendar digest scheduler: avvio digest giornaliero');
 
   let rangeStart: Date;
@@ -178,7 +208,7 @@ async function runDigestCore(
 
   if (logs.length === 0) {
     log.info('Calendar digest: nessuna modifica ieri, skip');
-    return;
+    return { tasks: [], calendarCount: 0 };
   }
 
   const DELETE_ACTIONS = new Set(['CALENDAR_EVENT_DELETE', 'CALENDAR_MILESTONE_DELETE']);
@@ -223,21 +253,46 @@ async function runDigestCore(
     byEvent.get(c.eventId)!.push(c);
   }
 
-  // An event is "net deleted" if its most recent touch in the period was a delete.
-  const liveTargetIds = [...byEvent.entries()]
-    .filter(([, chgs]) => !DELETE_ACTIONS.has(chgs[chgs.length - 1].action))
-    .map(([id]) => id);
+  // Single pass: an event is "net deleted" if its most recent touch in the period was a delete —
+  // split live vs. deleted here, and for the deleted branch also gather what the batched brand
+  // lookups below need (calendar ids, and the audit snapshot's candidate recipients).
+  const liveTargetIds: string[] = [];
+  const deletedCalendarIds = new Set<string>();
+  const brandAccessCandidateIds = new Set<string>(onlyUserId ? [onlyUserId] : []);
+  for (const [eventId, chgs] of byEvent) {
+    const last = chgs[chgs.length - 1];
+    if (!DELETE_ACTIONS.has(last.action)) {
+      liveTargetIds.push(eventId);
+      continue;
+    }
+    if (chgs.some(c => c.action === 'CALENDAR_EVENT_CREATE')) continue; // net-zero, skipped below too
+    const meta = last.meta;
+    const calendarId = !isRedactedValue(meta.calendarId) && typeof meta.calendarId === 'string' ? meta.calendarId : null;
+    if (calendarId) deletedCalendarIds.add(calendarId);
+    const extraIds = Array.isArray(meta.visibleUserIds) ? (meta.visibleUserIds as string[]) : [];
+    for (const id of extraIds) brandAccessCandidateIds.add(id);
+  }
 
   // Parallel pre-fetches
-  const [adminResult, visibilityMap, liveEvents] = await Promise.all([
-    prisma.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } }),
-    getVisibleUserIdsForMilestones(liveTargetIds, prisma).catch(() => new Map<string, string[]>()),
+  const [visibilityMap, liveEvents, deletedCalendarBrands, brandAccessMap] = await Promise.all([
+    resolveEventAudience(liveTargetIds, prisma).catch(() => new Map<string, string[]>()),
     liveTargetIds.length > 0
-      ? prisma.calendarEvent.findMany({ where: { id: { in: liveTargetIds } }, select: { id: true, title: true, calendarId: true, startAt: true, endAt: true, allDay: true, cancelledAt: true } })
+      ? prisma.calendarEvent.findMany({
+          where: { id: { in: liveTargetIds } },
+          select: { id: true, title: true, calendarId: true, startAt: true, endAt: true, allDay: true, cancelledAt: true, calendar: { select: { brandId: true } } },
+        })
       : Promise.resolve([]),
+    deletedCalendarIds.size > 0
+      ? prisma.seasonCalendar.findMany({ where: { id: { in: [...deletedCalendarIds] } }, select: { id: true, brandId: true } })
+      : Promise.resolve([]),
+    // The deleted-branch snapshot (AuditLog.metadata.visibleUserIds) was captured by the
+    // pre-fix resolver and may be wider than the current brand-scoped audience — this map
+    // re-filters it below. Also covers `onlyUserId` for the manual-bypass check.
+    resolveBrandAccess([...brandAccessCandidateIds], prisma),
   ]);
-  const adminIds = adminResult.map(a => a.id);
   const liveEventMap = new Map(liveEvents.map(e => [e.id, e]));
+  const deletedCalendarBrandMap = new Map(deletedCalendarBrands.map(c => [c.id, c.brandId]));
+  const onlyUserAccess = onlyUserId ? brandAccessMap.get(onlyUserId) : undefined;
 
   // Build per-calendar per-user digest map: calendarId → userId → UserDigest
   const calendarDigests = new Map<string, Map<string, UserDigest>>();
@@ -253,7 +308,6 @@ async function runDigestCore(
     const last = chgs[chgs.length - 1];
     const isNetDeleted = DELETE_ACTIONS.has(last.action);
     const hasCreate = chgs.some(c => c.action === 'CALENDAR_EVENT_CREATE');
-    const actorIds = chgs.map(c => c.actorId).filter((id): id is string => !!id);
 
     // Created then deleted within the same period: net zero, drop entirely.
     if (isNetDeleted && hasCreate) continue;
@@ -263,9 +317,18 @@ async function runDigestCore(
       const title = (!isRedactedValue(meta.title) && typeof meta.title === 'string' ? meta.title : null) ?? '(evento)';
       const calendarId = !isRedactedValue(meta.calendarId) && typeof meta.calendarId === 'string' ? meta.calendarId : null;
       if (!calendarId) continue;
+      const brandId = deletedCalendarBrandMap.get(calendarId);
       const dateLabel = dateLabelFromMeta(meta.startAt, meta.endAt, meta.allDay);
       const extraIds = Array.isArray(meta.visibleUserIds) ? (meta.visibleUserIds as string[]) : [];
-      const recipientIds = new Set([...adminIds, ...extraIds, ...actorIds]);
+
+      const recipientIds = new Set<string>();
+      if (brandId) {
+        for (const uid of extraIds) {
+          if (hasBrandAccess(brandAccessMap.get(uid), brandId)) recipientIds.add(uid);
+        }
+      }
+      addManualBypassRecipient(recipientIds, brandId, onlyUserId, onlyUserAccess);
+
       for (const uid of recipientIds) {
         addEntry(calendarId, uid, 'deleted', { title, actorName: last.actorName, time: last.time, dateLabel });
       }
@@ -280,8 +343,8 @@ async function runDigestCore(
     const metaTitle = chgs.map(c => c.meta.title).find((v): v is string => typeof v === 'string' && !isRedactedValue(v));
     const title = liveEvent?.title ?? metaTitle ?? eventId;
     const dateLabel = liveEvent ? formatEventDate(liveEvent.startAt, liveEvent.endAt, liveEvent.allDay) : undefined;
-    const extraIds = visibilityMap.get(eventId) ?? [];
-    const recipientIds = new Set([...adminIds, ...extraIds, ...actorIds]);
+    const recipientIds = new Set(visibilityMap.get(eventId) ?? []);
+    addManualBypassRecipient(recipientIds, liveEvent?.calendar.brandId, onlyUserId, onlyUserAccess);
 
     if (hasCreate) {
       // Brand-new event this period — final state is all that matters, no diff needed.
@@ -332,7 +395,7 @@ async function runDigestCore(
     }
   }
 
-  if (calendarDigests.size === 0) return;
+  if (calendarDigests.size === 0) return { tasks: [], calendarCount: 0 };
 
   // Fetch calendar labels + user emails + preferences + baseUrl in parallel
   const allCalendarIds = Array.from(calendarDigests.keys());
@@ -344,7 +407,9 @@ async function runDigestCore(
       select: { id: true, brand: { select: { name: true } }, season: { select: { name: true } } },
     }),
     prisma.user.findMany({ where: { id: { in: allUserIds }, isActive: true }, select: { id: true, email: true } }),
-    prisma.notificationPreference.findMany({ where: { userId: { in: allUserIds }, category: 'CALENDAR', enabled: false }, select: { userId: true } }),
+    // Scoped to eventKey:'' (category-level rows only) — an event-level mute on one calendar
+    // event must not silently drop the entire aggregated digest email for the user.
+    prisma.notificationPreference.findMany({ where: { userId: { in: allUserIds }, category: 'CALENDAR', eventKey: CATEGORY_LEVEL_EVENT_KEY, enabled: false }, select: { userId: true } }),
     getConfig(prisma, 'app.baseUrl', false),
   ]);
 
@@ -353,9 +418,6 @@ async function runDigestCore(
   const disabledSet = new Set(disabledPrefs.map(p => p.userId));
   const calendarUrl = `${baseUrlRaw || 'http://localhost:3000'}/calendar`;
 
-  // One email per calendar per user — content varies per (calendar, user) pair, so each task
-  // carries its own fully-rendered subject/html/text rather than being a plain recipient list.
-  interface EmailTask { email: string; subject: string; html: string; text: string }
   const tasks: EmailTask[] = [];
 
   for (const [calId, userDigestMap] of calendarDigests) {
@@ -383,6 +445,18 @@ async function runDigestCore(
     }
   }
 
+  return { tasks, calendarCount: calendarDigests.size };
+}
+
+async function runDigestCore(
+  prisma: PrismaClient,
+  log: FastifyInstance['log'],
+  range?: DigestDateRange,
+  onlyUserId?: string,
+): Promise<void> {
+  const { tasks, calendarCount } = await buildDigestTasks(prisma, log, range, onlyUserId);
+  if (tasks.length === 0) return;
+
   const { sent, failed } = await sendBulkEmail(tasks, task =>
     sendEmail(prisma, task.email, task.subject, task.html, task.text).catch(err => {
       log.error({ err }, 'Calendar digest: invio email fallito');
@@ -390,7 +464,7 @@ async function runDigestCore(
     })
   );
 
-  log.info({ sent, failed, calendars: calendarDigests.size }, 'Calendar digest: completato');
+  log.info({ sent, failed, calendars: calendarCount }, 'Calendar digest: completato');
 }
 
 async function runDigest(

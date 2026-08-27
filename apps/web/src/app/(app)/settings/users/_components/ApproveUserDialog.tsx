@@ -57,6 +57,14 @@ export function ApproveUserDialog({
 }: ApproveUserDialogProps) {
   const [pendingRole, setPendingRole] = useState<Role>(user.role);
   const [pendingSection, setPendingSection] = useState<SectionOverrideMap>({});
+  const [selectedFunctionId, setSelectedFunctionId] = useState<string>('');
+  const [selectedTeamId, setSelectedTeamId] = useState<string>('');
+
+  const { data: functions = [] } = trpc.company.function.list.useQuery(undefined, { enabled: open });
+  const { data: teams = [] } = trpc.company.team.listByFunction.useQuery(
+    { functionId: selectedFunctionId },
+    { enabled: open && !!selectedFunctionId }
+  );
 
   const getRoleDefault = (section: Section): boolean =>
     SECTION_ACCESS_DEFAULTS[pendingRole]?.[section] ?? false;
@@ -110,7 +118,7 @@ export function ApproveUserDialog({
         )
       );
 
-      await approveMutation.mutateAsync({ id: user.id });
+      await approveMutation.mutateAsync({ id: user.id, teamId: selectedTeamId });
 
       toast.success('Utente approvato con accesso configurato');
       onApproved();
@@ -136,9 +144,8 @@ export function ApproveUserDialog({
             Configura accesso e approva — {user.username}
           </DialogTitle>
           <DialogDescription>
-            Configura ruolo e visibilità sezioni prima di approvare l&apos;account.
-            L&apos;accesso ai brand è gestito tramite i team in{' '}
-            <strong>Impostazioni → Azienda</strong>.
+            Configura ruolo, visibilità sezioni e team prima di approvare l&apos;account —
+            il team determina a quali brand l&apos;utente avrà accesso.
           </DialogDescription>
         </DialogHeader>
 
@@ -214,9 +221,52 @@ export function ApproveUserDialog({
             </div>
           </div>
 
-          <div className="rounded-md border border-muted p-3 text-sm text-muted-foreground">
-            L&apos;accesso ai brand è gestito tramite la membership ai team aziendali.
-            Configura i team dalla pagina <strong>Impostazioni → Azienda</strong> dopo l&apos;approvazione.
+          <div>
+            <h3 className="text-sm font-semibold mb-3">Team *</h3>
+            <p className="text-xs text-muted-foreground mb-3">
+              L&apos;accesso ai brand dipende dal team: l&apos;utente vedrà esattamente i brand
+              assegnati al team scelto qui, non tutti quelli dell&apos;azienda.
+            </p>
+            <div className="flex gap-2">
+              <Select
+                value={selectedFunctionId}
+                onValueChange={v => { setSelectedFunctionId(v); setSelectedTeamId(''); }}
+              >
+                <SelectTrigger className="flex-1">
+                  <SelectValue placeholder="Funzione…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {functions.map(fn => (
+                    <SelectItem key={fn.id} value={fn.id}>{fn.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={selectedTeamId}
+                onValueChange={setSelectedTeamId}
+                disabled={!selectedFunctionId}
+              >
+                <SelectTrigger className="flex-1">
+                  <SelectValue placeholder="Team…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {teams.map(team => (
+                    <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {selectedTeamId && (() => {
+              const team = teams.find(t => t.id === selectedTeamId);
+              const brandCodes = team?.brandScopes.map(s => s.brand.code) ?? [];
+              return (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {brandCodes.length > 0
+                    ? `Brand: ${brandCodes.join(', ')}`
+                    : 'Nessun brand assegnato a questo team — l’utente non vedrà alcun brand finché il team non ne riceve uno (Impostazioni → Azienda).'}
+                </p>
+              );
+            })()}
           </div>
         </div>
 
@@ -228,7 +278,7 @@ export function ApproveUserDialog({
           >
             Annulla
           </Button>
-          <Button onClick={handleSaveAndApprove} disabled={isSaving}>
+          <Button onClick={handleSaveAndApprove} disabled={isSaving || !selectedTeamId}>
             {isSaving ? 'Approvazione...' : 'Salva e approva'}
           </Button>
         </DialogFooter>

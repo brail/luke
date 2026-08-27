@@ -53,6 +53,22 @@ export interface ContextResult {
 }
 
 /**
+ * Union of `brandScopes` across a set of (already active-team-filtered) team memberships. The one
+ * traversal both `getUserAllowedBrandIds` (single user) and `resolveBrandAccess`
+ * (`calendarAudience.service.ts`, batched multi-user) share — they fetch differently-shaped rows
+ * for different reasons (the batched path also filters `isActive`/`pendingApproval`, which this
+ * one deliberately doesn't do), but the "team → brandScopes → union" step itself is identical and
+ * was previously hand-written twice.
+ */
+export function unionBrandScopes(memberships: { team: { brandScopes: { brandId: string }[] } }[]): Set<string> {
+  const brandIds = new Set<string>();
+  for (const m of memberships) {
+    for (const bs of m.team.brandScopes) brandIds.add(bs.brandId);
+  }
+  return brandIds;
+}
+
+/**
  * Returns the set of brand IDs the user may access via team membership.
  * Admins receive null (unrestricted). Users in no team receive an empty array (no access).
  * A team with no brand scopes contributes nothing — it does not grant unrestricted access.
@@ -68,17 +84,10 @@ export async function getUserAllowedBrandIds(
 
   const memberships = await prisma.companyTeamMembership.findMany({
     where: { userId, team: { isActive: true } },
-    include: { team: { include: { brandScopes: true } } },
+    select: { team: { select: { brandScopes: { select: { brandId: true } } } } },
   });
 
-  if (memberships.length === 0) return [];
-
-  const brandIds = new Set<string>();
-  for (const m of memberships) {
-    for (const bs of m.team.brandScopes) brandIds.add(bs.brandId);
-  }
-
-  return [...brandIds];
+  return [...unionBrandScopes(memberships)];
 }
 
 
@@ -101,6 +110,32 @@ export async function getUserAllowedFunctionIds(
   });
 
   return [...new Set(memberships.map(m => m.team.functionId))];
+}
+
+/** Both halves of `getUserAllowedBrandIds`/`getUserAllowedFunctionIds`, for callers that need both
+ * in the same request (today: the calendar's `listMilestonesDb` and its export-route siblings) —
+ * one `companyTeamMembership` query instead of two identical-`where`, different-`select` ones. */
+export interface UserAllowedIds {
+  brandIds: string[] | null;
+  functionIds: string[] | null;
+}
+
+export async function getUserAllowedIds(
+  userId: string,
+  prisma: PrismaClient,
+  userRole?: Role
+): Promise<UserAllowedIds> {
+  if (userRole === 'admin') return { brandIds: null, functionIds: null };
+
+  const memberships = await prisma.companyTeamMembership.findMany({
+    where: { userId, team: { isActive: true } },
+    select: { team: { select: { functionId: true, brandScopes: { select: { brandId: true } } } } },
+  });
+
+  return {
+    brandIds: [...unionBrandScopes(memberships)],
+    functionIds: [...new Set(memberships.map(m => m.team.functionId))],
+  };
 }
 
 /**

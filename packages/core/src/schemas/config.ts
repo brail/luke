@@ -25,7 +25,6 @@ export const AppConfigRegistry = {
   'auth.strategy':                       z.enum(['local-first', 'ldap-first', 'local-only', 'ldap-only']),
   'auth.requireEmailVerification':       z.coerce.boolean(),
   'auth.nextAuthSecret':                 z.string().min(32),
-  'auth.provisioning.defaultTeamId':     z.string(),
 
   // ── RBAC ─────────────────────────────────────────────────────────────────
   'rbac.sectionAccessDefaults': z.string().transform(s => JSON.parse(s) as Record<string, Record<string, string>>),

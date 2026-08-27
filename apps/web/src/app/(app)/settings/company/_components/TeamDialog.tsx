@@ -207,7 +207,7 @@ export function EditTeamDialog({ open, onClose, onSaved, teamId }: EditTeamDialo
                   Membri ({localMemberIds.length})
                 </TabsTrigger>
                 <TabsTrigger value="brands" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent">
-                  Brand {selectedBrandIds.size > 0 ? `(${selectedBrandIds.size})` : '(tutti)'}
+                  Brand {selectedBrandIds.size > 0 ? `(${selectedBrandIds.size})` : '(nessuno)'}
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -287,8 +287,8 @@ export function EditTeamDialog({ open, onClose, onSaved, teamId }: EditTeamDialo
               <div className="space-y-3">
                 <p className="text-xs text-muted-foreground">
                   {selectedBrandIds.size === 0
-                    ? 'Nessuna selezione — questo team ha accesso a tutti i brand.'
-                    : `${selectedBrandIds.size} brand selezionati. Deseleziona tutto per accesso universale.`}
+                    ? 'Nessun brand selezionato — i membri di questo team non avranno accesso a nessun brand finché non ne assegni almeno uno.'
+                    : `${selectedBrandIds.size} brand selezionati — i membri vedranno solo questi.`}
                 </p>
                 {brands.length === 0 ? (
                   <p className="text-xs text-muted-foreground">Nessun brand disponibile</p>

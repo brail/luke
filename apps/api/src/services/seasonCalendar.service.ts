@@ -1,4 +1,5 @@
 import { TRPCError } from '@trpc/server';
+import pino from 'pino';
 
 import {
   eventDeadline,
@@ -8,9 +9,23 @@ import {
   type CloneSeasonCalendarInput,
 } from '@luke/core';
 
+import { eventVisibilityWhere } from './calendarAudience.service';
+
 import type { CalendarDaysRelevance, Prisma, PrismaClient } from '@prisma/client';
 
 const MS_PER_DAY = 86_400_000;
+const logger = pino({ level: 'info' });
+
+/**
+ * Warns when events are created with zero visibility rows — they still work (they fall back to
+ * "visible to the whole brand" via `eventVisibilityWhere`'s permissive fallback) but that's a
+ * safety net, not something template application or cloning should rely on producing.
+ */
+function warnIfOrphaned(orphanedEventIds: string[], fields: Record<string, unknown>, message: string): void {
+  if (orphanedEventIds.length > 0) {
+    logger.warn({ ...fields, orphanedEventIds }, message);
+  }
+}
 
 // ─── Calendar get/create ──────────────────────────────────────────────────────
 
@@ -326,21 +341,34 @@ export async function detectPhaseOrderWarning(eventId: string, prisma: PrismaCli
 // ─── Milestone list ───────────────────────────────────────────────────────────
 
 /**
- * Returns calendar events for the given season and brands, enriched with the caller's personal note.
+ * Returns calendar events for the given season and brands, enriched with the caller's personal
+ * note. Further restricted to events relevant to the user's functions or explicitly granted to
+ * them (`eventVisibilityWhere` — see its doc comment for the fallback on events with no
+ * visibility rows). Admins are unrestricted.
  *
- * @param functionId - When provided, only events visible to this company function are returned.
+ * @param functionId - When provided, an additional client-side filter chip: only events visible
+ *   to this specific company function are returned, on top of (not instead of) the user's own
+ *   restriction.
+ * @param allowedFunctionIds - The caller's allowed function ids (`null` = admin, unrestricted),
+ *   already resolved by the caller — see `eventVisibilityWhere`'s doc comment. Omitted only by
+ *   call sites pre-dating this restriction that haven't been updated yet; treated as `[]` (most
+ *   restrictive) rather than defaulting open.
  */
 export async function listMilestonesDb(
   seasonId: string,
   brandIds: string[],
   userId: string,
   prisma: PrismaClient,
-  functionId?: string
+  functionId?: string,
+  allowedFunctionIds?: string[] | null
 ) {
   const calendars = await prisma.seasonCalendar.findMany({
     where: { seasonId, brandId: { in: brandIds } },
     select: { id: true, brandId: true },
   });
+  // `undefined` (parameter omitted) and `null` (admin, unrestricted) are distinct — collapsing
+  // them with `??` would treat an admin as having no functions instead of no restriction.
+  const visibilityWhere = eventVisibilityWhere(userId, allowedFunctionIds === undefined ? [] : allowedFunctionIds);
   const calendarIds = calendars.map(c => c.id);
   const calendarBrandMap = new Map(calendars.map(c => [c.id, c.brandId]));
 
@@ -350,6 +378,7 @@ export async function listMilestonesDb(
       ...(functionId
         ? { visibilities: { some: { functionId } } }
         : {}),
+      ...(visibilityWhere ?? {}),
     },
     include: {
       visibilities: true,
@@ -581,6 +610,15 @@ export async function applyTemplate(
       }));
     });
     await tx.calendarEventVisibility.createMany({ data: visibilityData });
+
+    // Not blocked: the template item may genuinely have no functions assigned yet.
+    warnIfOrphaned(
+      created
+        .filter(event => (itemById.get(event.templateItemId!)?.visibilities.length ?? 0) === 0)
+        .map(event => event.id),
+      { templateId, planningGroupId },
+      'applyTemplate: eventi creati senza righe di visibilità (template item senza funzioni assegnate)'
+    );
 
     // Record the anchor date used, so a later re-apply/admin view can default to it.
     await tx.planningGroup.update({ where: { id: planningGroupId }, data: { anchorDate } });
@@ -860,6 +898,13 @@ export async function cloneFromBrandSeason(
         }))
       );
       await tx.calendarEventVisibility.createMany({ data: visibilityData });
+
+      // A source event with no visibility rows clones into another one with none.
+      warnIfOrphaned(
+        created.filter((_, i) => sourceGroup.events[i]!.visibilities.length === 0).map(e => e.id),
+        { sourceGroupId: sourceGroup.id, targetGroupId: targetGroup.id },
+        'cloneFromBrandSeason: eventi clonati senza righe di visibilità (sorgente senza funzioni assegnate)'
+      );
 
       totalCreated += created.length;
       createdEventIds.push(...created.map(e => e.id));

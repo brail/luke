@@ -1,8 +1,9 @@
+import { resolveEventAudience, resolveEventAudienceOne } from '../services/calendarAudience.service';
 import { createRevisionsForReachedEvents } from '../services/collectionLayoutAutoRevision.service';
 import { computeCriticalityForLayout, resolveAlertThresholds } from '../services/phaseAlert.service';
 
 import { guardMaintenance } from './maintenanceMode';
-import { createNotification, getVisibleUserIdsForMilestone, getVisibleUserIdsForMilestones, notifyDeduped } from './notifications';
+import { createNotification, notifyDeduped } from './notifications';
 import { withSchedulerLock } from './schedulerLock';
 
 import type { PrismaClient } from '@prisma/client';
@@ -23,7 +24,7 @@ async function notifyMilestone(
   type: DeadlineType,
   message: string,
 ): Promise<void> {
-  const userIds = await getVisibleUserIdsForMilestone(m.id, prisma);
+  const userIds = await resolveEventAudienceOne(m.id, prisma);
   await Promise.all(userIds.map(userId =>
     notifyDeduped(prisma, `milestone:${userId}:${m.id}:${type}`, MILESTONE_DEDUP_MS, () => createNotification(prisma, {
       userId,
@@ -67,7 +68,7 @@ async function checkRowPhaseOverdue(prisma: PrismaClient): Promise<void> {
       where: { id: { in: rowIds } },
       select: { id: true, line: true },
     }),
-    getVisibleUserIdsForMilestones(uniqueEventIds, prisma),
+    resolveEventAudience(uniqueEventIds, prisma),
   ]);
   const lineByRowId = new Map(rows.map(r => [r.id, r.line]));
 

@@ -1,6 +1,8 @@
 
 import { CATEGORY_LEVEL_EVENT_KEY, fullName } from '@luke/core';
 
+import { resolveEventAudience, resolveEventAudienceOne } from '../services/calendarAudience.service';
+
 import { sseStore } from './sseStore';
 
 import type { PrismaClient, NotificationCategory, Prisma } from '@prisma/client';
@@ -57,63 +59,6 @@ export async function createNotification(
 }
 
 /**
- * Batch visibility lookup — resolves function-level and user-level visibility for multiple
- * calendar events in 3 queries total. Returns a map of eventId → userId[].
- */
-export async function getVisibleUserIdsForMilestones(
-  milestoneIds: string[],
-  prisma: PrismaClient
-): Promise<Map<string, string[]>> {
-  if (milestoneIds.length === 0) return new Map();
-
-  const [fnVisibilities, userVisibilities] = await Promise.all([
-    prisma.calendarEventVisibility.findMany({
-      where: { eventId: { in: milestoneIds } },
-      select: { eventId: true, functionId: true },
-    }),
-    prisma.calendarEventUserVisibility.findMany({
-      where: { eventId: { in: milestoneIds } },
-      select: { eventId: true, userId: true },
-    }),
-  ]);
-
-  const functionIds = [...new Set(fnVisibilities.map(v => v.functionId))];
-  const teamMembers = functionIds.length > 0
-    ? await prisma.companyTeamMembership.findMany({
-        where: { team: { functionId: { in: functionIds }, isActive: true } },
-        select: { userId: true, team: { select: { functionId: true } } },
-      })
-    : [];
-
-  const fnToUsers = new Map<string, string[]>();
-  for (const m of teamMembers) {
-    if (!fnToUsers.has(m.team.functionId)) fnToUsers.set(m.team.functionId, []);
-    fnToUsers.get(m.team.functionId)!.push(m.userId);
-  }
-
-  const result = new Map<string, Set<string>>(milestoneIds.map(id => [id, new Set()]));
-  for (const v of fnVisibilities) {
-    const set = result.get(v.eventId)!;
-    for (const uid of fnToUsers.get(v.functionId) ?? []) set.add(uid);
-  }
-  for (const v of userVisibilities) result.get(v.eventId)?.add(v.userId);
-
-  return new Map(Array.from(result, ([id, set]) => [id, Array.from(set)]));
-}
-
-/**
- * Returns the set of user IDs who should receive notifications for a milestone.
- * Includes members of all company teams whose function is linked to the event,
- * plus any users with a direct user-level visibility entry.
- */
-export async function getVisibleUserIdsForMilestone(
-  milestoneId: string,
-  prisma: PrismaClient
-): Promise<string[]> {
-  return (await getVisibleUserIdsForMilestones([milestoneId], prisma)).get(milestoneId) ?? [];
-}
-
-/**
  * Shared core: filters disabled prefs, bulk-creates notifications, SSE-pings each recipient.
  * Exported (not just used internally by `notifyAdmins`/`notifyAllUsers`) so a caller that
  * already has the recipient id list on hand — e.g. because it also needs it for something
@@ -167,8 +112,6 @@ interface CalendarBufferEntry {
   actorName: string;
   calendarId: string | undefined;
   calendarLabel: string | null;
-  /** Active admin ids at entry-creation time — cached so later calls in the same window don't re-query them. */
-  adminIds: string[];
   userIds: Set<string>;
   count: number;
   firstCallAt: number;
@@ -192,12 +135,15 @@ function calendarBufferKey(actorId: string, calendarId: string | undefined): str
 }
 
 /**
- * Sends a CALENDAR-category notification about a calendar event change to all
- * users who have visibility on the event(s) plus all active admins, excluding the actor.
+ * Sends a CALENDAR-category notification about a calendar event change to all users who can see
+ * the event(s) (`resolveEventAudience` — brand-scoped, per-function or per-user grant), excluding
+ * the actor.
  *
  * - `eventId`: fetch visibility live for a single event (create/update/status change)
  * - `eventIds`: batch fetch visibility for multiple events (applyTemplate, clone)
- * - `preloadedUserIds`: use pre-fetched snapshot (delete, where event no longer exists)
+ * - `preloadedUserIds`: use pre-fetched snapshot (delete, where event no longer exists) — the
+ *   caller is responsible for having already brand-filtered it (see `calendarDigestScheduler`'s
+ *   delete branch for the pattern)
  * - `calendarId`: optional — resolves brand·season label appended to the message
  *
  * Does not send immediately: enqueues into a short in-memory buffer keyed by
@@ -226,10 +172,10 @@ export async function notifyCalendarChange(
   if (params.preloadedUserIds) {
     visibleUserIds = params.preloadedUserIds;
   } else if (params.eventIds) {
-    const map = await getVisibleUserIdsForMilestones(params.eventIds, prisma);
+    const map = await resolveEventAudience(params.eventIds, prisma);
     visibleUserIds = [...new Set(params.eventIds.flatMap(id => map.get(id) ?? []))];
   } else if (params.eventId) {
-    visibleUserIds = await getVisibleUserIdsForMilestone(params.eventId, prisma);
+    visibleUserIds = await resolveEventAudienceOne(params.eventId, prisma);
   } else {
     visibleUserIds = [];
   }
@@ -239,18 +185,15 @@ export async function notifyCalendarChange(
   const key = calendarBufferKey(params.actorId, params.calendarId);
   const existing = calendarBuffer.get(key);
 
-  // Actor and calendar are fixed by the buffer key, so a call joining an already-open
-  // window can reuse the admin list cached on it instead of re-querying admin/actor/calendar.
   if (existing) {
-    const allIds = [...new Set([...visibleUserIds, ...existing.adminIds])].filter(id => id !== params.actorId);
+    const allIds = visibleUserIds.filter(id => id !== params.actorId);
     if (allIds.length === 0) return;
     for (const id of allIds) existing.userIds.add(id);
     existing.count += 1;
     return;
   }
 
-  const [admins, actor, calendar] = await Promise.all([
-    prisma.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } }),
+  const [actor, calendar] = await Promise.all([
     prisma.user.findUnique({
       where: { id: params.actorId },
       select: { firstName: true, lastName: true, username: true },
@@ -263,8 +206,7 @@ export async function notifyCalendarChange(
       : Promise.resolve(null),
   ]);
 
-  const adminIds = admins.map(a => a.id);
-  const allIds = [...new Set([...visibleUserIds, ...adminIds])].filter(id => id !== params.actorId);
+  const allIds = visibleUserIds.filter(id => id !== params.actorId);
   if (allIds.length === 0) return;
 
   const actorName = actor ? fullName(actor) : params.actorId;
@@ -274,7 +216,6 @@ export async function notifyCalendarChange(
     actorName,
     calendarId: params.calendarId,
     calendarLabel,
-    adminIds,
     userIds: new Set(allIds),
     count: 1,
     firstCallAt: Date.now(),

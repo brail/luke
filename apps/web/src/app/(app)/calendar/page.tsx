@@ -112,20 +112,13 @@ export default function CalendarPage() {
   const { data: brandsData } = trpc.brand.list.useQuery({ isActive: true, limit: 100 }, { enabled });
   const { data: functionsData } = trpc.company.function.list.useQuery(undefined, { enabled });
 
-  const availableFunctions = useMemo(
-    () => (functionsData ?? []).map(f => ({ id: f.id, name: f.name })),
+  // Unrestricted name lookup — an event's `visibilities` can name a function the current user
+  // doesn't belong to (e.g. shared with Sourcing+Prodotto, user is only in Prodotto), and that
+  // still needs a readable label, not a raw id.
+  const functionsById = useMemo(
+    () => Object.fromEntries((functionsData ?? []).map(f => [f.id, f.name])),
     [functionsData]
   );
-  const functionsById = useMemo(
-    () => Object.fromEntries(availableFunctions.map(f => [f.id, f.name])),
-    [availableFunctions]
-  );
-
-  useEffect(() => {
-    if (availableFunctions.length > 0 && selectedFunctionIds.length === 0) {
-      setSelectedFunctionIds(availableFunctions.map(f => f.id));
-    }
-  }, [availableFunctions]); // intentional: only initialize when empty
 
   const { data: calendar, isLoading: calendarLoading } = trpc.seasonCalendar.getOrCreate.useQuery(
     { brandId: contextBrandId ?? '', seasonId: season?.id ?? '' },
@@ -138,6 +131,23 @@ export default function CalendarPage() {
   );
   // TS2589: RouterOutputs type is excessively deep — as unknown breaks instantiation before re-narrowing
   const milestones = rawMilestones as unknown as CalendarEventItem[] | undefined;
+
+  // Filter chips are scoped to functions actually present on the (already access-controlled)
+  // events, not every function in the company — a chip for a function with zero visible events
+  // here would just be dead UI. `listMilestones` already restricts the underlying data
+  // (`eventVisibilityWhere`); this only shapes which chips are worth showing.
+  const availableFunctions = useMemo(() => {
+    const presentIds = new Set((milestones ?? []).flatMap(m => m.visibilities.map(v => v.functionId)));
+    return (functionsData ?? [])
+      .filter(f => presentIds.has(f.id))
+      .map(f => ({ id: f.id, name: f.name }));
+  }, [functionsData, milestones]);
+
+  useEffect(() => {
+    if (availableFunctions.length > 0 && selectedFunctionIds.length === 0) {
+      setSelectedFunctionIds(availableFunctions.map(f => f.id));
+    }
+  }, [availableFunctions]); // intentional: only initialize when empty
 
   const { data: syncStatus } = trpc.seasonCalendar.getSyncStatus.useQuery(
     { calendarId: calendar?.id ?? '' },

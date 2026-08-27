@@ -11,7 +11,7 @@
  *  - Planning group freeze: freezePlanningGroup, unfreezePlanningGroup
  *  - Clone: cloneFromBrandSeason
  *  - Google Calendar sync: getSyncStatus, triggerSync, listGoogleCalendarBindings
- *  - User visibility: grantUserVisibility, revokeUserVisibility
+ *  - User visibility: listGrantCandidates, grantUserVisibility, revokeUserVisibility
  *
  * PlanningGroup CRUD (create/list/rename/delete) lives in `planningGroup.ts`.
  * Brand access is enforced per-operation via `assertBrandAccess`.
@@ -35,7 +35,7 @@ import {
 
 
 import { logAudit } from '../lib/auditLog.js';
-import { createNotification, getVisibleUserIdsForMilestone, getVisibleUserIdsForMilestones, notifyCalendarChange } from '../lib/notifications.js';
+import { createNotification, notifyCalendarChange } from '../lib/notifications.js';
 import { requirePermission } from '../lib/permissions.js';
 import { withRateLimit } from '../lib/ratelimit.js';
 import { sseStore } from '../lib/sseStore.js';
@@ -43,8 +43,10 @@ import { router, protectedProcedure } from '../lib/trpc.js';
 import {
   assertBrandAccess,
   filterAllowedBrandIds,
+  getAllowedFunctionIds,
   resolvePlanningGroupBrandAccess,
 } from '../services/brandScope.service.js';
+import { listUsersWithBrandAccess, resolveBrandAccess, resolveEventAudience, resolveEventAudienceOne } from '../services/calendarAudience.service.js';
 import { assertUnlocked } from '../services/editLock.service.js';
 import {
   syncOneMilestone,
@@ -247,9 +249,12 @@ export const seasonCalendarRouter = router({
   // ─── Calendar event queries ─────────────────────────────────────────────────
 
   /**
-   * Lists milestones for the given season and brands, filtered to brands the user can access.
+   * Lists milestones for the given season and brands, filtered to brands the user can access
+   * and further restricted to events relevant to the user's functions (or explicitly granted —
+   * see `eventVisibilityWhere`). An event with no visibility rows at all is visible to everyone
+   * with brand access (fallback, guards against orphaned events).
    *
-   * Admins see all requested brands; other roles are filtered by team-brand scopes.
+   * Admins see all requested brands and every event in them, with no function restriction.
    *
    * @auth season_calendar:read
    * @input { seasonId, brandIds, functionId? }
@@ -265,7 +270,8 @@ export const seasonCalendarRouter = router({
     .query(async ({ input, ctx }) => {
       const allowedBrandIds = await filterAllowedBrandIds(ctx, input.brandIds);
       if (allowedBrandIds.length === 0) return [];
-      return listMilestonesDb(input.seasonId, allowedBrandIds, ctx.session.user.id, ctx.prisma, input.functionId);
+      const allowedFunctionIds = await getAllowedFunctionIds(ctx);
+      return listMilestonesDb(input.seasonId, allowedBrandIds, ctx.session.user.id, ctx.prisma, input.functionId, allowedFunctionIds);
     }),
 
   // ─── Calendar event mutations ───────────────────────────────────────────────
@@ -475,7 +481,7 @@ export const seasonCalendarRouter = router({
       }
 
       // Snapshot visibility before delete so digest and notification can use it afterward
-      const visibleUserIds = await getVisibleUserIdsForMilestone(input.id, ctx.prisma);
+      const visibleUserIds = await resolveEventAudienceOne(input.id, ctx.prisma);
       await cleanupMilestoneEvents(input.id, ctx.prisma, ctx.logger);
       await deleteMilestone(input.id, ctx.prisma);
       await logAudit(ctx, {
@@ -530,7 +536,7 @@ export const seasonCalendarRouter = router({
         });
       }
       // Snapshot visibility for each event before deletion (for digest + notifications)
-      const visibilityMap = await getVisibleUserIdsForMilestones(events.map(e => e.id), ctx.prisma);
+      const visibilityMap = await resolveEventAudience(events.map(e => e.id), ctx.prisma);
       const visibilitySnapshots = events.map(e => ({
         id: e.id,
         title: e.title,
@@ -980,7 +986,43 @@ export const seasonCalendarRouter = router({
     }),
 
   /**
-   * Grants one or more users explicit visibility on a calendar event.
+   * Lists the candidate pool for `grantUserVisibility`'s picker: active users with access to the
+   * event's brand (admins included), each flagged with whether they already have an explicit
+   * grant. Deliberately not "every user" — the picker must never offer a name that
+   * `grantUserVisibility` would then reject.
+   *
+   * @auth season_calendar:read
+   * @input { eventId }
+   * @output Array of { id, username, firstName, lastName, alreadyGranted }
+   */
+  listGrantCandidates: protectedProcedure
+    .use(requirePermission('season_calendar:read'))
+    .input(z.object({ eventId: z.string().uuid() }))
+    .query(async ({ input, ctx }) => {
+      const event = await ctx.prisma.calendarEvent.findUnique({
+        where: { id: input.eventId },
+        select: {
+          calendar: { select: { brandId: true } },
+          userVisibilities: { select: { userId: true } },
+        },
+      });
+      if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+
+      const candidates = await listUsersWithBrandAccess(event.calendar.brandId, ctx.prisma);
+      const grantedIds = new Set(event.userVisibilities.map(v => v.userId));
+      return candidates.map(u => ({ ...u, alreadyGranted: grantedIds.has(u.id) }));
+    }),
+
+  /**
+   * Grants one or more users explicit visibility on a calendar event — the escape hatch for
+   * sharing an event with someone outside the functions it's already visible to, without
+   * widening those functions or moving the person into a different team.
+   *
+   * Brand is still a hard boundary: every recipient must already have access to the event's
+   * brand via team membership (or be an admin), otherwise the notification this sends
+   * ("Hai accesso all'evento X") would be false — the recipient couldn't actually find the
+   * event in `listMilestones`. Validated as a check-then-act inside the same transaction as
+   * the grant itself.
    *
    * Sends an in-app notification to each newly visible user.
    *
@@ -995,17 +1037,35 @@ export const seasonCalendarRouter = router({
     .mutation(async ({ input, ctx }) => {
       const event = await ctx.prisma.calendarEvent.findUnique({
         where: { id: input.eventId },
-        select: { title: true },
+        select: { title: true, calendar: { select: { brandId: true } } },
       });
       if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
 
-      await ctx.prisma.calendarEventUserVisibility.createMany({
-        data: input.userIds.map(userId => ({
-          eventId: input.eventId,
-          userId,
-          grantedBy: ctx.session.user.id,
-        })),
-        skipDuplicates: true,
+      await ctx.prisma.$transaction(async tx => {
+        const accessMap = await resolveBrandAccess(input.userIds, tx);
+        const rejectedIds = input.userIds.filter(uid => {
+          const access = accessMap.get(uid);
+          return access === undefined || (access !== null && !access.has(event.calendar.brandId));
+        });
+        if (rejectedIds.length > 0) {
+          const rejectedUsers = await tx.user.findMany({
+            where: { id: { in: rejectedIds } },
+            select: { username: true },
+          });
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `Utenti senza accesso al brand dell'evento: ${rejectedUsers.map(u => u.username).join(', ')}`,
+          });
+        }
+
+        await tx.calendarEventUserVisibility.createMany({
+          data: input.userIds.map(userId => ({
+            eventId: input.eventId,
+            userId,
+            grantedBy: ctx.session.user.id,
+          })),
+          skipDuplicates: true,
+        });
       });
 
       await Promise.all(

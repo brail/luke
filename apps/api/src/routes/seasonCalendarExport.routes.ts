@@ -16,7 +16,7 @@ import fp from 'fastify-plugin';
 
 
 import { generateIcal } from '@luke/calendar';
-import { isDevelopment } from '@luke/core';
+import { isDevelopment, type Role } from '@luke/core';
 
 import { authenticateRequest, rateLimitKeyFromRequest } from '../lib/auth';
 // Single entry point to the PDF engine: it's the only place where `setUrlAccessPolicy`
@@ -27,7 +27,7 @@ import { authenticateRequest, rateLimitKeyFromRequest } from '../lib/auth';
 // orphaned Promise rejected with an unhandled TypeError, which `server.ts`'s
 // guards turn into `process.exit(1)`.
 import { createPdfBuffer } from '../lib/export/pdf';
-import { filterAllowedBrandIds } from '../services/brandScope.service';
+import { getUserAllowedIds } from '../services/context.service';
 import { listMilestonesDb } from '../services/seasonCalendar.service';
 
 import type { PrismaClient } from '@prisma/client';
@@ -57,9 +57,10 @@ async function fetchExportMilestones(
   brandIds: string[],
   userId: string,
   prisma: PrismaClient,
-  functionId?: string
+  functionId?: string,
+  allowedFunctionIds?: string[] | null
 ): Promise<ExportMilestone[]> {
-  const milestones = await listMilestonesDb(seasonId, brandIds, userId, prisma, functionId);
+  const milestones = await listMilestonesDb(seasonId, brandIds, userId, prisma, functionId, allowedFunctionIds);
 
   const brandMap = new Map<string, string>();
   const functionNameMap = new Map<string, string>();
@@ -529,7 +530,10 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
     }
 
     const requestedBrandIds = brandIdsCsv.split(',').map(s => s.trim()).filter(Boolean);
-    const allowedBrandIds = await filterAllowedBrandIds({ prisma, session }, requestedBrandIds);
+    const allowed = await getUserAllowedIds(session.user.id, prisma, session.user.role as Role);
+    const allowedBrandIds = allowed.brandIds === null
+      ? requestedBrandIds
+      : requestedBrandIds.filter(id => allowed.brandIds!.includes(id));
     if (allowedBrandIds.length === 0) {
       reply.code(403).send({ error: 'No accessible brands' });
       return null;
@@ -548,7 +552,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
       : 'list';
     const parsedViewDate = viewDate ? new Date(viewDate) : new Date();
 
-    return { session, seasonId, allowedBrandIds, functionId, seasonLabel, view: parsedView, viewDate: parsedViewDate };
+    return { session, seasonId, allowedBrandIds, allowedFunctionIds: allowed.functionIds, functionId, seasonLabel, view: parsedView, viewDate: parsedViewDate };
   }
 
   app.get('/season-calendar/export/ical', exportRateLimit, async (req, reply) => {
@@ -556,7 +560,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
     if (!ctx) return;
 
     const milestones = await fetchExportMilestones(
-      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.functionId
+      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.functionId, ctx.allowedFunctionIds
     );
 
     const icalString = generateIcal(
@@ -579,7 +583,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
     if (!ctx) return;
 
     const milestones = await fetchExportMilestones(
-      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.functionId
+      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.functionId, ctx.allowedFunctionIds
     );
 
     let pdfBuffer: Buffer;
@@ -604,7 +608,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
     if (!ctx) return;
 
     const milestones = await fetchExportMilestones(
-      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.functionId
+      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.functionId, ctx.allowedFunctionIds
     );
 
     const xlsxBuffer = await generateXlsx(milestones, ctx.seasonLabel);

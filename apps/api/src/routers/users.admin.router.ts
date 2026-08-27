@@ -51,31 +51,41 @@ export const usersAdminRouter = router({
     }),
 
   /**
-   * Approves a pending LDAP user (clears pendingApproval flag) and sends an account-approved email.
+   * Approves a pending LDAP user (clears pendingApproval flag), assigns them to the given team
+   * in the same transaction, and sends an account-approved email. A pending user is provisioned
+   * without a team (`ldapAuth.ts`) — this is the first point a human decides where they belong,
+   * so the team is mandatory here rather than defaulted.
    *
    * @auth {users:update}
-   * @input {UserIdSchema}
+   * @input {{ id: string (UUID), teamId: string (UUID) }}
    * @output {{ success: true, message: string }}
    */
   approvePending: protectedProcedure
     .use(requirePermission('users:update'))
-    .input(UserIdSchema)
+    .input(z.object({ id: z.string().uuid(), teamId: z.string().uuid() }))
     .use(withAuditLog('USER_APPROVED', 'User'))
     .mutation(async ({ input, ctx }) => {
-      const user = await ctx.prisma.user.findUnique({
-        where: { id: input.id },
-      });
+      const user = await ctx.prisma.$transaction(async tx => {
+        const pendingUser = await tx.user.findUnique({ where: { id: input.id } });
+        if (!pendingUser || !pendingUser.pendingApproval) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Utente in attesa non trovato',
+          });
+        }
 
-      if (!user || !user.pendingApproval) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Utente in attesa non trovato',
-        });
-      }
+        const team = await tx.companyTeam.findUnique({ where: { id: input.teamId }, select: { isActive: true } });
+        if (!team || !team.isActive) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Team non trovato o non attivo',
+          });
+        }
 
-      await ctx.prisma.user.update({
-        where: { id: input.id },
-        data: { pendingApproval: false },
+        await tx.companyTeamMembership.create({ data: { teamId: input.teamId, userId: input.id } });
+        await tx.user.update({ where: { id: input.id }, data: { pendingApproval: false } });
+
+        return pendingUser;
       });
 
       // Send activation notification email (only if the email isn't synthetic)

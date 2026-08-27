@@ -7,7 +7,6 @@ import { TRPCError } from '@trpc/server';
 import pino from 'pino';
 
 import {
-  getConfig,
   getLdapConfig,
   getLdapResilienceConfig,
   type LdapConfig,
@@ -433,26 +432,13 @@ async function createOrUpdateUser(
       });
     }
 
-    const auditNoTeam = (meta: Record<string, unknown>) =>
-      prisma.auditLog.create({
-        data: { actorId: null, action: 'USER_PROVISIONED_NO_DEFAULT_TEAM', targetType: 'User', targetId: user!.id, result: 'FAILURE', metadata: { username: user!.username, ...meta } },
-      }).catch(e => logger.error({ err: e }, 'Failed to write provisioning audit log'));
-
-    // Auto-assign to default team if configured (graceful: failure leaves user without team)
-    const defaultTeamId = (await getConfig(prisma, 'auth.provisioning.defaultTeamId', false))?.trim() || null;
-    if (defaultTeamId) {
-      try {
-        await prisma.companyTeamMembership.create({
-          data: { teamId: defaultTeamId, userId: user.id },
-        });
-        logger.info({ defaultTeamId, userId: user.id }, 'Auto-assigned LDAP user to default team');
-      } catch (err) {
-        logger.warn({ defaultTeamId, userId: user.id, err }, 'Auto-team assignment failed, user created without team');
-        await auditNoTeam({ defaultTeamId });
-      }
-    } else {
-      await auditNoTeam({ reason: 'auth.provisioning.defaultTeamId not configured' });
-    }
+    // No team assignment here — a pending LDAP user has no brand or function access anyway
+    // (`pendingApproval: true` blocks login), and picking a team without knowing the person
+    // would just be a guess. `users.approvePending` requires an explicit team at approval time,
+    // which is where a human already has to make a decision about this user.
+    await prisma.auditLog.create({
+      data: { actorId: null, action: 'USER_PROVISIONED_WITHOUT_TEAM', targetType: 'User', targetId: user.id, result: 'SUCCESS', metadata: { username: user.username } },
+    }).catch(e => logger.error({ err: e }, 'Failed to write provisioning audit log'));
   }
 
   return user;

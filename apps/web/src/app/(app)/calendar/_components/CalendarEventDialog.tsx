@@ -27,6 +27,7 @@ import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 import { daysBetween, isEventDateLocked, isEventDeleteLocked } from '../utils';
 
+import { CalendarEventShareSection } from './CalendarEventShareSection';
 import { type CalendarEventItem } from './types';
 import { addOneHour, resolveIso, toDateInput, toTimeInput, useLinkedDateRange } from './useLinkedDateRange';
 
@@ -430,6 +431,10 @@ export function CalendarEventDialog({
                 ))}
               </div>
             </div>
+
+            {isEdit && event?.id && (
+              <CalendarEventShareSection eventId={event.id} readOnly={readOnly} />
+            )}
 
             <div className="flex items-center gap-2">
               <Checkbox id="ev-allday" checked={allDay} onCheckedChange={v => setAllDay(!!v)} disabled={isDateLocked} />
