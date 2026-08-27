@@ -254,7 +254,8 @@ export async function expectUnauthorized(
   } catch (error: any) {
     if (error.code !== expectedCode) {
       throw new Error(
-        `Expected error code '${expectedCode}', got '${error.code}': ${error.message}`
+        `Expected error code '${expectedCode}', got '${error.code}': ${error.message}`,
+        { cause: error }
       );
     }
   }

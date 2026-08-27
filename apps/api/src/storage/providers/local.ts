@@ -74,7 +74,8 @@ export class LocalFsProvider implements IStorageProvider {
       this.realBasePath = await realpath(this.basePath);
     } catch (error) {
       throw new Error(
-        `Impossibile inizializzare basePath: ${error instanceof Error ? error.message : 'Unknown'}`
+        `Impossibile inizializzare basePath: ${error instanceof Error ? error.message : 'Unknown'}`,
+        { cause: error }
       );
     }
 
@@ -293,7 +294,8 @@ export class LocalFsProvider implements IStorageProvider {
       }
 
       throw new Error(
-        `Errore upload file: ${error instanceof Error ? error.message : 'Unknown'}`
+        `Errore upload file: ${error instanceof Error ? error.message : 'Unknown'}`,
+        { cause: error }
       );
     }
   }
@@ -327,7 +329,8 @@ export class LocalFsProvider implements IStorageProvider {
       };
     } catch (error) {
       throw new Error(
-        `File non trovato: ${error instanceof Error ? error.message : 'Unknown'}`
+        `File non trovato: ${error instanceof Error ? error.message : 'Unknown'}`,
+        { cause: error }
       );
     }
   }
@@ -345,7 +348,8 @@ export class LocalFsProvider implements IStorageProvider {
       // If the file doesn't exist, we consider the operation successful (idempotent)
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         throw new Error(
-          `Errore cancellazione file: ${error instanceof Error ? error.message : 'Unknown'}`
+          `Errore cancellazione file: ${error instanceof Error ? error.message : 'Unknown'}`,
+          { cause: error }
         );
       }
     }

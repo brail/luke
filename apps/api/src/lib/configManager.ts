@@ -251,7 +251,7 @@ export async function getConfig(
         },
         'Errore decifratura config'
       );
-      throw new Error(`Impossibile decifrare configurazione: ${key}`);
+      throw new Error(`Impossibile decifrare configurazione: ${key}`, { cause: error });
     }
   }
 
@@ -529,7 +529,7 @@ export async function getSecret(
       { key, error: error instanceof Error ? error.message : 'Unknown error' },
       'Errore decifratura segreto'
     );
-    throw new Error(`Impossibile decifrare segreto: ${key}`);
+    throw new Error(`Impossibile decifrare segreto: ${key}`, { cause: error });
   }
 }
 

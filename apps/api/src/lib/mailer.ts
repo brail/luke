@@ -123,7 +123,8 @@ export async function sendEmail(
           'Email fallita dopo tutti i retry'
         );
         throw new Error(
-          `Impossibile inviare email: ${error instanceof Error ? error.message : 'Unknown error'}`
+          `Impossibile inviare email: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          { cause: error }
         );
       }
       await new Promise(resolve => setTimeout(resolve, calcBackoffDelay(attempt, 250, 1000)));
