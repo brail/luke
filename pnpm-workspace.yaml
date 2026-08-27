@@ -42,5 +42,5 @@ overrides:
   # GHSA-5p4m-2wfm-xmqj su <=4.3.0. Range, per la stessa ragione di fast-uri.
   js-yaml: '>=4.3.1 <5'
   protobufjs: '7.6.5'
-  sharp: '0.35.0'
+  sharp: '0.35.4'
   valibot: '>=1.4.2'
