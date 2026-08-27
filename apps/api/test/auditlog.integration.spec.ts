@@ -56,9 +56,11 @@ describe('AuditLog Integration', () => {
       expect(log.ip).toBe('127.0.0.1');
       expect(log.createdAt).toBeInstanceOf(Date);
 
-      // Verify there are no passwords in metadata
+      // The `password` key is now recorded, masked, instead of being dropped along with
+      // everything else the middleware could not name: what must never appear is its value.
       const metadataStr = JSON.stringify(log.metadata);
-      expect(metadataStr).not.toContain('password');
+      expect(metadataStr).toContain('"password":"***REDACTED***"');
+      expect(metadataStr).not.toContain('SecurePassword123!');
       expect(metadataStr).not.toContain('SecurePass');
     });
   });
@@ -219,6 +221,74 @@ describe('AuditLog Integration', () => {
     });
   });
 
+  describe('Attribuzione soggetto (actorId null)', () => {
+    it('dovrebbe attribuire il login a chi lo ha effettuato pur senza actorId', async () => {
+      const { user } = await createTestUser('viewer');
+      const { session: adminSession } = await createTestUser('admin');
+
+      const anonCaller = await createCallerAs(null);
+      await anonCaller.auth.login({
+        username: user.username,
+        password: TEST_USER_PASSWORD,
+      });
+
+      const page = await createCallerWithSession(adminSession).auditLog.list({
+        action: 'AUTH_LOGIN',
+        page: 1,
+        limit: 50,
+      });
+
+      const entry = page.items.find(i => i.targetId === user.id);
+      expect(entry).toBeDefined();
+      // The actor is genuinely absent (no session during login) and must stay absent:
+      // the fix resolves the *subject* from targetId, it does not fabricate an actor.
+      expect(entry?.actorId).toBeNull();
+      expect(entry?.actorName).toBeNull();
+      expect(entry?.subjectName).toBeTruthy();
+      expect(entry?.subjectEmail).toBe(user.email);
+    });
+
+    it('dovrebbe attribuire il login fallito allo username tentato quando l\'utente non esiste', async () => {
+      const { session: adminSession } = await createTestUser('admin');
+
+      const anonCaller = await createCallerAs(null);
+      await expect(
+        anonCaller.auth.login({ username: 'utente-inesistente', password: 'QualsiasiCosa123!' })
+      ).rejects.toThrow();
+
+      const page = await createCallerWithSession(adminSession).auditLog.list({
+        action: 'AUTH_LOGIN_FAILED',
+        page: 1,
+        limit: 50,
+      });
+
+      const entry = page.items.find(i => i.subjectName === 'utente-inesistente');
+      expect(entry).toBeDefined();
+      // No user row to point at, so the subject falls back to the attempted username in metadata.
+      expect(entry?.targetId).toBeNull();
+      expect(entry?.subjectEmail).toBeNull();
+    });
+
+    it('non dovrebbe attribuire un soggetto quando esiste un actor reale', async () => {
+      const { user: admin, session } = await createTestUser('admin');
+      const caller = createCallerWithSession(session);
+
+      await caller.users.create({
+        username: 'subjectcheck',
+        email: 'subjectcheck@test.com',
+        password: 'SecurePassword123!',
+        role: 'viewer',
+      });
+
+      const page = await caller.auditLog.list({ action: 'USER_CREATE', page: 1, limit: 50 });
+      const entry = page.items.find(i => i.actorId === admin.id);
+      expect(entry).toBeDefined();
+      expect(entry?.actorName).toBeTruthy();
+      expect(entry?.subjectName).toBeNull();
+      expect(entry?.subjectEmail).toBeNull();
+    });
+  });
+
   describe('CONFIG_UPSERT', () => {
     it('dovrebbe loggare entry per configurazione con redazione segreti', async () => {
       const { user: admin, session } = await createTestUser('admin');
@@ -244,10 +314,11 @@ describe('AuditLog Integration', () => {
         result: 'SUCCESS',
       });
 
-      // Verify secret redaction
+      // Verify secret redaction. The call site substitutes the value with the `[ENCRYPTED]`
+      // marker before `logAudit` ever sees it, so the plaintext cannot reach the sanitizer.
       const metadataStr = JSON.stringify(log.metadata);
       expect(metadataStr).toContain('app.test.secret');
-      expect(metadataStr).toContain('[REDACTED]'); // Redacted value
+      expect(metadataStr).toContain('[ENCRYPTED]');
       expect(metadataStr).not.toContain('super-secret-value');
     });
   });
@@ -311,15 +382,18 @@ describe('AuditLog Integration', () => {
       expect(auditLogs).toHaveLength(1);
       const log = auditLogs[0];
 
-      // Verify that metadata contains useful information but no password
+      // Metadata must carry the useful fields, with their values — asserting mere presence
+      // let `{ input_username: '[REDACTED]' }` pass as if it were information.
       expect(log.metadata).toBeTruthy();
-      expect(log.metadata).toHaveProperty('input_username');
-      expect(log.metadata).toHaveProperty('input_email');
-      expect(log.metadata).toHaveProperty('input_role');
+      expect(log.metadata).toHaveProperty('input.username', 'sensitiveuser');
+      expect(log.metadata).toHaveProperty('input.email', 'sensitive@test.com');
+      expect(log.metadata).toHaveProperty('input.role', 'viewer');
+      expect(log.metadata).toHaveProperty('result.id');
 
-      // Verify there are no passwords in metadata
+      // ...and the password masked, never its value.
+      expect(log.metadata).toHaveProperty('input.password', '***REDACTED***');
       const metadataStr = JSON.stringify(log.metadata);
-      expect(metadataStr).not.toContain('password');
+      expect(metadataStr).not.toContain('SuperSecurePassword123!');
       expect(metadataStr).not.toContain('SecurePass');
     });
   });

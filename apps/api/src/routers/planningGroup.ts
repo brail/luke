@@ -104,10 +104,10 @@ export const planningGroupRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      await resolvePlanningGroupBrandAccess(ctx, input.id);
+      const group = await resolvePlanningGroupBrandAccess(ctx, input.id);
 
       await deletePlanningGroup(input.id, ctx.prisma);
-      await logAudit(ctx, { action: 'PLANNING_GROUP_DELETE', targetType: 'PlanningGroup', targetId: input.id, result: 'SUCCESS', metadata: {} });
+      await logAudit(ctx, { action: 'PLANNING_GROUP_DELETE', targetType: 'PlanningGroup', targetId: input.id, result: 'SUCCESS', metadata: { calendarId: group.calendarId, brandId: group.calendar.brandId, seasonId: group.calendar.seasonId } });
       return { success: true };
     }),
 });

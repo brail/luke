@@ -3,7 +3,7 @@
  * Automatically records SUCCESS or FAILURE for every mutation that uses it.
  */
 
-import { logAudit } from './auditLog';
+import { logAudit, type AuditMetadata } from './auditLog';
 import { toErrorCode, toErrorMessage } from './error';
 import { t } from './trpc';
 
@@ -43,8 +43,11 @@ export function withAuditLog(action: string, targetType: string) {
           : undefined;
       const targetId = extractId(resultData) || extractId(result) || extractId(input);
 
-      // Extract safe metadata from input/result
-      const safeMetadata = extractSafeMetadata(input, result);
+      // `resultData`, not `result`: the latter is tRPC's middleware envelope, which carries
+      // `ctx` (Prisma client, Fastify request) and is circular — persisting it fails the
+      // Prisma insert, and `logAudit` swallows that for non-critical actions, so the audit
+      // row silently disappears instead of being merely incomplete.
+      const safeMetadata = extractSafeMetadata(input, resultData);
 
       await logAudit(ctx, {
         action,
@@ -76,51 +79,21 @@ export function withAuditLog(action: string, targetType: string) {
 }
 
 /**
- * Extracts safe metadata from input and result
- * Avoids logging sensitive data
+ * Captures the mutation's input and output under two container keys.
+ *
+ * There is deliberately no field list here any more. This function used to keep a second,
+ * hand-maintained allowlist of 9 input and 7 result fields, which failed twice over: most
+ * mutations have none of those fields, so the row was stored as `{}`, and the `input_`/`result_`
+ * prefixes it added were not on `SAFE_KEY_LIST`, so whatever it did capture was redacted by
+ * `sanitizeMetadata` anyway (`USER_UPDATE` rows read `{"input_role": "[REDACTED]"}`).
+ * `sanitizeMetadata` is the one allowlist; nesting keeps `input.role` and `result.role`
+ * distinguishable without prefixes.
+ *
+ * `result` must be the procedure's own return value, never tRPC's middleware envelope.
  */
-function extractSafeMetadata(input: unknown, result: unknown): Record<string, unknown> {
-  const metadata: Record<string, unknown> = {};
-
-  // From input: safe fields only
-  if (input && typeof input === 'object') {
-    const inputRecord = input as Record<string, unknown>;
-    const safeInputFields = [
-      'username',
-      'email',
-      'role',
-      'locale',
-      'timezone',
-      'key',
-      'isEncrypted',
-      'firstName',
-      'lastName',
-    ];
-    for (const field of safeInputFields) {
-      if (inputRecord[field] !== undefined) {
-        metadata[`input_${field}`] = inputRecord[field];
-      }
-    }
-  }
-
-  // From result: only safe fields
-  if (result && typeof result === 'object') {
-    const resultRecord = result as Record<string, unknown>;
-    const safeResultFields = [
-      'id',
-      'username',
-      'email',
-      'role',
-      'isActive',
-      'createdAt',
-      'updatedAt',
-    ];
-    for (const field of safeResultFields) {
-      if (resultRecord[field] !== undefined) {
-        metadata[`result_${field}`] = resultRecord[field];
-      }
-    }
-  }
-
-  return Object.keys(metadata).length > 0 ? metadata : {};
+function extractSafeMetadata(input: unknown, result: unknown): AuditMetadata {
+  return {
+    ...(input && typeof input === 'object' ? { input } : {}),
+    ...(result && typeof result === 'object' ? { result } : {}),
+  };
 }

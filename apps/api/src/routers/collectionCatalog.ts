@@ -144,7 +144,7 @@ export const collectionCatalogRouter = router({
         targetType: 'CollectionCatalogItem',
         targetId: input.id,
         result: 'SUCCESS',
-        metadata: {},
+        metadata: { changedFields: Object.keys(input.data) },
       });
 
       return result;

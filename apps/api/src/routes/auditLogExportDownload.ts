@@ -13,7 +13,7 @@ import { Readable } from 'stream';
 
 import { getAuditActionLabel } from '@luke/core';
 
-import { auditActorName, buildAuditLogWhere } from '../lib/auditLog';
+import { auditActorName, auditSubjectOf, buildAuditLogWhere, resolveAuditSubjects } from '../lib/auditLog';
 import { verifyAuditLogExportToken } from '../utils/downloadToken';
 import { streamRawResponse } from '../utils/streamResponse';
 
@@ -31,7 +31,7 @@ async function* generateAuditLogCsv(prisma: PrismaClient, filters: Parameters<ty
   // Leading BOM (explicit escape, not a literal character, so it doesn't trip no-irregular-whitespace):
   // makes Excel recognize UTF-8, otherwise it mangles accented characters.
   const BOM = '\uFEFF';
-  yield `${BOM}${['Data/Ora', 'Autore', 'Email', 'Azione', 'Entità', 'ID Entità', 'Esito', 'IP'].join(',')}\n`;
+  yield `${BOM}${['Data/Ora', 'Autore', 'Email', 'Attribuzione', 'Azione', 'Entità', 'ID Entità', 'Esito', 'IP'].join(',')}\n`;
 
   const whereClause = buildAuditLogWhere(filters);
   let skip = 0;
@@ -45,11 +45,20 @@ async function* generateAuditLogCsv(prisma: PrismaClient, filters: Parameters<ty
     });
     if (batch.length === 0) break;
 
+    const subjects = await resolveAuditSubjects(prisma, batch);
+
     for (const entry of batch) {
+      // Pre-session events (login, email verification, password reset) carry no actor but do
+      // identify their subject. Both land in the same columns so the CSV stays one shape;
+      // `Attribuzione` is what tells an auditor whether the identity is a proven actor or an
+      // inferred subject.
+      const subject = auditSubjectOf(entry, subjects);
+      const attribution = entry.actorId ? 'utente' : subject.name ? 'soggetto' : 'sistema';
       const row = [
         entry.createdAt.toISOString(),
-        auditActorName(entry.actor) ?? '',
-        entry.actor?.email ?? '',
+        auditActorName(entry.actor) ?? subject.name ?? '',
+        entry.actor?.email ?? subject.email ?? '',
+        attribution,
         getAuditActionLabel(entry.action),
         entry.targetType,
         entry.targetId ?? '',

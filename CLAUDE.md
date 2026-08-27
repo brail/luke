@@ -77,7 +77,13 @@ After changes to a tRPC router in `apps/api`: `cd apps/api && npx tsc -b`
 3. **`$transaction` for check-then-act** — "read → validate → write" always in
    a transaction (race condition)
 4. **Audit logging on every mutation** — create/update/delete/restore/unlink →
-   `withAuditLog` middleware or explicit `logAudit()`
+   `withAuditLog` middleware or explicit `logAudit()`. Metadata keys are typed
+   against `SAFE_KEY_LIST` (`apps/api/src/lib/auditLog.ts`): an unlisted key
+   fails the build, adding one there is a deliberate decision that it is safe
+   to persist. Pre-session flows (login, email verification, password reset)
+   legitimately write `actorId: null` — they must still set `targetId` to the
+   `User.id`, which is what lets the read path attribute the event to a person
+   instead of rendering an anonymous "Sistema"
 5. **`requirePermission()` on every protected endpoint** — READ → `entity:read`,
    CREATE → `entity:create`, etc. Never `update` for a read-only query
 6. **Explicit `onDelete` on every Prisma `@relation`** — safe default
@@ -123,6 +129,17 @@ After changes to a tRPC router in `apps/api`: `cd apps/api && npx tsc -b`
     privileged treatment in the source code. Merge logic on existing comments
     (leave untouched if accurate, extend if incomplete, rewrite if drifted):
     see `.claude/skills/luke-docs/references/inline-rules.md`.
+15. **An allowlist that gates persisted or displayed data must be bound to a
+    type** — every hand-maintained list of permitted keys/values
+    (`SAFE_KEY_LIST`, `PRICING_CURRENCIES`, valid storage buckets, ...) gets
+    `as const` plus a union derived from it, used in the signature of whatever
+    consumes it, so a call site outside the list fails `tsc` instead of
+    drifting. Filter paths fail **closed and silently**: drift produces
+    `[REDACTED]`, `{}` or a dropped field, never an error, so nothing surfaces
+    it until someone reads the output months later. Corollary: never stack a
+    second allowlist in front of the first "for safety" — each ends up
+    maintained as if the other were authoritative, and the outer one discards
+    what the inner one would have kept.
 
 ### Soft delete pattern
 

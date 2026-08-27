@@ -185,7 +185,12 @@ export const googleRouter = router({
         action: 'CONFIG_GOOGLE_OAUTH_DISCONNECT',
         targetType: 'Config',
         result: 'SUCCESS',
-        metadata: {},
+        metadata: {
+          configKeys: [
+            'integrations.google.oauth.refreshToken',
+            'integrations.google.oauth.userEmail',
+          ],
+        },
       });
       return { success: true };
     }),

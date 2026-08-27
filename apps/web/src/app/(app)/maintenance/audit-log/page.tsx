@@ -257,7 +257,15 @@ export default function AuditLogPage() {
                       onClick={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
                     >
                       <TableCell>{fmt.dateTime(entry.createdAt)}</TableCell>
-                      <TableCell>{entry.actorName ?? 'Sistema'}</TableCell>
+                      <TableCell>
+                        {entry.actorName ?? entry.subjectName ?? 'Sistema'}
+                        {/* Pre-session events (login, verifica email, reset password) have no
+                            authenticated actor: the name shown is the subject the event points at,
+                            not a proven actor identity. Marked so an auditor can tell them apart. */}
+                        {!entry.actorName && entry.subjectName && (
+                          <span className="ml-1 text-xs text-muted-foreground">(soggetto)</span>
+                        )}
+                      </TableCell>
                       <TableCell>{getAuditActionLabel(entry.action)}</TableCell>
                       <TableCell>
                         {entry.targetType}
@@ -274,7 +282,11 @@ export default function AuditLogPage() {
                         <TableCell colSpan={5} className="bg-muted/30">
                           <pre className="whitespace-pre-wrap break-all text-xs">
                             {JSON.stringify(
-                              { ip: entry.ip, actorEmail: entry.actorEmail, metadata: entry.metadata },
+                              {
+                                ip: entry.ip,
+                                actorEmail: entry.actorEmail ?? entry.subjectEmail,
+                                metadata: entry.metadata,
+                              },
                               null,
                               2
                             )}

@@ -489,3 +489,64 @@ deleted (local + remote) as soon as its successor is cut — see CLAUDE.md §
 Versioning & Release for the steps (update `branches` in
 `ci.yml`/`security.yml`, delete the previous one; `dependabot.yml` isn't
 involved, it always targets the default `main`).
+
+---
+
+## Audit log: a silent allowlist drift (2026-08-27)
+
+Two bugs reported on the audit log page — empty `metadata`, and "Sistema" as
+the author with no email on logins and password changes. Both were real; the
+instructive part is *why neither ever surfaced*.
+
+**What was wrong.** `SAFE_KEYS` in `lib/auditLog.ts` was a hand-maintained
+allowlist of 89 keys, checked at runtime by `sanitizeMetadata`. Call sites had
+kept adding metadata fields (`size`, `bucket`, `method`, `errorMessage`,
+`originalName`, ...) without ever adding them to the list, so those values were
+persisted as the string `[REDACTED]`. On the 1847 rows in dev: 34% contained at
+least one `[REDACTED]` on a harmless field, 19% had no metadata at all.
+Separately, `withAuditLog` kept a **second** allowlist of 16 field names and
+prefixed what it found with `input_`/`result_` — prefixes that were not on the
+first list, so the little it captured was redacted anyway
+(`{"input_role":"[REDACTED]"}`), and mutations without those fields stored `{}`.
+
+**Why nobody noticed.** A redaction path fails closed and silently. Drift never
+throws, never logs, never fails a test — it just quietly turns data into
+`[REDACTED]`. There is no moment where the system says it is losing
+information; it looks exactly like a correctly redacted field. The redaction
+test suite was green throughout, because it asserted *presence*
+(`toHaveProperty('input_username')`) rather than value, and `'[REDACTED]'` is
+present.
+
+**General rule — bind the allowlist to the compiler.** The fix was not adding
+the ~75 missing keys (they would drift again by Christmas): it was
+`SAFE_KEY_LIST = [...] as const`, a `AuditMetadataKey` union derived from it,
+and `AuditParams.metadata: Partial<Record<AuditMetadataKey, unknown>>`. `tsc`
+then enumerated every drifted call site in one run, and any future one fails
+the build at the line that invented the key. Any hand-maintained list that
+gates what gets persisted or displayed deserves the same treatment — see
+CLAUDE.md rule 15. Note the residual gap this does *not* cover, and say so
+rather than overselling it: excess-property checks only apply to fresh object
+literals, so `metadata: someVariable` (one call site in `seasonCalendar.ts`)
+still slips past and needs the key listed by hand.
+
+**Corollary — two filters in series is worse than one.** The middleware's
+private allowlist existed "for safety" on top of `sanitizeMetadata`. Each was
+maintained as if the other were the real one, and the outer discarded what the
+inner would have kept. One filter, one place.
+
+**Second bug — a null FK is not a missing identity.** `logAudit` reads the
+actor from `ctx.session`, which does not exist during login / email
+verification / password reset, so those rows store `actorId: null` and the page
+printed "Sistema". The identity was in the row all along: `targetId` pointed at
+the `User.id` on 427 of the 436 actor-less rows. Before concluding data is lost
+at write time, check the other columns — this was fixable entirely on the read
+path, retroactively over the whole history, with no migration. Keep the two
+concepts distinct in the UI (actor vs subject) rather than collapsing them: an
+inferred subject must not be displayed as if it were a proven actor.
+
+**Process note.** Three existing tests encoded the buggy behaviour and went red
+on the fix. Updating them was correct, but each replacement assertion had to
+come out *stronger* than the one it replaced (assert the secret's value is
+absent and the field is masked, not that the string `password` never appears).
+A test updated into something weaker to make a diff green is how the drift got
+certified in the first place.

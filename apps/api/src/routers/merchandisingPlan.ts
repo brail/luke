@@ -220,7 +220,7 @@ export const merchandisingPlanRouter = router({
         targetType: 'MerchandisingPlanRow',
         targetId: input.id,
         result: 'SUCCESS',
-        metadata: {},
+        metadata: { planId: result.planId, changedFields: Object.keys(input.data) },
       });
       return result;
     }),
@@ -237,13 +237,15 @@ export const merchandisingPlanRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      await ctx.prisma.merchandisingPlanRow.delete({ where: { id: input.id } });
+      // `delete` returns the removed row, so the audit entry can describe what is gone
+      // without a second read — after this the id points at nothing.
+      const deleted = await ctx.prisma.merchandisingPlanRow.delete({ where: { id: input.id } });
       await logAudit(ctx, {
         action: 'MERCHANDISING_ROW_DELETE',
         targetType: 'MerchandisingPlanRow',
         targetId: input.id,
         result: 'SUCCESS',
-        metadata: {},
+        metadata: { planId: deleted.planId, code: deleted.articleCode },
       });
       return { success: true };
     }),

@@ -13,7 +13,7 @@ import {
   type Permission,
 } from '@luke/core';
 
-import { auditActorName, buildAuditLogWhere } from '../lib/auditLog';
+import { auditActorName, auditSubjectOf, buildAuditLogWhere, resolveAuditSubjects } from '../lib/auditLog';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 import { signAuditLogExportToken } from '../utils/downloadToken';
@@ -48,6 +48,14 @@ export interface AuditLogEntryDTO {
   actorId: string | null;
   actorName: string | null;
   actorEmail: string | null;
+  /**
+   * Who the event is *about* when there is no authenticated actor — pre-session flows
+   * (login, email verification, password reset) record `actorId: null` but always point
+   * `targetId` at the user. Null when the entry has a real actor, or when it is a genuine
+   * system/script event with no user behind it.
+   */
+  subjectName: string | null;
+  subjectEmail: string | null;
 }
 
 export interface AuditLogListOutput {
@@ -114,20 +122,29 @@ export const auditLogRouter = router({
         ctx.prisma.auditLog.count({ where }),
       ]);
 
+      // Attributes the actor-less rows (login/verify/reset) in one extra batched query
+      // instead of leaving the whole pre-auth trail rendered as an anonymous "Sistema".
+      const subjects = await resolveAuditSubjects(ctx.prisma, items);
+
       return {
-        items: items.map(entry => ({
-          id: entry.id,
-          action: entry.action,
-          targetType: entry.targetType,
-          targetId: entry.targetId,
-          result: entry.result,
-          metadata: entry.metadata,
-          ip: entry.ip,
-          createdAt: entry.createdAt,
-          actorId: entry.actorId,
-          actorName: auditActorName(entry.actor),
-          actorEmail: entry.actor?.email ?? null,
-        })),
+        items: items.map(entry => {
+          const subject = auditSubjectOf(entry, subjects);
+          return {
+            id: entry.id,
+            action: entry.action,
+            targetType: entry.targetType,
+            targetId: entry.targetId,
+            result: entry.result,
+            metadata: entry.metadata,
+            ip: entry.ip,
+            createdAt: entry.createdAt,
+            actorId: entry.actorId,
+            actorName: auditActorName(entry.actor),
+            actorEmail: entry.actor?.email ?? null,
+            subjectName: subject.name,
+            subjectEmail: subject.email,
+          };
+        }),
         total,
         page: input.page,
         limit: input.limit,

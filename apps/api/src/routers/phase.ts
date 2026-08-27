@@ -170,7 +170,7 @@ export const phaseRouter = router({
         targetType: 'Phase',
         targetId: input.id,
         result: 'SUCCESS',
-        metadata: {},
+        metadata: { label: result.label, value: result.value, code: result.code, changedFields: Object.keys(input.data) },
       });
 
       return result;

@@ -214,13 +214,15 @@ export const holidaysRouter = router({
     .use(requirePermission('config:update'))
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      await ctx.prisma.holiday.delete({ where: { id: input.id } });
+      // `delete` returns the removed record: the audit entry keeps describing it after the id
+      // stops resolving to anything.
+      const deleted = await ctx.prisma.holiday.delete({ where: { id: input.id } });
       await logAudit(ctx, {
         action: 'HOLIDAY_DELETE',
         targetType: 'Holiday',
         targetId: input.id,
         result: 'SUCCESS',
-        metadata: {},
+        metadata: { name: deleted.name, countryCode: deleted.countryCode, startAt: deleted.startDate.toISOString() },
       });
       return { success: true };
     }),
@@ -356,7 +358,7 @@ export const holidaysRouter = router({
             notes: input.notes,
           },
         });
-        await logAudit(ctx, { action: 'VENDOR_CLOSURE_UPDATE', targetType: 'VendorClosurePeriod', targetId: updated.id, result: 'SUCCESS', metadata: {} });
+        await logAudit(ctx, { action: 'VENDOR_CLOSURE_UPDATE', targetType: 'VendorClosurePeriod', targetId: updated.id, result: 'SUCCESS', metadata: { vendorId: updated.vendorId, seasonId: updated.seasonId, name: updated.name, type: updated.type } });
         return updated;
       }
 
@@ -372,7 +374,7 @@ export const holidaysRouter = router({
           notes: input.notes,
         },
       });
-      await logAudit(ctx, { action: 'VENDOR_CLOSURE_CREATE', targetType: 'VendorClosurePeriod', targetId: created.id, result: 'SUCCESS', metadata: {} });
+      await logAudit(ctx, { action: 'VENDOR_CLOSURE_CREATE', targetType: 'VendorClosurePeriod', targetId: created.id, result: 'SUCCESS', metadata: { vendorId: created.vendorId, seasonId: created.seasonId, name: created.name, type: created.type } });
       return created;
     }),
 
@@ -387,8 +389,8 @@ export const holidaysRouter = router({
     .use(requirePermission('season_calendar:update'))
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      await ctx.prisma.vendorClosurePeriod.delete({ where: { id: input.id } });
-      await logAudit(ctx, { action: 'VENDOR_CLOSURE_DELETE', targetType: 'VendorClosurePeriod', targetId: input.id, result: 'SUCCESS', metadata: {} });
+      const deleted = await ctx.prisma.vendorClosurePeriod.delete({ where: { id: input.id } });
+      await logAudit(ctx, { action: 'VENDOR_CLOSURE_DELETE', targetType: 'VendorClosurePeriod', targetId: input.id, result: 'SUCCESS', metadata: { vendorId: deleted.vendorId, seasonId: deleted.seasonId, name: deleted.name } });
       return { success: true };
     }),
 

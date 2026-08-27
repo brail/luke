@@ -241,6 +241,13 @@ describe('sanitizeMetadata', () => {
       expect(sanitized.token).toBe('***REDACTED***');
     });
 
+    it('dovrebbe serializzare le Date in ISO invece di svuotarle', () => {
+      // `Object.entries(new Date())` is empty, so walking a Date as a plain object stored `{}`.
+      const sanitized = asRecord(sanitizeMetadata({ createdAt: new Date('2026-08-27T10:00:00Z') }));
+
+      expect(sanitized.createdAt).toBe('2026-08-27T10:00:00.000Z');
+    });
+
     it('dovrebbe gestire stringhe vuote', () => {
       const input = {
         username: '',
@@ -367,6 +374,47 @@ describe('sanitizeMetadata', () => {
       expect(sanitized.customData).toBe('[REDACTED]');
       expect(sanitized.internalId).toBe('[REDACTED]');
       expect(sanitized.sessionData).toBe('[REDACTED]');
+    });
+
+    it('dovrebbe redattare il contenuto degli array sotto una chiave non whitelisted', () => {
+      // Regression: the non-whitelisted branch used to recurse into arrays, and primitives
+      // inside them fell through to the `return obj` for primitives — so every string in
+      // `{ errors: [...] }` was persisted verbatim while a plain string under the same key
+      // was redacted. Objects inside the array are still filtered by their own keys.
+      const sanitized = asRecord(
+        sanitizeMetadata({
+          notAllowlisted: ['leaked-1', { username: 'kept', password: 'nope' }],
+          changedFields: ['name'],
+        })
+      );
+
+      expect(at(sanitized, 'notAllowlisted.0')).toBe('[REDACTED]');
+      expect(at(sanitized, 'notAllowlisted.1.username')).toBe('kept');
+      expect(at(sanitized, 'notAllowlisted.1.password')).toBe('***REDACTED***');
+      // ...while an allowlisted key keeps its array contents.
+      expect(sanitized.changedFields).toEqual(['name']);
+    });
+  });
+
+  describe('Messaggi di errore (free text)', () => {
+    it('dovrebbe preservare il messaggio ma mascherare le credenziali incorporate', () => {
+      const sanitized = asRecord(
+        sanitizeMetadata({
+          errorMessage: 'connect failed for sqlserver://nav:Hunter2@10.0.0.5:1433',
+          error: 'login rejected (password=Hunter2)',
+        })
+      );
+
+      expect(sanitized.errorMessage).toBe('connect failed for sqlserver://***:***@10.0.0.5:1433');
+      // The trailing `)` is swallowed with the value: erring toward over-masking on a
+      // free-text field is the right side to err on.
+      expect(sanitized.error).toBe('login rejected (password=***');
+    });
+
+    it('dovrebbe troncare i messaggi lunghi', () => {
+      const sanitized = asRecord(sanitizeMetadata({ error: 'x'.repeat(500) }));
+
+      expect(sanitized.error).toHaveLength(200);
     });
   });
 });
