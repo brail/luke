@@ -153,7 +153,7 @@ export const auditLogRouter = router({
 
   /**
    * Signs a short-lived (5-minute) token to download the CSV export of the audit trail,
-   * filtered the same way as `list` — the raw `/maintenance/audit-log/export` route verifies
+   * filtered the same way as `list` — the raw `/download/audit-log` route verifies
    * it and streams the CSV.
    *
    * @auth {audit:read_all}

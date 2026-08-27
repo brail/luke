@@ -35,6 +35,14 @@ const nextConfig = {
    *   /api/auth/...               → NextAuth
    *   /api/uploads/...            → app/api/uploads/[...path]/route.ts
    *   /api/upload/brand-logo/temp → app/api/upload/brand-logo/temp/route.ts
+   *
+   * An API path missing from this list does NOT fail loudly: it falls through to Next's own
+   * routing, which answers with the 404 page. A `fetch` caller sees `res.ok === false`, but an
+   * `<a download>` caller just saves that HTML under the requested filename — which is how
+   * backup downloads shipped 24KB of 404 page instead of the backup. To keep that impossible,
+   * every raw browser-facing API route lives under `/download/` (GET, streamed responses) or
+   * `/upload/` (POST, streamed request bodies), both wildcarded below, and
+   * `apps/api/test/rawRouteProxy.spec.ts` fails the build on a route registered outside them.
    */
   async rewrites() {
     const apiUrl = process.env.INTERNAL_API_URL;
@@ -43,8 +51,10 @@ const nextConfig = {
     return [
       // tRPC batch/streaming
       { source: '/trpc/:path*',    destination: `${apiUrl}/trpc/:path*` },
-      // Direct file uploads (brand logo by id, collection row pictures)
+      // Direct file uploads (brand logo by id, collection row pictures, backup import)
       { source: '/upload/:path*',  destination: `${apiUrl}/upload/:path*` },
+      // Streamed downloads (backup blob/export, audit log CSV, season calendar exports)
+      { source: '/download/:path*', destination: `${apiUrl}/download/:path*` },
       // SSE session invalidation
       { source: '/session-events', destination: `${apiUrl}/session-events` },
       // SSE notifications push

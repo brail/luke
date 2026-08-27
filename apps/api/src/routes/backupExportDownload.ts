@@ -25,7 +25,7 @@ export async function registerBackupExportDownloadRoute(
   prisma: PrismaClient
 ): Promise<void> {
   fastify.get<{ Params: { id: string }; Querystring: { token?: string } }>(
-    '/maintenance/backup/:id/export',
+    '/download/backup/:id/export',
     async (request, reply) => {
       let payload;
       try {

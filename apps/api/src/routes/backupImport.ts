@@ -36,7 +36,7 @@ export async function registerBackupImportRoute(
   fastify: FastifyInstance,
   prisma: PrismaClient
 ): Promise<void> {
-  fastify.post('/maintenance/backup/import', async (request, reply) => {
+  fastify.post('/upload/backup-import', async (request, reply) => {
     const session = await requireSessionWithPermission(request, reply, 'maintenance:backup_restore', prisma);
     if (!session) return;
 

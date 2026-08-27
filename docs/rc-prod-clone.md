@@ -36,7 +36,7 @@ API che userebbe un admin dalla dashboard, nessun accesso privilegiato in più:
 3. `maintenance.backup.prepareExport` con una passphrase generata a caso dallo
    script (mai stampata, mai riusata) → scarica il pacchetto `.lukebak` dal
    link firmato a scadenza breve
-4. Login su RC, upload del pacchetto su `/maintenance/backup/import`
+4. Login su RC, upload del pacchetto su `/upload/backup-import`
 5. `checkRestoreCompatibility` sullo schema:
    - **OLDER** → `runMigrationBridge`: applica le migration pendenti di questa
      release in un database temporaneo disposable, **senza toccare il database

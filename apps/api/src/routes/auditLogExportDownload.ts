@@ -78,7 +78,7 @@ export async function registerAuditLogExportDownloadRoute(
   prisma: PrismaClient
 ): Promise<void> {
   fastify.get<{ Querystring: { token?: string } }>(
-    '/maintenance/audit-log/export',
+    '/download/audit-log',
     async (request, reply) => {
       let payload;
       try {

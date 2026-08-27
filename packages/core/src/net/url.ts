@@ -168,6 +168,13 @@ export function buildTempSpecsheetImageUploadUrl(
   return buildApiUrl('/upload/specsheet-image/temp', options);
 }
 
+// Raw (non-tRPC) endpoints the *browser* calls directly must live under `/download/` (streamed
+// GET) or `/upload/` (streamed POST). In production the browser can only reach Next.js (apps/api
+// publishes no port — see docker-compose.prod.yml), so such a path is reachable only if
+// `apps/web/next.config.js` rewrites it; those two prefixes are the ones wired there wholesale.
+// A path outside them resolves to a Next.js page route instead: no error, just Next's own 404
+// HTML delivered under the requested filename — exactly how backup downloads shipped 24KB of 404
+// page in place of the backup. Enforced by `apps/api/test/rawRouteProxy.spec.ts`.
 /**
  * Builds the download URL for a passphrase-protected, instance-portable backup export package.
  *
@@ -179,14 +186,14 @@ export function buildBackupExportDownloadUrl(
   token: string,
   options: UrlOptions = {}
 ): string {
-  return buildApiUrl(`/maintenance/backup/${id}/export?token=${encodeURIComponent(token)}`, options);
+  return buildApiUrl(`/download/backup/${id}/export?token=${encodeURIComponent(token)}`, options);
 }
 
 /**
  * Builds the upload URL for importing a passphrase-protected backup export package.
  */
 export function buildBackupImportUrl(options: UrlOptions = {}): string {
-  return buildApiUrl('/maintenance/backup/import', options);
+  return buildApiUrl('/upload/backup-import', options);
 }
 
 /**
@@ -195,7 +202,7 @@ export function buildBackupImportUrl(options: UrlOptions = {}): string {
  * @param token - Signed export token minted by `auditLog.getExportLink`, encoding the applied filters
  */
 export function buildAuditLogExportUrl(token: string, options: UrlOptions = {}): string {
-  return buildApiUrl(`/maintenance/audit-log/export?token=${encodeURIComponent(token)}`, options);
+  return buildApiUrl(`/download/audit-log?token=${encodeURIComponent(token)}`, options);
 }
 
 /**

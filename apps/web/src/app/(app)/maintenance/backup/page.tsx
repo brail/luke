@@ -1,10 +1,10 @@
 'use client';
 
-import { Download, PackageOpen, RotateCcw, Trash2, Upload } from 'lucide-react';
+import { PackageOpen, RotateCcw, Trash2, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-import { BACKUP_RESTORE_CONFIRM_PHRASE, buildApiUrl, buildBackupExportDownloadUrl, type BackupRecord } from '@luke/core';
+import { BACKUP_RESTORE_CONFIRM_PHRASE, buildBackupExportDownloadUrl, type BackupRecord } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { CreateActionButton } from '../../../../components/CreateActionButton';
@@ -178,18 +178,6 @@ export default function MaintenanceBackupPage() {
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
-  const getDownloadLinkMutation = trpc.maintenance.backup.getDownloadLink.useMutation();
-
-  const handleDownload = async (backup: BackupRecord) => {
-    try {
-      const { token, filename } = await getDownloadLinkMutation.mutateAsync({ id: backup.id });
-      const url = buildApiUrl(`/maintenance/backup/${backup.id}/download?token=${encodeURIComponent(token)}`);
-      triggerUrlDownload(url, filename || `${backup.id}.enc`);
-    } catch {
-      toast.error('Download del backup fallito');
-    }
-  };
-
   const prepareExportMutation = trpc.maintenance.backup.prepareExport.useMutation({
     onSuccess: ({ token, filename }) => {
       if (!exportTarget) return;
@@ -286,15 +274,6 @@ export default function MaintenanceBackupPage() {
                   </TableCell>
                   <TableCell>{formatSize(backup.sizeBytesEncrypted)}</TableCell>
                   <TableCell className="text-right space-x-1">
-                    <PermissionButton
-                      hasPermission={backup.status === 'COMPLETED'}
-                      tooltip="Il backup non è ancora completato"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => void handleDownload(backup)}
-                    >
-                      <Download className="h-4 w-4" />
-                    </PermissionButton>
                     <PermissionButton
                       hasPermission={canExport && backup.status === 'COMPLETED'}
                       tooltip={

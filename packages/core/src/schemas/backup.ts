@@ -89,7 +89,7 @@ export const BackupExportInputSchema = z.object({
   passphrase: BackupExportPassphraseSchema,
 });
 
-/** Multipart text fields accompanying an uploaded export package on `/maintenance/backup/import`. */
+/** Multipart text fields accompanying an uploaded export package on `/upload/backup-import`. */
 export const BackupImportFieldsSchema = z.object({
   passphrase: BackupExportPassphraseSchema,
   label: BackupLabelSchema,

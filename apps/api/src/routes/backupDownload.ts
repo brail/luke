@@ -11,6 +11,9 @@
  * change is to let the frontend download natively instead of buffering the whole blob into a JS
  * `Blob` first. The permission check (`maintenance:read`) already happened when the token was
  * minted; possession of a valid, narrowly-scoped, 5-minute token is the authorization here.
+ *
+ * Currently has no UI caller — see the note on `getDownloadLink` for why, and for the open
+ * question of whether both should be deleted.
  */
 
 import { getStorageProvider } from '../storage';
@@ -25,7 +28,7 @@ export async function registerBackupDownloadRoute(
   prisma: PrismaClient
 ): Promise<void> {
   fastify.get<{ Params: { id: string }; Querystring: { token?: string } }>(
-    '/maintenance/backup/:id/download',
+    '/download/backup/:id',
     async (request, reply) => {
       let payload;
       try {

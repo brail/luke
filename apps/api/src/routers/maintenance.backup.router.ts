@@ -110,9 +110,15 @@ export const backupRouter = router({
     }),
 
   /**
-   * Mints a short-lived (5 min) signed download token for a completed backup's encrypted blob.
-   * The frontend appends it to `/maintenance/backup/:id/download?token=...` and downloads via a
-   * native `<a href>` — no Bearer header, no buffering the whole file into a JS `Blob` first.
+   * Mints a short-lived (5 min) signed download token for a completed backup's encrypted blob,
+   * to be appended to `/download/backup/:id?token=...`.
+   *
+   * No UI calls this: the Download button was removed once it became clear the raw `.enc` blob
+   * is not usable on its own. Its DEK is wrapped with *this* server's master key, and the iv and
+   * auth tag live in `BackupRecord`/the `.meta.json` sidecar, none of which travel with the
+   * downloaded file. `prepareExport` (`.lukebak`) is the portable artifact. This is kept only for
+   * fetching the raw blob by hand alongside its sidecar; if that need never materializes, this
+   * procedure and its route are dead weight and should go.
    *
    * @auth {maintenance:read}
    * @input `{ id: string }` — the backup record id.
@@ -135,7 +141,7 @@ export const backupRouter = router({
    * Prepares a passphrase-protected, instance-portable export package (`.lukebak`) for a
    * completed backup: unwraps its DEK with the server master key, re-wraps it with a key derived
    * from the given passphrase (Argon2id), and mints a signed token embedding that re-wrapped
-   * envelope so `/maintenance/backup/:id/export` can stream the package without hitting the DB
+   * envelope so `/download/backup/:id/export` can stream the package without hitting the DB
    * again. The passphrase itself is never persisted or included in the token.
    *
    * @auth {maintenance:backup_export}
