@@ -45,6 +45,7 @@ import { registerPortafoglioSyncScheduler } from './lib/portafoglioSyncScheduler
 import { rateLimitStore } from './lib/ratelimit';
 import { registerRetentionScheduler } from './lib/retentionScheduler';
 import { createContext } from './lib/trpc';
+import { trustProxy } from './lib/trustProxy';
 import {
   pinoTraceMiddleware,
   // pinoSerializers,
@@ -85,20 +86,7 @@ const fastify = Fastify({
   requestTimeout: 360_000, // 6 min — aligned with Next.js proxyTimeout and the NAV pool (300 s + margin)
   connectionTimeout: 0,    // disabled — requestTimeout handles the total limit
   routerOptions: { maxParamLength: 5000 }, // tRPC batch requests contain multiple procedure names in the URL param
-  // apps/api is never directly reachable from the Internet (no port published
-  // in docker-compose.prod.yml/rc.yml): the only entry point is the apps/web container,
-  // either via next.config.js rewrites or via NextAuth's server-to-server fetch
-  // (apps/web/src/auth.ts). Trusting X-Forwarded-For here is therefore safe and necessary
-  // so that req.ip resolves to the real client IP instead of the web container's internal
-  // address (root cause of the shared rate-limit bucket on /trpc/auth.login).
-  // `1` (not `true`): trust exactly one hop (the apps/web container, the only possible
-  // sender). `true` trusts an unlimited chain and resolves req.ip to the leftmost
-  // entry — i.e. the value a client can self-declare — making every
-  // keyBy:'ip' rate-limit bucket bypassable by sending a fake X-Forwarded-For (CRITICAL,
-  // audit 2026-08-07). With `1`, apps/api trusts only the direct socket (always apps/web)
-  // and reads the entry immediately before it — the one NPM itself appended via
-  // $proxy_add_x_forwarded_for, never the one self-declared by the client.
-  trustProxy: 1,
+  trustProxy, // see lib/trustProxy.ts — security-critical, do not inline a literal here
 });
 
 // Register global handler/onError for logging and a safe response

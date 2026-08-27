@@ -3,9 +3,11 @@
  * Verifies rate-limiting end-to-end with real tRPC calls
  */
 
+import Fastify from 'fastify';
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { rateLimitStore } from '../src/lib/ratelimit';
+import { trustProxy } from '../src/lib/trustProxy';
 
 import {
   setupTestDb,
@@ -360,6 +362,74 @@ describe('Rate-Limit Integration', () => {
       delete process.env.LUKE_RATE_LIMIT_PASSWORDCHANGE_MAX;
       delete process.env.LUKE_RATE_LIMIT_PASSWORDCHANGE_WINDOW;
       delete process.env.LUKE_RATE_LIMIT_PASSWORDCHANGE_KEY_BY;
+    });
+  });
+
+  // Every `keyBy: 'ip'` bucket above only works if fastify resolves request.ip
+  // correctly from X-Forwarded-For. That resolution is invisible to the tests
+  // above: createCallerWithIP stubs req.ip directly on a fake context, never
+  // exercising fastify's real HTTP layer or trustProxy option. This is the one
+  // spot that does — it proves the resolution itself, at the HTTP level, using
+  // the exact trustProxy value server.ts wires up (see lib/trustProxy.ts).
+  describe('trustProxy hop resolution (fastify HTTP layer)', () => {
+    async function buildTrustProxyTestServer() {
+      const fastify = Fastify({ trustProxy });
+      fastify.get('/whoami', async (request) => ({ ip: request.ip }));
+      await fastify.ready();
+      return fastify;
+    }
+
+    it('trusts the one hop apps/web sits behind: X-Forwarded-For resolves to the real client IP', async () => {
+      const fastify = await buildTrustProxyTestServer();
+      try {
+        // remoteAddress simulates the apps/web container's socket connection
+        // (the only possible direct peer per docker-compose network topology).
+        // A single X-Forwarded-For entry simulates NPM's own append.
+        const response = await fastify.inject({
+          method: 'GET',
+          url: '/whoami',
+          remoteAddress: '10.0.0.5',
+          headers: { 'x-forwarded-for': '203.0.113.7' },
+        });
+        expect(response.json().ip).toBe('203.0.113.7');
+      } finally {
+        await fastify.close();
+      }
+    });
+
+    it('does not let a client-supplied hop spoof req.ip past the trusted one (anti-spoofing proof)', async () => {
+      const fastify = await buildTrustProxyTestServer();
+      try {
+        // An attacker sending their own X-Forwarded-For header ends up to the
+        // LEFT of whatever NPM appends (NPM appends, never overwrites). If
+        // trustProxy trusted more than the one real hop, this attacker-chosen
+        // value would leak through as req.ip, defeating every keyBy:'ip'
+        // rate-limit bucket by letting the attacker pick their own bucket key.
+        const response = await fastify.inject({
+          method: 'GET',
+          url: '/whoami',
+          remoteAddress: '10.0.0.5',
+          headers: { 'x-forwarded-for': '198.51.100.9, 203.0.113.7' },
+        });
+        expect(response.json().ip).toBe('203.0.113.7');
+        expect(response.json().ip).not.toBe('198.51.100.9');
+      } finally {
+        await fastify.close();
+      }
+    });
+
+    it('falls back to the raw socket address when there is no X-Forwarded-For at all', async () => {
+      const fastify = await buildTrustProxyTestServer();
+      try {
+        const response = await fastify.inject({
+          method: 'GET',
+          url: '/whoami',
+          remoteAddress: '203.0.113.9',
+        });
+        expect(response.json().ip).toBe('203.0.113.9');
+      } finally {
+        await fastify.close();
+      }
     });
   });
 });
