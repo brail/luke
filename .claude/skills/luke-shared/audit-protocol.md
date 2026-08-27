@@ -1,7 +1,8 @@
 # Luke Audit Protocol — shared rules
 
 Protocol shared by all `luke-*` skills: `/luke-audit`, `/luke-bugs`,
-`/luke-security`, `/luke-full`, `/luke-test`, `/luke-fix`, `/luke-docs`.
+`/luke-security`, `/luke-full`, `/luke-test`, `/luke-fix`, `/luke-docs`,
+`/luke-deps`.
 Every skill reads it before starting; the specific checks stay in each
 skill's own file.
 
@@ -16,15 +17,15 @@ a different version of it: four said "apply it" with no qualification,
 `/luke-test` cited only §1, `/luke-fix` and `/luke-docs` didn't point here at
 all — despite writing files.
 
-| §   | Rule                                | Applies to                                                |
-| --- | ------------------------------------ | ---------------------------------------------------------- |
-| 1   | Diff scoping                         | all                                                        |
-| 2   | Baseline                             | audit, bugs, security, full                                |
-| 3   | Escalation to a deterministic rule   | audit, bugs, security, full                                |
-| 4   | `lessons.md` as a check input        | audit, bugs, security, full                                |
-| 5   | Score honesty                        | audit, bugs, security, full                                |
-| 6   | No fan-out                           | whoever declares `agent: Explore`                          |
-| 7   | Concurrent sessions                  | all — §7.2 only for those who write files (test, fix, docs) |
+| §   | Rule                               | Applies to                                                                                             |
+| --- | ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 1   | Diff scoping                       | all except deps — its input is the registry, not the diff; a path argument there is a workspace filter |
+| 2   | Baseline                           | audit, bugs, security, full                                                                            |
+| 3   | Escalation to a deterministic rule | audit, bugs, security, full, deps                                                                      |
+| 4   | `lessons.md` as a check input      | audit, bugs, security, full, deps                                                                      |
+| 5   | Score honesty                      | audit, bugs, security, full                                                                            |
+| 6   | No fan-out                         | whoever declares `agent: Explore`                                                                      |
+| 7   | Concurrent sessions                | all — §7.2 only for those who write files (test, fix, docs, deps)                                      |
 
 ---
 
@@ -35,13 +36,13 @@ and gets run rarely. The goal is the opposite: low cost, used every session.
 
 Interpret `$ARGUMENTS` as follows:
 
-| Form                    | Behavior                                                                  |
-| ----------------------- | -------------------------------------------------------------------------- |
-| _(empty)_                | **Default**: files changed relative to the merge-base with the development branch |
-| `--since <ref>`          | Files changed relative to `<ref>`                                         |
-| `--full`                 | Whole monorepo (explicit)                                                 |
-| `<path>`                 | Just that path, recursive                                                 |
-| `<path> --since <ref>`   | Intersection of the two                                                   |
+| Form                   | Behavior                                                                          |
+| ---------------------- | --------------------------------------------------------------------------------- |
+| _(empty)_              | **Default**: files changed relative to the merge-base with the development branch |
+| `--since <ref>`        | Files changed relative to `<ref>`                                                 |
+| `--full`               | Whole monorepo (explicit)                                                         |
+| `<path>`               | Just that path, recursive                                                         |
+| `<path> --since <ref>` | Intersection of the two                                                           |
 
 To derive the default set:
 
