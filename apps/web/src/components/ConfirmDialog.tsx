@@ -55,6 +55,14 @@ export function ConfirmDialog({
     onOpenChange(false);
   };
 
+  // Esc and outside-click close through onOpenChange, a path the Cancel button does not take:
+  // without this guard the dialog is dismissable mid-mutation while Cancel sits disabled, and the
+  // user loses the pending state without knowing whether the action went through.
+  const handleOpenChange = (next: boolean) => {
+    if (!next && isLoading) return;
+    onOpenChange(next);
+  };
+
   // Icone per diversi tipi di azione
   const getIcon = () => {
     switch (actionType) {
@@ -86,7 +94,7 @@ export function ConfirmDialog({
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
+    <AlertDialog open={open} onOpenChange={handleOpenChange}>
       <AlertDialogContent className="sm:max-w-[425px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
         <AlertDialogHeader>
           <div className="flex items-center gap-3">

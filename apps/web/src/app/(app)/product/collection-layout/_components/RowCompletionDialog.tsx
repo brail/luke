@@ -44,12 +44,18 @@ export function RowCompletionDialog({ open, mode, missingPhases, onClose, onConf
     onClose();
   };
 
+  // Esc and outside-click close through onOpenChange, a path the Cancel button does not take:
+  // without this guard the dialog is dismissable mid-mutation while Cancel sits disabled.
+  const handleOpenChange = (next: boolean) => {
+    if (!next && !isPending) close();
+  };
+
   const isForcing = mode === 'complete' && missingPhases.length > 0;
   const title = mode === 'complete' ? 'Concludi riga' : 'Riapri riga';
   const confirmLabel = isForcing ? 'Forza conclusione' : title;
 
   return (
-    <Dialog open={open} onOpenChange={v => { if (!v) close(); }}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[440px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
