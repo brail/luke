@@ -25,6 +25,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runPgBinary } from '../src/lib/backup/pgConnection';
 import { mergeStashedAuditLog, restoreDatabaseFromFile, stashAuditLog } from '../src/lib/backup/restorePipeline';
 
+import { ensureTestSchema, getTestPrismaClient } from './helpers/database';
+
 import type { PgConnectionParts } from '../src/lib/backup/pgConnection';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
@@ -91,6 +93,12 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
   let backupPath: string;
 
   beforeAll(async () => {
+    // The scratch database is seeded from TEST_DATABASE_URL's schema, so that schema has to be
+    // there. It is not a given: `pnpm test:db:down` runs `down -v`, which drops the volume, and a
+    // spec run on its own right afterwards would otherwise dump an empty database and fail later
+    // with a puzzling "table public.users does not exist".
+    await ensureTestSchema(getTestPrismaClient());
+
     const admin = partsFrom(TEST_DATABASE_URL!);
     scratchDb = { ...admin, database: scratchName };
     workDir = await mkdtemp(join(tmpdir(), 'luke-restore-spec-'));
