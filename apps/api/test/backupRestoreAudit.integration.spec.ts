@@ -23,7 +23,13 @@ import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { runPgBinary } from '../src/lib/backup/pgConnection';
-import { mergeStashedAuditLog, restoreDatabaseFromFile, stashAuditLog } from '../src/lib/backup/restorePipeline';
+import {
+  dropAuditStage,
+  mergeStashedAuditLog,
+  restoreDatabaseFromFile,
+  restoreStashedBackupRecords,
+  stashPreservedTables,
+} from '../src/lib/backup/restorePipeline';
 
 import { ensureTestSchema, getTestPrismaClient } from './helpers/database';
 
@@ -167,9 +173,11 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     });
 
     // --- restore ---
-    const stage = await stashAuditLog(prisma);
+    const stage = await stashPreservedTables(prisma);
     await restoreDatabaseFromFile(backupPath, { db: scratchDb });
     const merged = await mergeStashedAuditLog(prisma, stage);
+    await restoreStashedBackupRecords(prisma, stage);
+    await dropAuditStage(prisma, stage);
 
     // I dati applicativi tornano allo snapshot. Questa è la regressione del restore parziale
     // silenzioso: escludendo audit_logs dal TOC, `users` non veniva ripristinata affatto.
@@ -210,12 +218,72 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     expect(await prisma.user.count()).toBe(usersBefore);
   }, 60_000);
 
+  it('conserva l\'inventario dei backup invece di riportarlo indietro', async () => {
+    // Lo scenario che lasciava un backup "In corso…" per sempre e faceva sparire lo snapshot di
+    // sicurezza: il dump fotografa backup_records mentre il backup stesso è RUNNING, e i record
+    // creati dopo il dump (fra cui lo snapshot pre-restore) non ci sono affatto.
+    const dumpedAt = new Date();
+    await prisma.backupRecord.create({
+      data: { id: 'in-corso', filename: '', scope: 'DB', trigger: 'MANUAL', status: 'RUNNING', startedAt: dumpedAt },
+    });
+    const inventoryDump = join(workDir, 'inventario.dump');
+    await runPgBinary('pg_dump', [
+      '--format=custom', '--no-owner', '--no-privileges', '--exclude-schema=_luke_restore_stage*',
+      '--host', scratchDb.host, '--port', scratchDb.port, '--username', scratchDb.user,
+      '--dbname', scratchName, '--file', inventoryDump,
+    ], scratchDb.password);
+
+    // Il mondo va avanti: quel backup finisce, ne nasce lo snapshot di sicurezza, uno vecchio
+    // viene cancellato.
+    await prisma.backupRecord.update({
+      where: { id: 'in-corso' },
+      data: { status: 'COMPLETED', completedAt: new Date(), filename: 'in-corso.enc' },
+    });
+    await prisma.backupRecord.create({
+      data: { id: 'safety', filename: 'safety.enc', scope: 'DB', trigger: 'PRE_RESTORE_SAFETY', status: 'COMPLETED' },
+    });
+
+    const stage = await stashPreservedTables(prisma);
+    await restoreDatabaseFromFile(inventoryDump, { db: scratchDb });
+    await restoreStashedBackupRecords(prisma, stage);
+    await dropAuditStage(prisma, stage);
+
+    // Nessun fantasma: il record non torna RUNNING.
+    expect((await prisma.backupRecord.findUnique({ where: { id: 'in-corso' } }))?.status).toBe('COMPLETED');
+    // E lo snapshot di sicurezza, creato dopo il dump, è ancora raggiungibile dalla UI.
+    expect(await prisma.backupRecord.count({ where: { trigger: 'PRE_RESTORE_SAFETY' } })).toBe(1);
+  }, 90_000);
+
+  it('riporta indietro app_configs, che è perché la manutenzione va riaffermata dopo', async () => {
+    // Il fatto su cui poggia il fix nel router: lo stato della Modalità Manutenzione vive in
+    // app_configs, che il restore sovrascrive con la copia dello snapshot. Attivarla prima del
+    // pg_restore non basta — va riscritta dopo, altrimenti l'istanza si riapre a tutti nel
+    // momento esatto in cui il restore atterra e l'admin non verifica niente.
+    await prisma.appConfig.create({ data: { key: 'test.maintenance.probe', value: 'PRIMA' } });
+    const configDump = join(workDir, 'config.dump');
+    await runPgBinary('pg_dump', [
+      '--format=custom', '--no-owner', '--no-privileges', '--exclude-schema=_luke_restore_stage*',
+      '--host', scratchDb.host, '--port', scratchDb.port, '--username', scratchDb.user,
+      '--dbname', scratchName, '--file', configDump,
+    ], scratchDb.password);
+
+    await prisma.appConfig.update({ where: { key: 'test.maintenance.probe' }, data: { value: 'DOPO' } });
+
+    const stage = await stashPreservedTables(prisma);
+    await restoreDatabaseFromFile(configDump, { db: scratchDb });
+    await restoreStashedBackupRecords(prisma, stage);
+    await dropAuditStage(prisma, stage);
+
+    const probe = await prisma.appConfig.findUnique({ where: { key: 'test.maintenance.probe' } });
+    expect(probe?.value).toBe('PRIMA');
+  }, 90_000);
+
   it('sopravvive a un backup che contiene già uno schema di staging', async () => {
     // La regressione vera: un restore interrotto lascia il suo staging nel database, un backup
     // successivo lo cattura, e restaurando quel backup `pg_restore --clean` sovrascriveva lo
     // staging vivo con la copia dell'archivio — cancellando gli eventi che doveva proteggere
     // prima che il merge li leggesse, e riportando mergedRows: 0.
-    const leftover = await stashAuditLog(prisma);
+    const leftover = await stashPreservedTables(prisma);
     const archiveWithStage = join(workDir, 'con-staging.dump');
     await runPgBinary('pg_dump', [
       '--format=custom', '--no-owner', '--no-privileges',
@@ -228,7 +296,7 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
       data: { id: 'dopo-archivio', action: 'DOPO_ARCHIVIO', targetType: 'Test', result: 'SUCCESS' },
     });
 
-    const stage = await stashAuditLog(prisma);
+    const stage = await stashPreservedTables(prisma);
     expect(stage).not.toBe(leftover); // nome per esecuzione: l'archivio non può contenerlo
     await restoreDatabaseFromFile(archiveWithStage, { db: scratchDb });
     expect(await mergeStashedAuditLog(prisma, stage)).toBe(1);
@@ -237,12 +305,12 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
   }, 90_000);
 
   it('scarta uno staging residuo che non contiene nulla di perduto', async () => {
-    await stashAuditLog(prisma);
+    await stashPreservedTables(prisma);
     const before = await prisma.auditLog.count();
 
     // Secondo stash sopra il primo: ogni riga messa da parte è ancora nella tabella viva, quindi
     // non c'è niente da salvare e il restore non deve incastrarsi.
-    const stage = await stashAuditLog(prisma);
+    const stage = await stashPreservedTables(prisma);
 
     const merged = await mergeStashedAuditLog(prisma, stage);
     expect(merged).toBe(0);
@@ -250,13 +318,13 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
   }, 60_000);
 
   it('rifiuta se lo staging è l\'unica copia di eventi che la tabella viva non ha più', async () => {
-    const stage = await stashAuditLog(prisma);
+    const stage = await stashPreservedTables(prisma);
     // Simula il caso pericoloso: il restore precedente ha sovrascritto audit_logs e uno degli
     // eventi messi da parte non esiste più nella tabella viva.
     const [survivor] = await prisma.auditLog.findMany({ take: 1, orderBy: { id: 'asc' } });
     await prisma.auditLog.delete({ where: { id: survivor.id } });
 
-    await expect(stashAuditLog(prisma)).rejects.toThrow(/contiene 1 eventi/);
+    await expect(stashPreservedTables(prisma)).rejects.toThrow(/contiene 1 eventi/);
 
     // Lo staging è ancora lì, intatto: rifiutare non deve distruggere ciò che protegge.
     await expect(mergeStashedAuditLog(prisma, stage)).resolves.toBe(1);

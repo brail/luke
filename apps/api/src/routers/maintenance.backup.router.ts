@@ -467,8 +467,8 @@ export const backupRouter = router({
       // touching the DB — a restore is already a deliberate action, so activation is immediate,
       // not scheduled. Stays ACTIVE even after the restore completes: an admin must end it
       // explicitly after verifying that everything works.
-      await writeMaintenanceState(ctx.prisma, {
-        status: 'ACTIVE',
+      const maintenanceState = {
+        status: 'ACTIVE' as const,
         scheduledAt: null,
         activatedAt: new Date().toISOString(),
         message: 'Ripristino database in corso',
@@ -477,7 +477,8 @@ export const backupRouter = router({
         warningsSent: [],
         activatedByUserId: ctx.session.user.id,
         notifyByEmail: false,
-      });
+      };
+      await writeMaintenanceState(ctx.prisma, maintenanceState);
       await forceLogoutNonAdmins(ctx.prisma);
       await logAudit(ctx, {
         action: 'MAINTENANCE_MODE_ACTIVATED',
@@ -507,6 +508,12 @@ export const backupRouter = router({
       } finally {
         await discardStagedRestore(staged);
       }
+
+      // The maintenance state lives in `app_configs`, which the restore just overwrote with the
+      // snapshot's copy — where it was INACTIVE. Without re-asserting it, the guarantee above is
+      // silently false: the instance reopens to every user the moment the restore lands, and the
+      // admin never gets the chance to verify anything first.
+      await writeMaintenanceState(ctx.prisma, maintenanceState);
 
       await logAudit(ctx, {
         action: 'BACKUP_RESTORE',

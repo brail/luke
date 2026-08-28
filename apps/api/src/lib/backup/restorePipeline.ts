@@ -14,7 +14,7 @@
  *
  * Preserving the current audit trail is a stash-then-merge around the restore, not an exclusion
  * from it — `pg_restore` cannot skip a table, and skipping one via its TOC breaks the restore of
- * everything referencing it. See `stashAuditLog`.
+ * everything referencing it. See `stashPreservedTables`.
  *
  * Tar entry names are never trusted as filesystem paths (classic tar-extraction path-traversal
  * risk): the `db.dump` entry always stages to a fixed constant path, and `files/*` entries stage
@@ -66,7 +66,7 @@ export interface RestoreDatabaseFromFileOptions {
 /**
  * Runs `pg_restore` from a local dump file into `options.db` (default: this instance's own
  * database). Restores the dump whole — selecting what to keep is not expressible here (see
- * `stashAuditLog`), so this function has exactly one job.
+ * `stashPreservedTables`), so this function has exactly one job.
  *
  * Deliberately strict, in two ways. Any non-zero exit is a failure (pg_restore can exit 1 even
  * for warnings, e.g. skipped GRANT/OWNER statements under --no-owner). And `--exit-on-error`
@@ -139,7 +139,9 @@ export async function assertPgToolchainCompatible(prisma: PrismaClient): Promise
 }
 
 /**
- * Copies the current audit trail aside so a restore can put it back afterwards.
+ * Copies the tables a restore must not roll back into a staging schema: the audit trail and the
+ * backup inventory. What happens to each afterwards differs — see `mergeStashedAuditLog` and
+ * `restoreStashedBackupRecords` — but both have to be taken before `pg_restore` runs.
  *
  * Excluding `audit_logs` from the restore itself is not possible: `pg_restore` has no
  * `--exclude-table` (that is a `pg_dump` flag), and filtering its TOC with `-L` instead leaves
@@ -159,7 +161,7 @@ export async function assertPgToolchainCompatible(prisma: PrismaClient): Promise
  * did wipe the trail and this copy is the only one left; that refuses, because clearing it to
  * make room would destroy exactly what it exists to protect.
  */
-export async function stashAuditLog(prisma: PrismaClient): Promise<string> {
+export async function stashPreservedTables(prisma: PrismaClient): Promise<string> {
   // Any schema from an earlier run: either left by a restore that died between stash and merge,
   // or resurrected by a restore whose archive happened to contain one.
   const leftovers = await prisma.$queryRaw<{ schema_name: string }[]>(Prisma.sql`
@@ -198,6 +200,18 @@ export async function stashAuditLog(prisma: PrismaClient): Promise<string> {
   await prisma.$executeRaw(
     Prisma.sql`CREATE TABLE ${ident}.audit_logs AS SELECT * FROM public.audit_logs`
   );
+  // The enum columns are copied as text on purpose. `CREATE TABLE AS SELECT` would otherwise
+  // carry the `public."Backup*"` enum types into the staging table, and `pg_restore --clean`
+  // cannot then drop those types — it emits a plain `DROP TYPE`, which fails against the staging
+  // column still using it, and with `--exit-on-error` that aborts the whole restore.
+  await prisma.$executeRaw(Prisma.sql`
+    CREATE TABLE ${ident}.backup_records AS
+    SELECT id, filename, scope::text AS scope, trigger::text AS trigger, status::text AS status,
+           "sizeBytesEncrypted", "checksumSha256", "ivHex", "authTagHex", "wrappedDekHex",
+           algorithm, "appVersion", "schemaMigrationName", "errorMessage", "createdById",
+           "startedAt", "completedAt", "expiresAt", "createdAt", "fileCount", label, "sourceBackupId"
+    FROM public.backup_records
+  `);
   return schema;
 }
 
@@ -228,8 +242,63 @@ export async function mergeStashedAuditLog(prisma: PrismaClient, schema: string)
     LEFT JOIN public.users u ON u.id = s."actorId"
     ON CONFLICT (id) DO NOTHING
   `);
-  await prisma.$executeRaw(Prisma.sql`DROP SCHEMA ${ident} CASCADE`);
   return merged;
+}
+
+/**
+ * Puts the live backup inventory back after a restore, replacing whatever the snapshot contained.
+ *
+ * Replacement, not the union used for the audit trail, because `backup_records` describes what is
+ * in the storage bucket *now* and the restore does not touch that bucket. A snapshot's copy is
+ * stale in both directions: it resurrects records for backups deleted since (pointing at blobs
+ * that are gone) and erases records for backups taken since — including the mandatory
+ * pre-restore safety snapshot, which is created after the dump was written and would otherwise
+ * disappear at the very moment it becomes the way back.
+ *
+ * It also clears the phantom the snapshot leaves behind. A backup's own record is `RUNNING` while
+ * `pg_dump` reads the table, so every backup contains itself mid-flight; restoring that copy
+ * brings back a job that will never finish, and the UI polls it forever.
+ *
+ * `sourceBackupId` is filled in a second pass: it points at another row of this same table, and a
+ * single INSERT would have to emit parent before child. `createdById` gets the same NULL
+ * treatment as the audit trail's `actorId`, for the same reason.
+ */
+export async function restoreStashedBackupRecords(prisma: PrismaClient, schema: string): Promise<number> {
+  const ident = auditStageIdent(schema);
+
+  await prisma.$executeRaw(Prisma.sql`DELETE FROM public.backup_records`);
+  const restored = await prisma.$executeRaw(Prisma.sql`
+    INSERT INTO public.backup_records
+      (id, filename, scope, trigger, status, "sizeBytesEncrypted", "checksumSha256", "ivHex",
+       "authTagHex", "wrappedDekHex", algorithm, "appVersion", "schemaMigrationName",
+       "errorMessage", "createdById", "startedAt", "completedAt", "expiresAt", "createdAt",
+       "fileCount", label, "sourceBackupId")
+    SELECT s.id, s.filename, s.scope::"BackupScope", s.trigger::"BackupTrigger",
+           s.status::"BackupStatus", s."sizeBytesEncrypted", s."checksumSha256",
+           s."ivHex", s."authTagHex", s."wrappedDekHex", s.algorithm, s."appVersion",
+           s."schemaMigrationName", s."errorMessage",
+           CASE WHEN u.id IS NULL THEN NULL ELSE s."createdById" END,
+           s."startedAt", s."completedAt", s."expiresAt", s."createdAt",
+           s."fileCount", s.label, NULL
+    FROM ${ident}.backup_records s
+    LEFT JOIN public.users u ON u.id = s."createdById"
+  `);
+
+  await prisma.$executeRaw(Prisma.sql`
+    UPDATE public.backup_records r
+    SET "sourceBackupId" = s."sourceBackupId"
+    FROM ${ident}.backup_records s
+    WHERE s.id = r.id
+      AND s."sourceBackupId" IS NOT NULL
+      AND EXISTS (SELECT 1 FROM public.backup_records p WHERE p.id = s."sourceBackupId")
+  `);
+
+  return restored;
+}
+
+/** Removes a staging schema once everything preserved in it has been put back. */
+export async function dropAuditStage(prisma: PrismaClient, schema: string): Promise<void> {
+  await prisma.$executeRaw(Prisma.sql`DROP SCHEMA ${auditStageIdent(schema)} CASCADE`);
 }
 
 /**
@@ -386,7 +455,7 @@ export interface ApplyStagedRestoreParams {
   prisma: PrismaClient;
   staged: StagedRestore;
   /** If true, the current audit trail is stashed before the restore and merged back after, so no
-   *  event is lost in either direction. See `stashAuditLog`. */
+   *  event is lost in either direction. See `stashPreservedTables`. */
   preserveAuditLog: boolean;
   /** Whether to also replay `files/*` entries back into the storage provider. */
   restoreFiles: boolean;
@@ -402,22 +471,28 @@ export interface ApplyStagedRestoreParams {
 export async function applyStagedRestore(params: ApplyStagedRestoreParams): Promise<void> {
   const { prisma, staged, preserveAuditLog, restoreFiles, logger } = params;
 
-  let stageSchema: string | null = null;
-  if (preserveAuditLog) {
-    stageSchema = await stashAuditLog(prisma);
-    const [{ rows }] = await prisma.$queryRaw<{ rows: bigint }[]>(
-      Prisma.sql`SELECT count(*) AS rows FROM ${auditStageIdent(stageSchema)}.audit_logs`
-    );
-    logger.info({ stageSchema, rows: Number(rows) }, 'Restore: registro attività messo da parte');
-  }
+  // Unconditional: the backup inventory is preserved on every restore. `preserveAuditLog` only
+  // decides whether the audit trail is merged back too, or left as the snapshot restored it.
+  const stashSchema = await stashPreservedTables(prisma);
+  const [{ rows }] = await prisma.$queryRaw<{ rows: bigint }[]>(
+    Prisma.sql`SELECT count(*) AS rows FROM ${auditStageIdent(stashSchema)}.audit_logs`
+  );
+  logger.info({ stashSchema, auditRows: Number(rows) }, 'Restore: stato corrente messo da parte');
 
   logger.info('Restore: avvio pg_restore');
   await restoreDatabaseFromFile(staged.dumpPath);
 
-  if (stageSchema) {
-    const mergedRows = await mergeStashedAuditLog(prisma, stageSchema);
+  if (preserveAuditLog) {
+    const mergedRows = await mergeStashedAuditLog(prisma, stashSchema);
     logger.info({ mergedRows }, 'Restore: registro attività reinnestato');
   }
+
+  // Always, independently of `preserveAuditLog`: the backup inventory has to match the storage
+  // bucket, which this restore did not touch. See `restoreStashedBackupRecords`.
+  const backupRecords = await restoreStashedBackupRecords(prisma, stashSchema);
+  logger.info({ backupRecords }, 'Restore: inventario dei backup ripristinato');
+
+  await dropAuditStage(prisma, stashSchema);
 
   if (restoreFiles) {
     logger.info('Restore: database ripristinato, replay file storage');
