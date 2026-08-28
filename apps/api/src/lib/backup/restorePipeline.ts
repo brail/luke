@@ -36,6 +36,7 @@ import { APP_STORAGE_BUCKETS, type IStorageProvider, type StorageBucket } from '
 import { getStorageProvider } from '../../storage';
 
 import { createArchiveExtractor, forEachArchiveEntry } from './archiveFormat';
+import { AUDIT_STAGE_PREFIX, auditStageIdent, newAuditStageSchema } from './auditStage';
 import { createBackupDecipher, unwrapDek } from './crypto';
 import { parseDatabaseUrl, pgBinaryMajorVersion, runPgBinary } from './pgConnection';
 
@@ -137,19 +138,6 @@ export async function assertPgToolchainCompatible(prisma: PrismaClient): Promise
   );
 }
 
-/** Schema holding the copy of the audit trail taken before a restore. */
-const AUDIT_STAGE_SCHEMA = '_luke_restore_stage';
-
-/**
- * The staging schema as a SQL identifier.
- *
- * `Prisma.sql` parameterizes values, and a schema name is not one, so this is the one place that
- * has to bypass it. Safe because `AUDIT_STAGE_SCHEMA` is a compile-time constant in this file:
- * nothing reaches `Prisma.raw` that a caller can influence. Do not extend this pattern to a name
- * derived from input — that is a SQL injection, and the quoting here does not prevent it.
- */
-const AUDIT_STAGE_IDENT = Prisma.raw(`"${AUDIT_STAGE_SCHEMA}"`);
-
 /**
  * Copies the current audit trail aside so a restore can put it back afterwards.
  *
@@ -171,39 +159,46 @@ const AUDIT_STAGE_IDENT = Prisma.raw(`"${AUDIT_STAGE_SCHEMA}"`);
  * did wipe the trail and this copy is the only one left; that refuses, because clearing it to
  * make room would destroy exactly what it exists to protect.
  */
-export async function stashAuditLog(prisma: PrismaClient): Promise<void> {
-  const existing = await prisma.$queryRaw<{ exists: boolean }[]>(Prisma.sql`
-    SELECT EXISTS (
-      SELECT 1 FROM information_schema.schemata WHERE schema_name = ${AUDIT_STAGE_SCHEMA}
-    ) AS "exists"
+export async function stashAuditLog(prisma: PrismaClient): Promise<string> {
+  // Any schema from an earlier run: either left by a restore that died between stash and merge,
+  // or resurrected by a restore whose archive happened to contain one.
+  const leftovers = await prisma.$queryRaw<{ schema_name: string }[]>(Prisma.sql`
+    SELECT schema_name FROM information_schema.schemata
+    WHERE schema_name LIKE ${`${AUDIT_STAGE_PREFIX}%`}
   `);
-  if (existing[0]?.exists) {
+
+  for (const { schema_name } of leftovers) {
+    const ident = auditStageIdent(schema_name);
     const [{ orphaned }] = await prisma.$queryRaw<{ orphaned: bigint }[]>(Prisma.sql`
       SELECT count(*) AS orphaned
-      FROM ${AUDIT_STAGE_IDENT}.audit_logs s
+      FROM ${ident}.audit_logs s
       WHERE NOT EXISTS (SELECT 1 FROM public.audit_logs p WHERE p.id = s.id)
     `);
 
     if (orphaned > 0n) {
       throw new Error(
-        `Lo schema "${AUDIT_STAGE_SCHEMA}" contiene ${orphaned} eventi che il registro attività ` +
-        'corrente non ha: un restore precedente si è interrotto dopo averlo sovrascritto, e quella ' +
-        'copia è l\'unica rimasta. Reinnestala o mettila al sicuro (in alternativa ripristina lo ' +
-        'snapshot di sicurezza pre-restore), poi elimina lo schema a mano prima di riprovare.'
+        `Lo schema "${schema_name}" contiene ${orphaned} eventi che il registro attività corrente ` +
+        'non ha: un restore precedente si è interrotto dopo averlo sovrascritto, e quella copia è ' +
+        'l\'unica rimasta. Reinnestala o mettila al sicuro (in alternativa ripristina lo snapshot ' +
+        'di sicurezza pre-restore), poi elimina lo schema a mano prima di riprovare.'
       );
     }
 
-    // Nothing in the copy that the live table has lost: the earlier restore never reached
-    // audit_logs. Clear it and carry on rather than dead-ending an operator over a redundant copy.
-    await prisma.$executeRaw(Prisma.sql`DROP SCHEMA ${AUDIT_STAGE_IDENT} CASCADE`);
+    // Nothing in the copy that the live table has lost. Clear it rather than dead-ending an
+    // operator over a redundant copy.
+    await prisma.$executeRaw(Prisma.sql`DROP SCHEMA ${ident} CASCADE`);
   }
+
+  const schema = newAuditStageSchema();
+  const ident = auditStageIdent(schema);
 
   // Raw SQL: a staging schema plus CREATE TABLE AS SELECT has no Prisma ORM equivalent.
   // Parameterized `Prisma.sql` throughout, never $executeRawUnsafe.
-  await prisma.$executeRaw(Prisma.sql`CREATE SCHEMA ${AUDIT_STAGE_IDENT}`);
+  await prisma.$executeRaw(Prisma.sql`CREATE SCHEMA ${ident}`);
   await prisma.$executeRaw(
-    Prisma.sql`CREATE TABLE ${AUDIT_STAGE_IDENT}.audit_logs AS SELECT * FROM public.audit_logs`
+    Prisma.sql`CREATE TABLE ${ident}.audit_logs AS SELECT * FROM public.audit_logs`
   );
+  return schema;
 }
 
 /**
@@ -220,7 +215,8 @@ export async function stashAuditLog(prisma: PrismaClient): Promise<void> {
  * `AuditLog.actor`, and the FK would reject the row otherwise. The event survives without its
  * attribution.
  */
-export async function mergeStashedAuditLog(prisma: PrismaClient): Promise<number> {
+export async function mergeStashedAuditLog(prisma: PrismaClient, schema: string): Promise<number> {
+  const ident = auditStageIdent(schema);
   const merged = await prisma.$executeRaw(Prisma.sql`
     INSERT INTO public.audit_logs
       (id, "actorId", action, "targetType", "targetId", result, metadata, "traceId", ip, "createdAt")
@@ -228,11 +224,11 @@ export async function mergeStashedAuditLog(prisma: PrismaClient): Promise<number
            CASE WHEN u.id IS NULL THEN NULL ELSE s."actorId" END,
            s.action, s."targetType", s."targetId", s.result,
            s.metadata, s."traceId", s.ip, s."createdAt"
-    FROM ${AUDIT_STAGE_IDENT}.audit_logs s
+    FROM ${ident}.audit_logs s
     LEFT JOIN public.users u ON u.id = s."actorId"
     ON CONFLICT (id) DO NOTHING
   `);
-  await prisma.$executeRaw(Prisma.sql`DROP SCHEMA ${AUDIT_STAGE_IDENT} CASCADE`);
+  await prisma.$executeRaw(Prisma.sql`DROP SCHEMA ${ident} CASCADE`);
   return merged;
 }
 
@@ -406,16 +402,20 @@ export interface ApplyStagedRestoreParams {
 export async function applyStagedRestore(params: ApplyStagedRestoreParams): Promise<void> {
   const { prisma, staged, preserveAuditLog, restoreFiles, logger } = params;
 
+  let stageSchema: string | null = null;
   if (preserveAuditLog) {
-    await stashAuditLog(prisma);
-    logger.info('Restore: registro attività messo da parte');
+    stageSchema = await stashAuditLog(prisma);
+    const [{ rows }] = await prisma.$queryRaw<{ rows: bigint }[]>(
+      Prisma.sql`SELECT count(*) AS rows FROM ${auditStageIdent(stageSchema)}.audit_logs`
+    );
+    logger.info({ stageSchema, rows: Number(rows) }, 'Restore: registro attività messo da parte');
   }
 
   logger.info('Restore: avvio pg_restore');
   await restoreDatabaseFromFile(staged.dumpPath);
 
-  if (preserveAuditLog) {
-    const mergedRows = await mergeStashedAuditLog(prisma);
+  if (stageSchema) {
+    const mergedRows = await mergeStashedAuditLog(prisma, stageSchema);
     logger.info({ mergedRows }, 'Restore: registro attività reinnestato');
   }
 

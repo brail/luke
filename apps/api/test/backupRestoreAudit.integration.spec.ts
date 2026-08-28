@@ -167,9 +167,9 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     });
 
     // --- restore ---
-    await stashAuditLog(prisma);
+    const stage = await stashAuditLog(prisma);
     await restoreDatabaseFromFile(backupPath, { db: scratchDb });
-    const merged = await mergeStashedAuditLog(prisma);
+    const merged = await mergeStashedAuditLog(prisma, stage);
 
     // I dati applicativi tornano allo snapshot. Questa è la regressione del restore parziale
     // silenzioso: escludendo audit_logs dal TOC, `users` non veniva ripristinata affatto.
@@ -186,10 +186,10 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     expect(audit.find(a => a.id === 'a2')?.actorId).toBe('u1');
     expect(audit.find(a => a.id === 'a3')?.actorId).toBeNull();
 
-    const stage = await prisma.$queryRaw<{ exists: boolean }[]>`
-      SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = '_luke_restore_stage') AS "exists"
+    const leftovers = await prisma.$queryRaw<{ n: bigint }[]>`
+      SELECT count(*) AS n FROM information_schema.schemata WHERE schema_name LIKE '_luke_restore_stage%'
     `;
-    expect(stage[0].exists).toBe(false);
+    expect(Number(leftovers[0].n)).toBe(0);
   }, 120_000);
 
   it('rifiuta un archivio che pg_restore non sa leggere, senza toccare il database', async () => {
@@ -210,21 +210,47 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     expect(await prisma.user.count()).toBe(usersBefore);
   }, 60_000);
 
+  it('sopravvive a un backup che contiene già uno schema di staging', async () => {
+    // La regressione vera: un restore interrotto lascia il suo staging nel database, un backup
+    // successivo lo cattura, e restaurando quel backup `pg_restore --clean` sovrascriveva lo
+    // staging vivo con la copia dell'archivio — cancellando gli eventi che doveva proteggere
+    // prima che il merge li leggesse, e riportando mergedRows: 0.
+    const leftover = await stashAuditLog(prisma);
+    const archiveWithStage = join(workDir, 'con-staging.dump');
+    await runPgBinary('pg_dump', [
+      '--format=custom', '--no-owner', '--no-privileges',
+      '--host', scratchDb.host, '--port', scratchDb.port, '--username', scratchDb.user,
+      '--dbname', scratchName, '--file', archiveWithStage,
+    ], scratchDb.password);
+    expect(leftover).toMatch(/^_luke_restore_stage_/);
+
+    await prisma.auditLog.create({
+      data: { id: 'dopo-archivio', action: 'DOPO_ARCHIVIO', targetType: 'Test', result: 'SUCCESS' },
+    });
+
+    const stage = await stashAuditLog(prisma);
+    expect(stage).not.toBe(leftover); // nome per esecuzione: l'archivio non può contenerlo
+    await restoreDatabaseFromFile(archiveWithStage, { db: scratchDb });
+    expect(await mergeStashedAuditLog(prisma, stage)).toBe(1);
+
+    expect(await prisma.auditLog.count({ where: { id: 'dopo-archivio' } })).toBe(1);
+  }, 90_000);
+
   it('scarta uno staging residuo che non contiene nulla di perduto', async () => {
     await stashAuditLog(prisma);
     const before = await prisma.auditLog.count();
 
     // Secondo stash sopra il primo: ogni riga messa da parte è ancora nella tabella viva, quindi
     // non c'è niente da salvare e il restore non deve incastrarsi.
-    await expect(stashAuditLog(prisma)).resolves.toBeUndefined();
+    const stage = await stashAuditLog(prisma);
 
-    const merged = await mergeStashedAuditLog(prisma);
+    const merged = await mergeStashedAuditLog(prisma, stage);
     expect(merged).toBe(0);
     expect(await prisma.auditLog.count()).toBe(before);
   }, 60_000);
 
   it('rifiuta se lo staging è l\'unica copia di eventi che la tabella viva non ha più', async () => {
-    await stashAuditLog(prisma);
+    const stage = await stashAuditLog(prisma);
     // Simula il caso pericoloso: il restore precedente ha sovrascritto audit_logs e uno degli
     // eventi messi da parte non esiste più nella tabella viva.
     const [survivor] = await prisma.auditLog.findMany({ take: 1, orderBy: { id: 'asc' } });
@@ -233,6 +259,6 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     await expect(stashAuditLog(prisma)).rejects.toThrow(/contiene 1 eventi/);
 
     // Lo staging è ancora lì, intatto: rifiutare non deve distruggere ciò che protegge.
-    await expect(mergeStashedAuditLog(prisma)).resolves.toBe(1);
+    await expect(mergeStashedAuditLog(prisma, stage)).resolves.toBe(1);
   }, 60_000);
 });

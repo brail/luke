@@ -21,6 +21,7 @@ import { getStorageProvider } from '../../storage';
 import { getBackupRetentionDays } from '../configManager';
 
 import { addFileEntry, addStreamEntry, createArchivePacker } from './archiveFormat';
+import { AUDIT_STAGE_EXCLUDE_ARG } from './auditStage';
 import { createBackupCipher, generateDek, wrapDek } from './crypto';
 import { parseDatabaseUrl, runPgBinary } from './pgConnection';
 
@@ -81,6 +82,8 @@ async function dumpDatabaseToFile(destPath: string, db: PgConnectionParts = pars
     '--format=custom',
     '--no-owner',
     '--no-privileges',
+    // Keep audit staging schemas out of every backup — see auditStage.ts.
+    AUDIT_STAGE_EXCLUDE_ARG,
     '--host', db.host,
     '--port', db.port,
     '--username', db.user,
