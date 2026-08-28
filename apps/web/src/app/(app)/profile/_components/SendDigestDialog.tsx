@@ -1,7 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useEffect } from 'react';
+import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
+import { z } from 'zod';
 
 import { Button } from '../../../../components/ui/button';
 import {
@@ -11,8 +14,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../components/ui/dialog';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '../../../../components/ui/form';
 import { Input } from '../../../../components/ui/input';
-import { Label } from '../../../../components/ui/label';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -21,11 +31,30 @@ function todayIso(): string {
 }
 
 /**
+ * Mirrors the inline input of `system.triggerCalendarDigest`; both should move to `@luke/core`
+ * when that router input is extracted. The range check is stricter than the server's: an inverted
+ * range yields an empty recap instead of an error, so it is caught here before the mail goes out.
+ */
+const DigestRangeSchema = z
+  .object({
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data non valida'),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data non valida'),
+  })
+  .refine(value => value.to >= value.from, {
+    path: ['to'],
+    message: 'La data finale non può precedere quella iniziale',
+  });
+
+type DigestRangeForm = z.infer<typeof DigestRangeSchema>;
+
+/**
  * Dialog letting an admin manually send the calendar digest recap for an arbitrary date range.
  */
 export function SendDigestDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [from, setFrom] = useState(todayIso());
-  const [to, setTo] = useState(todayIso());
+  const form = useForm<DigestRangeForm>({
+    resolver: zodResolver(DigestRangeSchema),
+    defaultValues: { from: todayIso(), to: todayIso() },
+  });
 
   const digestMutation = trpc.system.triggerCalendarDigest.useMutation({
     onSuccess: () => {
@@ -34,34 +63,68 @@ export function SendDigestDialog({ open, onClose }: { open: boolean; onClose: ()
     },
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
+  const isPending = digestMutation.isPending;
+
+  // The dialog stays mounted across open/close, so without this reset the previous range is still
+  // sitting in the fields the next time it opens.
+  useEffect(() => {
+    if (open) form.reset({ from: todayIso(), to: todayIso() });
+  }, [open, form]);
+
+  // Esc and outside-click close through onOpenChange, a path the Cancel button does not take:
+  // without this guard the dialog is dismissable mid-send while Cancel sits disabled.
+  const handleOpenChange = (next: boolean) => {
+    if (!next && !isPending) onClose();
+  };
 
   return (
-    <Dialog open={open} onOpenChange={open => !open && onClose()}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[380px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
         <DialogHeader>
           <DialogTitle>Invia Recap</DialogTitle>
         </DialogHeader>
 
-        <div className="grid grid-cols-2 gap-3 py-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="digest-from">Dal</Label>
-            <Input id="digest-from" type="date" value={from} onChange={e => setFrom(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="digest-to">Al</Label>
-            <Input id="digest-to" type="date" value={to} onChange={e => setTo(e.target.value)} />
-          </div>
-        </div>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(data => digestMutation.mutate(data))}>
+            <div className="grid grid-cols-2 gap-3 py-2">
+              <FormField
+                control={form.control}
+                name="from"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel>Dal</FormLabel>
+                    <FormControl>
+                      <Input type="date" disabled={isPending} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="to"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel>Al</FormLabel>
+                    <FormControl>
+                      <Input type="date" disabled={isPending} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Annulla</Button>
-          <Button
-            disabled={digestMutation.isPending || !from || !to}
-            onClick={() => digestMutation.mutate({ from, to })}
-          >
-            {digestMutation.isPending ? 'Invio...' : 'Invia'}
-          </Button>
-        </DialogFooter>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>
+                Annulla
+              </Button>
+              <Button type="submit" disabled={isPending}>
+                {isPending ? 'Invio...' : 'Invia'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

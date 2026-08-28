@@ -1,6 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+
+import { BackupCreateInputSchema, BackupScopeSchema } from '@luke/core';
 
 import { Button } from '../ui/button';
 import {
@@ -11,8 +16,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog';
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '../ui/form';
 import { Input } from '../ui/input';
-import { Label } from '../ui/label';
 import {
   Select,
   SelectContent,
@@ -21,7 +34,18 @@ import {
   SelectValue,
 } from '../ui/select';
 
-export type BackupScopeChoice = 'DB' | 'DB_AND_FILES';
+export type BackupScopeChoice = z.infer<typeof BackupScopeSchema>;
+
+/**
+ * `label` is narrowed to a plain string: the core schema marks it optional, and an `undefined`
+ * value would leave the Input uncontrolled on first render. It is mapped back to `undefined` on
+ * submit so the payload still matches `BackupCreateInputSchema`.
+ */
+const BackupCreateFormSchema = BackupCreateInputSchema.extend({ label: z.string().max(255) });
+
+type BackupCreateFormData = z.infer<typeof BackupCreateFormSchema>;
+
+const EMPTY_BACKUP: BackupCreateFormData = { scope: 'DB', label: '' };
 
 interface BackupCreateDialogProps {
   open: boolean;
@@ -40,15 +64,30 @@ export function BackupCreateDialog({
   onConfirm,
   isLoading = false,
 }: BackupCreateDialogProps) {
-  const [scope, setScope] = useState<BackupScopeChoice>('DB');
-  const [label, setLabel] = useState('');
+  const form = useForm<BackupCreateFormData>({
+    resolver: zodResolver(BackupCreateFormSchema),
+    defaultValues: EMPTY_BACKUP,
+  });
 
-  const handleConfirm = () => {
-    onConfirm({ scope, label: label.trim() || undefined });
+  // The dialog stays mounted across open/close, so without this reset it reopens carrying the
+  // scope and label of the previous run.
+  useEffect(() => {
+    if (open) form.reset(EMPTY_BACKUP);
+  }, [open, form]);
+
+  // Esc and outside-click close through onOpenChange, a path the Cancel button does not take:
+  // without this guard the dialog is dismissable while the backup is being started.
+  const handleOpenChange = (next: boolean) => {
+    if (!next && isLoading) return;
+    onOpenChange(next);
+  };
+
+  const handleSubmit = (data: BackupCreateFormData) => {
+    onConfirm({ scope: data.scope, label: data.label.trim() || undefined });
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[480px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
         <DialogHeader>
           <DialogTitle>Crea backup</DialogTitle>
@@ -58,45 +97,71 @@ export function BackupCreateDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          <div className="space-y-2">
-            <Label htmlFor="backup-scope">Contenuto</Label>
-            <Select value={scope} onValueChange={v => setScope(v as BackupScopeChoice)}>
-              <SelectTrigger id="backup-scope">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="DB">Solo database</SelectItem>
-                <SelectItem value="DB_AND_FILES">Database + file storage (loghi, foto, allegati)</SelectItem>
-              </SelectContent>
-            </Select>
-            {scope === 'DB_AND_FILES' && (
-              <p className="text-sm text-muted-foreground">
-                Include tutti i file nei bucket applicativi. Più lento e più pesante di un backup solo-DB.
-              </p>
-            )}
-          </div>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleSubmit)}>
+            <div className="space-y-4 py-2">
+              <FormField
+                control={form.control}
+                name="scope"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Contenuto</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange} disabled={isLoading}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="DB">Solo database</SelectItem>
+                        <SelectItem value="DB_AND_FILES">Database + file storage (loghi, foto, allegati)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {field.value === 'DB_AND_FILES' && (
+                      <FormDescription>
+                        Include tutti i file nei bucket applicativi. Più lento e più pesante di un backup solo-DB.
+                      </FormDescription>
+                    )}
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-          <div className="space-y-2">
-            <Label htmlFor="backup-label">Etichetta (opzionale)</Label>
-            <Input
-              id="backup-label"
-              value={label}
-              onChange={e => setLabel(e.target.value)}
-              placeholder="es. prima di migrazione X"
-              maxLength={255}
-            />
-          </div>
-        </div>
+              <FormField
+                control={form.control}
+                name="label"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Etichetta (opzionale)</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="es. prima di migrazione X"
+                        maxLength={255}
+                        disabled={isLoading}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isLoading}>
-            Annulla
-          </Button>
-          <Button onClick={handleConfirm} disabled={isLoading}>
-            {isLoading ? 'Avvio…' : 'Avvia backup'}
-          </Button>
-        </DialogFooter>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={isLoading}
+              >
+                Annulla
+              </Button>
+              <Button type="submit" disabled={isLoading}>
+                {isLoading ? 'Avvio…' : 'Avvia backup'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );
