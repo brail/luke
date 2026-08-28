@@ -70,6 +70,30 @@ export function runPgBinary(
 }
 
 /**
+ * Reads a libpq CLI tool's major version (e.g. `18` from "pg_restore (PostgreSQL) 18.4").
+ *
+ * Not folded into `runPgBinary`: that one discards stdout, which is where `--version` writes.
+ * Throws if the binary is missing or its output is unparseable — a backup feature whose tools
+ * cannot be identified should say so rather than guess.
+ */
+export function pgBinaryMajorVersion(binary: 'pg_dump' | 'pg_restore'): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(binary, ['--version']);
+    let stdout = '';
+    child.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
+    child.on('error', reject);
+    child.on('close', () => {
+      const major = /(\d+)/.exec(stdout.replace(/^\D*\(.*?\)/, ''));
+      if (!major) {
+        reject(new Error(`Impossibile determinare la versione di ${binary}: "${stdout.trim()}"`));
+        return;
+      }
+      resolve(Number.parseInt(major[1], 10));
+    });
+  });
+}
+
+/**
  * Runs an arbitrary command (e.g. `npx prisma migrate deploy`), optionally overriding env vars —
  * the migration bridge uses this to run `migrate deploy` against its temp database via an
  * overridden `DATABASE_URL`, the same command `entrypoint.sh` runs at boot.

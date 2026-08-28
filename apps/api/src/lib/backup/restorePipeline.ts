@@ -37,7 +37,7 @@ import { getStorageProvider } from '../../storage';
 
 import { createArchiveExtractor, forEachArchiveEntry } from './archiveFormat';
 import { createBackupDecipher, unwrapDek } from './crypto';
-import { parseDatabaseUrl, runPgBinary } from './pgConnection';
+import { parseDatabaseUrl, pgBinaryMajorVersion, runPgBinary } from './pgConnection';
 
 import type { BackupLogger } from './dumpPipeline';
 import type { PgConnectionParts } from './pgConnection';
@@ -97,6 +97,44 @@ export async function restoreDatabaseFromFile(
     '--dbname', db.database,
     dumpPath,
   ], db.password);
+}
+
+/**
+ * Fails unless `pg_restore` and the PostgreSQL server share a major version.
+ *
+ * `pg_restore` writes its own prologue into the stream it replays, and that prologue tracks the
+ * *client's* version: from 18 it emits `SET transaction_timeout = 0`, a parameter a 16 server does
+ * not know. With `--exit-on-error` that aborts the restore. Harmless in itself — it aborts on the
+ * prologue, before any DROP, so the database is left untouched — but it means the restore simply
+ * cannot run, and the error it surfaces ("unrecognized configuration parameter") says nothing
+ * about the actual cause.
+ *
+ * So it is checked up front, by the callers, before a safety snapshot is taken and Maintenance
+ * Mode is switched on. Failing here costs nothing; failing three steps later leaves an admin to
+ * undo the maintenance state by hand.
+ *
+ * Deployed instances always match — apps/api/Dockerfile installs postgresql16-client alongside
+ * the postgres:16-alpine service. A local `pnpm dev` does not: it spawns whatever `pg_restore` is
+ * on the developer's PATH, which is how this surfaced.
+ */
+export async function assertPgToolchainCompatible(prisma: PrismaClient): Promise<void> {
+  const [clientMajor, rows] = await Promise.all([
+    pgBinaryMajorVersion('pg_restore'),
+    prisma.$queryRaw<{ server_version: string }[]>(Prisma.sql`SHOW server_version`),
+  ]);
+
+  const serverMajor = Number.parseInt(rows[0]?.server_version ?? '', 10);
+  if (!Number.isFinite(serverMajor)) {
+    throw new Error(`Impossibile determinare la versione del server PostgreSQL ("${rows[0]?.server_version}")`);
+  }
+  if (clientMajor === serverMajor) return;
+
+  throw new Error(
+    `pg_restore è alla major ${clientMajor}, il server PostgreSQL alla ${serverMajor}: un restore ` +
+    'con versioni disallineate fallisce a metà. Usa i binari client della stessa major del server ' +
+    `(in produzione l'immagine API installa postgresql${serverMajor}-client). In sviluppo locale ` +
+    `metti in PATH il client ${serverMajor} prima di quello di sistema.`
+  );
 }
 
 /** Schema holding the copy of the audit trail taken before a restore. */

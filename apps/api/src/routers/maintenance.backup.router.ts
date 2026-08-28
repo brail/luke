@@ -25,7 +25,7 @@ import { logAudit } from '../lib/auditLog';
 import { unwrapDek, wrapDekWithPassphrase } from '../lib/backup/crypto';
 import { createPendingBackupRecord, deleteBackupBlob, runBackupJob } from '../lib/backup/dumpPipeline';
 import { classifySchemaCompatibility, runMigrationBridgeJob } from '../lib/backup/migrationBridge';
-import { runRestoreJob } from '../lib/backup/restorePipeline';
+import { assertPgToolchainCompatible, runRestoreJob } from '../lib/backup/restorePipeline';
 import { getBackupScheduleSettings, saveConfig } from '../lib/configManager';
 import { forceLogoutNonAdmins, writeMaintenanceState } from '../lib/maintenanceMode';
 import { requirePermission } from '../lib/permissions';
@@ -286,6 +286,17 @@ export const backupRouter = router({
         });
       }
 
+      // Same pg_restore, same skew — the bridge restores into a temp database on this same server.
+      try {
+        await assertPgToolchainCompatible(ctx.prisma);
+      } catch (err) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: err instanceof Error ? err.message : String(err),
+          cause: err,
+        });
+      }
+
       const migrated = await createPendingBackupRecord(ctx.prisma, {
         scope: 'DB',
         trigger: 'MIGRATED',
@@ -385,6 +396,19 @@ export const backupRouter = router({
           ? `Schema del backup ("${target.schemaMigrationName}") più recente o sconosciuto rispetto a quello corrente ("${compat.currentSchemaMigrationName}"). Aggiorna questa istanza a una versione ≥ di quella del backup, poi riprova.`
           : `Schema del backup ("${target.schemaMigrationName}") più vecchio di quello corrente ("${compat.currentSchemaMigrationName}"). Usa prima "Applica migrazioni", poi ripristina il risultato.`;
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message });
+      }
+
+      // Before anything irreversible: a pg_restore whose major differs from the server's aborts on
+      // its own prologue. Caught here, that costs nothing; caught inside runRestoreJob it would
+      // already have taken a safety snapshot and put the instance into Maintenance Mode.
+      try {
+        await assertPgToolchainCompatible(ctx.prisma);
+      } catch (err) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: err instanceof Error ? err.message : String(err),
+          cause: err,
+        });
       }
 
       // Mandatory safety snapshot: if it fails, the restore doesn't start — nothing has been touched.
