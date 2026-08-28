@@ -228,9 +228,10 @@ export function RestoreConfirmDialog({
             <div className="space-y-0.5 pr-4">
               <Label htmlFor="preserve-audit-log">Preserva il registro attività corrente</Label>
               <p className="text-sm text-muted-foreground">
-                Se attivo (consigliato), l&apos;audit log attuale resta intatto e l&apos;evento di
-                restore vi viene comunque registrato. Se disattivi, anche il registro attività
-                torna a quello del backup.
+                Se attivo (consigliato), il registro attuale viene unito a quello del backup:
+                nessun evento va perso, né quelli scritti dopo il backup né quelli che il backup
+                contiene. Se disattivi, il registro torna esattamente a quello del backup e gli
+                eventi successivi vengono persi.
               </p>
             </div>
             <Switch
