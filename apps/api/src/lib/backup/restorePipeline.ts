@@ -101,7 +101,7 @@ export async function restoreDatabaseFromFile(
 }
 
 /**
- * Fails unless `pg_restore` and the PostgreSQL server share a major version.
+ * Fails unless both `pg_restore` and `pg_dump` share a major version with the PostgreSQL server.
  *
  * `pg_restore` writes its own prologue into the stream it replays, and that prologue tracks the
  * *client's* version: from 18 it emits `SET transaction_timeout = 0`, a parameter a 16 server does
@@ -128,14 +128,27 @@ export async function assertPgToolchainCompatible(prisma: PrismaClient): Promise
   if (!Number.isFinite(serverMajor)) {
     throw new Error(`Impossibile determinare la versione del server PostgreSQL ("${rows[0]?.server_version}")`);
   }
-  if (clientMajor === serverMajor) return;
+  if (clientMajor !== serverMajor) {
+    throw new Error(
+      `pg_restore è alla major ${clientMajor}, il server PostgreSQL alla ${serverMajor}: un restore ` +
+      'con versioni disallineate fallisce a metà. Usa i binari client della stessa major del server ' +
+      `(in produzione l'immagine API installa postgresql${serverMajor}-client). In sviluppo locale ` +
+      `metti in PATH il client ${serverMajor} prima di quello di sistema.`
+    );
+  }
 
-  throw new Error(
-    `pg_restore è alla major ${clientMajor}, il server PostgreSQL alla ${serverMajor}: un restore ` +
-    'con versioni disallineate fallisce a metà. Usa i binari client della stessa major del server ' +
-    `(in produzione l'immagine API installa postgresql${serverMajor}-client). In sviluppo locale ` +
-    `metti in PATH il client ${serverMajor} prima di quello di sistema.`
-  );
+  // `pg_dump` is checked too, and against the *server*, not against `pg_restore`. It writes the
+  // mandatory pre-restore safety snapshot, and a newer pg_dump happily dumps an older server —
+  // into an archive format this pg_restore cannot read back. The one artifact that has to stay
+  // restorable would be silently unusable, and nothing would say so until it was needed.
+  const dumpMajor = await pgBinaryMajorVersion('pg_dump');
+  if (dumpMajor !== serverMajor) {
+    throw new Error(
+      `pg_dump è alla major ${dumpMajor}, il server PostgreSQL alla ${serverMajor}: lo snapshot di ` +
+      'sicurezza pre-restore verrebbe scritto in un formato che pg_restore non sa rileggere. ' +
+      `Allinea anche pg_dump alla major ${serverMajor} prima di procedere.`
+    );
+  }
 }
 
 /**
@@ -164,13 +177,22 @@ export async function assertPgToolchainCompatible(prisma: PrismaClient): Promise
 export async function stashPreservedTables(prisma: PrismaClient): Promise<string> {
   // Any schema from an earlier run: either left by a restore that died between stash and merge,
   // or resurrected by a restore whose archive happened to contain one.
-  const leftovers = await prisma.$queryRaw<{ schema_name: string }[]>(Prisma.sql`
-    SELECT schema_name FROM information_schema.schemata
-    WHERE schema_name LIKE ${`${AUDIT_STAGE_PREFIX}%`}
-  `);
+  const leftovers = await listAuditStageSchemas(prisma);
 
-  for (const { schema_name } of leftovers) {
+  for (const schema_name of leftovers) {
     const ident = auditStageIdent(schema_name);
+
+    // A schema whose `audit_logs` never landed is a stash that died mid-creation. It protects
+    // nothing, and probing it below would fail with "relation does not exist" — an opaque error
+    // that would block every subsequent restore until an operator dropped the schema by hand.
+    const [{ present }] = await prisma.$queryRaw<{ present: boolean }[]>(Prisma.sql`
+      SELECT to_regclass(${`${schema_name}.audit_logs`}) IS NOT NULL AS present
+    `);
+    if (!present) {
+      await prisma.$executeRaw(Prisma.sql`DROP SCHEMA ${ident} CASCADE`);
+      continue;
+    }
+
     const [{ orphaned }] = await prisma.$queryRaw<{ orphaned: bigint }[]>(Prisma.sql`
       SELECT count(*) AS orphaned
       FROM ${ident}.audit_logs s
@@ -196,23 +218,44 @@ export async function stashPreservedTables(prisma: PrismaClient): Promise<string
 
   // Raw SQL: a staging schema plus CREATE TABLE AS SELECT has no Prisma ORM equivalent.
   // Parameterized `Prisma.sql` throughout, never $executeRawUnsafe.
-  await prisma.$executeRaw(Prisma.sql`CREATE SCHEMA ${ident}`);
-  await prisma.$executeRaw(
-    Prisma.sql`CREATE TABLE ${ident}.audit_logs AS SELECT * FROM public.audit_logs`
-  );
-  // The enum columns are copied as text on purpose. `CREATE TABLE AS SELECT` would otherwise
-  // carry the `public."Backup*"` enum types into the staging table, and `pg_restore --clean`
-  // cannot then drop those types — it emits a plain `DROP TYPE`, which fails against the staging
-  // column still using it, and with `--exit-on-error` that aborts the whole restore.
-  await prisma.$executeRaw(Prisma.sql`
-    CREATE TABLE ${ident}.backup_records AS
-    SELECT id, filename, scope::text AS scope, trigger::text AS trigger, status::text AS status,
-           "sizeBytesEncrypted", "checksumSha256", "ivHex", "authTagHex", "wrappedDekHex",
-           algorithm, "appVersion", "schemaMigrationName", "errorMessage", "createdById",
-           "startedAt", "completedAt", "expiresAt", "createdAt", "fileCount", label, "sourceBackupId"
-    FROM public.backup_records
-  `);
+  //
+  // One transaction (PostgreSQL DDL is transactional): the schema and both copies appear together
+  // or not at all. Split across three statements, a failure after the first would leave an empty
+  // staging schema behind — a leftover the next run has to reason about for no reason.
+  await prisma.$transaction([
+    prisma.$executeRaw(Prisma.sql`CREATE SCHEMA ${ident}`),
+    prisma.$executeRaw(
+      Prisma.sql`CREATE TABLE ${ident}.audit_logs AS SELECT * FROM public.audit_logs`
+    ),
+    // The enum columns are copied as text on purpose. `CREATE TABLE AS SELECT` would otherwise
+    // carry the `public."Backup*"` enum types into the staging table, and `pg_restore --clean`
+    // cannot then drop those types — it emits a plain `DROP TYPE`, which fails against the staging
+    // column still using it, and with `--exit-on-error` that aborts the whole restore.
+    prisma.$executeRaw(Prisma.sql`
+      CREATE TABLE ${ident}.backup_records AS
+      SELECT id, filename, scope::text AS scope, trigger::text AS trigger, status::text AS status,
+             "sizeBytesEncrypted", "checksumSha256", "ivHex", "authTagHex", "wrappedDekHex",
+             algorithm, "appVersion", "schemaMigrationName", "errorMessage", "createdById",
+             "startedAt", "completedAt", "expiresAt", "createdAt", "fileCount", label, "sourceBackupId"
+      FROM public.backup_records
+    `),
+  ]);
   return schema;
+}
+
+/**
+ * Every staging schema currently in the database.
+ *
+ * `starts_with` rather than `LIKE`: the prefix begins with `_`, which LIKE reads as a
+ * single-character wildcard — the pattern would also match an unrelated schema, and
+ * `auditStageIdent` would then reject it and dead-end the restore.
+ */
+async function listAuditStageSchemas(prisma: PrismaClient): Promise<string[]> {
+  const rows = await prisma.$queryRaw<{ schema_name: string }[]>(Prisma.sql`
+    SELECT schema_name FROM information_schema.schemata
+    WHERE starts_with(schema_name::text, ${AUDIT_STAGE_PREFIX})
+  `);
+  return rows.map(r => r.schema_name);
 }
 
 /**
@@ -266,32 +309,37 @@ export async function mergeStashedAuditLog(prisma: PrismaClient, schema: string)
 export async function restoreStashedBackupRecords(prisma: PrismaClient, schema: string): Promise<number> {
   const ident = auditStageIdent(schema);
 
-  await prisma.$executeRaw(Prisma.sql`DELETE FROM public.backup_records`);
-  const restored = await prisma.$executeRaw(Prisma.sql`
-    INSERT INTO public.backup_records
-      (id, filename, scope, trigger, status, "sizeBytesEncrypted", "checksumSha256", "ivHex",
-       "authTagHex", "wrappedDekHex", algorithm, "appVersion", "schemaMigrationName",
-       "errorMessage", "createdById", "startedAt", "completedAt", "expiresAt", "createdAt",
-       "fileCount", label, "sourceBackupId")
-    SELECT s.id, s.filename, s.scope::"BackupScope", s.trigger::"BackupTrigger",
-           s.status::"BackupStatus", s."sizeBytesEncrypted", s."checksumSha256",
-           s."ivHex", s."authTagHex", s."wrappedDekHex", s.algorithm, s."appVersion",
-           s."schemaMigrationName", s."errorMessage",
-           CASE WHEN u.id IS NULL THEN NULL ELSE s."createdById" END,
-           s."startedAt", s."completedAt", s."expiresAt", s."createdAt",
-           s."fileCount", s.label, NULL
-    FROM ${ident}.backup_records s
-    LEFT JOIN public.users u ON u.id = s."createdById"
-  `);
-
-  await prisma.$executeRaw(Prisma.sql`
-    UPDATE public.backup_records r
-    SET "sourceBackupId" = s."sourceBackupId"
-    FROM ${ident}.backup_records s
-    WHERE s.id = r.id
-      AND s."sourceBackupId" IS NOT NULL
-      AND EXISTS (SELECT 1 FROM public.backup_records p WHERE p.id = s."sourceBackupId")
-  `);
+  // One transaction. The DELETE empties the live inventory and only the INSERT refills it: run
+  // apart, an INSERT that failed on its own would leave the instance with no record of any backup
+  // at all — the pre-restore safety snapshot included, which is the only way back from a restore
+  // that went wrong.
+  const [, restored] = await prisma.$transaction([
+    prisma.$executeRaw(Prisma.sql`DELETE FROM public.backup_records`),
+    prisma.$executeRaw(Prisma.sql`
+      INSERT INTO public.backup_records
+        (id, filename, scope, trigger, status, "sizeBytesEncrypted", "checksumSha256", "ivHex",
+         "authTagHex", "wrappedDekHex", algorithm, "appVersion", "schemaMigrationName",
+         "errorMessage", "createdById", "startedAt", "completedAt", "expiresAt", "createdAt",
+         "fileCount", label, "sourceBackupId")
+      SELECT s.id, s.filename, s.scope::"BackupScope", s.trigger::"BackupTrigger",
+             s.status::"BackupStatus", s."sizeBytesEncrypted", s."checksumSha256",
+             s."ivHex", s."authTagHex", s."wrappedDekHex", s.algorithm, s."appVersion",
+             s."schemaMigrationName", s."errorMessage",
+             CASE WHEN u.id IS NULL THEN NULL ELSE s."createdById" END,
+             s."startedAt", s."completedAt", s."expiresAt", s."createdAt",
+             s."fileCount", s.label, NULL
+      FROM ${ident}.backup_records s
+      LEFT JOIN public.users u ON u.id = s."createdById"
+    `),
+    prisma.$executeRaw(Prisma.sql`
+      UPDATE public.backup_records r
+      SET "sourceBackupId" = s."sourceBackupId"
+      FROM ${ident}.backup_records s
+      WHERE s.id = r.id
+        AND s."sourceBackupId" IS NOT NULL
+        AND EXISTS (SELECT 1 FROM public.backup_records p WHERE p.id = s."sourceBackupId")
+    `),
+  ]);
 
   return restored;
 }
@@ -299,6 +347,21 @@ export async function restoreStashedBackupRecords(prisma: PrismaClient, schema: 
 /** Removes a staging schema once everything preserved in it has been put back. */
 export async function dropAuditStage(prisma: PrismaClient, schema: string): Promise<void> {
   await prisma.$executeRaw(Prisma.sql`DROP SCHEMA ${auditStageIdent(schema)} CASCADE`);
+}
+
+/**
+ * Removes every staging schema, this run's included.
+ *
+ * Dropping only this run's is not enough: `pg_restore --clean` recreates whatever the archive
+ * contained, so an archive written while an older run's stash existed puts that schema back. It is
+ * stale by construction, and left behind it can hold rows the freshly restored `audit_logs` does
+ * not — which is what the *next* restore's leftover probe refuses to proceed past, dead-ending it
+ * until an operator intervenes. By the time this runs everything worth keeping has been put back.
+ */
+async function dropAllAuditStages(prisma: PrismaClient): Promise<void> {
+  for (const schema of await listAuditStageSchemas(prisma)) {
+    await prisma.$executeRaw(Prisma.sql`DROP SCHEMA ${auditStageIdent(schema)} CASCADE`);
+  }
 }
 
 /**
@@ -492,7 +555,7 @@ export async function applyStagedRestore(params: ApplyStagedRestoreParams): Prom
   const backupRecords = await restoreStashedBackupRecords(prisma, stashSchema);
   logger.info({ backupRecords }, 'Restore: inventario dei backup ripristinato');
 
-  await dropAuditStage(prisma, stashSchema);
+  await dropAllAuditStages(prisma);
 
   if (restoreFiles) {
     logger.info('Restore: database ripristinato, replay file storage');

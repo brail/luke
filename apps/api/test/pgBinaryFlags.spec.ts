@@ -26,6 +26,17 @@ const BACKUP_SRC = join(import.meta.dirname, '..', 'src', 'lib', 'backup');
 const CALL_RE = /runPgBinary\(\s*'([a-z_]+)'\s*,\s*\[/g;
 /** A long option inside such an array, with or without an `=value` suffix. */
 const FLAG_RE = /'(--[a-z-]+)(?:=[^']*)?'/g;
+/**
+ * A module-level constant holding a flag, e.g. `AUDIT_STAGE_EXCLUDE_ARG`.
+ *
+ * Not every flag reaches an argv array as a literal — `--exclude-schema` is defined once in
+ * `auditStage.ts` and referenced by name. A literals-only scan cannot see those, which is exactly
+ * the wrong blind spot: `--exclude-schema` is a `pg_dump` option that `pg_restore` rejects, the
+ * same class of mistake this file exists to catch.
+ */
+const CONST_FLAG_RE = /const\s+([A-Z][A-Z0-9_]*)\s*(?::[^=]+)?=\s*[`'"](--[a-z-]+)/g;
+/** An identifier referenced inside an argv array — resolved against the constants above. */
+const IDENT_RE = /\b([A-Z][A-Z0-9_]{2,})\b/g;
 
 /**
  * Returns the argv array literal starting at `openIndex` (the `[`), matching brackets so nested
@@ -49,14 +60,26 @@ interface FlagUse {
 }
 
 function collectFlagUses(): FlagUse[] {
+  const sources = readdirSync(BACKUP_SRC)
+    .filter(entry => entry.endsWith('.ts'))
+    .map(entry => ({ entry, source: readFileSync(join(BACKUP_SRC, entry), 'utf8') }));
+
+  // Constants first: an argv array may reference a flag by name instead of spelling it out.
+  const constants = new Map<string, string>();
+  for (const { source } of sources) {
+    for (const decl of source.matchAll(CONST_FLAG_RE)) constants.set(decl[1], decl[2]);
+  }
+
   const uses: FlagUse[] = [];
-  for (const entry of readdirSync(BACKUP_SRC)) {
-    if (!entry.endsWith('.ts')) continue;
-    const source = readFileSync(join(BACKUP_SRC, entry), 'utf8');
+  for (const { entry, source } of sources) {
     for (const call of source.matchAll(CALL_RE)) {
       const argv = readArrayLiteral(source, call.index + call[0].length - 1);
       for (const flag of argv.matchAll(FLAG_RE)) {
         uses.push({ binary: call[1], flag: flag[1], file: entry });
+      }
+      for (const ident of argv.matchAll(IDENT_RE)) {
+        const flag = constants.get(ident[1]);
+        if (flag) uses.push({ binary: call[1], flag, file: entry });
       }
     }
   }
@@ -79,7 +102,11 @@ describe('pg binary flags', () => {
 
   it('finds the call sites at all (guards the scanner against silently matching nothing)', () => {
     expect(uses.length).toBeGreaterThan(5);
-    expect(uses.map(u => `${u.binary} ${u.flag}`)).toContain('pg_restore --exit-on-error');
+    const pairs = uses.map(u => `${u.binary} ${u.flag}`);
+    expect(pairs).toContain('pg_restore --exit-on-error');
+    // Reached through a constant, not a literal — proves the indirection is resolved. This is the
+    // pg_dump-only flag whose misuse on pg_restore is the failure mode this file guards.
+    expect(pairs).toContain('pg_dump --exclude-schema');
   });
 
   const binaries = [...new Set(uses.map(u => u.binary))].sort();

@@ -38,8 +38,8 @@ describe.skipIf(!TEST_DATABASE_URL)('preflight versioni pg', () => {
     if (clientMajor === serverMajor) {
       await expect(check).resolves.toBeUndefined();
     } else {
-      // Il messaggio deve nominare entrambe le versioni: senza, l'admin vede solo
-      // "unrecognized configuration parameter" e non sa cosa allineare.
+      // The message has to name both versions: without them the admin only sees
+      // "unrecognized configuration parameter" and has no idea what to align.
       await expect(check).rejects.toThrow(new RegExp(`${clientMajor}.*${serverMajor}`));
     }
   });

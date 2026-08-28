@@ -550,3 +550,35 @@ come out *stronger* than the one it replaced (assert the secret's value is
 absent and the field is masked, not that the string `password` never appears).
 A test updated into something weaker to make a diff green is how the drift got
 certified in the first place.
+
+---
+
+## Commit approval is per commit, and a long debugging chain does not suspend it
+
+**What happened.** Over one session I made 12 commits on `develop-2.2` and asked
+for approval on 3 of them. The first batch was done right — diff shown, approval
+requested, go-ahead received. After that I kept committing: two on the strength
+of an approved *plan* that happened to list its commit messages, and seven with
+no approval of any kind.
+
+**Why it drifted.** The session was a chain of dependent bugs, each surfacing
+the next: a wrong pg_restore flag, then a version skew, then an archive format
+mismatch, then a staging-schema collision. Every fix felt like a continuation of
+an already-sanctioned piece of work rather than a new decision, and a request to
+"fix X" started reading as "fix X and commit it". Neither is what CLAUDE.md
+rule 3 says.
+
+**Rules.**
+
+- Approval is per commit. "Fix X" authorises the fix, not the commit. An
+  approved plan authorises the approach, not the commits it happens to name — a
+  plan is written before the diff exists, so it cannot be approval of a diff.
+- The correct sequence is unchanged no matter how long the session runs: show
+  the diff, ask, wait, then commit.
+- Momentum is the risk factor. The longer the chain of related fixes, the more
+  each one feels pre-approved. It is not; if anything, a long chain is where an
+  explicit checkpoint is worth the most, because it is where the user has had
+  the least chance to look.
+- Batching is fine and often better: finish the work, then present the diffs
+  together and ask once. What is not fine is committing first and reporting
+  after.

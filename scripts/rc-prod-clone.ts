@@ -17,7 +17,7 @@
  *      script generates at random (never printed, never reused across runs) instead of the
  *      server master key — this is what makes the package decryptable on a different instance.
  *      Download the resulting `.lukebak` via the short-lived signed export link.
- *   4. Log into RC, upload the package to `/maintenance/backup/import` (re-wraps the DEK again,
+ *   4. Log into RC, upload the package to `/upload/backup-import` (re-wraps the DEK again,
  *      this time with RC's own master key).
  *   5. Check schema compatibility against RC's currently-applied migrations:
  *      - OLDER  → run the migration bridge (applies RC's pending migrations inside a disposable
@@ -203,7 +203,11 @@ async function main() {
     const exported = await prod.maintenance.backup.prepareExport.mutate({ id: backupId, passphrase });
 
     console.log('== Scarico il pacchetto export da PROD ==');
-    const exportUrl = `${prodUrl}/maintenance/backup/${backupId}/export?token=${encodeURIComponent(exported.token)}`;
+    // Keep in step with `buildBackupExportDownloadUrl` in packages/core/src/net/url.ts. Hand-written
+    // because @luke/core is not a dependency of the repo root (only @luke/api is), so this script
+    // cannot import it — the paths moved once already, to the `/download/` and `/upload/` prefixes
+    // Next.js proxies in production, and this copy is the one that went stale.
+    const exportUrl = `${prodUrl}/download/backup/${backupId}/export?token=${encodeURIComponent(exported.token)}`;
     const res = await fetch(exportUrl);
     if (!res.ok || !res.body) throw new Error(`Download export fallito: HTTP ${res.status}`);
     // res.body is typed against lib.dom's ReadableStream; Readable.fromWeb wants node:stream/web's —
@@ -221,7 +225,8 @@ async function main() {
     form.set('label', label);
     form.set('file', new Blob([fileBuffer]), 'backup.lukebak');
 
-    const importRes = await fetch(`${rcUrl}/maintenance/backup/import`, {
+    // Mirrors `buildBackupImportUrl` — see the note on `exportUrl` above.
+    const importRes = await fetch(`${rcUrl}/upload/backup-import`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${rcToken}` },
       body: form,

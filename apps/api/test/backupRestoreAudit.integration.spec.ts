@@ -8,6 +8,12 @@
  * layer under them was deliberately built to run standalone (see the docstring on
  * `dumpPipeline.ts`), and a scratch database has nothing to wreck.
  *
+ * Spawning pg_dump/pg_restore makes this suite sensitive to libpq's GSSAPI probe: on a machine
+ * whose Kerberos config declares no default realm, each connection stalls for minutes before
+ * falling back, which is long enough to blow the hook timeouts here while the same spec run on
+ * its own looks fine. `PGGSSENCMODE=disable` avoids it, and `turbo.json` declares that variable on
+ * `test:integration` so it survives the env filtering turbo applies to task environments.
+ *
  * The scenario is the one that was broken in production: take a backup, keep working, then
  * restore. Data must go back; the audit trail must not lose the events written in between.
  */
@@ -145,7 +151,7 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
   });
 
   it('riporta i dati al backup e non perde nessun evento del registro', async () => {
-    // --- stato al momento del backup ---
+    // --- state at the moment of the backup ---
     await prisma.user.create({
       data: { id: 'u1', email: 'old@x.it', username: 'olduser', firstName: 'Old', role: 'admin' },
     });
@@ -159,12 +165,12 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
       '--dbname', scratchName, '--file', backupPath,
     ], scratchDb.password);
 
-    // --- il lavoro continua dopo il backup ---
+    // --- work carries on after the backup ---
     await prisma.user.update({ where: { id: 'u1' }, data: { firstName: 'New' } });
     await prisma.auditLog.create({
       data: { id: 'a2', actorId: 'u1', action: 'AFTER_BACKUP', targetType: 'User', result: 'SUCCESS' },
     });
-    // Utente creato dopo il backup: il restore lo cancella, ma il suo evento deve sopravvivere.
+    // A user created after the backup: the restore deletes them, but their event must survive.
     await prisma.user.create({
       data: { id: 'u2', email: 'new@x.it', username: 'newuser', firstName: 'After', role: 'editor' },
     });
@@ -179,18 +185,18 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     await restoreStashedBackupRecords(prisma, stage);
     await dropAuditStage(prisma, stage);
 
-    // I dati applicativi tornano allo snapshot. Questa è la regressione del restore parziale
-    // silenzioso: escludendo audit_logs dal TOC, `users` non veniva ripristinata affatto.
+    // Application data goes back to the snapshot. This is the silent-partial-restore regression:
+    // excluding audit_logs via the TOC left `users` unrestored altogether.
     const users = await prisma.user.findMany({ orderBy: { id: 'asc' } });
     expect(users.map(u => u.id)).toEqual(['u1']);
     expect(users[0].firstName).toBe('Old');
 
-    // Il registro le conserva tutte, in entrambe le direzioni, senza duplicare a1.
+    // The trail keeps them all, in both directions, without duplicating a1.
     const audit = await prisma.auditLog.findMany({ orderBy: { id: 'asc' } });
     expect(audit.map(a => a.action)).toEqual(['BEFORE_BACKUP', 'AFTER_BACKUP', 'BY_USER_NOT_IN_BACKUP']);
     expect(merged).toBe(2); // a1 esiste già nello snapshot ripristinato: ON CONFLICT DO NOTHING
 
-    // Attribuzione: mantenuta dove l'utente esiste ancora, azzerata dove il restore l'ha rimosso.
+    // Attribution: kept where the user still exists, nulled where the restore removed them.
     expect(audit.find(a => a.id === 'a2')?.actorId).toBe('u1');
     expect(audit.find(a => a.id === 'a3')?.actorId).toBeNull();
 
@@ -219,9 +225,9 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
   }, 60_000);
 
   it('conserva l\'inventario dei backup invece di riportarlo indietro', async () => {
-    // Lo scenario che lasciava un backup "In corso…" per sempre e faceva sparire lo snapshot di
-    // sicurezza: il dump fotografa backup_records mentre il backup stesso è RUNNING, e i record
-    // creati dopo il dump (fra cui lo snapshot pre-restore) non ci sono affatto.
+    // The scenario that left a backup stuck at "In corso…" forever and made the safety snapshot
+    // vanish: the dump photographs backup_records while the backup itself is RUNNING, and records
+    // created after the dump (the pre-restore snapshot among them) are not in it at all.
     const dumpedAt = new Date();
     await prisma.backupRecord.create({
       data: { id: 'in-corso', filename: '', scope: 'DB', trigger: 'MANUAL', status: 'RUNNING', startedAt: dumpedAt },
@@ -233,8 +239,8 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
       '--dbname', scratchName, '--file', inventoryDump,
     ], scratchDb.password);
 
-    // Il mondo va avanti: quel backup finisce, ne nasce lo snapshot di sicurezza, uno vecchio
-    // viene cancellato.
+    // The world moves on: that backup finishes, the safety snapshot is born from it, an old one
+    // is deleted.
     await prisma.backupRecord.update({
       where: { id: 'in-corso' },
       data: { status: 'COMPLETED', completedAt: new Date(), filename: 'in-corso.enc' },
@@ -248,17 +254,17 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     await restoreStashedBackupRecords(prisma, stage);
     await dropAuditStage(prisma, stage);
 
-    // Nessun fantasma: il record non torna RUNNING.
+    // No phantom: the record does not go back to RUNNING.
     expect((await prisma.backupRecord.findUnique({ where: { id: 'in-corso' } }))?.status).toBe('COMPLETED');
-    // E lo snapshot di sicurezza, creato dopo il dump, è ancora raggiungibile dalla UI.
+    // And the safety snapshot, created after the dump, is still reachable from the UI.
     expect(await prisma.backupRecord.count({ where: { trigger: 'PRE_RESTORE_SAFETY' } })).toBe(1);
   }, 90_000);
 
   it('riporta indietro app_configs, che è perché la manutenzione va riaffermata dopo', async () => {
-    // Il fatto su cui poggia il fix nel router: lo stato della Modalità Manutenzione vive in
-    // app_configs, che il restore sovrascrive con la copia dello snapshot. Attivarla prima del
-    // pg_restore non basta — va riscritta dopo, altrimenti l'istanza si riapre a tutti nel
-    // momento esatto in cui il restore atterra e l'admin non verifica niente.
+    // The fact the router's fix rests on: Maintenance Mode state lives in app_configs, which the
+    // restore overwrites with the snapshot's copy. Activating it before pg_restore is not enough —
+    // it has to be rewritten afterwards, or the instance reopens to everyone at the exact moment
+    // the restore lands and the admin verifies nothing.
     await prisma.appConfig.create({ data: { key: 'test.maintenance.probe', value: 'PRIMA' } });
     const configDump = join(workDir, 'config.dump');
     await runPgBinary('pg_dump', [
@@ -279,10 +285,10 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
   }, 90_000);
 
   it('sopravvive a un backup che contiene già uno schema di staging', async () => {
-    // La regressione vera: un restore interrotto lascia il suo staging nel database, un backup
-    // successivo lo cattura, e restaurando quel backup `pg_restore --clean` sovrascriveva lo
-    // staging vivo con la copia dell'archivio — cancellando gli eventi che doveva proteggere
-    // prima che il merge li leggesse, e riportando mergedRows: 0.
+    // The real regression: an interrupted restore leaves its staging schema in the database, a
+    // later backup captures it, and restoring that backup had `pg_restore --clean` overwrite the
+    // live staging schema with the archive's copy — erasing the events it existed to protect
+    // before the merge ever read them, and reporting mergedRows: 0.
     const leftover = await stashPreservedTables(prisma);
     const archiveWithStage = join(workDir, 'con-staging.dump');
     await runPgBinary('pg_dump', [
@@ -297,7 +303,7 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     });
 
     const stage = await stashPreservedTables(prisma);
-    expect(stage).not.toBe(leftover); // nome per esecuzione: l'archivio non può contenerlo
+    expect(stage).not.toBe(leftover); // one name per run: the archive cannot already contain it
     await restoreDatabaseFromFile(archiveWithStage, { db: scratchDb });
     expect(await mergeStashedAuditLog(prisma, stage)).toBe(1);
 
@@ -308,8 +314,8 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     await stashPreservedTables(prisma);
     const before = await prisma.auditLog.count();
 
-    // Secondo stash sopra il primo: ogni riga messa da parte è ancora nella tabella viva, quindi
-    // non c'è niente da salvare e il restore non deve incastrarsi.
+    // A second stash on top of the first: every stashed row is still in the live table, so there
+    // is nothing to save and the restore must not wedge.
     const stage = await stashPreservedTables(prisma);
 
     const merged = await mergeStashedAuditLog(prisma, stage);
@@ -319,14 +325,14 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
 
   it('rifiuta se lo staging è l\'unica copia di eventi che la tabella viva non ha più', async () => {
     const stage = await stashPreservedTables(prisma);
-    // Simula il caso pericoloso: il restore precedente ha sovrascritto audit_logs e uno degli
-    // eventi messi da parte non esiste più nella tabella viva.
+    // Simulates the dangerous case: the previous restore overwrote audit_logs and one of the
+    // stashed events no longer exists in the live table.
     const [survivor] = await prisma.auditLog.findMany({ take: 1, orderBy: { id: 'asc' } });
     await prisma.auditLog.delete({ where: { id: survivor.id } });
 
     await expect(stashPreservedTables(prisma)).rejects.toThrow(/contiene 1 eventi/);
 
-    // Lo staging è ancora lì, intatto: rifiutare non deve distruggere ciò che protegge.
+    // The staging schema is still there, intact: refusing must not destroy what it protects.
     await expect(mergeStashedAuditLog(prisma, stage)).resolves.toBe(1);
   }, 60_000);
 });

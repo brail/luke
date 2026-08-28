@@ -82,10 +82,12 @@ export function pgBinaryMajorVersion(binary: 'pg_dump' | 'pg_restore'): Promise<
     let stdout = '';
     child.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
     child.on('error', reject);
-    child.on('close', () => {
-      const major = /(\d+)/.exec(stdout.replace(/^\D*\(.*?\)/, ''));
+    child.on('close', code => {
+      // A non-zero exit means the banner was never printed: whatever landed on stdout is error
+      // text, and a digit inside it would otherwise be read as a version number.
+      const major = code === 0 ? /(\d+)/.exec(stdout.replace(/^\D*\(.*?\)/, '')) : null;
       if (!major) {
-        reject(new Error(`Impossibile determinare la versione di ${binary}: "${stdout.trim()}"`));
+        reject(new Error(`Impossibile determinare la versione di ${binary} (exit ${code}): "${stdout.trim()}"`));
         return;
       }
       resolve(Number.parseInt(major[1], 10));

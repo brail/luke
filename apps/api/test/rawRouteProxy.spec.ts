@@ -12,9 +12,14 @@
  * Rather than diff two lists of paths (which drift), the invariant is a naming rule: browser-facing
  * raw routes live under `/download/` (streamed GET responses) or `/upload/` (streamed POST bodies),
  * and next.config.js wildcards exactly those two prefixes. This test enforces both halves.
+ *
+ * It also checks the other side of the contract: that the paths callers actually request exist.
+ * Renaming these routes once left `scripts/rc-prod-clone.ts` posting to a path that had moved,
+ * while the documentation for that very script was updated in the same change — a caller reaching
+ * a route that no longer exists gets a 404 from Next, not a build error, so nothing surfaced it.
  */
 
-import { readFileSync, readdirSync, statSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 
 import { describe, expect, it } from 'vitest';
@@ -56,11 +61,12 @@ function isExempt(path: string): path is ExemptPath {
   return (NOT_BROWSER_FACING as readonly string[]).includes(path);
 }
 
-function walk(dir: string): string[] {
+function walk(dir: string, extensions: string[] = ['.ts']): string[] {
   return readdirSync(dir).flatMap(entry => {
     const full = join(dir, entry);
-    if (statSync(full).isDirectory()) return entry === 'node_modules' ? [] : walk(full);
-    return full.endsWith('.ts') && !/\.(test|spec)\.ts$/.test(full) ? [full] : [];
+    if (statSync(full).isDirectory()) return entry === 'node_modules' ? [] : walk(full, extensions);
+    const wanted = extensions.some(ext => full.endsWith(ext));
+    return wanted && !/\.(test|spec)\.tsx?$/.test(full) ? [full] : [];
   });
 }
 
@@ -77,6 +83,77 @@ function collectRawRoutes(): { path: string; file: string }[] {
     }
   }
   return found;
+}
+
+
+const REPO_ROOT = join(import.meta.dirname, '..', '..', '..');
+
+/**
+ * Where raw API paths are requested from. Deliberately not apps/web's pages: a Next.js page route
+ * shares the `/maintenance/...` shape with the old API paths, and telling them apart statically
+ * is not worth the false positives. What is scanned instead are the two forms that unambiguously
+ * address the API — `buildApiUrl('...')`, and a template literal opening with a `…Url`/`…url`
+ * interpolation, which is how the scripts build absolute API URLs.
+ */
+const CALLER_DIRS = ['apps/web/src', 'packages/core/src', 'scripts'];
+
+/** `buildApiUrl('/x')` — unambiguously an API path, wherever it appears. */
+const BUILD_API_URL_RE = /buildApiUrl\(\s*[`'"]([^`'"]+)[`'"]/g;
+/**
+ * A template literal opening with a `…Url` interpolation, scanned only under `scripts/`.
+ * That is how the scripts address a deployed instance (`${prodUrl}/download/...`). The same shape
+ * in apps/web is usually a frontend redirect (`${baseUrl}/dashboard`), so scanning it there would
+ * report pages as missing API routes.
+ */
+const BASE_URL_TEMPLATE_RE = /`\$\{[A-Za-z_$][\w$]*[Uu]rl\}(\/[^`]*)`/g;
+
+/** Strips block comments, so a `@example buildApiUrl('/x')` in a docstring is not read as a call. */
+function stripBlockComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
+/** Splits a path into segments, dropping any query string; `:id`, `${expr}` and `*` all become `*`. */
+function segmentsOf(path: string): string[] {
+  return path
+    .split('?')[0]
+    .replace(/\$\{[^}]*\}/g, '*')
+    .replace(/:[A-Za-z_][\w]*/g, '*')
+    .split('/')
+    .filter(Boolean);
+}
+
+/**
+ * Whether a route can serve a requested path. `*` matches one segment on either side: a route's
+ * `:specsheetId` accepts the literal `temp`, and a caller's `${format}` may land on any of the
+ * literal `ical` / `pdf` / `xlsx` routes. A trailing `*` in a route (Fastify's wildcard) matches
+ * the rest.
+ */
+function routeServes(routeSegments: string[], requestedSegments: string[]): boolean {
+  if (routeSegments.at(-1) === '*' && requestedSegments.length >= routeSegments.length - 1) {
+    return routeSegments
+      .slice(0, -1)
+      .every((seg, i) => seg === '*' || seg === requestedSegments[i]);
+  }
+  if (routeSegments.length !== requestedSegments.length) return false;
+  return routeSegments.every((seg, i) => seg === '*' || requestedSegments[i] === '*' || seg === requestedSegments[i]);
+}
+
+function collectRequestedPaths(): { path: string; file: string }[] {
+  const requested: { path: string; file: string }[] = [];
+  for (const dir of CALLER_DIRS) {
+    const root = join(REPO_ROOT, dir);
+    if (!existsSync(root)) continue;
+    for (const file of walk(root, ['.ts', '.tsx'])) {
+      const source = stripBlockComments(readFileSync(file, 'utf8'));
+      const patterns = dir === 'scripts' ? [BUILD_API_URL_RE, BASE_URL_TEMPLATE_RE] : [BUILD_API_URL_RE];
+      for (const re of patterns) {
+        for (const match of source.matchAll(re)) {
+          if (match[1].startsWith('/')) requested.push({ path: match[1], file });
+        }
+      }
+    }
+  }
+  return requested;
 }
 
 describe('raw route proxying', () => {
@@ -97,6 +174,28 @@ describe('raw route proxying', () => {
       'These raw routes have no rewrite in apps/web/next.config.js, so in production they resolve ' +
         'to the Next.js 404 page instead of the API. Move them under /download/ or /upload/, or — ' +
         'only if no browser ever calls them — add them to NOT_BROWSER_FACING with a reason.'
+    ).toEqual([]);
+  });
+
+  it('only requests raw API paths that a route actually serves', () => {
+    const served = routes.map(r => segmentsOf(r.path));
+    // Handled by Next itself rather than by a Fastify route: tRPC, NextAuth, and the asset proxy.
+    const handledByNext = [/^\/trpc\b/, /^\/api\b/, /^\/uploads\b/];
+
+    const requested = collectRequestedPaths();
+    expect(requested.length, 'the caller scanner matched nothing').toBeGreaterThan(3);
+
+    const dangling = requested
+      .filter(r => !handledByNext.some(re => re.test(r.path)))
+      .filter(r => !served.some(route => routeServes(route, segmentsOf(r.path))))
+      .map(r => `${r.path}  (${r.file.replace(REPO_ROOT + '/', '')})`);
+
+    expect(
+      dangling,
+      'These callers request a raw API path no route serves. In production the request reaches ' +
+        'Next.js and comes back as its 404 page, which a fetch caller reports as a failed request ' +
+        'and a download caller saves to disk — neither is a build error, so a renamed route takes ' +
+        'its callers down silently.'
     ).toEqual([]);
   });
 
