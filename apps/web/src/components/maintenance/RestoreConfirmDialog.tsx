@@ -109,23 +109,25 @@ export function RestoreConfirmDialog({
           <DialogIconTitle icon={<Ban className="h-6 w-6 text-destructive shrink-0" />}>
             Impossibile ripristinare: schema più recente
           </DialogIconTitle>
-          <DialogDescription className="text-left space-y-3 pt-2">
-            <p>
-              Questo backup proviene da uno schema database più recente (o comunque non
-              riconosciuto da questa istanza:{' '}
-              <span className="font-mono">{backup.schemaMigrationName ?? '—'}</span>), rispetto a
-              quello in esecuzione (
-              <span className="font-mono">{compat.currentSchemaMigrationName ?? '—'}</span>).
-            </p>
-            <p>
-              Non è possibile applicare le migrazioni all&apos;indietro senza perdita di dati:
-              questo progetto non mantiene un percorso di rollback, e diverse migrazioni rimuovono
-              colonne o tabelle in modo irreversibile.
-            </p>
-            <p className="font-medium text-foreground">
-              Aggiorna questa istanza a una versione ≥ di quella del backup, poi riprova il
-              ripristino.
-            </p>
+          <DialogDescription asChild className="text-left space-y-3 pt-2">
+            <div>
+              <p>
+                Questo backup proviene da uno schema database più recente (o comunque non
+                riconosciuto da questa istanza:{' '}
+                <span className="font-mono">{backup.schemaMigrationName ?? '—'}</span>), rispetto a
+                quello in esecuzione (
+                <span className="font-mono">{compat.currentSchemaMigrationName ?? '—'}</span>).
+              </p>
+              <p>
+                Non è possibile applicare le migrazioni all&apos;indietro senza perdita di dati:
+                questo progetto non mantiene un percorso di rollback, e diverse migrazioni rimuovono
+                colonne o tabelle in modo irreversibile.
+              </p>
+              <p className="font-medium text-foreground">
+                Aggiorna questa istanza a una versione ≥ di quella del backup, poi riprova il
+                ripristino.
+              </p>
+            </div>
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -142,28 +144,30 @@ export function RestoreConfirmDialog({
           <DialogIconTitle icon={<AlertTriangle className="h-6 w-6 text-destructive shrink-0" />}>
             Schema del backup non aggiornato
           </DialogIconTitle>
-          <DialogDescription className="text-left space-y-3 pt-2">
-            <p>
-              Questo backup usa uno schema più vecchio (
-              <span className="font-mono">{backup.schemaMigrationName}</span>) di quello corrente
-              (<span className="font-mono">{compat.currentSchemaMigrationName}</span>). Cliccando{' '}
-              <strong className="text-foreground">Applica migrazioni</strong> verrà eseguito, in
-              ordine:
-            </p>
-            <ol className="list-decimal space-y-1 pl-5">
-              <li>Creazione di un database temporaneo isolato</li>
-              <li>
-                Ripristino del backup in quel database — <strong>nessun impatto su produzione</strong>
-              </li>
-              <li>Salvataggio di uno snapshot di sicurezza pre-migrazione</li>
-              <li>Applicazione delle {compat.pendingMigrations.length} migrazioni mancanti (elenco sotto)</li>
-              <li>Salvataggio del risultato come nuovo backup &quot;Migrato&quot;, pronto per il ripristino</li>
-              <li>Rimozione del database temporaneo</li>
-            </ol>
-            <p>
-              L&apos;operazione gira in background: puoi chiudere questa finestra, il progresso è
-              visibile nella tabella backup.
-            </p>
+          <DialogDescription asChild className="text-left space-y-3 pt-2">
+            <div>
+              <p>
+                Questo backup usa uno schema più vecchio (
+                <span className="font-mono">{backup.schemaMigrationName}</span>) di quello corrente
+                (<span className="font-mono">{compat.currentSchemaMigrationName}</span>). Cliccando{' '}
+                <strong className="text-foreground">Applica migrazioni</strong> verrà eseguito, in
+                ordine:
+              </p>
+              <ol className="list-decimal space-y-1 pl-5">
+                <li>Creazione di un database temporaneo isolato</li>
+                <li>
+                  Ripristino del backup in quel database — <strong>nessun impatto su produzione</strong>
+                </li>
+                <li>Salvataggio di uno snapshot di sicurezza pre-migrazione</li>
+                <li>Applicazione delle {compat.pendingMigrations.length} migrazioni mancanti (elenco sotto)</li>
+                <li>Salvataggio del risultato come nuovo backup &quot;Migrato&quot;, pronto per il ripristino</li>
+                <li>Rimozione del database temporaneo</li>
+              </ol>
+              <p>
+                L&apos;operazione gira in background: puoi chiudere questa finestra, il progresso è
+                visibile nella tabella backup.
+              </p>
+            </div>
           </DialogDescription>
         </DialogHeader>
 
@@ -204,22 +208,24 @@ export function RestoreConfirmDialog({
           <DialogIconTitle icon={<AlertTriangle className="h-6 w-6 text-destructive shrink-0" />}>
             Ripristina database da backup
           </DialogIconTitle>
-          <DialogDescription className="text-left space-y-3 pt-2">
-            <p className="font-medium text-foreground">
-              Questa operazione SOVRASCRIVE completamente il database attuale con il contenuto
-              del backup del{' '}
-              {new Intl.DateTimeFormat('it-IT', { dateStyle: 'long', timeStyle: 'short' }).format(
-                new Date(backup.createdAt)
-              )}
-              . Tutti i dati creati o modificati dopo quel momento andranno persi.
-            </p>
-            <p>
-              Prima di procedere viene creato automaticamente uno snapshot di sicurezza del
-              database attuale — se il restore fosse un errore, potrai ripristinare quello
-              snapshot. L&apos;operazione è comunque da considerarsi irreversibile: l&apos;app
-              entra in modalità manutenzione (bloccando tutti gli utenti non-admin) per la
-              durata del ripristino.
-            </p>
+          <DialogDescription asChild className="text-left space-y-3 pt-2">
+            <div>
+              <p className="font-medium text-foreground">
+                Questa operazione SOVRASCRIVE completamente il database attuale con il contenuto
+                del backup del{' '}
+                {new Intl.DateTimeFormat('it-IT', { dateStyle: 'long', timeStyle: 'short' }).format(
+                  new Date(backup.createdAt)
+                )}
+                . Tutti i dati creati o modificati dopo quel momento andranno persi.
+              </p>
+              <p>
+                Prima di procedere viene creato automaticamente uno snapshot di sicurezza del
+                database attuale — se il restore fosse un errore, potrai ripristinare quello
+                snapshot. L&apos;operazione è comunque da considerarsi irreversibile: l&apos;app
+                entra in modalità manutenzione (bloccando tutti gli utenti non-admin) per la
+                durata del ripristino.
+              </p>
+            </div>
           </DialogDescription>
         </DialogHeader>
 
