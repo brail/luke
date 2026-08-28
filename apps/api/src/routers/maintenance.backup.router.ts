@@ -25,7 +25,12 @@ import { logAudit } from '../lib/auditLog';
 import { unwrapDek, wrapDekWithPassphrase } from '../lib/backup/crypto';
 import { createPendingBackupRecord, deleteBackupBlob, runBackupJob } from '../lib/backup/dumpPipeline';
 import { classifySchemaCompatibility, runMigrationBridgeJob } from '../lib/backup/migrationBridge';
-import { assertPgToolchainCompatible, runRestoreJob } from '../lib/backup/restorePipeline';
+import {
+  applyStagedRestore,
+  assertPgToolchainCompatible,
+  discardStagedRestore,
+  stageBackupArchive,
+} from '../lib/backup/restorePipeline';
 import { getBackupScheduleSettings, saveConfig } from '../lib/configManager';
 import { forceLogoutNonAdmins, writeMaintenanceState } from '../lib/maintenanceMode';
 import { requirePermission } from '../lib/permissions';
@@ -411,6 +416,33 @@ export const backupRouter = router({
         });
       }
 
+      // Download, decrypt, unpack and verify the archive before anything else. All of it is
+      // non-destructive, and it is where a backup written by an incompatible pg_dump is caught —
+      // so an unreadable backup costs a temp directory instead of leaving the instance in
+      // Maintenance Mode with a safety snapshot taken for a restore that never had a chance.
+      let staged;
+      try {
+        staged = await stageBackupArchive({
+          prisma: ctx.prisma,
+          filename: target.filename,
+          ivHex: target.ivHex,
+          authTagHex: target.authTagHex,
+          wrappedDekHex: target.wrappedDekHex,
+          restoreFiles: input.restoreFiles,
+          logger: ctx.logger,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        await logAudit(ctx, {
+          action: 'BACKUP_RESTORE',
+          targetType: 'BackupRecord',
+          targetId: target.id,
+          result: 'FAILURE',
+          metadata: { preserveAuditLog: input.preserveAuditLog, restoreFiles: input.restoreFiles, errorCode: message.slice(0, 200) },
+        });
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: `Backup non ripristinabile: ${message}`, cause: err });
+      }
+
       // Mandatory safety snapshot: if it fails, the restore doesn't start — nothing has been touched.
       const safety = await createPendingBackupRecord(ctx.prisma, {
         scope: 'DB',
@@ -455,12 +487,9 @@ export const backupRouter = router({
       });
 
       try {
-        await runRestoreJob({
+        await applyStagedRestore({
           prisma: ctx.prisma,
-          filename: target.filename,
-          ivHex: target.ivHex,
-          authTagHex: target.authTagHex,
-          wrappedDekHex: target.wrappedDekHex,
+          staged,
           preserveAuditLog: input.preserveAuditLog,
           restoreFiles: input.restoreFiles,
           logger: ctx.logger,
@@ -475,6 +504,8 @@ export const backupRouter = router({
           metadata: { ...baseMeta, errorCode: message.slice(0, 200) },
         });
         throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Restore fallito: ${message}`, cause: err });
+      } finally {
+        await discardStagedRestore(staged);
       }
 
       await logAudit(ctx, {

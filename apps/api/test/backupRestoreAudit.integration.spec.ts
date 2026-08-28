@@ -192,6 +192,24 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     expect(stage[0].exists).toBe(false);
   }, 120_000);
 
+  it('rifiuta un archivio che pg_restore non sa leggere, senza toccare il database', async () => {
+    const { readFileSync, writeFileSync } = await import('fs');
+    const badPath = join(workDir, 'unreadable.dump');
+
+    // A custom-format archive stores its format version at bytes 5-6 (after the "PGDMP" magic).
+    // Bumping the minor past what this pg_restore supports reproduces exactly what a dump written
+    // by a newer pg_dump looks like to it, without needing that pg_dump installed.
+    const archive = readFileSync(backupPath);
+    archive[6] = archive[6] + 4;
+    writeFileSync(badPath, archive);
+
+    const usersBefore = await prisma.user.count();
+    await expect(
+      restoreDatabaseFromFile(badPath, { db: scratchDb })
+    ).rejects.toThrow(/versione|version/i);
+    expect(await prisma.user.count()).toBe(usersBefore);
+  }, 60_000);
+
   it('scarta uno staging residuo che non contiene nulla di perduto', async () => {
     await stashAuditLog(prisma);
     const before = await prisma.auditLog.count();

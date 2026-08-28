@@ -272,7 +272,7 @@ function parseFileEntryName(name: string): { bucket: StorageBucket; key: string 
   return { bucket: bucket as StorageBucket, key };
 }
 
-export interface RunRestoreJobParams {
+export interface StageBackupArchiveParams {
   prisma: PrismaClient;
   /** Storage key of the encrypted blob in the "backups" bucket. */
   filename: string;
@@ -280,16 +280,64 @@ export interface RunRestoreJobParams {
   ivHex: string;
   authTagHex: string;
   wrappedDekHex: string;
-  /** If true, the current audit trail is stashed before the restore and merged back after, so no
-   *  event is lost in either direction. See `stashAuditLog`. */
-  preserveAuditLog: boolean;
-  /** Whether to also replay `files/*` entries back into the storage provider. */
+  /** Whether `files/*` entries should be kept for replay, or drained and discarded. */
   restoreFiles: boolean;
   logger: BackupLogger;
 }
 
-export async function runRestoreJob(params: RunRestoreJobParams): Promise<void> {
-  const { filename, ivHex, authTagHex, wrappedDekHex, preserveAuditLog, restoreFiles, logger } = params;
+/** A backup unpacked on local disk, verified restorable, and not yet applied to anything. */
+export interface StagedRestore {
+  workDir: string;
+  dumpPath: string;
+  stagedFiles: StagedFileEntry[];
+}
+
+/**
+ * Verifies `pg_restore` can actually read a staged dump, by asking it to list the archive's
+ * contents — no connection, no writes.
+ *
+ * A custom-format archive carries a format version tied to the `pg_dump` that wrote it (16 writes
+ * 1.15, 18 writes 1.16), and `pg_restore` reads its own version and older, never newer. The raw
+ * refusal is "unsupported version (1.16) in the file header", which names neither the tool that
+ * wrote the archive nor the one that cannot read it.
+ *
+ * Deployed instances never see this: the same pinned client writes and reads every backup. It
+ * shows up when the toolchain changes underneath existing backups — a developer's PATH, or an
+ * image whose client major moved — and on `.lukebak` packages imported from an instance that ran
+ * a different one.
+ */
+async function assertDumpReadable(dumpPath: string, logger: BackupLogger): Promise<void> {
+  try {
+    await runPgBinary('pg_restore', ['--list', dumpPath], '');
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    logger.error({ dumpPath, err: detail }, 'Restore: dump illeggibile');
+
+    const clientMajor = await pgBinaryMajorVersion('pg_restore').catch(() => null);
+    throw new Error(
+      'Il dump contenuto nel backup non è leggibile da questo pg_restore' +
+      (clientMajor ? ` (major ${clientMajor})` : '') +
+      '. Se il messaggio parla di versione non supportata nell\'intestazione, il backup è stato ' +
+      'creato da un pg_dump più recente: serve un pg_restore almeno di pari major, che a sua volta ' +
+      `deve coincidere con quella del server. Dettaglio: ${detail}`,
+      { cause: err }
+    );
+  }
+}
+
+/**
+ * Downloads, decrypts and unpacks a backup onto local disk, then checks the dump is restorable.
+ *
+ * Nothing here touches the database or the storage provider, which is the point: the caller runs
+ * this *before* taking the instance down for maintenance, so a backup that turns out to be
+ * unreadable — or a download that fails halfway — costs nothing but a temp directory. Staging to
+ * disk in full also means the (possibly S3-backed) blob stream is not held open across a
+ * multi-minute `pg_restore`, and that a failing restore cannot leave storage files half-replaced.
+ *
+ * The caller owns the returned directory and must pass it to `discardStagedRestore`.
+ */
+export async function stageBackupArchive(params: StageBackupArchiveParams): Promise<StagedRestore> {
+  const { filename, ivHex, authTagHex, wrappedDekHex, restoreFiles, logger } = params;
   const jobId = filename.replace(/[^a-zA-Z0-9_.-]/g, '_');
   const workDir = join(TEMP_DIR, jobId);
   const dumpPath = join(workDir, 'db.dump');
@@ -298,16 +346,16 @@ export async function runRestoreJob(params: RunRestoreJobParams): Promise<void> 
   try {
     await mkdir(filesDir, { recursive: true, mode: 0o700 });
 
-    const provider = await getStorageProvider(params.prisma);
-
     logger.info({ filename }, 'Restore: download e decifratura archivio');
     const extract = await openBackupArchiveStream({ prisma: params.prisma, filename, ivHex, authTagHex, wrappedDekHex });
 
     const stagedFiles: StagedFileEntry[] = [];
     let fileIndex = 0;
+    let dumpFound = false;
 
     await forEachArchiveEntry(extract, async (header, entryStream) => {
       if (header.name === 'db.dump') {
+        dumpFound = true;
         await pipeline(entryStream, createWriteStream(dumpPath));
         return;
       }
@@ -325,31 +373,63 @@ export async function runRestoreJob(params: RunRestoreJobParams): Promise<void> 
       stagedFiles.push({ bucket: parsed.bucket, key: parsed.key, stagedPath, size: header.size ?? 0 });
     });
 
-    // Stashed only once the archive has been extracted in full: a download or decrypt failure
-    // must not leave a staging schema behind, since the next restore refuses to start on one.
-    if (preserveAuditLog) {
-      await stashAuditLog(params.prisma);
-      logger.info({ filename }, 'Restore: registro attività messo da parte');
+    if (!dumpFound) {
+      throw new Error("L'archivio del backup non contiene il dump del database (voce \"db.dump\" assente)");
     }
+    await assertDumpReadable(dumpPath, logger);
 
-    logger.info({ filename }, 'Restore: avvio pg_restore');
-    await restoreDatabaseFromFile(dumpPath);
-
-    if (preserveAuditLog) {
-      const mergedRows = await mergeStashedAuditLog(params.prisma);
-      logger.info({ filename, mergedRows }, 'Restore: registro attività reinnestato');
-    }
-
-    logger.info({ filename }, 'Restore: database ripristinato, replay file storage');
-
-    if (restoreFiles) {
-      await replayStagedFiles(provider, stagedFiles);
-    }
-
-    logger.info({ filename, restoredFiles: stagedFiles.length }, 'Restore: completato');
-  } finally {
+    logger.info({ filename, files: stagedFiles.length }, 'Restore: archivio estratto e verificato');
+    return { workDir, dumpPath, stagedFiles };
+  } catch (err) {
     await rm(workDir, { recursive: true, force: true }).catch(() => { /* best-effort cleanup */ });
+    throw err;
   }
+}
+
+export interface ApplyStagedRestoreParams {
+  prisma: PrismaClient;
+  staged: StagedRestore;
+  /** If true, the current audit trail is stashed before the restore and merged back after, so no
+   *  event is lost in either direction. See `stashAuditLog`. */
+  preserveAuditLog: boolean;
+  /** Whether to also replay `files/*` entries back into the storage provider. */
+  restoreFiles: boolean;
+  logger: BackupLogger;
+}
+
+/**
+ * Applies a staged backup: this is the destructive half, and the only one.
+ *
+ * The database goes first and the storage files second, so a failing `pg_restore` leaves the
+ * files untouched rather than half-replaced.
+ */
+export async function applyStagedRestore(params: ApplyStagedRestoreParams): Promise<void> {
+  const { prisma, staged, preserveAuditLog, restoreFiles, logger } = params;
+
+  if (preserveAuditLog) {
+    await stashAuditLog(prisma);
+    logger.info('Restore: registro attività messo da parte');
+  }
+
+  logger.info('Restore: avvio pg_restore');
+  await restoreDatabaseFromFile(staged.dumpPath);
+
+  if (preserveAuditLog) {
+    const mergedRows = await mergeStashedAuditLog(prisma);
+    logger.info({ mergedRows }, 'Restore: registro attività reinnestato');
+  }
+
+  if (restoreFiles) {
+    logger.info('Restore: database ripristinato, replay file storage');
+    await replayStagedFiles(await getStorageProvider(prisma), staged.stagedFiles);
+  }
+
+  logger.info({ restoredFiles: staged.stagedFiles.length }, 'Restore: completato');
+}
+
+/** Removes a staged restore's working directory. Safe to call more than once. */
+export async function discardStagedRestore(staged: StagedRestore): Promise<void> {
+  await rm(staged.workDir, { recursive: true, force: true }).catch(() => { /* best-effort cleanup */ });
 }
 
 async function replayStagedFiles(provider: IStorageProvider, files: StagedFileEntry[]): Promise<void> {
