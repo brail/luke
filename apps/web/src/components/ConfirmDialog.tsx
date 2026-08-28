@@ -1,6 +1,7 @@
 'use client';
 
 import { AlertTriangle, Trash2, UserX } from 'lucide-react';
+import { useRef } from 'react';
 
 import {
   AlertDialog,
@@ -63,6 +64,21 @@ export function ConfirmDialog({
     onOpenChange(next);
   };
 
+  const actionRef = useRef<HTMLButtonElement>(null);
+
+  // Radix moves focus to Cancel when an AlertDialog opens, so a reflex Enter — the same key the
+  // user just pressed to submit whatever opened this — cannot fire the action. Worth keeping on an
+  // irreversible delete; on a reversible confirmation it only leaves Enter doing nothing the user
+  // wanted, so those focus their own action instead. The preventDefault() is what disables Radix's
+  // own handler: it composes ours first and skips its Cancel focus once the event is defaulted.
+  const focusesActionOnOpen = actionType === 'disable' || actionType === 'warning';
+
+  const handleOpenAutoFocus = (event: Event) => {
+    if (!focusesActionOnOpen) return;
+    event.preventDefault();
+    actionRef.current?.focus({ preventScroll: true });
+  };
+
   // Icone per diversi tipi di azione
   const getIcon = () => {
     switch (actionType) {
@@ -95,7 +111,7 @@ export function ConfirmDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={handleOpenChange}>
-      <AlertDialogContent className="sm:max-w-[425px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
+      <AlertDialogContent className="sm:max-w-[425px]" onOpenAutoFocus={handleOpenAutoFocus}> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
         <AlertDialogHeader>
           <div className="flex items-center gap-3">
             {getIcon()}
@@ -115,6 +131,7 @@ export function ConfirmDialog({
             {cancelText}
           </AlertDialogCancel>
           <AlertDialogAction
+            ref={actionRef}
             onClick={handleConfirm}
             disabled={isLoading}
             className={
