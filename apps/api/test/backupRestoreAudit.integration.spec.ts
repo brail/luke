@@ -192,12 +192,29 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     expect(stage[0].exists).toBe(false);
   }, 120_000);
 
-  it('rifiuta di ripartire se lo staging di un restore precedente è ancora lì', async () => {
+  it('scarta uno staging residuo che non contiene nulla di perduto', async () => {
     await stashAuditLog(prisma);
-    try {
-      await expect(stashAuditLog(prisma)).rejects.toThrow(/esiste già/);
-    } finally {
-      await mergeStashedAuditLog(prisma);
-    }
+    const before = await prisma.auditLog.count();
+
+    // Secondo stash sopra il primo: ogni riga messa da parte è ancora nella tabella viva, quindi
+    // non c'è niente da salvare e il restore non deve incastrarsi.
+    await expect(stashAuditLog(prisma)).resolves.toBeUndefined();
+
+    const merged = await mergeStashedAuditLog(prisma);
+    expect(merged).toBe(0);
+    expect(await prisma.auditLog.count()).toBe(before);
+  }, 60_000);
+
+  it('rifiuta se lo staging è l\'unica copia di eventi che la tabella viva non ha più', async () => {
+    await stashAuditLog(prisma);
+    // Simula il caso pericoloso: il restore precedente ha sovrascritto audit_logs e uno degli
+    // eventi messi da parte non esiste più nella tabella viva.
+    const [survivor] = await prisma.auditLog.findMany({ take: 1, orderBy: { id: 'asc' } });
+    await prisma.auditLog.delete({ where: { id: survivor.id } });
+
+    await expect(stashAuditLog(prisma)).rejects.toThrow(/contiene 1 eventi/);
+
+    // Lo staging è ancora lì, intatto: rifiutare non deve distruggere ciò che protegge.
+    await expect(mergeStashedAuditLog(prisma)).resolves.toBe(1);
   }, 60_000);
 });

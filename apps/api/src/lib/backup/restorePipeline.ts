@@ -163,10 +163,13 @@ const AUDIT_STAGE_IDENT = Prisma.raw(`"${AUDIT_STAGE_SCHEMA}"`);
  * the copy survives the `users` drop; and the staging schema is absent from the archive's TOC, so
  * `--clean` never sees it.
  *
- * Refuses to run if the staging schema already exists. That means a previous restore died between
- * stash and merge, and after a half-applied `pg_restore --clean` the staging copy may be the only
- * surviving audit trail — dropping it blind to make room would destroy exactly what it was
- * protecting.
+ * A leftover staging schema means a previous restore died between stash and merge. Whether that
+ * copy still matters is a question with an answer, so it gets asked rather than assumed: if every
+ * row in it is already in `public.audit_logs`, the earlier restore never got as far as touching
+ * the table (a `pg_restore` that aborts on its prologue, say) and the copy is redundant — it is
+ * dropped and the restore proceeds. If it holds rows the live table does not, the previous run
+ * did wipe the trail and this copy is the only one left; that refuses, because clearing it to
+ * make room would destroy exactly what it exists to protect.
  */
 export async function stashAuditLog(prisma: PrismaClient): Promise<void> {
   const existing = await prisma.$queryRaw<{ exists: boolean }[]>(Prisma.sql`
@@ -175,11 +178,24 @@ export async function stashAuditLog(prisma: PrismaClient): Promise<void> {
     ) AS "exists"
   `);
   if (existing[0]?.exists) {
-    throw new Error(
-      `Lo schema "${AUDIT_STAGE_SCHEMA}" esiste già: un restore precedente si è interrotto dopo aver ` +
-      'messo da parte il registro attività. Quella copia potrebbe essere l\'unica rimasta — verificala ' +
-      '(oppure ripristina lo snapshot di sicurezza pre-restore) ed eliminala a mano prima di riprovare.'
-    );
+    const [{ orphaned }] = await prisma.$queryRaw<{ orphaned: bigint }[]>(Prisma.sql`
+      SELECT count(*) AS orphaned
+      FROM ${AUDIT_STAGE_IDENT}.audit_logs s
+      WHERE NOT EXISTS (SELECT 1 FROM public.audit_logs p WHERE p.id = s.id)
+    `);
+
+    if (orphaned > 0n) {
+      throw new Error(
+        `Lo schema "${AUDIT_STAGE_SCHEMA}" contiene ${orphaned} eventi che il registro attività ` +
+        'corrente non ha: un restore precedente si è interrotto dopo averlo sovrascritto, e quella ' +
+        'copia è l\'unica rimasta. Reinnestala o mettila al sicuro (in alternativa ripristina lo ' +
+        'snapshot di sicurezza pre-restore), poi elimina lo schema a mano prima di riprovare.'
+      );
+    }
+
+    // Nothing in the copy that the live table has lost: the earlier restore never reached
+    // audit_logs. Clear it and carry on rather than dead-ending an operator over a redundant copy.
+    await prisma.$executeRaw(Prisma.sql`DROP SCHEMA ${AUDIT_STAGE_IDENT} CASCADE`);
   }
 
   // Raw SQL: a staging schema plus CREATE TABLE AS SELECT has no Prisma ORM equivalent.
