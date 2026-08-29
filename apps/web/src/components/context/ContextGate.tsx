@@ -1,9 +1,12 @@
 'use client';
 
+import { zodResolver } from '@hookform/resolvers/zod';
 import React, { useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
+import { z } from 'zod';
 
-import { normalizeCode } from '@luke/core';
+import { BrandInputSchema, SeasonInputSchema, normalizeCode } from '@luke/core';
 
 import { useAppContext } from '../../contexts/AppContextProvider';
 import { useContextMutation } from '../../contexts/useContextMutation';
@@ -17,8 +20,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../ui/dialog';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '../ui/form';
 import { Input } from '../ui/input';
-import { Label } from '../ui/label';
 import {
   Select,
   SelectContent,
@@ -29,6 +39,33 @@ import {
 import { Skeleton } from '../ui/skeleton';
 
 import { BrandAvatar } from './BrandAvatar';
+
+/** The two fields the inline brand form collects; the core schema already carries Italian copy. */
+const BrandCreateFormSchema = BrandInputSchema.pick({ code: true, name: true });
+
+type BrandCreateFormData = z.infer<typeof BrandCreateFormSchema>;
+
+interface SeasonCreateFormData {
+  code: string;
+  name: string;
+  year: string;
+}
+
+/**
+ * The inline season form. `year` is held as a string because that is what the number input gives,
+ * and it is optional — parsed on submit, where `SeasonInputSchema`'s own range applies. Declared
+ * rather than inferred: the refine makes this a ZodEffects, whose inferred type does not survive
+ * the resolver's generics cleanly.
+ */
+const SeasonCreateFormSchema: z.ZodType<SeasonCreateFormData, SeasonCreateFormData> =
+  SeasonInputSchema.pick({ code: true, name: true }).extend({
+    year: z
+      .string()
+      .refine(
+        value => value === '' || (/^\d{4}$/.test(value) && Number(value) >= 2000 && Number(value) <= 2100),
+        'Anno non valido'
+      ),
+  });
 
 /**
  * Modale bloccante per la selezione iniziale del context
@@ -48,13 +85,16 @@ export function ContextGate() {
   const [selectedSeasonId, setSelectedSeasonId] = useState<string>('');
 
   // Mini form brand
-  const [newBrandCode, setNewBrandCode] = useState('');
-  const [newBrandName, setNewBrandName] = useState('');
+  const brandForm = useForm<BrandCreateFormData>({
+    resolver: zodResolver(BrandCreateFormSchema),
+    defaultValues: { code: '', name: '' },
+  });
 
   // Mini form season
-  const [newSeasonCode, setNewSeasonCode] = useState('');
-  const [newSeasonName, setNewSeasonName] = useState('');
-  const [newSeasonYear, setNewSeasonYear] = useState('');
+  const seasonForm = useForm<SeasonCreateFormData>({
+    resolver: zodResolver(SeasonCreateFormSchema),
+    defaultValues: { code: '', name: '', year: '' },
+  });
 
   const { data: brands = [], isLoading: brandsLoading } =
     trpc.catalog.brands.useQuery(undefined, { enabled: needsSetup });
@@ -66,8 +106,7 @@ export function ContextGate() {
     onSuccess: brand => {
       utils.catalog.brands.invalidate();
       setSelectedBrandId(brand.id);
-      setNewBrandCode('');
-      setNewBrandName('');
+      brandForm.reset();
       toast.success(`Brand "${brand.name}" creato`);
     },
     onError: () => toast.error('Errore durante la creazione del brand'),
@@ -77,9 +116,7 @@ export function ContextGate() {
     onSuccess: season => {
       utils.catalog.seasons.invalidate();
       setSelectedSeasonId(season.id);
-      setNewSeasonCode('');
-      setNewSeasonName('');
-      setNewSeasonYear('');
+      seasonForm.reset();
       toast.success(`Stagione "${season.code}" creata`);
     },
     onError: () => toast.error('Errore durante la creazione della stagione'),
@@ -95,17 +132,17 @@ export function ContextGate() {
     }
   };
 
-  const handleCreateBrand = () => {
-    const code = normalizeCode(newBrandCode);
-    if (!code || !newBrandName.trim()) return;
-    createBrandMutation.mutate({ code, name: newBrandName.trim(), isActive: true });
+  const handleCreateBrand = (data: BrandCreateFormData) => {
+    createBrandMutation.mutate({ code: data.code, name: data.name.trim(), isActive: true });
   };
 
-  const handleCreateSeason = () => {
-    const code = normalizeCode(newSeasonCode);
-    if (!code || !newSeasonName.trim()) return;
-    const year = newSeasonYear ? parseInt(newSeasonYear, 10) : undefined;
-    createSeasonMutation.mutate({ code, name: newSeasonName.trim(), year, isActive: true });
+  const handleCreateSeason = (data: SeasonCreateFormData) => {
+    createSeasonMutation.mutate({
+      code: data.code,
+      name: data.name.trim(),
+      year: data.year ? Number.parseInt(data.year, 10) : undefined,
+      isActive: true,
+    });
   };
 
   // Un brand è disponibile se ci sono brands nella lista O se è appena stato creato (selectedBrandId è set)
@@ -158,40 +195,58 @@ export function ContextGate() {
             <label className="text-sm font-medium">Brand</label>
             {noBrands ? (
               can('brands:create') ? (
-                <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
-                  <p className="text-sm text-muted-foreground">
-                    Nessun brand disponibile. Creane uno per continuare.
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Codice</Label>
-                      <Input
-                        placeholder="es. NIKE"
-                        value={newBrandCode}
-                        onChange={e => setNewBrandCode(e.target.value)}
-                        disabled={createBrandMutation.isPending}
-                        onKeyDown={e => e.key === 'Enter' && handleCreateBrand()}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Nome</Label>
-                      <Input
-                        placeholder="es. Nike"
-                        value={newBrandName}
-                        onChange={e => setNewBrandName(e.target.value)}
-                        disabled={createBrandMutation.isPending}
-                        onKeyDown={e => e.key === 'Enter' && handleCreateBrand()}
-                      />
-                    </div>
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={handleCreateBrand}
-                    disabled={!newBrandCode.trim() || !newBrandName.trim() || createBrandMutation.isPending}
+                <Form {...brandForm}>
+                  <form
+                    onSubmit={brandForm.handleSubmit(handleCreateBrand)}
+                    className="rounded-lg border bg-muted/30 p-4 space-y-3"
                   >
-                    {createBrandMutation.isPending ? 'Creazione...' : 'Crea Brand'}
-                  </Button>
-                </div>
+                    <p className="text-sm text-muted-foreground">
+                      Nessun brand disponibile. Creane uno per continuare.
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <FormField
+                        control={brandForm.control}
+                        name="code"
+                        render={({ field }) => (
+                          <FormItem className="space-y-1">
+                            <FormLabel className="text-xs">Codice</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="es. NIKE"
+                                disabled={createBrandMutation.isPending}
+                                {...field}
+                                // Normalised as it is typed, so what the field shows is what gets
+                                // validated and sent — it used to be normalised only on submit.
+                                onChange={e => field.onChange(normalizeCode(e.target.value))}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={brandForm.control}
+                        name="name"
+                        render={({ field }) => (
+                          <FormItem className="space-y-1">
+                            <FormLabel className="text-xs">Nome</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="es. Nike"
+                                disabled={createBrandMutation.isPending}
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <Button type="submit" size="sm" disabled={createBrandMutation.isPending}>
+                      {createBrandMutation.isPending ? 'Creazione...' : 'Crea Brand'}
+                    </Button>
+                  </form>
+                </Form>
               ) : (
                 <p className="text-sm text-muted-foreground rounded-lg border p-3">
                   Nessun brand disponibile. Contatta un amministratore per configurare il sistema.
@@ -239,51 +294,74 @@ export function ContextGate() {
               <label className="text-sm font-medium">Season</label>
               {noSeasons ? (
                 can('seasons:create') ? (
-                  <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
-                    <p className="text-sm text-muted-foreground">
-                      Nessuna stagione disponibile. Creane una per continuare.
-                    </p>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="space-y-1">
-                        <Label className="text-xs">Codice</Label>
-                        <Input
-                          placeholder="es. FW25"
-                          value={newSeasonCode}
-                          onChange={e => setNewSeasonCode(e.target.value)}
-                          disabled={createSeasonMutation.isPending}
-                          onKeyDown={e => e.key === 'Enter' && handleCreateSeason()}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Nome</Label>
-                        <Input
-                          placeholder="es. Fall/Winter"
-                          value={newSeasonName}
-                          onChange={e => setNewSeasonName(e.target.value)}
-                          disabled={createSeasonMutation.isPending}
-                          onKeyDown={e => e.key === 'Enter' && handleCreateSeason()}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Anno</Label>
-                        <Input
-                          placeholder="es. 2025"
-                          type="number"
-                          value={newSeasonYear}
-                          onChange={e => setNewSeasonYear(e.target.value)}
-                          disabled={createSeasonMutation.isPending}
-                          onKeyDown={e => e.key === 'Enter' && handleCreateSeason()}
-                        />
-                      </div>
-                    </div>
-                    <Button
-                      size="sm"
-                      onClick={handleCreateSeason}
-                      disabled={!newSeasonCode.trim() || !newSeasonName.trim() || createSeasonMutation.isPending}
+                  <Form {...seasonForm}>
+                    <form
+                      onSubmit={seasonForm.handleSubmit(handleCreateSeason)}
+                      className="rounded-lg border bg-muted/30 p-4 space-y-3"
                     >
-                      {createSeasonMutation.isPending ? 'Creazione...' : 'Crea Stagione'}
-                    </Button>
-                  </div>
+                      <p className="text-sm text-muted-foreground">
+                        Nessuna stagione disponibile. Creane una per continuare.
+                      </p>
+                      <div className="grid grid-cols-3 gap-2">
+                        <FormField
+                          control={seasonForm.control}
+                          name="code"
+                          render={({ field }) => (
+                            <FormItem className="space-y-1">
+                              <FormLabel className="text-xs">Codice</FormLabel>
+                              <FormControl>
+                                <Input
+                                  placeholder="es. FW25"
+                                  disabled={createSeasonMutation.isPending}
+                                  {...field}
+                                  onChange={e => field.onChange(normalizeCode(e.target.value))}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={seasonForm.control}
+                          name="name"
+                          render={({ field }) => (
+                            <FormItem className="space-y-1">
+                              <FormLabel className="text-xs">Nome</FormLabel>
+                              <FormControl>
+                                <Input
+                                  placeholder="es. Fall/Winter"
+                                  disabled={createSeasonMutation.isPending}
+                                  {...field}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={seasonForm.control}
+                          name="year"
+                          render={({ field }) => (
+                            <FormItem className="space-y-1">
+                              <FormLabel className="text-xs">Anno</FormLabel>
+                              <FormControl>
+                                <Input
+                                  placeholder="es. 2025"
+                                  type="number"
+                                  disabled={createSeasonMutation.isPending}
+                                  {...field}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      <Button type="submit" size="sm" disabled={createSeasonMutation.isPending}>
+                        {createSeasonMutation.isPending ? 'Creazione...' : 'Crea Stagione'}
+                      </Button>
+                    </form>
+                  </Form>
                 ) : (
                   <p className="text-sm text-muted-foreground rounded-lg border p-3">
                     Nessuna stagione disponibile. Contatta un amministratore per configurare il sistema.
