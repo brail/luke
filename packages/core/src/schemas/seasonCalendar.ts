@@ -48,6 +48,23 @@ export const CalendarEventBaseSchema = z.object({
 
 export type CalendarEventInput = z.infer<typeof CalendarEventBaseSchema>;
 
+/**
+ * Inclusive date range for a manually triggered calendar digest.
+ *
+ * The ordering check lives here rather than in the dialog: an inverted range is not a UI slip, it
+ * produces an empty recap that the server would otherwise mail out without complaint.
+ */
+export const CalendarDigestRangeInputSchema = z
+  .object({
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data non valida'),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data non valida'),
+  })
+  .refine(value => value.to >= value.from, {
+    path: ['to'],
+    message: 'La data finale non può precedere quella iniziale',
+  });
+export type CalendarDigestRangeInput = z.infer<typeof CalendarDigestRangeInputSchema>;
+
 // ─── Planning group input ─────────────────────────────────────────────────────
 
 /** Input schema for creating or renaming a PlanningGroup within a SeasonCalendar. */

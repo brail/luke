@@ -6,6 +6,8 @@ import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
+import { CalendarDigestRangeInputSchema } from '@luke/core';
+
 import { Button } from '../../../../components/ui/button';
 import {
   Dialog,
@@ -30,29 +32,14 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/**
- * Mirrors the inline input of `system.triggerCalendarDigest`; both should move to `@luke/core`
- * when that router input is extracted. The range check is stricter than the server's: an inverted
- * range yields an empty recap instead of an error, so it is caught here before the mail goes out.
- */
-const DigestRangeSchema = z
-  .object({
-    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data non valida'),
-    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data non valida'),
-  })
-  .refine(value => value.to >= value.from, {
-    path: ['to'],
-    message: 'La data finale non può precedere quella iniziale',
-  });
-
-type DigestRangeForm = z.infer<typeof DigestRangeSchema>;
+type DigestRangeForm = z.infer<typeof CalendarDigestRangeInputSchema>;
 
 /**
  * Dialog letting an admin manually send the calendar digest recap for an arbitrary date range.
  */
 export function SendDigestDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const form = useForm<DigestRangeForm>({
-    resolver: zodResolver(DigestRangeSchema),
+    resolver: zodResolver(CalendarDigestRangeInputSchema),
     defaultValues: { from: todayIso(), to: todayIso() },
   });
 

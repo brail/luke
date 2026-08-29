@@ -1,7 +1,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-import { z } from 'zod';
+import { CalendarDigestRangeInputSchema } from '@luke/core';
 
 import { runDigestNow } from '../lib/calendarDigestScheduler';
 import { requirePermission } from '../lib/permissions';
@@ -63,15 +63,12 @@ export const systemRouter = router({
    * normal cron schedule — used for testing/re-sending. See `runDigestNow`.
    *
    * @auth {config:update}
-   * @input {{ from: string, to: string }} — inclusive date range as `YYYY-MM-DD` strings.
+   * @input {CalendarDigestRangeInputSchema} — inclusive date range as `YYYY-MM-DD` strings.
    * @output {{ ok: true }}
    */
   triggerCalendarDigest: protectedProcedure
     .use(requirePermission('config:update'))
-    .input(z.object({
-      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    }))
+    .input(CalendarDigestRangeInputSchema)
     .mutation(async ({ input, ctx }) => {
       const range = {
         start: new Date(`${input.from}T00:00:00`),
