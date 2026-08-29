@@ -282,7 +282,10 @@ export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountry
                           <span className="text-muted-foreground">—</span>
                         )}
                       </td>
-                      <td className="px-3 py-2 max-w-[120px] truncate" title={c.name}>{c.name}</td> {/* 120px: caps closure-name column so the table doesn't stretch; no exact scale match */}
+                      {/* 120px: caps closure-name column so the table doesn't stretch; no exact scale match.
+                          Kept on its own line: trailing it after </td> leaves a whitespace text node,
+                          which is invalid directly inside <tr> and fails the row render. */}
+                      <td className="px-3 py-2 max-w-[120px] truncate" title={c.name}>{c.name}</td>
                       <td className="px-3 py-2 tabular-nums">
                         {String(c.startDate).slice(0, 10)}
                       </td>
