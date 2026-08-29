@@ -1,8 +1,13 @@
 'use client';
 
+import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowDown, ArrowUp, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
+import { z } from 'zod';
+
+import { PhaseInputSchema } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { PageHeader } from '../../../../components/PageHeader';
@@ -15,6 +20,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../components/ui/dialog';
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '../../../../components/ui/form';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
 import {
@@ -298,6 +312,18 @@ export default function PhaseCatalogPage() {
 
 type DialogSubmitData = { value: string; label: string };
 
+/**
+ * The two fields the dialog collects, out of the phase input. The messages are spelled out here:
+ * the core schema carries no copy, and Zod's default for `min(1)` talks about string length
+ * rather than about the field being required.
+ */
+const PhaseFormSchema = PhaseInputSchema.pick({ value: true, label: true }).extend({
+  value: z.string().min(1, 'Il valore è obbligatorio').max(100, 'Massimo 100 caratteri'),
+  label: z.string().min(1, 'La label è obbligatoria').max(200, 'Massimo 200 caratteri'),
+});
+
+type PhaseFormData = z.infer<typeof PhaseFormSchema>;
+
 function PhaseItemDialog({
   state,
   previewCode,
@@ -313,65 +339,83 @@ function PhaseItemDialog({
 }) {
   const initial = state.mode === 'edit' ? state.item : null;
 
-  const [value, setValue] = useState(initial?.value ?? '');
-  const [label, setLabel] = useState(initial?.label ?? '');
+  // The caller mounts this dialog only while it is open, so the defaults are seeded once per
+  // opening and need no reset effect.
+  const form = useForm<PhaseFormData>({
+    resolver: zodResolver(PhaseFormSchema),
+    defaultValues: { value: initial?.value ?? '', label: initial?.label ?? '' },
+  });
 
-  const canSubmit = value.trim().length > 0 && label.trim().length > 0;
+  const label = form.watch('label');
 
-  const handleSubmit = () => {
-    onSubmit({
-      value: value.trim(),
-      label: label.trim(),
-    });
+  const handleSubmit = (data: PhaseFormData) => {
+    onSubmit({ value: data.value.trim(), label: data.label.trim() });
   };
 
   return (
-    <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
+    <Dialog open onOpenChange={open => { if (!open && !isLoading) onClose(); }}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>{state.mode === 'create' ? 'Aggiungi fase' : 'Modifica fase'}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="phase-value">Valore (chiave)</Label>
-            <Input
-              id="phase-value"
-              value={value}
-              onChange={e => setValue(e.target.value)}
-              placeholder="es. DESIGN"
-              disabled={state.mode === 'edit'}
-              autoFocus
-            />
-            {state.mode === 'create' && (
-              <p className="text-xs text-muted-foreground">Stringa identificativa, non modificabile dopo la creazione.</p>
-            )}
-          </div>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="grid gap-4">
+            <div className="space-y-4 py-2">
+              <FormField
+                control={form.control}
+                name="value"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel>Valore (chiave)</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="es. DESIGN"
+                        disabled={state.mode === 'edit' || isLoading}
+                        autoFocus
+                        {...field}
+                      />
+                    </FormControl>
+                    {state.mode === 'create' && (
+                      <FormDescription className="text-xs">
+                        Stringa identificativa, non modificabile dopo la creazione.
+                      </FormDescription>
+                    )}
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-          <div className="space-y-1.5">
-            <Label htmlFor="phase-label">Label visualizzata</Label>
-            <Input
-              id="phase-label"
-              value={label}
-              onChange={e => setLabel(e.target.value)}
-              placeholder="es. Design"
-            />
-          </div>
+              <FormField
+                control={form.control}
+                name="label"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel>Label visualizzata</FormLabel>
+                    <FormControl>
+                      <Input placeholder="es. Design" disabled={isLoading} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-          <div className="space-y-1.5">
-            <Label>Codice</Label>
-            <p className="text-sm text-muted-foreground">
-              Derivato automaticamente dalla posizione: "{previewCode} — {label || 'Label'}"
-            </p>
-          </div>
-        </div>
+              <div className="space-y-1.5">
+                <Label>Codice</Label>
+                <p className="text-sm text-muted-foreground">
+                  Derivato automaticamente dalla posizione: &quot;{previewCode} — {label || 'Label'}&quot;
+                </p>
+              </div>
+            </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={isLoading}>Annulla</Button>
-          <Button onClick={handleSubmit} disabled={!canSubmit || isLoading}>
-            {isLoading ? 'Salvataggio…' : state.mode === 'create' ? 'Aggiungi' : 'Salva'}
-          </Button>
-        </DialogFooter>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>Annulla</Button>
+              <Button type="submit" disabled={isLoading}>
+                {isLoading ? 'Salvataggio…' : state.mode === 'create' ? 'Aggiungi' : 'Salva'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );
