@@ -190,6 +190,11 @@ export function EditTeamDialog({ open, onClose, onSaved, teamId }: EditTeamDialo
     defaultValues: EMPTY_TEAM,
   });
 
+  // Radix unmounts an inactive TabsContent, and every validated field lives in the "info" one:
+  // submitting from another tab would fail validation with no mounted <FormMessage> to say so.
+  // Controlling the tab lets an invalid submit bring the offending field back on screen.
+  const [activeTab, setActiveTab] = useState('info');
+
   // Brands and members stay outside the form: the brand set feeds the same update call but is
   // driven by checkboxes, and the member list is diffed against the server's into two separate
   // add/remove mutations. The form holds what is typed.
@@ -261,11 +266,14 @@ export function EditTeamDialog({ open, onClose, onSaved, teamId }: EditTeamDialo
         <Form {...form}>
           {/* flex, not the usual grid: this DialogContent overrides its own layout with
               `flex flex-col gap-0 p-0`, and the form has to stay transparent to it. */}
-          <form onSubmit={form.handleSubmit(handleSave)} className="flex min-h-0 flex-1 flex-col">
+          <form
+            onSubmit={form.handleSubmit(handleSave, () => setActiveTab('info'))}
+            className="flex min-h-0 flex-1 flex-col"
+          >
         {teamLoading ? (
           <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">Caricamento…</div>
         ) : (
-          <Tabs defaultValue="info" className="flex-1">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1">
             <div className="border-b px-6">
               <TabsList className="h-10 rounded-none bg-transparent p-0">
                 <TabsTrigger value="info" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent">
