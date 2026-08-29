@@ -1,25 +1,7 @@
 import { z } from 'zod';
 
-/** Input schema for a vendor closure or open-day period within a season, used in working-day calculations. */
-export const VendorClosurePeriodInputSchema = z.object({
-  vendorId:        z.string().uuid(),
-  seasonId:        z.string().uuid(),
-  name:            z.string().min(1).max(200),
-  startDate:       z.string().date(),
-  endDate:         z.string().date(),
-  type:            z.enum(['CLOSURE', 'OPEN']).default('CLOSURE'),
-  sourceHolidayId: z.string().uuid().optional(),
-  notes:           z.string().max(500).optional(),
-});
-export type VendorClosurePeriodInput = z.infer<typeof VendorClosurePeriodInputSchema>;
-
-/**
- * What `holidays.upsertVendorClosure` actually accepts, for both create and update.
- *
- * Distinct from {@link VendorClosurePeriodInputSchema} above, which no call site uses: this one
- * carries `countryCode`, takes full ISO datetimes rather than plain dates, and makes `id` the
- * create/update discriminator.
- */
+/** What `holidays.upsertVendorClosure` accepts, for both create and update — a vendor closure or
+ * open-day period within a season, used in working-day calculations. */
 export const VendorClosureUpsertInputSchema = z.object({
   id:          z.string().uuid().optional(),
   vendorId:    z.string().uuid(),

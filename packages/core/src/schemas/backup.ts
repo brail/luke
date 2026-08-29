@@ -39,9 +39,12 @@ export const BackupIdSchema = z.object({
 });
 
 /**
- * Input schema for a restore. `confirmPhrase` must equal `BACKUP_RESTORE_CONFIRM_PHRASE` —
- * validated server-side as a deliberate friction point for an irreversible operation, not merely
- * a UI-level nicety.
+ * Input schema for a restore. `confirmPhrase` must equal `BACKUP_RESTORE_CONFIRM_PHRASE`.
+ *
+ * That check catches a call that omits or misspells the field, not a deliberate one: the phrase is
+ * a public constant, and the client sends it whether or not anybody typed it. The friction is in
+ * the dialog, which keeps its confirm button disabled until the typed phrase matches — this
+ * schema cannot tell the two apart, and earlier wording here claimed otherwise.
  */
 export const BackupRestoreInputSchema = z.object({
   id: z.string().uuid('ID backup non valido'),

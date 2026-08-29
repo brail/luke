@@ -50,7 +50,6 @@ export function ConfirmDialog({
   userEmail,
   actionType = 'delete',
 }: ConfirmDialogProps) {
-  void open; // Usa il parametro open per evitare warning
   const handleConfirm = () => {
     onConfirm();
     onOpenChange(false);
