@@ -4,7 +4,7 @@ import { PackageOpen, RotateCcw, Trash2, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-import { BACKUP_RESTORE_CONFIRM_PHRASE, buildBackupExportDownloadUrl, type BackupRecord } from '@luke/core';
+import { buildBackupExportDownloadUrl, type BackupRecord } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { CreateActionButton } from '../../../../components/CreateActionButton';
@@ -344,14 +344,8 @@ export default function MaintenanceBackupPage() {
         backup={restoreTarget}
         compat={restoreCompat}
         isLoading={restoreMutation.isPending}
-        onConfirm={({ preserveAuditLog, restoreFiles }: { preserveAuditLog: boolean; restoreFiles: boolean }) =>
-          restoreTarget &&
-          restoreMutation.mutate({
-            id: restoreTarget.id,
-            preserveAuditLog,
-            restoreFiles,
-            confirmPhrase: BACKUP_RESTORE_CONFIRM_PHRASE,
-          })
+        onConfirm={fields =>
+          restoreTarget && restoreMutation.mutate({ id: restoreTarget.id, ...fields })
         }
         isBridging={bridgeMutation.isPending}
         onRunMigrationBridge={() =>

@@ -4,7 +4,9 @@
 
 import { z } from 'zod';
 
-/** Literal confirmation phrase the admin must type to enable a restore — checked server-side too, not just as UI friction. */
+import { typedConfirmation } from './confirmation';
+
+/** Confirmation phrase the restore dialog makes the admin type. */
 export const BACKUP_RESTORE_CONFIRM_PHRASE = 'RIPRISTINA';
 
 export const BackupScopeSchema = z.enum(['DB', 'DB_AND_FILES']);
@@ -38,21 +40,12 @@ export const BackupIdSchema = z.object({
   id: z.string().uuid('ID backup non valido'),
 });
 
-/**
- * Input schema for a restore. `confirmPhrase` must equal `BACKUP_RESTORE_CONFIRM_PHRASE`.
- *
- * That check catches a call that omits or misspells the field, not a deliberate one: the phrase is
- * a public constant, and the client sends it whether or not anybody typed it. The friction is in
- * the dialog, which keeps its confirm button disabled until the typed phrase matches — this
- * schema cannot tell the two apart, and earlier wording here claimed otherwise.
- */
+/** Input schema for a restore. See {@link typedConfirmation} for what `confirmPhrase` does and does not guarantee. */
 export const BackupRestoreInputSchema = z.object({
   id: z.string().uuid('ID backup non valido'),
   preserveAuditLog: z.boolean(),
   restoreFiles: z.boolean(),
-  confirmPhrase: z.literal(BACKUP_RESTORE_CONFIRM_PHRASE, {
-    message: `Devi digitare esattamente "${BACKUP_RESTORE_CONFIRM_PHRASE}" per confermare`,
-  }),
+  confirmPhrase: typedConfirmation(BACKUP_RESTORE_CONFIRM_PHRASE),
 });
 
 /**

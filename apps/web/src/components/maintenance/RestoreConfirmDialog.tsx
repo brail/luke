@@ -42,7 +42,7 @@ interface RestoreConfirmDialogProps {
   backup: BackupRecord | null;
   /** Fetched by the parent page (`checkRestoreCompatibility`) — same data-ownership convention as every other mutation on this page. */
   compat: CheckRestoreCompatibilityOutput | undefined;
-  onConfirm: (params: { preserveAuditLog: boolean; restoreFiles: boolean }) => void;
+  onConfirm: (params: RestoreFormData) => void;
   isLoading?: boolean;
   /** Requests the migration bridge (only reachable when `compat.classification === 'OLDER'`). */
   onRunMigrationBridge: () => void;
@@ -50,29 +50,15 @@ interface RestoreConfirmDialogProps {
 }
 
 /**
- * The two restore switches, taken from the mutation input; the `id` belongs to the parent.
+ * The mutation input minus the `id`, which belongs to the parent.
  *
- * `confirmPhrase` is relaxed from the core schema's `z.literal` to a checked string: the field
- * starts empty and is typed toward the phrase, so the form has to model every intermediate value.
- * The equality rule is the same one, and the literal still guards the mutation input.
+ * Derived straight from the core schema, rule and message included: `confirmPhrase` used to be a
+ * `z.literal` there, whose literal type forced this form to restate the check and hand-declare its
+ * own interface. Now that core states it as a checked string, inference carries it.
  */
-interface RestoreFormData {
-  preserveAuditLog: boolean;
-  restoreFiles: boolean;
-  confirmPhrase: string;
-}
+const RestoreFormSchema = BackupRestoreInputSchema.omit({ id: true });
 
-// Declared rather than inferred: `z.infer` of this composition still reports `confirmPhrase` as
-// the literal, even though `.extend()` really does replace it — verified at runtime, where the
-// field is a plain ZodString reporting the message below. The annotation pins the type the form
-// actually holds.
-const RestoreFormSchema: z.ZodType<RestoreFormData, RestoreFormData> = BackupRestoreInputSchema
-  .pick({ preserveAuditLog: true, restoreFiles: true })
-  .extend({
-    confirmPhrase: z.string().refine(value => value === BACKUP_RESTORE_CONFIRM_PHRASE, {
-      message: `Devi digitare esattamente "${BACKUP_RESTORE_CONFIRM_PHRASE}" per confermare`,
-    }),
-  });
+type RestoreFormData = z.infer<typeof RestoreFormSchema>;
 
 function DialogIconTitle({ icon, children }: { icon: ReactNode; children: ReactNode }) {
   return (
@@ -126,7 +112,7 @@ export function RestoreConfirmDialog({
 
   const canConfirmRestore = form.formState.isValid && !isLoading;
   const handleConfirmRestore = (data: RestoreFormData) => {
-    onConfirm({ preserveAuditLog: data.preserveAuditLog, restoreFiles: data.restoreFiles });
+    onConfirm(data);
   };
 
   const canRunBridge = acknowledgeMigrationBridge && !isBridging;
