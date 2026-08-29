@@ -9,7 +9,6 @@
  * - Aggregated loading state (`isAnyLoading`)
  */
 
-import { useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { toast } from 'sonner';
 
@@ -50,7 +49,7 @@ export interface ConfigFormData {
  *   (`saveConfig`, `deleteConfig`, `importConfigs`, `exportConfigs`, `invalidateQueries`).
  */
 export function useConfigQuery(params: ConfigQueryParams = {}) {
-  const queryClient = useQueryClient();
+  const utils = trpc.useUtils();
 
   // Query principale per lista paginata con filtri e ordinamento
   const query = trpc.config.list.useQuery({
@@ -150,11 +149,16 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
   });
 
   /**
-   * Invalidates all `config` React Query caches to force a refetch.
+   * Invalidates the `config` queries so the list refetches after a mutation.
+   *
+   * Goes through the tRPC utils rather than `queryClient.invalidateQueries({ queryKey: ['config'] })`:
+   * a tRPC hook's key is the generated `[['config','list'], { … }]`, which a bare `['config']`
+   * never matched. Nothing refetched, and it looked fine only because changing a filter builds a
+   * different key and therefore fetches anyway — so a delete left the deleted row on screen.
    */
   const invalidateQueries = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['config'] });
-  }, [queryClient]);
+    void utils.config.invalidate();
+  }, [utils]);
 
   /**
    * Saves a config entry, picking the procedure from the caller's intent.
