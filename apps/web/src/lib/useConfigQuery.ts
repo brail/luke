@@ -157,18 +157,22 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
   }, [queryClient]);
 
   /**
-   * Saves a config entry using upsert semantics: tries `update` first,
-   * falling back to `set` when the key does not yet exist.
+   * Saves a config entry, picking the procedure from the caller's intent.
+   *
+   * `set` upserts; `update` refuses to create, which is what stops a mangled key from silently
+   * becoming a new entry while the user thinks they are editing an existing one. Both take the
+   * same permission, rate limit and input, so the choice is purely about that guard.
+   *
+   * Deliberately not "try update, fall back to set": probing with `update` made every new key
+   * fail once on purpose, and the mutation's own onError surfaced that expected failure to the
+   * user as an error toast and a console error before the real save went through.
+   *
+   * @param isNew - True when creating a key that does not exist yet.
    */
   const saveConfig = useCallback(
-    async (formData: ConfigFormData) => {
-      try {
-        // Try update first (for existing configs)
-        return await updateMutation.mutateAsync(formData);
-      } catch (_error) {
-        // Se update fallisce, usa set (per nuove configurazioni)
-        return await setMutation.mutateAsync(formData);
-      }
+    async (formData: ConfigFormData, { isNew = false }: { isNew?: boolean } = {}) => {
+      const mutation = isNew ? setMutation : updateMutation;
+      return await mutation.mutateAsync(formData);
     },
     [setMutation, updateMutation]
   );

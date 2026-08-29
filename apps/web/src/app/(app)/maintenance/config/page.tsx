@@ -93,7 +93,8 @@ export default function MaintenanceConfigPage() {
   };
 
   const handleSaveConfig = async (formData: ConfigFormData) => {
-    await saveConfig(formData);
+    // `handleNewConfig` clears the selection, `handleEditConfig` sets it.
+    await saveConfig(formData, { isNew: selectedConfig === null });
     setEditDialogOpen(false);
     setSelectedConfig(null);
   };
