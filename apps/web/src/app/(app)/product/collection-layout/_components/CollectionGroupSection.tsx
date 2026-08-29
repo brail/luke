@@ -22,6 +22,7 @@ import {
 } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
+import { PermissionButton } from '../../../../../components/PermissionButton';
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
 import { Checkbox } from '../../../../../components/ui/checkbox';
@@ -48,7 +49,6 @@ import {
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '../../../../../components/ui/tooltip';
 import { trpc } from '../../../../../lib/trpc';
@@ -267,20 +267,18 @@ interface DragHandleProps {
 
 function DragHandle({ listeners }: DragHandleProps) {
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span
-            {...(listeners as HTMLAttributes<HTMLSpanElement>)}
-            className="cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground inline-flex"
-            onClick={e => e.stopPropagation()}
-          >
-            <GripVertical className="h-4 w-4" />
-          </span>
-        </TooltipTrigger>
-        <TooltipContent>Trascina per riordinare</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          {...(listeners as HTMLAttributes<HTMLSpanElement>)}
+          className="cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground inline-flex"
+          onClick={e => e.stopPropagation()}
+        >
+          <GripVertical className="h-4 w-4" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>Trascina per riordinare</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -632,60 +630,52 @@ export function CollectionGroupSection({
 
         <div className="flex items-center gap-1 shrink-0">
           {hasActiveFilters && (
-            <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="px-2 text-primary gap-1"
+                  onClick={e => { e.stopPropagation(); resetFilters(); }}
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  Filtri attivi
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Reset filtri e ordinamento</TooltipContent>
+            </Tooltip>
+          )}
+          {canUpdate && (
+            <>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="sm" onClick={() => onAddRow(group.id)}>
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Aggiungi riga</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="sm" onClick={() => onRenameGroup(group)}>
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Modifica gruppo</TooltipContent>
+              </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
-                    size="xs"
-                    className="px-2 text-primary gap-1"
-                    onClick={e => { e.stopPropagation(); resetFilters(); }}
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => setDeleteGroupConfirm(true)}
                   >
-                    <RotateCcw className="h-3 w-3" />
-                    Filtri attivi
+                    <Trash2 className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Reset filtri e ordinamento</TooltipContent>
+                <TooltipContent>Elimina gruppo</TooltipContent>
               </Tooltip>
-            </TooltipProvider>
-          )}
-          {canUpdate && (
-            <>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="sm" onClick={() => onAddRow(group.id)}>
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Aggiungi riga</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="sm" onClick={() => onRenameGroup(group)}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Modifica gruppo</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => setDeleteGroupConfirm(true)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Elimina gruppo</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
             </>
           )}
         </div>
@@ -812,14 +802,12 @@ export function CollectionGroupSection({
                               {isDndMode && canUpdate ? (
                                 <DragHandle listeners={listeners} />
                               ) : hasActiveFilters ? (
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span>{idx + 1}</span>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Disattiva ordinamento per usare drag-and-drop</TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span>{idx + 1}</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Disattiva ordinamento per usare drag-and-drop</TooltipContent>
+                                </Tooltip>
                               ) : (
                                 <span>{idx + 1}</span>
                               )}
@@ -968,50 +956,31 @@ export function CollectionGroupSection({
                               </Popover>
                             );
                           })()}
-                          {canUpdate ? (
-                            <>
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button variant="ghost" size="sm" onClick={() => onDuplicateRow(row.id)}>
-                                      <Copy className="h-3.5 w-3.5" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>Duplica</TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="text-destructive hover:text-destructive"
-                                      onClick={() => setDeleteRow(row)}
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>Elimina</TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            </>
-                          ) : (
-                            <TooltipProvider>
-                              <Tooltip>
-                                {/* Trigger sullo span: un bottone disabilitato non emette gli
-                                    eventi che aprono il tooltip (vedi `PermissionButton`). */}
-                                <TooltipTrigger asChild>
-                                  <span className="inline-flex" tabIndex={0}>
-                                    <Button variant="ghost" size="sm" disabled className="opacity-50 cursor-not-allowed">
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </Button>
-                                  </span>
-                                </TooltipTrigger>
-                                <TooltipContent>Non hai i permessi per eliminare righe</TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          )}
+                          {/* Both stay visible without the permission, disabled with an
+                              explanation — the pattern CLAUDE.md prescribes for table actions.
+                              Duplicate used to disappear entirely, which left a viewer no way to
+                              learn the action exists. */}
+                          <PermissionButton
+                            hasPermission={canUpdate}
+                            tooltip="Non hai i permessi per duplicare righe"
+                            infoTooltip="Duplica"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onDuplicateRow(row.id)}
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </PermissionButton>
+                          <PermissionButton
+                            hasPermission={canUpdate}
+                            tooltip="Non hai i permessi per eliminare righe"
+                            infoTooltip="Elimina"
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => setDeleteRow(row)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </PermissionButton>
                         </div>
                       </TableCell>
                           </>)}

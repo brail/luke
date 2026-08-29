@@ -8,55 +8,99 @@ import { Button, type ButtonProps } from './ui/button';
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from './ui/tooltip';
 
 interface PermissionButtonProps extends ButtonProps {
   hasPermission: boolean;
   tooltip: string;
+  infoTooltip?: string;
 }
 
 /**
- * Button with a permission gate: renders as a normal `Button` when allowed, or as a
- * disabled button with an explanatory tooltip when `hasPermission` is false.
+ * The tooltip trigger is the `<span>`, not the button. A `<button disabled>` emits neither
+ * `pointerenter` nor `focus` — and the `Button` variant adds `disabled:pointer-events-none` —
+ * so with `asChild` on the button Radix never receives the event that opens the tooltip: the
+ * button looked greyed out and the message explaining the block appeared to nobody. The events
+ * pass through the button and the span collects them; `tabIndex` makes it reachable by keyboard,
+ * where a disabled button never lands.
  *
- * Il trigger del tooltip è lo `<span>`, non il bottone. Un `<button disabled>` non emette
- * `pointerenter` né `focus` — e la variante `Button` aggiunge `disabled:pointer-events-none` —
- * quindi con `asChild` sul bottone Radix non riceve mai l'evento che apre il tooltip: il bottone
- * appariva grigio e il messaggio che spiega il blocco non compariva a nessuno. Gli eventi passano
- * attraverso il bottone e li raccoglie lo span; `tabIndex={0}` lo rende raggiungibile da tastiera,
- * dove un bottone disabilitato non arriva.
+ * `tabIndex` is 0 only while the button is disabled: an enabled button is already its own tab
+ * stop, and a permanent one on the span would double it.
+ */
+function TooltipWrapped({
+  message,
+  focusable,
+  children,
+}: {
+  message: string;
+  focusable: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        {/* `inline-flex` keeps the span neutral for the caller's layout, which expects a
+            button and not an inline element with a line-height of its own. */}
+        <span className="inline-flex" tabIndex={focusable ? 0 : -1}>
+          {children}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{message}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
+ * Button with a permission gate, in three states.
  *
- * `opacity-50 cursor-not-allowed` è lo stile che CLAUDE.md prescrive per lo stato senza permesso.
+ * 1. **No permission** — disabled, `opacity-50 cursor-not-allowed` (the style CLAUDE.md
+ *    prescribes), `tooltip` explaining the block.
+ * 2. **Permission, `infoTooltip` given** — normal button carrying its own label, and that label
+ *    stays reachable while `disabled` is true (a pending mutation, a boundary reached). This is
+ *    the state icon-only buttons need: without it the only thing naming the action disappears
+ *    exactly when the user wonders why the button does not respond.
+ * 3. **Permission, no `infoTooltip`** — a bare `Button`, nothing wrapped.
+ *
+ * State 2 is opt-in because a wrapper the caller did not ask for is a tab stop the caller did not
+ * ask for. A button with a visible label has nothing to explain and stays in state 3.
  *
  * @param hasPermission - Boolean prop from `usePermission` — do NOT call as a function.
- * @param tooltip - Message shown in the tooltip when the button is disabled.
+ * @param tooltip - Message shown when `hasPermission` is false.
+ * @param infoTooltip - Label shown when the permission is there; names the action for an
+ *   icon-only button. Omit it for a button whose text already says what it does.
  */
 export function PermissionButton({
   hasPermission,
   tooltip,
+  infoTooltip,
   children,
   className,
+  disabled,
   ...props
 }: PermissionButtonProps) {
   if (!hasPermission) {
     return (
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            {/* `inline-flex` tiene lo span neutro rispetto al layout del chiamante, che si aspetta
-                un bottone e non un elemento inline con line-height propria. */}
-            <span className="inline-flex" tabIndex={0}>
-              <Button {...props} className={cn('opacity-50 cursor-not-allowed', className)} disabled>
-                {children}
-              </Button>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>{tooltip}</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      <TooltipWrapped message={tooltip} focusable>
+        <Button {...props} className={cn('opacity-50 cursor-not-allowed', className)} disabled>
+          {children}
+        </Button>
+      </TooltipWrapped>
     );
   }
-  return <Button {...props} className={className}>{children}</Button>;
+
+  const button = (
+    <Button {...props} className={className} disabled={disabled}>
+      {children}
+    </Button>
+  );
+
+  if (!infoTooltip) {
+    return button;
+  }
+  return (
+    <TooltipWrapped message={infoTooltip} focusable={!!disabled}>
+      {button}
+    </TooltipWrapped>
+  );
 }

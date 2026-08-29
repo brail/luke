@@ -3,6 +3,8 @@
 import { AlertCircle, ArrowLeft, Copy, LayoutGrid, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
+import { PermissionButton } from '../../../../../components/PermissionButton';
+import { PermissionTooltip } from '../../../../../components/PermissionTooltip';
 import { Alert, AlertDescription } from '../../../../../components/ui/alert';
 import { Button } from '../../../../../components/ui/button';
 import { Checkbox } from '../../../../../components/ui/checkbox';
@@ -163,47 +165,67 @@ export function EmptyCollectionLayoutState({
       {/* Gender selector */}
       <div className="space-y-2">
         <p className="text-sm font-medium text-muted-foreground">Gender disponibili nel layout</p>
-        <div className="flex gap-2 justify-center">
-          {GENDER_OPTIONS.map(opt => (
-            <button
-              key={genderKey(opt.value)}
-              type="button"
-              onClick={() => setSelectedGenders([...opt.value])}
-              disabled={!canUpdate}
-              className={cn(
-                'px-4 py-2 rounded-md border text-sm font-medium transition-colors',
-                selectedKey === genderKey(opt.value)
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border hover:border-primary/50 hover:bg-muted/50',
-                'disabled:opacity-50 disabled:cursor-not-allowed'
-              )}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
+        {/* One tooltip for the whole group: the three toggles are disabled for the same single
+            reason, so one tab stop and one message beat the sentence repeated three times. */}
+        <PermissionTooltip
+          hasPermission={canUpdate}
+          tooltip="Non hai i permessi per creare il collection layout"
+          className="w-full justify-center"
+        >
+          <div className="flex gap-2 justify-center">
+            {GENDER_OPTIONS.map(opt => (
+              <button
+                key={genderKey(opt.value)}
+                type="button"
+                onClick={() => setSelectedGenders([...opt.value])}
+                disabled={!canUpdate}
+                className={cn(
+                  'px-4 py-2 rounded-md border text-sm font-medium transition-colors',
+                  selectedKey === genderKey(opt.value)
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border hover:border-primary/50 hover:bg-muted/50',
+                  // `pointer-events-none` is what lets the tooltip work: a disabled
+                  // <button> dispatches no pointer events, so without it the wrapper span
+                  // never sees the hover and the message stays keyboard-only.
+                  'disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none'
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </PermissionTooltip>
       </div>
 
       <div className="flex gap-3 flex-wrap justify-center">
         {seasons.length > 0 && (
-          <Button
+          <PermissionButton
+            hasPermission={canUpdate}
+            tooltip="Non hai i permessi per creare il collection layout"
             variant="outline"
             onClick={() => setIsCopyDialogOpen(true)}
-            disabled={!canUpdate || isLoading}
+            disabled={isLoading}
           >
             <Copy className="h-4 w-4 mr-2" />
             Copia da stagione precedente
-          </Button>
+          </PermissionButton>
         )}
-        <Button onClick={() => onCreateEmpty(selectedGenders)} disabled={!canUpdate || isLoading}>
+        <PermissionButton
+          hasPermission={canUpdate}
+          tooltip="Non hai i permessi per creare il collection layout"
+          onClick={() => onCreateEmpty(selectedGenders)}
+          disabled={isLoading}
+        >
           <Plus className="h-4 w-4 mr-2" />
           Crea layout vuoto
-        </Button>
+        </PermissionButton>
       </div>
 
+      {/* The dialog only opens from the `canUpdate`-gated button above, so the `!canUpdate`
+          guards inside it are defence in depth on a state no user can reach — no tooltip needed. */}
       <Dialog open={isCopyDialogOpen} onOpenChange={open => { if (!open) resetDialogState(); }}>
         <DialogContent className={step === 2 ? 'max-w-2xl' : 'max-w-md'}>
-          {/* ── Step 1: scegli stagione ─────────────────────── */}
+          {/* ── Step 1: pick the source season ──────────────── */}
           {step === 1 && (
             <>
               <DialogHeader>
@@ -244,7 +266,7 @@ export function EmptyCollectionLayoutState({
             </>
           )}
 
-          {/* ── Step 2: scegli righe ────────────────────────── */}
+          {/* ── Step 2: pick the rows to copy ───────────────── */}
           {step === 2 && (
             <>
               <DialogHeader>

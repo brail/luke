@@ -17,6 +17,8 @@ import {
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { PageHeader } from '../../../../components/PageHeader';
+import { PermissionButton } from '../../../../components/PermissionButton';
+import { PermissionTooltip } from '../../../../components/PermissionTooltip';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
 import { Checkbox } from '../../../../components/ui/checkbox';
@@ -38,12 +40,6 @@ import {
 } from '../../../../components/ui/form';
 import { Input } from '../../../../components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../components/ui/tabs';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '../../../../components/ui/tooltip';
 import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
@@ -138,26 +134,15 @@ export default function CollectionCatalogPage() {
                 <TabsTrigger key={t} value={t}>{TYPE_LABELS[t]}</TabsTrigger>
               ))}
             </TabsList>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span>
-                    <Button
-                      size="sm"
-                      disabled={!canWrite}
-                      className={!canWrite ? 'opacity-50 cursor-not-allowed' : undefined}
-                      onClick={() => canWrite && setItemDialog({ mode: 'create', type: activeTab })}
-                    >
-                      <Plus className="mr-1 h-4 w-4" />
-                      Aggiungi opzione
-                    </Button>
-                  </span>
-                </TooltipTrigger>
-                {!canWrite && (
-                  <TooltipContent>Non hai i permessi per modificare il catalog</TooltipContent>
-                )}
-              </Tooltip>
-            </TooltipProvider>
+            <PermissionButton
+              hasPermission={canWrite}
+              tooltip="Non hai i permessi per modificare il catalog"
+              size="sm"
+              onClick={() => setItemDialog({ mode: 'create', type: activeTab })}
+            >
+              <Plus className="mr-1 h-4 w-4" />
+              Aggiungi opzione
+            </PermissionButton>
           </div>
 
           {COLLECTION_CATALOG_TYPES.map(type => (
@@ -212,66 +197,48 @@ export default function CollectionCatalogPage() {
                           </td>
                           <td className="px-3 py-2">
                             <div className="flex items-center justify-end gap-1">
-                              {!item.isActive ? (
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span>
-                                        <Button
-                                          size="icon-sm"
-                                          variant="ghost"
-                                          className={!canWrite ? 'opacity-50 cursor-not-allowed' : undefined}
-                                          disabled={!canWrite || restoreMutation.isPending}
-                                          onClick={() => canWrite && restoreMutation.mutate({ id: item.id })}
-                                        >
-                                          <RotateCcw className="h-3.5 w-3.5" />
-                                        </Button>
-                                      </span>
-                                    </TooltipTrigger>
-                                    {!canWrite && <TooltipContent>Non hai i permessi per modificare il catalog</TooltipContent>}
-                                  </Tooltip>
-                                </TooltipProvider>
-                              ) : (
-                                <>
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <span>
-                                          <Button
-                                            size="icon-sm"
-                                            variant="ghost"
-                                            className={!canWrite ? 'opacity-50 cursor-not-allowed' : undefined}
-                                            disabled={!canWrite || isMutating}
-                                            onClick={() => canWrite && setItemDialog({ mode: 'edit', item })}
-                                          >
-                                            <Pencil className="h-3.5 w-3.5" />
-                                          </Button>
-                                        </span>
-                                      </TooltipTrigger>
-                                      {!canWrite && <TooltipContent>Non hai i permessi per modificare il catalog</TooltipContent>}
-                                    </Tooltip>
-                                  </TooltipProvider>
+                              {/* One tooltip for the whole actions cell: the controls are disabled
+                                  for the same single reason, so one tab stop and one message beat
+                                  the same sentence on every button of every row.
+                                  `cursor-not-allowed` sits on the span, which is where the pointer
+                                  lands — the buttons under it are `pointer-events-none`. */}
+                              <PermissionTooltip
+                                hasPermission={canWrite}
+                                tooltip="Non hai i permessi per modificare il catalog"
+                                className="items-center gap-1 cursor-not-allowed"
+                              >
+                                {!item.isActive ? (
+                                  <Button
+                                    size="icon-sm"
+                                    variant="ghost"
+                                    disabled={!canWrite || restoreMutation.isPending}
+                                    onClick={() => restoreMutation.mutate({ id: item.id })}
+                                  >
+                                    <RotateCcw className="h-3.5 w-3.5" />
+                                  </Button>
+                                ) : (
+                                  <>
+                                    <Button
+                                      size="icon-sm"
+                                      variant="ghost"
+                                      disabled={!canWrite || isMutating}
+                                      onClick={() => setItemDialog({ mode: 'edit', item })}
+                                    >
+                                      <Pencil className="h-3.5 w-3.5" />
+                                    </Button>
 
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <span>
-                                          <Button
-                                            size="icon-sm"
-                                            variant="ghost"
-                                            className={cn('text-destructive', !canWrite && 'opacity-50 cursor-not-allowed')}
-                                            disabled={!canWrite || isMutating}
-                                            onClick={() => canWrite && setDeletingItem(item)}
-                                          >
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                          </Button>
-                                        </span>
-                                      </TooltipTrigger>
-                                      {!canWrite && <TooltipContent>Non hai i permessi per modificare il catalog</TooltipContent>}
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                </>
-                              )}
+                                    <Button
+                                      size="icon-sm"
+                                      variant="ghost"
+                                      className="text-destructive"
+                                      disabled={!canWrite || isMutating}
+                                      onClick={() => setDeletingItem(item)}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </>
+                                )}
+                              </PermissionTooltip>
                             </div>
                           </td>
                         </tr>

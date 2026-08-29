@@ -77,3 +77,80 @@ comparire. Se il focus lo salta, il difetto è ancora lì.
 
 `npx eslint src/` e `npx tsc --noEmit` non dicono nulla su questo — è precisamente il tipo di
 difetto che passa tutti i controlli automatici e si vede solo esercitando l'interazione.
+
+---
+
+## Esito (2026-08-29)
+
+**La misura sopra sovrastima il difetto.** Contava le occorrenze grezze di
+`TooltipTrigger asChild`, non i wrapper attorno a un controllo *disabilitato*. Dei 20 trigger, 10
+stanno su controlli abilitati (drag handle, "Aggiungi riga", "Elimina variante", indice di riga):
+il bottone è focalizzabile da sé, nessun difetto da tastiera. I difettosi erano **8**, tutti nei
+due file admin. `CollectionGroupSection` (step 3 del piano) non aveva lavoro dentro: il suo unico
+wrapper permission-disabled era già quello corretto.
+
+Fatto:
+
+- **8 wrapper → `PermissionButton`** nei due file admin.
+  `disabled={!canWrite || isMutating}` → `hasPermission={canWrite}` + `disabled={isMutating}`;
+  la guardia ridondante `canWrite &&` nell'`onClick` è caduta (il componente disabilita già).
+  −162/+84 righe, import `Tooltip*` rimossi da entrambi.
+- **Frecce di riordino in `phase-catalog`**: difetto peggiore trovato lì accanto —
+  `disabled={!canWrite || …}` e *nessun* tooltip, quindi grigio senza spiegazione per chiunque,
+  mouse incluso. Anch'esse su `PermissionButton`.
+- **`ParameterSetPanel`**: i due bottoni con `disabled={isLoading}` avevano lo stesso difetto in
+  forma transitoria — irraggiungibili proprio nella finestra in cui l'utente si chiede perché non
+  rispondono. Trigger spostato su uno span con `tabIndex={isLoading ? 0 : -1}`: la tab stop esiste
+  solo mentre il bottone è disabilitato, altrimenti raddoppierebbe quella del bottone.
+- **Regola ESLint `@luke/no-unreachable-disabled-tooltip`** (step 4): rifiuta un
+  `TooltipTrigger asChild` il cui sottoalbero contiene un elemento `disabled` se il figlio del
+  trigger non porta `tabIndex`, e rifiuta sempre un trigger che è *esso stesso* disabilitato
+  (lì `tabIndex` non basta: un elemento disabilitato non diventa focalizzabile). Copre anche il
+  `disabled` dinamico. Attiva su `apps/web/src/**` in `eslint.config.mjs`.
+
+I due wrapper inline superstiti (`CollectionGroupSection.tsx`, `ParameterSetPanel.tsx`) restano
+inline di proposito e passano la regola: il loro ramo abilitato ha un tooltip *informativo* su un
+bottone-icona ("Elimina", "Elimina variante"), che `PermissionButton` non sa esprimere — mostra un
+tooltip solo quando il permesso manca.
+
+`npx eslint apps/web/src` e `npx tsc --noEmit` puliti. **Resta da fare la verifica da tastiera**:
+`Tab` fino a un controllo disabilitato nelle due pagine admin, il tooltip deve comparire.
+
+### Verifica da tastiera (fatta)
+
+Provata sull'app in esecuzione con un utente senza `collection_layout:update` /
+`pricing:create`: `Tab` atterra sullo `span.inline-flex[tabindex=0]` e il `[role="tooltip"]`
+compare. Confermato su `/product/pricing` e `/product/collection-layout`.
+
+**Non** sulle due pagine admin migrate: l'utente di prova non ha section access ad `admin.*` e
+viene rediretto a `/dashboard`. Renderizzano attraverso lo stesso `PermissionButton` appena
+verificato, ma per vederle serve un account con accesso alla sezione admin e senza permesso di
+scrittura.
+
+### Difetto complementare: tooltip assente
+
+Guardando l'app con l'utente viewer è emerso lo stesso problema in forma opposta —
+non "tooltip irraggiungibile" ma *nessun tooltip*: controlli `disabled` su una variabile di
+permesso e basta, grigi senza spiegazione per chiunque, mouse incluso.
+Trovati e sistemati con `PermissionButton`:
+
+- frecce di riordino in `admin/phase-catalog` (vedi sopra);
+- "Copia da stagione precedente" e "Crea layout vuoto" in `EmptyCollectionLayoutState`.
+
+I toggle gender nello stesso file non sono `Button` ma `<button>` nativi, quindi
+`PermissionButton` non li avvolge. È il caso previsto dallo step 1 del piano: serviva il secondo
+componente. `components/PermissionTooltip.tsx` — stesso span con `tabIndex={0}` come trigger, ma
+attorno a figli qualsiasi e senza imporre lo stile disabled, che lì è già nel `className` del
+bottone. Avvolge **il gruppo intero**, non i tre toggle uno per uno: sono disabilitati per la
+stessa identica ragione, e una tab stop con un messaggio batte lo stesso messaggio ripetuto tre
+volte. Verificato da tastiera: il focus prende il gruppo, il tooltip compare, il layout non si
+muove.
+
+Lasciati di proposito, con un commento che dice perché: i tre `!canUpdate` dentro il dialog di
+copia — il dialog si apre solo dal bottone ora gated, quindi sono difesa in profondità su uno
+stato irraggiungibile.
+
+La regola ESLint **non** copre questa famiglia: senza `TooltipTrigger` non c'è niente da
+controllare. Servirebbe una regola diversa ("un `disabled` che dipende da una variabile di
+permesso deve stare dentro `PermissionButton` o avere un tooltip"), più invasiva e con falsi
+positivi — non scritta.
