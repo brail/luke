@@ -1,10 +1,14 @@
 'use client';
 
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Pencil, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
+import { z } from 'zod';
 
 import type { RouterOutputs } from '@luke/api';
+import { PlanningGroupInputSchema } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { CreateActionButton } from '../../../../components/CreateActionButton';
@@ -19,13 +23,31 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../components/ui/dialog';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '../../../../components/ui/form';
 import { Input } from '../../../../components/ui/input';
-import { Label } from '../../../../components/ui/label';
 import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 type PlanningGroup = RouterOutputs['planningGroup']['list'][number];
+
+/**
+ * Same shape the create and rename mutations accept. The length message is spelled out here: the
+ * core schema carries no copy, and Zod's default for `min(1)` talks about string length rather
+ * than about the field being required.
+ */
+const PlanningGroupFormSchema = PlanningGroupInputSchema.extend({
+  name: z.string().min(1, 'Il nome è obbligatorio').max(100, 'Massimo 100 caratteri'),
+});
+
+type PlanningGroupFormData = z.infer<typeof PlanningGroupFormSchema>;
 
 interface GroupFormState {
   open: boolean;
@@ -54,7 +76,11 @@ export function ManagePlanningGroupsDialog({ open, onClose, calendarId, brandId,
 
   const [groupForm, setGroupForm] = useState<GroupFormState>({ open: false });
   const [deletingGroup, setDeletingGroup] = useState<PlanningGroup | null>(null);
-  const [name, setName] = useState('');
+
+  const form = useForm<PlanningGroupFormData>({
+    resolver: zodResolver(PlanningGroupFormSchema),
+    defaultValues: { name: '' },
+  });
 
   const { data: groups = [], isLoading, refetch } = trpc.planningGroup.list.useQuery(
     { brandId, seasonId },
@@ -79,17 +105,23 @@ export function ManagePlanningGroupsDialog({ open, onClose, calendarId, brandId,
   });
 
   const isEditingGroup = !!groupForm.group;
+  const isSavingGroup = createMutation.isPending || renameMutation.isPending;
 
-  const openCreate = () => { setName(''); setGroupForm({ open: true, group: null }); };
-  const openRename = (group: PlanningGroup) => { setName(group.name); setGroupForm({ open: true, group }); };
+  const openCreate = () => setGroupForm({ open: true, group: null });
+  const openRename = (group: PlanningGroup) => setGroupForm({ open: true, group });
 
-  const handleSave = () => {
-    const trimmed = name.trim();
-    if (!trimmed) { toast.error('Nome obbligatorio'); return; }
-    if (isEditingGroup && groupForm.group) {
-      renameMutation.mutate({ id: groupForm.group.id, name: trimmed });
+  // The inner dialog stays mounted, so it has to be seeded on every open: with the group's name
+  // when renaming, empty when creating.
+  useEffect(() => {
+    if (groupForm.open) form.reset({ name: groupForm.group?.name ?? '' });
+  }, [groupForm, form]);
+
+  const handleSave = (data: PlanningGroupFormData) => {
+    const name = data.name.trim();
+    if (groupForm.group) {
+      renameMutation.mutate({ id: groupForm.group.id, name });
     } else {
-      createMutation.mutate({ calendarId, name: trimmed });
+      createMutation.mutate({ calendarId, name });
     }
   };
 
@@ -226,23 +258,44 @@ export function ManagePlanningGroupsDialog({ open, onClose, calendarId, brandId,
         </DialogContent>
       </Dialog>
 
-      <Dialog open={groupForm.open} onOpenChange={v => { if (!v) setGroupForm({ open: false }); }}>
+      <Dialog
+        open={groupForm.open}
+        onOpenChange={v => { if (!v && !isSavingGroup) setGroupForm({ open: false }); }}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>{isEditingGroup ? 'Rinomina gruppo' : 'Nuovo gruppo di pianificazione'}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-1.5">
-            <Label htmlFor="pg-name">Nome *</Label>
-            <Input id="pg-name" value={name} onChange={e => setName(e.target.value)} placeholder="es. Promo estate" />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setGroupForm({ open: false })} disabled={createMutation.isPending || renameMutation.isPending}>
-              Annulla
-            </Button>
-            <Button onClick={handleSave} disabled={createMutation.isPending || renameMutation.isPending}>
-              {createMutation.isPending || renameMutation.isPending ? 'Salvataggio…' : 'Salva'}
-            </Button>
-          </DialogFooter>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(handleSave)} className="grid gap-4">
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel>Nome *</FormLabel>
+                    <FormControl>
+                      <Input placeholder="es. Promo estate" disabled={isSavingGroup} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setGroupForm({ open: false })}
+                  disabled={isSavingGroup}
+                >
+                  Annulla
+                </Button>
+                <Button type="submit" disabled={isSavingGroup}>
+                  {isSavingGroup ? 'Salvataggio…' : 'Salva'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
         </DialogContent>
       </Dialog>
 
