@@ -1,32 +1,18 @@
 'use client';
 
-import { zodResolver } from '@hookform/resolvers/zod';
-import { AlertTriangle, Lock } from 'lucide-react';
-import { useMemo } from 'react';
-import { useForm } from 'react-hook-form';
-import { z } from 'zod';
+import { Lock } from 'lucide-react';
 
 import { isCriticalKey } from '../../lib/configHelpers';
+import { ConfirmDialog } from '../ConfirmDialog';
 import {
   AlertDialog,
   AlertDialogCancel,
   AlertDialogContent,
-  AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../ui/alert-dialog';
 import { Badge } from '../ui/badge';
-import { Button } from '../ui/button';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '../ui/form';
-import { Input } from '../ui/input';
 
 interface ConfigDeleteDialogProps {
   onOpenChange: () => void;
@@ -38,15 +24,14 @@ interface ConfigDeleteDialogProps {
 /**
  * Confirmation dialog for deleting an AppConfig key.
  *
- * Critical keys (from `isCriticalKey`) are blocked from deletion and render a locked badge.
- * For non-critical keys the user must type the exact key name to enable the confirm button.
+ * A deletable key goes through the shared `ConfirmDialog`, typing the key name itself as the
+ * confirmation — the same gate the permanent deletions use, with the entity's own identifier in
+ * place of their fixed phrase.
  *
- * This is the one place where the primary stays disabled on incomplete input rather than
- * submitting and reporting the problem: the requirement is spelled out right above the field, so
- * the disabled button is explaining itself, and the deliberate friction is the point of a
- * type-to-confirm gate on an irreversible delete.
+ * A critical key (from `isCriticalKey`) cannot be deleted at all, so it gets its own dialog: there
+ * is no action to confirm, only a reason to read.
  *
- * @param configKey - The config key to be deleted; used for the confirmation input and critical-key check.
+ * @param configKey - The config key to be deleted; used both as the confirmation phrase and for the critical-key check.
  */
 export function ConfigDeleteDialog({
   onOpenChange,
@@ -54,99 +39,49 @@ export function ConfigDeleteDialog({
   onConfirm,
   isLoading = false,
 }: ConfigDeleteDialogProps) {
-  const isCritical = isCriticalKey(configKey);
+  if (isCriticalKey(configKey)) {
+    return (
+      <AlertDialog open={true} onOpenChange={onOpenChange}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Lock className="w-5 h-5 text-destructive" />
+              Eliminazione bloccata
+            </AlertDialogTitle>
+          </AlertDialogHeader>
 
-  const ConfirmKeySchema = useMemo(
-    () =>
-      z.object({
-        confirmKey: z.string().refine(value => value === configKey, {
-          message: 'Il nome della chiave non corrisponde',
-        }),
-      }),
-    [configKey]
-  );
+          <div className="flex items-start gap-2 rounded-md border border-destructive/20 bg-destructive/10 p-3">
+            <div>
+              <Badge variant="destructive" className="mb-1">
+                Chiave critica
+              </Badge>
+              <p className="text-sm text-destructive">
+                <code className="font-mono">{configKey}</code> è necessaria per il funzionamento
+                del sistema e non può essere eliminata.
+              </p>
+            </div>
+          </div>
 
-  const form = useForm<z.infer<typeof ConfirmKeySchema>>({
-    resolver: zodResolver(ConfirmKeySchema),
-    defaultValues: { confirmKey: '' },
-    // The gate has to track every keystroke: it drives whether the confirm button is enabled at
-    // all, not just what happens once the form is submitted.
-    mode: 'onChange',
-  });
-
-  const canDelete = !isCritical && form.formState.isValid;
-
-  // Esc and outside-click close through onOpenChange, a path the Cancel button does not take:
-  // without this guard the dialog is dismissable while the delete is in flight.
-  const handleOpenChange = () => {
-    if (isLoading) return;
-    onOpenChange();
-  };
+          <AlertDialogFooter>
+            <AlertDialogCancel type="button">Chiudi</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    );
+  }
 
   return (
-    <AlertDialog open={true} onOpenChange={handleOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-destructive" />
-            Conferma Eliminazione
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            Stai per eliminare la configurazione{' '}
-            <code className="bg-muted px-1 py-0.5 rounded text-sm font-mono">
-              {configKey}
-            </code>
-            . Questa azione è irreversibile.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(() => onConfirm())} className="grid gap-4">
-            <div className="space-y-3">
-              {isCritical ? (
-                <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
-                  <Lock className="w-4 h-4 text-destructive" />
-                  <div>
-                    <Badge variant="destructive" className="mb-1">
-                      Chiave Critica — Eliminazione Bloccata
-                    </Badge>
-                    <p className="text-sm text-destructive">
-                      Questa chiave è necessaria per il funzionamento del sistema e
-                      non può essere eliminata.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <FormField
-                  control={form.control}
-                  name="confirmKey"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-sm font-medium">
-                        Digita il nome della chiave per confermare:
-                      </FormLabel>
-                      <FormControl>
-                        <Input placeholder={configKey} disabled={isLoading} {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
-            </div>
-
-            <AlertDialogFooter>
-              <AlertDialogCancel type="button" disabled={isLoading}>Annulla</AlertDialogCancel>
-              {/* Deliberately not AlertDialogAction: that renders a Radix DialogClose, which tears
-                  the dialog down on click and detaches the form before the browser gets to run the
-                  submit. The parent closes the dialog once the delete resolves. */}
-              <Button type="submit" variant="destructive" disabled={!canDelete || isLoading}>
-                {isLoading ? 'Eliminazione...' : 'Elimina'}
-              </Button>
-            </AlertDialogFooter>
-          </form>
-        </Form>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDialog
+      open={true}
+      onOpenChange={open => { if (!open) onOpenChange(); }}
+      title="Conferma eliminazione"
+      description={`Stai per eliminare la configurazione ${configKey}. Questa azione è irreversibile.`}
+      confirmText="Elimina"
+      cancelText="Annulla"
+      actionType="hardDelete"
+      confirmPhrase={configKey}
+      onConfirm={() => onConfirm()}
+      isLoading={isLoading}
+    />
   );
 }
