@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, Trash2, UserX } from 'lucide-react';
+import { AlertTriangle, Ban, Trash2 } from 'lucide-react';
 import { useRef } from 'react';
 
 import {
@@ -87,7 +87,9 @@ export function ConfirmDialog({
       case 'hardDelete':
         return <AlertTriangle className="h-5 w-5 text-destructive" />;
       case 'disable':
-        return <UserX className="h-5 w-5 text-orange-500" />;
+        // Neutral on purpose: `disable` covers the reversible deactivation of any entity — user,
+        // brand, season, vendor, catalog option — not just a person.
+        return <Ban className="h-5 w-5 text-orange-500" />;
       case 'warning':
         return <AlertTriangle className="h-5 w-5 text-orange-500" />;
       default:

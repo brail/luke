@@ -286,7 +286,7 @@ export default function PhaseCatalogPage() {
         confirmText="Disattiva"
         cancelText="Annulla"
         variant="destructive"
-        actionType="delete"
+        actionType="disable"
         onConfirm={() => { if (deletingItem) removeMutation.mutate({ id: deletingItem.id }); }}
         isLoading={removeMutation.isPending}
       />

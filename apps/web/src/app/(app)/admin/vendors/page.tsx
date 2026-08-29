@@ -147,7 +147,7 @@ export default function VendorsPage() {
         confirmText="Disattiva"
         cancelText="Annulla"
         variant="destructive"
-        actionType="delete"
+        actionType="disable"
         onConfirm={() => { if (deletingVendor) removeMutation.mutate({ id: deletingVendor.id }); }}
         isLoading={removeMutation.isPending}
       />
@@ -173,7 +173,7 @@ export default function VendorsPage() {
         confirmText="Elimina definitivamente"
         cancelText="Annulla"
         variant="destructive"
-        actionType="delete"
+        actionType="hardDelete"
         onConfirm={() => { if (hardDeletingVendor) hardDeleteMutation.mutate({ id: hardDeletingVendor.id }); }}
         isLoading={hardDeleteMutation.isPending}
       />

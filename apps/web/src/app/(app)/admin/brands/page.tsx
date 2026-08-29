@@ -210,7 +210,7 @@ export default function BrandsPage() {
         confirmText="Disattiva"
         cancelText="Annulla"
         variant="destructive"
-        actionType="delete"
+        actionType="disable"
         onConfirm={() => { if (deletingBrand) removeMutation.mutate({ id: deletingBrand.id }); }}
         isLoading={removeMutation.isPending}
       />
@@ -236,7 +236,7 @@ export default function BrandsPage() {
         confirmText="Elimina definitivamente"
         cancelText="Annulla"
         variant="destructive"
-        actionType="delete"
+        actionType="hardDelete"
         onConfirm={() => { if (hardDeletingBrand) hardDeleteMutation.mutate({ id: hardDeletingBrand.id }); }}
         isLoading={hardDeleteMutation.isPending}
       />

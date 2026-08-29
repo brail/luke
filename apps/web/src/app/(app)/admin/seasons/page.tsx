@@ -189,7 +189,7 @@ export default function SeasonsPage() {
         confirmText="Disattiva"
         cancelText="Annulla"
         variant="destructive"
-        actionType="delete"
+        actionType="disable"
         onConfirm={() => { if (deletingSeason) removeMutation.mutate({ id: deletingSeason.id }); }}
         isLoading={removeMutation.isPending}
       />
@@ -215,7 +215,7 @@ export default function SeasonsPage() {
         confirmText="Elimina definitivamente"
         cancelText="Annulla"
         variant="destructive"
-        actionType="delete"
+        actionType="hardDelete"
         onConfirm={() => { if (hardDeletingSeason) hardDeleteMutation.mutate({ id: hardDeletingSeason.id }); }}
         isLoading={hardDeleteMutation.isPending}
       />
