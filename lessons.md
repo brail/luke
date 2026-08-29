@@ -662,3 +662,11 @@ conditions that make it a defect.
 - When an override is same-type — a `string` replacing a `string`, a message
   swapped for another message — a green build proves nothing about whether it
   took effect. Probe it at runtime, or leave it unverified and say so.
+
+**Postscript.** A review at the end of the same session found two defects this
+file's own earlier entry had already warned about: a `<button>` two levels deep
+in the markup that had no `type` and therefore submitted the form it had just
+been wrapped in, and a required field that Radix unmounts with its tab, so
+validation failed with no mounted message to show. Writing the rule down is not
+the same as applying it to every instance — when a rule is added, sweep the
+whole file for the pattern, not just the lines being edited.
