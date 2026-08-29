@@ -1,8 +1,13 @@
 'use client';
 
+import { zodResolver } from '@hookform/resolvers/zod';
 import { X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
+import { z } from 'zod';
+
+import { CompanyTeamInputSchema } from '@luke/core';
 
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
@@ -14,8 +19,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../../components/ui/dialog';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '../../../../../components/ui/form';
 import { Input } from '../../../../../components/ui/input';
-import { Label } from '../../../../../components/ui/label';
 import {
   Select,
   SelectContent,
@@ -42,6 +54,19 @@ function displayName(u: { firstName?: string | null; lastName?: string | null; u
   return full || u.username;
 }
 
+/**
+ * The fields both team dialogs collect by typing. `description` is narrowed to a plain string so
+ * the Textarea stays controlled; it is mapped back to `undefined` on submit.
+ */
+const TeamFormSchema = CompanyTeamInputSchema.pick({ name: true, description: true }).extend({
+  name: z.string().min(1, 'Il nome è obbligatorio').max(80, 'Massimo 80 caratteri'),
+  description: z.string().max(500, 'Massimo 500 caratteri'),
+});
+
+type TeamFormData = z.infer<typeof TeamFormSchema>;
+
+const EMPTY_TEAM: TeamFormData = { name: '', description: '' };
+
 // ── CreateTeamDialog ──────────────────────────────────────────────────────────
 
 interface CreateTeamDialogProps {
@@ -56,43 +81,78 @@ interface CreateTeamDialogProps {
  * @param functionId - ID of the parent company function the team will belong to
  */
 export function CreateTeamDialog({ open, onClose, onSaved, functionId }: CreateTeamDialogProps) {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-
-  useEffect(() => {
-    if (!open) { setName(''); setDescription(''); }
-  }, [open]);
+  const form = useForm<TeamFormData>({
+    resolver: zodResolver(TeamFormSchema),
+    defaultValues: EMPTY_TEAM,
+  });
 
   const createMutation = trpc.company.team.create.useMutation({
     onSuccess: () => { toast.success('Team creato'); onSaved(); onClose(); },
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
+  // The dialog stays mounted, so it reopens on whatever was typed last unless reset.
+  useEffect(() => {
+    if (open) form.reset(EMPTY_TEAM);
+  }, [open, form]);
+
+  const handleCreate = (data: TeamFormData) => {
+    createMutation.mutate({
+      functionId,
+      name: data.name.trim(),
+      description: data.description.trim() || undefined,
+    });
+  };
+
   return (
-    <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={v => { if (!v && !createMutation.isPending) onClose(); }}
+    >
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Nuovo team</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="ct-name">Nome *</Label>
-            <Input id="ct-name" value={name} onChange={e => setName(e.target.value)} autoFocus />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="ct-desc">Descrizione</Label>
-            <Textarea id="ct-desc" value={description} onChange={e => setDescription(e.target.value)} rows={2} />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={createMutation.isPending}>Annulla</Button>
-          <Button
-            onClick={() => createMutation.mutate({ functionId, name: name.trim(), description: description.trim() || undefined })}
-            disabled={createMutation.isPending || !name.trim()}
-          >
-            {createMutation.isPending ? 'Creazione…' : 'Crea'}
-          </Button>
-        </DialogFooter>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleCreate)} className="grid gap-4">
+            <div className="space-y-4 py-2">
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel>Nome *</FormLabel>
+                    <FormControl>
+                      <Input autoFocus disabled={createMutation.isPending} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel>Descrizione</FormLabel>
+                    <FormControl>
+                      <Textarea rows={2} disabled={createMutation.isPending} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onClose} disabled={createMutation.isPending}>
+                Annulla
+              </Button>
+              <Button type="submit" disabled={createMutation.isPending}>
+                {createMutation.isPending ? 'Creazione…' : 'Crea'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );
@@ -125,19 +185,24 @@ export function EditTeamDialog({ open, onClose, onSaved, teamId }: EditTeamDialo
   const { data: usersData } = trpc.users.list.useQuery({ limit: 100 }, { enabled: open });
   const allUsers = usersData?.users ?? [];
 
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
+  const form = useForm<TeamFormData>({
+    resolver: zodResolver(TeamFormSchema),
+    defaultValues: EMPTY_TEAM,
+  });
+
+  // Brands and members stay outside the form: the brand set feeds the same update call but is
+  // driven by checkboxes, and the member list is diffed against the server's into two separate
+  // add/remove mutations. The form holds what is typed.
   const [selectedBrandIds, setSelectedBrandIds] = useState<Set<string>>(new Set());
   const [localMemberIds, setLocalMemberIds] = useState<string[]>([]);
   const [addMemberValue, setAddMemberValue] = useState('');
 
   useEffect(() => {
     if (!team) return;
-    setName(team.name);
-    setDescription(team.description ?? '');
+    form.reset({ name: team.name, description: team.description ?? '' });
     setSelectedBrandIds(new Set(team.brandScopes.map(s => s.brandId)));
     setLocalMemberIds(team.memberships.map(m => m.userId));
-  }, [team]);
+  }, [team, form]);
 
   const userMap = useMemo(() => {
     const map = new Map<string, { id: string; email: string; username: string; firstName?: string | null; lastName?: string | null }>();
@@ -155,13 +220,12 @@ export function EditTeamDialog({ open, onClose, onSaved, teamId }: EditTeamDialo
   const removeMembersMutation = trpc.company.team.removeMembers.useMutation({ onError: err => toast.error(getTrpcErrorMessage(err)) });
   const isPending = updateMutation.isPending || addMembersMutation.isPending || removeMembersMutation.isPending;
 
-  const handleSave = async () => {
-    if (!name.trim()) return;
+  const handleSave = async (data: TeamFormData) => {
     const originalIds = new Set(team?.memberships.map(m => m.userId) ?? []);
     const toAdd = localMemberIds.filter(id => !originalIds.has(id));
     const toRemove = [...originalIds].filter(id => !localMemberIds.includes(id));
     try {
-      await updateMutation.mutateAsync({ id: teamId, name: name.trim(), description: description.trim() || undefined, brandIds: [...selectedBrandIds] });
+      await updateMutation.mutateAsync({ id: teamId, name: data.name.trim(), description: data.description.trim() || undefined, brandIds: [...selectedBrandIds] });
       const ops: Promise<unknown>[] = [];
       if (toAdd.length > 0) ops.push(addMembersMutation.mutateAsync({ teamId, userIds: toAdd }));
       if (toRemove.length > 0) ops.push(removeMembersMutation.mutateAsync({ teamId, userIds: toRemove }));
@@ -188,12 +252,16 @@ export function EditTeamDialog({ open, onClose, onSaved, teamId }: EditTeamDialo
     team?.memberships.find(m => m.userId === userId)?.role ?? 'MEMBER';
 
   return (
-    <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
+    <Dialog open={open} onOpenChange={v => { if (!v && !isPending) onClose(); }}>
       <DialogContent className="flex max-w-2xl flex-col gap-0 p-0">
         <DialogHeader className="border-b px-6 py-4">
           <DialogTitle>{team?.name ?? 'Gestione team'}</DialogTitle>
         </DialogHeader>
 
+        <Form {...form}>
+          {/* flex, not the usual grid: this DialogContent overrides its own layout with
+              `flex flex-col gap-0 p-0`, and the form has to stay transparent to it. */}
+          <form onSubmit={form.handleSubmit(handleSave)} className="flex min-h-0 flex-1 flex-col">
         {teamLoading ? (
           <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">Caricamento…</div>
         ) : (
@@ -215,14 +283,32 @@ export function EditTeamDialog({ open, onClose, onSaved, teamId }: EditTeamDialo
             {/* ── Informazioni ── */}
             <TabsContent value="info" className="px-6 py-4">
               <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="et-name">Nome *</Label>
-                  <Input id="et-name" value={name} onChange={e => setName(e.target.value)} disabled={!canUpdate} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="et-desc">Descrizione</Label>
-                  <Textarea id="et-desc" value={description} onChange={e => setDescription(e.target.value)} rows={3} disabled={!canUpdate} />
-                </div>
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel>Nome *</FormLabel>
+                      <FormControl>
+                        <Input disabled={!canUpdate || isPending} {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel>Descrizione</FormLabel>
+                      <FormControl>
+                        <Textarea rows={3} disabled={!canUpdate || isPending} {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
             </TabsContent>
 
@@ -313,13 +399,15 @@ export function EditTeamDialog({ open, onClose, onSaved, teamId }: EditTeamDialo
         )}
 
         <DialogFooter className="border-t px-6 py-4">
-          <Button variant="outline" onClick={onClose} disabled={isPending}>Annulla</Button>
+          <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>Annulla</Button>
           {canUpdate && (
-            <Button onClick={() => void handleSave()} disabled={isPending || !name.trim() || teamLoading}>
+            <Button type="submit" disabled={isPending || teamLoading}>
               {isPending ? 'Salvataggio…' : 'Salva'}
             </Button>
           )}
         </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );
