@@ -4,8 +4,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useSession } from 'next-auth/react';
 import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { z } from 'zod';
 
-import { ldapConfigSchema, type LdapConfigInput } from '@luke/core';
+import { ldapConfigSchema, ldapSearchTestSchema, type LdapConfigInput } from '@luke/core';
 
 import { SectionCard } from '../../../../components/SectionCard';
 import { KeyValueGrid } from '../../../../components/settings/KeyValueGrid';
@@ -80,7 +81,10 @@ export default function LdapSettingsPage() {
 
   // Dialog per test ricerca
   const [showSearchDialog, setShowSearchDialog] = useState(false);
-  const [searchUsername, setSearchUsername] = useState('');
+  const searchForm = useForm<z.infer<typeof ldapSearchTestSchema>>({
+    resolver: zodResolver(ldapSearchTestSchema),
+    defaultValues: { username: '' },
+  });
 
   // Carica configurazione esistente (solo se admin)
   const {
@@ -150,7 +154,7 @@ export default function LdapSettingsPage() {
       toast.success(`Test ricerca LDAP: ${data.message}`);
       debugLog('LDAP Search Results:', data);
       setShowSearchDialog(false);
-      setSearchUsername('');
+      searchForm.reset();
     },
     onError: err => {
       toast.error('Test ricerca fallito', {
@@ -205,10 +209,8 @@ export default function LdapSettingsPage() {
     setShowSearchDialog(true);
   };
 
-  const handleSearchDialogSubmit = () => {
-    if (searchUsername.trim()) {
-      testSearchMutation.mutate({ username: searchUsername.trim() });
-    }
+  const handleSearchDialogSubmit = (data: z.infer<typeof ldapSearchTestSchema>) => {
+    testSearchMutation.mutate({ username: data.username.trim() });
   };
 
   return (
@@ -545,7 +547,10 @@ export default function LdapSettingsPage() {
       </SectionCard>
 
       {/* Dialog Test Ricerca */}
-      <Dialog open={showSearchDialog} onOpenChange={setShowSearchDialog}>
+      <Dialog
+        open={showSearchDialog}
+        onOpenChange={open => { if (!open && !testSearchMutation.isPending) setShowSearchDialog(false); }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Test Ricerca LDAP</DialogTitle>
@@ -553,32 +558,41 @@ export default function LdapSettingsPage() {
               Inserisci un username per testare la ricerca nel server LDAP
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <Input
-              placeholder="Username da cercare"
-              value={searchUsername}
-              onChange={e => setSearchUsername(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  handleSearchDialogSubmit();
-                }
-              }}
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowSearchDialog(false)}
-            >
-              Annulla
-            </Button>
-            <Button
-              onClick={handleSearchDialogSubmit}
-              disabled={!searchUsername.trim() || testSearchMutation.isPending}
-            >
-              {testSearchMutation.isPending ? 'Ricerca...' : 'Cerca'}
-            </Button>
-          </DialogFooter>
+          <Form {...searchForm}>
+            <form onSubmit={searchForm.handleSubmit(handleSearchDialogSubmit)} className="grid gap-4">
+              <div className="py-4">
+                <FormField
+                  control={searchForm.control}
+                  name="username"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <Input
+                          placeholder="Username da cercare"
+                          disabled={testSearchMutation.isPending}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowSearchDialog(false)}
+                  disabled={testSearchMutation.isPending}
+                >
+                  Annulla
+                </Button>
+                <Button type="submit" disabled={testSearchMutation.isPending}>
+                  {testSearchMutation.isPending ? 'Ricerca...' : 'Cerca'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
         </DialogContent>
       </Dialog>
     </SettingsFormShell>
