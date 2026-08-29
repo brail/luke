@@ -30,4 +30,4 @@ rules:
       - pattern-not-regex: '(BrandAccess|getUserAllowedBrandIds|filterAllowedBrandIds)'
     paths:
       include:
-        - 'apps/api/src/routers/**'
+        - '/apps/api/src/routers/**'

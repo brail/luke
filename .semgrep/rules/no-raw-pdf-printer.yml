@@ -17,6 +17,6 @@ rules:
       - pattern: $P.createPdfKitDocument(...)
     paths:
       include:
-        - 'apps/api/src/**'
+        - '/apps/api/src/**'
       exclude:
-        - 'apps/api/src/lib/export/pdf.ts'
+        - '/apps/api/src/lib/export/pdf.ts'
