@@ -130,6 +130,13 @@ export default [
     rules: { '@luke/no-dialog-input-outside-form': 'error' },
   },
   {
+    // Cache-invalidation backstop. A tRPC hook's query key is generated, so a hand-written one
+    // never matches and the invalidation quietly does nothing — a mutation succeeds and the stale
+    // row stays on screen. `trpc.useUtils()` is type-checked against the real path.
+    files: ['apps/web/src/**/*.{ts,tsx}'],
+    rules: { '@luke/no-raw-query-client': 'error' },
+  },
+  {
     // crypto.randomUUID() secure-context backstop — only 'use client' files run in the
     // browser; the rule itself checks for the directive, this just scopes it to apps/web.
     files: ['apps/web/src/**/*.{ts,tsx}'],
