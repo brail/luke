@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 import { partialWithoutDefaults } from '../utils/zod';
 
+import { MandatoryReasonSchema } from './reason';
+
 /**
  * Toggleable columns for the collection table. Always-visible columns (#, line, skuForecast, actions)
  * are not listed here. At most `COLLECTION_COLUMNS_MAX_VISIBLE` of these may be shown simultaneously.
@@ -142,6 +144,22 @@ export const CollectionLayoutBulkAssignPlanningGroupInputSchema = z.object({
 });
 export type CollectionLayoutBulkAssignPlanningGroupInput = z.infer<
   typeof CollectionLayoutBulkAssignPlanningGroupInputSchema
+>;
+
+/**
+ * Input schema for concluding or reopening the development of a collection row: `note` is mandatory
+ * in both directions, `force` acknowledges phases the row skipped. Shared with `RowCompletionDialog`
+ * so the form and the endpoint reject the same text with the same message; the reasoning is on
+ * `rows.setCompleted`.
+ */
+export const CollectionRowSetCompletedInputSchema = z.object({
+  rowId: z.string(),
+  completed: z.boolean(),
+  note: MandatoryReasonSchema,
+  force: z.boolean().optional(),
+});
+export type CollectionRowSetCompletedInput = z.infer<
+  typeof CollectionRowSetCompletedInputSchema
 >;
 
 /** Input schema for creating or updating a quotation attached to a collection row. */

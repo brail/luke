@@ -20,6 +20,7 @@ import {
   CollectionLayoutSettingsSchema,
   CollectionRowQuotationInputSchema,
   CollectionRowQuotationUpdateSchema,
+  CollectionRowSetCompletedInputSchema,
   partialWithoutDefaults,
 } from '@luke/core';
 
@@ -432,20 +433,13 @@ const rowsRouter = router({
    * make it possible, in hindsight, to tell cleanly closed rows apart from forced ones.
    *
    * @auth collection_layout:update
-   * @input { rowId: string, completed: boolean, note: string (mandatory rationale, 1-500 chars), force?: boolean }
+   * @input CollectionRowSetCompletedInputSchema — rowId, completed, mandatory note (trimmed, 1-500), optional force
    * @output The updated CollectionLayoutRow record, with completedAt set or cleared.
    */
   setCompleted: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
-    .input(
-      z.object({
-        rowId: z.string(),
-        completed: z.boolean(),
-        note: z.string().min(1, 'Motivazione obbligatoria').max(500),
-        force: z.boolean().optional(),
-      })
-    )
+    .input(CollectionRowSetCompletedInputSchema)
     .mutation(async ({ input, ctx }) => {
       await resolveRowBrandAccess(ctx, input.rowId);
 

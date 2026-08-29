@@ -6,6 +6,8 @@ import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
+import { CollectionRowSetCompletedInputSchema } from '@luke/core';
+
 import { Button } from '../../../../../components/ui/button';
 import {
   Dialog,
@@ -24,9 +26,8 @@ import {
 } from '../../../../../components/ui/form';
 import { Textarea } from '../../../../../components/ui/textarea';
 
-const CompletionNoteSchema = z.object({
-  note: z.string().min(1, 'La motivazione è obbligatoria').max(500, 'Massimo 500 caratteri'),
-});
+/** Picked from the endpoint's own input so the message under the textarea is the server's. */
+const CompletionNoteSchema = CollectionRowSetCompletedInputSchema.pick({ note: true });
 
 type CompletionNoteForm = z.infer<typeof CompletionNoteSchema>;
 
@@ -81,7 +82,7 @@ export function RowCompletionDialog({ open, mode, missingPhases, onClose, onConf
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(data => onConfirm(data.note.trim()))} className="grid gap-4">
+          <form onSubmit={form.handleSubmit(data => onConfirm(data.note))} className="grid gap-4">
         <div className="space-y-3 py-2">
           {isForcing ? (
             <div className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">

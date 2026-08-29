@@ -243,6 +243,23 @@ describe('rows.setCompleted — stato e audit', () => {
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
+  it('una motivazione di soli spazi non passa, e i bordi vengono tolti', async () => {
+    // `MandatoryReasonSchema` trims before it measures the length. With the two steps in the other
+    // order the trim is a no-op on the check, `'   '` passes as `''`, and the form — which shares
+    // this schema — accepts a note the server then refuses in a toast.
+    const row = await createRow();
+    await expect(
+      asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true, note: '   ' })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+
+    await asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true, note: '  chiusa  ' });
+    const log = await prisma.auditLog.findFirst({
+      where: { targetId: row.id, action: 'COLLECTION_ROW_COMPLETE' },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect((log!.metadata as { completionNote?: string }).completionNote).toBe('chiusa');
+  });
+
   it('la motivazione ha un tetto di 500 caratteri', async () => {
     // The limit is the one from `phaseChangeNote` in @luke/core: the audit log is not a note field.
     const row = await createRow();
