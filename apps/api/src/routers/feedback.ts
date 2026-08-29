@@ -1,5 +1,6 @@
 import { TRPCError } from '@trpc/server';
-import { z } from 'zod';
+
+import { FeedbackSubmitInputSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import { getTypedConfig } from '../lib/configManager';
@@ -13,16 +14,12 @@ export const feedbackRouter = router({
    * Submits a bug report or feature request as a GitHub issue using the configured feedback token.
    *
    * @auth {authenticated}
-   * @input {{ type: "bug" | "feature", title: string, description: string }}
+   * @input {FeedbackSubmitInputSchema} — feedback type, title and description.
    * @output {{ issueUrl: string, issueNumber: number }}
    */
   submit: protectedProcedure
     .use(withRateLimit('configMutations'))
-    .input(z.object({
-      type: z.enum(['bug', 'feature']),
-      title: z.string().min(1).max(200),
-      description: z.string().min(1).max(4000),
-    }))
+    .input(FeedbackSubmitInputSchema)
     .mutation(async ({ input, ctx }) => {
       const [token, repo] = await Promise.all([
         getTypedConfig(ctx.prisma, 'integrations.github.feedbackToken'),
