@@ -4,6 +4,8 @@ import { useSession } from 'next-auth/react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
+import { HARD_DELETE_CONFIRM_PHRASE } from '@luke/core';
+
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
@@ -45,6 +47,8 @@ const CONFIRM_ACTION_CONFIG: Record<
     description: string;
     confirmText: string;
     actionType: 'disable' | 'hardDelete' | 'revokeSessions' | 'warning';
+    /** Set only where the action is irreversible and has to be typed out to unlock. */
+    confirmPhrase?: string;
   }
 > = {
   disable: {
@@ -60,6 +64,7 @@ const CONFIRM_ACTION_CONFIG: Record<
       "Questa operazione è irreversibile. Tutti i dati dell'utente verranno eliminati permanentemente dal database.",
     confirmText: 'Elimina Definitivamente',
     actionType: 'hardDelete',
+    confirmPhrase: HARD_DELETE_CONFIRM_PHRASE,
   },
   revokeSessions: {
     title: 'Revoca Sessioni Utente',
@@ -109,7 +114,8 @@ export default function UsersPage() {
   const [confirmAction, setConfirmAction] = useState<{
     type: ConfirmActionType;
     user: UserListItem;
-    handler: () => void;
+    /** Receives the typed phrase for the actions that are gated behind one. */
+    handler: (confirmPhrase?: string) => void;
   } | null>(null);
 
   // Stato per ordinamento
@@ -282,14 +288,16 @@ export default function UsersPage() {
     setConfirmAction({
       type: 'hardDelete',
       user,
-      handler: () => hardDeleteUser({ id: user.id }),
+      handler: phrase => {
+        if (phrase) hardDeleteUser({ id: user.id, confirmPhrase: phrase });
+      },
     });
     setConfirmDialogOpen(true);
   };
 
-  const handleConfirmAction = () => {
+  const handleConfirmAction = (confirmPhrase?: string) => {
     if (confirmAction) {
-      confirmAction.handler();
+      confirmAction.handler(confirmPhrase);
     }
   };
 
@@ -508,6 +516,7 @@ export default function UsersPage() {
             }
             userEmail={confirmAction.user?.email}
             actionType={CONFIRM_ACTION_CONFIG[confirmAction.type].actionType}
+            confirmPhrase={CONFIRM_ACTION_CONFIG[confirmAction.type].confirmPhrase}
           />
         )}
 

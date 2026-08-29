@@ -7,6 +7,8 @@ import { z } from 'zod';
 
 import { partialWithoutDefaults } from '../utils/zod';
 
+import { HardDeleteConfirmSchema } from './confirmation';
+
 /** Input schema for creating a season. Code must be alphanumeric, max 10 chars (NAV constraint). */
 export const SeasonInputSchema = z.object({
   code: z
@@ -40,6 +42,9 @@ export const SeasonInputSchema = z.object({
 export const SeasonIdSchema = z.object({
   id: z.string().uuid('ID season non valido'),
 });
+
+/** Input schema for permanently deleting a season — an id alone is not enough. */
+export const SeasonHardDeleteInputSchema = SeasonIdSchema.merge(HardDeleteConfirmSchema);
 
 /** Input schema for listing seasons with optional search, active filter, and cursor pagination. */
 export const SeasonListInputSchema = z.object({

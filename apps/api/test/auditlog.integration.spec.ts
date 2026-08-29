@@ -6,6 +6,8 @@
 import { PrismaClient } from '@prisma/client';
 import { describe, it, expect, beforeEach } from 'vitest';
 
+import { HARD_DELETE_CONFIRM_PHRASE } from '@luke/core';
+
 import { appRouter } from '../src/routers';
 
 import {
@@ -129,7 +131,7 @@ describe('AuditLog Integration', () => {
 
       const caller = createCallerWithSession(session);
 
-      await caller.users.hardDelete({ id: targetUser.id });
+      await caller.users.hardDelete({ id: targetUser.id, confirmPhrase: HARD_DELETE_CONFIRM_PHRASE });
 
       const auditLogs = await testPrisma.auditLog.findMany({
         where: { action: 'USER_HARD_DELETE' },
@@ -419,7 +421,7 @@ describe('AuditLog Integration', () => {
       const { user: targetUser } = await createTestUser('viewer');
       const caller = createCallerWithSession(session);
 
-      await caller.users.hardDelete({ id: targetUser.id });
+      await caller.users.hardDelete({ id: targetUser.id, confirmPhrase: HARD_DELETE_CONFIRM_PHRASE });
 
       const auditLogs = await testPrisma.auditLog.findMany({
         where: {

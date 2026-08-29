@@ -8,6 +8,7 @@ import { TRPCError } from '@trpc/server';
 
 import {
   BrandInputSchema,
+  BrandHardDeleteInputSchema,
   BrandIdSchema,
   BrandListInputSchema,
   BrandUpdateInputSchema,
@@ -372,14 +373,17 @@ export const brandRouter = router({
   /**
    * Permanently deletes a brand; blocked if it has a NAV link or active dependencies.
    *
+   * A wrong or missing `confirmPhrase` is rejected in input validation, so it never reaches this
+   * body and never reaches the audit log — the same as any other malformed field.
+   *
    * @auth {brands:delete}
-   * @input {BrandIdSchema} — brand UUID.
+   * @input {BrandHardDeleteInputSchema} — brand UUID plus the typed confirmation.
    * @output {{ success: true }}
    */
   hardDelete: protectedProcedure
     .use(requirePermission('brands:delete'))
     .use(withRateLimit('brandMutations'))
-    .input(BrandIdSchema)
+    .input(BrandHardDeleteInputSchema)
     .mutation(async ({ input, ctx }) => {
       const brand = await ctx.prisma.brand.findUnique({ where: { id: input.id } });
 

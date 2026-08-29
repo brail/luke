@@ -7,6 +7,8 @@ import { z } from 'zod';
 
 import { partialWithoutDefaults } from '../utils/zod';
 
+import { HardDeleteConfirmSchema } from './confirmation';
+
 /** Input schema for creating a brand. Code must be alphanumeric with `_` and `-`, max 20 chars. */
 export const BrandInputSchema = z.object({
   /** Unique brand code (max 20 characters) */
@@ -49,6 +51,9 @@ export const BrandIdSchema = z.object({
   /** UUID of the brand */
   id: z.string().uuid('ID brand non valido'),
 });
+
+/** Input schema for permanently deleting a brand — an id alone is not enough. */
+export const BrandHardDeleteInputSchema = BrandIdSchema.merge(HardDeleteConfirmSchema);
 
 /** Full brand record as returned by the API (includes all fields). */
 export const BrandSchema = z.object({

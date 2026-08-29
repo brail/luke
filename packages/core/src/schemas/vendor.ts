@@ -7,6 +7,8 @@ import { z } from 'zod';
 
 import { partialWithoutDefaults } from '../utils/zod';
 
+import { HardDeleteConfirmSchema } from './confirmation';
+
 /** Input schema for creating an internal vendor record. */
 export const VendorInputSchema = z.object({
   name: z.string().min(1, 'Nome obbligatorio').max(255).trim(),
@@ -27,6 +29,9 @@ export const VendorInputSchema = z.object({
 export const VendorIdSchema = z.object({
   id: z.string().uuid('ID vendor non valido'),
 });
+
+/** Input schema for permanently deleting a vendor — an id alone is not enough. */
+export const VendorHardDeleteInputSchema = VendorIdSchema.merge(HardDeleteConfirmSchema);
 
 /** Input schema for partially updating an existing vendor. */
 export const VendorUpdateInputSchema = z.object({

@@ -36,6 +36,7 @@ export * from './schemas/backup';
 export * from './schemas/auditLog';
 export * from './schemas/maintenanceMode';
 export * from './schemas/feedback';
+export * from './schemas/confirmation';
 
 // Re-export RBAC
 export * from './rbac';

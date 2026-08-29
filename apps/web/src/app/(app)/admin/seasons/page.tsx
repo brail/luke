@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { toast } from 'sonner';
 
+import { HARD_DELETE_CONFIRM_PHRASE } from '@luke/core';
+
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { CreateActionButton } from '../../../../components/CreateActionButton';
 import { PageHeader } from '../../../../components/PageHeader';
@@ -213,7 +215,10 @@ export default function SeasonsPage() {
         confirmText="Elimina definitivamente"
         cancelText="Annulla"
         actionType="hardDelete"
-        onConfirm={() => { if (hardDeletingSeason) hardDeleteMutation.mutate({ id: hardDeletingSeason.id }); }}
+        confirmPhrase={HARD_DELETE_CONFIRM_PHRASE}
+        onConfirm={phrase => {
+          if (hardDeletingSeason && phrase) hardDeleteMutation.mutate({ id: hardDeletingSeason.id, confirmPhrase: phrase });
+        }}
         isLoading={hardDeleteMutation.isPending}
       />
 

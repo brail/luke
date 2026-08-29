@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
+import { HARD_DELETE_CONFIRM_PHRASE } from '@luke/core';
 import type { BrandInput } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
@@ -234,7 +235,10 @@ export default function BrandsPage() {
         confirmText="Elimina definitivamente"
         cancelText="Annulla"
         actionType="hardDelete"
-        onConfirm={() => { if (hardDeletingBrand) hardDeleteMutation.mutate({ id: hardDeletingBrand.id }); }}
+        confirmPhrase={HARD_DELETE_CONFIRM_PHRASE}
+        onConfirm={phrase => {
+          if (hardDeletingBrand && phrase) hardDeleteMutation.mutate({ id: hardDeletingBrand.id, confirmPhrase: phrase });
+        }}
         isLoading={hardDeleteMutation.isPending}
       />
 

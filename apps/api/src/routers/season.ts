@@ -8,6 +8,7 @@ import { TRPCError } from '@trpc/server';
 
 import {
   SeasonInputSchema,
+  SeasonHardDeleteInputSchema,
   SeasonIdSchema,
   SeasonListInputSchema,
   SeasonUpdateInputSchema,
@@ -262,14 +263,17 @@ export const seasonRouter = router({
   /**
    * Permanently deletes a season; only allowed for seasons not linked to NAV and without active dependencies.
    *
+   * A wrong or missing `confirmPhrase` is rejected in input validation, so it never reaches this
+   * body and never reaches the audit log — the same as any other malformed field.
+   *
    * @auth {seasons:delete}
-   * @input {SeasonIdSchema}
+   * @input {SeasonHardDeleteInputSchema} — season UUID plus the typed confirmation.
    * @output {{ success: true }}
    */
   hardDelete: protectedProcedure
     .use(requirePermission('seasons:delete'))
     .use(withRateLimit('configMutations'))
-    .input(SeasonIdSchema)
+    .input(SeasonHardDeleteInputSchema)
     .mutation(async ({ input, ctx }) => {
       const season = await ctx.prisma.season.findUnique({ where: { id: input.id } });
 

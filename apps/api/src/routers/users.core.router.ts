@@ -24,7 +24,7 @@ import { getOnlineUserIds, updatePresence } from '../lib/presenceStore';
 import { withRateLimit } from '../lib/ratelimit';
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
 import { router, protectedProcedure } from '../lib/trpc';
-import { deleteUserHandler, getLockedFields, resolveEffectiveProvider, UserIdSchema } from '../services/users.service';
+import { deleteUserHandler, getLockedFields, resolveEffectiveProvider, UserHardDeleteInputSchema, UserIdSchema } from '../services/users.service';
 
 export const usersCoreRouter = router({
   /**
@@ -661,14 +661,17 @@ export const usersCoreRouter = router({
   /**
    * Permanently deletes a user and all cascade relations; blocked for self or last remaining admin.
    *
+   * A wrong or missing `confirmPhrase` is rejected in input validation, so it never reaches this
+   * body and never reaches the audit log — the same as any other malformed field.
+   *
    * @auth {users:delete}
-   * @input {UserIdSchema}
+   * @input {UserHardDeleteInputSchema} — user UUID plus the typed confirmation.
    * @output {{ success: true, message: string }}
    */
   hardDelete: protectedProcedure
     .use(requirePermission('users:delete'))
     .use(withRateLimit('userMutations'))
-    .input(UserIdSchema)
+    .input(UserHardDeleteInputSchema)
     .mutation(async ({ input, ctx }) => {
       const user = await ctx.prisma.user.findUnique({
         where: { id: input.id },

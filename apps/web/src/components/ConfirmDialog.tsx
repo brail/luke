@@ -1,7 +1,12 @@
 'use client';
 
+import { zodResolver } from '@hookform/resolvers/zod';
 import { AlertTriangle, Ban, Trash2 } from 'lucide-react';
-import { useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+
+import { typedConfirmation } from '@luke/core';
 
 import {
   AlertDialog,
@@ -13,6 +18,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from './ui/alert-dialog';
+import { Button } from './ui/button';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from './ui/form';
+import { Input } from './ui/input';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -21,10 +36,13 @@ interface ConfirmDialogProps {
   description: string;
   confirmText?: string;
   cancelText?: string;
-  onConfirm: () => void;
+  /** Receives the typed phrase when `confirmPhrase` gates the dialog, nothing otherwise. */
+  onConfirm: (confirmPhrase?: string) => void;
   isLoading?: boolean;
   userEmail?: string;
   actionType?: 'delete' | 'disable' | 'hardDelete' | 'revokeSessions' | 'warning';
+  /** When set, the action unlocks only once the user types this exact phrase. */
+  confirmPhrase?: string;
 }
 
 /**
@@ -35,6 +53,7 @@ interface ConfirmDialogProps {
  *
  * @param actionType - Controls the icon and button color: `delete` and `hardDelete` use destructive styling; `disable` and `warning` use default styling.
  * @param userEmail - Optional email displayed below the description to identify the target user.
+ * @param confirmPhrase - Gates the action behind typing this phrase; omit for a plain confirmation.
  */
 export function ConfirmDialog({
   open,
@@ -47,9 +66,10 @@ export function ConfirmDialog({
   isLoading = false,
   userEmail,
   actionType = 'delete',
+  confirmPhrase,
 }: ConfirmDialogProps) {
-  const handleConfirm = () => {
-    onConfirm();
+  const handleConfirm = (typed?: string) => {
+    onConfirm(typed);
     onOpenChange(false);
   };
 
@@ -62,6 +82,26 @@ export function ConfirmDialog({
   };
 
   const actionRef = useRef<HTMLButtonElement>(null);
+  const phraseInputRef = useRef<HTMLInputElement>(null);
+
+  // Reuses the server's own rule, so the dialog rejects exactly what the endpoint would and says it
+  // with the same words.
+  const schema = useMemo(
+    () => z.object({ typed: typedConfirmation(confirmPhrase ?? '') }),
+    [confirmPhrase]
+  );
+
+  const form = useForm<{ typed: string }>({
+    resolver: zodResolver(schema),
+    defaultValues: { typed: '' },
+    // The typed phrase decides whether the action is clickable at all, so validity has to track
+    // every keystroke rather than settle at submit time.
+    mode: 'onChange',
+  });
+
+  useEffect(() => {
+    if (open) form.reset({ typed: '' });
+  }, [open, form]);
 
   // Radix moves focus to Cancel when an AlertDialog opens, so a reflex Enter — the same key the
   // user just pressed to submit whatever opened this — cannot fire the action. Worth keeping on an
@@ -71,6 +111,13 @@ export function ConfirmDialog({
   const focusesActionOnOpen = actionType === 'disable' || actionType === 'warning';
 
   const handleOpenAutoFocus = (event: Event) => {
+    // A gated dialog puts the caret in the field instead: the action is unreachable until
+    // something is typed there anyway.
+    if (confirmPhrase) {
+      event.preventDefault();
+      phraseInputRef.current?.focus({ preventScroll: true });
+      return;
+    }
     if (!focusesActionOnOpen) return;
     event.preventDefault();
     actionRef.current?.focus({ preventScroll: true });
@@ -126,23 +173,70 @@ export function ConfirmDialog({
             )}
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={isLoading}>
-            {cancelText}
-          </AlertDialogCancel>
-          <AlertDialogAction
-            ref={actionRef}
-            onClick={handleConfirm}
-            disabled={isLoading}
-            className={
-              getActionVariant() === 'destructive'
-                ? 'bg-destructive hover:bg-destructive/90'
-                : ''
-            }
-          >
-            {isLoading ? 'Elaborazione...' : confirmText}
-          </AlertDialogAction>
-        </AlertDialogFooter>
+        {confirmPhrase ? (
+          <Form {...form}>
+            <form
+              onSubmit={form.handleSubmit(data => handleConfirm(data.typed))}
+              className="grid gap-4"
+            >
+              <FormField
+                control={form.control}
+                name="typed"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel>
+                      Digita <span className="font-mono font-semibold">{confirmPhrase}</span> per confermare
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder={confirmPhrase}
+                        autoComplete="off"
+                        className="font-mono"
+                        disabled={isLoading}
+                        {...field}
+                        ref={phraseInputRef}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <AlertDialogFooter>
+                <AlertDialogCancel type="button" disabled={isLoading}>
+                  {cancelText}
+                </AlertDialogCancel>
+                {/* Deliberately not AlertDialogAction: that renders a Radix DialogClose, which
+                    tears the dialog down on click and detaches the form before the browser runs
+                    the submit — the action would never fire. See lessons.md. */}
+                <Button
+                  type="submit"
+                  variant={getActionVariant()}
+                  disabled={isLoading || !form.formState.isValid}
+                >
+                  {isLoading ? 'Elaborazione...' : confirmText}
+                </Button>
+              </AlertDialogFooter>
+            </form>
+          </Form>
+        ) : (
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isLoading}>
+              {cancelText}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              ref={actionRef}
+              onClick={() => handleConfirm()}
+              disabled={isLoading}
+              className={
+                getActionVariant() === 'destructive'
+                  ? 'bg-destructive hover:bg-destructive/90'
+                  : ''
+              }
+            >
+              {isLoading ? 'Elaborazione...' : confirmText}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        )}
       </AlertDialogContent>
     </AlertDialog>
   );

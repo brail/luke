@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { toast } from 'sonner';
 
+import { HARD_DELETE_CONFIRM_PHRASE } from '@luke/core';
 import type { VendorInput } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
@@ -171,7 +172,10 @@ export default function VendorsPage() {
         confirmText="Elimina definitivamente"
         cancelText="Annulla"
         actionType="hardDelete"
-        onConfirm={() => { if (hardDeletingVendor) hardDeleteMutation.mutate({ id: hardDeletingVendor.id }); }}
+        confirmPhrase={HARD_DELETE_CONFIRM_PHRASE}
+        onConfirm={phrase => {
+          if (hardDeletingVendor && phrase) hardDeleteMutation.mutate({ id: hardDeletingVendor.id, confirmPhrase: phrase });
+        }}
         isLoading={hardDeleteMutation.isPending}
       />
 

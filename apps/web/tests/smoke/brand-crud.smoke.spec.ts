@@ -1,5 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
+import { HARD_DELETE_CONFIRM_PHRASE } from '@luke/core';
+
 import {
   expectContextConfigured,
   expectNoErrorBoundary,
@@ -57,6 +59,12 @@ async function deleteFirstSmokeBrand(page: Page): Promise<boolean> {
   const dialog = page.getByRole('alertdialog');
   await row.getByRole('button', { name: 'Elimina', exact: true }).click();
   await expect(dialog).toBeVisible();
+
+  // L'eliminazione definitiva è dietro una conferma digitata: il bottone resta disabilitato
+  // finché il campo non contiene la frase esatta, e il server rifiuta comunque una chiamata che
+  // non la porta. L'attrito voluto per gli umani è attrito anche per questa pulizia — è il costo
+  // accettato, non un dettaglio da aggirare.
+  await dialog.getByRole('textbox').fill(HARD_DELETE_CONFIRM_PHRASE);
 
   await dialog
     .getByRole('button', { name: 'Elimina definitivamente', exact: true })

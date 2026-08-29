@@ -13,6 +13,7 @@ import { TRPCError } from '@trpc/server';
 
 import {
   VendorInputSchema,
+  VendorHardDeleteInputSchema,
   VendorIdSchema,
   VendorListInputSchema,
   VendorUpdateInputSchema,
@@ -275,14 +276,17 @@ export const vendorsRouter = router({
   /**
    * Permanently deletes a vendor; only allowed for vendors not linked to NAV and without CollectionLayoutRow references.
    *
+   * A wrong or missing `confirmPhrase` is rejected in input validation, so it never reaches this
+   * body and never reaches the audit log — the same as any other malformed field.
+   *
    * @auth {vendors:delete}
-   * @input {VendorIdSchema}
+   * @input {VendorHardDeleteInputSchema} — vendor UUID plus the typed confirmation.
    * @output {{ success: true }}
    */
   hardDelete: protectedProcedure
     .use(requirePermission('vendors:delete'))
     .use(withRateLimit('configMutations'))
-    .input(VendorIdSchema)
+    .input(VendorHardDeleteInputSchema)
     .mutation(async ({ input, ctx }) => {
       const vendor = await ctx.prisma.vendor.findUnique({ where: { id: input.id } });
 
