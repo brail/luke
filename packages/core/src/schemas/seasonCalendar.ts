@@ -13,6 +13,26 @@ export const VendorClosurePeriodInputSchema = z.object({
 });
 export type VendorClosurePeriodInput = z.infer<typeof VendorClosurePeriodInputSchema>;
 
+/**
+ * What `holidays.upsertVendorClosure` actually accepts, for both create and update.
+ *
+ * Distinct from {@link VendorClosurePeriodInputSchema} above, which no call site uses: this one
+ * carries `countryCode`, takes full ISO datetimes rather than plain dates, and makes `id` the
+ * create/update discriminator.
+ */
+export const VendorClosureUpsertInputSchema = z.object({
+  id:          z.string().uuid().optional(),
+  vendorId:    z.string().uuid(),
+  seasonId:    z.string().uuid(),
+  countryCode: z.string().length(2).nullable(),
+  name:        z.string().min(1, 'Il nome è obbligatorio').max(200, 'Massimo 200 caratteri'),
+  startDate:   z.string().datetime(),
+  endDate:     z.string().datetime(),
+  type:        z.enum(['CLOSURE', 'OPEN']),
+  notes:       z.string().max(500, 'Massimo 500 caratteri').nullable().optional(),
+});
+export type VendorClosureUpsertInput = z.infer<typeof VendorClosureUpsertInputSchema>;
+
 // ─── Const arrays ─────────────────────────────────────────────────────────────
 
 /** Lifecycle statuses for a season calendar. `ARCHIVED` calendars are read-only. */

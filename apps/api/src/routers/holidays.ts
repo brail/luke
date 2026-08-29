@@ -1,6 +1,8 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { VendorClosureUpsertInputSchema } from '@luke/core';
+
 import { logAudit } from '../lib/auditLog.js';
 import { requirePermission } from '../lib/permissions.js';
 import { router, protectedProcedure } from '../lib/trpc.js';
@@ -323,17 +325,7 @@ export const holidaysRouter = router({
    */
   upsertVendorClosure: protectedProcedure
     .use(requirePermission('season_calendar:update'))
-    .input(z.object({
-      id: z.string().uuid().optional(),
-      vendorId: z.string().uuid(),
-      seasonId: z.string().uuid(),
-      countryCode: z.string().length(2).nullable(),
-      name: z.string().min(1).max(200),
-      startDate: z.string().datetime(),
-      endDate: z.string().datetime(),
-      type: z.enum(['CLOSURE', 'OPEN']),
-      notes: z.string().max(500).nullable().optional(),
-    }))
+    .input(VendorClosureUpsertInputSchema)
     .mutation(async ({ input, ctx }) => {
       const startDate = new Date(input.startDate);
       const endDate   = new Date(input.endDate);
