@@ -663,6 +663,15 @@ conditions that make it a defect.
   swapped for another message — a green build proves nothing about whether it
   took effect. Probe it at runtime, or leave it unverified and say so.
 
+**Postscript 2.** A green hook is not a green pipeline. `.husky/pre-push` ran
+tests and a drift check and printed "8 successful, 8 total"; that was read as
+"the branch is verified" and the push went out with a type error CI then found.
+The hook ran no typecheck at all. Worse, adding `typecheck` alone would not
+have caught it: `apps/api/tsconfig.json` includes `src/**` and nothing else, so
+`test/`, `scripts/` and `prisma/` are compiled only by `tsconfig.test.json`
+under a second task. Before trusting any gate, read what it actually runs — the
+count of green tasks says nothing about which tasks they were.
+
 **Postscript.** A review at the end of the same session found two defects this
 file's own earlier entry had already warned about: a `<button>` two levels deep
 in the markup that had no `type` and therefore submitted the form it had just
