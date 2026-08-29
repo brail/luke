@@ -49,6 +49,9 @@ Indice con Status aggiornato: [decisions/README.md](decisions/README.md).
 |------|-------------|
 | [TASK_calendar_ux_deferred_items.md](TASK_calendar_ux_deferred_items.md) | Backlog differito della UX review calendario/collection-layout (2026-07-10) |
 | [TASK_working_days_calendar_relevance.md](TASK_working_days_calendar_relevance.md) | Design doc storico: giorni lavorativi paese-aware per la criticità calendario (implementato 2026-07-10) |
+| [TASK_permission_button_inline_copies.md](TASK_permission_button_inline_copies.md) | 18 tooltip di permesso irraggiungibili da tastiera: copie inline di `PermissionButton` senza `tabIndex` (2026-08-29) |
+| [TASK_router_schemas_to_core.md](TASK_router_schemas_to_core.md) | 106 schemi di input inline nei router: quali spostare in `@luke/core` e con che criterio (2026-08-29) |
+| [TASK_url_check_enforcement.md](TASK_url_check_enforcement.md) | `codemod:check-urls` esiste ma non gira in CI né in husky: renderlo effettivo (2026-08-29) |
 
 ## Directory operative
 

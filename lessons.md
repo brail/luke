@@ -614,3 +614,51 @@ uses `onClick`, which `composeEventHandlers` runs *before* Radix's close.
   that moves *what triggers* a mutation — button type, event handler, wrapping
   element — needs the flow exercised in the running app before it is called
   done, or the uncertainty stated plainly to the user.
+
+## A grep is evidence about text, not about the thing you are claiming
+
+**What happened.** Over one session I made five confident claims from `grep`
+output, and four of them were wrong.
+
+- *"25 call sites don't pass `actionType`."* 25 was the number of **files**
+  `grep -l` returned. Every one of the 35 call sites passed it.
+- *"The `hardDelete` branch is used by nobody."* I grepped the string literal
+  `actionType="hardDelete"`. It was used through a lookup —
+  `CONFIRM_ACTION_CONFIG[type].actionType` — which no literal search can see.
+- *"These two pages have the stale-state bug."* I matched on `useState` seeded
+  from a prop with no `useEffect` beside it. Both dialogs are rendered
+  conditionally, so they remount on every open and the seeding is correct. The
+  pattern was there; the precondition that turns it into a bug was not.
+- *"19 dialogs need migrating."* The census asked "which files contain a
+  `<form>`", so a dialog living in a file whose *other* component had one was
+  invisible. The ESLint rule written at the end found the twentieth.
+- *"`BackupScheduleCard` is a form with no submit button."* The submit button
+  is in the shared `SettingsActions` component, one import away.
+
+**Why it kept happening.** Each grep answered a question about *text*, and each
+claim was about *structure* — what is nested in what, what is reachable from
+what, what runs. Text is a proxy for structure, and the proxy fails in the same
+few ways every time: indirection through a variable or a map, composition
+through a child component, and the difference between a pattern and the
+conditions that make it a defect.
+
+**Rules.**
+
+- Say which unit you counted. "25 files" and "25 call sites" are different
+  claims and only one of them was true.
+- Before "nothing uses X", look for indirection: a lookup table, a variable, a
+  prop, a re-export. If X is a *value* rather than a syntax form, a literal
+  search cannot answer the question.
+- A pattern is not a defect until its precondition holds. `useState` seeded
+  from a prop is only stale if the component stays mounted — check the call
+  site before naming it a bug.
+- When the property is structural — this element inside that one, this call
+  reachable from there — the honest instruments are the type checker, an ESLint
+  rule over the AST, or a runtime probe. Prefer them, and where the codebase
+  can carry one, leave the rule behind instead of the grep.
+- Removing a prop or a field turns the compiler into the census: every call
+  site becomes an error and none can hide. Reach for that before reaching for
+  `grep -c`.
+- When an override is same-type — a `string` replacing a `string`, a message
+  swapped for another message — a green build proves nothing about whether it
+  took effect. Probe it at runtime, or leave it unverified and say so.
