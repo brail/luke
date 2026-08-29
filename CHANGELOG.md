@@ -238,6 +238,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **api**: Import @fastify/cookie for reply.clearCookie type augmentation
 - **web**: Guard crypto.randomUUID() in collection-control against non-secure contexts
 - **web**: Restore XLSX/PDF export wiring in collection layout page
+- **api**: Prevent OOM on large collection layout XLSX/PDF export
+- **api**: Resize export images with sharp to prevent OOM on collection layout export
+- **api**: Stop sharp types paths remap from hijacking tsx runtime resolution
+- **web**: Make sharp type shim reachable from apps/web's own TS program
+- **api**: Resolve vitest/globals + sharp types for typecheck:test
 
 ### Maintenance
 - **husky**: Remove deprecated husky.sh source from post-checkout
