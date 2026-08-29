@@ -117,7 +117,7 @@ export function FunctionDialog({ open, onClose, onSaved, fn }: FunctionDialogPro
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)}>
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="grid gap-4">
             <div className="space-y-4 py-2">
               {!isEdit && (
                 <FormField

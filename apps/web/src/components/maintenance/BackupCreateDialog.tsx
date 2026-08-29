@@ -98,7 +98,7 @@ export function BackupCreateDialog({
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)}>
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="grid gap-4">
             <div className="space-y-4 py-2">
               <FormField
                 control={form.control}

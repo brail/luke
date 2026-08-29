@@ -85,7 +85,7 @@ export function SendDigestDialog({ open, onClose }: { open: boolean; onClose: ()
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(data => digestMutation.mutate(data))}>
+          <form onSubmit={form.handleSubmit(data => digestMutation.mutate(data))} className="grid gap-4">
             <div className="grid grid-cols-2 gap-3 py-2">
               <FormField
                 control={form.control}
