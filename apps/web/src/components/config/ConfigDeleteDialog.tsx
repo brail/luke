@@ -9,7 +9,6 @@ import { z } from 'zod';
 import { isCriticalKey } from '../../lib/configHelpers';
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -18,6 +17,7 @@ import {
   AlertDialogTitle,
 } from '../ui/alert-dialog';
 import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
 import {
   Form,
   FormControl,
@@ -137,13 +137,12 @@ export function ConfigDeleteDialog({
 
             <AlertDialogFooter>
               <AlertDialogCancel type="button" disabled={isLoading}>Annulla</AlertDialogCancel>
-              <AlertDialogAction
-                type="submit"
-                disabled={!canDelete || isLoading}
-                className="bg-destructive hover:bg-destructive/90"
-              >
+              {/* Deliberately not AlertDialogAction: that renders a Radix DialogClose, which tears
+                  the dialog down on click and detaches the form before the browser gets to run the
+                  submit. The parent closes the dialog once the delete resolves. */}
+              <Button type="submit" variant="destructive" disabled={!canDelete || isLoading}>
                 {isLoading ? 'Eliminazione...' : 'Elimina'}
-              </AlertDialogAction>
+              </Button>
             </AlertDialogFooter>
           </form>
         </Form>
