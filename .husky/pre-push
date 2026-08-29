@@ -29,6 +29,20 @@ while read local_ref local_sha remote_ref remote_sha; do
   esac
 done
 
+# Typecheck prima degli unit test. `test` non tipizza niente e `typecheck` da solo
+# copre solo il grafo di build: `apps/api/tsconfig.json` include `src/**` e basta,
+# quindi `test/`, `scripts/` e `prisma/` passano unicamente da `typecheck:test`.
+# È così che un `Array.prototype.at` è arrivato in CI mentre in locale l'hook
+# stampava otto task verdi — che erano verdi, ma non erano quelli.
+echo "🔎 Typecheck..."
+if ! pnpm turbo run typecheck typecheck:test --output-logs=errors-only; then
+  echo ""
+  echo "❌ Typecheck fallito — push bloccato."
+  echo "   Per saltare (solo se sai perché): git push --no-verify"
+  echo ""
+  exit 1
+fi
+
 # Unit test prima del push. Non in pre-commit: là serve latenza bassa e il ciclo
 # di lavoro ne farebbe a meno. I test di integrazione restano fuori: richiedono
 # Docker, e un hook che dipende da un container non è affidabile.
