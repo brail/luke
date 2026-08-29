@@ -1,8 +1,13 @@
 'use client';
 
+import { zodResolver } from '@hookform/resolvers/zod';
 import { ExternalLink } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect } from 'react';
+import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
+import { z } from 'zod';
+
+import { FeedbackSubmitInputSchema } from '@luke/core';
 
 import { trpc } from '../lib/trpc';
 import { getTrpcErrorMessage } from '../lib/trpcErrorMessages';
@@ -16,8 +21,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from './ui/dialog';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from './ui/form';
 import { Input } from './ui/input';
-import { Label } from './ui/label';
 import {
   Select,
   SelectContent,
@@ -26,6 +38,10 @@ import {
   SelectValue,
 } from './ui/select';
 import { Textarea } from './ui/textarea';
+
+type FeedbackFormData = z.infer<typeof FeedbackSubmitInputSchema>;
+
+const EMPTY_FEEDBACK: FeedbackFormData = { type: 'bug', title: '', description: '' };
 
 interface FeedbackDialogProps {
   open: boolean;
@@ -39,9 +55,10 @@ interface FeedbackDialogProps {
  * shows a toast with a direct link to the created issue.
  */
 export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
-  const [type, setType] = useState<'bug' | 'feature'>('bug');
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const form = useForm<FeedbackFormData>({
+    resolver: zodResolver(FeedbackSubmitInputSchema),
+    defaultValues: EMPTY_FEEDBACK,
+  });
 
   const submit = trpc.feedback.submit.useMutation({
     onSuccess: ({ issueUrl, issueNumber }) => {
@@ -54,19 +71,29 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
         </span>,
       );
       onOpenChange(false);
-      setTitle('');
-      setDescription('');
-      setType('bug');
     },
     onError: (err) => {
       toast.error(getTrpcErrorMessage(err));
     },
   });
 
-  const canSubmit = title.trim().length > 0 && description.trim().length > 0;
+  const type = form.watch('type');
+
+  // The dialog stays mounted for the lifetime of the sidebar, so without this reset a report
+  // abandoned halfway is still in the fields the next time it opens.
+  useEffect(() => {
+    if (open) form.reset(EMPTY_FEEDBACK);
+  }, [open, form]);
+
+  // Esc and outside-click close through onOpenChange, a path the Cancel button does not take:
+  // without this guard the dialog is dismissable while the issue is being created.
+  const handleOpenChange = (next: boolean) => {
+    if (!next && submit.isPending) return;
+    onOpenChange(next);
+  };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[480px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
         <DialogHeader>
           <DialogTitle>Segnalazione / Suggerimento</DialogTitle>
@@ -75,55 +102,88 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label>Tipo</Label>
-            <Select value={type} onValueChange={v => setType(v as 'bug' | 'feature')}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="bug">🐛 Bug — qualcosa non funziona</SelectItem>
-                <SelectItem value="feature">✨ Suggerimento — nuova funzionalità</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(data => submit.mutate(data))} className="grid gap-4">
+            <div className="space-y-4 py-2">
+              <FormField
+                control={form.control}
+                name="type"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel>Tipo</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange} disabled={submit.isPending}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="bug">🐛 Bug — qualcosa non funziona</SelectItem>
+                        <SelectItem value="feature">✨ Suggerimento — nuova funzionalità</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-          <div className="space-y-1.5">
-            <Label htmlFor="fb-title">Titolo</Label>
-            <Input
-              id="fb-title"
-              placeholder={type === 'bug' ? 'Es. Il prezzo non si salva' : 'Es. Aggiungere export PDF'}
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              maxLength={200}
-            />
-          </div>
+              <FormField
+                control={form.control}
+                name="title"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel>Titolo</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder={type === 'bug' ? 'Es. Il prezzo non si salva' : 'Es. Aggiungere export PDF'}
+                        maxLength={200}
+                        disabled={submit.isPending}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-          <div className="space-y-1.5">
-            <Label htmlFor="fb-description">Descrizione</Label>
-            <Textarea
-              id="fb-description"
-              placeholder={type === 'bug'
-                ? 'Passi per riprodurre, comportamento atteso, cosa succede invece…'
-                : 'Descrivi la funzionalità, il caso d\'uso, perché sarebbe utile…'}
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              rows={5}
-              maxLength={4000}
-            />
-          </div>
-        </div>
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel>Descrizione</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder={type === 'bug'
+                          ? 'Passi per riprodurre, comportamento atteso, cosa succede invece…'
+                          : 'Descrivi la funzionalità, il caso d\'uso, perché sarebbe utile…'}
+                        rows={5}
+                        maxLength={4000}
+                        disabled={submit.isPending}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Annulla</Button>
-          <Button
-            onClick={() => submit.mutate({ type, title, description })}
-            disabled={!canSubmit || submit.isPending}
-          >
-            {submit.isPending ? 'Invio…' : 'Invia'}
-          </Button>
-        </DialogFooter>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={submit.isPending}
+              >
+                Annulla
+              </Button>
+              <Button type="submit" disabled={submit.isPending}>
+                {submit.isPending ? 'Invio…' : 'Invia'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );
