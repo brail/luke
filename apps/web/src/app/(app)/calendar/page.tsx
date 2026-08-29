@@ -12,7 +12,7 @@ import { Button } from '../../../components/ui/button';
 import { Card, CardContent } from '../../../components/ui/card';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../../../components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../../components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../../../components/ui/tooltip';
 import { useAppContext } from '../../../contexts/AppContextProvider';
 import { usePermission } from '../../../hooks/usePermission';
 import { trpc } from '../../../lib/trpc';
@@ -582,18 +582,16 @@ export default function CalendarPage() {
     },
   };
   const seasonStateBadge = season && (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Badge variant={seasonState === 'maintenance' ? 'secondary' : 'outline'} className="cursor-help">
-            {seasonStateCopy[seasonState].label}
-          </Badge>
-        </TooltipTrigger>
-        <TooltipContent className="max-w-xs">
-          {seasonStateCopy[seasonState].tooltip}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge variant={seasonState === 'maintenance' ? 'secondary' : 'outline'} className="cursor-help">
+          {seasonStateCopy[seasonState].label}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">
+        {seasonStateCopy[seasonState].tooltip}
+      </TooltipContent>
+    </Tooltip>
   );
 
   return (

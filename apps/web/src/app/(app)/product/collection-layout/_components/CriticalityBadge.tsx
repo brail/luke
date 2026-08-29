@@ -4,7 +4,7 @@ import type { RouterOutputs } from '@luke/api';
 import { formatDate } from '@luke/core';
 
 import { Badge } from '../../../../../components/ui/badge';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../../../../components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../../../../../components/ui/tooltip';
 import { bandBadgeStyle } from '../../../../../lib/alertBandStyle';
 import { trpc } from '../../../../../lib/trpc';
 import { cn } from '../../../../../lib/utils';
@@ -101,18 +101,16 @@ export function formatDaysLabel(daysToDeadline: number): string {
  */
 export function CriticalityBandBadge({ band, tooltip, className }: { band: CriticalityBand; tooltip: string; className?: string }) {
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          {/* Color is an admin-configured hex value from AppConfig (collectionControl.alertThresholds),
-              not a design token — cannot be expressed as a static Tailwind/CVA class. */}
-          <Badge variant="outline" className={className} style={bandBadgeStyle(band)}>
-            {band.label}
-          </Badge>
-        </TooltipTrigger>
-        <TooltipContent>{tooltip}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        {/* Color is an admin-configured hex value from AppConfig (collectionControl.alertThresholds),
+            not a design token — cannot be expressed as a static Tailwind/CVA class. */}
+        <Badge variant="outline" className={className} style={bandBadgeStyle(band)}>
+          {band.label}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
   );
 }
 

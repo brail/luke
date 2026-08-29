@@ -13,7 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../../components/ui/dialog';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../../../../components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../../../../../components/ui/tooltip';
 import { narrowRouterOutput, trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 import { FreezePlanningGroupWizard } from '../FreezePlanningGroupWizard';
@@ -163,17 +163,15 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
                 Evento {stepIndex + 1} di {sortedEvents.length}
                 {lock.expiresAt && ` — sessione valida fino alle ${lock.expiresAt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`}
                 {lock.expiresAt && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Info className="h-3 w-3 cursor-help shrink-0" />
-                      </TooltipTrigger>
-                      <TooltipContent className="max-w-xs">
-                        La sessione blocca calendario e collection layout per altri utenti mentre pianifichi.
-                        Si rinnova automaticamente finché resti nella wizard — scade solo se la lasci aperta e inattiva a lungo.
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-3 w-3 cursor-help shrink-0" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      La sessione blocca calendario e collection layout per altri utenti mentre pianifichi.
+                      Si rinnova automaticamente finché resti nella wizard — scade solo se la lasci aperta e inattiva a lungo.
+                    </TooltipContent>
+                  </Tooltip>
                 )}
               </p>
 

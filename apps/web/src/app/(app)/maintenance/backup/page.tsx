@@ -29,7 +29,6 @@ import {
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '../../../../components/ui/tooltip';
 import { usePermission } from '../../../../hooks/usePermission';
@@ -260,16 +259,14 @@ export default function MaintenanceBackupPage() {
                   <TableCell>
                     <StatusBadge status={backup.status} />
                     {backup.status === 'FAILED' && backup.errorMessage && (
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="ml-1 cursor-help text-xs text-muted-foreground underline decoration-dotted">
-                              dettagli
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-sm">{backup.errorMessage}</TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="ml-1 cursor-help text-xs text-muted-foreground underline decoration-dotted">
+                            dettagli
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-sm">{backup.errorMessage}</TooltipContent>
+                      </Tooltip>
                     )}
                   </TableCell>
                   <TableCell>{formatSize(backup.sizeBytesEncrypted)}</TableCell>

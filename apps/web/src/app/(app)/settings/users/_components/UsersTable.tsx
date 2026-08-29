@@ -16,7 +16,6 @@ import {
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '../../../../../components/ui/tooltip';
 import { useFormatDate } from '../../../../../hooks/useFormatDate';
@@ -270,20 +269,18 @@ export function UsersTable({
             <TableRow key={user.id}>
               <TableCell>
                 <div className="flex items-center gap-2">
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span
-                          className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                            user.isOnline ? 'bg-green-500' : 'bg-gray-300'
-                          }`}
-                        />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        {user.isOnline ? 'Online' : 'Offline'}
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                          user.isOnline ? 'bg-green-500' : 'bg-gray-300'
+                        }`}
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {user.isOnline ? 'Online' : 'Offline'}
+                    </TooltipContent>
+                  </Tooltip>
                   {user.email}
                 </div>
               </TableCell>
@@ -314,16 +311,14 @@ export function UsersTable({
                 {user.lastLoginAt ? (
                   fmt.dateTime(user.lastLoginAt)
                 ) : (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Badge variant="secondary">Mai</Badge>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        L&apos;utente non ha mai effettuato l&apos;accesso
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Badge variant="secondary">Mai</Badge>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      L&apos;utente non ha mai effettuato l&apos;accesso
+                    </TooltipContent>
+                  </Tooltip>
                 )}
               </TableCell>
               <TableCell>

@@ -14,7 +14,6 @@ import { Label } from '../../../../components/ui/label';
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '../../../../components/ui/tooltip';
 import { LOCALES } from '../../../../lib/i18n/locales';
@@ -170,16 +169,14 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
         <div className="flex items-center gap-2">
           <Label htmlFor="firstName">Nome</Label>
           {readonlyFields.includes('firstName') && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Info className="h-4 w-4 text-muted-foreground" />
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Campo sincronizzato da {user.provider}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="h-4 w-4 text-muted-foreground" />
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Campo sincronizzato da {user.provider}</p>
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
         <Input
@@ -204,16 +201,14 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
         <div className="flex items-center gap-2">
           <Label htmlFor="lastName">Cognome</Label>
           {readonlyFields.includes('lastName') && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Info className="h-4 w-4 text-muted-foreground" />
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Campo sincronizzato da {user.provider}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="h-4 w-4 text-muted-foreground" />
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Campo sincronizzato da {user.provider}</p>
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
         <Input

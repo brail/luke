@@ -43,7 +43,6 @@ import { Switch } from '../../../../../components/ui/switch';
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '../../../../../components/ui/tooltip';
 import { useBrandPermissions } from '../../../../../hooks/useBrandPermissions';
@@ -93,18 +92,16 @@ function DisabledFieldWrapper({
   }
 
   return (
-    <TooltipProvider>
-      <Tooltip>
-        {/* The trigger is the `div`, not the field: a disabled input doesn't emit `pointerenter`
-            or `focus`, so with `asChild` directly on the field the tooltip would never open
-            — same fix applied in `PermissionButton`. `tabIndex` makes it keyboard-reachable,
-            where a disabled field cannot be reached. */}
-        <TooltipTrigger asChild>
-          <div tabIndex={0}>{children}</div>
-        </TooltipTrigger>
-        <TooltipContent>{tooltip}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip>
+      {/* The trigger is the `div`, not the field: a disabled input doesn't emit `pointerenter`
+          or `focus`, so with `asChild` directly on the field the tooltip would never open
+          — same fix applied in `PermissionButton`. `tabIndex` makes it keyboard-reachable,
+          where a disabled field cannot be reached. */}
+      <TooltipTrigger asChild>
+        <div tabIndex={0}>{children}</div>
+      </TooltipTrigger>
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
   );
 }
 
