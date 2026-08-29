@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { MandatoryReasonSchema } from './reason';
+
 /** What `holidays.upsertVendorClosure` accepts, for both create and update — a vendor closure or
  * open-day period within a season, used in working-day calculations. */
 export const VendorClosureUpsertInputSchema = z.object({
@@ -64,6 +66,32 @@ export const CalendarDigestRangeInputSchema = z
     message: 'La data finale non può precedere quella iniziale',
   });
 export type CalendarDigestRangeInput = z.infer<typeof CalendarDigestRangeInputSchema>;
+
+// ─── Milestone lifecycle inputs ───────────────────────────────────────────────
+
+/**
+ * Motivated in-place move of a milestone's dates — the only way past `isEventDateLocked`, so the
+ * reason is the whole point of the endpoint rather than a courtesy. The baseline is deliberately
+ * not a field: a reschedule must not rewrite what scheduling variance is measured against.
+ */
+export const MilestoneRescheduleInputSchema = z.object({
+  id: z.string().uuid(),
+  startAt: z.string().datetime(),
+  endAt: z.string().datetime().optional().nullable(),
+  allDay: z.boolean().optional(),
+  reason: MandatoryReasonSchema,
+});
+export type MilestoneRescheduleInput = z.infer<typeof MilestoneRescheduleInputSchema>;
+
+/**
+ * Retiring a milestone instead of deleting it: the event stays in history, and the reason is what
+ * makes that history worth keeping.
+ */
+export const MilestoneCancelInputSchema = z.object({
+  id: z.string().uuid(),
+  reason: MandatoryReasonSchema,
+});
+export type MilestoneCancelInput = z.infer<typeof MilestoneCancelInputSchema>;
 
 // ─── Planning group input ─────────────────────────────────────────────────────
 

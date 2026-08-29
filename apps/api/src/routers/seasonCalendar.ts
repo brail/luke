@@ -27,6 +27,8 @@ import {
   CalendarEventPersonalNoteInputSchema,
   CalendarEventUserVisibilityInputSchema,
   ApplyTemplateInputSchema,
+  MilestoneCancelInputSchema,
+  MilestoneRescheduleInputSchema,
   MilestoneTemplateItemBaseSchema,
   SEASON_CALENDAR_STATUS,
   partialWithoutDefaults,
@@ -398,19 +400,13 @@ export const seasonCalendarRouter = router({
    * and recorded in the audit log alongside the old/new dates.
    *
    * @auth season_calendar:update
-   * @input { id, startAt, endAt?, allDay?, reason }
+   * @input MilestoneRescheduleInputSchema — id, startAt, optional endAt/allDay, mandatory reason (trimmed, 1-500)
    * @output Updated CalendarEvent
    */
   rescheduleMilestone: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({
-      id: z.string().uuid(),
-      startAt: z.string().datetime(),
-      endAt: z.string().datetime().optional().nullable(),
-      allDay: z.boolean().optional(),
-      reason: z.string().min(1, 'Motivazione obbligatoria').max(500),
-    }))
+    .input(MilestoneRescheduleInputSchema)
     .mutation(async ({ input, ctx }) => {
       const event = await ctx.prisma.calendarEvent.findUnique({
         where: { id: input.id },
@@ -585,16 +581,13 @@ export const seasonCalendarRouter = router({
    * a lock. Re-cancelling an already-cancelled event conflicts.
    *
    * @auth season_calendar:update
-   * @input { id, reason }
+   * @input MilestoneCancelInputSchema — id plus a mandatory reason (trimmed, 1-500)
    * @output { event, rolledBack }
    */
   cancelMilestone: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({
-      id: z.string().uuid(),
-      reason: z.string().min(1, 'Motivazione obbligatoria').max(500),
-    }))
+    .input(MilestoneCancelInputSchema)
     .mutation(async ({ input, ctx }) => {
       const event = await ctx.prisma.calendarEvent.findUnique({
         where: { id: input.id },

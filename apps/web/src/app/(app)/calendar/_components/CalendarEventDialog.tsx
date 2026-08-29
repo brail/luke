@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
-import { CalendarEventBaseSchema } from '@luke/core';
+import { CalendarEventBaseSchema, MandatoryReasonSchema, MilestoneCancelInputSchema } from '@luke/core';
 
 import { CalendarDaysRelevanceSelect, NO_RELEVANCE_VALUE } from '../../../../components/CalendarDaysRelevanceSelect';
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
@@ -142,6 +142,10 @@ interface RescheduleFormData {
 /**
  * The motivated-move form. It carries its own copy of the range: cancelling out of the move must
  * not leave the event's dates altered behind it.
+ *
+ * The dates are not picked from `MilestoneRescheduleInputSchema` because they are not the same
+ * fields: the endpoint takes two ISO datetimes, the form four inputs that `handleReschedule`
+ * recombines. `reason` is the one rule both sides really share, so it comes from core.
  */
 const RescheduleFormSchema: z.ZodType<RescheduleFormData, RescheduleFormData> = z.object({
   startDate: z.string().min(1, 'La nuova data di inizio è obbligatoria'),
@@ -149,16 +153,14 @@ const RescheduleFormSchema: z.ZodType<RescheduleFormData, RescheduleFormData> = 
   endDate: z.string(),
   endTime: z.string(),
   allDay: z.boolean(),
-  reason: z.string().min(1, 'La motivazione è obbligatoria'),
+  reason: MandatoryReasonSchema,
 });
 
 interface CancelFormData {
   reason: string;
 }
 
-const CancelFormSchema = z.object({
-  reason: z.string().min(1, 'La motivazione è obbligatoria'),
-});
+const CancelFormSchema = MilestoneCancelInputSchema.pick({ reason: true });
 
 function describeBaselineDrift(event: ExistingEvent): string | null {
   if (!event.baselineStartAt) return null;
@@ -403,7 +405,7 @@ export function CalendarEventDialog({
     const startIso = resolveIso(data.startDate, data.startTime, data.allDay);
     const endIso = data.endDate ? resolveIso(data.endDate, data.endTime, data.allDay) : undefined;
     rescheduleMutation.mutate({
-      id: event.id, startAt: startIso, endAt: endIso, allDay: data.allDay, reason: data.reason.trim(),
+      id: event.id, startAt: startIso, endAt: endIso, allDay: data.allDay, reason: data.reason,
     });
   };
 
@@ -795,7 +797,7 @@ export function CalendarEventDialog({
             <Form {...cancelForm}>
               <form
                 onSubmit={cancelForm.handleSubmit(data =>
-                  cancelMutation.mutate({ id: event.id, reason: data.reason.trim() })
+                  cancelMutation.mutate({ id: event.id, reason: data.reason })
                 )}
                 className="grid gap-4"
               >
