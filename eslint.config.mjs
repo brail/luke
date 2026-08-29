@@ -123,6 +123,13 @@ export default [
     rules: { '@luke/no-uncommented-tailwind-arbitrary': 'error' },
   },
   {
+    // Dialog-form backstop: keeps the ad-hoc dialog population from re-forming. Every dialog with
+    // a typed field is a form; the sanctioned stack (react-hook-form + a @luke/core schema)
+    // already existed while 18 dialogs quietly ignored it.
+    files: ['apps/web/src/**/*.{ts,tsx}'],
+    rules: { '@luke/no-dialog-input-outside-form': 'error' },
+  },
+  {
     // crypto.randomUUID() secure-context backstop — only 'use client' files run in the
     // browser; the rule itself checks for the directive, this just scopes it to apps/web.
     files: ['apps/web/src/**/*.{ts,tsx}'],

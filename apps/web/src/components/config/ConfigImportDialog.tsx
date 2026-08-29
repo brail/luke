@@ -284,6 +284,8 @@ export function ConfigImportDialog({
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="import-file">Seleziona file JSON</Label>
+              {/* eslint-disable-next-line @luke/no-dialog-input-outside-form -- file picker:
+                  selecting a file advances the wizard on change, there is nothing to submit. */}
               <Input
                 id="import-file"
                 type="file"
