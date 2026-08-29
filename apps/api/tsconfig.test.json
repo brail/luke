@@ -19,7 +19,7 @@
     // bundler evita di pretendere estensioni `.js` sugli import relativi.
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "types": ["node", "vitest/globals", "sharp"]
+    "types": ["node", "vitest/globals"]
   },
   "include": [
     "src/**/*",

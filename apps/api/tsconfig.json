@@ -20,16 +20,7 @@
       "@luke/core/*": ["../../packages/core/src/*"],
       "pdfmake/interfaces": ["./node_modules/@types/pdfmake/interfaces.d.ts"]
     },
-    "types": ["node", "sharp"],
-    // Order matters: for each name in "types" (here and in tsconfig.test.json's
-    // own "types"), TS scans typeRoots left-to-right and stops at the first
-    // match. "../../types" (our ambient sharp shim) must precede plain
-    // "./node_modules" — sharp's real package.json would otherwise match
-    // first and shadow the shim, since it lacks a usable "types" entry (see
-    // types/sharp/index.d.ts). Plain "./node_modules" is needed only so
-    // tsconfig.test.json's "vitest/globals" entry can resolve
-    // node_modules/vitest/globals.d.ts, which isn't under node_modules/@types.
-    "typeRoots": ["./node_modules/@types", "../../types", "./node_modules"]
+    "types": ["node"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"],
