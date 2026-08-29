@@ -75,3 +75,29 @@ cd apps/web && npx tsc --noEmit && npx eslint src/ && npx vitest run
 Il segnale che l'estrazione è servita: il form e il router rifiutano lo **stesso** input con lo
 **stesso** messaggio. Se dopo lo spostamento i due divergono ancora, lo schema è stato copiato, non
 condiviso.
+
+## Fuori scope — il seam che questo lavoro non raggiunge (aperto il 2026-08-30, da B1)
+
+Condividere lo schema **allo strato del dialog** chiude la distanza fra il campo e l'endpoint solo
+finché il payload inviato coincide con l'insieme dei campi validati. Dove non coincide, l'estrazione
+non serve a niente e non se ne accorge nessuno, perché il tipo continua a tornare.
+
+Due casi trovati durante B1, entrambi su collection layout:
+
+- `CollectionRowDrawer.tsx` attacca `quotations` e `phaseChangeNote` al payload **dopo** che
+  `form.handleSubmit` ha girato. Sono tipati `CollectionLayoutRowInput` ma non passano mai da
+  `parse`: `phaseChangeNote.max(500)`, `retailPrice.positive()` e `sku.int().min(1)` — tutti già in
+  core — lato client non li applica nessuno.
+- `ChangePhaseDialog.tsx` raccoglie la sua nota senza schema e senza `maxLength`: 501 caratteri
+  vengono accettati, bufferizzati, e rifiutati solo quando fallisce il salvataggio dell'intera riga.
+
+Stessa forma del difetto che il task descrive — due idee divergenti di cosa sia valido — ma un
+livello sotto, e il rimedio è diverso: non «sposta lo schema in core» (lì c'è già) bensì **valida il
+payload assemblato**, non solo i campi del form. Non va in nessuno dei batch da ≤3 router: è un
+lavoro sui call site, da fare a parte una volta chiuso lo spostamento degli schemi.
+
+Nota collegata, stessa origine: `MandatoryReasonSchema` (`packages/core/src/schemas/reason.ts`,
+estratto in B1) esiste perché la regola «motivazione obbligatoria, 1-500, trimmata» era dichiarata
+sei volte fra `collectionLayout` e `seasonCalendar`. L'ordine `.trim()` prima di `.min(1)` non è
+cosmetico: al contrario il trim non tocca il controllo e una nota di soli spazi passa il form per
+farsi rifiutare dal server. `packages/core/src/schemas/vendor.ts` ha ancora l'ordine inerte.
