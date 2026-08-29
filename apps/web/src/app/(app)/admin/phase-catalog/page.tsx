@@ -299,7 +299,6 @@ export default function PhaseCatalogPage() {
         description={`Disattivare "${deletingItem?.label}"? Non sarà più disponibile nei nuovi record, ma i dati esistenti non vengono modificati.`}
         confirmText="Disattiva"
         cancelText="Annulla"
-        variant="destructive"
         actionType="disable"
         onConfirm={() => { if (deletingItem) removeMutation.mutate({ id: deletingItem.id }); }}
         isLoading={removeMutation.isPending}

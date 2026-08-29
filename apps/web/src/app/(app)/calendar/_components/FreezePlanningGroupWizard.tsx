@@ -179,7 +179,6 @@ export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGro
         description="Salva uno snapshot immutabile delle date correnti come baseline — da questo momento lo scostamento piano/realtà si misura contro queste date, non più contro quelle live dell'evento. Operazione irreversibile senza uno scongelamento amministrativo."
         confirmText="Congela"
         cancelText="Annulla"
-        variant="destructive"
         actionType="warning"
         onConfirm={() => freezeMutation.mutate({ planningGroupId })}
       />

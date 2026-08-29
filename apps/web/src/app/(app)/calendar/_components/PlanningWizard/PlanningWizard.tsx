@@ -219,7 +219,6 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
         description="Le modifiche non ancora salvate in questo passaggio andranno perse e la sessione di pianificazione (lock su calendario e layout) verrà rilasciata."
         confirmText="Esci"
         cancelText="Continua la pianificazione"
-        variant="destructive"
         actionType="warning"
         onConfirm={confirmExit}
       />

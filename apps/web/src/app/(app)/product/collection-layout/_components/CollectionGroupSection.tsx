@@ -1048,7 +1048,6 @@ export function CollectionGroupSection({
         description={`Sei sicuro di voler eliminare la riga "${deleteRow?.line}"? Questa operazione è irreversibile.`}
         confirmText="Elimina"
         cancelText="Annulla"
-        variant="destructive"
         actionType="delete"
         onConfirm={() => {
           if (deleteRow) onDeleteRow(deleteRow.id, deleteRow.line);
@@ -1064,7 +1063,6 @@ export function CollectionGroupSection({
         description={`Sei sicuro di voler eliminare il gruppo "${group.name}" e tutte le sue righe (${group.rows.length})? Questa operazione è irreversibile.`}
         confirmText="Elimina"
         cancelText="Annulla"
-        variant="destructive"
         actionType="delete"
         onConfirm={() => {
           onDeleteGroup(group.id, group.name);

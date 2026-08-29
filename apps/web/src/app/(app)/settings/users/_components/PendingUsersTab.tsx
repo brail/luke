@@ -197,7 +197,6 @@ export function PendingUsersTab() {
           description={`Vuoi rifiutare la richiesta di "${rejectTarget.username}"? L'account verrà eliminato definitivamente.`}
           confirmText="Rifiuta"
           cancelText="Annulla"
-          variant="destructive"
           actionType="delete"
           onConfirm={() => reject({ id: rejectTarget.id })}
           isLoading={isRejecting}

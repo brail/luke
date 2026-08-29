@@ -561,7 +561,6 @@ export function MerchandisingRowDialog({
           description={`Sei sicuro di voler eliminare la riga "${row?.articleCode ?? ''}"? Verranno eliminate anche specsheet e immagini associate. Operazione irreversibile.`}
           confirmText="Elimina"
           cancelText="Annulla"
-          variant="destructive"
           actionType="delete"
           onConfirm={() => { setConfirmDelete(false); onDelete(); }}
           isLoading={false}

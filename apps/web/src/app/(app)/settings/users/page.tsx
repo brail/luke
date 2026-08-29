@@ -498,7 +498,6 @@ export default function UsersPage() {
             description={CONFIRM_ACTION_CONFIG[confirmAction.type].description}
             confirmText={CONFIRM_ACTION_CONFIG[confirmAction.type].confirmText}
             cancelText="Annulla"
-            variant="destructive"
             onConfirm={handleConfirmAction}
             isLoading={
               isDeletingUser ||

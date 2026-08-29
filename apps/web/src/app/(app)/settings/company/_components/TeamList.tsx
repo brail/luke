@@ -156,7 +156,6 @@ export function TeamList({ functionId, canCreate, canUpdate, canDelete }: TeamLi
         description={`Sei sicuro di voler eliminare "${deleteTarget?.name}"? Questa operazione è irreversibile.`}
         confirmText="Elimina"
         cancelText="Annulla"
-        variant="destructive"
         actionType="delete"
         onConfirm={() => { if (deleteTarget) deleteMutation.mutate({ id: deleteTarget.id }); }}
         isLoading={deleteMutation.isPending}

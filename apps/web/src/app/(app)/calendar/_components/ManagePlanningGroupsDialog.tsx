@@ -306,7 +306,6 @@ export function ManagePlanningGroupsDialog({ open, onClose, calendarId, brandId,
         description={`Sei sicuro di voler eliminare "${deletingGroup?.name}"? Questa operazione è irreversibile.`}
         confirmText="Elimina"
         cancelText="Annulla"
-        variant="destructive"
         actionType="delete"
         onConfirm={() => deletingGroup && deleteMutation.mutate({ id: deletingGroup.id })}
         isLoading={deleteMutation.isPending}

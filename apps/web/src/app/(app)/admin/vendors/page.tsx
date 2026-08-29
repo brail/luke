@@ -146,7 +146,6 @@ export default function VendorsPage() {
         description={`Sei sicuro di voler disattivare "${deletingVendor?.name}"? Non apparirà più nelle liste di selezione. Potrai riattivarlo in seguito.`}
         confirmText="Disattiva"
         cancelText="Annulla"
-        variant="destructive"
         actionType="disable"
         onConfirm={() => { if (deletingVendor) removeMutation.mutate({ id: deletingVendor.id }); }}
         isLoading={removeMutation.isPending}
@@ -159,7 +158,6 @@ export default function VendorsPage() {
         description={`Sei sicuro di voler scollegare "${unlinkingVendor?.name}" da NAV? Il fornitore verrà disattivato e il codice NAV "${unlinkingVendor?.navVendorId}" tornerà disponibile per la sincronizzazione automatica.`}
         confirmText="Scollega e disattiva"
         cancelText="Annulla"
-        variant="destructive"
         actionType="delete"
         onConfirm={() => { if (unlinkingVendor) unlinkMutation.mutate({ id: unlinkingVendor.id }); }}
         isLoading={unlinkMutation.isPending}
@@ -172,7 +170,6 @@ export default function VendorsPage() {
         description={`Sei sicuro di voler eliminare "${hardDeletingVendor?.name}"? Questa operazione è irreversibile.`}
         confirmText="Elimina definitivamente"
         cancelText="Annulla"
-        variant="destructive"
         actionType="hardDelete"
         onConfirm={() => { if (hardDeletingVendor) hardDeleteMutation.mutate({ id: hardDeletingVendor.id }); }}
         isLoading={hardDeleteMutation.isPending}

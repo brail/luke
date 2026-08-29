@@ -772,7 +772,6 @@ export default function CalendarPage() {
         description="Azzera la baseline congelata di tutti gli eventi del gruppo — lo scostamento piano/realtà misurato finora andrà perso. Operazione riservata agli amministratori, da usare solo per correggere un congelamento fatto per errore."
         confirmText="Forza scongelamento"
         cancelText="Annulla"
-        variant="destructive"
         actionType="warning"
         isLoading={unfreezeMutation.isPending}
         onConfirm={() => activeGroupAction && unfreezeMutation.mutate({ planningGroupId: activeGroupAction.groupId })}

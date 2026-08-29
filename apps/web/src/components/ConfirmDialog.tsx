@@ -21,7 +21,6 @@ interface ConfirmDialogProps {
   description: string;
   confirmText?: string;
   cancelText?: string;
-  variant?: 'default' | 'destructive';
   onConfirm: () => void;
   isLoading?: boolean;
   userEmail?: string;
@@ -44,7 +43,6 @@ export function ConfirmDialog({
   description,
   confirmText = 'Conferma',
   cancelText = 'Annulla',
-  variant = 'default',
   onConfirm,
   isLoading = false,
   userEmail,
@@ -96,7 +94,9 @@ export function ConfirmDialog({
     }
   };
 
-  // Colori per diversi tipi di azione
+  // The action's colour follows from what it does, so every actionType decides its own. There is
+  // no `variant` prop: it used to exist, but the switch below answered for every case except
+  // `revokeSessions`, so thirty call sites passed a value that was read nowhere.
   const getActionVariant = () => {
     switch (actionType) {
       case 'delete':
@@ -104,9 +104,8 @@ export function ConfirmDialog({
         return 'destructive';
       case 'disable':
       case 'warning':
+      case 'revokeSessions':
         return 'default';
-      default:
-        return variant;
     }
   };
 

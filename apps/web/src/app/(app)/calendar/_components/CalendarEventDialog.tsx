@@ -777,7 +777,6 @@ export function CalendarEventDialog({
           description={`Sei sicuro di voler eliminare "${event.title}"? Questa operazione è irreversibile.`}
           confirmText="Elimina"
           cancelText="Annulla"
-          variant="destructive"
           actionType="delete"
           onConfirm={() => deleteMutation.mutate({ id: event.id })}
           isLoading={deleteMutation.isPending}

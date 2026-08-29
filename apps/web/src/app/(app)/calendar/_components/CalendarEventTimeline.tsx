@@ -172,7 +172,6 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
         description={`Questa operazione è irreversibile. Vuoi eliminare ${selected.size} event${selected.size === 1 ? 'o selezionato' : 'i selezionati'}?`}
         confirmText="Elimina"
         cancelText="Annulla"
-        variant="destructive"
         actionType="delete"
         onConfirm={handleConfirmDelete}
       />

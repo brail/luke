@@ -273,7 +273,6 @@ export function HolidayImportTab() {
         description="Sei sicuro di voler eliminare questa festività? L'operazione è irreversibile."
         confirmText="Elimina"
         cancelText="Annulla"
-        variant="destructive"
         actionType="delete"
         onConfirm={() => { if (deleteTarget) deleteMutation.mutate({ id: deleteTarget }); }}
         isLoading={deleteMutation.isPending}

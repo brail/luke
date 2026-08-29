@@ -138,7 +138,6 @@ export function TasksWidget() {
         description={`Eliminare "${deleteTarget?.label}"?`}
         confirmText="Elimina"
         cancelText="Annulla"
-        variant="destructive"
         actionType="delete"
         onConfirm={() => { if (deleteTarget) deleteMutation.mutate({ id: deleteTarget.id }); }}
         isLoading={deleteMutation.isPending}

@@ -350,7 +350,6 @@ export function ParameterSetPanel({
         description={`Sei sicuro di voler eliminare la variante "${deleteTarget?.name}"? Questa operazione è irreversibile.`}
         confirmText="Elimina"
         cancelText="Annulla"
-        variant="destructive"
         actionType="delete"
         onConfirm={() => {
           if (deleteTarget) onDeleteSet(deleteTarget.id);

@@ -188,7 +188,6 @@ export default function SeasonsPage() {
         description={`Sei sicuro di voler disattivare la stagione "${deletingSeason?.code}"? Potrà essere riattivata in seguito.`}
         confirmText="Disattiva"
         cancelText="Annulla"
-        variant="destructive"
         actionType="disable"
         onConfirm={() => { if (deletingSeason) removeMutation.mutate({ id: deletingSeason.id }); }}
         isLoading={removeMutation.isPending}
@@ -201,7 +200,6 @@ export default function SeasonsPage() {
         description={`Sei sicuro di voler scollegare "${unlinkingSeason?.code}" da NAV? La stagione verrà disattivata e il codice NAV "${unlinkingSeason?.navSeasonId}" tornerà disponibile per la sincronizzazione automatica.`}
         confirmText="Scollega e disattiva"
         cancelText="Annulla"
-        variant="destructive"
         actionType="delete"
         onConfirm={() => { if (unlinkingSeason) unlinkMutation.mutate({ id: unlinkingSeason.id }); }}
         isLoading={unlinkMutation.isPending}
@@ -214,7 +212,6 @@ export default function SeasonsPage() {
         description={`Sei sicuro di voler eliminare "${hardDeletingSeason?.code}"? Questa operazione è irreversibile.`}
         confirmText="Elimina definitivamente"
         cancelText="Annulla"
-        variant="destructive"
         actionType="hardDelete"
         onConfirm={() => { if (hardDeletingSeason) hardDeleteMutation.mutate({ id: hardDeletingSeason.id }); }}
         isLoading={hardDeleteMutation.isPending}

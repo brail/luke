@@ -490,7 +490,6 @@ export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountry
         description="Sei sicuro di voler eliminare questo periodo di chiusura?"
         confirmText="Elimina"
         cancelText="Annulla"
-        variant="destructive"
         actionType="delete"
         onConfirm={() => { if (deleteTarget) deleteMutation.mutate({ id: deleteTarget }); }}
         isLoading={deleteMutation.isPending}

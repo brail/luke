@@ -209,7 +209,6 @@ export default function BrandsPage() {
         description={`Sei sicuro di voler disattivare il brand "${deletingBrand?.name}"? Potrà essere riattivato in seguito.`}
         confirmText="Disattiva"
         cancelText="Annulla"
-        variant="destructive"
         actionType="disable"
         onConfirm={() => { if (deletingBrand) removeMutation.mutate({ id: deletingBrand.id }); }}
         isLoading={removeMutation.isPending}
@@ -222,7 +221,6 @@ export default function BrandsPage() {
         description={`Sei sicuro di voler scollegare "${unlinkingBrand?.name}" da NAV? Il brand verrà disattivato e il codice NAV "${unlinkingBrand?.navBrandId}" tornerà disponibile per la sincronizzazione automatica.`}
         confirmText="Scollega e disattiva"
         cancelText="Annulla"
-        variant="destructive"
         actionType="delete"
         onConfirm={() => { if (unlinkingBrand) unlinkMutation.mutate({ id: unlinkingBrand.id }); }}
         isLoading={unlinkMutation.isPending}
@@ -235,7 +233,6 @@ export default function BrandsPage() {
         description={`Sei sicuro di voler eliminare "${hardDeletingBrand?.name}"? Questa operazione è irreversibile.`}
         confirmText="Elimina definitivamente"
         cancelText="Annulla"
-        variant="destructive"
         actionType="hardDelete"
         onConfirm={() => { if (hardDeletingBrand) hardDeleteMutation.mutate({ id: hardDeletingBrand.id }); }}
         isLoading={hardDeleteMutation.isPending}

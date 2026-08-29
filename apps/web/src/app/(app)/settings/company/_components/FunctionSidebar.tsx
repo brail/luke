@@ -242,7 +242,6 @@ export function FunctionSidebar({ functions, selectedId, canCreate, canUpdate, c
         description={`Sei sicuro di voler disattivare "${deleteTarget?.name}"? I team associati rimarranno, ma la funzione non sarà più visibile.`}
         confirmText="Disattiva"
         cancelText="Annulla"
-        variant="destructive"
         actionType="disable"
         onConfirm={() => { if (deleteTarget) deactivateMutation.mutate({ id: deleteTarget.id }); }}
         isLoading={deactivateMutation.isPending}

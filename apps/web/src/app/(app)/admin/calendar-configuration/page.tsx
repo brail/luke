@@ -257,7 +257,6 @@ export default function CalendarConfigurationPage() {
         description={`Eliminare "${deletingTemplate?.name}"? Tutti gli item verranno rimossi. Operazione irreversibile.`}
         confirmText="Elimina"
         cancelText="Annulla"
-        variant="destructive"
         actionType="delete"
         onConfirm={() => { if (deletingTemplate) deleteTemplateMutation.mutate({ id: deletingTemplate.id }); }}
         isLoading={deleteTemplateMutation.isPending}
@@ -270,7 +269,6 @@ export default function CalendarConfigurationPage() {
         description={`Eliminare "${deletingItem?.title}"?`}
         confirmText="Elimina"
         cancelText="Annulla"
-        variant="destructive"
         actionType="delete"
         onConfirm={() => { if (deletingItem) deleteItemMutation.mutate({ id: deletingItem.id }); }}
         isLoading={deleteItemMutation.isPending}
