@@ -408,6 +408,7 @@ export default function CollectionControlPage() {
   const [thresholds, setThresholds] = useState<CollectionAlertThresholds | null>(null);
   const [newOverridePhase, setNewOverridePhase] = useState<string>('');
 
+  const utils = trpc.useUtils();
   const { data: existing, isLoading, error } = trpc.phaseAlert.thresholds.useQuery();
   const { data: phases } = trpc.phase.list.useQuery();
 
@@ -418,6 +419,10 @@ export default function CollectionControlPage() {
   const updateMutation = trpc.phaseAlert.updateThresholds.useMutation({
     onSuccess: () => {
       toast.success('Soglie alert salvate con successo');
+      // The screen already shows the saved values from local state, but the query cache still
+      // holds the old ones: leaving and coming back inside the 60s staleTime would seed the form
+      // from them again.
+      void utils.phaseAlert.thresholds.invalidate();
     },
     onError: err => {
       toast.error('Errore durante il salvataggio', { description: err.message });
