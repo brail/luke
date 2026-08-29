@@ -13,6 +13,7 @@
     "typecheck:test": "tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.mts",
+    "test:integration:local": "pnpm test:db:up && TEST_DATABASE_URL=\"postgresql://luke:luke_test@localhost:5434/luke_test\" pnpm test:integration",
     "test:db:up": "docker compose -f ../../docker-compose.test.yml up -d --wait",
     "test:db:down": "docker compose -f ../../docker-compose.test.yml down -v",
     "test:watch": "vitest",
