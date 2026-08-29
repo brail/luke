@@ -60,10 +60,10 @@ async function deleteFirstSmokeBrand(page: Page): Promise<boolean> {
   await row.getByRole('button', { name: 'Elimina', exact: true }).click();
   await expect(dialog).toBeVisible();
 
-  // L'eliminazione definitiva è dietro una conferma digitata: il bottone resta disabilitato
-  // finché il campo non contiene la frase esatta, e il server rifiuta comunque una chiamata che
-  // non la porta. L'attrito voluto per gli umani è attrito anche per questa pulizia — è il costo
-  // accettato, non un dettaglio da aggirare.
+  // The permanent delete sits behind a typed confirmation: the button stays disabled until the
+  // field holds the exact phrase, and the server refuses a call that does not carry it either.
+  // Friction meant for humans is friction for this cleanup too — the accepted cost, not something
+  // to work around.
   await dialog.getByRole('textbox').fill(HARD_DELETE_CONFIRM_PHRASE);
 
   await dialog
