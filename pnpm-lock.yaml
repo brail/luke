@@ -476,7 +476,11 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/ui@4.1.11)(vite@8.2.2(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
 
-  packages/eslint-plugin-luke: {}
+  packages/eslint-plugin-luke:
+    devDependencies:
+      eslint:
+        specifier: ^10.9.1
+        version: 10.9.1(jiti@2.7.0)
 
   packages/nav:
     dependencies:

@@ -4,6 +4,7 @@ import noDialogInputOutsideForm from './rules/no-dialog-input-outside-form.js';
 import noRawQueryClient from './rules/no-raw-query-client.js';
 import noUncommentedAny from './rules/no-uncommented-any.js';
 import noUncommentedTailwindArbitrary from './rules/no-uncommented-tailwind-arbitrary.js';
+import noUnreachableDisabledTooltip from './rules/no-unreachable-disabled-tooltip.js';
 
 export default {
   rules: {
@@ -13,5 +14,6 @@ export default {
     'no-raw-query-client': noRawQueryClient,
     'no-uncommented-any': noUncommentedAny,
     'no-uncommented-tailwind-arbitrary': noUncommentedTailwindArbitrary,
+    'no-unreachable-disabled-tooltip': noUnreachableDisabledTooltip,
   },
 };

@@ -137,6 +137,13 @@ export default [
     rules: { '@luke/no-raw-query-client': 'error' },
   },
   {
+    // Disabled-tooltip backstop: a tooltip that explains why a control is disabled is worthless
+    // if only the mouse can reach it. `PermissionButton` solved this once; four files
+    // reimplemented the wrapper inline and dropped the tabIndex that makes it reachable.
+    files: ['apps/web/src/**/*.{ts,tsx}'],
+    rules: { '@luke/no-unreachable-disabled-tooltip': 'error' },
+  },
+  {
     // crypto.randomUUID() secure-context backstop — only 'use client' files run in the
     // browser; the rule itself checks for the directive, this just scopes it to apps/web.
     files: ['apps/web/src/**/*.{ts,tsx}'],

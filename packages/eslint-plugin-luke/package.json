@@ -6,5 +6,11 @@
   "main": "./index.js",
   "exports": {
     ".": "./index.js"
+  },
+  "scripts": {
+    "test": "node --test \"rules/__tests__/*.test.js\""
+  },
+  "devDependencies": {
+    "eslint": "^10.9.1"
   }
 }
