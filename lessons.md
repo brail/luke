@@ -582,3 +582,35 @@ rule 3 says.
 - Batching is fine and often better: finish the work, then present the diffs
   together and ask once. What is not fine is committing first and reporting
   after.
+
+## A Radix close-button cannot double as a form's submit button
+
+**What happened.** Migrating `ConfigDeleteDialog` to a real `<form>`, I gave its
+`AlertDialogAction` `type="submit"` and dropped the `onClick` that used to do the
+work. The dialog then closed on click and on Enter without ever deleting
+anything. The user found it by testing; typecheck, lint and the suite were all
+green, because nothing about it is a type error.
+
+**Why.** `AlertDialogAction` renders a Radix `DialogClose`, whose `onClick`
+closes the dialog. React flushes that state update synchronously for discrete
+events, so the component unmounts *within the click*, and the browser then skips
+the submit button's default action — a form detached from the document does not
+submit. The submit handler never ran. Enter behaves identically: it activates
+the same default button.
+
+The shared `ConfirmDialog` gets away with `AlertDialogAction` only because it
+uses `onClick`, which `composeEventHandlers` runs *before* Radix's close.
+
+**Rules.**
+
+- Never put `type="submit"` on `AlertDialogAction`, `DialogClose`, or anything
+  else that closes an overlay as a side effect of being clicked. Use a plain
+  `Button type="submit"` and let the submit handler (or its caller) close the
+  dialog once the work resolves.
+- Inside a `<form>`, give every non-submitting button an explicit
+  `type="button"` — `AlertDialogCancel` included. A button's default type is
+  `submit`, so a Cancel button silently becomes a second submit trigger.
+- A green typecheck says nothing about whether an interaction fires. Any change
+  that moves *what triggers* a mutation — button type, event handler, wrapping
+  element — needs the flow exercised in the running app before it is called
+  done, or the uncertainty stated plainly to the user.
