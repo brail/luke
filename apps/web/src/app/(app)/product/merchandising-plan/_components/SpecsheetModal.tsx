@@ -365,6 +365,7 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
                       <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         {!img.isDefault && canUpdate && (
                           <button
+                            type="button"
                             title="Imposta come default"
                             onClick={() => setDefaultImageMutation.mutate({ id: img.id })}
                             className="bg-background/90 rounded p-1 hover:bg-background"
@@ -374,6 +375,7 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
                         )}
                         {canUpdate && (
                           <button
+                            type="button"
                             title="Elimina immagine"
                             onClick={() => deleteImageMutation.mutate({ id: img.id })}
                             className="bg-background/90 rounded p-1 hover:bg-background text-destructive"
