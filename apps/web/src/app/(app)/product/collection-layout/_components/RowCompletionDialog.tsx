@@ -1,7 +1,10 @@
 'use client';
 
+import { zodResolver } from '@hookform/resolvers/zod';
 import { AlertTriangle } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
 
 import { Button } from '../../../../../components/ui/button';
 import {
@@ -11,8 +14,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../../components/ui/dialog';
-import { Label } from '../../../../../components/ui/label';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '../../../../../components/ui/form';
 import { Textarea } from '../../../../../components/ui/textarea';
+
+const CompletionNoteSchema = z.object({
+  note: z.string().min(1, 'La motivazione è obbligatoria').max(500, 'Massimo 500 caratteri'),
+});
+
+type CompletionNoteForm = z.infer<typeof CompletionNoteSchema>;
 
 interface Props {
   open: boolean;
@@ -37,17 +53,20 @@ interface Props {
  * il server le registra nell'audit log.
  */
 export function RowCompletionDialog({ open, mode, missingPhases, onClose, onConfirm, isPending }: Props) {
-  const [note, setNote] = useState('');
+  const form = useForm<CompletionNoteForm>({
+    resolver: zodResolver(CompletionNoteSchema),
+    defaultValues: { note: '' },
+  });
 
-  const close = () => {
-    setNote('');
-    onClose();
-  };
+  // The dialog stays mounted across open/close, so it reopens on the previous reason unless reset.
+  useEffect(() => {
+    if (open) form.reset({ note: '' });
+  }, [open, form]);
 
   // Esc and outside-click close through onOpenChange, a path the Cancel button does not take:
   // without this guard the dialog is dismissable mid-mutation while Cancel sits disabled.
   const handleOpenChange = (next: boolean) => {
-    if (!next && !isPending) close();
+    if (!next && !isPending) onClose();
   };
 
   const isForcing = mode === 'complete' && missingPhases.length > 0;
@@ -61,6 +80,8 @@ export function RowCompletionDialog({ open, mode, missingPhases, onClose, onConf
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
 
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(data => onConfirm(data.note.trim()))} className="grid gap-4">
         <div className="space-y-3 py-2">
           {isForcing ? (
             <div className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
@@ -79,32 +100,38 @@ export function RowCompletionDialog({ open, mode, missingPhases, onClose, onConf
             </p>
           )}
 
-          <div className="space-y-1.5">
-            <Label htmlFor="row-completion-note">Motivazione *</Label>
-            <Textarea
-              id="row-completion-note"
-              value={note}
-              onChange={e => setNote(e.target.value)}
-              placeholder={mode === 'complete' ? 'Perché la riga si considera conclusa…' : 'Perché la riga viene riaperta…'}
-              className="resize-none text-sm"
-              rows={3}
-              maxLength={500}
-            />
-          </div>
+          <FormField
+            control={form.control}
+            name="note"
+            render={({ field }) => (
+              <FormItem className="space-y-1.5">
+                <FormLabel>Motivazione *</FormLabel>
+                <FormControl>
+                  <Textarea
+                    placeholder={mode === 'complete' ? 'Perché la riga si considera conclusa…' : 'Perché la riga viene riaperta…'}
+                    className="resize-none text-sm"
+                    rows={3}
+                    maxLength={500}
+                    disabled={isPending}
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={close} disabled={isPending}>
+          <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>
             Annulla
           </Button>
-          <Button
-            variant={isForcing ? 'destructive' : 'default'}
-            onClick={() => onConfirm(note.trim())}
-            disabled={isPending || !note.trim()}
-          >
+          <Button type="submit" variant={isForcing ? 'destructive' : 'default'} disabled={isPending}>
             {isPending ? 'Salvataggio…' : confirmLabel}
           </Button>
         </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );
