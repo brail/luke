@@ -268,9 +268,20 @@ NAV table details and sync decisions: `docs/nav-integration.md`
 
 - Creation buttons: `<CreateActionButton>` — always visible, disabled + tooltip
   if no permission
-- Table actions: Edit/Delete always visible, disabled + tooltip if no permission.
-  Disabled style: `className="opacity-50 cursor-not-allowed"` +
-  `<TooltipProvider><Tooltip>` with message "You don't have permission to [action] [resource]"
+- Table actions: Edit/Delete always visible, disabled + tooltip if no permission,
+  message "You don't have permission to [action] [resource]". Always
+  `<PermissionButton>`, or `<PermissionTooltip>` when the control is not a
+  `Button` (a native `<button>`, a `Checkbox`, a group) — never hand-roll the
+  wrapper: a `<button disabled>` emits no pointer or focus event and `Tab` skips
+  it, so the tooltip has to hang off a focusable `<span>` and the components are
+  what put it there. Enforced by `@luke/no-unreachable-disabled-tooltip`
+- One tooltip per control, not per group. Group only when the controls share the
+  exact same message (a toolbar behind a single permission): a group tooltip can
+  carry one message, and grouping also hands a user without the permission a
+  different tab order from one who has it
+- `TooltipProvider` is mounted once, in `components/Providers.tsx` — never add
+  another: Radix groups the open delay per provider, so a local one silently
+  makes every neighbouring tooltip re-wait the full delay
 - Config pages (mail, storage, LDAP): save button gated on `can('config:update')`
 
 **Delete confirmation**: ALWAYS `<ConfirmDialog>` from `components/ConfirmDialog.tsx` —
