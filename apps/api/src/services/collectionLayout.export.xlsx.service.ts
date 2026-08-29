@@ -205,6 +205,10 @@ export async function buildCollectionLayoutXlsx(
           return;
         }
         const buffer = await resizeForEmbed(result.buffer, FOTO_COL_WIDTH_PX * EMBED_OVERSAMPLE_FACTOR, FOTO_ROW_HEIGHT_PX * EMBED_OVERSAMPLE_FACTOR, logger);
+        if (!buffer) {
+          keyToImage.set(key, null);
+          return;
+        }
         keyToImage.set(key, { buffer, contentType: result.contentType, width: result.width, height: result.height });
       }),
     ),

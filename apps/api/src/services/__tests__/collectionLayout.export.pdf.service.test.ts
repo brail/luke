@@ -3,6 +3,7 @@
  * - image fetch concurrency bounded by IMAGE_FETCH_CONCURRENCY
  * - single image fetch failure doesn't break the row
  * - large source photos are downscaled before being embedded
+ * - an undecodable photo is dropped, never re-embedded at full size
  * - end-to-end smoke test produces a valid PDF buffer
  */
 
@@ -129,6 +130,20 @@ describe('buildCollectionLayoutPdf', () => {
     // single large photo embedded at original resolution can exhaust the
     // container's heap on its own.
     expect(buffer.length).toBeLessThan(noise.length);
+  });
+
+  it('drops a picture sharp cannot decode instead of embedding it', async () => {
+    // `readAssetBuffer` serves the uncapped master whenever the background-generated
+    // `export` variant isn't ready, so an undecodable buffer here can be arbitrarily
+    // large. Passing it through would base64 those bytes into the content stream.
+    const undecodable = randomBytes(256 * 1024);
+    vi.mocked(readAssetBuffer).mockResolvedValue({ buffer: undecodable, contentType: 'image/jpeg', width: null, height: null });
+    const rows = [makeRow('row-1', 'corrupt.jpg')];
+
+    const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date());
+
+    expect(buffer.length).toBeGreaterThan(0);
+    expect(buffer.length).toBeLessThan(undecodable.length);
   });
 
   it('produces a valid non-empty PDF buffer (smoke test)', async () => {

@@ -263,15 +263,10 @@ export async function buildCollectionLayoutPdf(
     ...uniqueRowKeys.map(key =>
       limit(async () => {
         const result = await readAssetBuffer(prisma, pictureBucket, key, 'export', logger);
-        keyToDataUriMap.set(
-          key,
-          result
-            ? bufferToDataUri(
-                await resizeForEmbed(result.buffer, IMAGE_WIDTH * EMBED_OVERSAMPLE_FACTOR, IMAGE_HEIGHT * EMBED_OVERSAMPLE_FACTOR, logger),
-                result.contentType,
-              )
-            : null,
-        );
+        const resized = result
+          ? await resizeForEmbed(result.buffer, IMAGE_WIDTH * EMBED_OVERSAMPLE_FACTOR, IMAGE_HEIGHT * EMBED_OVERSAMPLE_FACTOR, logger)
+          : null;
+        keyToDataUriMap.set(key, result && resized ? bufferToDataUri(resized, result.contentType) : null);
       }),
     ),
   ]);

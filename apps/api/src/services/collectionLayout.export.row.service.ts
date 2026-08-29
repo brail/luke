@@ -139,14 +139,11 @@ export async function buildCollectionRowPdf(
   const [brandLogoDataUri, rowImageDataUri, company, progressLabelMap] = await Promise.all([
     resolveLogoDataUri(prisma, brand.logoKey, logger),
     row.pictureKey
-      ? readAssetBuffer(prisma, 'collection-row-pictures', row.pictureKey, 'export', logger).then(async result =>
-          result
-            ? bufferToDataUri(
-                await resizeForEmbed(result.buffer, ROW_PHOTO_WIDTH * EMBED_OVERSAMPLE_FACTOR, ROW_PHOTO_HEIGHT * EMBED_OVERSAMPLE_FACTOR, logger),
-                result.contentType,
-              )
-            : null,
-        )
+      ? readAssetBuffer(prisma, 'collection-row-pictures', row.pictureKey, 'export', logger).then(async result => {
+          if (!result) return null;
+          const resized = await resizeForEmbed(result.buffer, ROW_PHOTO_WIDTH * EMBED_OVERSAMPLE_FACTOR, ROW_PHOTO_HEIGHT * EMBED_OVERSAMPLE_FACTOR, logger);
+          return resized ? bufferToDataUri(resized, result.contentType) : null;
+        })
       : Promise.resolve(null),
     fetchCompanyExportContext(prisma, logger),
     buildProgressLabelMap(prisma),

@@ -54,8 +54,10 @@ export interface NormalizedMaster {
  * Never throws. A buffer that merely passed magic-byte sniffing but isn't a
  * real decodable image (fuzzed input, or a test fixture) falls back to the
  * original bytes untouched — an upload must never fail because normalization
- * couldn't run, exactly like `resizeForEmbed` falls back to the original
- * buffer for exports.
+ * couldn't run. Note this is the opposite of `resizeForEmbed`, which drops an
+ * undecodable buffer instead of passing it on: keeping the bytes is safe here
+ * (one upload, already size-capped) and unsafe there (many buffers held at once
+ * across a whole export). See that function for the full rationale.
  */
 export async function normalizeMaster(
   buf: Buffer,

@@ -3,6 +3,7 @@
  * - image fetch concurrency bounded by IMAGE_FETCH_CONCURRENCY
  * - single image fetch failure doesn't break the row
  * - large source photos are downscaled before being embedded
+ * - an undecodable photo is dropped, never re-embedded at full size
  * - end-to-end smoke test produces a valid XLSX buffer
  */
 
@@ -121,6 +122,20 @@ describe('buildCollectionLayoutXlsx', () => {
     // this is the actual bug: a single large photo embedded at original
     // resolution can exhaust the container's heap on its own.
     expect(buffer.length).toBeLessThan(noise.length);
+  });
+
+  it('drops a picture sharp cannot decode instead of embedding it', async () => {
+    // `readAssetBuffer` serves the uncapped master whenever the background-generated
+    // `export` variant isn't ready, so an undecodable buffer here can be arbitrarily
+    // large. Passing it through would put those bytes straight into the workbook.
+    const undecodable = randomBytes(256 * 1024);
+    vi.mocked(readAssetBuffer).mockResolvedValue({ buffer: undecodable, contentType: 'image/jpeg', width: null, height: null });
+    const rows = [makeRow('row-1', 'corrupt.jpg')];
+
+    const buffer = await buildCollectionLayoutXlsx(makeLayout(rows), mockPrisma);
+
+    expect(buffer.length).toBeGreaterThan(0);
+    expect(buffer.length).toBeLessThan(undecodable.length);
   });
 
   it('produces a valid non-empty XLSX buffer (smoke test)', async () => {
