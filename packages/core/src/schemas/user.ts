@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { HardDeleteConfirmSchema } from './confirmation';
+
 /** Full user record as returned by the API (excludes password hash). */
 export const UserSchema = z.object({
   /** ID univoco dell'utente (UUID v4) */
@@ -54,6 +56,14 @@ export const UpdateUserInputSchema = z.object({
   isActive: z.boolean().optional(),
   password: z.string().min(12, 'Password deve essere di almeno 12 caratteri').optional(),
 });
+
+/** Schema for identifying a single user by UUID — shared across the users sub-routers. */
+export const UserIdSchema = z.object({
+  id: z.string().uuid('ID utente non valido'),
+});
+
+/** Input schema for permanently deleting a user — an id alone is not enough. */
+export const UserHardDeleteInputSchema = UserIdSchema.merge(HardDeleteConfirmSchema);
 
 export type User = z.infer<typeof UserSchema>;
 export type CreateUserInput = z.infer<typeof CreateUserInputSchema>;

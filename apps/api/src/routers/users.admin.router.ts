@@ -9,6 +9,8 @@ import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { UserIdSchema } from '@luke/core';
+
 import { logAudit } from '../lib/auditLog';
 import { withAuditLog } from '../lib/auditMiddleware';
 import { getConfig } from '../lib/configManager';
@@ -19,7 +21,6 @@ import { hashPassword } from '../lib/password';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure, invalidateTokenVersionCache } from '../lib/trpc';
-import { UserIdSchema } from '../services/users.service';
 
 export const usersAdminRouter = router({
   /**

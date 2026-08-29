@@ -8,7 +8,7 @@ import { TRPCError } from '@trpc/server';
 import argon2 from 'argon2';
 import { z } from 'zod';
 
-import { CreateUserInputSchema, UpdateUserInputSchema, hasPermission } from '@luke/core';
+import { CreateUserInputSchema, UpdateUserInputSchema, UserHardDeleteInputSchema, UserIdSchema, hasPermission } from '@luke/core';
 import type { LockedFields, Role } from '@luke/core';
 import { invalidateRbacCache } from '@luke/core/server';
 
@@ -24,7 +24,7 @@ import { getOnlineUserIds, updatePresence } from '../lib/presenceStore';
 import { withRateLimit } from '../lib/ratelimit';
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
 import { router, protectedProcedure } from '../lib/trpc';
-import { deleteUserHandler, getLockedFields, resolveEffectiveProvider, UserHardDeleteInputSchema, UserIdSchema } from '../services/users.service';
+import { deleteUserHandler, getLockedFields, resolveEffectiveProvider } from '../services/users.service';
 
 export const usersCoreRouter = router({
   /**

@@ -5,27 +5,13 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { HardDeleteConfirmSchema, hasPermission, type LockedFields, type Role } from '@luke/core';
+import { hasPermission, UserIdSchema, type LockedFields, type Role } from '@luke/core';
 
 import { assertNotLastAdminWithSettingsAccess } from '../lib/lastAdminGuard';
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
 
 import type { Context } from '../lib/trpc';
 import type { Prisma } from '@prisma/client';
-
-/** UUID schema for a user ID — shared across sub-routers. */
-export const UserIdSchema = z.object({
-  id: z.string().uuid('ID utente non valido'),
-});
-
-/**
- * Input schema for permanently deleting a user — an id alone is not enough.
- *
- * Defined here rather than in `@luke/core` only because `UserIdSchema` is: the other three
- * entities keep their hard-delete input beside their id schema in core, and this one follows suit
- * where its id schema actually lives.
- */
-export const UserHardDeleteInputSchema = UserIdSchema.merge(HardDeleteConfirmSchema);
 
 /**
  * Resolves the provider to use for lock/display decisions when a user may hold more than one
