@@ -31,8 +31,8 @@ describe('create ed edit giudicano le identità allo stesso modo', () => {
 
   for (const { field, value } of cases) {
     it(`rifiuta ${field} non valido in entrambe le modalità`, () => {
-      const create = buildUserPayload('create', { ...CREATE_FORM, [field]: value });
-      const edit = buildUserPayload('edit', { ...EDIT_FORM, [field]: value });
+      const create = buildUserPayload('create', { ...CREATE_FORM, [field]: value }, []);
+      const edit = buildUserPayload('edit', { ...EDIT_FORM, [field]: value }, []);
       expect(create.ok).toBe(false);
       expect(edit.ok).toBe(false);
       if (!create.ok && !edit.ok) {
@@ -43,14 +43,14 @@ describe('create ed edit giudicano le identità allo stesso modo', () => {
   }
 
   it('accetta la stessa identità valida in entrambe le modalità', () => {
-    expect(buildUserPayload('create', CREATE_FORM).ok).toBe(true);
-    expect(buildUserPayload('edit', EDIT_FORM).ok).toBe(true);
+    expect(buildUserPayload('create', CREATE_FORM, []).ok).toBe(true);
+    expect(buildUserPayload('edit', EDIT_FORM, []).ok).toBe(true);
   });
 });
 
 describe('confirmPassword non lascia mai il browser', () => {
   it('non compare nel payload di create', () => {
-    const result = buildUserPayload('create', CREATE_FORM);
+    const result = buildUserPayload('create', CREATE_FORM, []);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.payload).not.toHaveProperty('confirmPassword');
   });
@@ -60,7 +60,7 @@ describe('confirmPassword non lascia mai il browser', () => {
       ...EDIT_FORM,
       password: VALID_PASSWORD,
       confirmPassword: VALID_PASSWORD,
-    });
+    }, []);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.payload).not.toHaveProperty('confirmPassword');
   });
@@ -68,7 +68,7 @@ describe('confirmPassword non lascia mai il browser', () => {
 
 describe('in edit una password vuota significa «lascia quella che c’è»', () => {
   it('omette la chiave password invece di mandarla vuota', () => {
-    const result = buildUserPayload('edit', EDIT_FORM);
+    const result = buildUserPayload('edit', EDIT_FORM, []);
     expect(result.ok).toBe(true);
     // Non `password: ''`: il router tratterebbe la chiave presente come una password da hashare.
     if (result.ok) expect('password' in result.payload).toBe(false);
@@ -79,20 +79,32 @@ describe('in edit una password vuota significa «lascia quella che c’è»', ()
       ...EDIT_FORM,
       password: VALID_PASSWORD,
       confirmPassword: VALID_PASSWORD,
-    });
+    }, []);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.payload.password).toBe(VALID_PASSWORD);
   });
 
   it('rifiuta una conferma compilata quando la password è vuota', () => {
-    const result = buildUserPayload('edit', { ...EDIT_FORM, confirmPassword: 'qualcosa' });
+    const result = buildUserPayload('edit', { ...EDIT_FORM, confirmPassword: 'qualcosa' }, []);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.errors.confirmPassword).toBe('Le password non coincidono');
   });
 
   it('in create la password resta obbligatoria', () => {
-    const result = buildUserPayload('create', { ...CREATE_FORM, password: '', confirmPassword: '' });
+    const result = buildUserPayload('create', { ...CREATE_FORM, password: '', confirmPassword: '' }, []);
     expect(result.ok).toBe(false);
+    // Sul campo, non sul risultato: con entrambi vuoti anche `confirmPassword` fallisce, quindi
+    // `ok === false` da solo resterebbe vero anche se la regola sulla password sparisse.
+    if (!result.ok) expect(result.errors.password).toBeDefined();
+  });
+
+  it('in create una password troppo corta viene rifiutata sul suo campo', () => {
+    // Nessun test fissava un confine: fra 8 e 11 caratteri è la fascia che il prossimo cambio
+    // tocca, e senza questo un `min` allentato per sbaglio non farebbe diventare rosso niente.
+    const short = 'Ab1!efgh';
+    const result = buildUserPayload('create', { ...CREATE_FORM, password: short, confirmPassword: short }, []);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors.password).toBeDefined();
   });
 });
 
@@ -114,5 +126,8 @@ describe('campi gestiti da un provider esterno', () => {
     // esterno mal configurato aprirebbe un varco su ciò che il form accetta.
     const result = buildUserPayload('create', { ...CREATE_FORM, email: 'rotta' }, ['email']);
     expect(result.ok).toBe(false);
+    // Il messaggio, non solo l'esito: togliendo il campo prima di validare si otterrebbe comunque
+    // un fallimento, ma con «expected string, received undefined». Solo l'ordine giusto dà questo.
+    if (!result.ok) expect(result.errors.email).toBe('Email non valida');
   });
 });

@@ -4,7 +4,7 @@ import { useSession } from 'next-auth/react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { HARD_DELETE_CONFIRM_PHRASE } from '@luke/core';
+import { CreateUserInputSchema, HARD_DELETE_CONFIRM_PHRASE } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { PageHeader } from '../../../../components/PageHeader';
@@ -21,6 +21,7 @@ import { usePermission } from '../../../../hooks/usePermission';
 import { debugLog } from '../../../../lib/debug';
 import { useRefresh } from '../../../../lib/refresh';
 import { trpc } from '../../../../lib/trpc';
+import { type SyncedField } from '../../../../lib/userFormSchema';
 import { useStandardMutation } from '../../../../lib/useStandardMutation';
 
 import { ApproveUserDialog } from './_components/ApproveUserDialog';
@@ -105,9 +106,7 @@ export default function UsersPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('');
-  const [syncedFields, setSyncedFields] = useState<
-    ('email' | 'username' | 'firstName' | 'lastName' | 'role' | 'password')[]
-  >([]);
+  const [syncedFields, setSyncedFields] = useState<SyncedField[]>([]);
 
   // Stato per modal di conferma
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
@@ -255,14 +254,7 @@ export default function UsersPage() {
     // Determina campi sincronizzati in base al provider
     // Per provider esterni (LDAP, OIDC): blocca username, firstName, lastName e password
     // email and role are editable even for external users
-    const synced: (
-      | 'email'
-      | 'username'
-      | 'firstName'
-      | 'lastName'
-      | 'role'
-      | 'password'
-    )[] =
+    const synced: SyncedField[] =
       user?.identities?.[0]?.provider !== 'LOCAL'
         ? ['username', 'firstName', 'lastName', 'password']
         : [];
@@ -359,18 +351,17 @@ export default function UsersPage() {
 
   const handleFormSubmit = (data: UserDialogSubmitData) => {
     if (dialogMode === 'create') {
-      // In create mode `syncedFields` is empty, so the payload does carry every field — but the
-      // type cannot say so, since the same shape serves edit where a synced field is stripped.
-      // Spelling the fallbacks out keeps that assumption in front of the compiler; if one were ever
-      // wrong the server's own schema rejects it, which a cast here would have hidden.
-      createUser({
-        email: data.email ?? '',
-        username: data.username ?? '',
-        password: data.password ?? '',
-        firstName: data.firstName,
-        lastName: data.lastName,
-        role: data.role ?? 'viewer',
-      });
+      // The payload type is optional in every field, because the same shape serves edit where a
+      // synced field is stripped. In create nothing is stripped, so it does carry them all — but
+      // rather than assert that with fallbacks, let the endpoint's own schema decide. Defaulting
+      // was not equally safe across fields: an empty email or password fails server-side, while
+      // `role ?? 'viewer'` would have quietly created a viewer instead of reporting a bug.
+      const parsed = CreateUserInputSchema.safeParse(data);
+      if (!parsed.success) {
+        toast.error('Dati utente incompleti', { description: parsed.error.issues[0]?.message });
+        return;
+      }
+      createUser(parsed.data);
     } else {
       if (!selectedUser) return;
       // Filtra i campi per self-edit

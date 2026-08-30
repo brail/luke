@@ -1,6 +1,6 @@
 'use client';
 
-import { type UserSubmitPayload } from '../lib/userFormSchema';
+import { type SyncedField, type UserSubmitPayload } from '../lib/userFormSchema';
 
 import {
   Dialog,
@@ -39,14 +39,7 @@ interface UserDialogProps {
   user?: User;
   onSubmit: (userData: UserDialogSubmitData) => void;
   isLoading?: boolean;
-  syncedFields?: (
-    | 'email'
-    | 'username'
-    | 'firstName'
-    | 'lastName'
-    | 'role'
-    | 'password'
-  )[];
+  syncedFields?: SyncedField[];
   isSelfEdit?: boolean;
   /** Whether the current user may reset another user's password (requires `*:*`). Defaults to `true` for callers that don't gate this (e.g. self-service create flows outside admin settings). */
   canResetPassword?: boolean;

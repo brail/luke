@@ -9,7 +9,7 @@
 
 import { z } from 'zod';
 
-import { CreateUserInputSchema } from '@luke/core';
+import { CreateUserInputSchema, type LockedFields } from '@luke/core';
 
 /**
  * The identity fields come from `users.core.create`'s own input, so the form and the endpoint
@@ -67,8 +67,15 @@ export type UserFormData = CreateUserData | EditUserData;
 
 export type UserFormMode = 'create' | 'edit';
 
-/** Fields an external provider (LDAP) owns: rendered read-only and stripped from the payload. */
-export type SyncedField = 'email' | 'username' | 'firstName' | 'lastName' | 'role' | 'password';
+/**
+ * Fields an external provider (LDAP) owns: rendered read-only and stripped from the payload.
+ *
+ * An alias, not a second list. `users.core.update` uses `LockedFields` to *reject* an edit to one
+ * of these, so a local copy would be the same allowlist maintained on both sides of the same wire:
+ * drift one way and the form strips a field the server would have taken, drift the other and it
+ * sends one the server refuses.
+ */
+export type SyncedField = LockedFields;
 
 /**
  * What actually leaves the form.
@@ -91,13 +98,15 @@ export type BuildUserPayloadResult =
  * Validates the form state for the given mode and shapes what should be sent.
  *
  * @param values - Raw form state.
- * @param syncedFields - Fields owned by an external provider, removed from the payload.
+ * @param syncedFields - Fields owned by an external provider, removed from the payload. Required
+ *   rather than defaulted: a default would let the argument be dropped at the call site without a
+ *   compile error and without a test going red, while LDAP-owned fields started reaching the server.
  * @returns The payload, or the per-field error messages keyed by field name.
  */
 export function buildUserPayload(
   mode: UserFormMode,
   values: unknown,
-  syncedFields: readonly SyncedField[] = []
+  syncedFields: readonly SyncedField[]
 ): BuildUserPayloadResult {
   const schema = mode === 'create' ? CreateUserSchema : EditUserSchema;
   const result = schema.safeParse(values);
