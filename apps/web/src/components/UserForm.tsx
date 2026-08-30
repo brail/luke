@@ -2,70 +2,18 @@
 'use client';
 
 import React, { useState } from 'react';
-import { z } from 'zod';
 
-import { CreateUserInputSchema } from '@luke/core';
+import {
+  buildUserPayload,
+  type SyncedField,
+  type UserFormData,
+  type UserSubmitPayload,
+} from '../lib/userFormSchema';
 
 import { PasswordValidationIndicators } from './PasswordValidationIndicators';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-
-/**
- * Validation for the user form, in both modes.
- *
- * The identity fields come from `users.core.create`'s own input, so the form and the endpoint
- * cannot end up with different ideas of what a username or an email is. Only what the endpoint has
- * no opinion about is declared here: `confirmPassword`, which never leaves the browser, and
- * `isActive`, which belongs to the update input rather than the create one.
- *
- * The password rules are the exception, and knowingly so: create requires 12 characters, edit adds
- * four complexity checks, and the server applies neither — it has a configurable policy
- * (`security.password.*`) that only the reset flow consults. Unifying that is a decision about
- * behaviour, not a schema move; it is filed as its own batch and left alone here.
- */
-const CreateUserSchema = CreateUserInputSchema.extend({
-  confirmPassword: z.string().min(1, 'Conferma password richiesta'),
-  isActive: z.boolean(),
-}).refine(data => data.password === data.confirmPassword, {
-  message: 'Le password non coincidono',
-  path: ['confirmPassword'],
-});
-
-const EditUserSchema = CreateUserInputSchema
-  .extend({
-    password: z
-      .string()
-      .min(12, 'Password deve essere di almeno 12 caratteri')
-      .regex(/[A-Z]/, 'Password deve contenere almeno una lettera maiuscola')
-      .regex(/[a-z]/, 'Password deve contenere almeno una lettera minuscola')
-      .regex(/[0-9]/, 'Password deve contenere almeno un numero')
-      .regex(
-        /[^A-Za-z0-9]/,
-        'Password deve contenere almeno un carattere speciale'
-      )
-      .optional()
-      .or(z.literal('')), // empty string retains the existing password
-    confirmPassword: z.string().optional().or(z.literal('')), // empty string allowed
-    isActive: z.boolean(),
-  })
-  .refine(
-    data => {
-      // No new password means no confirmation either.
-      if (!data.password || data.password.trim() === '') {
-        return !data.confirmPassword || data.confirmPassword.trim() === '';
-      }
-      return data.password === data.confirmPassword;
-    },
-    {
-      message: 'Le password non coincidono',
-      path: ['confirmPassword'],
-    }
-  );
-
-type CreateUserData = z.infer<typeof CreateUserSchema>;
-type EditUserData = z.infer<typeof EditUserSchema>;
-type UserFormData = CreateUserData | EditUserData;
 
 interface UserFormProps {
   mode: 'create' | 'edit';
@@ -76,17 +24,10 @@ interface UserFormProps {
     lastName?: string | null;
     provider?: string;
   };
-  onSubmit: (data: UserFormData) => void;
+  onSubmit: (data: UserSubmitPayload) => void;
   onCancel: () => void;
   isLoading?: boolean;
-  syncedFields?: (
-    | 'email'
-    | 'username'
-    | 'firstName'
-    | 'lastName'
-    | 'role'
-    | 'password'
-  )[];
+  syncedFields?: SyncedField[];
   isSelfEdit?: boolean;
   /** Whether the current user may reset this user's password in edit mode (requires `*:*`). */
   canResetPassword?: boolean;
@@ -209,47 +150,12 @@ export function UserForm({
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    // Use correct schema based on mode
-    const schema = mode === 'create' ? CreateUserSchema : EditUserSchema;
-    const result = schema.safeParse(formData);
-
-    if (!result.success) {
-      const fieldErrors: Record<string, string> = {};
-      result.error.issues.forEach(issue => {
-        if (issue.path[0]) {
-          fieldErrors[issue.path[0] as string] = issue.message;
-        }
-      });
-      setErrors(fieldErrors);
+    const result = buildUserPayload(mode, formData, syncedFields);
+    if (!result.ok) {
+      setErrors(result.errors);
       return;
     }
-
-    // Remove confirmPassword from data before sending
-    const { confirmPassword: _confirmPassword, ...dataToSubmit } = result.data;
-
-    // In edit mode, if password is empty, remove it from data
-    if (
-      mode === 'edit' &&
-      (!formData.password || formData.password.trim() === '')
-    ) {
-      const { password: _password, ...dataWithoutPassword } = dataToSubmit;
-
-      // Remove synced fields from data to send
-      const filteredData = { ...dataWithoutPassword };
-      syncedFields?.forEach(field => {
-        delete filteredData[field as keyof typeof filteredData];
-      });
-
-      onSubmit(filteredData as UserFormData);
-    } else {
-      // Remove synced fields from data to send
-      const filteredData = { ...dataToSubmit };
-      syncedFields?.forEach(field => {
-        delete filteredData[field as keyof typeof filteredData];
-      });
-
-      onSubmit(filteredData as UserFormData);
-    }
+    onSubmit(result.payload);
   };
 
   return (

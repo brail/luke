@@ -1,5 +1,7 @@
 'use client';
 
+import { type UserSubmitPayload } from '../lib/userFormSchema';
+
 import {
   Dialog,
   DialogContent,
@@ -23,16 +25,12 @@ interface User {
   }>;
 }
 
-export interface UserDialogSubmitData {
-  email: string;
-  username: string;
-  firstName?: string;
-  lastName?: string;
-  password?: string;
-  confirmPassword?: string;
-  role: 'admin' | 'editor' | 'viewer';
-  isActive: boolean;
-}
+/**
+ * What the form hands back. Re-exported rather than redeclared: the previous local copy required
+ * `email`, `username` and `role`, which `syncedFields` is allowed to strip — the shape was stricter
+ * than the value, and only a cast inside `UserForm` kept the two apart.
+ */
+export type UserDialogSubmitData = UserSubmitPayload;
 
 interface UserDialogProps {
   open: boolean;
@@ -75,19 +73,6 @@ export function UserDialog({
 }: UserDialogProps) {
   void open; // Usa il parametro open per evitare warning
 
-  const handleSubmit = (userData: {
-    email: string;
-    username: string;
-    firstName?: string;
-    lastName?: string;
-    password?: string;
-    confirmPassword?: string;
-    role: 'admin' | 'editor' | 'viewer';
-    isActive: boolean;
-  }) => {
-    onSubmit(userData);
-  };
-
   const handleCancel = () => {
     onOpenChange(false);
   };
@@ -112,7 +97,7 @@ export function UserDialog({
             ...user,
             provider: user?.identities?.[0]?.provider,
           }}
-          onSubmit={handleSubmit}
+          onSubmit={onSubmit}
           onCancel={handleCancel}
           isLoading={isLoading}
           syncedFields={syncedFields}

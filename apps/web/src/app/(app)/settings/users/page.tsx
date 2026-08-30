@@ -359,9 +359,18 @@ export default function UsersPage() {
 
   const handleFormSubmit = (data: UserDialogSubmitData) => {
     if (dialogMode === 'create') {
-      // CreateUserSchema (UserForm) requires password (min 12 chars) in create mode; the shared
-      // UserDialogSubmitData type just doesn't encode that per-mode distinction.
-      createUser({ ...data, password: data.password ?? '' });
+      // In create mode `syncedFields` is empty, so the payload does carry every field — but the
+      // type cannot say so, since the same shape serves edit where a synced field is stripped.
+      // Spelling the fallbacks out keeps that assumption in front of the compiler; if one were ever
+      // wrong the server's own schema rejects it, which a cast here would have hidden.
+      createUser({
+        email: data.email ?? '',
+        username: data.username ?? '',
+        password: data.password ?? '',
+        firstName: data.firstName,
+        lastName: data.lastName,
+        role: data.role ?? 'viewer',
+      });
     } else {
       if (!selectedUser) return;
       // Filtra i campi per self-edit
