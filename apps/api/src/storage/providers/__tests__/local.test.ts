@@ -15,7 +15,6 @@ describe('LocalFsProvider - Path Traversal Protection', () => {
     provider = new LocalFsProvider({
       basePath: testDir,
       maxFileSizeMB: 10,
-      buckets: ['uploads', 'brand-logos'],
       enableProxy: false,
     });
     await provider.init();
@@ -52,7 +51,6 @@ describe('LocalFsProvider - Path Traversal Protection', () => {
       const providerSymlink = new LocalFsProvider({
         basePath: symlinkPath,
         maxFileSizeMB: 10,
-        buckets: ['uploads'],
         enableProxy: false,
       });
 

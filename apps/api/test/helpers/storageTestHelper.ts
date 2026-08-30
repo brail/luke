@@ -248,22 +248,12 @@ export function createValidWebpBuffer(): Buffer {
 export async function seedLocalStorageConfig(
   prisma: PrismaClient,
   basePath: string,
-  options: { buckets?: string[]; maxFileSizeMB?: number } = {},
+  options: { maxFileSizeMB?: number } = {},
 ): Promise<void> {
   const rows: Array<{ key: string; value: string }> = [
     { key: 'storage.type', value: 'local' },
     { key: 'storage.local.basePath', value: basePath },
     { key: 'storage.local.maxFileSizeMB', value: String(options.maxFileSizeMB ?? 50) },
-    {
-      key: 'storage.local.buckets',
-      value: JSON.stringify(options.buckets ?? [
-        'collection-row-pictures',
-        'collection-row-pictures-revisions',
-        'brand-logos',
-        'company-assets',
-        'merchandising-specsheet-images',
-      ]),
-    },
     { key: 'storage.local.enableProxy', value: 'true' },
     { key: 'storage.derivatives.enabled', value: 'true' },
   ];

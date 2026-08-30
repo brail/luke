@@ -6,11 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
-import {
-  APP_STORAGE_BUCKETS,
-  localStorageSaveConfigSchema,
-  s3StorageSaveConfigSchema,
-} from '@luke/core';
+import { localStorageSaveConfigSchema, s3StorageSaveConfigSchema } from '@luke/core';
 
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
@@ -41,12 +37,9 @@ const onNumberChange = (onChange: (v: number) => void) =>
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
-/**
- * The endpoint's own input, minus the one field the form does not collect: nothing in the UI picks
- * a subset of buckets, so the page sends them all on submit rather than rendering a control for it.
- */
+/** The endpoint's own input, used as-is. */
 const formSchema = z.discriminatedUnion('type', [
-  localStorageSaveConfigSchema.omit({ buckets: true }),
+  localStorageSaveConfigSchema,
   s3StorageSaveConfigSchema,
 ]);
 type StorageForm = z.infer<typeof formSchema>;
@@ -135,7 +128,7 @@ export default function StoragePage() {
       <Form {...form}>
         <form
           onSubmit={form.handleSubmit(data =>
-            saveConfig(data.type === 'local' ? { ...data, buckets: [...APP_STORAGE_BUCKETS] } : data)
+            saveConfig(data)
           )}
           className="space-y-6"
         >

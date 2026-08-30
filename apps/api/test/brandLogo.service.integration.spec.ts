@@ -46,7 +46,7 @@ describe('Brand Logo Upload Service', () => {
   beforeEach(async () => {
     testContext = await createContextForRole();
     basePath = await mkdtemp(join(tmpdir(), 'luke-brandlogo-service-'));
-    await seedLocalStorageConfig(testContext.prisma, basePath, { buckets: ['brand-logos'], maxFileSizeMB: 2 });
+    await seedLocalStorageConfig(testContext.prisma, basePath, { maxFileSizeMB: 2 });
   });
 
   afterEach(async () => {

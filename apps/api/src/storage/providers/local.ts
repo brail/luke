@@ -15,8 +15,6 @@ import { readdir, mkdir, unlink, stat, realpath } from 'fs/promises';
 import { join, dirname, resolve, basename, relative, isAbsolute } from 'path';
 import { pipeline } from 'stream/promises';
 
-import pino from 'pino';
-
 import type {
   IStorageCapabilities,
   IStorageProvider,
@@ -29,9 +27,7 @@ import type {
   StorageListResult,
   LocalStorageConfig,
 } from '@luke/core';
-import { isPathSafe } from '@luke/core';
-
-const logger = pino({ level: 'info' });
+import { APP_STORAGE_BUCKETS, isPathSafe } from '@luke/core';
 
 /**
  * `NodeJS.ReadableStream` doesn't declare `.destroy()` (it's specific to the
@@ -54,18 +50,20 @@ export class LocalFsProvider implements IStorageProvider {
 
   private basePath: string;
   private maxFileSizeBytes: number;
-  private buckets: string[];
   private realBasePath?: string;
 
   constructor(config: LocalStorageConfig) {
     this.basePath = config.basePath;
     this.maxFileSizeBytes = config.maxFileSizeMB * 1024 * 1024;
-    this.buckets = config.buckets;
   }
 
   /**
-   * Initializes the provider by creating the base directory and one subdirectory per configured bucket.
-   * Each bucket also gets a `.tmp` subdirectory used for atomic writes.
+   * Initializes the provider by creating the base directory and one subdirectory per application
+   * bucket, each with the `.tmp` subdirectory used for atomic writes.
+   *
+   * Pre-creation is a convenience, not a precondition: `put` creates the directory it needs anyway.
+   * The set is `APP_STORAGE_BUCKETS` rather than a configured list — nothing chose a subset, and a
+   * second spelling of the list only gave the two a chance to disagree.
    */
   async init(): Promise<void> {
     // Get the realpath of basePath
@@ -80,24 +78,13 @@ export class LocalFsProvider implements IStorageProvider {
     }
 
     // Create directory for each bucket
-    for (const bucket of this.buckets) {
+    for (const bucket of APP_STORAGE_BUCKETS) {
       const bucketPath = join(this.basePath, bucket);
       await mkdir(bucketPath, { recursive: true, mode: 0o700 });
 
       // Create .tmp directory for atomic writes
       const tmpPath = join(bucketPath, '.tmp');
       await mkdir(tmpPath, { recursive: true, mode: 0o700 });
-    }
-
-    // Explicitly create brand-logos directory if missing
-    const brandLogosPath = join(this.basePath, 'brand-logos');
-    try {
-      await mkdir(brandLogosPath, { recursive: true, mode: 0o700 });
-      const brandLogosTmpPath = join(brandLogosPath, '.tmp');
-      await mkdir(brandLogosTmpPath, { recursive: true, mode: 0o700 });
-    } catch (error) {
-      // Log but don't fail if it already exists
-      logger.warn({ err: error }, 'Directory brand-logos creation warning');
     }
   }
 

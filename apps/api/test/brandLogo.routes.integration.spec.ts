@@ -88,7 +88,7 @@ describe('Brand Logo Upload Integration', () => {
     authToken = 'mock-jwt-token';
 
     basePath = await mkdtemp(join(tmpdir(), 'luke-brandlogo-routes-'));
-    await seedLocalStorageConfig(testContext.prisma, basePath, { buckets: ['brand-logos'], maxFileSizeMB: 2 });
+    await seedLocalStorageConfig(testContext.prisma, basePath, { maxFileSizeMB: 2 });
 
     // Create Fastify app for testing
     const fastify = (await import('fastify')).default;

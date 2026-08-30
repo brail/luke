@@ -463,14 +463,13 @@ export const storageRouter = router({
     .query(async ({ ctx }) => {
       const [
         storageType,
-        basePath, maxFileSizeMBStr, bucketsStr, enableProxyStr,
+        basePath, maxFileSizeMBStr, enableProxyStr,
         s3Endpoint, s3PortStr, s3UseSslStr, s3AccessKey, s3SecretKey,
         s3Region, s3PublicBaseUrl, s3PutTtlStr, s3GetTtlStr,
       ] = await Promise.all([
         getConfig(ctx.prisma, 'storage.type', false),
         getConfig(ctx.prisma, 'storage.local.basePath', false),
         getConfig(ctx.prisma, 'storage.local.maxFileSizeMB', false),
-        getConfig(ctx.prisma, 'storage.local.buckets', false),
         getConfig(ctx.prisma, 'storage.local.enableProxy', false),
         getConfig(ctx.prisma, 'storage.s3.endpoint', false),
         getConfig(ctx.prisma, 'storage.s3.port', false),
@@ -483,19 +482,11 @@ export const storageRouter = router({
         getConfig(ctx.prisma, 'storage.s3.presignedGetTtl', false),
       ]);
 
-      let buckets: string[];
-      try {
-        buckets = bucketsStr ? JSON.parse(bucketsStr) : APP_STORAGE_BUCKETS.slice();
-      } catch {
-        buckets = ['uploads'];
-      }
-
       return {
         type: (storageType || 'local') as 'local' | 's3',
         local: {
           basePath: basePath || join(homedir(), '.luke', 'storage'),
           maxFileSizeMB: parseInt(maxFileSizeMBStr || '50', 10),
-          buckets,
           enableProxy: enableProxyStr !== 'false',
         },
         s3: {
@@ -530,7 +521,6 @@ export const storageRouter = router({
           saveConfig(ctx.prisma, 'storage.type', 'local', false),
           saveConfig(ctx.prisma, 'storage.local.basePath', input.basePath, false),
           saveConfig(ctx.prisma, 'storage.local.maxFileSizeMB', input.maxFileSizeMB.toString(), false),
-          saveConfig(ctx.prisma, 'storage.local.buckets', JSON.stringify(input.buckets), false),
           saveConfig(ctx.prisma, 'storage.local.enableProxy', String(enableProxy), false),
         ]);
       } else {

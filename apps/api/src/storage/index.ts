@@ -42,11 +42,10 @@ let providerInitPromise: Promise<IStorageProvider> | null = null;
  * @returns Initialized LocalFsProvider ready for use.
  */
 export async function loadLocalProvider(prisma: PrismaClient): Promise<LocalFsProvider> {
-  const [rawBasePathConfig, maxFileSizeMBStr, bucketsStr, publicBaseUrl, enableProxyStr] =
+  const [rawBasePathConfig, maxFileSizeMBStr, publicBaseUrl, enableProxyStr] =
     await Promise.all([
       getConfig(prisma, 'storage.local.basePath', false),
       getConfig(prisma, 'storage.local.maxFileSizeMB', false),
-      getConfig(prisma, 'storage.local.buckets', false),
       getConfig(prisma, 'storage.local.publicBaseUrl', false),
       getConfig(prisma, 'storage.local.enableProxy', false),
     ]);
@@ -58,22 +57,11 @@ export async function loadLocalProvider(prisma: PrismaClient): Promise<LocalFsPr
 
   const maxFileSizeMB = parseInt(maxFileSizeMBStr || '50', 10);
 
-  let buckets: unknown;
-  try {
-    buckets = JSON.parse(
-      bucketsStr ||
-        '["uploads","exports","assets","brand-logos","collection-row-pictures","collection-row-pictures-revisions","merchandising-specsheet-images","company-assets"]'
-    );
-  } catch {
-    throw new Error(`storage.local.buckets non è JSON valido: ${bucketsStr}`);
-  }
-
   const enableProxy = enableProxyStr ? enableProxyStr === 'true' : true;
 
   const config = localStorageConfigSchema.parse({
     basePath,
     maxFileSizeMB,
-    buckets,
     publicBaseUrl: publicBaseUrl || undefined,
     enableProxy,
   });

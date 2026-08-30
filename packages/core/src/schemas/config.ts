@@ -52,7 +52,6 @@ export const AppConfigRegistry = {
   'storage.type':                z.enum(['local', 's3']),
   'storage.local.basePath':      z.string().min(1),
   'storage.local.maxFileSizeMB': z.coerce.number().int().min(1),
-  'storage.local.buckets':       z.string().transform(s => JSON.parse(s) as string[]),
   'storage.local.publicBaseUrl': z.string().url(),
   'storage.local.enableProxy':   z.coerce.boolean(),
 
