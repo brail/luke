@@ -27,13 +27,24 @@ skills *generate* for humans (README.md, ADRs in `docs/decisions/`) — see
 
 ```
 apps/
-  web/          → Next.js 15 + shadcn/ui (frontend, port 3000)
-  api/          → Fastify 5 + tRPC + Prisma (backend, port 3001)
+  web/          → Next.js + shadcn/ui (frontend, port 3000)
+  api/          → Fastify + tRPC + Prisma (backend, port 3001)
 packages/
   core/         → @luke/core: schemas, RBAC, pricing, storage, crypto, URL utils
   nav/          → @luke/nav: NAV sync layer (mssql pool, sync modules)
+  calendar/     → @luke/calendar: calendar domain, Google sync, ICS generation
   eslint-plugin-luke/ → custom ESLint rules
 ```
+
+**No version numbers in this file.** The architectural choice — Next, Fastify,
+tRPC, Prisma, Zod, pnpm — is stable and belongs here; the version it currently
+sits on is not. Read that from the workspace manifests (`apps/*/package.json`,
+`packages/*/package.json`, the root `package.json` for `engines` and
+`packageManager`) and the configs they point at. `/luke-deps platform` governs
+and verifies that those pins stay coherent with each other.
+
+A version repeated here is a second source of truth, and it drifts: this block
+said "Next.js 15" for months while `apps/web` was on 16.
 
 Dev: `pnpm dev` starts everything via Turbo.
 If the API fails with "Cannot find module @luke/core/dist": `pnpm --filter @luke/core build`.

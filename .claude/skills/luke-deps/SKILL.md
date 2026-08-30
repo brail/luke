@@ -1,35 +1,66 @@
 ---
 name: luke-deps
 description: >
-  Dependency and toolchain update workflow for the Luke monorepo. Inventories
-  outdated packages, classifies them by blast radius, and — on request — applies
-  them one verified batch at a time: within-major bumps together, every major
-  alone, each proven by the level of test that can actually catch its failure
-  mode. Also covers advisory-driven updates, pnpm overrides review, deprecated
-  package migrations and Node/pnpm/base-image bumps.
-  Use for a periodic dependency review, before a release, or when osv-scanner
-  reports an advisory.
-  Modes: /luke-deps (review, read-only) | apply | security | toolchain.
-  Optional filter: /luke-deps apply apps/api
-argument-hint: '[apply|security|toolchain] [path]'
+  Technology and Platform Governor for the Luke monorepo. Owns the approved
+  stack, the dependency graph, the toolchain and the supply chain: detects
+  platform drift, assesses proposed technology changes, and applies upgrades
+  through evidence-based verification — within-major bumps together, every
+  major alone, each proven by the level of test that can actually catch its
+  failure mode. Also covers advisory response, pnpm overrides review,
+  deprecated package migrations and Node/pnpm/base-image lifecycle.
+  Use for a platform health check, a periodic dependency review, before a
+  release, or when osv-scanner reports an advisory.
+  Modes: /luke-deps (review) | platform | apply | security | toolchain |
+  evaluate. Optional filter: /luke-deps apply apps/api
+argument-hint: '[platform|apply|security|toolchain|evaluate] [path|proposal]'
 ---
 
-# Luke Dependency Review
+# Luke Platform Governor
 
-Two halves, and the split is the point: **review is read-only and always runs
-first**, apply only ever executes a plan the user has seen.
+**Own and maintain the approved Luke technology platform, dependency graph and
+toolchain. Detect platform drift, assess technology changes, and apply upgrades
+through evidence-based verification.**
+
+Not merely a package updater. Two halves, and the split is the point:
+**everything read-only runs first**, apply only ever executes a plan the user
+has seen.
 
 A dependency bump is the one change that alters behavior without altering a
 diff you can read. Everything in this skill exists because of that: the
 verification ladder, one-major-at-a-time, the risk table. Green types are not
 evidence.
 
+## Modes
+
+| Mode                        | Does                                                  | Writes |
+| --------------------------- | ----------------------------------------------------- | ------ |
+| _(empty)_                   | dependency review + platform summary (§1–§6)          | no     |
+| `platform`                  | platform integrity and architecture drift (§10)       | no     |
+| `apply [path]`              | execute a reviewed plan (§7)                          | yes    |
+| `security [path]`           | advisory-driven response (§9)                         | yes    |
+| `toolchain`                 | Node / pnpm / base image / Actions lifecycle (§8)     | yes    |
+| `evaluate <proposal>`       | technology decision assessment (§11)                  | no     |
+
+**This skill is deliberately not forked.** `apply`, `security` and `toolchain`
+run an approve-per-cycle loop with the user, and a forked context breaks it.
+The fork/background contract in `tools/scripts/check-skill-integrity.ts`
+therefore does not apply here.
+
 **Read `.claude/skills/luke-shared/audit-protocol.md` first** and apply the
 sections its applicability table assigns to `/luke-deps`: §3 escalation to a
 deterministic rule, §4 `lessons.md` as a check input, §7 concurrent sessions.
-§1 diff scoping does **not** apply — the input here is the registry, not the
-diff. A `$ARGUMENTS` path is a workspace filter (`apps/api`, `packages/nav`),
-never a git range.
+§1 diff scoping does **not** apply — the input here is the registry and the
+repository's own configuration, not the diff. A `$ARGUMENTS` path is a
+workspace filter (`apps/api`, `packages/nav`), never a git range.
+
+**Ownership**: `.claude/skills/luke-shared/governance-map.md`. This skill owns
+platform, dependencies, toolchain and supply chain. It does not own application
+architecture, runtime bugs or application exploits. When a platform finding
+explains an application finding, hand it over — do not audit the application.
+
+**Platform facts are read live**, from the authority table in
+`.claude/skills/luke-deps/references/platform-policy.md`. Never copy a version
+into a skill, a reference or `CLAUDE.md`.
 
 ---
 
@@ -224,8 +255,9 @@ On every run, review the whole `overrides` block: an override whose upstream has
 since published a clean version in the natural range is dead weight — propose
 removing it, then confirm resolution with `pnpm why <pkg>`.
 
-**Version alignment across the workspace is CLAUDE.md rule 9** and has no
-automated gate. Run it:
+**Version alignment across the workspace is CLAUDE.md rule 9, and this skill
+owns it** (`.claude/skills/luke-shared/governance-map.md` §2). It has no
+automated gate yet. Run it:
 
 ```bash
 jq -r '(.dependencies // {}) + (.devDependencies // {}) | to_entries[] | "\(.key)\t\(.value)"' \
@@ -235,9 +267,10 @@ jq -r '(.dependencies // {}) + (.devDependencies // {}) | to_entries[] | "\(.key
 ```
 
 Empty output means aligned. Any line is a package carried at two versions —
-fix it in the same cycle. This missing gate is a standing candidate for
-protocol §3 promotion; propose it as a `tools/scripts` checker wired into
-`pnpm check:drift`, not as a lesson nobody runs.
+fix it in the same cycle. The gate itself is the standing protocol §3 promotion
+for this skill: a `tools/scripts` checker wired into `pnpm check:drift`, not a
+lesson nobody runs. Until it exists, this command is the interim control and
+`luke-audit` must not carry a second copy of it.
 
 ---
 
@@ -324,6 +357,118 @@ the finding.
 Note the branch rule: `.github/dependabot.yml` targets the default branch only,
 and a merged `develop-X.Y` is dead — never backport an advisory fix onto one
 (`lessons.md`, "Branch management").
+
+---
+
+## 10 — Platform mode
+
+`/luke-deps platform`. **Read-only.** Answers one question:
+
+> Does the real repository still conform to the approved Luke platform
+> architecture?
+
+It is not a freshness check. It does not ask the registry what is newest unless
+that is needed to resolve a specific finding — that is review mode. The two are
+separate on purpose: a full audit should be able to ask whether the platform is
+internally coherent without triggering an upgrade review.
+
+**Order matters. Deterministic first, semantic second.**
+
+1. Run the deterministic gate and report its exact output:
+
+   ```bash
+   pnpm check:drift
+   ```
+
+   Anything the checker already decides is not re-litigated in prose. A finding a
+   script can make is a level-2 control; repeating it as an LLM observation
+   downgrades it to level 4 (protocol §3).
+
+2. Then, and only then, the semantic checks the checker cannot safely encode.
+   Read `.claude/skills/luke-deps/references/platform-policy.md` and walk the
+   authority table. For each row, read the live authority and ask whether the
+   governance rule still holds:
+
+   - is a pin site out of step with the others?
+   - is a declared policy inert — configured but with no effect?
+   - is an installed tool not actually wired into the config that would run it?
+   - does a task-graph edge still correspond to a real artifact dependency?
+   - is a lifecycle commitment (Node LTS, override expiry, held decision) overdue?
+   - is a platform version duplicated as prose anywhere it can drift?
+
+3. Where the local Claude Code build supports it, validate the agent runtime
+   contract too:
+
+   ```bash
+   claude plugin validate .claude/skills
+   ```
+
+   Report it as unavailable rather than skipping it silently. Do not make CI
+   depend on the Claude CLI — the repo does not install or pin it.
+
+### Report
+
+```
+## Luke Platform Report
+Date: <today>
+Deterministic gate: <exact result of pnpm check:drift>
+
+### Platform health
+<HEALTHY | HEALTHY WITH KNOWN GAPS | ACTION REQUIRED | RELEASE BLOCKED>
+
+### Findings
+**[P0/P1/P2]** — <title>
+Authority: <the file that holds the real fact>
+Evidence: <what was read, and what it said>
+Rule broken: <the governance rule from platform-policy.md>
+Acceptance criterion: <how anyone confirms this is fixed>
+Remediation cycle: <isolated cycle proposed — never bundled>
+
+### Decisions required
+<policy questions the repository has not answered; do not answer them here>
+
+### Promotion to rule
+<protocol §3 — which findings should become deterministic checks>
+```
+
+Then stop. `platform` proposes isolated remediation cycles; it never applies
+them. A platform report that silently fixed things would remove the reviewable
+boundary that keeps two high-blast-radius changes out of one diff.
+
+---
+
+## 11 — Evaluate mode
+
+`/luke-deps evaluate <proposal>`. **Read-only.** For a technology decision, not
+a version bump: Prisma → Drizzle, Fastify → Hono, Node → Bun, Next → something
+else, a new build or lint or runtime technology, a major language-toolchain move.
+
+A fashionable technology is not a reason to migrate. A migration needs a
+specific measurable problem: a deployment or runtime requirement, a severe
+measured bottleneck, a missing capability, an unacceptable maintenance cost, an
+organizational constraint, or a security requirement.
+
+Verdict is one of:
+
+```
+ADOPT   SPIKE   HOLD   REJECT
+```
+
+Every verdict carries:
+
+- what the current choice does well — state the incumbent's advantage honestly;
+- what the candidate would actually buy, in this repository's terms;
+- migration blast radius: workspaces, generated code, tests, CI, deployment;
+- ecosystem and tooling maturity, including the peer ranges that gate it;
+- security implications;
+- agent-engineering implications — does it make the architecture more or less
+  visible to a coding agent?
+- rollback path;
+- the measurable criterion that would make the answer ADOPT;
+- for HOLD, the unblock condition, recorded in `platform-policy.md` §4.
+
+A hold without a written unblock condition is not a decision, it is a deferral
+that gets re-argued from scratch next quarter.
 
 ---
 

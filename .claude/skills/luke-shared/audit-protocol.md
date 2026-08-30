@@ -6,6 +6,13 @@ Protocol shared by all `luke-*` skills: `/luke-audit`, `/luke-bugs`,
 Every skill reads it before starting; the specific checks stay in each
 skill's own file.
 
+**This file says _how_ a skill works. Its companion
+`.claude/skills/luke-shared/governance-map.md` says _which skill decides_** —
+ownership, the owner/consumer boundary rule, and the authority order between a
+user decision, an Accepted ADR, a manifest and generated documentation. Read it
+when a finding could belong to two skills, when adding a check, or when routing
+a finding to a remediator.
+
 ## Applicability
 
 Not every section applies to every skill: §2, §3 and §5 assume the skill
