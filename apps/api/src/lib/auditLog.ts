@@ -134,6 +134,12 @@ const SAFE_KEY_LIST = [
   'oldEndAt',
   'newEndAt',
   'allDay',
+  // `rescheduleMilestone` writes these when a move flips the all-day flag. They reached the audit
+  // log as `[REDACTED]` because the conditional spread that adds them (`...(cond && { ... })`)
+  // hides the keys from the excess-property check `AuditMetadata` relies on — the type guard is
+  // real, but that idiom walks around it.
+  'oldAllDay',
+  'newAllDay',
   'oldStatus',
   'changedFields',
   'safetySnapshotId',

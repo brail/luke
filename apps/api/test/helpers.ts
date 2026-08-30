@@ -316,6 +316,13 @@ export async function buildTestServer() {
  * When adding an export to a `helpers/` module, add it here too — that's
  * what keeps the check active.
  */
+export {
+  createCalendarFixture,
+  grantBrandAccess,
+  type CalendarFixture,
+  type CalendarFixtureOptions,
+  type BrandAccessGrant,
+} from './helpers/calendarFixture';
 export { createContextForRole } from './helpers/testContext';
 export { createSilentLogger } from './helpers/logger';
 export {
