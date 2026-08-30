@@ -30,8 +30,18 @@ export interface CalendarFixture {
   planningGroupId: string;
 }
 
+/**
+ * Longest accepted `prefix`. `Season.code` caps at 10 characters (aligned with the NAV column), and
+ * the code is `prefix + 'S' + a 6-char uid` — so three is what fits with the uid intact.
+ */
+const MAX_PREFIX_LENGTH = 3;
+
 export interface CalendarFixtureOptions {
-  /** Prefix for the generated brand/season codes. Keep it short — `Brand.code` caps at 20 chars. */
+  /**
+   * Up to three characters, used to tell one spec's rows from another's in a failure message.
+   * Longer than that throws: it used to be truncated, which quietly ate the uid instead and turned
+   * a naming choice into an intermittent unique-constraint failure.
+   */
   prefix?: string;
   /** Season year. Specs that assert on ordering usually want a far-future one. */
   year?: number;
@@ -49,14 +59,19 @@ export async function createCalendarFixture(
   options: CalendarFixtureOptions = {}
 ): Promise<CalendarFixture> {
   const { prefix = 'CAL', year = 2099, groupName } = options;
+  if (prefix.length === 0 || prefix.length > MAX_PREFIX_LENGTH) {
+    throw new Error(`createCalendarFixture: prefix deve essere di 1-${MAX_PREFIX_LENGTH} caratteri, ricevuto "${prefix}"`);
+  }
   const uid = randomUUID().substring(0, 6).toUpperCase();
 
+  // `B`/`S` keep the two codes distinguishable in an assertion failure: they used to differ only by
+  // `prefix[0]` vs the whole prefix, so `CAL` and `CAT` both produced the same season code.
   const [brand, season] = await Promise.all([
     prisma.brand.create({
-      data: { code: `${prefix}${uid}`.slice(0, 20), name: `${prefix} Brand ${uid}`, isActive: true },
+      data: { code: `${prefix}B${uid}`, name: `${prefix} Brand ${uid}`, isActive: true },
     }),
     prisma.season.create({
-      data: { code: `${prefix[0]}${uid}`.slice(0, 10), name: `${prefix} Season ${uid}`, year, isActive: true },
+      data: { code: `${prefix}S${uid}`, name: `${prefix} Season ${uid}`, year, isActive: true },
     }),
   ]);
 
@@ -91,8 +106,18 @@ export interface BrandAccessGrant {
  * refused when in fact the brand was never visible. Admins bypass the whole thing
  * (`getUserAllowedBrandIds` returns null for them), so they never need this.
  *
+ * **It grants two things, not one.** Team membership also puts the users in the team's
+ * `CompanyFunction`, which is a separate authorization axis: it feeds `getUserAllowedFunctionIds`
+ * and from there `eventVisibilityWhere`, so an event carrying visibility rows becomes readable to
+ * them. A spec meant to prove "this user cannot see that milestone" has to account for it, or it
+ * will pass for the wrong reason in the other direction.
+ *
  * An empty `brandIds` is legitimate and means a team that sees no brand — the case a spec uses to
- * prove that membership alone grants nothing.
+ * prove that membership alone grants nothing. An empty `userIds` is not: it would grant to nobody
+ * and leave unreferenced rows behind, so it throws.
+ *
+ * The team and its function are always active; a spec proving that an inactive team grants nothing
+ * has to deactivate the returned `teamId` itself.
  *
  * @returns The function and team ids, for specs that need to add more members or scopes.
  */
@@ -111,24 +136,34 @@ export async function grantBrandAccess(
   }
 ): Promise<BrandAccessGrant> {
   const { brandIds, userIds, label = 'Scope', functionId } = params;
+  if (userIds.length === 0) {
+    throw new Error('grantBrandAccess: userIds vuoto — non concederebbe niente a nessuno');
+  }
   const uid = randomUUID().substring(0, 6);
 
+  // `label` reaches a column documented as a URL-safe stable identifier, and callers pass display
+  // names like 'Team A/X'. Slugified here rather than trusted: the previous version was well-formed
+  // only when the caller also passed `functionId`, so the same argument was valid or not depending
+  // on a different one.
+  const slug = `${label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')}_fn_${uid}`;
   const resolvedFunctionId =
     functionId ??
     (
       await prisma.companyFunction.create({
-        data: { slug: `${label.toLowerCase()}_fn_${uid}`, name: `${label} Fn ${uid}`, order: 90, isActive: true },
+        data: { slug, name: `${label} Fn ${uid}`, order: 90, isActive: true },
       })
     ).id;
   const team = await prisma.companyTeam.create({
     data: { functionId: resolvedFunctionId, name: `${label} Team ${uid}`, isActive: true },
   });
 
+  // De-duplicated: a repeated id would hit the composite primary key and surface as an opaque
+  // P2002 from inside `Promise.all`, in a `beforeAll`, where it reads as a broken fixture.
   await Promise.all([
-    ...userIds.map(userId =>
+    ...[...new Set(userIds)].map(userId =>
       prisma.companyTeamMembership.create({ data: { teamId: team.id, userId } })
     ),
-    ...brandIds.map(brandId =>
+    ...[...new Set(brandIds)].map(brandId =>
       prisma.companyTeamBrandScope.create({ data: { teamId: team.id, brandId } })
     ),
   ]);

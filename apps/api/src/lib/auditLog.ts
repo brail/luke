@@ -134,10 +134,15 @@ const SAFE_KEY_LIST = [
   'oldEndAt',
   'newEndAt',
   'allDay',
-  // `rescheduleMilestone` writes these when a move flips the all-day flag. They reached the audit
-  // log as `[REDACTED]` because the conditional spread that adds them (`...(cond && { ... })`)
-  // hides the keys from the excess-property check `AuditMetadata` relies on — the type guard is
-  // real, but that idiom walks around it.
+  // `rescheduleMilestone` writes these when a move flips the all-day flag; both used to land as
+  // `[REDACTED]`.
+  //
+  // Worth knowing why the type guard did not catch it, because the hole is wider than these two
+  // keys: excess-property checking only applies to properties written *literally* in the object.
+  // Every spread form escapes it — `...(cond && { … })`, `...(cond ? { … } : {})`, `...someVar` —
+  // and `metadata` passed as a bare variable (`seasonCalendar.triggerSync`, `auditMiddleware`) is
+  // not checked at all. `AuditMetadata` still earns its place for the literal case; it just is not
+  // the backstop the absence of a runtime error might suggest.
   'oldAllDay',
   'newAllDay',
   'oldStatus',

@@ -188,8 +188,9 @@ describe('Phase Router', () => {
      * "in progress" in the eyes of the alert engine, i.e. whether the phase can be retired. */
     async function seedRowOnPhase(phaseId: string, completedAt: Date | null) {
       const prisma = adminContext.prisma;
-      // `Date.now() % 100000` used to build the codes here: two seeds in the same millisecond
-      // collided on `Brand.code`. The fixture derives them from a UUID instead.
+      // The codes used to come from `Date.now() % 100000`. Not a live collision — the outer
+      // `beforeEach` truncates every table and integration files run serially — but a generator
+      // whose uniqueness rests on the caller not being fast is one to retire on sight.
       const fixture = await createCalendarFixture(prisma, { prefix: 'GRD', year: 2040 });
       const layout = await prisma.collectionLayout.create({
         data: { brandId: fixture.brandId, seasonId: fixture.seasonId },
@@ -234,8 +235,8 @@ describe('Phase Router', () => {
       const phase = await caller(adminContext).create({ value: 'CON_SCOPE', label: 'Con scope' });
       const { brandCode, seasonCode } = await seedRowOnPhase(phase.id, null);
 
-      // I codici arrivano dalla fixture invece di essere riscritti come pattern: il messaggio deve
-      // dire *quale* brand/stagione, e un'espressione che indovina il formato non lo verifica.
+      // The codes come from the fixture rather than being restated as a pattern: the message has
+      // to name *which* brand and season, and an expression guessing their format never checks that.
       await expect(caller(adminContext).remove({ id: phase.id })).rejects.toThrow(
         `1 righe ancora aperte (${brandCode}/${seasonCode}: 1)`
       );

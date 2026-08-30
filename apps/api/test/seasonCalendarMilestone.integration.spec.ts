@@ -162,6 +162,8 @@ describe('rescheduleMilestone — è l’unica uscita da un evento congelato', (
     ).resolves.toMatchObject({ id: locked.id });
   });
 
+  // Nessuna fase su questo evento, quindi non è bloccato: qui si misura solo che lo spostamento
+  // lasci stare il baseline, non l'uscita dal congelamento.
   it('non riscrive il baseline: la varianza continua a misurare sul piano originale', async () => {
     const baselineStart = new Date('2099-06-01');
     const event = await prisma.calendarEvent.create({
@@ -207,6 +209,24 @@ describe('cancelMilestone — ritirare senza distruggere', () => {
     expect(after.cancelledAt).not.toBeNull();
     expect(after.cancelReason).toBe('campionatura annullata');
     expect(after.cancelledByUserId).toBe(adminSession.user.id);
+  });
+
+  it('la motivazione è obbligatoria, non di soli spazi e sotto i 500 caratteri', async () => {
+    // Le due procedure condividono `MandatoryReasonSchema`, ma condividerlo non è ciò che il test
+    // deve dimostrare: sostituirlo qui con uno `z.string()` nudo non doveva restare verde.
+    const event = await createEvent();
+    await expect(
+      // @ts-expect-error -- obbligatoria nello schema, qui si verifica che lo sia a runtime.
+      asAdmin().seasonCalendar.cancelMilestone({ id: event.id })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+
+    await expect(
+      asAdmin().seasonCalendar.cancelMilestone({ id: event.id, reason: '   ' })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+
+    await expect(
+      asAdmin().seasonCalendar.cancelMilestone({ id: event.id, reason: 'x'.repeat(501) })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
   it('ri-annullare va in conflitto', async () => {

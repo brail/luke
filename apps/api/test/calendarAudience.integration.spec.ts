@@ -108,9 +108,8 @@ beforeAll(async () => {
   adminNoTeamId = aNoTeam.user.id; adminNoTeamSession = aNoTeam.session;
   adminWithTeamId = aWithTeam.user.id; adminWithTeamSession = aWithTeam.session;
 
-  // Le funzioni sono condivise fra i team di proposito: la visibilità si misura per funzione, i
-  // brand per team. `Team A/Zero` non ha scope — è il caso che dimostra che l'appartenenza da sola
-  // non concede nulla.
+  // The functions are shared between teams on purpose: visibility is measured per function, brand
+  // scope per team. `Team A/Zero` has none — the case proving membership alone grants nothing.
   await Promise.all([
     grantBrandAccess(prisma, {
       functionId: fnA, brandIds: [brandX], label: 'Team A/X',
