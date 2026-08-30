@@ -75,75 +75,21 @@ export function UserForm({
   ) => {
     setFormData(prev => ({ ...prev, [field]: value }));
 
-    // Clear error when user starts typing
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
-    }
-
-    // Real-time password validation (simplified)
-    if (field === 'password') {
-      const passwordValue = value as string;
-      // Advanced validation is handled by PasswordValidationIndicators component
-      // Here we only handle basic validation for the form
-      if (
-        passwordValue &&
-        passwordValue.length > 0 &&
-        passwordValue.length < 12
-      ) {
-        setErrors(prev => ({
-          ...prev,
-          password: 'Password deve essere di almeno 12 caratteri',
-        }));
-      } else {
-        setErrors(prev => ({ ...prev, password: '' }));
-      }
-    }
-
-    // Real-time confirmation password validation
-    if (field === 'confirmPassword') {
-      const confirmPasswordValue = value as string;
-      const passwordValue = formData.password;
-
-      if (mode === 'edit') {
-        // In edit mode, if password is empty, confirmPassword must be empty
-        if (!passwordValue || passwordValue.trim() === '') {
-          if (confirmPasswordValue && confirmPasswordValue.trim() !== '') {
-            setErrors(prev => ({
-              ...prev,
-              confirmPassword:
-                'Confirm password not needed if password is empty',
-            }));
-          } else {
-            setErrors(prev => ({ ...prev, confirmPassword: '' }));
-          }
-        } else {
-          // If password is present, must match
-          if (confirmPasswordValue && confirmPasswordValue !== passwordValue) {
-            setErrors(prev => ({
-              ...prev,
-              confirmPassword: 'Le password non coincidono',
-            }));
-          } else if (
-            confirmPasswordValue &&
-            confirmPasswordValue === passwordValue
-          ) {
-            setErrors(prev => ({ ...prev, confirmPassword: '' }));
-          }
-        }
-      } else {
-        // Create mode: password must match
-        if (confirmPasswordValue && confirmPasswordValue !== passwordValue) {
-          setErrors(prev => ({
-            ...prev,
-            confirmPassword: 'Le password non coincidono',
-          }));
-        } else if (
-          confirmPasswordValue &&
-          confirmPasswordValue === passwordValue
-        ) {
-          setErrors(prev => ({ ...prev, confirmPassword: '' }));
-        }
-      }
+    // Clear the error the user is editing away. For the two password fields the confirmation goes
+    // with it: a mismatch belongs to the pair, so fixing either half resolves it.
+    //
+    // No rule is re-implemented here any more. This block used to carry a third copy of the
+    // twelve-character minimum and a second copy of the match rule — one of them announcing itself
+    // in English in an otherwise Italian form — while the configured policy said something else
+    // entirely. The checklist under the field shows the real requirements live, and
+    // `buildUserPayload` decides on submit.
+    const pairedWithConfirm = field === 'password' || field === 'confirmPassword';
+    if (errors[field] || (pairedWithConfirm && errors.confirmPassword)) {
+      setErrors(prev => ({
+        ...prev,
+        [field]: '',
+        ...(pairedWithConfirm ? { confirmPassword: '' } : {}),
+      }));
     }
   };
 

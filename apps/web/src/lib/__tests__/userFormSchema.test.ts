@@ -42,6 +42,18 @@ describe('create ed edit giudicano le identità allo stesso modo', () => {
     });
   }
 
+  for (const field of ['email', 'username', 'role'] as const) {
+    it(`rifiuta ${field} mancante in entrambe le modalità`, () => {
+      // Edit deriva da `UpdateUserInputSchema`, dove questi campi sono opzionali perché una update
+      // parziale è legittima sul filo. Questo form non è una update parziale: manda ogni campo di
+      // una riga. Senza questo test il ribasamento avrebbe reso i tre facoltativi in silenzio.
+      const { [field]: _omitted, ...createWithout } = CREATE_FORM;
+      const { [field]: _omittedEdit, ...editWithout } = EDIT_FORM;
+      expect(buildUserPayload('create', createWithout, []).ok).toBe(false);
+      expect(buildUserPayload('edit', editWithout, []).ok).toBe(false);
+    });
+  }
+
   it('accetta la stessa identità valida in entrambe le modalità', () => {
     expect(buildUserPayload('create', CREATE_FORM, []).ok).toBe(true);
     expect(buildUserPayload('edit', EDIT_FORM, []).ok).toBe(true);

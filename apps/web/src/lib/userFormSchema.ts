@@ -9,7 +9,12 @@
 
 import { z } from 'zod';
 
-import { CreateUserInputSchema, type LockedFields } from '@luke/core';
+import {
+  CreateUserInputSchema,
+  UpdateUserInputSchema,
+  passwordPrefilterSchema,
+  type LockedFields,
+} from '@luke/core';
 
 /**
  * The identity fields come from `users.core.create`'s own input, so the form and the endpoint
@@ -30,20 +35,24 @@ export const CreateUserSchema = CreateUserInputSchema.extend({
   path: ['confirmPassword'],
 });
 
-export const EditUserSchema = CreateUserInputSchema
+/**
+ * Edit derives from the endpoint it actually calls.
+ *
+ * It used to extend `CreateUserInputSchema` while the form in edit mode submits to
+ * `users.core.update` — the type link pointed at the wrong contract, so a change to update would
+ * have left the form following create with nothing failing. The fields the form always sends are
+ * re-required here: the update input marks them optional because a partial update is legitimate
+ * over the wire, but this form is not a partial update, it is every field of a rendered row.
+ *
+ * The password keeps only the shared prefilter. The four complexity regexes that used to live here
+ * are gone: they were a copy of a rule that is configured in AppConfig, and the checklist under the
+ * field now reads the real one.
+ */
+export const EditUserSchema = UpdateUserInputSchema
+  .omit({ id: true })
+  .required({ email: true, username: true, role: true })
   .extend({
-    password: z
-      .string()
-      .min(12, 'Password deve essere di almeno 12 caratteri')
-      .regex(/[A-Z]/, 'Password deve contenere almeno una lettera maiuscola')
-      .regex(/[a-z]/, 'Password deve contenere almeno una lettera minuscola')
-      .regex(/[0-9]/, 'Password deve contenere almeno un numero')
-      .regex(
-        /[^A-Za-z0-9]/,
-        'Password deve contenere almeno un carattere speciale'
-      )
-      .optional()
-      .or(z.literal('')), // empty string retains the existing password
+    password: passwordPrefilterSchema.optional().or(z.literal('')), // empty string keeps the existing one
     confirmPassword: z.string().optional().or(z.literal('')), // empty string allowed
     isActive: z.boolean(),
   })
