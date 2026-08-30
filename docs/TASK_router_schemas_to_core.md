@@ -101,3 +101,52 @@ estratto in B1) esiste perché la regola «motivazione obbligatoria, 1-500, trim
 sei volte fra `collectionLayout` e `seasonCalendar`. L'ordine `.trim()` prima di `.min(1)` non è
 cosmetico: al contrario il trim non tocca il controllo e una nota di soli spazi passa il form per
 farsi rifiutare dal server. `packages/core/src/schemas/vendor.ts` ha ancora l'ordine inerte.
+
+## B5 — i finding rinviati (aperto il 2026-08-30)
+
+Roba emersa durante il censimento e durante B1/B2 che **non** è «schema inline da spostare in
+core», e che per questo non entra in nessun batch da ≤3 router — ma che è lo stesso difetto di
+fondo, una regola dichiarata più volte che diverge in silenzio. Va fatta, in fondo, come batch a sé.
+
+1. **Policy password: sei definizioni hardcoded, una configurabile che ne governa una sola.** Le
+   cinque chiavi `security.password.*` esistono nel registry e sono lette da `getPasswordPolicy`,
+   ma `validatePassword` ha **un solo call site** (`auth.service.ts`, la conferma reset). Gli altri
+   percorsi — `users.core.create`, `users.core.update`, `me.changePassword` — portano la loro copia
+   della regola, e così `UserForm` (due volte, create e edit, con regole diverse fra loro) e
+   `usePasswordValidation`. Alzi `minLength` a 16 e la creazione utente accetta ancora 12; abbassi
+   `requireSpecialChar` e il cambio password self-service continua a rifiutare. Fallisce aperto in
+   una direzione e chiuso nell'altra.
+   **Deciso**: AppConfig diventa autoritativa su tutti i percorsi; lo Zod scende a `min(8)` (il
+   floor a cui `getPasswordPolicy` già clampa) come prefiltro; una query espone la policy al client
+   così che form e indicatori smettano di riscriverla. Comporta che rilassare la policy rilassa
+   anche `me.changePassword`, e che la policy diventa leggibile dal client (serve sulla pagina di
+   reset, senza sessione).
+
+2. **Parametri argon2 inline invece di `ARGON2_OPTIONS`.** `users.core.router.ts` e
+   `auth.service.ts` costruiscono l'oggetto a mano; `backup/crypto.ts` fa la cosa giusta e lo
+   spreada. I valori oggi coincidono, quindi non si rompe niente: il punto è che un ritocco di
+   tuning lascerebbe indietro due percorsi senza che nessuno se ne accorga, perché hash con
+   parametri diversi continuano a verificarsi correttamente. Due righe, passano da `hashPassword()`.
+
+3. **`ProfileTab` riscrive i vincoli come attributo HTML.** `maxLength={200}` dove core dice
+   `footerText: z.string().max(200)`, più `{5}` e `{7}` senza controparte. Il tab non ha form
+   schema, è tutto `useState`. Minore e di natura diversa — l'attributo tronca, non rifiuta — ma è
+   la stessa costante scritta due volte.
+
+4. **La copertura che questo task ha scoperto di non avere.** Più volte abbiamo condiviso uno
+   schema senza poter dimostrare niente, perché sotto non c'era un test. Due punti, entrambi
+   emersi mentre si spostava lo schema, nessuno dei due causato da noi:
+
+   - `rescheduleMilestone` e `cancelMilestone` (B2) non hanno test, né prima né dopo.
+     `test/procedure-coverage.ts` dichiara 28 procedure scoperte su `seasonCalendar` con la
+     motivazione giusta («la copertura va costruita per milestone, non in un colpo»), quindi il
+     gate resta verde — ma i cambi di B2 (rifiuto >500 lato client, motivazione trimmata a valle)
+     sono esattamente le cose che un test dovrebbe fissare. Servono fixture calendario + planning
+     group + evento, e alla fine `uncovered` va portato a 26.
+   - `UserForm` (B3) non ha test e ha un solo caller, `UserDialog`, che fa passthrough. Il
+     typecheck copre la shape, non il comportamento: che create e edit accettino e rifiutino le
+     stesse identità, che `confirmPassword` non finisca mai nel payload, che in edit una password
+     vuota significhi «lascia quella che c'è» e non «svuotala». Sono tre asserzioni su un
+     componente che gestisce credenziali, e oggi non ne esiste nessuna. Da fare comunque, ma
+     soprattutto **prima** di toccare le regole password al punto 1: quel cambio senza rete sotto
+     è il modo più facile per rompere la creazione utente in silenzio.
