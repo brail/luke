@@ -248,7 +248,12 @@ async function upsertConfig(
   // Validates the key
   validateKey(key);
 
-  // Special validation for password policy (security)
+  // Special validation for password policy (security).
+  //
+  // Duplicates `AppConfigRegistry`, which now declares the same 8-128 range — they used to
+  // disagree, this saying 8 while the registry said 6. It stays because writes do not consult the
+  // registry at all (B5.5): this is the general check, approximated for the one key someone needed
+  // it for. Fixing that is what deletes this block.
   if (key === 'security.password.minLength') {
     const minLength = parseInt(value, 10);
     if (isNaN(minLength) || minLength < 8) {

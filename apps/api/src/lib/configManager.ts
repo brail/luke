@@ -23,6 +23,7 @@ import { getMasterKey, invalidateRbacCache } from '@luke/core/server';
 
 import { acquireLastAdminLock } from './lastAdminGuard';
 
+import type { PasswordPolicy } from './password';
 import type { BackupScope, Prisma, PrismaClient } from '@prisma/client';
 
 const logger = pino({ level: 'info' });
@@ -707,18 +708,12 @@ export async function getBackupScheduleSettings(prisma: PrismaClient): Promise<B
 
 /**
  * Reads the password policy from AppConfig.
- * Individual keys are read concurrently; missing keys fall back to secure defaults.
- * The `minLength` is always clamped to a minimum of 8 characters.
+ * Individual keys are read concurrently; a missing or unparseable key falls back to its secure
+ * default, which includes anything below the registry's minimum length.
  *
  * @returns Password policy with validated constraints.
  */
-export async function getPasswordPolicy(prisma: PrismaClient): Promise<{
-  minLength: number;
-  requireUppercase: boolean;
-  requireLowercase: boolean;
-  requireDigit: boolean;
-  requireSpecialChar: boolean;
-}> {
+export async function getPasswordPolicy(prisma: PrismaClient): Promise<PasswordPolicy> {
   const [minLength, requireUppercase, requireLowercase, requireDigit, requireSpecialChar] =
     await Promise.all([
       getTypedConfig(prisma, 'security.password.minLength').catch(() => 12),
@@ -729,7 +724,10 @@ export async function getPasswordPolicy(prisma: PrismaClient): Promise<{
     ]);
 
   return {
-    minLength: Math.max(minLength, 8), // Min assoluto: 8 caratteri
+    // No clamp: the floor is `AppConfigRegistry`'s `.min(8)`, so a stored value below it fails to
+    // parse and the `.catch()` above already returned the secure default. Clamping as well meant
+    // two floors that disagreed — 7 became 8, while 4 became 12.
+    minLength,
     requireUppercase,
     requireLowercase,
     requireDigit,

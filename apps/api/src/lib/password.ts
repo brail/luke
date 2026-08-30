@@ -5,6 +5,8 @@
 
 import argon2 from 'argon2';
 
+import { PASSWORD_SPECIAL_CHAR_REGEX } from '@luke/core';
+
 /**
  * Argon2 configuration for password hashing
  * Uses argon2id for optimal security
@@ -106,11 +108,10 @@ export function validatePassword(
     errors.push('Richiesta almeno una cifra');
   }
 
-  // Checks for special character
-  if (
-    policy.requireSpecialChar &&
-    !/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password)
-  ) {
+  // Checks for special character. The set comes from `@luke/core` so the form, the indicators and
+  // the reset page can ask for the same thing — and can name the characters instead of saying
+  // "symbol", which is what left `~` and a space looking acceptable right up to the rejection.
+  if (policy.requireSpecialChar && !PASSWORD_SPECIAL_CHAR_REGEX.test(password)) {
     errors.push('Richiesto almeno un carattere speciale');
   }
 

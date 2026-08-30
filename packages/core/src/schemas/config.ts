@@ -49,7 +49,10 @@ export const AppConfigRegistry = {
   'smtp.from':   z.string().email(),
 
   // ── Security ─────────────────────────────────────────────────────────────
-  'security.password.minLength':           z.coerce.number().int().min(6).max(128),
+  // 8 is the floor, and this is where it is declared. It used to say 6 while `getPasswordPolicy`
+  // clamped to 8 and `upsertConfig` refused anything under 8 by hand — three numbers for one rule,
+  // so asking for 4 produced 12 and asking for 7 produced 8.
+  'security.password.minLength':           z.coerce.number().int().min(8).max(128),
   'security.password.requireUppercase':    booleanConfigSchema,
   'security.password.requireLowercase':    booleanConfigSchema,
   'security.password.requireDigit':        booleanConfigSchema,

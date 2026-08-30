@@ -50,19 +50,20 @@ describe('getPasswordPolicy — cosa legge', () => {
     await expect(getPasswordPolicy(prisma)).resolves.toMatchObject({ minLength: 16 });
   });
 
-  it('clampa minLength a 8 quando la configurazione dice meno', async () => {
-    await seedPolicy({ 'security.password.minLength': '7' });
+  it('accetta il pavimento esatto', async () => {
+    await seedPolicy({ 'security.password.minLength': '8' });
     await expect(getPasswordPolicy(prisma)).resolves.toMatchObject({ minLength: 8 });
   });
 
-  it('sotto il pavimento del registry non clampa: ricade sul default, che è più severo', async () => {
-    // Il pavimento è dichiarato due volte e in disaccordo: `AppConfigRegistry` dice 6, il clamp
-    // dice 8. Un valore sotto 6 non passa il registry, quindi `getTypedConfig` lancia e il
-    // `.catch()` restituisce 12 — chiedere 4 dà 12, chiedere 7 dà 8. Fissato perché è la
-    // conseguenza osservabile della contraddizione, non perché sia un comportamento desiderabile.
-    await seedPolicy({ 'security.password.minLength': '4' });
-    await expect(getPasswordPolicy(prisma)).resolves.toMatchObject({ minLength: 12 });
-  });
+  for (const below of ['7', '4']) {
+    it(`sotto il pavimento (${below}) ricade sul default, che è più severo`, async () => {
+      // Un pavimento solo, dichiarato nel registry: un valore che non lo rispetta non parsa, e il
+      // `.catch()` restituisce il default. Prima erano tre numeri per una regola e la risposta
+      // dipendeva da quanto si scendeva — 7 diventava 8, 4 diventava 12.
+      await seedPolicy({ 'security.password.minLength': below });
+      await expect(getPasswordPolicy(prisma)).resolves.toMatchObject({ minLength: 12 });
+    });
+  }
 
   it('una chiave illeggibile non rompe la policy, ricade sul default', async () => {
     await seedPolicy({ 'security.password.minLength': 'non-un-numero' });
