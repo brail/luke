@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import React, { useState, useEffect, Suspense } from 'react';
 
 import Logo from '../../../../components/Logo';
+import { PasswordValidationIndicators } from '../../../../components/PasswordValidationIndicators';
 import { Alert, AlertDescription } from '../../../../components/ui/alert';
 import { Button } from '../../../../components/ui/button';
 import {
@@ -16,6 +17,8 @@ import {
 } from '../../../../components/ui/card';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
+import { usePasswordPolicy } from '../../../../hooks/usePasswordValidation';
+import { evaluatePassword } from '../../../../lib/passwordChecks';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -33,6 +36,7 @@ function ResetPasswordContent() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const policy = usePasswordPolicy();
 
   // tRPC mutations
   const requestResetMutation = trpc.auth.requestPasswordReset.useMutation();
@@ -77,15 +81,16 @@ function ResetPasswordContent() {
     setError('');
     setSuccess('');
 
-    // Validazione password match
-    if (newPassword !== confirmPassword) {
-      setError('Le password non corrispondono');
+    // Contro la policy configurata, non contro un numero scritto qui: questa pagina annunciava 12
+    // caratteri e nessun requisito di complessità, poi rilanciava un rifiuto del server che ne
+    // elencava altri quattro di cui non aveva mai parlato.
+    const evaluation = evaluatePassword(newPassword, confirmPassword, policy);
+    if (evaluation.confirmError) {
+      setError(evaluation.confirmError);
       return;
     }
-
-    // Validazione lunghezza minima
-    if (newPassword.length < 12) {
-      setError('La password deve essere di almeno 12 caratteri');
+    if (!evaluation.isValid) {
+      setError(`Password non valida: ${evaluation.errors.join(', ')}`);
       return;
     }
 
@@ -184,13 +189,18 @@ function ResetPasswordContent() {
                 <Input
                   id="newPassword"
                   type="password"
-                  placeholder="Nuova password (min 12 caratteri)"
+                  placeholder={`Nuova password (min ${policy.minLength} caratteri)`}
                   value={newPassword}
                   onChange={e => setNewPassword(e.target.value)}
                   required
                   disabled={isLoading}
                   autoComplete="new-password"
-                  minLength={12}
+                  minLength={policy.minLength}
+                />
+                <PasswordValidationIndicators
+                  password={newPassword}
+                  confirmPassword={confirmPassword}
+                  showConfirmPassword
                 />
               </div>
 
@@ -205,7 +215,7 @@ function ResetPasswordContent() {
                   required
                   disabled={isLoading}
                   autoComplete="new-password"
-                  minLength={12}
+                  minLength={policy.minLength}
                 />
               </div>
 

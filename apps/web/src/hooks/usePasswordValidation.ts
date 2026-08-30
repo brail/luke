@@ -2,91 +2,46 @@
 
 import { useMemo } from 'react';
 
+import {
+  FALLBACK_PASSWORD_POLICY,
+  evaluatePassword,
+  type ClientPasswordPolicy,
+  type PasswordEvaluation,
+} from '../lib/passwordChecks';
+import { trpc } from '../lib/trpc';
+
 /**
- * Validates a password and its confirmation field in real-time.
- * All checks are memoized and re-evaluated only when the inputs change.
+ * The password policy the server will actually apply.
  *
- * @param password - The password being entered.
- * @param confirmPassword - The confirmation field value (optional).
- * @returns `{ passwordChecks, passwordErrors, confirmPasswordError, isValid, firstError }`
- *   where `isValid` is `true` when all constraints pass and the passwords match.
- *   An empty password is considered valid (suitable for optional edit-mode fields).
+ * Public endpoint: the reset page has no session by definition, and it is the page that most needed
+ * this — it announced a hardcoded minimum, showed no complexity requirements, and then relayed a
+ * rejection listing rules it had never mentioned.
+ *
+ * Falls back to the same values the server uses when nothing is configured, so a slow or failed
+ * fetch shows the common case rather than the client's own idea of strict.
+ */
+export function usePasswordPolicy(): ClientPasswordPolicy {
+  const { data } = trpc.public.passwordPolicy.useQuery(undefined, {
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  return data ?? FALLBACK_PASSWORD_POLICY;
+}
+
+/**
+ * Evaluates a password and its confirmation against the configured policy, live.
+ *
+ * @param confirmPassword - Omit where there is no confirmation field.
+ * @returns The requirements to display, the errors, and whether the pair is acceptable. An empty
+ *   password is valid: in edit mode it means the existing one stays.
  */
 export function usePasswordValidation(
   password: string,
-  confirmPassword: string = ''
-) {
-  // Controlli di validazione
-  const passwordChecks = useMemo(
-    () => ({
-      length: password.length >= 12,
-      uppercase: /[A-Z]/.test(password),
-      lowercase: /[a-z]/.test(password),
-      number: /[0-9]/.test(password),
-      symbol: /[^A-Za-z0-9]/.test(password),
-      match: password === confirmPassword && confirmPassword.length > 0,
-    }),
-    [password, confirmPassword]
+  confirmPassword?: string
+): PasswordEvaluation {
+  const policy = usePasswordPolicy();
+  return useMemo(
+    () => evaluatePassword(password, confirmPassword, policy),
+    [password, confirmPassword, policy]
   );
-
-  // Messaggi di errore
-  const passwordErrors = useMemo(() => {
-    if (!password || password.length === 0) {
-      return [];
-    }
-
-    const errors: string[] = [];
-
-    if (!passwordChecks.length) {
-      errors.push('Password deve essere di almeno 12 caratteri');
-    }
-    if (!passwordChecks.uppercase) {
-      errors.push('Password deve contenere almeno una lettera maiuscola');
-    }
-    if (!passwordChecks.lowercase) {
-      errors.push('Password deve contenere almeno una lettera minuscola');
-    }
-    if (!passwordChecks.number) {
-      errors.push('Password deve contenere almeno un numero');
-    }
-    if (!passwordChecks.symbol) {
-      errors.push('Password deve contenere almeno un carattere speciale');
-    }
-
-    return errors;
-  }, [password, passwordChecks]);
-
-  // Errore per conferma password
-  const confirmPasswordError = useMemo(() => {
-    if (!confirmPassword || confirmPassword.length === 0) {
-      return '';
-    }
-
-    if (password !== confirmPassword) {
-      return 'Le password non coincidono';
-    }
-
-    return '';
-  }, [password, confirmPassword]);
-
-  // Validazione completa
-  const isValid = useMemo(() => {
-    if (!password || password.length === 0) {
-      return true; // Password vuota è valida (per edit mode)
-    }
-
-    return (
-      Object.values(passwordChecks).every(check => check) &&
-      !confirmPasswordError
-    );
-  }, [password, passwordChecks, confirmPasswordError]);
-
-  return {
-    passwordChecks,
-    passwordErrors,
-    confirmPasswordError,
-    isValid,
-    // Helper per ottenere il primo errore
-    firstError: passwordErrors[0] || confirmPasswordError,
-  };
 }
