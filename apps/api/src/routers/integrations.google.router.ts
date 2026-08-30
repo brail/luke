@@ -1,30 +1,12 @@
 import { z } from 'zod';
 
 import { testGoogleConnection, generateOAuthUrl, exchangeOAuthCode } from '@luke/calendar';
+import { googleWorkspaceConfigSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import { saveConfig, getConfig } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
-
-const serviceAccountConfigSchema = z.object({
-  authMode: z.literal('service_account'),
-  serviceEmail: z.string().email('Email service account non valida'),
-  serviceKey: z.string().optional(),
-  impersonateEmail: z.string().email('Email non valida').or(z.literal('')).optional(),
-  domain: z.string().min(1, 'Workspace domain obbligatorio'),
-  calendarSyncEnabled: z.boolean(),
-});
-
-const oauthConfigSchema = z.object({
-  authMode: z.literal('oauth_user'),
-  oauthClientId: z.string().min(1, 'Client ID obbligatorio'),
-  oauthClientSecret: z.string().optional(),
-  domain: z.string().min(1, 'Workspace domain obbligatorio'),
-  calendarSyncEnabled: z.boolean(),
-});
-
-const saveConfigSchema = z.discriminatedUnion('authMode', [serviceAccountConfigSchema, oauthConfigSchema]);
 
 export const googleRouter = router({
   /**
@@ -83,12 +65,12 @@ export const googleRouter = router({
    * Saves the Google Workspace integration configuration (service account or OAuth mode).
    *
    * @auth {config:update}
-   * @input {saveConfigSchema} — discriminated union on authMode: service_account or oauth_user fields.
+   * @input {googleWorkspaceConfigSchema} — discriminated union on authMode: service_account or oauth_user fields.
    * @output {{ success: true }}
    */
   saveConfig: protectedProcedure
     .use(requirePermission('config:update'))
-    .input(saveConfigSchema)
+    .input(googleWorkspaceConfigSchema)
     .mutation(async ({ input, ctx }) => {
       await saveConfig(ctx.prisma, 'integrations.google.authMode', input.authMode, false);
       await saveConfig(ctx.prisma, 'integrations.google.domain', input.domain, false);

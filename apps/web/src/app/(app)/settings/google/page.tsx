@@ -5,7 +5,8 @@ import { CheckCircle, FileJson, LogOut, Unplug } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
-import { z } from 'zod';
+
+import { googleWorkspaceConfigSchema, type GoogleWorkspaceConfig } from '@luke/core';
 
 import { SectionCard } from '../../../../components/SectionCard';
 import { KeyValueGrid } from '../../../../components/settings/KeyValueGrid';
@@ -37,27 +38,7 @@ import { usePermission } from '../../../../hooks/usePermission';
 import { useToast } from '../../../../hooks/useToast';
 import { trpc } from '../../../../lib/trpc';
 
-const baseSchema = z.object({
-  authMode: z.enum(['service_account', 'oauth_user']),
-  domain: z.string().min(1, 'Workspace domain obbligatorio').or(z.literal('')),
-  calendarSyncEnabled: z.boolean(),
-});
-
-const schema = z.discriminatedUnion('authMode', [
-  baseSchema.extend({
-    authMode: z.literal('service_account'),
-    serviceEmail: z.string().email('Email non valida').or(z.literal('')),
-    serviceKey: z.string().optional(),
-    impersonateEmail: z.string().email('Email non valida').or(z.literal('')),
-  }),
-  baseSchema.extend({
-    authMode: z.literal('oauth_user'),
-    oauthClientId: z.string().min(1, 'Client ID obbligatorio').or(z.literal('')),
-    oauthClientSecret: z.string().optional(),
-  }),
-]);
-
-type FormValues = z.infer<typeof schema>;
+type FormValues = GoogleWorkspaceConfig;
 
 interface ServiceAccountJson {
   client_email?: string;
@@ -82,7 +63,7 @@ export default function GoogleWorkspacePage() {
   const [jsonError, setJsonError] = useState('');
 
   const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(googleWorkspaceConfigSchema),
     defaultValues: {
       authMode: 'service_account',
       domain: '',
@@ -371,7 +352,7 @@ export default function GoogleWorkspacePage() {
                       <FormItem className="col-span-2">
                         <FormLabel>Impersonazione utente (DWD — opzionale)</FormLabel>
                         <FormControl>
-                          <Input type="email" placeholder="luke@azienda.com" disabled={!canUpdate} {...field} />
+                          <Input type="email" placeholder="luke@azienda.com" disabled={!canUpdate} {...field} value={field.value ?? ''} />
                         </FormControl>
                         <FormDescription>
                           Richiede Domain-Wide Delegation in Google Admin Console. Se vuoto: Luke usa l&apos;identità del service account.

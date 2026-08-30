@@ -25,33 +25,8 @@ export const localStorageConfigSchema = z.object({
    */
   maxFileSizeMB: z.number().int().positive().min(1).max(1000).default(50),
 
-  /**
-   * Bucket abilitati
-   * Default: ['uploads', 'exports', 'assets', 'brand-logos', 'collection-row-pictures', 'merchandising-specsheet-images']
-   */
-  buckets: z
-    .array(
-      z.enum([
-        'uploads',
-        'exports',
-        'assets',
-        'brand-logos',
-        'collection-row-pictures',
-        'collection-row-pictures-revisions',
-        'merchandising-specsheet-images',
-        'company-assets',
-      ])
-    )
-    .default([
-      'uploads',
-      'exports',
-      'assets',
-      'brand-logos',
-      'collection-row-pictures',
-      'collection-row-pictures-revisions',
-      'merchandising-specsheet-images',
-      'company-assets',
-    ]),
+  /** Enabled buckets; defaults to all of `APP_STORAGE_BUCKETS`, which is the list's only spelling. */
+  buckets: z.array(z.enum(APP_STORAGE_BUCKETS)).default([...APP_STORAGE_BUCKETS]),
 
   /**
    * URL base pubblico per accesso diretto ai file
@@ -92,6 +67,53 @@ export const s3StorageConfigSchema = z.object({
 });
 
 export type S3StorageConfig = z.infer<typeof s3StorageConfigSchema>;
+
+/**
+ * What `storage.saveConfig` accepts for a local provider.
+ *
+ * Deliberately separate from `localStorageConfigSchema`: that one parses what is already in
+ * AppConfig and lets `.default()` fill the gaps, while a save has to state every value it writes —
+ * an omitted field there would mean "reset to default", which is never what a settings form means.
+ *
+ * `basePath` must be absolute or `~`-relative. A relative path resolves against whatever directory
+ * the API process happens to have started in, which is not a configuration anyone means to write;
+ * the settings form has always refused one, the endpoint used to accept it.
+ */
+export const localStorageSaveConfigSchema = z.object({
+  type: z.literal('local'),
+  basePath: z
+    .string()
+    .min(1, 'Path richiesto')
+    .regex(/^(\/|~\/)[a-zA-Z0-9_./-]*$/, 'Path deve iniziare con / oppure ~/'),
+  maxFileSizeMB: z.number().int().positive().min(1).max(1000),
+  buckets: z.array(z.enum(APP_STORAGE_BUCKETS)),
+  enableProxy: z.boolean().optional(),
+});
+
+/** What `storage.saveConfig` accepts for an S3-compatible provider. */
+export const s3StorageSaveConfigSchema = z.object({
+  type: z.literal('s3'),
+  endpoint: z.string().min(1, 'Endpoint richiesto'),
+  port: z.number().int().min(1).max(65535),
+  useSSL: z.boolean(),
+  accessKey: z.string().min(1, 'Access key richiesta'),
+  secretKey: z.string().min(1, 'Secret key richiesta'),
+  region: z.string().min(1, 'Region richiesta'),
+  publicBaseUrl: z.string().url('URL non valido').or(z.literal('')).optional(),
+  presignedPutTtl: z.number().int().min(60).max(86400),
+  presignedGetTtl: z.number().int().min(60).max(86400),
+});
+
+/**
+ * The `storage.saveConfig` input. The two members are exported separately because the settings form
+ * consumes the local one without `buckets`: nothing in the UI picks a subset, the page sends them
+ * all, so it is a field of the endpoint and not of the form.
+ */
+export const storageSaveConfigSchema = z.discriminatedUnion('type', [
+  localStorageSaveConfigSchema,
+  s3StorageSaveConfigSchema,
+]);
+export type StorageSaveConfig = z.infer<typeof storageSaveConfigSchema>;
 
 /**
  * Schema per tipo di storage (estensibile per futuri provider)

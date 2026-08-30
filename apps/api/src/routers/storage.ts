@@ -11,7 +11,7 @@ import { join } from 'path';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { APP_STORAGE_BUCKETS, isValidBucket, localStorageConfigSchema, type StorageBucket } from '@luke/core';
+import { APP_STORAGE_BUCKETS, isValidBucket, storageSaveConfigSchema, type StorageBucket } from '@luke/core';
 
 import { getConfig, saveConfig } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
@@ -69,28 +69,6 @@ const ConfirmUploadSchema = z.object({
   originalName: z.string().min(1).max(255),
   checksumSha256: z.string().optional(),
 });
-
-const SaveStorageConfigSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('local'),
-    basePath: z.string().min(1),
-    maxFileSizeMB: z.number().int().positive().min(1).max(1000),
-    buckets: z.array(z.enum(APP_STORAGE_BUCKETS)),
-    enableProxy: z.boolean().optional(),
-  }),
-  z.object({
-    type: z.literal('s3'),
-    endpoint: z.string().min(1),
-    port: z.number().int().min(1).max(65535),
-    useSSL: z.boolean(),
-    accessKey: z.string().min(1),
-    secretKey: z.string().min(1),
-    region: z.string().min(1),
-    publicBaseUrl: z.string().url().optional().or(z.literal('')),
-    presignedPutTtl: z.number().int().min(60).max(86400),
-    presignedGetTtl: z.number().int().min(60).max(86400),
-  }),
-]);
 
 /**
  * Storage Router
@@ -538,27 +516,22 @@ export const storageRouter = router({
    * Saves the storage configuration (local or S3) to AppConfig and resets the storage provider singleton.
    *
    * @auth {config:update}
-   * @input {SaveStorageConfigSchema} — discriminated union of local or s3 config.
+   * @input {storageSaveConfigSchema} — discriminated union of local or s3 config.
    * @output {{ success: true }}
    */
   saveConfig: protectedProcedure
     .use(requirePermission('config:update'))
     .use(withSectionAccess('settings'))
-    .input(SaveStorageConfigSchema)
+    .input(storageSaveConfigSchema)
     .mutation(async ({ input, ctx }) => {
       if (input.type === 'local') {
-        const validated = localStorageConfigSchema.parse({
-          basePath: input.basePath,
-          maxFileSizeMB: input.maxFileSizeMB,
-          buckets: input.buckets,
-          enableProxy: input.enableProxy ?? true,
-        });
+        const enableProxy = input.enableProxy ?? true;
         await Promise.all([
           saveConfig(ctx.prisma, 'storage.type', 'local', false),
-          saveConfig(ctx.prisma, 'storage.local.basePath', validated.basePath, false),
-          saveConfig(ctx.prisma, 'storage.local.maxFileSizeMB', validated.maxFileSizeMB.toString(), false),
-          saveConfig(ctx.prisma, 'storage.local.buckets', JSON.stringify(validated.buckets), false),
-          saveConfig(ctx.prisma, 'storage.local.enableProxy', String(validated.enableProxy), false),
+          saveConfig(ctx.prisma, 'storage.local.basePath', input.basePath, false),
+          saveConfig(ctx.prisma, 'storage.local.maxFileSizeMB', input.maxFileSizeMB.toString(), false),
+          saveConfig(ctx.prisma, 'storage.local.buckets', JSON.stringify(input.buckets), false),
+          saveConfig(ctx.prisma, 'storage.local.enableProxy', String(enableProxy), false),
         ]);
       } else {
         await Promise.all([

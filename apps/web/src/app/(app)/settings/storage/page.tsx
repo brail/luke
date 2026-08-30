@@ -6,7 +6,11 @@ import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
-import { APP_STORAGE_BUCKETS } from '@luke/core';
+import {
+  APP_STORAGE_BUCKETS,
+  localStorageSaveConfigSchema,
+  s3StorageSaveConfigSchema,
+} from '@luke/core';
 
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
@@ -37,33 +41,14 @@ const onNumberChange = (onChange: (v: number) => void) =>
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
-const localSchema = z.object({
-  type: z.literal('local'),
-  basePath: z
-    .string()
-    .min(1, 'Path richiesto')
-    .regex(
-      /^(\/|~\/)[a-zA-Z0-9_./-]*$/,
-      'Path deve iniziare con / oppure ~/'
-    ),
-  maxFileSizeMB: z.number().int().min(1).max(1000),
-  enableProxy: z.boolean(),
-});
-
-const s3Schema = z.object({
-  type: z.literal('s3'),
-  endpoint: z.string().min(1, 'Endpoint richiesto'),
-  port: z.number().int().min(1).max(65535),
-  useSSL: z.boolean(),
-  accessKey: z.string().min(1, 'Access key richiesta'),
-  secretKey: z.string().min(1, 'Secret key richiesta'),
-  region: z.string().min(1, 'Region richiesta'),
-  publicBaseUrl: z.string().url('URL non valido').or(z.literal('')).optional(),
-  presignedPutTtl: z.number().int().min(60).max(86400),
-  presignedGetTtl: z.number().int().min(60).max(86400),
-});
-
-const formSchema = z.discriminatedUnion('type', [localSchema, s3Schema]);
+/**
+ * The endpoint's own input, minus the one field the form does not collect: nothing in the UI picks
+ * a subset of buckets, so the page sends them all on submit rather than rendering a control for it.
+ */
+const formSchema = z.discriminatedUnion('type', [
+  localStorageSaveConfigSchema.omit({ buckets: true }),
+  s3StorageSaveConfigSchema,
+]);
 type StorageForm = z.infer<typeof formSchema>;
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -284,7 +269,7 @@ export default function StoragePage() {
                         </FormDescription>
                       </div>
                       <FormControl>
-                        <Switch checked={field.value} onCheckedChange={field.onChange} disabled={disabled} />
+                        <Switch checked={field.value ?? true} onCheckedChange={field.onChange} disabled={disabled} />
                       </FormControl>
                     </FormItem>
                   )}

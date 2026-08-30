@@ -38,6 +38,7 @@ export * from './schemas/maintenanceMode';
 export * from './schemas/feedback';
 export * from './schemas/confirmation';
 export * from './schemas/reason';
+export * from './schemas/google';
 
 // Re-export RBAC
 export * from './rbac';
