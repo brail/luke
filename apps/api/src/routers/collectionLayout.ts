@@ -387,9 +387,15 @@ const rowsRouter = router({
           targetType: 'CollectionLayoutRow',
           targetId: input.rowId,
           result: 'SUCCESS',
+          // Conditional values, not conditional keys: `AuditMetadata` only checks properties
+          // written literally, so a spread hides the key names from it. `undefined` is dropped
+          // by the sanitizer, so the stored row is the same as before.
           metadata: {
-            ...(phaseChanged ? { oldPhaseId: before.phaseId, newPhaseId: rowData.phaseId, ...(phaseChangeNote ? { phaseChangeNote } : {}) } : {}),
-            ...(planningGroupChanged ? { oldPlanningGroupId: before.planningGroupId, newPlanningGroupId: rowData.planningGroupId } : {}),
+            oldPhaseId: phaseChanged ? before.phaseId : undefined,
+            newPhaseId: phaseChanged ? rowData.phaseId : undefined,
+            phaseChangeNote: phaseChanged ? phaseChangeNote : undefined,
+            oldPlanningGroupId: planningGroupChanged ? before.planningGroupId : undefined,
+            newPlanningGroupId: planningGroupChanged ? rowData.planningGroupId : undefined,
           },
         }),
         ...quotationSyncAuditPromises(ctx, input.rowId, quotationsSync),
@@ -464,9 +470,9 @@ const rowsRouter = router({
         metadata: {
           completedAt: row.completedAt?.toISOString() ?? null,
           completionNote: input.note,
-          ...(missingPhases.length > 0
-            ? { completionForced: true, skippedPhases: missingPhases.map(p => p.value) }
-            : {}),
+          completionForced: missingPhases.length > 0 ? true : undefined,
+          skippedPhases:
+            missingPhases.length > 0 ? missingPhases.map(p => p.value) : undefined,
         },
       });
       return row;

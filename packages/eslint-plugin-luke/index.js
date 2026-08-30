@@ -1,3 +1,4 @@
+import auditMetadataObjectLiteral from './rules/audit-metadata-object-literal.js';
 import noBareClientRandomUuid from './rules/no-bare-client-random-uuid.js';
 import noBareZodPartial from './rules/no-bare-zod-partial.js';
 import noDialogInputOutsideForm from './rules/no-dialog-input-outside-form.js';
@@ -8,6 +9,7 @@ import noUnreachableDisabledTooltip from './rules/no-unreachable-disabled-toolti
 
 export default {
   rules: {
+    'audit-metadata-object-literal': auditMetadataObjectLiteral,
     'no-bare-client-random-uuid': noBareClientRandomUuid,
     'no-bare-zod-partial': noBareZodPartial,
     'no-dialog-input-outside-form': noDialogInputOutsideForm,

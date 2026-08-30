@@ -467,8 +467,6 @@ export const backupRouter = router({
           });
         }
 
-        const baseMeta = { preserveAuditLog: input.preserveAuditLog, restoreFiles: input.restoreFiles };
-
         // Blocks all non-admin traffic (reads included) and invalidates their sessions before
         // touching the DB — a restore is already a deliberate action, so activation is immediate,
         // not scheduled. Stays ACTIVE even after the restore completes: an admin must end it
@@ -508,7 +506,11 @@ export const backupRouter = router({
             targetType: 'BackupRecord',
             targetId: target.id,
             result: 'FAILURE',
-            metadata: { ...baseMeta, errorCode: message.slice(0, 200) },
+            metadata: {
+              preserveAuditLog: input.preserveAuditLog,
+              restoreFiles: input.restoreFiles,
+              errorCode: message.slice(0, 200),
+            },
           });
           throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Restore fallito: ${message}`, cause: err });
         } finally {
@@ -533,7 +535,11 @@ export const backupRouter = router({
           targetType: 'BackupRecord',
           targetId: target.id,
           result: 'SUCCESS',
-          metadata: { ...baseMeta, safetySnapshotId: safety.id },
+          metadata: {
+            preserveAuditLog: input.preserveAuditLog,
+            restoreFiles: input.restoreFiles,
+            safetySnapshotId: safety.id,
+          },
         });
 
         return { success: true, safetySnapshotId: safety.id };
@@ -579,7 +585,16 @@ export const backupRouter = router({
         action: 'BACKUP_SCHEDULE_UPDATE',
         targetType: 'Config',
         result: 'SUCCESS',
-        metadata: { ...input },
+        // Written out rather than spread: a spread hides the key names from `AuditMetadata`, so
+        // adding a field to `BackupScheduleConfigSchema` would silently store it as `[REDACTED]`.
+        metadata: {
+          enabled: input.enabled,
+          dailyTime: input.dailyTime,
+          scope: input.scope,
+          retentionDays: input.retentionDays,
+          retentionMinCount: input.retentionMinCount,
+          notifyOnFailure: input.notifyOnFailure,
+        },
       });
 
       return { success: true };

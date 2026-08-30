@@ -80,7 +80,15 @@ After changes to a tRPC router in `apps/api`: `cd apps/api && npx tsc -b`
    `withAuditLog` middleware or explicit `logAudit()`. Metadata keys are typed
    against `SAFE_KEY_LIST` (`apps/api/src/lib/auditLog.ts`): an unlisted key
    fails the build, adding one there is a deliberate decision that it is safe
-   to persist. Pre-session flows (login, email verification, password reset)
+   to persist. The type only sees **properties written literally**, so
+   `metadata` must be a spread-free object literal — enforced by
+   `@luke/audit-metadata-object-literal`. Write `x: cond ? v : undefined`, never
+   `...(cond && { x: v })`: `undefined` is dropped by the sanitizer, so the row
+   is identical and the key stays visible to the type. Outside production an
+   unlisted key **throws**; in production it is redacted as before. A key whose
+   value is a map (its keys are data, not field names) goes in
+   `MAP_VALUED_KEYS` — otherwise the allowlist is asked to vouch for the data
+   and silently eats it. Pre-session flows (login, email verification, password reset)
    legitimately write `actorId: null` — they must still set `targetId` to the
    `User.id`, which is what lets the read path attribute the event to a person
    instead of rendering an anonymous "Sistema"

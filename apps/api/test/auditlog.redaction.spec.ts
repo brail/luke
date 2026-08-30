@@ -9,9 +9,9 @@
  * redaction that actually runs — on a compliance surface.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-import { sanitizeMetadata } from '../src/lib/auditLog';
+import { collectUnlistedAuditKeys, sanitizeMetadata } from '../src/lib/auditLog';
 
 /**
  * Narrows the result of `sanitizeMetadata`, which is `unknown` by construction:
@@ -225,20 +225,26 @@ describe('sanitizeMetadata', () => {
   });
 
   describe('Edge cases', () => {
-    it('dovrebbe gestire valori null e undefined', () => {
-      const input = {
-        username: 'test',
-        password: null,
-        token: undefined,
-        email: 'test@test.com',
-      };
-
-      const sanitized = asRecord(sanitizeMetadata(input));
+    it('redatta null, ma omette del tutto undefined', () => {
+      // The two are not the same thing. `null` is a value the call site chose to pass, so a
+      // blacklisted key holding it is redacted like any other. `undefined` is the key not
+      // applying to this event — emitting `***REDACTED***` for it would suggest a token was
+      // present and hidden, which is worse than saying nothing in a trail people read to find
+      // out what happened. Omitting it is also what lets a call site write
+      // `oldStartAt: dateChanged ? … : undefined` instead of a spread the type cannot see.
+      const sanitized = asRecord(
+        sanitizeMetadata({
+          username: 'test',
+          password: null,
+          token: undefined,
+          email: 'test@test.com',
+        }),
+      );
 
       expect(sanitized.username).toBe('test');
       expect(sanitized.email).toBe('test@test.com');
       expect(sanitized.password).toBe('***REDACTED***');
-      expect(sanitized.token).toBe('***REDACTED***');
+      expect('token' in sanitized).toBe(false);
     });
 
     it('dovrebbe serializzare le Date in ISO invece di svuotarle', () => {
@@ -356,24 +362,68 @@ describe('sanitizeMetadata', () => {
   });
 
   describe('Chiavi non whitelisted', () => {
-    it('dovrebbe redattare chiavi non in whitelist', () => {
-      const input = {
-        username: 'test', // whitelisted
-        email: 'test@test.com', // whitelisted
-        unknownField: 'value1',
-        customData: 'value2',
-        internalId: 'value3',
-        sessionData: 'value4',
-      };
+    const UNLISTED = {
+      username: 'test', // whitelisted
+      email: 'test@test.com', // whitelisted
+      unknownField: 'value1',
+    };
 
-      const sanitized = asRecord(sanitizeMetadata(input));
+    it('in produzione redatta la chiave e prosegue', () => {
+      // The shipped behaviour, unchanged: an audit write is not the place to start failing
+      // requests over a metadata key. `vi.stubEnv` because the branch is chosen per call.
+      vi.stubEnv('NODE_ENV', 'production');
+      try {
+        const sanitized = asRecord(
+          sanitizeMetadata({ ...UNLISTED, customData: 'value2', internalId: 'value3' }),
+        );
 
-      expect(sanitized.username).toBe('test');
-      expect(sanitized.email).toBe('test@test.com');
-      expect(sanitized.unknownField).toBe('[REDACTED]');
-      expect(sanitized.customData).toBe('[REDACTED]');
-      expect(sanitized.internalId).toBe('[REDACTED]');
-      expect(sanitized.sessionData).toBe('[REDACTED]');
+        expect(sanitized.username).toBe('test');
+        expect(sanitized.email).toBe('test@test.com');
+        expect(sanitized.unknownField).toBe('[REDACTED]');
+        expect(sanitized.customData).toBe('[REDACTED]');
+        expect(sanitized.internalId).toBe('[REDACTED]');
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it('fuori produzione lancia, nominando la chiave', () => {
+      // The gate. `AuditMetadata` cannot see a key arriving through a spread or a bare variable,
+      // so this runtime check is the only thing between a drifting call site and a column of
+      // `[REDACTED]` nobody reads for months.
+      expect(() => sanitizeMetadata(UNLISTED)).toThrow(/unknownField.*SAFE_KEY_LIST/s);
+    });
+
+    it('nomina il percorso completo, non solo la foglia', () => {
+      // A bare key name is not enough to find the call site when it is three levels inside a
+      // procedure input captured by `withAuditLog`.
+      expect(() => sanitizeMetadata({ input: { nested: { deep: 1 } } })).toThrow(
+        /input\.nested\.deep/,
+      );
+    });
+
+    it('il collector raccoglie invece di lanciare, e si disinstalla', () => {
+      // A red suite stops at the first violation and hides the rest, so enumerating a batch has to
+      // come before gating it. The restore function matters as much as the collector: leaving one
+      // installed would silently disarm the gate for every test that follows.
+      const seen: string[] = [];
+      const restore = collectUnlistedAuditKeys(p => seen.push(p));
+      try {
+        sanitizeMetadata({ unknownField: 'v', input: { alsoUnknown: 1 } });
+      } finally {
+        restore();
+      }
+
+      expect(seen).toEqual(['unknownField', 'input.alsoUnknown']);
+      // Gate armed again.
+      expect(() => sanitizeMetadata({ unknownField: 'v' })).toThrow(/SAFE_KEY_LIST/);
+    });
+
+    it('non lancia per una chiave che la blacklist intercetta', () => {
+      // The blacklist firing is the design working. Treating it as drift would ask every call
+      // site to pre-declare the secrets it is *not* passing.
+      expect(() => sanitizeMetadata({ apiToken: 'x' })).not.toThrow();
+      expect(asRecord(sanitizeMetadata({ apiToken: 'x' })).apiToken).toBe('***REDACTED***');
     });
 
     it('dovrebbe redattare il contenuto degli array sotto una chiave non whitelisted', () => {

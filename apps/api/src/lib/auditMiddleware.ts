@@ -3,7 +3,7 @@
  * Automatically records SUCCESS or FAILURE for every mutation that uses it.
  */
 
-import { logAudit, type AuditMetadata } from './auditLog';
+import { logAudit } from './auditLog';
 import { toErrorCode, toErrorMessage } from './error';
 import { t } from './trpc';
 
@@ -43,18 +43,30 @@ export function withAuditLog(action: string, targetType: string) {
           : undefined;
       const targetId = extractId(resultData) || extractId(result) || extractId(input);
 
-      // `resultData`, not `result`: the latter is tRPC's middleware envelope, which carries
-      // `ctx` (Prisma client, Fastify request) and is circular — persisting it fails the
-      // Prisma insert, and `logAudit` swallows that for non-critical actions, so the audit
-      // row silently disappears instead of being merely incomplete.
-      const safeMetadata = extractSafeMetadata(input, resultData);
-
       await logAudit(ctx, {
         action,
         targetType,
         targetId,
         result: 'SUCCESS',
-        metadata: safeMetadata,
+        // The mutation's input and output under two container keys, written out so
+        // `AuditMetadata` checks them; their children are dynamic by design and are checked at
+        // runtime by `sanitizeMetadata`. That split is the contract.
+        //
+        // There is deliberately no field list here. This used to keep a second, hand-maintained
+        // allowlist of 9 input and 7 result fields, which failed twice over: most mutations have
+        // none of those fields, so the row was stored as `{}`, and the `input_`/`result_` prefixes
+        // it added were not on `SAFE_KEY_LIST`, so whatever it did capture was redacted anyway
+        // (`USER_UPDATE` rows read `{"input_role": "[REDACTED]"}`). `sanitizeMetadata` is the one
+        // allowlist; nesting keeps `input.role` and `result.role` distinguishable without prefixes.
+        //
+        // `resultData`, not `result`: the latter is tRPC's middleware envelope, which carries
+        // `ctx` (Prisma client, Fastify request) and is circular — persisting it fails the
+        // Prisma insert, and `logAudit` swallows that for non-critical actions, so the audit
+        // row silently disappears instead of being merely incomplete.
+        metadata: {
+          input: input && typeof input === 'object' ? input : undefined,
+          result: resultData && typeof resultData === 'object' ? resultData : undefined,
+        },
       });
 
       return result;
@@ -76,24 +88,4 @@ export function withAuditLog(action: string, targetType: string) {
       throw error; // Re-throw to not block flow
     }
   });
-}
-
-/**
- * Captures the mutation's input and output under two container keys.
- *
- * There is deliberately no field list here any more. This function used to keep a second,
- * hand-maintained allowlist of 9 input and 7 result fields, which failed twice over: most
- * mutations have none of those fields, so the row was stored as `{}`, and the `input_`/`result_`
- * prefixes it added were not on `SAFE_KEY_LIST`, so whatever it did capture was redacted by
- * `sanitizeMetadata` anyway (`USER_UPDATE` rows read `{"input_role": "[REDACTED]"}`).
- * `sanitizeMetadata` is the one allowlist; nesting keeps `input.role` and `result.role`
- * distinguishable without prefixes.
- *
- * `result` must be the procedure's own return value, never tRPC's middleware envelope.
- */
-function extractSafeMetadata(input: unknown, result: unknown): AuditMetadata {
-  return {
-    ...(input && typeof input === 'object' ? { input } : {}),
-    ...(result && typeof result === 'object' ? { result } : {}),
-  };
 }

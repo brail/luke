@@ -281,9 +281,12 @@ const SAFE_KEYS = new Set<string>(SAFE_KEY_LIST);
  * field. An exception string can embed a connection string or a `password=...` pair, so the
  * value — not just the key — is scrubbed and capped before it reaches the audit trail.
  */
-const FREE_TEXT_KEYS = new Set<string>(['error', 'errorMessage']);
+const FREE_TEXT_KEYS = new Set<string>(['error', 'errorMessage', 'message']);
 
 const FREE_TEXT_MAX_LENGTH = 200;
+
+/** Blacklist: a key that looks like a secret is redacted wherever it appears. */
+const SENSITIVE_KEY_PATTERN = /password|token|secret|key|auth|credential|bind/i;
 
 /** Masks credentials embedded in a free-text message: URL userinfo and `secret=value` pairs. */
 function scrubFreeText(value: string): string {
@@ -299,6 +302,105 @@ export function isRedactedValue(v: unknown): boolean {
 }
 
 /**
+ * Records a key whose value the allowlist is about to drop.
+ *
+ * `AuditMetadata` types `logAudit`'s parameter, but TypeScript's excess-property check only sees
+ * properties written literally: `metadata: syncResult`, `metadata: { ...input }` and every
+ * `...(cond && { … })` walk straight past it, and the sanitizer then stores `[REDACTED]` without
+ * anyone being told. This is the only mechanism that sees those forms, because it runs on the
+ * object that actually reaches the database.
+ *
+ * Outside production this throws, so the drift fails a test run instead of surfacing months later
+ * in a column nobody reads. Production keeps redacting silently — the behaviour the audit trail
+ * already has, and not something to change from inside an error path.
+ */
+let unlistedKeyCollector: ((path: string) => void) | null = null;
+
+/**
+ * Collects offending paths instead of throwing, for the length of one run.
+ *
+ * This is how the existing violations were enumerated before the throw was armed, and how the
+ * next batch gets enumerated: a red suite stops at the first violation and hides the rest, so a
+ * census has to come before a gate. A seam rather than an env var because a new `process.env`
+ * read is exactly what the Env Policy forbids, and a diagnostic is a poor reason to bend it.
+ *
+ * @returns A function that uninstalls the collector. Always call it — a leaked collector turns
+ * the gate off for every test that follows.
+ */
+export function collectUnlistedAuditKeys(collector: (path: string) => void): () => void {
+  unlistedKeyCollector = collector;
+  return () => {
+    unlistedKeyCollector = null;
+  };
+}
+
+function reportUnlistedKey(path: string): void {
+  if (unlistedKeyCollector) {
+    unlistedKeyCollector(path);
+    return;
+  }
+  if (process.env.NODE_ENV !== 'production') {
+    throw new Error(
+      `Audit metadata: '${path}' is not in SAFE_KEY_LIST and would be stored as [REDACTED]. ` +
+        'Either add it there — a deliberate decision that it is safe to persist — or stop passing it. ' +
+        'See apps/api/src/lib/auditLog.ts.',
+    );
+  }
+}
+
+/** Path of a nested key, for a census entry that says which call site to look at. */
+function joinPath(path: string, key: string): string {
+  return path ? `${path}.${key}` : key;
+}
+
+/**
+ * Keys whose value is a *map* — its keys are data, not field names.
+ *
+ * The allowlist model assumes every object is a struct whose keys were chosen by a developer.
+ * `sectionAccessDefaults` is `Record<Role, Record<Section, Access>>`, so walking it as a struct
+ * asks the allowlist to vouch for three role names and ninety-odd section names. It cannot, so
+ * every leaf of a `CONFIG_UPSERT` on `rbac.sectionAccessDefaults` — a `CRITICAL_AUDIT_ACTIONS`
+ * action — has been stored as `[REDACTED]`: the trail recorded that the RBAC defaults changed,
+ * never what they changed to. Listing the section names would fix it until the next section is
+ * added, and CLAUDE.md already asks for three places to be updated then, not four.
+ *
+ * Typed as `AuditMetadataKey`, so a key here must first be on `SAFE_KEY_LIST` — this says how to
+ * walk a value that is already allowed, it never admits one that isn't.
+ */
+const MAP_VALUED_KEYS = new Set<string>(
+  ['sectionAccessDefaults'] satisfies readonly AuditMetadataKey[],
+);
+
+/**
+ * Walks a map: keeps the keys, sanitises the values.
+ *
+ * The blacklist still applies to the keys — a map key that looks like `password` is redacted
+ * wherever it appears — and nested objects stay in map mode, because a nested map's keys are
+ * data for the same reason its parent's are.
+ */
+function sanitizeMapValues(obj: object, depth: number, path: string): unknown {
+  if (depth > 5) return '[REDACTED:MAX_DEPTH]';
+
+  if (Array.isArray(obj)) {
+    return obj.map((item, i) =>
+      item && typeof item === 'object' ? sanitizeMapValues(item, depth + 1, `${path}[${i}]`) : item,
+    );
+  }
+
+  const sanitized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (SENSITIVE_KEY_PATTERN.test(key)) {
+      sanitized[key] = '***REDACTED***';
+    } else if (value && typeof value === 'object') {
+      sanitized[key] = sanitizeMapValues(value, depth + 1, joinPath(path, key));
+    } else {
+      sanitized[key] = value;
+    }
+  }
+  return sanitized;
+}
+
+/**
  * Elements of an array held by a key that is *not* on the allowlist.
  *
  * Objects keep being filtered by their own keys, but a bare primitive is redacted: nothing
@@ -306,8 +408,12 @@ export function isRedactedValue(v: unknown): boolean {
  * fall through to its `return obj` for primitives without the holding key ever being checked,
  * so `{ errors: ['...'] }` was stored in clear while a plain string under the same key was not.
  */
-function sanitizeUnvouchedArray(arr: unknown[], depth: number): unknown[] {
-  return arr.map(item => (item && typeof item === 'object' ? sanitizeMetadata(item, depth) : '[REDACTED]'));
+function sanitizeUnvouchedArray(arr: unknown[], depth: number, path: string): unknown[] {
+  return arr.map((item, i) =>
+    item && typeof item === 'object'
+      ? sanitizeMetadata(item, depth, `${path}[${i}]`)
+      : '[REDACTED]',
+  );
 }
 
 /**
@@ -317,13 +423,16 @@ function sanitizeUnvouchedArray(arr: unknown[], depth: number): unknown[] {
  * copy, which had already drifted in an inverted way — it checked the blacklist
  * first and had 24 keys instead of 79 — so the entire redaction suite was
  * asserting a behaviour production doesn't have.
+ *
+ * `path` is carried for the benefit of `reportUnlistedKey`: a bare key name is not enough to
+ * find the call site when the key is three levels inside a captured procedure input.
  */
-export function sanitizeMetadata(obj: unknown, depth = 0): unknown {
+export function sanitizeMetadata(obj: unknown, depth = 0, path = ''): unknown {
   // Recursion limit (DoS protection)
   if (depth > 5) return '[REDACTED:MAX_DEPTH]';
 
   if (Array.isArray(obj)) {
-    return obj.map(item => sanitizeMetadata(item, depth + 1));
+    return obj.map((item, i) => sanitizeMetadata(item, depth + 1, `${path}[${i}]`));
   }
 
   // Before the generic object branch: `Object.entries(new Date())` is empty, so a Date walked
@@ -334,20 +443,32 @@ export function sanitizeMetadata(obj: unknown, depth = 0): unknown {
   if (obj && typeof obj === 'object') {
     const sanitized: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj)) {
+      // A key that does not apply to this event is absent, not null. This is what lets a call site
+      // write `oldStartAt: dateChanged ? … : undefined` — keys literal, so `AuditMetadata` checks
+      // them — instead of `...(dateChanged && { oldStartAt: … })`, whose keys the type cannot see.
+      if (value === undefined) continue;
+
       // Check whitelist first, then blacklist
       if (FREE_TEXT_KEYS.has(key)) {
         sanitized[key] = typeof value === 'string' ? scrubFreeText(value) : '[REDACTED]';
+      } else if (MAP_VALUED_KEYS.has(key) && value && typeof value === 'object') {
+        sanitized[key] = sanitizeMapValues(value, depth + 1, joinPath(path, key));
       } else if (SAFE_KEYS.has(key)) {
-        sanitized[key] = sanitizeMetadata(value, depth + 1);
-      } else if (/password|token|secret|key|auth|credential|bind/i.test(key)) {
+        sanitized[key] = sanitizeMetadata(value, depth + 1, joinPath(path, key));
+      } else if (SENSITIVE_KEY_PATTERN.test(key)) {
+        // The blacklist firing is the design working, not drift: never reported.
         sanitized[key] = '***REDACTED***';
       } else {
         // Default: redact non-allowlisted keys
         if (Array.isArray(value)) {
-          sanitized[key] = sanitizeUnvouchedArray(value, depth + 1);
+          sanitized[key] = sanitizeUnvouchedArray(value, depth + 1, joinPath(path, key));
         } else if (value && typeof value === 'object') {
-          sanitized[key] = sanitizeMetadata(value, depth + 1);
+          // Nothing is lost here — the children are filtered by their own keys — so there is
+          // nothing to report either.
+          sanitized[key] = sanitizeMetadata(value, depth + 1, joinPath(path, key));
         } else {
+          // The silent drop the allowlist was supposed to make loud.
+          reportUnlistedKey(joinPath(path, key));
           sanitized[key] = '[REDACTED]';
         }
       }
@@ -372,12 +493,13 @@ export async function logAudit(
   ctx: Context,
   params: AuditParams
 ): Promise<void> {
-  try {
-    // Sanitize metadata to remove sensitive fields
-    const sanitizedMetadata = params.metadata
-      ? sanitizeMetadata(params.metadata)
-      : undefined;
+  // Outside the try on purpose. Everything below it is I/O, whose failure is swallowed for
+  // non-critical actions; a key missing from `SAFE_KEY_LIST` is a programming error, and letting
+  // it be caught there would turn the gate into a log line nobody reads — exactly the silence it
+  // exists to break.
+  const sanitizedMetadata = params.metadata ? sanitizeMetadata(params.metadata) : undefined;
 
+  try {
     // Create AuditLog record with the new schema
     await ctx.prisma.auditLog.create({
       data: {

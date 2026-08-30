@@ -2,10 +2,9 @@
 
 Aperto il 2026-08-30, a valle di B5 (`TASK_router_schemas_to_core.md`) e del /simplify su di esso.
 
-> **Stato al 2026-08-30.** Punti 1, 2 e 3 chiusi. Punto 4 (`SAFE_KEY_LIST`) non iniziato:
-> richiede un censimento che va condotto a parte, ed è deliberatamente tenuto in un diff
-> separato da quello sull'autorità in scrittura. Punto 5 resta una domanda aperta.
-> Dettagli in fondo, sezione «Esito».
+> **Stato al 2026-08-30.** Punti 1, 2, 3 e 4 chiusi, in due commit distinti.
+> Punto 5 resta una domanda aperta, deliberatamente fuori da questo task.
+> Dettagli in fondo, sezioni «Esito» e «Esito — punto 4».
 
 ## Contesto
 
@@ -218,3 +217,89 @@ si aspettano smette di succedere. Il resto sta in `configWriteAuthority.integrat
 Cinque test d'integrazione preesistenti scrivevano chiavi inventate (`app.test`, `app.test0`,
 `app.test.secret`) per collaudare idempotenza, rate limit e audit: puntano ora a chiavi reali del
 registry. Erano esattamente il drift che il gate esiste per fermare.
+
+---
+
+## Esito — punto 4
+
+### Il censimento
+
+Suite d'integrazione intera in sola segnalazione — `collectUnlistedAuditKeys(fn)` installa un
+collector che raccoglie i percorsi che `sanitizeMetadata` sta per redigere, invece di lanciare.
+**483 rilievi, due cause sole.**
+
+(Prima stesura: una env var `LUKE_AUDIT_KEY_CENSUS`. L'ha bloccata il pre-commit — semgrep
+`luke-no-direct-env` — e giustamente: la Env Policy è una regola architetturale ferma e un
+diagnostico è una pessima ragione per piegarla. Il seam esportato fa la stessa cosa senza
+toccare `process.env`, e a differenza della env var è testato.)
+
+**1. Il difetto vivo: `sectionAccessDefaults` — 480 dei 483.** La chiave *è* in `SAFE_KEY_LIST`, ma
+il suo valore è `Record<Role, Record<Section, Access>>`: le chiavi figlie sono nomi di ruolo e di
+sezione, cioè **dati**, non nomi di campo scelti da uno sviluppatore. Il sanitizer le percorreva
+come se fossero una struct, quindi ogni foglia di un `CONFIG_UPSERT` su `rbac.sectionAccessDefaults`
+— azione in `CRITICAL_AUDIT_ACTIONS` — era persistita come `[REDACTED]`. L'audit registrava che i
+default RBAC erano cambiati, mai in cosa. Esattamente il fallimento chiuso e silenzioso descritto
+in apertura, su una superficie di compliance, e nessuno l'aveva visto.
+
+Elencare i 96 nomi di sezione l'avrebbe risolto fino alla sezione successiva, e CLAUDE.md chiede
+già tre posti da aggiornare quando se ne aggiunge una, non quattro. La soluzione è `MAP_VALUED_KEYS`:
+dichiara che il valore di quella chiave è una mappa, quindi si filtrano i valori e non si
+interrogano i nomi. È tipizzato `AuditMetadataKey`, così una chiave lì dentro deve prima stare in
+`SAFE_KEY_LIST` — dice *come* percorrere un valore già ammesso, non ne ammette di nuovi. La
+blacklist continua ad applicarsi anche alle chiavi della mappa.
+
+**2. `result.message` — 3.** Il messaggio di successo restituito dalle mutation e catturato da
+`withAuditLog`. È testo operatore-facing: è entrato in `FREE_TEXT_KEYS`, che lo tronca a 200
+caratteri e maschera le credenziali incorporate, invece che in `SAFE_KEY_LIST` che lo passerebbe
+intero.
+
+**Il censimento è un limite inferiore, per costruzione**: vede solo ciò che i test eseguono. È la
+ragione per cui la regola ESLint non è un'alternativa.
+
+### I due gate
+
+**A runtime**, in `logAudit`: fuori produzione una chiave non in lista **lancia**, nominando il
+percorso completo (`input.nested.deep`, non solo la foglia — un nome nudo non basta a trovare il
+call site quando la chiave sta tre livelli dentro un input catturato dal middleware). In produzione
+si continua a redigere in silenzio, che è il comportamento che l'audit trail ha già.
+
+La sanitizzazione è stata spostata **fuori** dal `try` di `logAudit`: lì dentro le eccezioni sono
+inghiottite per le azioni non critiche, e il gate sarebbe diventato una riga di log che nessuno
+legge — la stessa silenziosità che esiste per rompere.
+
+La blacklist che scatta non è drift e non viene mai segnalata: chiederlo significherebbe obbligare
+ogni call site a pre-dichiarare i segreti che *non* sta passando.
+
+**Statico**, `@luke/audit-metadata-object-literal`: `metadata` dev'essere un oggetto letterale senza
+spread. Vede le due forme che sfuggono al tipo — variabile nuda e spread — ovunque siano scritte,
+senza dipendere dalla copertura dei test. 11 violazioni trovate, tutte sistemate; nessuna ha
+richiesto una chiave nuova in `SAFE_KEY_LIST`, erano tutte forme che nascondevano chiavi già
+ammesse.
+
+Il fix ricorrente: **valori condizionali invece di chiavi condizionali**.
+`...(cond && { x: v })` → `x: cond ? v : undefined`. Perché fosse equivalente, `sanitizeMetadata`
+ora omette le proprietà `undefined`. È anche la semantica giusta di suo: una chiave che non si
+applica all'evento è assente, non nulla, e `token: undefined` che diventava `***REDACTED***`
+suggeriva che un token ci fosse e fosse stato nascosto — peggio che tacere, in una traccia che si
+legge per capire cosa è successo. `null` resta redatto: è un valore che il chiamante ha scelto.
+
+`extractSafeMetadata` in `auditMiddleware` è sparito: le due chiavi contenitore (`input`, `result`)
+sono note e ora scritte letteralmente, quindi il tipo le controlla; i figli restano dinamici per
+disegno e li controlla il sanitizer a runtime. Quella divisione è il contratto.
+
+### Verifica del segnale
+
+Il criterio posto in apertura — «rimettere `metadata: { ...input }` da qualche parte fa fallire la
+suite invece di scrivere `[REDACTED]` in silenzio» — verificato a mano su un percorso coperto:
+`tsc` passa (il buco documentato), ESLint dà 1 rilievo, la suite d'integrazione diventa rossa con
+il nome della chiave e cosa farne. Ripristinato subito dopo.
+
+Nota emersa dalla prova: la blacklist è larga. Un campo chiamato `driftedKey` contiene «key», quindi
+viene redatto da lì e non segnalato — corretto per disegno, ma va tenuto presente scegliendo i nomi
+in una prova del genere.
+
+### Verifica
+
+`pnpm lint` e `pnpm typecheck` 9/9 task · `apps/api` unit 435/435 · integration 510/510 (+1 expected
+fail) · `eslint-plugin-luke` 24/24 (10 casi nuovi sulla regola) · `packages/core` 225/225 ·
+`apps/web` 80/80.

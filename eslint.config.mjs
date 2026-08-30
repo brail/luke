@@ -137,6 +137,13 @@ export default [
     rules: { '@luke/no-raw-query-client': 'error' },
   },
   {
+    // Audit-metadata backstop, the static half of the `SAFE_KEY_LIST` gate. The runtime check in
+    // `logAudit` sees every form, but only for code a test actually executes; this sees the two
+    // forms that escape the type — a bare variable and a spread — wherever they are written.
+    files: ['apps/api/src/**/*.ts'],
+    rules: { '@luke/audit-metadata-object-literal': 'error' },
+  },
+  {
     // Disabled-tooltip backstop: a tooltip that explains why a control is disabled is worthless
     // if only the mouse can reach it. `PermissionButton` solved this once; four files
     // reimplemented the wrapper inline and dropped the tabIndex that makes it reachable.

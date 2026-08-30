@@ -381,14 +381,16 @@ export const seasonCalendarRouter = router({
       syncOneMilestone(input.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on update'));
       return withPhaseOrderWarning(result, ctx.prisma, logAudit(ctx, {
         action: 'CALENDAR_EVENT_UPDATE', targetType: 'CalendarEvent', targetId: input.id, result: 'SUCCESS',
+        // Conditional values, not conditional keys — a spread hides the key names from
+        // `AuditMetadata`. `undefined` is dropped by the sanitizer, so the row is unchanged.
         metadata: {
           title: result.title, calendarId: event.calendarId,
-          ...(dateChanged && {
-            oldStartAt: event.startAt.toISOString(), newStartAt: result.startAt.toISOString(),
-            oldEndAt: event.endAt?.toISOString() ?? null, newEndAt: result.endAt?.toISOString() ?? null,
-            allDay: result.allDay,
-          }),
-          ...(changedFields.length > 0 && { changedFields }),
+          oldStartAt: dateChanged ? event.startAt.toISOString() : undefined,
+          newStartAt: dateChanged ? result.startAt.toISOString() : undefined,
+          oldEndAt: dateChanged ? event.endAt?.toISOString() ?? null : undefined,
+          newEndAt: dateChanged ? result.endAt?.toISOString() ?? null : undefined,
+          allDay: dateChanged ? result.allDay : undefined,
+          changedFields: changedFields.length > 0 ? changedFields : undefined,
         },
       }));
     }),
@@ -437,7 +439,8 @@ export const seasonCalendarRouter = router({
           title: result.title, calendarId: event.calendarId, reason: input.reason,
           oldStartAt: event.startAt.toISOString(), newStartAt: result.startAt.toISOString(),
           oldEndAt: event.endAt?.toISOString() ?? null, newEndAt: result.endAt?.toISOString() ?? null,
-          ...(event.allDay !== result.allDay && { oldAllDay: event.allDay, newAllDay: result.allDay }),
+          oldAllDay: event.allDay !== result.allDay ? event.allDay : undefined,
+          newAllDay: event.allDay !== result.allDay ? result.allDay : undefined,
         },
       }));
     }),
@@ -972,7 +975,7 @@ export const seasonCalendarRouter = router({
       if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
       await assertBrandAccess(ctx, calendar.brandId);
       const syncResult = await reconcileCalendar(input.calendarId, ctx.prisma, ctx.logger);
-      await logAudit(ctx, { action: 'SEASON_CALENDAR_SYNC_TRIGGERED', targetType: 'SeasonCalendar', targetId: input.calendarId, result: 'SUCCESS', metadata: syncResult });
+      await logAudit(ctx, { action: 'SEASON_CALENDAR_SYNC_TRIGGERED', targetType: 'SeasonCalendar', targetId: input.calendarId, result: 'SUCCESS', metadata: { synced: syncResult.synced, errors: syncResult.errors } });
       return { triggered: true, ...syncResult };
     }),
 
