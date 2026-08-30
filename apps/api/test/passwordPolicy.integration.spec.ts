@@ -1,12 +1,11 @@
 /**
- * Contratto di `getPasswordPolicy`: come le cinque chiavi `security.password.*` di AppConfig
- * diventano la policy che il server applica.
+ * The contract of `getPasswordPolicy`: how the five `security.password.*` keys in AppConfig become
+ * the policy the server applies.
  *
- * Nessun test la copriva. Sta per diventare l'autorità su quattro percorsi che impostano una
- * password invece di uno solo, quindi cosa legge — e cosa succede quando una chiave manca o è
- * scritta male — smette di essere un dettaglio.
+ * Nothing covered it. It governs four password-setting paths rather than one, so what it reads —
+ * and what happens when a key is missing or malformed — stops being a detail.
  *
- * Integration perché legge da AppConfig; la validazione vera e propria è pura e sta in
+ * Integration, because it reads AppConfig; the validation itself is pure and lives in
  * `password.spec.ts`.
  */
 
@@ -34,8 +33,8 @@ async function seedPolicy(values: Record<string, string>): Promise<void> {
 
 describe('getPasswordPolicy — cosa legge', () => {
   it('senza alcuna chiave torna il default sicuro: tutto acceso, 12 caratteri', () => {
-    // Il fallback vive in un `.catch()` per chiave: `getTypedConfig` lancia se la chiave manca.
-    // Il default deve essere il più severo, non il più permissivo.
+    // The fallback lives in a per-key `.catch()`: `getTypedConfig` throws when the key is absent.
+    // The default has to be the strictest option, not the most permissive.
     return expect(getPasswordPolicy(prisma)).resolves.toEqual({
       minLength: 12,
       requireUppercase: true,
@@ -57,9 +56,9 @@ describe('getPasswordPolicy — cosa legge', () => {
 
   for (const below of ['7', '4']) {
     it(`sotto il pavimento (${below}) ricade sul default, che è più severo`, async () => {
-      // Un pavimento solo, dichiarato nel registry: un valore che non lo rispetta non parsa, e il
-      // `.catch()` restituisce il default. Prima erano tre numeri per una regola e la risposta
-      // dipendeva da quanto si scendeva — 7 diventava 8, 4 diventava 12.
+      // One floor, declared in the registry: a value that does not meet it fails to parse and the
+      // `.catch()` returns the default. There used to be three numbers for one rule, so the answer
+      // depended on how far below you went — 7 became 8, 4 became 12.
       await seedPolicy({ 'security.password.minLength': below });
       await expect(getPasswordPolicy(prisma)).resolves.toMatchObject({ minLength: 12 });
     });
@@ -74,9 +73,9 @@ describe('getPasswordPolicy — cosa legge', () => {
 /**
  * I quattro interruttori devono potersi spegnere.
  *
- * Una policy configurabile che sa solo diventare più severa non è configurabile: è una costante
- * con un pannello di controllo. E finché `validatePassword` aveva un solo call site il difetto
- * restava piccolo — estendendolo a quattro percorsi, un requisito che non si può togliere diventa
+ * A policy that can only ever become stricter is not configurable: it is a constant with a control
+ * panel. While `validatePassword` had a single call site the defect stayed small — extended to four
+ * paths, a requirement that cannot be switched off becomes
  * un lockout.
  */
 describe('getPasswordPolicy — spegnere un requisito lo spegne davvero', () => {
@@ -103,10 +102,10 @@ describe('getPasswordPolicy — spegnere un requisito lo spegne davvero', () => 
 /**
  * La policy deve essere leggibile senza sessione.
  *
- * La pagina di reset vive fuori dal layout autenticato — chi imposta una nuova password non ha una
- * sessione, per definizione — ed è la pagina che ne aveva più bisogno: annunciava un minimo scritto
- * a mano, non mostrava alcun requisito di complessità, e poi rilanciava un rifiuto del server che
- * ne elencava altri di cui non aveva mai parlato.
+ * The reset page lives outside the authenticated layout — someone setting a new password has no
+ * session, by definition — and it is the page that needed this most: it announced a hardcoded
+ * minimum, showed no complexity requirements at all, and then relayed a server rejection listing
+ * rules it had never mentioned.
  */
 describe('public.passwordPolicy', () => {
   it('risponde a un client anonimo', async () => {
@@ -130,8 +129,8 @@ describe('public.passwordPolicy', () => {
   });
 
   it('nomina i caratteri che contano come speciali', async () => {
-    // Il client non può dire «un simbolo»: la classe del server è un allowlist, e `~` o uno spazio
-    // sembrano accettabili sotto un'etichetta vaga fino al rifiuto.
+    // The client cannot say "a symbol": the server's class is an allowlist, and `~` or a space look
+    // acceptable under a vague label right up to the rejection.
     const anon = await createAnonymousCaller();
     const policy = await anon.public.passwordPolicy();
     expect(policy.specialChars).toContain('!');

@@ -33,7 +33,13 @@ export const UserSchema = z.object({
   updatedAt: z.date(),
 });
 
-/** Input schema for creating a user. Password must be at least 12 characters (policy enforced server-side). */
+/**
+ * Input schema for creating a user.
+ *
+ * `password` is only prefiltered here (8-128). The effective minimum and the complexity rules come
+ * from the configured policy and are applied server-side — a schema compiled into the bundle cannot
+ * know what an installation chose.
+ */
 export const CreateUserInputSchema = z.object({
   email: z.string().email('Email non valida'),
   username: z.string().min(3, 'Username deve essere di almeno 3 caratteri'),

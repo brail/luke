@@ -81,9 +81,9 @@ function ResetPasswordContent() {
     setError('');
     setSuccess('');
 
-    // Contro la policy configurata, non contro un numero scritto qui: questa pagina annunciava 12
-    // caratteri e nessun requisito di complessità, poi rilanciava un rifiuto del server che ne
-    // elencava altri quattro di cui non aveva mai parlato.
+    // Against the configured policy, not a number written here: this page announced 12 characters
+    // and no complexity requirement at all, then relayed a server rejection listing four more it had
+    // never mentioned.
     const evaluation = evaluatePassword(newPassword, confirmPassword, policy);
     if (evaluation.confirmError) {
       setError(evaluation.confirmError);

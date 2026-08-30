@@ -22,10 +22,9 @@ import {
  * no opinion about is declared here: `confirmPassword`, which never leaves the browser, and
  * `isActive`, which belongs to the update input rather than the create one.
  *
- * The password rules are the exception, and knowingly so: create requires 12 characters, edit adds
- * four complexity checks, and the server applies neither — it has a configurable policy
- * (`security.password.*`) that only the reset flow consults. Unifying that is a decision about
- * behaviour, not a schema move, and it is the next phase of this batch.
+ * `password` carries only the static prefilter: the effective minimum and the complexity rules come
+ * from the configured policy, applied server-side. The live checklist under the field shows them,
+ * so the user sees what is missing before submitting.
  */
 export const CreateUserSchema = CreateUserInputSchema.extend({
   confirmPassword: z.string().min(1, 'Conferma password richiesta'),

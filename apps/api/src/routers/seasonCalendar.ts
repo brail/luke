@@ -625,9 +625,7 @@ export const seasonCalendarRouter = router({
    * Reverses `cancelMilestone`, restoring the event to active and read-write. Admin-only — an
    * editor who can cancel an event cannot undo that decision, mirroring the `freeze`/`unfreeze`
    * asymmetry. Rejects if another active event has since taken the (planningGroup, phase) slot
-   * (the partial unique index would otherwise throw a raw constraint error). Does NOT re-apply
-   * state effects that were rolled back on cancel (e.g. a collection-layout lock) — that is a
-   * separate trigger mechanism, not something to replay blindly here.
+   * (the partial unique index would otherwise throw a raw constraint error).
    *
    * @auth season_calendar:uncancel (admin wildcard only — not granted to editor/viewer)
    * @input { id }

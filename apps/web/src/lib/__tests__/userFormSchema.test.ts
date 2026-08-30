@@ -44,9 +44,9 @@ describe('create ed edit giudicano le identità allo stesso modo', () => {
 
   for (const field of ['email', 'username', 'role'] as const) {
     it(`rifiuta ${field} mancante in entrambe le modalità`, () => {
-      // Edit deriva da `UpdateUserInputSchema`, dove questi campi sono opzionali perché una update
-      // parziale è legittima sul filo. Questo form non è una update parziale: manda ogni campo di
-      // una riga. Senza questo test il ribasamento avrebbe reso i tre facoltativi in silenzio.
+      // Edit derives from `UpdateUserInputSchema`, where these are optional because a partial
+      // update is legitimate on the wire. This form is not a partial update: it sends every field of
+      // one row. Without this test the rebase would have made all three optional in silence.
       const { [field]: _omitted, ...createWithout } = CREATE_FORM;
       const { [field]: _omittedEdit, ...editWithout } = EDIT_FORM;
       expect(buildUserPayload('create', createWithout, []).ok).toBe(false);
@@ -82,7 +82,7 @@ describe('in edit una password vuota significa «lascia quella che c’è»', ()
   it('omette la chiave password invece di mandarla vuota', () => {
     const result = buildUserPayload('edit', EDIT_FORM, []);
     expect(result.ok).toBe(true);
-    // Non `password: ''`: il router tratterebbe la chiave presente come una password da hashare.
+    // Not `password: ''`: a present key would be treated by the router as a password to hash.
     if (result.ok) expect('password' in result.payload).toBe(false);
   });
 
@@ -105,16 +105,16 @@ describe('in edit una password vuota significa «lascia quella che c’è»', ()
   it('in create la password resta obbligatoria', () => {
     const result = buildUserPayload('create', { ...CREATE_FORM, password: '', confirmPassword: '' }, []);
     expect(result.ok).toBe(false);
-    // Sul campo, non sul risultato: con entrambi vuoti anche `confirmPassword` fallisce, quindi
-    // `ok === false` da solo resterebbe vero anche se la regola sulla password sparisse.
+    // On the field, not on the result: with both empty `confirmPassword` fails too, so `ok === false`
+    // alone would stay true even if the password rule disappeared.
     if (!result.ok) expect(result.errors.password).toBeDefined();
   });
 
   it('in create una password sotto il prefiltro viene rifiutata sul suo campo', () => {
-    // Il confine lato client è il prefiltro statico, 8 caratteri: è il pavimento sotto cui nessuna
-    // configurazione può scendere. La lunghezza minima *effettiva* la decide la policy in AppConfig
-    // e oggi la applica solo il server — finché il client non la legge, questo è tutto ciò che il
-    // form può sapere, e va detto qui invece che scoperto quando l'utente prende un rifiuto.
+    // The client-side boundary is the static prefilter, 8 characters: the floor no configuration
+    // can go below. The *effective* minimum comes from the policy in AppConfig and is applied by the
+    // server; the schema is compiled into the bundle and cannot know it, so this is all the form
+    // itself can assert.
     const tooShort = 'Ab1!efg';
     const result = buildUserPayload('create', { ...CREATE_FORM, password: tooShort, confirmPassword: tooShort }, []);
     expect(result.ok).toBe(false);
@@ -122,9 +122,9 @@ describe('in edit una password vuota significa «lascia quella che c’è»', ()
   });
 
   it('il prefiltro non replica la complessità: quella la decide la policy', () => {
-    // Otto caratteri senza maiuscole né simboli passano il form e vengono rifiutati dal server.
-    // Non è una svista: replicare qui le regex significherebbe riscrivere una regola configurabile
-    // in un bundle che non sa come è configurata — il difetto che questo batch chiude.
+    // Eight characters with no uppercase or symbol pass the form and are refused by the server.
+    // Not an oversight: replicating the regexes here would mean rewriting a configurable rule
+    // into a bundle that cannot know how it is configured — the defect this batch closes.
     const simple = 'abcdefgh';
     const result = buildUserPayload('create', { ...CREATE_FORM, password: simple, confirmPassword: simple }, []);
     expect(result.ok).toBe(true);
@@ -145,12 +145,12 @@ describe('campi gestiti da un provider esterno', () => {
   });
 
   it('la validazione avviene comunque prima della rimozione', () => {
-    // Togliere un campo dal payload non lo rende esente dalle regole: altrimenti un provider
-    // esterno mal configurato aprirebbe un varco su ciò che il form accetta.
+    // Removing a field from the payload does not exempt it from the rules: otherwise a
+    // misconfigured external provider would open a gap in what the form accepts.
     const result = buildUserPayload('create', { ...CREATE_FORM, email: 'rotta' }, ['email']);
     expect(result.ok).toBe(false);
-    // Il messaggio, non solo l'esito: togliendo il campo prima di validare si otterrebbe comunque
-    // un fallimento, ma con «expected string, received undefined». Solo l'ordine giusto dà questo.
+    // The message, not just the outcome: stripping the field before validating would also fail,
+    // but with "expected string, received undefined". Only the right order produces this one.
     if (!result.ok) expect(result.errors.email).toBe('Email non valida');
   });
 });

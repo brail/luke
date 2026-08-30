@@ -1,15 +1,15 @@
 /**
- * La policy password configurata in AppConfig governa **tutti** i percorsi che impostano una
- * password, non solo la conferma del reset.
+ * The policy configured in AppConfig governs **every** path that sets a password, not only the
+ * reset confirmation.
  *
- * È il difetto che questo batch chiude, ed era di quelli che non si vedono: cinque chiavi
- * `security.password.*` esistevano, erano validate e leggibili, e `validatePassword` aveva un solo
- * call site. Alzare `minLength` a 16 lasciava la creazione utente accettare 12; spegnere un
- * requisito lasciava il cambio password self-service rifiutare comunque. Falliva aperto in una
- * direzione e chiuso nell'altra, e ogni percorso era coerente con sé stesso.
+ * This is the defect the batch closes, and it was one of the invisible ones: five
+ * `security.password.*` keys existed, validated and readable, while `validatePassword` had a single
+ * call site. Raising `minLength` to 16 left user creation accepting 12; switching a requirement off
+ * left the self-service change refusing anyway. It failed open in one direction and closed in the
+ * other, and each path was self-consistent.
  *
- * Ogni test qui configura la policy e poi guarda il verdetto cambiare: è l'unica forma che
- * distingue «la regola è applicata» da «la regola è scritta uguale in un altro posto».
+ * Every test here configures the policy and then watches the verdict change. That is the only shape
+ * that tells "the rule is applied" apart from "the rule is written the same way somewhere else".
  */
 
 import { randomUUID } from 'crypto';
@@ -64,7 +64,7 @@ describe('users.core.create', () => {
   });
 
   it('la accetta se quel requisito viene spento', async () => {
-    // Il senso della configurazione: spegnerlo deve spegnerlo anche qui, non solo sul reset.
+    // The point of configuring it: switching it off must switch it off here too, not only on reset.
     await setPolicy({ 'security.password.requireUppercase': 'false' });
     await expect(
       asAdmin().users.create({ ...newUser(), password: NO_UPPERCASE })
@@ -72,8 +72,8 @@ describe('users.core.create', () => {
   });
 
   it('alzare minLength rifiuta una password che prima bastava', async () => {
-    // Il caso esatto del difetto: prima questa restava accettata perché lo Zod diceva 12 e la
-    // configurazione non arrivava fin qui.
+    // The defect exactly: this used to stay accepted, because Zod said 12 and the configuration
+    // never reached this far.
     await expect(asAdmin().users.create({ ...newUser(), password: STRONG })).resolves.toBeTruthy();
 
     await setPolicy({ 'security.password.minLength': '16' });
@@ -100,7 +100,7 @@ describe('users.core.update', () => {
   });
 
   it('una update senza password non consulta la policy', async () => {
-    // La policy non deve trasformarsi in un ostacolo per chi modifica un altro campo.
+    // The policy must not become an obstacle to editing some other field.
     const { user: target } = await createTestUser('viewer');
     await setPolicy({ 'security.password.minLength': '128' });
     await expect(
@@ -122,8 +122,8 @@ describe('me.changePassword', () => {
   });
 
   it('la accetta se quel requisito viene spento', async () => {
-    // La direzione che prima falliva chiusa: la catena hardcoded nello schema rifiutava comunque,
-    // qualunque cosa dicesse la configurazione.
+    // The direction that used to fail closed: the hardcoded chain in the schema refused anyway,
+    // whatever the configuration said.
     const { session } = await createTestUser('editor');
     await setPolicy({ 'security.password.requireUppercase': 'false' });
     await expect(
@@ -137,12 +137,12 @@ describe('me.changePassword', () => {
 });
 
 /**
- * Chi può cambiare la policy.
+ * Who may change the policy.
  *
- * Renderla autoritativa su quattro percorsi ha tolto i pavimenti statici che nessuna configurazione
- * poteva abbassare. Se resta scrivibile da un ruolo non-admin, il risultato netto è aver spostato
- * la decisione dal codice a un utente che prima non poteva prenderla: un editor avrebbe potuto
- * portarla a otto caratteri qualsiasi. Questo è il test che impedisce al permesso di tornare.
+ * Making it authoritative over four paths removed the static floors no configuration could lower.
+ * If it stays writable by a non-admin role, the net effect is moving the decision from the code to
+ * a user who previously could not make it: an editor could have taken it down to eight characters
+ * of anything. This is the test that stops the permission coming back.
  */
 describe('la policy la cambia solo un admin', () => {
   it('un editor non può scriverla', async () => {

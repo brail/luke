@@ -1,14 +1,14 @@
 /**
- * Contratto di `validatePassword`, la funzione che sta per diventare l'unica autorità sulla
- * complessità delle password su tutti i percorsi che ne impostano una.
+ * The contract of `validatePassword`, the single authority on password complexity across every path
+ * that sets one.
  *
- * Oggi ha **un solo call site** (la conferma del reset) e nessun test. Prima di estenderla a
- * `users.core.create`, `users.core.update` e `me.changePassword` va fissato cosa fa davvero — in
- * particolare quali caratteri conta come speciali, che è il punto su cui diverge da tutte e sei le
- * copie client della stessa regola.
+ * It had one call site — the reset confirmation — and no test at all. Before extending it to
+ * `users.core.create`, `users.core.update` and `me.changePassword`, what it actually does had to be
+ * pinned, above all which characters it counts as special: that is where it diverged from the
+ * client-side copies of the same rule.
  *
- * Tier unit: la funzione è pura, la policy le arriva come argomento. Il caricamento della policy da
- * AppConfig è un'altra cosa e sta in `passwordPolicy.integration.spec.ts`.
+ * Unit tier: the function is pure and takes its policy as an argument. Loading that policy from
+ * AppConfig is a different question, covered in `passwordPolicy.integration.spec.ts`.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -44,8 +44,8 @@ describe('validatePassword — ogni requisito, acceso e spento', () => {
   });
 
   it('la lunghezza minima è quella della policy, non una costante', () => {
-    // Il difetto che questa fase chiude è proprio che alzare `minLength` non cambiava nulla
-    // altrove: qui si fissa che la funzione la legge davvero dall'argomento.
+    // The defect this phase closes is precisely that raising `minLength` changed nothing
+    // elsewhere; this pins that the function really reads it from its argument.
     expect(validatePassword('abcdefgh', { ...RELAXED, minLength: 8 }).isValid).toBe(true);
     expect(validatePassword('abcdefgh', { ...RELAXED, minLength: 9 }).isValid).toBe(false);
   });
@@ -65,7 +65,7 @@ describe('validatePassword — ogni requisito, acceso e spento', () => {
     });
 
     it(`con ${key} spento lo stesso input passa`, () => {
-      // Il senso di una policy configurabile: spegnere un requisito deve spegnerlo davvero.
+      // The point of a configurable policy: switching a requirement off must actually switch it off.
       expect(validatePassword(missing, { ...STRICT, [key]: false }).isValid).toBe(true);
     });
   }
@@ -78,12 +78,12 @@ describe('validatePassword — ogni requisito, acceso e spento', () => {
 });
 
 /**
- * La classe dei caratteri speciali è un allowlist esplicito, non «qualsiasi non alfanumerico».
+ * The special-character class is an explicit allowlist, not "any non-alphanumeric".
  *
- * È il punto in cui il server diverge da tutte le copie client, che usano `/[^A-Za-z0-9]/`: con
- * `~`, backtick, `€` o uno spazio l'utente vede tutte le spunte verdi e si prende un rifiuto dal
- * server. La suite non poteva accorgersene perché ogni password di test contiene `!`, che
- * soddisfa entrambe le classi.
+ * This is where the server diverged from every client copy, which used `/[^A-Za-z0-9]/`: with `~`,
+ * a backtick, `€` or a space the user saw every tick turn green and then collected a rejection from
+ * the server. The suite could not notice, because every test password contains `!`, which satisfies
+ * both classes.
  */
 describe('validatePassword — quali caratteri contano come speciali', () => {
   const accepted = ['!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', '-', '=', '[', ']', '{', '}', ';', "'", ':', '"', '\\', '|', ',', '.', '<', '>', '/', '?'];

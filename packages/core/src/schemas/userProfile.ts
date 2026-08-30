@@ -64,10 +64,10 @@ export const ChangePasswordSchema = z
       .max(128, 'Password troppo lunga'),
 
     /**
-     * Nuova password. Le regole di complessità non sono qui: le applica `validatePassword` con la
-     * policy configurata in AppConfig, perché uno schema compilato nel bundle non può sapere cosa
-     * una installazione ha scelto. Questa catena diceva 12 più quattro regex, ed era il motivo per
-     * cui rilassare un requisito configurato non rilassava questo percorso.
+     * New password. The complexity rules are not here: `validatePassword` applies them with the
+     * policy configured in AppConfig, because a schema compiled into the bundle cannot know what an
+     * installation chose. This chain used to say 12 plus four regexes, which is why relaxing a
+     * configured requirement did not relax this path.
      */
     newPassword: passwordPrefilterSchema,
 

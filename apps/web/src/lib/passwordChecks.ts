@@ -2,14 +2,16 @@
  * What a password must satisfy, evaluated against the policy the server actually applies.
  *
  * The checks used to be five hardcoded regexes with five hardcoded messages, written here and
- * again in the form schema and again on the reset page. They said 12 characters and "a symbol"
- * whatever the installation had configured, so an admin who relaxed a requirement still saw it
+ * again in the form schema and again in `ChangePasswordSchema`. They said 12 characters and "a
+ * symbol" whatever the installation had configured, so an admin who relaxed a requirement still saw it
  * demanded, and one who tightened `minLength` saw the old number — and "a symbol" covered
  * characters the server does not accept.
  *
  * Pure and under `src/lib/` on purpose: it is the part worth testing, and the unit tier only
  * collects `src/lib/**`. The hook around it does nothing but fetch the policy.
  */
+
+import { PASSWORD_SPECIAL_CHARS } from '@luke/core';
 
 /** The policy as the client receives it from `public.passwordPolicy`. */
 export interface ClientPasswordPolicy {
@@ -34,7 +36,11 @@ export const FALLBACK_PASSWORD_POLICY: ClientPasswordPolicy = {
   requireLowercase: true,
   requireDigit: true,
   requireSpecialChar: true,
-  specialChars: '!@#$%^&*()_+-=[]{};\':"\\|,.<>/?',
+  // Imported, not retyped. A hand-copied allowlist here would be the exact defect this batch set
+  // out to remove, and the worst possible place for it: this value is what the checklist shows when
+  // the endpoint is unreachable, so a divergence would refuse a character the server accepts with
+  // nothing to make it visible.
+  specialChars: PASSWORD_SPECIAL_CHARS,
 };
 
 export interface PasswordCheck {
@@ -106,16 +112,19 @@ export function evaluatePassword(
   const confirmError =
     confirmPassword && password !== confirmPassword ? 'Le password non coincidono' : '';
 
-  // An empty password is not "failing every requirement": in edit mode it means the existing one
-  // stays, so it reports no errors and no verdict.
-  const errors = password.length === 0
-    ? []
-    : checks.filter(c => c.key !== 'match' && !c.met).map(c => c.label);
+  // `errors` and `isValid` must agree, so that `!isValid` always implies something to show. They
+  // did not: `errors` skipped the `match` check while `isValid` counted it, so a filled password
+  // with an empty confirmation returned `isValid: false` with an empty `errors` — and the reset
+  // page rendered the literal string "Password non valida: " with nothing after the colon.
+  const errors = checks.filter(c => !c.met).map(c => c.label);
 
   return {
     checks,
     errors,
     confirmError,
-    isValid: password.length === 0 || (checks.every(c => c.met) && !confirmError),
+    // No exemption for an empty password. Only the reset page reads this verdict, and there an
+    // empty password is not valid; "blank means keep the existing one" is an edit-mode rule that
+    // belongs to the call site that knows it — `EditUserSchema` and `buildUserPayload` handle it.
+    isValid: errors.length === 0 && !confirmError,
   };
 }

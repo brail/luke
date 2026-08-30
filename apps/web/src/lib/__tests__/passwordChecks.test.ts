@@ -1,14 +1,15 @@
 /**
- * Contratto di `evaluatePassword`: quello che l'utente vede chiedere deve essere quello che il
- * server chiede davvero.
+ * The contract of `evaluatePassword`: what the user is shown must be what the server asks for.
  *
- * La versione precedente aveva cinque controlli e cinque messaggi scritti a mano: diceva 12
- * caratteri e «un simbolo» qualunque cosa l'installazione avesse configurato. Questi test fissano
- * la proprietà che rende utile la configurazione — cambiare la policy cambia sia il verdetto sia
- * ciò che viene mostrato — e la classe di caratteri, che è dove client e server divergevano.
+ * The previous version had five hand-written checks and five hand-written messages, saying twelve
+ * characters and "a symbol" whatever the installation had configured. These tests pin the property
+ * that makes the configuration worth having — changing the policy changes both the verdict and what
+ * is displayed — and the character class, which is where client and server diverged.
  */
 
 import { describe, expect, it } from 'vitest';
+
+import { PASSWORD_SPECIAL_CHARS } from '@luke/core';
 
 import {
   FALLBACK_PASSWORD_POLICY,
@@ -34,8 +35,8 @@ describe('i requisiti mostrati vengono dalla policy', () => {
   });
 
   it('un requisito spento sparisce dall’elenco invece di restare non soddisfatto', () => {
-    // È la differenza fra «configurabile» e «configurabile solo verso il più severo»: un requisito
-    // tolto non deve restare a schermo come una spunta che non si accenderà mai.
+    // The difference between "configurable" and "configurable only towards stricter": a removed
+    // requirement must not stay on screen as a tick that will never turn green.
     expect(keys({ ...FALLBACK_PASSWORD_POLICY, requireDigit: false })).not.toContain('digit');
     expect(keys(RELAXED)).toEqual(['length']);
   });
@@ -46,9 +47,15 @@ describe('i requisiti mostrati vengono dalla policy', () => {
   });
 
   it('il requisito sui simboli nomina i caratteri ammessi', () => {
-    // «Un simbolo» è ciò che lasciava sembrare accettabili `~` e lo spazio fino al rifiuto.
+    // "A symbol" is what made `~` and a space look acceptable right up to the rejection.
     const special = evaluatePassword('', undefined, FALLBACK_PASSWORD_POLICY).checks.find(c => c.key === 'special');
-    expect(special?.label).toContain(FALLBACK_PASSWORD_POLICY.specialChars);
+    expect(special?.label).toContain(PASSWORD_SPECIAL_CHARS);
+  });
+
+  it('il fallback usa la classe del server, non una copia', () => {
+    // Comparing it against itself proved nothing: dropping three characters from the client copy
+    // left the suite green while the server went on accepting them.
+    expect(FALLBACK_PASSWORD_POLICY.specialChars).toBe(PASSWORD_SPECIAL_CHARS);
   });
 });
 
@@ -82,10 +89,21 @@ describe('quali caratteri contano come speciali', () => {
 });
 
 describe('password vuota e conferma', () => {
-  it('una password vuota è valida e non elenca errori: in edit vuol dire «lascia quella che c’è»', () => {
+  it('una password vuota non è valida e dice cosa manca', () => {
+    // There used to be an exemption here, justified as "in edit mode it means keep the existing
+    // one". But that meaning belongs to `EditUserSchema` and `buildUserPayload`, not to this
+    // function: the only consumer of the verdict is the reset page, where empty is not valid.
     const result = evaluatePassword('', '', FALLBACK_PASSWORD_POLICY);
-    expect(result.isValid).toBe(true);
-    expect(result.errors).toEqual([]);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  it('quando non è valida c’è sempre qualcosa da mostrare', () => {
+    // The missing invariant: `errors` skipped the match check while `isValid` counted it, so the
+    // reset page rendered "Password non valida: " and nothing else.
+    const result = evaluatePassword('TestPassw0rd!x', '', FALLBACK_PASSWORD_POLICY);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.length).toBeGreaterThan(0);
   });
 
   it('segnala le password che non coincidono', () => {

@@ -8,9 +8,10 @@
  * refusing anyway. It failed open in one direction and closed in the other, and each path looked
  * correct on its own.
  *
- * A service rather than a function in `lib/password.ts`: the policy comes from `configManager`,
- * which imports `PasswordPolicy` back from there, and keeping the value import one-directional
- * avoids building a cycle around a type.
+ * A service rather than a function in `lib/password.ts` because of layering, not cycles: that file
+ * is a dependency-free crypto utility, and this needs `PrismaClient` and `TRPCError`. (An earlier
+ * version of this comment claimed a require cycle through `configManager`. There is none —
+ * `configManager` imports `PasswordPolicy` as `import type`, which is erased at emit.)
  */
 
 import { TRPCError } from '@trpc/server';

@@ -1,7 +1,5 @@
 'use client';
 
-import { useMemo } from 'react';
-
 import {
   FALLBACK_PASSWORD_POLICY,
   evaluatePassword,
@@ -39,9 +37,8 @@ export function usePasswordValidation(
   password: string,
   confirmPassword?: string
 ): PasswordEvaluation {
-  const policy = usePasswordPolicy();
-  return useMemo(
-    () => evaluatePassword(password, confirmPassword, policy),
-    [password, confirmPassword, policy]
-  );
+  // No `useMemo`: `evaluatePassword` builds a six-element array and runs four regex tests, which is
+  // the cost of the memo's own bookkeeping — and memoising would add a dependency on React Query
+  // handing back a referentially stable object.
+  return evaluatePassword(password, confirmPassword, usePasswordPolicy());
 }

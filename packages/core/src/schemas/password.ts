@@ -4,9 +4,10 @@ import { z } from 'zod';
  * The one description of what a password must look like, shared by the server that enforces it and
  * the client that has to tell the user about it.
  *
- * It exists because the two disagreed. The server counts as special only the characters below; the
- * form, the indicators and the reset page all asked for "any non-alphanumeric". A password with
- * `~`, a backtick or a space earned a row of green ticks and a rejection.
+ * It exists because the two disagreed. The server counts as special only the characters below,
+ * while the form schema, the indicator hook and `ChangePasswordSchema` all asked for "any
+ * non-alphanumeric" — so a password with `~`, a backtick or a space earned a row of green ticks and
+ * a rejection. (The reset page is a separate case: it asked for no complexity at all.)
  */
 
 /**
