@@ -16,8 +16,11 @@ import { randomUUID } from 'crypto';
 
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { createResetToken } from '../src/lib/emailHelpers';
+
 import {
   TEST_USER_PASSWORD,
+  createAnonymousCaller,
   createCallerWithSession,
   createTestUser,
   expectUnauthorized,
@@ -106,6 +109,37 @@ describe('users.core.update', () => {
     await expect(
       asAdmin().users.update({ id: target.id, firstName: 'Nuovo' })
     ).resolves.toMatchObject({ id: target.id });
+  });
+});
+
+/**
+ * The reset confirmation — the one path that always consulted the policy, and the one the refactor
+ * could not prove it had kept. Neutralising the check here left the whole suite green.
+ */
+describe('auth.confirmPasswordReset', () => {
+  const resetWith = async (newPassword: string) => {
+    const { user } = await createTestUser('viewer');
+    const { token } = await createResetToken(prisma, user.id);
+    const anon = await createAnonymousCaller();
+    return anon.auth.confirmPasswordReset({ token, newPassword });
+  };
+
+  it('rifiuta una password che non soddisfa la complessità configurata', async () => {
+    await expect(resetWith(NO_UPPERCASE)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
+
+  it('la accetta se quel requisito viene spento', async () => {
+    await setPolicy({ 'security.password.requireUppercase': 'false' });
+    await expect(resetWith(NO_UPPERCASE)).resolves.toBeTruthy();
+  });
+
+  it('registra il tentativo debole nell’audit, che è il motivo per cui questo percorso non usa assert', async () => {
+    await expect(resetWith(NO_UPPERCASE)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    const log = await prisma.auditLog.findFirst({
+      where: { action: 'PASSWORD_CHANGED', result: 'FAILURE' },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect((log?.metadata as { reason?: string } | null)?.reason).toBe('weak_password');
   });
 });
 

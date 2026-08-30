@@ -13,7 +13,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { validatePassword, type PasswordPolicy } from '../src/lib/password';
+import { hashPassword, validatePassword, verifyPassword, type PasswordPolicy } from '../src/lib/password';
 
 /** Tutti i requisiti accesi: il default di `getPasswordPolicy` quando nulla è configurato. */
 const STRICT: PasswordPolicy = {
@@ -102,4 +102,28 @@ describe('validatePassword — quali caratteri contano come speciali', () => {
       expect(result.errors).toContain('Richiesto almeno un carattere speciale');
     });
   }
+});
+
+/**
+ * A stored hash that argon2 cannot read.
+ *
+ * `argon2.verify` throws on a malformed hash rather than returning false, so calling it directly on
+ * the login path turned a corrupted credential row into a 500. `verifyPassword` swallows that and
+ * answers "wrong password", which is what lets the caller report invalid credentials instead of a
+ * server error. Nothing asserted it, so the claim was only a claim.
+ */
+describe('verifyPassword — a hash argon2 cannot read', () => {
+  const malformed = ['', 'not-a-hash', '$argon2id$garbage', '$argon2id$v=19$m=65536,t=3,p=1$c2FsdA'];
+
+  for (const hash of malformed) {
+    it(`answers false instead of throwing, for ${JSON.stringify(hash.slice(0, 24))}`, async () => {
+      await expect(verifyPassword('qualsiasi-password', hash)).resolves.toBe(false);
+    });
+  }
+
+  it('still answers true for a real hash and the right password', async () => {
+    const hash = await hashPassword('TestPassw0rd!23');
+    await expect(verifyPassword('TestPassw0rd!23', hash)).resolves.toBe(true);
+    await expect(verifyPassword('sbagliata', hash)).resolves.toBe(false);
+  });
 });

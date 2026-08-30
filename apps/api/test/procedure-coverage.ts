@@ -7,7 +7,7 @@
  *
  * ## Granularity
  *
- * Per namespace, not per procedure. There are 309 across 34 namespaces: a
+ * Per namespace, not per procedure. There are 314 across 34 namespaces: a
  * per-procedure map would be ~280 lines on day one, almost all "not yet
  * covered" — a file nobody reads, i.e. ceremony.
  *
@@ -45,7 +45,7 @@ const PLACEHOLDER_REASONS = [/^todo\b/i, /^da fare\b/i, /^-+$/, /^n\/?a$/i];
 /**
  * Namespaces whose procedures aren't reached by the integration suite.
  *
- * State as of 2026-07-30: **28 procedures invoked out of 309**, 9%. The
+ * State as of 2026-08-30: **95 procedures invoked out of 314**, 30%. The
  * number is deliberately spelled out here: it's the measurement, not a goal
  * reached. The suite started out focused on auth, RBAC, audit, idempotency
  * and rate limiting — i.e. the cross-cutting mechanisms — and the
@@ -60,8 +60,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   // ── Partially invoked: the suite touches them, but glancingly ─────────────
   auth: {
     reason:
-      'login e refreshToken coperte (rate limit, idempotenza, retrocessione di ruolo); il resto è flussi email e reset password, che richiedono SMTP e token reali',
-    uncovered: 10,
+      'login, refreshToken e confirmPasswordReset coperte (rate limit, idempotenza, retrocessione di ruolo, policy password sul token di reset); il resto è flussi email, che richiedono SMTP reale',
+    uncovered: 9,
   },
   brand: {
     reason:
@@ -204,7 +204,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
     uncovered: 1,
   },
   public: {
-    reason: 'nessun test scritto su appInfo, unico endpoint non autenticato',
+    reason:
+      'passwordPolicy è coperta da passwordPolicy.integration.spec.ts; resta appInfo, che legge una sola chiave e ha fallback hardcoded',
     uncovered: 1,
   },
 };

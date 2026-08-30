@@ -169,14 +169,21 @@ describe('users.update — reset password admin', () => {
     expect(auditRow).toBeNull();
   });
 
-  it('password sotto il prefiltro statico → rigettata prima di raggiungere il router', async () => {
-    // Il prefiltro è 8 caratteri, non 12: la lunghezza minima vera viene dalla policy configurata
-    // e si prova in `passwordPolicyEnforcement.integration.spec.ts`. Qui resta solo il pavimento
-    // sotto cui nessuna configurazione può scendere.
+  it('password sotto il prefiltro statico → rigettata da Zod, non dalla policy', async () => {
+    // The title used to claim the rejection happened before the router, while asserting only
+    // `BAD_REQUEST` — which `assertPasswordMeetsPolicy` produces too, from inside it. Lowering the
+    // prefilter left it green. Asserting the message distinguishes the two: Zod's wording is the
+    // prefilter's own, and the policy answers `Password non valida: …`.
+    //
+    // The prefilter is 8, not 12: the real minimum comes from the configured policy and is proved
+    // in `passwordPolicyEnforcement.integration.spec.ts`.
     const { user: target } = await createTargetUser();
 
     await expect(
-      usersAs('admin').update({ id: target.id, password: 'short1!' })
-    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+      usersAs('admin').update({ id: target.id, password: 'Ab1!efg' })
+    ).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+      message: expect.stringContaining('Password deve essere di almeno 8 caratteri'),
+    });
   });
 });
