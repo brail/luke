@@ -3,6 +3,8 @@
 
 import React, { useState } from 'react';
 
+import { usePasswordPolicy } from '../hooks/usePasswordValidation';
+import { evaluatePassword } from '../lib/passwordChecks';
 import {
   buildUserPayload,
   type SyncedField,
@@ -68,6 +70,7 @@ export function UserForm({
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const policy = usePasswordPolicy();
 
   const handleInputChange = (
     field: keyof UserFormData,
@@ -101,6 +104,20 @@ export function UserForm({
       setErrors(result.errors);
       return;
     }
+
+    // The schema carries only the static prefilter; the complexity rules and the real minimum come
+    // from the configured policy, which the bundle cannot know. Applied here so a password the
+    // server would refuse fails on the field, next to the checklist already showing what is missing,
+    // instead of returning as a toast. Skipped when blank in edit mode: there it means "keep the
+    // existing one", and `buildUserPayload` has already dropped the key.
+    if (result.payload.password) {
+      const evaluation = evaluatePassword(result.payload.password, undefined, policy);
+      if (!evaluation.isValid) {
+        setErrors({ password: `Password non valida: ${evaluation.errors.join(', ')}` });
+        return;
+      }
+    }
+
     onSubmit(result.payload);
   };
 

@@ -107,7 +107,7 @@ Le seguenti configurazioni **possono** essere modificate via AppConfig:
 - Rate limiting policies
 - Session duration e refresh
 - LDAP/SMTP timeouts
-- Password policy (con minimi hardcoded)
+- Password policy (`security.password.*`: un solo pavimento, 8, dichiarato in `AppConfigRegistry`)
 - CORS origins (con fallback sicuri)
 
 ---

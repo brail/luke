@@ -14,6 +14,8 @@ import { homedir } from 'os';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
+import { DEFAULT_PASSWORD_POLICY } from '@luke/core';
+
 import { encryptValue } from '../src/lib/configManager';
 import { hashPassword } from '../src/lib/password';
 import { seedCollectionCatalog } from './seeds/collectionCatalog';
@@ -190,27 +192,27 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     },
     {
       key: 'security.password.minLength',
-      value: '12',
+      value: String(DEFAULT_PASSWORD_POLICY.minLength),
       encrypt: false,
     },
     {
       key: 'security.password.requireUppercase',
-      value: 'true',
+      value: String(DEFAULT_PASSWORD_POLICY.requireUppercase),
       encrypt: false,
     },
     {
       key: 'security.password.requireLowercase',
-      value: 'true',
+      value: String(DEFAULT_PASSWORD_POLICY.requireLowercase),
       encrypt: false,
     },
     {
       key: 'security.password.requireDigit',
-      value: 'true',
+      value: String(DEFAULT_PASSWORD_POLICY.requireDigit),
       encrypt: false,
     },
     {
       key: 'security.password.requireSpecialChar',
-      value: 'true',
+      value: String(DEFAULT_PASSWORD_POLICY.requireSpecialChar),
       encrypt: false,
     },
     {

@@ -14,7 +14,9 @@ import { SectionCard } from '../../../../components/SectionCard';
 import { Button } from '../../../../components/ui/button';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
+import { usePasswordPolicy } from '../../../../hooks/usePasswordValidation';
 import { debugLog } from '../../../../lib/debug';
+import { evaluatePassword } from '../../../../lib/passwordChecks';
 import { trpc } from '../../../../lib/trpc';
 
 
@@ -50,10 +52,13 @@ export function ChangePasswordCard({
     handleSubmit,
     formState: { errors, isSubmitting },
     reset,
+    setError,
     watch,
   } = useForm<ChangePasswordInput>({
     resolver: zodResolver(ChangePasswordSchema),
   });
+
+  const policy = usePasswordPolicy();
 
   // Watch per validazione policy in tempo reale
   const newPassword = watch('newPassword', '');
@@ -91,9 +96,18 @@ export function ChangePasswordCard({
     },
   });
 
-  // Handler per submit form
+  /**
+   * `ChangePasswordSchema` only carries the static prefilter — the complexity rules and the real
+   * minimum come from the configured policy, which a schema compiled into the bundle cannot know.
+   * So the policy is applied here, against the same evaluation the server runs, and the failure
+   * lands on the field instead of coming back as a toast from the API.
+   */
   const onSubmit = (data: ChangePasswordInput) => {
-    // Zod gestisce già tutta la validazione lato client
+    const evaluation = evaluatePassword(data.newPassword, data.confirmNewPassword, policy);
+    if (!evaluation.isValid) {
+      setError('newPassword', { message: `Password non valida: ${evaluation.errors.join(', ')}` });
+      return;
+    }
     changePasswordMutation.mutate(data);
   };
 

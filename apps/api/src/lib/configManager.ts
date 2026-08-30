@@ -11,8 +11,10 @@ import pino from 'pino';
 import { z } from 'zod';
 
 import {
+  DEFAULT_PASSWORD_POLICY,
   type AppConfigKey,
   type AppConfigValue,
+  type PasswordPolicy,
   parseConfigValue,
   CRITICAL_CONFIG_KEYS,
   LdapResilienceSchema,
@@ -23,7 +25,6 @@ import { getMasterKey, invalidateRbacCache } from '@luke/core/server';
 
 import { acquireLastAdminLock } from './lastAdminGuard';
 
-import type { PasswordPolicy } from './password';
 import type { BackupScope, Prisma, PrismaClient } from '@prisma/client';
 
 const logger = pino({ level: 'info' });
@@ -716,11 +717,11 @@ export async function getBackupScheduleSettings(prisma: PrismaClient): Promise<B
 export async function getPasswordPolicy(prisma: PrismaClient): Promise<PasswordPolicy> {
   const [minLength, requireUppercase, requireLowercase, requireDigit, requireSpecialChar] =
     await Promise.all([
-      getTypedConfig(prisma, 'security.password.minLength').catch(() => 12),
-      getTypedConfig(prisma, 'security.password.requireUppercase').catch(() => true),
-      getTypedConfig(prisma, 'security.password.requireLowercase').catch(() => true),
-      getTypedConfig(prisma, 'security.password.requireDigit').catch(() => true),
-      getTypedConfig(prisma, 'security.password.requireSpecialChar').catch(() => true),
+      getTypedConfig(prisma, 'security.password.minLength').catch(() => DEFAULT_PASSWORD_POLICY.minLength),
+      getTypedConfig(prisma, 'security.password.requireUppercase').catch(() => DEFAULT_PASSWORD_POLICY.requireUppercase),
+      getTypedConfig(prisma, 'security.password.requireLowercase').catch(() => DEFAULT_PASSWORD_POLICY.requireLowercase),
+      getTypedConfig(prisma, 'security.password.requireDigit').catch(() => DEFAULT_PASSWORD_POLICY.requireDigit),
+      getTypedConfig(prisma, 'security.password.requireSpecialChar').catch(() => DEFAULT_PASSWORD_POLICY.requireSpecialChar),
     ]);
 
   return {

@@ -46,3 +46,67 @@ export const passwordPrefilterSchema = z
   .string()
   .min(8, 'Password deve essere di almeno 8 caratteri')
   .max(128, 'Password troppo lunga');
+
+/**
+ * Password complexity requirements, as configured in AppConfig.
+ *
+ * Here rather than beside the server's hashing utilities because both sides need it: the server to
+ * enforce it, the client to tell the user what will be asked of them.
+ */
+export interface PasswordPolicy {
+  minLength: number;
+  requireUppercase: boolean;
+  requireLowercase: boolean;
+  requireDigit: boolean;
+  requireSpecialChar: boolean;
+}
+
+/**
+ * What `getPasswordPolicy` returns when nothing is configured, and what a client shows until the
+ * policy arrives.
+ *
+ * One declaration for a default that used to be written three times — in the per-key `.catch()`
+ * fallbacks, in the seed, and in the browser. The seed copy is the one an installation actually
+ * runs on, so a drift between them was not cosmetic.
+ */
+export const DEFAULT_PASSWORD_POLICY: PasswordPolicy = {
+  minLength: 12,
+  requireUppercase: true,
+  requireLowercase: true,
+  requireDigit: true,
+  requireSpecialChar: true,
+};
+
+/** Which requirement a check refers to. Stable across languages; the text is the caller's. */
+export type PasswordRequirementKey = 'length' | 'uppercase' | 'lowercase' | 'digit' | 'special';
+
+export interface PasswordRequirement {
+  key: PasswordRequirementKey;
+  met: boolean;
+}
+
+/**
+ * Evaluates a password against the policy, once.
+ *
+ * Returns keys rather than messages, which is what lets both sides share it: the server turns an
+ * unmet key into an error string, the client into a checklist label, and neither has to agree with
+ * the other about wording. The five predicates themselves used to be written twice — the same four
+ * regexes in `apps/api` and in `apps/web`, plus two different mechanisms for the symbol class (a
+ * compiled RegExp against a per-character scan), which is the kind of pair that drifts while both
+ * halves still look right.
+ *
+ * Requirements the policy does not ask for are absent, not unmet: a caller rendering this must not
+ * show a tick that can never turn green.
+ */
+export function checkPassword(password: string, policy: PasswordPolicy): PasswordRequirement[] {
+  const requirements: PasswordRequirement[] = [
+    { key: 'length', met: password.length >= policy.minLength },
+  ];
+  if (policy.requireUppercase) requirements.push({ key: 'uppercase', met: /[A-Z]/.test(password) });
+  if (policy.requireLowercase) requirements.push({ key: 'lowercase', met: /[a-z]/.test(password) });
+  if (policy.requireDigit) requirements.push({ key: 'digit', met: /[0-9]/.test(password) });
+  if (policy.requireSpecialChar) {
+    requirements.push({ key: 'special', met: PASSWORD_SPECIAL_CHAR_REGEX.test(password) });
+  }
+  return requirements;
+}

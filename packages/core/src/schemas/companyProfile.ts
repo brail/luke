@@ -17,13 +17,19 @@ export type CompanyAddress = z.infer<typeof CompanyAddressSchema>;
  */
 export const COMPANY_FOOTER_TEXT_MAX = 200;
 
-/** A hex colour as `#RRGGBB`; the length the input accepts, including the `#`. */
-export const COMPANY_ACCENT_COLOR_LENGTH = 7;
+/** Hex digits in an accent colour, `#RRGGBB` — the schema's regex is built from this. */
+const COMPANY_ACCENT_COLOR_DIGITS = 6;
+
+/** What the input accepts, `#` included. Derived, so the two cannot say different numbers. */
+export const COMPANY_ACCENT_COLOR_LENGTH = COMPANY_ACCENT_COLOR_DIGITS + 1;
 
 /** Settings that control the visual style of exported documents (PDF, XLSX) for this company. */
 export const CompanyExportSettingsSchema = z.object({
   footerText: z.string().max(COMPANY_FOOTER_TEXT_MAX).optional(),
-  accentColorHex: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+  accentColorHex: z
+    .string()
+    .regex(new RegExp(`^#[0-9A-Fa-f]{${COMPANY_ACCENT_COLOR_DIGITS}}$`))
+    .optional(),
   locale: z.enum(['it-IT', 'en-US']).default('it-IT').optional(),
   dateFormat: z.enum(['DD/MM/YYYY', 'YYYY-MM-DD']).default('DD/MM/YYYY').optional(),
 });

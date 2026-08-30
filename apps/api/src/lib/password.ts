@@ -5,7 +5,7 @@
 
 import argon2 from 'argon2';
 
-import { PASSWORD_SPECIAL_CHAR_REGEX } from '@luke/core';
+import { checkPassword, type PasswordPolicy } from '@luke/core';
 
 /**
  * Argon2 configuration for password hashing
@@ -57,16 +57,7 @@ export async function verifyPassword(
   }
 }
 
-/**
- * Password complexity requirements loaded from AppConfig.
- */
-export interface PasswordPolicy {
-  minLength: number;
-  requireUppercase: boolean;
-  requireLowercase: boolean;
-  requireDigit: boolean;
-  requireSpecialChar: boolean;
-}
+export type { PasswordPolicy };
 
 /**
  * Outcome of a password validation check.
@@ -86,34 +77,20 @@ export function validatePassword(
   password: string,
   policy: PasswordPolicy
 ): PasswordValidationResult {
-  const errors: string[] = [];
+  // The predicates live in `@luke/core`; what stays here is the wording. `checkPassword` returns
+  // keys precisely so the client can render the same evaluation as a checklist without either side
+  // having to share the other's phrasing.
+  const messages: Record<string, string> = {
+    length: `Lunghezza minima: ${policy.minLength} caratteri`,
+    uppercase: 'Richiesta almeno una lettera maiuscola',
+    lowercase: 'Richiesta almeno una lettera minuscola',
+    digit: 'Richiesta almeno una cifra',
+    special: 'Richiesto almeno un carattere speciale',
+  };
 
-  // Checks minimum length
-  if (password.length < policy.minLength) {
-    errors.push(`Lunghezza minima: ${policy.minLength} caratteri`);
-  }
-
-  // Checks for uppercase letter
-  if (policy.requireUppercase && !/[A-Z]/.test(password)) {
-    errors.push('Richiesta almeno una lettera maiuscola');
-  }
-
-  // Checks for lowercase letter
-  if (policy.requireLowercase && !/[a-z]/.test(password)) {
-    errors.push('Richiesta almeno una lettera minuscola');
-  }
-
-  // Checks for digit
-  if (policy.requireDigit && !/[0-9]/.test(password)) {
-    errors.push('Richiesta almeno una cifra');
-  }
-
-  // Checks for special character. The set comes from `@luke/core` so the form, the indicators and
-  // the reset page can ask for the same thing — and can name the characters instead of saying
-  // "symbol", which is what left `~` and a space looking acceptable right up to the rejection.
-  if (policy.requireSpecialChar && !PASSWORD_SPECIAL_CHAR_REGEX.test(password)) {
-    errors.push('Richiesto almeno un carattere speciale');
-  }
+  const errors = checkPassword(password, policy)
+    .filter(r => !r.met)
+    .map(r => messages[r.key] as string);
 
   return {
     isValid: errors.length === 0,

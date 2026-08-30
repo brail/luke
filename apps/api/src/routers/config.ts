@@ -252,8 +252,9 @@ async function upsertConfig(
   //
   // Duplicates `AppConfigRegistry`, which now declares the same 8-128 range — they used to
   // disagree, this saying 8 while the registry said 6. It stays because writes do not consult the
-  // registry at all (B5.5): this is the general check, approximated for the one key someone needed
-  // it for. Fixing that is what deletes this block.
+  // registry at all: this is the general check, approximated for the one key someone needed
+  // it for. Making writes validate against the registry is what deletes this block; that work is
+  // scoped in docs/TASK_appconfig_write_authority.md.
   if (key === 'security.password.minLength') {
     const minLength = parseInt(value, 10);
     if (isNaN(minLength) || minLength < 8) {
