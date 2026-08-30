@@ -33,7 +33,7 @@
     "changelog:bump": "git-cliff --unreleased --prepend CHANGELOG.md",
     "changelog:tag": "git-cliff --unreleased --prepend CHANGELOG.md",
     "prepare": "husky",
-    "security:sast": "semgrep scan --config .semgrep/rules/mutation-requires-permission.yml; semgrep scan --config p/typescript --config p/nextjs --config p/nodejs --config p/react --config p/sql-injection --error && semgrep scan --config .semgrep/rules/ --severity ERROR --error",
+    "security:sast": "semgrep scan --config .semgrep/rules/mutation-requires-permission.yml && semgrep scan --config p/typescript --config p/nextjs --config p/nodejs --config p/react --config p/sql-injection --error && semgrep scan --config .semgrep/rules/ --severity ERROR --error",
     "security:secrets": "gitleaks detect --source .",
     "security:deps": "osv-scanner scan -r .",
     "security": "pnpm security:sast && pnpm security:secrets && pnpm security:deps"
