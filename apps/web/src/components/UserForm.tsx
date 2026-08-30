@@ -4,36 +4,36 @@
 import React, { useState } from 'react';
 import { z } from 'zod';
 
+import { CreateUserInputSchema } from '@luke/core';
+
 import { PasswordValidationIndicators } from './PasswordValidationIndicators';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 
 /**
- * Schema di validazione per il form utente
+ * Validation for the user form, in both modes.
+ *
+ * The identity fields come from `users.core.create`'s own input, so the form and the endpoint
+ * cannot end up with different ideas of what a username or an email is. Only what the endpoint has
+ * no opinion about is declared here: `confirmPassword`, which never leaves the browser, and
+ * `isActive`, which belongs to the update input rather than the create one.
+ *
+ * The password rules are the exception, and knowingly so: create requires 12 characters, edit adds
+ * four complexity checks, and the server applies neither — it has a configurable policy
+ * (`security.password.*`) that only the reset flow consults. Unifying that is a decision about
+ * behaviour, not a schema move; it is filed as its own batch and left alone here.
  */
-const CreateUserSchema = z
-  .object({
-    email: z.string().email('Email non valida'),
-    username: z.string().min(3, 'Username deve essere di almeno 3 caratteri'),
-    firstName: z.string().optional().or(z.literal('')),
-    lastName: z.string().optional().or(z.literal('')),
-    password: z.string().min(12, 'Password deve essere di almeno 12 caratteri'),
-    confirmPassword: z.string().min(12, 'Conferma password richiesta'),
-    role: z.enum(['admin', 'editor', 'viewer']),
-    isActive: z.boolean(),
-  })
-  .refine(data => data.password === data.confirmPassword, {
-    message: 'Le password non coincidono',
-    path: ['confirmPassword'],
-  });
+const CreateUserSchema = CreateUserInputSchema.extend({
+  confirmPassword: z.string().min(12, 'Conferma password richiesta'),
+  isActive: z.boolean(),
+}).refine(data => data.password === data.confirmPassword, {
+  message: 'Le password non coincidono',
+  path: ['confirmPassword'],
+});
 
-const EditUserSchema = z
-  .object({
-    email: z.string().email('Email non valida'),
-    username: z.string().min(3, 'Username deve essere di almeno 3 caratteri'),
-    firstName: z.string().optional().or(z.literal('')),
-    lastName: z.string().optional().or(z.literal('')),
+const EditUserSchema = CreateUserInputSchema.omit({ password: true })
+  .extend({
     password: z
       .string()
       .min(12, 'Password deve essere di almeno 12 caratteri')
@@ -45,18 +45,16 @@ const EditUserSchema = z
         'Password deve contenere almeno un carattere speciale'
       )
       .optional()
-      .or(z.literal('')), // Permette stringa vuota
-    confirmPassword: z.string().optional().or(z.literal('')), // Permette stringa vuota
-    role: z.enum(['admin', 'editor', 'viewer']),
+      .or(z.literal('')), // empty string retains the existing password
+    confirmPassword: z.string().optional().or(z.literal('')), // empty string allowed
     isActive: z.boolean(),
   })
   .refine(
     data => {
-      // Se password è vuota, confirmPassword deve essere vuota
+      // No new password means no confirmation either.
       if (!data.password || data.password.trim() === '') {
         return !data.confirmPassword || data.confirmPassword.trim() === '';
       }
-      // Se password è presente, deve coincidere con confirmPassword
       return data.password === data.confirmPassword;
     },
     {
