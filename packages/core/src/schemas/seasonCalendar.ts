@@ -83,10 +83,7 @@ export const MilestoneRescheduleInputSchema = z.object({
 });
 export type MilestoneRescheduleInput = z.infer<typeof MilestoneRescheduleInputSchema>;
 
-/**
- * Retiring a milestone instead of deleting it: the event stays in history, and the reason is what
- * makes that history worth keeping.
- */
+/** Retiring a milestone instead of deleting it: the event stays in history, with its reason. */
 export const MilestoneCancelInputSchema = z.object({
   id: z.string().uuid(),
   reason: MandatoryReasonSchema,

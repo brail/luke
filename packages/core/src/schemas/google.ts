@@ -1,16 +1,14 @@
 /**
  * Google Workspace integration config, in the two mutually exclusive auth modes.
  *
- * Shared by `integrations.google.saveConfig` and the settings page. Declared on each side, the two
- * disagreed on what "filled in" means: the form accepted an empty domain, service email and client
- * id, so Save fired and the server answered 400 — the failure landing in a toast instead of under
- * the field that caused it.
+ * Shared by `integrations.google.saveConfig` and the settings page, so the two cannot disagree on
+ * what counts as filled in.
  */
 
 import { z } from 'zod';
 
 /** Server-to-server auth: a service account key, optionally impersonating a Workspace user. */
-export const googleServiceAccountConfigSchema = z.object({
+const googleServiceAccountConfigSchema = z.object({
   authMode: z.literal('service_account'),
   serviceEmail: z.string().email('Email service account non valida'),
   /** Write-only: absent means "keep the stored key", never "clear it". */
@@ -21,7 +19,7 @@ export const googleServiceAccountConfigSchema = z.object({
 });
 
 /** Delegated auth: an OAuth client the user connects their own Google account through. */
-export const googleOauthConfigSchema = z.object({
+const googleOauthConfigSchema = z.object({
   authMode: z.literal('oauth_user'),
   oauthClientId: z.string().min(1, 'Client ID obbligatorio'),
   /** Write-only, same rule as `serviceKey`. */

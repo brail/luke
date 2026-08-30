@@ -25,14 +25,14 @@ import { Label } from './ui/label';
  * behaviour, not a schema move; it is filed as its own batch and left alone here.
  */
 const CreateUserSchema = CreateUserInputSchema.extend({
-  confirmPassword: z.string().min(12, 'Conferma password richiesta'),
+  confirmPassword: z.string().min(1, 'Conferma password richiesta'),
   isActive: z.boolean(),
 }).refine(data => data.password === data.confirmPassword, {
   message: 'Le password non coincidono',
   path: ['confirmPassword'],
 });
 
-const EditUserSchema = CreateUserInputSchema.omit({ password: true })
+const EditUserSchema = CreateUserInputSchema
   .extend({
     password: z
       .string()

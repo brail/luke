@@ -208,27 +208,6 @@ export default function GoogleWorkspacePage() {
     getOAuthUrlMutation.mutate({ redirectUri });
   };
 
-  const onSubmit = (data: FormValues) => {
-    if (data.authMode === 'service_account') {
-      saveMutation.mutate({
-        authMode: 'service_account',
-        serviceEmail: data.serviceEmail,
-        serviceKey: data.serviceKey?.trim() || undefined,
-        impersonateEmail: data.impersonateEmail || undefined,
-        domain: data.domain,
-        calendarSyncEnabled: data.calendarSyncEnabled,
-      });
-    } else {
-      saveMutation.mutate({
-        authMode: 'oauth_user',
-        oauthClientId: data.oauthClientId,
-        oauthClientSecret: data.oauthClientSecret?.trim() || undefined,
-        domain: data.domain,
-        calendarSyncEnabled: data.calendarSyncEnabled,
-      });
-    }
-  };
-
   return (
     <SettingsFormShell
       title="Google Workspace"
@@ -236,7 +215,7 @@ export default function GoogleWorkspacePage() {
       isLoading={isLoading}
     >
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <form onSubmit={form.handleSubmit(values => saveMutation.mutate(values))} className="space-y-6">
           {/* Modalità autenticazione */}
           <SectionCard
             title="Modalità autenticazione"

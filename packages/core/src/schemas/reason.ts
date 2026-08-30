@@ -13,9 +13,8 @@ import { z } from 'zod';
  * that should have appeared under the field. Reversed, the resolver rejects it where it was typed.
  * (`vendor.ts` still has the no-op ordering.)
  *
- * Shared so the endpoints that demand a reason cannot answer differently for identical input.
- * Consumed today by `collectionLayout.rows.setCompleted`; `seasonCalendar`'s `rescheduleMilestone`
- * and `cancelMilestone` declare the same rule inline and should be folded in here.
+ * Shared so the endpoints that demand a reason cannot answer differently for identical input:
+ * `collectionLayout.rows.setCompleted` and `seasonCalendar`'s reschedule/cancel inputs.
  */
 export const MandatoryReasonSchema = z
   .string()
