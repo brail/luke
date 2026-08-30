@@ -10,6 +10,17 @@ import { MaintenanceModeStateSchema } from './maintenanceMode';
  * automatic type conversion. Add new keys here to gain compile-time type safety
  * and automatic validation on boot via `validateCriticalConfig()`.
  */
+/**
+ * A boolean setting, as AppConfig stores it: a string.
+ *
+ * `booleanConfigSchema` follows JavaScript truthiness, so every non-empty string is `true` — the
+ * literal `"false"` included. A setting declared that way can be switched on and never off, and
+ * the failure is silent: the value is in the database, the admin sees it, and nothing applies it.
+ * `configManager.getBackupScheduleSettings` already sidesteps this with a hand-written string
+ * comparison; parsing the two words here means no reader has to know.
+ */
+const booleanConfigSchema = z.enum(['true', 'false']).transform(v => v === 'true');
+
 export const AppConfigRegistry = {
   // ── App ──────────────────────────────────────────────────────────────────
   'app.name':            z.string().min(1),
@@ -23,7 +34,7 @@ export const AppConfigRegistry = {
 
   // ── Auth ─────────────────────────────────────────────────────────────────
   'auth.strategy':                       z.enum(['local-first', 'ldap-first', 'local-only', 'ldap-only']),
-  'auth.requireEmailVerification':       z.coerce.boolean(),
+  'auth.requireEmailVerification':       booleanConfigSchema,
   'auth.nextAuthSecret':                 z.string().min(32),
 
   // ── RBAC ─────────────────────────────────────────────────────────────────
@@ -32,17 +43,17 @@ export const AppConfigRegistry = {
   // ── SMTP ─────────────────────────────────────────────────────────────────
   'smtp.host':   z.string().min(1),
   'smtp.port':   z.coerce.number().int().min(1).max(65535),
-  'smtp.secure': z.coerce.boolean(),
+  'smtp.secure': booleanConfigSchema,
   'smtp.user':   z.string(),
   'smtp.pass':   z.string(),
   'smtp.from':   z.string().email(),
 
   // ── Security ─────────────────────────────────────────────────────────────
   'security.password.minLength':           z.coerce.number().int().min(6).max(128),
-  'security.password.requireUppercase':    z.coerce.boolean(),
-  'security.password.requireLowercase':    z.coerce.boolean(),
-  'security.password.requireDigit':        z.coerce.boolean(),
-  'security.password.requireSpecialChar':  z.coerce.boolean(),
+  'security.password.requireUppercase':    booleanConfigSchema,
+  'security.password.requireLowercase':    booleanConfigSchema,
+  'security.password.requireDigit':        booleanConfigSchema,
+  'security.password.requireSpecialChar':  booleanConfigSchema,
   'security.tokenVersionCacheTTL':         z.coerce.number().int().min(0),
   'security.session.maxAge':               z.coerce.number().int().min(60),
   'security.session.updateAge':            z.coerce.number().int().min(60),
@@ -53,12 +64,12 @@ export const AppConfigRegistry = {
   'storage.local.basePath':      z.string().min(1),
   'storage.local.maxFileSizeMB': z.coerce.number().int().min(1).max(1000),
   'storage.local.publicBaseUrl': z.string().url(),
-  'storage.local.enableProxy':   z.coerce.boolean(),
+  'storage.local.enableProxy':   booleanConfigSchema,
 
   // ── Storage — S3-compatible (MinIO, SeaweedFS, Ceph RGW, ...) ─────────────
   'storage.s3.endpoint':        z.string().min(1),
   'storage.s3.port':            z.coerce.number().int().min(1).max(65535),
-  'storage.s3.useSSL':          z.coerce.boolean(),
+  'storage.s3.useSSL':          booleanConfigSchema,
   'storage.s3.accessKey':       z.string().min(1),
   'storage.s3.secretKey':       z.string().min(1),
   'storage.s3.region':          z.string(),
@@ -67,7 +78,7 @@ export const AppConfigRegistry = {
   'storage.s3.presignedGetTtl': z.coerce.number().int().min(60),
 
   // ── Storage — asset derivative pipeline (thumb/card/export image variants) ────
-  'storage.derivatives.enabled': z.coerce.boolean(),
+  'storage.derivatives.enabled': booleanConfigSchema,
 
   // ── Rate limiting (JSON object) ───────────────────────────────────────────
   'rateLimit': z.string().transform(s => RateLimitConfigSchema.parse(JSON.parse(s))),
@@ -79,7 +90,7 @@ export const AppConfigRegistry = {
   'editLock.ttlMs': z.coerce.number().int().min(300_000).max(3_600_000),
 
   // ── LDAP ─────────────────────────────────────────────────────────────────
-  'auth.ldap.enabled':        z.coerce.boolean(),
+  'auth.ldap.enabled':        booleanConfigSchema,
   'auth.ldap.url':            z.string().url(),
   'auth.ldap.bindDN':         z.string(),
   'auth.ldap.bindPassword':   z.string(),
@@ -104,13 +115,13 @@ export const AppConfigRegistry = {
   'integrations.nav.user':                  z.string().min(1),
   'integrations.nav.password':              z.string(),
   'integrations.nav.company':               z.string().min(1),
-  'integrations.nav.readOnly':              z.coerce.boolean(),
-  'integrations.nav.syncEnabled':           z.coerce.boolean(),
+  'integrations.nav.readOnly':              booleanConfigSchema,
+  'integrations.nav.syncEnabled':           booleanConfigSchema,
 
   // ── Google Workspace ──────────────────────────────────────────────────────
   'integrations.google.authMode':              z.enum(['service_account', 'oauth_user']),
   'integrations.google.domain':                z.string().min(1),
-  'integrations.google.calendarSync.enabled':  z.coerce.boolean(),
+  'integrations.google.calendarSync.enabled':  booleanConfigSchema,
   // Service account mode
   'integrations.google.serviceEmail':          z.string().email(),
   'integrations.google.serviceKey':            z.string().min(1),
@@ -127,13 +138,13 @@ export const AppConfigRegistry = {
   'integrations.github.feedbackSyncIntervalMs': z.coerce.number().int().min(300_000).max(604_800_000), // 5min–7d, default 24h (seed.ts)
 
   // ── Backup & Disaster Recovery ────────────────────────────────────────────
-  'backup.schedule.enabled':        z.coerce.boolean(),
+  'backup.schedule.enabled':        booleanConfigSchema,
   'backup.schedule.dailyTime':      z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), // "HH:mm"
   'backup.schedule.scope':          z.enum(['DB', 'DB_AND_FILES']),
   'backup.retentionDays':           z.coerce.number().int().min(1),
   'backup.retentionMinCount':       z.coerce.number().int().min(0),
   'backup.target.bucket':           z.string().min(1),
-  'backup.notifyOnFailure':         z.coerce.boolean(),
+  'backup.notifyOnFailure':         booleanConfigSchema,
 
   // ── Retention sweep (audit log + notifiche) ──────────────────────────────
   'auditLog.retentionDays':             z.coerce.number().int().min(1),
