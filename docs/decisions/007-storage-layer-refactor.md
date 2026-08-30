@@ -121,7 +121,7 @@ Tutte le chiavi vivono in AppConfig:
 
 ## Bucket validi
 
-Definiti in `localStorageConfigSchema` — non aggiungerne senza aggiornare lo schema:
+Definiti in `APP_STORAGE_BUCKETS` (`packages/core/src/storage/types.ts`), unica lista:
 
 - `uploads` — file generici
 - `exports` — PDF/XLSX generati

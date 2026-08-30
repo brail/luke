@@ -228,9 +228,9 @@ Two-level model: **Groups** contain **Rows**, independent ordering.
 `IStorageProvider` is an interface deliberately designed for future providers (local/samba/gdrive).
 
 - Never handle files outside an `IStorageProvider` implementation
-- Valid buckets: whatever `isValidBucket()` accepts in
-  `packages/core/src/storage/config.ts` — never add a bucket without updating
-  `localStorageConfigSchema`
+- Valid buckets: `APP_STORAGE_BUCKETS` in `packages/core/src/storage/types.ts` is
+  the only list — `isValidBucket()` derives from it. Never spell the buckets out
+  a second time anywhere
 - Always use the builder functions — never construct `/upload/...` paths by hand
 - `enableProxy`: don't hardcode — read from config
 

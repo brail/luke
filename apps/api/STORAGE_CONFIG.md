@@ -9,8 +9,7 @@ Per abilitare lo storage locale, aggiungi le seguenti configurazioni in `AppConf
 INSERT INTO app_configs (id, key, value, isEncrypted, createdAt, updatedAt) VALUES
   (hex(randomblob(16)), 'storage.type', 'local', false, datetime('now'), datetime('now')),
   (hex(randomblob(16)), 'storage.local.basePath', '/var/lib/luke/storage', false, datetime('now'), datetime('now')),
-  (hex(randomblob(16)), 'storage.local.maxFileSizeMB', '50', false, datetime('now'), datetime('now')),
-  (hex(randomblob(16)), 'storage.local.buckets', '["uploads","exports","assets"]', false, datetime('now'), datetime('now'));
+  (hex(randomblob(16)), 'storage.local.maxFileSizeMB', '50', false, datetime('now'), datetime('now'));
 ```
 
 ## Configurazione Parametri
@@ -34,11 +33,11 @@ INSERT INTO app_configs (id, key, value, isEncrypted, createdAt, updatedAt) VALU
 - **Descrizione**: Dimensione massima file in MB
 - **Range**: 1-1000 MB
 
-### `storage.local.buckets`
+### Bucket
 
-- **Valore**: `["uploads","exports","assets"]`
-- **Descrizione**: Bucket logici abilitati
-- **Opzioni**: `uploads`, `exports`, `assets`
+Non sono configurabili: la lista è `APP_STORAGE_BUCKETS`
+(`packages/core/src/storage/types.ts`), e il provider locale crea una directory
+per ciascuno all'avvio. Nulla la ridichiara altrove.
 
 ## Struttura Directory
 
