@@ -9,6 +9,8 @@ description: >
   Scoping: default = diff vs merge-base. /luke-audit apps/web | --since <ref> | --full
 context: fork
 agent: Explore
+background: false
+disallowed-tools: Edit, Write, NotebookEdit
 ---
 
 # Luke Architecture Audit

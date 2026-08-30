@@ -8,6 +8,8 @@ description: >
   Scoping: default = diff vs merge-base. /luke-bugs apps/api | --since <ref> | --full
 context: fork
 agent: Explore
+background: false
+disallowed-tools: Edit, Write, NotebookEdit
 ---
 
 # Luke Deep Bug Scan

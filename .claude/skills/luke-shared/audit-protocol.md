@@ -214,6 +214,39 @@ scope the context can run out. The default scope is the diff, so this only
 bites on explicit `--full`. If it happens, the answer is `/luke-full`, not
 resurrecting the fan-out.
 
+### 6.1 Execution contract — declared, never inherited from a default
+
+Every forked skill declares `context`, `agent` and `background` explicitly.
+
+Claude Code's skill frontmatter makes `background` optional, and a fork
+**defaults to running as a background agent that reports back as a task
+notification instead of blocking the turn**. `/luke-full` tells itself to wait
+for each child to finish before starting the next: under that default the
+children would not block and the instruction would be a promise the runtime
+does not keep — the same defect as the fan-out above, in a different field.
+So every Luke fork sets `background: false`.
+
+`disallowed-tools: Edit, Write, NotebookEdit` on the read-only skills removes
+the **direct file-editing tools** while the skill is active. Be precise about
+what that buys:
+
+- it is **structural** for `/luke-full`, which runs on `general-purpose` and
+  would otherwise hold Edit and Write with only prose to stop it;
+- it is **defense in depth** for the three `Explore` skills, whose agent type
+  already lacks those tools;
+- it is **not a filesystem sandbox**. A skill that still has `Bash` can write
+  through it. The claim is "the direct write tools are gone", not "the
+  filesystem is immutable". Do not restate it more strongly anywhere.
+
+`tools/scripts/check-skill-integrity.ts` enforces the **declaration**, not the
+enforcement: it verifies the fields are present and mutually consistent. That
+the runtime honors them is Claude Code's contract, read from its frontmatter
+schema — not independently proven here.
+
+A skill that writes files (`/luke-docs`) declares `background: false` for the
+same reason and carries **no** write restriction: background edits fall outside
+the invoking session's checkpoints, which is precisely what a writer must not do.
+
 ---
 
 ## 7. Concurrent sessions

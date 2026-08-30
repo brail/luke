@@ -25,7 +25,7 @@
 
 import { execFileSync } from 'child_process';
 import { existsSync, readdirSync, readFileSync } from 'fs';
-import { dirname, join, relative } from 'path';
+import { basename, dirname, join, relative } from 'path';
 
 import { isGitIgnored } from './lib/gitPaths';
 import { formatProblems, REPO_ROOT, type Problem } from './lib/report';
@@ -181,6 +181,112 @@ function symbolExists(name: string): boolean {
   return declaredSymbols.has(name);
 }
 
+/**
+ * Execution contract of a `SKILL.md`.
+ *
+ * Claude Code's skill frontmatter makes `background` optional, and a fork
+ * defaults to running as a background agent that reports back as a task
+ * notification instead of blocking the turn. `luke-full` instructs itself to
+ * wait for each child skill before starting the next — under that default the
+ * children would not block and the instruction would be a promise the runtime
+ * cannot keep. Same class as the fan-out this file already guards: a skill
+ * asserting behavior the runtime does not provide.
+ *
+ * Unknown frontmatter keys are deliberately NOT checked. The key set belongs to
+ * Claude Code, not to this repo, and hardcoding it here would turn the next CLI
+ * upgrade into a red gate. Only invariants the project owns are enforced.
+ *
+ * See `.claude/skills/luke-shared/audit-protocol.md` §6.1.
+ */
+
+/** Tools the read-only marker asserts are gone. Not a filesystem sandbox: a skill keeping Bash can still write through it. */
+const DIRECT_WRITE_TOOLS = ['Edit', 'Write', 'NotebookEdit'];
+
+/** The project-owned literal by which a skill declares itself read-only. */
+const READONLY_MARKER = 'Do NOT modify any file';
+
+/** Frontmatter body of a skill file, or null when it has none. */
+function frontmatter(content: string): string | null {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  return match ? match[1] : null;
+}
+
+/** 1-based line of the first match, for anchoring a problem. */
+function lineOf(content: string, pattern: RegExp): number {
+  const match = content.match(pattern);
+  return match?.index === undefined
+    ? 1
+    : content.slice(0, match.index).split('\n').length;
+}
+
+/**
+ * Checks the declaration, not the enforcement: that the fields are present and
+ * mutually consistent. Whether the runtime honors them is Claude Code's
+ * contract, read from its frontmatter schema and not proven here.
+ */
+function checkExecutionContract(
+  relPath: string,
+  content: string,
+  problems: Problem[]
+): void {
+  const fm = frontmatter(content);
+  if (fm === null) {
+    problems.push({
+      file: relPath,
+      line: 1,
+      message:
+        'no frontmatter. A SKILL.md without it declares no execution ' +
+        'contract at all, so every invariant below is silently unenforced.',
+    });
+    return;
+  }
+
+  if (/^context:\s*fork\s*$/m.test(fm)) {
+    // fork-declares-background
+    if (!/^background:\s*(true|false)\s*$/m.test(fm)) {
+      problems.push({
+        file: relPath,
+        line: lineOf(content, /^context:\s*fork\s*$/m),
+        message:
+          'declares `context: fork` without an explicit `background: true|false`. ' +
+          'A fork defaults to background execution, so an orchestrator that ' +
+          'waits for this skill would not actually be waiting. Declare it.',
+      });
+    }
+
+    // fork-declares-agent
+    if (!/^agent:\s*\S+/m.test(fm)) {
+      problems.push({
+        file: relPath,
+        line: lineOf(content, /^context:\s*fork\s*$/m),
+        message:
+          'declares `context: fork` without `agent:`. The agent type is what ' +
+          'decides the fork\'s tool and permission model — leaving it implicit ' +
+          'makes that model unreviewable.',
+      });
+    }
+  }
+
+  // readonly-skill-disallows-direct-write-tools
+  if (content.includes(READONLY_MARKER)) {
+    const declared = fm.match(/^disallowed-tools:\s*(.+)$/m)?.[1] ?? '';
+    const missing = DIRECT_WRITE_TOOLS.filter(
+      tool => !new RegExp(`\\b${tool}\\b`).test(declared)
+    );
+    if (missing.length > 0) {
+      problems.push({
+        file: relPath,
+        line: lineOf(content, new RegExp(READONLY_MARKER)),
+        message:
+          `says "${READONLY_MARKER}" but does not remove ${missing.join(', ')} ` +
+          'via `disallowed-tools`. Prose is a level-4 control; the frontmatter ' +
+          'field is structural. This removes the direct write tools only — a ' +
+          'skill keeping Bash is still not sandboxed.',
+      });
+    }
+  }
+}
+
 function main(): void {
   const files = skillFiles();
   if (files.length === 0) {
@@ -194,11 +300,19 @@ function main(): void {
   const problems: Problem[] = [];
   let pathRefs = 0;
   let symbolRefs = 0;
+  let contracts = 0;
 
   for (const file of files) {
     const relPath = relative(REPO_ROOT, file);
     const content = readFileSync(file, 'utf8');
     const lines = content.split('\n');
+
+    // Only SKILL.md carries an execution contract. `audit-protocol.md` quotes
+    // the read-only marker while documenting it, and is not a skill.
+    if (basename(file) === 'SKILL.md') {
+      contracts++;
+      checkExecutionContract(relPath, content, problems);
+    }
 
     // Vincolo di capacità: un agente Explore non ha il tool Agent, quindi non
     // può invocare subagenti. Vedi audit-protocol.md §6.
@@ -264,6 +378,17 @@ function main(): void {
     );
   }
 
+  // Same zero-discovery guard, for the execution contract. If the SKILL.md
+  // naming convention ever changes, this check must go red rather than
+  // silently vouch for zero skills.
+  if (contracts === 0) {
+    throw new Error(
+      `[skill-integrity] nessun SKILL.md fra ${files.length} file di skill. ` +
+        'Il contratto di esecuzione (fork/background/agent, tool di scrittura) ' +
+        'non sarebbe verificato su nessuna skill.'
+    );
+  }
+
   if (problems.length > 0) {
     throw new Error(
       `[skill-integrity] ${problems.length} riferimenti rotti nelle skill:\n` +
@@ -274,8 +399,8 @@ function main(): void {
   }
 
   console.log(
-    `[skill-integrity] ok — ${files.length} skill, ${pathRefs} path e ` +
-      `${symbolRefs} simboli verificati.`
+    `[skill-integrity] ok — ${files.length} skill, ${pathRefs} path, ` +
+      `${symbolRefs} simboli e ${contracts} contratti di esecuzione verificati.`
   );
 }
 

@@ -8,6 +8,8 @@ description: >
   full health check. Scoping: /luke-full apps/api | --since <ref> | --full
 context: fork
 agent: general-purpose
+background: false
+disallowed-tools: Edit, Write, NotebookEdit
 ---
 
 # Luke Full Audit — Orchestrator

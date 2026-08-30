@@ -11,6 +11,7 @@ description: >
 argument-hint: '[readme|inline|adr] [--since <git-ref>] [--dry-run]'
 context: fork
 agent: general-purpose
+background: false
 ---
 
 # Luke Docs — Documentation generator and maintainer
