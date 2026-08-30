@@ -1,6 +1,13 @@
 /**
  * Unit tests for Brand Logo Upload Service
  * Verifies MIME, size, magic bytes validations and upload logic
+ *
+ * **Known load-sensitive failures**, shared with `brandLogo.routes.integration.spec.ts` — see the
+ * header there for the mechanism. In short: a successful upload leaves `enqueueDerivatives` in
+ * flight, deferred through `setImmediate`, so `processMaster` can run after `afterEach` has reset
+ * the memoized storage provider and removed `basePath`, and re-initialise against the next test's
+ * directory. A red here is worth reading before assuming it is that flake; the specific failure
+ * observed in this file ("zero-size file") has not been traced to that mechanism.
  */
 
 import { mkdtemp, rm } from 'fs/promises';
