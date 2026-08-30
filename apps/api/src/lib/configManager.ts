@@ -17,6 +17,8 @@ import {
   type PasswordPolicy,
   parseConfigValue,
   validateConfigValue,
+  APP_CONFIG_DEFAULTS,
+  type AppConfigKeyWithDefault,
   CRITICAL_CONFIG_KEYS,
   LdapResilienceSchema,
   type LdapResilienceConfig,
@@ -293,6 +295,32 @@ export async function getTypedConfig<K extends AppConfigKey>(
     throw new Error(`Configurazione '${key}' non trovata`);
   }
   return parseConfigValue(key, raw);
+}
+
+/**
+ * Reads a key that has a declared default, always returning a usable parsed value.
+ *
+ * This is what most readers actually wanted. `getConfig` hands back a raw string or `null`, so
+ * every call site re-implemented the same two steps — a fallback and a coercion — and the copies
+ * drifted apart: `storage.local.enableProxy` was read three different ways, and the `s3.endpoint`
+ * fallback disagreed between the provider and the settings page. Here the fallback comes from
+ * `APP_CONFIG_DEFAULTS` and the parse from the registry, so neither is a call site's business.
+ *
+ * A stored value that no longer validates falls back too, with a warning: refusing to serve a
+ * storage provider because one row is malformed would take the app down for a bad edit.
+ */
+export async function getConfigOrDefault<K extends AppConfigKeyWithDefault>(
+  prisma: PrismaClient,
+  key: K,
+): Promise<AppConfigValue<K>> {
+  const raw = await getConfig(prisma, key, false);
+  return parseConfigOrDefault(
+    raw,
+    key,
+    // The default is declared in the string form AppConfig stores, and a test proves every entry
+    // parses; this is the same schema that test uses.
+    parseConfigValue(key, APP_CONFIG_DEFAULTS[key]),
+  );
 }
 
 /**
@@ -716,14 +744,16 @@ export async function getBackupScheduleSettings(prisma: PrismaClient): Promise<B
   ]);
 
   return {
-    // z.coerce.boolean() treats any non-empty string (including the literal "false") as true —
-    // explicit string comparison sidesteps that footgun for these two, unlike dailyTime/scope below.
-    enabled: enabledRaw === 'true',
+    // All six go through the registry schema. The two booleans used to be compared by hand
+    // against the literal strings, working around `z.coerce.boolean()` treating every non-empty
+    // string — `"false"` included — as true; `booleanConfigSchema` parses the two words, so the
+    // workaround outlived the footgun it was written for.
+    enabled: parseConfigOrDefault(enabledRaw, 'backup.schedule.enabled', false),
     dailyTime: parseConfigOrDefault(dailyTimeRaw, 'backup.schedule.dailyTime', '03:00'),
     scope: parseConfigOrDefault(scopeRaw, 'backup.schedule.scope', 'DB'),
     retentionDays,
     retentionMinCount,
-    notifyOnFailure: notifyRaw !== 'false',
+    notifyOnFailure: parseConfigOrDefault(notifyRaw, 'backup.notifyOnFailure', true),
   };
 }
 

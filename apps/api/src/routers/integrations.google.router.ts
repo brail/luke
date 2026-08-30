@@ -4,7 +4,7 @@ import { testGoogleConnection, generateOAuthUrl, exchangeOAuthCode } from '@luke
 import { googleWorkspaceConfigSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { saveConfig, getConfig, deleteConfig } from '../lib/configManager';
+import { saveConfig, getConfig, getConfigOrDefault, deleteConfig } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 
@@ -35,7 +35,7 @@ export const googleRouter = router({
       ] = await Promise.all([
         getConfig(ctx.prisma, 'integrations.google.authMode', false),
         getConfig(ctx.prisma, 'integrations.google.domain', false),
-        getConfig(ctx.prisma, 'integrations.google.calendarSync.enabled', false),
+        getConfigOrDefault(ctx.prisma, 'integrations.google.calendarSync.enabled'),
         getConfig(ctx.prisma, 'integrations.google.serviceEmail', false),
         getConfig(ctx.prisma, 'integrations.google.serviceKey', false),
         getConfig(ctx.prisma, 'integrations.google.impersonateEmail', false),
@@ -48,7 +48,7 @@ export const googleRouter = router({
       return {
         authMode: (authMode ?? 'service_account') as 'service_account' | 'oauth_user',
         domain: domain ?? '',
-        calendarSyncEnabled: calendarSyncEnabled === 'true',
+        calendarSyncEnabled,
         // service account
         serviceEmail: serviceEmail ?? '',
         hasServiceKey: !!serviceKey,

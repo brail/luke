@@ -13,7 +13,7 @@ import { UserIdSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import { withAuditLog } from '../lib/auditMiddleware';
-import { getConfig } from '../lib/configManager';
+import { getConfig, getConfigOrDefault } from '../lib/configManager';
 import { createResetToken, sendVerificationEmail } from '../lib/emailHelpers';
 import { isSyntheticLdapEmail } from '../lib/ldapAuth';
 import { sendAccountApprovedEmail, sendPasswordResetEmail } from '../lib/mailer';
@@ -331,7 +331,7 @@ export const usersAdminRouter = router({
       try {
         const [{ token, userToken: createdToken }, baseUrl] = await Promise.all([
           createResetToken(ctx.prisma, user.id),
-          getConfig(ctx.prisma, 'app.baseUrl', false).then(v => v || 'http://localhost:3000'),
+          getConfigOrDefault(ctx.prisma, 'app.baseUrl'),
         ]);
         userToken = createdToken;
 

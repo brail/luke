@@ -2,9 +2,8 @@
 
 Aperto il 2026-08-30, a valle di B5 (`TASK_router_schemas_to_core.md`) e del /simplify su di esso.
 
-> **Stato al 2026-08-30.** Punti 1, 2, 3 e 4 chiusi, in due commit distinti.
-> Punto 5 resta una domanda aperta, deliberatamente fuori da questo task.
-> Dettagli in fondo, sezioni «Esito» e «Esito — punto 4».
+> **Stato al 2026-08-30.** Tutti e cinque i punti chiusi, in tre commit distinti.
+> Dettagli in fondo: «Esito», «Esito — punto 4», «Esito — punto 5».
 
 ## Contesto
 
@@ -303,3 +302,88 @@ in una prova del genere.
 `pnpm lint` e `pnpm typecheck` 9/9 task · `apps/api` unit 435/435 · integration 510/510 (+1 expected
 fail) · `eslint-plugin-luke` 24/24 (10 casi nuovi sulla regola) · `packages/core` 225/225 ·
 `apps/web` 80/80.
+
+---
+
+## Esito — punto 5
+
+Il punto 5 era formulato come domanda, non come piano. Il censimento gli ha dato una forma
+concreta, e non era quella attesa: il problema non è che `getConfig` sia poco elegante, è che
+**il default di una chiave era scritto in quattro posti che non concordavano**.
+
+| chiave | `prisma/seed.ts` | `storage/index.ts` (il provider) | `routers/storage.ts` (la UI) |
+|---|---|---|---|
+| `storage.s3.endpoint` | `seaweedfs` | **`localhost`** | `seaweedfs` |
+| `storage.s3.accessKey` | `s3admin` | `s3admin` | **`''`** |
+| `storage.local.enableProxy` | `true` | non letta | `!== 'false'` |
+
+Su un'installazione non seedata la pagina impostazioni mostrava `seaweedfs` mentre il provider
+apriva la connessione verso `localhost`. Nessuno lo diceva. `storage.local.enableProxy` era letto
+in tre modi diversi in tre file.
+
+### La forma scelta
+
+`APP_CONFIG_DEFAULTS` in `packages/core/src/schemas/config.ts`: una dichiarazione sola, nella
+**forma stringa** in cui AppConfig conserva i valori. È la scelta che fa lavorare il registry —
+il default passa dallo stesso schema Zod del valore stanziato, e un test lo parsa chiave per
+chiave, così un default che il suo stesso schema rifiuterebbe diventa rosso subito invece che
+alla prima lettura su un'installazione nuova. `satisfies Partial<Record<AppConfigKey, string>>`
+lega le chiavi.
+
+`getConfigOrDefault(prisma, key)` è l'unico modo in cui un default viene applicato: restituisce il
+valore già parsato e non restituisce mai null, quindi nessun call site scrive più né un fallback né
+una coercizione. Un valore stanziato che non valida più ricade sul default con un warning —
+rifiutare di servire lo storage per una riga malformata butterebbe giù l'app per una modifica
+sbagliata.
+
+`prisma/seed.ts` legge la stessa dichiarazione: 13 valori letterali sostituiti.
+
+**Due assenze deliberate.** `storage.local.basePath`, il cui default è `join(homedir(), …)` e non è
+una costante. E le credenziali S3: **un default credenziale non è un default, è un seed di
+sviluppo**. Restano in `seed.ts`, e il provider tiene il suo fallback con un commento che dice
+perché; la UI continua a mostrare vuoto, perché offrire in un form una credenziale che il database
+non ha invita l'admin a salvarla come se fosse vera. Il pentest ha una cosa in meno da trovare.
+
+### Tre chiavi morte
+
+Il censimento incrociato seed↔registry ha trovato `integrations.ldap.timeout`,
+`integrations.ldap.connectTimeout` e `integrations.nav.syncIntervalMinutes`: seedate in AppConfig,
+assenti dal registry, **lette da nessuno**. Rimosse dal seed. Una chiave che il registry non
+dichiara e che nessuno legge contraddice «il registry è la fonte di verità» tanto quanto una
+lettura non tipizzata.
+
+### Un commento che era sopravvissuto al suo motivo
+
+`getBackupScheduleSettings` confrontava a mano `enabledRaw === 'true'` e `notifyRaw !== 'false'`,
+con un commento che lo giustificava: `z.coerce.boolean()` tratta ogni stringa non vuota — `"false"`
+inclusa — come `true`. Vero quando fu scritto; `booleanConfigSchema` ha risolto quel footgun tempo
+fa, e il workaround è rimasto. Ora passano dallo schema come i quattro campi vicini.
+
+### Una duplicazione che il censimento ha fatto emergere di lato
+
+`mailer.ts` **esporta già** `getSmtpConfig(prisma)`, che legge le sei chiavi SMTP, le controlla e
+coerce `port` e `secure`. `integrations.mail.router.ts` ne teneva una copia inline, con un secondo
+`parseInt` e un secondo `=== 'true'`. Il suo errore «configurazione incompleta» era lanciato dentro
+lo stesso `try` del resto, quindi finiva comunque in `handleSMTPError` esattamente come quello di
+`getSmtpConfig`: il router ora chiama la funzione che esisteva.
+
+### La misura
+
+Stesso metodo di conteggio prima e dopo (chiavi distinte lette attraverso uno schema del registry,
+via `getTypedConfig` / `getConfigOrDefault` / `parseConfigValue` / `parseConfigOrDefault`):
+
+**17 chiavi su 86 → 33 su 86.**
+
+Non è 86 su 86, e non deve esserlo: `getConfig` resta la lettura giusta per una stringa senza
+default — un URL, una credenziale — dove non c'è niente da parsare. Ciò che è sparito è il
+`parseInt` e il `=== 'true'` scritti a mano sul suo risultato, che è ciò di cui il punto 5 si
+lamentava davvero.
+
+### Verifica
+
+`pnpm lint` e `pnpm typecheck` 9/9 task · `packages/core` 242/242 · `apps/api` unit 436/436 ·
+integration 514/514 (+1 expected fail) · `apps/web` 80/80.
+
+Il guardiano della divergenza è `apps/api/test/configDefaults.integration.spec.ts`: con le righe
+`storage.*` cancellate — lo stato in cui le copie discordavano — la pagina impostazioni deve
+riportare esattamente i default dichiarati, quelli che il provider legge dalla stessa fonte.

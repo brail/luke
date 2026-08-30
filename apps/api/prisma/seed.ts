@@ -14,7 +14,7 @@ import { homedir } from 'os';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
-import { DEFAULT_PASSWORD_POLICY } from '@luke/core';
+import { APP_CONFIG_DEFAULTS, DEFAULT_PASSWORD_POLICY } from '@luke/core';
 
 import { encryptValue } from '../src/lib/configManager';
 import { hashPassword } from '../src/lib/password';
@@ -157,7 +157,7 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     },
     {
       key: 'app.name',
-      value: 'Luke',
+      value: APP_CONFIG_DEFAULTS['app.name'],
       encrypt: false,
     },
     {
@@ -177,7 +177,7 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     },
     {
       key: 'app.baseUrl',
-      value: 'http://localhost:3000',
+      value: APP_CONFIG_DEFAULTS['app.baseUrl'],
       encrypt: false,
     },
     {
@@ -247,21 +247,10 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       }),
       encrypt: false,
     },
-    // Timeouts for integrations
-    {
-      key: 'integrations.ldap.timeout',
-      value: '10000', // ms
-      encrypt: false,
-    },
-    {
-      key: 'integrations.ldap.connectTimeout',
-      value: '5000', // ms
-      encrypt: false,
-    },
     // Storage configuration
     {
       key: 'storage.type',
-      value: 'local',
+      value: APP_CONFIG_DEFAULTS['storage.type'],
       encrypt: false,
     },
     {
@@ -271,33 +260,33 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     },
     {
       key: 'storage.local.maxFileSizeMB',
-      value: '50',
+      value: APP_CONFIG_DEFAULTS['storage.local.maxFileSizeMB'],
       encrypt: false,
     },
     {
       key: 'storage.local.publicBaseUrl',
-      value: 'http://localhost:3001',
+      value: APP_CONFIG_DEFAULTS['storage.local.publicBaseUrl'],
       encrypt: false,
     },
     {
       key: 'storage.local.enableProxy',
-      value: 'true',
+      value: APP_CONFIG_DEFAULTS['storage.local.enableProxy'],
       encrypt: false,
     },
     // Storage — S3-compatible defaults (used when storage.type = 's3'); dev stack runs SeaweedFS
     {
       key: 'storage.s3.endpoint',
-      value: 'seaweedfs',
+      value: APP_CONFIG_DEFAULTS['storage.s3.endpoint'],
       encrypt: false,
     },
     {
       key: 'storage.s3.port',
-      value: '8333',
+      value: APP_CONFIG_DEFAULTS['storage.s3.port'],
       encrypt: false,
     },
     {
       key: 'storage.s3.useSSL',
-      value: 'false',
+      value: APP_CONFIG_DEFAULTS['storage.s3.useSSL'],
       encrypt: false,
     },
     {
@@ -312,23 +301,23 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     },
     {
       key: 'storage.s3.region',
-      value: 'us-east-1',
+      value: APP_CONFIG_DEFAULTS['storage.s3.region'],
       encrypt: false,
     },
     {
       key: 'storage.s3.presignedPutTtl',
-      value: '3600',
+      value: APP_CONFIG_DEFAULTS['storage.s3.presignedPutTtl'],
       encrypt: false,
     },
     {
       key: 'storage.s3.presignedGetTtl',
-      value: '3600',
+      value: APP_CONFIG_DEFAULTS['storage.s3.presignedGetTtl'],
       encrypt: false,
     },
     // Storage — asset derivative pipeline (thumb/card/export image variants)
     {
       key: 'storage.derivatives.enabled',
-      value: 'true',
+      value: APP_CONFIG_DEFAULTS['storage.derivatives.enabled'],
       encrypt: false,
     },
     // NAV (Microsoft Dynamics NAV / SQL Server)
@@ -360,11 +349,6 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     {
       key: 'integrations.nav.company',
       value: 'MYCOMPANY',
-      encrypt: false,
-    },
-    {
-      key: 'integrations.nav.syncIntervalMinutes',
-      value: '30',
       encrypt: false,
     },
     {

@@ -36,7 +36,7 @@ import {
 } from '@luke/core';
 
 import { putDerivativeObject, readFileBuffer } from '../../storage';
-import { getConfig } from '../configManager';
+import { getConfigOrDefault } from '../configManager';
 import { withSchedulerLock } from '../schedulerLock';
 
 import { deriveVariant, probeHasAlpha } from './pipeline';
@@ -57,8 +57,7 @@ const derivativeLimit = pLimit(DERIVATIVE_CONCURRENCY);
 
 /** Exported for `asset.service.ts`'s `ingestImageAsset`, whose synchronous sync-variant generation must honor the same kill switch — see the call site there for why. */
 export async function derivativesEnabled(prisma: PrismaClient): Promise<boolean> {
-  const raw = await getConfig(prisma, 'storage.derivatives.enabled', false);
-  return raw === null ? true : raw === 'true';
+  return getConfigOrDefault(prisma, 'storage.derivatives.enabled');
 }
 
 function isUniqueConstraintViolation(err: unknown): boolean {

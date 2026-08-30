@@ -7,14 +7,9 @@ import * as nodemailer from 'nodemailer';
 import { z } from 'zod';
 
 import { logAudit } from '../lib/auditLog';
-import { saveConfig, getConfig } from '../lib/configManager';
-import {
-  ErrorCode,
-  createStandardError,
-  toTRPCError,
-  IntegrationErrorHandler,
-  SecureLogger,
-} from '../lib/errorHandler';
+import { saveConfig } from '../lib/configManager';
+import { toTRPCError, IntegrationErrorHandler, SecureLogger } from '../lib/errorHandler';
+import { getSmtpConfig } from '../lib/mailer';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 
@@ -109,45 +104,28 @@ export const mailRouter = router({
       try {
         const logger = new SecureLogger(ctx.logger);
 
-        // Fetches SMTP configuration from individual AppConfig fields
-        const [host, port, secure, user, pass, from] = await Promise.all([
-          getConfig(ctx.prisma, 'smtp.host', false),
-          getConfig(ctx.prisma, 'smtp.port', false),
-          getConfig(ctx.prisma, 'smtp.secure', false),
-          getConfig(ctx.prisma, 'smtp.user', false),
-          getConfig(ctx.prisma, 'smtp.pass', true), // Decrypts password
-          getConfig(ctx.prisma, 'smtp.from', false),
-        ]);
+        // `getSmtpConfig` already reads these six keys, checks them and coerces port and secure;
+        // this procedure kept its own copy, down to a second `parseInt` and a second
+        // `=== 'true'`. Its "incomplete configuration" error was thrown inside this same `try`,
+        // so it reached `handleSMTPError` exactly as the one from `getSmtpConfig` now does.
+        const smtp = await getSmtpConfig(ctx.prisma);
 
-        // Verifies all fields are configured
-        if (!host || !port || !user || !pass || !from) {
-          const standardError = createStandardError(
-            ErrorCode.CONFIG_ERROR,
-            'Configurazione SMTP incompleta. Verifica che tutti i campi siano configurati.'
-          );
-          throw toTRPCError(standardError);
-        }
-
-        // Creates nodemailer transporter
         const transporter = nodemailer.createTransport({
-          host,
-          port: parseInt(port, 10),
-          secure: secure === 'true', // true for SSL/TLS, false for STARTTLS
-          auth: {
-            user,
-            pass,
-          },
+          host: smtp.host,
+          port: smtp.port,
+          secure: smtp.secure, // true for SSL/TLS, false for STARTTLS
+          auth: smtp.auth,
         });
 
         // Verifies the connection
         await transporter.verify();
 
         // Determines recipient: parameter or configured sender
-        const recipient = input.testEmail || from;
+        const recipient = input.testEmail || smtp.from;
 
         // Sends test email
         const testEmail = {
-          from,
+          from: smtp.from,
           to: recipient,
           subject: 'Luke - Test Email Configurazione SMTP',
           text: "Questa è un'email di test da Luke. Se ricevi questa email, la configurazione SMTP funziona correttamente!",

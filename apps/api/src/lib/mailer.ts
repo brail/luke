@@ -9,9 +9,9 @@ import { join } from 'path';
 import nodemailer from 'nodemailer';
 import pino from 'pino';
 
-import { calcBackoffDelay } from '@luke/core';
+import { calcBackoffDelay, parseConfigValue } from '@luke/core';
 
-import { getConfig } from './configManager';
+import { getConfig, getConfigOrDefault } from './configManager';
 
 import type { PrismaClient } from '@prisma/client';
 import type Mail from 'nodemailer/lib/mailer';
@@ -42,7 +42,7 @@ export async function getSmtpConfig(prisma: PrismaClient): Promise<SmtpConfig> {
   const [host, port, secure, user, pass, from] = await Promise.all([
     getConfig(prisma, 'smtp.host', false),
     getConfig(prisma, 'smtp.port', false),
-    getConfig(prisma, 'smtp.secure', false),
+    getConfigOrDefault(prisma, 'smtp.secure'),
     getConfig(prisma, 'smtp.user', false),
     getConfig(prisma, 'smtp.pass', true), // Decifrare password
     getConfig(prisma, 'smtp.from', false),
@@ -56,8 +56,9 @@ export async function getSmtpConfig(prisma: PrismaClient): Promise<SmtpConfig> {
 
   return {
     host,
-    port: parseInt(port, 10),
-    secure: secure === 'true',
+    // Parsed by the key's own registry schema — `port` is guaranteed non-null by the guard above.
+    port: parseConfigValue('smtp.port', port),
+    secure,
     auth: {
       user,
       pass,

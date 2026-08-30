@@ -13,7 +13,7 @@ import { z } from 'zod';
 
 import { APP_STORAGE_BUCKETS, isValidBucket, storageSaveConfigSchema, type StorageBucket } from '@luke/core';
 
-import { deleteConfig, getConfig, saveConfig } from '../lib/configManager';
+import { deleteConfig, getConfig, getConfigOrDefault, saveConfig } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
 import { withSectionAccess } from '../lib/sectionAccessMiddleware';
 import { getStorageBaseUrl, resolvePublicUrl } from '../lib/storageUrl';
@@ -335,8 +335,7 @@ export const storageRouter = router({
   createUpload: protectedProcedure
     .input(CreateUploadSchema)
     .mutation(async ({ input, ctx }) => {
-      const maxSizeMBStr = await getConfig(ctx.prisma, 'storage.local.maxFileSizeMB', false);
-      const maxSizeMB = parseInt(maxSizeMBStr || '50', 10);
+      const maxSizeMB = await getConfigOrDefault(ctx.prisma, 'storage.local.maxFileSizeMB');
       const maxSizeBytes = maxSizeMB * 1024 * 1024;
 
       if (input.size > maxSizeBytes) {
@@ -461,44 +460,49 @@ export const storageRouter = router({
     .use(requirePermission('config:read'))
     .use(withSectionAccess('settings'))
     .query(async ({ ctx }) => {
+      // Every fallback and coercion here used to be written out, and disagreed with the copy in
+      // `storage/index.ts` that opens the actual connection — the page showed `seaweedfs` while
+      // the provider dialled `localhost`. Both now read the one declaration.
       const [
-        storageType,
-        basePath, maxFileSizeMBStr, enableProxyStr,
-        s3Endpoint, s3PortStr, s3UseSslStr, s3AccessKey, s3SecretKey,
-        s3Region, s3PublicBaseUrl, s3PutTtlStr, s3GetTtlStr,
+        type,
+        basePath, maxFileSizeMB, enableProxy,
+        endpoint, port, useSSL, s3AccessKey, s3SecretKey,
+        region, s3PublicBaseUrl, presignedPutTtl, presignedGetTtl,
       ] = await Promise.all([
-        getConfig(ctx.prisma, 'storage.type', false),
+        getConfigOrDefault(ctx.prisma, 'storage.type'),
         getConfig(ctx.prisma, 'storage.local.basePath', false),
-        getConfig(ctx.prisma, 'storage.local.maxFileSizeMB', false),
-        getConfig(ctx.prisma, 'storage.local.enableProxy', false),
-        getConfig(ctx.prisma, 'storage.s3.endpoint', false),
-        getConfig(ctx.prisma, 'storage.s3.port', false),
-        getConfig(ctx.prisma, 'storage.s3.useSSL', false),
+        getConfigOrDefault(ctx.prisma, 'storage.local.maxFileSizeMB'),
+        getConfigOrDefault(ctx.prisma, 'storage.local.enableProxy'),
+        getConfigOrDefault(ctx.prisma, 'storage.s3.endpoint'),
+        getConfigOrDefault(ctx.prisma, 'storage.s3.port'),
+        getConfigOrDefault(ctx.prisma, 'storage.s3.useSSL'),
         getConfig(ctx.prisma, 'storage.s3.accessKey', true),
         getConfig(ctx.prisma, 'storage.s3.secretKey', true),
-        getConfig(ctx.prisma, 'storage.s3.region', false),
+        getConfigOrDefault(ctx.prisma, 'storage.s3.region'),
         getConfig(ctx.prisma, 'storage.s3.publicBaseUrl', false),
-        getConfig(ctx.prisma, 'storage.s3.presignedPutTtl', false),
-        getConfig(ctx.prisma, 'storage.s3.presignedGetTtl', false),
+        getConfigOrDefault(ctx.prisma, 'storage.s3.presignedPutTtl'),
+        getConfigOrDefault(ctx.prisma, 'storage.s3.presignedGetTtl'),
       ]);
 
       return {
-        type: (storageType || 'local') as 'local' | 's3',
+        type,
         local: {
           basePath: basePath || join(homedir(), '.luke', 'storage'),
-          maxFileSizeMB: parseInt(maxFileSizeMBStr || '50', 10),
-          enableProxy: enableProxyStr !== 'false',
+          maxFileSizeMB,
+          enableProxy,
         },
         s3: {
-          endpoint: s3Endpoint || 'seaweedfs',
-          port: parseInt(s3PortStr || '8333', 10),
-          useSSL: s3UseSslStr === 'true',
+          endpoint,
+          port,
+          useSSL,
+          // Blank, not the provider's dev fallback: this feeds a settings form, and offering a
+          // credential the database does not hold invites an admin to save it as if it were real.
           accessKey: s3AccessKey || '',
           secretKey: s3SecretKey || '',
-          region: s3Region || 'us-east-1',
+          region,
           publicBaseUrl: s3PublicBaseUrl || '',
-          presignedPutTtl: parseInt(s3PutTtlStr || '3600', 10),
-          presignedGetTtl: parseInt(s3GetTtlStr || '3600', 10),
+          presignedPutTtl,
+          presignedGetTtl,
         },
       };
     }),

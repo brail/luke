@@ -8,7 +8,7 @@ import { randomBytes, createHash } from 'crypto';
 import { PrismaClient } from '@prisma/client';
 
 import { logAudit } from './auditLog';
-import { getConfig } from './configManager';
+import { getConfigOrDefault } from './configManager';
 import { sendEmailVerificationEmail } from './mailer';
 
 import type { Context } from './context';
@@ -79,7 +79,7 @@ export async function sendVerificationEmail(
 
   // Retrieve baseUrl from config
   const baseUrl =
-    (await getConfig(prisma, 'app.baseUrl', false)) || 'http://localhost:3000';
+    await getConfigOrDefault(prisma, 'app.baseUrl');
 
   // Send email (with automatic internal retry)
   try {

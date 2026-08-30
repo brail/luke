@@ -17,8 +17,10 @@
 import { Prisma } from '@prisma/client';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { APP_CONFIG_DEFAULTS } from '@luke/core';
+
 import { putDerivativeObject, readFileBuffer } from '../../../storage';
-import { getConfig } from '../../configManager';
+import { getConfigOrDefault } from '../../configManager';
 import { enqueueDerivatives, processMaster, registerDerivativeScheduler } from '../derivativeWorker';
 import { deriveVariant, probeHasAlpha } from '../pipeline';
 
@@ -33,7 +35,7 @@ vi.mock('../../../storage', () => ({
   readFileBuffer: vi.fn(),
 }));
 vi.mock('../../configManager', () => ({
-  getConfig: vi.fn(),
+  getConfigOrDefault: vi.fn(),
 }));
 vi.mock('../../schedulerLock', () => ({
   // Pass-through: the lock's own acquire/release semantics aren't this file's
@@ -100,11 +102,11 @@ describe('processMaster', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     prisma = makePrisma();
-    vi.mocked(getConfig).mockResolvedValue('true'); // storage.derivatives.enabled
+    vi.mocked(getConfigOrDefault).mockResolvedValue(true); // storage.derivatives.enabled
   });
 
   it('does nothing when the kill switch is off', async () => {
-    vi.mocked(getConfig).mockResolvedValue('false');
+    vi.mocked(getConfigOrDefault).mockResolvedValue(false);
 
     await processMaster(prisma, 'master-1');
 
@@ -112,7 +114,11 @@ describe('processMaster', () => {
   });
 
   it('treats a missing AppConfig row for the kill switch as enabled (fail-open to the existing behavior, not fail-closed)', async () => {
-    vi.mocked(getConfig).mockResolvedValue(null);
+    // The absent row no longer reaches this function: `getConfigOrDefault` resolves it against
+    // `APP_CONFIG_DEFAULTS`, so what used to be a hand-written `raw === null ? true : …` here is
+    // now a declaration. Asserting the declaration is what keeps the fail-open guarantee pinned.
+    expect(APP_CONFIG_DEFAULTS['storage.derivatives.enabled']).toBe('true');
+    vi.mocked(getConfigOrDefault).mockResolvedValue(true);
     vi.mocked(prisma.fileObject.findUnique).mockResolvedValue(null);
 
     await processMaster(prisma, 'master-1');
@@ -297,14 +303,14 @@ describe('enqueueDerivatives concurrency cap', () => {
   });
 
   it('bounds concurrent processMaster runs instead of letting a burst of uploads run unbounded', async () => {
-    // getConfig is processMaster's first await point (the kill-switch check) — resolving
+    // getConfigOrDefault is processMaster's first await point (the kill-switch check) — resolving
     // it under an artificial delay turns it into an in-flight/peak-concurrency probe
     // without needing to fake the rest of the pipeline. Mirrors the same
     // inFlight/peak pattern already used for `IMAGE_FETCH_CONCURRENCY` in
     // `collectionLayout.export.pdf.service.test.ts`.
     let inFlight = 0;
     let peak = 0;
-    vi.mocked(getConfig).mockImplementation(async () => {
+    vi.mocked(getConfigOrDefault).mockImplementation(async () => {
       inFlight++;
       peak = Math.max(peak, inFlight);
       await new Promise(resolve => setTimeout(resolve, 5));
@@ -316,7 +322,7 @@ describe('enqueueDerivatives concurrency cap', () => {
     const masterIds = Array.from({ length: 24 }, (_, i) => `master-${i}`);
     for (const id of masterIds) enqueueDerivatives(prisma, id);
 
-    await expect.poll(() => vi.mocked(getConfig).mock.calls.length, { timeout: 5000 }).toBe(masterIds.length);
+    await expect.poll(() => vi.mocked(getConfigOrDefault).mock.calls.length, { timeout: 5000 }).toBe(masterIds.length);
 
     // The exact cap (8) is a private constant in derivativeWorker.ts; the invariant
     // this test protects is that it stays *bounded* well under the full burst size,
@@ -349,7 +355,7 @@ describe('registerDerivativeScheduler', () => {
     // Same "try/catch per item" discipline as every other tick-based sweep in this
     // codebase (CLAUDE.md dev pattern #2) — a single bad master must not silently
     // swallow the whole 5-minute catch-up sweep for every other stale master.
-    vi.mocked(getConfig).mockResolvedValue('true');
+    vi.mocked(getConfigOrDefault).mockResolvedValue(true);
     const prisma = makePrisma();
     vi.mocked(prisma.fileObject.findMany).mockImplementation(((args: unknown) => {
       const where = (args as { where?: Record<string, unknown> })?.where;
@@ -384,7 +390,7 @@ describe('registerDerivativeScheduler', () => {
   });
 
   it('skips the reconcile query entirely when the kill switch is off', async () => {
-    vi.mocked(getConfig).mockResolvedValue('false');
+    vi.mocked(getConfigOrDefault).mockResolvedValue(false);
     const prisma = makePrisma();
 
     const fastify = makeFastify();

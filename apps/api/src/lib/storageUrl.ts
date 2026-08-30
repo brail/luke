@@ -1,7 +1,7 @@
 
 import { getPublicUrl, getProxyUrl, type StorageBucket, type UrlConfig } from '@luke/core';
 
-import { getConfig } from './configManager';
+import { getConfig, getConfigOrDefault } from './configManager';
 
 import type { PrismaClient } from '@prisma/client';
 
@@ -12,9 +12,10 @@ import type { PrismaClient } from '@prisma/client';
 export async function getStorageUrlConfig(
   prisma: PrismaClient
 ): Promise<UrlConfig> {
-  const publicBaseUrl = await getConfig(prisma, 'storage.local.publicBaseUrl', false);
-  const enableProxyStr = await getConfig(prisma, 'storage.local.enableProxy', false);
-  const enableProxy = enableProxyStr ? enableProxyStr === 'true' : true;
+  const [publicBaseUrl, enableProxy] = await Promise.all([
+    getConfig(prisma, 'storage.local.publicBaseUrl', false),
+    getConfigOrDefault(prisma, 'storage.local.enableProxy'),
+  ]);
 
   return {
     publicBaseUrl: publicBaseUrl || undefined,
@@ -42,7 +43,7 @@ export async function getStorageBaseUrl(prisma: PrismaClient): Promise<string> {
 export async function makeUrlResolver(
   prisma: PrismaClient,
 ): Promise<(bucket: StorageBucket, key: string) => string> {
-  const storageType = (await getConfig(prisma, 'storage.type', false)) || 'local';
+  const storageType = await getConfigOrDefault(prisma, 'storage.type');
 
   if (storageType === 's3') {
     // S3-compatible assets are served via the authenticated proxy route /api/uploads/{bucket}/{key}.

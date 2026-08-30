@@ -219,6 +219,54 @@ export function parseConfigValue<K extends AppConfigKey>(
 }
 
 /**
+ * The value a key falls back to when AppConfig has no row for it.
+ *
+ * Declared once, in the string form AppConfig stores, so the seed writes it and every reader
+ * parses it through the same registry schema. It used to be spelled at each call site, and the
+ * copies had drifted: `storage.s3.endpoint` defaulted to `seaweedfs` in `prisma/seed.ts` and in
+ * the settings router, but to `localhost` in `storage/index.ts` — the provider that actually opens
+ * the connection. On an install that had not been seeded, the settings page showed one host and
+ * the system talked to another.
+ *
+ * `satisfies Partial<Record<AppConfigKey, string>>` binds the keys; a test parses every entry
+ * through `AppConfigRegistry`, so a default that its own schema would reject fails there rather
+ * than at the first read on a fresh install.
+ *
+ * Two deliberate absences:
+ * - `storage.local.basePath` — its default is `join(homedir(), …)`, which is not a constant.
+ * - `storage.s3.accessKey` / `secretKey` — a default credential is not a default, it is a dev
+ *   seed. `prisma/seed.ts` keeps them; nothing here hands them to a reader.
+ */
+export const APP_CONFIG_DEFAULTS = {
+  'app.name':    'Luke',
+  'app.baseUrl': 'http://localhost:3000',
+
+  'smtp.secure': 'false',
+
+  'integrations.google.calendarSync.enabled': 'false',
+
+  'backup.schedule.enabled':  'false',
+  'backup.notifyOnFailure':   'true',
+
+  'storage.type':                'local',
+  'storage.local.maxFileSizeMB': '50',
+  'storage.local.enableProxy':   'true',
+  'storage.local.publicBaseUrl': 'http://localhost:3001',
+
+  'storage.s3.endpoint':        'seaweedfs',
+  'storage.s3.port':            '8333',
+  'storage.s3.useSSL':          'false',
+  'storage.s3.region':          'us-east-1',
+  'storage.s3.presignedPutTtl': '3600',
+  'storage.s3.presignedGetTtl': '3600',
+
+  'storage.derivatives.enabled': 'true',
+} as const satisfies Partial<Record<AppConfigKey, string>>;
+
+/** A key that has a declared fallback, so reading it can be total. */
+export type AppConfigKeyWithDefault = keyof typeof APP_CONFIG_DEFAULTS;
+
+/**
  * Narrows an arbitrary string to a registered key.
  *
  * The type on `saveConfig` closes typos at the call sites that spell a key out, but the config

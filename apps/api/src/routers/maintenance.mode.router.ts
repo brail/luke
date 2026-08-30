@@ -15,7 +15,7 @@ import {
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { getConfig } from '../lib/configManager';
+import { getConfigOrDefault } from '../lib/configManager';
 import { sendBulkEmail, sendMaintenanceEndedEmail, sendMaintenanceScheduledEmail } from '../lib/mailer';
 import { forceLogoutNonAdmins, getMaintenanceState, writeMaintenanceState } from '../lib/maintenanceMode';
 import { bulkNotify } from '../lib/notifications';
@@ -39,7 +39,7 @@ const INACTIVE_RESET: MaintenanceModeState = {
 
 /** Resolves the app base URL used in email CTAs — same fallback used elsewhere for local dev. */
 async function getBaseUrl(ctx: Context): Promise<string> {
-  return (await getConfig(ctx.prisma, 'app.baseUrl', false)) || 'http://localhost:3000';
+  return getConfigOrDefault(ctx.prisma, 'app.baseUrl');
 }
 
 /**

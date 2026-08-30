@@ -15,7 +15,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { AppConfigRegistry, isAppConfigKey, validateConfigValue } from '../config';
+import { APP_CONFIG_DEFAULTS, AppConfigRegistry, isAppConfigKey, validateConfigValue } from '../config';
 import { passwordPrefilterSchema } from '../password';
 
 /** Every boolean key in the registry — the property must hold for all of them, not a sample. */
@@ -156,5 +156,16 @@ describe('every registry entry composes safely under safeParse', () => {
     const result = AppConfigRegistry['rateLimit'].safeParse('{not json');
     expect(result.success).toBe(false);
     expect(result.error?.issues[0].message).toContain('JSON');
+  });
+});
+
+describe('every declared default is a value its own key would accept', () => {
+  // The binding that keeps `APP_CONFIG_DEFAULTS` honest. Its keys are checked by `satisfies`, but
+  // nothing in the type system says `'8333'` is a valid port or that `'true'` is how this registry
+  // spells a boolean — and a default that its own schema rejects is invisible until a fresh
+  // install reads it, which is the one moment nobody is watching.
+  it.each(Object.entries(APP_CONFIG_DEFAULTS))('%s = %s', (key, raw) => {
+    const result = validateConfigValue(key as keyof typeof AppConfigRegistry, raw);
+    expect(result.success ? null : result.message).toBeNull();
   });
 });

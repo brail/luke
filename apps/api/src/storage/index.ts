@@ -22,7 +22,7 @@ import {
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { getConfig } from '../lib/configManager';
+import { getConfig, getConfigOrDefault } from '../lib/configManager';
 
 
 import { LocalFsProvider } from './providers/local';
@@ -44,17 +44,17 @@ let providerInitPromise: Promise<IStorageProvider> | null = null;
 export async function loadLocalProvider(prisma: PrismaClient): Promise<LocalFsProvider> {
   // `publicBaseUrl`/`enableProxy` are deliberately not read here: the provider does not use them,
   // URL building reads them from AppConfig itself in `lib/storageUrl.ts`.
-  const [rawBasePathConfig, maxFileSizeMBStr] = await Promise.all([
+  const [rawBasePathConfig, maxFileSizeMB] = await Promise.all([
     getConfig(prisma, 'storage.local.basePath', false),
-    getConfig(prisma, 'storage.local.maxFileSizeMB', false),
+    getConfigOrDefault(prisma, 'storage.local.maxFileSizeMB'),
   ]);
 
+  // `basePath` keeps its own fallback: `join(homedir(), …)` is not a constant, so it cannot live
+  // in `APP_CONFIG_DEFAULTS` with the rest.
   const rawBasePath = rawBasePathConfig || join(homedir(), '.luke', 'storage');
   const basePath = rawBasePath.startsWith('~/')
     ? join(homedir(), rawBasePath.slice(2))
     : rawBasePath;
-
-  const maxFileSizeMB = parseInt(maxFileSizeMBStr || '50', 10);
 
   const config = localStorageConfigSchema.parse({ basePath, maxFileSizeMB });
 
@@ -69,29 +69,31 @@ export async function loadLocalProvider(prisma: PrismaClient): Promise<LocalFsPr
  * @returns Initialized S3Provider ready for use.
  */
 export async function loadS3Provider(prisma: PrismaClient): Promise<S3Provider> {
-  const [endpoint, portStr, useSslStr, accessKey, secretKey, region, publicBaseUrl, putTtlStr, getTtlStr] =
+  const [endpoint, port, useSSL, accessKey, secretKey, region, publicBaseUrl, presignedPutTtl, presignedGetTtl] =
     await Promise.all([
-      getConfig(prisma, 'storage.s3.endpoint', false),
-      getConfig(prisma, 'storage.s3.port', false),
-      getConfig(prisma, 'storage.s3.useSSL', false),
+      getConfigOrDefault(prisma, 'storage.s3.endpoint'),
+      getConfigOrDefault(prisma, 'storage.s3.port'),
+      getConfigOrDefault(prisma, 'storage.s3.useSSL'),
       getConfig(prisma, 'storage.s3.accessKey', true),
       getConfig(prisma, 'storage.s3.secretKey', true),
-      getConfig(prisma, 'storage.s3.region', false),
+      getConfigOrDefault(prisma, 'storage.s3.region'),
       getConfig(prisma, 'storage.s3.publicBaseUrl', false),
-      getConfig(prisma, 'storage.s3.presignedPutTtl', false),
-      getConfig(prisma, 'storage.s3.presignedGetTtl', false),
+      getConfigOrDefault(prisma, 'storage.s3.presignedPutTtl'),
+      getConfigOrDefault(prisma, 'storage.s3.presignedGetTtl'),
     ]);
 
   const config = s3StorageConfigSchema.parse({
-    endpoint: endpoint || 'localhost',
-    port: parseInt(portStr || '8333', 10),
-    useSSL: useSslStr === 'true',
+    endpoint,
+    port,
+    useSSL,
+    // The credentials keep a call-site fallback on purpose: a default credential is a dev seed,
+    // not a default, so it is not declared alongside the others in `APP_CONFIG_DEFAULTS`.
     accessKey: accessKey || 's3admin',
     secretKey: secretKey || 's3adminpwd',
-    region: region || 'us-east-1',
+    region,
     publicBaseUrl: publicBaseUrl || undefined,
-    presignedPutTtl: parseInt(putTtlStr || '3600', 10),
-    presignedGetTtl: parseInt(getTtlStr || '3600', 10),
+    presignedPutTtl,
+    presignedGetTtl,
   });
 
   const provider = new S3Provider(config);
@@ -116,7 +118,7 @@ export async function getStorageProvider(
 
   if (!providerInitPromise) {
     providerInitPromise = (async () => {
-      const storageType = (await getConfig(prisma, 'storage.type', false)) || 'local';
+      const storageType = await getConfigOrDefault(prisma, 'storage.type');
 
       let provider: IStorageProvider;
       if (storageType === 's3') {

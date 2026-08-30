@@ -177,7 +177,17 @@ All runtime configuration lives in the `AppConfig` table (Postgres KV).
   `SyntaxError`) inside a bare `transform` **throws through `safeParse`** instead of
   populating `result.error`, so every caller would have to know to wrap that key.
   Pinned by a test over the whole registry, not a sample
-- Sensitive values read with `decrypt: true` in `getConfig()`
+- **Defaults live in `APP_CONFIG_DEFAULTS`**, once, in the string form AppConfig
+  stores — never spelled at the call site. Read such a key with
+  `getConfigOrDefault(prisma, key)`, which returns the parsed value and never
+  null, so no caller writes a fallback or a coercion. The seed reads the same
+  declaration. They had drifted: `storage.s3.endpoint` fell back to `seaweedfs`
+  in the settings router and `localhost` in the provider that opens the
+  connection. Credentials are deliberately absent — a default credential is a
+  dev seed, not a default
+- Sensitive values read with `decrypt: true` in `getConfig()`. `getConfig`
+  remains correct for a plain string with no default (a URL, a credential); it
+  is the manual `parseInt`/`=== 'true'` on its result that does not
 - `CRITICAL_CONFIG_KEYS`: only `auth.strategy`. Add only if its absence must
   block boot
 
