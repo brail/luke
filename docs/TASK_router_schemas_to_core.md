@@ -122,6 +122,21 @@ fondo, una regola dichiarata più volte che diverge in silenzio. Va fatta, in fo
    anche `me.changePassword`, e che la policy diventa leggibile dal client (serve sulla pagina di
    reset, senza sessione).
 
+   Tre cose emerse dal /simplify su B2-B4 che appartengono a questo nodo:
+
+   - Il floor stesso è dichiarato tre volte e in disaccordo: `AppConfigRegistry` dice
+     `min(6)`, `upsertConfig` rifiuta a mano sotto 8, `getPasswordPolicy` clampa con
+     `Math.max(minLength, 8)`. Chi legge il registry crede che 6 sia ammesso.
+   - La catena statica «12 + quattro regex» **esiste già in core**, come
+     `ChangePasswordSchema.newPassword` (`schemas/userProfile.ts`), con un `.max(128)` che il form
+     non ha e messaggi diversi. `UserForm` la riscrive invece di importarla: prima ancora della
+     policy runtime, c'è una copia evitabile.
+   - `UserForm` in edit chiama `users.core.update` ma deriva da `CreateUserInputSchema`. Il legame
+     di tipo punta all'endpoint sbagliato, e i due già divergono proprio sulla password:
+     `UpdateUserInputSchema` la vuole `min(12).optional()` senza regole di complessità, il form ne
+     applica quattro. Rilegare a `UpdateUserInputSchema.omit({ id: true })` va fatto **in questo
+     batch**, non prima: separato dalla policy sarebbe un cambio di forma senza il test sotto.
+
 2. **Parametri argon2 inline invece di `ARGON2_OPTIONS`.** `users.core.router.ts` e
    `auth.service.ts` costruiscono l'oggetto a mano; `backup/crypto.ts` fa la cosa giusta e lo
    spreada. I valori oggi coincidono, quindi non si rompe niente: il punto è che un ritocco di
@@ -150,3 +165,19 @@ fondo, una regola dichiarata più volte che diverge in silenzio. Va fatta, in fo
      componente che gestisce credenziali, e oggi non ne esiste nessuna. Da fare comunque, ma
      soprattutto **prima** di toccare le regole password al punto 1: quel cambio senza rete sotto
      è il modo più facile per rompere la creazione utente in silenzio.
+
+5. **`upsertConfig` non valida contro `AppConfigRegistry`.** Radice di un difetto trovato mentre si
+   allineavano i bound storage, e lasciata aperta di proposito perché il fix è largo.
+   `AppConfigRegistry` associa a ogni chiave uno schema Zod ed è dichiarato «single source of
+   truth», ma il percorso di scrittura (`config.set` → `upsertConfig`) chiama solo `validateKey`,
+   che controlla formato e prefisso. Gli schemi del registry si applicano **solo in lettura**, via
+   `getTypedConfig`. Conseguenza: un valore fuori range si scrive pulito e si scopre quando qualcosa
+   prova a leggerlo — per `storage.local.maxFileSizeMB` significa che ogni operazione di storage
+   smette di funzionare all'init del provider, non al salvataggio.
+
+   Che sia la radice lo prova il codice stesso: `upsertConfig` ha **un caso speciale scritto a
+   mano** per `security.password.minLength`, cioè un'approssimazione della validazione generale per
+   l'unica chiave in cui qualcuno ne ha sentito il bisogno — ed è pure in disaccordo col registry
+   (punto 1). Il fix è far passare la scrittura per lo schema del registry quando la chiave è
+   conosciuta, e cancellare il caso speciale. È contenuto in una funzione, ma tocca ogni scrittura
+   di configurazione, quindi vuole il suo giro di verifica.
