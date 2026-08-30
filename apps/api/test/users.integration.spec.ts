@@ -169,7 +169,10 @@ describe('users.update — reset password admin', () => {
     expect(auditRow).toBeNull();
   });
 
-  it('password sotto i 12 caratteri → rigettata da Zod prima di raggiungere il router', async () => {
+  it('password sotto il prefiltro statico → rigettata prima di raggiungere il router', async () => {
+    // Il prefiltro è 8 caratteri, non 12: la lunghezza minima vera viene dalla policy configurata
+    // e si prova in `passwordPolicyEnforcement.integration.spec.ts`. Qui resta solo il pavimento
+    // sotto cui nessuna configurazione può scendere.
     const { user: target } = await createTargetUser();
 
     await expect(

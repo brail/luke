@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { HardDeleteConfirmSchema } from './confirmation';
+import { passwordPrefilterSchema } from './password';
 
 /** Full user record as returned by the API (excludes password hash). */
 export const UserSchema = z.object({
@@ -38,7 +39,7 @@ export const CreateUserInputSchema = z.object({
   username: z.string().min(3, 'Username deve essere di almeno 3 caratteri'),
   firstName: z.string().optional().or(z.literal('')),
   lastName: z.string().optional().or(z.literal('')),
-  password: z.string().min(12, 'Password deve essere di almeno 12 caratteri'),
+  password: passwordPrefilterSchema,
   role: z.enum(['admin', 'editor', 'viewer']),
 });
 
@@ -54,7 +55,7 @@ export const UpdateUserInputSchema = z.object({
   lastName: z.string().optional().or(z.literal('')),
   role: z.enum(['admin', 'editor', 'viewer']).optional(),
   isActive: z.boolean().optional(),
-  password: z.string().min(12, 'Password deve essere di almeno 12 caratteri').optional(),
+  password: passwordPrefilterSchema.optional(),
 });
 
 /** Schema for identifying a single user by UUID — shared across the users sub-routers. */

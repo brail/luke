@@ -98,13 +98,24 @@ describe('in edit una password vuota significa «lascia quella che c’è»', ()
     if (!result.ok) expect(result.errors.password).toBeDefined();
   });
 
-  it('in create una password troppo corta viene rifiutata sul suo campo', () => {
-    // Nessun test fissava un confine: fra 8 e 11 caratteri è la fascia che il prossimo cambio
-    // tocca, e senza questo un `min` allentato per sbaglio non farebbe diventare rosso niente.
-    const short = 'Ab1!efgh';
-    const result = buildUserPayload('create', { ...CREATE_FORM, password: short, confirmPassword: short }, []);
+  it('in create una password sotto il prefiltro viene rifiutata sul suo campo', () => {
+    // Il confine lato client è il prefiltro statico, 8 caratteri: è il pavimento sotto cui nessuna
+    // configurazione può scendere. La lunghezza minima *effettiva* la decide la policy in AppConfig
+    // e oggi la applica solo il server — finché il client non la legge, questo è tutto ciò che il
+    // form può sapere, e va detto qui invece che scoperto quando l'utente prende un rifiuto.
+    const tooShort = 'Ab1!efg';
+    const result = buildUserPayload('create', { ...CREATE_FORM, password: tooShort, confirmPassword: tooShort }, []);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.errors.password).toBeDefined();
+  });
+
+  it('il prefiltro non replica la complessità: quella la decide la policy', () => {
+    // Otto caratteri senza maiuscole né simboli passano il form e vengono rifiutati dal server.
+    // Non è una svista: replicare qui le regex significherebbe riscrivere una regola configurabile
+    // in un bundle che non sa come è configurata — il difetto che questo batch chiude.
+    const simple = 'abcdefgh';
+    const result = buildUserPayload('create', { ...CREATE_FORM, password: simple, confirmPassword: simple }, []);
+    expect(result.ok).toBe(true);
   });
 });
 

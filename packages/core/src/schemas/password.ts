@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 /**
  * The one description of what a password must look like, shared by the server that enforces it and
  * the client that has to tell the user about it.
@@ -26,3 +28,20 @@ export const PASSWORD_SPECIAL_CHARS = '!@#$%^&*()_+-=[]{};\':"\\|,.<>/?';
 export const PASSWORD_SPECIAL_CHAR_REGEX = new RegExp(
   `[${PASSWORD_SPECIAL_CHARS.replace(/[\\\]^-]/g, '\\$&')}]`
 );
+
+/**
+ * The static check every password input applies before the configured policy runs.
+ *
+ * Deliberately not the policy: complexity and the real minimum live in AppConfig and are applied
+ * server-side by `validatePassword`, because a schema compiled into the bundle cannot know what an
+ * installation configured. What stays here is only what is true regardless — 8 is the floor
+ * `AppConfigRegistry` refuses to go below, and 128 caps what gets handed to argon2.
+ *
+ * These schemas used to carry `min(12)` and, in one of the three, four complexity regexes. That was
+ * the divergence: raising the configured minimum left them accepting the old one, and relaxing a
+ * configured requirement left them refusing anyway.
+ */
+export const passwordPrefilterSchema = z
+  .string()
+  .min(8, 'Password deve essere di almeno 8 caratteri')
+  .max(128, 'Password troppo lunga');

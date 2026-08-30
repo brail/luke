@@ -10,7 +10,7 @@ import argon2 from 'argon2';
 
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
-import { getConfig, getPasswordPolicy } from '../lib/configManager';
+import { getConfig } from '../lib/configManager';
 import { createResetToken } from '../lib/emailHelpers';
 import { authenticateViaLdap } from '../lib/ldapAuth';
 import {
@@ -18,9 +18,10 @@ import {
   sendEmailVerificationEmail,
 } from '../lib/mailer';
 import { assertNotBlockedByMaintenance, isMaintenanceActive } from '../lib/maintenanceMode';
-import { validatePassword } from '../lib/password';
 import { enforceRateLimit } from '../lib/ratelimit';
 import { resolveRateLimitPolicy } from '../lib/rateLimitPolicy';
+
+import { checkPasswordAgainstPolicy } from './passwordPolicy.service';
 
 import type { Context } from '../lib/trpc';
 import type { PrismaClient, User } from '@prisma/client';
@@ -569,8 +570,7 @@ export async function confirmPasswordReset(
     });
   }
 
-  const passwordPolicy = await getPasswordPolicy(ctx.prisma);
-  const passwordValidation = validatePassword(newPassword, passwordPolicy);
+  const passwordValidation = await checkPasswordAgainstPolicy(ctx.prisma, newPassword);
 
   if (!passwordValidation.isValid) {
     await logAudit(ctx, {

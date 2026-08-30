@@ -25,6 +25,7 @@ import {
   invalidateTokenVersionCache,
 } from '../lib/trpc';
 import { getUserPreferenceValue, setUserPreferenceValue } from '../services/context.service';
+import { assertPasswordMeetsPolicy } from '../services/passwordPolicy.service';
 
 const DAILY_GREETING_ENABLED_KEY = 'dailyGreetingEnabled';
 
@@ -327,6 +328,8 @@ export const meRouter = router({
             'La nuova password deve essere diversa dalla password attuale',
         });
       }
+
+      await assertPasswordMeetsPolicy(ctx.prisma, input.newPassword);
 
       // Generate hash for the new password
       const newPasswordHash = await hashPassword(input.newPassword);

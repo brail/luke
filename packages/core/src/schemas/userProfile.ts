@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { passwordPrefilterSchema } from './password';
+
 /** Input schema for updating the authenticated user's profile (all editable fields). */
 export const UserProfileSchema = z.object({
   /** Email dell'utente */
@@ -61,20 +63,18 @@ export const ChangePasswordSchema = z
       .min(1, 'Password corrente obbligatoria')
       .max(128, 'Password troppo lunga'),
 
-    /** Nuova password con policy forte */
-    newPassword: z
-      .string()
-      .min(12, 'Password deve essere di almeno 12 caratteri')
-      .max(128, 'Password troppo lunga')
-      .regex(/[A-Z]/, 'Deve contenere almeno una lettera maiuscola')
-      .regex(/[a-z]/, 'Deve contenere almeno una lettera minuscola')
-      .regex(/[0-9]/, 'Deve contenere almeno una cifra')
-      .regex(/[^A-Za-z0-9]/, 'Deve contenere almeno un simbolo speciale'),
+    /**
+     * Nuova password. Le regole di complessità non sono qui: le applica `validatePassword` con la
+     * policy configurata in AppConfig, perché uno schema compilato nel bundle non può sapere cosa
+     * una installazione ha scelto. Questa catena diceva 12 più quattro regex, ed era il motivo per
+     * cui rilassare un requisito configurato non rilassava questo percorso.
+     */
+    newPassword: passwordPrefilterSchema,
 
     /** Conferma nuova password */
     confirmNewPassword: z
       .string()
-      .min(12, 'Conferma password obbligatoria')
+      .min(1, 'Conferma password obbligatoria')
       .max(128, 'Password troppo lunga'),
   })
   .refine(data => data.newPassword === data.confirmNewPassword, {

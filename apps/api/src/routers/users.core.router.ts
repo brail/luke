@@ -24,6 +24,7 @@ import { getOnlineUserIds, updatePresence } from '../lib/presenceStore';
 import { withRateLimit } from '../lib/ratelimit';
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
 import { router, protectedProcedure } from '../lib/trpc';
+import { assertPasswordMeetsPolicy } from '../services/passwordPolicy.service';
 import { deleteUserHandler, getLockedFields, resolveEffectiveProvider } from '../services/users.service';
 
 export const usersCoreRouter = router({
@@ -246,6 +247,8 @@ export const usersCoreRouter = router({
         });
       }
 
+      await assertPasswordMeetsPolicy(ctx.prisma, input.password);
+
       // Hash the password with argon2id
       const passwordHash = await argon2.hash(input.password, {
         type: argon2.argon2id,
@@ -458,10 +461,11 @@ export const usersCoreRouter = router({
         }
       }
 
+      if (password !== undefined) await assertPasswordMeetsPolicy(ctx.prisma, password);
+
       // Hash outside the transaction (argon2 is CPU-bound, it must not hold a
-      // DB transaction open). `password` here is already guaranteed to be
-      // `undefined` or valid (Zod already applied `.min(12)` upstream, during
-      // input parsing).
+      // DB transaction open). Zod has applied the static prefilter and the line
+      // above the configured policy, so `password` is `undefined` or acceptable.
       const passwordHash =
         password !== undefined ? await hashPassword(password) : undefined;
 
