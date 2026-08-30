@@ -13,9 +13,10 @@
  * @author Luke Team
  */
 
-import { Project, SourceFile, Node, SyntaxKind } from 'ts-morph';
-import * as path from 'path';
 import * as fs from 'fs';
+import * as path from 'path';
+
+import { Project, SourceFile, Node, SyntaxKind } from 'ts-morph';
 
 interface CodemodOptions {
   dryRun: boolean;
@@ -359,7 +360,7 @@ class HardcodedUrlEliminator {
       if (needsBuildTempBrandLogoUploadUrl)
         imports.push('buildTempBrandLogoUploadUrl');
 
-      const importDeclaration = sourceFile.addImportDeclaration({
+      sourceFile.addImportDeclaration({
         moduleSpecifier: '@luke/core',
         namedImports: imports,
       });

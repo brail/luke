@@ -73,7 +73,7 @@ function skillFiles(): string[] {
 /**
  * Un token è un path del repo se contiene `/` e o sta sotto una directory nota
  * o ha un'estensione di file. Placeholder e glob restano fuori: `<nome>.yml`,
- * `apps/*​/next.config.*` non sono affermazioni su file esistenti.
+ * `apps/<app>/next.config.*` non sono affermazioni su file esistenti.
  */
 function isRepoPath(token: string): boolean {
   if (!token.includes('/')) return false;

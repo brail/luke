@@ -5,6 +5,61 @@ import importPlugin from 'eslint-plugin-import-x';
 import lukePlugin from 'eslint-plugin-luke';
 import globals from 'globals';
 
+/**
+ * Rules that hold for every TypeScript surface in the repo, whatever its
+ * runtime. Extracted so the application block and the `tools/` control-plane
+ * block below cannot drift into two different definitions of the same rule.
+ */
+const baseTypescriptRules = {
+  'prefer-const': 'error',
+  'no-var': 'error',
+  'no-unused-vars': 'off', // Disabled in favor of @typescript-eslint/no-unused-vars
+  '@typescript-eslint/no-unused-vars': [
+    'error',
+    {
+      argsIgnorePattern: '^_',
+      varsIgnorePattern: '^_',
+      caughtErrorsIgnorePattern: '^_',
+    },
+  ],
+  // Import ordering and management rules
+  'import-x/order': [
+    'error',
+    {
+      groups: [
+        'builtin',
+        'external',
+        'internal',
+        'parent',
+        'sibling',
+        'index',
+        'type',
+      ],
+      'newlines-between': 'always',
+      alphabetize: {
+        order: 'asc',
+        caseInsensitive: true,
+      },
+      pathGroups: [
+        {
+          pattern: '@luke/**',
+          group: 'internal',
+          position: 'before',
+        },
+        {
+          pattern: '@/**',
+          group: 'internal',
+          position: 'before',
+        },
+      ],
+      pathGroupsExcludedImportTypes: ['builtin'],
+    },
+  ],
+  'import-x/no-duplicates': 'error',
+  'import-x/first': 'error',
+  'import-x/newline-after-import': 'error',
+};
+
 export default [
   js.configs.recommended,
   {
@@ -39,56 +94,39 @@ export default [
       '@luke': lukePlugin,
     },
     rules: {
-      'prefer-const': 'error',
-      'no-var': 'error',
+      ...baseTypescriptRules,
       '@luke/no-bare-zod-partial': 'error',
       '@luke/no-uncommented-any': 'error',
-      'no-unused-vars': 'off', // Disabled in favor of @typescript-eslint/no-unused-vars
-      '@typescript-eslint/no-unused-vars': [
-        'error',
-        {
-          argsIgnorePattern: '^_',
-          varsIgnorePattern: '^_',
-          caughtErrorsIgnorePattern: '^_',
-        },
-      ],
-      // Import ordering and management rules
-      'import-x/order': [
-        'error',
-        {
-          groups: [
-            'builtin',
-            'external',
-            'internal',
-            'parent',
-            'sibling',
-            'index',
-            'type',
-          ],
-          'newlines-between': 'always',
-          alphabetize: {
-            order: 'asc',
-            caseInsensitive: true,
-          },
-          pathGroups: [
-            {
-              pattern: '@luke/**',
-              group: 'internal',
-              position: 'before',
-            },
-            {
-              pattern: '@/**',
-              group: 'internal',
-              position: 'before',
-            },
-          ],
-          pathGroupsExcludedImportTypes: ['builtin'],
-        },
-      ],
-      'import-x/no-duplicates': 'error',
-      'import-x/first': 'error',
-      'import-x/newline-after-import': 'error',
     },
+  },
+  {
+    // Deterministic control plane. The drift checkers, the boundary validator
+    // and the codemods under `tools/` are release gates — `pnpm check:drift`
+    // runs them in CI and in `.husky/pre-push` — yet no lint and no typecheck
+    // reached them: `tools/` is not a workspace, so `turbo run lint` never saw
+    // it, and ESLint reported every file here as ignored.
+    //
+    // Node globals only, and a separate block rather than an entry in the list
+    // above: that block merges `globals.browser` with `globals.node` for every
+    // workspace, which blunts runtime-boundary checking. These scripts run
+    // under tsx/node and never in a browser, so they do not inherit it.
+    // Repairing the shared block is a separate, larger change.
+    files: ['tools/**/*.ts'],
+    languageOptions: {
+      parser: typescriptParser,
+      parserOptions: {
+        ecmaVersion: 2022,
+        sourceType: 'module',
+      },
+      globals: {
+        ...globals.node,
+      },
+    },
+    plugins: {
+      '@typescript-eslint': typescript,
+      'import-x': importPlugin,
+    },
+    rules: baseTypescriptRules,
   },
   {
     files: ['apps/api/src/**/*.{ts,tsx}'],

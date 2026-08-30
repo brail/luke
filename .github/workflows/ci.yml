@@ -34,6 +34,13 @@ jobs:
       - name: TypeCheck (test)
         run: pnpm typecheck:test
 
+      # The drift checkers under tools/ are release gates, but tools/ is not a
+      # workspace: `turbo run lint`/`typecheck` never saw it and tsx executes
+      # TypeScript without checking it, so a type error in a gate would ship
+      # silently. Its own standalone Node config covers it.
+      - name: Lint & TypeCheck (tools)
+        run: pnpm lint:tools && pnpm typecheck:tools
+
       # Skill e documentazione affermano fatti sulla codebase (path, simboli,
       # link) che possono driftare in silenzio: `luke-test` ha istruito per mesi
       # ad aggiungere le spec a un file eliminato. Qui quei fatti diventano
