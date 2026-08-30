@@ -4,6 +4,7 @@ import {
   UNTOUCHED_SIDES,
   addOneHour,
   applyLinkedEdit,
+  resolveIso,
   toDateInput,
   toTimeInput,
   type DateRangeState,
@@ -131,5 +132,39 @@ describe('toDateInput / toTimeInput', () => {
     const d = new Date(2026, 0, 5, 7, 4);
     expect(toDateInput(d)).toBe('2026-01-05');
     expect(toTimeInput(d)).toBe('07:04');
+  });
+});
+
+/**
+ * The time inputs are not `required`, so clearing one is an ordinary action rather than an edge
+ * case. Before this guard the pair reached `toISOString`, which throws `RangeError` on an
+ * unparseable instant, and the linked-shift arithmetic wrote the literal 'NaN-NaN-NaN' into the
+ * other date field — a value `startDate: z.string().min(1)` accepts.
+ */
+describe('coppie data/ora che non descrivono un istante', () => {
+  it('resolveIso restituisce null invece di lanciare, con l\'ora vuota', () => {
+    expect(resolveIso('2026-03-10', '', false)).toBeNull();
+  });
+
+  it('resolveIso restituisce null per un anno che Date rende in forma estesa', () => {
+    // <input type="date"> arriva fino al 275760: toISOString emette '+275760-…', che il
+    // z.string().datetime() dell'endpoint rifiuta. Meglio fermarlo nel campo che in un toast.
+    expect(resolveIso('275760-09-12', '10:00', false)).toBeNull();
+  });
+
+  it('resolveIso risolve normalmente una coppia valida', () => {
+    expect(resolveIso('2026-03-10', '09:00', false)).toMatch(/^2026-03-10T/);
+  });
+
+  it('applyLinkedEdit non scrive NaN nella data accoppiata quando si svuota un orario', () => {
+    const { next } = applyLinkedEdit(RANGE, 'start', { startTime: '' }, false, UNTOUCHED_SIDES);
+    expect(next.endDate).toBe(RANGE.endDate);
+    expect(next.startTime).toBe('');
+    expect(JSON.stringify(next)).not.toContain('NaN');
+  });
+
+  it('applyLinkedEdit non scrive NaN nemmeno in resize indipendente', () => {
+    const { next } = applyLinkedEdit(RANGE, 'end', { endTime: '' }, false, { start: true, end: true });
+    expect(JSON.stringify(next)).not.toContain('NaN');
   });
 });

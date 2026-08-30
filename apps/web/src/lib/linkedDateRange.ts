@@ -17,18 +17,37 @@ export function toTimeInput(val: Date | string | null | undefined): string {
   return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
 }
 
-function buildIso(date: string, time: string): string {
-  return new Date(`${date}T${time}:00`).toISOString();
+/**
+ * `toISOString` throws `RangeError` on an unparseable instant, and both an empty time field (the
+ * time inputs are not `required`, so clearing one is an ordinary action) and a year past 275760
+ * produce one. Returning null instead makes the caller decide, and makes it a type error to forget.
+ *
+ * A year the `<input type="date">` accepts but `Date` renders in expanded form (`+275760-09-11…`)
+ * is also rejected here: it round-trips through `toISOString` fine and then fails the endpoint's
+ * `z.string().datetime()`, which is the divergence this whole task exists to remove.
+ */
+function toIsoOrNull(d: Date): string | null {
+  if (Number.isNaN(d.getTime())) return null;
+  const iso = d.toISOString();
+  return iso.startsWith('+') || iso.startsWith('-') ? null : iso;
+}
+
+function buildIso(date: string, time: string): string | null {
+  return toIsoOrNull(new Date(`${date}T${time}:00`));
 }
 
 /** Bare date parses as UTC midnight per spec — unlike `buildIso`, needed for all-day events so the
  * calendar day survives round-tripping through non-UTC-midnight-aware consumers (e.g. Google Calendar). */
-function buildAllDayIso(date: string): string {
-  return new Date(date).toISOString();
+function buildAllDayIso(date: string): string | null {
+  return toIsoOrNull(new Date(date));
 }
 
-/** Resolves a date/time pair to an ISO instant, using UTC-midnight semantics for all-day events. */
-export function resolveIso(date: string, time: string, allDay: boolean): string {
+/**
+ * Resolves a date/time pair to an ISO instant, using UTC-midnight semantics for all-day events.
+ *
+ * @returns The instant, or null when the pair does not describe one.
+ */
+export function resolveIso(date: string, time: string, allDay: boolean): string | null {
   return allDay ? buildAllDayIso(date) : buildIso(date, time);
 }
 
@@ -108,6 +127,13 @@ export function applyLinkedEdit(
   // No-end-date (open-ended) event, or the other side was never given a value: nothing to
   // shift/clamp against, apply the raw edit.
   if (merged[dateKey(side)] === '' || prev[dateKey(other)] === '') {
+    return { next: merged, touched: nextTouched };
+  }
+
+  // An unparseable side (a cleared time field, a year `Date` cannot represent) has no instant to
+  // shift or clamp against. Without this the arithmetic below yields NaN and writes the literal
+  // 'NaN-NaN-NaN' into the other date field, which `min(1)` then happily accepts.
+  if ([sideInstant(merged, side, allDay), sideInstant(prev, side, allDay), sideInstant(prev, other, allDay)].some(Number.isNaN)) {
     return { next: merged, touched: nextTouched };
   }
 

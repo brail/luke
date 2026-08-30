@@ -6,7 +6,11 @@ import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
-import { CalendarEventBaseSchema, MandatoryReasonSchema, MilestoneCancelInputSchema } from '@luke/core';
+import {
+  CalendarEventBaseSchema,
+  MilestoneCancelInputSchema,
+  MilestoneRescheduleInputSchema,
+} from '@luke/core';
 
 import { CalendarDaysRelevanceSelect, NO_RELEVANCE_VALUE } from '../../../../components/CalendarDaysRelevanceSelect';
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
@@ -111,11 +115,11 @@ interface EventFormData {
 /**
  * The form's own shape of a calendar event. It is not the mutation input: dates live here as the
  * `yyyy-mm-dd` + `hh:mm` pairs the inputs hold and are resolved to ISO instants on submit, and the
- * two selects use sentinels rather than null. Title, description and the visibility list keep the
- * rules `CalendarEventBaseSchema` states, including its message.
+ * two selects use sentinels rather than null. Only the visibility list comes through from
+ * `CalendarEventBaseSchema` untouched; title and description restate it with a user-facing message.
  */
 const EventFormBaseSchema = CalendarEventBaseSchema
-  .pick({ title: true, description: true, visibilityFunctionIds: true })
+  .pick({ visibilityFunctionIds: true })
   .extend({
     title: z.string().min(1, 'Il titolo è obbligatorio').max(200, 'Massimo 200 caratteri'),
     description: z.string().max(2000, 'Massimo 2000 caratteri'),
@@ -130,37 +134,32 @@ const EventFormBaseSchema = CalendarEventBaseSchema
     endTime: z.string(),
   });
 
-interface RescheduleFormData {
-  startDate: string;
-  startTime: string;
-  endDate: string;
-  endTime: string;
-  allDay: boolean;
-  reason: string;
-}
-
 /**
  * The motivated-move form. It carries its own copy of the range: cancelling out of the move must
  * not leave the event's dates altered behind it.
  *
- * The dates are not picked from `MilestoneRescheduleInputSchema` because they are not the same
- * fields: the endpoint takes two ISO datetimes, the form four inputs that `handleReschedule`
- * recombines. `reason` is the one rule both sides really share, so it comes from core.
+ * The dates are not picked from the endpoint's schema because they are not the same fields: it
+ * takes two ISO datetimes, the form four inputs that `handleReschedule` recombines. `reason` is the
+ * one rule both sides share, so it comes off the endpoint like the cancel form's does.
  */
-const RescheduleFormSchema: z.ZodType<RescheduleFormData, RescheduleFormData> = z.object({
+const RescheduleFormSchema = MilestoneRescheduleInputSchema.pick({ reason: true }).extend({
   startDate: z.string().min(1, 'La nuova data di inizio è obbligatoria'),
   startTime: z.string(),
   endDate: z.string(),
   endTime: z.string(),
   allDay: z.boolean(),
-  reason: MandatoryReasonSchema,
 });
-
-interface CancelFormData {
-  reason: string;
-}
+type RescheduleFormData = z.infer<typeof RescheduleFormSchema>;
 
 const CancelFormSchema = MilestoneCancelInputSchema.pick({ reason: true });
+type CancelFormData = z.infer<typeof CancelFormSchema>;
+
+/** The reschedule endpoint's field names, mapped back onto the form fields that produce them. */
+const ISSUE_PATH_TO_FIELD: Record<string, 'startDate' | 'endDate' | 'reason' | undefined> = {
+  startAt: 'startDate',
+  endAt: 'endDate',
+  reason: 'reason',
+};
 
 function describeBaselineDrift(event: ExistingEvent): string | null {
   if (!event.baselineStartAt) return null;
@@ -400,13 +399,34 @@ export function CalendarEventDialog({
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
+  /**
+   * The four date/time fields are folded into two instants here, after the resolver has run, so the
+   * object that goes on the wire is not the one the form validated. It is checked against the
+   * endpoint's own schema before sending: otherwise an instant the fields accept but the endpoint
+   * refuses comes back as a toast, which is exactly the divergence the shared schema is for.
+   */
   const handleReschedule = (data: RescheduleFormData) => {
     if (!event) return;
     const startIso = resolveIso(data.startDate, data.startTime, data.allDay);
     const endIso = data.endDate ? resolveIso(data.endDate, data.endTime, data.allDay) : undefined;
-    rescheduleMutation.mutate({
+    if (startIso === null || endIso === null) {
+      rescheduleForm.setError(startIso === null ? 'startDate' : 'endDate', {
+        message: 'Data e ora non formano un istante valido',
+      });
+      return;
+    }
+
+    const parsed = MilestoneRescheduleInputSchema.safeParse({
       id: event.id, startAt: startIso, endAt: endIso, allDay: data.allDay, reason: data.reason,
     });
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
+        const field = ISSUE_PATH_TO_FIELD[String(issue.path[0])];
+        if (field) rescheduleForm.setError(field, { message: issue.message });
+      }
+      return;
+    }
+    rescheduleMutation.mutate(parsed.data);
   };
 
   const isPending = createMutation.isPending || updateMutation.isPending;
@@ -414,6 +434,12 @@ export function CalendarEventDialog({
   const handleSubmit = (data: EventFormData) => {
     const startIso = resolveIso(data.startDate, data.startTime, data.allDay);
     const endIso = data.endDate ? resolveIso(data.endDate, data.endTime, data.allDay) : undefined;
+    if (startIso === null || endIso === null) {
+      form.setError(startIso === null ? 'startDate' : 'endDate', {
+        message: 'Data e ora non formano un istante valido',
+      });
+      return;
+    }
 
     const payload = {
       title: data.title.trim(),
