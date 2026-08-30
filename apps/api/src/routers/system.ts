@@ -62,12 +62,14 @@ export const systemRouter = router({
    * Manually triggers the calendar phase-alert digest email for a given date range, outside its
    * normal cron schedule — used for testing/re-sending. See `runDigestNow`.
    *
-   * @auth {config:update}
+   * @auth {season_calendar:read}
    * @input {CalendarDigestRangeInputSchema} — inclusive date range as `YYYY-MM-DD` strings.
    * @output {{ ok: true }}
    */
   triggerCalendarDigest: protectedProcedure
-    .use(requirePermission('config:update'))
+    // Re-sending your own calendar digest is a calendar action, not a configuration change. It was
+    // the only legitimate editor flow behind `config:update`.
+    .use(requirePermission('season_calendar:read'))
     .input(CalendarDigestRangeInputSchema)
     .mutation(async ({ input, ctx }) => {
       const range = {

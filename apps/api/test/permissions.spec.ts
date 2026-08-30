@@ -129,7 +129,6 @@ describe('expandRole', () => {
     const permissions = expandRole('viewer');
     expect(permissions).toContain('brands:read');
     expect(permissions).toContain('users:read');
-    expect(permissions).toContain('config:read');
     expect(permissions).not.toContain('brands:create');
     expect(permissions).not.toContain('brands:update');
     expect(permissions).not.toContain('brands:delete');
@@ -280,8 +279,11 @@ describe('ROLE_PERMISSIONS configuration', () => {
     expect(editorPermissions).toContain('seasons:*');
     expect(editorPermissions).toContain('users:read');
     expect(editorPermissions).toContain('users:update');
-    expect(editorPermissions).toContain('config:read');
-    expect(editorPermissions).toContain('config:update');
+    // Nessun accesso a config: gli endpoint che gatea (SMTP, LDAP, strategia di auth,
+    // credenziali storage, policy password) non controllano l'accesso di sezione, quindi il
+    // permesso arrivava molto oltre le pagine che l'interfaccia nascondeva.
+    expect(editorPermissions).not.toContain('config:read');
+    expect(editorPermissions).not.toContain('config:update');
     expect(editorPermissions).toContain('audit:read');
     expect(editorPermissions).toContain('dashboard:read');
     // The settings section is admin-only by design: `SECTION_ACCESS_DEFAULTS.editor.settings`
@@ -295,7 +297,7 @@ describe('ROLE_PERMISSIONS configuration', () => {
     expect(viewerPermissions).toContain('brands:read');
     expect(viewerPermissions).toContain('seasons:read');
     expect(viewerPermissions).toContain('users:read');
-    expect(viewerPermissions).toContain('config:read');
+    expect(viewerPermissions).not.toContain('config:read');
     expect(viewerPermissions).toContain('audit:read');
     expect(viewerPermissions).toContain('dashboard:read');
     expect(viewerPermissions).not.toContain('brands:create');

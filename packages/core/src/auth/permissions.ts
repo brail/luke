@@ -122,9 +122,11 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // Users: read and update (no delete)
     'users:read',
     'users:update',
-    // Config: read and update
-    'config:read',
-    'config:update',
+    // Config: none. `config:update` gates 27 endpoints — SMTP, LDAP, the auth strategy, Google
+    // OAuth and S3 credentials, the password policy — and only one of them also checks section
+    // access, so the `settings: false` an editor has in SECTION_ACCESS_DEFAULTS only ever hid the
+    // pages, never the endpoints behind them. The two layers CLAUDE.md requires to stay in sync
+    // disagreed, and RBAC was the permissive one.
     // Audit: read-only
     'audit:read',
     // Dashboard: read
@@ -166,8 +168,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'seasons:read',
     // Users: read-only
     'users:read',
-    // Config: read-only
-    'config:read',
+    // Config: none, same reason as the editor above — the settings endpoints it gates do not check
+    // section access, so the permission reached further than the hidden pages suggested.
     // Audit: read-only
     'audit:read',
     // Dashboard: read

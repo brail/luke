@@ -43,7 +43,10 @@ export const holidaysRouter = router({
    * @output {Array<{ code: string, name: string }>} — country codes relevant to the company.
    */
   listCountries: protectedProcedure
-    .use(requirePermission('config:read'))
+    // `season_calendar:read`, not `config:read`: this is the country list the calendar page renders,
+    // reference data rather than configuration. Gated as config it was the one thing keeping that
+    // permission necessary for a role that must not have it.
+    .use(requirePermission('season_calendar:read'))
     .query(async ({ ctx }) => {
       const [vendors, companyCountryCode] = await Promise.all([
         ctx.prisma.vendor.findMany({

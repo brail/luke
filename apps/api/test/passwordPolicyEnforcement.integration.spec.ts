@@ -20,6 +20,7 @@ import {
   TEST_USER_PASSWORD,
   createCallerWithSession,
   createTestUser,
+  expectUnauthorized,
   resetTestData,
   setupTestDb,
 } from './helpers';
@@ -131,6 +132,48 @@ describe('me.changePassword', () => {
         newPassword: NO_UPPERCASE,
         confirmNewPassword: NO_UPPERCASE,
       })
+    ).resolves.toBeTruthy();
+  });
+});
+
+/**
+ * Chi può cambiare la policy.
+ *
+ * Renderla autoritativa su quattro percorsi ha tolto i pavimenti statici che nessuna configurazione
+ * poteva abbassare. Se resta scrivibile da un ruolo non-admin, il risultato netto è aver spostato
+ * la decisione dal codice a un utente che prima non poteva prenderla: un editor avrebbe potuto
+ * portarla a otto caratteri qualsiasi. Questo è il test che impedisce al permesso di tornare.
+ */
+describe('la policy la cambia solo un admin', () => {
+  it('un editor non può scriverla', async () => {
+    const { session } = await createTestUser('editor');
+    await expectUnauthorized(
+      () =>
+        createCallerWithSession(session).config.set({
+          key: 'security.password.minLength',
+          value: '8',
+          encrypt: false,
+        }),
+      'FORBIDDEN'
+    );
+  });
+
+  it('e nemmeno spegnere un requisito', async () => {
+    const { session } = await createTestUser('editor');
+    await expectUnauthorized(
+      () =>
+        createCallerWithSession(session).config.set({
+          key: 'security.password.requireUppercase',
+          value: 'false',
+          encrypt: false,
+        }),
+      'FORBIDDEN'
+    );
+  });
+
+  it('un admin sì', async () => {
+    await expect(
+      asAdmin().config.set({ key: 'security.password.minLength', value: '16', encrypt: false })
     ).resolves.toBeTruthy();
   });
 });

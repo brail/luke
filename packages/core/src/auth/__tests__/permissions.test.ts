@@ -223,9 +223,11 @@ describe('Role Expansion', () => {
       expect(expanded).not.toContain('users:create');
       expect(expanded).not.toContain('users:delete');
 
-      // Should contain config read and update
-      expect(expanded).toContain('config:read');
-      expect(expanded).toContain('config:update');
+      // No config access at all: `config:update` gates SMTP, LDAP, the auth strategy, storage
+      // credentials and the password policy, and almost none of those endpoints also check section
+      // access — so the editor's `settings: false` hid the pages while leaving the endpoints open.
+      expect(expanded).not.toContain('config:read');
+      expect(expanded).not.toContain('config:update');
 
       // Should contain audit read only
       expect(expanded).toContain('audit:read');
@@ -255,7 +257,7 @@ describe('Role Expansion', () => {
       expect(expanded).toContain('users:read');
       expect(expanded).not.toContain('users:create');
 
-      expect(expanded).toContain('config:read');
+      expect(expanded).not.toContain('config:read');
       expect(expanded).not.toContain('config:update');
 
       expect(expanded).toContain('audit:read');
@@ -335,9 +337,9 @@ describe('Permission Checking', () => {
       expect(hasPermission(editorUser, 'users:create')).toBe(false);
       expect(hasPermission(editorUser, 'users:delete')).toBe(false);
 
-      // Config: read and update
-      expect(hasPermission(editorUser, 'config:read')).toBe(true);
-      expect(hasPermission(editorUser, 'config:update')).toBe(true);
+      // Config: none — see the expansion test above.
+      expect(hasPermission(editorUser, 'config:read')).toBe(false);
+      expect(hasPermission(editorUser, 'config:update')).toBe(false);
 
       // Audit: only read
       expect(hasPermission(editorUser, 'audit:read')).toBe(true);
@@ -357,7 +359,7 @@ describe('Permission Checking', () => {
       expect(hasPermission(viewerUser, 'brands:read')).toBe(true);
       expect(hasPermission(viewerUser, 'seasons:read')).toBe(true);
       expect(hasPermission(viewerUser, 'users:read')).toBe(true);
-      expect(hasPermission(viewerUser, 'config:read')).toBe(true);
+      expect(hasPermission(viewerUser, 'config:read')).toBe(false);
       expect(hasPermission(viewerUser, 'audit:read')).toBe(true);
       expect(hasPermission(viewerUser, 'dashboard:read')).toBe(true);
 
