@@ -378,12 +378,12 @@ const MAP_VALUED_KEYS = new Set<string>(
  * wherever it appears — and nested objects stay in map mode, because a nested map's keys are
  * data for the same reason its parent's are.
  */
-function sanitizeMapValues(obj: object, depth: number, path: string): unknown {
+function sanitizeMapValues(obj: object, depth: number): unknown {
   if (depth > 5) return '[REDACTED:MAX_DEPTH]';
 
   if (Array.isArray(obj)) {
-    return obj.map((item, i) =>
-      item && typeof item === 'object' ? sanitizeMapValues(item, depth + 1, `${path}[${i}]`) : item,
+    return obj.map(item =>
+      item && typeof item === 'object' ? sanitizeMapValues(item, depth + 1) : item,
     );
   }
 
@@ -392,7 +392,7 @@ function sanitizeMapValues(obj: object, depth: number, path: string): unknown {
     if (SENSITIVE_KEY_PATTERN.test(key)) {
       sanitized[key] = '***REDACTED***';
     } else if (value && typeof value === 'object') {
-      sanitized[key] = sanitizeMapValues(value, depth + 1, joinPath(path, key));
+      sanitized[key] = sanitizeMapValues(value, depth + 1);
     } else {
       sanitized[key] = value;
     }
@@ -452,7 +452,7 @@ export function sanitizeMetadata(obj: unknown, depth = 0, path = ''): unknown {
       if (FREE_TEXT_KEYS.has(key)) {
         sanitized[key] = typeof value === 'string' ? scrubFreeText(value) : '[REDACTED]';
       } else if (MAP_VALUED_KEYS.has(key) && value && typeof value === 'object') {
-        sanitized[key] = sanitizeMapValues(value, depth + 1, joinPath(path, key));
+        sanitized[key] = sanitizeMapValues(value, depth + 1);
       } else if (SAFE_KEYS.has(key)) {
         sanitized[key] = sanitizeMetadata(value, depth + 1, joinPath(path, key));
       } else if (SENSITIVE_KEY_PATTERN.test(key)) {

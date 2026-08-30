@@ -12,7 +12,7 @@ import {
 } from '@luke/calendar';
 import type { Role } from '@luke/core';
 
-import { getConfig } from '../lib/configManager.js';
+import { getConfig, getConfigOrDefault } from '../lib/configManager.js';
 
 import { getUserAllowedFunctionIds } from './context.service.js';
 
@@ -36,10 +36,10 @@ export async function getConfiguredGoogleClient(prisma: PrismaClient): Promise<{
   const [authMode, domain, enabled] = await Promise.all([
     getConfig(prisma, 'integrations.google.authMode', false),
     getConfig(prisma, 'integrations.google.domain', false),
-    getConfig(prisma, 'integrations.google.calendarSync.enabled', false),
+    getConfigOrDefault(prisma, 'integrations.google.calendarSync.enabled'),
   ]);
 
-  if (!domain || enabled !== 'true') return null;
+  if (!domain || !enabled) return null;
 
   if (authMode === 'oauth_user') {
     const [clientId, clientSecret, refreshToken] = await Promise.all([

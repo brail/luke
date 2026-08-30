@@ -23,7 +23,7 @@ import { CATEGORY_LEVEL_EVENT_KEY, fullName } from '@luke/core';
 import { hasBrandAccess, resolveBrandAccess, resolveEventAudience } from '../services/calendarAudience.service';
 
 import { isRedactedValue } from './auditLog';
-import { getConfig } from './configManager';
+import { getConfigOrDefault } from './configManager';
 import { sendBulkEmail, sendEmail } from './mailer';
 import { guardMaintenance } from './maintenanceMode';
 import { withSchedulerLock } from './schedulerLock';
@@ -401,7 +401,7 @@ export async function buildDigestTasks(
   const allCalendarIds = Array.from(calendarDigests.keys());
   const allUserIds = [...new Set(Array.from(calendarDigests.values()).flatMap(m => [...m.keys()]))];
 
-  const [calendars, users, disabledPrefs, baseUrlRaw] = await Promise.all([
+  const [calendars, users, disabledPrefs, baseUrl] = await Promise.all([
     prisma.seasonCalendar.findMany({
       where: { id: { in: allCalendarIds } },
       select: { id: true, brand: { select: { name: true } }, season: { select: { name: true } } },
@@ -410,13 +410,13 @@ export async function buildDigestTasks(
     // Scoped to eventKey:'' (category-level rows only) — an event-level mute on one calendar
     // event must not silently drop the entire aggregated digest email for the user.
     prisma.notificationPreference.findMany({ where: { userId: { in: allUserIds }, category: 'CALENDAR', eventKey: CATEGORY_LEVEL_EVENT_KEY, enabled: false }, select: { userId: true } }),
-    getConfig(prisma, 'app.baseUrl', false),
+    getConfigOrDefault(prisma, 'app.baseUrl'),
   ]);
 
   const calendarLabelMap = new Map(calendars.map(c => [c.id, `${c.brand.name} · ${c.season.name}`]));
   const userEmailMap = new Map(users.map(u => [u.id, u.email]));
   const disabledSet = new Set(disabledPrefs.map(p => p.userId));
-  const calendarUrl = `${baseUrlRaw || 'http://localhost:3000'}/calendar`;
+  const calendarUrl = `${baseUrl}/calendar`;
 
   const tasks: EmailTask[] = [];
 

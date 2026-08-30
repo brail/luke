@@ -318,7 +318,10 @@ export async function getConfigOrDefault<K extends AppConfigKeyWithDefault>(
     raw,
     key,
     // The default is declared in the string form AppConfig stores, and a test proves every entry
-    // parses; this is the same schema that test uses.
+    // parses; this is the same schema that test uses. Parsed eagerly, so a stored row makes it
+    // wasted work — a Zod parse of a short literal, against a query, on paths that run once per
+    // provider init or per settings-page load. Making it lazy costs either a duplicate of
+    // `parseConfigOrDefault`'s warning branch or a thunk parameter its two other callers do not want.
     parseConfigValue(key, APP_CONFIG_DEFAULTS[key]),
   );
 }
@@ -584,23 +587,14 @@ export async function getSecret(
 }
 
 /**
- * Reads a numeric AppConfig value, clamped to `[min, max]`. Missing keys and out-of-range or
- * non-numeric values both fall back to `defaultValue` — shared by every "TTL-style" getter below
- * so the fetch/parse/bounds-check boilerplate lives in one place.
+ * The eight numeric getters below are one line each: `getConfigOrDefault` fetches, the registry
+ * schema enforces the bounds, and `APP_CONFIG_DEFAULTS` supplies the fallback for a missing or
+ * out-of-range value. They used to share a `getBoundedNumericConfig` helper that took `min`, `max`
+ * and `defaultValue` from each call site — one place, but a second declaration: seven of the eight
+ * `max` bounds existed *only* there, so `saveConfig` accepted `auditLog.retentionDays: 99999`,
+ * stored it, and the reader quietly returned 365. `security.tokenVersionCacheTTL` was worse — the
+ * schema allowed `0` while the reader clamped anything under 10s back to the default.
  */
-async function getBoundedNumericConfig(
-  prisma: PrismaClient,
-  key: string,
-  { defaultValue, min, max }: { defaultValue: number; min: number; max: number }
-): Promise<number> {
-  const config = await getConfig(prisma, key, false);
-  if (!config) return defaultValue;
-
-  const value = parseInt(config, 10);
-  if (isNaN(value) || value < min || value > max) return defaultValue;
-
-  return value;
-}
 
 /**
  * Reads the tokenVersion cache TTL from AppConfig.
@@ -609,9 +603,7 @@ async function getBoundedNumericConfig(
  * @returns TTL in milliseconds. Defaults to 60 000 ms (60 s).
  */
 export function getTokenVersionCacheTTL(prisma: PrismaClient): Promise<number> {
-  return getBoundedNumericConfig(prisma, 'security.tokenVersionCacheTTL', {
-    defaultValue: 60000, min: 10000, max: 600000,
-  });
+  return getConfigOrDefault(prisma, 'security.tokenVersionCacheTTL');
 }
 
 /**
@@ -623,9 +615,7 @@ export function getTokenVersionCacheTTL(prisma: PrismaClient): Promise<number> {
  * @returns TTL in milliseconds. Defaults to 900 000 ms (15 min).
  */
 export function getEditLockTtlMs(prisma: PrismaClient): Promise<number> {
-  return getBoundedNumericConfig(prisma, 'editLock.ttlMs', {
-    defaultValue: 900000, min: 300000, max: 3600000,
-  });
+  return getConfigOrDefault(prisma, 'editLock.ttlMs');
 }
 
 /**
@@ -634,9 +624,7 @@ export function getEditLockTtlMs(prisma: PrismaClient): Promise<number> {
  * @returns Retention window in days. Defaults to 30; invalid values fall back to the default.
  */
 export function getBackupRetentionDays(prisma: PrismaClient): Promise<number> {
-  return getBoundedNumericConfig(prisma, 'backup.retentionDays', {
-    defaultValue: 30, min: 1, max: 3650,
-  });
+  return getConfigOrDefault(prisma, 'backup.retentionDays');
 }
 
 /**
@@ -646,9 +634,7 @@ export function getBackupRetentionDays(prisma: PrismaClient): Promise<number> {
  * @returns Minimum backup count to retain. Defaults to 3; invalid values fall back to the default.
  */
 export function getBackupRetentionMinCount(prisma: PrismaClient): Promise<number> {
-  return getBoundedNumericConfig(prisma, 'backup.retentionMinCount', {
-    defaultValue: 3, min: 0, max: 1000,
-  });
+  return getConfigOrDefault(prisma, 'backup.retentionMinCount');
 }
 
 /**
@@ -657,9 +643,7 @@ export function getBackupRetentionMinCount(prisma: PrismaClient): Promise<number
  * @returns Retention window in days. Defaults to 365; invalid values fall back to the default.
  */
 export function getAuditLogRetentionDays(prisma: PrismaClient): Promise<number> {
-  return getBoundedNumericConfig(prisma, 'auditLog.retentionDays', {
-    defaultValue: 365, min: 1, max: 3650,
-  });
+  return getConfigOrDefault(prisma, 'auditLog.retentionDays');
 }
 
 /**
@@ -669,9 +653,7 @@ export function getAuditLogRetentionDays(prisma: PrismaClient): Promise<number> 
  * @returns Retention window in days. Defaults to 3650 (10 years); invalid values fall back to the default.
  */
 export function getAuditLogCriticalRetentionDays(prisma: PrismaClient): Promise<number> {
-  return getBoundedNumericConfig(prisma, 'auditLog.criticalRetentionDays', {
-    defaultValue: 3650, min: 1, max: 36500,
-  });
+  return getConfigOrDefault(prisma, 'auditLog.criticalRetentionDays');
 }
 
 /**
@@ -681,9 +663,7 @@ export function getAuditLogCriticalRetentionDays(prisma: PrismaClient): Promise<
  * @returns Retention window in days. Defaults to 90; invalid values fall back to the default.
  */
 export function getNotificationRetentionDays(prisma: PrismaClient): Promise<number> {
-  return getBoundedNumericConfig(prisma, 'notification.retentionDays', {
-    defaultValue: 90, min: 1, max: 3650,
-  });
+  return getConfigOrDefault(prisma, 'notification.retentionDays');
 }
 
 /**
@@ -693,9 +673,7 @@ export function getNotificationRetentionDays(prisma: PrismaClient): Promise<numb
  * @returns Retention window in days. Defaults to 30; invalid values fall back to the default.
  */
 export function getNotificationDedupRetentionDays(prisma: PrismaClient): Promise<number> {
-  return getBoundedNumericConfig(prisma, 'notification.dedupRetentionDays', {
-    defaultValue: 30, min: 1, max: 3650,
-  });
+  return getConfigOrDefault(prisma, 'notification.dedupRetentionDays');
 }
 
 /** Automatic-backup schedule + retention settings, resolved from AppConfig with the scheduler's own defaults. */
@@ -734,26 +712,31 @@ function parseConfigOrDefault<K extends AppConfigKey>(
  * scheduler tick and the admin settings UI, so both agree on defaults for unset keys.
  */
 export async function getBackupScheduleSettings(prisma: PrismaClient): Promise<BackupScheduleSettings> {
-  const [enabledRaw, dailyTimeRaw, scopeRaw, notifyRaw, retentionDays, retentionMinCount] = await Promise.all([
-    getConfig(prisma, 'backup.schedule.enabled', false),
-    getConfig(prisma, 'backup.schedule.dailyTime', false),
-    getConfig(prisma, 'backup.schedule.scope', false),
-    getConfig(prisma, 'backup.notifyOnFailure', false),
-    getBackupRetentionDays(prisma),
-    getBackupRetentionMinCount(prisma),
-  ]);
+  const [enabled, dailyTimeRaw, scopeRaw, notifyOnFailure, retentionDays, retentionMinCount] =
+    await Promise.all([
+      getConfigOrDefault(prisma, 'backup.schedule.enabled'),
+      getConfig(prisma, 'backup.schedule.dailyTime', false),
+      getConfig(prisma, 'backup.schedule.scope', false),
+      getConfigOrDefault(prisma, 'backup.notifyOnFailure'),
+      getBackupRetentionDays(prisma),
+      getBackupRetentionMinCount(prisma),
+    ]);
 
   return {
     // All six go through the registry schema. The two booleans used to be compared by hand
     // against the literal strings, working around `z.coerce.boolean()` treating every non-empty
     // string — `"false"` included — as true; `booleanConfigSchema` parses the two words, so the
     // workaround outlived the footgun it was written for.
-    enabled: parseConfigOrDefault(enabledRaw, 'backup.schedule.enabled', false),
+    //
+    // Their fallbacks come from `APP_CONFIG_DEFAULTS` rather than being written here: a literal
+    // `false` in this file is a second copy of a fact the registry already states.
+    // `dailyTime`/`scope` keep theirs inline — those two keys have no declared default.
+    enabled,
     dailyTime: parseConfigOrDefault(dailyTimeRaw, 'backup.schedule.dailyTime', '03:00'),
     scope: parseConfigOrDefault(scopeRaw, 'backup.schedule.scope', 'DB'),
     retentionDays,
     retentionMinCount,
-    notifyOnFailure: parseConfigOrDefault(notifyRaw, 'backup.notifyOnFailure', true),
+    notifyOnFailure,
   };
 }
 

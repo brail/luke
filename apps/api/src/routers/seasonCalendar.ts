@@ -433,14 +433,15 @@ export const seasonCalendarRouter = router({
         eventKey: 'CALENDAR_RESCHEDULE',
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on reschedule'));
       syncOneMilestone(input.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on reschedule'));
+      const allDayChanged = event.allDay !== result.allDay;
       return withPhaseOrderWarning(result, ctx.prisma, logAudit(ctx, {
         action: 'CALENDAR_EVENT_RESCHEDULE', targetType: 'CalendarEvent', targetId: input.id, result: 'SUCCESS',
         metadata: {
           title: result.title, calendarId: event.calendarId, reason: input.reason,
           oldStartAt: event.startAt.toISOString(), newStartAt: result.startAt.toISOString(),
           oldEndAt: event.endAt?.toISOString() ?? null, newEndAt: result.endAt?.toISOString() ?? null,
-          oldAllDay: event.allDay !== result.allDay ? event.allDay : undefined,
-          newAllDay: event.allDay !== result.allDay ? result.allDay : undefined,
+          oldAllDay: allDayChanged ? event.allDay : undefined,
+          newAllDay: allDayChanged ? result.allDay : undefined,
         },
       }));
     }),

@@ -340,9 +340,17 @@ sbagliata.
 
 **Due assenze deliberate.** `storage.local.basePath`, il cui default è `join(homedir(), …)` e non è
 una costante. E le credenziali S3: **un default credenziale non è un default, è un seed di
-sviluppo**. Restano in `seed.ts`, e il provider tiene il suo fallback con un commento che dice
-perché; la UI continua a mostrare vuoto, perché offrire in un form una credenziale che il database
-non ha invita l'admin a salvarla come se fosse vera. Il pentest ha una cosa in meno da trovare.
+sviluppo**. Restano solo in `seed.ts`; la UI mostra vuoto, perché offrire in un form una credenziale
+che il database non ha invita l'admin a salvarla come se fosse vera.
+
+Il /simplify successivo ha mostrato che escluderle dalla dichiarazione non bastava: lo **stesso**
+fallback era rimasto cablato un livello sotto, in `loadS3Provider`, senza gate su `NODE_ENV` —
+quindi attivo anche nelle immagini di produzione. `seed.ts` semina entrambe le righe, quindi era
+codice morto ovunque tranne nello stato che più meritava un errore: S3 selezionato e credenziali
+assenti, dove il provider si collegava in silenzio con `s3admin`/`s3adminpwd` invece di dirlo. Ora
+lancia, come `getSmtpConfig` fa da sempre per una configurazione SMTP incompleta: non c'era un
+argomento perché due integrazioni con credenziali, nello stesso lavoro, si comportassero
+diversamente.
 
 ### Tre chiavi morte
 
@@ -372,17 +380,33 @@ lo stesso `try` del resto, quindi finiva comunque in `handleSMTPError` esattamen
 Stesso metodo di conteggio prima e dopo (chiavi distinte lette attraverso uno schema del registry,
 via `getTypedConfig` / `getConfigOrDefault` / `parseConfigValue` / `parseConfigOrDefault`):
 
-**17 chiavi su 86 → 33 su 86.**
+**17 chiavi su 86 → 41 su 86**, e **zero coercizioni a mano rimaste** su un risultato di
+`getConfig` (misurato, non asserito — la prima stesura diceva «non deve essere 86 su 86» senza
+avere controllato cosa facessero davvero le 53 restanti).
 
-Non è 86 su 86, e non deve esserlo: `getConfig` resta la lettura giusta per una stringa senza
-default — un URL, una credenziale — dove non c'è niente da parsare. Ciò che è sparito è il
-`parseInt` e il `=== 'true'` scritti a mano sul suo risultato, che è ciò di cui il punto 5 si
-lamentava davvero.
+Il /simplify successivo ha migrato sei call site rimasti indietro — `app.baseUrl` in
+`auth.service.ts` ×2, `users.admin.router.ts` e `calendarDigestScheduler.ts`,
+`integrations.google.calendarSync.enabled` in `googleCalendarSync.service.ts`, e i due booleani di
+`getBackupScheduleSettings`, che scriveva ancora i propri fallback a mano nella funzione stessa in
+cui era stato introdotto il helper.
+
+E ha fatto emergere l'ultima istanza della stessa classe, che la prima stesura aveva archiviato
+come «già fattorizzata» perché stava in un posto solo. `getBoundedNumericConfig` prendeva `min`,
+`max` e `defaultValue` da ogni chiamante: un posto solo, ma **una seconda dichiarazione**. Sette
+degli otto `max` esistevano *unicamente* lì, quindi `saveConfig` — che ora valida contro il
+registry — accettava `auditLog.retentionDays: 99999`, lo scriveva, e il lettore restituiva 365
+senza dirlo. `security.tokenVersionCacheTTL` era peggio: lo schema ammetteva `0` mentre il lettore
+riportava al default tutto ciò che stava sotto 10s. Tre numeri per una regola, esattamente come
+`security.password.minLength` prima di B5 — reintrodotto un layer più in basso dalla stessa
+migrazione che l'aveva chiuso sopra.
+
+I limiti stanno ora sugli schemi del registry, i default in `APP_CONFIG_DEFAULTS`, e gli otto
+getter sono una riga ciascuno su `getConfigOrDefault`. `getBoundedNumericConfig` è sparito.
 
 ### Verifica
 
-`pnpm lint` e `pnpm typecheck` 9/9 task · `packages/core` 242/242 · `apps/api` unit 436/436 ·
-integration 514/514 (+1 expected fail) · `apps/web` 80/80.
+`pnpm lint` e `pnpm typecheck` 9/9 task · `packages/core` 258/258 · `apps/api` unit 436/436 ·
+integration 515/515 (+1 expected fail) · `apps/web` 80/80.
 
 Il guardiano della divergenza è `apps/api/test/configDefaults.integration.spec.ts`: con le righe
 `storage.*` cancellate — lo stato in cui le copie discordavano — la pagina impostazioni deve

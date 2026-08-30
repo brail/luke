@@ -184,7 +184,12 @@ All runtime configuration lives in the `AppConfig` table (Postgres KV).
   declaration. They had drifted: `storage.s3.endpoint` fell back to `seaweedfs`
   in the settings router and `localhost` in the provider that opens the
   connection. Credentials are deliberately absent — a default credential is a
-  dev seed, not a default
+  dev seed, not a default, and the reader refuses to start rather than
+  substituting one (`loadS3Provider`, mirroring `getSmtpConfig`)
+- **Numeric bounds belong on the registry schema**, not on the reader. Seven
+  `max` values used to live only in `configManager`'s numeric getters, so
+  `saveConfig` accepted an out-of-range write, stored it, and the reader
+  silently returned the default instead
 - Sensitive values read with `decrypt: true` in `getConfig()`. `getConfig`
   remains correct for a plain string with no default (a URL, a credential); it
   is the manual `parseInt`/`=== 'true'` on its result that does not

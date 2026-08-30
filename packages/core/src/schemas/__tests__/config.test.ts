@@ -169,3 +169,23 @@ describe('every declared default is a value its own key would accept', () => {
     expect(result.success ? null : result.message).toBeNull();
   });
 });
+
+describe('numeric bounds are declared once, on the schema', () => {
+  // Seven of these `max` values used to exist only inside `configManager.getBoundedNumericConfig`,
+  // so `saveConfig` validated a write against a schema that had no upper bound, stored it, and the
+  // reader then quietly substituted the default. `tokenVersionCacheTTL` was the worst of the set:
+  // the schema accepted 0 while the reader clamped anything under 10s back to 60s.
+  it.each([
+    ['security.tokenVersionCacheTTL', '5000', '60000'],
+    ['auditLog.retentionDays', '99999', '365'],
+    ['auditLog.criticalRetentionDays', '99999', '3650'],
+    ['notification.retentionDays', '99999', '90'],
+    ['notification.dedupRetentionDays', '99999', '30'],
+    ['backup.retentionDays', '99999', '30'],
+    ['backup.retentionMinCount', '99999', '3'],
+    ['editLock.ttlMs', '99999999', '900000'],
+  ] as const)('%s rejects %s and accepts %s', (key, outOfRange, inRange) => {
+    expect(validateConfigValue(key, outOfRange).success).toBe(false);
+    expect(validateConfigValue(key, inRange).success).toBe(true);
+  });
+});

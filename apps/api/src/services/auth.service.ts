@@ -9,7 +9,7 @@ import { TRPCError } from '@trpc/server';
 
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
-import { getConfig } from '../lib/configManager';
+import { getConfig, getConfigOrDefault } from '../lib/configManager';
 import { createResetToken } from '../lib/emailHelpers';
 import { authenticateViaLdap } from '../lib/ldapAuth';
 import {
@@ -463,8 +463,7 @@ export async function requestPasswordReset(ctx: Context, email: string) {
   const { token, userToken } = await createResetToken(ctx.prisma, user.id);
 
   const baseUrl =
-    (await getConfig(ctx.prisma, 'app.baseUrl', false)) ||
-    'http://localhost:3000';
+    await getConfigOrDefault(ctx.prisma, 'app.baseUrl');
 
   const genericResponse = {
     success: true,
@@ -690,8 +689,7 @@ export async function requestEmailVerification(ctx: Context, email: string) {
   });
 
   const baseUrl =
-    (await getConfig(ctx.prisma, 'app.baseUrl', false)) ||
-    'http://localhost:3000';
+    await getConfigOrDefault(ctx.prisma, 'app.baseUrl');
 
   try {
     await sendEmailVerificationEmail(

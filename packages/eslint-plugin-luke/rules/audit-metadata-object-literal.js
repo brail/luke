@@ -6,16 +6,16 @@ const MESSAGE =
   'stores `[REDACTED]` — so the loss is silent until someone reads the audit log months later. ' +
   'Write the keys out; if the value really is dynamic, pick the fields explicitly.';
 
-const AUDIT_CALLEES = new Set(['logAudit', 'logAuditTx']);
+const AUDIT_CALLEE = 'logAudit';
 
 /** `logAudit(...)`, `auditLog.logAudit(...)`, `await logAudit(...)` — however it is spelled. */
 function isAuditCall(node) {
   const { callee } = node;
-  if (callee.type === 'Identifier') return AUDIT_CALLEES.has(callee.name);
+  if (callee.type === 'Identifier') return callee.name === AUDIT_CALLEE;
   return (
     callee.type === 'MemberExpression' &&
     callee.property.type === 'Identifier' &&
-    AUDIT_CALLEES.has(callee.property.name)
+    callee.property.name === AUDIT_CALLEE
   );
 }
 

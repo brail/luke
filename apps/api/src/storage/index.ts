@@ -82,14 +82,25 @@ export async function loadS3Provider(prisma: PrismaClient): Promise<S3Provider> 
       getConfigOrDefault(prisma, 'storage.s3.presignedGetTtl'),
     ]);
 
+  // No credential fallback. There used to be one — `accessKey || 's3admin'`, `secretKey ||
+  // 's3adminpwd'` — applied unconditionally, production images included. `prisma/seed.ts` writes
+  // both rows, so it was dead code everywhere except the one state that most deserves an error:
+  // S3 selected and its credentials missing, where it silently connected with a guessable
+  // credential instead of saying so. `getSmtpConfig` refuses an incomplete SMTP config for the
+  // same reason; there is no argument for the two credential-bearing integrations to differ.
+  if (!accessKey || !secretKey) {
+    throw new Error(
+      "Credenziali S3 non configurate: 'storage.s3.accessKey' e 'storage.s3.secretKey' sono " +
+        "obbligatorie quando 'storage.type' è 's3'.",
+    );
+  }
+
   const config = s3StorageConfigSchema.parse({
     endpoint,
     port,
     useSSL,
-    // The credentials keep a call-site fallback on purpose: a default credential is a dev seed,
-    // not a default, so it is not declared alongside the others in `APP_CONFIG_DEFAULTS`.
-    accessKey: accessKey || 's3admin',
-    secretKey: secretKey || 's3adminpwd',
+    accessKey,
+    secretKey,
     region,
     publicBaseUrl: publicBaseUrl || undefined,
     presignedPutTtl,

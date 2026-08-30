@@ -13,7 +13,7 @@ import { UserIdSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import { withAuditLog } from '../lib/auditMiddleware';
-import { getConfig, getConfigOrDefault } from '../lib/configManager';
+import { getConfigOrDefault } from '../lib/configManager';
 import { createResetToken, sendVerificationEmail } from '../lib/emailHelpers';
 import { isSyntheticLdapEmail } from '../lib/ldapAuth';
 import { sendAccountApprovedEmail, sendPasswordResetEmail } from '../lib/mailer';
@@ -98,8 +98,7 @@ export const usersAdminRouter = router({
       if (!user.email.endsWith('@ldap.local')) {
         try {
           const baseUrl =
-            (await getConfig(ctx.prisma, 'app.baseUrl', false)) ||
-            'http://localhost:3000';
+            await getConfigOrDefault(ctx.prisma, 'app.baseUrl');
           await sendAccountApprovedEmail(
             ctx.prisma,
             user.email,

@@ -217,7 +217,7 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     },
     {
       key: 'security.tokenVersionCacheTTL',
-      value: '60000', // 60 seconds default
+      value: APP_CONFIG_DEFAULTS['security.tokenVersionCacheTTL'], // 60 seconds default
       encrypt: false,
     },
     {
@@ -364,22 +364,22 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     // Retention sweep (audit log + notifications) — see retentionScheduler.ts
     {
       key: 'auditLog.retentionDays',
-      value: '365',
+      value: APP_CONFIG_DEFAULTS['auditLog.retentionDays'],
       encrypt: false,
     },
     {
       key: 'auditLog.criticalRetentionDays',
-      value: '3650', // 10 years, for actions in CRITICAL_AUDIT_ACTIONS
+      value: APP_CONFIG_DEFAULTS['auditLog.criticalRetentionDays'], // 10 years, for actions in CRITICAL_AUDIT_ACTIONS
       encrypt: false,
     },
     {
       key: 'notification.retentionDays',
-      value: '90',
+      value: APP_CONFIG_DEFAULTS['notification.retentionDays'],
       encrypt: false,
     },
     {
       key: 'notification.dedupRetentionDays',
-      value: '30',
+      value: APP_CONFIG_DEFAULTS['notification.dedupRetentionDays'],
       encrypt: false,
     },
     // Feedback GitHub issue sync — see feedbackSyncScheduler.ts

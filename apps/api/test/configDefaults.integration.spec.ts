@@ -1,21 +1,17 @@
 /**
  * One declaration of what a key falls back to when AppConfig has no row for it.
  *
- * The defaults used to be written out at every call site, and the copies had drifted. The clearest
- * case: `storage.s3.endpoint` fell back to `seaweedfs` in `prisma/seed.ts` and in the settings
- * router, but to `localhost` in `storage/index.ts` — the code that opens the connection. On an
- * install that had not been seeded, the settings page showed one host and the system used another,
- * and nothing said so.
- *
- * `APP_CONFIG_DEFAULTS` is now the only place a fallback is written, and `getConfigOrDefault`
- * the only way one is applied. What is pinned here is the user-visible half: with no rows stored,
- * the settings page reports exactly the declared defaults — which is also exactly what the
- * provider will use, because it reads the same declaration.
+ * The drift this closed — and why the defaults are not spelled at the call site — is recorded on
+ * `APP_CONFIG_DEFAULTS` in `packages/core/src/schemas/config.ts`. What is pinned here is the
+ * user-visible half: with no rows stored, the settings page reports exactly the declared defaults,
+ * which is also exactly what the provider uses, because it reads the same declaration.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { APP_CONFIG_DEFAULTS } from '@luke/core';
+
+import { loadS3Provider } from '../src/storage';
 
 import { setupTestDb, createCallerAs } from './helpers';
 
@@ -78,5 +74,19 @@ describe('AppConfig defaults', () => {
     expect((await caller.storage.getConfig()).s3.port).toBe(
       Number(APP_CONFIG_DEFAULTS['storage.s3.port']),
     );
+  });
+
+  describe('missing S3 credentials', () => {
+    it('refuses to build the provider instead of substituting a known one', async () => {
+      // `loadS3Provider` used to fall back to `s3admin`/`s3adminpwd` unconditionally, production
+      // included. Seeded installs have both rows, so the fallback only ever fired when S3 was
+      // selected and its credentials were gone — connecting with a guessable credential rather
+      // than saying so. `getSmtpConfig` refuses an incomplete SMTP config; this now matches.
+      await testPrisma.appConfig.deleteMany({
+        where: { key: { in: ['storage.s3.accessKey', 'storage.s3.secretKey'] } },
+      });
+
+      await expect(loadS3Provider(testPrisma)).rejects.toThrow(/Credenziali S3 non configurate/);
+    });
   });
 });

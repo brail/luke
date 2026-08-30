@@ -85,7 +85,10 @@ export const AppConfigRegistry = {
   'security.password.requireLowercase':    booleanConfigSchema,
   'security.password.requireDigit':        booleanConfigSchema,
   'security.password.requireSpecialChar':  booleanConfigSchema,
-  'security.tokenVersionCacheTTL':         z.coerce.number().int().min(0),
+  // 10s–10min. The bounds used to live only in `getTokenVersionCacheTTL`, which clamped anything
+  // outside them back to the default while this schema accepted `0` — so a write of 5000 was
+  // validated, stored, and then silently read as 60000. Declared once, here.
+  'security.tokenVersionCacheTTL':         z.coerce.number().int().min(10_000).max(600_000),
   'security.session.maxAge':               z.coerce.number().int().min(60),
   'security.session.updateAge':            z.coerce.number().int().min(60),
   'security.cors.developmentOrigins':      z.string(),
@@ -181,16 +184,16 @@ export const AppConfigRegistry = {
   'backup.schedule.enabled':        booleanConfigSchema,
   'backup.schedule.dailyTime':      z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), // "HH:mm"
   'backup.schedule.scope':          z.enum(['DB', 'DB_AND_FILES']),
-  'backup.retentionDays':           z.coerce.number().int().min(1),
-  'backup.retentionMinCount':       z.coerce.number().int().min(0),
+  'backup.retentionDays':           z.coerce.number().int().min(1).max(3650),
+  'backup.retentionMinCount':       z.coerce.number().int().min(0).max(1000),
   'backup.target.bucket':           z.string().min(1),
   'backup.notifyOnFailure':         booleanConfigSchema,
 
   // ── Retention sweep (audit log + notifiche) ──────────────────────────────
-  'auditLog.retentionDays':             z.coerce.number().int().min(1),
-  'auditLog.criticalRetentionDays':     z.coerce.number().int().min(1),
-  'notification.retentionDays':         z.coerce.number().int().min(1),
-  'notification.dedupRetentionDays':    z.coerce.number().int().min(1),
+  'auditLog.retentionDays':             z.coerce.number().int().min(1).max(3650),
+  'auditLog.criticalRetentionDays':     z.coerce.number().int().min(1).max(36500),
+  'notification.retentionDays':         z.coerce.number().int().min(1).max(3650),
+  'notification.dedupRetentionDays':    z.coerce.number().int().min(1).max(3650),
 
   // ── Maintenance Mode (schedulable, system-wide) ───────────────────────────
   // Single JSON blob, not one key per field: nothing outside maintenanceMode.ts (apps/api)
@@ -235,7 +238,8 @@ export function parseConfigValue<K extends AppConfigKey>(
  * Two deliberate absences:
  * - `storage.local.basePath` — its default is `join(homedir(), …)`, which is not a constant.
  * - `storage.s3.accessKey` / `secretKey` — a default credential is not a default, it is a dev
- *   seed. `prisma/seed.ts` keeps them; nothing here hands them to a reader.
+ *   seed. `prisma/seed.ts` keeps them; nothing here hands them to a reader, and `loadS3Provider`
+ *   refuses to start rather than substituting one of its own.
  */
 export const APP_CONFIG_DEFAULTS = {
   'app.name':    'Luke',
@@ -247,6 +251,16 @@ export const APP_CONFIG_DEFAULTS = {
 
   'backup.schedule.enabled':  'false',
   'backup.notifyOnFailure':   'true',
+  'backup.retentionDays':     '30',
+  'backup.retentionMinCount': '3',
+
+  'security.tokenVersionCacheTTL': '60000',
+  'editLock.ttlMs':                '900000',
+
+  'auditLog.retentionDays':          '365',
+  'auditLog.criticalRetentionDays':  '3650',
+  'notification.retentionDays':      '90',
+  'notification.dedupRetentionDays': '30',
 
   'storage.type':                'local',
   'storage.local.maxFileSizeMB': '50',
