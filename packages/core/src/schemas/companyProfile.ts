@@ -10,9 +10,19 @@ export const CompanyAddressSchema = z.object({
 });
 export type CompanyAddress = z.infer<typeof CompanyAddressSchema>;
 
+/**
+ * Length of the export footer, exported so the input that collects it can cap at the same number
+ * instead of restating it: an HTML `maxLength` silently truncates, so a drift here would cut text
+ * the schema would have accepted, with nothing to notice.
+ */
+export const COMPANY_FOOTER_TEXT_MAX = 200;
+
+/** A hex colour as `#RRGGBB`; the length the input accepts, including the `#`. */
+export const COMPANY_ACCENT_COLOR_LENGTH = 7;
+
 /** Settings that control the visual style of exported documents (PDF, XLSX) for this company. */
 export const CompanyExportSettingsSchema = z.object({
-  footerText: z.string().max(200).optional(),
+  footerText: z.string().max(COMPANY_FOOTER_TEXT_MAX).optional(),
   accentColorHex: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
   locale: z.enum(['it-IT', 'en-US']).default('it-IT').optional(),
   dateFormat: z.enum(['DD/MM/YYYY', 'YYYY-MM-DD']).default('DD/MM/YYYY').optional(),

@@ -4,7 +4,12 @@ import { ImageIcon, Trash2, UploadCloud } from 'lucide-react';
 import { type CSSProperties, type ChangeEvent, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-import { buildCompanyLogoUploadUrl, buildCompanyLogoUrl } from '@luke/core';
+import {
+  COMPANY_ACCENT_COLOR_LENGTH,
+  COMPANY_FOOTER_TEXT_MAX,
+  buildCompanyLogoUploadUrl,
+  buildCompanyLogoUrl,
+} from '@luke/core';
 
 import { SectionCard } from '../../../../../components/SectionCard';
 import { Button } from '../../../../../components/ui/button';
@@ -336,10 +341,10 @@ export function ProfileTab() {
               onChange={e => { setFooterText(e.target.value); setDirty(true); }}
               disabled={!canUpdate}
               placeholder="es. FEBOS S.r.l. — P.IVA 12345678901"
-              maxLength={200}
+              maxLength={COMPANY_FOOTER_TEXT_MAX}
               rows={2}
             />
-            <p className="text-xs text-muted-foreground">{footerText.length}/200 caratteri</p>
+            <p className="text-xs text-muted-foreground">{footerText.length}/{COMPANY_FOOTER_TEXT_MAX} caratteri</p>
           </div>
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-1.5">
@@ -355,7 +360,7 @@ export function ProfileTab() {
                   onChange={e => { setAccentColorHex(e.target.value); setDirty(true); }}
                   disabled={!canUpdate}
                   className="font-mono uppercase"
-                  maxLength={7}
+                  maxLength={COMPANY_ACCENT_COLOR_LENGTH}
                 />
                 <input
                   ref={colorInputRef}

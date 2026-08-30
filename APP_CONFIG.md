@@ -65,10 +65,10 @@ Il sistema utilizza 29 chiavi AppConfig organizzate in categorie funzionali.
 |                  | `app.defaultTimezone`              | String  | -       | `Europe/Rome`       | Default timezone          |
 |                  | `app.baseUrl`                      | String  | -       | -                   | Base URL for emails       |
 | **Security**     | `security.password.minLength`      | Number  | -       | 12                  | Min password length       |
-|                  | `security.password.requireUpper`   | Boolean | -       | true                | Require uppercase         |
-|                  | `security.password.requireLower`   | Boolean | -       | true                | Require lowercase         |
-|                  | `security.password.requireNumber`  | Boolean | -       | true                | Require number            |
-|                  | `security.password.requireSpecial` | Boolean | -       | false               | Require special char      |
+|                  | `security.password.requireUppercase`   | Boolean | - | true            | Require uppercase         |
+|                  | `security.password.requireLowercase`   | Boolean | - | true            | Require lowercase         |
+|                  | `security.password.requireDigit`       | Boolean | - | true            | Require digit             |
+|                  | `security.password.requireSpecialChar` | Boolean | - | true            | Require special char      |
 |                  | `security.tokenVersionCacheTTL`    | Number  | -       | 60000               | Token cache TTL (ms)      |
 |                  | `security.cors.developmentOrigins` | CSV     | -       | localhost:3000,5173 | CORS dev origins          |
 |                  | `security.session.maxAge`          | Number  | -       | 28800               | Session duration (s)      |
@@ -451,12 +451,18 @@ Policy sicurezza, sessioni e CORS.
 ```json
 {
   "security.password.minLength": 12,
-  "security.password.requireUpper": true,
-  "security.password.requireLower": true,
-  "security.password.requireNumber": true,
-  "security.password.requireSpecial": false
+  "security.password.requireUppercase": true,
+  "security.password.requireLowercase": true,
+  "security.password.requireDigit": true,
+  "security.password.requireSpecialChar": true
 }
 ```
+
+I valori sono stringhe, come ogni valore in AppConfig: `"true"` e `"false"`, non booleani JSON.
+`minLength` non scende sotto 8 — sotto quella soglia il valore non passa `AppConfigRegistry` e la
+policy ricade sul default. La classe di caratteri che conta come speciale è
+`PASSWORD_SPECIAL_CHARS` (`packages/core/src/schemas/password.ts`): un allowlist esplicito, quindi
+`~`, il backtick e lo spazio non contano.
 
 #### Session Management
 

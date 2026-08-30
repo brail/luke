@@ -5,7 +5,6 @@
 
 import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
-import argon2 from 'argon2';
 import { z } from 'zod';
 
 import { CreateUserInputSchema, UpdateUserInputSchema, UserHardDeleteInputSchema, UserIdSchema, hasPermission } from '@luke/core';
@@ -249,13 +248,7 @@ export const usersCoreRouter = router({
 
       await assertPasswordMeetsPolicy(ctx.prisma, input.password);
 
-      // Hash the password with argon2id
-      const passwordHash = await argon2.hash(input.password, {
-        type: argon2.argon2id,
-        timeCost: 3,
-        memoryCost: 65536,
-        parallelism: 1,
-      });
+      const passwordHash = await hashPassword(input.password);
 
       // Create user, identity, and credential in a transaction
       let result;

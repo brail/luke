@@ -576,13 +576,13 @@ export const seasonCalendarRouter = router({
    * Cancels a calendar event with a mandatory reason — the only lifecycle transition an event has
    * (there is no PLANNED/IN_PROGRESS/COMPLETED; completion is row-driven, see
    * CollectionRowPhaseHistory). A cancelled event is retired from the alert engine and frees its
-   * (planningGroup, phase) uniqueness slot, but is kept for audit. Any still-active state effects it
-   * applied (e.g. a collection-layout lock) are rolled back so a cancelled event never keeps holding
-   * a lock. Re-cancelling an already-cancelled event conflicts.
+   * (planningGroup, phase) uniqueness slot, but is kept for audit. Cancelling is allowed on a
+   * frozen event, which is the reason it exists: a commitment already made is retired, not deleted
+   * — `deleteMilestone` refuses the same event. Re-cancelling an already-cancelled event conflicts.
    *
    * @auth season_calendar:update
    * @input MilestoneCancelInputSchema — id plus a mandatory reason (trimmed, 1-500)
-   * @output { event, rolledBack }
+   * @output { event }
    */
   cancelMilestone: protectedProcedure
     .use(requirePermission('season_calendar:update'))

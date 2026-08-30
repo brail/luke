@@ -5,7 +5,6 @@
 import { randomBytes, createHash } from 'crypto';
 
 import { TRPCError } from '@trpc/server';
-import argon2 from 'argon2';
 
 
 import { logAudit } from '../lib/auditLog';
@@ -18,6 +17,7 @@ import {
   sendEmailVerificationEmail,
 } from '../lib/mailer';
 import { assertNotBlockedByMaintenance, isMaintenanceActive } from '../lib/maintenanceMode';
+import { hashPassword, verifyPassword } from '../lib/password';
 import { enforceRateLimit } from '../lib/ratelimit';
 import { resolveRateLimitPolicy } from '../lib/rateLimitPolicy';
 
@@ -59,10 +59,12 @@ export async function authenticateLocal(
     return null;
   }
 
-  // Verify the password
-  const isValidPassword = await argon2.verify(
-    user.identities[0].localCredential.passwordHash,
-    password
+  // Via `verifyPassword` rather than argon2 directly: it treats a malformed stored hash as a failed
+  // verification instead of throwing, so a corrupted credential row answers "wrong password"
+  // instead of turning a login attempt into a 500.
+  const isValidPassword = await verifyPassword(
+    password,
+    user.identities[0].localCredential.passwordHash
   );
 
   if (!isValidPassword) {
@@ -589,12 +591,7 @@ export async function confirmPasswordReset(
     });
   }
 
-  const passwordHash = await argon2.hash(newPassword, {
-    type: argon2.argon2id,
-    timeCost: 3,
-    memoryCost: 65536,
-    parallelism: 1,
-  });
+  const passwordHash = await hashPassword(newPassword);
 
   await ctx.prisma.$transaction(async tx => {
     await tx.localCredential.update({
