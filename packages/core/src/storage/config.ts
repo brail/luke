@@ -116,3 +116,24 @@ export type StorageType = z.infer<typeof storageTypeSchema>;
 export function isValidBucket(bucket: string): bucket is StorageBucket {
   return ([...APP_STORAGE_BUCKETS, 'backups'] as readonly string[]).includes(bucket);
 }
+
+/**
+ * Legacy SMB provider configuration, stored as a single JSON blob under `storage.smb`.
+ *
+ * Lives here rather than in the router that writes it because `AppConfigRegistry` has to name a
+ * schema for the key: a registry entry that could not describe its own value would leave the write
+ * path unvalidated for exactly the two keys built from a variable.
+ */
+export const smbStorageProviderConfigSchema = z.object({
+  host: z.string().min(1, 'Host è obbligatorio'),
+  path: z.string().min(1, 'Path è obbligatorio'),
+  username: z.string().optional(),
+  password: z.string().optional(),
+});
+
+/** Legacy Google Drive OAuth provider configuration, stored as a JSON blob under `storage.drive`. */
+export const driveStorageProviderConfigSchema = z.object({
+  clientId: z.string().min(1, 'Client ID è obbligatorio'),
+  clientSecret: z.string().min(1, 'Client Secret è obbligatorio'),
+  refreshToken: z.string().min(1, 'Refresh Token è obbligatorio'),
+});

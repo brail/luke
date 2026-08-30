@@ -13,7 +13,7 @@ import { z } from 'zod';
 
 import { APP_STORAGE_BUCKETS, isValidBucket, storageSaveConfigSchema, type StorageBucket } from '@luke/core';
 
-import { getConfig, saveConfig } from '../lib/configManager';
+import { deleteConfig, getConfig, saveConfig } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
 import { withSectionAccess } from '../lib/sectionAccessMiddleware';
 import { getStorageBaseUrl, resolvePublicUrl } from '../lib/storageUrl';
@@ -531,7 +531,13 @@ export const storageRouter = router({
           saveConfig(ctx.prisma, 'storage.s3.accessKey', input.accessKey, true),
           saveConfig(ctx.prisma, 'storage.s3.secretKey', input.secretKey, true),
           saveConfig(ctx.prisma, 'storage.s3.region', input.region, false),
-          saveConfig(ctx.prisma, 'storage.s3.publicBaseUrl', input.publicBaseUrl || '', false),
+          // Left blank, the CDN base URL is absent, not an empty URL: `storage/index.ts` and the
+          // two read paths in this router all treat a falsy value as "derive the URL from the
+          // endpoint". Storing `''` would be a second spelling of that, and one the registry's
+          // `z.string().url()` cannot describe.
+          input.publicBaseUrl
+            ? saveConfig(ctx.prisma, 'storage.s3.publicBaseUrl', input.publicBaseUrl, false)
+            : deleteConfig(ctx.prisma, 'storage.s3.publicBaseUrl'),
           saveConfig(ctx.prisma, 'storage.s3.presignedPutTtl', input.presignedPutTtl.toString(), false),
           saveConfig(ctx.prisma, 'storage.s3.presignedGetTtl', input.presignedGetTtl.toString(), false),
         ]);

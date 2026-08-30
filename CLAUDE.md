@@ -156,9 +156,19 @@ All runtime configuration lives in the `AppConfig` table (Postgres KV).
 
 - **Never `process.env.*` in application code** — use `getConfigValue(prisma, key)`
   or the tRPC config router. Env vars only for bootstrap (URL, NODE_ENV)
-- **Every new config key must be added to `AppConfigRegistry`** with its Zod schema
+- **Every new config key must be added to `AppConfigRegistry`** with its Zod schema —
+  not a convention: `saveConfig(prisma, key: AppConfigKey, ...)` won't compile
+  without it, and it validates the value against that schema before writing
+  (on the plaintext, before `encryptValue`). Never widen a schema to accommodate
+  a write: a key that means "not configured" is *absent*, so the write path calls
+  `deleteConfig`, never `saveConfig(key, '')` — `getConfig` already returns `null`
+  for an absent key, and `''` would be a second spelling of the same state
 - Values in the DB are always strings — `z.coerce.*` for numbers/booleans,
-  `.transform(s => JSON.parse(s))` for JSON blobs
+  **`jsonConfigSchema(Inner)`** for JSON blobs, never
+  `.transform(s => Inner.parse(JSON.parse(s)))`: a `parse` (or a `JSON.parse`
+  `SyntaxError`) inside a bare `transform` **throws through `safeParse`** instead of
+  populating `result.error`, so every caller would have to know to wrap that key.
+  Pinned by a test over the whole registry, not a sample
 - Sensitive values read with `decrypt: true` in `getConfig()`
 - `CRITICAL_CONFIG_KEYS`: only `auth.strategy`. Add only if its absence must
   block boot

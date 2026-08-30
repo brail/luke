@@ -5,6 +5,8 @@
 
 import { z } from 'zod';
 
+import { driveStorageProviderConfigSchema, smbStorageProviderConfigSchema } from '@luke/core';
+
 import { saveConfig } from '../lib/configManager';
 import {
   toTRPCError,
@@ -13,21 +15,6 @@ import {
 } from '../lib/errorHandler';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
-
-// Schema for SMB configuration
-const smbConfigSchema = z.object({
-  host: z.string().min(1, 'Host è obbligatorio'),
-  path: z.string().min(1, 'Path è obbligatorio'),
-  username: z.string().optional(),
-  password: z.string().optional(),
-});
-
-// Schema for Google Drive OAuth configuration
-const driveConfigSchema = z.object({
-  clientId: z.string().min(1, 'Client ID è obbligatorio'),
-  clientSecret: z.string().min(1, 'Client Secret è obbligatorio'),
-  refreshToken: z.string().min(1, 'Refresh Token è obbligatorio'),
-});
 
 export const storageRouter = router({
   /**
@@ -42,7 +29,7 @@ export const storageRouter = router({
     .input(
       z.object({
         provider: z.enum(['smb', 'drive']),
-        config: z.union([smbConfigSchema, driveConfigSchema]),
+        config: z.union([smbStorageProviderConfigSchema, driveStorageProviderConfigSchema]),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -52,7 +39,10 @@ export const storageRouter = router({
           'Storage config save request'
         );
         const { provider, config } = input;
-        const configKey = `storage.${provider}`;
+        // Typed, not interpolated into a `string`: `provider` is a two-value enum, so the template
+        // narrows to `'storage.smb' | 'storage.drive'` — both registered — and `saveConfig` checks
+        // the blob against the same schema the input was parsed with.
+        const configKey = `storage.${provider}` as const;
         const logger = new SecureLogger(ctx.logger);
 
         // Encrypts the sensitive credentials

@@ -221,7 +221,7 @@ describe('Rate-Limit Integration', () => {
       // First 20 set requests should succeed
       for (let i = 0; i < 20; i++) {
         await adminCaller.config.set({
-          key: `app.test${i}`,
+          key: 'app.name',
           value: `value${i}`,
           encrypt: false,
         });
@@ -230,7 +230,7 @@ describe('Rate-Limit Integration', () => {
       // 21st request must fail with TOO_MANY_REQUESTS
       await expectToThrow(
         adminCaller.config.set({
-          key: 'app.test21',
+          key: 'app.name',
           value: 'value21',
           encrypt: false,
         }),

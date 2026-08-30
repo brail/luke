@@ -4,7 +4,7 @@ import { testGoogleConnection, generateOAuthUrl, exchangeOAuthCode } from '@luke
 import { googleWorkspaceConfigSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { saveConfig, getConfig } from '../lib/configManager';
+import { saveConfig, getConfig, deleteConfig } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 
@@ -78,7 +78,15 @@ export const googleRouter = router({
 
       if (input.authMode === 'service_account') {
         await saveConfig(ctx.prisma, 'integrations.google.serviceEmail', input.serviceEmail, false);
-        await saveConfig(ctx.prisma, 'integrations.google.impersonateEmail', input.impersonateEmail ?? '', false);
+        // An empty field means "no impersonation", which is the absence of the key, not an empty
+        // email stored under it: `getConfig` already returns `null` for an absent key and every
+        // reader of this one collapses both to `undefined`. Writing `''` would have been a second
+        // spelling of the same state that the registry schema (`z.string().email()`) cannot describe.
+        if (input.impersonateEmail) {
+          await saveConfig(ctx.prisma, 'integrations.google.impersonateEmail', input.impersonateEmail, false);
+        } else {
+          await deleteConfig(ctx.prisma, 'integrations.google.impersonateEmail');
+        }
         if (input.serviceKey?.trim()) {
           await saveConfig(ctx.prisma, 'integrations.google.serviceKey', input.serviceKey, true);
         }
@@ -161,8 +169,9 @@ export const googleRouter = router({
   disconnectOAuth: protectedProcedure
     .use(requirePermission('config:update'))
     .mutation(async ({ ctx }) => {
-      await saveConfig(ctx.prisma, 'integrations.google.oauth.refreshToken', '', false);
-      await saveConfig(ctx.prisma, 'integrations.google.oauth.userEmail', '', false);
+      // Disconnecting removes the keys rather than blanking them — see the impersonation note above.
+      await deleteConfig(ctx.prisma, 'integrations.google.oauth.refreshToken');
+      await deleteConfig(ctx.prisma, 'integrations.google.oauth.userEmail');
       await logAudit(ctx, {
         action: 'CONFIG_GOOGLE_OAUTH_DISCONNECT',
         targetType: 'Config',

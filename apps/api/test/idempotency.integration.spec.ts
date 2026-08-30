@@ -155,14 +155,14 @@ describe('Idempotency Integration', () => {
       const adminCaller = await createCallerWithIdempotency(idempotencyKey, 'admin');
 
       const configData = {
-        key: 'app.test',
+        key: 'app.name',
         value: 'test-value',
         encrypt: false,
       };
 
       // First call: sets config
       const result1 = await adminCaller.config.set(configData);
-      expect(result1.key).toBe('app.test');
+      expect(result1.key).toBe('app.name');
 
       // Second call: should return the same result
       const result2 = await adminCaller.config.set(configData);
@@ -175,13 +175,13 @@ describe('Idempotency Integration', () => {
       const adminCaller = await createCallerWithIdempotency(idempotencyKey, 'admin');
 
       const configData1 = {
-        key: 'app.test1',
+        key: 'app.name',
         value: 'test-value-1',
         encrypt: false,
       };
 
       const configData2 = {
-        key: 'app.test2',
+        key: 'app.locale',
         value: 'test-value-2',
         encrypt: false,
       };

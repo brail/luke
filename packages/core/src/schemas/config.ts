@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { driveStorageProviderConfigSchema, smbStorageProviderConfigSchema } from '../storage/config';
+
 import { RateLimitConfigSchema, LdapResilienceSchema, CollectionAlertThresholdsSchema, AppContextDefaultsSchema } from './appConfig';
 import { MaintenanceModeStateSchema } from './maintenanceMode';
 
@@ -21,6 +23,29 @@ import { MaintenanceModeStateSchema } from './maintenanceMode';
  */
 const booleanConfigSchema = z.enum(['true', 'false']).transform(v => v === 'true');
 
+/**
+ * A setting stored as a JSON string, parsed and then validated by `inner`.
+ *
+ * The point is the `ctx.addIssue`/`.pipe()` shape rather than the obvious
+ * `.transform(s => Inner.parse(JSON.parse(s)))`: a `parse` — or a `JSON.parse` `SyntaxError` —
+ * thrown inside a bare `transform` propagates straight through `safeParse` instead of landing in
+ * `result.error`. Every schema in this registry is expected to honour "safeParse never throws";
+ * nine entries were written the obvious way and did not, so each caller had to know to wrap them.
+ * Declaring the shape once here is the same move `booleanConfigSchema` makes above.
+ */
+const jsonConfigSchema = <T extends z.ZodTypeAny>(inner: T) =>
+  z
+    .string()
+    .transform((raw, ctx) => {
+      try {
+        return JSON.parse(raw) as unknown;
+      } catch {
+        ctx.addIssue({ code: 'custom', message: 'Valore non è JSON valido' });
+        return z.NEVER;
+      }
+    })
+    .pipe(inner);
+
 export const AppConfigRegistry = {
   // ── App ──────────────────────────────────────────────────────────────────
   'app.name':            z.string().min(1),
@@ -29,8 +54,8 @@ export const AppConfigRegistry = {
   'app.locale':          z.string(),
   'app.defaultTimezone': z.string(),
   'app.baseUrl':         z.string().url(),
-  'app.sections.disabled': z.string().transform(s => z.array(z.string()).parse(JSON.parse(s))),
-  'app.context.defaults':  z.string().transform(s => AppContextDefaultsSchema.parse(JSON.parse(s))),
+  'app.sections.disabled': jsonConfigSchema(z.array(z.string())),
+  'app.context.defaults':  jsonConfigSchema(AppContextDefaultsSchema),
 
   // ── Auth ─────────────────────────────────────────────────────────────────
   'auth.strategy':                       z.enum(['local-first', 'ldap-first', 'local-only', 'ldap-only']),
@@ -38,7 +63,10 @@ export const AppConfigRegistry = {
   'auth.nextAuthSecret':                 z.string().min(32),
 
   // ── RBAC ─────────────────────────────────────────────────────────────────
-  'rbac.sectionAccessDefaults': z.string().transform(s => JSON.parse(s) as Record<string, Record<string, string>>),
+  // `z.custom` accepts whatever parsed, which is what the previous `as` cast did — typing the
+  // shape without checking it. Narrowing it to a real schema would start rejecting stored blobs
+  // that are accepted today, which is a decision about RBAC defaults, not about JSON parsing.
+  'rbac.sectionAccessDefaults': jsonConfigSchema(z.custom<Record<string, Record<string, string>>>()),
 
   // ── SMTP ─────────────────────────────────────────────────────────────────
   'smtp.host':   z.string().min(1),
@@ -83,11 +111,18 @@ export const AppConfigRegistry = {
   // ── Storage — asset derivative pipeline (thumb/card/export image variants) ────
   'storage.derivatives.enabled': booleanConfigSchema,
 
+  // ── Storage — legacy providers, written as `storage.${provider}` JSON blobs ───
+  // The only keys in the codebase assembled from a variable. They are registered rather than
+  // exempted so `saveConfig` can validate them like every other key: the interpolation is over a
+  // two-value enum, so both keys are known statically even though neither is spelled out.
+  'storage.smb':   jsonConfigSchema(smbStorageProviderConfigSchema),
+  'storage.drive': jsonConfigSchema(driveStorageProviderConfigSchema),
+
   // ── Rate limiting (JSON object) ───────────────────────────────────────────
-  'rateLimit': z.string().transform(s => RateLimitConfigSchema.parse(JSON.parse(s))),
+  'rateLimit': jsonConfigSchema(RateLimitConfigSchema),
 
   // ── Collection Control — motore alert (JSON object) ──────────────────────
-  'collectionControl.alertThresholds': z.string().transform(s => CollectionAlertThresholdsSchema.parse(JSON.parse(s))),
+  'collectionControl.alertThresholds': jsonConfigSchema(CollectionAlertThresholdsSchema),
 
   // ── Edit lock — session-scoped entity lock (currently: planning wizard) ────
   'editLock.ttlMs': z.coerce.number().int().min(300_000).max(3_600_000),
@@ -101,7 +136,9 @@ export const AppConfigRegistry = {
   'auth.ldap.searchFilter':   z.string(),
   'auth.ldap.groupSearchBase':   z.string(),
   'auth.ldap.groupSearchFilter': z.string(),
-  'auth.ldap.roleMapping':    z.string().transform(s => JSON.parse(s) as Record<string, string>),
+  // Same as `rbac.sectionAccessDefaults`: types the shape, does not check it. `configManager`
+  // has a stricter `RoleMappingSchema` it applies where it actually needs the guarantee.
+  'auth.ldap.roleMapping':    jsonConfigSchema(z.custom<Record<string, string>>()),
 
   // ── LDAP resilience (scalari individuali) ────────────────────────────────
   'auth.ldap.resilience.timeoutMs':               z.coerce.number().int().min(100),
@@ -159,7 +196,7 @@ export const AppConfigRegistry = {
   // Single JSON blob, not one key per field: nothing outside maintenanceMode.ts (apps/api)
   // ever reads an individual sub-field, so one row keeps writes atomic for free instead of
   // needing a $transaction across 9 rows.
-  'maintenance.mode.state': z.string().transform(s => MaintenanceModeStateSchema.parse(JSON.parse(s))),
+  'maintenance.mode.state': jsonConfigSchema(MaintenanceModeStateSchema),
 } as const satisfies Record<string, z.ZodTypeAny>;
 
 export type AppConfigKey = keyof typeof AppConfigRegistry;
@@ -179,6 +216,38 @@ export function parseConfigValue<K extends AppConfigKey>(
   raw: string,
 ): AppConfigValue<K> {
   return (AppConfigRegistry[key] as z.ZodTypeAny).parse(raw) as AppConfigValue<K>;
+}
+
+/**
+ * Narrows an arbitrary string to a registered key.
+ *
+ * The type on `saveConfig` closes typos at the call sites that spell a key out, but the config
+ * router receives its key over the wire as a plain `string`; this is where that string earns the
+ * type. Registry membership is strictly stronger than the router's prefix allowlist — it does not
+ * replace it, because the allowlist additionally decides which registered keys the *generic*
+ * endpoint may reach at all (`backup.*` and `rbac.*` are registered but only written by their own
+ * routers).
+ */
+export function isAppConfigKey(key: string): key is AppConfigKey {
+  return Object.hasOwn(AppConfigRegistry, key);
+}
+
+/**
+ * Validates a raw string value against its key's schema. The write path needs the verdict, not the
+ * value: `saveConfig` stores the string it was given.
+ *
+ * No try/catch: every registry entry composes safely under `safeParse`, which is what
+ * `jsonConfigSchema` is for. A message rather than the `ZodError` because `@luke/core` has no
+ * business knowing what transport the caller will turn it into.
+ */
+export function validateConfigValue(
+  key: AppConfigKey,
+  raw: string,
+): { success: true } | { success: false; message: string } {
+  const result = (AppConfigRegistry[key] as z.ZodTypeAny).safeParse(raw);
+  return result.success
+    ? { success: true }
+    : { success: false, message: result.error.issues.map(i => i.message).join('; ') };
 }
 
 /**

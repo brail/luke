@@ -15,7 +15,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { AppConfigRegistry } from '../config';
+import { AppConfigRegistry, isAppConfigKey, validateConfigValue } from '../config';
 import { passwordPrefilterSchema } from '../password';
 
 /** Every boolean key in the registry — the property must hold for all of them, not a sample. */
@@ -83,5 +83,78 @@ describe('the registry declares one floor for minLength', () => {
     expect(schema.safeParse('7').success).toBe(false);
     expect(schema.safeParse('129').success).toBe(false);
     expect(schema.safeParse('8').success).toBe(true);
+  });
+});
+
+describe('the registry is consulted on the write path, not only on the read path', () => {
+  it('narrows a key that exists and rejects one that does not', () => {
+    expect(isAppConfigKey('security.password.minLength')).toBe(true);
+    expect(isAppConfigKey('app.test')).toBe(false);
+    // A prefix that is registered does not make its children registered.
+    expect(isAppConfigKey('security.password')).toBe(false);
+  });
+
+  it('does not mistake inherited Object properties for registered keys', () => {
+    // `key in registry` would answer true for every one of these, and `saveConfig` would then
+    // hand `AppConfigRegistry['toString']` to `safeParse`.
+    expect(isAppConfigKey('toString')).toBe(false);
+    expect(isAppConfigKey('constructor')).toBe(false);
+    expect(isAppConfigKey('__proto__')).toBe(false);
+  });
+
+  it('rejects a value its key’s schema refuses', () => {
+    const result = validateConfigValue('security.password.minLength', '4');
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts the string form the value arrives in, not the parsed form', () => {
+    // Everything reaching AppConfig is a string; a schema that only accepted `8` would reject
+    // every real write.
+    expect(validateConfigValue('security.password.minLength', '12').success).toBe(true);
+    expect(validateConfigValue('storage.s3.useSSL', 'false').success).toBe(true);
+    expect(validateConfigValue('app.sections.disabled', '["pricing"]').success).toBe(true);
+  });
+
+  it('refuses the empty string for keys whose absence means "not configured"', () => {
+    // These four used to be written as `''` to mean unset, which no schema here can describe.
+    // The write paths delete the key instead — see `integrations.google.router.ts`.
+    expect(validateConfigValue('integrations.google.oauth.userEmail', '').success).toBe(false);
+    expect(validateConfigValue('integrations.google.oauth.refreshToken', '').success).toBe(false);
+    expect(validateConfigValue('integrations.google.impersonateEmail', '').success).toBe(false);
+    expect(validateConfigValue('storage.s3.publicBaseUrl', '').success).toBe(false);
+  });
+
+  it('covers the two keys assembled from a variable', () => {
+    // `storage.${provider}` is the only interpolated key in the codebase. Registered, so the JSON
+    // blob it writes is validated like every other value instead of being exempt by construction.
+    for (const provider of ['smb', 'drive'] as const) {
+      expect(isAppConfigKey(`storage.${provider}`)).toBe(true);
+    }
+    expect(
+      validateConfigValue('storage.smb', JSON.stringify({ host: 'nas', path: '/share' })).success,
+    ).toBe(true);
+    expect(validateConfigValue('storage.smb', JSON.stringify({ host: '' })).success).toBe(false);
+  });
+});
+
+describe('every registry entry composes safely under safeParse', () => {
+  // The property, over the whole registry rather than a sample. Nine entries were written
+  // `z.string().transform(s => Schema.parse(JSON.parse(s)))`, where a throw inside the transform
+  // propagates through `safeParse` instead of landing in `result.error` — so `safeParse` returning
+  // a verdict was true for the scalar keys and a lie for the JSON ones. `jsonConfigSchema` is what
+  // makes it uniform, and this is what catches the tenth JSON key added the obvious way.
+  const GARBAGE = ['{not json', '', 'null', '[]', '{}', 'true', '-1', 'x'.repeat(300)];
+
+  it.each(Object.keys(AppConfigRegistry))('%s never throws out of safeParse', key => {
+    const schema = AppConfigRegistry[key as keyof typeof AppConfigRegistry];
+    for (const raw of GARBAGE) {
+      expect(() => schema.safeParse(raw)).not.toThrow();
+    }
+  });
+
+  it('reports a malformed JSON blob as an issue, not an exception', () => {
+    const result = AppConfigRegistry['rateLimit'].safeParse('{not json');
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0].message).toContain('JSON');
   });
 });

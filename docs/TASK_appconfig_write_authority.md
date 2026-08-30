@@ -2,6 +2,11 @@
 
 Aperto il 2026-08-30, a valle di B5 (`TASK_router_schemas_to_core.md`) e del /simplify su di esso.
 
+> **Stato al 2026-08-30.** Punti 1, 2 e 3 chiusi. Punto 4 (`SAFE_KEY_LIST`) non iniziato:
+> richiede un censimento che va condotto a parte, ed è deliberatamente tenuto in un diff
+> separato da quello sull'autorità in scrittura. Punto 5 resta una domanda aperta.
+> Dettagli in fondo, sezione «Esito».
+
 ## Contesto
 
 La regola 15 di CLAUDE.md dice che ogni lista mantenuta a mano che filtra dati persistiti va legata
@@ -134,3 +139,82 @@ Il segnale che il punto 4 è servito: rimettere `metadata: { ...input }` da qual
 la suite invece di scrivere `[REDACTED]` in silenzio. Per i punti 1-2: cambiare il tipo di una
 chiave nel registry deve rompere la compilazione al call site che la scrive, non alla prima lettura
 in produzione.
+
+---
+
+## Esito
+
+### Punto 3 — chiuso prima degli altri, e in modo più ampio
+
+Il commit `780660c` ha tolto `config:read`/`config:update` a **editor e viewer**, invece di gateare
+il solo prefisso `security.` su `*:*` come proponeva il piano. Il gate sul prefisso avrebbe chiuso
+la policy password e lasciato aperti gli altri 26 endpoint dietro `config:update` — SMTP, LDAP,
+`auth.strategy`, le credenziali OAuth Google e S3 — di cui uno solo controllava anche la section
+access. La regressione da B5 era il sintomo; la causa era che RBAC concedeva più di quanto
+`SECTION_ACCESS_DEFAULTS` lasciasse intendere.
+
+### Punti 1 e 2 — la scrittura risponde al registry
+
+- `saveConfig(prisma, key: AppConfigKey, value, encrypt)` — la chiave è tipizzata. Le 44 chiavi
+  scritte con literal erano già tutte nel registry: `tsc` è passato senza modifiche ai call site.
+- `saveConfig` valida il valore con `validateConfigValue(key, raw)` **prima** di cifrare. Il caso
+  speciale su `security.password.minLength` in `upsertConfig` è sparito come conseguenza.
+- Le due chiavi costruite dinamicamente erano `storage.smb` e `storage.drive`. Sono **entrate** nel
+  registry: `storage.${provider}` si restringe da solo perché `provider` è un enum a due valori, e
+  i loro schemi Zod si sono spostati dal router a `packages/core/src/storage/config.ts`.
+- `validateKey` nel router config narrowa a `AppConfigKey`, ma **in aggiunta** a `ALLOWED_PREFIXES`,
+  non al suo posto: i due gate rispondono a domande diverse, e appoggiarsi al solo registry avrebbe
+  aperto `backup.*`, `rbac.*`, `auditLog.*` e `rateLimit` all'endpoint generico `config.set`.
+
+**`importJson`** — decisione risolta senza scrivere codice. Il ciclo aveva già un try/catch per
+item con `errorCount`/`errors[]`: un `saveConfig` che lancia produce «salta la chiave e la riporta»
+gratis, e il contratto dell'endpoint non cambia. Un backup con un valore non più valido si
+ripristina lo stesso, meno quella chiave, che viene nominata nella risposta.
+
+**Valori cifrati** — verificato: nessuno schema del registry descrive un ciphertext. La validazione
+gira sul chiaro, prima di `encryptValue`. Validare dopo avrebbe testato un blob esadecimale contro
+una regola scritta per il segreto (`min(1)` sarebbe passato sempre).
+
+### Due cose che il piano non aveva previsto
+
+**1. Quattro call site scrivevano `''` per dire «non configurato».**
+`integrations.google.oauth.refreshToken`, `…oauth.userEmail`, `…impersonateEmail`,
+`storage.s3.publicBaseUrl` — tutti contro schemi (`.email()`, `.url()`, `.min(1)`) che la stringa
+vuota non soddisfa. Non è stato allargato lo schema: i call site ora **cancellano la chiave**.
+`getConfig` restituisce già `null` per una chiave assente, quindi `''` era un secondo modo di dire
+quello che `null` diceva già, e ogni reader futuro avrebbe dovuto *sapere* che `''` significa unset.
+`deleteConfig` è diventato idempotente (`deleteMany`) e resta su `key: string`: una delete non può
+persistere un valore sbagliato, e pretendere l'appartenenza al registry lascerebbe senza rimozione
+una riga la cui chiave venisse tolta dal registry in futuro.
+
+**2. Nove chiavi sfuggivano a `safeParse`.** Le entry shape
+`z.string().transform(s => Schema.parse(JSON.parse(s)))` — `rateLimit`, `app.sections.disabled`,
+`maintenance.mode.state`, `rbac.sectionAccessDefaults` e altre — **lanciano** attraverso
+`safeParse` invece di popolare `result.error`: un `parse` dentro un `transform` non viene raccolto.
+Senza intervento la validazione in scrittura avrebbe funzionato solo per le chiavi scalari, e ogni
+blob JSON malformato sarebbe uscito come `SyntaxError` (500) invece che come `BAD_REQUEST`.
+Trovato da un test, non a lettura.
+
+La prima stesura ci metteva un try/catch dentro `validateConfigValue`. Il /simplify l'ha
+correttamente bocciato come toppa al chiamante: «`safeParse` non lancia mai» è un contratto che
+ogni entry del registry deve onorare, non un problema del consumatore. Le nove entry usano ora
+`jsonConfigSchema(Inner)`, dichiarato accanto a `booleanConfigSchema` — stesso identico movimento
+che quel helper aveva già fatto per i booleani — che riporta un JSON malformato via `ctx.addIssue`
+e poi `.pipe(Inner)`. `validateConfigValue` è tornato a essere un wrapper sottile senza catch, e la
+proprietà è pinnata con un `it.each` su **tutte** le chiavi del registry: è ciò che intercetta la
+decima chiave JSON scritta nel modo ovvio.
+
+### Verifica
+
+`packages/core` 225/225 · `apps/api` unit 432/432 · `apps/api` integration 510/510 (+1 expected
+fail) con il gate procedure-coverage verde · `apps/web` 80/80 · lint e typecheck puliti sui tre
+pacchetti.
+
+Il segnale del piano — «cambiare il tipo di una chiave nel registry deve rompere la compilazione al
+call site che la scrive» — è pinnato in `apps/api/test/configWriteAuthority.types.spec.ts`, dentro
+`tsconfig.test.json`: le asserzioni sono i `@ts-expect-error`, che falliscono `tsc` se l'errore che
+si aspettano smette di succedere. Il resto sta in `configWriteAuthority.integration.spec.ts`.
+
+Cinque test d'integrazione preesistenti scrivevano chiavi inventate (`app.test`, `app.test0`,
+`app.test.secret`) per collaudare idempotenza, rate limit e audit: puntano ora a chiavi reali del
+registry. Erano esattamente il drift che il gate esiste per fermare.

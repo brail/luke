@@ -16,6 +16,7 @@ import {
   type AppConfigValue,
   type PasswordPolicy,
   parseConfigValue,
+  validateConfigValue,
   CRITICAL_CONFIG_KEYS,
   LdapResilienceSchema,
   type LdapResilienceConfig,
@@ -109,23 +110,6 @@ export function decryptValue(encrypted: string): string {
 }
 
 /**
- * Upserts a configuration entry in the database.
- *
- * @param prisma - Prisma client.
- * @param key - Configuration key (dot-notation, must conform to AppConfigRegistry).
- * @param value - Value to store.
- * @param encrypt - When `true`, the value is encrypted with AES-256-GCM before storage.
- *
- * @example
- * // Store plaintext value
- * await saveConfig(prisma, "app.name", "Luke", false);
- *
- * @example
- * // Store encrypted value
- * await saveConfig(prisma, "auth.ldap.bindPassword", "secret123", true);
- */
-
-/**
  * Keys read by `getRbacConfig`'s cache — any write here must invalidate it,
  * or the RBAC-aware last-admin guards (`lastAdminGuard.ts`,
  * `sectionAccess.ts`) can evaluate against a stale kill-switch/defaults value
@@ -149,15 +133,10 @@ async function saveSectionsDisabledGuarded(
   encrypt: boolean
 ): Promise<void> {
   await prisma.$transaction(async tx => {
-    let disabled: string[];
-    try {
-      disabled = z.array(z.string()).parse(JSON.parse(rawValue));
-    } catch {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'app.sections.disabled deve essere un array JSON di stringhe',
-      });
-    }
+    // Parsed here rather than threaded in from `saveConfig`'s validation: there `key` is the open
+    // `AppConfigKey`, so the parsed value is the union of every config type and narrowing it to
+    // `string[]` would need a cast. A second parse of a ten-element array is the cheaper price.
+    const disabled = parseConfigValue('app.sections.disabled', rawValue);
 
     if (disabled.includes('settings')) {
       await acquireLastAdminLock(tx);
@@ -179,12 +158,47 @@ async function saveSectionsDisabledGuarded(
   });
 }
 
+/**
+ * Upserts a configuration entry in the database.
+ *
+ * The key is an `AppConfigKey`, and the value is parsed by that key's registry schema before it is
+ * written: reads had a typed variant (`getTypedConfig`) and writes had none, so the registry
+ * described what the application expected to find rather than what it was allowed to store. A
+ * caller outside the registry now fails `tsc`, and a value the schema rejects fails here instead
+ * of at the first read in production.
+ *
+ * Validation runs on the plaintext, before `encryptValue`: no registry schema describes a
+ * ciphertext, so validating after would test the hex blob against a rule written for the secret.
+ *
+ * @param prisma - Prisma client.
+ * @param key - Configuration key declared in `AppConfigRegistry`.
+ * @param value - Value to store, as the string form the registry schema parses.
+ * @param encrypt - When `true`, the value is encrypted with AES-256-GCM before storage.
+ * @throws {TRPCError} `BAD_REQUEST` when the value fails its registry schema.
+ *
+ * @example
+ * // Store plaintext value
+ * await saveConfig(prisma, "app.name", "Luke", false);
+ *
+ * @example
+ * // Store encrypted value
+ * await saveConfig(prisma, "auth.ldap.bindPassword", "secret123", true);
+ */
+
 export async function saveConfig(
   prisma: PrismaClient,
-  key: string,
+  key: AppConfigKey,
   value: string,
   encrypt: boolean = false
 ): Promise<void> {
+  const validation = validateConfigValue(key, value);
+  if (!validation.success) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: `Valore non valido per '${key}': ${validation.message}`,
+    });
+  }
+
   const finalValue = encrypt ? encryptValue(value) : value;
 
   if (key === 'app.sections.disabled') {
@@ -483,13 +497,19 @@ export async function listConfigsPaged(
 }
 
 /**
- * Permanently deletes a configuration entry from the database.
+ * Permanently deletes a configuration entry from the database. A no-op when the key is absent.
+ *
+ * `key` stays a `string` where `saveConfig` takes an `AppConfigKey`: a delete cannot persist a bad
+ * value, and requiring registry membership here would leave a row whose key was later dropped from
+ * the registry with no way to remove it from the app.
  */
 export async function deleteConfig(
   prisma: PrismaClient,
   key: string
 ): Promise<void> {
-  await prisma.appConfig.delete({
+  // `deleteMany`, not `delete`: clearing a key that is already absent is the intended outcome of
+  // every caller here, and `delete` turns that into a P2025 the caller would have to swallow.
+  await prisma.appConfig.deleteMany({
     where: { key },
   });
 

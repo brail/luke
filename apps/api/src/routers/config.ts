@@ -6,6 +6,8 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { isAppConfigKey, type AppConfigKey } from '@luke/core';
+
 import { logAudit } from '../lib/auditLog';
 import {
   saveConfig,
@@ -79,21 +81,32 @@ function isCriticalKey(key: string): boolean {
 }
 
 /**
- * Validates the format and prefix of a key
+ * Validates the prefix of a key, then narrows it to a registered `AppConfigKey`.
+ *
+ * Two independent gates, and the second does not subsume the first. Registry membership says the
+ * key exists and names a schema; `ALLOWED_PREFIXES` says the *generic* endpoint may reach it at
+ * all. Registered keys outside those prefixes (`backup.*`, `rbac.*`, `auditLog.*`, `rateLimit`, …)
+ * are written only by the routers that own them, and dropping the prefix check to lean on the
+ * registry alone would quietly open every one of them to `config.set`.
+ *
+ * There is no format check here: `KEY_REGEX` is built from `ALLOWED_PREFIXES`, so anything it
+ * would have caught is caught by one of the two gates below — a malformed key cannot equal one of
+ * the registry's literals. The regex still guards the `config.set` input schema, where it reports
+ * a bad format before the mutation runs.
  */
-function validateKey(key: string): void {
-  if (!KEY_REGEX.test(key)) {
-    throw new TRPCError({
-      code: 'BAD_REQUEST',
-      message: `Formato chiave non valido. Deve iniziare con una categoria supportata (${Array.from(ALLOWED_PREFIXES).join(', ')})`,
-    });
-  }
-
+function validateKey(key: string): asserts key is AppConfigKey {
   const prefix = key.split('.')[0];
   if (!ALLOWED_PREFIXES.has(prefix)) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
       message: `Prefisso non ammesso: ${prefix}. Prefissi consentiti: ${Array.from(ALLOWED_PREFIXES).join(', ')}`,
+    });
+  }
+
+  if (!isAppConfigKey(key)) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: `Chiave non dichiarata in AppConfigRegistry: ${key}`,
     });
   }
 }
@@ -245,31 +258,9 @@ async function upsertConfig(
   encrypt: boolean,
   options: { strictUpdate?: boolean; source?: string } = {}
 ) {
-  // Validates the key
+  // Validates the key and narrows it to an AppConfigKey. The value is validated by `saveConfig`
+  // against the registry schema — there is no per-key special case here any more.
   validateKey(key);
-
-  // Special validation for password policy (security).
-  //
-  // Duplicates `AppConfigRegistry`, which now declares the same 8-128 range — they used to
-  // disagree, this saying 8 while the registry said 6. It stays because writes do not consult the
-  // registry at all: this is the general check, approximated for the one key someone needed
-  // it for. Making writes validate against the registry is what deletes this block; that work is
-  // scoped in docs/TASK_appconfig_write_authority.md.
-  if (key === 'security.password.minLength') {
-    const minLength = parseInt(value, 10);
-    if (isNaN(minLength) || minLength < 8) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Password minLength non può essere inferiore a 8 caratteri',
-      });
-    }
-    if (minLength > 128) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Password minLength non può essere superiore a 128 caratteri',
-      });
-    }
-  }
 
   // If strictUpdate=true, verifies that the configuration exists
   if (options.strictUpdate) {

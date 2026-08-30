@@ -75,8 +75,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   config: {
     reason:
-      'set e viewValue coperte dalle spec audit/idempotenza; export/import JSON e le letture multiple non hanno test',
-    uncovered: 9,
+      'set, viewValue e importJson coperte dalle spec audit/idempotenza/autorità in scrittura; exportJson e le letture multiple non hanno test',
+    uncovered: 8,
   },
   me: {
     reason:
@@ -112,8 +112,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   storage: {
     reason:
-      'operazioni su file reali via IStorageProvider; il MockStorageProvider esiste ma è cablato solo nelle spec brandLogo',
-    uncovered: 10,
+      'saveConfig coperta dalla spec sull\'autorità in scrittura di AppConfig; il resto sono operazioni su file reali via IStorageProvider e il MockStorageProvider è cablato solo nelle spec brandLogo',
+    uncovered: 9,
   },
   maintenance: {
     reason:

@@ -312,7 +312,7 @@ describe('AuditLog Integration', () => {
       const caller = createCallerWithSession(session);
 
       await caller.config.set({
-        key: 'app.test.secret',
+        key: 'auth.ldap.bindPassword',
         value: 'super-secret-value',
         encrypt: true,
       });
@@ -334,7 +334,7 @@ describe('AuditLog Integration', () => {
       // Verify secret redaction. The call site substitutes the value with the `[ENCRYPTED]`
       // marker before `logAudit` ever sees it, so the plaintext cannot reach the sanitizer.
       const metadataStr = JSON.stringify(log.metadata);
-      expect(metadataStr).toContain('app.test.secret');
+      expect(metadataStr).toContain('auth.ldap.bindPassword');
       expect(metadataStr).toContain('[ENCRYPTED]');
       expect(metadataStr).not.toContain('super-secret-value');
     });
@@ -447,26 +447,26 @@ describe('AuditLog Integration', () => {
 
       // First create a config
       await caller.config.set({
-        key: 'app.test.secret',
+        key: 'auth.ldap.bindPassword',
         value: 'secret123',
         encrypt: true,
       });
 
       // Then view it in raw mode
       await caller.config.viewValue({
-        key: 'app.test.secret',
+        key: 'auth.ldap.bindPassword',
         mode: 'raw',
       });
 
       const auditLogs = await testPrisma.auditLog.findMany({
         where: {
           action: 'CONFIG_VIEW_VALUE',
-          targetId: 'app.test.secret',
+          targetId: 'auth.ldap.bindPassword',
         },
       });
 
       expect(auditLogs).toHaveLength(1);
-      expect(auditLogs[0].targetId).toBe('app.test.secret');
+      expect(auditLogs[0].targetId).toBe('auth.ldap.bindPassword');
     });
   });
 
