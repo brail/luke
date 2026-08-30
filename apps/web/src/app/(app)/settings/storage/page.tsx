@@ -4,9 +4,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useSession } from 'next-auth/react';
 import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { z } from 'zod';
 
-import { localStorageSaveConfigSchema, s3StorageSaveConfigSchema } from '@luke/core';
+import { storageSaveConfigSchema, type StorageSaveConfig } from '@luke/core';
 
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
@@ -37,12 +36,7 @@ const onNumberChange = (onChange: (v: number) => void) =>
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
-/** The endpoint's own input, used as-is. */
-const formSchema = z.discriminatedUnion('type', [
-  localStorageSaveConfigSchema,
-  s3StorageSaveConfigSchema,
-]);
-type StorageForm = z.infer<typeof formSchema>;
+type StorageForm = StorageSaveConfig;
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -76,7 +70,7 @@ export default function StoragePage() {
   };
 
   const form = useForm<StorageForm>({
-    resolver: zodResolver(formSchema),
+    resolver: zodResolver(storageSaveConfigSchema),
     defaultValues: {
       type: 'local',
       basePath: '',
@@ -127,9 +121,7 @@ export default function StoragePage() {
 
       <Form {...form}>
         <form
-          onSubmit={form.handleSubmit(data =>
-            saveConfig(data)
-          )}
+          onSubmit={form.handleSubmit(saveConfig)}
           className="space-y-6"
         >
 
@@ -262,7 +254,7 @@ export default function StoragePage() {
                         </FormDescription>
                       </div>
                       <FormControl>
-                        <Switch checked={field.value ?? true} onCheckedChange={field.onChange} disabled={disabled} />
+                        <Switch checked={field.value} onCheckedChange={field.onChange} disabled={disabled} />
                       </FormControl>
                     </FormItem>
                   )}

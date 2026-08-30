@@ -15,7 +15,6 @@ describe('LocalFsProvider - Path Traversal Protection', () => {
     provider = new LocalFsProvider({
       basePath: testDir,
       maxFileSizeMB: 10,
-      enableProxy: false,
     });
     await provider.init();
   });
@@ -51,7 +50,6 @@ describe('LocalFsProvider - Path Traversal Protection', () => {
       const providerSymlink = new LocalFsProvider({
         basePath: symlinkPath,
         maxFileSizeMB: 10,
-        enableProxy: false,
       });
 
       // Should not throw

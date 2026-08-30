@@ -8,7 +8,6 @@
  * @author Luke Team
  */
 
-import type { LocalStorageConfig } from './config';
 import type { StorageBucket } from './types';
 
 const VALID_BUCKETS: readonly StorageBucket[] = [
@@ -257,24 +256,6 @@ function sanitizeId(id: string): string {
   return id
     .replace(/[^a-zA-Z0-9_-]/g, '') // Only safe characters
     .substring(0, 100); // Limit length
-}
-
-/**
- * Converts LocalStorageConfig to UrlConfig
- *
- * @param config - Local storage configuration
- * @param frontendBaseUrl - Frontend base URL (optional)
- * @returns URL configuration
- */
-export function storageConfigToUrlConfig(
-  config: LocalStorageConfig,
-  frontendBaseUrl?: string
-): UrlConfig {
-  return {
-    publicBaseUrl: config.publicBaseUrl,
-    enableProxy: config.enableProxy ?? true,
-    frontendBaseUrl,
-  };
 }
 
 /**

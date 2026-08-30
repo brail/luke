@@ -516,12 +516,11 @@ export const storageRouter = router({
     .input(storageSaveConfigSchema)
     .mutation(async ({ input, ctx }) => {
       if (input.type === 'local') {
-        const enableProxy = input.enableProxy ?? true;
         await Promise.all([
           saveConfig(ctx.prisma, 'storage.type', 'local', false),
           saveConfig(ctx.prisma, 'storage.local.basePath', input.basePath, false),
           saveConfig(ctx.prisma, 'storage.local.maxFileSizeMB', input.maxFileSizeMB.toString(), false),
-          saveConfig(ctx.prisma, 'storage.local.enableProxy', String(enableProxy), false),
+          saveConfig(ctx.prisma, 'storage.local.enableProxy', String(input.enableProxy), false),
         ]);
       } else {
         await Promise.all([

@@ -8,7 +8,12 @@ import { z } from 'zod';
 import { APP_STORAGE_BUCKETS, type StorageBucket } from './types';
 
 /**
- * Schema per configurazione storage locale (filesystem)
+ * What `LocalFsProvider` needs to run: nothing more.
+ *
+ * `publicBaseUrl` and `enableProxy` are not here even though both are `storage.local.*` keys — the
+ * provider never reads them. They belong to URL building, which reads them from AppConfig directly
+ * in `lib/storageUrl.ts`. Carrying them here made the schema look like "the local storage config"
+ * while guarding two fields nothing downstream consumed.
  */
 export const localStorageConfigSchema = z.object({
   /**
@@ -25,19 +30,6 @@ export const localStorageConfigSchema = z.object({
    */
   maxFileSizeMB: z.number().int().positive().min(1).max(1000).default(50),
 
-  /**
-   * URL base pubblico per accesso diretto ai file
-   * Esempio: http://localhost:3001 (DEV) o https://api.example.com (PROD)
-   * Opzionale: se non fornito, usa proxy Next.js
-   */
-  publicBaseUrl: z.string().url().optional(),
-
-  /**
-   * Abilita proxy Next.js per file serving
-   * Default: true (DEV), false (PROD)
-   * Se true, genera URL /api/uploads/... invece di URL assoluti
-   */
-  enableProxy: z.boolean().default(true),
 });
 
 /**
@@ -83,7 +75,7 @@ export const localStorageSaveConfigSchema = z.object({
     .min(1, 'Path richiesto')
     .regex(/^(\/|~\/)[a-zA-Z0-9_./-]*$/, 'Path deve iniziare con / oppure ~/'),
   maxFileSizeMB: z.number().int().positive().min(1).max(1000),
-  enableProxy: z.boolean().optional(),
+  enableProxy: z.boolean(),
 });
 
 /** What `storage.saveConfig` accepts for an S3-compatible provider. */

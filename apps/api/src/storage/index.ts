@@ -42,13 +42,12 @@ let providerInitPromise: Promise<IStorageProvider> | null = null;
  * @returns Initialized LocalFsProvider ready for use.
  */
 export async function loadLocalProvider(prisma: PrismaClient): Promise<LocalFsProvider> {
-  const [rawBasePathConfig, maxFileSizeMBStr, publicBaseUrl, enableProxyStr] =
-    await Promise.all([
-      getConfig(prisma, 'storage.local.basePath', false),
-      getConfig(prisma, 'storage.local.maxFileSizeMB', false),
-      getConfig(prisma, 'storage.local.publicBaseUrl', false),
-      getConfig(prisma, 'storage.local.enableProxy', false),
-    ]);
+  // `publicBaseUrl`/`enableProxy` are deliberately not read here: the provider does not use them,
+  // URL building reads them from AppConfig itself in `lib/storageUrl.ts`.
+  const [rawBasePathConfig, maxFileSizeMBStr] = await Promise.all([
+    getConfig(prisma, 'storage.local.basePath', false),
+    getConfig(prisma, 'storage.local.maxFileSizeMB', false),
+  ]);
 
   const rawBasePath = rawBasePathConfig || join(homedir(), '.luke', 'storage');
   const basePath = rawBasePath.startsWith('~/')
@@ -57,14 +56,7 @@ export async function loadLocalProvider(prisma: PrismaClient): Promise<LocalFsPr
 
   const maxFileSizeMB = parseInt(maxFileSizeMBStr || '50', 10);
 
-  const enableProxy = enableProxyStr ? enableProxyStr === 'true' : true;
-
-  const config = localStorageConfigSchema.parse({
-    basePath,
-    maxFileSizeMB,
-    publicBaseUrl: publicBaseUrl || undefined,
-    enableProxy,
-  });
+  const config = localStorageConfigSchema.parse({ basePath, maxFileSizeMB });
 
   const provider = new LocalFsProvider(config);
   await provider.init();

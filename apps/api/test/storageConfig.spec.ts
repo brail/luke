@@ -15,7 +15,14 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { AppConfigRegistry, s3StorageConfigSchema, storageTypeSchema } from '@luke/core';
+import {
+  AppConfigRegistry,
+  localStorageConfigSchema,
+  localStorageSaveConfigSchema,
+  s3StorageConfigSchema,
+  s3StorageSaveConfigSchema,
+  storageTypeSchema,
+} from '@luke/core';
 
 describe('Sincronia storage.type fra storageTypeSchema e AppConfigRegistry', () => {
   it('AppConfigRegistry accetta esattamente gli stessi valori di storageTypeSchema', () => {
@@ -39,5 +46,53 @@ describe('Sincronia campi storage.s3.* fra S3StorageConfigSchema e AppConfigRegi
   it('AppConfigRegistry non ha chiavi storage.s3.* orfane, senza campo corrispondente nello schema', () => {
     const extra = registryS3Keys.filter(key => !schemaFields.includes(key));
     expect(extra).toEqual([]);
+  });
+});
+
+/**
+ * Terza dichiarazione degli stessi campi: `storage.saveConfig` prende i `*SaveConfigSchema`, che
+ * ripetono i `*ConfigSchema` senza i `.default()` (un save deve dichiarare ogni valore che scrive).
+ * Il guardiano sopra copriva due sorgenti su tre — un campo aggiunto allo schema base e non a
+ * quello di salvataggio resta semplicemente non impostabile dal form, in silenzio.
+ */
+describe('Sincronia fra gli schema di salvataggio e quelli base', () => {
+  const drop = (shape: object, ...omit: string[]) =>
+    Object.keys(shape).filter(k => !omit.includes(k));
+
+  it('s3StorageSaveConfigSchema copre esattamente i campi di s3StorageConfigSchema', () => {
+    expect(drop(s3StorageSaveConfigSchema.shape, 'type').sort()).toEqual(
+      drop(s3StorageConfigSchema.shape).sort()
+    );
+  });
+
+  // `localStorageConfigSchema` non è il termine di paragone giusto: descrive ciò che serve al
+  // provider (basePath, maxFileSizeMB), non ciò che il form scrive. Le chiavi `storage.local.*` del
+  // registry sì — sono esattamente quelle che `saveConfig` tocca.
+  const registryLocalKeys = Object.keys(AppConfigRegistry)
+    .filter(key => key.startsWith('storage.local.'))
+    .map(key => key.replace('storage.local.', ''));
+
+  it('ogni campo di localStorageSaveConfigSchema ha la sua chiave storage.local.* nel registry', () => {
+    const extra = drop(localStorageSaveConfigSchema.shape, 'type').filter(k => !registryLocalKeys.includes(k));
+    expect(extra).toEqual([]);
+  });
+
+  it('solo publicBaseUrl resta una chiave storage.local.* che il form non può impostare', () => {
+    // Non una scelta: nessun controllo lo espone, e `lib/storageUrl.ts` lo legge. Se questo elenco
+    // cresce, qualcuno ha aggiunto una chiave configurabile che nessuno può configurare.
+    const save = drop(localStorageSaveConfigSchema.shape, 'type');
+    expect(registryLocalKeys.filter(k => !save.includes(k))).toEqual(['publicBaseUrl']);
+  });
+
+  // Il registry non validava il tetto, quindi un valore che il provider rifiuta all'init si
+  // scriveva pulito e si scopriva solo quando ogni operazione di storage smetteva di funzionare.
+  it('registry e schema concordano sul tetto di maxFileSizeMB', () => {
+    const registry = AppConfigRegistry['storage.local.maxFileSizeMB'];
+    expect(registry.safeParse('1000').success).toBe(true);
+    expect(registry.safeParse('5000').success).toBe(false);
+    expect(localStorageConfigSchema.safeParse({ basePath: '/x', maxFileSizeMB: 5000 }).success).toBe(false);
+    expect(localStorageSaveConfigSchema.safeParse({
+      type: 'local', basePath: '/x', maxFileSizeMB: 5000, enableProxy: true,
+    }).success).toBe(false);
   });
 });
