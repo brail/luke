@@ -22,7 +22,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 import { appRouter } from '../src/routers/index';
 
-import { expectUnauthorized } from './helpers';
+import { createCalendarFixture, expectUnauthorized } from './helpers';
 import { createContextForRole } from './helpers/testContext';
 
 import type { Context } from '../src/lib/trpc';
@@ -188,25 +188,20 @@ describe('Phase Router', () => {
      * "in progress" in the eyes of the alert engine, i.e. whether the phase can be retired. */
     async function seedRowOnPhase(phaseId: string, completedAt: Date | null) {
       const prisma = adminContext.prisma;
-      const [brand, season] = await Promise.all([
-        prisma.brand.create({ data: { code: `GB${Date.now() % 100000}`, name: 'Guard Brand' } }),
-        prisma.season.create({ data: { code: `GS${Date.now() % 100000}`, name: 'Guard Season', year: 2040 } }),
-      ]);
+      // `Date.now() % 100000` used to build the codes here: two seeds in the same millisecond
+      // collided on `Brand.code`. The fixture derives them from a UUID instead.
+      const fixture = await createCalendarFixture(prisma, { prefix: 'GRD', year: 2040 });
       const layout = await prisma.collectionLayout.create({
-        data: { brandId: brand.id, seasonId: season.id },
+        data: { brandId: fixture.brandId, seasonId: fixture.seasonId },
       });
-      const [group, calendar] = await Promise.all([
-        prisma.collectionGroup.create({ data: { collectionLayoutId: layout.id, name: 'G', order: 0 } }),
-        prisma.seasonCalendar.create({ data: { brandId: brand.id, seasonId: season.id } }),
-      ]);
-      const planningGroup = await prisma.planningGroup.create({
-        data: { calendarId: calendar.id, name: 'PG' },
+      const group = await prisma.collectionGroup.create({
+        data: { collectionLayoutId: layout.id, name: 'G', order: 0 },
       });
       await prisma.collectionLayoutRow.create({
         data: {
           collectionLayoutId: layout.id,
           groupId: group.id,
-          planningGroupId: planningGroup.id,
+          planningGroupId: fixture.planningGroupId,
           phaseId,
           gender: 'MAN',
           line: 'Linea',
@@ -215,7 +210,12 @@ describe('Phase Router', () => {
           completedAt,
         },
       });
-      return { calendarId: calendar.id, planningGroupId: planningGroup.id };
+      return {
+        calendarId: fixture.calendarId,
+        planningGroupId: fixture.planningGroupId,
+        brandCode: fixture.brandCode,
+        seasonCode: fixture.seasonCode,
+      };
     }
 
     it('rifiuta con CONFLICT se una riga aperta è ferma su quella fase', async () => {
@@ -232,9 +232,13 @@ describe('Phase Router', () => {
 
     it("il messaggio dice quante righe e in quale brand/stagione, non solo che la fase è in uso", async () => {
       const phase = await caller(adminContext).create({ value: 'CON_SCOPE', label: 'Con scope' });
-      await seedRowOnPhase(phase.id, null);
+      const { brandCode, seasonCode } = await seedRowOnPhase(phase.id, null);
 
-      await expect(caller(adminContext).remove({ id: phase.id })).rejects.toThrow(/1 righe ancora aperte \(GB\d+\/GS\d+: 1\)/);
+      // I codici arrivano dalla fixture invece di essere riscritti come pattern: il messaggio deve
+      // dire *quale* brand/stagione, e un'espressione che indovina il formato non lo verifica.
+      await expect(caller(adminContext).remove({ id: phase.id })).rejects.toThrow(
+        `1 righe ancora aperte (${brandCode}/${seasonCode}: 1)`
+      );
     });
 
     it('rifiuta se restano milestone non cancellate su quella fase, anche senza righe aperte', async () => {

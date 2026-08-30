@@ -24,6 +24,7 @@ import {
   createCallerWithSession,
   createTestUser,
   expectUnauthorized,
+  grantBrandAccess,
   setupTestDb,
 } from './helpers';
 
@@ -85,20 +86,11 @@ beforeAll(async () => {
     prisma.season.create({ data: { code: `CS${uid}`, name: `Compl Season ${uid}`, year: 2034, isActive: true } }),
   ]);
 
-  // Editor and viewer must be able to see the brand, otherwise `assertBrandAccess` would respond
-  // FORBIDDEN before even checking permissions -- and the role tests would pass for the
-  // wrong reason.
-  const fn = await prisma.companyFunction.create({
-    data: { slug: `compl_fn_${uid.toLowerCase()}`, name: `Compl Fn ${uid}`, order: 93, isActive: true },
+  await grantBrandAccess(prisma, {
+    brandIds: [brand.id],
+    userIds: [editor.user.id, viewer.user.id],
+    label: 'Compl',
   });
-  const team = await prisma.companyTeam.create({
-    data: { functionId: fn.id, name: `Compl Team ${uid}`, isActive: true },
-  });
-  await Promise.all([
-    prisma.companyTeamMembership.create({ data: { teamId: team.id, userId: editor.user.id } }),
-    prisma.companyTeamMembership.create({ data: { teamId: team.id, userId: viewer.user.id } }),
-    prisma.companyTeamBrandScope.create({ data: { teamId: team.id, brandId: brand.id } }),
-  ]);
 
   const layout = await asAdmin().collectionLayout.getOrCreate({
     brandId: brand.id,

@@ -11,15 +11,13 @@
  * unnoticed: hence the coverage for all four views, not just the default one.
  */
 
-import { randomUUID } from 'crypto';
-
 import fastify, { type FastifyInstance } from 'fastify';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 import { createToken } from '../src/lib/auth';
 import seasonCalendarExportRoutes from '../src/routes/seasonCalendarExport.routes';
 
-import { createTestUser, setupTestDb } from './helpers';
+import { createCalendarFixture, createTestUser, setupTestDb } from './helpers';
 
 import type { PrismaClient } from '@prisma/client';
 
@@ -32,8 +30,6 @@ let brandId: string;
 beforeAll(async () => {
   prisma = await setupTestDb();
 
-  const uid = randomUUID().substring(0, 6).toUpperCase();
-
   // Admin: `getUserAllowedBrandIds` returns `null`, so the route doesn't filter
   // by brand and the generators actually receive milestones.
   const { user } = await createTestUser('admin');
@@ -45,27 +41,14 @@ beforeAll(async () => {
     tokenVersion: 0,
   })}`;
 
-  const [brand, season] = await Promise.all([
-    prisma.brand.create({
-      data: { code: `CAL${uid}`, name: `Cal ${uid}`, isActive: true },
-    }),
-    prisma.season.create({
-      data: { code: `C${uid}`, name: `Cal Season ${uid}`, year: 2032, isActive: true },
-    }),
-  ]);
-  brandId = brand.id;
-  seasonId = season.id;
+  const fixture = await createCalendarFixture(prisma, { prefix: 'CAL', year: 2032 });
+  brandId = fixture.brandId;
+  seasonId = fixture.seasonId;
 
-  const calendar = await prisma.seasonCalendar.create({
-    data: { brandId, seasonId },
-  });
-  const group = await prisma.planningGroup.create({
-    data: { calendarId: calendar.id, name: `Cal Group ${uid}` },
-  });
   await prisma.calendarEvent.create({
     data: {
-      calendarId: calendar.id,
-      planningGroupId: group.id,
+      calendarId: fixture.calendarId,
+      planningGroupId: fixture.planningGroupId,
       title: 'Milestone di export',
       startAt: new Date('2032-03-01'),
       endAt: new Date('2032-03-05'),

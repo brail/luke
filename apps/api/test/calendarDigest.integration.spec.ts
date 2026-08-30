@@ -28,6 +28,7 @@ import {
   createCallerWithSession,
   createSilentLogger,
   createTestUser,
+  grantBrandAccess,
   setupTestDb,
 } from './helpers';
 
@@ -73,15 +74,6 @@ beforeAll(async () => {
   calDX = calDXRow.id;
   planningGroupDX = (await prisma.planningGroup.create({ data: { calendarId: calDX, name: `Digest Group ${uid}` } })).id;
 
-  const [teamDX, teamDY] = await Promise.all([
-    prisma.companyTeam.create({ data: { functionId: fnD, name: `Digest Team X ${uid}`, isActive: true } }),
-    prisma.companyTeam.create({ data: { functionId: fnD, name: `Digest Team Y ${uid}`, isActive: true } }),
-  ]);
-  await Promise.all([
-    prisma.companyTeamBrandScope.create({ data: { teamId: teamDX.id, brandId: brandDX } }),
-    prisma.companyTeamBrandScope.create({ data: { teamId: teamDY.id, brandId: brandDY } }),
-  ]);
-
   const [dx, dy, aNoTeam] = await Promise.all([
     createTestUser('editor'),
     createTestUser('editor'),
@@ -91,9 +83,11 @@ beforeAll(async () => {
   userDYId = dy.user.id; userDYEmail = dy.user.email;
   adminNoTeamId = aNoTeam.user.id; adminNoTeamEmail = aNoTeam.user.email;
 
+  // Both teams hang off `fnD`: the two users share an audience but not a brand, which is the whole
+  // point of the fan-out assertions below.
   await Promise.all([
-    prisma.companyTeamMembership.create({ data: { teamId: teamDX.id, userId: userDXId } }),
-    prisma.companyTeamMembership.create({ data: { teamId: teamDY.id, userId: userDYId } }),
+    grantBrandAccess(prisma, { brandIds: [brandDX], userIds: [userDXId], functionId: fnD, label: 'Digest X' }),
+    grantBrandAccess(prisma, { brandIds: [brandDY], userIds: [userDYId], functionId: fnD, label: 'Digest Y' }),
   ]);
 });
 

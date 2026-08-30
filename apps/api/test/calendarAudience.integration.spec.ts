@@ -27,6 +27,7 @@ import {
   createCallerWithSession,
   createTestUser,
   expectToThrow,
+  grantBrandAccess,
   setupTestDb,
 } from './helpers';
 
@@ -88,20 +89,6 @@ beforeAll(async () => {
   calX = calXRow.id;
   calY = calYRow.id;
 
-  const [teamAX, teamAY, teamAZero, teamCY] = await Promise.all([
-    prisma.companyTeam.create({ data: { functionId: fnA, name: `Team A/X ${uid}`, isActive: true } }),
-    prisma.companyTeam.create({ data: { functionId: fnA, name: `Team A/Y ${uid}`, isActive: true } }),
-    prisma.companyTeam.create({ data: { functionId: fnA, name: `Team A/Zero ${uid}`, isActive: true } }),
-    prisma.companyTeam.create({ data: { functionId: fnC, name: `Team C/Y ${uid}`, isActive: true } }),
-  ]);
-
-  await Promise.all([
-    prisma.companyTeamBrandScope.create({ data: { teamId: teamAX.id, brandId: brandX } }),
-    prisma.companyTeamBrandScope.create({ data: { teamId: teamAY.id, brandId: brandY } }),
-    prisma.companyTeamBrandScope.create({ data: { teamId: teamCY.id, brandId: brandY } }),
-    // teamAZero: deliberately zero brand scopes.
-  ]);
-
   const [ux, uy, uz, uc, uInactive, uPending, aNoTeam, aWithTeam] = await Promise.all([
     createTestUser('viewer'),
     createTestUser('viewer'),
@@ -121,14 +108,17 @@ beforeAll(async () => {
   adminNoTeamId = aNoTeam.user.id; adminNoTeamSession = aNoTeam.session;
   adminWithTeamId = aWithTeam.user.id; adminWithTeamSession = aWithTeam.session;
 
+  // Le funzioni sono condivise fra i team di proposito: la visibilità si misura per funzione, i
+  // brand per team. `Team A/Zero` non ha scope — è il caso che dimostra che l'appartenenza da sola
+  // non concede nulla.
   await Promise.all([
-    prisma.companyTeamMembership.create({ data: { teamId: teamAX.id, userId: userX } }),
-    prisma.companyTeamMembership.create({ data: { teamId: teamAY.id, userId: userY } }),
-    prisma.companyTeamMembership.create({ data: { teamId: teamAZero.id, userId: userZero } }),
-    prisma.companyTeamMembership.create({ data: { teamId: teamCY.id, userId: userC } }),
-    prisma.companyTeamMembership.create({ data: { teamId: teamAX.id, userId: userInactive } }),
-    prisma.companyTeamMembership.create({ data: { teamId: teamAX.id, userId: userPending } }),
-    prisma.companyTeamMembership.create({ data: { teamId: teamAX.id, userId: adminWithTeamId } }),
+    grantBrandAccess(prisma, {
+      functionId: fnA, brandIds: [brandX], label: 'Team A/X',
+      userIds: [userX, userInactive, userPending, adminWithTeamId],
+    }),
+    grantBrandAccess(prisma, { functionId: fnA, brandIds: [brandY], userIds: [userY], label: 'Team A/Y' }),
+    grantBrandAccess(prisma, { functionId: fnA, brandIds: [], userIds: [userZero], label: 'Team A/Zero' }),
+    grantBrandAccess(prisma, { functionId: fnC, brandIds: [brandY], userIds: [userC], label: 'Team C/Y' }),
   ]);
 
   await Promise.all([

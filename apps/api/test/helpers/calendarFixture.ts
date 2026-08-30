@@ -20,7 +20,11 @@ export interface CalendarFixture {
   /** Short uppercase suffix used in every generated code/name, so parallel specs cannot collide. */
   uid: string;
   brandId: string;
+  /** The generated `Brand.code`, for specs asserting on messages that quote it. */
+  brandCode: string;
   seasonId: string;
+  /** The generated `Season.code`, same reason. */
+  seasonCode: string;
   calendarId: string;
   /** The first planning group; more can be added with `prisma.planningGroup.create`. */
   planningGroupId: string;
@@ -66,7 +70,9 @@ export async function createCalendarFixture(
   return {
     uid,
     brandId: brand.id,
+    brandCode: brand.code,
     seasonId: season.id,
+    seasonCode: season.code,
     calendarId: calendar.id,
     planningGroupId: group.id,
   };
@@ -85,20 +91,37 @@ export interface BrandAccessGrant {
  * refused when in fact the brand was never visible. Admins bypass the whole thing
  * (`getUserAllowedBrandIds` returns null for them), so they never need this.
  *
+ * An empty `brandIds` is legitimate and means a team that sees no brand — the case a spec uses to
+ * prove that membership alone grants nothing.
+ *
  * @returns The function and team ids, for specs that need to add more members or scopes.
  */
 export async function grantBrandAccess(
   prisma: PrismaClient,
-  params: { brandIds: string[]; userIds: string[]; label?: string }
+  params: {
+    brandIds: string[];
+    userIds: string[];
+    label?: string;
+    /**
+     * Put the team under an existing function instead of a fresh one. Visibility is measured per
+     * function, so a spec comparing two teams that share an audience has to say so — creating one
+     * function per call would silently make them disjoint.
+     */
+    functionId?: string;
+  }
 ): Promise<BrandAccessGrant> {
-  const { brandIds, userIds, label = 'Scope' } = params;
+  const { brandIds, userIds, label = 'Scope', functionId } = params;
   const uid = randomUUID().substring(0, 6);
 
-  const fn = await prisma.companyFunction.create({
-    data: { slug: `${label.toLowerCase()}_fn_${uid}`, name: `${label} Fn ${uid}`, order: 90, isActive: true },
-  });
+  const resolvedFunctionId =
+    functionId ??
+    (
+      await prisma.companyFunction.create({
+        data: { slug: `${label.toLowerCase()}_fn_${uid}`, name: `${label} Fn ${uid}`, order: 90, isActive: true },
+      })
+    ).id;
   const team = await prisma.companyTeam.create({
-    data: { functionId: fn.id, name: `${label} Team ${uid}`, isActive: true },
+    data: { functionId: resolvedFunctionId, name: `${label} Team ${uid}`, isActive: true },
   });
 
   await Promise.all([
@@ -110,5 +133,5 @@ export async function grantBrandAccess(
     ),
   ]);
 
-  return { functionId: fn.id, teamId: team.id };
+  return { functionId: resolvedFunctionId, teamId: team.id };
 }
