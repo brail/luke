@@ -87,6 +87,24 @@ Two boundaries that are easy to get wrong:
 requires; `luke-test` owns implementing and executing it. `luke-fix` cannot call
 a behavior-bearing fix proven on lint and typecheck alone — see §5.
 
+## 3A. Handing a result to another skill
+
+`/luke-full` synthesizes; `/luke-fix` routes. That is the one place a result
+crosses an invocation boundary, so it is the one place with a machine-readable
+shape: `.claude/skills/luke-shared/result-contract.md`.
+
+It keeps **two** ownership fields, deliberately. `domainOwner` is the skill that
+owns the invariant — who decides what counts as a defect, and who a disagreement
+goes to. `remediationOwner` is who performs the corrective action. A runtime bug
+is owned by `luke-bugs` and fixed by `luke-fix`; a platform finding is owned and
+fixed by `luke-deps`. Collapsing the two would undo §1.
+
+It also keeps each finding's `status`, so a `NEEDS DECISION` cannot be queued as
+an executable fix on the strength of a high severity, and its `evidence`, so a
+QA GAP is routed to `luke-test` rather than patched by `luke-fix`.
+
+Specialist severities stay native. There is no shared scale.
+
 ## 4. Authority order
 
 Canonical here. Do not restate it in a skill; link to this section.
@@ -134,6 +152,9 @@ invariant is still semantic, the row says so — "moved" is not the same claim a
 | `npm install` / `yarn` in an executable workflow  | `luke-audit`  | `luke-deps`     | **semantic** — `/luke-deps platform` §10; the checker only sees a tracked foreign lockfile (P3), never the textual half |
 | systematic IDOR / rate-limit / secret-exposure hunt | `luke-bugs` | `luke-security` | **semantic** — handoff via `Security escalation: YES`; no deterministic owner |
 | raw-SQL exception list restated in the skill      | `luke-audit`  | `CLAUDE.md`     | **normative source** — the skill points at the policy instead of copying it  |
+| numeric 0–100 health score                        | `luke-full`   | categorical state | **synthesis rule** — four states with the rule that fires stated; no score to reintroduce |
+| ADR `Status` mutation on a code contradiction     | `luke-docs`   | user decision   | **normative source** — contradiction reports `ADR/CODE CONFLICT` and changes nothing |
+| framework versions in README templates            | `luke-docs`   | manifests       | **live authority** — templates name a technology, never its version          |
 
 The `requirePermission` + non-transactional write case stayed in `luke-bugs`
 rather than moving: it is a check-then-act race whose defect is the missing
@@ -141,10 +162,10 @@ atomicity, not an attacker primitive.
 
 ### Pending
 
-| Duplicate                                | Remove from | Owner after       | Cycle |
-| ---------------------------------------- | ----------- | ----------------- | ----- |
-| `luke-full` numeric 0–100 health score   | `luke-full` | categorical state | 4B    |
-| ADR `Status` mutation without a decision | `luke-docs` | user decision     | 4B    |
+| Item                                         | Owner       | State                                              |
+| -------------------------------------------- | ----------- | -------------------------------------------------- |
+| ADR index completeness as a deterministic gate | `luke-docs` | index brought current first, then the checker      |
+| ADRs 007/008/009 at `Potentially stale`      | user        | written by the old auto-mutating behavior; awaiting an explicit decision, deliberately not rewritten |
 
 ### Known limit
 

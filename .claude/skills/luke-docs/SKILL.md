@@ -22,7 +22,7 @@ Three modes:
 | -------- | ---------------------------------------------------------------------------------------------------- | --------------------------------- |
 | `readme` | Creates/updates the `README.md` files at every level (root, `apps/*`, `packages/*`, `docs/`)         | `references/readme-templates.md` |
 | `inline` | Normalizes source-code comments: JSDoc on TS exports, tRPC comments, Prisma field docs (`///`)       | `references/inline-rules.md`     |
-| `adr`    | Validates the ADRs in `docs/decisions/` against the codebase, updates Status, maintains the index    | `references/adr-rules.md`        |
+| `adr`    | Validates the ADRs in `docs/decisions/` against the codebase, reports conflicts, maintains the index | `references/adr-rules.md`        |
 
 No mode in $ARGUMENTS → run `readme` → `inline` → `adr` in sequence, combined report.
 
@@ -52,9 +52,15 @@ concurrent sessions — you write files, so §7.2 applies to you.
    generated text. If information is missing: omit the section and flag it
    in the report.
 7. **Never touch**: `.planning/`, `CLAUDE.md`, `lessons.md`, `lessons-archive.md`.
-8. **Always a final report** — files created/updated/unchanged + symbols
+   Never change an ADR's `Status` without an explicit user decision.
+8. **No volatile platform facts in generated text** — a framework or tool is
+   named, never versioned. Versions are read from the manifests at the moment
+   anyone needs them (`.claude/skills/luke-deps/references/platform-policy.md`).
+   A README that states a version is a second source of truth that drifts: the
+   template here said `Next.js 15` while `apps/web` was on 16.
+9. **Always a final report** — files created/updated/unchanged + symbols
    documented + flagged issues.
-9. **Commit suggestion** at the end: `docs: update readme tree, inline comments and adr validation [luke-docs]`
+10. **Commit suggestion** at the end: `docs: update readme tree, inline comments and adr validation [luke-docs]`
 
 ## Language
 
@@ -138,7 +144,11 @@ extract the title, `Status`, and key statements from the Decision section.
 If `docs/decisions/` doesn't exist: flag it in the report and stop.
 
 **Phase 2 — Validate** against the codebase (max 3 ADRs in parallel) per
-`references/adr-rules.md`. Only modify the `Status` field.
+`references/adr-rules.md`. **Change no `Status` field.** An Accepted ADR is
+normative until a human supersedes it, so a contradiction with the code is
+reported as `ADR/CODE CONFLICT` and left for decision — see the reference for
+why the alternative lets an agent repeal an architectural decision by noticing
+the code disagrees with it.
 
 **Phase 3 — Regenerate the index** `docs/decisions/README.md`.
 
@@ -164,9 +174,10 @@ INLINE:
 
 ADR:
   Validated:           N
-  Confirmed:           N  (Status unchanged)
-  Potentially stale:   N  (list with detail)
+  Confirmed:           N  (code matches the decision)
+  ADR/CODE CONFLICT:   N  (list with evidence — awaiting your decision, not resolved)
   Not verifiable:      N
+  Status changed:      N  (only on an explicit decision; normally 0)
   Index updated:       docs/decisions/README.md
 
 Suggested commit:

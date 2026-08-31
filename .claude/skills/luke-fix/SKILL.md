@@ -40,16 +40,47 @@ Store the scope path if provided as a second argument (e.g. `/luke-fix bugs apps
 
 ### Iteration Start
 
-**Step 1 — Run audit**
+**Step 1 — Run audit, then route**
 Invoke AUDIT_SKILL (with scope if provided).
-Parse all findings. Build a prioritized list:
 
-1. CRITICAL findings (sorted by file path for reproducibility)
-2. HIGH findings
-3. MEDIUM findings
-4. Stop — do not auto-process LOW findings
+**Route before you queue.** Every finding has a remediation owner, and it is not
+always this skill (`.claude/skills/luke-shared/governance-map.md` §3). When the
+audit was `/luke-full`, its structured footer states the owner per finding
+(`.claude/skills/luke-shared/result-contract.md`); otherwise derive it from the
+producing skill.
 
-If the list is empty: print the completion message (see below) and stop.
+| Finding                                    | Remediation owner   | This skill does                  |
+| ------------------------------------------ | ------------------- | -------------------------------- |
+| application architecture / runtime / app security | `luke-fix`   | fix it, after approval           |
+| platform, dependency, toolchain            | `luke-deps`         | **hand off** — never edit        |
+| missing or inadequate evidence (QA GAP)    | `luke-test write`   | **hand off** — never write tests |
+| README / JSDoc / Prisma docs / ADR index   | `luke-docs`         | **hand off**                     |
+
+A finding this skill does not own is listed in the report with its owner and the
+command that addresses it. Editing outside this authority is how a fixer starts
+bumping dependency versions to make an audit quiet.
+
+**Then build the queue**, from the findings this skill owns:
+
+1. `CRITICAL` (sorted by file path for reproducibility)
+2. `HIGH`
+3. Stop.
+
+`MEDIUM` and `LOW` are **never queued**. They appear in the completion summary,
+and the user may ask for one by name. The queue used to include MEDIUM while the
+hard rules forbade processing it — both statements could not be true, and the
+one that survives is the conservative one.
+
+**Status gates eligibility, not severity.** Only findings whose status is
+`CONFIRMED` are eligible. A `NEEDS DECISION` is a question for the user and is
+never auto-queued however severe it looks; `ALREADY RESOLVED`, `SUPERSEDED` and
+`NOT REPRODUCIBLE` are reported and skipped. Severity says how bad it would be;
+status says whether we know it is real.
+
+Being queued means **eligible for the loop**, never authorisation to edit: every
+change still waits for explicit approval at Step 3.
+
+If the queue is empty: print the completion message (see below) and stop.
 
 ---
 
@@ -98,11 +129,22 @@ Do not apply any change without explicit confirmation.
   mark the finding `skipped — file owned by another session`, say so, and move
   to the next finding. The loop continues.
 - Apply the fix to the file, then append its path to your ledger (§7.1)
-- Run the minimal verification for this finding type:
-  - TypeScript error? → `pnpm --filter <app> typecheck` on the affected file
+- Run the **static** gate the change needs — this is the cheap first pass, not
+  the proof:
+  - TypeScript error? → `pnpm --filter <app> typecheck`
   - Prisma schema? → check schema syntax only, do not run migration
-  - React hook? → no automated check, note it for manual testing
   - ESLint violation? → `pnpm --filter <app> lint <file>`
+- **If the fix changes behavior, static gates are not evidence.** Hand the
+  verification to `/luke-test`, which owns what proof is adequate
+  (`.claude/skills/luke-test/references/evidence-matrix.md`):
+  - `/luke-test assess <scope>` — what would catch this being wrong?
+  - `/luke-test verify <scope>` — run it, and read the result
+  - if the evidence does not exist, that is a **QA GAP**: offer
+    `/luke-test write <scope>`. Do not write the test here — test files are
+    `/luke-test`'s to write, application code is this skill's
+- A fix whose only evidence is a green typecheck is **not proven**. `lessons.md`
+  records a dialog whose submit never fired: typecheck, lint and the whole suite
+  were green, because nothing about it was a type error
 - If verification fails: show the error, revert the change — **by undoing your own
   Edit, never with `git checkout`/`git restore` on the file** (§7.4) — mark finding
   as "attempted/failed", move to next
@@ -137,6 +179,11 @@ Check:
 1. The original finding is gone ✅
 2. No new CRITICAL or HIGH findings appeared in the same file ✅
 
+**A disappeared finding is not correct behavior.** The audit proves the
+prohibited pattern is gone; only the QA step above proves the replacement works.
+Report both, and if the behavioral evidence is missing say so as a QA GAP rather
+than calling the remediation proven.
+
 If a new finding appeared in the fixed file:
 
 - Show it immediately: "⚠️ Fix introduced a new issue:"
@@ -162,6 +209,12 @@ Files modified:
   - path/to/file.ts (N fixes)
   - path/to/other.ts (N fixes)
 
+Not owned by this skill (handed off):
+  - <finding> → <owner> — run: <command>
+
+Needs decision (never auto-queued):
+  - <finding> — <the question it poses>
+
 Suggested next step:
   Run /luke-full for a complete health check before committing.
   Then: show diff → ask "Ready to commit?" → wait for approval.
@@ -179,6 +232,10 @@ Suggested next step:
   session's uncommitted work and the user's, not just yours (§7.4)
 - NEVER process MEDIUM or LOW findings automatically — present them in the
   completion summary only
+- NEVER queue a finding whose status is NEEDS DECISION, however severe it looks
+- NEVER edit outside this skill's remediation authority: platform findings go to
+  `/luke-deps`, missing evidence to `/luke-test`, documentation to `/luke-docs`
+- NEVER call a behavior-bearing fix proven because lint and typecheck are green
 - If the same file is fixed 3+ times in one session, warn:
   "⚠️ This file has been modified 3 times — consider reviewing the full file
   before continuing."

@@ -1,8 +1,15 @@
 # luke-docs — ADR rules (`adr` mode)
 
 Directory: `docs/decisions/` (MADR format). Language: **Italian**.
-The skill only modifies the **Status field**. Context, Decision and
-Consequences are always manual.
+
+**An Accepted ADR is normative architecture, not documentation** — it outranks
+the implementation until a human supersedes it
+(`.claude/skills/luke-shared/governance-map.md` §4). This mode therefore
+**reports** and does not decide: Context, Decision and Consequences are always
+manual, and `Status` is only ever changed on an explicit user instruction.
+
+Discovery reads the ADR **files** under `docs/decisions/`. The generated index
+is for navigation and is not proof that no other ADR exists.
 
 ## MADR format (mandatory)
 
@@ -31,7 +38,9 @@ Allowed values for `Status`:
 - `Accepted` — active, validated decision
 - `Deprecated` — no longer applicable, replaced by different practice
 - `Superseded by [NNNN — Titolo](NNNN-titolo.md)` — replaced by a later ADR
-- `Potentially stale — review needed` — the skill detected a possible contradiction with the codebase
+- `Potentially stale — review needed` — **legacy value, do not write it.** It
+  exists on ADRs written before this mode was read-only about status; leave
+  those alone and report them for decision rather than rewriting either way
 
 ---
 
@@ -55,14 +64,34 @@ for evidence in the code.
 
 | Evidence found                                  | Action                                                                                    |
 | ------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Confirmed — code matches the decision             | Leave `Status: Accepted` unchanged                                                            |
-| Contradiction detected — code diverges            | Set `Status: Potentially stale — review needed`, flag it in the report with detail            |
+| Confirmed — code matches the decision             | Leave `Status` unchanged                                                                       |
+| Contradiction detected — code diverges            | **Report `ADR/CODE CONFLICT`. Change nothing.**                                                |
 | Not verifiable — statement too abstract           | Leave unchanged, flag as "not automatically verifiable" in the report                         |
 | ADR already `Deprecated` or `Superseded`          | Skip validation, include only in the index                                                    |
 
-**Never mark an ADR as stale if the contradiction is ambiguous** — only when
-there's explicit evidence (e.g. removed package, renamed model, abandoned
-pattern).
+### `ADR/CODE CONFLICT`
+
+A contradiction between an Accepted ADR and the code has **two** explanations,
+and this mode cannot tell them apart:
+
+1. the decision was superseded and nobody updated the ADR;
+2. the implementation drifted away from a decision that still stands.
+
+Assuming (1) is how an architectural decision gets repealed by an agent that
+noticed the code disagreed with it. Report instead:
+
+```
+ADR/CODE CONFLICT — <NNN Title>
+  Decision says: <the statement, quoted>
+  Code shows:    <file:line and what it does>
+  Not resolved here. Options: restore the implementation · supersede the ADR ·
+  accept a new ADR.
+```
+
+Only after the user chooses may `Status` be edited, and only to what they chose.
+
+**Never mark an ADR stale on ambiguity** — and now, never mark one stale at all
+without an explicit decision.
 
 ---
 
@@ -90,7 +119,8 @@ _Ultimo aggiornamento: {data corrente}_
 ## ADR quality checklist (verify before closing)
 
 - [ ] No ADR has had Context / Decision / Consequences modified
-- [ ] Only the `Status` field was touched where needed
+- [ ] No `Status` field was changed without an explicit user decision
+- [ ] Every contradiction was reported as `ADR/CODE CONFLICT`, not resolved
 - [ ] Every `Potentially stale` in the report has specific detail (what contradicts what)
 - [ ] The `docs/decisions/README.md` index includes every file present in the directory
 - [ ] No ADR was marked stale for ambiguity — only for explicit evidence

@@ -105,7 +105,7 @@ Tag naming: vX.Y.Z. commitlint + husky hooks active.}
 
 <!-- luke-docs:start:overview -->
 
-{Next.js 15, App Router, shadcn/ui. What it renders, who uses it.}
+{Framework and UI layer, named but never versioned — read the versions from apps/web/package.json and the routing style from the app directory. What it renders, who uses it.}
 
 <!-- luke-docs:end:overview -->
 
@@ -152,7 +152,7 @@ Use markdown indentation, not a table.}
 
 <!-- luke-docs:start:overview -->
 
-{Fastify 5 + tRPC + Prisma + PostgreSQL. What it exposes (tRPC endpoint, any REST).}
+{Server stack, named but never versioned — read the versions from apps/api/package.json. What it exposes (tRPC endpoint, any REST).}
 
 <!-- luke-docs:end:overview -->
 
