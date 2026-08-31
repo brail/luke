@@ -54,6 +54,20 @@ export default defineConfig({
       'class-variance-authority',
       'clsx',
       'tailwind-merge',
+      // Added for planningWizardReadiness.browser.test.tsx (BUG-B, Cycle 4), which mounts the
+      // real PlanningWizard component rather than only its hooks. Without these listed up front, the
+      // scanner discovers them mid-run instead of before it, Vite reloads deps mid-test, and every
+      // component that had already mounted a hook (Dialog's useRef here) throws "Invalid hook
+      // call" against the discarded React instance. Reproduces reliably on a cold `.vite` cache —
+      // which is what CI always has and a local run usually does not, so it is silent locally and
+      // failed CI outright on the first push (run 33436843455).
+      '@radix-ui/react-dialog',
+      '@radix-ui/react-scroll-area',
+      '@tanstack/react-query',
+      '@trpc/client',
+      '@trpc/react-query',
+      'next-auth/react',
+      'sonner',
     ],
   },
   oxc: {
