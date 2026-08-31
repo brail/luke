@@ -20,7 +20,23 @@ Every finding needs a concrete attack scenario — no theoretical issues.
 
 **Read `.claude/skills/luke-shared/audit-protocol.md` first** and apply it in
 full: diff scoping (§1), baseline suppression (§2), the mandatory "Promotion
-to rule" section (§3), `lessons.md` as a check input (§4).
+to rule" section (§3), `lessons.md` as a check input (§4), and the
+constraint/heuristic classification (§8).
+
+**This skill owns the systematic exploit hunt** for the application
+(`.claude/skills/luke-shared/governance-map.md`). Two boundaries:
+
+- **Dependency and supply-chain advisories are not yours.** A vulnerable
+  package, an override that still resolves to a patched version, a deprecated
+  security-sensitive dependency: `/luke-deps security`. The mechanical
+  correctness of a security gate — a scanner chain that does not fail closed —
+  is `/luke-deps platform`. What belongs here is the semantics: a recurring
+  injection pattern with no Semgrep rule is yours to propose (§3).
+- **`/luke-bugs` escalates to you.** It reports runtime defects and no longer
+  keeps its own IDOR / rate-limit / secret-exposure checklist. A bug carrying
+  `Security escalation: YES` arrives with a scenario but no exploitability
+  judgement — that judgement is this skill's job. Re-derive it from the code;
+  an escalation is a pointer, not a finding you inherit.
 
 Scope: resolve it per §1 of the shared protocol — empty `$ARGUMENTS` means
 **diff vs merge-base**, not the whole monorepo.

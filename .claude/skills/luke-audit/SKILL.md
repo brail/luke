@@ -21,7 +21,16 @@ Report findings with proposed fixes — never apply them.
 
 **Read `.claude/skills/luke-shared/audit-protocol.md` first** and apply it in
 full: diff scoping (§1), baseline suppression (§2), the mandatory "Promotion
-to rule" section (§3), `lessons.md` as a check input (§4).
+to rule" section (§3), `lessons.md` as a check input (§4), and the
+constraint/heuristic classification (§8).
+
+**Scope of this skill: application architecture.** Platform state — exact
+versions, dependency alignment, Node/pnpm/Docker lifecycle, package-manager
+policy, toolchain health — belongs to `/luke-deps`
+(`.claude/skills/luke-shared/governance-map.md`). Consume a platform finding
+when it explains an application finding; never maintain a second checklist for
+it. Several checks that used to live here now have a deterministic owner in
+`tools/scripts/check-platform-integrity.ts`.
 
 Then read these files:
 
@@ -36,6 +45,16 @@ Then read these files:
 These source files are the single source of truth for enum-like checks below —
 never assume a hardcoded count or list from this skill file.
 
+**Accepted ADRs are normative architecture**, not documentation
+(`governance-map.md` §4). Read the ADR files that bear on the scope directly
+from `docs/decisions/` — the generated index is for navigation and is **not**
+proof that no other ADR exists, because ADRs have been missing from it. Load
+only what the scope touches, not the whole directory.
+
+Code that contradicts an Accepted ADR is reported as `ADR/CODE CONFLICT` with
+the evidence, and the user decides. Never conclude from the contradiction alone
+that the ADR is stale, and never reinterpret one to fit the implementation.
+
 Scope: resolve it per §1 of the shared protocol — empty `$ARGUMENTS` means
 **diff vs merge-base**, not the whole monorepo.
 
@@ -49,9 +68,14 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 
 **Stack constraints:**
 
-- `npm install`, `npm run`, `yarn` anywhere in scripts/docs (must be pnpm)
-- Raw SQL outside `packages/nav/src/`
-- `$queryRaw` / `$executeRaw` outside nav package
+- Raw SQL inconsistent with the raw-SQL policy in `CLAUDE.md` (Stack
+  Constraints → ORM). **CONSTRAINT** against that policy, which is the
+  normative source and carries its own exception classes — read it, do not
+  restate it here. Raw SQL that the policy permits is not a finding; raw SQL
+  whose justification is absent or contradicted is. Unusual-but-permitted SQL
+  is an investigation trigger, not an automatic violation (protocol §8)
+- `$queryRawUnsafe` / `$executeRawUnsafe` anywhere in application code — the
+  policy names the tagged-template form as the only sanctioned one
 - `any` type without explanatory comment on same line
 - `// @ts-ignore` or `// @ts-expect-error` without explanation
 - `console.log/warn/error/info` in `apps/api/src/` (must use Pino) or `apps/web/src/` (must use `lib/debug.ts`). Exception: `apps/api/prisma/` scripts.
@@ -73,8 +97,7 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 - `user.role === 'admin'` or `user.role === 'editor'` inline instead of `hasPermission()`
 - `console.*` leaking through (covered above)
 - Missing `onDelete:` on any `@relation` in `schema.prisma`
-- Missing `@@index` on FK fields or commonly filtered columns (`isActive`, `navVendorId`, `brandId`, `seasonId`, `vendorId`) in `schema.prisma`
-- Dependency version mismatch: same package at different versions across `package.json` files in the monorepo
+- Missing `@@index` on FK fields or commonly filtered columns (`isActive`, `navVendorId`, `brandId`, `seasonId`, `vendorId`) in `schema.prisma`. **CONSTRAINT** while CLAUDE.md rule 8 says so — enforce it as written. The rule is also broader than access patterns can justify; report that once per run as `NEEDS DECISION` on the rule itself, never by narrowing it silently (protocol §8.3)
 
 ---
 

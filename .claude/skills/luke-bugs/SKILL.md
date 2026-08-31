@@ -1,9 +1,11 @@
 ---
 name: luke-bugs
 description: >
-  Deep bug detection scan for the Luke codebase. Finds race conditions, async
+  Runtime correctness scan for the Luke codebase. Finds race conditions, async
   bugs, N+1 queries, memory leaks, null crashes, error propagation failures,
-  stale closures, React logic bugs, and security logic errors.
+  stale closures, React logic bugs and check-then-act races across a permission
+  boundary. Escalates security-impacting defects to /luke-security rather than
+  running its own exploit hunt.
   Use when asked to find bugs, do a bug assessment, or check for runtime issues.
   Scoping: default = diff vs merge-base. /luke-bugs apps/api | --since <ref> | --full
 context: fork
@@ -21,7 +23,12 @@ data corruption, or security issue with a realistic failure scenario.
 
 **Read `.claude/skills/luke-shared/audit-protocol.md` first** and apply it in
 full: diff scoping (§1), baseline suppression (§2), the mandatory "Promotion
-to rule" section (§3), `lessons.md` as a check input (§4).
+to rule" section (§3), `lessons.md` as a check input (§4), and the
+constraint/heuristic classification (§8).
+
+Most of the patterns below are **investigation triggers**, not constraints: they
+say where to read, not what is broken. A finding still requires the failure
+scenario. Ownership boundaries: `.claude/skills/luke-shared/governance-map.md`.
 
 Then read:
 
@@ -61,14 +68,14 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 - `someAsync()` called without `await` and without `.catch()` — silent fire-and-forget <!-- skill-check-ignore -->
 - `Promise.all([...])` where one failure is not rethrown or logged
 - `Promise.allSettled` results iterated without checking `status === 'rejected'`
-- `array.forEach(async item => { await ... })` — forEach doesn't await async callbacks. Should be `await Promise.all(array.map(...))` or `for...of`
+- `array.forEach(async item => { await ... })` — forEach doesn't await async callbacks. Should be `await Promise.all(array.map(...))` or `for...of`. Effectively a **constraint** and syntactic: propose it for promotion (§3) rather than reporting occurrences forever
 - tRPC procedures calling NAV/SMTP/LDAP without try/catch — unhandled exception → 500 with no useful message
 - `setTimeout`/`setInterval` results not stored and not cleared on cleanup
 
 **Prisma & database:**
 
-- N+1 queries: loops containing `prisma.*.findUnique/findFirst` — should use `findMany` with `where: { id: { in: ids } }` or `include`
-- `findMany` without `select` on tables with sensitive fields (passwords, encrypted values)
+- N+1 queries: loops containing `prisma.*.findUnique/findFirst` — should use `findMany` with `where: { id: { in: ids } }` or `include`. **Investigation trigger**: the finding is the query count against a realistic row count, not the shape
+- `findMany` without `select` on tables with sensitive fields (passwords, encrypted values). **Heuristic**: a defect only when the extra fields can cross a trust boundary or reach a log — otherwise it is a `select` worth tightening, not a bug
 - Hard deletes `prisma.*.delete(` outside migration scripts (should be soft delete `isActive: false`)
 - `findMany` without `take`/`skip`/cursor on tables that grow unboundedly (audit logs, sync history, collection rows)
 - `findUnique` result used without null check before accessing properties
@@ -106,7 +113,7 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 
 ---
 
-### 3 — React, Frontend Logic & Auth Bugs
+### 3 — React, Frontend Logic & Permission-Boundary Races
 
 **React logic bugs (apps/web/src only):**
 
@@ -117,14 +124,33 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 - Lists rendered with index as key when items can be reordered/filtered — causes React to reuse wrong component instances
 - Mutations that modify data without calling `utils.entity.invalidate()` — sibling components show stale data
 
-**Security & auth logic bugs** (logic errors spotted while scanning — the dedicated
-security hunt with attack scenarios is /luke-security's job):
+**Check-then-act across a permission boundary:**
 
-- tRPC procedures that fetch resource by ID then apply permission check without verifying the resource belongs to the requesting user's context (IDOR: user A accesses user B's resource by guessing ID)
-- Error messages including SQL error details, file paths, stack traces, or internal IDs sent to frontend
-- Auth endpoints (login, password reset, email verification) without rate limiting policy in AppConfig
-- `getApiJwtSecret()` or `getNextAuthSecret()` called in client-side code or logged anywhere
-- `requirePermission` check + sensitive DB write in same procedure but NOT in a transaction (permission can be revoked between check and write)
+- `requirePermission` check + sensitive DB write in the same procedure but NOT
+  in a transaction — the permission can be revoked between the check and the
+  write. This is the same TOCTOU shape as the race conditions in area 1, and it
+  stays here: the defect is the missing atomicity, not an attacker primitive.
+
+**No systematic security hunt here.** IDOR, leaked internals in error
+responses, missing auth rate limiting and secrets reaching client code used to
+be enumerated in this section and are all systematic checks in
+`/luke-security`. Two skills maintaining the same hunt drift into two
+definitions of the same vulnerability, so the duplicate list is gone — not the
+coverage.
+
+A runtime bug that hands an attacker a primitive is still reported here, with
+an explicit handoff:
+
+```
+Security escalation: YES
+Reason: <why this runtime defect creates an attacker primitive>
+Suggested follow-up: /luke-security <same scope>
+```
+
+Report the bug on its own merits — scenario, impact, fix — and let
+`/luke-security` decide exploitability. Do not withhold a finding because it
+looks security-adjacent, and do not grow an attack-scenario checklist here to
+compensate.
 
 ---
 
@@ -140,7 +166,7 @@ Date: <today>
 |---------------------------------|----------|------|--------|
 | Race Conditions, Async & DB     |    N     |  N   |   N    |
 | Memory, Null & Error Propagation|    N     |  N   |   N    |
-| React, Frontend & Auth Logic    |    N     |  N   |   N    |
+| React, Frontend & Boundary Races|    N     |  N   |   N    |
 
 ### Severity Guide
 - CRITICAL: data corruption, auth bypass, potential data loss

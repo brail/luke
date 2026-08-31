@@ -33,6 +33,7 @@ all — despite writing files.
 | 5   | Score honesty                      | audit, bugs, security, full                                                                            |
 | 6   | No fan-out                         | whoever declares `agent: Explore`                                                                      |
 | 7   | Concurrent sessions                | all — §7.2 only for those who write files (test, fix, docs, deps)                                      |
+| 8   | Constraint vs heuristic            | audit, bugs, security, deps — anyone whose checklist turns a pattern into a finding                    |
 
 ---
 
@@ -323,3 +324,56 @@ never with `git checkout` or `git restore` on the file.
 The git command can't tell your change apart from the rest: it throws away
 the other session's uncommitted work too, and the user's. It's destructive
 even in a single session; concurrency just makes it more likely.
+
+---
+
+## 8. Constraint, heuristic, investigation trigger
+
+Every item in a skill's checklist is one of three things, and which one it is
+decides whether a pattern match is already a finding.
+
+| Class                     | Meaning                                                            | Finding from a pattern match alone? |
+| ------------------------- | ------------------------------------------------------------------ | ----------------------------------- |
+| **Constraint**            | the project or an Accepted ADR says this must not happen           | yes, when the evidence is unambiguous |
+| **Heuristic**             | often a defect, but needs contextual proof                         | no                                  |
+| **Investigation trigger** | a cheap search that locates code worth reading                     | no                                  |
+
+Examples, to calibrate:
+
+- `array.forEach(async ...)` — close to a syntactic constraint, and promotable
+  to semgrep/eslint (§3).
+- `findMany` inside a loop — investigation trigger for N+1. Proof is the query
+  count against a realistic row count, not the shape.
+- `findMany` without `select` — heuristic. It is a defect only if the extra
+  fields can cross a trust boundary or reach a log.
+- `npm install` appearing in a file — investigation trigger. Actual use in an
+  executable workflow is drift; a migration note, a quoted example, or prose
+  explaining what not to do is not.
+
+### 8.1 A skill may summarize a normative rule, never strengthen it
+
+If the source carries exceptions, the skill either reproduces the exceptions or
+— better — **points at the source and does not restate the rule at all**. A
+second copy of an exception list is a second thing to keep in sync, and it will
+not be kept in sync.
+
+This is not hypothetical: `luke-audit` carried "raw SQL outside
+`packages/nav/src/`" flat, while `CLAUDE.md` had documented exception classes
+all along. Every legitimately excepted call site was a false positive waiting to
+be reported, and false positives on a blocking rule get the rule disabled
+within a week (`lessons.md`).
+
+### 8.2 A pattern is not a defect until its precondition holds
+
+`useState` seeded from a prop is only stale if the component stays mounted;
+a conditionally rendered dialog remounts and the seeding is correct. Check the
+call site before naming it a bug (`lessons.md`, "A grep is evidence about text,
+not about the thing you are claiming").
+
+### 8.3 Disagreeing with a rule is not licence to reinterpret it
+
+A skill that believes a project rule is too broad reports it as
+`NEEDS DECISION` alongside its findings, and **keeps enforcing it meanwhile**.
+The rule's author is the authority on the rule; the skill is the authority on
+what the code does. Silently narrowing a constraint because it seems excessive
+is how a control disappears without anyone deciding to remove it.

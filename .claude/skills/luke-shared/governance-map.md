@@ -105,18 +105,41 @@ valid decision — and no agent can pick between them. Report an
 `luke-audit` loads only the Accepted ADRs relevant to its scope, not all of them
 on every diff.
 
-## 5. Pending deduplications
+## 5. Deduplications
 
-Declared here so the removal has a written spec, and so nothing is deleted on
-the strength of an agent's judgement alone. Each is scheduled, not done.
+Recorded so a removal has a written spec, and so nothing is deleted on the
+strength of an agent's judgement alone.
 
-| Duplicate                                                                    | Remove from      | Owner after      |
-| ---------------------------------------------------------------------------- | ---------------- | ---------------- |
-| dependency version mismatch across workspace manifests                       | `luke-audit`     | `luke-deps`      |
-| systematic IDOR / auth-rate-limit / secret-exposure hunt                      | `luke-bugs`      | `luke-security`  |
-| `luke-full` numeric 0–100 health score                                        | `luke-full`      | categorical state |
-| ADR `Status` mutation without a human decision                                | `luke-docs`      | user decision    |
+**A duplicate is only removed once its new owner actually performs the check.**
+A half-removed duplicate is worse than either state: the check disappears from
+the skill that had it while the new owner has not implemented it yet. Where the
+invariant is still semantic, the row says so — "moved" is not the same claim as
+"now deterministic".
 
-Until a row is executed, both skills still run their copy. A half-removed
-duplicate is worse than either state: the check disappears from the skill that
-had it while the new owner has not implemented it yet.
+### Done
+
+| Was duplicated                                    | Removed from  | Owner now       | Enforcement                                                                 |
+| ------------------------------------------------- | ------------- | --------------- | --------------------------------------------------------------------------- |
+| dependency version mismatch across manifests      | `luke-audit`  | `luke-deps`     | **deterministic** — P1 in `tools/scripts/check-platform-integrity.ts`        |
+| `npm install` / `yarn` in an executable workflow  | `luke-audit`  | `luke-deps`     | **semantic** — `/luke-deps platform` §10; the checker only sees a tracked foreign lockfile (P3), never the textual half |
+| systematic IDOR / rate-limit / secret-exposure hunt | `luke-bugs` | `luke-security` | **semantic** — handoff via `Security escalation: YES`; no deterministic owner |
+| raw-SQL exception list restated in the skill      | `luke-audit`  | `CLAUDE.md`     | **normative source** — the skill points at the policy instead of copying it  |
+
+The `requirePermission` + non-transactional write case stayed in `luke-bugs`
+rather than moving: it is a check-then-act race whose defect is the missing
+atomicity, not an attacker primitive.
+
+### Pending
+
+| Duplicate                                | Remove from | Owner after       | Cycle |
+| ---------------------------------------- | ----------- | ----------------- | ----- |
+| `luke-full` numeric 0–100 health score   | `luke-full` | categorical state | 4B    |
+| ADR `Status` mutation without a decision | `luke-docs` | user decision     | 4B    |
+
+### Known limit
+
+One-owner-per-invariant is **not itself machine-enforced**. `check:drift`
+validates paths, symbols and execution contracts; it does not understand what a
+checklist item means, so nothing stops a future edit from reintroducing a
+duplicate. The control here is this file plus review — level 4, honestly
+labelled.

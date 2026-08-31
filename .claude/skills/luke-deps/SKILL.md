@@ -390,6 +390,14 @@ internally coherent without triggering an upgrade review.
    governance rule still holds:
 
    - is a pin site out of step with the others?
+   - **is a forbidden package manager actually in use?** `npm install`,
+     `npm run`, `yarn` in an executable workflow — a script, a hook, a
+     Dockerfile, a CI step — is drift. Raw occurrence is only an
+     **investigation trigger** (protocol §8): the same strings in a migration
+     note, a quoted example, or prose explaining what not to do are not
+     violations. The deterministic checker owns the lockfile half of this
+     (a tracked `yarn.lock`); the textual half needs the context you have and
+     it does not
    - is a declared policy inert — configured but with no effect?
    - is an installed tool not actually wired into the config that would run it?
    - does a task-graph edge still correspond to a real artifact dependency?
