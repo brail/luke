@@ -1822,3 +1822,59 @@ No surfaced application violation was fixed in Cycle 3A. Scope was activation an
 ## D.8 Execution status
 
 Cycle 3A is complete. Per A.4, cycle 4 — BUG-B, the wizard lock, on the browser tier — is next.
+
+---
+
+# Appendix E — Cycle 4 BUG-B remediation (2026-08-31)
+
+Appends to Appendices A–D; neither the historical body nor any earlier appendix is rewritten. Implementation commit `10aca07` on `develop-2.2`; a second commit, `1f84a4b`, was required to get CI green — see E.6. CI and security fully green on `1f84a4b` (Lint/TypeCheck/Unit, Browser Component Tests, Integration Tests, Migrations; gitleaks, semgrep, osv-push).
+
+## E.1 BUG-B → DONE
+
+Recorded in Appendix A §A.5 as CONFIRMED MEDIUM, data-integrity/concurrency, not an authorization boundary.
+
+## E.2 Root cause
+
+`useWizardLock`'s acquire effect depended only on `[enabled]`. A cold React Query cache produced an incomplete initial target set (`SEASON_CALENDAR` only — `COLLECTION_LAYOUT`'s id not yet resolved), and the effect acquired it. A boolean latch (`acquiredRef`) recorded only that acquisition had happened, not which targets were granted, so it never re-fired once the complete set became available. The renew effect closed over `targets` by reference rather than by dependency, so it could later renew a target set different from — and not a subset of — what was actually acquired, attempting to renew `COLLECTION_LAYOUT` when no such lock existed.
+
+## E.3 Final invariant
+
+Unresolved dependency discovery → wizard unusable, no acquisition attempted. Successful target discovery → the complete target set, computed once. Successful acquisition → wizard usable. Acquire, renew and release all operate on the exact set frozen at acquisition (`acquiredTargetsRef`), never on whatever the live `targets` value happens to be when renew/release run.
+
+## E.4 Query-state distinction
+
+`computeLockTargets` reads the layout query's own `status` (`'pending' | 'error' | 'success'`) rather than a bare pending flag:
+
+- `pending` → no acquisition (targets `null`).
+- `error` → no acquisition (targets `null`) and the existing error UX — a failed `collectionLayout.get` leaves the complete dependency set genuinely unknown, so it is never treated as "no layout."
+- `success` with a layout → `SEASON_CALENDAR` + `COLLECTION_LAYOUT`.
+- `success` with `null` → `SEASON_CALENDAR` only. `collectionLayout.get`'s `null` is Prisma's ordinary "no row" result (a bare `findUnique`), not an error path — confirmed from `apps/api/src/services/collectionLayout.service.ts`, not assumed.
+
+## E.5 Deferred acquire/unmount race
+
+Proven in both orderings, not just asserted: acquisition resolving before cleanup runs (cleanup releases the frozen `acquiredTargetsRef` set) and cleanup running first, before the ref is ever populated (the async continuation's own `cancelled` check releases the just-granted set once it lands late). Both orderings assert `release` called exactly once — neither a leaked lock nor a double release.
+
+## E.6 Browser coverage
+
+26 tests across two files, both required to get CI green:
+
+- `wizardLock.browser.test.tsx` (13 tests) — `computeLockTargets`'s pending/success/error/no-layout target computation directly, and `useWizardLock`'s lifecycle via `vitest-browser-react`'s `renderHook` against a mocked tRPC client: cold cache, warm cache, legitimate no-layout, renew/release pinned to the acquired set, no reacquisition on an unrelated rerender, both race orderings from E.5, and error surfacing on a rejected acquire.
+- `planningWizardReadiness.browser.test.tsx` (5 tests) — the same invariant at the real `PlanningWizard` boundary via a full render, not only `renderHook`: cold layout pending leaves Next/Indietro disabled and no event content rendered; layout resolved but `acquireMany` still pending stays unusable; a successful grant makes it usable; a legitimate `null` layout still becomes usable (calendar-only); a layout query error acquires nothing and stays unusable with the error surfaced.
+
+**CI caught what a local run did not.** The first push (`10aca07`) failed CI's Browser Component Tests job: mounting the real `PlanningWizard` reaches `@radix-ui/react-dialog`, `@radix-ui/react-scroll-area` (via `FreezePlanningGroupWizard`'s `ScrollArea`, statically imported though never rendered), `@tanstack/react-query`, `@trpc/client`, `@trpc/react-query`, `next-auth/react` and `sonner` — none pre-bundled in `vitest.browser.config.mts`'s `optimizeDeps.include`. Vite discovered them mid-run instead of before it, reloaded its dependency graph mid-test, and every component that had already mounted a hook threw `Invalid hook call` against the discarded React instance — all 5 `planningWizardReadiness` tests failed with `Cannot read properties of null (reading 'useRef')`. Silent locally because this session's `.vite` cache was already warm; reproduced deterministically with `rm -rf node_modules/.vite` (matching what a cold CI checkout always has), fixed by adding the seven deps to `optimizeDeps.include`, and reverified cold three times — isolated file and full suite, zero reload warnings, 26/26 each time — before pushing `1f84a4b`. No application code changed in that commit.
+
+## E.7 ESLint evidence
+
+Both `react-hooks/exhaustive-deps` warnings BUG-B's target files carried (`useWizardLock.ts:65` and `:99`, named in Cycle 3A's Appendix D measurement) disappeared by construction — the effect's dependency array is now complete, no suppression added. A suppressed `react-hooks/preserve-manual-memoization` finding on the same `lockTargets` `useMemo` disappeared too, as a byproduct of the same fix rather than a separate target. Warning ratchet reduced `--max-warnings` 51 → 49, matching the genuine warning count decrease. Bulk suppression debt reduced 72 → 71 entries (41 → 40 files) — verified by re-running `--prune-suppressions` and diffing the suppression file: exactly the one now-stale entry removed, nothing else touched. No unrelated framework finding was fixed or suppressed.
+
+## E.8 No backend change
+
+`apps/api`'s `editLock` router and service (`acquireLocks`/`renewLocks`/`releaseLocks`) are untouched. The fix is entirely in `apps/web`'s lock-acquisition timing and target-discovery logic.
+
+## E.9 Test/gate evidence
+
+`pnpm --filter @luke/web test:browser`: 26/26, reproducibly cold. `pnpm --filter @luke/web test`: 80/80. `pnpm typecheck` / `pnpm typecheck:test` (full repo): green. `pnpm lint --force`: 0 errors, 49 warnings, exit 0. `pnpm check:drift`: green. CI on `1f84a4b`: Lint/TypeCheck/Unit, Browser Component Tests, Integration Tests, Migrations all `success`; security: gitleaks, semgrep, osv-push `success`.
+
+## E.10 Execution status
+
+Cycle 4 is complete. Per A.4, cycle 5 — per-runtime globals, closing `P0-02b` (Sonnet, evidence: a bait file per runtime) — is next.
