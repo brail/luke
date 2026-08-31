@@ -29,7 +29,7 @@ were equally believable.
 | `luke-audit`     | application architecture compliance with `CLAUDE.md` and Accepted ADRs                 | package freshness, toolchain lifecycle                 | no                   | source inspection + promotion to a deterministic rule |
 | `luke-bugs`      | runtime and logic correctness                                                          | style, version policy, systematic exploit hunting      | no                   | reproducible scenario + regression test proposal |
 | `luke-security`  | exploitable application security                                                       | dependency freshness and advisories                    | no                   | attack scenario + security regression proof      |
-| `luke-test`      | verification adequacy for changed behavior                                             | application fixes, toolchain version choice            | tests only           | real test execution                              |
+| `luke-test`      | verification adequacy: which evidence a change needs, whether it exists, what it proved | application fixes, test-toolchain versions             | `write` mode only    | real test execution + QA GAP reporting           |
 | `luke-fix`       | controlled application remediation                                                     | platform, docs and test remediation                    | yes, after approval  | re-audit + `luke-test` verification              |
 | `luke-docs`      | README, JSDoc, Prisma field docs, ADR index                                            | architectural decisions, platform policy               | docs and comments only | docs integrity checker                         |
 | `luke-full`      | orchestration and synthesis                                                            | any checklist of its own                               | no                   | child skill reports                              |
@@ -65,6 +65,7 @@ Worked example: **workspace dependency version alignment**.
 | race, stale state, N+1, null crash, broken cleanup          | `luke-bugs`     |
 | auth bypass, IDOR, injection, token weakness, data exposure | `luke-security` |
 | missing or inadequate verification for a change             | `luke-test`     |
+| test runner or browser-provider version compatibility       | `luke-deps`     |
 | README / JSDoc / Prisma doc / ADR index drift               | `luke-docs`     |
 
 Two boundaries that are easy to get wrong:
@@ -76,6 +77,15 @@ Two boundaries that are easy to get wrong:
 - **Bug with security impact.** `luke-bugs` reports it and escalates; it does not
   run a parallel exploit hunt. The escalation shape is defined in
   `.claude/skills/luke-bugs/SKILL.md`.
+- **QA strategy vs QA toolchain.** "this change has no component-level
+  coverage" is `luke-test`. "the browser provider no longer supports the
+  installed Vitest" is `luke-deps`. A skill that owns strategy must not start
+  picking runner versions, and one that owns versions must not decide what is
+  adequately tested.
+
+`luke-bugs` and `luke-security` may prescribe the regression evidence a finding
+requires; `luke-test` owns implementing and executing it. `luke-fix` cannot call
+a behavior-bearing fix proven on lint and typecheck alone — see §5.
 
 ## 4. Authority order
 
