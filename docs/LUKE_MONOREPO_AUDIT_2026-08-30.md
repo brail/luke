@@ -1742,3 +1742,31 @@ Not classified as a security defect here. Whether an editor should retain this c
 `BUG-B` remains CONFIRMED MEDIUM — incomplete wizard lock on a cold React Query cache; data-integrity/concurrency, not an authorization boundary. It is scheduled at cycle 4 of the Appendix A sequence, after ESLint framework activation, so the `react-hooks/exhaustive-deps` rule demonstrates the defect class rather than the fix hiding the rule's value.
 
 The next scheduled work is unchanged: cycle 2, the documentation-drift batch.
+
+---
+
+# Appendix C — Cycle 2 documentation-drift remediation (2026-08-31)
+
+Appends to Appendix A and Appendix B; neither the historical body nor either earlier appendix is rewritten. Commit `8b63b83` on `develop-2.2`, pushed after local verification and the full `.husky/pre-push` gate ran green at push time.
+
+## C.1 Cycle 2 → DONE
+
+Per A.4, closes `P1-07` and the three governance-prose-drift items scheduled alongside it. Commit `8b63b83` — `docs(platform): remove stale operational assertions`.
+
+## C.2 Corrections
+
+**`P1-07` — bcrypt/Argon2 documentation drift.** `apps/api/prisma/schema.prisma` described `LocalCredential` and its `passwordHash` field as Bcrypt. Verified against the actual implementation before rewording: `apps/api/src/lib/password.ts` hashes and verifies with `argon2.hash`/`argon2.verify` under `argon2id`, `apps/api/package.json` declares `argon2 ^0.45.1`, and `apps/api/src` has zero remaining `bcrypt` references. Both comments now read Argon2id, with a pointer to `lib/password.ts`.
+
+**`security.yml` stale default-branch/schedule prose.** The `osv-push`/`osv-weekly` comments asserted, as a point-in-time fact, that the workflow file was absent on `main`. Rewritten as the durable invariant instead: GitHub evaluates `schedule` triggers from the workflow file committed on the default branch, so this file must stay there for `osv-weekly` to keep firing. The 2026 incident — the file's prior absence on `main` left `osv-weekly` never running, so 24 known vulnerabilities went unnoticed, 3 of them critical on the authentication layer — is kept as grounding for why `osv-push` is blocking, explicitly framed as history rather than current state, so the comment does not itself drift back into a dated assertion.
+
+**`git-reminders.sh` gate-enumeration drift.** The pre-commit reminder claimed a `typecheck + lint + test` check that `.husky/pre-commit` does not run — that combination runs at `.husky/pre-push`. The reminder now names the two canonical hook files directly instead of carrying its own copy of their contents.
+
+**`luke-deps` stale "no automated gate" assertion.** `SKILL.md` §6 stated CLAUDE.md rule 9 (workspace version alignment) had no automated gate. `checkVersionAlignment` (`tools/scripts/check-platform-integrity.ts:300`, invoked at `:610`) is now part of the deterministic platform-integrity checker wired into `pnpm check:drift`. The manual `jq`/`awk` command is kept as a convenience for an interactive dependency pass, no longer described as the interim control.
+
+## C.3 Scope confirmation
+
+Diff reviewed line by line: every changed line is a Prisma `///` comment, a YAML `#` comment, an echoed reminder string, or Markdown prose. No model field, workflow trigger/job/permission/action, hook case logic, or skill command changed — Cycle 2 introduced no runtime or workflow behavior change. `pnpm check:drift` green before and after each edit; `prisma validate` green; `pnpm test:tools` 46/46. At push time the full `.husky/pre-push` gate ran green: typecheck across 6 packages (13/13 tasks), `tools/` lint + typecheck + test, 861 unit tests across `@luke/core`, `@luke/web`, `@luke/calendar`, `@luke/api` and `eslint-plugin-luke`, then `check:drift` again.
+
+## C.4 Execution status
+
+Cycle 2 is DONE. Per A.4, cycle 3 — ESLint framework activation, closing `P0-02a` (Opus for configuration, Sonnet for triage) — is next.
