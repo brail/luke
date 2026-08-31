@@ -1,9 +1,117 @@
+import { createRequire } from 'node:module';
+
 import js from '@eslint/js';
 import typescript from '@typescript-eslint/eslint-plugin';
 import typescriptParser from '@typescript-eslint/parser';
+import nextCoreWebVitals from 'eslint-config-next/core-web-vitals';
 import importPlugin from 'eslint-plugin-import-x';
 import lukePlugin from 'eslint-plugin-luke';
 import globals from 'globals';
+
+/** The web surface, and the only place framework rules may apply. */
+const WEB_FILES = ['apps/web/src/**/*.{ts,tsx}', 'apps/web/tests/**/*.{ts,tsx}'];
+
+/**
+ * The React that `apps/web` actually resolves, read through Node from that
+ * workspace rather than written down here.
+ *
+ * `settings.react.version` has to be set at all because `eslint-plugin-react`
+ * still calls `context.getFilename()` on its `'detect'` path, removed in ESLint
+ * 10 — detection throws before any rule runs. A literal would fix that and
+ * create a second place React's version lives, silently wrong from the next
+ * major on. Resolution is filesystem-only: no network, no new dependency, and
+ * one source of truth that moves when the manifest does.
+ */
+const requireFromWeb = createRequire(new URL('./apps/web/package.json', import.meta.url));
+let reactVersion;
+try {
+  reactVersion = requireFromWeb('react/package.json').version;
+} catch (cause) {
+  throw new Error(
+    'Cannot resolve React from apps/web, so eslint-plugin-react has no version ' +
+      'to work from and would crash on its detect path under ESLint 10. Install ' +
+      'dependencies before linting.',
+    { cause }
+  );
+}
+
+/**
+ * `eslint-config-next` ships flat-config arrays. `/core-web-vitals` is the
+ * superset — the same entries as the bare export plus `next/core-web-vitals` —
+ * and is the layer a Next application is expected to run. Two entries are taken
+ * from it and re-scoped to the web surface, rather than the plugins or rule ids
+ * being restated here:
+ * - `next` — React, React Hooks, jsx-a11y and `@next/next` with their
+ *   recommended rules;
+ * - `next/core-web-vitals` — promotes `no-html-link-for-pages` and
+ *   `no-sync-scripts` from warn to error. It ships with no `files` of its own,
+ *   so leaving it unscoped would apply it to the whole monorepo.
+ *
+ * Consuming the preset this way keeps `eslint-plugin-react-hooks` out of the
+ * manifests: the preset owns the instance, so the version that lints is always
+ * the one Next was tested against.
+ *
+ * Deliberately not consumed:
+ * - the `next/typescript` entry, which registers a second `@typescript-eslint`
+ *   (8.62.0 against the 8.68.0 this repo pins). Two objects under one plugin
+ *   key is a hard ESLint error, and the older copy would decide TS rule
+ *   behaviour for `apps/web` alone;
+ * - its global `ignores` entry, already covered by the ignore block below.
+ *
+ * Looked up by name rather than index, and fatal when absent: a preset that
+ * changed shape must break the lint run, not silently deactivate the rules this
+ * cycle exists to turn on.
+ *
+ * Turning these on exposed errors and warnings that were always there. No
+ * severity is lowered to absorb them. Both halves are pinned at today's count
+ * and can only be paid down:
+ * - the errors are in `apps/web/eslint-suppressions.json`, ESLint's own bulk
+ *   suppression file, listing an exact count per file per rule. One more — or a
+ *   second in a file that had one — is not suppressed and fails;
+ * - the warnings stay visible on every run, capped by `--max-warnings` in
+ *   `apps/web`'s lint script, so they cannot quietly grow.
+ * Every rule the preset ships still runs at the severity it ships with, so any
+ * rule with no debt today — `rules-of-hooks` and the erroring `@next/next`
+ * rules among them — already blocks on its first violation. The path to full
+ * enforcement is `--prune-suppressions` and a smaller number, not a config edit.
+ */
+const webFrameworkBlocks = ['next', 'next/core-web-vitals'].map((entryName) => {
+  const entry = nextCoreWebVitals.find((candidate) => candidate.name === entryName);
+  if (!entry) {
+    throw new Error(
+      `eslint-config-next no longer exports a flat-config entry named '${entryName}'. ` +
+        'Framework rules for apps/web would silently stop running — re-map them ' +
+        'against the new shape before this passes again.'
+    );
+  }
+
+  return {
+    ...entry,
+    name: `luke/web-${entryName.replace('/', '-')}`,
+    files: WEB_FILES,
+    // The preset parses with Next's Babel parser. `apps/web` is TypeScript, and
+    // every rule below it — `@typescript-eslint/*` and the whole `@luke` plugin —
+    // reads a TS AST. Set on each block rather than left to block ordering: a
+    // parser inherited by position degrades silently, and a rule that sees the
+    // wrong AST reports nothing rather than failing.
+    languageOptions: {
+      parser: typescriptParser,
+      parserOptions: {
+        ecmaVersion: 2022,
+        sourceType: 'module',
+        ecmaFeatures: { jsx: true },
+      },
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+      },
+    },
+    settings: {
+      ...entry.settings,
+      react: { version: reactVersion },
+    },
+  };
+});
 
 /**
  * Rules that hold for every TypeScript surface in the repo, whatever its
@@ -62,6 +170,7 @@ const baseTypescriptRules = {
 
 export default [
   js.configs.recommended,
+  ...webFrameworkBlocks,
   {
     files: [
       'apps/api/src/**/*.{ts,tsx}',
