@@ -37,8 +37,13 @@ Then read:
 - `apps/api/src/lib/` — middleware: requirePermission, auditLog, context
 - `lessons.md` — regressions already paid for, to re-check on every run
 
-Scope: resolve it per §1 of the shared protocol — empty `$ARGUMENTS` means
-**diff vs merge-base**, not the whole monorepo.
+**Invocation arguments:** $ARGUMENTS
+
+Resolve the invocation arguments above per `audit-protocol.md` §1 **before**
+running any git scope derivation. The whole bound value is the scope selector
+here — this skill takes no mode. If it is empty, use the protocol default —
+diff vs merge-base, not the whole monorepo. If it carries an explicit selector,
+that selector wins and the default is never derived.
 
 ## A reproducible bug becomes a test
 

@@ -31,24 +31,67 @@ write: `/luke-deps platform` assesses the platform without upgrading anything,
 and `/luke-test assess` reports what evidence is missing without creating it.
 **Never invoke `/luke-test write` from here**, and never `/luke-deps apply`.
 
-Scope: resolve it per §1 of the shared protocol and pass it unchanged to the
-phases that take one, so every report covers exactly the same set of files.
-Phase 0 is the exception: `/luke-deps platform` reads the repository's own
-configuration, which has no diff scope.
-
 `/luke-full` is the case where `--full` makes the most sense: before a release
-you want the absolute state, not the delta since the last session. The
-default still stays the diff — ask for confirmation before launching an
-unrequested full scan.
+you want the absolute state, not the delta since the last session. Scope is
+resolved exactly once, before Phase 0 — see "Scope Resolution" below — never
+re-decided independently by each of the four phases that take one. Phase 0 is
+the exception regardless of scope: `/luke-deps platform` reads the
+repository's own configuration, which has no diff scope.
+
+---
+
+## Scope Resolution — before Phase 0, before anything else
+
+**Invocation arguments:** $ARGUMENTS
+
+Resolve the invocation arguments above per the normative order in
+`audit-protocol.md` §1, **before** running any git diff command. This skill
+takes no mode, so the whole bound value is the scope selector.
+
+**The selector is carried across the skill boundary unchanged.** Never
+translate it into a semantically equivalent one:
+
+| Bound value              | Carried to every phase   |
+| ------------------------ | ------------------------ |
+| `--full`                 | `--full`                 |
+| `--since <ref>`          | `--since <ref>`          |
+| `<path>`                 | `<path>`                 |
+| `<path> --since <ref>`   | `<path> --since <ref>`   |
+| *(empty)*                | *(empty)*                |
+
+`--full` was once rewritten to `.` here, on the reasoning that §1 already
+defines an explicit path as recursive and `.` is the repository root. A full
+run proved that wrong: the first child bound `.` as an *empty* selector and
+silently ran the default diff instead of the monorepo. An equivalent selector
+is not the same selector. Carry the canonical token.
+
+On `--full`, do not derive the default diff first "to check", and do not ask
+for confirmation — the explicit flag *is* the user's confirmation (§1 point 4).
+
+On an **empty** selector, derive the default diff for your own scope reporting;
+if it is empty, say so and stop rather than silently escalating to a full scan
+(§1 point 5). Pass the empty selector down unchanged: each child then derives
+the identical default from the same repository state. That is the design
+working, not a gap — a selector is deterministic, a materialized file list is
+not, and §1 defines no form for one.
+
+You may materialize the file set for your own `Scanned:` line. **The
+materialized set is never the transport value**, and there is no variable to
+forward: each phase below receives the **literal selector string** above.
 
 ---
 
 ## Execution Plan
 
-Run the five phases **sequentially**, in this order. Pass the scoped path
-($ARGUMENTS) to each skill where it takes one. Each forked skill declares
-`background: false`, so waiting is a property of the runtime and not just an
-instruction here (audit-protocol §6.1).
+Run the five phases **sequentially**, in this order. Set each child skill
+call's `args` to the **literal selector string** you resolved above —
+`args: "--full"`, `args: "--since abc123"`, `args: "apps/api"`, or `args: ""`
+when the invocation was empty. Never pass a
+variable name, a placeholder, or the words "carried selector": those are
+prose here and would be read by §1 as a path that does not exist, silently
+scoping a phase to nothing. Each forked skill declares `background: false`, so
+waiting is a property of the runtime and not just an instruction here
+(audit-protocol §6.1).
 
 ### Phase 0 — Platform & Toolchain
 
@@ -61,21 +104,27 @@ four.
 
 ### Phase 1 — Architectural Compliance
 
-Invoke: `Skill(luke-audit) $ARGUMENTS`
+Invoke `Skill(luke-audit)` with `args` = the carried selector, verbatim.
 
 ### Phase 2 — Runtime Correctness
 
-Invoke: `Skill(luke-bugs) $ARGUMENTS`
+Invoke `Skill(luke-bugs)` with `args` = the carried selector, verbatim.
 
 ### Phase 3 — Application Security
 
-Invoke: `Skill(luke-security) $ARGUMENTS`
+Invoke `Skill(luke-security)` with `args` = the carried selector, verbatim.
 
 Findings escalated by Phase 2 are re-derived here, not inherited.
 
 ### Phase 4 — QA Adequacy
 
-Invoke: `Skill(luke-test) assess $ARGUMENTS`
+Invoke `Skill(luke-test)` with `args` = **`assess` followed by the normalized
+carried selector, verbatim** — `args: "assess --full"`,
+`args: "assess --since abc123"`,
+`args: "assess apps/api"`, or `args: "assess"` when the selector is empty.
+`/luke-test` is mode-bearing (audit-protocol §1 point 1): it parses the mode
+first, then the remainder as the selector. Dropping `assess` would leave the
+mode unset — never pass the selector alone.
 
 Read-only. Answers whether the changed surface has evidence behind it. A missing
 required tier is a QA GAP, and a QA GAP is a finding — it is what "the tests

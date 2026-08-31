@@ -38,8 +38,13 @@ constraint/heuristic classification (§8).
   judgement — that judgement is this skill's job. Re-derive it from the code;
   an escalation is a pointer, not a finding you inherit.
 
-Scope: resolve it per §1 of the shared protocol — empty `$ARGUMENTS` means
-**diff vs merge-base**, not the whole monorepo.
+**Invocation arguments:** $ARGUMENTS
+
+Resolve the invocation arguments above per `audit-protocol.md` §1 **before**
+running any git scope derivation. The whole bound value is the scope selector
+here — this skill takes no mode. If it is empty, use the protocol default —
+diff vs merge-base, not the whole monorepo. If it carries an explicit selector,
+that selector wins and the default is never derived.
 
 Exception to scoping: authentication, session, and token-handling checks must
 always be evaluated **at the system level**, even when the diff doesn't touch

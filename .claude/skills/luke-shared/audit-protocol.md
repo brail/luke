@@ -42,17 +42,47 @@ all — despite writing files.
 A full-monorepo scan produces the same findings on every run, costs a lot,
 and gets run rarely. The goal is the opposite: low cost, used every session.
 
-Interpret `$ARGUMENTS` as follows:
+**Resolution order is normative, not incidental. Parse before you look at
+git** — an invocation that ran a git diff command before checking
+`$ARGUMENTS` has already gotten this wrong, whatever it does next.
 
-| Form                   | Behavior                                                                          |
-| ---------------------- | --------------------------------------------------------------------------------- |
-| _(empty)_              | **Default**: files changed relative to the merge-base with the development branch |
-| `--since <ref>`        | Files changed relative to `<ref>`                                                 |
-| `--full`               | Whole monorepo (explicit)                                                         |
-| `<path>`               | Just that path, recursive                                                         |
-| `<path> --since <ref>` | Intersection of the two                                                           |
+1. Read the **bound invocation arguments** — the value the invoking `SKILL.md`
+   substituted into its own `$ARGUMENTS` placeholder. Not this literal token:
+   **this file is read as a reference, so its own `$ARGUMENTS` is never
+   substituted** and carries no caller state. Every skill that resolves scope
+   binds the value in its own body first, on its own line, before reasoning
+   about it. Do not run any git diff command before this step.
 
-To derive the default set:
+   A skill first parses any skill-specific **mode or action** it defines; the
+   remaining portion is the scope selector. For the scope-only audit
+   specialists and `/luke-full`, the whole bound value is the selector. For a
+   mode-bearing skill such as `/luke-test`, `assess` is parsed first and the
+   remainder is the selector. **A scope selector is never a materialized
+   arbitrary file list** — it is one of the deterministic forms below, so
+   every skill derives the same set from the same repository state.
+2. If the remaining selector carries an explicit form, resolve it and **stop**
+   — never fall through to the default derivation below once one of these
+   matched:
+
+   | Form                   | Behavior                           |
+   | ---------------------- | ----------------------------------- |
+   | `--full`               | whole monorepo, explicit            |
+   | `--since <ref>`        | files changed relative to `<ref>`   |
+   | `<path>`               | just that path, recursive           |
+   | `<path> --since <ref>` | intersection of the two             |
+
+3. Only when the bound selector is empty — no explicit form present — derive
+   the default set below.
+4. **An explicit `--full` is itself the user's confirmation.** Never ask a
+   second time before running it, and never recompute the default diff first
+   "to check" — that recomputation, followed by asking anyway, is precisely
+   the failure this order exists to prevent.
+5. The default (empty) path may escalate to a full scan only by asking first
+   — see below. This asking requirement is scoped to that one path; it is not
+   a general policy about `--full` invocations, and it never re-applies once
+   an explicit selector already matched in step 2.
+
+### Deriving the default (empty bound selector only)
 
 ```bash
 # current development branch (develop-*), fallback to main

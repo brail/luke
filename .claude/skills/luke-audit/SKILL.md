@@ -55,8 +55,13 @@ Code that contradicts an Accepted ADR is reported as `ADR/CODE CONFLICT` with
 the evidence, and the user decides. Never conclude from the contradiction alone
 that the ADR is stale, and never reinterpret one to fit the implementation.
 
-Scope: resolve it per §1 of the shared protocol — empty `$ARGUMENTS` means
-**diff vs merge-base**, not the whole monorepo.
+**Invocation arguments:** $ARGUMENTS
+
+Resolve the invocation arguments above per `audit-protocol.md` §1 **before**
+running any git scope derivation. The whole bound value is the scope selector
+here — this skill takes no mode. If it is empty, use the protocol default —
+diff vs merge-base, not the whole monorepo. If it carries an explicit selector,
+that selector wins and the default is never derived.
 
 ---
 
