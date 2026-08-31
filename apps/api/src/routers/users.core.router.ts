@@ -7,7 +7,7 @@ import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { CreateUserInputSchema, UpdateUserInputSchema, UserHardDeleteInputSchema, UserIdSchema, hasPermission } from '@luke/core';
+import { CreateUserInputSchema, USER_IDENTITY_FIELDS, UpdateUserInputSchema, UserHardDeleteInputSchema, UserIdSchema, hasPermission } from '@luke/core';
 import type { LockedFields, Role } from '@luke/core';
 import { invalidateRbacCache } from '@luke/core/server';
 
@@ -420,6 +420,30 @@ export const usersCoreRouter = router({
         });
       }
 
+      // Protection: identity fields are admin-only on someone else's account.
+      // `users:update` is also granted to `editor`, and `email` is not merely
+      // profile data — it is the address `auth.requestPasswordReset` matches on,
+      // so an editor able to rewrite an admin's email can take the account over
+      // through the public reset flow. `username` is the key `authenticateLocal`
+      // matches, so it is the same class of change.
+      //
+      // Compared against the stored value rather than tested for presence: the
+      // edit dialog submits the whole record, so an unchanged email must remain
+      // an ordinary save. The list is `USER_IDENTITY_FIELDS` from `@luke/core`,
+      // which the regression matrix iterates too — one declaration, not two.
+      const attemptedIdentityFields = USER_IDENTITY_FIELDS.filter(
+        field => updateData[field] !== undefined && updateData[field] !== existingUser[field]
+      );
+      if (
+        attemptedIdentityFields.length > 0 &&
+        !hasPermission({ role: ctx.session.user.role as Role }, '*:*')
+      ) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `Solo un amministratore può modificare: ${attemptedIdentityFields.join(', ')}`,
+        });
+      }
+
       // If updating email or username, verify they don't already exist
       if (updateData.email || updateData.username) {
         const conflictingUser = await ctx.prisma.user.findFirst({
@@ -490,11 +514,18 @@ export const usersCoreRouter = router({
             });
           }
 
+          // An identity change revokes sessions for the same reason a role or
+          // password change does: after it, the account is reachable by a
+          // different person through account recovery, so tokens issued to the
+          // previous holder must stop being honoured.
+          const changesIdentity = attemptedIdentityFields.length > 0;
+
           const revokesSessions =
             (updateData.role !== undefined && updateData.role !== current?.role) ||
             (updateData.isActive !== undefined &&
               updateData.isActive !== current?.isActive) ||
-            passwordHash !== undefined;
+            passwordHash !== undefined ||
+            changesIdentity;
 
           const removesAdminPrivilege =
             current?.role === 'admin' &&
@@ -532,6 +563,16 @@ export const usersCoreRouter = router({
             data: {
               ...updateData,
               updatedAt: new Date(),
+              // A new address inherits nothing from the one it replaces: the
+              // recovery flow trusts `email`, and `requireEmailVerification`
+              // gates on this column, so carrying the old timestamp over would
+              // leave the account verified for an address nobody proved.
+              // `me.ts:172`, `me.ts:227` and `users.admin.router.ts:475` already
+              // do this on the self-service paths; this was the one cross-user
+              // path that did not.
+              ...(updateData.email !== undefined && updateData.email !== existingUser.email
+                ? { emailVerifiedAt: null }
+                : {}),
               ...(revokesSessions ? { tokenVersion: { increment: 1 } } : {}),
             },
           });
@@ -572,6 +613,20 @@ export const usersCoreRouter = router({
           });
         } catch (err) {
           ctx.logger.error({ err, userId: input.id }, 'Notifica cambio ruolo fallita dopo update riuscito');
+        }
+      }
+
+      if (updateData.email !== undefined && updateData.email !== existingUser.email) {
+        try {
+          await createNotification(ctx.prisma, {
+            userId: input.id,
+            category: 'WORKFLOW',
+            title: 'Email aggiornata',
+            message: `L'indirizzo email del tuo account è stato cambiato in "${updateData.email}" da un amministratore`,
+            data: { newEmail: updateData.email },
+          });
+        } catch (err) {
+          ctx.logger.error({ err, userId: input.id }, 'Notifica cambio email fallita dopo update riuscito');
         }
       }
 

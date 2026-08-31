@@ -60,8 +60,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   // ── Partially invoked: the suite touches them, but glancingly ─────────────
   auth: {
     reason:
-      'login, refreshToken e confirmPasswordReset coperte (rate limit, idempotenza, retrocessione di ruolo, policy password sul token di reset); il resto è flussi email, che richiedono SMTP reale',
-    uncovered: 9,
+      'login, refreshToken, confirmPasswordReset e requestPasswordReset coperte (rate limit, idempotenza, retrocessione di ruolo, policy password sul token di reset, catena di takeover SEC-A); il resto è flussi email, che richiedono SMTP reale',
+    uncovered: 8,
   },
   brand: {
     reason:

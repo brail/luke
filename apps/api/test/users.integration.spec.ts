@@ -9,6 +9,8 @@
 
 import { describe, it, expect, beforeAll } from 'vitest';
 
+import { USER_IDENTITY_FIELDS } from '@luke/core';
+
 import {
   createCallerWithIP,
   createCallerWithSession,
@@ -185,5 +187,116 @@ describe('users.update — reset password admin', () => {
       code: 'BAD_REQUEST',
       message: expect.stringContaining('Password deve essere di almeno 8 caratteri'),
     });
+  });
+});
+
+/**
+ * SEC-A — an `editor` must not be able to take over a privileged account by
+ * repointing its authentication identity.
+ *
+ * `users:update` is granted to `editor`. The procedure re-checked `*:*` for
+ * `password` and `role` but treated `email` as a uniqueness question only, so
+ * an editor could point an admin's email at an address they control and then
+ * drive the public password-reset flow to obtain that account. The reset itself
+ * is not the defect — it behaves correctly for whoever legitimately owns the
+ * address on record.
+ *
+ * `email` and `username` are covered together: username is the lookup key
+ * `authenticateLocal` matches against, so rewriting it is the same class of
+ * identity mutation. `isActive` is deliberately NOT covered — it is account
+ * state rather than identity, an editor deactivating a user is an existing
+ * capability, and widening this guard to include it would be a product change
+ * riding along with a security fix.
+ */
+describe('users.update — privileged identity fields (SEC-A)', () => {
+  it.each(USER_IDENTITY_FIELDS)(
+    'editor con users:update ma senza *:* non può cambiare %s di un admin',
+    async field => {
+      const { user: adminTarget } = await createTestUser('admin');
+      const before = await prisma.user.findUniqueOrThrow({ where: { id: adminTarget.id } });
+
+      const attacker = field === 'email' ? `takeover-${Date.now()}@evil.test` : `takeover${Date.now()}`;
+
+      await expectUnauthorized(() =>
+        usersAs('editor').update({ id: adminTarget.id, [field]: attacker })
+      );
+
+      // The rejection must also mean the write did not happen. An endpoint that
+      // throws after persisting would satisfy the assertion above and still be
+      // exploitable.
+      const after = await prisma.user.findUniqueOrThrow({ where: { id: adminTarget.id } });
+      expect(after.email).toBe(before.email);
+      expect(after.username).toBe(before.username);
+    }
+  );
+
+  it('la catena di takeover si interrompe al primo passo: il reset password non raggiunge un indirizzo iniettato', async () => {
+    const { user: adminTarget } = await createTestUser('admin');
+    const attackerEmail = `chain-${Date.now()}@evil.test`;
+
+    await expectUnauthorized(() =>
+      usersAs('editor').update({ id: adminTarget.id, email: attackerEmail })
+    );
+
+    // No user carries the attacker's address, so the public reset flow has
+    // nothing to send there. `requestPasswordReset` answers generically either
+    // way (enumeration protection), so assert on state rather than on its reply.
+    const holder = await prisma.user.findFirst({ where: { email: attackerEmail } });
+    expect(holder).toBeNull();
+
+    const caller = await createCallerWithIP('10.20.30.9', null);
+    await caller.auth.requestPasswordReset({ email: attackerEmail });
+
+    const tokens = await prisma.userToken.findMany({
+      where: { type: 'RESET', userId: adminTarget.id },
+    });
+    expect(tokens).toHaveLength(0);
+  });
+
+  it('admin cambia legittimamente la email: riesce, azzera emailVerifiedAt e invalida le sessioni', async () => {
+    const { user: target } = await createTargetUser();
+    await prisma.user.update({
+      where: { id: target.id },
+      data: { emailVerifiedAt: new Date() },
+    });
+    const before = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
+    expect(before.emailVerifiedAt).not.toBeNull();
+
+    const newEmail = `moved-${Date.now()}@example.test`;
+    await usersAs('admin').update({ id: target.id, email: newEmail });
+
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
+    expect(after.email).toBe(newEmail);
+    // The address on record is what the recovery flow trusts; it must not
+    // inherit the verified state of the address it replaced.
+    expect(after.emailVerifiedAt).toBeNull();
+    // An identity change invalidates issued tokens, like a role or password change.
+    expect(after.tokenVersion).toBe(before.tokenVersion + 1);
+  });
+
+  it('admin che riscrive la stessa email non è bloccato e non invalida le sessioni', async () => {
+    // The guard must compare against the stored value, not merely detect the
+    // key's presence: an idempotent update carrying the unchanged email is a
+    // normal edit-dialog save.
+    const { user: target } = await createTargetUser();
+    const before = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
+
+    await usersAs('admin').update({ id: target.id, email: before.email, firstName: 'Rinominato' });
+
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
+    expect(after.firstName).toBe('Rinominato');
+    expect(after.tokenVersion).toBe(before.tokenVersion);
+  });
+
+  it('editor conserva le capacità legittime su un utente: firstName/lastName restano modificabili', async () => {
+    // Proves the guard is scoped to identity rather than freezing the whole
+    // procedure for editors — the failure mode that gets a security fix reverted.
+    const { user: target } = await createTargetUser();
+
+    await usersAs('editor').update({ id: target.id, firstName: 'Modificato', lastName: 'DaEditor' });
+
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
+    expect(after.firstName).toBe('Modificato');
+    expect(after.lastName).toBe('DaEditor');
   });
 });
