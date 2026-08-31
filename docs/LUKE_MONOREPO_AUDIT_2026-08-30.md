@@ -1694,3 +1694,51 @@ The following are governance control-plane items from the separately closed Agen
 Explore/fan-out checker fail-open · skill size budget decision · ADR 006–009 status disposition · CLAUDE.md rule 8 breadth · the future finding/adjudication ledger.
 
 These are not Monorepo Audit findings and must not be merged into its execution program.
+
+---
+
+# Appendix B — Progress update (2026-08-31): SEC-A remediated
+
+Appends to Appendix A; neither the historical body nor the baseline appendix is rewritten. Verified against `develop-2.2` at `d792b2f`, with CI and security green on that commit (Lint/TypeCheck/Unit, Browser Component Tests, Integration Tests, Migrations; gitleaks, semgrep, osv-push).
+
+## B.1 SEC-A → DONE
+
+Recorded in Appendix A §A.5 as CONFIRMED CRITICAL, release-blocking. Now closed on two counts, in two separate commits.
+
+**`0fcacde` — `fix(auth): protect privileged user identity changes`.** The concrete chain is broken. `users.update` now requires `*:*` to change another account's authentication identity, an identity change clears `emailVerifiedAt` (the three self-service paths already did; this was the one cross-user path that did not) and revokes sessions through the existing `tokenVersion` mechanism, and the account holder is notified through the existing `createNotification` used for role, activation and password changes — no new subsystem.
+
+**`d792b2f` — `refactor(auth): make cross-user updates default-deny`.** The first commit closed the takeover but kept the defect class: naming the sensitive fields is still a deny-list, so a field added to `UpdateUserInputSchema` later would have defaulted to editor-writable until somebody remembered to classify it. Inverted. `USER_EDITOR_UPDATABLE_FIELDS` is now the allow-list and the only list; the privileged set is derived as its complement from the schema shape at runtime.
+
+## B.2 Evidence
+
+**Red before green.** The regression suite was written first and run against the unfixed router, which failed with `Expected operation to be unauthorized, but it succeeded` on the editor cases and `expected 2026-08-31T15:51:28.508Z to be null` on the verification state. 4 failures pre-fix, 13/13 after `0fcacde`, 17/17 after `d792b2f` as the matrices grew.
+
+**Full integration.** 42 files, 525 passed, green locally and in CI against its own Postgres. `procedure-coverage` required decrementing the `auth` namespace's declared-uncovered count, since the chain test now invokes `requestPasswordReset` — the gate caught that itself.
+
+**Default-deny proven, not asserted.** Adding an unclassified `phone` field to `UpdateUserInputSchema` places it in the privileged complement automatically, with no edit to the classification, and fails the build until it is covered:
+
+```
+test/users.integration.spec.ts: error TS2741: Property 'phone' is missing in type
+  '{ email: string; username: string; role: string; }'
+  but required in type 'Record<PrivilegedUserUpdateField, unknown>'
+src/routers/users.core.router.ts: error TS7053: expression of type
+  'PrivilegedUserUpdateField' can't be used to index type '...User...'
+```
+
+The second fires on `@luke/api:build`, so an unclassified field breaks the production typecheck and not only the tests. The schema was restored byte-identical after the probe. Note the layering: the deny itself is automatic and does not depend on anyone noticing a compile error; the compile error exists to force test coverage for the new field.
+
+Both regression matrices iterate the same two declarations the router consumes, plus a runtime assertion that the two sets partition the schema exactly, so the authorization surface cannot be tested against a stale copy of itself.
+
+## B.3 Recorded separately
+
+**LOW / NEEDS DECISION — editor may deactivate another user; this is now an explicit entry in `USER_EDITOR_UPDATABLE_FIELDS` rather than a permission inherited by omission.**
+
+Not classified as a security defect here. Whether an editor should retain this capability depends on the intended product role model, which this audit has no basis to decide. It is already bounded by the self-deactivation guard and `assertNotLastAdminWithSettingsAccess`, and it is account state rather than authentication identity. What changed is visibility: it is a deliberate classification a reader can find and question, instead of a default nobody wrote down.
+
+## B.4 Execution status
+
+**The repository has no known release-blocking CRITICAL.**
+
+`BUG-B` remains CONFIRMED MEDIUM — incomplete wizard lock on a cold React Query cache; data-integrity/concurrency, not an authorization boundary. It is scheduled at cycle 4 of the Appendix A sequence, after ESLint framework activation, so the `react-hooks/exhaustive-deps` rule demonstrates the defect class rather than the fix hiding the rule's value.
+
+The next scheduled work is unchanged: cycle 2, the documentation-drift batch.
