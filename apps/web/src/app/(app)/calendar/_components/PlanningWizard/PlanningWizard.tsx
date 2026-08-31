@@ -20,7 +20,7 @@ import { FreezePlanningGroupWizard } from '../FreezePlanningGroupWizard';
 
 import { EventStep } from './EventStep';
 import { useVendorClosures } from './useVendorClosures';
-import { useWizardLock } from './useWizardLock';
+import { computeLockTargets, useWizardLock } from './useWizardLock';
 
 import type { CalendarEventItem } from '../types';
 import type { HolidayMap } from '../useHolidays';
@@ -69,16 +69,28 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
   );
   const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
 
-  const { data: rawLayout } = trpc.collectionLayout.get.useQuery({ brandId, seasonId }, { enabled: open });
-  const layout = narrowRouterOutput<WizardLayout | null | undefined>(rawLayout);
-  const lockTargets = useMemo(() => {
-    const targets: { entityType: 'SEASON_CALENDAR' | 'COLLECTION_LAYOUT'; entityId: string }[] = [
-      { entityType: 'SEASON_CALENDAR', entityId: calendarId },
-    ];
-    if (layout?.id) targets.push({ entityType: 'COLLECTION_LAYOUT', entityId: layout.id });
-    return targets;
-  }, [calendarId, layout?.id]);
+  const layoutQuery = trpc.collectionLayout.get.useQuery({ brandId, seasonId }, { enabled: open });
+  const layout = narrowRouterOutput<WizardLayout | null | undefined>(layoutQuery.data);
+  const lockTargets = useMemo(
+    () => computeLockTargets(calendarId, layout?.id, layoutQuery.status),
+    [calendarId, layout?.id, layoutQuery.status]
+  );
   const lock = useWizardLock(lockTargets, open);
+
+  /**
+   * A failed `collectionLayout.get` leaves the target set unknown — `computeLockTargets` already
+   * refuses to guess and returns `null`, so no lock is ever attempted and `lock.error` never fires
+   * on its own for this cause. Surfaced through the same banner/close pattern as a lock error
+   * rather than a separate one: from the user's side both mean "this session cannot be usable."
+   */
+  const displayError = layoutQuery.isError ? getTrpcErrorMessage(layoutQuery.error) : lock.error;
+
+  /**
+   * `lock.expiresAt` is set exactly once acquisition succeeds (`useWizardLock`) and stays `null`
+   * through target discovery, through an in-flight `acquireMany`, and through a failed one — so it
+   * already is the "acquisition succeeded" signal without a separate state to keep in sync with it.
+   */
+  const isReady = lock.expiresAt !== null;
 
   const currentEvent = sortedEvents[stepIndex] ?? null;
 
@@ -100,14 +112,17 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
 
   /**
    * Only exit vector: any close attempt (overlay click, Escape, X, Annulla) opens the confirm
-   * step instead — except when `lock.error` is set, since there's no in-progress edit to lose
+   * step instead — except when `displayError` is set, since there's no in-progress edit to lose
    * (the session was never usable) and forcing a confirm just adds a click the user can't avoid.
    */
-  const requestClose = () => { if (lock.error) { onClose(); return; } setExitConfirmOpen(true); };
+  const requestClose = () => { if (displayError) { onClose(); return; } setExitConfirmOpen(true); };
   const confirmExit = () => { setExitConfirmOpen(false); onClose(); };
 
   const handleNext = async () => {
-    if (!currentEvent) return;
+    // Belt-and-suspenders: the button below is already disabled for the same condition, this
+    // guards the handler itself so nothing can reach an update/freeze transition before the
+    // session is confirmed usable.
+    if (!isReady || !currentEvent) return;
 
     const draft = draftDates.get(currentEvent.id);
     const dateChanged = draft && draft.getTime() !== new Date(currentEvent.startAt).getTime();
@@ -151,13 +166,19 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
             <DialogTitle>Pianificazione guidata</DialogTitle>
           </DialogHeader>
 
-          {lock.error && (
+          {displayError && (
             <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {lock.error}
+              {displayError}
             </p>
           )}
 
-          {!lock.error && currentEvent && (
+          {!displayError && !isReady && (
+            <p className="text-sm text-muted-foreground py-4 text-center">
+              Preparazione sessione di pianificazione…
+            </p>
+          )}
+
+          {!displayError && isReady && currentEvent && (
             <div className="space-y-4 py-2">
               <p className="text-xs text-muted-foreground flex items-center gap-1">
                 Evento {stepIndex + 1} di {sortedEvents.length}
@@ -185,7 +206,7 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
             </div>
           )}
 
-          {!lock.error && !currentEvent && (
+          {!displayError && isReady && !currentEvent && (
             <p className="text-sm text-muted-foreground py-4 text-center">Nessun evento da pianificare</p>
           )}
 
@@ -193,12 +214,12 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
             <Button variant="ghost" onClick={requestClose}>
               Annulla
             </Button>
-            <Button variant="outline" onClick={handleBack} disabled={stepIndex === 0}>
+            <Button variant="outline" onClick={handleBack} disabled={!isReady || stepIndex === 0}>
               Indietro
             </Button>
             <Button
               onClick={handleNext}
-              disabled={!currentEvent || updateMilestone.isPending || !!lock.error}
+              disabled={!isReady || !currentEvent || updateMilestone.isPending || !!displayError}
             >
               {updateMilestone.isPending
                 ? 'Salvataggio…'

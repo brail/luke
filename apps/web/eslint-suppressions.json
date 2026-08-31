@@ -40,11 +40,6 @@
       "count": 2
     }
   },
-  "src/app/(app)/calendar/_components/PlanningWizard/PlanningWizard.tsx": {
-    "react-hooks/preserve-manual-memoization": {
-      "count": 1
-    }
-  },
   "src/app/(app)/calendar/page.tsx": {
     "react-hooks/set-state-in-effect": {
       "count": 2
