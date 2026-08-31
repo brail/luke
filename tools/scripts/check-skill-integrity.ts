@@ -75,7 +75,7 @@ function skillFiles(): string[] {
  * o ha un'estensione di file. Placeholder e glob restano fuori: `<nome>.yml`,
  * `apps/<app>/next.config.*` non sono affermazioni su file esistenti.
  */
-function isRepoPath(token: string): boolean {
+export function isRepoPath(token: string): boolean {
   if (!token.includes('/')) return false;
   if (/[<>*$\s()]/.test(token)) return false;
   if (token.startsWith('http')) return false;
@@ -87,7 +87,7 @@ function isRepoPath(token: string): boolean {
 }
 
 /** Un token è un riferimento a simbolo se ha la forma `identificatore()`. */
-function isSymbolRef(token: string): boolean {
+export function isSymbolRef(token: string): boolean {
   return /^[a-zA-Z_$][\w$]*\(\)$/.test(token);
 }
 
@@ -224,7 +224,7 @@ function lineOf(content: string, pattern: RegExp): number {
  * mutually consistent. Whether the runtime honors them is Claude Code's
  * contract, read from its frontmatter schema and not proven here.
  */
-function checkExecutionContract(
+export function checkExecutionContract(
   relPath: string,
   content: string,
   problems: Problem[]
@@ -404,4 +404,11 @@ function main(): void {
   );
 }
 
-main();
+// Runs the real check only as the CLI entrypoint. Without this the fixture
+// suite would execute `main()` against the live repository on import, so an
+// unrelated broken skill would fail these tests for the wrong reason — the
+// failure mode `luke-test` SKILL.md §3.3 names. Same guard as
+// `check-platform-integrity.ts`.
+if (require.main === module) {
+  main();
+}
