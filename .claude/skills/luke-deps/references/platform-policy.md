@@ -44,7 +44,7 @@ does.
 | Lint                      | `eslint.config.mjs` + `packages/eslint-plugin-luke/`                           | official framework rules and project rules both actually active       |
 | ORM                       | `apps/api/prisma/schema.prisma`, `apps/api/prisma.config.ts`, the Prisma package family | supported generator; schema and migrations in agreement       |
 | Database runtime          | `docker-compose.test.yml`, CI service images, `apps/api/Dockerfile`            | client and server majors pinned together                              |
-| Test toolchain            | `apps/api/vitest.config.mts`, `apps/api/vitest.integration.config.mts`, `apps/web/vitest.config.mts`, `apps/web/playwright.config.ts` | every tier reachable from a named root script |
+| Test toolchain            | `apps/api/vitest.config.mts`, `apps/api/vitest.integration.config.mts`, `apps/web/vitest.config.mts`, `apps/web/vitest.browser.config.mts`, `apps/web/playwright.config.ts` | every tier reachable from a named root script; the browser tier keeps its own project so the fast path provisions no browser |
 | CI                        | `.github/workflows/`, `.github/actions/setup-workspace/action.yml`             | gates fail closed; the shared setup action is authoritative           |
 | Security gates            | root `package.json` security scripts, `.semgrep/rules/`, `.husky/`             | the three gates stay consistent; a chain fails closed                 |
 | Agent runtime             | `.claude/`                                                                     | execution semantics explicit, never an implicit runtime default       |

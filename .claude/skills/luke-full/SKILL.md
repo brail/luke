@@ -122,14 +122,21 @@ and it never moves the state on its own.
 | ---------------------------- | -------------------------------------------------------------------------------------------------------- |
 | **RELEASE BLOCKED**          | any confirmed CRITICAL (bugs/security) or P0 (platform), **or** a required gate that ran and failed |
 | **ACTION REQUIRED**          | any confirmed HIGH or P1, **or** a QA GAP whose residual risk is HIGH                                    |
-| **HEALTHY WITH KNOWN GAPS**  | no confirmed HIGH or above, but QA GAPs, baseline suppressions or open `NEEDS DECISION` items exist       |
-| **HEALTHY**                  | none of the above                                                                                          |
+| **HEALTHY WITH KNOWN GAPS**  | no confirmed HIGH or above, but **any** confirmed backlog finding (MEDIUM / LOW / P2), QA GAP, baseline suppression or open `NEEDS DECISION` exists |
+| **HEALTHY**                  | no confirmed findings at all, and no QA GAP, suppression or open decision                                  |
 
 There is deliberately **no numeric score**. The previous
 `100 − (CRITICAL×20 + HIGH×10 + …)` produced a two-digit number out of counts an
 LLM produced, which moved when findings were grouped differently rather than
 when the code changed. A state that says which rule fired is auditable; `82/100`
 is not. Do not reintroduce a score, a percentage or a grade.
+
+`HEALTHY` is deliberately hard to reach: it means nothing confirmed was found
+and nothing is knowingly unproven. A confirmed MEDIUM is still a confirmed
+finding, so it lands in `HEALTHY WITH KNOWN GAPS` — the state exists to say
+"nothing urgent, and here is what we know about". Reporting a backlog as
+`HEALTHY` is how a backlog stops being read. No severity arithmetic is involved:
+the rule asks whether a confirmed finding exists, not how the scales compare.
 
 **"A required gate that ran and failed"** means exactly that: a gate applicable
 to this scope, executed, and red — `pnpm check:drift`, a failing suite, a red
@@ -178,10 +185,24 @@ One specific area to address first, based on finding density and severity.
 
 ## Synthesis rules
 
-- **Deduplicate across phases.** The same `file:line` reported by two skills is
-  one finding: keep the higher severity and record both in `source`. A platform
-  failure that explains application findings is reported once, in Phase 0, with
-  the downstream symptoms named.
+- **Correlate across phases; deduplicate only on the same root cause.** The same
+  `file:line` reaching two phases is a **hint**, not identity — two skills can
+  legitimately find different defects on one line. Collapse two reports only
+  when they clearly describe the same underlying invariant. Findings with
+  different domain owners stay distinct unless there is an unambiguous reason to
+  merge them.
+
+  Where a platform or domain-owner finding **explains** downstream symptoms,
+  keep the owner's finding canonical and mention the symptoms beside it as
+  related observations in the Markdown — a version skew is one finding with
+  four visible effects, not five findings.
+
+  **Never rank severities across skills.** The vocabularies have no common
+  scale (`luke-audit` has no CRITICAL, `luke-security` no LOW, `luke-deps` uses
+  P0–P2), so "keep the higher severity" is not a computable instruction. When
+  two reports do merge, the canonical one keeps **its own** severity, and the
+  structured finding keeps a single `source` — the contract's `source` is
+  singular by design. Name the corroborating phase in the Markdown instead.
 - **Every finding carries an owner pair.** `domainOwner` is the skill that owns
   the invariant; `remediationOwner` is who should act — derived from
   `governance-map.md` §3, never from severity. A platform finding is remediated

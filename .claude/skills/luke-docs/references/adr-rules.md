@@ -14,7 +14,7 @@ is for navigation and is not proof that no other ADR exists.
 ## MADR format (mandatory)
 
 ```markdown
-# NNNN — Titolo della decisione
+# ADR-NNN — Titolo della decisione
 
 ## Status
 
@@ -33,11 +33,15 @@ Cosa abbiamo scelto e perché.
 Trade-off introdotti, vincoli architetturali, impatti su altri componenti.
 ```
 
+**Numbering is three digits**, zero-padded, matching the tracked corpus
+(`001` … `014`). A four-digit number would start a second convention, and the
+index and every cross-reference would then carry both.
+
 Allowed values for `Status`:
 
 - `Accepted` — active, validated decision
 - `Deprecated` — no longer applicable, replaced by different practice
-- `Superseded by [NNNN — Titolo](NNNN-titolo.md)` — replaced by a later ADR
+- `Superseded by [NNN — Titolo](NNN-titolo.md)` — replaced by a later ADR
 - `Potentially stale — review needed` — **legacy value, do not write it.** It
   exists on ADRs written before this mode was read-only about status; leave
   those alone and report them for decision rather than rewriting either way
@@ -106,8 +110,8 @@ Always fully regenerated, ascending numeric order:
 
 | #                      | Titolo                 | Status     |
 | ---------------------- | ---------------------- | ---------- |
-| [0001](0001-titolo.md) | Titolo della decisione | Accepted   |
-| [0002](0002-titolo.md) | Titolo della decisione | Deprecated |
+| [001](001-titolo.md)   | Titolo della decisione | Accepted   |
+| [002](002-titolo.md)   | Titolo della decisione | Deprecated |
 
 _Ultimo aggiornamento: {data corrente}_
 
@@ -121,6 +125,10 @@ _Ultimo aggiornamento: {data corrente}_
 - [ ] No ADR has had Context / Decision / Consequences modified
 - [ ] No `Status` field was changed without an explicit user decision
 - [ ] Every contradiction was reported as `ADR/CODE CONFLICT`, not resolved
-- [ ] Every `Potentially stale` in the report has specific detail (what contradicts what)
-- [ ] The `docs/decisions/README.md` index includes every file present in the directory
-- [ ] No ADR was marked stale for ambiguity — only for explicit evidence
+- [ ] Every `ADR/CODE CONFLICT` in the report has specific detail (what contradicts what)
+- [ ] No new `Potentially stale` status was written — the value is legacy, read
+      and reported only. ADRs 006, 007, 008 and 009 carry it from the old
+      behavior and are awaiting an explicit decision
+- [ ] The `docs/decisions/README.md` index includes every file present in the
+      directory — enforced by `tools/scripts/check-docs-integrity.ts`, so a gap
+      is a red gate rather than a review item

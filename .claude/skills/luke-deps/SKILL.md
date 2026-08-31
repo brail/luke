@@ -404,15 +404,15 @@ internally coherent without triggering an upgrade review.
    - is a lifecycle commitment (Node LTS, override expiry, held decision) overdue?
    - is a platform version duplicated as prose anywhere it can drift?
 
-3. Where the local Claude Code build supports it, validate the agent runtime
-   contract too:
-
-   ```bash
-   claude plugin validate .claude/skills
-   ```
-
-   Report it as unavailable rather than skipping it silently. Do not make CI
-   depend on the Claude CLI — the repo does not install or pin it.
+The agent runtime contract is **not** re-checked here. `check-skill-integrity`
+already owns the project's frontmatter invariants — fork/background/agent and
+the read-only write restriction — and `claude plugin validate` was measured
+against the installed CLI in Cycle 2: it expects a plugin manifest directory
+this repo deliberately does not have, and errors on a bare skills directory, so
+it would report a missing manifest rather than anything about skill quality. When a change actually
+depends on Claude Code runtime semantics, inspect the installed runtime and its
+frontmatter schema deliberately, as that cycle did. Do not put a speculative CLI
+gate in this path, and do not make CI depend on the Claude CLI.
 
 ### Report
 

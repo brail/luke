@@ -54,19 +54,29 @@ Worked example: **workspace dependency version alignment**.
 
 ## 3. Where a finding goes
 
-| Finding                                                     | Owner           |
-| ----------------------------------------------------------- | --------------- |
-| exact framework/tool version, version drift, family skew    | `luke-deps`     |
-| Node / pnpm / Docker base / GitHub Actions lifecycle        | `luke-deps`     |
-| TypeScript / ESLint / Turbo / Prisma toolchain health       | `luke-deps`     |
-| package-manager policy, release-age, overrides, advisories  | `luke-deps`     |
-| mechanical correctness of a CI or security gate             | `luke-deps`     |
-| application code violating `CLAUDE.md` or an Accepted ADR   | `luke-audit`    |
-| race, stale state, N+1, null crash, broken cleanup          | `luke-bugs`     |
-| auth bypass, IDOR, injection, token weakness, data exposure | `luke-security` |
-| missing or inadequate verification for a change             | `luke-test`     |
-| test runner or browser-provider version compatibility       | `luke-deps`     |
-| README / JSDoc / Prisma doc / ADR index drift               | `luke-docs`     |
+**This table is the routing source.** `result-contract.md`, `/luke-full` and
+`/luke-fix` all derive `remediationOwner` from it, so it records both fields
+rather than leaving the second to be inferred.
+
+| Finding                                                     | Domain owner    | Remediation owner |
+| ----------------------------------------------------------- | --------------- | ----------------- |
+| exact framework/tool version, version drift, family skew    | `luke-deps`     | `luke-deps`       |
+| Node / pnpm / Docker base / GitHub Actions lifecycle        | `luke-deps`     | `luke-deps`       |
+| TypeScript / ESLint / Turbo / Prisma toolchain health       | `luke-deps`     | `luke-deps`       |
+| package-manager policy, release-age, overrides, advisories  | `luke-deps`     | `luke-deps`       |
+| mechanical correctness of a CI or security gate             | `luke-deps`     | `luke-deps`       |
+| test runner or browser-provider version compatibility       | `luke-deps`     | `luke-deps`       |
+| application code violating `CLAUDE.md` or an Accepted ADR   | `luke-audit`    | `luke-fix`        |
+| race, stale state, N+1, null crash, broken cleanup          | `luke-bugs`     | `luke-fix`        |
+| auth bypass, IDOR, injection, token weakness, data exposure | `luke-security` | `luke-fix`        |
+| missing or inadequate verification for a change             | `luke-test`     | `luke-test`       |
+| README / JSDoc / Prisma doc / ADR index drift               | `luke-docs`     | `luke-docs`       |
+
+The two columns differ only where the skill that owns an invariant is not the
+one that may edit the code: an application finding is judged by its specialist
+and fixed by `/luke-fix`. Where they coincide, the owner both decides and acts —
+a platform finding is not handed to an application fixer, and a QA gap is closed
+with evidence rather than a code change.
 
 Two boundaries that are easy to get wrong:
 
@@ -155,6 +165,7 @@ invariant is still semantic, the row says so — "moved" is not the same claim a
 | numeric 0–100 health score                        | `luke-full`   | categorical state | **synthesis rule** — four states with the rule that fires stated; no score to reintroduce |
 | ADR `Status` mutation on a code contradiction     | `luke-docs`   | user decision   | **normative source** — contradiction reports `ADR/CODE CONFLICT` and changes nothing |
 | framework versions in README templates            | `luke-docs`   | manifests       | **live authority** — templates name a technology, never its version          |
+| ADR index completeness left to a generation pass  | `luke-docs`   | `check-docs-integrity` | **deterministic** — every tracked ADR indexed once, every entry resolving, no duplicate number. Not ADR discovery: `luke-audit` reads the files directly |
 
 The `requirePermission` + non-transactional write case stayed in `luke-bugs`
 rather than moving: it is a check-then-act race whose defect is the missing
@@ -162,10 +173,9 @@ atomicity, not an attacker primitive.
 
 ### Pending
 
-| Item                                         | Owner       | State                                              |
-| -------------------------------------------- | ----------- | -------------------------------------------------- |
-| ADR index completeness as a deterministic gate | `luke-docs` | index brought current first, then the checker      |
-| ADRs 007/008/009 at `Potentially stale`      | user        | written by the old auto-mutating behavior; awaiting an explicit decision, deliberately not rewritten |
+| Item                                              | Owner  | State                                                        |
+| ------------------------------------------------- | ------ | ------------------------------------------------------------ |
+| ADRs **006, 007, 008 and 009** at `Potentially stale` | user   | written by the old auto-mutating behavior; awaiting an explicit decision, deliberately not rewritten. ADR 012 mentions the phrase in prose about 007 — its own status is Accepted |
 
 ### Known limit
 
