@@ -256,8 +256,11 @@ since published a clean version in the natural range is dead weight — propose
 removing it, then confirm resolution with `pnpm why <pkg>`.
 
 **Version alignment across the workspace is CLAUDE.md rule 9, and this skill
-owns it** (`.claude/skills/luke-shared/governance-map.md` §2). It has no
-automated gate yet. Run it:
+owns it** (`.claude/skills/luke-shared/governance-map.md` §2). It has an
+automated gate: `checkVersionAlignment` in
+`tools/scripts/check-platform-integrity.ts`, wired into `pnpm check:drift` and
+run on every push. For a manual look during a dependency pass, the same check
+by hand:
 
 ```bash
 jq -r '(.dependencies // {}) + (.devDependencies // {}) | to_entries[] | "\(.key)\t\(.value)"' \
@@ -267,10 +270,8 @@ jq -r '(.dependencies // {}) + (.devDependencies // {}) | to_entries[] | "\(.key
 ```
 
 Empty output means aligned. Any line is a package carried at two versions —
-fix it in the same cycle. The gate itself is the standing protocol §3 promotion
-for this skill: a `tools/scripts` checker wired into `pnpm check:drift`, not a
-lesson nobody runs. Until it exists, this command is the interim control and
-`luke-audit` must not carry a second copy of it.
+fix it in the same cycle; the gate above will fail the push otherwise.
+`luke-audit` must not carry a second copy of either the gate or this command.
 
 ---
 

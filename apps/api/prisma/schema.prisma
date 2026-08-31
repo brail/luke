@@ -131,12 +131,12 @@ model Identity {
   @@map("identities")
 }
 
-/// Bcrypt password credential for a LOCAL identity. One-to-one with Identity.
+/// Password credential for a LOCAL identity. One-to-one with Identity.
 model LocalCredential {
   id           String   @id @default(uuid())
   /// FK to Identity (LOCAL provider). 1:1 unique constraint enforced.
   identityId   String   @unique
-  /// Bcrypt hash of the user's password. Never stored in plain text.
+  /// Argon2id hash of the user's password (see `apps/api/src/lib/password.ts`). Never stored in plain text.
   passwordHash String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

@@ -45,13 +45,14 @@ jobs:
 
       - run: gitleaks detect --source .
 
-  # Bloccante. Era `continue-on-error: true` — "report-only sui push", con il
-  # segnale vero delegato a `osv-weekly`. Ma `osv-weekly` non è mai partito una
-  # volta: GitHub esegue i trigger `schedule` usando i workflow del **branch di
-  # default**, e questo file non esiste su `main`. Risultato: l'unico job che
-  # girava era volutamente non bloccante, e quello bloccante non aveva un file da
-  # eseguire. Sono passate inosservate 24 vulnerabilità note, 3 delle quali
-  # critiche sul layer di autenticazione.
+  # Blocking. Was `continue-on-error: true` — "report-only on push", with the
+  # real signal delegated to `osv-weekly`. GitHub evaluates `schedule`
+  # triggers using the workflow file committed on the **default branch**, so
+  # `osv-weekly` only ever fires if this file is present there — historically
+  # it wasn't, and `osv-weekly` never actually ran: the only job that did was
+  # deliberately non-blocking, and 24 known vulnerabilities went unnoticed, 3
+  # of them critical on the authentication layer. This file must stay on the
+  # default branch for `osv-weekly` to keep firing — see `osv-weekly` below.
   osv-push:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -59,9 +60,10 @@ jobs:
       - uses: actions/checkout@v7
       - uses: google/osv-scanner-action/osv-scanner-action@v2.5.1
 
-  # Copre il caso che il job su push non può coprire: una vulnerabilità
-  # divulgata dopo l'ultimo commit, su codice fermo. Resta inerte finché questo
-  # file non arriva anche su `main` — vedi il commento sopra.
+  # Covers what the push job can't: a vulnerability disclosed after the last
+  # commit, on code that hasn't changed since. Fires only if this file is on
+  # the default branch — `schedule` triggers read from there, not from
+  # whichever branch last pushed — see the note above.
   osv-weekly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
