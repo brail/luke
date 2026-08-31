@@ -1770,3 +1770,55 @@ Diff reviewed line by line: every changed line is a Prisma `///` comment, a YAML
 ## C.4 Execution status
 
 Cycle 2 is DONE. Per A.4, cycle 3 — ESLint framework activation, closing `P0-02a` (Opus for configuration, Sonnet for triage) — is next.
+
+---
+
+# Appendix D — Cycle 3A ESLint framework activation (2026-08-31)
+
+Appends to Appendices A–C; neither the historical body nor any earlier appendix is rewritten. Commit `c931df1` on `develop-2.2`, CI and security green on that SHA (Lint/TypeCheck/Unit, Browser Component Tests, Integration Tests, Migrations; gitleaks, semgrep, osv-push).
+
+## D.1 P0-02a → DONE
+
+`eslint-config-next` was already a declared devDependency at both root and `apps/web` — installed, never referenced by the flat config. The React, React Hooks, jsx-a11y and `@next/next` rules had never executed. `eslint-config-next/core-web-vitals` is now actually consumed for `apps/web`.
+
+**Entries consumed**, selected by name and re-scoped to the web surface: `next` (React, React Hooks, jsx-a11y, `@next/next` recommended) and `next/core-web-vitals`, which promotes `no-html-link-for-pages` and `no-sync-scripts` from warn to error and ships with no `files` glob of its own — unscoped it would have applied to the whole monorepo. Consuming the preset rather than naming plugins keeps `eslint-plugin-react-hooks` out of the manifests, so the version that lints is the one Next pinned.
+
+**`next/typescript` deliberately excluded.** It registers a second `@typescript-eslint` plugin instance at 8.62.0 against the 8.68.0 this repo pins. Two objects under one plugin key is a hard ESLint error, and the older copy would have decided TS rule behaviour for `apps/web` alone.
+
+**React version resolved, not hard-coded.** `settings.react.version` must be set at all because `eslint-plugin-react` still calls `context.getFilename()` on its `detect` path, removed in ESLint 10, and throws before any rule runs. The value is read through Node module resolution rooted at `apps/web` rather than written into the config, so React's version stays single-sourced in the manifest. `--print-config` confirms `19.2.8`, the version `apps/web` actually resolves.
+
+## D.2 Non-vacuity
+
+The same bait file produces **zero** framework findings under the pre-activation config and React Hooks, Next and jsx-a11y findings under the new one — `rules-of-hooks` (error), `exhaustive-deps`, `no-img-element`, `alt-text`, and `no-sync-scripts` at the error severity the core-web-vitals layer gives it. That separates "the preset is active and the repo is clean" from "the preset never loaded" by construction. The same 312 files that linted clean before now report 123 findings.
+
+## D.3 Measured debt
+
+**72 errors and 51 warnings across 62 of 312 web files.** Largest contributors: `react-hooks/set-state-in-effect` (34E/26 files), `react-hooks/exhaustive-deps` (28W/21), `react/no-unescaped-entities` (23E/12), `react-hooks/incompatible-library` (16W/16). Most of the error volume is React Compiler tier — `eslint-plugin-react-hooks` v7 ships 16 rules, not the classic two. The core-web-vitals layer added enforcement without adding debt: both rules it promotes have no violations here.
+
+## D.4 Transition mechanism
+
+No rule severity was weakened. Both halves of the debt are pinned at today's count and can only be paid down:
+
+- the 72 errors are held in `apps/web/eslint-suppressions.json`, ESLint's own bulk suppression file, as an exact count per file per rule across 41 files;
+- the 51 warnings stay visible on every run, capped by `--max-warnings 51` in `apps/web`'s lint script.
+
+Every rule keeps the severity the preset ships, so any rule with no debt today — `rules-of-hooks` and the erroring `@next/next` rules among them — blocks on its first violation. The path to full enforcement is `--prune-suppressions` and a smaller number, not a config edit.
+
+**Ratchet proven by probe, not assumed.** Four baits each fail the run: an extra violation of an already-suppressed rule in an already-suppressed file, a 52nd warning, a new `rules-of-hooks` error, and a new `no-sync-scripts` error. The clean tree returns to exit 0 after each.
+
+## D.5 BUG-B is now mechanically surfaced
+
+`react-hooks/exhaustive-deps` flags `useWizardLock.ts:65` and `:99`, naming the missing `targets` dependency that is the defect's mechanism: `PlanningWizard.tsx:74` pushes `COLLECTION_LAYOUT` into `lockTargets` only once `layout?.id` resolves, so on a cold cache the acquire effect runs with `[enabled]` deps and never re-runs. The rule reports a missing dependency, not a lock-protocol defect — it does not know what `targets` means — but the dependency it names is the one whose omission causes BUG-B. The Appendix A ordering rationale for cycle 3 before cycle 4 holds.
+
+## D.6 No remediation
+
+No surfaced application violation was fixed in Cycle 3A. Scope was activation and measurement only; `P0-02b` and BUG-B were not touched, and no dependency was added, removed or upgraded.
+
+## D.7 Recorded without changing priority
+
+- **P2-09 evidence strengthened.** `turbo.json`'s `lint` task declares no `inputs`, and `globalDependencies` covers only `**/.env.*local`, so a change to the root `eslint.config.mjs` does not invalidate the lint cache — a config change can appear green locally without rerunning. CI is unaffected (cold cache, remote caching disabled). Kept for its scheduled Turbo-graph cycle.
+- **Transitive `typescript-eslint` split is informational only.** `eslint-config-next` resolves 8.62.0 while the repo pins 8.68.0. It has no effect because the Next entry that would register it is not consumed, and `checkVersionAlignment` compares declared manifest dependencies rather than transitive ones.
+
+## D.8 Execution status
+
+Cycle 3A is complete. Per A.4, cycle 4 — BUG-B, the wizard lock, on the browser tier — is next.
